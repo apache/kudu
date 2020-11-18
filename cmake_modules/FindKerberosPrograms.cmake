@@ -28,6 +28,8 @@ foreach(bin ${bins})
                /usr/sbin
                # Homebrew install location.
                /usr/local/opt/krb5/sbin
+               # Homebrew arm install location
+               /opt/homebrew/opt/krb5/sbin
                # Macports install location.
                /opt/local/sbin
                # SLES

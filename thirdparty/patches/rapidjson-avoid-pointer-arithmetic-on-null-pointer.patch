@@ -1,0 +1,43 @@
+From 16872af88915176f49e389defb167f899e2c230a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Konstantin=20K=C3=A4fer?= <mail@kkaefer.com>
+Date: Thu, 1 Sep 2016 12:10:03 +0200
+Subject: [PATCH] Avoid pointer arithmetic on null pointer to remove undefined
+ behavior
+
+The existing checks triggered undefined behavior when the stack was empty (null pointer). This change avoid this:
+* If `stackTop_` and `stackEnd_` are null, it results in a `ptrdiff_t` of `0`
+* If `stackTop_` and `stackEnd_` are valid pointers, they produce a `ptrdiff_t` with the remaining size on the stack
+---
+ include/rapidjson/internal/stack.h | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/include/rapidjson/internal/stack.h b/include/rapidjson/internal/stack.h
+index 89558d0da..45dca6a8b 100644
+--- a/include/rapidjson/internal/stack.h
++++ b/include/rapidjson/internal/stack.h
+@@ -17,6 +17,7 @@
+ 
+ #include "../allocators.h"
+ #include "swap.h"
++#include <cstddef>
+ 
+ #if defined(__clang__)
+ RAPIDJSON_DIAG_PUSH
+@@ -114,7 +115,7 @@ class Stack {
+     template<typename T>
+     RAPIDJSON_FORCEINLINE void Reserve(size_t count = 1) {
+          // Expand the stack if needed
+-        if (RAPIDJSON_UNLIKELY(stackTop_ + sizeof(T) * count > stackEnd_))
++        if (RAPIDJSON_UNLIKELY(static_cast<std::ptrdiff_t>(sizeof(T) * count) > (stackEnd_ - stackTop_)))
+             Expand<T>(count);
+     }
+ 
+@@ -127,7 +128,7 @@ class Stack {
+     template<typename T>
+     RAPIDJSON_FORCEINLINE T* PushUnsafe(size_t count = 1) {
+         RAPIDJSON_ASSERT(stackTop_);
+-        RAPIDJSON_ASSERT(stackTop_ + sizeof(T) * count <= stackEnd_);
++        RAPIDJSON_ASSERT(static_cast<std::ptrdiff_t>(sizeof(T) * count) <= (stackEnd_ - stackTop_));
+         T* ret = reinterpret_cast<T*>(stackTop_);
+         stackTop_ += sizeof(T) * count;
+         return ret;

@@ -1,0 +1,23 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 846b444..5c5d42e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -60,10 +60,7 @@ if (NOT WITH_THREADS)
+   set (CMAKE_DISABLE_FIND_PACKAGE_Threads ON)
+ endif (NOT WITH_THREADS)
+ 
+-set (CMAKE_C_VISIBILITY_PRESET hidden)
+-set (CMAKE_CXX_VISIBILITY_PRESET hidden)
+ set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+-set (CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+ 
+ set (CMAKE_DEBUG_POSTFIX d)
+ set (CMAKE_THREAD_PREFER_PTHREAD 1)
+@@ -581,6 +578,7 @@ set (GLOG_PUBLIC_H
+   ${CMAKE_CURRENT_BINARY_DIR}/glog/vlog_is_on.h
+   src/glog/log_severity.h
+   src/glog/platform.h
++  src/utilities.h
+ )
+ 
+ set (GLOG_SRCS

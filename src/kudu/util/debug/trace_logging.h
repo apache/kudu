@@ -102,9 +102,9 @@ class TraceGLog {
   class TraceLogSink : public google::LogSink {
    public:
     explicit TraceLogSink(const char* category) : category_(category) {}
-    void send(google::LogSeverity severity, const char* full_filename,
+    void send(google::LogSeverity severity, const char*  /*full_filename*/,
               const char* base_filename, int line,
-              const struct ::tm* tm_time, const char* message,
+              const ::google::LogMessageTime& logmsgtime, const char* message,
               size_t message_len) override {
       // Rather than calling TRACE_EVENT_INSTANT here, we have to do it from
       // the destructor. This is because glog holds its internal mutex while
@@ -116,7 +116,7 @@ class TraceGLog {
       // we defer the tracing until the google::LogMessage has destructed and the
       // glog lock is available again.
       str_ = ToString(severity, base_filename, line,
-                      tm_time, message, message_len);
+                      logmsgtime, message, message_len);
     }
     virtual ~TraceLogSink() {
       TRACE_EVENT_INSTANT1(category_, "vlog", TRACE_EVENT_SCOPE_THREAD,

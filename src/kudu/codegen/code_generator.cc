@@ -158,14 +158,14 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm, std::ostream* out, int max_in
     MCInst inst;
     uint64_t size;
     MCDisassembler::DecodeStatus stat =
-      disas->getInstruction(inst, size, mem_obj.slice(addr), addr, llvm::nulls(), llvm::nulls());
+      disas->getInstruction(inst, size, mem_obj.slice(addr), addr, llvm::nulls());
     if (stat != MCDisassembler::Success) {
       *out << "<ERROR at 0x" << std::hex << addr
            << " (absolute 0x" << (addr + base_addr) << ")"
            << ", skipping instruction>\n" << std::dec;
     } else {
       string annotations;
-      printer->printInst(&inst, os, annotations, subtarget_info);
+      printer->printInst(&inst, addr, annotations, subtarget_info, os);
       os << " " << annotations << "\n";
       // We need to check the opcode name for "RET" instead of comparing
       // the opcode to llvm::ReturnInst::getOpcode() because the native
@@ -178,7 +178,7 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm, std::ostream* out, int max_in
       // LLVM RTTI, since subclassing an LLVM interface would require
       // identical RTTI settings between LLVM and Kudu (see:
       // http://llvm.org/docs/Packaging.html#c-features).
-      string opname = printer->getOpcodeName(inst.getOpcode());
+      string opname = printer->getOpcodeName(inst.getOpcode()).str();
       std::transform(opname.begin(), opname.end(), opname.begin(), ::toupper);
       if (opname.find("RET") != string::npos) return i + 1;
     }

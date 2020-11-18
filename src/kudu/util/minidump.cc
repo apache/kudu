@@ -17,6 +17,7 @@
 
 #include "kudu/util/minidump.h"
 
+// IWYU pragma: no_include <features.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -41,6 +42,7 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -190,7 +192,7 @@ static bool DumpCallback(const google_breakpad::MinidumpDescriptor& descriptor,
 }
 
 // Failure function that simply calls abort().
-static void AbortFailureFunction() {
+ATTRIBUTE_NORETURN static void AbortFailureFunction() {
   abort();
 }
 

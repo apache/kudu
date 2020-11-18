@@ -17,6 +17,7 @@
 #ifndef KUDU_UTIL_LOGGING_H
 #define KUDU_UTIL_LOGGING_H
 
+#include <cstddef>
 #include <iosfwd>
 #include <string>
 
@@ -226,9 +227,6 @@ enum PRIVATE_ThrottleMsg {THROTTLE_MSG};
 
 // The direct user-facing macros.
 #define KLOG_EVERY_N(severity, n) \
-  GOOGLE_GLOG_COMPILE_ASSERT(google::GLOG_ ## severity < \
-                             google::NUM_SEVERITIES, \
-                             INVALID_REQUESTED_LOG_SEVERITY); \
   KUDU_SOME_KIND_OF_LOG_EVERY_N(severity, (n), google::LogMessage::SendToLog)
 
 #define KSYSLOG_EVERY_N(severity, n) \
@@ -327,7 +325,7 @@ class LogThrottler {
     ANNOTATE_BENIGN_RACE_SIZED(this, sizeof(*this), "OK to be sloppy with log throttling");
   }
 
-  bool ShouldLog(int n_secs, const char* tag, int* num_suppressed) {
+  bool ShouldLog(size_t n_secs, const char* tag, int* num_suppressed) {
     MicrosecondsInt64 ts = GetMonoTimeMicros();
 
     // When we switch tags, we should not show the "suppressed" messages, because

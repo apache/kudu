@@ -90,6 +90,10 @@ struct BTreeTraits {
 
 template<class T>
 inline void PrefetchMemory(const T *addr) {
+  // During the LLVM 11 upgrade, the sanitizer runs reported null pointer dereference. Wrapping the
+  // prefetch() call with an if statement fixed the errors. In the end, it was decided to add a
+  // DCHECK() here, and wrap all uses of PrefetchMemory() with the null pointer guard.
+  DCHECK(addr);
   int size = std::min<int>(sizeof(T), 4 * CACHELINE_SIZE);
 
   for (int i = 0; i < size; i += CACHELINE_SIZE) {
@@ -1168,7 +1172,9 @@ class CBTree {
 
     while (node.type() != NodePtr<Traits>::LEAF_NODE) {
 #ifdef TRAVERSE_PREFETCH
-      PrefetchMemory(node.internal_node_ptr());
+      if (node.internal_node_ptr()) {
+        PrefetchMemory(node.internal_node_ptr());
+      }
 #endif
       retry_in_node:
       int num_children = node.internal_node_ptr()->num_children_;
@@ -1206,7 +1212,9 @@ class CBTree {
       version = child_version;
     }
 #ifdef TRAVERSE_PREFETCH
-    PrefetchMemory(node.leaf_node_ptr());
+    if (node.leaf_node_ptr()) {
+      PrefetchMemory(node.leaf_node_ptr());
+    }
 #endif
     *stable_version = version;
     return node.leaf_node_ptr();
@@ -1777,7 +1785,9 @@ class CBTreeIterator {
       AtomicVersion version;
       LeafNode<Traits> *leaf = tree_->TraverseToLeaf(key, &version);
 #ifdef SCAN_PREFETCH
-      PrefetchMemory(leaf->next_);
+      if (leaf->next_) {
+        PrefetchMemory(leaf->next_);
+      }
 #endif
 
       // If the tree is frozen, we don't need to follow optimistic concurrency.
@@ -1815,7 +1825,9 @@ class CBTreeIterator {
       return false;
     }
 #ifdef SCAN_PREFETCH
-    PrefetchMemory(next->next_);
+    if (next->next_) {
+      PrefetchMemory(next->next_);
+    }
     for (int i = 0; i < next->num_entries(); i++) {
       next->vals_[i].prefetch();
     }

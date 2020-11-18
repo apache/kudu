@@ -36,22 +36,23 @@
 # 10. Create new tarball from the resulting source tree
 #
 # Usage:
-#  $ env VERSION=6.0.0 IWYU_VERSION=0.9 thirdparty/package-llvm.sh
+#  $ env VERSION=11.0.0 IWYU_VERSION=0.15 thirdparty/package-llvm.sh
 
 set -eux
 
-for ARTIFACT in llvm cfe compiler-rt libcxx libcxxabi lld clang-tools-extra; do
-  wget https://releases.llvm.org/$VERSION/$ARTIFACT-$VERSION.src.tar.xz
+for ARTIFACT in llvm clang compiler-rt libcxx libcxxabi lld clang-tools-extra; do
+  wget https://github.com/llvm/llvm-project/releases/download/llvmorg-$VERSION/$ARTIFACT-$VERSION.src.tar.xz
   tar xf $ARTIFACT-$VERSION.src.tar.xz
   rm $ARTIFACT-$VERSION.src.tar.xz
 done
 
 IWYU_TAR=include-what-you-use-${IWYU_VERSION}.src.tar.gz
 wget https://include-what-you-use.org/downloads/$IWYU_TAR
-tar xf $IWYU_TAR
+mkdir include-what-you-use
+tar xf $IWYU_TAR -C include-what-you-use
 rm $IWYU_TAR
 
-mv cfe-$VERSION.src llvm-$VERSION.src/tools/clang
+mv clang-$VERSION.src llvm-$VERSION.src/tools/clang
 mv clang-tools-extra-$VERSION.src llvm-$VERSION.src/tools/clang/tools/extra
 mv lld-$VERSION.src llvm-$VERSION.src/tools/lld
 mv compiler-rt-$VERSION.src llvm-$VERSION.src/projects/compiler-rt

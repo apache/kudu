@@ -99,7 +99,7 @@ TAG_FLAG(ranger_logtostdout, advanced);
 TAG_FLAG(ranger_logtostdout, evolving);
 
 DECLARE_int32(max_log_files);
-DECLARE_int32(max_log_size);
+DECLARE_uint32(max_log_size);
 DECLARE_string(log_dir);
 
 METRIC_DEFINE_histogram(server, ranger_subprocess_execution_time_ms,

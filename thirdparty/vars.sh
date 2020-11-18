@@ -42,7 +42,7 @@ GFLAGS_VERSION=2.2.2
 GFLAGS_NAME=gflags-$GFLAGS_VERSION
 GFLAGS_SOURCE=$TP_SOURCE_DIR/$GFLAGS_NAME
 
-GLOG_VERSION=0.3.5
+GLOG_VERSION=0.6.0
 GLOG_NAME=glog-$GLOG_VERSION
 GLOG_SOURCE=$TP_SOURCE_DIR/$GLOG_NAME
 
@@ -142,12 +142,12 @@ LIBUNWIND_NAME=libunwind-$LIBUNWIND_VERSION
 LIBUNWIND_SOURCE=$TP_SOURCE_DIR/$LIBUNWIND_NAME
 
 # See package-llvm.sh for details on the LLVM tarball.
-LLVM_VERSION=9.0.0
+LLVM_VERSION=11.0.0
 LLVM_NAME=llvm-$LLVM_VERSION.src
 LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
 
 # The include-what-you-use is built along with LLVM in its source tree.
-IWYU_VERSION=0.13
+IWYU_VERSION=0.15
 
 # Python is required to build LLVM 3.6+ because it uses
 # llvm/utils/llvm-build/llvmbuild script. It is only built and installed if

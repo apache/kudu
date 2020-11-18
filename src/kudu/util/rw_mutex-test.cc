@@ -112,73 +112,73 @@ TEST_P(RWMutexTest, TestDeadlocks) {
 // Tests that the RWMutex wrapper catches basic usage errors. This checking is
 // only enabled in debug builds.
 TEST_P(RWMutexTest, TestLockChecking) {
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     lock_.ReadLock();
     lock_.ReadLock();
-  }, "already holding lock for reading");
+  }), "already holding lock for reading");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     CHECK(lock_.TryReadLock());
     CHECK(lock_.TryReadLock());
-  }, "already holding lock for reading");
+  }), "already holding lock for reading");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     lock_.ReadLock();
     lock_.WriteLock();
-  }, "already holding lock for reading");
+  }), "already holding lock for reading");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     CHECK(lock_.TryReadLock());
     CHECK(lock_.TryWriteLock());
-  }, "already holding lock for reading");
+  }), "already holding lock for reading");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     lock_.WriteLock();
     lock_.ReadLock();
-  }, "already holding lock for writing");
+  }), "already holding lock for writing");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     CHECK(lock_.TryWriteLock());
     CHECK(lock_.TryReadLock());
-  }, "already holding lock for writing");
+  }), "already holding lock for writing");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     lock_.WriteLock();
     lock_.WriteLock();
-  }, "already holding lock for writing");
+  }), "already holding lock for writing");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     CHECK(lock_.TryWriteLock());
     CHECK(lock_.TryWriteLock());
-  }, "already holding lock for writing");
+  }), "already holding lock for writing");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     lock_.ReadUnlock();
-  }, "wasn't holding lock for reading");
+  }), "wasn't holding lock for reading");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     lock_.WriteUnlock();
-  }, "wasn't holding lock for writing");
+  }), "wasn't holding lock for writing");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     lock_.ReadLock();
     lock_.WriteUnlock();
-  }, "already holding lock for reading");
+  }), "already holding lock for reading");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     CHECK(lock_.TryReadLock());
     lock_.WriteUnlock();
-  }, "already holding lock for reading");
+  }), "already holding lock for reading");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     lock_.WriteLock();
     lock_.ReadUnlock();
-  }, "already holding lock for writing");
+  }), "already holding lock for writing");
 
-  EXPECT_DEATH({
+  EXPECT_DEATH(({
     CHECK(lock_.TryWriteLock());
     lock_.ReadUnlock();
-  }, "already holding lock for writing");
+  }), "already holding lock for writing");
 }
 #endif
 

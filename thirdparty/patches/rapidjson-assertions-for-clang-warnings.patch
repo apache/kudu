@@ -1,0 +1,21 @@
+From 9d8df28c1dd92be8480fae8026fed0aa2c0d8cdd Mon Sep 17 00:00:00 2001
+From: Patrick Cheng <patrickyccheng@gmail.com>
+Date: Fri, 30 Sep 2016 10:47:00 -0700
+Subject: [PATCH] added assertion to help suppress clang warnings
+
+---
+ include/rapidjson/internal/stack.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/rapidjson/internal/stack.h b/include/rapidjson/internal/stack.h
+index 022c9aab4..54ac77a82 100644
+--- a/include/rapidjson/internal/stack.h
++++ b/include/rapidjson/internal/stack.h
+@@ -126,6 +127,7 @@ class Stack {
+ 
+     template<typename T>
+     RAPIDJSON_FORCEINLINE T* PushUnsafe(size_t count = 1) {
++        RAPIDJSON_ASSERT(stackTop_);
+         RAPIDJSON_ASSERT(stackTop_ + sizeof(T) * count <= stackEnd_);
+         T* ret = reinterpret_cast<T*>(stackTop_);
+         stackTop_ += sizeof(T) * count;

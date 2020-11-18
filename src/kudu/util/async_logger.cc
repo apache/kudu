@@ -61,7 +61,7 @@ void AsyncLogger::Stop() {
 void AsyncLogger::Write(bool force_flush,
                         time_t timestamp,
                         const char* message,
-                        int message_len) {
+                        size_t message_len) {
   {
     MutexLock l(lock_);
     DCHECK_EQ(state_, RUNNING);

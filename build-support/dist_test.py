@@ -241,6 +241,10 @@ def is_lib_whitelisted(lib):
     # installed versions different from the dist_test image.
     if "libcrypto" in lib or "libsasl2" in lib or "libssl" in lib:
       return True
+    # After upgrading to LLVM 11, TSAN builds link libatomic.
+    # Since it was not present on the test machines, it is whitelisted.
+    if "libatomic" in lib:
+      return True
     return False
   return True
 

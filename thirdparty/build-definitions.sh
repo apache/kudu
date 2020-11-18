@@ -196,7 +196,6 @@ build_llvm() {
   TOOLS_ARGS="$TOOLS_ARGS -DLLVM_TOOL_LIBCXX_BUILD=OFF"
   TOOLS_ARGS="$TOOLS_ARGS -DLLVM_TOOL_LIBCXXABI_BUILD=OFF"
 
-
   # Disable some builds we don't care about.
   for arg in \
       CLANG_ENABLE_ARCMT \
@@ -300,14 +299,6 @@ build_llvm() {
         TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_ENABLE_TVOS=OFF"
       fi
 
-      # Depend on zlib from the thirdparty tree. It's an optional dependency for
-      # LLVM, but a required [1] one for IWYU. When TSAN is enabled these flags
-      # are already set by build-thirdparty.sh in order to support the
-      # thirdparty libc++, so it's not necessary to set them again.
-      #
-      # 1. https://github.com/include-what-you-use/include-what-you-use/issues/539
-      CLANG_CXXFLAGS="$CLANG_CXXFLAGS -I$PREFIX/include"
-      CLANG_LDFLAGS="$CLANG_LDFLAGS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib"
       ;;
     "tsan")
       # Build just the core LLVM libraries, dependent on libc++.
@@ -432,32 +423,44 @@ build_libunwind() {
 }
 
 build_glog() {
-  GLOG_BDIR=$TP_BUILD_DIR/$GLOG_NAME$MODE_SUFFIX
-  mkdir -p $GLOG_BDIR
-  pushd $GLOG_BDIR
+  GLOG_SHARED_BDIR=$TP_BUILD_DIR/$GLOG_NAME.shared$MODE_SUFFIX
+  GLOG_STATIC_BDIR=$TP_BUILD_DIR/$GLOG_NAME.static$MODE_SUFFIX
+  for SHARED in ON OFF; do
+    if [ $SHARED = "ON" ]; then
+      GLOG_BDIR=$GLOG_SHARED_BDIR
+    else
+      GLOG_BDIR=$GLOG_STATIC_BDIR
+    fi
+    mkdir -p $GLOG_BDIR
+    pushd $GLOG_BDIR
+    rm -rf CMakeCache.txt CMakeFiles/
 
-  # glog depends on libunwind and gflags.
-  #
-  # Specifying -Wl,-rpath has different default behavior on GNU binutils ld vs.
-  # the GNU gold linker. ld sets RPATH (due to defaulting to --disable-new-dtags)
-  # and gold sets RUNPATH (due to defaulting to --enable-new-dtags). At the time
-  # of this writing, contrary to the way RPATH is treated, when RUNPATH is
-  # specified on a binary, glibc doesn't respect it for transitive (non-direct)
-  # library dependencies (see https://sourceware.org/bugzilla/show_bug.cgi?id=13945).
-  # So we must set RUNPATH for all deps-of-deps on the dep libraries themselves.
-  #
-  # This comment applies both here and the locations elsewhere in this script
-  # where we add something to -Wl,-rpath.
-  CXXFLAGS="$EXTRA_CXXFLAGS -I$PREFIX/include" \
-    LDFLAGS="$EXTRA_LDFLAGS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
-    LIBS="$EXTRA_LIBS" \
-    $GLOG_SOURCE/configure \
-    --with-pic \
-    --prefix=$PREFIX \
-    --with-gflags=$PREFIX
-  fixup_libtool
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
-  popd
+    # glog depends on libunwind and gflags.
+    #
+    # Specifying -Wl,-rpath has different default behavior on GNU binutils ld vs.
+    # the GNU gold linker. ld sets RPATH (due to defaulting to --disable-new-dtags)
+    # and gold sets RUNPATH (due to defaulting to --enable-new-dtags). At the time
+    # of this writing, contrary to the way RPATH is treated, when RUNPATH is
+    # specified on a binary, glibc doesn't respect it for transitive (non-direct)
+    # library dependencies (see https://sourceware.org/bugzilla/show_bug.cgi?id=13945).
+    # So we must set RUNPATH for all deps-of-deps on the dep libraries themselves.
+    #
+    # This comment applies both here and the locations elsewhere in this script
+    # where we add something to -Wl,-rpath.
+    cmake \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=$PREFIX \
+      -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS -I$PREFIX/include" \
+      -DCMAKE_EXE_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
+      -DCMAKE_MODULE_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
+      -DCMAKE_SHARED_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
+      -DBUILD_SHARED_LIBS=$SHARED \
+      -DBUILD_TESTING=OFF \
+      $EXTRA_CMAKE_FLAGS \
+      $GLOG_SOURCE
+    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+    popd
+  done
 }
 
 build_gperftools() {

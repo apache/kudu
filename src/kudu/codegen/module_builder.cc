@@ -29,7 +29,10 @@
 //       for successful run-time operation of the code generator.
 #include <glog/logging.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringMapEntry.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/ilist_iterator.h>
+#include <llvm/ADT/iterator.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/MCJIT.h> // IWYU pragma: keep
 #include <llvm/IR/Attributes.h>
@@ -125,7 +128,7 @@ string ToString(const Module& m) {
 // This method is needed for the implicit conversion from
 // llvm::StringRef to std::string
 string ToString(const Function* f) {
-  return f->getName();
+  return f->getName().str();
 }
 
 bool ModuleContains(const Module& m, const Function* fptr) {
@@ -379,7 +382,7 @@ TargetMachine* ModuleBuilder::GetTargetMachine() const {
 unordered_set<string> ModuleBuilder::GetFunctionNames() const {
   unordered_set<string> ret;
   for (const JITFuture& fut : futures_) {
-    ret.insert(CHECK_NOTNULL(fut.llvm_f_)->getName());
+    ret.insert(CHECK_NOTNULL(fut.llvm_f_)->getName().str());
   }
   return ret;
 }

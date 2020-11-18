@@ -123,6 +123,13 @@ SANITIZER_HOOK_ATTRIBUTE const char *__tsan_default_suppressions() {
   // the destruction of a locked mutex in glog.
   "mutex:glog_internal_namespace_::Mutex::~Mutex\n"
 
+  // TODO(martongreber) After doing the  LLVM 11 and glog 0.6.0 upgrades the below
+  // llvm regexes are flagged as race. They are most likely noise.
+  "race:llvm_regexec\n"
+  "race:llvm::Regex::match\n"
+  "race:llvm::Regex::~Regex\n"
+  "race:llvm_regfree\n"
+
   // gflags variables are accessed without synchronization, but FlagSaver and other
   // APIs acquire locks when accessing them. This should be safe on x86 for
   // primitive flag types, but not for string flags, which is why fLS is omitted.

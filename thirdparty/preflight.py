@@ -138,9 +138,10 @@ def check_openssl():
   if openssl_include != "":
     cflags.append(openssl_include)
   else:
-    homebrew_openssl_dir="/usr/local/opt/openssl/include"
-    if os.path.isdir(homebrew_openssl_dir):
-      cflags.append("-I" + homebrew_openssl_dir)
+    homebrew_openssl_dirs=["/usr/local/opt/openssl/include", "/opt/homebrew/opt/openssl@1.1/include"]
+    for homebrew_openssl_dir in homebrew_openssl_dirs:
+      if os.path.isdir(homebrew_openssl_dir):
+        cflags.append("-I" + homebrew_openssl_dir)
   try_do(
     "Checking for openssl headers",
     ("Unable to compile a simple program that uses openssl. " +

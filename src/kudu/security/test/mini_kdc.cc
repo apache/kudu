@@ -105,6 +105,8 @@ Status GetBinaryPath(const string& binary, string* path) {
   static const vector<string> kCommonLocations = {
     "/usr/local/opt/krb5/sbin", // Homebrew
     "/usr/local/opt/krb5/bin", // Homebrew
+    "/opt/homebrew/opt/krb5/sbin", // Homebrew arm
+    "/opt/homebrew/opt/krb5/bin", // Homebrew arm
     "/opt/local/sbin", // Macports
     "/opt/local/bin", // Macports
     "/usr/lib/mit/sbin", // SLES

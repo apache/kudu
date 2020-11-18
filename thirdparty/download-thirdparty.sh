@@ -170,22 +170,20 @@ fetch_and_patch() {
 mkdir -p $TP_SOURCE_DIR
 cd $TP_SOURCE_DIR
 
-GLOG_PATCHLEVEL=4
+GLOG_PATCHLEVEL=2
 fetch_and_patch \
  glog-${GLOG_VERSION}.tar.gz \
  $GLOG_SOURCE \
  $GLOG_PATCHLEVEL \
- "patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch" \
- "patch -p0 < $TP_DIR/patches/glog-issue-54-dont-build-tests.patch" \
- "patch -p1 < $TP_DIR/patches/glog-fix-symbolization.patch" \
- "patch -p1 < $TP_DIR/patches/glog-support-stacktrace-for-aarch64.patch" \
- "autoreconf -fvi"
+ "patch -p1 < $TP_DIR/patches/glog-make-internals-visible.patch" \
+ "patch -p1 < $TP_DIR/patches/glog-support-stacktrace-for-aarch64.patch"
 
-GMOCK_PATCHLEVEL=0
+GMOCK_PATCHLEVEL=1
 fetch_and_patch \
  googletest-release-${GMOCK_VERSION}.tar.gz \
  $GMOCK_SOURCE \
- $GMOCK_PATCHLEVEL
+ $GMOCK_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/gmock-remove-unused-gunit-iwyu-pragma.patch"
 
 GFLAGS_PATCHLEVEL=0
 fetch_and_patch \
@@ -270,12 +268,14 @@ fetch_and_patch \
  $LIBEV_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/libev-c17.patch"
 
-RAPIDJSON_PATCHLEVEL=1
+RAPIDJSON_PATCHLEVEL=3
 fetch_and_patch \
  rapidjson-${RAPIDJSON_VERSION}.zip \
  $RAPIDJSON_SOURCE \
  $RAPIDJSON_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/rapidjson-fix-signed-unsigned-conversion-error.patch"
+ "patch -p1 < $TP_DIR/patches/rapidjson-fix-signed-unsigned-conversion-error.patch" \
+ "patch -p1 < $TP_DIR/patches/rapidjson-assertions-for-clang-warnings.patch" \
+ "patch -p1 < $TP_DIR/patches/rapidjson-avoid-pointer-arithmetic-on-null-pointer.patch"
 
 SQUEASEL_PATCHLEVEL=0
 fetch_and_patch \
@@ -329,18 +329,12 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=6
+LLVM_PATCHLEVEL=1
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
  $LLVM_PATCHLEVEL \
-  "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch" \
-  "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch" \
-  "patch -p1 < $TP_DIR/patches/llvm-MicrosoftDemangleNodes-e0402b5c9813a2458b8dd3f640883110db280395.patch" \
-  "patch -p0 < $TP_DIR/patches/llvm-iwyu-sized-deallocation.patch" \
-  "patch -d projects -p1 < $TP_DIR/patches/llvm-947f9692440836dcb8d88b74b69dd379d85974ce.patch" \
-  "patch -d projects -p1 < $TP_DIR/patches/llvm-remove-cyclades-inclusion-in-sanitizer.patch" \
-  "patch -p2 < $TP_DIR/patches/llvm-fix-missing-include.patch"
+ "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch"
 
 LZ4_PATCHLEVEL=0
 fetch_and_patch \

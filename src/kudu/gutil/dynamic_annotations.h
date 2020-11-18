@@ -522,7 +522,7 @@ void AnnotateBenignRace(const char *file, int line,
                         const char *description);
 void AnnotateBenignRaceSized(const char *file, int line,
                         const volatile void *address,
-                        long size,
+                        size_t size,
                         const char *description);
 void AnnotateMutexIsUsedAsCondVar(const char *file, int line,
                                   const volatile void *mu);

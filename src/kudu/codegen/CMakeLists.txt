@@ -69,7 +69,7 @@ if (APPLE)
   # Clang does not know about by default.
   set(PREFIXED_IR_INCLUDES
     ${PREFIXED_IR_INCLUDES}
-    -cxx-isystem "/Library/Developer/CommandLineTools/usr/include/c++/v1")
+    -cxx-isystem "${CMAKE_OSX_SYSROOT}")
 endif()
 
 # Get preprocessing definitions, which enable directives for glog and gtest.

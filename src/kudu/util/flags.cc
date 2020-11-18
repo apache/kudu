@@ -246,7 +246,7 @@ DECLARE_bool(logtostderr);
 TAG_FLAG(logtostderr, stable);
 TAG_FLAG(logtostderr, runtime);
 
-DECLARE_int32(max_log_size);
+DECLARE_uint32(max_log_size);
 TAG_FLAG(max_log_size, stable);
 TAG_FLAG(max_log_size, runtime);
 

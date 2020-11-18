@@ -82,15 +82,15 @@ TEST_F(KuduTest, Locking) {
 
   // Note: we must use a death test here because file locking is only
   // disallowed across processes, and death tests spawn child processes.
-  ASSERT_DEATH({
+  ASSERT_DEATH(({
     DirInstanceMetadataFile second(env_, "", kType, kFileName);
     CHECK_OK(second.LoadFromDisk());
     CHECK_EQ(kUuid, second.uuid());
     CHECK_OK(second.Lock());
-  }, "Could not lock");
+  }), "Could not lock");
 
   ASSERT_OK(first.Unlock());
-  ASSERT_DEATH({
+  ASSERT_DEATH(({
     DirInstanceMetadataFile second(env_, "", kType, kFileName);
     CHECK_OK(second.LoadFromDisk());
     CHECK_EQ(kUuid, second.uuid());
@@ -100,7 +100,7 @@ TEST_F(KuduTest, Locking) {
     } else {
       LOG(FATAL) << "Could not lock: " << s.ToString();
     }
-  }, "Lock successfully acquired");
+  }), "Lock successfully acquired");
 }
 
 } // namespace fs

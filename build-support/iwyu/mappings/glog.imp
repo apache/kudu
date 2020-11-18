@@ -23,5 +23,10 @@
   { symbol: [ "CHECK_GE", private, "<glog/logging.h>", public ] },
   { symbol: [ "CHECK_GT", private, "<glog/logging.h>", public ] },
   { symbol: [ "ErrnoLogMessage", private, "<glog/logging.h>", public ] },
-  { symbol: [ "COMPACT_GOOGLE_LOG_0", private, "<glog/logging.h>", public ] }
+  { symbol: [ "COMPACT_GOOGLE_LOG_0", private, "<glog/logging.h>", public ] },
+
+# Upgrading from glog 0.3.5 to 0.6.0 the includes for log_severity.h and vlog_is_on.h
+# are changed from #include "" to #include <> which seem to cause issues.
+  { include: ["<glog/log_severity.h>", "public", "<glog/logging.h>", "public"] },
+  { include: ["<glog/vlog_is_on.h>", "public", "<glog/logging.h>", "public"] }
 ]
