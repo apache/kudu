@@ -284,6 +284,15 @@ build_llvm() {
         TOOLS_ARGS="$TOOLS_ARGS -DGCC_INSTALL_PREFIX=$GCC_INSTALL_PREFIX"
       fi
 
+      # Xcode 12.2 fails to buld the sanitizers and they are not needed.
+      # We disable them as a workaround to the build issues.
+      if [ -n "$OS_OSX" ]; then
+        # Disable the sanitizers and xray to prevent sanitizer_common compilation.
+        # See https://github.com/llvm-mirror/compiler-rt/blob/749af53928a31afa3111f27cc41fd15849d86667/lib/CMakeLists.txt#L11-L14
+        TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_BUILD_SANITIZERS=OFF"
+        TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_BUILD_XRAY=OFF"
+      fi
+
       # Depend on zlib from the thirdparty tree. It's an optional dependency for
       # LLVM, but a required [1] one for IWYU. When TSAN is enabled these flags
       # are already set by build-thirdparty.sh in order to support the
