@@ -69,7 +69,7 @@ if (APPLE)
   # Clang does not know about by default.
   set(PREFIXED_IR_INCLUDES
     ${PREFIXED_IR_INCLUDES}
-    -cxx-isystem "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1")
+    -cxx-isystem "/Library/Developer/CommandLineTools/usr/include/c++/v1")
 endif()
 
 # Get preprocessing definitions, which enable directives for glog and gtest.
@@ -90,19 +90,14 @@ set(IR_FLAGS
   ${PREFIXED_IR_INCLUDES})
 
 # /usr/include doesn't have the necessary headers on macOS 10.14 (Mojave) with
-# Xcode 10[1]. In this case the --sysroot has to be set to the output of "xcrun
+# Xcode 10[1]+. In this case the --sysroot has to be set to the output of "xcrun
 # --show-sdk-path" for the thirdparty clang-6.0 to work correctly.
 #
 # [1] https://developer.apple.com/documentation/xcode_release_notes/xcode_10_release_notes
 if (APPLE AND NOT EXISTS /usr/include/libc.h)
-  EXECUTE_PROCESS (COMMAND
-    xcrun --show-sdk-path
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    OUTPUT_VARIABLE SDKPATH)
-
   set(IR_FLAGS
     ${IR_FLAGS}
-    --sysroot="${SDKPATH}")
+    --sysroot="${CMAKE_OSX_SYSROOT}")
 endif()
 
 # Provide clang with any explicitly defined system prefix path. If there isn't

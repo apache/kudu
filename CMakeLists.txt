@@ -24,6 +24,11 @@ cmake_minimum_required(VERSION 3.11.2)
 
 project(Kudu)
 
+# Print out the CMAKE_OSX_SYSROOT to help debug Apple build issues.
+if (CMAKE_OSX_SYSROOT)
+  message(STATUS "Using CMAKE_OSX_SYSROOT: ${CMAKE_OSX_SYSROOT}")
+endif()
+
 # Prevent builds from the top-level source directory. This ensures that build
 # output is well isolated from the source tree.
 #

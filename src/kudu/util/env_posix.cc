@@ -248,6 +248,9 @@ int fallocate(int fd, int mode, off_t offset, off_t len) {
   return 0;
 }
 
+// Implementations for `preadv` and `pwritev` are available in the MacOSX11+ SDK.
+// We provide simulated implementations for older versions.
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED < 110000
 // Simulates Linux's preadv API on OS X.
 ssize_t preadv(int fd, const struct iovec* iovec, int count, off_t offset) {
   ssize_t total_read_bytes = 0;
@@ -283,6 +286,8 @@ ssize_t pwritev(int fd, const struct iovec* iovec, int count, off_t offset) {
   }
   return total_written_bytes;
 }
+#endif
+
 #endif
 
 void DoClose(int fd) {
