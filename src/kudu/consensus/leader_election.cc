@@ -1217,6 +1217,9 @@ void LeaderElection::Run() {
   // single-node configuration, since we always pre-vote for ourselves).
   CheckForDecision();
 
+  std::string msg;
+  msg.reserve(100 * other_voter_uuids.size());
+  size_t pnum = 0;
   // The rest of the code below is for a typical multi-node configuration.
   for (const auto& voter_uuid : other_voter_uuids) {
     VoterState* state = nullptr;
@@ -1241,10 +1244,16 @@ void LeaderElection::Run() {
       continue;
     }
 
-    // Send the RPC request.
-    LOG_WITH_PREFIX(INFO) << "Requesting "
-                          << (request_.is_pre_election() ? "pre-" : "")
-                          << "vote from peer " << state->PeerInfo();
+    // Create a single message with comma separated peers
+    if (pnum != 0) {
+      msg.append(", ");
+      if (pnum % 3 == 0) {
+        msg.append("\n");
+      }
+    }
+    pnum++;
+    msg.append(state->PeerInfo());
+
     state->rpc.set_timeout(timeout_);
 
     state->request = request_;
@@ -1259,6 +1268,10 @@ void LeaderElection::Run() {
         boost::bind(&Closure::Run,
                     Bind(&LeaderElection::VoteResponseRpcCallback, this, voter_uuid)));
   }
+  // Send the RPC request.
+  LOG_WITH_PREFIX(INFO) << "Requesting "
+                        << (request_.is_pre_election() ? "pre-" : "")
+                        << "vote from peers: " << msg;
 }
 
 void LeaderElection::CheckForDecision() {

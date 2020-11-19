@@ -491,7 +491,7 @@ void Peer::ProcessResponseError(const Status& status) {
   }
 #endif
 
-  KLOG_EVERY_N_SECS(WARNING, 60) << LogPrefixUnlocked() << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
+  KLOG_EVERY_N_SECS(WARNING, 300) << LogPrefixUnlocked() << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
       << " for tablet " << tablet_id_ << "."
       << resp_err_info
       << " Status: " << status.ToString() << "."
