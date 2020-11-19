@@ -61,6 +61,7 @@ DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
 DECLARE_int32(rpc_service_queue_length);
 DECLARE_int64(txn_manager_status_table_range_partition_span);
+DECLARE_uint32(txn_manager_status_table_num_replicas);
 DECLARE_uint32(transaction_keepalive_interval_ms);
 
 namespace kudu {
@@ -81,6 +82,9 @@ class TxnManagerTest : public KuduTest {
     // Explicitly setting the flags just for better readability.
     FLAGS_txn_manager_enabled = true;
     FLAGS_txn_manager_lazily_initialized = true;
+
+    // In this test, there is just a single tablet servers in the cluster.
+    FLAGS_txn_manager_status_table_num_replicas = 1;
 
     // Make TxnManager creating new ranges in the transaction status table more
     // often, so it's not necessary to start too many transactions to see it

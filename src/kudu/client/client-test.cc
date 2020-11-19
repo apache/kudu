@@ -162,6 +162,7 @@ DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
 DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
+DECLARE_uint32(txn_manager_status_table_num_replicas);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
@@ -231,6 +232,9 @@ class ClientTest : public KuduTest {
 
     // Enable TxnManager in Kudu master.
     FLAGS_txn_manager_enabled = true;
+    // Basic txn-related scenarios in this test assume there is only one
+    // replica of the transaction status table.
+    FLAGS_txn_manager_status_table_num_replicas = 1;
 
     SetLocationMappingCmd();
 

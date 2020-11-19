@@ -73,6 +73,11 @@ DEFINE_int64(txn_manager_status_table_range_partition_span, 1000000,
 TAG_FLAG(txn_manager_status_table_range_partition_span, advanced);
 TAG_FLAG(txn_manager_status_table_range_partition_span, experimental);
 
+DEFINE_uint32(txn_manager_status_table_num_replicas, 3,
+              "Number of replicas for transaction status table");
+TAG_FLAG(txn_manager_status_table_num_replicas, advanced);
+TAG_FLAG(txn_manager_status_table_num_replicas, experimental);
+
 namespace kudu {
 namespace transactions {
 
@@ -250,7 +255,8 @@ Status TxnManager::Init() {
   RETURN_NOT_OK(TxnSystemClient::Create(master_addrs, &txn_sys_client_));
   DCHECK(txn_sys_client_);
   auto s = txn_sys_client_->CreateTxnStatusTable(
-      FLAGS_txn_manager_status_table_range_partition_span);
+      FLAGS_txn_manager_status_table_range_partition_span,
+      FLAGS_txn_manager_status_table_num_replicas);
   if (!s.ok() && !s.IsAlreadyPresent()) {
     // Status::OK() is expected only on the very first call to Init() before
     // the transaction status table is created.
