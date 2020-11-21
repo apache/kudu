@@ -991,7 +991,7 @@ void Tablet::CreateTxnRowSets(int64_t txn_id, scoped_refptr<TxnMetadata> txn_met
                              &new_mrs));
   scoped_refptr<TxnRowSets> rowsets(new TxnRowSets(std::move(new_mrs)));
   {
-    shared_lock<rw_spinlock> l(component_lock_);
+    std::lock_guard<rw_spinlock> l(component_lock_);
     // TODO(awong): can we ever get here?
     if (ContainsKey(uncommitted_rowsets_by_txn_id_, txn_id)) {
       return;
