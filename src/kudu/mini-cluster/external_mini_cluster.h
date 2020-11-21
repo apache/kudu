@@ -93,6 +93,12 @@ class ExternalTabletServer;
 // Location --> number of tablet servers in location.
 typedef std::map<std::string, int> LocationInfo;
 
+
+struct TabletIdAndTableName {
+  const std::string tablet_id;
+  const std::string table_name;
+};
+
 #if !defined(NO_CHRONY)
 // The enumeration below describes the way Kudu's built-in NTP client is
 // configured given the set of dedicated NTP servers run by the mini-cluster.
@@ -405,8 +411,11 @@ class ExternalMiniCluster : public MiniCluster {
   // If 'min_tablet_count' is not -1, will also wait for at least that many
   // RUNNING tablets to appear before returning (potentially timing out if that
   // number is never reached).
-  Status WaitForTabletsRunning(ExternalTabletServer* ts, int min_tablet_count,
-                               const MonoDelta& timeout);
+  Status WaitForTabletsRunning(
+      ExternalTabletServer* ts,
+      int min_tablet_count,
+      const MonoDelta& timeout,
+      std::vector<TabletIdAndTableName>* tablets_info = nullptr);
 
   // Create a client configured to talk to this cluster.
   // Builder may contain override options for the client. The master address will

@@ -720,9 +720,11 @@ void ExternalMiniCluster::AssertNoCrashes() {
   ASSERT_EQ(0, num_crashes) << "At least one process crashed";
 }
 
-Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
-                                                  int min_tablet_count,
-                                                  const MonoDelta& timeout) {
+Status ExternalMiniCluster::WaitForTabletsRunning(
+    ExternalTabletServer* ts,
+    int min_tablet_count,
+    const MonoDelta& timeout,
+    vector<TabletIdAndTableName>* tablets_info) {
   TabletServerServiceProxy proxy(messenger_, ts->bound_rpc_addr(), ts->bound_rpc_addr().host());
   ListTabletsRequestPB req;
   ListTabletsResponsePB resp;
@@ -747,6 +749,17 @@ Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
     // 1. All the tablets are running, and
     // 2. We've observed as many tablets as we had expected or more.
     if (all_running && resp.status_and_schema_size() >= min_tablet_count) {
+      if (tablets_info) {
+        tablets_info->clear();
+        const auto num_elems = resp.status_and_schema_size();
+        tablets_info->reserve(num_elems);
+        for (auto i = 0; i < num_elems; ++i) {
+          const auto& elem = resp.status_and_schema(i);
+          tablets_info->emplace_back(
+              TabletIdAndTableName{elem.tablet_status().tablet_id(),
+                                   elem.tablet_status().table_name()});
+        }
+      }
       return Status::OK();
     }
 
