@@ -218,7 +218,7 @@ class FlexPartitioningITest : public KuduTest,
     }
 
     vector<const KuduPartialRow*> split_rows;
-    for (const vector<int32_t> split : range_partition.splits) {
+    for (const auto& split : range_partition.splits) {
       KuduPartialRow* row = schema.NewRow();
       for (int i = 0; i < split.size(); i++) {
         ASSERT_OK(row->SetInt32(range_partition.columns[i], split[i]));
