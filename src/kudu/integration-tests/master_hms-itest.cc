@@ -50,7 +50,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::make_optional;
 using boost::none;
 using boost::optional;
 using kudu::client::KuduTable;

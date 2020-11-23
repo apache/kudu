@@ -351,7 +351,6 @@ GROUP_FLAG_VALIDATOR(auto_rebalancing_flags,
 
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
-using boost::make_optional;
 using boost::none;
 using boost::optional;
 using google::protobuf::Map;
@@ -1850,7 +1849,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     }
   });
   const optional<string> dimension_label =
-      req.has_dimension_label() ? make_optional(req.dimension_label()) : none;
+      req.has_dimension_label() ? boost::make_optional(req.dimension_label()) : none;
   for (const Partition& partition : partitions) {
     PartitionPB partition_pb;
     partition.ToPB(&partition_pb);
@@ -2559,7 +2558,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
           const optional<string> dimension_label =
               step.add_range_partition().has_dimension_label()
-              ? make_optional(step.add_range_partition().dimension_label())
+              ? boost::make_optional(step.add_range_partition().dimension_label())
               : none;
           PartitionPB partition_pb;
           partition.ToPB(&partition_pb);
@@ -4917,7 +4916,7 @@ void CatalogManager::HandleAssignCreatingTablet(const scoped_refptr<TabletInfo>&
   const PersistentTabletInfo& old_info = tablet->metadata().state();
 
   const optional<string> dimension_label = old_info.pb.has_dimension_label()
-      ? make_optional(old_info.pb.dimension_label())
+      ? boost::make_optional(old_info.pb.dimension_label())
       : none;
   // The "tablet creation" was already sent, but we didn't receive an answer
   // within the timeout. So the tablet will be replaced by a new one.
@@ -5239,7 +5238,7 @@ Status CatalogManager::BuildLocationsForTablet(
 
     const auto role = GetParticipantRole(peer, cstate);
     const optional<string> dimension = l_tablet.data().pb.has_dimension_label()
-        ? make_optional(l_tablet.data().pb.dimension_label())
+        ? boost::make_optional(l_tablet.data().pb.dimension_label())
         : none;
     if (ts_infos_dict) {
       const auto idx = ts_infos_dict->LookupOrAdd(peer.permanent_uuid(), fill_tsinfo_pb);
