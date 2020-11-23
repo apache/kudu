@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -99,6 +100,12 @@ TEST_P(DiffScanTest, TestDiffScan) {
   static const bool kIsDeletedDefault = false;
   SchemaBuilder builder(tablet->metadata()->schema());
   if (order_mode == ORDERED) {
+    // Define our diff scan to start from snap1.
+    // NOTE: it isn't critical to set this given the default is -Inf, but it
+    // can't hurt to specify one, given we expect it to be the common case with
+    // the backup jobs.
+    opts.snap_to_exclude = snap1;
+
     // The merge iterator requires an IS_DELETED column when including deleted
     // rows in order to support deduplication of the rows.
     ASSERT_OK(builder.AddColumn("deleted", IS_DELETED,
@@ -138,6 +145,61 @@ TEST_P(DiffScanTest, TestDiffScan) {
     ASSERT_EQ(1, rows.size());
     EXPECT_EQ("(int64 key=1, int32 key_idx=1, int32 val=2, is_deleted deleted=false)", rows[0]);
   }
+}
+
+class OrderedDiffScanWithDeletesTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
+ public:
+  OrderedDiffScanWithDeletesTest()
+      : Superclass(TabletHarness::Options::ClockType::HYBRID_CLOCK) {}
+
+ private:
+  using Superclass = TabletTestBase<IntKeyTestSetup<INT64>>;
+};
+
+// Regression test for KUDU-3108, wherein running the merge iterator on
+// overlapping rowsets could potentially lead to invalid memory access.
+TEST_F(OrderedDiffScanWithDeletesTest, TestKudu3108) {
+  auto tablet = this->tablet();
+  auto tablet_id = tablet->tablet_id();
+
+  LocalTabletWriter writer(tablet.get(), &client_schema_);
+  ASSERT_OK(InsertTestRow(&writer, 1, 1));
+  ASSERT_OK(tablet->Flush());
+
+  MvccSnapshot snap1(*tablet->mvcc_manager());
+  ASSERT_OK(DeleteTestRow(&writer, 1));
+  ASSERT_OK(InsertTestRow(&writer, 3, 1));
+  ASSERT_OK(tablet->Flush());
+
+  ASSERT_OK(InsertTestRow(&writer, 1, 1));
+  ASSERT_OK(InsertTestRow(&writer, 0, 1));
+  ASSERT_OK(tablet->mvcc_manager()->WaitForApplyingOpsToApply());
+  MvccSnapshot snap2(*tablet->mvcc_manager());
+
+  RowIteratorOptions opts;
+  opts.snap_to_exclude = snap1;
+  opts.snap_to_include = snap2;
+  opts.order = ORDERED;
+  opts.include_deleted_rows = true;
+  static const bool kIsDeletedDefault = false;
+  SchemaBuilder builder(tablet->metadata()->schema());
+  ASSERT_OK(builder.AddColumn("deleted", IS_DELETED,
+                              /*is_nullable=*/ false,
+                              /*read_default=*/ &kIsDeletedDefault,
+                              /*write_default=*/ nullptr));
+  Schema projection = builder.BuildWithoutIds();
+  opts.projection = &projection;
+
+  // We should be able to iterate through the rows without issue.
+  unique_ptr<RowwiseIterator> row_iterator;
+  ASSERT_OK(tablet->NewRowIterator(std::move(opts),
+                                   &row_iterator));
+  ASSERT_TRUE(row_iterator);
+  ScanSpec spec;
+  ASSERT_OK(row_iterator->Init(&spec));
+  vector<string> rows;
+  ASSERT_OK(tablet::IterateToStringList(row_iterator.get(), &rows));
+  ASSERT_EQ(3, rows.size());
 }
 
 } // namespace tablet

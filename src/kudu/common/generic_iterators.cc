@@ -192,7 +192,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
 
   // Returns the schema from the underlying iterator.
   const Schema& schema() const {
-    return iwb_.iter->schema();
+    return DCHECK_NOTNULL(iwb_.iter)->schema();
   }
 
   // Pulls the next block from the underlying iterator.
@@ -221,7 +221,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
   // iterators.
   //
   // Must already be Init'ed at MergeIterState construction time.
-  IterWithBounds iwb_;
+  const IterWithBounds iwb_;
 
   // Allocates memory for read_block_.
   RowBlockMemory memory_;
@@ -291,7 +291,7 @@ Status MergeIterState::PullNextBlock() {
   while (iwb_.iter->HasNext()) {
     RETURN_NOT_OK(iwb_.iter->NextBlock(read_block_.get()));
 
-    SelectionVector *selection = read_block_->selection_vector();
+    SelectionVector* selection = read_block_->selection_vector();
     DCHECK_EQ(selection->nrows(), read_block_->nrows());
     DCHECK_LE(selection->CountSelected(), read_block_->nrows());
     size_t rows_valid = selection->CountSelected();
@@ -321,7 +321,7 @@ Status MergeIterState::PullNextBlock() {
     LOG(FATAL) << "unreachable code"; // guaranteed by the short-circuit above
   }
 
-  // The underlying iterator is fully exhausted.
+  VLOG(1) << "Fully exhausted iter " << iwb_.iter->ToString();
   next_row_idx_ = 0;
   read_block_.reset();
   return Status::OK();
@@ -347,10 +347,10 @@ Status MergeIterState::CopyBlock(RowBlock* dst, size_t dst_offset,
 // An iterator which merges the results of other iterators, comparing
 // based on keys.
 //
-// Three different heaps are used to optimize the merge process. To explain how
-// it works, let's start with an explanation of a traditional heap-based merge:
-// there exist N sorted lists of elements and the goal is to produce a single
-// sorted list containing all of the elements.
+// Two heaps are used to optimize the merge process. To explain how it works,
+// let's start with an explanation of a traditional heap-based merge: there
+// exist N sorted lists of elements and the goal is to produce a single sorted
+// list containing all of the elements.
 //
 // To begin:
 // - For each list, peek the first element into a per-list buffer.
@@ -428,28 +428,35 @@ Status MergeIterState::CopyBlock(RowBlock* dst, size_t dst_offset,
 // output), or when a sub-iterator finishes its NEXT and needs to peek again.
 //
 // But which sub-iterators should be moved? To answer this question efficiently,
-// we need two more heaps:
-// - COLD: a min-heap for sub-iterators in the second set, ordered by each's
-//   NEXT's lower bound. At any given time, the NEXT belonging to the top-most
-//   sub-iterator in COLD is nearest the merge window.
-// - HOTMAXES: a min-heap for keys. Each entry corresponds to a sub-iterator
-//   present in HOT, and specifically, to its NEXT's upper bound. At any given
-//   time, the top-most key in HOTMAXES represents the end of the merge window.
+// we need another heap: we'll define a COLD min-heap for sub-iterators in the
+// second set, ordered by each's NEXT's lower bound. At any given time, the
+// NEXT belonging to the top-most sub-iterator in COLD is nearest the merge
+// window.
 //
-// When the merge window's end has moved and we need to refill HOT, the top-most
-// sub-iterator in COLD is the best candidate. To figure out whether it should
-// be moved, we compare its NEXT's lower bound against the top-most key in
-// HOTMAXES: if the lower bound is less than or equal to the key, we move the
-// sub-iterator from COLD to HOT. On the flip side, when a sub-iterator from HOT
-// finishes its NEXT and peeks again, we also need to check whether it has
-// exited the merge window. The approach is similar: if its NEXT's lower bound
-// is greater than the top-most key in HOTMAXES, it's time to move it to COLD.
+// When the merge window's end has moved and we need to refill HOT, the
+// top-most sub-iterator in COLD is the best candidate. To figure out whether
+// it should be moved, we compare its NEXT's lower bound against the upper
+// bound in HOT's first iterator: if the lower bound is less than or equal to
+// the key, we move the sub-iterator from COLD to HOT. On the flip side, when a
+// sub-iterator from HOT finishes its NEXT and peeks again, we also need to
+// check whether it has exited the merge window. The approach is similar: if
+// its NEXT's lower bound is greater than the upper bound of HOT'S first
+// iterator, it's time to move it to COLD.
 //
 // There's one more piece to this puzzle: the absolute bounds that are known
 // ahead of time are used as stand-ins for NEXT's lower and upper bounds. This
 // helps defer peeking for as long as possible, at least until the sub-iterator
 // moves from COLD to HOT. After that, peeked memory must remain resident until
 // the sub-iterator is fully exhausted.
+//
+// TODO(awong): there is a variant of this algorithm that defines another
+// container to further optimize the size of the merge window: HOTMAXES, an
+// ordered set for sub-iterators in HOT, ordered by each sub-iterator's upper
+// bound. At any given time, the first iterator in HOTMAXES represents the
+// optimal end of the merge window, allowing us to move elements onto COLD via
+// comparison to the first value of HOTMAXES. Some experiments defined this
+// using std::set and found its maintenance sometimes takes more than it nets.
+// Experiment with a less memory-hungry data structure (maybe absl::btree?).
 //
 // For another description of this algorithm including pseudocode, see
 // https://docs.google.com/document/d/1uP0ubjM6ulnKVCRrXtwT_dqrTWjF9tlFSRk0JN2e_O0/edit#
@@ -496,7 +503,7 @@ class MergeIterator : public RowwiseIterator {
   Status InitSubIterators(ScanSpec *spec);
 
   // Advances 'state' by 'num_rows_to_advance', destroying it and/or updating
-  // the three heaps if necessary.
+  // 'hot_' and 'cold_' if necessary.
   Status AdvanceAndReheap(MergeIterState* state, size_t num_rows_to_advance);
 
   // Moves sub-iterators from cold_ to hot_ if they now overlap with the merge
@@ -543,18 +550,6 @@ class MergeIterator : public RowwiseIterator {
   // MergeIterState's decoded bounds remain allocated for its lifetime.
   RowBlockMemory decoded_bounds_memory_;
 
-  // Min-heap that orders rows by their keys. A call to top() will yield the row
-  // with the smallest key.
-  struct RowComparator {
-    bool operator()(const RowBlockRow& a, const RowBlockRow& b) const {
-      // This is counter-intuitive, but it's because boost::heap defaults to
-      // a max-heap; the comparator must be inverted to yield a min-heap.
-      return a.schema()->Compare(a, b) > 0;
-    }
-  };
-  typedef boost::heap::skew_heap<
-    RowBlockRow, boost::heap::compare<RowComparator>> RowMinHeap;
-
   // Min-heap that orders sub-iterators by their next row key. A call to top()
   // will yield the sub-iterator with the smallest next row key.
   struct MergeIterStateComparator {
@@ -565,16 +560,15 @@ class MergeIterator : public RowwiseIterator {
     }
   };
   typedef boost::heap::skew_heap<
-    MergeIterState*, boost::heap::compare<MergeIterStateComparator>> MergeStateMinHeap;
+      MergeIterState*, boost::heap::compare<MergeIterStateComparator>> MergeStateMinHeap;
 
-  // The three heaps as described in the algorithm above.
+  // The min-heaps as described in the algorithm above.
   //
-  // Note that the heaps do not "own" any of the objects they contain:
-  // - The MergeIterStates in hot_ and cold_ are owned by states_.
-  // - The data backing the rows in hotmaxes_ is owned by all states' read_block_.
-  //
-  // Care must be taken to remove entries from the heaps when the corresponding
-  // objects are destroyed.
+  // Note that none of these containers "own" the objects they contain: the
+  // MergeIterStates are all owned by states_. Care must be taken to remove
+  // entries from the containers in such a way that does not access the
+  // corresponding objects, even if they are destroyed (e.g. if an iterator
+  // state becomes fully exhausted while still in the containers).
   //
   // Boost offers a variety of different heap data structures[1]. Perf testing
   // via generic_iterators-test (TestMerge and TestMergeNonOverlapping with
@@ -587,7 +581,6 @@ class MergeIterator : public RowwiseIterator {
   // 1. https://www.boost.org/doc/libs/1_69_0/doc/html/heap/data_structures.html
   MergeStateMinHeap hot_;
   MergeStateMinHeap cold_;
-  RowMinHeap hotmaxes_;
 };
 
 MergeIterator::MergeIterator(MergeIteratorOptions opts,
@@ -644,7 +637,7 @@ Status MergeIterator::Init(ScanSpec *spec) {
       [](const MergeIterState& s) { return PREDICT_FALSE(s.IsFullyExhausted()); },
       [](MergeIterState* s) { delete s; });
 
-  // Establish the merge window and initialize the three heaps.
+  // Establish the merge window and initialize the ordered iterator containers.
   for (auto& s : states_) {
     cold_.push(&s);
   }
@@ -680,27 +673,21 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
 
 Status MergeIterator::AdvanceAndReheap(MergeIterState* state,
                                        size_t num_rows_to_advance) {
-  bool pulled_new_block;
+  DCHECK_EQ(state, hot_.top());
+  bool pulled_new_block = false;
   RETURN_NOT_OK(state->Advance(num_rows_to_advance, &pulled_new_block));
   hot_.pop();
 
-  // Note that hotmaxes_ is not yet popped as it's not necessary to do so if the
-  // merge window hasn't changed. Thus, we can avoid some work by deferring it
-  // into the cases below.
-
   if (state->IsFullyExhausted()) {
-    hotmaxes_.pop();
     DestroySubIterator(state);
 
     // This sub-iterator's removal means the end of the merge window may have shifted.
     RETURN_NOT_OK(RefillHotHeap());
   } else if (pulled_new_block) {
-    hotmaxes_.pop();
-
     // This sub-iterator has a new block, which means the end of the merge window
-    //may have shifted.
-    if (!hotmaxes_.empty() &&
-        schema_->Compare(hotmaxes_.top(), state->next_row()) < 0) {
+    // may have shifted.
+    if (!hot_.empty() &&
+        schema_->Compare(hot_.top()->last_row(), state->next_row()) < 0) {
       // The new block lies beyond the new end of the merge window.
       VLOG(2) << "Block finished, became cold: " << state->ToString();
       cold_.push(state);
@@ -708,7 +695,6 @@ Status MergeIterator::AdvanceAndReheap(MergeIterState* state,
       // The new block is still within the merge window.
       VLOG(2) << "Block finished, still hot: " << state->ToString();
       hot_.push(state);
-      hotmaxes_.push(state->last_row());
     }
     RETURN_NOT_OK(RefillHotHeap());
   } else {
@@ -722,8 +708,8 @@ Status MergeIterator::AdvanceAndReheap(MergeIterState* state,
 Status MergeIterator::RefillHotHeap() {
   VLOG(2) << "Refilling hot heap";
   while (!cold_.empty() &&
-         (hotmaxes_.empty() ||
-          schema_->Compare(hotmaxes_.top(), cold_.top()->next_row()) >= 0)) {
+         (hot_.empty() ||
+          schema_->Compare(hot_.top()->last_row(), cold_.top()->next_row()) >= 0)) {
     MergeIterState* warmest = cold_.top();
     cold_.pop();
 
@@ -750,7 +736,6 @@ Status MergeIterator::RefillHotHeap() {
     }
     VLOG(2) << "Became hot: " << warmest->ToString();
     hot_.push(warmest);
-    hotmaxes_.push(warmest->last_row());
   }
   if (VLOG_IS_ON(2)) {
     VLOG(2) << "Done refilling hot heap";
@@ -896,6 +881,9 @@ Status MergeIterator::MaterializeOneRow(RowBlock* dst, size_t* dst_row_idx) {
   RETURN_NOT_OK(CopyRow(row_to_return_iter->next_row(), &dst_row, dst->arena()));
 
   // Advance all matching sub-iterators and remove any that are exhausted.
+  // Since we're advancing iterators of the same row starting with hot_.top(),
+  // each of these calls is effectively being called on hot_.top(), since the
+  // reheaping will put each top iterator farther down the hot heap.
   for (auto& s : smallest) {
     RETURN_NOT_OK(AdvanceAndReheap(s, /*num_rows_to_advance=*/1));
   }
