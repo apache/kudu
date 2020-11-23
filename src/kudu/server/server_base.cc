@@ -101,7 +101,7 @@ DEFINE_int32(max_negotiation_threads, 50, "Maximum number of connection negotiat
 TAG_FLAG(max_negotiation_threads, advanced);
 
 DEFINE_int64(rpc_negotiation_timeout_ms, 3000,
-             "Timeout for negotiating an RPC connection.");
+             "Timeout for negotiating an RPC connection, in milliseconds");
 TAG_FLAG(rpc_negotiation_timeout_ms, advanced);
 
 DEFINE_bool(webserver_enabled, true, "Whether to enable the web server on this daemon. "

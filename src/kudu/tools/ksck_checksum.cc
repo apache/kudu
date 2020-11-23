@@ -37,9 +37,9 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/periodic.h"
 #include "kudu/tools/ksck.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -359,8 +359,7 @@ bool KsckChecksumManager::ReserveSlotsToChecksumUnlocked(
 
 Status KsckChecksumManager::RunChecksumsAsync() {
   if (!messenger_) {
-    rpc::MessengerBuilder builder("timestamp update");
-    RETURN_NOT_OK(builder.Build(&messenger_));
+    RETURN_NOT_OK(BuildMessenger("timestamp update", &messenger_));
   }
   timestamp_update_timer_ = rpc::PeriodicTimer::Create(
       messenger_,

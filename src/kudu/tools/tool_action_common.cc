@@ -42,6 +42,7 @@
 #include "kudu/client/client-internal.h"  // IWYU pragma: keep
 #include "kudu/client/client.h"
 #include "kudu/client/master_proxy_rpc.h"
+#include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_operations.h"
@@ -76,6 +77,7 @@
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/mem_tracker.pb.h"
 #include "kudu/util/memory/arena.h"
@@ -140,9 +142,27 @@ static bool ValidateNumThreads(const char* flag_name, int32_t flag_value) {
 }
 DEFINE_validator(num_threads, &ValidateNumThreads);
 
+DEFINE_int64(negotiation_timeout_ms, 3000,
+             "Timeout for negotiating an RPC connection to a Kudu server, "
+             "in milliseconds");
+
+bool ValidateTimeoutSettings() {
+  if (FLAGS_timeout_ms < FLAGS_negotiation_timeout_ms) {
+    LOG(ERROR) << strings::Substitute(
+        "RPC timeout set by --timeout_ms should be not less than connection "
+        "negotiation timeout set by --negotiation_timeout_ms; "
+        "current settings are $0 and $1 correspondingly",
+        FLAGS_timeout_ms, FLAGS_negotiation_timeout_ms);
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(timeout_flags, ValidateTimeoutSettings);
+
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::internal::AsyncLeaderMasterRpc;
+using kudu::client::internal::ReplicaController;
 using kudu::consensus::ConsensusServiceProxy; // NOLINT
 using kudu::consensus::ReplicateMsg;
 using kudu::log::LogEntryPB;
@@ -199,6 +219,16 @@ const char* const kTabletIdArgDesc = "Tablet Identifier";
 const char* const kTabletIdsCsvArg = "tablet_ids";
 const char* const kTabletIdsCsvArgDesc =
     "Comma-separated list of Tablet Identifiers";
+
+const char* const kMasterAddressArg = "master_address";
+const char* const kMasterAddressDesc = "Address of a Kudu Master of form "
+    "'hostname:port'. Port may be omitted if the Master is bound to the "
+    "default port.";
+
+const char* const kTServerAddressArg = "tserver_address";
+const char* const kTServerAddressDesc = "Address of a Kudu Tablet Server of "
+    "form 'hostname:port'. Port may be omitted if the Tablet Server is bound "
+    "to the default port.";
 
 namespace {
 
@@ -356,17 +386,52 @@ Status GetServerFlags(const string& address,
 
 } // anonymous namespace
 
+RpcActionBuilder::RpcActionBuilder(std::string name, ActionRunner runner)
+    : ActionBuilder(std::move(name), std::move(runner)) {
+}
+
+unique_ptr<Action> RpcActionBuilder::Build() {
+  AddOptionalParameter("negotiation_timeout_ms");
+  AddOptionalParameter("timeout_ms");
+  return ActionBuilder::Build();
+}
+
+ClusterActionBuilder::ClusterActionBuilder(std::string name, ActionRunner runner)
+    : RpcActionBuilder(std::move(name), std::move(runner)) {
+  AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc });
+}
+
+MasterActionBuilder::MasterActionBuilder(std::string name, ActionRunner runner)
+    : RpcActionBuilder(std::move(name), std::move(runner)) {
+  AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc });
+}
+
+TServerActionBuilder::TServerActionBuilder(std::string name, ActionRunner runner)
+    : RpcActionBuilder(std::move(name), std::move(runner)) {
+  AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc });
+}
+
+Status BuildMessenger(std::string name, shared_ptr<Messenger>* messenger) {
+  shared_ptr<Messenger> m;
+  MessengerBuilder b(std::move(name));
+  b.set_rpc_negotiation_timeout_ms(FLAGS_negotiation_timeout_ms);
+  auto s = b.Build(&m);
+  if (s.ok()) {
+    *messenger = std::move(m);
+  }
+  return s;
+}
+
 template<class ProxyClass>
 Status BuildProxy(const string& address,
                   uint16_t default_port,
                   unique_ptr<ProxyClass>* proxy) {
   HostPort hp;
   RETURN_NOT_OK(hp.ParseString(address, default_port));
-  shared_ptr<Messenger> messenger;
-  RETURN_NOT_OK(MessengerBuilder("tool").Build(&messenger));
-
   vector<Sockaddr> resolved;
   RETURN_NOT_OK(hp.ResolveAddresses(&resolved));
+  shared_ptr<Messenger> messenger;
+  RETURN_NOT_OK(BuildMessenger("tool", &messenger));
 
   proxy->reset(new ProxyClass(messenger, resolved[0], hp.host()));
   return Status::OK();
@@ -507,14 +572,31 @@ bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
   return false;
 }
 
+Status CreateKuduClient(const vector<string>& master_addresses,
+                        client::sp::shared_ptr<KuduClient>* client,
+                        bool can_see_all_replicas) {
+  auto rpc_timeout = MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
+  auto negotiation_timeout = MonoDelta::FromMilliseconds(
+      FLAGS_negotiation_timeout_ms);
+  KuduClientBuilder b;
+  if (can_see_all_replicas) {
+    ReplicaController::SetVisibility(&b, ReplicaController::Visibility::ALL);
+  }
+  return b
+      .master_server_addrs(master_addresses)
+      .default_rpc_timeout(rpc_timeout)
+      .default_admin_operation_timeout(rpc_timeout)
+      .connection_negotiation_timeout(negotiation_timeout)
+      .Build(client);
+}
+
 Status CreateKuduClient(const RunnerContext& context,
                         const char* master_addresses_arg,
                         client::sp::shared_ptr<KuduClient>* client) {
   vector<string> master_addresses;
-  RETURN_NOT_OK(ParseMasterAddresses(context, master_addresses_arg, &master_addresses));
-  return KuduClientBuilder()
-             .master_server_addrs(master_addresses)
-             .Build(client);
+  RETURN_NOT_OK(ParseMasterAddresses(context, master_addresses_arg,
+                                     &master_addresses));
+  return CreateKuduClient(master_addresses, client);
 }
 
 Status CreateKuduClient(const RunnerContext& context,
@@ -809,21 +891,28 @@ Status DataTable::PrintTo(ostream& out) const {
   return Status::OK();
 }
 
-LeaderMasterProxy::LeaderMasterProxy(client::sp::shared_ptr<KuduClient> client) :
-  client_(std::move(client)) {
+LeaderMasterProxy::LeaderMasterProxy(client::sp::shared_ptr<KuduClient> client)
+    : client_(std::move(client)) {
 }
 
-Status LeaderMasterProxy::Init(const vector<string>& master_addrs, const MonoDelta& timeout) {
-  return KuduClientBuilder().master_server_addrs(master_addrs)
-                            .default_rpc_timeout(timeout)
-                            .default_admin_operation_timeout(timeout)
-                            .Build(&client_);
+Status LeaderMasterProxy::Init(const vector<string>& master_addrs,
+                               const MonoDelta& timeout,
+                               const MonoDelta& connection_negotiation_timeout) {
+  return KuduClientBuilder()
+      .master_server_addrs(master_addrs)
+      .default_rpc_timeout(timeout)
+      .default_admin_operation_timeout(timeout)
+      .connection_negotiation_timeout(connection_negotiation_timeout)
+      .Build(&client_);
 }
 
 Status LeaderMasterProxy::Init(const RunnerContext& context) {
   vector<string> master_addresses;
   RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
-  return Init(master_addresses, MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+  return Init(
+     master_addresses,
+     MonoDelta::FromMilliseconds(FLAGS_timeout_ms),
+     MonoDelta::FromMilliseconds(FLAGS_negotiation_timeout_ms));
 }
 
 template<typename Req, typename Resp>

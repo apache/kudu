@@ -141,6 +141,8 @@ DECLARE_bool(fs_data_dirs_consider_available_space);
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(show_values);
 DECLARE_bool(show_attributes);
+DECLARE_int32(catalog_manager_inject_latency_load_ca_info_ms);
+DECLARE_int32(rpc_negotiation_inject_delay_ms);
 DECLARE_string(block_manager);
 DECLARE_string(hive_metastore_uris);
 
@@ -340,6 +342,23 @@ class ToolTest : public KuduTest {
                                          stderr.end());
     for (const auto& r : regexes) {
       ASSERT_STRINGS_ANY_MATCH(remaining_lines, r);
+    }
+  }
+
+  // Run each of the provided 'arg_str_subcommands' for the specified 'arg_str'
+  // command with '--help' command-line flag and make sure the result usage
+  // message contains information on command line flags to control RPC and
+  // connection negotiation timeouts. This targets various CLI tools issuing
+  // RPCs to a Kudu cluster (either to masters or tablet servers).
+  void RunTestHelpRpcFlags(const string& arg_str,
+                           const vector<string>& arg_str_subcommands) const {
+    static const vector<string> kTimeoutRegexes = {
+      "-negotiation_timeout_ms \\(Timeout for negotiating an RPC connection",
+      "-timeout_ms \\(RPC timeout in milliseconds\\)",
+    };
+    for (auto& cmd_str : arg_str_subcommands) {
+      const string arg = arg_str + " " + cmd_str + " --help";
+      NO_FATALS(RunTestHelp(arg, kTimeoutRegexes));
     }
   }
 
@@ -984,11 +1003,13 @@ TEST_F(ToolTest, TestTopLevelHelp) {
 
 TEST_F(ToolTest, TestModeHelp) {
   {
+    const string kCmd = "cluster";
     const vector<string> kClusterModeRegexes = {
         "ksck.*Check the health of a Kudu cluster",
         "rebalance.*Move tablet replicas between tablet servers",
     };
-    NO_FATALS(RunTestHelp("cluster", kClusterModeRegexes));
+    NO_FATALS(RunTestHelp(kCmd, kClusterModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd, {"ksck", "rebalance"}));
   }
   {
     const vector<string> kDiagnoseModeRegexes = {
@@ -1019,6 +1040,7 @@ TEST_F(ToolTest, TestModeHelp) {
 
   }
   {
+    const string kCmd = "hms";
     const vector<string> kHmsModeRegexes = {
         "check.*Check metadata consistency",
         "downgrade.*Downgrade the metadata",
@@ -1026,9 +1048,11 @@ TEST_F(ToolTest, TestModeHelp) {
         "list.*List the Kudu table HMS entries",
         "precheck.*Check that the Kudu cluster is prepared",
     };
-    NO_FATALS(RunTestHelp("hms", kHmsModeRegexes));
-    NO_FATALS(RunTestHelp("hms not_a_mode", kHmsModeRegexes,
+    NO_FATALS(RunTestHelp(kCmd, kHmsModeRegexes));
+    NO_FATALS(RunTestHelp(kCmd + " not_a_mode", kHmsModeRegexes,
                           Status::InvalidArgument("unknown command 'not_a_mode'")));
+    NO_FATALS(RunTestHelpRpcFlags(
+        kCmd, {"check", "downgrade", "fix", "list", "precheck"}));
   }
   {
     const vector<string> kLocalReplicaModeRegexes = {
@@ -1072,6 +1096,7 @@ TEST_F(ToolTest, TestModeHelp) {
                           kLocalReplicaCopyFromRemoteRegexes));
   }
   {
+    const string kCmd = "master";
     const vector<string> kMasterModeRegexes = {
         "authz_cache.*Operate on the authz caches of the Kudu Masters",
         "dump_memtrackers.*Dump the memtrackers",
@@ -1082,13 +1107,23 @@ TEST_F(ToolTest, TestModeHelp) {
         "timestamp.*Get the current timestamp",
         "list.*List masters in a Kudu cluster",
     };
-    NO_FATALS(RunTestHelp("master", kMasterModeRegexes));
+    NO_FATALS(RunTestHelp(kCmd, kMasterModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd,
+        { "dump_memtrackers",
+          "get_flags",
+          "set_flag",
+          "status",
+          "timestamp",
+          "list",
+        }));
   }
   {
+    const string kSubCmd = "master authz_cache";
     const vector<string> kMasterAuthzCacheModeRegexes = {
         "refresh.*Refresh the authorization policies",
     };
-    NO_FATALS(RunTestHelp("master authz_cache", kMasterAuthzCacheModeRegexes));
+    NO_FATALS(RunTestHelp(kSubCmd, kMasterAuthzCacheModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kSubCmd, {"refresh"}));
   }
   {
     const vector<string> kPbcModeRegexes = {
@@ -1098,14 +1133,17 @@ TEST_F(ToolTest, TestModeHelp) {
     NO_FATALS(RunTestHelp("pbc", kPbcModeRegexes));
   }
   {
+    const string kCmd = "perf";
     const vector<string> kPerfRegexes = {
         "loadgen.*Run load generation with optional scan afterwards",
         "table_scan.*Show row count and scanning time cost of tablets in a table",
         "tablet_scan.*Show row count of a local tablet",
     };
-    NO_FATALS(RunTestHelp("perf", kPerfRegexes));
+    NO_FATALS(RunTestHelp(kCmd, kPerfRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd, {"loadgen", "table_scan"}));
   }
   {
+    const string kCmd = "remote_replica";
     const vector<string> kRemoteReplicaModeRegexes = {
         "check.*Check if all tablet replicas",
         "copy.*Copy a tablet replica from one Kudu Tablet Server",
@@ -1114,9 +1152,18 @@ TEST_F(ToolTest, TestModeHelp) {
         "list.*List all tablet replicas",
         "unsafe_change_config.*Force the specified replica to adopt",
     };
-    NO_FATALS(RunTestHelp("remote_replica", kRemoteReplicaModeRegexes));
+    NO_FATALS(RunTestHelp(kCmd, kRemoteReplicaModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd,
+        { "check",
+          "copy",
+          "delete",
+          "dump",
+          "list",
+          "unsafe_change_config",
+        }));
   }
   {
+    const string kCmd = "table";
     const vector<string> kTableModeRegexes = {
         "add_range_partition.*Add a range partition for table",
         "column_remove_default.*Remove write_default value for a column",
@@ -1140,24 +1187,59 @@ TEST_F(ToolTest, TestModeHelp) {
         "set_extra_config.*Change a extra configuration value on a table",
         "statistics.*Get table statistics",
     };
-    NO_FATALS(RunTestHelp("table", kTableModeRegexes));
+    NO_FATALS(RunTestHelp(kCmd, kTableModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd,
+        { "add_range_partition",
+          "column_remove_default",
+          "column_set_block_size",
+          "column_set_compression",
+          "column_set_default",
+          "column_set_encoding",
+          "column_set_comment",
+          "copy",
+          "create",
+          "delete_column",
+          "delete",
+          "describe",
+          "drop_range_partition",
+          "get_extra_configs",
+          "list",
+          "locate_row",
+          "rename_column",
+          "rename_table",
+          "scan",
+          "set_extra_config",
+          "statistics",
+        }));
   }
   {
+    const string kCmd = "tablet";
     const vector<string> kTabletModeRegexes = {
         "change_config.*Change.*Raft configuration",
         "leader_step_down.*Change.*tablet's leader",
         "unsafe_replace_tablet.*Replace a tablet with an empty one",
     };
-    NO_FATALS(RunTestHelp("tablet", kTabletModeRegexes));
+    NO_FATALS(RunTestHelp(kCmd, kTabletModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd,
+        { "leader_step_down",
+          "unsafe_replace_tablet",
+        }));
   }
   {
+    const string kSubCmd = "tablet change_config";
     const vector<string> kChangeConfigModeRegexes = {
         "add_replica.*Add a new replica",
         "change_replica_type.*Change the type of an existing replica",
         "move_replica.*Move a tablet replica",
         "remove_replica.*Remove an existing replica",
     };
-    NO_FATALS(RunTestHelp("tablet change_config", kChangeConfigModeRegexes));
+    NO_FATALS(RunTestHelp(kSubCmd, kChangeConfigModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kSubCmd,
+        { "add_replica",
+          "change_replica_type",
+          "move_replica",
+          "remove_replica",
+        }));
   }
   {
     const vector<string> kTestModeRegexes = {
@@ -1166,6 +1248,7 @@ TEST_F(ToolTest, TestModeHelp) {
     NO_FATALS(RunTestHelp("test", kTestModeRegexes));
   }
   {
+    const string kCmd = "tserver";
     const vector<string> kTServerModeRegexes = {
         "dump_memtrackers.*Dump the memtrackers",
         "get_flags.*Get the gflags",
@@ -1177,22 +1260,37 @@ TEST_F(ToolTest, TestModeHelp) {
         "timestamp.*Get the current timestamp",
         "list.*List tablet servers",
     };
-    NO_FATALS(RunTestHelp("tserver", kTServerModeRegexes));
+    NO_FATALS(RunTestHelp(kCmd, kTServerModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd,
+        { "dump_memtrackers",
+          "get_flags",
+          "set_flag",
+          "status",
+          "timestamp",
+          "list",
+        }));
   }
   {
+    const string kSubCmd = "tserver state";
     const vector<string> kTServerSetStateModeRegexes = {
         "enter_maintenance.*Begin maintenance on the Tablet Server",
         "exit_maintenance.*End maintenance of the Tablet Server",
     };
-    NO_FATALS(RunTestHelp("tserver state", kTServerSetStateModeRegexes));
+    NO_FATALS(RunTestHelp(kSubCmd, kTServerSetStateModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kSubCmd,
+        { "enter_maintenance",
+          "exit_maintenance",
+        }));
   }
   {
+    const string kSubCmd = "tserver quiesce";
     const vector<string> kTServerQuiesceModeRegexes = {
         "status.*Output information about the quiescing state",
         "start.*Start quiescing the given Tablet Server",
         "stop.*Stop quiescing a Tablet Server",
     };
-    NO_FATALS(RunTestHelp("tserver quiesce", kTServerQuiesceModeRegexes));
+    NO_FATALS(RunTestHelp(kSubCmd, kTServerQuiesceModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kSubCmd, {"status", "start", "stop"}));
   }
   {
     const vector<string> kWalModeRegexes = {
@@ -5952,6 +6050,41 @@ TEST_F(ToolTest, TestGetTableStatisticsNotSupported) {
       &stdout));
   ASSERT_STR_CONTAINS(stdout, "on disk size: N/A");
   ASSERT_STR_CONTAINS(stdout, "live row count: N/A");
+}
+
+// Run one of the cluster-targeted subcommands verifying the functionality of
+// the --connection_negotiation_timeout command-line option (the RPC
+// connection negotiation timeout).
+TEST_F(ToolTest, ConnectionNegotiationTimeoutOption) {
+  static constexpr const char* const kPattern =
+      "cluster ksck $0 --negotiation_timeout_ms=$1 --timeout_ms=$2";
+
+  FLAGS_rpc_negotiation_inject_delay_ms = 200;
+  NO_FATALS(StartMiniCluster());
+  const auto rpc_addr = mini_cluster_->mini_master()->bound_rpc_addr().ToString();
+
+  {
+    string msg;
+    // Set the RPC timeout to be a bit longer than the connection negotiation
+    // timeout, but not too much: otherwise, there would be many RPC retries.
+    auto s = RunActionStderrString(Substitute(kPattern, rpc_addr, 10, 11), &msg);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(msg, Substitute(
+        "Timed out: Client connection negotiation failed: client connection to "
+        "$0: received 0 of 4 requested bytes", rpc_addr));
+  }
+
+  {
+    string msg;
+    // Set the RPC timeout to be a bit longer than the connection negotiation
+    // timeout, but not too much: otherwise, there would be many RPC retries.
+    auto s = RunActionStderrString(Substitute(kPattern, rpc_addr, 2, 1), &msg);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(msg,
+        "RPC timeout set by --timeout_ms should be not less than connection "
+        "negotiation timeout set by --negotiation_timeout_ms; "
+        "current settings are 1 and 2 correspondingly");
+  }
 }
 
 } // namespace tools

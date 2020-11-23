@@ -25,6 +25,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/client/client.h"
@@ -37,6 +38,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/response_callback.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
@@ -64,7 +66,6 @@ DEFINE_int64(move_leader_timeout_sec, 30,
              "Number of seconds to wait for a leader when relocating a leader tablet");
 
 using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
 using kudu::consensus::ADD_PEER;
 using kudu::consensus::ChangeConfigType;
 using kudu::consensus::LeaderStepDownMode;
@@ -153,9 +154,7 @@ Status LeaderStepDown(const RunnerContext& context) {
   }
 
   client::sp::shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder()
-                .master_server_addrs(master_addresses)
-                .Build(&client));
+  RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
 
   string leader_uuid;
   HostPort leader_hp;
@@ -227,9 +226,7 @@ Status MoveReplica(const RunnerContext& context) {
                                          MonoDelta::FromSeconds(5)),
                         "ksck pre-move health check failed");
   client::sp::shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder()
-                .master_server_addrs(master_addresses)
-                .Build(&client));
+  RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
   RETURN_NOT_OK(ScheduleReplicaMove(master_addresses, client,
                                     tablet_id, from_ts_uuid, to_ts_uuid));
   const auto copy_timeout = MonoDelta::FromSeconds(FLAGS_move_copy_timeout_sec);
@@ -264,9 +261,8 @@ Status ReplaceTablet(const RunnerContext& context) {
 
 unique_ptr<Mode> BuildTabletMode() {
   unique_ptr<Action> add_replica =
-      ActionBuilder("add_replica", &AddReplica)
+      ClusterActionBuilder("add_replica", &AddReplica)
       .Description("Add a new replica to a tablet's Raft configuration")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kTsUuidArg,
                               "UUID of the tablet server that should host the new replica" })
@@ -276,10 +272,9 @@ unique_ptr<Mode> BuildTabletMode() {
       .Build();
 
   unique_ptr<Action> change_replica_type =
-      ActionBuilder("change_replica_type", &ChangeReplicaType)
+      ClusterActionBuilder("change_replica_type", &ChangeReplicaType)
       .Description(
           "Change the type of an existing replica in a tablet's Raft configuration")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kTsUuidArg,
                               "UUID of the tablet server hosting the existing replica" })
@@ -289,9 +284,8 @@ unique_ptr<Mode> BuildTabletMode() {
       .Build();
 
   unique_ptr<Action> remove_replica =
-      ActionBuilder("remove_replica", &RemoveReplica)
+      ClusterActionBuilder("remove_replica", &RemoveReplica)
       .Description("Remove an existing replica from a tablet's Raft configuration")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kTsUuidArg,
                               "UUID of the tablet server hosting the existing replica" })
@@ -306,19 +300,17 @@ unique_ptr<Mode> BuildTabletMode() {
       "new replica will be deleted automatically after some time, and then the "
       "move can be retried.";
   unique_ptr<Action> move_replica =
-      ActionBuilder("move_replica", &MoveReplica)
+      ClusterActionBuilder("move_replica", &MoveReplica)
       .Description("Move a tablet replica from one tablet server to another")
       .ExtraDescription(move_extra_desc)
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kFromTsUuidArg, "UUID of the tablet server to move from" })
       .AddRequiredParameter({ kToTsUuidArg, "UUID of the tablet server to move to" })
       .Build();
 
   unique_ptr<Action> leader_step_down =
-      ActionBuilder("leader_step_down", &LeaderStepDown)
+      ClusterActionBuilder("leader_step_down", &LeaderStepDown)
       .Description("Change the tablet's leader")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("abrupt")
       .AddOptionalParameter("new_leader_uuid")
@@ -334,7 +326,7 @@ unique_ptr<Mode> BuildTabletMode() {
       .Build();
 
   unique_ptr<Action> replace_tablet =
-      ActionBuilder("unsafe_replace_tablet", &ReplaceTablet)
+      ClusterActionBuilder("unsafe_replace_tablet", &ReplaceTablet)
       .Description("Replace a tablet with an empty one, deleting the previous tablet.")
       .ExtraDescription("Use this tool to repair a table when one of its tablets has permanently "
                         "lost all of its replicas. It replaces the unrecoverable tablet with a new "
@@ -344,7 +336,6 @@ unique_ptr<Mode> BuildTabletMode() {
                         "NOTE: The original tablet will be deleted. Its data will be permanently "
                         "lost. Additionally, clients should be restarted before attempting to "
                         "use the repaired table (see KUDU-2376).")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .Build();
 

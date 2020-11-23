@@ -922,61 +922,59 @@ Status TabletScan(const RunnerContext& context) {
 
 unique_ptr<Mode> BuildPerfMode() {
   unique_ptr<Action> loadgen =
-      ActionBuilder("loadgen", &TestLoadGenerator)
-          .Description("Run load generation with optional scan afterwards")
-          .ExtraDescription(
-              "Run load generation tool which inserts auto-generated data into "
-              "an existing or auto-created table as fast as possible. "
-              "If requested, also scan the inserted rows to check whether the "
-              "actual count of inserted rows matches the expected one.")
-          .AddRequiredParameter({kMasterAddressesArg, kMasterAddressesArgDesc})
-          .AddOptionalParameter("auto_database")
-          .AddOptionalParameter("buffer_flush_watermark_pct")
-          .AddOptionalParameter("buffer_size_bytes")
-          .AddOptionalParameter("buffers_num")
-          .AddOptionalParameter("error_buffer_size_bytes")
-          .AddOptionalParameter("flush_per_n_rows")
-          .AddOptionalParameter("keep_auto_table")
-          .AddOptionalParameter("num_rows_per_thread")
-          .AddOptionalParameter("num_threads")
-          .AddOptionalParameter("run_cleanup")
-          .AddOptionalParameter("run_scan")
-          .AddOptionalParameter("seq_start")
-          .AddOptionalParameter("show_first_n_errors")
-          .AddOptionalParameter("string_fixed")
-          .AddOptionalParameter("string_len")
-          .AddOptionalParameter(
-              "table_name",
-              boost::none,
-              string("Name of an existing table to use for the test. The test will "
-                     "determine the structure of the table schema and "
-                     "populate it with data accordingly. If left empty, "
-                     "the test automatically creates a table of pre-defined columnar "
-                     "structure with unique name and uses it to insert "
-                     "auto-generated data. The auto-created table is dropped "
-                     "upon successful completion of the test if not overridden "
-                     "by the '--keep_auto_table' flag. If running the test against "
-                     "an already existing table, it's recommended to use a dedicated "
-                     "table created just for testing purposes: the tool doesn't delete "
-                     "the rows it inserted into the table. Neither the existing table "
-                     "nor its data is ever dropped/deleted."))
-          .AddOptionalParameter("table_num_hash_partitions")
-          .AddOptionalParameter("table_num_range_partitions")
-          .AddOptionalParameter("table_num_replicas")
-          .AddOptionalParameter("use_client_per_thread")
-          .AddOptionalParameter("use_random")
-          .AddOptionalParameter("use_random_pk")
-          .AddOptionalParameter("use_random_non_pk")
-          .AddOptionalParameter("use_upsert")
-          .Build();
+      ClusterActionBuilder("loadgen", &TestLoadGenerator)
+      .Description("Run load generation with optional scan afterwards")
+      .ExtraDescription(
+          "Run load generation tool which inserts auto-generated data into "
+          "an existing or auto-created table as fast as possible. "
+          "If requested, also scan the inserted rows to check whether the "
+          "actual count of inserted rows matches the expected one.")
+      .AddOptionalParameter("auto_database")
+      .AddOptionalParameter("buffer_flush_watermark_pct")
+      .AddOptionalParameter("buffer_size_bytes")
+      .AddOptionalParameter("buffers_num")
+      .AddOptionalParameter("error_buffer_size_bytes")
+      .AddOptionalParameter("flush_per_n_rows")
+      .AddOptionalParameter("keep_auto_table")
+      .AddOptionalParameter("num_rows_per_thread")
+      .AddOptionalParameter("num_threads")
+      .AddOptionalParameter("run_cleanup")
+      .AddOptionalParameter("run_scan")
+      .AddOptionalParameter("seq_start")
+      .AddOptionalParameter("show_first_n_errors")
+      .AddOptionalParameter("string_fixed")
+      .AddOptionalParameter("string_len")
+      .AddOptionalParameter(
+          "table_name",
+          boost::none,
+          string("Name of an existing table to use for the test. The test will "
+                 "determine the structure of the table schema and "
+                 "populate it with data accordingly. If left empty, "
+                 "the test automatically creates a table of pre-defined columnar "
+                 "structure with unique name and uses it to insert "
+                 "auto-generated data. The auto-created table is dropped "
+                 "upon successful completion of the test if not overridden "
+                 "by the '--keep_auto_table' flag. If running the test against "
+                 "an already existing table, it's recommended to use a dedicated "
+                 "table created just for testing purposes: the tool doesn't delete "
+                 "the rows it inserted into the table. Neither the existing table "
+                 "nor its data is ever dropped/deleted."))
+      .AddOptionalParameter("table_num_hash_partitions")
+      .AddOptionalParameter("table_num_range_partitions")
+      .AddOptionalParameter("table_num_replicas")
+      .AddOptionalParameter("use_client_per_thread")
+      .AddOptionalParameter("use_random")
+      .AddOptionalParameter("use_random_pk")
+      .AddOptionalParameter("use_random_non_pk")
+      .AddOptionalParameter("use_upsert")
+      .Build();
 
   unique_ptr<Action> table_scan =
-      ActionBuilder("table_scan", &TableScan)
+      ClusterActionBuilder("table_scan", &TableScan)
       .Description("Show row count and scanning time cost of tablets in a table")
       .ExtraDescription("Show row count and scanning time of tablets in a table. "
           "This can be useful to check for row count skew across different tablets, "
           "or whether there is a long latency tail when scanning different tables.")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to scan"})
       .AddOptionalParameter("columns")
       .AddOptionalParameter("fill_cache")
@@ -985,6 +983,7 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("tablets")
       .Build();
 
+  // TODO(aserbin): move this to tool_local_replica.cc
   unique_ptr<Action> tablet_scan =
       ActionBuilder("tablet_scan", &TabletScan)
       .Description("Show row count of a local tablet")

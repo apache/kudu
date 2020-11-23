@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -36,7 +37,6 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
-#include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
@@ -49,6 +49,7 @@
 #include "kudu/rebalance/placement_policy_util.h"
 #include "kudu/rebalance/rebalance_algo.h"
 #include "kudu/rebalance/rebalancer.h"
+#include "kudu/rpc/response_callback.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/ksck_results.h"
@@ -57,7 +58,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
-using kudu::client::KuduClientBuilder;
 using kudu::cluster_summary::ServerHealth;
 using kudu::cluster_summary::ServerHealthSummary;
 using kudu::cluster_summary::TableSummary;
@@ -669,9 +669,7 @@ Status RebalancerTool::BaseRunner::Init(vector<string> master_addresses) {
   DCHECK(master_addresses_.empty());
   DCHECK(client_.get() == nullptr);
   master_addresses_ = std::move(master_addresses);
-  return KuduClientBuilder()
-      .master_server_addrs(master_addresses_)
-      .Build(&client_);
+  return CreateKuduClient(master_addresses_, &client_);
 }
 
 Status RebalancerTool::BaseRunner::GetNextMoves(bool* has_moves) {

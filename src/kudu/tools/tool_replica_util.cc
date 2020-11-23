@@ -49,7 +49,6 @@
 
 using kudu::MonoDelta;
 using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
 using kudu::client::KuduTablet;
 using kudu::client::KuduTabletServer;
 using kudu::consensus::ADD_PEER;
@@ -674,9 +673,7 @@ Status DoChangeConfig(const vector<string>& master_addresses,
   }
 
   client::sp::shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder()
-                .master_server_addrs(master_addresses)
-                .Build(&client));
+  RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
 
   // When adding a new server, we need to provide the server's RPC address.
   if (cc_type == consensus::ADD_PEER) {
@@ -724,9 +721,7 @@ Status Is343SchemeCluster(const vector<string>& master_addresses,
                           const boost::optional<string>& tablet_id_in,
                           bool* is_343_scheme) {
   client::sp::shared_ptr<client::KuduClient> client;
-  RETURN_NOT_OK(client::KuduClientBuilder()
-                .master_server_addrs(master_addresses)
-                .Build(&client));
+  RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
   string tablet_id;
   if (tablet_id_in) {
     tablet_id = *tablet_id_in;

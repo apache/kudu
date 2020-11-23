@@ -27,6 +27,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/response_callback.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
@@ -43,6 +44,7 @@ class MasterServiceProxy;
 } // namespace master
 
 namespace rpc {
+class Messenger;
 class RpcController;
 } // namespace rpc
 
@@ -56,8 +58,6 @@ class ServerStatusPB;
 
 namespace tools {
 
-struct RunnerContext;
-
 // Constants for parameters and descriptions.
 extern const char* const kMasterAddressesArg;
 extern const char* const kMasterAddressesArgDesc;
@@ -69,7 +69,44 @@ extern const char* const kTabletIdArgDesc;
 extern const char* const kTabletIdsCsvArg;
 extern const char* const kTabletIdsCsvArgDesc;
 
+extern const char* const kMasterAddressArg;
+extern const char* const kMasterAddressDesc;
+
+extern const char* const kTServerAddressArg;
+extern const char* const kTServerAddressDesc;
+
+// Builder for actions involving RPC communications, either with a whole Kudu
+// cluster or a particular Kudu RPC server.
+class RpcActionBuilder : public ActionBuilder {
+ public:
+  RpcActionBuilder(std::string name, ActionRunner runner);
+  std::unique_ptr<Action> Build() override;
+};
+
+// Builder for actions involving RPC communications with a Kudu cluster.
+class ClusterActionBuilder : public RpcActionBuilder {
+ public:
+  ClusterActionBuilder(std::string name, ActionRunner runner);
+};
+
+// Builder for actions involving RPC communications with a Kudu master.
+class MasterActionBuilder : public RpcActionBuilder {
+ public:
+  MasterActionBuilder(std::string name, ActionRunner runner);
+};
+
+// Builder for actions involving RPC communications with a Kudu tablet server.
+class TServerActionBuilder : public RpcActionBuilder {
+ public:
+  TServerActionBuilder(std::string name, ActionRunner runner);
+};
+
 // Utility methods used by multiple actions across different modes.
+
+// Build an RPC messenger with the specified name. The messenger has the
+// properties as defined by the command line flags/options.
+Status BuildMessenger(std::string name,
+                      std::shared_ptr<rpc::Messenger>* messenger);
 
 // Builds a proxy to a Kudu server running at 'address', returning it in
 // 'proxy'.
@@ -125,6 +162,13 @@ Status DumpMemTrackers(const std::string& address, uint16_t default_port);
 // Return true if 'str' matches any of the patterns in 'patterns', or if
 // 'patterns' is empty.
 bool MatchesAnyPattern(const std::vector<std::string>& patterns, const std::string& str);
+
+// Create a Kudu client connected to the cluster with the set of the specified
+// master addresses. The 'can_see_all_replicas' controls whether the client sees
+// other than VOTER (e.g., NON_VOTER) tablet replicas.
+Status CreateKuduClient(const std::vector<std::string>& master_addresses,
+                        client::sp::shared_ptr<client::KuduClient>* client,
+                        bool can_see_all_replicas = false);
 
 // Creates a Kudu client connected to the cluster whose master addresses are specified by
 // 'master_addresses_arg'
@@ -222,13 +266,18 @@ class LeaderMasterProxy {
   LeaderMasterProxy() = default;
   explicit LeaderMasterProxy(client::sp::shared_ptr<client::KuduClient> client);
 
-  // Initializes the leader master proxy with the given master addresses and timeout.
-  Status Init(const std::vector<std::string>& master_addrs, const MonoDelta& timeout);
+  // Initializes the leader master proxy with the given master addresses,
+  // RPC timeout, and connection negotiation timeout.
+  Status Init(const std::vector<std::string>& master_addrs,
+              const MonoDelta& timeout,
+              const MonoDelta& connection_negotiation_timeout);
 
   // Initialize the leader master proxy given the provided tool context.
   //
-  // Uses the required 'master_addresses' option for the master addresses, and
-  // the optional 'timeout_ms' flag to control admin and operation timeouts.
+  // Uses the required 'master_addresses' option for the master addresses,
+  // the optional 'timeout_ms' flag to control admin and operation timeouts, and
+  // the optional 'connection_negotiation_timeout_ms' flag to control
+  // the client-side RPC connection negotiation timeout.
   Status Init(const RunnerContext& context);
 
   // Calls a master RPC service method on the current leader master.

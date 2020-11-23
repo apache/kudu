@@ -169,10 +169,6 @@ class ReplicaDumper {
 namespace {
 
 constexpr const char* const kReasonArg = "reason";
-constexpr const char* const kTServerAddressArg = "tserver_address";
-constexpr const char* const kTServerAddressDesc =
-    "Address of a Kudu Tablet Server of form 'hostname:port'. Port may be "
-    "omitted if the Tablet Server is bound to the default port.";
 constexpr const char* const kSrcAddressArg = "src_address";
 constexpr const char* const kDstAddressArg = "dst_address";
 constexpr const char* const kPeerUUIDsArg = "peer uuids";
@@ -424,16 +420,15 @@ Status UnsafeChangeConfig(const RunnerContext& context) {
 
 unique_ptr<Mode> BuildRemoteReplicaMode() {
   unique_ptr<Action> check_replicas =
-      ActionBuilder("check", &CheckReplicas)
+      TServerActionBuilder("check", &CheckReplicas)
       .Description("Check if all tablet replicas on a Kudu tablet server are "
                    "running. Tombstoned replica do not count as not running, "
                    "because they are just records of the previous existence of "
                    "a replica.")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
 
   unique_ptr<Action> copy_replica =
-      ActionBuilder("copy", &CopyReplica)
+      RpcActionBuilder("copy", &CopyReplica)
       .Description("Copy a tablet replica from one Kudu Tablet Server to another")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kSrcAddressArg, kTServerAddressDesc })
@@ -442,24 +437,21 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       .Build();
 
   unique_ptr<Action> delete_replica =
-      ActionBuilder("delete", &DeleteReplica)
+      TServerActionBuilder("delete", &DeleteReplica)
       .Description("Delete a tablet replica from a Kudu Tablet Server")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kReasonArg, "Reason for deleting the replica" })
       .Build();
 
   unique_ptr<Action> dump_replica =
-      ActionBuilder("dump", &DumpReplica)
+      TServerActionBuilder("dump", &DumpReplica)
       .Description("Dump the data of a tablet replica on a Kudu Tablet Server")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .Build();
 
   unique_ptr<Action> list =
-      ActionBuilder("list", &ListReplicas)
+      TServerActionBuilder("list", &ListReplicas)
       .Description("List all tablet replicas on a Kudu Tablet Server")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddOptionalParameter("include_schema")
       .AddOptionalParameter("table_name")
       .AddOptionalParameter("tablets",
@@ -469,7 +461,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       .Build();
 
   unique_ptr<Action> unsafe_change_config =
-      ActionBuilder("unsafe_change_config", &UnsafeChangeConfig)
+      TServerActionBuilder("unsafe_change_config", &UnsafeChangeConfig)
       .Description("Force the specified replica to adopt a new Raft config")
       .ExtraDescription("This tool is useful when a config change is "
                         "necessary because a tablet cannot make progress with "
@@ -478,7 +470,6 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
                         "The members of the new Raft config must be a subset "
                         "of (or the same as) the members of the existing "
                         "committed Raft config.")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredVariadicParameter({ kPeerUUIDsArg, kPeerUUIDsArgDesc })
       .Build();

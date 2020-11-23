@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -32,6 +33,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/rpc/response_callback.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -101,7 +103,10 @@ TEST_F(ReplaceTabletITest, DISABLED_ReplaceTabletsWhileWriting) {
   for (const auto& hp : cluster_->master_rpc_addrs()) {
     master_addrs.emplace_back(hp.ToString());
   }
-  ASSERT_OK(proxy.Init(master_addrs, MonoDelta::FromSeconds(10)));
+  const auto timeout = MonoDelta::FromSeconds(10);
+  ASSERT_OK(proxy.Init(master_addrs,
+                       timeout /* rpc_timeout */,
+                       timeout /* connection_negotiation_timeout */));
 
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(kNumTabletServers);

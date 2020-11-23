@@ -79,10 +79,6 @@ namespace kudu {
 namespace tools {
 namespace {
 
-const char* const kMasterAddressArg = "master_address";
-const char* const kMasterAddressDesc = "Address of a Kudu Master of form "
-    "'hostname:port'. Port may be omitted if the Master is bound to the "
-    "default port.";
 const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
 
@@ -327,16 +323,14 @@ unique_ptr<Mode> BuildMasterMode() {
 
   {
     unique_ptr<Action> action_refresh =
-        ActionBuilder("refresh", &RefreshAuthzCache)
-            .Description("Refresh the authorization policies")
-            .AddRequiredParameter(
-                {kMasterAddressesArg, kMasterAddressesArgDesc})
-            .AddOptionalParameter(
-                "force", boost::none,
-                string(
-                    "Ignore mismatches of the specified and the actual lists "
-                    "of master addresses in the cluster"))
-            .Build();
+        ClusterActionBuilder("refresh", &RefreshAuthzCache)
+        .Description("Refresh the authorization policies")
+        .AddOptionalParameter(
+            "force", boost::none,
+            string(
+                "Ignore mismatches of the specified and the actual lists "
+                "of master addresses in the cluster"))
+        .Build();
 
     unique_ptr<Mode> mode_authz_cache = ModeBuilder("authz_cache")
         .Description("Operate on the authz caches of the Kudu Masters")
@@ -346,20 +340,17 @@ unique_ptr<Mode> BuildMasterMode() {
   }
   {
     unique_ptr<Action> dump_memtrackers =
-        ActionBuilder("dump_memtrackers", &MasterDumpMemTrackers)
+        MasterActionBuilder("dump_memtrackers", &MasterDumpMemTrackers)
         .Description("Dump the memtrackers from a Kudu Master")
-        .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .AddOptionalParameter("format")
         .AddOptionalParameter("memtracker_output")
-        .AddOptionalParameter("timeout_ms")
         .Build();
     builder.AddAction(std::move(dump_memtrackers));
   }
   {
     unique_ptr<Action> get_flags =
-        ActionBuilder("get_flags", &MasterGetFlags)
+        MasterActionBuilder("get_flags", &MasterGetFlags)
         .Description("Get the gflags for a Kudu Master")
-        .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .AddOptionalParameter("all_flags")
         .AddOptionalParameter("flags")
         .AddOptionalParameter("flag_tags")
@@ -392,9 +383,8 @@ unique_ptr<Mode> BuildMasterMode() {
   }
   {
     unique_ptr<Action> set_flag =
-        ActionBuilder("set_flag", &MasterSetFlag)
+        MasterActionBuilder("set_flag", &MasterSetFlag)
         .Description("Change a gflag value on a Kudu Master")
-        .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
         .AddRequiredParameter({ kValueArg, "New value for the gflag" })
         .AddOptionalParameter("force")
@@ -403,25 +393,22 @@ unique_ptr<Mode> BuildMasterMode() {
   }
   {
     unique_ptr<Action> status =
-        ActionBuilder("status", &MasterStatus)
+        MasterActionBuilder("status", &MasterStatus)
         .Description("Get the status of a Kudu Master")
-        .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .Build();
     builder.AddAction(std::move(status));
   }
   {
     unique_ptr<Action> timestamp =
-        ActionBuilder("timestamp", &MasterTimestamp)
+        MasterActionBuilder("timestamp", &MasterTimestamp)
         .Description("Get the current timestamp of a Kudu Master")
-        .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .Build();
     builder.AddAction(std::move(timestamp));
   }
   {
     unique_ptr<Action> list_masters =
-        ActionBuilder("list", &ListMasters)
+        ClusterActionBuilder("list", &ListMasters)
         .Description("List masters in a Kudu cluster")
-        .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
         .AddOptionalParameter(
             "columns",
             string("uuid,rpc-addresses,role"),
@@ -430,7 +417,6 @@ unique_ptr<Mode> BuildMasterMode() {
                    "rpc-addresses, http-addresses, version, seqno, "
                    "start_time and role"))
         .AddOptionalParameter("format")
-        .AddOptionalParameter("timeout_ms")
         .Build();
     builder.AddAction(std::move(list_masters));
   }

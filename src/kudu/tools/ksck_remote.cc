@@ -47,7 +47,6 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/rebalance/cluster_status.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
@@ -70,8 +69,8 @@
 #include "kudu/util/threadpool.h"
 #include "kudu/util/version_info.pb.h"
 
-DECLARE_int64(timeout_ms); // defined in tool_action_common
 DECLARE_int32(fetch_info_concurrency);
+DECLARE_int64(timeout_ms); // defined in tool_action_common
 
 DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks.");
 DEFINE_bool(quiescing_info, true,
@@ -79,7 +78,6 @@ DEFINE_bool(quiescing_info, true,
             "e.g. number of tablet leaders per server, the number of active scanners "
             "per server.");
 
-using kudu::client::KuduClientBuilder;
 using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
@@ -90,7 +88,6 @@ using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
 using kudu::master::TServerStatePB;
 using kudu::rpc::Messenger;
-using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::server::GenericServiceProxy;
 using kudu::server::GetFlagsRequestPB;
@@ -108,6 +105,7 @@ namespace tools {
 static const std::string kMessengerName = "ksck";
 
 namespace {
+
 MonoDelta GetDefaultTimeout() {
   return MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
 }
@@ -523,25 +521,23 @@ RemoteKsckCluster::RemoteKsckCluster(std::vector<std::string> master_addresses,
 }
 
 Status RemoteKsckCluster::Connect() {
-  KuduClientBuilder builder;
-  builder.default_rpc_timeout(GetDefaultTimeout());
-  builder.master_server_addrs(master_addresses_);
-  ReplicaController::SetVisibility(&builder, ReplicaController::Visibility::ALL);
-  return builder.Build(&client_);
+  return CreateKuduClient(master_addresses_,
+                          &client_,
+                          true /* can_see_all_replicas */);
 }
 
 Status RemoteKsckCluster::Build(const vector<string>& master_addresses,
                                shared_ptr<KsckCluster>* cluster) {
   CHECK(!master_addresses.empty());
   shared_ptr<Messenger> messenger;
-  MessengerBuilder builder(kMessengerName);
-  RETURN_NOT_OK(builder.Build(&messenger));
-  auto* cl = new RemoteKsckCluster(master_addresses, messenger);
+  RETURN_NOT_OK(BuildMessenger(kMessengerName, &messenger));
+  shared_ptr<RemoteKsckCluster> cl(new RemoteKsckCluster(
+      master_addresses, messenger));
   for (const auto& master : cl->masters()) {
     RETURN_NOT_OK_PREPEND(master->Init(),
                           Substitute("unable to initialize master at $0", master->address()));
   }
-  cluster->reset(cl);
+  *cluster = std::move(cl);
   return Status::OK();
 }
 

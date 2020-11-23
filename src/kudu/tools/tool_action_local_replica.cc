@@ -67,7 +67,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/sys_catalog.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/rowset.h"
@@ -86,6 +85,12 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+
+namespace kudu {
+namespace rpc {
+class Messenger;
+}  // namespace rpc
+}  // namespace kudu
 
 DEFINE_bool(dump_all_columns, true,
             "If true, dumped rows include all of the columns in the rowset. If "
@@ -111,23 +116,26 @@ DEFINE_bool(ignore_nonexistent, false,
 
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
 
-namespace kudu {
-namespace tools {
-
-using consensus::ConsensusMetadata;
-using consensus::ConsensusMetadataManager;
-using consensus::OpId;
-using consensus::RaftConfigPB;
-using consensus::RaftPeerPB;
-using fs::IOContext;
-using fs::ReadableBlock;
-using log::LogEntryPB;
-using log::LogEntryReader;
-using log::LogReader;
-using log::ReadableLogSegment;
-using log::SegmentSequence;
-using rpc::Messenger;
-using rpc::MessengerBuilder;
+using kudu::consensus::ConsensusMetadata;
+using kudu::consensus::ConsensusMetadataManager;
+using kudu::consensus::OpId;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftPeerPB;
+using kudu::fs::IOContext;
+using kudu::fs::ReadableBlock;
+using kudu::log::LogEntryPB;
+using kudu::log::LogEntryReader;
+using kudu::log::LogReader;
+using kudu::log::ReadableLogSegment;
+using kudu::log::SegmentSequence;
+using kudu::rpc::Messenger;
+using kudu::tablet::DiskRowSet;
+using kudu::tablet::RowIteratorOptions;
+using kudu::tablet::RowSetMetadata;
+using kudu::tablet::TabletDataState;
+using kudu::tablet::TabletMetadata;
+using kudu::tserver::TSTabletManager;
+using kudu::tserver::TabletCopyClient;
 using std::cout;
 using std::endl;
 using std::map;
@@ -137,13 +145,9 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
-using tablet::DiskRowSet;
-using tablet::RowIteratorOptions;
-using tablet::RowSetMetadata;
-using tablet::TabletMetadata;
-using tablet::TabletDataState;
-using tserver::TabletCopyClient;
-using tserver::TSTabletManager;
+
+namespace kudu {
+namespace tools {
 
 namespace {
 
@@ -372,9 +376,8 @@ Status CopyFromRemote(const RunnerContext& context) {
   FsManager fs_manager(Env::Default(), FsManagerOpts());
   RETURN_NOT_OK(fs_manager.Open());
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
-  MessengerBuilder builder("tablet_copy_client");
   shared_ptr<Messenger> messenger;
-  builder.Build(&messenger);
+  RETURN_NOT_OK(BuildMessenger("tablet_copy_client", &messenger));
   TabletCopyClient client(tablet_id, &fs_manager, cmeta_manager,
                           messenger, nullptr /* no metrics */);
   RETURN_NOT_OK(client.Start(hp, nullptr));
@@ -880,7 +883,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
   unique_ptr<Action> print_replica_uuids =
       ActionBuilder("print_replica_uuids", &PrintReplicaUuids)
       .Description("Print all tablet replica peer UUIDs found in a "
-        "tablet's Raft configuration")
+                   "tablet's Raft configuration")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
@@ -901,8 +904,9 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       ActionBuilder("set_term", &SetRaftTerm)
       .Description("Bump the current term stored in consensus metadata")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddRequiredParameter({ kTermArg, "the new raft term (must be greater "
-        "than the current term)" })
+      .AddRequiredParameter({ kTermArg,
+                              "the new raft term (must be greater "
+                              "than the current term)" })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
@@ -911,7 +915,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
   unique_ptr<Mode> cmeta =
       ModeBuilder("cmeta")
       .Description("Operate on a local tablet replica's consensus "
-        "metadata file")
+                   "metadata file")
       .AddAction(std::move(print_replica_uuids))
       .AddAction(std::move(rewrite_raft_config))
       .AddAction(std::move(set_term))
@@ -922,7 +926,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .Description("Copy a tablet replica from a remote server")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ "source", "Source RPC address of "
-        "form hostname:port" })
+                              "form hostname:port" })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")

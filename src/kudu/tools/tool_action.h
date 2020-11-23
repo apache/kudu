@@ -193,6 +193,7 @@ class ActionBuilder {
   // action runner. The name uniquely identifies the action amongst its
   // siblings in the tree.
   ActionBuilder(std::string name, ActionRunner runner);
+  virtual ~ActionBuilder() = default;
 
   // Sets the description of this action (e.g. "Format a new Kudu filesystem"),
   // to be used when printing the parent mode's help and the action's help.
@@ -245,9 +246,9 @@ class ActionBuilder {
                                       boost::optional<std::string> description = boost::none);
 
   // Creates an action using builder state.
-  std::unique_ptr<Action> Build();
+  virtual std::unique_ptr<Action> Build();
 
- private:
+ protected:
   const std::string name_;
 
   std::string description_;

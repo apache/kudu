@@ -33,7 +33,7 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/rebalance/rebalance_algo.h"
 #include "kudu/rebalance/rebalancer.h"
-#include "kudu/util/monotime.h"
+#include "kudu/util/monotime.h"     // IWYU pragma: keep
 #include "kudu/util/status.h"
 
 namespace kudu {

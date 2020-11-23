@@ -82,10 +82,6 @@ using tserver::TabletServerAdminServiceProxy;
 namespace tools {
 namespace {
 
-const char* const kTServerAddressArg = "tserver_address";
-const char* const kTServerAddressDesc = "Address of a Kudu Tablet Server of "
-    "form 'hostname:port'. Port may be omitted if the Tablet Server is bound "
-    "to the default port.";
 const char* const kTServerIdArg = "tserver_uuid";
 const char* const kTServerIdDesc = "UUID of a Kudu Tablet Server";
 const char* const kFlagArg = "flag";
@@ -304,18 +300,15 @@ Status QuiescingStatus(const RunnerContext& context) {
 
 unique_ptr<Mode> BuildTServerMode() {
   unique_ptr<Action> dump_memtrackers =
-      ActionBuilder("dump_memtrackers", &TserverDumpMemTrackers)
+      TServerActionBuilder("dump_memtrackers", &TserverDumpMemTrackers)
       .Description("Dump the memtrackers from a Kudu Tablet Server")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddOptionalParameter("format")
       .AddOptionalParameter("memtracker_output")
-      .AddOptionalParameter("timeout_ms")
       .Build();
 
   unique_ptr<Action> get_flags =
-      ActionBuilder("get_flags", &TServerGetFlags)
+      TServerActionBuilder("get_flags", &TServerGetFlags)
       .Description("Get the gflags for a Kudu Tablet Server")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddOptionalParameter("all_flags")
       .AddOptionalParameter("flags")
       .AddOptionalParameter("flag_tags")
@@ -345,58 +338,50 @@ unique_ptr<Mode> BuildTServerMode() {
       .Build();
 
   unique_ptr<Action> set_flag =
-      ActionBuilder("set_flag", &TServerSetFlag)
+      TServerActionBuilder("set_flag", &TServerSetFlag)
       .Description("Change a gflag value on a Kudu Tablet Server")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
       .AddRequiredParameter({ kValueArg, "New value for the gflag" })
       .AddOptionalParameter("force")
       .Build();
 
   unique_ptr<Action> status =
-      ActionBuilder("status", &TServerStatus)
+      TServerActionBuilder("status", &TServerStatus)
       .Description("Get the status of a Kudu Tablet Server")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
 
   unique_ptr<Action> timestamp =
-      ActionBuilder("timestamp", &TServerTimestamp)
+      TServerActionBuilder("timestamp", &TServerTimestamp)
       .Description("Get the current timestamp of a Kudu Tablet Server")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
 
   unique_ptr<Action> list_tservers =
-      ActionBuilder("list", &ListTServers)
+      ClusterActionBuilder("list", &ListTServers)
       .Description("List tablet servers in a Kudu cluster")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddOptionalParameter("columns", string("uuid,rpc-addresses"),
                             string("Comma-separated list of tserver info fields to "
                                    "include in output.\nPossible values: uuid, "
                                    "rpc-addresses, http-addresses, version, seqno, "
                                    "heartbeat, start_time, state"))
       .AddOptionalParameter("format")
-      .AddOptionalParameter("timeout_ms")
       .Build();
 
   unique_ptr<Action> quiescing_status =
-      ActionBuilder("status", &QuiescingStatus)
+      TServerActionBuilder("status", &QuiescingStatus)
       .Description("Output information about the quiescing state of a Tablet "
                    "Server.")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
   unique_ptr<Action> start_quiescing =
-      ActionBuilder("start", &StartQuiescingTServer)
+      TServerActionBuilder("start", &StartQuiescingTServer)
       .Description("Start quiescing the given Tablet Server. While a Tablet "
                    "Server is quiescing, Tablet replicas on it will no longer "
                    "attempt to become leader, and new scan requests will be "
                    "retried at other servers.")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddOptionalParameter("error_if_not_fully_quiesced")
       .Build();
   unique_ptr<Action> stop_quiescing =
-      ActionBuilder("stop", &StopQuiescingTServer)
+      TServerActionBuilder("stop", &StopQuiescingTServer)
       .Description("Stop quiescing a Tablet Server.")
-      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
   unique_ptr<Mode> quiesce = ModeBuilder("quiesce")
       .Description("Operate on the quiescing state of a Kudu Tablet Server.")
@@ -406,11 +391,10 @@ unique_ptr<Mode> BuildTServerMode() {
       .Build();
 
   unique_ptr<Action> enter_maintenance =
-      ActionBuilder("enter_maintenance", &EnterMaintenance)
+      ClusterActionBuilder("enter_maintenance", &EnterMaintenance)
       .Description("Begin maintenance on the Tablet Server. While under "
                    "maintenance, downtime of the Tablet Server will not lead "
                    "to the immediate re-replication of its tablet replicas.")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTServerIdArg, kTServerIdDesc })
       .AddOptionalParameter("allow_missing_tserver")
       .Build();
@@ -418,9 +402,8 @@ unique_ptr<Mode> BuildTServerMode() {
   // because if the tserver is missing, the non-existent tserver's state is
   // already NONE and so exit_maintenance is a no-op.
   unique_ptr<Action> exit_maintenance =
-      ActionBuilder("exit_maintenance", &ExitMaintenance)
+      ClusterActionBuilder("exit_maintenance", &ExitMaintenance)
       .Description("End maintenance of the Tablet Server.")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTServerIdArg, kTServerIdDesc })
       .Build();
   unique_ptr<Mode> state = ModeBuilder("state")

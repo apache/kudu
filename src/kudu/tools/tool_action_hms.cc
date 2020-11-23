@@ -47,15 +47,13 @@
 #include "kudu/hms/hms_client.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-DECLARE_string(columns);
 DECLARE_bool(force);
 DECLARE_bool(hive_metastore_sasl_enabled);
-DECLARE_int64(timeout_ms);
+DECLARE_string(columns);
 DECLARE_string(hive_metastore_uris);
 
 DEFINE_bool(dryrun, false,
@@ -75,18 +73,13 @@ DEFINE_bool(ignore_other_clusters, true,
     "Whether to ignore entirely separate Kudu clusters, as indicated by a "
     "different set of master addresses.");
 
-namespace kudu {
-
-namespace tools {
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduSchema;
-using client::KuduTable;
-using client::KuduTableAlterer;
-using client::sp::shared_ptr;
-using hms::HmsCatalog;
-using hms::HmsClient;
+using kudu::client::KuduClient;
+using kudu::client::KuduSchema;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
+using kudu::client::sp::shared_ptr;
+using kudu::hms::HmsCatalog;
+using kudu::hms::HmsClient;
 using std::cout;
 using std::endl;
 using std::make_pair;
@@ -99,6 +92,9 @@ using std::unordered_map;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
+
+namespace kudu {
+namespace tools {
 
 // Only alter the table in Kudu but not in the Hive Metastore.
 Status RenameTableInKuduCatalog(KuduClient* kudu_client,
@@ -128,10 +124,8 @@ Status Init(const RunnerContext& context,
   RETURN_NOT_OK(ParseMasterAddressesStr(context, &master_addrs_flag));
 
   // Create a Kudu Client.
-  RETURN_NOT_OK(KuduClientBuilder()
-      .default_rpc_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms))
-      .master_server_addrs(Split(master_addrs_flag, ","))
-      .Build(kudu_client));
+  const vector<string> master_addresses(Split(master_addrs_flag, ","));
+  RETURN_NOT_OK(CreateKuduClient(master_addresses, kudu_client));
 
   // Get the configured master addresses from the leader master. It's critical
   // that the check and fix tools use the exact same master address
@@ -844,11 +838,8 @@ Status Precheck(const RunnerContext& context) {
   string master_addrs;
   RETURN_NOT_OK(ParseMasterAddressesStr(context, &master_addrs));
   shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder()
-      .default_rpc_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms))
-      .master_server_addrs(Split(master_addrs, ","))
-      .Build(&client));
-
+  const vector<string> master_addresses(Split(master_addrs, ","));
+  RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
   vector<string> tables;
   RETURN_NOT_OK(client->ListTables(&tables));
 
@@ -911,61 +902,56 @@ unique_ptr<Mode> BuildHmsMode() {
     "Metastore configuration.";
 
   unique_ptr<Action> hms_check =
-      ActionBuilder("check", &CheckHmsMetadata)
-          .Description("Check metadata consistency between Kudu and the Hive Metastore catalogs")
-          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-          .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
-          .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
-          .AddOptionalParameter("ignore_other_clusters")
-          .Build();
+      ClusterActionBuilder("check", &CheckHmsMetadata)
+      .Description("Check metadata consistency between Kudu and the Hive Metastore catalogs")
+      .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
+      .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
+      .AddOptionalParameter("ignore_other_clusters")
+      .Build();
 
   unique_ptr<Action> hms_downgrade =
-      ActionBuilder("downgrade", &HmsDowngrade)
-          .Description("Downgrade the metadata to legacy format for Kudu and the Hive Metastores")
-          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-          .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
-          .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
-          .Build();
+      ClusterActionBuilder("downgrade", &HmsDowngrade)
+      .Description("Downgrade the metadata to legacy format for Kudu and the Hive Metastores")
+      .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
+      .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
+      .Build();
 
   unique_ptr<Action> hms_fix =
-    ActionBuilder("fix", &FixHmsMetadata)
-        .Description("Fix automatically-repairable metadata inconsistencies in the "
-                     "Kudu and Hive Metastore catalogs")
-        .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-        .AddOptionalParameter("dryrun")
-        .AddOptionalParameter("drop_orphan_hms_tables")
-        .AddOptionalParameter("create_missing_hms_tables")
-        .AddOptionalParameter("fix_inconsistent_tables")
-        .AddOptionalParameter("upgrade_hms_tables")
-        .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
-        .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
-        .AddOptionalParameter("ignore_other_clusters")
-        .Build();
+      ClusterActionBuilder("fix", &FixHmsMetadata)
+      .Description("Fix automatically-repairable metadata inconsistencies in the "
+                   "Kudu and Hive Metastore catalogs")
+      .AddOptionalParameter("dryrun")
+      .AddOptionalParameter("drop_orphan_hms_tables")
+      .AddOptionalParameter("create_missing_hms_tables")
+      .AddOptionalParameter("fix_inconsistent_tables")
+      .AddOptionalParameter("upgrade_hms_tables")
+      .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
+      .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
+      .AddOptionalParameter("ignore_other_clusters")
+      .Build();
 
   unique_ptr<Action> hms_list =
-      ActionBuilder("list", &List)
-          .Description("List the Kudu table HMS entries")
-          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-          .AddOptionalParameter("columns",
-                                Substitute("database,table,type,$0",
-                                                  HmsClient::kKuduTableNameKey),
-                                Substitute("Comma-separated list of HMS entry fields to "
-                                           "include in output.\nPossible values: database, "
-                                           "table, type, owner, $0, $1, $2, $3, $4",
-                                           HmsClient::kKuduTableNameKey,
-                                           HmsClient::kKuduTableIdKey,
-                                           HmsClient::kKuduClusterIdKey,
-                                           HmsClient::kKuduMasterAddrsKey,
-                                           HmsClient::kStorageHandlerKey))
-          .AddOptionalParameter("format")
-          .Build();
+      ClusterActionBuilder("list", &List)
+      .Description("List the Kudu table HMS entries")
+      .AddOptionalParameter("columns",
+                            Substitute("database,table,type,$0",
+                                              HmsClient::kKuduTableNameKey),
+                            Substitute("Comma-separated list of HMS entry fields to "
+                                       "include in output.\nPossible values: database, "
+                                       "table, type, owner, $0, $1, $2, $3, $4",
+                                       HmsClient::kKuduTableNameKey,
+                                       HmsClient::kKuduTableIdKey,
+                                       HmsClient::kKuduClusterIdKey,
+                                       HmsClient::kKuduMasterAddrsKey,
+                                       HmsClient::kStorageHandlerKey))
+      .AddOptionalParameter("format")
+      .Build();
 
   unique_ptr<Action> hms_precheck =
-    ActionBuilder("precheck", &Precheck)
-        .Description("Check that the Kudu cluster is prepared to enable the Hive "
-                     "Metastore integration")
-        .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-        .Build();
+      ClusterActionBuilder("precheck", &Precheck)
+      .Description("Check that the Kudu cluster is prepared to enable "
+                   "the Hive Metastore integration")
+      .Build();
 
   return ModeBuilder("hms").Description("Operate on remote Hive Metastores")
                            .AddAction(std::move(hms_check))

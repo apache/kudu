@@ -65,7 +65,6 @@ using google::protobuf::util::JsonStringToMessage;
 using google::protobuf::util::JsonParseOptions;
 using google::protobuf::RepeatedPtrField;
 using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduColumnSpec;
 using kudu::client::KuduColumnStorageAttributes;
@@ -116,6 +115,7 @@ DEFINE_string(lower_bound_type, "INCLUSIVE_BOUND",
 DEFINE_string(upper_bound_type, "EXCLUSIVE_BOUND",
               "The type of the upper bound, either inclusive or exclusive. "
               "Defaults to exclusive. This flag is case-insensitive.");
+
 DECLARE_bool(show_values);
 DECLARE_string(tables);
 
@@ -127,12 +127,10 @@ namespace tools {
 class TableLister {
  public:
   static Status ListTablets(const vector<string>& master_addresses) {
-    KuduClientBuilder builder;
-    ReplicaController::SetVisibility(&builder, ReplicaController::Visibility::ALL);
     client::sp::shared_ptr<KuduClient> client;
-    RETURN_NOT_OK(builder
-                  .master_server_addrs(master_addresses)
-                  .Build(&client));
+    RETURN_NOT_OK(CreateKuduClient(master_addresses,
+                                   &client,
+                                   true /* can_see_all_replicas */));
     vector<string> table_names;
     RETURN_NOT_OK(client->ListTables(&table_names));
 
@@ -1177,31 +1175,28 @@ Status CreateTable(const RunnerContext& context) {
 
 unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> delete_table =
-      ActionBuilder("delete", &DeleteTable)
+      ClusterActionBuilder("delete", &DeleteTable)
       .Description("Delete a table")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to delete" })
       .AddOptionalParameter("modify_external_catalogs")
       .Build();
 
   unique_ptr<Action> describe_table =
-      ActionBuilder("describe", &DescribeTable)
+      ClusterActionBuilder("describe", &DescribeTable)
       .Description("Describe a table")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to describe" })
       .AddOptionalParameter("show_attributes")
       .Build();
 
   unique_ptr<Action> list_tables =
-      ActionBuilder("list", &ListTables)
+      ClusterActionBuilder("list", &ListTables)
       .Description("List tables")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddOptionalParameter("tables")
       .AddOptionalParameter("list_tablets")
       .Build();
 
   unique_ptr<Action> locate_row =
-      ActionBuilder("locate_row", &LocateRow)
+      ClusterActionBuilder("locate_row", &LocateRow)
       .Description("Locate which tablet a row belongs to")
       .ExtraDescription("Provide the primary key as a JSON array of primary "
                         "key values, e.g. '[1, \"foo\", 2, \"bar\"]'. The "
@@ -1209,7 +1204,6 @@ unique_ptr<Mode> BuildTableMode() {
                         "key. If there is no such tablet, an error message "
                         "will be printed and the command will return a "
                         "non-zero status")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to look up against" })
       .AddRequiredParameter({ kKeyArg,
                               "String representation of the row's primary key "
@@ -1218,29 +1212,26 @@ unique_ptr<Mode> BuildTableMode() {
       .Build();
 
   unique_ptr<Action> rename_column =
-      ActionBuilder("rename_column", &RenameColumn)
+      ClusterActionBuilder("rename_column", &RenameColumn)
       .Description("Rename a column")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to rename" })
       .AddRequiredParameter({ kNewColumnNameArg, "New column name" })
       .Build();
 
   unique_ptr<Action> rename_table =
-      ActionBuilder("rename_table", &RenameTable)
+      ClusterActionBuilder("rename_table", &RenameTable)
       .Description("Rename a table")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to rename" })
       .AddRequiredParameter({ kNewTableNameArg, "New table name" })
       .AddOptionalParameter("modify_external_catalogs")
       .Build();
 
   unique_ptr<Action> scan_table =
-      ActionBuilder("scan", &ScanTable)
+      ClusterActionBuilder("scan", &ScanTable)
       .Description("Scan rows from a table")
       .ExtraDescription("Scan rows from an existing table. See the help "
                         "for the --predicates flag on how predicates can be specified.")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to scan"})
       .AddOptionalParameter("columns")
       .AddOptionalParameter("fill_cache")
@@ -1250,14 +1241,13 @@ unique_ptr<Mode> BuildTableMode() {
       .Build();
 
   unique_ptr<Action> copy_table =
-      ActionBuilder("copy", &CopyTable)
+      ClusterActionBuilder("copy", &CopyTable)
       .Description("Copy table data to another table")
       .ExtraDescription("Copy table data to another table; the two tables could be in the same "
                         "cluster or not. The two tables must have the same table schema, but "
                         "could have different partition schemas. Alternatively, the tool can "
                         "create the new table using the same table and partition schema as the "
                         "source table.")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the source table" })
       .AddRequiredParameter({ kDestMasterAddressesArg, kDestMasterAddressesArgDesc })
       .AddOptionalParameter("create_table")
@@ -1269,27 +1259,24 @@ unique_ptr<Mode> BuildTableMode() {
       .Build();
 
   unique_ptr<Action> set_extra_config =
-      ActionBuilder("set_extra_config", &SetExtraConfig)
+      ClusterActionBuilder("set_extra_config", &SetExtraConfig)
       .Description("Change a extra configuration value on a table")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kConfigNameArg, "Name of the configuration" })
       .AddRequiredParameter({ kConfigValueArg, "New value for the configuration" })
       .Build();
 
   unique_ptr<Action> get_extra_configs =
-      ActionBuilder("get_extra_configs", &GetExtraConfigs)
+      ClusterActionBuilder("get_extra_configs", &GetExtraConfigs)
       .Description("Get the extra configuration properties for a table")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg,
                               "Name of the table for which to get extra configurations" })
       .AddOptionalParameter("config_names")
       .Build();
 
   unique_ptr<Action> drop_range_partition =
-      ActionBuilder("drop_range_partition", &DropRangePartition)
+      ClusterActionBuilder("drop_range_partition", &DropRangePartition)
       .Description("Drop a range partition of table")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table" })
       .AddRequiredParameter({ kTableRangeLowerBoundArg,
                               "String representation of lower bound of "
@@ -1302,9 +1289,8 @@ unique_ptr<Mode> BuildTableMode() {
       .Build();
 
   unique_ptr<Action> add_range_partition =
-      ActionBuilder("add_range_partition", &AddRangePartition)
+      ClusterActionBuilder("add_range_partition", &AddRangePartition)
       .Description("Add a range partition for table")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table" })
       .AddRequiredParameter({ kTableRangeLowerBoundArg,
                               "String representation of lower bound of "
@@ -1321,9 +1307,8 @@ unique_ptr<Mode> BuildTableMode() {
       .Build();
 
   unique_ptr<Action> column_set_default =
-      ActionBuilder("column_set_default", &ColumnSetDefault)
+      ClusterActionBuilder("column_set_default", &ColumnSetDefault)
       .Description("Set write_default value for a column")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kDefaultValueArg,
@@ -1332,67 +1317,60 @@ unique_ptr<Mode> BuildTableMode() {
       .Build();
 
   unique_ptr<Action> column_remove_default =
-      ActionBuilder("column_remove_default", &ColumnRemoveDefault)
+      ClusterActionBuilder("column_remove_default", &ColumnRemoveDefault)
       .Description("Remove write_default value for a column")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .Build();
 
   unique_ptr<Action> column_set_compression =
-      ActionBuilder("column_set_compression", &ColumnSetCompression)
+      ClusterActionBuilder("column_set_compression", &ColumnSetCompression)
       .Description("Set compression type for a column")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kCompressionTypeArg, "Compression type of the column" })
       .Build();
 
   unique_ptr<Action> column_set_encoding =
-      ActionBuilder("column_set_encoding", &ColumnSetEncoding)
+      ClusterActionBuilder("column_set_encoding", &ColumnSetEncoding)
       .Description("Set encoding type for a column")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kEncodingTypeArg, "Encoding type of the column" })
       .Build();
 
   unique_ptr<Action> column_set_block_size =
-      ActionBuilder("column_set_block_size", &ColumnSetBlockSize)
+      ClusterActionBuilder("column_set_block_size", &ColumnSetBlockSize)
       .Description("Set block size for a column")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kBlockSizeArg, "Block size of the column" })
       .Build();
 
   unique_ptr<Action> column_set_comment =
-      ActionBuilder("column_set_comment", &ColumnSetComment)
+      ClusterActionBuilder("column_set_comment", &ColumnSetComment)
       .Description("Set comment for a column")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
       .AddRequiredParameter({ kColumnCommentArg, "Comment of the column" })
       .Build();
 
   unique_ptr<Action> delete_column =
-      ActionBuilder("delete_column", &DeleteColumn)
+      ClusterActionBuilder("delete_column", &DeleteColumn)
       .Description("Delete a column")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to delete" })
       .Build();
 
 
   unique_ptr<Action> statistics =
-      ActionBuilder("statistics", &GetTableStatistics)
-          .Description("Get table statistics")
-          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-          .AddRequiredParameter({ kTableNameArg, "Name of the table to get statistics" })
-          .Build();
+      ClusterActionBuilder("statistics", &GetTableStatistics)
+      .Description("Get table statistics")
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to get statistics" })
+      .Build();
 
   unique_ptr<Action> create_table =
-      ActionBuilder("create", &CreateTable)
+      ClusterActionBuilder("create", &CreateTable)
       .Description("Create a new table")
       .ExtraDescription("Provide the  table-build statements as a JSON object, e.g."
                         "'{\"table_name\":\"test\",\"schema\":{\"columns\":[{\"column_name"
@@ -1408,7 +1386,6 @@ unique_ptr<Mode> BuildTableMode() {
                         "\": [\"2\"]},\"upper_bound\":{\"bound_type\":\"inclusive\",\""
                         "bound_values\":[\"3\"]}}]}},\"extra_configs\":{\"configs\":{\""
                         "kudu.table.history_max_age_sec\":\"3600\"}},\"num_replicas\":3}'.")
-      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kCreateTableJSONArg, "JSON object for creating table" })
       .Build();
 
