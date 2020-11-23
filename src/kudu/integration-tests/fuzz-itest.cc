@@ -66,7 +66,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DEFINE_int32(keyspace_size, 2,  "number of distinct primary keys to test with");
+DEFINE_int32(keyspace_size, 5,  "number of distinct primary keys to test with");
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(scanner_allow_snapshot_scans_with_logical_timestamps);
 DECLARE_bool(use_hybrid_clock);
@@ -1378,6 +1378,26 @@ TEST_F(FuzzTest, TestDiffScanRowLifespanInOneScanDRS) {
       {TEST_FLUSH_OPS},
       {TEST_DIFF_SCAN, 4, 7}
     });
+}
+
+// Regression test for KUDU-3108. Previously caused us to have divergent 'hot'
+// and 'hotmaxes' containers in the merge iterator, causing us to read invalid
+// state and crash.
+TEST_F(FuzzTest, Kudu3108) {
+  CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
+  RunFuzzCase({
+    {TEST_INSERT, 1},
+    {TEST_FLUSH_OPS},
+    {TEST_FLUSH_TABLET},
+    {TEST_INSERT, 3},
+    {TEST_DELETE, 1},
+    {TEST_FLUSH_OPS},
+    {TEST_FLUSH_TABLET},
+    {TEST_INSERT, 1},
+    {TEST_INSERT, 0},
+    {TEST_FLUSH_OPS},
+    {TEST_DIFF_SCAN, 5, 12},
+  });
 }
 
 } // namespace tablet
