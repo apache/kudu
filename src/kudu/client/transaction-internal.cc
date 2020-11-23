@@ -17,11 +17,11 @@
 
 #include "kudu/client/transaction-internal.h"
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <utility>
 
 #include <glog/logging.h>
 
@@ -32,15 +32,18 @@
 #include "kudu/client/txn_manager_proxy_rpc.h"
 #include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/txn_manager.pb.h"
 #include "kudu/master/txn_manager.proxy.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 using kudu::client::internal::AsyncRandomTxnManagerRpc;
 using kudu::rpc::BackoffType;
@@ -52,10 +55,13 @@ using kudu::transactions::CommitTransactionRequestPB;
 using kudu::transactions::CommitTransactionResponsePB;
 using kudu::transactions::GetTransactionStateRequestPB;
 using kudu::transactions::GetTransactionStateResponsePB;
+using kudu::transactions::KeepTransactionAliveRequestPB;
+using kudu::transactions::KeepTransactionAliveResponsePB;
 using kudu::transactions::TxnManagerServiceProxy;
 using kudu::transactions::TxnStatePB;
 using kudu::transactions::TxnTokenPB;
 using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
@@ -91,7 +97,7 @@ Status KuduTransaction::Data::CreateSession(sp::shared_ptr<KuduSession>* session
   return Status::OK();
 }
 
-Status KuduTransaction::Data::Begin() {
+Status KuduTransaction::Data::Begin(const sp::shared_ptr<KuduTransaction>& txn) {
   auto c = weak_client_.lock();
   if (!c) {
     return Status::IllegalState("associated KuduClient is gone");
@@ -100,6 +106,7 @@ Status KuduTransaction::Data::Begin() {
   Synchronizer sync;
   BeginTransactionRequestPB req;
   BeginTransactionResponsePB resp;
+  // TODO(aserbin): should there be no retries for sending keepalive heartbeats?
   AsyncRandomTxnManagerRpc<
       BeginTransactionRequestPB, BeginTransactionResponsePB> rpc(
       deadline, c.get(), BackoffType::EXPONENTIAL, req, &resp,
@@ -111,18 +118,33 @@ Status KuduTransaction::Data::Begin() {
     return StatusFromPB(resp.error().status());
   }
 
-  // TODO(aserbin): start sending regular hearbeats for the started transaction
-  CHECK(resp.has_txn_id());
+  DCHECK(resp.has_txn_id());
   txn_id_ = resp.txn_id();
-  CHECK(resp.has_keepalive_millis());
+  DCHECK(txn_id_.IsValid());
+  DCHECK(resp.has_keepalive_millis());
   txn_keep_alive_ms_ = resp.keepalive_millis();
-  CHECK(txn_id_.IsValid());
+  DCHECK_GT(txn_keep_alive_ms_, 0);
+
+  // Start sending regular heartbeats for the new transaction.
+  auto next_run_after = MonoDelta::FromMilliseconds(
+      std::max<uint32_t>(1, txn_keep_alive_ms_ / 2));
+  auto m = c->data_->messenger_;
+  if (PREDICT_FALSE(!m)) {
+    return Status::IllegalState("null messenger in Kudu client");
+  }
+
+  sp::weak_ptr<KuduTransaction> weak_txn(txn);
+  m->ScheduleOnReactor(
+      [weak_txn](const Status& s) {
+        SendTxnKeepAliveTask(s, weak_txn);
+      },
+      next_run_after);
 
   return Status::OK();
 }
 
 Status KuduTransaction::Data::Commit(bool wait) {
-  CHECK(txn_id_.IsValid());
+  DCHECK(txn_id_.IsValid());
   auto c = weak_client_.lock();
   if (!c) {
     return Status::IllegalState("associated KuduClient is gone");
@@ -152,7 +174,7 @@ Status KuduTransaction::Data::IsCommitComplete(
     bool* is_complete, Status* completion_status) {
   DCHECK(is_complete);
   DCHECK(completion_status);
-  CHECK(txn_id_.IsValid());
+  DCHECK(txn_id_.IsValid());
   auto c = weak_client_.lock();
   if (!c) {
     return Status::IllegalState("associated KuduClient is gone");
@@ -186,14 +208,14 @@ Status KuduTransaction::Data::Rollback() {
   return Status::OK();
 }
 
-Status KuduTransaction::Data::Serialize(string* serialized_txn) const {
-  CHECK(txn_id_.IsValid());
+Status KuduTransaction::Data::Serialize(string* serialized_txn,
+                                        bool enable_keepalive) const {
   DCHECK(serialized_txn);
+  DCHECK(txn_id_.IsValid());
   TxnTokenPB token;
   token.set_txn_id(txn_id_);
-  if (txn_keep_alive_ms_ > 0) {
-    token.set_keepalive_millis(txn_keep_alive_ms_);
-  }
+  token.set_keepalive_millis(txn_keep_alive_ms_);
+  token.set_enable_keepalive(enable_keepalive);
   if (!token.SerializeToString(serialized_txn)) {
     return Status::Corruption("unable to serialize transaction information");
   }
@@ -204,6 +226,8 @@ Status KuduTransaction::Data::Deserialize(
     const sp::shared_ptr<KuduClient>& client,
     const string& serialized_txn,
     sp::shared_ptr<KuduTransaction>* txn) {
+  DCHECK(client);
+
   // TODO(aserbin): should the owner of the transaction be taken into account
   //                as well, i.e. not allow other than the user that created
   //                the transaction to deserialize its transaction token?
@@ -219,10 +243,28 @@ Status KuduTransaction::Data::Deserialize(
   }
 
   sp::shared_ptr<KuduTransaction> ret(new KuduTransaction(client));
-  ret->data_->txn_id_ = token.txn_id();
   ret->data_->txn_keep_alive_ms_ = token.keepalive_millis();
-  *txn = std::move(ret);
+  DCHECK_GT(ret->data_->txn_keep_alive_ms_, 0);
+  ret->data_->txn_id_ = token.txn_id();
+  DCHECK(ret->data_->txn_id_.IsValid());
 
+  // Start sending periodic txn keepalive requests for the deserialized
+  // transaction, as specified in the source txn token.
+  if (token.has_enable_keepalive() && token.enable_keepalive()) {
+    auto m = client->data_->messenger_;
+    if (PREDICT_TRUE(m)) {
+      sp::weak_ptr<KuduTransaction> weak_txn(ret);
+      auto next_run_after = MonoDelta::FromMilliseconds(
+          std::max<uint32_t>(1, ret->data_->txn_keep_alive_ms_ / 2));
+      m->ScheduleOnReactor(
+          [weak_txn](const Status& s) {
+            SendTxnKeepAliveTask(s, weak_txn);
+          },
+          next_run_after);
+    }
+  }
+
+  *txn = std::move(ret);
   return Status::OK();
 }
 
@@ -294,6 +336,128 @@ Status KuduTransaction::Data::WaitForTxnCommitToFinalize(
         *retry = !is_complete;
         return status;
       });
+}
+
+// A structure to pass around metadata on KeepTransactionAlive() when invoking
+// the RPC asynchronously.
+struct KeepaliveRpcCtx {
+  KeepTransactionAliveResponsePB resp;
+  unique_ptr<AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
+                                      KeepTransactionAliveResponsePB>> rpc;
+  sp::weak_ptr<KuduTransaction> weak_txn;
+};
+
+void KuduTransaction::Data::SendTxnKeepAliveTask(
+    const Status& status,
+    sp::weak_ptr<KuduTransaction> weak_txn) {
+  VLOG(2) << Substitute("SendTxnKeepAliveTask() is run");
+  if (PREDICT_FALSE(!status.ok())) {
+    // This means there was an error executing the task on reactor. As of now,
+    // this can only happen if the reactor is being shutdown and the task is
+    // de-scheduled from the queue, so the only possible error status here is
+    // Status::Aborted().
+    VLOG(1) << Substitute("SendTxnKeepAliveTask did not run: $0",
+                          status.ToString());
+    DCHECK(status.IsAborted());
+    return;
+  }
+
+  // Check if the transaction object is still around.
+  sp::shared_ptr<KuduTransaction> txn(weak_txn.lock());
+  if (PREDICT_FALSE(!txn)) {
+    return;
+  }
+
+  auto c = txn->data_->weak_client_.lock();
+  if (PREDICT_FALSE(!c)) {
+    return;
+  }
+
+  const auto& txn_id = txn->data_->txn_id_;
+  const auto next_run_after = MonoDelta::FromMilliseconds(
+      std::max<uint32_t>(1, txn->data_->txn_keep_alive_ms_ / 2));
+  auto deadline = MonoTime::Now() + next_run_after;
+  KeepTransactionAliveRequestPB req;
+  req.set_txn_id(txn_id);
+
+  sp::shared_ptr<KeepaliveRpcCtx> ctx(new KeepaliveRpcCtx);
+  ctx->weak_txn = weak_txn;
+
+  unique_ptr<AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
+                                      KeepTransactionAliveResponsePB>> rpc(
+      new AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
+                                   KeepTransactionAliveResponsePB>(
+          deadline, c.get(), BackoffType::LINEAR,
+          req, &ctx->resp,
+          &TxnManagerServiceProxy::KeepTransactionAliveAsync,
+          "KeepTransactionAlive",
+          [ctx](const Status& s) {
+            TxnKeepAliveCb(s, std::move(ctx));
+          }
+  ));
+  ctx->rpc = std::move(rpc);
+
+  // Send the RPC and handle the response asynchronously.
+  ctx->rpc->SendRpc();
+}
+
+void KuduTransaction::Data::TxnKeepAliveCb(
+    const Status& s, sp::shared_ptr<KeepaliveRpcCtx> ctx) {
+  // Break the circular reference to 'ctx'. The circular reference is there
+  // because KeepaliveRpcCtx::rpc captures the 'ctx' for ResponseCallback.
+  ctx->rpc.reset();
+
+  // Check if the transaction object is still around.
+  sp::shared_ptr<KuduTransaction> txn(ctx->weak_txn.lock());
+  if (PREDICT_FALSE(!txn)) {
+    return;
+  }
+  const auto& resp = ctx->resp;
+  if (s.ok() && resp.has_error()) {
+    auto s = StatusFromPB(resp.error().status());
+  }
+  const auto& txn_id = txn->data_->txn_id_;
+  if (s.IsIllegalState() || s.IsAborted()) {
+    // Transaction's state changed a to terminal one, no need to send
+    // keepalive requests anymore.
+    VLOG(1) << Substitute("KeepTransactionAlive() returned $0: "
+                          "stopping keepalive requests for transaction ID $1",
+                          s.ToString(), txn_id.value());
+    return;
+  }
+
+  // Re-schedule the task, so it will send another keepalive heartbeat as
+  // necessary.
+  sp::shared_ptr<KuduClient> c(txn->data_->weak_client_.lock());
+  if (PREDICT_FALSE(!c)) {
+    return;
+  }
+  auto m = c->data_->messenger_;
+  if (PREDICT_TRUE(m)) {
+    auto weak_txn = ctx->weak_txn;
+    const auto next_run_after = MonoDelta::FromMilliseconds(
+        std::max<uint32_t>(1, txn->data_->txn_keep_alive_ms_ / 2));
+    m->ScheduleOnReactor(
+        [weak_txn](const Status& s) {
+          SendTxnKeepAliveTask(s, weak_txn);
+        },
+        next_run_after);
+  }
+}
+
+KuduTransactionSerializer::Data::Data(
+    const sp::shared_ptr<KuduTransaction>& txn)
+    : txn_(txn),
+      enable_keepalive_(false) {
+  DCHECK(txn_);
+}
+
+Status KuduTransactionSerializer::Data::Serialize(string* txn_token) const {
+  DCHECK(txn_token);
+  if (PREDICT_FALSE(!txn_)) {
+    return Status::InvalidArgument("no transaction to serialize");
+  }
+  return txn_->data_->Serialize(txn_token, enable_keepalive_);
 }
 
 } // namespace client

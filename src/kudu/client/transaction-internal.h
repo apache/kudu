@@ -32,21 +32,21 @@ class MonoTime;
 
 namespace client {
 
-// This class contains the implementation the functionality behind
-// kudu::client::KuduTransaction.
+struct KeepaliveRpcCtx;
+
+// This class implements the functionality of kudu::client::KuduTransaction.
 class KuduTransaction::Data {
  public:
   explicit Data(const sp::shared_ptr<KuduClient>& client);
 
   Status CreateSession(sp::shared_ptr<KuduSession>* session);
 
-  Status Begin();
+  Status Begin(const sp::shared_ptr<KuduTransaction>& txn);
   Status Commit(bool wait);
   Status IsCommitComplete(bool* is_complete, Status* completion_status);
   Status Rollback();
 
-  Status Serialize(std::string* serialized_txn) const;
-
+  Status Serialize(std::string* serialized_txn, bool enable_keepalive) const;
   static Status Deserialize(const sp::shared_ptr<KuduClient>& client,
                             const std::string& serialized_txn,
                             sp::shared_ptr<KuduTransaction>* txn);
@@ -61,11 +61,44 @@ class KuduTransaction::Data {
   static Status WaitForTxnCommitToFinalize(
       KuduClient* client, const MonoTime& deadline, const TxnId& txn_id);
 
+  // The self-rescheduling task to send KeepTransactionAlive() RPC periodically
+  // for a transaction. The task re-schedules itself as needed.
+  // The 'status' parameter is to report on the status of scheduling the task
+  // on reactor.
+  static void SendTxnKeepAliveTask(const Status& status,
+                                   sp::weak_ptr<KuduTransaction> weak_txn);
+
+  // This helper member function is to analyze the status of the
+  // KeepTransactionAlive() RPC and re-schedule the SendTxnKeepAliveTask(),
+  // if necessary. The 'status' parameter contains the status of
+  // KeepTransactionAlive() RPC called by SendTxnKeepAliveTask(). As soon as
+  // TxnManager returns Status::IllegalState() or Status::Aborted(), the task
+  // stops rescheduling itself, so transactions in terminal states are no longer
+  // receiving keepalive heartbeats from the client.
+  static void TxnKeepAliveCb(const Status& status,
+                             sp::shared_ptr<KeepaliveRpcCtx> ctx);
+
   sp::weak_ptr<KuduClient> weak_client_;
-  TxnId txn_id_;
   uint32_t txn_keep_alive_ms_;
+  TxnId txn_id_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
+};
+
+// This class implements the functionality of
+// kudu::client::KuduTransactionSerializer.
+class KuduTransactionSerializer::Data {
+ public:
+  explicit Data(const sp::shared_ptr<KuduTransaction>& client);
+
+  void enable_keepalive(bool enable) {
+    enable_keepalive_ = enable;
+  }
+
+  Status Serialize(std::string* txn_token) const;
+
+  sp::shared_ptr<KuduTransaction> txn_;
+  bool enable_keepalive_;
 };
 
 } // namespace client

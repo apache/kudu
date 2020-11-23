@@ -125,6 +125,9 @@ class AsyncRandomTxnManagerRpc : public rpc::Rpc {
   // Callback to call upon completion of the operation (whether the RPC itself
   // was successful or not).
   const StatusCallback user_cb_;
+
+  // Whether this is a multi-master cluster to work with.
+  const bool multi_txn_manager_;
 };
 
 } // namespace internal

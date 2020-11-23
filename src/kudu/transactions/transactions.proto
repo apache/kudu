@@ -55,4 +55,8 @@ message TxnTokenPB {
   // keep-alive heartbeats spaced by intervals equal or shorter than
   // 'keepalive_millis' milliseconds in duration.
   optional uint32 keepalive_millis = 2;
+
+  // Whether the client should automatically send keepalive messages once
+  // this token is deserialized into a runtime transaction handle.
+  optional bool enable_keepalive = 3;
 }

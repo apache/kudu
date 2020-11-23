@@ -28,6 +28,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/map-util.h"
@@ -48,6 +49,9 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::client::KuduClient;
+using kudu::client::KuduTransaction;
+using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::TabletIdAndTableName;
 using kudu::itest::TServerDetails;
@@ -64,10 +68,8 @@ using kudu::transactions::KeepTransactionAliveRequestPB;
 using kudu::transactions::KeepTransactionAliveResponsePB;
 using kudu::transactions::TxnManagerServiceProxy;
 using kudu::transactions::TxnStatePB;
-using std::shared_ptr;
 using std::string;
 using std::thread;
-using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -230,8 +232,8 @@ class TxnStatusManagerITest : public ExternalMiniClusterITestBase {
   ExternalMiniClusterOptions cluster_opts_;
   string txn_status_tablet_id_;
 
-  shared_ptr<rpc::Messenger> messenger_;
-  unique_ptr<TxnManagerServiceProxy> txn_manager_proxy_;
+  std::shared_ptr<rpc::Messenger> messenger_;
+  std::unique_ptr<TxnManagerServiceProxy> txn_manager_proxy_;
 };
 
 const MonoDelta TxnStatusManagerITest::kTimeout = MonoDelta::FromSeconds(15);
@@ -356,7 +358,7 @@ TEST_F(TxnStatusManagerITest, DISABLED_TxnKeepAliveMultiTxnStatusManagerInstance
     const auto period = MonoDelta::FromMilliseconds(keepalive_interval_ms / 2);
     const auto timeout = MonoDelta::FromMilliseconds(keepalive_interval_ms / 4);
     // Keepalive thread uses its own messenger and proxy.
-    shared_ptr<rpc::Messenger> m;
+    std::shared_ptr<rpc::Messenger> m;
     rpc::MessengerBuilder b("txn-keepalive");
     ASSERT_OK(b.Build(&m));
     const auto rpc_addr = cluster_->master()->bound_rpc_addr();
@@ -463,6 +465,37 @@ TEST_F(TxnStatusManagerITest, DISABLED_TxnKeepAliveMultiTxnStatusManagerInstance
     NO_FATALS(CheckTxnState(txn_id, TxnStatePB::ABORTED));
   });
 
+  NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// Check that internal txn heartbeater in KuduClient keeps sending
+// KeepTransactionAlive requests even if no TxnStatusManager instance is
+// accessible for some time, and the txn keepalive messages reach the
+// destination after TxnStatusManager is back online. So, the txn should not be
+// auto-aborted when its KuduTransaction objects is kept in the scope.
+TEST_F(TxnStatusManagerITest, DISABLED_TxnKeptAliveByClientIfStatusManagerRestarted) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  shared_ptr<KuduClient> c;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &c));
+
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(c->NewTransaction(&txn));
+
+  for (auto idx = 0; idx < cluster_->num_tablet_servers(); ++idx) {
+    auto* ts = cluster_->tablet_server(idx);
+    ts->Shutdown();
+  }
+
+  SleepFor(MonoDelta::FromMilliseconds(3 * kTxnKeepaliveIntervalMs));
+
+  for (auto idx = 0; idx < cluster_->num_tablet_servers(); ++idx) {
+    auto* ts = cluster_->tablet_server(idx);
+    ASSERT_OK(ts->Restart());
+  }
+
+  SleepFor(MonoDelta::FromMilliseconds(5 * kTxnKeepaliveIntervalMs));
+
+  ASSERT_OK(txn->Commit(false /* wait */));
   NO_FATALS(cluster_->AssertNoCrashes());
 }
 

@@ -169,6 +169,8 @@ DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
 DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
+DECLARE_uint32(txn_keepalive_interval_ms);
+DECLARE_uint32(txn_staleness_tracker_interval_ms);
 DECLARE_uint32(txn_manager_status_table_num_replicas);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
@@ -245,6 +247,15 @@ class ClientTest : public KuduTest {
     // Basic txn-related scenarios in this test assume there is only one
     // replica of the transaction status table.
     FLAGS_txn_manager_status_table_num_replicas = 1;
+
+    // Speed up test scenarios which are related to txn keepalive interval.
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+    FLAGS_txn_keepalive_interval_ms = 1500;
+    FLAGS_txn_staleness_tracker_interval_ms = 300;
+#else
+    FLAGS_txn_keepalive_interval_ms = 250;
+    FLAGS_txn_staleness_tracker_interval_ms = 50;
+#endif
 
     SetLocationMappingCmd();
 
@@ -427,7 +438,7 @@ class ClientTest : public KuduTest {
   //                once the transaction orchestration is implemented
   Status FinalizeCommitTransaction(const shared_ptr<KuduTransaction>& txn) {
     string txn_token;
-    RETURN_NOT_OK(txn->Serialize(&txn_token));
+    RETURN_NOT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
     TxnTokenPB token;
     CHECK(token.ParseFromString(txn_token));
     CHECK(token.has_txn_id());
@@ -7126,7 +7137,7 @@ TEST_F(ClientTest, TxnCommit) {
       ASSERT_FALSE(is_complete);
       ASSERT_TRUE(cs.IsIncomplete()) << cs.ToString();
       ASSERT_STR_CONTAINS(cs.ToString(), "commit is still in progress");
-      ASSERT_OK(txn->Serialize(&txn_token));
+      ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
     }
 
     // Make sure the transaction isn't aborted once its KuduTransaction handle
@@ -7250,12 +7261,12 @@ TEST_F(ClientTest, TxnToken) {
   ASSERT_GT(txn_keepalive_ms, 0);
 
   string txn_token;
-  ASSERT_OK(txn->Serialize(&txn_token));
+  ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
 
   // Serializing the same transaction again produces the same result.
   {
     string token;
-    ASSERT_OK(txn->Serialize(&token));
+    ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&token));
     ASSERT_EQ(txn_token, token);
   }
 
@@ -7278,7 +7289,7 @@ TEST_F(ClientTest, TxnToken) {
   // Make sure the KuduTransaction object deserialized from a token is fully
   // functional.
   string serdes_txn_token;
-  ASSERT_OK(serdes_txn->Serialize(&serdes_txn_token));
+  ASSERT_OK(KuduTransactionSerializer(serdes_txn).Serialize(&serdes_txn_token));
   ASSERT_EQ(txn_token, serdes_txn_token);
 
   // TODO(awong): remove once we register participants automatically before
@@ -7294,7 +7305,7 @@ TEST_F(ClientTest, TxnToken) {
     // The state of a transaction isn't stored in the token, so initiating
     // commit of the transaction doesn't change the result of the serialization.
     string token;
-    ASSERT_OK(serdes_txn->Serialize(&token));
+    ASSERT_OK(KuduTransactionSerializer(serdes_txn).Serialize(&token));
     ASSERT_EQ(serdes_txn_token, token);
   }
 
@@ -7302,14 +7313,14 @@ TEST_F(ClientTest, TxnToken) {
   shared_ptr<KuduTransaction> other_txn;
   ASSERT_OK(client_->NewTransaction(&other_txn));
   string other_txn_token;
-  ASSERT_OK(other_txn->Serialize(&other_txn_token));
+  ASSERT_OK(KuduTransactionSerializer(other_txn).Serialize(&other_txn_token));
   ASSERT_NE(txn_token, other_txn_token);
 
   // The state of a transaction isn't stored in the token, so aborting
   // the doesn't change the result of the serialization.
   string token;
   ASSERT_OK(other_txn->Rollback());
-  ASSERT_OK(other_txn->Serialize(&token));
+  ASSERT_OK(KuduTransactionSerializer(other_txn).Serialize(&token));
   ASSERT_EQ(other_txn_token, token);
 }
 
@@ -7322,7 +7333,7 @@ TEST_F(ClientTest, AttemptToControlTxnByOtherUser) {
   shared_ptr<KuduTransaction> txn;
   ASSERT_OK(client_->NewTransaction(&txn));
   string txn_token;
-  ASSERT_OK(txn->Serialize(&txn_token));
+  ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
 
   // Transaction identifier is surfacing here only to build the reference error
   // message for Status::NotAuthorized() returned by attempts to perform
@@ -7412,6 +7423,95 @@ TEST_F(ClientTxnManagerProxyTest, RetryOnServiceUnavailable) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   shared_ptr<KuduTransaction> txn;
   ASSERT_OK(client_->NewTransaction(&txn));
+}
+
+TEST_F(ClientTest, TxnKeepAlive) {
+  // Begin a transaction and wait for longer than the keepalive interval
+  // (with some margin). If there were no txn keepalive messages sent,
+  // the transaction would be automatically aborted. Since the client
+  // sends keepalive heartbeats under the hood, it's still possible to commit
+  // the transaction after some period of inactivity.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+
+    SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
+
+    ASSERT_OK(txn->Commit(false /* wait */));
+    ASSERT_OK(FinalizeCommitTransaction(txn));
+  }
+
+  // Begin a transaction and move its KuduTransaction object out of the
+  // scope. After txn keepalive interval (with some margin) the system should
+  // automatically abort the transaction.
+  {
+    string txn_token;
+    {
+      shared_ptr<KuduTransaction> txn;
+      ASSERT_OK(client_->NewTransaction(&txn));
+      ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
+    }
+
+    SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
+
+    // The transaction should be automatically aborted since no keepalive
+    // requests were sent once the original KuduTransaction object went out
+    // of the scope.
+    shared_ptr<KuduTransaction> serdes_txn;
+    ASSERT_OK(KuduTransaction::Deserialize(client_, txn_token, &serdes_txn));
+    auto s = serdes_txn->Commit(false /* wait */);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORTED");
+  }
+
+  // Begin a new transaction and move the KuduTransaction object out of the
+  // scope. If the transaction handle is deserialized from a txn token that
+  // hadn't keepalive enabled when serialized, the transaction should be
+  // automatically aborted after txn keepalive timeout.
+  {
+    string txn_token;
+    {
+      shared_ptr<KuduTransaction> txn;
+      ASSERT_OK(client_->NewTransaction(&txn));
+      ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
+    }
+
+    shared_ptr<KuduTransaction> serdes_txn;
+    ASSERT_OK(KuduTransaction::Deserialize(client_, txn_token, &serdes_txn));
+    ASSERT_NE(nullptr, serdes_txn.get());
+
+    SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
+
+    auto s = serdes_txn->Commit(false /* wait */);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORTED");
+  }
+
+  // Begin a new transaction and move the KuduTransaction object out of the
+  // scope. If the transaction handle is deserialized from a txn token that
+  // had keepalive enabled when serialized, the transaction should stay alive
+  // even if the original KuduTransaction object went out of the scope.
+  // It's assumed that no longer than the keepalive timeout interval has passed
+  // between the original transaction handle got out of scope and the new
+  // one has been created from the token.
+  {
+    string txn_token;
+    {
+      shared_ptr<KuduTransaction> txn;
+      ASSERT_OK(client_->NewTransaction(&txn));
+      ASSERT_OK(KuduTransactionSerializer(txn)
+                .enable_keepalive(true)
+                .Serialize(&txn_token));
+    }
+
+    shared_ptr<KuduTransaction> serdes_txn;
+    ASSERT_OK(KuduTransaction::Deserialize(client_, txn_token, &serdes_txn));
+
+    SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
+
+    ASSERT_OK(serdes_txn->Commit(false /* wait */));
+    ASSERT_OK(FinalizeCommitTransaction(serdes_txn));
+  }
 }
 
 // Client test that assigns locations to clients and tablet servers.

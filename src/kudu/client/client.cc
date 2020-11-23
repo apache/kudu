@@ -29,7 +29,6 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
-#include <boost/type_traits/decay.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
 
@@ -425,14 +424,29 @@ Status KuduTransaction::Rollback() {
   return data_->Rollback();
 }
 
-Status KuduTransaction::Serialize(string* serialized_txn) const {
-  return data_->Serialize(serialized_txn);
-}
-
 Status KuduTransaction::Deserialize(const sp::shared_ptr<KuduClient>& client,
                                     const string& serialized_txn,
                                     sp::shared_ptr<KuduTransaction>* txn) {
   return Data::Deserialize(client, serialized_txn, txn);
+}
+
+KuduTransactionSerializer::KuduTransactionSerializer(
+    const sp::shared_ptr<KuduTransaction>& txn)
+    : data_(new KuduTransactionSerializer::Data(txn)) {
+}
+
+KuduTransactionSerializer::~KuduTransactionSerializer() {
+  delete data_;
+}
+
+KuduTransactionSerializer&
+KuduTransactionSerializer::enable_keepalive(bool enable) {
+  data_->enable_keepalive(enable);
+  return *this;
+}
+
+Status KuduTransactionSerializer::Serialize(string* serialized_txn) const {
+  return data_->Serialize(serialized_txn);
 }
 
 KuduClient::KuduClient()
@@ -566,7 +580,7 @@ shared_ptr<KuduSession> KuduClient::NewSession() {
 
 Status KuduClient::NewTransaction(sp::shared_ptr<KuduTransaction>* txn) {
   shared_ptr<KuduTransaction> ret(new KuduTransaction(shared_from_this()));
-  const auto s = ret->data_->Begin();
+  const auto s = ret->data_->Begin(ret);
   if (s.ok()) {
     *txn = std::move(ret);
   }

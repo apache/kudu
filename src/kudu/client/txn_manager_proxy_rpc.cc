@@ -53,6 +53,8 @@ using kudu::transactions::CommitTransactionRequestPB;
 using kudu::transactions::CommitTransactionResponsePB;
 using kudu::transactions::GetTransactionStateRequestPB;
 using kudu::transactions::GetTransactionStateResponsePB;
+using kudu::transactions::KeepTransactionAliveRequestPB;
+using kudu::transactions::KeepTransactionAliveResponsePB;
 using kudu::transactions::TxnManagerServiceProxy;
 using kudu::transactions::TxnManagerErrorPB;
 using std::string;
@@ -76,9 +78,13 @@ AsyncRandomTxnManagerRpc<ReqClass, RespClass>::AsyncRandomTxnManagerRpc(
     string rpc_name,
     StatusCallback user_cb)
     : Rpc(deadline, client->data_->messenger_, backoff),
-      client_(client), req_(&req), resp_(resp), func_(func),
+      client_(client),
+      req_(&req),
+      resp_(resp),
+      func_(func),
       rpc_name_(std::move(rpc_name)),
-      user_cb_(std::move(user_cb)) {
+      user_cb_(std::move(user_cb)),
+      multi_txn_manager_(client_->IsMultiMaster()) {
   DCHECK(deadline.Initialized());
 }
 
@@ -139,7 +145,6 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
     // 'rpc_name_' and 'client_' inaccessible.
     KLOG_EVERY_N_SECS(WARNING, 1) << retry_warning;
   });
-  const bool multi_txn_manager = client_->IsMultiMaster();
   // Pull out the RPC status.
   Status s = *status;
   if (s.ok()) {
@@ -156,7 +161,7 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
   // another TxnManager (if available) or re-send the RPC to the same TxnManager
   // a bit later.
   if (s.IsServiceUnavailable()) {
-    if (multi_txn_manager) {
+    if (multi_txn_manager_) {
       ResetTxnManagerAndRetry(s);
     } else {
       mutable_retrier()->DelayedRetry(this, s);
@@ -168,7 +173,7 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
   // mean a TxnManager is down or doesn't exist. If there's another TxnManager
   // to connect to, connect to it. Otherwise, don't bother retrying.
   if (s.IsNetworkError()) {
-    if (multi_txn_manager) {
+    if (multi_txn_manager_) {
       ResetTxnManagerAndRetry(s);
       return true;
     }
@@ -178,7 +183,7 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
     // deadline for RPC operation, retry the operation; if multiple TxnManagers
     // are available, try with another one.
     if (MonoTime::Now() < retrier().deadline()) {
-      if (multi_txn_manager) {
+      if (multi_txn_manager_) {
         ResetTxnManagerAndRetry(s);
       } else {
         mutable_retrier()->DelayedRetry(this, s);
@@ -200,7 +205,7 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
          err->code() == ErrorStatusPB::ERROR_UNAVAILABLE)) {
       // If TxnManager is too busy, try another one if it's around or try again
       // later with the same TxnManager.
-      if (multi_txn_manager) {
+      if (multi_txn_manager_) {
         ResetTxnManagerAndRetry(s);
       } else {
         mutable_retrier()->DelayedRetry(this, s);
@@ -225,7 +230,7 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
     const auto app_status = StatusFromPB(app_err.status());
     DCHECK(!app_status.ok());
     if (app_status.IsServiceUnavailable()) {
-      if (multi_txn_manager) {
+      if (multi_txn_manager_) {
         ResetTxnManagerAndRetry(app_status);
       } else {
         mutable_retrier()->DelayedRetry(this, app_status);
@@ -249,6 +254,8 @@ template class AsyncRandomTxnManagerRpc<CommitTransactionRequestPB,
                                         CommitTransactionResponsePB>;
 template class AsyncRandomTxnManagerRpc<GetTransactionStateRequestPB,
                                         GetTransactionStateResponsePB>;
+template class AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
+                                        KeepTransactionAliveResponsePB>;
 
 } // namespace internal
 } // namespace client
