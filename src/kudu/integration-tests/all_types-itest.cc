@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <ostream>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -681,7 +682,8 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
     // Each time this function is called we shuffle the projection to get the chance
     // of having timestamps in different places of the projection and before/after
     // different types.
-    std::random_shuffle(projection.begin(), projection.end());
+    std::mt19937 gen(SeedRandom());
+    std::shuffle(projection.begin(), projection.end(), gen);
     RETURN_NOT_OK(scanner->SetProjectedColumnNames(projection));
     int row_format_flags = KuduScanner::NO_FLAGS;
     row_format_flags |= KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES;

@@ -25,6 +25,7 @@
 #include <limits>
 #include <memory>
 #include <ostream>
+#include <random>
 #include <string>
 #include <type_traits>
 #include <unordered_set>
@@ -473,7 +474,8 @@ class PredicateTest : public KuduTest {
     }
 
     // IN list and IN Bloom filter predicates
-    std::random_shuffle(test_values.begin(), test_values.end());
+    std::mt19937 gen(SeedRandom());
+    std::shuffle(test_values.begin(), test_values.end(), gen);
 
     for (auto end = test_values.begin(); end <= test_values.end(); end++) {
       vector<KuduValue*> vals;
@@ -592,7 +594,8 @@ class PredicateTest : public KuduTest {
     }
 
     // IN list and IN Bloom filter predicates
-    std::random_shuffle(test_values.begin(), test_values.end());
+    std::mt19937 gen(SeedRandom());
+    std::shuffle(test_values.begin(), test_values.end(), gen);
 
     for (auto end = test_values.begin(); end <= test_values.end(); end++) {
       vector<KuduValue*> vals;
@@ -1027,7 +1030,8 @@ TEST_F(PredicateTest, TestFloatPredicates) {
   }
 
   // IN list and IN Bloom filter predicates
-  std::random_shuffle(test_values.begin(), test_values.end());
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(test_values.begin(), test_values.end(), gen);
 
   for (auto end = test_values.begin(); end <= test_values.end(); end++) {
     vector<KuduValue*> vals;
@@ -1157,7 +1161,8 @@ TEST_F(PredicateTest, TestDoublePredicates) {
   }
 
   // IN list and IN Bloom filter predicates
-  std::random_shuffle(test_values.begin(), test_values.end());
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(test_values.begin(), test_values.end(), gen);
 
   for (auto end = test_values.begin(); end <= test_values.end(); end++) {
     vector<KuduValue*> vals;
@@ -1305,7 +1310,8 @@ TEST_F(PredicateTest, TestDecimalPredicates) {
   }
 
   // IN list and IN Bloom filter predicates
-  std::random_shuffle(test_values.begin(), test_values.end());
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(test_values.begin(), test_values.end(), gen);
 
   for (auto end = test_values.begin(); end <= test_values.end(); end++) {
     vector<KuduValue*> vals;

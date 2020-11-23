@@ -168,7 +168,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   DYLIB_SUFFIX="dylib"
   PARALLEL=${PARALLEL:-$(sysctl -n hw.ncpu)}
 
-  # Kudu builds with C++11, which on OS X requires using libc++ as the standard
+  # Kudu builds with C++17, which on OS X requires using libc++ as the standard
   # library implementation. Some of the dependencies do not compile against
   # libc++ by default, so we specify it explicitly.
   EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS -stdlib=libc++"

@@ -255,11 +255,12 @@ fetch_and_patch \
  $ZLIB_SOURCE \
  $ZLIB_PATCHLEVEL
 
-LIBEV_PATCHLEVEL=0
+LIBEV_PATCHLEVEL=1
 fetch_and_patch \
  libev-${LIBEV_VERSION}.tar.gz \
  $LIBEV_SOURCE \
- $LIBEV_PATCHLEVEL
+ $LIBEV_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/libev-c17.patch"
 
 RAPIDJSON_PATCHLEVEL=1
 fetch_and_patch \

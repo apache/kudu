@@ -60,7 +60,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <boost/optional/optional_io.hpp> // IWYU pragma: keep
-#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/arena.h>

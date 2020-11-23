@@ -128,7 +128,7 @@ COPY --chown=kudu:kudu ./build-support/enable_devtoolset.sh \
   ./build-support/enable_devtoolset_inner.sh \
   build-support/
 COPY --chown=kudu:kudu ./build-support/ccache-clang build-support/ccache-clang
-COPY --chown=kudu:kudu ./build-support/ccache-devtoolset-3 build-support/ccache-devtoolset-3
+COPY --chown=kudu:kudu ./build-support/ccache-devtoolset-8 build-support/ccache-devtoolset-8
 # We explicitly set UID/GID due to https://github.com/moby/buildkit/issues/1237
 # Hard coded UID/GID are required due to https://github.com/moby/buildkit/issues/815
 RUN --mount=type=cache,id=ccache,uid=1000,gid=1000,target=/home/kudu/.ccache \

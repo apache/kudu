@@ -16,6 +16,6 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# Helper script that invokes devtoolset-3's c++ via ccache.
+# Helper script that invokes devtoolset-8's c++ via ccache.
 
-exec ccache /opt/rh/devtoolset-3/root/usr/bin/cc "$@"
+exec ccache /opt/rh/devtoolset-8/root/usr/bin/cc "$@"

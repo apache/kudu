@@ -103,21 +103,21 @@ def check_tools():
       "\n".join("  " + tool for tool in missing))
 
 
-def check_cxx11():
+def check_cxx17():
   # Check that the compiler is new enough.
   try_do(
-    "Checking for C++11 compiler support",
-    ("Unable to compile a simple c++11 program. " +
-     "Please use g++ 4.8 or higher. On CentOS 6 or RHEL 6 " +
+    "Checking for C++17 compiler support",
+    ("Unable to compile a simple c++17 program. " +
+     "Please use g++ 7.0 or higher. On CentOS 7 or RHEL 7 " +
      "you must use the devtoolset. See docs/installation.adoc " +
      "for more info."),
     lambda: compile("""
-      #include <atomic>
+      #include <optional>
       int f() {
-        std::atomic<int> i;
-        return i.load();
+        std::optional<int> oi = 0;
+        return oi.value();
       }""",
-      flags=['--std=c++11']))
+      flags=['--std=c++17']))
 
 
 def check_sasl():
@@ -160,7 +160,7 @@ def main():
   print("  (Set $CC and $CXX to change compiler)")
   print("-------------------------")
   check_tools()
-  check_cxx11()
+  check_cxx17()
   check_sasl()
   check_openssl()
   print("-------------")

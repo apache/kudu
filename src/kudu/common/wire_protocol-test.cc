@@ -23,6 +23,7 @@
 #include <list>
 #include <numeric>
 #include <ostream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -557,7 +558,8 @@ class WireProtocolBenchmark :
     } else {
       vector<int> indexes(block->nrows());
       std::iota(indexes.begin(), indexes.end(), 0);
-      std::random_shuffle(indexes.begin(), indexes.end());
+      std::mt19937 gen(SeedRandom());
+      std::shuffle(indexes.begin(), indexes.end(), gen);
       indexes.resize(select_count);
       select_vector->SetAllFalse();
       for (auto index : indexes) {

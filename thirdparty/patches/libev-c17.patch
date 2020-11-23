@@ -1,0 +1,37 @@
+From ef89859726b03245ff49e48999fc5f2e4b447b42 Mon Sep 17 00:00:00 2001
+From: Grant Henke <ghenke@cloudera.com>
+Date: Mon, 23 Nov 2020 17:06:38 -0600
+Subject: [PATCH] Fix usage with C++17
+
+When using with C++17 I got the following error:
+ev++.h:355:46: error: ISO C++1z does not allow dynamic exception specifications
+      dynamic_loop (unsigned int flags = AUTO) throw (bad_loop)
+
+This patch fixes the error by replacing `throw (bad_loop)`
+with `noexcept(false)`.
+---
+ ev++.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/ev++.h b/ev++.h
+index 4f0a36a..361bf5a 100644
+--- a/ev++.h
++++ b/ev++.h
+@@ -352,7 +352,7 @@ namespace ev {
+   struct dynamic_loop : loop_ref
+   {
+ 
+-    dynamic_loop (unsigned int flags = AUTO) throw (bad_loop)
++    dynamic_loop (unsigned int flags = AUTO) noexcept(false)
+     : loop_ref (ev_loop_new (flags))
+     {
+       if (!EV_AX)
+@@ -376,7 +376,7 @@ namespace ev {
+ 
+   struct default_loop : loop_ref
+   {
+-    default_loop (unsigned int flags = AUTO) throw (bad_loop)
++    default_loop (unsigned int flags = AUTO) noexcept(false)
+ #if EV_MULTIPLICITY
+     : loop_ref (ev_default_loop (flags))
+ #endif

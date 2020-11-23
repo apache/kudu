@@ -29,6 +29,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <random>
 #include <set>
 #include <string>
 #include <thread>
@@ -7296,7 +7297,8 @@ TEST_F(ClientTest, TestProjectionPredicatesFuzz) {
   Random rng(SeedRandom());
   vector<string> projected_col_names =
       SelectRandomSubset<vector<string>, string, Random>(all_col_names, 0, &rng);
-  std::random_shuffle(projected_col_names.begin(), projected_col_names.end());
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(projected_col_names.begin(), projected_col_names.end(), gen);
   ASSERT_OK(scanner->SetProjectedColumnNames(projected_col_names));
 
   // Insert some rows with randomized keys, flushing the tablet periodically.

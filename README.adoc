@@ -418,7 +418,7 @@ Eclipse can be used as an IDE for Kudu. To generate Eclipse project files, run:
 $ mkdir -p <sibling directory to source tree>
 $ cd <sibling directory to source tree>
 $ rm -rf CMakeCache.txt CMakeFiles/
-$ cmake -G "Eclipse CDT4 - Unix Makefiles" -DCMAKE_CXX_COMPILER_ARG1=-std=c++11 <source tree>
+$ cmake -G "Eclipse CDT4 - Unix Makefiles" -DCMAKE_CXX_COMPILER_ARG1=-std=c++17 <source tree>
 ----
 
 When the Eclipse generator is run in a subdirectory of the source tree, the
@@ -429,7 +429,7 @@ It's critical that _CMakeCache.txt_ be removed prior to running the generator,
 otherwise the extra Eclipse generator logic (the CMakeFindEclipseCDT4.make module)
 won't run and standard system includes will be missing from the generated project.
 
-Thanks to [2], the Eclipse generator ignores the `-std=c++11` definition and we must
+Thanks to [2], the Eclipse generator ignores the `-std=c++17` definition and we must
 add it manually on the command line via `CMAKE_CXX_COMPILER_ARG1`.
 
 By default, the Eclipse CDT indexer will index everything under the _kudu/_

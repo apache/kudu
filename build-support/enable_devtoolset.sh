@@ -23,13 +23,12 @@
 # USAGE: ./enable_devtoolset.sh <command> <args>...
 
 set -e
-
 if [[ "$OSTYPE" =~ ^linux ]] && \
-   [[ "$(lsb_release -irs)" =~ (CentOS|RedHatEnterpriseServer)[[:space:]]+6\.[[:digit:]]+ ]]; then
+   [[ "$(lsb_release -irs)" =~ (CentOS|RedHatEnterpriseServer)[[:space:]]+7\.[[:digit:]]+ ]]; then
   # Invoke the inner script, which may do some additional customization within
   # the devtoolset.
   ROOT=$(cd $(dirname "$BASH_SOURCE") ; pwd)
-  scl enable devtoolset-3 "$ROOT/enable_devtoolset_inner.sh $*"
+  scl enable devtoolset-8 "$ROOT/enable_devtoolset_inner.sh $*"
 else
   $@
 fi

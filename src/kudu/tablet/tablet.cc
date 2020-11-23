@@ -23,7 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <type_traits>
+#include <random>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -882,7 +882,9 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(const RowOp* op,
     // relevance. We've had bugs in the past (eg KUDU-1341) which were obscured by
     // relying on the order of rowsets here. So, in debug builds, we shuffle the
     // order to encourage finding such bugs more easily.
-    std::random_shuffle(to_check.begin(), to_check.end());
+    std::random_device rdev;
+    std::mt19937 gen(rdev());
+    std::shuffle(to_check.begin(), to_check.end(), gen);
 #endif
     return to_check;
   }

@@ -26,6 +26,7 @@
 #include <initializer_list>
 #include <memory>
 #include <ostream>
+#include <random>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -1649,7 +1650,8 @@ TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
   // files which have just been compacted. Since we have more metadata files than
   // we have file_cache capacity, this will also generate a mix of cache hits,
   // misses, and re-insertions.
-  std::random_shuffle(block_ids.begin(), block_ids.end());
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(block_ids.begin(), block_ids.end(), gen);
   {
     shared_ptr<BlockDeletionTransaction> deletion_transaction =
         this->bm_->NewDeletionTransaction();

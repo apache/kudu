@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <memory>
 #include <ostream>
+#include <random>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -267,7 +268,8 @@ TServerDetails* TabletServerIntegrationTestBase::GetLeaderReplicaOrNull(
     replicas_copy.push_back((*range.first).second);
   }
 
-  std::random_shuffle(replicas_copy.begin(), replicas_copy.end());
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(replicas_copy.begin(), replicas_copy.end(), gen);
   for (TServerDetails* replica : replicas_copy) {
     if (itest::GetReplicaStatusAndCheckIfLeader(
           replica, tablet_id, MonoDelta::FromMilliseconds(100)).ok()) {

@@ -24,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <random>
 #include <set>
 #include <string>
 #include <thread>
@@ -224,7 +225,8 @@ TEST_F(TxnStatusManagerTest, TestStartTransactionsConcurrently) {
   for (int i = 0; i < kBatchesToStart; i++) {
     vector<int64_t> txns_in_batch(kParallelTxnsPerBatch);
     std::iota(txns_in_batch.begin(), txns_in_batch.end(), i * kParallelTxnsPerBatch);
-    std::random_shuffle(txns_in_batch.begin(), txns_in_batch.end());
+    std::mt19937 gen(SeedRandom());
+    std::shuffle(txns_in_batch.begin(), txns_in_batch.end(), gen);
     txns_to_insert.emplace_back(std::move(txns_in_batch));
   }
 

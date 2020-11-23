@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <ostream>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -172,9 +173,11 @@ void WalHiccupBenchmarker::Run() {
     setups.push_back(setup);
   }
 
+  std::random_device rdev;
+  std::mt19937 gen(rdev());
   for (int round = 0; round < FLAGS_num_rounds; round++) {
     // Randomize the order of setups in each round.
-    std::random_shuffle(setups.begin(), setups.end());
+    std::shuffle(setups.begin(), setups.end(), gen);
 
     for (uint32_t setup : setups) {
       SetFlags(setup);

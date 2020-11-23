@@ -54,3 +54,9 @@ src:*/google/protobuf/parse_context.h
 # Sparsepp has an unsigned-integer negation overflow:
 # /include/sparsepp/spp.h:1196:20: runtime error: negation of 8192 cannot be represented in type 'group_bm_type' (aka 'unsigned int')
 src:*/sparsepp/spp.h
+
+# libstdc++'s basic_string implementation has unsigned-integer overflows
+# bits/basic_string.h:392:51: runtime error: unsigned integer overflow: 4 - 17 cannot be represented in type 'unsigned long'
+# bits/basic_string.tcc:1271:25: runtime error: unsigned integer overflow: 0 - 1 cannot be represented in type 'unsigned long'
+src:*/bits/basic_string.h
+src:*/bits/basic_string.tcc

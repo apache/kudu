@@ -97,13 +97,11 @@ if [[ -f "/usr/bin/yum" ]]; then
   #  ruby-devel \
   #  zlib-devel
 
-  # To build on a version older than 7.0, the Red Hat Developer Toolset
-  # must be installed (in order to have access to a C++11 capable compiler).
-  if [[ "$OS_MAJOR_VERSION" -lt "7" ]]; then
-    DTLS_REPO_URL=https://copr.fedorainfracloud.org/coprs/rhscl/devtoolset-3/repo/epel-6/rhscl-devtoolset-3-epel-6.repo
-    yum install -y scl-utils yum-utils
-    yum-config-manager --add-repo=${DTLS_REPO_URL}
-    yum install -y devtoolset-3-toolchain
+  # To build on a version older than 8.0, the Red Hat Developer Toolset
+  # must be installed (in order to have access to a C++17 capable compiler).
+  if [[ "$OS_MAJOR_VERSION" -lt "8" ]]; then
+    yum install -y centos-release-scl-rh
+    yum install -y devtoolset-8
   fi
 
   # Reduce the image size by cleaning up after the install.

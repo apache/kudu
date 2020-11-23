@@ -24,6 +24,7 @@
 #include <memory>
 #include <numeric>
 #include <ostream>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -660,9 +661,9 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   all_rss.push_back(rs1);
   all_rss.push_back(rs2);
 
-  SeedRandom();
   // Shuffle the row sets to make sure we test different orderings
-  std::random_shuffle(all_rss.begin(), all_rss.end());
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(all_rss.begin(), all_rss.end(), gen);
 
   // Now compact all the drs and make sure we don't get duplicated keys on the output
   CompactAndReopenNoRoll(all_rss, schema_, &result);
@@ -844,7 +845,8 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
 
   // Compact the row sets by picking a few at random until we're left with just one.
   while (row_sets.size() > 1) {
-    std::random_shuffle(row_sets.begin(), row_sets.end());
+    std::mt19937 gen(SeedRandom());
+    std::shuffle(row_sets.begin(), row_sets.end(), gen);
     // Merge between 2 and 4 row sets.
     int num_rowsets_to_merge = std::min(rand() % 3 + 2, static_cast<int>(row_sets.size()));
     vector<shared_ptr<DiskRowSet>> to_merge;
@@ -1314,8 +1316,8 @@ TEST_F(TestCompaction, TestCountLiveRowsOfDiskRowSetsCompact) {
   all_rss.emplace_back(std::move(rs1));
   all_rss.emplace_back(std::move(rs2));
 
-  SeedRandom();
-  std::random_shuffle(all_rss.begin(), all_rss.end());
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(all_rss.begin(), all_rss.end(), gen);
   NO_FATALS(CompactAndReopenNoRoll(all_rss, schema_, &result));
 
   uint64_t count = 0;
