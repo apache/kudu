@@ -194,6 +194,10 @@ SANITIZER_HOOK_ATTRIBUTE const char *__lsan_default_suppressions() {
   // Fixed by upstream commit 379d39c17b8930718e98185a5b32a0f7f3e3b4b6
   "leak:krb5_authdata_import_attributes\n"
 
+  // KUDU-2700: OpenSSL 1.1 has a leak in libcrypto.so when running tests
+  // that use the CLI to connect to a remote server.
+  "leak:libcrypto.so.1.1\n"
+
   // KUDU-2653: Memory leak in libgssapi_krb5 [1]. Exists in certain patched
   // versions of krb5-1.12 (such as krb5 in Debian 8).
   //
