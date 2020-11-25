@@ -204,7 +204,7 @@ fetch_and_patch \
 
 PROTOBUF_PATCHLEVEL=0
 fetch_and_patch \
- protobuf-${PROTOBUF_VERSION}.tar.gz \
+ protobuf-cpp-${PROTOBUF_VERSION}.tar.gz \
  $PROTOBUF_SOURCE \
  $PROTOBUF_PATCHLEVEL \
  "autoreconf -fvi"
