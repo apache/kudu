@@ -143,6 +143,7 @@ DECLARE_bool(rpc_listen_on_unix_domain_socket);
 DECLARE_bool(rpc_trace_negotiation);
 DECLARE_bool(scanner_inject_service_unavailable_on_continue_scan);
 DECLARE_bool(txn_manager_enabled);
+DECLARE_bool(txn_manager_lazily_initialized);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
@@ -159,6 +160,7 @@ DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(table_locations_ttl_ms);
+DECLARE_int32(txn_status_manager_inject_latency_load_from_tablet_ms);
 DECLARE_int64(live_row_count_for_testing);
 DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
@@ -7157,6 +7159,33 @@ TEST_F(ClientTest, NoTxnManager) {
     ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Client connection negotiation failed");
   }
+}
+
+class ClientTxnManagerProxyTest : public ClientTest {
+ public:
+  void SetUp() override {
+    // To avoid extra latency in addition to already injected ones, scenarios
+    // based on setup can assume assume the initial txn status tablet is already
+    // created.
+    FLAGS_txn_manager_lazily_initialized = false;
+
+    // Inject latency into the process of loading txn status data from the
+    // backing tablet, so TxnStatusManager would respond with
+    // ServiceUnavailable() for some time right after starting up.
+    FLAGS_txn_status_manager_inject_latency_load_from_tablet_ms = 3000;
+
+    ClientTest::SetUp();
+    ASSERT_OK(cluster_->mini_master()->master()->WaitForTxnManagerInit());
+  }
+};
+
+// This is a scenario to verify the retry logic in the client: if receiving
+// ServiceNotAvailable() error status, it should retry its RPCs to TxnManager
+// a bit later.
+TEST_F(ClientTxnManagerProxyTest, RetryOnServiceUnavailable) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(client_->NewTransaction(&txn));
 }
 
 // Client test that assigns locations to clients and tablet servers.

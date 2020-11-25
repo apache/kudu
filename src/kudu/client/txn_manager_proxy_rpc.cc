@@ -54,6 +54,7 @@ using kudu::transactions::CommitTransactionResponsePB;
 using kudu::transactions::GetTransactionStateRequestPB;
 using kudu::transactions::GetTransactionStateResponsePB;
 using kudu::transactions::TxnManagerServiceProxy;
+using kudu::transactions::TxnManagerErrorPB;
 using std::string;
 using strings::Substitute;
 
@@ -191,8 +192,8 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
   // Next, parse RPC errors that happened after the connection succeeded.
   // Note: RemoteErrors from the controller are guaranteed to also return error
   // responses, per RpcController's contract (see rpc_controller.h).
-  const ErrorStatusPB* err = retrier().controller().error_response();
   if (s.IsRemoteError()) {
+    const ErrorStatusPB* err = retrier().controller().error_response();
     CHECK(err);
     if (err->has_code() &&
         (err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY ||
@@ -206,10 +207,33 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
       }
       return true;
     }
+    // TODO(aserbin): report unsupported features in the error message if it
+    //                starts making sense: of course this code is forward
+    //                looking, but it's not clear how the detailed information
+    //                on missing features could help in making this error
+    //                message more actionable
     if (err->unsupported_feature_flags_size() > 0) {
-      s = Status::NotSupported(Substitute("cluster does not support $0",
-                                          rpc_name_));
+      s = Status::NotSupported("TxnManager is missing required features");
     }
+  }
+
+  // Finally, parse generic application errors from TxnManager.
+  if (s.ok() && resp_->has_error()) {
+    const auto& app_err = resp_->error();
+    // As of now, TxnManager doesn't have any custom application error codes.
+    DCHECK_EQ(TxnManagerErrorPB::UNKNOWN_ERROR, app_err.code());
+    const auto app_status = StatusFromPB(app_err.status());
+    DCHECK(!app_status.ok());
+    if (app_status.IsServiceUnavailable()) {
+      if (multi_txn_manager) {
+        ResetTxnManagerAndRetry(app_status);
+      } else {
+        mutable_retrier()->DelayedRetry(this, app_status);
+      }
+      return true;
+    }
+    // All other cases are non-retriable: propagate the app_status and return.
+    s = app_status;
   }
 
   warn_on_retry.cancel();

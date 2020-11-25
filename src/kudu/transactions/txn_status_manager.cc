@@ -34,6 +34,7 @@
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -44,6 +45,14 @@ DEFINE_uint32(transaction_keepalive_interval_ms, 5000,
               "keep-alive heartbeats to let the transaction status manager "
               "know that a transaction is not abandoned");
 TAG_FLAG(transaction_keepalive_interval_ms, experimental);
+
+DEFINE_int32(txn_status_manager_inject_latency_load_from_tablet_ms, 0,
+             "Injects a random latency between 0 and this many milliseconds "
+             "when loading data from the txn status tablet replica backing "
+             "the instance of TxnStatusManager. This is a test-only flag, "
+             "do not use in production.");
+TAG_FLAG(txn_status_manager_inject_latency_load_from_tablet_ms, hidden);
+TAG_FLAG(txn_status_manager_inject_latency_load_from_tablet_ms, unsafe);
 
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::ParticipantIdsByTxnId;
@@ -119,6 +128,9 @@ Status TxnStatusManager::LoadFromTablet() {
   int64_t highest_txn_id;
   TransactionsMap txns_by_id;
   v.Release(&highest_txn_id, &txns_by_id);
+
+  MAYBE_INJECT_RANDOM_LATENCY(
+      FLAGS_txn_status_manager_inject_latency_load_from_tablet_ms);
 
   std::lock_guard<simple_spinlock> l(lock_);
   highest_txn_id_ = std::max(highest_txn_id, highest_txn_id_);

@@ -37,7 +37,7 @@ message TxnManagerErrorPB {
   }
 
   // The error code.
-  required Code code = 1;
+  required Code code = 1 [ default = UNKNOWN_ERROR ];
 
   // The Status object for the error. This includes a text message that may be
   // more useful to present in log messages, though its error code is less
