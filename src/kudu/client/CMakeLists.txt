@@ -184,6 +184,7 @@ install(FILES
   client.h
   columnar_scan_batch.h
   hash.h
+  resource_metrics.h
   row_result.h
   scan_batch.h
   scan_predicate.h
@@ -192,7 +193,6 @@ install(FILES
   stubs.h
   value.h
   write_op.h
-  resource_metrics.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/client)
 
 # Headers: common
