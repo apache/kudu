@@ -36,7 +36,6 @@
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/transactions/txn_system_client.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -207,12 +206,8 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, TestTxnSystemClientRetryOnPause)
   cluster_opts_.num_tablet_servers = kNumTabletServers;
   ASSERT_OK(CreateAndStartCluster());
 
-  vector<string> master_addrs;
-  for (const auto& hp : cluster_->master_rpc_addrs()) {
-    master_addrs.emplace_back(hp.ToString());
-  }
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
   ASSERT_OK(txn_client->CreateTxnStatusTable(100, kNumTabletServers));
   ASSERT_OK(txn_client->OpenTxnStatusTable());
 

@@ -57,7 +57,6 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -108,11 +107,7 @@ class TxnStatusTableITest : public KuduTest {
     ASSERT_OK(cluster_->Start());
 
     // Create the txn system client with which to communicate with the cluster.
-    vector<string> master_addrs;
-    for (const auto& hp : cluster_->master_rpc_addrs()) {
-      master_addrs.emplace_back(hp.ToString());
-    }
-    ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_sys_client_));
+    ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_sys_client_));
   }
 
   // Ensures that all replicas have the right table type set.
@@ -631,11 +626,7 @@ class MultiServerTxnStatusTableITest : public TxnStatusTableITest {
     opts.num_tablet_servers = 4;
     cluster_.reset(new InternalMiniCluster(env_, std::move(opts)));
     ASSERT_OK(cluster_->Start());
-    vector<string> master_addrs;
-    for (const auto& hp : cluster_->master_rpc_addrs()) {
-      master_addrs.emplace_back(hp.ToString());
-    }
-    ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_sys_client_));
+    ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_sys_client_));
 
     // Create the initial transaction status table partitions and start an
     // initial transaction.

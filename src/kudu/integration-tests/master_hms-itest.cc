@@ -45,7 +45,6 @@
 #include "kudu/thrift/client.h"
 #include "kudu/transactions/txn_system_client.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -677,12 +676,8 @@ TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {
 // synchronized to the HMS.
 TEST_F(MasterHmsTest, TestTransactionStatusTableDoesntSync) {
   // Create a transaction status table.
-  vector<string> master_addrs;
-  for (const auto& hp : cluster_->master_rpc_addrs()) {
-    master_addrs.emplace_back(hp.ToString());
-  }
   unique_ptr<TxnSystemClient> txn_sys_client;
-  ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_sys_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_sys_client));
   ASSERT_OK(txn_sys_client->CreateTxnStatusTable(100));
 
   // We shouldn't see the table in the HMS catalog.

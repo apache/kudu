@@ -456,12 +456,8 @@ TEST_F(TokenBasedConnectionITest, ReacquireAuthnToken) {
 // of the transaction status table.
 TEST_F(TokenBasedConnectionITest, TxnSystemClientReacquireAuthnToken) {
   SKIP_IF_SLOW_NOT_ALLOWED();
-  vector<string> master_addrs;
-  for (const auto& hp : cluster_->master_rpc_addrs()) {
-    master_addrs.emplace_back(hp.ToString());
-  }
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
   ASSERT_OK(txn_client->CreateTxnStatusTable(10));
   ASSERT_OK(txn_client->OpenTxnStatusTable());
 

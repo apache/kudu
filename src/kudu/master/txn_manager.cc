@@ -247,12 +247,7 @@ Status TxnManager::Init() {
   }
   vector<HostPort> hostports;
   RETURN_NOT_OK(server_->GetMasterHostPorts(&hostports));
-  vector<string> master_addrs;
-  master_addrs.reserve(hostports.size());
-  for (const auto& hp : hostports) {
-    master_addrs.emplace_back(hp.ToString());
-  }
-  RETURN_NOT_OK(TxnSystemClient::Create(master_addrs, &txn_sys_client_));
+  RETURN_NOT_OK(TxnSystemClient::Create(hostports, &txn_sys_client_));
   DCHECK(txn_sys_client_);
   auto s = txn_sys_client_->CreateTxnStatusTable(
       FLAGS_txn_manager_status_table_range_partition_span,

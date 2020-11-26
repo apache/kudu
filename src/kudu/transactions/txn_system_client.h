@@ -32,6 +32,8 @@
 #include "kudu/util/status_callback.h"
 
 namespace kudu {
+class HostPort;
+
 namespace client {
 class KuduClient;
 class KuduTable;
@@ -55,7 +57,7 @@ class TxnStatusEntryPB;
 // calls to various servers.
 class TxnSystemClient {
  public:
-  static Status Create(const std::vector<std::string>& master_addrs,
+  static Status Create(const std::vector<HostPort>& master_addrs,
                        std::unique_ptr<TxnSystemClient>* sys_client);
 
   // Creates the transaction status table with a single range partition of the
