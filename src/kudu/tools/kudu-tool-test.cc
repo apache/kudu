@@ -984,16 +984,17 @@ TEST_F(ToolTest, TestTopLevelHelp) {
 
 TEST_F(ToolTest, TestModeHelp) {
   {
-    const vector<string> kFsModeRegexes = {
-        "check.*Check metadata consistency",
-        "downgrade.*Downgrade the metadata",
-        "fix.*Fix automatically-repairable metadata",
-        "list.*List the Kudu table HMS entries",
-        "precheck.*Check that the Kudu cluster is prepared",
+    const vector<string> kClusterModeRegexes = {
+        "ksck.*Check the health of a Kudu cluster",
+        "rebalance.*Move tablet replicas between tablet servers",
     };
-    NO_FATALS(RunTestHelp("hms", kFsModeRegexes));
-    NO_FATALS(RunTestHelp("hms not_a_mode", kFsModeRegexes,
-                          Status::InvalidArgument("unknown command 'not_a_mode'")));
+    NO_FATALS(RunTestHelp("cluster", kClusterModeRegexes));
+  }
+  {
+    const vector<string> kDiagnoseModeRegexes = {
+        "parse_stacks.*Parse sampled stack traces",
+    };
+    NO_FATALS(RunTestHelp("diagnose", kDiagnoseModeRegexes));
   }
   {
     const vector<string> kFsModeRegexes = {
@@ -1012,10 +1013,22 @@ TEST_F(ToolTest, TestModeHelp) {
         "block.*binary contents of a data block",
         "cfile.*contents of a CFile",
         "tree.*tree of a Kudu filesystem",
-        "uuid.*UUID of a Kudu filesystem"
+        "uuid.*UUID of a Kudu filesystem",
     };
     NO_FATALS(RunTestHelp("fs dump", kFsDumpModeRegexes));
 
+  }
+  {
+    const vector<string> kHmsModeRegexes = {
+        "check.*Check metadata consistency",
+        "downgrade.*Downgrade the metadata",
+        "fix.*Fix automatically-repairable metadata",
+        "list.*List the Kudu table HMS entries",
+        "precheck.*Check that the Kudu cluster is prepared",
+    };
+    NO_FATALS(RunTestHelp("hms", kHmsModeRegexes));
+    NO_FATALS(RunTestHelp("hms not_a_mode", kHmsModeRegexes,
+                          Status::InvalidArgument("unknown command 'not_a_mode'")));
   }
   {
     const vector<string> kLocalReplicaModeRegexes = {
@@ -1024,7 +1037,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "dump.*Dump a Kudu filesystem",
         "copy_from_remote.*Copy a tablet replica",
         "delete.*Delete tablet replicas from the local filesystem",
-        "list.*Show list of tablet replicas"
+        "list.*Show list of tablet replicas",
     };
     NO_FATALS(RunTestHelp("local_replica", kLocalReplicaModeRegexes));
   }
@@ -1034,7 +1047,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "data_dirs.*Dump the data directories",
         "meta.*Dump the metadata",
         "rowset.*Dump the rowset contents",
-        "wals.*Dump all WAL"
+        "wals.*Dump all WAL",
     };
     NO_FATALS(RunTestHelp("local_replica dump", kLocalReplicaDumpModeRegexes));
   }
@@ -1042,7 +1055,7 @@ TEST_F(ToolTest, TestModeHelp) {
     const vector<string> kLocalReplicaCMetaRegexes = {
         "print_replica_uuids.*Print all tablet replica peer UUIDs",
         "rewrite_raft_config.*Rewrite a tablet replica",
-        "set_term.*Bump the current term"
+        "set_term.*Bump the current term",
     };
     NO_FATALS(RunTestHelp("local_replica cmeta", kLocalReplicaCMetaRegexes));
     // Try with a hyphen instead of an underscore.
@@ -1050,7 +1063,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kLocalReplicaCopyFromRemoteRegexes = {
-        "Copy a tablet replica from a remote server"
+        "Copy a tablet replica from a remote server",
     };
     NO_FATALS(RunTestHelp("local_replica copy_from_remote --help",
                           kLocalReplicaCopyFromRemoteRegexes));
@@ -1059,22 +1072,11 @@ TEST_F(ToolTest, TestModeHelp) {
                           kLocalReplicaCopyFromRemoteRegexes));
   }
   {
-    const vector<string> kClusterModeRegexes = {
-        "ksck.*Check the health of a Kudu cluster",
-    };
-    NO_FATALS(RunTestHelp("cluster", kClusterModeRegexes));
-  }
-  {
-    const vector<string> kDiagnoseModeRegexes = {
-        "parse_stacks.*Parse sampled stack traces",
-    };
-    NO_FATALS(RunTestHelp("diagnose", kDiagnoseModeRegexes));
-  }
-  {
     const vector<string> kMasterModeRegexes = {
         "authz_cache.*Operate on the authz caches of the Kudu Masters",
         "dump_memtrackers.*Dump the memtrackers",
         "get_flags.*Get the gflags",
+        "run.*Run a Kudu Master",
         "set_flag.*Change a gflag value",
         "status.*Get the status",
         "timestamp.*Get the current timestamp",
@@ -1091,6 +1093,7 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kPbcModeRegexes = {
         "dump.*Dump a PBC",
+        "edit.*Edit a PBC \\(protobuf container\\) file",
     };
     NO_FATALS(RunTestHelp("pbc", kPbcModeRegexes));
   }
@@ -1098,7 +1101,7 @@ TEST_F(ToolTest, TestModeHelp) {
     const vector<string> kPerfRegexes = {
         "loadgen.*Run load generation with optional scan afterwards",
         "table_scan.*Show row count and scanning time cost of tablets in a table",
-        "tablet_scan.*Show row count of a local tablet"
+        "tablet_scan.*Show row count of a local tablet",
     };
     NO_FATALS(RunTestHelp("perf", kPerfRegexes));
   }
@@ -1109,7 +1112,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "delete.*Delete a tablet replica",
         "dump.*Dump the data of a tablet replica",
         "list.*List all tablet replicas",
-        "unsafe_change_config.*Force the specified replica to adopt"
+        "unsafe_change_config.*Force the specified replica to adopt",
     };
     NO_FATALS(RunTestHelp("remote_replica", kRemoteReplicaModeRegexes));
   }
@@ -1135,16 +1138,26 @@ TEST_F(ToolTest, TestModeHelp) {
         "rename_table.*Rename a table",
         "scan.*Scan rows from a table",
         "set_extra_config.*Change a extra configuration value on a table",
-        "statistics.*Get table statistics"
+        "statistics.*Get table statistics",
     };
     NO_FATALS(RunTestHelp("table", kTableModeRegexes));
   }
   {
     const vector<string> kTabletModeRegexes = {
         "change_config.*Change.*Raft configuration",
-        "leader_step_down.*Change.*tablet's leader"
+        "leader_step_down.*Change.*tablet's leader",
+        "unsafe_replace_tablet.*Replace a tablet with an empty one",
     };
     NO_FATALS(RunTestHelp("tablet", kTabletModeRegexes));
+  }
+  {
+    const vector<string> kChangeConfigModeRegexes = {
+        "add_replica.*Add a new replica",
+        "change_replica_type.*Change the type of an existing replica",
+        "move_replica.*Move a tablet replica",
+        "remove_replica.*Remove an existing replica",
+    };
+    NO_FATALS(RunTestHelp("tablet change_config", kChangeConfigModeRegexes));
   }
   {
     const vector<string> kTestModeRegexes = {
@@ -1153,24 +1166,16 @@ TEST_F(ToolTest, TestModeHelp) {
     NO_FATALS(RunTestHelp("test", kTestModeRegexes));
   }
   {
-    const vector<string> kChangeConfigModeRegexes = {
-        "add_replica.*Add a new replica",
-        "change_replica_type.*Change the type of an existing replica",
-        "move_replica.*Move a tablet replica",
-        "remove_replica.*Remove an existing replica"
-    };
-    NO_FATALS(RunTestHelp("tablet change_config", kChangeConfigModeRegexes));
-  }
-  {
     const vector<string> kTServerModeRegexes = {
         "dump_memtrackers.*Dump the memtrackers",
         "get_flags.*Get the gflags",
         "set_flag.*Change a gflag value",
+        "run.*Run a Kudu Tablet Server",
         "state.*Operate on the state",
         "status.*Get the status",
         "quiesce.*Operate on the quiescing state",
         "timestamp.*Get the current timestamp",
-        "list.*List tablet servers"
+        "list.*List tablet servers",
     };
     NO_FATALS(RunTestHelp("tserver", kTServerModeRegexes));
   }

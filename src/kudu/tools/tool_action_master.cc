@@ -370,7 +370,7 @@ unique_ptr<Mode> BuildMasterMode() {
     unique_ptr<Action> run =
         ActionBuilder("run", &MasterRun)
         .ProgramName("kudu-master")
-        .Description("Runs a Kudu Master")
+        .Description("Run a Kudu Master")
         .ExtraDescription("Note: The master server is started in this process and "
                           "runs until interrupted.\n\n"
                           "The most common configuration flags are described below. "

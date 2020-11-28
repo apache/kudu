@@ -37,6 +37,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
@@ -323,7 +324,7 @@ unique_ptr<Mode> BuildTServerMode() {
   unique_ptr<Action> run =
       ActionBuilder("run", &TServerRun)
       .ProgramName("kudu-tserver")
-      .Description("Runs a Kudu Tablet Server")
+      .Description("Run a Kudu Tablet Server")
       .ExtraDescription("Note: The tablet server is started in this process and "
                         "runs until interrupted.\n\n"
                         "The most common configuration flags are described below. "
