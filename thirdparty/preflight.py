@@ -108,14 +108,14 @@ def check_cxx17():
   try_do(
     "Checking for C++17 compiler support",
     ("Unable to compile a simple c++17 program. " +
-     "Please use g++ 7.0 or higher. On CentOS 7 or RHEL 7 " +
-     "you must use the devtoolset. See docs/installation.adoc " +
+     "Please use g++ 7.0 or higher (or CLANG 6.0 or higher). On CentOS 7 or "
+     "RHEL 7 you must use the devtoolset. See docs/installation.adoc " +
      "for more info."),
     lambda: compile("""
       #include <optional>
       int f() {
         std::optional<int> oi = 0;
-        return oi.value();
+        return *oi;
       }""",
       flags=['--std=c++17']))
 
