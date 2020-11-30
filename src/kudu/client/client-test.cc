@@ -145,6 +145,7 @@ DECLARE_bool(rpc_trace_negotiation);
 DECLARE_bool(scanner_inject_service_unavailable_on_continue_scan);
 DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
+DECLARE_int32(client_tablet_locations_by_id_ttl_ms);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
@@ -274,6 +275,19 @@ class ClientTest : public KuduTest {
         sync.AsStatusCallback());
     CHECK_OK(sync.Wait());
     return rt;
+  }
+
+  Status MetaCacheLookupById(
+      const string& tablet_id, scoped_refptr<internal::RemoteTablet>* remote_tablet) {
+    remote_tablet->reset();
+    scoped_refptr<internal::RemoteTablet> rt;
+    Synchronizer sync;
+    client_->data_->meta_cache_->LookupTabletById(
+        client_.get(), tablet_id, MonoTime::Max(), &rt,
+        sync.AsStatusCallback());
+    RETURN_NOT_OK(sync.Wait());
+    *remote_tablet = std::move(rt);
+    return Status::OK();
   }
 
   // Generate a set of split rows for tablets used in this test.
@@ -2208,7 +2222,6 @@ TEST_F(ClientTest, TestMinMaxRangeBounds) {
 }
 
 TEST_F(ClientTest, TestMetaCacheExpiry) {
-  google::FlagSaver saver;
   FLAGS_table_locations_ttl_ms = 25;
   auto& meta_cache = client_->data_->meta_cache_;
 
@@ -2228,8 +2241,190 @@ TEST_F(ClientTest, TestMetaCacheExpiry) {
   ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
 
   // Force a lookup and ensure the entry is refreshed.
-  CHECK_NOTNULL(MetaCacheLookup(client_table_.get(), "").get());
+  ASSERT_NE(nullptr, MetaCacheLookup(client_table_.get(), ""));
+  ASSERT_TRUE(entry.stale());
   ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_FALSE(entry.stale());
+}
+
+TEST_F(ClientTest, TestBasicIdBasedLookup) {
+  auto tablet_ids = cluster_->mini_tablet_server(0)->ListTablets();
+  ASSERT_FALSE(tablet_ids.empty());
+  scoped_refptr<internal::RemoteTablet> rt;
+  for (const auto& tablet_id : tablet_ids) {
+    ASSERT_OK(MetaCacheLookupById(tablet_id, &rt));
+    ASSERT_TRUE(rt != nullptr);
+    ASSERT_EQ(tablet_id, rt->tablet_id());
+  }
+  const auto& kDummyId = "dummy-tablet-id";
+  Status s = MetaCacheLookupById(kDummyId, &rt);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_EQ(nullptr, rt);
+
+  auto& meta_cache = client_->data_->meta_cache_;
+  internal::MetaCacheEntry entry;
+  ASSERT_FALSE(meta_cache->LookupEntryByIdFastPath(kDummyId, &entry));
+}
+
+TEST_F(ClientTest, TestMetaCacheExpiryById) {
+  FLAGS_client_tablet_locations_by_id_ttl_ms = 25;
+  auto tablet_ids = cluster_->mini_tablet_server(0)->ListTablets();
+  ASSERT_FALSE(tablet_ids.empty());
+  const auto& tablet_id = tablet_ids[0];
+
+  auto& meta_cache = client_->data_->meta_cache_;
+  meta_cache->ClearCache();
+  {
+    internal::MetaCacheEntry entry;
+    ASSERT_FALSE(meta_cache->LookupEntryByIdFastPath(tablet_id, &entry));
+    ASSERT_FALSE(entry.Initialized());
+  }
+  {
+    scoped_refptr<internal::RemoteTablet> rt;
+    ASSERT_OK(MetaCacheLookupById(tablet_id, &rt));
+    ASSERT_NE(nullptr, rt);
+    internal::MetaCacheEntry entry;
+    ASSERT_TRUE(meta_cache->LookupEntryByIdFastPath(tablet_id, &entry));
+    ASSERT_TRUE(entry.Initialized());
+    ASSERT_FALSE(entry.stale());
+
+    // After some time, the entry should become stale.
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_client_tablet_locations_by_id_ttl_ms));
+    ASSERT_TRUE(entry.stale());
+  }
+  {
+    internal::MetaCacheEntry entry;
+    ASSERT_FALSE(meta_cache->LookupEntryByIdFastPath(tablet_id, &entry));
+    ASSERT_FALSE(entry.Initialized());
+
+    // Force a lookup and ensure the entry is refreshed only once we refresh the
+    // entry.
+    scoped_refptr<internal::RemoteTablet> rt;
+    ASSERT_OK(MetaCacheLookupById(tablet_id, &rt));
+    ASSERT_NE(nullptr, rt);
+    ASSERT_TRUE(meta_cache->LookupEntryByIdFastPath(tablet_id, &entry));
+    ASSERT_FALSE(entry.stale());
+  }
+}
+
+TEST_F(ClientTest, TestMetaCacheWithKeysAndIds) {
+  auto& meta_cache = client_->data_->meta_cache_;
+  auto tablet_ids = cluster_->mini_tablet_server(0)->ListTablets();
+  ASSERT_FALSE(tablet_ids.empty());
+  const auto& first_tablet_id = tablet_ids[0];
+
+  meta_cache->ClearCache();
+  {
+    internal::MetaCacheEntry entry;
+    ASSERT_FALSE(meta_cache->LookupEntryByIdFastPath(first_tablet_id, &entry));
+    ASSERT_FALSE(entry.Initialized());
+    ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+    ASSERT_FALSE(entry.Initialized());
+
+    ASSERT_NE(nullptr, MetaCacheLookup(client_table_.get(), ""));
+    ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+    ASSERT_FALSE(entry.stale());
+  }
+  // Just because we have a cache entry for key-based lookup doesn't mean we
+  // have an entry for id-based lookup.
+  for (const auto& tid : tablet_ids) {
+    {
+      internal::MetaCacheEntry entry;
+      ASSERT_FALSE(meta_cache->LookupEntryByIdFastPath(tid, &entry));
+      ASSERT_FALSE(entry.Initialized());
+
+      // We should be able to force an id-based lookup even if the tablets are
+      // already in the meta cache.
+      scoped_refptr<internal::RemoteTablet> rt;
+      ASSERT_OK(MetaCacheLookupById(tid, &rt));
+      ASSERT_NE(nullptr, rt);
+    }
+    {
+      internal::MetaCacheEntry entry;
+      ASSERT_TRUE(meta_cache->LookupEntryByIdFastPath(tid, &entry));
+      ASSERT_FALSE(entry.stale());
+    }
+  }
+  // Even if we looked up new locations, the key-based cached entry should
+  // still be available.
+  {
+    internal::MetaCacheEntry entry;
+    ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+    ASSERT_FALSE(entry.stale());
+  }
+  // Let's do that again but with an id-based lookup first.
+  meta_cache->ClearCache();
+  {
+    internal::MetaCacheEntry entry;
+    ASSERT_FALSE(meta_cache->LookupEntryByIdFastPath(first_tablet_id, &entry));
+    ASSERT_FALSE(entry.Initialized());
+    ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+    ASSERT_FALSE(entry.Initialized());
+  }
+  // Once we do the lookup by ID, we should be able to fast-path the id-based
+  // lookup but not the key-based lookup.
+  {
+    internal::MetaCacheEntry entry;
+    scoped_refptr<internal::RemoteTablet> rt;
+    ASSERT_OK(MetaCacheLookupById(first_tablet_id, &rt));
+    ASSERT_NE(nullptr, rt);
+    ASSERT_TRUE(meta_cache->LookupEntryByIdFastPath(first_tablet_id, &entry));
+    ASSERT_FALSE(entry.stale());
+    ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+  }
+  // And once we do the key-based lookups, we should be able to see them both
+  // cached.
+  {
+    internal::MetaCacheEntry entry;
+    ASSERT_NE(nullptr, MetaCacheLookup(client_table_.get(), ""));
+    ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+    ASSERT_FALSE(entry.stale());
+  }
+  {
+    internal::MetaCacheEntry entry;
+    ASSERT_TRUE(meta_cache->LookupEntryByIdFastPath(first_tablet_id, &entry));
+    ASSERT_FALSE(entry.stale());
+  }
+}
+
+TEST_F(ClientTest, TestMetaCacheExpiryWithKeysAndIds) {
+  auto& meta_cache = client_->data_->meta_cache_;
+  meta_cache->ClearCache();
+  auto tablet_ids = cluster_->mini_tablet_server(0)->ListTablets();
+  ASSERT_FALSE(tablet_ids.empty());
+  const auto& first_tablet_id = tablet_ids[0];
+
+  FLAGS_table_locations_ttl_ms = 10000;
+  FLAGS_client_tablet_locations_by_id_ttl_ms = 25;
+  internal::MetaCacheEntry entry;
+  ASSERT_FALSE(meta_cache->LookupEntryByIdFastPath(first_tablet_id, &entry));
+  ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+
+  // Perform both id-based and key-based lookups.
+  ASSERT_NE(nullptr, MetaCacheLookup(client_table_.get(), ""));
+  scoped_refptr<internal::RemoteTablet> rt;
+  ASSERT_OK(MetaCacheLookupById(first_tablet_id, &rt));
+  ASSERT_NE(nullptr, rt);
+
+  // Wait for our id-based entries to expire. This shouldn't affect our
+  // key-based entries.
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_client_tablet_locations_by_id_ttl_ms));
+  ASSERT_FALSE(meta_cache->LookupEntryByIdFastPath(first_tablet_id, &entry));
+  ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_FALSE(entry.stale());
+
+  FLAGS_client_tablet_locations_by_id_ttl_ms = 10000;
+  FLAGS_table_locations_ttl_ms = 25;
+  meta_cache->ClearCache();
+  ASSERT_NE(nullptr, MetaCacheLookup(client_table_.get(), ""));
+  ASSERT_OK(MetaCacheLookupById(first_tablet_id, &rt));
+  ASSERT_NE(nullptr, rt);
+
+  // Wait for our key-based entries to expire. This shouldn't affect our
+  // id-based entries.
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_table_locations_ttl_ms));
+  ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_TRUE(meta_cache->LookupEntryByIdFastPath(first_tablet_id, &entry));
   ASSERT_FALSE(entry.stale());
 }
 

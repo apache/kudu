@@ -49,14 +49,15 @@ namespace kudu {
 class Sockaddr;
 
 namespace tserver {
-class TabletServerServiceProxy;
 class TabletServerAdminServiceProxy;
+class TabletServerServiceProxy;
 } // namespace tserver
 
 namespace master {
+class GetTableLocationsResponsePB;
+class GetTabletLocationsResponsePB;
 class TSInfoPB;
 class TabletLocationsPB;
-class GetTableLocationsResponsePB;
 } // namespace master
 
 namespace client {
@@ -187,7 +188,8 @@ class MetaCacheServerPicker : public rpc::ServerPicker<RemoteTabletServer> {
   // A ref to the meta cache.
   scoped_refptr<MetaCache> meta_cache_;
 
-  // The table we're writing to.
+  // The table we're writing to. If null, relies on tablet ID-based lookups
+  // instead of partition key-based lookups.
   const KuduTable* table_;
 
   // The tablet we're picking replicas for.
@@ -365,12 +367,12 @@ class MetaCacheEntry {
   // metadata.
   std::string DebugString(const KuduTable* table) const;
 
- private:
-
   // Returns true if the entry is initialized.
   bool Initialized() const {
     return expiration_time_.Initialized();
   }
+
+ private:
 
   // The expiration time of this cached entry.
   MonoTime expiration_time_;
@@ -422,12 +424,30 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
 
+  // Look up the locations of the given tablet, storing the result in
+  // 'remote_tablet' if not null, and calling 'callback' once the lookup is
+  // complete. Only tablets with non-failed LEADERs are considered.
+  //
+  // NOTE: the callback may be called from an IO thread or inline with this
+  // call if the cached data is already available.
+  void LookupTabletById(KuduClient* client,
+                        const std::string& tablet_id,
+                        const MonoTime& deadline,
+                        scoped_refptr<RemoteTablet>* remote_tablet,
+                        const StatusCallback& callback);
+
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *entry if successful.
   bool LookupEntryByKeyFastPath(const KuduTable* table,
                                 const std::string& partition_key,
                                 MetaCacheEntry* entry);
+  // Lookup the given tablet by tablet ID, only consulting local information.
+  // Returns true and sets *entry if successful.
+  bool LookupEntryByIdFastPath(const std::string& tablet_id,
+                               MetaCacheEntry* entry);
 
+  // Process the response for the given key-based lookup parameters, indexing
+  // the location information as appropriate.
   Status ProcessGetTableLocationsResponse(const KuduTable* table,
                                           const std::string& partition_key,
                                           bool is_exact_lookup,
@@ -458,6 +478,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
  private:
   friend class LookupRpc;
+  friend class LookupRpcById;
 
   FRIEND_TEST(client::ClientTest, TestMasterLookupPermits);
   FRIEND_TEST(client::ClientTest, TestMetaCacheExpiry);
@@ -468,10 +489,16 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                                MetaCacheEntry* cache_entry,
                                int max_returned_locations);
 
+  // Process the response for the given id-based lookup parameters, indexing
+  // the location information as appropriate.
+  Status ProcessGetTabletLocationsResponse(const std::string& tablet_id,
+                                           const master::GetTabletLocationsResponsePB& resp,
+                                           MetaCacheEntry* cache_entry);
+
   // Perform the complete fast-path lookup. Returns:
-  //  - NotFound if the lookup hits a non-covering range.
-  //  - Incomplete if the fast path was not possible
-  //  - OK if the lookup was successful.
+  // - NotFound if the lookup hits a non-covering range.
+  // - Incomplete if the fast path was not possible
+  // - OK if the lookup was successful.
   //
   // If 'lookup_type' is kLowerBound, then 'partition_key' will be updated to indicate the
   // start of the range for the matched tablet.
@@ -480,13 +507,23 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                           LookupType lookup_type,
                           scoped_refptr<RemoteTablet>* remote_tablet);
 
+  // Perform the fast-path lookup by tablet ID. Returns:
+  // - Incomplete if there was no cache entry
+  // - OK if the lookup was successful
+  //
+  // If 'remote_tablet' isn't null, it is populated with a pointer to the
+  // RemoteTablet being looked up. Otherwise, just does the lookup, priming the
+  // cache with the location.
+  Status DoFastPathLookupById(const std::string& tablet_id,
+                              scoped_refptr<RemoteTablet>* remote_tablet);
+
   // Update our information about the given tablet server.
   //
   // This is called when we get some response from the master which contains
   // the latest host/port info for a server.
   //
   // NOTE: Must be called with lock_ held.
-  void UpdateTabletServer(const master::TSInfoPB& pb);
+  void UpdateTabletServerUnlocked(const master::TSInfoPB& pb);
 
   KuduClient* client_;
 
@@ -501,17 +538,28 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Protected by lock_.
   TabletServerMap ts_cache_;
 
-  // Cache of tablets, keyed by partition key.
+  // Cache entries for tablets and non-covered ranges, keyed by table ID, used
+  // for key-based lookups.
   //
   // Protected by lock_.
   typedef std::map<std::string, MetaCacheEntry> TabletMap;
-
-  // Cache of tablets and non-covered ranges, keyed by table id.
-  //
-  // Protected by lock_.
   std::unordered_map<std::string, TabletMap> tablets_by_table_and_key_;
 
-  // Cache of tablets, keyed by tablet ID.
+  // Cache entries for tablets, keyed by tablet ID, used for ID-based lookups.
+  // NOTE: existence in 'tablets_by_table_and_key' does not imply existence in
+  // 'entry_by_tablet_id_', and vice versa.
+  //
+  // Protected by lock_.
+  //
+  // TODO(awong): it might be nice for ID-based lookups and table-based lookups
+  // to use the same entries. It's currently tricky to do so since ID-based
+  // lookups don't incur any table metadata, making lookups by table ID tricky.
+  std::unordered_map<std::string, MetaCacheEntry> entry_by_tablet_id_;
+
+  // The underlying remote tablets pointed to by the above cache entry
+  // containers, keyed by tablet ID. If an entry does not exist for a given
+  // tablet ID in this container, none can exist in either of the above
+  // containers.
   //
   // Protected by lock_
   std::unordered_map<std::string, scoped_refptr<RemoteTablet>> tablets_by_id_;

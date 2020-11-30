@@ -83,11 +83,6 @@ class AsyncLeaderMasterRpc : public rpc::Rpc {
 
   std::string ToString() const override;
 
- protected:
-  // Handles 'status', retrying if necessary, and calling the user-provided
-  // callback as appropriate.
-  void SendRpcCb(const Status& status) override;
-
   // Uses 'status' and the contents of the RPC controller and RPC response to
   // determine whether reconnections or retries should be performed, and if so,
   // performs them. Additionally, updates 'status' to include more information
@@ -107,6 +102,11 @@ class AsyncLeaderMasterRpc : public rpc::Rpc {
   // scheduled, in which case callers should ensure that this object remains
   // alive.
   bool RetryOrReconnectIfNecessary(Status* status);
+
+ protected:
+  // Handles 'status', retrying if necessary, and calling the user-provided
+  // callback as appropriate.
+  void SendRpcCb(const Status& status) override;
 
   // Attempts to reconnect with the masters and find the leader master, and
   // attempts to retry the RPC.
