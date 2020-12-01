@@ -111,7 +111,8 @@ message ParticipantOpPB {
 }
 
 message ParticipantRequestPB {
-  optional ParticipantOpPB op = 1;
+  optional bytes tablet_id = 1;
+  optional ParticipantOpPB op = 2;
 }
 
 message ParticipantResponsePB {
@@ -251,6 +252,10 @@ service TabletServerAdminService {
   // Coordinate the lifecycle of a transaction.
   rpc CoordinateTransaction(CoordinateTransactionRequestPB)
       returns (CoordinateTransactionResponsePB);
+
+  // Request that a tablet participate in a transaction, or update the state of
+  // an existing transaction participant.
+  rpc ParticipateInTransaction(ParticipantRequestPB) returns (ParticipantResponsePB);
 }
 
 message QuiesceTabletServerRequestPB {

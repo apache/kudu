@@ -96,6 +96,8 @@ class CreateTabletRequestPB;
 class CreateTabletResponsePB;
 class DeleteTabletRequestPB;
 class DeleteTabletResponsePB;
+class ParticipantRequestPB;
+class ParticipantResponsePB;
 class QuiesceTabletServerRequestPB;
 class QuiesceTabletServerResponsePB;
 class ScanResultCollector;
@@ -232,6 +234,10 @@ class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
   void CoordinateTransaction(const CoordinateTransactionRequestPB* req,
                              CoordinateTransactionResponsePB* resp,
                              rpc::RpcContext* context) override;
+
+  void ParticipateInTransaction(const ParticipantRequestPB* req,
+                                ParticipantResponsePB* resp,
+                                rpc::RpcContext* context) override;
 
   bool SupportsFeature(uint32_t feature) const override;
 

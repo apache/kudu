@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -45,6 +46,8 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
@@ -58,6 +61,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -74,6 +78,7 @@ DECLARE_int32(follower_unavailable_considered_failed_sec);
 DECLARE_int32(log_segment_size_mb);
 DECLARE_int32(maintenance_manager_polling_interval_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
+DECLARE_int32(tablet_bootstrap_inject_latency_ms);
 
 METRIC_DECLARE_histogram(log_gc_duration);
 
@@ -85,7 +90,9 @@ using kudu::tablet::TabletReplica;
 using kudu::tablet::Txn;
 using kudu::tablet::TxnParticipant;
 using kudu::tserver::ParticipantOpPB;
+using kudu::tserver::ParticipantRequestPB;
 using kudu::tserver::ParticipantResponsePB;
+using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::WriteRequestPB;
 using std::string;
 using std::thread;
@@ -98,6 +105,39 @@ namespace kudu {
 namespace itest {
 
 namespace {
+ParticipantRequestPB ParticipantRequest(const string& tablet_id, int64_t txn_id,
+                                        ParticipantOpPB::ParticipantOpType type) {
+  ParticipantRequestPB req;
+  req.set_tablet_id(tablet_id);
+  auto* op_pb = req.mutable_op();
+  op_pb->set_txn_id(txn_id);
+  op_pb->set_type(type);
+  if (type == ParticipantOpPB::FINALIZE_COMMIT) {
+    op_pb->set_finalized_commit_timestamp(kDummyCommitTimestamp);
+  }
+  return req;
+}
+
+Status ParticipateInTransaction(TabletServerAdminServiceProxy* admin_proxy,
+                                const string& tablet_id, int64_t txn_id,
+                                ParticipantOpPB::ParticipantOpType type,
+                                ParticipantResponsePB* resp) {
+  rpc::RpcController rpc;
+  return admin_proxy->ParticipateInTransaction(
+      ParticipantRequest(tablet_id, txn_id, type), resp, &rpc);
+}
+
+Status ParticipateInTransactionCheckResp(TabletServerAdminServiceProxy* admin_proxy,
+                                         const string& tablet_id, int64_t txn_id,
+                                         ParticipantOpPB::ParticipantOpType type) {
+  ParticipantResponsePB resp;
+  RETURN_NOT_OK(ParticipateInTransaction(admin_proxy, tablet_id, txn_id, type, &resp));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
 vector<Status> RunOnReplicas(const vector<TabletReplica*>& replicas,
                              int64_t txn_id,
                              ParticipantOpPB::ParticipantOpType type,
@@ -450,6 +490,202 @@ TEST_F(TxnParticipantITest, TestWaitOnAbortCommit) {
   ASSERT_OK(WaitForCompletedOps(leader_replica, before_abort_ts, kShortTimeout));
   SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2));
   ASSERT_OK(WaitForCompletedOps(follower_replica, before_abort_ts, kShortTimeout));
+}
+
+TEST_F(TxnParticipantITest, TestProxyBasicCalls) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kTxnId = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+  auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
+  for (const auto& op : kCommitSequence) {
+    const auto req = ParticipantRequest(replicas[kLeaderIdx]->tablet_id(), kTxnId, op);
+    ParticipantResponsePB resp;
+    rpc::RpcController rpc;
+    ASSERT_OK(admin_proxy->ParticipateInTransaction(req, &resp, &rpc));
+  }
+}
+
+TEST_F(TxnParticipantITest, TestProxyInvalidStatesInCommitSequence) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kTxnId = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+  auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
+
+  // Begin after already beginning.
+  const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
+  ASSERT_OK(ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN));
+  // TODO(awong): IllegalState error codes may be easily misconstrued with
+  // errors coming from Raft. We should make the participants return something
+  // like InvalidArgument if there's an unexpected state.
+  // TODO(awong): make repeated, idempotent return OK instead of an error.
+  Status s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  // We can't finalize the commit without beginning to commit first.
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  // Start commititng and ensure we can't start another transaction.
+  ASSERT_OK(ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT));
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  // Finalize the commit and ensure we can do nothing else.
+  ASSERT_OK(ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT));
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+}
+
+TEST_F(TxnParticipantITest, TestProxyInvalidStatesInAbortSequence) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kTxnId = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+  auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
+
+  // Begin after already beginning.
+  const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
+  ASSERT_OK(ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN));
+  // TODO(awong): IllegalState error codes may be easily misconstrued with
+  // errors coming from Raft. We should make the participants return something
+  // like InvalidArgument if there's an unexpected state.
+  // TODO(awong): make repeated, idempotent return OK instead of an error.
+  Status s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  // Abort the transaction and ensure we can do nothing else.
+  ASSERT_OK(ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN));
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  s = ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+}
+
+TEST_F(TxnParticipantITest, TestProxyNonLeader) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kNonLeaderIdx = kLeaderIdx + 1;
+  constexpr const int kTxnId = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+  auto admin_proxy = cluster_->tserver_admin_proxy(kNonLeaderIdx);
+  for (const auto& op : kCommitSequence) {
+    const auto req = ParticipantRequest(replicas[kLeaderIdx]->tablet_id(), kTxnId, op);
+    ParticipantResponsePB resp;
+    rpc::RpcController rpc;
+    ASSERT_OK(admin_proxy->ParticipateInTransaction(req, &resp, &rpc));
+    ASSERT_TRUE(resp.has_error());
+    auto resp_error = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(resp_error.IsIllegalState()) << resp_error.ToString();
+    ASSERT_STR_CONTAINS(resp_error.ToString(), "not leader");
+  }
+}
+
+TEST_F(TxnParticipantITest, TestProxyTabletBootstrapping) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kTxnId = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+
+  FLAGS_tablet_bootstrap_inject_latency_ms = 1000;
+  cluster_->mini_tablet_server(kLeaderIdx)->Shutdown();
+  ASSERT_OK(cluster_->mini_tablet_server(kLeaderIdx)->Restart());
+  replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+
+  auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
+  for (const auto& op : kCommitSequence) {
+    const auto req = ParticipantRequest(replicas[kLeaderIdx]->tablet_id(), kTxnId, op);
+    ParticipantResponsePB resp;
+    rpc::RpcController rpc;
+    ASSERT_OK(admin_proxy->ParticipateInTransaction(req, &resp, &rpc));
+    ASSERT_TRUE(resp.has_error());
+    auto resp_error = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(resp_error.IsIllegalState()) << resp_error.ToString();
+    ASSERT_STR_CONTAINS(resp_error.ToString(), "not RUNNING");
+  }
+}
+
+TEST_F(TxnParticipantITest, TestProxyTabletNotRunning) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kTxnId = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+  auto* tablet_manager = cluster_->mini_tablet_server(kLeaderIdx)->server()->tablet_manager();
+  ASSERT_OK(tablet_manager->DeleteTablet(leader_replica->tablet_id(),
+      tablet::TABLET_DATA_TOMBSTONED, boost::none));
+
+  auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
+  for (const auto& op : kCommitSequence) {
+    const auto req = ParticipantRequest(replicas[kLeaderIdx]->tablet_id(), kTxnId, op);
+    ParticipantResponsePB resp;
+    rpc::RpcController rpc;
+    ASSERT_OK(admin_proxy->ParticipateInTransaction(req, &resp, &rpc));
+    ASSERT_TRUE(resp.has_error());
+    auto resp_error = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(resp_error.IsIllegalState()) << resp_error.ToString();
+    ASSERT_STR_CONTAINS(resp_error.ToString(), "not RUNNING");
+  }
+}
+
+TEST_F(TxnParticipantITest, TestProxyTabletNotFound) {
+  constexpr const int kTxnId = 0;
+  auto admin_proxy = cluster_->tserver_admin_proxy(0);
+  for (const auto& op : kCommitSequence) {
+    const auto req = ParticipantRequest("dummy-tablet-id", kTxnId, op);
+    ParticipantResponsePB resp;
+    rpc::RpcController rpc;
+    ASSERT_OK(admin_proxy->ParticipateInTransaction(req, &resp, &rpc));
+    ASSERT_TRUE(resp.has_error());
+    auto resp_error = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(resp_error.IsNotFound()) << resp_error.ToString();
+    ASSERT_STR_CONTAINS(resp_error.ToString(), "not found");
+  }
 }
 
 class TxnParticipantElectionStormITest : public TxnParticipantITest {

@@ -79,6 +79,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/ops/alter_schema_op.h"
 #include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/ops/participant_op.h"
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.h"
@@ -218,6 +219,7 @@ using kudu::security::TokenPB;
 using kudu::server::ServerBase;
 using kudu::tablet::AlterSchemaOpState;
 using kudu::tablet::MvccSnapshot;
+using kudu::tablet::ParticipantOpState;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
@@ -1294,6 +1296,36 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
     resp->mutable_op_result()->set_highest_seen_txn_id(highest_seen_txn_id);
   }
   context->RespondSuccess();
+}
+
+void TabletServiceAdminImpl::ParticipateInTransaction(const ParticipantRequestPB* req,
+                                                      ParticipantResponsePB* resp,
+                                                      rpc::RpcContext* context) {
+  scoped_refptr<TabletReplica> replica;
+  if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
+                                           context, &replica)) {
+    return;
+  }
+  shared_ptr<Tablet> tablet;
+  TabletServerErrorPB::Code error_code;
+  Status s = GetTabletRef(replica, &tablet, &error_code);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+    return;
+  }
+  // TODO(awong): consider memory-based throttling?
+  // TODO(awong): we should also persist the transaction's owner, and prevent
+  // other users from mutating it.
+  unique_ptr<ParticipantOpState> op_state(
+      new ParticipantOpState(replica.get(), tablet->txn_participant(), req, resp));
+  op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+      new RpcOpCompletionCallback<ParticipantResponsePB>(context, resp)));
+  s = replica->SubmitTxnParticipantOp(std::move(op_state));
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+  }
 }
 
 bool TabletServiceAdminImpl::SupportsFeature(uint32_t feature) const {
