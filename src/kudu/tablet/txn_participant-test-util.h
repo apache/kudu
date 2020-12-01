@@ -29,25 +29,38 @@ namespace kudu {
 namespace tablet {
 
 constexpr const int64_t kDummyCommitTimestamp = 1337;
-const std::vector<tserver::ParticipantOpPB::ParticipantOpType> kCommitSequence = {
+constexpr const tserver::ParticipantOpPB::ParticipantOpType kCommitSequence[] = {
   tserver::ParticipantOpPB::BEGIN_TXN,
   tserver::ParticipantOpPB::BEGIN_COMMIT,
   tserver::ParticipantOpPB::FINALIZE_COMMIT,
 };
+constexpr const tserver::ParticipantOpPB::ParticipantOpType kAbortSequence[] = {
+  tserver::ParticipantOpPB::BEGIN_TXN,
+  tserver::ParticipantOpPB::BEGIN_COMMIT,
+  tserver::ParticipantOpPB::ABORT_TXN,
+};
 
-std::unique_ptr<ParticipantOpState> NewParticipantOp(
+inline tserver::ParticipantOpPB MakeParticipantOp(
+    int64_t txn_id,
+    tserver::ParticipantOpPB::ParticipantOpType type,
+    int64_t finalized_commit_timestamp = kDummyCommitTimestamp) {
+  tserver::ParticipantOpPB op_pb;
+  op_pb.set_txn_id(txn_id);
+  op_pb.set_type(type);
+  if (type == tserver::ParticipantOpPB::FINALIZE_COMMIT) {
+    op_pb.set_finalized_commit_timestamp(finalized_commit_timestamp);
+  }
+  return op_pb;
+}
+
+inline std::unique_ptr<ParticipantOpState> NewParticipantOp(
     TabletReplica* replica,
     int64_t txn_id,
     tserver::ParticipantOpPB::ParticipantOpType type,
     int64_t finalized_commit_timestamp,
     tserver::ParticipantRequestPB* req,
     tserver::ParticipantResponsePB* resp) {
-  auto* op = req->mutable_op();
-  op->set_txn_id(txn_id);
-  op->set_type(type);
-  if (type == tserver::ParticipantOpPB::FINALIZE_COMMIT) {
-    op->set_finalized_commit_timestamp(finalized_commit_timestamp);
-  }
+  *req->mutable_op() = MakeParticipantOp(txn_id, type, finalized_commit_timestamp);
   std::unique_ptr<ParticipantOpState> op_state(new ParticipantOpState(
       replica,
       replica->tablet()->txn_participant(),

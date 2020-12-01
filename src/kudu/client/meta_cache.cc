@@ -502,18 +502,29 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
   // Put another way, we don't care about the lookup results at all; we're
   // just using it to fetch the latest consensus configuration information.
   //
-  // TODO: When we support tablet splits, we should let the lookup shift
-  // the write to another tablet (i.e. if it's since been split).
+  // TODO(dralves): When we support tablet splits, we should let the lookup
+  // shift the write to another tablet (i.e. if it's since been split).
   if (!leader) {
-    meta_cache_->LookupTabletByKey(
-        table_,
-        tablet_->partition().partition_key_start(),
-        deadline,
-        MetaCache::LookupType::kPoint,
-        nullptr,
-        [this, callback, deadline](const Status& s) {
-          this->LookUpTabletCb(callback, deadline, s);
-        });
+    if (table_) {
+      meta_cache_->LookupTabletByKey(
+          table_,
+          tablet_->partition().partition_key_start(),
+          deadline,
+          MetaCache::LookupType::kPoint,
+          /*remote_tablet*/nullptr,
+          [this, callback, deadline](const Status& s) {
+            this->LookUpTabletCb(callback, deadline, s);
+          });
+    } else {
+      meta_cache_->LookupTabletById(
+          client_,
+          tablet_->tablet_id(),
+          deadline,
+          /*remote_tablet*/nullptr,
+          [this, callback, deadline](const Status& s) {
+            this->LookUpTabletCb(callback, deadline, s);
+          });
+    }
     return;
   }
 

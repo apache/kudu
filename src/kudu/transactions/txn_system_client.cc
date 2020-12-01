@@ -36,6 +36,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/transactions/coordinator_rpc.h"
+#include "kudu/transactions/participant_rpc.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
@@ -51,6 +52,7 @@ using kudu::client::KuduTableCreator;
 using kudu::client::internal::MetaCache;
 using kudu::tserver::CoordinatorOpPB;
 using kudu::tserver::CoordinatorOpResultPB;
+using kudu::tserver::ParticipantOpPB;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -289,6 +291,50 @@ Status TxnSystemClient::CoordinateTransactionAsync(CoordinatorOpPB coordinate_tx
         rpc->SendRpc();
       });
   return Status::OK();
+}
+
+Status TxnSystemClient::ParticipateInTransaction(const string& tablet_id,
+                                                 const ParticipantOpPB& participant_op,
+                                                 const MonoDelta& timeout,
+                                                 Timestamp* begin_commit_timestamp) {
+  Synchronizer sync;
+  ParticipateInTransactionAsync(tablet_id, participant_op, timeout,
+                                sync.AsStatusCallback(), begin_commit_timestamp);
+  return sync.Wait();
+}
+
+void TxnSystemClient::ParticipateInTransactionAsync(const string& tablet_id,
+                                                    ParticipantOpPB participant_op,
+                                                    const MonoDelta& timeout,
+                                                    StatusCallback cb,
+                                                    Timestamp* begin_commit_timestamp) {
+  MonoTime deadline = MonoTime::Now() + timeout;
+  unique_ptr<TxnParticipantContext> ctx(
+      new TxnParticipantContext({
+          client_.get(),
+          std::move(participant_op),
+          /*tablet*/nullptr,
+      }));
+  TxnParticipantContext* ctx_raw = ctx.release();
+  // TODO(awong): find a clever way around constructing a std::function here
+  // (maybe some fancy template magic?). For now, we're forced to pass the raw
+  // 'ctx' instead of moving it directly.
+  // See https://taylorconor.com/blog/noncopyable-lambdas/ for more details.
+  client_->data_->meta_cache_->LookupTabletById(
+      client_.get(), tablet_id, deadline, &ctx_raw->tablet,
+      [cb = std::move(cb), deadline, ctx_raw, begin_commit_timestamp] (const Status& s) mutable {
+        unique_ptr<TxnParticipantContext> unique_ctx(ctx_raw);
+        if (PREDICT_FALSE(!s.ok())) {
+          cb(s);
+          return;
+        }
+        ParticipantRpc* rpc = ParticipantRpc::NewRpc(
+            std::move(unique_ctx),
+            deadline,
+            std::move(cb),
+            begin_commit_timestamp);
+        rpc->SendRpc();
+      });
 }
 
 } // namespace transactions

@@ -73,6 +73,7 @@ class FuzzTest;
 
 namespace transactions {
 class CoordinatorRpc;
+class ParticipantRpc;
 class TxnSystemClient;
 } // namespace transactions
 
@@ -892,6 +893,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class kudu::AuthzTokenTest;
   friend class kudu::SecurityUnknownTskTest;
   friend class transactions::CoordinatorRpc;
+  friend class transactions::ParticipantRpc;
   friend class transactions::TxnSystemClient;
   friend class tools::LeaderMasterProxy;
   friend class tools::RemoteKsckCluster;

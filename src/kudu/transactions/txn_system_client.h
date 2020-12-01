@@ -33,6 +33,7 @@
 
 namespace kudu {
 class HostPort;
+class Timestamp;
 
 namespace client {
 class KuduClient;
@@ -47,6 +48,7 @@ class TxnStatusTableITest_TestProtectCreateAndAlter_Test;
 namespace tserver {
 class CoordinatorOpPB;
 class CoordinatorOpResultPB;
+class ParticipantOpPB;
 } // namespace tserver
 
 namespace transactions {
@@ -129,6 +131,15 @@ class TxnSystemClient {
   // masters.
   Status OpenTxnStatusTable();
 
+  // Sends an RPC to the leader of the given tablet to participate in a
+  // transaction.
+  //
+  // If this is a BEGIN_COMMIT op, 'begin_commit_timestamp' is populated on success
+  // with the timestamp used to replicate the op on the participant.
+  Status ParticipateInTransaction(const std::string& tablet_id,
+                                  const tserver::ParticipantOpPB& participant_op,
+                                  const MonoDelta& timeout,
+                                  Timestamp* begin_commit_timestamp = nullptr);
  private:
 
   friend class itest::TxnStatusTableITest;
@@ -146,6 +157,12 @@ class TxnSystemClient {
                                     const MonoDelta& timeout,
                                     const StatusCallback& cb,
                                     tserver::CoordinatorOpResultPB* result = nullptr);
+
+  void ParticipateInTransactionAsync(const std::string& tablet_id,
+                                     tserver::ParticipantOpPB participant_op,
+                                     const MonoDelta& timeout,
+                                     StatusCallback cb,
+                                     Timestamp* begin_commit_timestamp = nullptr);
 
   client::sp::shared_ptr<client::KuduTable> txn_status_table() {
     std::lock_guard<simple_spinlock> l(table_lock_);
