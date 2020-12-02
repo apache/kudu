@@ -422,10 +422,8 @@ $0
     // The path to Unix domain socket file cannot be longer than ~100 bytes,
     // so it's necessary to create a directory with shorter absolute path.
     // TODO(aserbin): use some synthetic mount point instead?
-    string dir;
-    RETURN_NOT_OK(Env::Default()->GetTestDirectory(&dir));
-    dir = JoinPathSegments(dir, Substitute("$0.$1", Env::Default()->NowMicros(),
-                                           getpid()));
+    string dir = JoinPathSegments("/tmp", Substitute("$0.$1",
+        Env::Default()->NowMicros(), getpid()));
     const auto s = Env::Default()->CreateDir(dir);
     if (!s.ok() && !s.IsAlreadyPresent()) {
       return s;
@@ -433,6 +431,7 @@ $0
     RETURN_NOT_OK(CorrectOwnership(dir));
     options_.bindcmdaddress = Substitute("$0/chronyd.$1.sock",
                                          dir, options_.index);
+    // Set cmd_socket_dir_ so we can cleanup the unix domain sockets.
     cmd_socket_dir_ = std::move(dir);
   }
   string username;
