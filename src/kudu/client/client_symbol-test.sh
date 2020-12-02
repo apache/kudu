@@ -68,10 +68,18 @@ while read ADDR TYPE SYMBOL; do
     continue;
   fi
 
-  # KUDU-455: skip bizarro global symbol that remains when compiling with old gcc.
+  # KUDU-455: Skip bizarro global symbol that remains when compiling with old gcc.
   if [ "$SYMBOL" = "__gnu_cxx::hash<StringPiece>::operator()(StringPiece) const" ]; then
     echo "Skipping KUDU-455 symbol '$SYMBOL'"
     continue
+  fi
+
+  # KUDU-3218: Skip transaction clone symbols coming from std.
+  # TODO(KUDU-3218): Validate these are safe to ignore long term.
+  if [[ "$SYMBOL" =~ ^"transaction clone for std::" ||
+        "$SYMBOL" =~ ^"operator delete" ]]; then
+    echo "Skipping transaction clone symbol (KUDU-3218) '$SYMBOL'"
+    continue;
   fi
 
   # Any left over symbol is bad.
