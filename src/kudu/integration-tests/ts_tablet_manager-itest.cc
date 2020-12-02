@@ -1226,7 +1226,8 @@ TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCalls) {
   FLAGS_superuser_acl = kSuperUser;
   FLAGS_trusted_user_acl = kTrustedUser;
   NO_FATALS(StartCluster({}));
-  auto* ts = cluster_->mini_tablet_server(0);
+  constexpr const int kTServerIdx = 0;
+  auto* ts = cluster_->mini_tablet_server(kTServerIdx);
   ASSERT_OK(CreateTxnStatusTablet(ts));
   // Put together a sequence of ops that should succeed.
   const vector<CoordinatorOpPB::CoordinatorOpType> kOpSequence = {
@@ -1241,9 +1242,7 @@ TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCalls) {
   // the logged-in user (this user is the service user, since we just restarted
   // the server).
   const auto perform_ops = [&] (int64_t txn_id, const string& user, bool expect_success) {
-    unique_ptr<TabletServerAdminServiceProxy> admin_proxy(
-        new TabletServerAdminServiceProxy(client_messenger_, ts->bound_rpc_addr(),
-                                          ts->bound_rpc_addr().host()));
+    auto admin_proxy = cluster_->tserver_admin_proxy(kTServerIdx);
     if (!user.empty()) {
       rpc::UserCredentials user_creds;
       user_creds.set_real_user(user);
@@ -1283,10 +1282,8 @@ TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCalls) {
 TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCallErrors) {
   NO_FATALS(StartCluster({}));
   auto* ts = cluster_->mini_tablet_server(0);
+  auto admin_proxy = cluster_->tserver_admin_proxy(0);
   ASSERT_OK(CreateTxnStatusTablet(ts));
-  unique_ptr<TabletServerAdminServiceProxy> admin_proxy(
-      new TabletServerAdminServiceProxy(client_messenger_, ts->bound_rpc_addr(),
-                                        ts->bound_rpc_addr().host()));
   // If the request is missing fields, it should be rejected.
   {
     CoordinateTransactionRequestPB req;

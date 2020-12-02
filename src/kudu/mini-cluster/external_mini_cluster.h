@@ -81,6 +81,7 @@ class ServerStatusPB;
 } // namespace server
 
 namespace tserver {
+class TabletServerAdminServiceProxy;
 class TabletServerServiceProxy;
 } // namespace tserver
 
@@ -391,6 +392,8 @@ class ExternalMiniCluster : public MiniCluster {
   std::shared_ptr<master::MasterServiceProxy> master_proxy() const override;
   std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const override;
   std::shared_ptr<tserver::TabletServerServiceProxy> tserver_proxy(int idx) const override;
+  std::shared_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy(
+      int idx) const override;
 
   std::string block_manager_type() const {
     return opts_.block_manager_type;

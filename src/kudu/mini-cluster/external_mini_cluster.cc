@@ -58,6 +58,7 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
@@ -86,6 +87,7 @@ using kudu::rpc::RpcController;
 using kudu::server::ServerStatusPB;
 using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
+using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
 using std::copy;
 using std::pair;
@@ -890,6 +892,13 @@ std::shared_ptr<TabletServerServiceProxy> ExternalMiniCluster::tserver_proxy(int
   CHECK_LT(idx, tablet_servers_.size());
   const auto& addr = CHECK_NOTNULL(tablet_server(idx))->bound_rpc_addr();
   return std::make_shared<TabletServerServiceProxy>(messenger_, addr, addr.host());
+}
+
+std::shared_ptr<TabletServerAdminServiceProxy> ExternalMiniCluster::tserver_admin_proxy(
+    int idx) const {
+  CHECK_LT(idx, tablet_servers_.size());
+  const auto& addr = CHECK_NOTNULL(tablet_server(idx))->bound_rpc_addr();
+  return std::make_shared<TabletServerAdminServiceProxy>(messenger_, addr, addr.host());
 }
 
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder* builder,
