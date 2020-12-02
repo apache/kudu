@@ -202,11 +202,19 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/gperftools-unbreak-memz.patch" \
  "autoreconf -fvi"
 
+# NOTE: creating an empty 'third_party/googletest/m4' subdir is a recipe from
+# the $PROTOBUF_SOURCE/autogen.sh file:
+#
+#   The absence of a m4 directory in googletest causes autoreconf to fail when
+#   building under the CentOS docker image. It's a warning in regular build on
+#   Ubuntu/gLinux as well.
+#
 PROTOBUF_PATCHLEVEL=0
 fetch_and_patch \
  protobuf-cpp-${PROTOBUF_VERSION}.tar.gz \
  $PROTOBUF_SOURCE \
  $PROTOBUF_PATCHLEVEL \
+ "mkdir -p third_party/googletest/m4" \
  "autoreconf -fvi"
 
 # Returns 0 if cmake should be patched to work around this bug [1].
