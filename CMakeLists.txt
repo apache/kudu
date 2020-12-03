@@ -24,8 +24,11 @@ cmake_minimum_required(VERSION 3.11.2)
 
 project(Kudu)
 
-# Print out the CMAKE_OSX_SYSROOT to help debug Apple build issues.
-if (CMAKE_OSX_SYSROOT)
+
+if (APPLE)
+  # Print out the CMAKE_OSX_* variables to help debug Apple build issues.
+  message(STATUS "Using CMAKE_OSX_ARCHITECTURES: ${CMAKE_OSX_ARCHITECTURES}")
+  message(STATUS "Using CMAKE_OSX_DEPLOYMENT_TARGET: ${CMAKE_OSX_DEPLOYMENT_TARGET}")
   message(STATUS "Using CMAKE_OSX_SYSROOT: ${CMAKE_OSX_SYSROOT}")
 endif()
 
@@ -157,6 +160,13 @@ include(CompilerInfo)
 
 # compiler flags that are common across debug/release builds
 execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH_NAME)
+message(STATUS "Found ARCH_NAME: ${ARCH_NAME}")
+# The Apple backend for aarch64 is called arm64.
+# Rename to aarch64 to simplify all of our build checks.
+if("${ARCH_NAME}" MATCHES "arm64")
+  set(ARCH_NAME "aarch64")
+endif()
+message(STATUS "Using ARCH_NAME: ${ARCH_NAME}")
 if("${ARCH_NAME}" MATCHES "aarch64")
   # Certain platforms such as ARM do not use signed chars by default
   # which causes issues with certain bounds checks.
