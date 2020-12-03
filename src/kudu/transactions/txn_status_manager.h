@@ -108,7 +108,8 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   // so it doesn't take a user.
   //
   // TODO(awong): add a commit timestamp.
-  Status FinalizeCommitTransaction(int64_t txn_id) override;
+  Status FinalizeCommitTransaction(int64_t txn_id,
+                                   tserver::TabletServerErrorPB* ts_error) override;
 
   // Aborts the given transaction, returning an error if the transaction
   // doesn't exist, is committed or not yet opened, or isn't owned by the given
@@ -120,7 +121,8 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   // the transaction doesn't exist or isn't owned by the specified user.
   Status GetTransactionStatus(int64_t txn_id,
                               const std::string& user,
-                              transactions::TxnStatusEntryPB* txn_status) override;
+                              transactions::TxnStatusEntryPB* txn_status,
+                              tserver::TabletServerErrorPB* ts_error) override;
 
   // Creates an in-memory participant, writes an entry to the status table, and
   // attaches the in-memory participant to the transaction.
@@ -142,15 +144,23 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
 
  private:
   // Verifies that the transaction status data has already been loaded from the
-  // underlying tablet. Returns Status::OK() if the data is loaded, otherwise
-  // returns Status::ServiceUnavailable().
-  Status CheckTxnStatusDataLoadedUnlocked() const;
+  // underlying tablet and the replica is a leader. Returns Status::OK() if the
+  // data is loaded and the replica is a leader. Otherwise, if the data hasn't
+  // been loaded yet, return Status::ServiceUnavailable().  If the data has
+  // been loaded, but the replica isn't a leader, returns
+  // Status::ServiceUnavailable() and sets the code in 'ts_error'
+  // to TabletServerErrorPB::NOT_THE_LEADER.
+  Status CheckTxnStatusDataLoadedUnlocked(
+      tserver::TabletServerErrorPB* ts_error) const;
 
   // Returns the transaction entry, returning an error if the transaction ID
   // doesn't exist or if 'user' is specified but isn't the owner of the
-  // transaction.
+  // transaction. In addition, if the underlying replica isn't a leader,
+  // sets the code in 'ts_error' to TabletServerErrorPB::NOT_THE_LEADER
+  // correspondingly.
   Status GetTransaction(int64_t txn_id, const boost::optional<std::string>& user,
-                        scoped_refptr<TransactionEntry>* txn) const;
+                        scoped_refptr<TransactionEntry>* txn,
+                        tserver::TabletServerErrorPB* ts_error) const;
 
   // Protects 'highest_txn_id_' and 'txns_by_id_'.
   mutable simple_spinlock lock_;

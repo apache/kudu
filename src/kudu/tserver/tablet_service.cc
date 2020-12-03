@@ -30,9 +30,9 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
-#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/common/column_predicate.h"
@@ -1268,7 +1268,8 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
       s = txn_coordinator->AbortTransaction(txn_id, user, &ts_error);
       break;
     case CoordinatorOpPB::GET_TXN_STATUS:
-      s = txn_coordinator->GetTransactionStatus(txn_id, user, &txn_status);
+      s = txn_coordinator->GetTransactionStatus(
+          txn_id, user, &txn_status, &ts_error);
       break;
     default:
       s = Status::InvalidArgument(Substitute("Unknown op type: $0", op.type()));

@@ -411,7 +411,8 @@ class ClientTest : public KuduTest {
         if (txn_id > highest_txn_id) {
           continue;
         }
-        auto s = c->FinalizeCommitTransaction(txn_id);
+        tserver::TabletServerErrorPB ts_error;
+        auto s = c->FinalizeCommitTransaction(txn_id, &ts_error);
         if (s.IsNotFound()) {
           continue;
         }

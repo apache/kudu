@@ -75,7 +75,8 @@ class TxnCoordinator {
   // no such transaction), returns an error without populating 'ts_error'.
   //
   // TODO(awong): add a commit timestamp.
-  virtual Status FinalizeCommitTransaction(int64_t txn_id) = 0;
+  virtual Status FinalizeCommitTransaction(
+      int64_t txn_id, tserver::TabletServerErrorPB* ts_error) = 0;
 
   // Aborts the given transaction as the given user.
   //
@@ -85,10 +86,19 @@ class TxnCoordinator {
   virtual Status AbortTransaction(int64_t txn_id, const std::string& user,
                                   tserver::TabletServerErrorPB* ts_error) = 0;
 
-  // Retrieves the status entry for the specified transaction.
-  virtual Status GetTransactionStatus(int64_t txn_id,
-                                      const std::string& user,
-                                      transactions::TxnStatusEntryPB* txn_status) = 0;
+
+  // Retrieves the status entry for the specified transaction, returning
+  // Status::OK() in case of success with 'txn_status' populated. In case of
+  // error, returns non-OK status. 'ts_error' is used to return not-the-leader
+  // error to let the caller know that the call reached a non-leader replica and
+  // it's not up to its purpose, so the client needs to retry the call against
+  // a leader replica. In the latter case, the method returns
+  // Status::ServiceUnavailable().
+  virtual Status GetTransactionStatus(
+      int64_t txn_id,
+      const std::string& user,
+      transactions::TxnStatusEntryPB* txn_status,
+      tserver::TabletServerErrorPB* ts_error) = 0;
 
   // Registers a participant tablet ID to the given transaction ID as the given
   // user.

@@ -27,10 +27,14 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
@@ -57,6 +61,7 @@ TAG_FLAG(txn_status_manager_inject_latency_load_from_tablet_ms, unsafe);
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::ParticipantIdsByTxnId;
 using kudu::tserver::TabletServerErrorPB;
+using kudu::consensus::RaftPeerPB;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -75,6 +80,17 @@ namespace {
 //     tablet (unless the tablet contains a record with higher txn_id)
 constexpr int64_t kIdStatusDataNotLoaded = -2;
 constexpr int64_t kIdStatusDataReady = -1;
+
+Status ReportIllegalTxnState(const string& errmsg,
+                             TabletServerErrorPB* ts_error) {
+  DCHECK(ts_error);
+  auto s = Status::IllegalState(errmsg);
+  TabletServerErrorPB error;
+  StatusToPB(s, error.mutable_status());
+  error.set_code(TabletServerErrorPB::TXN_ILLEGAL_STATE);
+  *ts_error = std::move(error);
+  return s;
+}
 
 } // anonymous namespace
 
@@ -138,7 +154,9 @@ Status TxnStatusManager::LoadFromTablet() {
   return Status::OK();
 }
 
-Status TxnStatusManager::CheckTxnStatusDataLoadedUnlocked() const {
+Status TxnStatusManager::CheckTxnStatusDataLoadedUnlocked(
+    TabletServerErrorPB* ts_error) const {
+  DCHECK(ts_error);
   DCHECK(lock_.is_locked());
   // TODO(aserbin): this is just to handle requests which come in a short time
   //                interval when the leader replica of the transaction status
@@ -151,18 +169,30 @@ Status TxnStatusManager::CheckTxnStatusDataLoadedUnlocked() const {
   if (PREDICT_FALSE(highest_txn_id_ <= kIdStatusDataNotLoaded)) {
     return Status::ServiceUnavailable("transaction status data is not loaded");
   }
+  auto* consensus = status_tablet_.tablet_replica_->consensus();
+  DCHECK(consensus);
+  if (consensus->role() != RaftPeerPB::LEADER) {
+    static const Status kErrStatus = Status::ServiceUnavailable(
+        "txn status tablet replica is not a leader");
+    TabletServerErrorPB error;
+    StatusToPB(kErrStatus, error.mutable_status());
+    error.set_code(TabletServerErrorPB::NOT_THE_LEADER);
+    *ts_error = std::move(error);
+    return kErrStatus;
+  }
   return Status::OK();
 }
 
 Status TxnStatusManager::GetTransaction(int64_t txn_id,
                                         const boost::optional<string>& user,
-                                        scoped_refptr<TransactionEntry>* txn) const {
+                                        scoped_refptr<TransactionEntry>* txn,
+                                        TabletServerErrorPB* ts_error) const {
   std::lock_guard<simple_spinlock> l(lock_);
 
   // First, make sure the transaction status data has been loaded. If not, then
   // the caller might get an unexpected error response and bail instead of
   // retrying a bit later and getting proper response.
-  RETURN_NOT_OK(CheckTxnStatusDataLoadedUnlocked());
+  RETURN_NOT_OK(CheckTxnStatusDataLoadedUnlocked(ts_error));
 
   scoped_refptr<TransactionEntry> ret = FindPtrOrNull(txns_by_id_, txn_id);
   if (PREDICT_FALSE(!ret)) {
@@ -201,7 +231,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
     //
     // If this check fails, don not set the 'highest_seen_txn_id' because
     // 'highest_txn_id_' doesn't contain any meaningful value yet.
-    RETURN_NOT_OK(CheckTxnStatusDataLoadedUnlocked());
+    RETURN_NOT_OK(CheckTxnStatusDataLoadedUnlocked(ts_error));
 
     // Second, make sure the requested ID is viable.
     if (PREDICT_FALSE(txn_id <= highest_txn_id_)) {
@@ -256,7 +286,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
 Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& user,
                                                 TabletServerErrorPB* ts_error) {
   scoped_refptr<TransactionEntry> txn;
-  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn));
+  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
@@ -265,9 +295,9 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
     return Status::OK();
   }
   if (PREDICT_FALSE(state != TxnStatePB::OPEN)) {
-    return Status::IllegalState(
-        Substitute("transaction ID $0 is not open: $1",
-                   txn_id, SecureShortDebugString(pb)));
+    return ReportIllegalTxnState(Substitute("transaction ID $0 is not open: $1",
+                                            txn_id, SecureShortDebugString(pb)),
+                                 ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::COMMIT_IN_PROGRESS);
@@ -276,9 +306,11 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
   return Status::OK();
 }
 
-Status TxnStatusManager::FinalizeCommitTransaction(int64_t txn_id) {
+Status TxnStatusManager::FinalizeCommitTransaction(
+    int64_t txn_id,
+    TabletServerErrorPB* ts_error) {
   scoped_refptr<TransactionEntry> txn;
-  RETURN_NOT_OK(GetTransaction(txn_id, boost::none, &txn));
+  RETURN_NOT_OK(GetTransaction(txn_id, boost::none, &txn, ts_error));
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
@@ -287,14 +319,15 @@ Status TxnStatusManager::FinalizeCommitTransaction(int64_t txn_id) {
     return Status::OK();
   }
   if (PREDICT_FALSE(state != TxnStatePB::COMMIT_IN_PROGRESS)) {
-    return Status::IllegalState(
+    return ReportIllegalTxnState(
         Substitute("transaction ID $0 is not committing: $1",
-                   txn_id, SecureShortDebugString(pb)));
+                   txn_id, SecureShortDebugString(pb)),
+        ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::COMMITTED);
-  TabletServerErrorPB ts_error;
-  RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, &ts_error));
+  RETURN_NOT_OK(status_tablet_.UpdateTransaction(
+      txn_id, mutable_data->pb, ts_error));
   txn_lock.Commit();
   return Status::OK();
 }
@@ -302,7 +335,7 @@ Status TxnStatusManager::FinalizeCommitTransaction(int64_t txn_id) {
 Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& user,
                                           TabletServerErrorPB* ts_error) {
   scoped_refptr<TransactionEntry> txn;
-  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn));
+  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
@@ -312,9 +345,10 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& use
   }
   if (PREDICT_FALSE(state != TxnStatePB::OPEN &&
       state != TxnStatePB::COMMIT_IN_PROGRESS)) {
-    return Status::IllegalState(
+    return ReportIllegalTxnState(
         Substitute("transaction ID $0 cannot be aborted: $1",
-                   txn_id, SecureShortDebugString(pb)));
+                   txn_id, SecureShortDebugString(pb)),
+        ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::ABORTED);
@@ -326,10 +360,11 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& use
 Status TxnStatusManager::GetTransactionStatus(
     int64_t txn_id,
     const std::string& user,
-    transactions::TxnStatusEntryPB* txn_status) {
+    transactions::TxnStatusEntryPB* txn_status,
+    TabletServerErrorPB* ts_error) {
   DCHECK(txn_status);
   scoped_refptr<TransactionEntry> txn;
-  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn));
+  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::READ);
   const auto& pb = txn_lock.data().pb;
@@ -341,10 +376,13 @@ Status TxnStatusManager::GetTransactionStatus(
   return Status::OK();
 }
 
-Status TxnStatusManager::RegisterParticipant(int64_t txn_id, const string& tablet_id,
-                                             const string& user, TabletServerErrorPB* ts_error) {
+Status TxnStatusManager::RegisterParticipant(
+    int64_t txn_id,
+    const string& tablet_id,
+    const string& user,
+    TabletServerErrorPB* ts_error) {
   scoped_refptr<TransactionEntry> txn;
-  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn));
+  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
 
   // Lock the transaction in read mode and check that it's open. If the
   // transaction isn't open, e.g. because a commit is already in progress,
@@ -352,9 +390,9 @@ Status TxnStatusManager::RegisterParticipant(int64_t txn_id, const string& table
   TransactionEntryLock txn_lock(txn.get(), LockMode::READ);
   const auto& txn_state = txn_lock.data().pb.state();
   if (PREDICT_FALSE(txn_state != TxnStatePB::OPEN)) {
-    return Status::IllegalState(
-        Substitute("transaction ID $0 not open: $1",
-                   txn_id, TxnStatePB_Name(txn_state)));
+    return ReportIllegalTxnState(Substitute("transaction ID $0 not open: $1",
+                                            txn_id, TxnStatePB_Name(txn_state)),
+                                 ts_error);
   }
 
   auto participant = txn->GetOrCreateParticipant(tablet_id);

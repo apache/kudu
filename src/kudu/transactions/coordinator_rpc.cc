@@ -50,12 +50,14 @@ using kudu::rpc::ResponseCallback;
 using kudu::rpc::RetriableRpc;
 using kudu::rpc::RetriableRpcStatus;
 using kudu::tserver::CoordinatorOpResultPB;
+using kudu::tserver::TabletServerErrorPB;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
 class MonoTime;
+
 namespace transactions {
 
 CoordinatorRpc* CoordinatorRpc::NewRpc(
@@ -84,15 +86,10 @@ string CoordinatorRpc::ToString() const {
 void CoordinatorRpc::Finish(const Status& status) {
   // Free memory upon completion.
   unique_ptr<CoordinatorRpc> this_instance(this);
-  Status final_status = status;
-  if (final_status.ok() &&
-      resp_.has_op_result() && resp_.op_result().has_op_error()) {
-    final_status = StatusFromPB(resp_.op_result().op_error());
-  }
   if (resp_.has_op_result() && op_result_) {
     *op_result_ = resp_.op_result();
   }
-  cb_(final_status);
+  cb_(status);
 }
 
 bool CoordinatorRpc::GetNewAuthnTokenAndRetry() {
@@ -133,7 +130,14 @@ RetriableRpcStatus CoordinatorRpc::AnalyzeResponse(const Status& rpc_cb_status) 
   // We only analyze OK statuses if we succeeded to do the tablet lookup. In
   // either case, let's examine whatever errors exist.
   RetriableRpcStatus result;
-  result.status = rpc_cb_status.ok() ? retrier().controller().status() : rpc_cb_status;
+  result.status = rpc_cb_status.ok() ? retrier().controller().status()
+                                     : rpc_cb_status;
+  if (result.status.ok() &&
+      resp_.has_op_result() && resp_.op_result().has_op_error()) {
+    // Extract the application-level error (AppStatusPB), if any, and convert it
+    // into Status to allow the retry logic to work as expected.
+    result.status = StatusFromPB(resp_.op_result().op_error());
+  }
 
   // Check for specific RPC errors.
   if (result.status.IsRemoteError()) {
@@ -178,17 +182,42 @@ RetriableRpcStatus CoordinatorRpc::AnalyzeResponse(const Status& rpc_cb_status) 
   // errors -- from here on out, the result status will be the response error.
   if (result.status.ok() && resp_.has_error()) {
     result.status = StatusFromPB(resp_.error().status());
+    DCHECK(!result.status.ok());
   }
 
-  // If we get TABLET_NOT_FOUND, the replica we thought was leader has been
-  // deleted.
-  if (resp_.has_error() &&
-      resp_.error().code() == tserver::TabletServerErrorPB::TABLET_NOT_FOUND) {
-    result.result = RetriableRpcStatus::RESOURCE_NOT_FOUND;
-    return result;
+  if (resp_.has_error()) {
+    const auto code = resp_.error().code();
+    switch (code) {
+      // If we get TABLET_NOT_FOUND, the replica we thought was leader
+      // has been deleted.
+      case TabletServerErrorPB::TABLET_NOT_FOUND:
+      case TabletServerErrorPB::TABLET_FAILED:
+        result.result = RetriableRpcStatus::RESOURCE_NOT_FOUND;
+        return result;
+
+      case TabletServerErrorPB::TABLET_NOT_RUNNING:
+      case TabletServerErrorPB::THROTTLED:
+        result.result = RetriableRpcStatus::SERVICE_UNAVAILABLE;
+        return result;
+
+      case TabletServerErrorPB::NOT_THE_LEADER:
+        result.result = RetriableRpcStatus::REPLICA_NOT_LEADER;
+        return result;
+
+      case TabletServerErrorPB::TXN_ILLEGAL_STATE:
+        result.result = RetriableRpcStatus::NON_RETRIABLE_ERROR;
+        return result;
+
+      case TabletServerErrorPB::UNKNOWN_ERROR:
+      default:
+        // The rest is handled in the code below.
+        break;
+    }
   }
 
-  if (result.status.IsIllegalState() || result.status.IsAborted()) {
+  if (result.status.IsAborted() || result.status.IsIllegalState()) {
+    // This is to handle "Op aborted by new leader" Raft replication errors or
+    // non-a-Raft-leader errors.
     result.result = RetriableRpcStatus::REPLICA_NOT_LEADER;
     return result;
   }
