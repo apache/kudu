@@ -24,7 +24,6 @@
 #include <ostream>
 #include <string>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <glog/logging.h>
 #include <regex.h>
 #include <sasl/sasl.h>
@@ -36,6 +35,7 @@
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/rw_mutex.h"
+#include "kudu/util/string_case.h"
 
 #if defined(__APPLE__)
 // Almost all functions in the SASL API are marked as deprecated
@@ -446,10 +446,10 @@ Status EnableProtection(sasl_conn_t* sasl_conn,
 }
 
 SaslMechanism::Type SaslMechanism::value_of(const string& mech) {
-  if (boost::iequals(mech, "PLAIN")) {
+  if (iequals(mech, "PLAIN")) {
     return PLAIN;
   }
-  if (boost::iequals(mech, "GSSAPI")) {
+  if (iequals(mech, "GSSAPI")) {
     return GSSAPI;
   }
   return INVALID;

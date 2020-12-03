@@ -23,7 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
@@ -38,6 +37,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/user.h"
 
@@ -222,7 +222,7 @@ void HmsITestHarness::CheckTable(const string& database_name,
   }
   ASSERT_EQ(table->id(), hms_table.parameters[hms::HmsClient::kKuduTableIdKey]);
   ASSERT_EQ(table->client()->cluster_id(), hms_table.parameters[hms::HmsClient::kKuduClusterIdKey]);
-  ASSERT_TRUE(boost::iequals(table->name(),
+  ASSERT_TRUE(iequals(table->name(),
       hms_table.parameters[hms::HmsClient::kKuduTableNameKey]));
   ASSERT_EQ(HostPort::ToCommaSeparatedString(cluster->master_rpc_addrs()),
             hms_table.parameters[hms::HmsClient::kKuduMasterAddrsKey]);

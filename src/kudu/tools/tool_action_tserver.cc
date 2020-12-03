@@ -23,7 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -48,6 +47,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/init.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 DEFINE_bool(allow_missing_tserver, false, "If true, performs the action on the "
     "tserver even if it has not been registered with the master and has no "
@@ -129,7 +129,7 @@ Status ListTServers(const RunnerContext& context) {
   const vector<string> cols = strings::Split(FLAGS_columns, ",", strings::SkipEmpty());
   ListTabletServersRequestPB req;
   for (const auto& col : cols) {
-    if (boost::iequals(col, "state")) {
+    if (iequals(col, "state")) {
       req.set_include_states(true);
     }
   }
@@ -151,44 +151,44 @@ Status ListTServers(const RunnerContext& context) {
 
   for (const auto& column : cols) {
     vector<string> values;
-    if (boost::iequals(column, "uuid")) {
+    if (iequals(column, "uuid")) {
       for (const auto& server : servers) {
         values.emplace_back(server.instance_id().permanent_uuid());
       }
-    } else if (boost::iequals(column, "seqno")) {
+    } else if (iequals(column, "seqno")) {
       for (const auto& server : servers) {
         values.emplace_back(std::to_string(server.instance_id().instance_seqno()));
       }
-    } else if (boost::iequals(column, "rpc-addresses") ||
-               boost::iequals(column, "rpc_addresses")) {
+    } else if (iequals(column, "rpc-addresses") ||
+               iequals(column, "rpc_addresses")) {
       for (const auto& server : servers) {
         values.emplace_back(JoinMapped(server.registration().rpc_addresses(),
                                        hostport_to_string, ","));
       }
-    } else if (boost::iequals(column, "http-addresses") ||
-               boost::iequals(column, "http_addresses")) {
+    } else if (iequals(column, "http-addresses") ||
+               iequals(column, "http_addresses")) {
       for (const auto& server : servers) {
         values.emplace_back(JoinMapped(server.registration().http_addresses(),
                                        hostport_to_string, ","));
       }
-    } else if (boost::iequals(column, "version")) {
+    } else if (iequals(column, "version")) {
       for (const auto& server : servers) {
         values.emplace_back(server.registration().software_version());
       }
-    } else if (boost::iequals(column, "heartbeat")) {
+    } else if (iequals(column, "heartbeat")) {
       for (const auto& server : servers) {
         values.emplace_back(Substitute("$0ms", server.millis_since_heartbeat()));
       }
-    } else if (boost::iequals(column, "location")) {
+    } else if (iequals(column, "location")) {
       for (const auto& server : servers) {
         string loc = server.location();
         values.emplace_back(loc.empty() ? "<none>" : std::move(loc));
       }
-    } else if (boost::iequals(column, "start_time")) {
+    } else if (iequals(column, "start_time")) {
       for (const auto& server : servers) {
         values.emplace_back(StartTimeToString(server.registration()));
       }
-    } else if (boost::iequals(column, "state")) {
+    } else if (iequals(column, "state")) {
       for (const auto& server : servers) {
         values.emplace_back(TServerStatePB_Name(server.state()));
       }

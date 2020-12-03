@@ -62,4 +62,25 @@ TEST(TestStringCase, TestCapitalize) {
   ASSERT_EQ("Hibernate", word);
 }
 
+TEST(TestStringCase, TestIequals) {
+  const string foo = "foo";
+  const string capital = "Foo";
+  const string caps = "FOO";
+  const string mix = "FoO";
+  const string zero = "FO0";
+
+  ASSERT_TRUE(iequals(foo, capital));
+  ASSERT_TRUE(iequals(foo, caps));
+  ASSERT_TRUE(iequals(foo, mix));
+  ASSERT_TRUE(iequals(capital, mix));
+  ASSERT_TRUE(iequals(caps, foo));
+  ASSERT_TRUE(iequals(caps, capital));
+  ASSERT_TRUE(iequals(caps, mix));
+
+  ASSERT_FALSE(iequals(foo, zero));
+  ASSERT_FALSE(iequals(capital, zero));
+  ASSERT_FALSE(iequals(caps, zero));
+  ASSERT_FALSE(iequals(mix, zero));
+}
+
 } // namespace kudu

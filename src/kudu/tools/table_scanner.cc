@@ -27,7 +27,6 @@
 #include <memory>
 #include <set>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -72,6 +71,7 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::client::KuduValue;
 using kudu::client::KuduWriteOperation;
+using kudu::iequals;
 using std::endl;
 using std::map;
 using std::ostream;
@@ -120,7 +120,7 @@ static bool ValidateWriteType(const char* flag_name,
   const vector<string> allowed_values = { "insert", "upsert", "" };
   if (std::find_if(allowed_values.begin(), allowed_values.end(),
                    [&](const string& allowed_value) {
-                     return boost::iequals(allowed_value, flag_value);
+                     return iequals(allowed_value, flag_value);
                    }) != allowed_values.end()) {
     return true;
   }

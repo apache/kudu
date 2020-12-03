@@ -27,7 +27,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -52,6 +51,7 @@
 #include "kudu/util/init.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 DECLARE_bool(force);
 DECLARE_int64(timeout_ms);
@@ -149,43 +149,43 @@ Status ListMasters(const RunnerContext& context) {
 
   for (const auto& column : strings::Split(FLAGS_columns, ",", strings::SkipEmpty())) {
     vector<string> values;
-    if (boost::iequals(column, "uuid")) {
+    if (iequals(column.ToString(), "uuid")) {
       for (const auto& master : masters) {
         values.push_back(master.instance_id().permanent_uuid());
       }
-    } else if (boost::iequals(column, "cluster_id")) {
+    } else if (iequals(column.ToString(), "cluster_id")) {
       for (const auto& master : masters) {
         values.emplace_back(master.has_cluster_id() ? master.cluster_id() : "");
       }
-    } else if (boost::iequals(column, "seqno")) {
+    } else if (iequals(column.ToString(), "seqno")) {
       for (const auto& master : masters) {
         values.push_back(std::to_string(master.instance_id().instance_seqno()));
       }
-    } else if (boost::iequals(column, "rpc-addresses") ||
-               boost::iequals(column, "rpc_addresses")) {
+    } else if (iequals(column.ToString(), "rpc-addresses") ||
+               iequals(column.ToString(), "rpc_addresses")) {
       for (const auto& master : masters) {
         values.push_back(JoinMapped(master.registration().rpc_addresses(),
                          hostport_to_string, ","));
       }
-    } else if (boost::iequals(column, "http-addresses") ||
-               boost::iequals(column, "http_addresses")) {
+    } else if (iequals(column.ToString(), "http-addresses") ||
+               iequals(column.ToString(), "http_addresses")) {
       for (const auto& master : masters) {
         values.push_back(JoinMapped(master.registration().http_addresses(),
                                     hostport_to_string, ","));
       }
-    } else if (boost::iequals(column, "version")) {
+    } else if (iequals(column.ToString(), "version")) {
       for (const auto& master : masters) {
         values.push_back(master.registration().software_version());
       }
-    } else if (boost::iequals(column, "start_time")) {
+    } else if (iequals(column.ToString(), "start_time")) {
       for (const auto& master : masters) {
         values.emplace_back(StartTimeToString(master.registration()));
       }
-    } else if (boost::iequals(column, "role")) {
+    } else if (iequals(column.ToString(), "role")) {
       for (const auto& master : masters) {
         values.emplace_back(RaftPeerPB::Role_Name(master.role()));
       }
-    } else if (boost::iequals(column, "member_type")) {
+    } else if (iequals(column.ToString(), "member_type")) {
       for (const auto& master : masters) {
         values.emplace_back(RaftPeerPB::MemberType_Name(master.member_type()));
       }

@@ -26,7 +26,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -47,12 +46,14 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 using google::SetCommandLineOptionWithMode;
 using google::FlagSettingMode;
 using kudu::clock::BuiltInNtp;
 using kudu::cloud::InstanceDetector;
 using kudu::cloud::InstanceMetadata;
+using kudu::iequals;
 using kudu::Status;
 using std::string;
 using std::unique_ptr;
@@ -111,13 +112,13 @@ DEFINE_string(time_source,
               "environment.");
 TAG_FLAG(time_source, stable);
 DEFINE_validator(time_source, [](const char* flag_name, const string& value) {
-  if (boost::iequals(value, TIME_SOURCE_AUTO) ||
-      boost::iequals(value, TIME_SOURCE_NTP_SYNC_BUILTIN) ||
+  if (iequals(value, TIME_SOURCE_AUTO) ||
+      iequals(value, TIME_SOURCE_NTP_SYNC_BUILTIN) ||
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
-      boost::iequals(value, TIME_SOURCE_NTP_SYNC_SYSTEM) ||
+      iequals(value, TIME_SOURCE_NTP_SYNC_SYSTEM) ||
 #endif
-      boost::iequals(value, TIME_SOURCE_UNSYNC_SYSTEM) ||
-      boost::iequals(value, TIME_SOURCE_MOCK)) {
+      iequals(value, TIME_SOURCE_UNSYNC_SYSTEM) ||
+      iequals(value, TIME_SOURCE_MOCK)) {
     return true;
   }
   LOG(ERROR) << Substitute("unknown value for --$0 flag: '$1' "
@@ -452,7 +453,7 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
                                      vector<HostPort>* builtin_ntp_servers) {
   TimeSource result_time_source = TimeSource::UNKNOWN;
   vector<HostPort> result_builtin_ntp_servers;
-  if (boost::iequals(time_source_str, TIME_SOURCE_AUTO)) {
+  if (iequals(time_source_str, TIME_SOURCE_AUTO)) {
     InstanceDetector detector;
     unique_ptr<InstanceMetadata> md;
     const auto s = detector.Detect(&md);
@@ -499,15 +500,15 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
     SetCommandLineOptionWithMode("time_source",
                                  TimeSourceToString(result_time_source),
                                  FlagSettingMode::SET_FLAGS_DEFAULT);
-  } else if (boost::iequals(time_source_str, TIME_SOURCE_MOCK)) {
+  } else if (iequals(time_source_str, TIME_SOURCE_MOCK)) {
     result_time_source = TimeSource::MOCK;
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
-  } else if (boost::iequals(time_source_str, TIME_SOURCE_NTP_SYNC_SYSTEM)) {
+  } else if (iequals(time_source_str, TIME_SOURCE_NTP_SYNC_SYSTEM)) {
     result_time_source = TimeSource::NTP_SYNC_SYSTEM;
 #endif
-  } else if (boost::iequals(time_source_str, TIME_SOURCE_UNSYNC_SYSTEM)) {
+  } else if (iequals(time_source_str, TIME_SOURCE_UNSYNC_SYSTEM)) {
     result_time_source = TimeSource::UNSYNC_SYSTEM;
-  } else if (boost::iequals(time_source_str, TIME_SOURCE_NTP_SYNC_BUILTIN)) {
+  } else if (iequals(time_source_str, TIME_SOURCE_NTP_SYNC_BUILTIN)) {
     result_time_source = TimeSource::NTP_SYNC_BUILTIN;
   } else {
     return Status::InvalidArgument("invalid time source", time_source_str);

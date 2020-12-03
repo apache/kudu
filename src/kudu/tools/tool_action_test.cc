@@ -26,7 +26,6 @@
 #include <string>
 #include <utility>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
@@ -47,6 +46,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 DEFINE_string(serialization, "json", "Serialization method to be used by the "
               "control shell. Valid values are 'json' (protobuf serialized "
@@ -54,8 +54,8 @@ DEFINE_string(serialization, "json", "Serialization method to be used by the "
               "(four byte protobuf message length in big endian followed by "
               "the protobuf message itself).");
 DEFINE_validator(serialization, [](const char* /*n*/, const std::string& v) {
-  return boost::iequals(v, "pb") ||
-         boost::iequals(v, "json");
+  return kudu::iequals(v, "pb") ||
+         kudu::iequals(v, "json");
 });
 
 using kudu::cluster::ExternalDaemon;
@@ -324,10 +324,10 @@ Status RunControlShell(const RunnerContext& /*context*/) {
   RETRY_ON_EINTR(ret, dup2(STDERR_FILENO, STDOUT_FILENO));
   PCHECK(ret == STDOUT_FILENO);
   SubprocessProtocol::SerializationMode serde_mode;
-  if (boost::iequals(FLAGS_serialization, "json")) {
+  if (iequals(FLAGS_serialization, "json")) {
     serde_mode = SubprocessProtocol::SerializationMode::JSON;
   } else {
-    DCHECK(boost::iequals(FLAGS_serialization, "pb"));
+    DCHECK(iequals(FLAGS_serialization, "pb"));
     serde_mode = SubprocessProtocol::SerializationMode::PB;
   }
   SubprocessProtocol protocol(serde_mode,

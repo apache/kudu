@@ -26,7 +26,6 @@
 #include <tuple>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -44,9 +43,11 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/version_util.h"
 
 using kudu::rebalance::Rebalancer;
+using kudu::iequals;
 using std::cout;
 using std::endl;
 using std::make_shared;
@@ -157,7 +158,7 @@ static bool ValidateMoveSingleReplicas(const char* flag_name,
   const vector<string> allowed_values = { "auto", "enabled", "disabled" };
   if (std::find_if(allowed_values.begin(), allowed_values.end(),
                    [&](const string& allowed_value) {
-                     return boost::iequals(allowed_value, flag_value);
+                     return iequals(allowed_value, flag_value);
                    }) != allowed_values.end()) {
     return true;
   }
@@ -218,11 +219,11 @@ bool VersionSupportsRF1Movement(const string& version_str) {
 Status EvaluateMoveSingleReplicasFlag(const vector<string>& master_addresses,
                                       bool* move_single_replicas) {
   DCHECK(move_single_replicas);
-  if (!boost::iequals(FLAGS_move_single_replicas, "auto")) {
-    if (boost::iequals(FLAGS_move_single_replicas, "enabled")) {
+  if (!iequals(FLAGS_move_single_replicas, "auto")) {
+    if (iequals(FLAGS_move_single_replicas, "enabled")) {
       *move_single_replicas = true;
     } else {
-      DCHECK(boost::iequals(FLAGS_move_single_replicas, "disabled"));
+      DCHECK(iequals(FLAGS_move_single_replicas, "disabled"));
       *move_single_replicas = false;
     }
     return Status::OK();

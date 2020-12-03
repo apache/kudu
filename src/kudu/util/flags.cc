@@ -31,7 +31,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #ifdef TCMALLOC_ENABLED
@@ -595,11 +594,11 @@ GFlagsMap GetFlagsMap() {
 
 Status ParseTriState(const char* flag_name, const std::string& flag_value,
     TriStateFlag* tri_state) {
-  if (boost::iequals(flag_value, "required")) {
+  if (iequals(flag_value, "required")) {
     *tri_state = TriStateFlag::REQUIRED;
-  } else if (boost::iequals(flag_value, "optional")) {
+  } else if (iequals(flag_value, "optional")) {
     *tri_state = TriStateFlag::OPTIONAL;
-  } else if (boost::iequals(flag_value, "disabled")) {
+  } else if (iequals(flag_value, "disabled")) {
     *tri_state = TriStateFlag::DISABLED;
   } else {
     return Status::InvalidArgument(strings::Substitute(

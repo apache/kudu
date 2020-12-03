@@ -25,7 +25,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <glog/logging.h>
 #include <thrift/TApplicationException.h>
 #include <thrift/Thrift.h>
@@ -45,12 +44,14 @@
 #include "kudu/thrift/sasl_client_transport.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/string_case.h"
 
 using apache::thrift::TApplicationException;
 using apache::thrift::TException;
 using apache::thrift::protocol::TJSONProtocol;
 using apache::thrift::transport::TMemoryBuffer;
 using apache::thrift::transport::TTransportException;
+using kudu::iequals;
 using kudu::thrift::ClientOptions;
 using kudu::thrift::CreateClientProtocol;
 using kudu::thrift::SaslException;
@@ -196,7 +197,7 @@ Status HmsClient::Start() {
                  Substitute("failed to get Hive Metastore $0 configuration",
                             kDisallowIncompatibleColTypeChanges));
 
-  if (boost::iequals(disallow_incompatible_column_type_changes, "true")) {
+  if (iequals(disallow_incompatible_column_type_changes, "true")) {
     return Status::IllegalState(Substitute(
         "Hive Metastore configuration is invalid: $0 must be set to false",
         kDisallowIncompatibleColTypeChanges));
@@ -212,7 +213,7 @@ Status HmsClient::Start() {
                                           "true"),
                  Substitute("failed to get Hive Metastore $0 configuration",
                             kNotificationAddThriftObjects));
-  if (boost::iequals(thrift_objects_config, "false")) {
+  if (iequals(thrift_objects_config, "false")) {
     return Status::IllegalState(Substitute(
         "Hive Metastore configuration is invalid: $0 must be set to true",
         kNotificationAddThriftObjects));
@@ -413,7 +414,7 @@ bool HmsClient::IsSynchronized(const hive::Table& table) {
       FindWithDefault(table.parameters, hms::HmsClient::kExternalPurgeKey, "false");
   return table.tableType == hms::HmsClient::kManagedTable ||
          (table.tableType == hms::HmsClient::kExternalTable &&
-          boost::iequals(externalPurge, "true"));
+          iequals(externalPurge, "true"));
 }
 
 } // namespace hms

@@ -35,7 +35,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -132,6 +131,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -180,6 +180,7 @@ using kudu::fs::FsReport;
 using kudu::fs::WritableBlock;
 using kudu::hms::HmsCatalog;
 using kudu::hms::HmsClient;
+using kudu::iequals;
 using kudu::itest::MiniClusterFsInspector;
 using kudu::itest::TServerDetails;
 using kudu::log::Log;
@@ -4002,7 +4003,7 @@ void ValidateHmsEntries(HmsClient* hms_client,
   if (HmsClient::IsSynchronized(hms_table)) {
     shared_ptr<KuduTable> kudu_table;
     ASSERT_OK(kudu_client->OpenTable(Substitute("$0.$1", database_name, table_name), &kudu_table));
-    ASSERT_TRUE(boost::iequals(kudu_table->name(),
+    ASSERT_TRUE(iequals(kudu_table->name(),
                                hms_table.parameters[hms::HmsClient::kKuduTableNameKey]));
     ASSERT_EQ(kudu_table->id(), hms_table.parameters[HmsClient::kKuduTableIdKey]);
     ASSERT_EQ(kudu_table->client()->cluster_id(),

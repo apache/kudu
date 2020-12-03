@@ -38,7 +38,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rebalance/cluster_status.h" // IWYU pragma: keep
-#include "kudu/server/server_base.pb.h"
+#include "kudu/server/server_base.pb.h" // IWYU pragma: keep
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
 #include "kudu/tools/ksck_results.h"

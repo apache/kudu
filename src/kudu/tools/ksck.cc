@@ -20,19 +20,19 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
 #include <mutex>
 #include <set>
+#include <type_traits>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/basictypes.h"
@@ -159,8 +159,8 @@ bool IsNotAuthorizedMethodAccess(const Status& s) {
 
 // Return whether the format of the ksck results is non-JSON.
 bool IsNonJSONFormat() {
-  return boost::iequals(FLAGS_ksck_format, "plain_full") ||
-         boost::iequals(FLAGS_ksck_format, "plain_concise");
+  return iequals(FLAGS_ksck_format, "plain_full") ||
+         iequals(FLAGS_ksck_format, "plain_concise");
 }
 
 } // anonymous namespace
@@ -224,13 +224,13 @@ const char* FlagsCategoryToString(FlagsCategory category) {
 }
 
 Status StringToFlagsCategory(const string& str, FlagsCategory* category) {
-  if (boost::iequals(str, STR_FLAGS_CATEGORY_TIME_SOURCE)) {
+  if (iequals(str, STR_FLAGS_CATEGORY_TIME_SOURCE)) {
     if (category) {
       *category = FlagsCategory::TIME_SOURCE;
     }
     return Status::OK();
   }
-  if (boost::iequals(str, STR_FLAGS_CATEGORY_UNUSUAL)) {
+  if (iequals(str, STR_FLAGS_CATEGORY_UNUSUAL)) {
     if (category) {
       *category = FlagsCategory::UNUSUAL;
     }

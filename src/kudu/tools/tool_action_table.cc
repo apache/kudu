@@ -23,12 +23,10 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -60,6 +58,7 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 using google::protobuf::util::JsonStringToMessage;
 using google::protobuf::util::JsonParseOptions;
@@ -634,9 +633,9 @@ Status ModifyRangePartition(const RunnerContext& context, PartitionAction action
   const auto convert_bounds_type = [&] (const string& range_bound,
                                         const string& flags_range_bound_type,
                                         KuduTableCreator::RangePartitionBound* range_bound_type) {
-    string inclusive_bound = boost::iequals(flags_range_bound_type, "INCLUSIVE_BOUND") ?
+    string inclusive_bound = iequals(flags_range_bound_type, "INCLUSIVE_BOUND") ?
         "INCLUSIVE_BOUND" : "";
-    string exclusive_bound = boost::iequals(flags_range_bound_type, "EXCLUSIVE_BOUND") ?
+    string exclusive_bound = iequals(flags_range_bound_type, "EXCLUSIVE_BOUND") ?
         "EXCLUSIVE_BOUND" : "";
 
     if (inclusive_bound.empty() && exclusive_bound.empty()) {

@@ -57,4 +57,7 @@ inline void ToLowerCase(std::string* s) {
 // - 'hiBerNATe' -> 'Hibernate'
 void Capitalize(std::string* word);
 
+// True if all of the ASCII characters in the given strings match case insensitively.
+bool iequals(const std::string& a, const std::string& b);
+
 } // namespace kudu

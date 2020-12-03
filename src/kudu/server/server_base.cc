@@ -25,7 +25,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -87,6 +86,7 @@
 #endif
 #include "kudu/util/slice.h"
 #include "kudu/util/spinlock_profiling.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/user.h"
 #include "kudu/util/version_info.h"
@@ -669,10 +669,10 @@ Status ServerBase::DumpServerInfo(const string& path,
   ServerStatusPB status;
   RETURN_NOT_OK_PREPEND(GetStatusPB(&status), "could not get server status");
 
-  if (boost::iequals(format, "json")) {
+  if (iequals(format, "json")) {
     string json = JsonWriter::ToJson(status, JsonWriter::PRETTY);
     RETURN_NOT_OK(WriteStringToFile(options_.env, Slice(json), path));
-  } else if (boost::iequals(format, "pb")) {
+  } else if (iequals(format, "pb")) {
     // TODO: Use PB container format?
     RETURN_NOT_OK(pb_util::WritePBToPath(options_.env, path, status,
                                          pb_util::NO_SYNC)); // durability doesn't matter

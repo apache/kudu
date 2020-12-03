@@ -34,7 +34,6 @@
 #include <type_traits>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -52,6 +51,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/user.h"
 
 // Hard code OpenSSL flag values from OpenSSL 1.0.1e[1][2] when compiling
@@ -172,13 +172,13 @@ Status TlsContext::Init() {
   //   https://tools.ietf.org/html/rfc7525#section-3.3
   auto options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION;
 
-  if (boost::iequals(tls_min_protocol_, "TLSv1.2")) {
+  if (iequals(tls_min_protocol_, "TLSv1.2")) {
     RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_2_VERSION, "TLSv1.2"));
     options |= SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1;
-  } else if (boost::iequals(tls_min_protocol_, "TLSv1.1")) {
+  } else if (iequals(tls_min_protocol_, "TLSv1.1")) {
     RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_1_VERSION, "TLSv1.1"));
     options |= SSL_OP_NO_TLSv1;
-  } else if (!boost::iequals(tls_min_protocol_, "TLSv1")) {
+  } else if (!iequals(tls_min_protocol_, "TLSv1")) {
     return Status::InvalidArgument("unknown value provided for --rpc_tls_min_protocol flag",
                                    tls_min_protocol_);
   }

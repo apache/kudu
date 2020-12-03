@@ -17,6 +17,8 @@
 
 #include "kudu/util/string_case.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -30,9 +32,19 @@ namespace kudu {
 
 using std::string;
 
+static bool IsAscii(const string& string) {
+  for (size_t i = 0; i < string.size(); ++i) {
+    if (!ascii_isascii(string[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void SnakeToCamelCase(const std::string& snake_case,
                       std::string* camel_case) {
   DCHECK_NE(camel_case, &snake_case) << "Does not support in-place operation";
+  DCHECK(IsAscii(snake_case));
   camel_case->clear();
   camel_case->reserve(snake_case.size());
 
@@ -54,6 +66,7 @@ void SnakeToCamelCase(const std::string& snake_case,
 
 void ToUpperCase(const std::string& string,
                  std::string* out) {
+  DCHECK(IsAscii(string));
   if (out != &string) {
     *out = string;
   }
@@ -63,6 +76,7 @@ void ToUpperCase(const std::string& string,
 
 void ToLowerCase(const std::string& string,
                  std::string* out) {
+  DCHECK(IsAscii(string));
   if (out != &string) {
     *out = string;
   }
@@ -71,6 +85,7 @@ void ToLowerCase(const std::string& string,
 }
 
 void Capitalize(string* word) {
+  DCHECK(IsAscii(*word));
   uint32_t size = word->size();
   if (size == 0) {
     return;
@@ -81,6 +96,20 @@ void Capitalize(string* word) {
   for (int i = 1; i < size; i++) {
     (*word)[i] = tolower((*word)[i]);
   }
+}
+
+bool iequals(const string& a, const string& b) {
+  DCHECK(IsAscii(a));
+  DCHECK(IsAscii(b));
+  if (b.size() != a.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (ascii_tolower(a[i]) != ascii_tolower(b[i])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 } // namespace kudu

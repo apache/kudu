@@ -28,12 +28,11 @@
 #include <numeric>
 #include <stack>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 // IWYU pragma: no_include <yaml-cpp/node/impl.h>
@@ -87,6 +86,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/yamlreader.h"
 
 DEFINE_bool(force, false, "If true, allows the set_flag command to set a flag "
@@ -712,13 +712,13 @@ Status DumpMemTrackers(const string& address, uint16_t default_port) {
   rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
   RETURN_NOT_OK(proxy->DumpMemTrackers(req, &resp, &rpc));
 
-  if (boost::iequals(FLAGS_memtracker_output, "json")) {
+  if (iequals(FLAGS_memtracker_output, "json")) {
     cout << JsonWriter::ToJson(resp.root_tracker(), JsonWriter::Mode::PRETTY)
          << endl;
-  } else if (boost::iequals(FLAGS_memtracker_output, "json_compact")) {
+  } else if (iequals(FLAGS_memtracker_output, "json_compact")) {
     cout << JsonWriter::ToJson(resp.root_tracker(), JsonWriter::Mode::COMPACT)
          << endl;
-  } else if (boost::iequals(FLAGS_memtracker_output, "table")) {
+  } else if (iequals(FLAGS_memtracker_output, "table")) {
     DataTable table({ "id", "parent_id", "limit",
                       "current consumption", "peak_consumption" });
     const auto& root = resp.root_tracker();
@@ -875,15 +875,15 @@ void DataTable::AddColumn(string name, vector<string> column) {
 }
 
 Status DataTable::PrintTo(ostream& out) const {
-  if (boost::iequals(FLAGS_format, "pretty")) {
+  if (iequals(FLAGS_format, "pretty")) {
     PrettyPrintTable(column_names_, columns_, out);
-  } else if (boost::iequals(FLAGS_format, "space")) {
+  } else if (iequals(FLAGS_format, "space")) {
     PrintTable(columns_, " ", out);
-  } else if (boost::iequals(FLAGS_format, "tsv")) {
+  } else if (iequals(FLAGS_format, "tsv")) {
     PrintTable(columns_, "	", out);
-  } else if (boost::iequals(FLAGS_format, "csv")) {
+  } else if (iequals(FLAGS_format, "csv")) {
     PrintTable(columns_, ",", out);
-  } else if (boost::iequals(FLAGS_format, "json")) {
+  } else if (iequals(FLAGS_format, "json")) {
     JsonPrintTable(column_names_, columns_, out);
   } else {
     return Status::InvalidArgument("unknown format (--format)", FLAGS_format);

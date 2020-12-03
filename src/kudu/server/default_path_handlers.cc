@@ -28,7 +28,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -59,6 +58,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/process_memory.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/web_callback_registry.h"
 
 #ifdef TCMALLOC_ENABLED
@@ -67,6 +67,7 @@
 
 using google::CommandLineFlagInfo;
 using google::GetCommandLineFlagInfo;
+using kudu::iequals;
 using std::ifstream;
 using std::ostringstream;
 using std::shared_ptr;
@@ -89,9 +90,9 @@ TAG_FLAG(metrics_default_level, advanced);
 TAG_FLAG(metrics_default_level, runtime);
 TAG_FLAG(metrics_default_level, evolving);
 DEFINE_validator(metrics_default_level, [](const char* flag_name, const string& value) {
-  if (boost::iequals(value, "debug") ||
-      boost::iequals(value, "info") ||
-      boost::iequals(value, "warn")) {
+  if (iequals(value, "debug") ||
+      iequals(value, "info") ||
+      iequals(value, "warn")) {
     return true;
   }
   LOG(ERROR) << Substitute("unknown value for --$0 flag: '$1' "
@@ -302,7 +303,7 @@ static void FillSecurityConfigs(EasyJson* output) {
   EasyJson rpc_encryption = configs.PushBack(EasyJson::kObject);
   rpc_encryption[kName] = "RPC Encryption";
   rpc_encryption[kValue] = FLAGS_rpc_encryption;
-  rpc_encryption[kSecure] = boost::iequals(FLAGS_rpc_encryption, "required");
+  rpc_encryption[kSecure] = iequals(FLAGS_rpc_encryption, "required");
   rpc_encryption[kId] = "rpc_encryption";
   rpc_encryption[kComment] =
       "Configure with --rpc_encryption. Most secure value is 'required'.";
@@ -310,7 +311,7 @@ static void FillSecurityConfigs(EasyJson* output) {
   EasyJson rpc_authentication = configs.PushBack(EasyJson::kObject);
   rpc_authentication[kName] = "RPC Authentication";
   rpc_authentication[kValue] = FLAGS_rpc_authentication;
-  rpc_authentication[kSecure] = boost::iequals(FLAGS_rpc_authentication, "required");
+  rpc_authentication[kSecure] = iequals(FLAGS_rpc_authentication, "required");
   rpc_authentication[kId] = "rpc_authentication";
   rpc_authentication[kComment] =
       "Configure with --rpc_authentication. Most secure value is 'required'.";
@@ -326,7 +327,7 @@ static void FillSecurityConfigs(EasyJson* output) {
   EasyJson webserver_redaction = configs.PushBack(EasyJson::kObject);
   webserver_redaction[kName] = "Webserver Redaction";
   webserver_redaction[kValue] = FLAGS_redact;
-  webserver_redaction[kSecure] = boost::iequals(FLAGS_redact, "all");
+  webserver_redaction[kSecure] = iequals(FLAGS_redact, "all");
   webserver_redaction[kId] = "webserver_redaction";
   webserver_redaction[kComment] =
       "Configure with --redact. Most secure value is 'all'.";

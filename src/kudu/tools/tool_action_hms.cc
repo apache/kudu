@@ -29,7 +29,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -50,6 +49,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 DECLARE_bool(force);
 DECLARE_bool(hive_metastore_sasl_enabled);
@@ -271,39 +271,39 @@ Status PrintHMSTables(vector<hive::Table> tables, ostream& out) {
   DataTable table({});
   for (const auto& column : strings::Split(FLAGS_columns, ",", strings::SkipEmpty())) {
     vector<string> values;
-    if (boost::iequals(column, "database")) {
+    if (iequals(column.ToString(), "database")) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.dbName);
       }
-    } else if (boost::iequals(column, "table")) {
+    } else if (iequals(column.ToString(), "table")) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.tableName);
       }
-    } else if (boost::iequals(column, "type")) {
+    } else if (iequals(column.ToString(), "type")) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.tableType);
       }
-    } else if (boost::iequals(column, "owner")) {
+    } else if (iequals(column.ToString(), "owner")) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.owner);
       }
-    } else if (boost::iequals(column, HmsClient::kKuduTableNameKey)) {
+    } else if (iequals(column.ToString(), HmsClient::kKuduTableNameKey)) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.parameters[HmsClient::kKuduTableNameKey]);
       }
-    } else if (boost::iequals(column, HmsClient::kKuduTableIdKey)) {
+    } else if (iequals(column.ToString(), HmsClient::kKuduTableIdKey)) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.parameters[HmsClient::kKuduTableIdKey]);
       }
-    } else if (boost::iequals(column, HmsClient::kKuduClusterIdKey)) {
+    } else if (iequals(column.ToString(), HmsClient::kKuduClusterIdKey)) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.parameters[HmsClient::kKuduClusterIdKey]);
       }
-    } else if (boost::iequals(column, HmsClient::kKuduMasterAddrsKey)) {
+    } else if (iequals(column.ToString(), HmsClient::kKuduMasterAddrsKey)) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.parameters[HmsClient::kKuduMasterAddrsKey]);
       }
-    } else if (boost::iequals(column, HmsClient::kStorageHandlerKey)) {
+    } else if (iequals(column.ToString(), HmsClient::kStorageHandlerKey)) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.parameters[HmsClient::kStorageHandlerKey]);
       }
