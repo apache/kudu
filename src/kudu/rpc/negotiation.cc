@@ -308,16 +308,23 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
       s.IsNotAuthorized());
 
   if (is_bad || FLAGS_rpc_trace_negotiation) {
-    string msg = Trace::CurrentTrace()->DumpToString();
+    std::string msg;
+    if (FLAGS_rpc_trace_negotiation) {
+      msg = Trace::CurrentTrace()->DumpToString();
+    } else {
+      msg = Substitute("$0 connection : $1",
+                       conn->direction() == ConnectionDirection::SERVER ? "Server" : "Client",
+                       conn->ToString());
+    }
     if (is_bad) {
-      LOG(WARNING) << "Failed RPC negotiation. Trace:\n" << msg;
+      KLOG_EVERY_N_SECS(WARNING, 300) << "Failed RPC negotiation. Details: " << msg;
     } else {
       LOG(INFO) << "RPC negotiation tracing enabled. Trace:\n" << msg;
     }
   }
 
   if (conn->direction() == ConnectionDirection::SERVER && s.IsNotAuthorized()) {
-    LOG(WARNING) << "Unauthorized connection attempt: " << s.message().ToString();
+    KLOG_EVERY_N_SECS(WARNING, 300) << "Unauthorized connection attempt: " << s.message().ToString();
   }
   conn->CompleteNegotiation(std::move(s), std::move(rpc_error));
 }
