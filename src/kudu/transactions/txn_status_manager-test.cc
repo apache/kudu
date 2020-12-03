@@ -471,7 +471,13 @@ TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
   ASSERT_OK(txn_manager_->BeginTransaction(4, kOwner, nullptr, &ts_error));
 
   // Make the TxnStatusManager start from scratch.
-  ASSERT_OK(RestartReplica());
+  {
+    ASSERT_OK(RestartReplica());
+    decltype(txn_manager_) txn_manager_reloaded(
+        new TxnStatusManager(tablet_replica_.get()));
+    ASSERT_OK(txn_manager_reloaded->LoadFromTablet());
+    txn_manager_ = std::move(txn_manager_reloaded);
+  }
 
   // Committed, aborted, and in-flight transactions should be known to the
   // TxnStatusManager even after restarting the underlying replica and
