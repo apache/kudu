@@ -1839,7 +1839,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   // takes place between requests.
   // Lock ordering: update_lock_ must be acquired before lock_.
   std::unique_lock<simple_spinlock> update_guard(update_lock_, std::defer_lock);
-  if (FLAGS_enable_leader_failure_detection) {
+  if (FLAGS_enable_leader_failure_detection && !request->ignore_live_leader()) {
     update_guard.try_lock();
   } else {
     // If failure detection is not enabled, then we can't just reject the vote,
