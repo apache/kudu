@@ -1,0 +1,147 @@
+--- Makefile.am.orig	2016-09-16 13:39:40.053027310 -0700
++++ Makefile.am	2016-09-16 13:36:27.899844745 -0700
+@@ -52,132 +52,6 @@
+ 
+ # The libraries libglog depends on.
+ COMMON_LIBS = $(PTHREAD_LIBS) $(GFLAGS_LIBS) $(UNWIND_LIBS)
+-# Compile switches for our unittest.
+-TEST_CFLAGS = $(GTEST_CFLAGS) $(GMOCK_CFLAGS) $(GFLAGS_CFLAGS) \
+-              $(MINGW_CFLAGS) $(AM_CXXFLAGS)
+-# Libraries for our unittest.
+-TEST_LIBS = $(GTEST_LIBS) $(GMOCK_LIBS) $(GFLAGS_LIBS)
+-
+-## unittests you want to run when people type 'make check'.
+-## TESTS is for binary unittests, check_SCRIPTS for script-based unittests.
+-## TESTS_ENVIRONMENT sets environment variables for when you run unittest,
+-## but it only seems to take effect for *binary* unittests (argh!)
+-TESTS =
+-TESTS_ENVIRONMENT =
+-check_SCRIPTS =
+-# Every time you add a unittest to check_SCRIPTS, add it here too
+-noinst_SCRIPTS =
+-# Binaries used for script-based unittests.
+-TEST_BINARIES =
+-
+-TESTS += logging_unittest
+-logging_unittest_SOURCES = $(gloginclude_HEADERS) \
+-                           src/logging_unittest.cc \
+-                           src/config_for_unittests.h \
+-                           src/mock-log.h
+-nodist_logging_unittest_SOURCES = $(nodist_gloginclude_HEADERS)
+-logging_unittest_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-logging_unittest_LDFLAGS = $(PTHREAD_CFLAGS)
+-logging_unittest_LDADD = libglog.la $(COMMON_LIBS) $(TEST_LIBS)
+-
+-check_SCRIPTS += logging_striplog_test_sh
+-noinst_SCRIPTS += src/logging_striplog_test.sh
+-logging_striplog_test_sh: logging_striptest0 logging_striptest2 logging_striptest10
+-	$(top_srcdir)/src/logging_striplog_test.sh
+-
+-check_SCRIPTS += demangle_unittest_sh
+-noinst_SCRIPTS += src/demangle_unittest.sh
+-demangle_unittest_sh: demangle_unittest
+-	$(builddir)/demangle_unittest  # force to create lt-demangle_unittest
+-	$(top_srcdir)/src/demangle_unittest.sh
+-
+-check_SCRIPTS += signalhandler_unittest_sh
+-noinst_SCRIPTS += src/signalhandler_unittest.sh
+-signalhandler_unittest_sh: signalhandler_unittest
+-	$(builddir)/signalhandler_unittest  # force to create lt-signalhandler_unittest
+-	$(top_srcdir)/src/signalhandler_unittest.sh
+-
+-TEST_BINARIES += logging_striptest0
+-logging_striptest0_SOURCES = $(gloginclude_HEADERS) \
+-                             src/logging_striptest_main.cc
+-nodist_logging_striptest0_SOURCES = $(nodist_gloginclude_HEADERS)
+-logging_striptest0_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-logging_striptest0_LDFLAGS = $(PTHREAD_CFLAGS)
+-logging_striptest0_LDADD = libglog.la $(COMMON_LIBS)
+-
+-TEST_BINARIES += logging_striptest2
+-logging_striptest2_SOURCES = $(gloginclude_HEADERS) \
+-                             src/logging_striptest2.cc
+-nodist_logging_striptest2_SOURCES = $(nodist_gloginclude_HEADERS)
+-logging_striptest2_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-logging_striptest2_LDFLAGS = $(PTHREAD_CFLAGS)
+-logging_striptest2_LDADD = libglog.la $(COMMON_LIBS)
+-
+-TEST_BINARIES += logging_striptest10
+-logging_striptest10_SOURCES = $(gloginclude_HEADERS) \
+-                              src/logging_striptest10.cc
+-nodist_logging_striptest10_SOURCES = $(nodist_gloginclude_HEADERS)
+-logging_striptest10_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-logging_striptest10_LDFLAGS = $(PTHREAD_CFLAGS)
+-logging_striptest10_LDADD = libglog.la $(COMMON_LIBS)
+-
+-TESTS += demangle_unittest
+-demangle_unittest_SOURCES = $(gloginclude_HEADERS) \
+-                            src/demangle_unittest.cc
+-nodist_demangle_unittest_SOURCES = $(nodist_gloginclude_HEADERS)
+-demangle_unittest_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-demangle_unittest_LDFLAGS = $(PTHREAD_CFLAGS)
+-demangle_unittest_LDADD = libglog.la $(COMMON_LIBS) $(TEST_LIBS)
+-
+-TESTS += stacktrace_unittest
+-stacktrace_unittest_SOURCES = $(gloginclude_HEADERS) \
+-                              src/stacktrace_unittest.cc
+-nodist_stacktrace_unittest_SOURCES = $(nodist_gloginclude_HEADERS)
+-stacktrace_unittest_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-stacktrace_unittest_LDFLAGS = $(PTHREAD_CFLAGS)
+-stacktrace_unittest_LDADD = libglog.la $(COMMON_LIBS)
+-
+-TESTS += symbolize_unittest
+-symbolize_unittest_SOURCES = $(gloginclude_HEADERS) \
+-                              src/symbolize_unittest.cc
+-nodist_symbolize_unittest_SOURCES = $(nodist_gloginclude_HEADERS)
+-symbolize_unittest_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-symbolize_unittest_LDFLAGS = $(PTHREAD_CFLAGS)
+-symbolize_unittest_LDADD = libglog.la $(COMMON_LIBS) $(TEST_LIBS)
+-
+-TESTS += stl_logging_unittest
+-stl_logging_unittest_SOURCES = $(gloginclude_HEADERS) \
+-                               src/stl_logging_unittest.cc
+-nodist_stl_logging_unittest_SOURCES = $(nodist_gloginclude_HEADERS)
+-stl_logging_unittest_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-stl_logging_unittest_LDFLAGS = $(PTHREAD_CFLAGS)
+-stl_logging_unittest_LDADD = libglog.la $(COMMON_LIBS) $(TEST_LIBS)
+-
+-TEST_BINARIES += signalhandler_unittest
+-signalhandler_unittest_SOURCES = $(gloginclude_HEADERS) \
+-                               src/signalhandler_unittest.cc
+-nodist_signalhandler_unittest_SOURCES = $(nodist_gloginclude_HEADERS)
+-signalhandler_unittest_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-signalhandler_unittest_LDFLAGS = $(PTHREAD_CFLAGS)
+-signalhandler_unittest_LDADD = libglog.la $(COMMON_LIBS) $(TEST_LIBS)
+-
+-TESTS += utilities_unittest
+-utilities_unittest_SOURCES = $(gloginclude_HEADERS) \
+-                             src/utilities_unittest.cc
+-nodist_utilities_unittest_SOURCES = $(nodist_gloginclude_HEADERS)
+-utilities_unittest_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-utilities_unittest_LDFLAGS = $(PTHREAD_CFLAGS)
+-utilities_unittest_LDADD = libglog.la $(COMMON_LIBS) $(TEST_LIBS)
+-
+-if HAVE_GMOCK
+-TESTS += mock_log_test
+-mock_log_test_SOURCES = $(gloginclude_HEADERS) \
+-                        src/mock-log_test.cc
+-nodist_mock_log_test_SOURCES = $(nodist_gloginclude_HEADERS)
+-mock_log_test_CXXFLAGS = $(PTHREAD_CFLAGS) $(TEST_CFLAGS)
+-mock_log_test_LDFLAGS = $(PTHREAD_CFLAGS)
+-mock_log_test_LDADD = libglog.la $(COMMON_LIBS) $(TEST_LIBS)
+-endif
+ 
+ ## vvvv RULES TO MAKE THE LIBRARIES, BINARIES, AND UNITTESTS
+ 
+@@ -212,11 +86,6 @@
+ 
+ ## ^^^^ END OF RULES TO MAKE THE LIBRARIES, BINARIES, AND UNITTESTS
+ 
+-
+-## This should always include $(TESTS), but may also include other
+-## binaries that you compile but don't want automatically installed.
+-noinst_PROGRAMS = $(TESTS) $(TEST_BINARIES)
+-
+ rpm: dist-gzip packages/rpm.sh packages/rpm/rpm.spec
+ 	@cd packages && ./rpm.sh ${PACKAGE} ${VERSION}
+ 
