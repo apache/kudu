@@ -2,7 +2,7 @@
 title: Apache Kudu Administration
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2020-09-03 09:01:38 +0200'
+last_updated: 'Last updated 2020-12-01 12:29:41 -0800'
 ---
 <!--
 
@@ -180,7 +180,8 @@ during normal operation.</p>
 but may not be monitored under normal circumstances.</p>
 </li>
 <li>
-<p><code>warn</code> - Metrics which can often indicate operational oddities, which may need more investigation.</p>
+<p><code>warn</code> - Metrics which can often indicate operational oddities that may need
+more investigation.</p>
 </li>
 </ul>
 </div>
@@ -194,6 +195,19 @@ but may not be monitored under normal circumstances.</p>
 <div class="content">
 <pre class="highlight"><code class="language-bash" data-lang="bash">$ curl -s 'http://example-ts:8050/metrics?include_schema=1&amp;metrics=connections_accepted'</code></pre>
 </div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+See the <code><a href="metrics_reference.html">metrics reference</a></code>
+page for more information on the available metrics.
+</td>
+</tr>
+</table>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -316,13 +330,15 @@ single node failure. However, clusters can be vulnerable to correlated failures
 of multiple nodes. For example, all of the physical hosts on the same rack in
 a datacenter may become unavailable simultaneously if the top-of-rack switch
 fails. Kudu&#8217;s rack awareness feature provides protection from some kinds of
-correlated failures, like the failure of a single rack in a datacenter.</p>
+correlated failures, like the failure of a whole rack in a datacenter. Rack
+awareness increases the availability of a Kudu cluster if there are at least
+three different <em>locations</em> defined in the cluster.</p>
 </div>
 <div class="paragraph">
-<p>The first element of Kudu&#8217;s rack awareness feature is location assignment. When
-a tablet server or client registers with a master, the master assigns it a
-location. A location is a <code>/</code>-separated string that begins with a <code>/</code> and where
-each <code>/</code>-separated component consists of characters from the set
+<p>The first element of Kudu&#8217;s rack awareness feature is <em>location assignment</em>.
+When a tablet server or client registers with a master, the master assigns it a
+<em>location</em>. A location is a <code>/</code>-separated string that begins with a <code>/</code> and
+where each <code>/</code>-separated component consists of characters from the set
 <code>[a-zA-Z0-9_-.]</code>. For example, <code>/dc-0/rack-09</code> is a valid location, while
 <code>rack-04</code> and <code>/rack=1</code> are not valid locations. Thus location strings resemble
 absolute UNIX file paths where characters in directory and file names are
@@ -335,7 +351,7 @@ the location for the tablet server or client. Make sure that all Kudu masters
 are using the same location mapping command.</p>
 </div>
 <div class="paragraph">
-<p>The second element of Kudu&#8217;s rack awareness feature is the placement policy,
+<p>The second element of Kudu&#8217;s rack awareness feature is the <em>placement policy</em>,
 which is</p>
 </div>
 <div class="literalblock">
@@ -356,6 +372,12 @@ location <code>/L0</code>. As another example, if a tablet has replicas on table
 <code>D</code> in order to comply with the placement policy.</p>
 </div>
 <div class="paragraph">
+<p>It&#8217;s necessary to have at least three locations defined in a Kudu cluster to
+improve its high availability with the location awareness feature. If there are
+only two or just one location defined in a Kudu cluster, any tablet will
+inevitably have a majority of its replicas placed in a single location.</p>
+</div>
+<div class="paragraph">
 <p>In the case where it is impossible to place replicas in a way that complies with
 the placement policy, Kudu will violate the policy and place a replica anyway.
 For example, using the setup described in the previous paragraph, if a tablet
@@ -371,8 +393,8 @@ moved to comply with the placement policy. See
 for more information.</p>
 </div>
 <div class="paragraph">
-<p>The third and final element of Kudu&#8217;s rack awareness feature is the use of
-client locations to find "nearby" servers. As mentioned, the masters also
+<p>The third and final element of Kudu&#8217;s rack awareness feature is the <em>use of
+client locations to find "nearby" servers</em>. As mentioned, the masters also
 assign a location to clients when they connect to the cluster. The client
 (whether Java, C&#43;&#43;, or Python) uses its own location and the locations of
 tablet servers in the cluster to prefer "nearby" replicas when scanning in
@@ -3112,6 +3134,10 @@ line tool that expects a list of Kudu master RPC addresses.
       <li>
 
           <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="metrics_reference.html">Kudu Metrics Reference</a> 
       </li> 
       <li>
 

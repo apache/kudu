@@ -12,3 +12,7 @@ vendor/
 # htmlproof creates this tmp dir
 tmp
 
+# Files which can be left around when swithching
+# between the gh-pages and source branches.
+thirdparty/
+www/

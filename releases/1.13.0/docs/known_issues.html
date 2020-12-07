@@ -2,7 +2,7 @@
 title: Known Issues and Limitations
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2020-08-24 21:48:24 +0200'
+last_updated: 'Last updated 2020-12-01 12:29:41 -0800'
 ---
 <!--
 
@@ -64,11 +64,13 @@ composite-key encoding done by Kudu.</p>
 <div class="ulist">
 <ul>
 <li>
-<p>CHAR, DATE, and complex types like ARRAY, MAP, and STRUCT are not supported.</p>
+<p><code>CHAR</code> and complex types like <code>ARRAY</code>, <code>MAP</code>, and <code>STRUCT</code> are not yet
+supported.</p>
 </li>
 <li>
 <p>Type, nullability and type attributes (i.e. precision and scale of <code>DECIMAL</code>,
-length of <code>VARCHAR</code>)of existing columns cannot be changed by altering the table.</p>
+length of <code>VARCHAR</code>) of existing columns cannot be changed by altering the
+table.</p>
 </li>
 <li>
 <p>Tables can have a maximum of 300 columns by default.</p>
@@ -107,7 +109,7 @@ length of <code>VARCHAR</code>)of existing columns cannot be changed by altering
 <p>Secondary indexes are not supported.</p>
 </li>
 <li>
-<p>Multi-row transactions are not supported.</p>
+<p>Multi-row transactions are not yet supported.</p>
 </li>
 <li>
 <p>Relational features, like foreign keys, are not supported.</p>
@@ -158,9 +160,6 @@ intervention to be repaired.</p>
 <div class="ulist">
 <ul>
 <li>
-<p>Rolling restart is not supported.</p>
-</li>
-<li>
 <p>Recommended maximum point-to-point latency within a Kudu cluster is 20 milliseconds.</p>
 </li>
 <li>
@@ -191,18 +190,11 @@ and ideally more than 16 GiB when approaching the data and tablet <a href="#_sca
 <p>Write ahead logs (WAL) can only be stored on one disk.</p>
 </li>
 <li>
-<p>Tablet servers cannot be gracefully decommissioned.</p>
-</li>
-<li>
 <p>Tablet servers can’t change address/port.</p>
 </li>
 <li>
 <p>Kudu has a hard requirement on having up-to-date NTP. Kudu masters and tablet servers
 will crash when out of sync.</p>
-</li>
-<li>
-<p>Kudu releases are only tested with NTP. Other time synchronization providers like Chrony
-may or may not work.</p>
 </li>
 </ul>
 </div>
@@ -413,6 +405,10 @@ issue has been addressed in 1.10.1 and 1.11.1 patch releases correspondingly
       <li>
 
           <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="metrics_reference.html">Kudu Metrics Reference</a> 
       </li> 
       <li>
 <span class="active-toc">Known Issues and Limitations</span>
