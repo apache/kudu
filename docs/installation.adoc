@@ -85,7 +85,7 @@ Below are the steps for each supported operating system to build Kudu from  sour
 
 [[rhel_from_source]]
 === RHEL or CentOS
-RHEL or CentOS 7.6 or later is required to build Kudu from source. To build
+RHEL or CentOS 7.0 or later is required to build Kudu from source. To build
 on a version older than 8.0, the Red Hat Developer Toolset must be installed
 (in order to have access to a C++17 capable compiler).
 
