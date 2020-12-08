@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <thread>
@@ -93,6 +94,7 @@ using kudu::tserver::ParticipantOpPB;
 using kudu::tserver::ParticipantRequestPB;
 using kudu::tserver::ParticipantResponsePB;
 using kudu::tserver::TabletServerAdminServiceProxy;
+using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::WriteRequestPB;
 using std::string;
 using std::thread;
@@ -129,10 +131,14 @@ Status ParticipateInTransaction(TabletServerAdminServiceProxy* admin_proxy,
 
 Status ParticipateInTransactionCheckResp(TabletServerAdminServiceProxy* admin_proxy,
                                          const string& tablet_id, int64_t txn_id,
-                                         ParticipantOpPB::ParticipantOpType type) {
+                                         ParticipantOpPB::ParticipantOpType type,
+                                         TabletServerErrorPB::Code* code = nullptr) {
   ParticipantResponsePB resp;
   RETURN_NOT_OK(ParticipateInTransaction(admin_proxy, tablet_id, txn_id, type, &resp));
   if (resp.has_error()) {
+    if (code) {
+      *code = resp.error().code();
+    }
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();
@@ -506,7 +512,7 @@ TEST_F(TxnParticipantITest, TestProxyBasicCalls) {
   }
 }
 
-TEST_F(TxnParticipantITest, TestProxyInvalidStatesInCommitSequence) {
+TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
@@ -515,95 +521,135 @@ TEST_F(TxnParticipantITest, TestProxyInvalidStatesInCommitSequence) {
 
   // Begin after already beginning.
   const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
-  ASSERT_OK(ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN));
-  // TODO(awong): IllegalState error codes may be easily misconstrued with
-  // errors coming from Raft. We should make the participants return something
-  // like InvalidArgument if there's an unexpected state.
-  // TODO(awong): make repeated, idempotent return OK instead of an error.
-  Status s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_OK(ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  }
+  // TODO(awong): make repeated, idempotent return OK instead of an error? Or
+  // return a different error code so callers can distinguish between a benign
+  // error.
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
 
   // We can't finalize the commit without beginning to commit first.
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
 
   // Start commititng and ensure we can't start another transaction.
-  ASSERT_OK(ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT));
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_OK(ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT, &code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  }
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
 
   // Finalize the commit and ensure we can do nothing else.
-  ASSERT_OK(ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT));
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_OK(ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, &code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  }
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
 }
 
-TEST_F(TxnParticipantITest, TestProxyInvalidStatesInAbortSequence) {
+TEST_F(TxnParticipantITest, TestProxyIllegalStatesInAbortSequence) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
   auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
 
-  // Begin after already beginning.
+  // Try our illegal ops when our transaction is open.
   const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
   ASSERT_OK(ParticipateInTransactionCheckResp(
       admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN));
-  // TODO(awong): IllegalState error codes may be easily misconstrued with
-  // errors coming from Raft. We should make the participants return something
-  // like InvalidArgument if there's an unexpected state.
   // TODO(awong): make repeated, idempotent return OK instead of an error.
-  Status s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
 
   // Abort the transaction and ensure we can do nothing else.
-  ASSERT_OK(ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN));
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-
-  s = ParticipateInTransactionCheckResp(
-      admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_OK(ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN, &code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  }
+  for (auto type : { ParticipantOpPB::ABORT_TXN,
+                     ParticipantOpPB::FINALIZE_COMMIT,
+                     ParticipantOpPB::BEGIN_TXN,
+                     ParticipantOpPB::BEGIN_COMMIT}) {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, type, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
 }
 
 TEST_F(TxnParticipantITest, TestProxyNonLeader) {

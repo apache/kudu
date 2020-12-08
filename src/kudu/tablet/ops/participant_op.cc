@@ -36,6 +36,7 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_participant.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -48,6 +49,7 @@ using kudu::consensus::OpId;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::ParticipantOpPB;
+using kudu::tserver::TabletServerErrorPB;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
@@ -91,20 +93,31 @@ string ParticipantOpState::ToString() const {
       ParticipantOpPB::ParticipantOpType_Name(request_->op().type()));
 }
 
-Status ParticipantOpState::ValidateOp() const {
+Status ParticipantOpState::ValidateOp() {
   const auto& op = request()->op();
   DCHECK(txn_);
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  Status s;
   switch (op.type()) {
     case ParticipantOpPB::BEGIN_TXN:
-      return txn_->ValidateBeginTransaction();
+      s = txn_->ValidateBeginTransaction(&code);
+      break;
     case ParticipantOpPB::BEGIN_COMMIT:
-      return txn_->ValidateBeginCommit();
+      s = txn_->ValidateBeginCommit(&code);
+      break;
     case ParticipantOpPB::FINALIZE_COMMIT:
-      return txn_->ValidateFinalize();
+      s = txn_->ValidateFinalize(&code);
+      break;
     case ParticipantOpPB::ABORT_TXN:
-      return txn_->ValidateAbort();
-    case ParticipantOpPB::UNKNOWN:
-      return Status::InvalidArgument("unknown op type");
+      s = txn_->ValidateAbort(&code);
+      break;
+    default:
+      s = Status::InvalidArgument("unknown op type");
+      break;
+  }
+  if (PREDICT_FALSE(!s.ok())) {
+    completion_callback()->set_error(s, code);
+    return s;
   }
   return Status::OK();
 }

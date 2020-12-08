@@ -103,8 +103,9 @@ class ParticipantOpState : public OpState {
   friend class ParticipantOp;
 
   // Returns an error if the transaction is not in an appropriate state for
-  // the state change requested by this op.
-  Status ValidateOp() const;
+  // the state change requested by this op, also setting the OpState's callback
+  // error with an appropriate error code.
+  Status ValidateOp();
 
   // The particpant being mutated. This may differ from the one we'd get from
   // TabletReplica if, for instance, we're bootstrapping a new Tablet.

@@ -34,6 +34,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/rw_semaphore.h"
 #include "kudu/util/status.h"
@@ -110,45 +111,50 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // Validates that the transaction is in the appropriate state to perform the
   // given operation. Should be called while holding the state lock before
   // replicating a participant op.
-  Status ValidateBeginTransaction() const {
+  Status ValidateBeginTransaction(tserver::TabletServerErrorPB::Code* code) const {
     DCHECK(state_lock_.is_locked());
     if (PREDICT_FALSE(tablet_metadata_->HasTxnMetadata(txn_id_))) {
+      *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Transaction metadata for transaction $0 already exists",
                               txn_id_));
     }
     if (PREDICT_FALSE(state_ != kInitializing)) {
+      *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Cannot begin transaction in state: $0",
                               StateToString(state_)));
     }
     return Status::OK();
   }
-  Status ValidateBeginCommit() const {
+  Status ValidateBeginCommit(tserver::TabletServerErrorPB::Code* code) const {
     DCHECK(state_lock_.is_locked());
-    RETURN_NOT_OK(CheckFinishedInitializing());
+    RETURN_NOT_OK(CheckFinishedInitializing(code));
     if (PREDICT_FALSE(state_ != kOpen)) {
+      *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Cannot begin committing transaction in state: $0",
                               StateToString(state_)));
     }
     return Status::OK();
   }
-  Status ValidateFinalize() const {
+  Status ValidateFinalize(tserver::TabletServerErrorPB::Code* code) const {
     DCHECK(state_lock_.is_locked());
-    RETURN_NOT_OK(CheckFinishedInitializing());
+    RETURN_NOT_OK(CheckFinishedInitializing(code));
     if (PREDICT_FALSE(state_ != kCommitInProgress)) {
+      *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Cannot finalize transaction in state: $0",
                               StateToString(state_)));
     }
     return Status::OK();
   }
-  Status ValidateAbort() const {
+  Status ValidateAbort(tserver::TabletServerErrorPB::Code* code) const {
     DCHECK(state_lock_.is_locked());
-    RETURN_NOT_OK(CheckFinishedInitializing());
+    RETURN_NOT_OK(CheckFinishedInitializing(code));
     if (PREDICT_FALSE(state_ != kOpen &&
                       state_ != kCommitInProgress)) {
+      *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Cannot abort transaction in state: $0",
                               StateToString(state_)));
@@ -207,15 +213,17 @@ class Txn : public RefCountedThreadSafe<Txn> {
   }
 
   // Returns an error if the transaction has not finished initializing.
-  Status CheckFinishedInitializing() const {
+  Status CheckFinishedInitializing(tserver::TabletServerErrorPB::Code* code) const {
     if (PREDICT_FALSE(state_ == kInitializing)) {
       if (tablet_metadata_->HasTxnMetadata(txn_id_)) {
         // We created this transaction as a part of this op (i.e. it was not
         // already in flight), and there is existing metadata for it.
+        *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
         return Status::IllegalState(
             strings::Substitute("Transaction metadata for transaction $0 already exists",
                                 txn_id_));
       }
+      // TODO(awong): add another code for this?
       return Status::NotFound("Transaction hasn't been successfully started");
     }
     return Status::OK();

@@ -75,6 +75,7 @@ using kudu::pb_util::SecureShortDebugString;
 using kudu::tserver::ParticipantRequestPB;
 using kudu::tserver::ParticipantResponsePB;
 using kudu::tserver::ParticipantOpPB;
+using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::WriteRequestPB;
 using std::map;
 using std::string;
@@ -254,6 +255,7 @@ TEST_F(TxnParticipantTest, TestTransactionNotFound) {
       SCOPED_TRACE(SecureShortDebugString(resp));
       ASSERT_TRUE(resp.has_error());
       ASSERT_TRUE(resp.error().has_status());
+      ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, resp.error().code());
       ASSERT_EQ(AppStatusPB::NOT_FOUND, resp.error().status().code());
       ASSERT_FALSE(resp.has_timestamp());
     }
@@ -285,6 +287,7 @@ TEST_F(TxnParticipantTest, TestIllegalTransitions) {
       ASSERT_TRUE(resp.has_error());
       ASSERT_TRUE(resp.error().has_status());
       ASSERT_EQ(AppStatusPB::ILLEGAL_STATE, resp.error().status().code());
+      ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, resp.error().code());
       ASSERT_FALSE(resp.has_timestamp());
     }
   };
