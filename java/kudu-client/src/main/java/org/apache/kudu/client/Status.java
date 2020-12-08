@@ -22,6 +22,7 @@ import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.master.Master;
+import org.apache.kudu.transactions.TxnManager;
 import org.apache.kudu.tserver.Tserver;
 
 /**
@@ -92,6 +93,16 @@ public class Status {
   static Status fromTabletServerErrorPB(Tserver.TabletServerErrorPB tserverErrorPB) {
     assert tserverErrorPB.hasStatus() : "no status in PB " + tserverErrorPB;
     return new Status(tserverErrorPB.getStatus());
+  }
+
+  /**
+   * Create a status object from a TxnManager's error.
+   * @param pbError protobuf object received via RPC from the TxnManager
+   * @return status object equivalent to the protobuf
+   */
+  static Status fromTxnManagerErrorPB(TxnManager.TxnManagerErrorPB pbError) {
+    assert pbError.hasStatus() : "no status in PB " + pbError;
+    return new Status(pbError.getStatus());
   }
 
   /**

@@ -95,9 +95,10 @@ public abstract class KuduRpc<R> {
    */
   static final int MAX_RPC_SIZE = 256 * 1024 * 1024; // 256MB
 
-  // Service names.
+  // Service names used by the client.
   protected static final String MASTER_SERVICE_NAME = "kudu.master.MasterService";
   protected static final String TABLET_SERVER_SERVICE_NAME = "kudu.tserver.TabletServerService";
+  protected static final String TXN_MANAGER_SERVICE_NAME = "kudu.transactions.TxnManagerService";
 
   private static final Logger LOG = LoggerFactory.getLogger(KuduRpc.class);
 

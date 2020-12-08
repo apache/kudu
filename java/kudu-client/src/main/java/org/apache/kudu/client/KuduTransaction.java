@@ -18,15 +18,21 @@
 package org.apache.kudu.client;
 
 import java.io.IOException;
+import javax.annotation.Nullable;
 
 import com.google.common.base.Preconditions;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
+import com.stumbleupon.async.Callback;
+import com.stumbleupon.async.Deferred;
+import io.netty.util.Timeout;
+import io.netty.util.TimerTask;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kudu.transactions.Transactions;
 import org.apache.kudu.transactions.Transactions.TxnTokenPB;
 
 /**
@@ -204,7 +210,9 @@ public class KuduTransaction implements AutoCloseable {
       Preconditions.checkState(!isInFlight);
     }
 
-    // TODO(aserbin): implement
+    // Make corresponding call to TxnManager and process the response,
+    // in a synchronous way.
+    doBeginTransaction();
 
     // Once the heavy-lifting has successfully completed, mark this instance
     // as a handle for an in-flight transaction.
@@ -255,9 +263,14 @@ public class KuduTransaction implements AutoCloseable {
    * @throws KuduException if something went wrong
    */
   public void commit(boolean wait) throws KuduException {
-    Preconditions.checkState(isInFlight);
+    Preconditions.checkState(isInFlight, "transaction is not open for this handle");
+    CommitTransactionRequest req = doCommitTransaction();
 
-    // TODO(aserbin): implement
+    if (wait) {
+      Deferred<GetTransactionStateResponse> txnState =
+          getDelayedIsTransactionCommittedDeferred(req);
+      KuduClient.joinAndHandleException(txnState);
+    }
 
     // Once everything else is completed successfully, mark the transaction as
     // no longer in flight.
@@ -274,9 +287,22 @@ public class KuduTransaction implements AutoCloseable {
    *                       the state of the transaction
    */
   public boolean isCommitComplete() throws KuduException {
-    Preconditions.checkState(!isInFlight);
-    // TODO(aserbin): implement
-    return false;
+    Deferred<GetTransactionStateResponse> d = isTransactionCommittedAsync();
+    GetTransactionStateResponse resp = KuduClient.joinAndHandleException(d);
+    final Transactions.TxnStatePB txnState = resp.txnState();
+    switch (txnState) {
+      case ABORTED:
+        throw new NonRecoverableException(Status.Aborted("transaction was aborted"));
+      case OPEN:
+        throw new NonRecoverableException(Status.IllegalState("transaction is still open"));
+      case COMMITTED:
+        return true;
+      case COMMIT_IN_PROGRESS:
+        return false;
+      default:
+        throw new NonRecoverableException(Status.NotSupported(
+            "unexpected transaction state: " + txnState.toString()));
+    }
   }
 
   /**
@@ -292,8 +318,7 @@ public class KuduTransaction implements AutoCloseable {
    */
   public void rollback() throws KuduException {
     Preconditions.checkState(isInFlight, "transaction is not open for this handle");
-
-    // TODO(aserbin): implement
+    doRollbackTransaction();
 
     // Once everything else is completed successfully, mark the transaction as
     // no longer in flight.
@@ -393,5 +418,128 @@ public class KuduTransaction implements AutoCloseable {
     } catch (Exception e) {
       LOG.error("exception while automatically rolling back a transaction", e);
     }
+  }
+
+  private void doBeginTransaction() throws KuduException {
+    BeginTransactionRequest request = new BeginTransactionRequest(
+        client.getMasterTable(),
+        client.getTimer(),
+        client.getDefaultAdminOperationTimeoutMs());
+    Deferred<BeginTransactionResponse> d = client.sendRpcToTablet(request);
+    BeginTransactionResponse resp = KuduClient.joinAndHandleException(d);
+    txnId = resp.txnId();
+    keepaliveMillis = resp.keepaliveMillis();
+  }
+
+  private void doRollbackTransaction() throws KuduException {
+    AbortTransactionRequest request = new AbortTransactionRequest(
+        client.getMasterTable(),
+        client.getTimer(),
+        client.getDefaultAdminOperationTimeoutMs(),
+        txnId);
+    Deferred<AbortTransactionResponse> d = client.sendRpcToTablet(request);
+    KuduClient.joinAndHandleException(d);
+  }
+
+  private CommitTransactionRequest doCommitTransaction() throws KuduException {
+    CommitTransactionRequest request = new CommitTransactionRequest(
+        client.getMasterTable(),
+        client.getTimer(),
+        client.getDefaultAdminOperationTimeoutMs(),
+        txnId);
+    Deferred<CommitTransactionResponse> d = client.sendRpcToTablet(request);
+    KuduClient.joinAndHandleException(d);
+    return request;
+  }
+
+  private Deferred<GetTransactionStateResponse> isTransactionCommittedAsync() {
+    GetTransactionStateRequest request = new GetTransactionStateRequest(
+        client.getMasterTable(),
+        client.getTimer(),
+        client.getDefaultAdminOperationTimeoutMs(),
+        txnId);
+    return client.sendRpcToTablet(request);
+  }
+
+  Deferred<GetTransactionStateResponse> getDelayedIsTransactionCommittedDeferred(
+      KuduRpc<?> parent) {
+    // TODO(aserbin): By scheduling even the first RPC via timer, the sequence of
+    // RPCs is delayed by at least one timer tick, which is unfortunate for the
+    // case where the transaction is fully committed.
+    //
+    // Eliminating the delay by sending the first RPC immediately (and
+    // scheduling the rest via timer) would also allow us to replace this "fake"
+    // RPC with a real one.
+    KuduRpc<GetTransactionStateResponse> fakeRpc = client.buildFakeRpc(
+        "GetTransactionState", parent);
+
+    // Store the Deferred locally; callback() or errback() on the RPC will
+    // reset it and we'd return a different, non-triggered Deferred.
+    Deferred<GetTransactionStateResponse> fakeRpcD = fakeRpc.getDeferred();
+
+    delayedIsTransactionCommitted(
+        fakeRpc,
+        isTransactionCommittedCb(fakeRpc),
+        isTransactionCommittedErrb(fakeRpc));
+    return fakeRpcD;
+  }
+
+  private void delayedIsTransactionCommitted(
+      final KuduRpc<GetTransactionStateResponse> rpc,
+      final Callback<Deferred<GetTransactionStateResponse>,
+          GetTransactionStateResponse> callback,
+      final Callback<Exception, Exception> errback) {
+    final class RetryTimer implements TimerTask {
+      @Override
+      public void run(final Timeout timeout) {
+        isTransactionCommittedAsync().addCallbacks(callback, errback);
+      }
+    }
+
+    long sleepTimeMillis = client.getSleepTimeForRpcMillis(rpc);
+    if (rpc.timeoutTracker.wouldSleepingTimeoutMillis(sleepTimeMillis)) {
+      AsyncKuduClient.tooManyAttemptsOrTimeout(rpc, null);
+      return;
+    }
+    AsyncKuduClient.newTimeout(client.getTimer(), new RetryTimer(), sleepTimeMillis);
+  }
+
+  /**
+   * Returns a callback to be called upon completion of GetTransactionState RPC.
+   * If the transaction is committed, triggers the provided RPC's callback chain
+   * with 'txnResp' as its value. Otherwise, sends another GetTransactionState
+   * RPC after sleeping.
+   * <p>
+   * @param rpc RPC that initiated this sequence of operations
+   * @return callback that will eventually return 'txnResp'
+   */
+  private Callback<Deferred<GetTransactionStateResponse>, GetTransactionStateResponse>
+      isTransactionCommittedCb(final KuduRpc<GetTransactionStateResponse> rpc) {
+    return resp -> {
+      // Store the Deferred locally; callback() below will reset it and we'd
+      // return a different, non-triggered Deferred.
+      Deferred<GetTransactionStateResponse> d = rpc.getDeferred();
+      if (resp.isCommitted()) {
+        rpc.callback(resp);
+      } else if (resp.isAborted()) {
+        rpc.errback(new NonRecoverableException(
+            Status.Aborted("transaction was aborted")));
+      } else {
+        rpc.attempt++;
+        delayedIsTransactionCommitted(
+            rpc,
+            isTransactionCommittedCb(rpc),
+            isTransactionCommittedErrb(rpc));
+      }
+      return d;
+    };
+  }
+
+  private <R> Callback<Exception, Exception> isTransactionCommittedErrb(
+      final KuduRpc<R> rpc) {
+    return e -> {
+      rpc.errback(e);
+      return e;
+    };
   }
 }

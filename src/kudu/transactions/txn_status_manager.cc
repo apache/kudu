@@ -73,6 +73,16 @@ DEFINE_uint32(txn_staleness_tracker_interval_ms, 10000,
 TAG_FLAG(txn_staleness_tracker_interval_ms, experimental);
 TAG_FLAG(txn_staleness_tracker_interval_ms, runtime);
 
+// TODO(aserbin): remove this test-only crutch once the orchestration of
+//                the two phase commit is implemented
+DEFINE_bool(txn_status_manager_finalize_commit_on_begin, false,
+            "Finalize committing a transaction automatically right after "
+            "changing its state to COMMIT_IN_PROGRESS during processing "
+            "a call to CoordinateTransaction() of the BEGIN_COMMIT_TXN type. "
+            "Used only for tests.");
+TAG_FLAG(txn_status_manager_finalize_commit_on_begin, hidden);
+TAG_FLAG(txn_status_manager_finalize_commit_on_begin, unsafe);
+
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::ParticipantIdsByTxnId;
 using kudu::tserver::TabletServerErrorPB;
@@ -319,6 +329,13 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
   mutable_data->pb.set_state(TxnStatePB::COMMIT_IN_PROGRESS);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
   txn_lock.Commit();
+
+  // TODO(aserbin): remove this test-only crutch once the orchestration of
+  //                the two phase commit is implemented
+  if (PREDICT_FALSE(FLAGS_txn_status_manager_finalize_commit_on_begin)) {
+    RETURN_NOT_OK(FinalizeCommitTransaction(txn_id, ts_error));
+  }
+
   return Status::OK();
 }
 

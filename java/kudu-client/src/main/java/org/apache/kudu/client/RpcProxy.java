@@ -46,6 +46,7 @@ import org.apache.kudu.WireProtocol;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
+import org.apache.kudu.transactions.TxnManager;
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.util.Pair;
 
@@ -271,7 +272,7 @@ class RpcProxy {
     // We can get this Message from within the RPC's expected type,
     // so convert it into an exception and nullify decoded so that we use the errback route.
     // Have to do it for both TS and Master errors.
-    if (decoded != null) {
+    if (decoded != null && decoded.getSecond() != null) {
       if (decoded.getSecond() instanceof Tserver.TabletServerErrorPB) {
         Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded.getSecond();
         exception = dispatchTSError(client, connection, rpc, error, traceBuilder);
@@ -291,6 +292,22 @@ class RpcProxy {
         } else {
           decoded = null;
         }
+      } else if (decoded.getSecond() instanceof TxnManager.TxnManagerErrorPB) {
+        TxnManager.TxnManagerErrorPB error =
+            (TxnManager.TxnManagerErrorPB) decoded.getSecond();
+        exception = dispatchTxnManagerError(client, connection, rpc, error, traceBuilder);
+        if (exception == null) {
+          // Exception was taken care of.
+          return;
+        } else {
+          decoded = null;
+        }
+      } else {
+        rpc.addTrace(traceBuilder.build());
+        exception = new NonRecoverableException(Status.NotSupported(
+            "unexpected error from server side: " + decoded.getSecond().toString()));
+        rpc.errback(exception);
+        return;
       }
     }
 
@@ -393,6 +410,40 @@ class RpcProxy {
     } else {
       return new NonRecoverableException(status);
     }
+    rpc.addTrace(tracer.callStatus(status).build());
+    return null;
+  }
+
+  /**
+   * Handle for various kinds of TxnManager errors. As of now, only
+   * SERVICE_UNAVAILABLE is a re-triable error.
+   *
+   * @param client client object to handle response and sending retries, if needed
+   * @param connection connection to send the request over
+   * @param rpc the original RPC call that triggered the error
+   * @param pbError the error the master sent
+   * @param tracer RPC trace builder to add a record on the error into the call history
+   * @return an exception if we couldn't dispatch the error, or null
+   */
+  private static KuduException dispatchTxnManagerError(
+      AsyncKuduClient client,
+      Connection connection,
+      KuduRpc<?> rpc,
+      TxnManager.TxnManagerErrorPB pbError,
+      RpcTraceFrame.RpcTraceFrameBuilder tracer) {
+    final WireProtocol.AppStatusPB.ErrorCode code = pbError.getStatus().getCode();
+    final Status status = Status.fromTxnManagerErrorPB(pbError);
+    if (code != WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+      return new NonRecoverableException(status);
+    }
+
+    // TODO(aserbin): try sending request to other TxnManager instance,
+    //                if possible. The idea is that Kudu clusters are expected
+    //                expected to have multiple masters, so if one TxnManager
+    //                instance is not available, there is a high chance that
+    //                others are still available (TxnManager is hosted by a
+    //                kudu-master process).
+    client.handleRetryableError(rpc, new RecoverableException(status));
     rpc.addTrace(tracer.callStatus(status).build());
     return null;
   }

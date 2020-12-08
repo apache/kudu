@@ -1448,7 +1448,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param timeoutMs the timeout in milliseconds for the fake RPC
    * @return created fake RPC
    */
-  private <R> KuduRpc<R> buildFakeRpc(
+  <R> KuduRpc<R> buildFakeRpc(
       @Nonnull final String method,
       @Nullable final KuduRpc<?> parent,
       long timeoutMs) {
@@ -1465,7 +1465,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param <R> the expected return type of the fake RPC
    * @return created fake RPC
    */
-  private <R> KuduRpc<R> buildFakeRpc(
+  <R> KuduRpc<R> buildFakeRpc(
       @Nonnull final String method,
       @Nullable final KuduRpc<?> parent) {
     return buildFakeRpc(method, parent, defaultAdminOperationTimeoutMs);
@@ -1474,7 +1474,7 @@ public class AsyncKuduClient implements AutoCloseable {
   /**
    * A fake RPC that is used for timeouts and will never be sent.
    */
-  private static class FakeKuduRpc<R> extends KuduRpc<R> {
+  static class FakeKuduRpc<R> extends KuduRpc<R> {
     private final String method;
 
     FakeKuduRpc(String method, Timer timer, long timeoutMillis) {
@@ -1713,7 +1713,7 @@ public class AsyncKuduClient implements AutoCloseable {
     }
   }
 
-  private long getSleepTimeForRpcMillis(KuduRpc<?> rpc) {
+  long getSleepTimeForRpcMillis(KuduRpc<?> rpc) {
     int attemptCount = rpc.attempt;
     if (attemptCount == 0) {
       // If this is the first RPC attempt, don't sleep at all.
@@ -1758,8 +1758,8 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param cause What was cause of the last failed attempt, if known.
    * You can pass {@code null} if the cause is unknown.
    */
-  private static <R> Deferred<R> tooManyAttemptsOrTimeout(final KuduRpc<R> request,
-                                                          final KuduException cause) {
+  static <R> Deferred<R> tooManyAttemptsOrTimeout(final KuduRpc<R> request,
+                                                  final KuduException cause) {
     String message;
     if (request.attempt > MAX_RPC_ATTEMPTS) {
       message = "too many attempts: ";
