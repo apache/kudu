@@ -39,6 +39,18 @@ using strings::Substitute;
 namespace kudu {
 namespace tablet {
 
+const char* TxnStateToString(TxnState s) {
+  switch (s) {
+    case kNone: return "<none>";
+    case kInitializing: return "INITIALIZING";
+    case kOpen: return "OPEN";
+    case kCommitInProgress: return "COMMIT_IN_PROGRESS";
+    case kCommitted: return "COMMITTED";
+    case kAborted: return "ABORTED";
+  }
+  __builtin_unreachable();
+}
+
 Txn::~Txn() {
   CHECK_OK(log_anchor_registry_->UnregisterIfAnchored(&begin_commit_anchor_));
   // As a sanity check, make sure our state makes sense: if we have an MVCC op
@@ -46,7 +58,7 @@ Txn::~Txn() {
   if (commit_op_) {
     DCHECK(state_ == kCommitInProgress ||
            state_ == kCommitted ||
-           state_ == kAborted) << StateToString(state_);
+           state_ == kAborted) << TxnStateToString(state_);
   }
 }
 
@@ -64,7 +76,7 @@ void TxnParticipant::CreateOpenTransaction(int64_t txn_id,
                                            LogAnchorRegistry* log_anchor_registry) {
   std::lock_guard<simple_spinlock> l(lock_);
   EmplaceOrDie(&txns_, txn_id, new Txn(txn_id, log_anchor_registry,
-                                       tablet_metadata_, Txn::kOpen));
+                                       tablet_metadata_, kOpen));
 }
 
 scoped_refptr<Txn> TxnParticipant::GetOrCreateTransaction(int64_t txn_id,
@@ -85,7 +97,7 @@ void TxnParticipant::ClearIfInitFailed(int64_t txn_id) {
   Txn* txn = FindPointeeOrNull(txns_, txn_id);
   // NOTE: If this is the only reference to the transaction, we can forego
   // locking the state.
-  if (txn && txn->HasOneRef() && txn->state() == Txn::kInitializing) {
+  if (txn && txn->HasOneRef() && txn->state() == kInitializing) {
     txns_.erase(txn_id);
   }
 }
@@ -96,8 +108,8 @@ bool TxnParticipant::ClearIfComplete(int64_t txn_id) {
   // NOTE: If this is the only reference to the transaction, we can forego
   // locking the state.
   if (txn && txn->HasOneRef() &&
-      (txn->state() == Txn::kAborted ||
-       txn->state() == Txn::kCommitted)) {
+      (txn->state() == kAborted ||
+       txn->state() == kCommitted)) {
     txns_.erase(txn_id);
     return true;
   }
@@ -125,13 +137,13 @@ vector<TxnParticipant::TxnEntry> TxnParticipant::GetTxnsForTests() const {
     if (txn_meta) {
       txn_metas.erase(txn_entry.txn_id);
       if (txn_meta->aborted()) {
-        txn_entry.state = Txn::kAborted;
+        txn_entry.state = kAborted;
         txn_entry.commit_timestamp = -1;
         continue;
       }
       const auto& commit_ts = txn_meta->commit_timestamp();
       if (commit_ts) {
-        txn_entry.state = Txn::kCommitted;
+        txn_entry.state = kCommitted;
         txn_entry.commit_timestamp = commit_ts->value();
         continue;
       }
@@ -144,14 +156,14 @@ vector<TxnParticipant::TxnEntry> TxnParticipant::GetTxnsForTests() const {
     TxnEntry txn_entry;
     txn_entry.txn_id = txn_id;
     if (txn_meta->aborted()) {
-      txn_entry.state = Txn::kAborted;
+      txn_entry.state = kAborted;
       txn_entry.commit_timestamp = -1;
       txns.emplace_back(std::move(txn_entry));
       continue;
     }
     const auto& commit_ts = txn_meta->commit_timestamp();
     if (commit_ts) {
-      txn_entry.state = Txn::kCommitted;
+      txn_entry.state = kCommitted;
       txn_entry.commit_timestamp = commit_ts->value();
       txns.emplace_back(txn_entry);
       continue;

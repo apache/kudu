@@ -380,9 +380,9 @@ Status WriteOpState::AcquireTxnLockCheckOpen(scoped_refptr<Txn> txn) {
   shared_lock<rw_semaphore> temp;
   txn->AcquireReadLock(&temp);
   const auto txn_state = txn->state();
-  if (PREDICT_FALSE(txn_state != Txn::kOpen)) {
+  if (PREDICT_FALSE(txn_state != kOpen)) {
     return Status::InvalidArgument(Substitute("txn $0 is not open: $1",
-        txn->txn_id(), Txn::StateToString(txn_state)));
+        txn->txn_id(), TxnStateToString(txn_state)));
   }
   txn_lock_.swap(temp);
   txn_ = std::move(txn);

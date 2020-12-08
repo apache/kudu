@@ -87,8 +87,13 @@ using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using kudu::tablet::kCommitSequence;
 using kudu::tablet::kDummyCommitTimestamp;
+using kudu::tablet::kCommitted;
+using kudu::tablet::kCommitInProgress;
+using kudu::tablet::kInitializing;
+using kudu::tablet::kOpen;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::Txn;
+using kudu::tablet::TxnState;
 using kudu::tablet::TxnParticipant;
 using kudu::tserver::ParticipantOpPB;
 using kudu::tserver::ParticipantRequestPB;
@@ -132,9 +137,13 @@ Status ParticipateInTransaction(TabletServerAdminServiceProxy* admin_proxy,
 Status ParticipateInTransactionCheckResp(TabletServerAdminServiceProxy* admin_proxy,
                                          const string& tablet_id, int64_t txn_id,
                                          ParticipantOpPB::ParticipantOpType type,
-                                         TabletServerErrorPB::Code* code = nullptr) {
+                                         TabletServerErrorPB::Code* code = nullptr,
+                                         Timestamp* begin_commit_ts = nullptr) {
   ParticipantResponsePB resp;
   RETURN_NOT_OK(ParticipateInTransaction(admin_proxy, tablet_id, txn_id, type, &resp));
+  if (begin_commit_ts) {
+    *begin_commit_ts = Timestamp(resp.timestamp());
+  }
   if (resp.has_error()) {
     if (code) {
       *code = resp.error().code();
@@ -170,7 +179,7 @@ string TxnsAsString(const vector<TxnParticipant::TxnEntry>& txns) {
   return JoinMapped(txns,
       [](const TxnParticipant::TxnEntry& txn) {
         return Substitute("(txn_id=$0: $1, $2)",
-            txn.txn_id, Txn::StateToString(txn.state), txn.commit_timestamp);
+            txn.txn_id, TxnStateToString(txn.state), txn.commit_timestamp);
       },
       ",");
 }
@@ -344,7 +353,7 @@ TEST_P(ParticipantCopyITest, TestCopyParticipantOps) {
       }
     }
     expected_txns.emplace_back(
-        TxnParticipant::TxnEntry({ i, Txn::kCommitted, kDummyCommitTimestamp }));
+        TxnParticipant::TxnEntry({ i, kCommitted, kDummyCommitTimestamp }));
   }
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     ASSERT_EVENTUALLY([&] {
@@ -527,15 +536,12 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
         admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code));
     ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
   }
-  // TODO(awong): make repeated, idempotent return OK instead of an error? Or
-  // return a different error code so callers can distinguish between a benign
-  // error.
   {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
     Status s = ParticipateInTransactionCheckResp(
         admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+    ASSERT_EQ(TabletServerErrorPB::TXN_OP_ALREADY_APPLIED, code);
   }
 
   // We can't finalize the commit without beginning to commit first.
@@ -548,18 +554,24 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
   }
 
   // Start commititng and ensure we can't start another transaction.
+  Timestamp begin_commit_ts;
   {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
     ASSERT_OK(ParticipateInTransactionCheckResp(
-        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT, &code));
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+        &code, &begin_commit_ts));
     ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    ASSERT_NE(Timestamp::kInvalidTimestamp, begin_commit_ts);
   }
   {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Timestamp refetched_begin_commit_ts;
     Status s = ParticipateInTransactionCheckResp(
-        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT, &code);
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+        &code, &refetched_begin_commit_ts);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+    ASSERT_EQ(TabletServerErrorPB::TXN_OP_ALREADY_APPLIED, code);
+    ASSERT_EQ(begin_commit_ts, refetched_begin_commit_ts);
   }
   {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
@@ -581,26 +593,14 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
     Status s = ParticipateInTransactionCheckResp(
         admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, &code);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+    ASSERT_EQ(TabletServerErrorPB::TXN_OP_ALREADY_APPLIED, code);
   }
-  {
+  for (auto type : { ParticipantOpPB::BEGIN_TXN,
+                     ParticipantOpPB::BEGIN_COMMIT,
+                     ParticipantOpPB::ABORT_TXN }) {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
     Status s = ParticipateInTransactionCheckResp(
-        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code);
-    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
-  }
-  {
-    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
-    Status s = ParticipateInTransactionCheckResp(
-        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT, &code);
-    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
-  }
-  {
-    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
-    Status s = ParticipateInTransactionCheckResp(
-        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN, &code);
+        admin_proxy.get(), tablet_id, kTxnId, type, &code);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
   }
@@ -617,13 +617,12 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInAbortSequence) {
   const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
   ASSERT_OK(ParticipateInTransactionCheckResp(
       admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN));
-  // TODO(awong): make repeated, idempotent return OK instead of an error.
   {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
     Status s = ParticipateInTransactionCheckResp(
         admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+    ASSERT_EQ(TabletServerErrorPB::TXN_OP_ALREADY_APPLIED, code);
   }
   {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
@@ -640,8 +639,14 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInAbortSequence) {
         admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN, &code));
     ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
   }
-  for (auto type : { ParticipantOpPB::ABORT_TXN,
-                     ParticipantOpPB::FINALIZE_COMMIT,
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::ABORT_TXN, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_OP_ALREADY_APPLIED, code);
+  }
+  for (auto type : { ParticipantOpPB::FINALIZE_COMMIT,
                      ParticipantOpPB::BEGIN_TXN,
                      ParticipantOpPB::BEGIN_COMMIT}) {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
@@ -838,23 +843,23 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
     if (last_successful_op == ParticipantOpPB::UNKNOWN) {
       continue;
     }
-    Txn::State expected_state;
+    TxnState expected_state;
     switch (last_successful_op) {
       case ParticipantOpPB::BEGIN_TXN:
-        expected_state = Txn::kOpen;
+        expected_state = kOpen;
         break;
       case ParticipantOpPB::BEGIN_COMMIT:
-        expected_state = Txn::kCommitInProgress;
+        expected_state = kCommitInProgress;
         break;
       case ParticipantOpPB::FINALIZE_COMMIT:
         expected_rows += num_successful_writes_per_txn[txn_id];
-        expected_state = Txn::kCommitted;
+        expected_state = kCommitted;
         break;
       default:
         FAIL() << "Unexpected successful op " << last_successful_op;
     }
     expected_txns.emplace_back(TxnParticipant::TxnEntry({
-        txn_id, expected_state, expected_state == Txn::kCommitted ? kDummyCommitTimestamp : -1}));
+        txn_id, expected_state, expected_state == kCommitted ? kDummyCommitTimestamp : -1}));
   }
   for (int i = 0; i < replicas.size(); i++) {
     // NOTE: We ASSERT_EVENTUALLY here because having completed the participant
@@ -891,7 +896,7 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
     // successfully initialized.
     vector<TxnParticipant::TxnEntry> actual_txns_not_initting;
     for (const auto& txn : actual_txns) {
-      if (txn.state != Txn::kInitializing) {
+      if (txn.state != kInitializing) {
         actual_txns_not_initting.emplace_back(txn);
       }
     }

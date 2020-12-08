@@ -239,9 +239,9 @@ TEST_F(TxnParticipantTest, TestSuccessfulSequences) {
       ParticipantOpPB::ABORT_TXN,
   }, 2));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { 0, Txn::kCommitted, kDummyCommitTimestamp },
-      { 1, Txn::kAborted, -1 },
-      { 2, Txn::kAborted, -1 },
+      { 0, kCommitted, kDummyCommitTimestamp },
+      { 1, kAborted, -1 },
+      { 2, kAborted, -1 },
   }), txn_participant()->GetTxnsForTests());
 }
 
@@ -296,14 +296,14 @@ TEST_F(TxnParticipantTest, TestIllegalTransitions) {
   NO_FATALS(check_valid_op(ParticipantOpPB::BEGIN_TXN, kTxnId));
   NO_FATALS(check_bad_ops({ ParticipantOpPB::FINALIZE_COMMIT }, kTxnId));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kOpen, -1 },
+      { kTxnId, kOpen, -1 },
   }), txn_participant()->GetTxnsForTests());
 
   // Once we begin committing, we can't start the transaction again.
   NO_FATALS(check_valid_op(ParticipantOpPB::BEGIN_COMMIT, kTxnId));
   NO_FATALS(check_bad_ops({ ParticipantOpPB::BEGIN_TXN }, kTxnId));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitInProgress, -1 },
+      { kTxnId, kCommitInProgress, -1 },
   }), txn_participant()->GetTxnsForTests());
 
   // Once we've begun finalizing, we can't do anything.
@@ -312,7 +312,7 @@ TEST_F(TxnParticipantTest, TestIllegalTransitions) {
                             ParticipantOpPB::BEGIN_COMMIT,
                             ParticipantOpPB::ABORT_TXN }, kTxnId));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp },
+      { kTxnId, kCommitted, kDummyCommitTimestamp },
   }), txn_participant()->GetTxnsForTests());
 
   // Once we've aborted, we can't do anything.
@@ -323,8 +323,8 @@ TEST_F(TxnParticipantTest, TestIllegalTransitions) {
                             ParticipantOpPB::BEGIN_COMMIT,
                             ParticipantOpPB::FINALIZE_COMMIT }, kAbortedTxnId));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp },
-      { kAbortedTxnId, Txn::kAborted, -1 },
+      { kTxnId, kCommitted, kDummyCommitTimestamp },
+      { kAbortedTxnId, kAborted, -1 },
   }), txn_participant()->GetTxnsForTests());
 }
 
@@ -352,7 +352,7 @@ TEST_F(TxnParticipantTest, TestConcurrentTransactions) {
   }
   const auto& txns = txn_participant()->GetTxnsForTests();
   for (int i = 0; i < kNumTxns; i++) {
-    ASSERT_EQ(TxnParticipant::TxnEntry({ i, Txn::kCommitted, kDummyCommitTimestamp }), txns[i]);
+    ASSERT_EQ(TxnParticipant::TxnEntry({ i, kCommitted, kDummyCommitTimestamp }), txns[i]);
   }
 }
 
@@ -391,7 +391,7 @@ TEST_F(TxnParticipantTest, TestConcurrentOps) {
   // not have been able to abort.
   if (status_for_op(ParticipantOpPB::FINALIZE_COMMIT).ok()) {
     ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-        { kTxnId, Txn::kCommitted, kDummyCommitTimestamp },
+        { kTxnId, kCommitted, kDummyCommitTimestamp },
     }), txn_participant()->GetTxnsForTests());
     ASSERT_OK(statuses[FindOrDie(kIndexByOps, ParticipantOpPB::BEGIN_COMMIT)]);
     ASSERT_FALSE(statuses[FindOrDie(kIndexByOps, ParticipantOpPB::ABORT_TXN)].ok());
@@ -399,7 +399,7 @@ TEST_F(TxnParticipantTest, TestConcurrentOps) {
   // If we aborted the commit, we could not have finalized the commit.
   } else if (status_for_op(ParticipantOpPB::ABORT_TXN).ok()) {
     ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-        { kTxnId, Txn::kAborted, -1 },
+        { kTxnId, kAborted, -1 },
     }), txn_participant()->GetTxnsForTests());
     ASSERT_FALSE(statuses[FindOrDie(kIndexByOps, ParticipantOpPB::FINALIZE_COMMIT)].ok());
 
@@ -407,14 +407,14 @@ TEST_F(TxnParticipantTest, TestConcurrentOps) {
   // left with the commit in progress.
   } else if (status_for_op(ParticipantOpPB::BEGIN_COMMIT).ok()) {
     ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-        { kTxnId, Txn::kCommitInProgress, -1 },
+        { kTxnId, kCommitInProgress, -1 },
     }), txn_participant()->GetTxnsForTests());
 
   // Finally, if nothing else succeeded, at least we should have been able to
   // start the transaction.
   } else {
     ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-        { kTxnId, Txn::kOpen, -1 },
+        { kTxnId, kOpen, -1 },
     }), txn_participant()->GetTxnsForTests());
   }
 }
@@ -429,11 +429,11 @@ TEST_F(TxnParticipantTest, TestReplayParticipantOps) {
     ASSERT_TRUE(resp.has_timestamp());
   }
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
+      { kTxnId, kCommitted, kDummyCommitTimestamp }
   }), txn_participant()->GetTxnsForTests());
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
+      { kTxnId, kCommitted, kDummyCommitTimestamp }
   }), txn_participant()->GetTxnsForTests());
 }
 
@@ -532,7 +532,7 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitInProgress, -1 }
+      { kTxnId, kCommitInProgress, -1 }
   }), txn_participant()->GetTxnsForTests());
 
   // Once we finalize the commit, the BEGIN_COMMIT anchor should be released.
@@ -558,7 +558,7 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   // Ensure the transaction bootstraps to the expected state.
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
+      { kTxnId, kCommitted, kDummyCommitTimestamp }
   }), txn_participant()->GetTxnsForTests());
 }
 
@@ -661,7 +661,7 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
 
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kOpen, -1 }
+      { kTxnId, kOpen, -1 }
   }), txn_participant()->GetTxnsForTests());
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT,
                                        kDummyCommitTimestamp));
@@ -671,7 +671,7 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
 
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitInProgress, -1 }
+      { kTxnId, kCommitInProgress, -1 }
   }), txn_participant()->GetTxnsForTests());
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
                                        kDummyCommitTimestamp));
@@ -681,7 +681,7 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
 
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
+      { kTxnId, kCommitted, kDummyCommitTimestamp }
   }), txn_participant()->GetTxnsForTests());
 
   // Now perform the same validation but for a transaction that gets aborted.
@@ -693,8 +693,8 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
   }
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp },
-      { kAbortedTxnId, Txn::kOpen, -1 }
+      { kTxnId, kCommitted, kDummyCommitTimestamp },
+      { kAbortedTxnId, kOpen, -1 }
   }), txn_participant()->GetTxnsForTests());
   ASSERT_OK(CallParticipantOpCheckResp(kAbortedTxnId, ParticipantOpPB::ABORT_TXN,
                                        kDummyCommitTimestamp));
@@ -703,8 +703,8 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
   }
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp },
-      { kAbortedTxnId, Txn::kAborted, -1 }
+      { kTxnId, kCommitted, kDummyCommitTimestamp },
+      { kAbortedTxnId, kAborted, -1 }
   }), txn_participant()->GetTxnsForTests());
 }
 
@@ -842,7 +842,7 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
   // As a sanity check, ensure we get to the expected state if we reboot.
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kOpen, -1 }
+      { kTxnId, kOpen, -1 }
   }), txn_participant()->GetTxnsForTests());
 }
 

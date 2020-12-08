@@ -27,7 +27,6 @@
 #include <utility>
 
 #include <boost/optional/optional.hpp>
-#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 #include <google/protobuf/stubs/port.h>
 
@@ -50,6 +49,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/txn_metadata.h"
+#include "kudu/tablet/txn_participant.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
@@ -850,9 +850,23 @@ void TabletMetadata::AbortTransaction(int64_t txn_id, unique_ptr<MinLogIndexAnch
   anchors_needing_flush_.emplace_back(std::move(log_anchor));
 }
 
-bool TabletMetadata::HasTxnMetadata(int64_t txn_id) {
+bool TabletMetadata::HasTxnMetadata(int64_t txn_id, TxnState* state) {
   std::lock_guard<LockType> l(data_lock_);
-  return ContainsKey(txn_metadata_by_txn_id_, txn_id);
+  auto txn_meta = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
+  if (txn_meta) {
+    if (!state) return true;
+    if (txn_meta->commit_timestamp()) {
+      *state = kCommitted;
+    } else if (txn_meta->aborted()) {
+      *state = kAborted;
+    } else if (txn_meta->commit_mvcc_op_timestamp()) {
+      *state = kCommitInProgress;
+    } else {
+      *state = kOpen;
+    }
+    return true;
+  }
+  return false;
 }
 
 void TabletMetadata::GetTxnIds(unordered_set<int64_t>* in_flight_txn_ids,

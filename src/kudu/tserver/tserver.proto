@@ -106,6 +106,9 @@ message TabletServerErrorPB {
 
     // The requested transaction is not in the appropriate state.
     TXN_ILLEGAL_STATE = 22;
+
+    // The requested transaction participant op was already applied.
+    TXN_OP_ALREADY_APPLIED = 23;
   }
 
   // The error code.

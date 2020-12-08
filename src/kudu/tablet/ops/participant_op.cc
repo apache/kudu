@@ -18,6 +18,7 @@
 #include "kudu/tablet/ops/participant_op.h"
 
 #include <memory>
+#include <ostream>
 
 #include <glog/logging.h>
 #include <google/protobuf/arena.h>
@@ -102,9 +103,15 @@ Status ParticipantOpState::ValidateOp() {
     case ParticipantOpPB::BEGIN_TXN:
       s = txn_->ValidateBeginTransaction(&code);
       break;
-    case ParticipantOpPB::BEGIN_COMMIT:
-      s = txn_->ValidateBeginCommit(&code);
+    case ParticipantOpPB::BEGIN_COMMIT: {
+      Timestamp begin_commit_ts;
+      s = txn_->ValidateBeginCommit(&code, &begin_commit_ts);
+      if (PREDICT_FALSE(begin_commit_ts != Timestamp::kInvalidTimestamp)) {
+        DCHECK(s.IsIllegalState()) << s.ToString();
+        response_->set_timestamp(begin_commit_ts.value());
+      }
       break;
+    }
     case ParticipantOpPB::FINALIZE_COMMIT:
       s = txn_->ValidateFinalize(&code);
       break;

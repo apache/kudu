@@ -58,6 +58,7 @@ namespace tablet {
 
 class RowSetMetadata;
 class TxnMetadata;
+enum TxnState : int8_t;
 
 typedef std::vector<std::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::unordered_set<int64_t> RowSetMetadataIds;
@@ -270,8 +271,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // associated with it.
   void AbortTransaction(int64_t txn_id, std::unique_ptr<log::MinLogIndexAnchorer> log_anchor);
 
-  // Returns whether a given transaction has metadata.
-  bool HasTxnMetadata(int64_t txn_id);
+  // Returns whether a given transaction has metadata, and if requested, what
+  // state the transaction is in.
+  bool HasTxnMetadata(int64_t txn_id, TxnState* state = nullptr);
 
   // Returns the transaction IDs that were persisted as being in-flight,
   // terminal (committed or aborted), and having un-flushed MRSs.

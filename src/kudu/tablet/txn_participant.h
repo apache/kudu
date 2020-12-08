@@ -26,6 +26,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/macros.h"
@@ -42,6 +43,40 @@
 namespace kudu {
 namespace tablet {
 
+// NOTE: we define the type explicitly so we can forward declare this enum.
+enum TxnState : int8_t {
+
+  // Not a real state; useful for representing optionality.
+  kNone,
+
+  // Each transaction starts in this state. While in this state, the
+  // transaction is not yet ready to be used, e.g. the initial op to begin
+  // the transaction may not have successfully replicated yet.
+  kInitializing,
+
+  // Each transaction is moved into this state once they are ready to begin
+  // accepting ops.
+  kOpen,
+
+  // A transaction is moved into this state when a client has signified the
+  // intent to begin committing it. While in this state, the transaction may
+  // not accept new ops.
+  kCommitInProgress,
+
+  // A transaction is moved into this state when it becomes finalized -- all
+  // participants have acknowledged the intent to commit and have guaranteed
+  // that all ops in the transaction will succeed. While in this state, the
+  // transaction may not accept new ops and may not be aborted.
+  kCommitted,
+
+  // A transaction is moved into this state when a client has signified
+  // intent to cancel the transaction. While in this state, the transaction
+  // may not accept new ops, begin committing, or finalize a commit.
+  kAborted,
+};
+
+const char* TxnStateToString(TxnState s);
+
 // Tracks the state associated with a transaction.
 //
 // This class will primarily be accessed via op drivers. As such, locking
@@ -49,42 +84,6 @@ namespace tablet {
 // replication.
 class Txn : public RefCountedThreadSafe<Txn> {
  public:
-  enum State {
-    // Each transaction starts in this state. While in this state, the
-    // transaction is not yet ready to be used, e.g. the initial op to begin
-    // the transaction may not have successfully replicated yet.
-    kInitializing,
-
-    // Each transaction is moved into this state once they are ready to begin
-    // accepting ops.
-    kOpen,
-
-    // A transaction is moved into this state when a client has signified the
-    // intent to begin committing it. While in this state, the transaction may
-    // not accept new ops.
-    kCommitInProgress,
-
-    // A transaction is moved into this state when it becomes finalized -- all
-    // participants have acknowledged the intent to commit and have guaranteed
-    // that all ops in the transaction will succeed. While in this state, the
-    // transaction may not accept new ops and may not be aborted.
-    kCommitted,
-
-    // A transaction is moved into this state when a client has signified
-    // intent to cancel the transaction. While in this state, the transaction
-    // may not accept new ops, begin committing, or finalize a commit.
-    kAborted,
-  };
-  static const char* StateToString(State s) {
-    switch (s) {
-      case kInitializing: return "INITIALIZING";
-      case kOpen: return "OPEN";
-      case kCommitInProgress: return "COMMIT_IN_PROGRESS";
-      case kCommitted: return "COMMITTED";
-      case kAborted: return "ABORTED";
-    }
-    __builtin_unreachable();
-  }
 
   // Constructs a transaction instance with the given transaction ID and WAL
   // anchor registry.
@@ -94,7 +93,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // in-memory state is not GCed, allowing us to rebuild this transaction's
   // in-memory state upon rebooting a server.
   Txn(int64_t txn_id, log::LogAnchorRegistry* log_anchor_registry,
-      scoped_refptr<TabletMetadata> tablet_metadata, State init_state = kInitializing)
+      scoped_refptr<TabletMetadata> tablet_metadata, TxnState init_state = kInitializing)
       : txn_id_(txn_id),
         log_anchor_registry_(log_anchor_registry),
         tablet_metadata_(std::move(tablet_metadata)),
@@ -113,6 +112,11 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // replicating a participant op.
   Status ValidateBeginTransaction(tserver::TabletServerErrorPB::Code* code) const {
     DCHECK(state_lock_.is_locked());
+    if (PREDICT_FALSE(state_ == kOpen)) {
+      *code = tserver::TabletServerErrorPB::TXN_OP_ALREADY_APPLIED;
+      return Status::IllegalState(
+          strings::Substitute("Transaction $0 already open", txn_id_));
+    }
     if (PREDICT_FALSE(tablet_metadata_->HasTxnMetadata(txn_id_))) {
       *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
@@ -123,41 +127,58 @@ class Txn : public RefCountedThreadSafe<Txn> {
       *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Cannot begin transaction in state: $0",
-                              StateToString(state_)));
+                              TxnStateToString(state_)));
     }
     return Status::OK();
   }
-  Status ValidateBeginCommit(tserver::TabletServerErrorPB::Code* code) const {
+  Status ValidateBeginCommit(tserver::TabletServerErrorPB::Code* code,
+                             Timestamp* begin_commit_ts) const {
     DCHECK(state_lock_.is_locked());
     RETURN_NOT_OK(CheckFinishedInitializing(code));
+    if (PREDICT_FALSE(state_ == kCommitInProgress)) {
+      *begin_commit_ts = DCHECK_NOTNULL(commit_op_)->timestamp();
+      *code = tserver::TabletServerErrorPB::TXN_OP_ALREADY_APPLIED;
+      return Status::IllegalState(
+          strings::Substitute("Transaction $0 commit already in progress", txn_id_));
+    }
     if (PREDICT_FALSE(state_ != kOpen)) {
       *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Cannot begin committing transaction in state: $0",
-                              StateToString(state_)));
+                              TxnStateToString(state_)));
     }
     return Status::OK();
   }
   Status ValidateFinalize(tserver::TabletServerErrorPB::Code* code) const {
     DCHECK(state_lock_.is_locked());
-    RETURN_NOT_OK(CheckFinishedInitializing(code));
+    RETURN_NOT_OK(CheckFinishedInitializing(code, kCommitted));
+    if (PREDICT_FALSE(state_ == kCommitted)) {
+      *code = tserver::TabletServerErrorPB::TXN_OP_ALREADY_APPLIED;
+      return Status::IllegalState(
+          strings::Substitute("Transaction $0 has already been committed", txn_id_));
+    }
     if (PREDICT_FALSE(state_ != kCommitInProgress)) {
       *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Cannot finalize transaction in state: $0",
-                              StateToString(state_)));
+                              TxnStateToString(state_)));
     }
     return Status::OK();
   }
   Status ValidateAbort(tserver::TabletServerErrorPB::Code* code) const {
     DCHECK(state_lock_.is_locked());
-    RETURN_NOT_OK(CheckFinishedInitializing(code));
+    RETURN_NOT_OK(CheckFinishedInitializing(code, kAborted));
+    if (PREDICT_FALSE(state_ == kAborted)) {
+      *code = tserver::TabletServerErrorPB::TXN_OP_ALREADY_APPLIED;
+      return Status::IllegalState(
+          strings::Substitute("Transaction $0 has already been aborted", txn_id_));
+    }
     if (PREDICT_FALSE(state_ != kOpen &&
                       state_ != kCommitInProgress)) {
       *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
           strings::Substitute("Cannot abort transaction in state: $0",
-                              StateToString(state_)));
+                              TxnStateToString(state_)));
     }
     return Status::OK();
   }
@@ -184,7 +205,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
   }
 
   // Simple accessors for state. No locks are required to call these.
-  State state() const {
+  TxnState state() const {
     return state_;
   }
   int64_t commit_timestamp() const {
@@ -207,15 +228,34 @@ class Txn : public RefCountedThreadSafe<Txn> {
   friend class RefCountedThreadSafe<Txn>;
 
   // Sets the transaction state.
-  void SetState(State s) {
+  void SetState(TxnState s) {
     DCHECK(state_lock_.is_write_locked());
     state_ = s;
   }
 
-  // Returns an error if the transaction has not finished initializing.
-  Status CheckFinishedInitializing(tserver::TabletServerErrorPB::Code* code) const {
+  // Returns an error if the transaction has not finished initializing. This
+  // may mean that an in-flight transaction didn't exist so we created a new
+  // one, in which case we need to check if there's existing metadata for it.
+  //
+  // NOTE: we only need to check the expected metadata state when we're
+  // aborting or finalizing a commit, since these end the in-flight
+  // transaction. In other cases, we should be able to check the state of the
+  // in-flight transaction.
+  Status CheckFinishedInitializing(
+      tserver::TabletServerErrorPB::Code* code,
+      TxnState expected_metadata_state = kNone) const {
+    DCHECK(expected_metadata_state == kNone ||
+           expected_metadata_state == kAborted ||
+           expected_metadata_state == kCommitted);
     if (PREDICT_FALSE(state_ == kInitializing)) {
-      if (tablet_metadata_->HasTxnMetadata(txn_id_)) {
+      TxnState meta_state;
+      if (tablet_metadata_->HasTxnMetadata(txn_id_, &meta_state)) {
+        if (expected_metadata_state != kNone && expected_metadata_state == meta_state) {
+          *code = tserver::TabletServerErrorPB::TXN_OP_ALREADY_APPLIED;
+          return Status::IllegalState(
+              strings::Substitute("Transaction metadata for transaction $0 already set",
+                                  txn_id_));
+        }
         // We created this transaction as a part of this op (i.e. it was not
         // already in flight), and there is existing metadata for it.
         *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
@@ -247,7 +287,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // reading 'state_' and relying on it remaining constant must take this lock
   // in read mode.
   mutable rw_semaphore state_lock_;
-  std::atomic<State> state_;
+  std::atomic<TxnState> state_;
 
   // If this transaction was successfully committed, the timestamp at which the
   // transaction should be applied, and -1 otherwise.
@@ -273,7 +313,7 @@ class TxnParticipant {
   // for testing, as it easy to construct.
   struct TxnEntry {
     int64_t txn_id;
-    Txn::State state;
+    TxnState state;
     int64_t commit_timestamp;
   };
 

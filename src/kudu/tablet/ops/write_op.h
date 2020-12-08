@@ -26,6 +26,7 @@
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -54,11 +55,11 @@ namespace tablet {
 
 class ScopedOp;
 class TabletReplica;
-class Txn;
 class TxResultPB;
-struct TxnRowSets;
+class Txn;
 struct RowOp;
 struct TabletComponents;
+struct TxnRowSets;
 
 // Privileges required for write operations.
 enum WritePrivilegeType {
