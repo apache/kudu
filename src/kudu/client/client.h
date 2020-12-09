@@ -808,6 +808,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class tools::RemoteKsckCluster;
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
+  FRIEND_TEST(ClientTest, ClearCacheAndConcurrentWorkload);
   FRIEND_TEST(ClientTest, ConnectionNegotiationTimeout);
   FRIEND_TEST(ClientTest, TestBasicIdBasedLookup);
   FRIEND_TEST(ClientTest, TestCacheAuthzTokens);
