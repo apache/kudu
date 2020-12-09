@@ -146,6 +146,8 @@ struct RemoteReplica {
   bool failed;
 };
 
+typedef std::unordered_map<std::string, std::unique_ptr<RemoteTabletServer>>
+    TabletServerRegistry;
 typedef std::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
 
 // A ServerPicker for tablets servers, backed by the MetaCache.
@@ -394,7 +396,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
  public:
   // The passed 'client' object must remain valid as long as MetaCache is alive.
   MetaCache(KuduClient* client, ReplicaController::Visibility replica_visibility);
-  ~MetaCache();
+  ~MetaCache() = default;
 
   // Determines what type of operation a MetaCache lookup is being done for.
   enum class LookupType {
@@ -493,11 +495,21 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
   percpu_rwlock lock_;
 
-  // Cache of Tablet Server locations: TS UUID -> RemoteTabletServer*.
+  // Registry of all tablet servers as a map of tablet server's
+  // UUID -> std::unique_ptr<RemoteTabletServer>.
   //
-  // Given that the set of tablet servers is bounded by physical machines, we never
-  // evict entries from this map until the MetaCache is destructed. So, no need to use
-  // shared_ptr, etc.
+  // Given that the set of tablet servers in a cluster is bounded by physical
+  // machines and every tablet server has its unique identifier, we never remove
+  // entries from this map until the MetaCache is destructed. Note that the
+  // ClearCache() method doesn't touch this registry, but updates ts_cache_ map
+  // below which contains raw pointers to the elements in this registry.
+  // So, there is no need to use shared_ptr and alike for the entries.
+  //
+  // Protected by lock_.
+  TabletServerRegistry ts_registry_;
+
+  // Cache of Tablet Server locations: TS UUID -> RemoteTabletServer*.
+  // The cache can be cleared by the ClearCache() method.
   //
   // Protected by lock_.
   TabletServerMap ts_cache_;

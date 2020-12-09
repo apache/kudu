@@ -116,6 +116,7 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -2077,9 +2078,38 @@ TEST_F(ClientTest, TestMetaCacheExpiry) {
   ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
 
   // Force a lookup and ensure the entry is refreshed.
-  CHECK_NOTNULL(MetaCacheLookup(client_table_.get(), "").get());
+  ASSERT_NE(nullptr, MetaCacheLookup(client_table_.get(), ""));
+  ASSERT_TRUE(entry.stale());
   ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
   ASSERT_FALSE(entry.stale());
+}
+
+// This test scenario verifies that reset of the metacache is safe while working
+// with the client. The scenario calls MetaCache::ClearCache() in a rather
+// synthetic way, but the natural control flow does something similar to that
+// when alterting a table by adding a new range partition (see
+// KuduTableAlterer::Alter() for details).
+TEST_F(ClientTest, ClearCacheAndConcurrentWorkload) {
+  CountDownLatch latch(1);
+  thread cache_cleaner([&]() {
+    const auto sleep_interval = MonoDelta::FromMilliseconds(3);
+    while (!latch.WaitFor(sleep_interval)) {
+      client_->data_->meta_cache_->ClearCache();
+    }
+  });
+  auto thread_joiner = MakeScopedCleanup([&] {
+    latch.CountDown();
+    cache_cleaner.join();
+  });
+
+  constexpr const int kLowIdx = 0;
+  constexpr const int kHighIdx = 1000;
+  const auto runUntil = MonoTime::Now() + MonoDelta::FromSeconds(1);
+  while (MonoTime::Now() < runUntil) {
+    NO_FATALS(InsertTestRows(client_table_.get(), kHighIdx, kLowIdx));
+    NO_FATALS(UpdateTestRows(client_table_.get(), kLowIdx, kHighIdx));
+    NO_FATALS(DeleteTestRows(client_table_.get(), kLowIdx, kHighIdx));
+  }
 }
 
 TEST_F(ClientTest, TestGetTabletServerBlacklist) {
