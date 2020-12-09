@@ -93,6 +93,10 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // local Raft config.
   bool IsMemberInConfig(const std::string& uuid, RaftConfigState type);
 
+  bool IsMemberInConfigWithDetail(const std::string& uuid,
+      RaftConfigState type,
+      std::string *hostname_port);
+
   // Returns a count of the number of voters in the specified local Raft
   // config.
   int CountVotersInConfig(RaftConfigState type);

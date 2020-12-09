@@ -390,6 +390,13 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Return the proxy topology.
   ProxyTopologyPB GetProxyTopology() const;
 
+  // Only relevant for abstracted logs.
+  // Callback the log abstraction's TruncateOpsAfter function
+  // while holding Raft Consensus lock. This is to serialize
+  // the operation with Raft Consensus lock, which is the same locking
+  // pattern that is used by UpdateReplica while invoking TruncateOpsAfter
+  Status TruncateCallbackWithRaftLock();
+
   // Returns the last OpId (either received or committed, depending on the
   // 'type' argument) that the Consensus implementation knows about.
   // Returns boost::none if RaftConsensus was not properly initialized.
@@ -430,7 +437,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   MonoDelta MinimumElectionTimeout() const;
 
   // Return the minimum election timeout considering ban-factor
-  MonoDelta MinimumElectionTimeoutWithBan() const;
+  MonoDelta MinimumElectionTimeoutWithBan();
 
   // Returns a copy of the state of the consensus system.
   // If 'report_health' is set to 'INCLUDE_HEALTH_REPORT', and if the
@@ -732,29 +739,36 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code, VoteResponsePB* response);
 
   // Respond to VoteRequest that the candidate has an old term.
-  Status RequestVoteRespondInvalidTerm(const VoteRequestPB* request, VoteResponsePB* response);
+  Status RequestVoteRespondInvalidTerm(const VoteRequestPB* request,
+                                       const std::string& hostname_port,
+                                       VoteResponsePB* response);
 
   // Respond to VoteRequest that we already granted our vote to the candidate.
   Status RequestVoteRespondVoteAlreadyGranted(const VoteRequestPB* request,
+                                              const std::string& hostname_port,
                                               VoteResponsePB* response);
 
   // Respond to VoteRequest that we already granted our vote to someone else.
   Status RequestVoteRespondAlreadyVotedForOther(const VoteRequestPB* request,
+                                                const std::string& hostname_port,
                                                 VoteResponsePB* response);
 
   // Respond to VoteRequest that the candidate's last-logged OpId is too old.
   Status RequestVoteRespondLastOpIdTooOld(const OpId& local_last_logged_opid,
                                           const VoteRequestPB* request,
+                                          const std::string& hostname_port,
                                           VoteResponsePB* response);
 
   // Respond to VoteRequest with a denial because votes are being witheld
   // for testing.
-  Status RequestVoteRespondVoteWitheld(
-      const VoteRequestPB* request, VoteResponsePB* response);
+  Status RequestVoteRespondVoteWitheld(const VoteRequestPB* request,
+                                       const std::string& hostname_port,
+                                       VoteResponsePB* response);
 
   // Respond to VoteRequest that the vote was not granted because we believe
   // the leader to be alive.
   Status RequestVoteRespondLeaderIsAlive(const VoteRequestPB* request,
+                                         const std::string& hostname_port,
                                          VoteResponsePB* response);
 
   // Respond to VoteRequest that the replica is already in the middle of servicing
@@ -764,6 +778,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Respond to VoteRequest that the vote is granted for candidate.
   Status RequestVoteRespondVoteGranted(const VoteRequestPB* request,
+                                       const std::string& hostname_port,
                                        VoteResponsePB* response);
 
   // Callback for leader election driver. ElectionCallback is run on the
@@ -803,6 +818,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   //
   // The maximum delta is capped by 'FLAGS_leader_failure_exp_backoff_max_delta_ms'.
   MonoDelta LeaderElectionExpBackoffDeltaUnlocked();
+
+  MonoDelta TimeoutBackoffHelper(double backoff_factor);
 
   // Handle when the term has advanced beyond the current term.
   //

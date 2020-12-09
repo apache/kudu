@@ -143,6 +143,14 @@ bool ConsensusMetadata::IsMemberInConfig(const string& uuid,
   return IsRaftConfigMember(uuid, GetConfig(type));
 }
 
+bool ConsensusMetadata::IsMemberInConfigWithDetail(
+    const std::string& uuid,
+    RaftConfigState type,
+    std::string *hostname_port) {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  return IsRaftConfigMemberWithDetail(uuid, GetConfig(type), hostname_port);
+}
+
 int ConsensusMetadata::CountVotersInConfig(RaftConfigState type) {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   return CountVoters(GetConfig(type));
