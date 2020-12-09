@@ -985,7 +985,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
 
   PartitionSchemaPB schema_builder;
-  // Table-wide HashSchema defined below, 3 by 2 buckets so 6 total.
+  // Table-wide hash schema defined below, 3 by 2 buckets so 6 total.
   AddHashBucketComponent(&schema_builder, { "a", "c" }, 3, 0);
   AddHashBucketComponent(&schema_builder, { "b" }, 2, 0);
   PartitionSchema partition_schema;
@@ -1079,6 +1079,14 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
                                                schema, &partitions);
   ASSERT_EQ("Invalid argument: Both 'split_rows' and 'range_hash_schemas' "
             "cannot be populated at the same time.", s.ToString());
+
+  // adding another schema to range_hash_schemas to trigger Status::InvalidArgument due to
+  // 'bounds and 'range_hash_schema' not being the same size.
+  range_hash_schemas.emplace_back(PartitionSchema::HashBucketSchemas());
+  Status s1 = partition_schema.CreatePartitions({}, bounds, range_hash_schemas,
+                                               schema, &partitions);
+  ASSERT_EQ("Invalid argument: The number of range bounds does not match the number of per "
+            "range hash schemas.", s1.ToString());
 
 }
 } // namespace kudu

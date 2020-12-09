@@ -490,6 +490,10 @@ message GetTabletLocationsResponsePB {
 // ============================================================================
 //  Catalog
 // ============================================================================
+message PerRangeHashBucketSchemasPB {
+  repeated PartitionSchemaPB.HashBucketSchemaPB hash_schemas = 1;
+}
+
 message CreateTableRequestPB {
   required string name = 1;
   required SchemaPB schema = 2;
@@ -497,7 +501,15 @@ message CreateTableRequestPB {
   // repeated PartialRowPB split_rows = 5;
   // Holds either the split rows or the range bounds (or both) of the table.
   optional RowOperationsPB split_rows_range_bounds = 6;
+  // Holds the table's partition schema, the partition schema's hash bucket schemas
+  // are the default for any range where 'range_hash_schemas' is empty.
   optional PartitionSchemaPB partition_schema = 7;
+  // Holds the hash bucket schemas for each range during table creation.
+  // Only populated when 'split_rows_range_bounds' specifies range bounds, must be empty if any
+  // split rows are specified. If this field is set, its size must match the number of ranges
+  // specified by range bounds and they must be in the same order. If this field is empty,
+  // 'partition_schema' is assumed for every range bound.
+  repeated PerRangeHashBucketSchemasPB range_hash_schemas = 12;
   optional int32 num_replicas = 4;
 
   // If set, uses the provided value as the table owner when creating the table.

@@ -327,6 +327,10 @@ DEFINE_uint32(table_locations_cache_capacity_mb, 0,
               "of 0 means table locations are not be cached");
 TAG_FLAG(table_locations_cache_capacity_mb, advanced);
 
+DEFINE_bool(enable_per_range_hash_schemas, false,
+            "Whether the ability to specify different hash schemas per range is enabled");
+TAG_FLAG(enable_per_range_hash_schemas, unsafe);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int64(tsk_rotation_seconds);
 
@@ -1710,7 +1714,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
           RETURN_NOT_OK(partition_schema.MakeUpperBoundRangePartitionKeyExclusive(
                 ops[i].split_row.get()));
         }
-
         range_bounds.emplace_back(*op.split_row, *ops[i].split_row);
         break;
       }
@@ -1719,10 +1722,20 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     }
   }
 
+  PartitionSchema::RangeHashSchema range_hash_schemas;
+  if (FLAGS_enable_per_range_hash_schemas) {
+    for (int i = 0; i < req.range_hash_schemas_size(); i++) {
+      PartitionSchema::HashBucketSchemas hash_bucket_schemas;
+      RETURN_NOT_OK(PartitionSchema::ExtractHashBucketSchemasFromPB(
+          schema, req.range_hash_schemas(i).hash_schemas(), &hash_bucket_schemas));
+      range_hash_schemas.emplace_back(std::move(hash_bucket_schemas));
+    }
+  }
+
   // Create partitions based on specified partition schema and split rows.
   vector<Partition> partitions;
   RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, range_bounds,
-                                                  {}, schema, &partitions));
+                                                  range_hash_schemas, schema, &partitions));
 
   // If they didn't specify a num_replicas, set it based on the default.
   if (!req.has_num_replicas()) {

@@ -41,7 +41,7 @@ class ConstContiguousRow;
 class KuduPartialRow;
 class PartitionPB;
 class PartitionSchemaPB;
-class PartitionSchemaPB_ColumnIdentifierPB;
+class PartitionSchemaPB_HashBucketSchemaPB;
 template <typename Buffer> class KeyEncoder;
 
 // A Partition describes the set of rows that a Tablet is responsible for
@@ -163,11 +163,12 @@ class PartitionSchema {
     HashBucketSchemas hash_schemas;
   };
 
-  // Extracts the column IDs from a protobuf repeated field of column identifiers.
-  static Status ExtractColumnIds(
-      const google::protobuf::RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>& identifiers,
+  // Extracts HashBucketSchemas from a protobuf repeated field of hash buckets.
+  static Status ExtractHashBucketSchemasFromPB(
       const Schema& schema,
-      std::vector<ColumnId>* column_ids);
+      const google::protobuf::RepeatedPtrField<PartitionSchemaPB_HashBucketSchemaPB>&
+          hash_buckets_pb,
+      HashBucketSchemas* hash_bucket_schemas);
 
   // Deserializes a protobuf message into a partition schema.
   static Status FromPB(const PartitionSchemaPB& pb,

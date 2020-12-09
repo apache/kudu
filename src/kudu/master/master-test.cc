@@ -117,6 +117,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
+DECLARE_bool(enable_per_range_hash_schemas);
 DECLARE_bool(master_support_authz_tokens);
 DECLARE_bool(mock_table_metrics_for_testing);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
@@ -162,6 +163,12 @@ class MasterTest : public KuduTest {
     KuduTest::TearDown();
   }
 
+  struct HashBucketSchema {
+    vector<string> columns;
+    int32_t num_buckets;
+    uint32_t seed;
+  };
+
   void DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp);
   void DoListAllTables(ListTablesResponsePB* resp);
   Status CreateTable(const string& table_name,
@@ -172,7 +179,8 @@ class MasterTest : public KuduTest {
                      const vector<KuduPartialRow>& split_rows,
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
                      const optional<string>& owner,
-                     const optional<TableTypePB>& table_type = boost::none);
+                     const optional<TableTypePB>& table_type = boost::none,
+                     const vector<vector<HashBucketSchema>>& range_hash_schema = {});
 
   shared_ptr<Messenger> client_messenger_;
   unique_ptr<MiniMaster> mini_master_;
@@ -546,7 +554,8 @@ Status MasterTest::CreateTable(const string& table_name,
                                const vector<KuduPartialRow>& split_rows,
                                const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
                                const optional<string>& owner,
-                               const optional<TableTypePB>& table_type) {
+                               const optional<TableTypePB>& table_type,
+                               const vector<vector<HashBucketSchema>>& range_hash_schema) {
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController controller;
@@ -563,6 +572,18 @@ Status MasterTest::CreateTable(const string& table_name,
   for (const pair<KuduPartialRow, KuduPartialRow>& bound : bounds) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+  }
+
+  for (const auto& hash_schemas : range_hash_schema) {
+    auto* hash_schemas_pb = req.add_range_hash_schemas();
+    for (const auto& hash_schema : hash_schemas) {
+      auto* hash_bucket_schema_pb = hash_schemas_pb->add_hash_schemas();
+      for (const string& col_name : hash_schema.columns) {
+        hash_bucket_schema_pb->add_columns()->set_name(col_name);
+      }
+      hash_bucket_schema_pb->set_num_buckets(hash_schema.num_buckets);
+      hash_bucket_schema_pb->set_seed(hash_schema.seed);
+    }
   }
 
   if (owner) {
@@ -805,6 +826,43 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
                         "least one range partition column");
   }
 
+  // No split rows and range specific hashing concurrently.
+  {
+    FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
+    KuduPartialRow split1(&kTableSchema);
+    ASSERT_OK(split1.SetInt32("key", 1));
+    KuduPartialRow a_lower(&kTableSchema);
+    KuduPartialRow a_upper(&kTableSchema);
+    ASSERT_OK(a_lower.SetInt32("key", 0));
+    ASSERT_OK(a_upper.SetInt32("key", 100));
+    vector<vector<HashBucketSchema>> range_hash_schema = { vector<HashBucketSchema>() };
+    Status s = CreateTable(kTableName, kTableSchema, { split1 }, { { a_lower, a_upper } },
+                           none, none, range_hash_schema);
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "Both 'split_rows' and 'range_hash_schemas' cannot be "
+                        "populated at the same time.");
+  }
+
+  // The number of range bounds must match the size of user defined hash schemas.
+  {
+    FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
+    KuduPartialRow a_lower(&kTableSchema);
+    KuduPartialRow a_upper(&kTableSchema);
+    ASSERT_OK(a_lower.SetInt32("key", 0));
+    ASSERT_OK(a_upper.SetInt32("key", 100));
+    vector<HashBucketSchema> hash_schemas_4 = { { {"key"}, 4, 0 } };
+    vector<HashBucketSchema> hash_schemas_2 = { { {"val"}, 2, 0 } };
+    vector<vector<HashBucketSchema>> range_hash_schema = {std::move(hash_schemas_2),
+                                                          std::move(hash_schemas_4)};
+    Status s = CreateTable(kTableName, kTableSchema, { }, { { a_lower, a_upper } },
+                           none, none, range_hash_schema);
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "The number of range bounds does not match the number of per "
+                        "range hash schemas.");
+  }
+
   // No non-range columns.
   {
     KuduPartialRow split(&kTableSchema);
@@ -827,8 +885,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(b_lower.SetInt32("key", 50));
     ASSERT_OK(b_upper.SetInt32("key", 150));
     Status s = CreateTable(kTableName, kTableSchema, { }, { { a_lower, a_upper },
-                                                            { b_lower, b_upper } },
-                                                            none);
+                                                            { b_lower, b_upper } }, none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: overlapping range partition");
   }
@@ -842,8 +899,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(split.SetInt32("key", 200));
 
     Status s = CreateTable(kTableName, kTableSchema, { split },
-                           { { bound_lower, bound_upper } },
-                           none);
+                           { { bound_lower, bound_upper } }, none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split out of bounds");
   }
@@ -857,8 +913,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(split.SetInt32("key", -120));
 
     Status s = CreateTable(kTableName, kTableSchema, { split },
-                           { { bound_lower, bound_upper } },
-                           none);
+                           { { bound_lower, bound_upper } }, none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split out of bounds");
   }
@@ -935,7 +990,7 @@ TEST_F(MasterTest, TestCreateTableOwnerNameTooLong) {
     "xyz01234567899abcdefghijklmnopqrstuvwxyz01234567899abcdefghijklmnopqrstuvwxyz01234567899";
 
   const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
-  Status s = CreateTable(kTableName, kTableSchema, { }, { }, kOwnerName);
+  Status s = CreateTable(kTableName, kTableSchema, {}, {}, kOwnerName);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "invalid owner name");
 }

@@ -111,21 +111,10 @@ void Partition::FromPB(const PartitionPB& pb, Partition* partition) {
 }
 
 namespace {
-// Sets a repeated field of column identifiers to the provided column IDs.
-void SetColumnIdentifiers(const vector<ColumnId>& column_ids,
-                          RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>* identifiers) {
-    identifiers->Reserve(column_ids.size());
-    for (const ColumnId& column_id : column_ids) {
-      identifiers->Add()->set_id(column_id);
-    }
-}
-} // namespace
-
 // Extracts the column IDs from a protobuf repeated field of column identifiers.
-Status PartitionSchema::ExtractColumnIds(
-    const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>& identifiers,
-    const Schema& schema,
-    vector<ColumnId>* column_ids) {
+Status ExtractColumnIds(const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>& identifiers,
+                        const Schema& schema,
+                        vector<ColumnId>* column_ids) {
   vector<ColumnId> new_column_ids;
   new_column_ids.reserve(identifiers.size());
   for (const auto& identifier : identifiers) {
@@ -136,7 +125,7 @@ Status PartitionSchema::ExtractColumnIds(
           return Status::InvalidArgument("unknown column id", SecureDebugString(identifier));
         }
         new_column_ids.emplace_back(std::move(column_id));
-      continue;
+        continue;
       }
       case PartitionSchemaPB_ColumnIdentifierPB::kName: {
         int32_t column_idx = schema.find_column(identifier.name());
@@ -144,7 +133,7 @@ Status PartitionSchema::ExtractColumnIds(
           return Status::InvalidArgument("unknown column", SecureDebugString(identifier));
         }
         new_column_ids.emplace_back(schema.column_id(column_idx));
-      continue;
+        continue;
       }
       default: return Status::InvalidArgument("unknown column", SecureDebugString(identifier));
     }
@@ -153,12 +142,22 @@ Status PartitionSchema::ExtractColumnIds(
   return Status::OK();
 }
 
-Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
-                               const Schema& schema,
-                               PartitionSchema* partition_schema) {
-  partition_schema->Clear();
+// Sets a repeated field of column identifiers to the provided column IDs.
+void SetColumnIdentifiers(const vector<ColumnId>& column_ids,
+                          RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>* identifiers) {
+  identifiers->Reserve(column_ids.size());
+  for (const ColumnId& column_id : column_ids) {
+    identifiers->Add()->set_id(column_id);
+  }
+}
+} // namespace
 
-  for (const PartitionSchemaPB_HashBucketSchemaPB& hash_bucket_pb : pb.hash_bucket_schemas()) {
+
+Status PartitionSchema::ExtractHashBucketSchemasFromPB(
+    const Schema& schema,
+    const RepeatedPtrField<PartitionSchemaPB_HashBucketSchemaPB>& hash_buckets_pb,
+    HashBucketSchemas* hash_bucket_schemas) {
+  for (const PartitionSchemaPB_HashBucketSchemaPB& hash_bucket_pb : hash_buckets_pb) {
     HashBucketSchema hash_bucket;
     RETURN_NOT_OK(ExtractColumnIds(hash_bucket_pb.columns(), schema, &hash_bucket.column_ids));
 
@@ -170,8 +169,17 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
 
     hash_bucket.seed = hash_bucket_pb.seed();
     hash_bucket.num_buckets = hash_bucket_pb.num_buckets();
-    partition_schema->hash_bucket_schemas_.push_back(hash_bucket);
+    hash_bucket_schemas->push_back(std::move(hash_bucket));
   }
+  return Status::OK();
+}
+
+Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
+                               const Schema& schema,
+                               PartitionSchema* partition_schema) {
+  partition_schema->Clear();
+  RETURN_NOT_OK(ExtractHashBucketSchemasFromPB(schema, pb.hash_bucket_schemas(),
+                             &partition_schema->hash_bucket_schemas_));
 
   if (pb.has_range_schema()) {
     const PartitionSchemaPB_RangeSchemaPB& range_pb = pb.range_schema();
@@ -407,12 +415,14 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
                                          vector<Partition>* partitions) const {
   const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
 
-  if (!split_rows.empty()) {
-    for (const auto& hash_schemas : range_hash_schemas) {
-      if (!hash_schemas.empty()) {
-        return Status::InvalidArgument("Both 'split_rows' and 'range_hash_schemas' cannot be "
-                                       "populated at the same time.");
+  if (!range_hash_schemas.empty()) {
+    if (!split_rows.empty()) {
+      return Status::InvalidArgument("Both 'split_rows' and 'range_hash_schemas' cannot be "
+                                     "populated at the same time.");
       }
+    if (range_bounds.size() != range_hash_schemas.size()) {
+      return Status::InvalidArgument("The number of range bounds does not match the number of per "
+                                     "range hash schemas.");
     }
   }
 
@@ -440,8 +450,10 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
   RETURN_NOT_OK(SplitRangeBounds(schema, std::move(splits), &bounds_with_hash_schemas));
 
   if (!range_hash_schemas.empty()) {
-    // Hash schemas per range cannot be applied to split rows.
+    // The number of ranges should match the size of range_hash_schemas.
     DCHECK_EQ(range_hash_schemas.size(), bounds_with_hash_schemas.size());
+    // No split rows should be defined if range_hash_schemas is populated.
+    DCHECK(split_rows.empty());
     vector<Partition> result_partitions;
     // Iterate through each bound and its hash schemas to generate hash partitions.
     for (const auto& bound : bounds_with_hash_schemas) {
