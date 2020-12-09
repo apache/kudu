@@ -40,7 +40,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -521,20 +520,30 @@ MetaCache::MetaCache(KuduClient* client,
       replica_visibility_(replica_visibility) {
 }
 
-MetaCache::~MetaCache() {
-  STLDeleteValues(&ts_cache_);
-}
-
 void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
   DCHECK(lock_.is_write_locked());
-  RemoteTabletServer* ts = FindPtrOrNull(ts_cache_, pb.permanent_uuid());
+  const auto& ts_uuid = pb.permanent_uuid();
+  auto* ts = FindPtrOrNull(ts_cache_, ts_uuid);
   if (ts) {
     ts->Update(pb);
     return;
   }
 
-  VLOG(1) << "Client caching new TabletServer " << pb.permanent_uuid();
-  InsertOrDie(&ts_cache_, pb.permanent_uuid(), new RemoteTabletServer(pb));
+  // First check whether the information about the tablet server is already
+  // present in the registry.
+  ts = FindPointeeOrNull(ts_registry_, ts_uuid);
+  if (ts) {
+    // If the tablet server is already registered, update the existing entry.
+    ts->Update(pb);
+  } else {
+    // If the tablet server isn't registered, add a new entry.
+    unique_ptr<RemoteTabletServer> entry(new RemoteTabletServer(pb));
+    ts = entry.get();
+    EmplaceOrDie(&ts_registry_, ts_uuid, std::move(entry));
+  }
+  // Now add the entry into the cache.
+  VLOG(1) << Substitute("client caching new TabletServer $0", ts_uuid);
+  InsertOrDie(&ts_cache_, ts_uuid, ts);
 }
 
 
@@ -997,7 +1006,7 @@ void MetaCache::ClearNonCoveredRangeEntries(const std::string& table_id) {
 void MetaCache::ClearCache() {
   VLOG(3) << "Clearing cache";
   std::lock_guard<percpu_rwlock> l(lock_);
-  STLDeleteValues(&ts_cache_);
+  ts_cache_.clear();
   tablets_by_id_.clear();
   tablets_by_table_and_key_.clear();
 }
