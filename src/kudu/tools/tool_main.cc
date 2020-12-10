@@ -61,20 +61,20 @@ namespace tools {
 unique_ptr<Mode> RootMode(const string& name) {
   return ModeBuilder(name)
       .Description("Kudu Command Line Tools") // root mode description isn't printed
-      .AddMode(BuildClusterMode())
-      .AddMode(BuildDiagnoseMode())
-      .AddMode(BuildFsMode())
-      .AddMode(BuildHmsMode())
-      .AddMode(BuildLocalReplicaMode())
-      .AddMode(BuildMasterMode())
+      //.AddMode(BuildClusterMode())
+      //.AddMode(BuildDiagnoseMode())
+      //.AddMode(BuildFsMode())
+      //.AddMode(BuildHmsMode())
+      //.AddMode(BuildLocalReplicaMode())
+      //.AddMode(BuildMasterMode())
       .AddMode(BuildPbcMode())
-      .AddMode(BuildPerfMode())
-      .AddMode(BuildRemoteReplicaMode())
-      .AddMode(BuildTableMode())
-      .AddMode(BuildTabletMode())
-      .AddMode(BuildTestMode())
-      .AddMode(BuildTServerMode())
-      .AddMode(BuildWalMode())
+      //.AddMode(BuildPerfMode())
+      //.AddMode(BuildRemoteReplicaMode())
+      //.AddMode(BuildTableMode())
+      //.AddMode(BuildTabletMode())
+      //.AddMode(BuildTestMode())
+      //.AddMode(BuildTServerMode())
+      //.AddMode(BuildWalMode())
       .Build();
 }
 
@@ -219,10 +219,7 @@ int RunTool(int argc, char** argv, bool show_help) {
   return 1;
 }
 
-} // namespace tools
-} // namespace kudu
-
-static bool ParseCommandLineFlags(const char* prog_name) {
+bool ParseCommandLineFlags(const char* prog_name) {
   // Leverage existing helpxml flag to print mode/action xml.
   if (FLAGS_helpxml) {
     kudu::tools::DumpToolXML(prog_name);
@@ -246,11 +243,11 @@ static bool ParseCommandLineFlags(const char* prog_name) {
   return show_help;
 }
 
-int main(int argc, char** argv) {
+int ToolMain(int argc, char** argv) {
   // Disable redaction by default so that user data printed to the console will be shown
   // in full.
-  CHECK_NE("",  google::SetCommandLineOptionWithMode(
-      "redact", "", google::SET_FLAGS_DEFAULT));
+  CHECK_NE("",  gflags::SetCommandLineOptionWithMode(
+      "redact", "", gflags::SET_FLAGS_DEFAULT));
 
   // Hide the regular gflags help unless --helpfull is used.
   //
@@ -264,3 +261,6 @@ int main(int argc, char** argv) {
 
   return kudu::tools::RunTool(argc, argv, show_help);
 }
+
+} // namespace tools
+} // namespace kudu

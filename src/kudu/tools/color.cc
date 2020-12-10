@@ -43,7 +43,7 @@ static bool ValidateColorFlag(const char* flagname, const std::string& value) {
   LOG(ERROR) << "option 'color' expects \"always\", \"auto\", or \"never\"";
   return false;
 }
-static bool dummy = google::RegisterFlagValidator(
+static bool dummy = gflags::RegisterFlagValidator(
     &FLAGS_color, &ValidateColorFlag);
 
 

@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -38,14 +37,6 @@ namespace kudu {
 
 class MonoDelta;
 class faststring;
-
-namespace client {
-class KuduClient;
-} // namespace client
-
-namespace master {
-class MasterServiceProxy;
-} // namespace master
 
 namespace rpc {
 class RpcController;
@@ -81,6 +72,7 @@ Status BuildProxy(const std::string& address,
                   uint16_t default_port,
                   std::unique_ptr<ProxyClass>* proxy);
 
+/*
 // Get the current status of the Kudu server running at 'address', storing it
 // in 'status'.
 //
@@ -132,9 +124,7 @@ Status PrintServerFlags(const std::string& address, uint16_t default_port);
 // If 'address' does not contain a port, 'default_port' is used instead.
 Status SetServerFlag(const std::string& address, uint16_t default_port,
                      const std::string& flag, const std::string& value);
-
-// Get the configured master addresses on the most recently connected to leader master.
-std::string GetMasterAddresses(const client::KuduClient& client);
+*/
 
 // Return true if 'str' matches any of the patterns in 'patterns', or if
 // 'patterns' is empty.
@@ -174,35 +164,6 @@ class DataTable {
  private:
   std::vector<std::string> column_names_;
   std::vector<std::vector<std::string>> columns_;
-};
-
-// Wrapper around a Kudu client which allows calling proxy methods on the leader
-// master.
-class LeaderMasterProxy {
- public:
-  LeaderMasterProxy() = default;
-  explicit LeaderMasterProxy(client::sp::shared_ptr<client::KuduClient> client);
-
-  // Initializes the leader master proxy with the given master addresses and timeout.
-  Status Init(const std::vector<std::string>& master_addrs, const MonoDelta& timeout);
-
-  // Initialize the leader master proxy given the provided tool context.
-  //
-  // Uses the required 'master_addresses' option for the master addresses, and
-  // the optional 'timeout_ms' flag to control admin and operation timeouts.
-  Status Init(const RunnerContext& context);
-
-  // Calls a master RPC service method on the current leader master.
-  template<typename Req, typename Resp>
-  Status SyncRpc(const Req& req,
-                 Resp* resp,
-                 const char* func_name,
-                 const boost::function<Status(master::MasterServiceProxy*,
-                                              const Req&, Resp*,
-                                              rpc::RpcController*)>& func);
-
- private:
-  client::sp::shared_ptr<client::KuduClient> client_;
 };
 
 // Facilitates sending and receiving messages with the tool control shell.

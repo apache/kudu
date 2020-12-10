@@ -48,7 +48,7 @@ namespace tools {
 namespace {
 
 string FakeDescribeOneFlag(const ActionArgsDescriptor::Arg& arg) {
-  string res = google::DescribeOneFlag({
+  string res = gflags::DescribeOneFlag({
     arg.name,        // name
     "string",        // type
     arg.description, // description
@@ -232,7 +232,7 @@ ActionBuilder& ActionBuilder::AddOptionalParameter(string param,
 #ifndef NDEBUG
   // Make sure this gflag exists.
   string option;
-  DCHECK(google::GetCommandLineOption(param.c_str(), &option)) << "unknown option: " << param;
+  DCHECK(gflags::GetCommandLineOption(param.c_str(), &option)) << "unknown option: " << param;
 #endif
   args_.optional.emplace_back(ActionArgsDescriptor::Flag({ std::move(param),
                                                            std::move(default_value),
@@ -275,8 +275,8 @@ string Action::BuildHelp(const vector<Mode*>& chain,
     desc_msg += "\n";
   }
   for (const auto& param : args_.optional) {
-    google::CommandLineFlagInfo gflag_info =
-        google::GetCommandLineFlagInfoOrDie(param.name.c_str());
+    gflags::CommandLineFlagInfo gflag_info =
+        gflags::GetCommandLineFlagInfoOrDie(param.name.c_str());
 
     if (param.description) {
       gflag_info.description = *param.description;
@@ -299,7 +299,7 @@ string Action::BuildHelp(const vector<Mode*>& chain,
       }
       usage_msg += Substitute(" [-$0=<$1>]", param.name, noun);
     }
-    desc_msg += google::DescribeOneFlag(gflag_info);
+    desc_msg += gflags::DescribeOneFlag(gflag_info);
     desc_msg += "\n";
   }
   if (mode == USAGE_ONLY) {
@@ -353,8 +353,8 @@ string Action::BuildHelpXML(const vector<Mode*>& chain) const {
   }
 
   for (const auto& o : args().optional) {
-    google::CommandLineFlagInfo gflag_info =
-        google::GetCommandLineFlagInfoOrDie(o.name.c_str());
+    gflags::CommandLineFlagInfo gflag_info =
+        gflags::GetCommandLineFlagInfoOrDie(o.name.c_str());
 
     if (o.description) {
       gflag_info.description = *o.description;
@@ -395,9 +395,9 @@ string Action::BuildHelpXML(const vector<Mode*>& chain) const {
 void Action::SetOptionalParameterDefaultValues() const {
   for (const auto& param : args_.optional) {
     if (param.default_value) {
-      google::SetCommandLineOptionWithMode(param.name.c_str(),
+      gflags::SetCommandLineOptionWithMode(param.name.c_str(),
                                            param.default_value->c_str(),
-                                           google::FlagSettingMode::SET_FLAGS_DEFAULT);
+                                           gflags::FlagSettingMode::SET_FLAGS_DEFAULT);
     }
   }
 }

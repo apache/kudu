@@ -21,8 +21,8 @@ option java_package = "org.apache.kudu.tools";
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
-import "kudu/tablet/metadata.proto";
-import "kudu/tablet/tablet.proto";
+//import "kudu/tablet/metadata.proto";
+//import "kudu/tablet/tablet.proto";
 
 // Creates a new ExternalMiniCluster.
 //
@@ -44,7 +44,7 @@ message CreateClusterRequestPB {
 
   // Whether or not to create a Hive Metastore, and/or enable Kudu Hive
   // Metastore integration.
-  optional HmsMode hms_mode = 7;
+  //optional HmsMode hms_mode = 7;
 
   // The directory where the cluster's data and logs should be placed.
   optional string cluster_root = 4;
@@ -270,8 +270,8 @@ message KsckReplicaSummaryPB {
   optional bool ts_healthy = 3;
   optional bool is_leader = 4;
   optional bool is_voter = 5;
-  optional tablet.TabletStatePB state = 6;
-  optional tablet.TabletStatusPB status_pb = 7;
+  //optional tablet.TabletStatePB state = 6;
+  //optional tablet.TabletStatusPB status_pb = 7;
   optional KsckConsensusStatePB consensus_state = 8;
 }
 

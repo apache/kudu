@@ -36,12 +36,7 @@
 #include <glog/logging.h>
 #include <google/protobuf/util/json_util.h>
 
-#include "kudu/client/client-internal.h"  // IWYU pragma: keep
-#include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
-#include "kudu/common/row_operations.h"
-#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h" // IWYU pragma: keep
@@ -57,7 +52,6 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -65,9 +59,7 @@
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tools/tool.pb.h" // IWYU pragma: keep
 #include "kudu/tools/tool_action.h"
-#include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"   // IWYU pragma: keep
-#include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/memory/arena.h"
@@ -125,38 +117,27 @@ class ReplaceTabletResponsePB;
 
 namespace tools {
 
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduTablet;
-using client::KuduTabletServer;
 using consensus::ConsensusServiceProxy;
 using consensus::ReplicateMsg;
 using log::LogEntryPB;
 using log::LogEntryReader;
 using log::ReadableLogSegment;
-using master::ListMastersRequestPB;
-using master::ListMastersResponsePB;
-using master::ListTabletServersRequestPB;
-using master::ListTabletServersResponsePB;
-using master::MasterServiceProxy;
-using master::ReplaceTabletRequestPB;
-using master::ReplaceTabletResponsePB;
 using pb_util::SecureDebugString;
 using pb_util::SecureShortDebugString;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using rpc::RequestIdPB;
 using rpc::RpcController;
-using server::GenericServiceProxy;
-using server::GetFlagsRequestPB;
-using server::GetFlagsResponsePB;
-using server::GetStatusRequestPB;
-using server::GetStatusResponsePB;
-using server::ServerClockRequestPB;
-using server::ServerClockResponsePB;
+//using server::GenericServiceProxy;
+//using server::GetFlagsRequestPB;
+//using server::GetFlagsResponsePB;
+//using server::GetStatusRequestPB;
+//using server::GetStatusResponsePB;
+//using server::ServerClockRequestPB;
+//using server::ServerClockResponsePB;
 using server::ServerStatusPB;
-using server::SetFlagRequestPB;
-using server::SetFlagResponsePB;
+//using server::SetFlagRequestPB;
+//using server::SetFlagResponsePB;
 using std::cout;
 using std::endl;
 using std::ostream;
@@ -167,120 +148,12 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
-using tserver::TabletServerAdminServiceProxy;
-using tserver::TabletServerServiceProxy;
-using tserver::WriteRequestPB;
 
 const char* const kMasterAddressesArg = "master_addresses";
 const char* const kMasterAddressesArgDesc = "Comma-separated list of Kudu "
     "Master addresses where each address is of form 'hostname:port'";
 const char* const kTabletIdArg = "tablet_id";
 const char* const kTabletIdArgDesc = "Tablet Identifier";
-
-namespace {
-
-enum PrintEntryType {
-  DONT_PRINT,
-  PRINT_PB,
-  PRINT_DECODED,
-  PRINT_ID
-};
-
-PrintEntryType ParsePrintType() {
-  if (ParseLeadingBoolValue(FLAGS_print_entries.c_str(), true) == false) {
-    return DONT_PRINT;
-  } else if (ParseLeadingBoolValue(FLAGS_print_entries.c_str(), false) == true ||
-             FLAGS_print_entries == "decoded") {
-    return PRINT_DECODED;
-  } else if (FLAGS_print_entries == "pb") {
-    return PRINT_PB;
-  } else if (FLAGS_print_entries == "id") {
-    return PRINT_ID;
-  } else {
-    LOG(FATAL) << "Unknown value for --print_entries: " << FLAGS_print_entries;
-  }
-}
-
-void PrintIdOnly(const LogEntryPB& entry) {
-  switch (entry.type()) {
-    case log::REPLICATE:
-    {
-      cout << entry.replicate().id().term() << "." << entry.replicate().id().index()
-           << "@" << entry.replicate().timestamp() << "\t";
-      cout << "REPLICATE "
-           << OperationType_Name(entry.replicate().op_type());
-      break;
-    }
-    case log::COMMIT:
-    {
-      cout << "COMMIT " << entry.commit().commited_op_id().term()
-           << "." << entry.commit().commited_op_id().index();
-      break;
-    }
-    default:
-      cout << "UNKNOWN: " << SecureShortDebugString(entry);
-  }
-
-  cout << endl;
-}
-
-Status PrintDecodedWriteRequestPB(const string& indent,
-                                  const Schema& tablet_schema,
-                                  const WriteRequestPB& write,
-                                  const RequestIdPB* request_id) {
-  Schema request_schema;
-  RETURN_NOT_OK(SchemaFromPB(write.schema(), &request_schema));
-
-  Arena arena(32 * 1024);
-  RowOperationsPBDecoder dec(&write.row_operations(), &request_schema, &tablet_schema, &arena);
-  vector<DecodedRowOperation> ops;
-  RETURN_NOT_OK(dec.DecodeOperations(&ops));
-
-  cout << indent << "Tablet: " << write.tablet_id() << endl;
-  cout << indent << "RequestId: "
-      << (request_id ? SecureShortDebugString(*request_id) : "None") << endl;
-  cout << indent << "Consistency: "
-       << ExternalConsistencyMode_Name(write.external_consistency_mode()) << endl;
-  if (write.has_propagated_timestamp()) {
-    cout << indent << "Propagated TS: " << write.propagated_timestamp() << endl;
-  }
-
-  int i = 0;
-  for (const DecodedRowOperation& op : ops) {
-    // TODO (KUDU-515): Handle the case when a tablet's schema changes
-    // mid-segment.
-    cout << indent << "op " << (i++) << ": " << op.ToString(tablet_schema) << endl;
-  }
-
-  return Status::OK();
-}
-
-Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
-  PrintIdOnly(entry);
-
-  const string indent = "\t";
-  if (entry.has_replicate()) {
-    // We can actually decode REPLICATE messages.
-
-    const ReplicateMsg& replicate = entry.replicate();
-    if (replicate.op_type() == consensus::WRITE_OP) {
-      RETURN_NOT_OK(PrintDecodedWriteRequestPB(
-          indent,
-          tablet_schema,
-          replicate.write_request(),
-          replicate.has_request_id() ? &replicate.request_id() : nullptr));
-    } else {
-      cout << indent << SecureShortDebugString(replicate) << endl;
-    }
-  } else if (entry.has_commit()) {
-    // For COMMIT we'll just dump the PB
-    cout << indent << SecureShortDebugString(entry.commit()) << endl;
-  }
-
-  return Status::OK();
-}
-
-} // anonymous namespace
 
 template<class ProxyClass>
 Status BuildProxy(const string& address,
@@ -303,19 +176,7 @@ template
 Status BuildProxy(const string& address,
                   uint16_t default_port,
                   unique_ptr<ConsensusServiceProxy>* proxy);
-template
-Status BuildProxy(const string& address,
-                  uint16_t default_port,
-                  unique_ptr<TabletServerServiceProxy>* proxy);
-template
-Status BuildProxy(const string& address,
-                  uint16_t default_port,
-                  unique_ptr<TabletServerAdminServiceProxy>* proxy);
-template
-Status BuildProxy(const string& address,
-                  uint16_t default_port,
-                  unique_ptr<MasterServiceProxy>* proxy);
-
+/*
 Status GetServerStatus(const string& address, uint16_t default_port,
                        ServerStatusPB* status) {
   unique_ptr<GenericServiceProxy> proxy;
@@ -332,44 +193,6 @@ Status GetServerStatus(const string& address, uint16_t default_port,
                               proxy->ToString());
   }
   *status = resp.status();
-  return Status::OK();
-}
-
-Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
-  PrintEntryType print_type = ParsePrintType();
-  if (FLAGS_print_meta) {
-    cout << "Header:\n" << SecureDebugString(segment->header());
-  }
-  if (print_type != DONT_PRINT) {
-    Schema tablet_schema;
-    RETURN_NOT_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
-
-    LogEntryReader reader(segment.get());
-    while (true) {
-      unique_ptr<LogEntryPB> entry;
-      Status s = reader.ReadNextEntry(&entry);
-      if (s.IsEndOfFile()) {
-        break;
-      }
-      RETURN_NOT_OK(s);
-
-      if (print_type == PRINT_PB) {
-        if (FLAGS_truncate_data > 0) {
-          pb_util::TruncateFields(entry.get(), FLAGS_truncate_data);
-        }
-
-        cout << "Entry:\n" << SecureDebugString(*entry);
-      } else if (print_type == PRINT_DECODED) {
-        RETURN_NOT_OK(PrintDecoded(*entry, tablet_schema));
-      } else if (print_type == PRINT_ID) {
-        PrintIdOnly(*entry);
-      }
-    }
-  }
-  if (FLAGS_print_meta && segment->HasFooter()) {
-    cout << "Footer:\n" << SecureDebugString(segment->footer());
-  }
-
   return Status::OK();
 }
 
@@ -445,10 +268,7 @@ Status SetServerFlag(const string& address, uint16_t default_port,
       return Status::RemoteError(SecureShortDebugString(resp));
   }
 }
-
-string GetMasterAddresses(const client::KuduClient& client) {
-  return HostPort::ToCommaSeparatedString(client.data_->master_hostports());
-}
+*/
 
 bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
   // Consider no filter a wildcard.
@@ -460,6 +280,7 @@ bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
   return false;
 }
 
+/*
 Status PrintServerStatus(const string& address, uint16_t default_port) {
   ServerStatusPB status;
   RETURN_NOT_OK(GetServerStatus(address, default_port, &status));
@@ -483,6 +304,7 @@ Status PrintServerTimestamp(const string& address, uint16_t default_port) {
   cout << resp.timestamp() << endl;
   return Status::OK();
 }
+*/
 
 namespace {
 
@@ -630,60 +452,6 @@ Status DataTable::PrintTo(ostream& out) const {
   }
   return Status::OK();
 }
-
-LeaderMasterProxy::LeaderMasterProxy(client::sp::shared_ptr<KuduClient> client) :
-  client_(std::move(client)) {
-}
-
-Status LeaderMasterProxy::Init(const vector<string>& master_addrs, const MonoDelta& timeout) {
-  return KuduClientBuilder().master_server_addrs(master_addrs)
-                            .default_rpc_timeout(timeout)
-                            .default_admin_operation_timeout(timeout)
-                            .Build(&client_);
-}
-
-Status LeaderMasterProxy::Init(const RunnerContext& context) {
-  const string& master_addrs = FindOrDie(context.required_args, kMasterAddressesArg);
-  return Init(strings::Split(master_addrs, ","), MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
-}
-
-template<typename Req, typename Resp>
-Status LeaderMasterProxy::SyncRpc(const Req& req,
-                                  Resp* resp,
-                                  const char* func_name,
-                                  const boost::function<Status(master::MasterServiceProxy*,
-                                                               const Req&, Resp*,
-                                                               rpc::RpcController*)>& func) {
-  MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
-  return client_->data_->SyncLeaderMasterRpc(deadline, client_.get(), req, resp,
-                                             func_name, func, {});
-}
-
-// Explicit specializations for callers outside this compilation unit.
-template
-Status LeaderMasterProxy::SyncRpc(const ListTabletServersRequestPB& req,
-                                  ListTabletServersResponsePB* resp,
-                                  const char* func_name,
-                                  const boost::function<Status(MasterServiceProxy*,
-                                                               const ListTabletServersRequestPB&,
-                                                               ListTabletServersResponsePB*,
-                                                               RpcController*)>& func);
-template
-Status LeaderMasterProxy::SyncRpc(const ListMastersRequestPB& req,
-                                  ListMastersResponsePB* resp,
-                                  const char* func_name,
-                                  const boost::function<Status(MasterServiceProxy*,
-                                                               const ListMastersRequestPB&,
-                                                               ListMastersResponsePB*,
-                                                               RpcController*)>& func);
-template
-Status LeaderMasterProxy::SyncRpc(const ReplaceTabletRequestPB& req,
-                                  ReplaceTabletResponsePB* resp,
-                                  const char* func_name,
-                                  const boost::function<Status(MasterServiceProxy*,
-                                                               const ReplaceTabletRequestPB&,
-                                                               ReplaceTabletResponsePB*,
-                                                               RpcController*)>& func);
 
 const int ControlShellProtocol::kMaxMessageBytes = 1024 * 1024;
 
