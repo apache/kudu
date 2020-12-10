@@ -22,7 +22,15 @@ apply plugin: "com.google.protobuf"
 // Use the maven protoc artifact instead of local.
 protobuf {
   protoc {
-    artifact = libs.protoc
+    // If -PuseKuduProtoc is set, use the protoc from Kudu's thirdparty instead
+    // of using the protoc Maven artifacts. This is useful if a specific
+    // OS or architecture is not published to Maven.
+    if (propertyExists("useKuduProtoc")) {
+      logger.warn("Using Protoc from: $rootDir/../thirdparty/installed/uninstrumented/bin/protoc")
+      path = "$rootDir/../thirdparty/installed/uninstrumented/bin/protoc"
+    } else {
+      artifact = libs.protoc
+    }
   }
 }
 

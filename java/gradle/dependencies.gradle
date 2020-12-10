@@ -67,7 +67,7 @@ versions += [
 
 // Log the Gradle version used vs defined.
 if (gradle.gradleVersion != versions.gradle) {
-  println "Using gradle version $gradle.gradleVersion (Build defines $versions.gradle)"
+  logger.warn("Using gradle version $gradle.gradleVersion (Build defines $versions.gradle)")
 }
 
 // If the `spark2` property is passed, override the `spark` and `scala` version
