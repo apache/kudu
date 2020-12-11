@@ -279,16 +279,17 @@ TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
   }
 }
 
-TEST_F(RegistrationTest, TestServerStartTime) {
+TEST_F(RegistrationTest, TestServerStartWallTime) {
   ServerRegistrationPB reg;
   cluster_->mini_master()->master()->GetMasterRegistration(&reg);
   ASSERT_LE(setup_time_, reg.start_time());
   ASSERT_LE(reg.start_time(), WallTime_Now());
 
   for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
-    auto start_time = cluster_->mini_tablet_server(i)->server()->start_time();
-    ASSERT_LE(setup_time_, start_time);
-    ASSERT_LE(start_time, WallTime_Now());
+    auto start_walltime =
+        cluster_->mini_tablet_server(i)->server()->start_walltime();
+    ASSERT_LE(setup_time_, start_walltime);
+    ASSERT_LE(start_walltime, WallTime_Now());
   }
 }
 

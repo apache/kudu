@@ -220,6 +220,11 @@ DECLARE_string(keytab_file);
 DECLARE_string(principal);
 
 METRIC_DECLARE_gauge_size(merged_entities_count_of_server);
+METRIC_DEFINE_gauge_int64(server, uptime,
+                          "Server Uptime",
+                          kudu::MetricUnit::kMicroseconds,
+                          "Time interval since the server has started",
+                          kudu::MetricLevel::kInfo);
 
 using kudu::security::RpcAuthentication;
 using kudu::security::RpcEncryption;
@@ -392,6 +397,7 @@ int64_t GetFileCacheCapacity(Env* env) {
 ServerBase::ServerBase(string name, const ServerBaseOptions& options,
                        const string& metric_namespace)
     : name_(std::move(name)),
+      start_time_(MonoTime::Min()),
       minidump_handler_(new MinidumpExceptionHandler()),
       mem_tracker_(CreateMemTrackerForServer()),
       metric_registry_(new MetricRegistry()),
@@ -504,7 +510,6 @@ Status ServerBase::Init() {
 
   // Create the Messenger.
   rpc::MessengerBuilder builder(name_);
-
   builder.set_num_reactors(FLAGS_num_reactor_threads)
          .set_min_negotiation_threads(FLAGS_min_negotiation_threads)
          .set_max_negotiation_threads(FLAGS_max_negotiation_threads)
@@ -547,21 +552,10 @@ Status ServerBase::Init() {
                           "for RPC server");
   }
 
-  RETURN_NOT_OK(rpc_server_->Bind());
-
-  RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
-
-  result_tracker_->StartGCThread();
-  RETURN_NOT_OK(StartExcessLogFileDeleterThread());
-#ifdef TCMALLOC_ENABLED
-  RETURN_NOT_OK(StartTcmallocMemoryGcThread());
-#endif
-
-  return Status::OK();
+  return rpc_server_->Bind();
 }
 
 Status ServerBase::InitAcls() {
-
   string service_user;
   boost::optional<string> keytab_user = security::GetLoggedInUsernameFromKeytab();
   if (keytab_user) {
@@ -789,6 +783,27 @@ Status ServerBase::Start() {
 
   RETURN_NOT_OK(RegisterService(
       unique_ptr<rpc::ServiceIf>(new GenericServiceImpl(this))));
+
+  // Webserver shows the wall clock time when server was started and exposes
+  // the server's uptime along with all other metrics, and the metrics logger
+  // accesses the uptime metric as well, so it's necessary to have corresponding
+  // information ready at this point.
+  start_time_ = MonoTime::Now();
+  start_walltime_ = static_cast<int64_t>(WallTime_Now());
+
+  METRIC_uptime.InstantiateFunctionGauge(
+      metric_entity_,
+      [this]() {return (MonoTime::Now() - this->start_time()).ToMicroseconds();})->
+          AutoDetachToLastValue(&metric_detacher_);
+
+  RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
+
+  result_tracker_->StartGCThread();
+  RETURN_NOT_OK(StartExcessLogFileDeleterThread());
+#ifdef TCMALLOC_ENABLED
+  RETURN_NOT_OK(StartTcmallocMemoryGcThread());
+#endif
+
   RETURN_NOT_OK(rpc_server_->Start());
 
   if (web_server_) {
@@ -804,8 +819,6 @@ Status ServerBase::Start() {
     RETURN_NOT_OK_PREPEND(DumpServerInfo(options_.dump_info_path, options_.dump_info_format),
                           "Failed to dump server info to " + options_.dump_info_path);
   }
-
-  start_time_ = WallTime_Now();
 
   return Status::OK();
 }

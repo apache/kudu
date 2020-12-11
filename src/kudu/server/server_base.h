@@ -20,12 +20,16 @@
 #include <memory>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/simple_acl.h"
 #include "kudu/server/server_base_options.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -34,8 +38,6 @@ class DnsResolver;
 class FileCache;
 class FsManager;
 class MemTracker;
-class MetricEntity;
-class MetricRegistry;
 class MinidumpExceptionHandler;
 class NodeInstancePB;
 class RpcServer;
@@ -110,7 +112,12 @@ class ServerBase {
   // Return a PB describing the status of the server (version info, bound ports, etc)
   Status GetStatusPB(ServerStatusPB* status) const;
 
-  int64_t start_time() const {
+  int64_t start_walltime() const {
+    return start_walltime_;
+  }
+
+  const MonoTime& start_time() const {
+    DCHECK(start_time_ > MonoTime::Min());
     return start_time_;
   }
 
@@ -176,8 +183,14 @@ class ServerBase {
   void LogUnauthorizedAccess(rpc::RpcContext* rpc) const;
 
   const std::string name_;
-  // Seconds since the epoch.
-  int64_t start_time_;
+
+  // Start wall clock time: wall clock as seconds since the Epoch when
+  // the Start() method was called.
+  int64_t start_walltime_;
+
+  // Start time: a snapshot of the monotonic clock when the Start() method
+  // was called.
+  MonoTime start_time_;
 
   std::unique_ptr<MinidumpExceptionHandler> minidump_handler_;
   std::shared_ptr<MemTracker> mem_tracker_;
@@ -246,6 +259,10 @@ class ServerBase {
   CountDownLatch stop_background_threads_latch_;
 
   std::unique_ptr<ScopedGLogMetrics> glog_metrics_;
+
+  // NOTE: it's important that this is the first member to be destructed. This
+  // ensures we do not attempt to collect metrics while calling the destructor.
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerBase);
 };

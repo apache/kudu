@@ -355,7 +355,7 @@ Status Heartbeater::Thread::SetupRegistration(ServerRegistrationPB* reg) {
     reg->set_https_enabled(server_->web_server()->IsSecure());
   }
   reg->set_software_version(VersionInfo::GetVersionInfo());
-  reg->set_start_time(server_->start_time());
+  reg->set_start_time(server_->start_walltime());
 
   return Status::OK();
 }

@@ -94,7 +94,7 @@ message ServerRegistrationPB {
   // 'http_addresses' field.
   optional bool https_enabled = 4;
 
-  // Seconds since the epoch.
+  // The wall clock time when the server started as seconds since the Epoch.
   optional int64 start_time = 5;
 
   // The path of a UNIX domain socket where the server is listening.
