@@ -102,18 +102,19 @@ Status KuduTransaction::Data::Begin(const sp::shared_ptr<KuduTransaction>& txn) 
   if (!c) {
     return Status::IllegalState("associated KuduClient is gone");
   }
-  const auto deadline = GetRpcDeadline(c.get());
-  Synchronizer sync;
-  BeginTransactionRequestPB req;
+
   BeginTransactionResponsePB resp;
-  // TODO(aserbin): should there be no retries for sending keepalive heartbeats?
-  AsyncRandomTxnManagerRpc<
-      BeginTransactionRequestPB, BeginTransactionResponsePB> rpc(
-      deadline, c.get(), BackoffType::EXPONENTIAL, req, &resp,
-      &TxnManagerServiceProxy::BeginTransactionAsync, "BeginTransaction",
-      sync.AsStatusCallback());
-  rpc.SendRpc();
-  RETURN_NOT_OK(sync.Wait());
+  {
+    Synchronizer sync;
+    BeginTransactionRequestPB req;
+    AsyncRandomTxnManagerRpc<BeginTransactionRequestPB,
+                             BeginTransactionResponsePB> rpc(
+        GetRpcDeadline(c.get()), c.get(), BackoffType::EXPONENTIAL,
+        std::move(req), &resp, &TxnManagerServiceProxy::BeginTransactionAsync,
+        "BeginTransaction", sync.AsStatusCallback());
+    rpc.SendRpc();
+    RETURN_NOT_OK(sync.Wait());
+  }
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -149,18 +150,21 @@ Status KuduTransaction::Data::Commit(bool wait) {
   if (!c) {
     return Status::IllegalState("associated KuduClient is gone");
   }
+
   const auto deadline = GetRpcDeadline(c.get());
-  Synchronizer sync;
-  CommitTransactionRequestPB req;
-  req.set_txn_id(txn_id_);
   CommitTransactionResponsePB resp;
-  AsyncRandomTxnManagerRpc<CommitTransactionRequestPB,
-                           CommitTransactionResponsePB> rpc(
-      deadline, c.get(), BackoffType::EXPONENTIAL, req, &resp,
-      &TxnManagerServiceProxy::CommitTransactionAsync, "CommitTransaction",
-      sync.AsStatusCallback());
-  rpc.SendRpc();
-  RETURN_NOT_OK(sync.Wait());
+  {
+    Synchronizer sync;
+    CommitTransactionRequestPB req;
+    req.set_txn_id(txn_id_);
+    AsyncRandomTxnManagerRpc<CommitTransactionRequestPB,
+                             CommitTransactionResponsePB> rpc(
+        deadline, c.get(), BackoffType::EXPONENTIAL,
+        std::move(req), &resp, &TxnManagerServiceProxy::CommitTransactionAsync,
+        "CommitTransaction", sync.AsStatusCallback());
+    rpc.SendRpc();
+    RETURN_NOT_OK(sync.Wait());
+  }
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -190,18 +194,20 @@ Status KuduTransaction::Data::Rollback() {
   if (!c) {
     return Status::IllegalState("associated KuduClient is gone");
   }
-  const auto deadline = GetRpcDeadline(c.get());
-  Synchronizer sync;
-  AbortTransactionRequestPB req;
-  req.set_txn_id(txn_id_);
+
   AbortTransactionResponsePB resp;
-  AsyncRandomTxnManagerRpc<AbortTransactionRequestPB,
-                           AbortTransactionResponsePB> rpc(
-      deadline, c.get(), BackoffType::EXPONENTIAL, req, &resp,
-      &TxnManagerServiceProxy::AbortTransactionAsync, "AbortTransaction",
-      sync.AsStatusCallback());
-  rpc.SendRpc();
-  RETURN_NOT_OK(sync.Wait());
+  {
+    Synchronizer sync;
+    AbortTransactionRequestPB req;
+    req.set_txn_id(txn_id_);
+    AsyncRandomTxnManagerRpc<AbortTransactionRequestPB,
+                             AbortTransactionResponsePB> rpc(
+        GetRpcDeadline(c.get()), c.get(), BackoffType::EXPONENTIAL,
+        std::move(req), &resp, &TxnManagerServiceProxy::AbortTransactionAsync,
+        "AbortTransaction", sync.AsStatusCallback());
+    rpc.SendRpc();
+    RETURN_NOT_OK(sync.Wait());
+  }
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -275,17 +281,19 @@ Status KuduTransaction::Data::IsCommitCompleteImpl(
     bool* is_complete,
     Status* completion_status) {
   DCHECK(client);
-  Synchronizer sync;
-  GetTransactionStateRequestPB req;
-  req.set_txn_id(txn_id);
   GetTransactionStateResponsePB resp;
-  AsyncRandomTxnManagerRpc<GetTransactionStateRequestPB,
-                           GetTransactionStateResponsePB> rpc(
-      deadline, client, BackoffType::EXPONENTIAL, req, &resp,
-      &TxnManagerServiceProxy::GetTransactionStateAsync, "GetTransactionState",
-      sync.AsStatusCallback());
-  rpc.SendRpc();
-  RETURN_NOT_OK(sync.Wait());
+  {
+    Synchronizer sync;
+    GetTransactionStateRequestPB req;
+    req.set_txn_id(txn_id);
+    AsyncRandomTxnManagerRpc<GetTransactionStateRequestPB,
+                             GetTransactionStateResponsePB> rpc(
+        deadline, client, BackoffType::EXPONENTIAL, std::move(req), &resp,
+        &TxnManagerServiceProxy::GetTransactionStateAsync, "GetTransactionState",
+        sync.AsStatusCallback());
+    rpc.SendRpc();
+    RETURN_NOT_OK(sync.Wait());
+  }
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -377,25 +385,25 @@ void KuduTransaction::Data::SendTxnKeepAliveTask(
   const auto next_run_after = MonoDelta::FromMilliseconds(
       std::max<uint32_t>(1, txn->data_->txn_keep_alive_ms_ / 2));
   auto deadline = MonoTime::Now() + next_run_after;
-  KeepTransactionAliveRequestPB req;
-  req.set_txn_id(txn_id);
 
   sp::shared_ptr<KeepaliveRpcCtx> ctx(new KeepaliveRpcCtx);
   ctx->weak_txn = weak_txn;
 
-  unique_ptr<AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
-                                      KeepTransactionAliveResponsePB>> rpc(
-      new AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
-                                   KeepTransactionAliveResponsePB>(
-          deadline, c.get(), BackoffType::LINEAR,
-          req, &ctx->resp,
-          &TxnManagerServiceProxy::KeepTransactionAliveAsync,
-          "KeepTransactionAlive",
-          [ctx](const Status& s) {
-            TxnKeepAliveCb(s, std::move(ctx));
-          }
-  ));
-  ctx->rpc = std::move(rpc);
+  {
+    KeepTransactionAliveRequestPB req;
+    req.set_txn_id(txn_id);
+    unique_ptr<AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
+                                        KeepTransactionAliveResponsePB>> rpc(
+        new AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
+                                     KeepTransactionAliveResponsePB>(
+            deadline, c.get(), BackoffType::LINEAR, std::move(req), &ctx->resp,
+            &TxnManagerServiceProxy::KeepTransactionAliveAsync,
+            "KeepTransactionAlive",
+            [ctx](const Status& s) {
+              TxnKeepAliveCb(s, std::move(ctx));
+            }));
+    ctx->rpc = std::move(rpc);
+  }
 
   // Send the RPC and handle the response asynchronously.
   ctx->rpc->SendRpc();

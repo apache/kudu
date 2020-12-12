@@ -67,7 +67,7 @@ class AsyncRandomTxnManagerRpc : public rpc::Rpc {
       const MonoTime& deadline,
       KuduClient* client,
       rpc::BackoffType backoff,
-      const ReqClass& req,
+      ReqClass req,
       RespClass* resp,
       const std::function<void(transactions::TxnManagerServiceProxy*,
                                const ReqClass&, RespClass*,
@@ -108,7 +108,7 @@ class AsyncRandomTxnManagerRpc : public rpc::Rpc {
   bool RetryIfNecessary(Status* status);
 
   KuduClient* client_;
-  const ReqClass* req_;
+  const ReqClass req_;
   RespClass* resp_;
 
   // Asynchronous function that sends an RPC to current TxnManager.

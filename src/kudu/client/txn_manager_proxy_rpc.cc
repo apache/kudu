@@ -69,7 +69,7 @@ AsyncRandomTxnManagerRpc<ReqClass, RespClass>::AsyncRandomTxnManagerRpc(
     const MonoTime& deadline,
     KuduClient* client,
     BackoffType backoff,
-    const ReqClass& req,
+    ReqClass req,
     RespClass* resp,
     const std::function<void(TxnManagerServiceProxy*,
                              const ReqClass&, RespClass*,
@@ -79,7 +79,7 @@ AsyncRandomTxnManagerRpc<ReqClass, RespClass>::AsyncRandomTxnManagerRpc(
     StatusCallback user_cb)
     : Rpc(deadline, client->data_->messenger_, backoff),
       client_(client),
-      req_(&req),
+      req_(std::move(req)),
       resp_(resp),
       func_(func),
       rpc_name_(std::move(rpc_name)),
@@ -103,7 +103,7 @@ void AsyncRandomTxnManagerRpc<ReqClass, RespClass>::SendRpc() {
   RpcController* controller = mutable_retrier()->mutable_controller();
   controller->Reset();
   controller->set_deadline(deadline);
-  func_(client_->data_->txn_manager_proxy().get(), *req_, resp_, controller,
+  func_(client_->data_->txn_manager_proxy().get(), req_, resp_, controller,
         [this]() { this->SendRpcCb(Status::OK()); });
 }
 
