@@ -317,7 +317,7 @@ Status ServerNegotiation::PreflightCheckGSSAPI(const std::string& sasl_proto_nam
           kSaslMechGSSAPI,
           "", 0,  // Pass a 0-length token.
           &server_out, &server_out_len);
-    });
+    }, "calling sasl_server_start()");
 
   // We expect 'Incomplete' status to indicate that the first step of negotiation
   // was correct.
@@ -415,6 +415,8 @@ Status ServerNegotiation::InitSaslServer() {
     server_fqdn = default_server_fqdn.c_str();
   }
 
+  static constexpr const char* const kDesc = "creating new SASL server";
+  //static constexpr const char* const kDesc = "create "
   RETURN_NOT_OK_PREPEND(WrapSaslCall(nullptr /* no conn */, [&]() {
       return sasl_server_new(
           // Registered name of the service using SASL. Required.
@@ -432,7 +434,7 @@ Status ServerNegotiation::InitSaslServer() {
           // Security flags.
           secflags,
           &sasl_conn);
-    }), "Unable to create new SASL server");
+    }, kDesc), string(kDesc) + " failed");
   sasl_conn_.reset(sasl_conn);
   return Status::OK();
 }
@@ -810,7 +812,8 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
 
   const char* server_out = nullptr;
   uint32_t server_out_len = 0;
-  TRACE("Calling sasl_server_start()");
+  static constexpr const char* const kDesc = "calling sasl_server_start()";
+  TRACE(kDesc);
 
   Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
       return sasl_server_start(
@@ -820,7 +823,7 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
           request.token().length(), // Client string len.
           &server_out,              // The output of the SASL library, might not be NULL terminated
           &server_out_len);         // Output len.
-    });
+    }, kDesc);
 
   if (PREDICT_FALSE(!s.ok() && !s.IsIncomplete())) {
     RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
@@ -852,9 +855,10 @@ Status ServerNegotiation::HandleSaslResponse(const NegotiatePB& request) {
     return s;
   }
 
+  static constexpr const char* const kDesc = "calling sasl_server_step()";
   const char* server_out = nullptr;
   uint32_t server_out_len = 0;
-  TRACE("Calling sasl_server_step()");
+  TRACE(kDesc);
   Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
       return sasl_server_step(
           sasl_conn_.get(),         // The SASL connection context created by init()
@@ -862,7 +866,7 @@ Status ServerNegotiation::HandleSaslResponse(const NegotiatePB& request) {
           request.token().length(), // Client string len
           &server_out,              // The output of the SASL library, might not be NULL terminated
           &server_out_len);         // Output len
-    });
+    }, kDesc);
 
   if (s.ok()) {
     DCHECK(server_out_len == 0);

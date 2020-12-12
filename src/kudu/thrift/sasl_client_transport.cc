@@ -265,7 +265,7 @@ void SaslClientTransport::Negotiate() {
                                 nullptr,
                                 &out,
                                 &out_len);
-    });
+    }, "calling sasl_client_step()");
 
     if (PREDICT_FALSE(!s.IsIncomplete() && !s.ok())) {
       throw SaslException(std::move(s));
@@ -353,7 +353,7 @@ void SaslClientTransport::SendSaslStart() {
           &init_msg,                                     // Filled in on success.
           &init_msg_len,                                 // Filled in on success.
           &negotiated_mech);                             // Filled in on success.
-  });
+  }, "calling sasl_client_start()");
 
   if (PREDICT_FALSE(!s.IsIncomplete() && !s.ok())) {
     throw SaslException(std::move(s));
@@ -390,7 +390,8 @@ void SaslClientTransport::SetupSaslContext() {
           sasl_callbacks_.data(),       // Connection-specific callbacks.
           0,                            // flags
           &sasl_conn);
-      });
+      },
+      "calling sasl_client_new()");
   if (!s.ok()) {
     throw SaslException(s);
   }

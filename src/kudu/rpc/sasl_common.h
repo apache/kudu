@@ -88,7 +88,9 @@ Status SaslInit(bool kerberos_keytab_provided = false) WARN_UNUSED_RESULT;
 Status DisableSaslInitialization() WARN_UNUSED_RESULT;
 
 // Wrap a call into the SASL library. 'call' should be a lambda which
-// returns a SASL error code.
+// returns a SASL error code, 'conn' is the SASL connection to perform
+// the operation with (might be null), and 'description' is be a description
+// of the SASL call (e.g., the name of the SASL library function).
 //
 // The result is translated into a Status as follows:
 //
@@ -98,7 +100,9 @@ Status DisableSaslInitialization() WARN_UNUSED_RESULT;
 //
 // The Status message is beautified to be more user-friendly compared
 // to the underlying sasl_errdetails() call.
-Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) WARN_UNUSED_RESULT;
+Status WrapSaslCall(sasl_conn_t* conn,
+                    const std::function<int()>& call,
+                    const char* description) WARN_UNUSED_RESULT;
 
 // Return <ip>;<port> string formatted for SASL library use.
 std::string SaslIpPortString(const Sockaddr& addr);

@@ -49,6 +49,7 @@
 #include "kudu/security/gssapi.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_handshake.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
@@ -294,17 +295,21 @@ Status ClientNegotiation::InitSaslClient() {
   // TODO(KUDU-1922): consider setting SASL_SUCCESS_DATA
   unsigned flags = 0;
 
+  const auto desc = Substitute("creating new SASL $0 client", sasl_proto_name_);
   sasl_conn_t* sasl_conn = nullptr;
-  RETURN_NOT_OK_PREPEND(WrapSaslCall(nullptr /* no conn */, [&]() {
-      return sasl_client_new(
-          sasl_proto_name_.c_str(),     // Registered name of the service using SASL. Required.
-          helper_.server_fqdn(),        // The fully qualified domain name of the remote server.
-          nullptr,                      // Local and remote IP address strings. (we don't use
-          nullptr,                      // any mechanisms which require this info.)
-          &callbacks_[0],               // Connection-specific callbacks.
-          flags,
-          &sasl_conn);
-    }), Substitute("unable to create new SASL $0 client", sasl_proto_name_));
+  RETURN_NOT_OK_PREPEND(WrapSaslCall(
+      nullptr /* no conn */,
+      [&]() {
+        return sasl_client_new(
+            sasl_proto_name_.c_str(),     // Registered name of the service using SASL. Required.
+            helper_.server_fqdn(),        // The fully qualified domain name of the remote server.
+            nullptr,                      // Local and remote IP address strings. (we don't use
+            nullptr,                      // any mechanisms which require this info.)
+            &callbacks_[0],               // Connection-specific callbacks.
+            flags,
+            &sasl_conn);
+      },
+      desc.c_str()), desc + " failed");
   sasl_conn_.reset(sasl_conn);
   return Status::OK();
 }
@@ -587,7 +592,8 @@ Status ClientNegotiation::SendSaslInitiate() {
    *  SASL_NOMECH   -- no mechanism meets requested properties
    *  SASL_INTERACT -- user interaction needed to fill in prompt_need list
    */
-  TRACE("Calling sasl_client_start()");
+  static constexpr const char* const kDesc = "calling sasl_client_start()";
+  TRACE(kDesc);
   const Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
       return sasl_client_start(
           sasl_conn_.get(),                         // The SASL connection context created by init()
@@ -596,7 +602,7 @@ Status ClientNegotiation::SendSaslInitiate() {
           &init_msg,                                // Filled in on success.
           &init_msg_len,                            // Filled in on success.
           &negotiated_mech);                        // Filled in on success.
-  });
+  }, kDesc);
 
   if (PREDICT_FALSE(!s.IsIncomplete() && !s.ok())) {
     return s;
@@ -697,11 +703,13 @@ Status ClientNegotiation::HandleSaslSuccess(const NegotiatePB& response) {
 }
 
 Status ClientNegotiation::DoSaslStep(const string& in, const char** out, unsigned* out_len) {
-  TRACE("Calling sasl_client_step()");
+  static constexpr const char* const kDesc = "calling sasl_client_step()";
+  TRACE(kDesc);
 
   return WrapSaslCall(sasl_conn_.get(), [&]() {
-      return sasl_client_step(sasl_conn_.get(), in.c_str(), in.length(), nullptr, out, out_len);
-  });
+      return sasl_client_step(
+          sasl_conn_.get(), in.c_str(), in.length(), nullptr, out, out_len);
+  }, kDesc);
 }
 
 Status ClientNegotiation::SendConnectionContext() {

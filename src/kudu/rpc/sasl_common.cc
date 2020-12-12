@@ -17,6 +17,10 @@
 
 #include "kudu/rpc/sasl_common.h"
 
+#include <regex.h>
+#include <sasl/sasl.h>
+#include <sasl/saslplug.h>
+
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -25,9 +29,6 @@
 #include <string>
 
 #include <glog/logging.h>
-#include <regex.h>
-#include <sasl/sasl.h>
-#include <sasl/saslplug.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/rpc/constants.h"
@@ -35,6 +36,7 @@
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/rw_mutex.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/string_case.h"
 
 #if defined(__APPLE__)
@@ -315,7 +317,11 @@ static string SaslErrDesc(int status, sasl_conn_t* conn) {
   return CleanSaslError(err);
 }
 
-Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) {
+Status WrapSaslCall(sasl_conn_t* conn,
+                    const std::function<int()>& call,
+                    const char* description) {
+  DCHECK(description);
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 250, description);
   // In many cases, the GSSAPI SASL plugin will generate a nice error
   // message as a message logged at SASL_LOG_FAIL logging level, but then
   // return a useless one in sasl_errstring(). So, we set a global thread-local
@@ -373,6 +379,7 @@ uint32_t GetMaxSendBufferSize(sasl_conn_t* sasl_conn) {
 }
 
 Status SaslEncode(sasl_conn_t* conn, Slice plaintext, Slice* ciphertext) {
+  static constexpr const char* const kDesc = "SASL encoding";
   const char* out;
   unsigned out_len;
   RETURN_NOT_OK_PREPEND(WrapSaslCall(conn, [&] {
@@ -380,12 +387,13 @@ Status SaslEncode(sasl_conn_t* conn, Slice plaintext, Slice* ciphertext) {
                          reinterpret_cast<const char*>(plaintext.data()),
                          plaintext.size(),
                          &out, &out_len);
-  }), "SASL encode failed");
+  }, kDesc), string(kDesc) + " failed");
   *ciphertext = Slice(out, out_len);
   return Status::OK();
 }
 
 Status SaslDecode(sasl_conn_t* conn, Slice ciphertext, Slice* plaintext) {
+  static constexpr const char* const kDesc = "SASL decoding";
   const char* out;
   unsigned out_len;
   RETURN_NOT_OK_PREPEND(WrapSaslCall(conn, [&] {
@@ -393,7 +401,7 @@ Status SaslDecode(sasl_conn_t* conn, Slice ciphertext, Slice* plaintext) {
                        reinterpret_cast<const char*>(ciphertext.data()),
                        ciphertext.size(),
                        &out, &out_len);
-  }), "SASL decode failed");
+  }, kDesc), string(kDesc) + " failed");
   *plaintext = Slice(out, out_len);
   return Status::OK();
 }
@@ -433,6 +441,8 @@ sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context) {
 Status EnableProtection(sasl_conn_t* sasl_conn,
                         SaslProtection::Type minimum_protection,
                         size_t max_recv_buf_size) {
+  static constexpr const char* const kDesc = "setting SASL security properties";
+
   sasl_security_properties_t sec_props;
   memset(&sec_props, 0, sizeof(sec_props));
   sec_props.min_ssf = minimum_protection;
@@ -441,7 +451,7 @@ Status EnableProtection(sasl_conn_t* sasl_conn,
 
   RETURN_NOT_OK_PREPEND(WrapSaslCall(sasl_conn, [&] {
     return sasl_setprop(sasl_conn, SASL_SEC_PROPS, &sec_props);
-  }), "failed to set SASL security properties");
+  }, kDesc), string(kDesc) + " failed");
   return Status::OK();
 }
 
