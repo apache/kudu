@@ -1357,14 +1357,12 @@ TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
       }
     });
   }
-  SCOPED_CLEANUP({
-    for (auto& t : caller_threads) {
-      t.join();
-    }
-  });
 
   SleepFor(kRunInterval);
   done.Store(true);
+  for (auto& t : caller_threads) {
+    t.join();
+  }
 
   const auto errors = accumulate(error_counters.begin(), error_counters.end(), 0UL);
   if (errors != 0) {
