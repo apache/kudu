@@ -255,7 +255,7 @@ POSTGRES_JDBC_SOURCE=$TP_SOURCE_DIR/$POSTGRES_JDBC_NAME
 # run the following commands:
 # mvn versions:set -DnewVersion=$(git rev-parse HEAD)
 # mvn versions:update-child-modules
-# mvn package
-RANGER_VERSION=f37f5407eee8d2627a4306a25938b151f8e2ba31
+# mvn package -DskipTests
+RANGER_VERSION=2.1.0
 RANGER_NAME=ranger-$RANGER_VERSION-admin
 RANGER_SOURCE=$TP_SOURCE_DIR/$RANGER_NAME

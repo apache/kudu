@@ -471,7 +471,6 @@ fetch_and_patch \
  $RANGER_NAME.tar.gz \
  $RANGER_SOURCE \
  $RANGER_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/ranger-python3.patch" \
  "patch -p0 < $TP_DIR/patches/ranger-fixscripts.patch"
 
 echo "---------------"
