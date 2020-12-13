@@ -203,7 +203,8 @@ BISON_SOURCE=$TP_SOURCE_DIR/$BISON_NAME
 
 # Note: The Hive release binary tarball is stripped of unnecessary jars before
 # being uploaded. See thirdparty/package-hive.sh for details.
-HIVE_VERSION=3.1.1
+# ./thirdparty/package-hive.sh -d -r -v 3.1.2 apache-hive-3.1.2-bin
+HIVE_VERSION=3.1.2
 HIVE_NAME=hive-$HIVE_VERSION
 HIVE_SOURCE=$TP_SOURCE_DIR/$HIVE_NAME
 
