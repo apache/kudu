@@ -64,7 +64,7 @@ import sys
 ME = os.path.abspath(__file__)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(ME), ".."))
 
-DEFAULT_OS = 'ubuntu:xenial'
+DEFAULT_OS = 'ubuntu:bionic'
 DEFAULT_TARGETS = ['kudu','kudu-python']
 DEFAULT_REPOSITORY = 'apache/kudu'
 DEFAULT_ACTION = 'load'
@@ -77,13 +77,12 @@ def parse_args():
   parser = argparse.ArgumentParser(description='Build the Apache Kudu Docker images',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument('--platforms', nargs='+', choices=[
-                      'linux/amd64', 'linux/arm64', ],
+                      'linux/amd64', 'linux/arm64'],
                       help='The platforms to build with. If unspecified, the platform of your '
                            'build machine will be used.')
   parser.add_argument('--bases', nargs='+', default=DEFAULT_OS, choices=[
-                      'centos:6', 'centos:7', 'centos:8',
-                      'debian:jessie', 'debian:stretch',
-                      'ubuntu:trusty', 'ubuntu:xenial', 'ubuntu:bionic',
+                      'centos:7', 'centos:8',
+                      'ubuntu:bionic', 'ubuntu:focal',
                       'opensuse/leap:15'],
                       help='The base operating systems to build with')
   # These targets are defined in the Dockerfile. Dependent targets of a passed image will be built,
@@ -91,7 +90,7 @@ def parse_args():
   # and image pruning.
   parser.add_argument('--targets', nargs='+', default=DEFAULT_TARGETS, choices=[
                       'runtime', 'dev', 'thirdparty', 'build',
-                      'kudu', 'kudu-python', 'impala-build', 'impala' ],
+                      'kudu', 'kudu-python', 'impala-build', 'impala'],
                       help='The targets to build and tag')
   parser.add_argument('--repository', default=DEFAULT_REPOSITORY,
                       help='The repository string to use when tagging the image')
