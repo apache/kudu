@@ -453,7 +453,6 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
     {
       std::lock_guard<simple_spinlock> lock(lock_);
       marked_as_follower = ContainsKey(followers_, leader);
-
     }
     if (leader && marked_as_follower) {
       VLOG(2) << "Tablet " << tablet_->tablet_id() << ": We have a follower for a leader: "
@@ -1231,13 +1230,16 @@ bool MetaCache::LookupEntryByIdFastPath(const string& tablet_id,
 Status MetaCache::DoFastPathLookupById(const string& tablet_id,
                                        scoped_refptr<RemoteTablet>* remote_tablet) {
   MetaCacheEntry entry;
-  if (PREDICT_TRUE(LookupEntryByIdFastPath(tablet_id, &entry))) {
+  if (PREDICT_TRUE(LookupEntryByIdFastPath(tablet_id, &entry) &&
+                   entry.tablet()->HasLeader())) {
     DCHECK(!entry.is_non_covered_range());
     if (remote_tablet) {
       *remote_tablet = entry.tablet();
     }
     return Status::OK();
   }
+  // If we have no cached entry, or the cached entries don't have a leader, we
+  // must do another lookup.
   return Status::Incomplete("");
 }
 
@@ -1299,13 +1301,13 @@ void MetaCache::LookupTabletById(KuduClient* client,
                                  const string& tablet_id,
                                  const MonoTime& deadline,
                                  scoped_refptr<RemoteTablet>* remote_tablet,
-                                 const StatusCallback& callback) {
+                                 const StatusCallback& lookup_complete_cb) {
   Status fastpath_status = DoFastPathLookupById(tablet_id, remote_tablet);
   if (!fastpath_status.IsIncomplete()) {
-    callback(fastpath_status);
+    lookup_complete_cb(fastpath_status);
     return;
   }
-  LookupRpcById* rpc = new LookupRpcById(this, client, callback, tablet_id,
+  LookupRpcById* rpc = new LookupRpcById(this, client, lookup_complete_cb, tablet_id,
                                          remote_tablet, deadline);
   rpc->SendRpcSlowPath();
 }

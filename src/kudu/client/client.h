@@ -908,6 +908,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   FRIEND_TEST(ClientTest, TestMetaCacheExpiry);
   FRIEND_TEST(ClientTest, TestMetaCacheExpiryById);
   FRIEND_TEST(ClientTest, TestMetaCacheExpiryWithKeysAndIds);
+  FRIEND_TEST(ClientTest, TestMetaCacheLookupNoLeaders);
   FRIEND_TEST(ClientTest, TestMetaCacheWithKeysAndIds);
   FRIEND_TEST(ClientTest, TestNonCoveringRangePartitions);
   FRIEND_TEST(ClientTest, TestRetrieveAuthzTokenInParallel);

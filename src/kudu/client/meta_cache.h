@@ -426,8 +426,8 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                          const StatusCallback& callback);
 
   // Look up the locations of the given tablet, storing the result in
-  // 'remote_tablet' if not null, and calling 'callback' once the lookup is
-  // complete. Only tablets with non-failed LEADERs are considered.
+  // 'remote_tablet' if not null, and calling 'lookup_complete_cb' once the
+  // lookup is complete. Only tablets with non-failed LEADERs are considered.
   //
   // NOTE: the callback may be called from an IO thread or inline with this
   // call if the cached data is already available.
@@ -435,7 +435,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                         const std::string& tablet_id,
                         const MonoTime& deadline,
                         scoped_refptr<RemoteTablet>* remote_tablet,
-                        const StatusCallback& callback);
+                        const StatusCallback& lookup_complete_cb);
 
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *entry if successful.

@@ -75,6 +75,7 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/integral_types.h"
@@ -123,9 +124,9 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/slice.h"
-#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -2467,6 +2468,45 @@ TEST_F(ClientTest, TestMetaCacheExpiryWithKeysAndIds) {
   ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
   ASSERT_TRUE(meta_cache->LookupEntryByIdFastPath(first_tablet_id, &entry));
   ASSERT_FALSE(entry.stale());
+}
+
+// Test that if our cache entry indicates there is no leader, we will perform a
+// lookup and refresh our cache entry.
+TEST_F(ClientTest, TestMetaCacheLookupNoLeaders) {
+  auto& meta_cache = client_->data_->meta_cache_;
+  auto tablet_ids = cluster_->mini_tablet_server(0)->ListTablets();
+  ASSERT_FALSE(tablet_ids.empty());
+  const auto& tablet_id = tablet_ids[0];
+
+  // Populate the cache.
+  scoped_refptr<internal::RemoteTablet> rt;
+  ASSERT_OK(MetaCacheLookupById(tablet_id, &rt));
+  ASSERT_NE(nullptr, rt);
+
+  // Mark the cache entry's replicas as followers.
+  internal::MetaCacheEntry entry;
+  ASSERT_TRUE(meta_cache->LookupEntryByIdFastPath(tablet_id, &entry));
+  ASSERT_FALSE(entry.stale());
+  vector<internal::RemoteReplica> replicas;
+  auto remote_tablet = entry.tablet();
+  remote_tablet->GetRemoteReplicas(&replicas);
+  for (auto& r : replicas) {
+    remote_tablet->MarkTServerAsFollower(r.ts);
+  }
+  const auto has_leader = [&] {
+    remote_tablet->GetRemoteReplicas(&replicas);
+    for (auto& r : replicas) {
+      if (r.role == consensus::RaftPeerPB::LEADER) {
+        return true;
+      }
+    }
+    return false;
+  };
+  ASSERT_FALSE(has_leader());
+  // This should force a lookup RPC, rather than leaving our cache entries
+  // leaderless.
+  ASSERT_OK(MetaCacheLookupById(tablet_id, &rt));
+  ASSERT_TRUE(has_leader());
 }
 
 TEST_F(ClientTest, TestGetTabletServerBlacklist) {
