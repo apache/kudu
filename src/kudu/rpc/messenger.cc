@@ -271,11 +271,11 @@ void Messenger::ShutdownInternal(ShutdownMode mode) {
   RpcServicesMap services_to_release;
   {
     std::lock_guard<percpu_rwlock> guard(lock_);
-    if (closing_) {
+    if (state_ == kClosing) {
       return;
     }
     VLOG(1) << "shutting down messenger " << name_;
-    closing_ = true;
+    state_ = kClosing;
 
     services_to_release = std::move(rpc_services_);
     pools_to_shutdown = std::move(acceptor_pools_);
@@ -330,6 +330,8 @@ Status Messenger::RegisterService(const string& service_name,
                                   const scoped_refptr<RpcService>& service) {
   DCHECK(service);
   std::lock_guard<percpu_rwlock> guard(lock_);
+  DCHECK_NE(kServicesUnregistered, state_);
+  DCHECK_NE(kClosing, state_);
   if (InsertIfNotPresent(&rpc_services_, service_name, service)) {
     return Status::OK();
   } else {
@@ -342,6 +344,7 @@ void Messenger::UnregisterAllServices() {
   {
     std::lock_guard<percpu_rwlock> guard(lock_);
     to_release = std::move(rpc_services_);
+    state_ = kServicesUnregistered;
   }
   // Release the map outside of the lock.
 }
@@ -376,10 +379,15 @@ void Messenger::QueueInboundCall(unique_ptr<InboundCall> call) {
   scoped_refptr<RpcService>* service = FindOrNull(rpc_services_,
                                                   call->remote_method().service_name());
   if (PREDICT_FALSE(!service)) {
-    Status s =  Status::ServiceUnavailable(Substitute("service $0 not registered on $1",
-                                                      call->remote_method().service_name(), name_));
-    LOG(INFO) << s.ToString();
-    call.release()->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_SERVICE, s);
+    const auto msg = Substitute("service $0 not registered on $1",
+                                call->remote_method().service_name(), name_);
+    LOG(INFO) << msg;
+    if (state_ == kServicesRegistered) {
+      call.release()->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_SERVICE, Status::NotFound(msg));
+    } else {
+      call.release()->RespondFailure(
+          ErrorStatusPB::ERROR_UNAVAILABLE, Status::ServiceUnavailable(msg));
+    }
     return;
   }
 
@@ -401,7 +409,7 @@ void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote
 
 Messenger::Messenger(const MessengerBuilder &bld)
   : name_(bld.name_),
-    closing_(false),
+    state_(kStarted),
     authentication_(RpcAuthentication::REQUIRED),
     encryption_(RpcEncryption::REQUIRED),
     tls_context_(new security::TlsContext(bld.rpc_tls_ciphers_, bld.rpc_tls_min_protocol_)),
@@ -427,7 +435,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
 }
 
 Messenger::~Messenger() {
-  CHECK(closing_) << "Should have already shut down";
+  CHECK_EQ(state_, kClosing) << "Should have already shut down";
   STLDeleteElements(&reactors_);
 }
 

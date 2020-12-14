@@ -410,6 +410,15 @@ TEST_P(TestRpc, TestWrongService) {
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Service unavailable: service WrongServiceName "
                       "not registered on TestServer");
+
+  // If the server has been marked as having registered all services, we should
+  // expect a "not found" error instead.
+  server_messenger_->SetServicesRegistered();
+  s = DoTestSyncCall(p, "ThisMethodDoesNotExist");
+  ASSERT_TRUE(s.IsRemoteError()) << "unexpected status: " << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "Not found: service WrongServiceName "
+                      "not registered on TestServer");
 }
 
 // Test that we can still make RPC connections even if many fds are in use.

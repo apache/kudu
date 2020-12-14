@@ -219,6 +219,7 @@ Status RpcServer::Start() {
     bound_addrs_str += bind_addr.ToString();
   }
   LOG(INFO) << "RPC server started. Bound to: " << bound_addrs_str;
+  messenger_->SetServicesRegistered();
 
   return Status::OK();
 }

@@ -245,7 +245,9 @@ class Messenger {
   // Returns an error if no service with this name can be found.
   Status UnregisterService(const std::string& service_name);
 
-  // Unregisters all RPC services.
+  // Unregisters all RPC services. Once called, no new services can be
+  // registered, and attempts to access missing services will result in a
+  // retriable error code.
   void UnregisterAllServices();
 
   // Queue a call for transmission. This will pick the appropriate reactor,
@@ -303,9 +305,14 @@ class Messenger {
     return name_;
   }
 
+  void SetServicesRegistered() {
+    std::lock_guard<percpu_rwlock> guard(lock_);
+    state_ = kServicesRegistered;
+  }
+
   bool closing() const {
     shared_lock<rw_spinlock> l(lock_.get_lock());
-    return closing_;
+    return state_ == kClosing;
   }
 
   scoped_refptr<MetricEntity> metric_entity() const { return metric_entity_; }
@@ -355,7 +362,23 @@ class Messenger {
   // Protects closing_, acceptor_pools_, rpc_services_.
   mutable percpu_rwlock lock_;
 
-  bool closing_;
+  enum State {
+    // The Messenger has been started; not all services may be registered yet.
+    kStarted,
+
+    // The Messenger is fully up running. All services have been registered and
+    // are accepting requests.
+    // NOTE: Messengers that do not register services never enter this state.
+    kServicesRegistered,
+
+    // All services have been unregistered. No further requests will succeed.
+    // NOTE: Messengers that do not register services never enter this state.
+    kServicesUnregistered,
+
+    // The Messenger is being closed. Its resources may be freed.
+    kClosing,
+  };
+  State state_;
 
   // Whether to require authentication and encryption on the connections managed
   // by this messenger.

@@ -3145,6 +3145,50 @@ TEST_F(ClientTest, TestWriteTimeout) {
   }
 }
 
+// Test that Write RPCs get properly retried through the duration of a restart.
+// This tests the narrow windows during startup and shutdown that RPC services
+// are unregistered, checking that any resuling  "missing service" errors don't
+// get propogated to end users.
+TEST_F(ClientTest, TestWriteWhileRestarting) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  Status writer_error;
+  int row_id = 1;
+
+  // Writes a row and checks for errors.
+  const auto& write_and_check_error = [&] {
+    RETURN_NOT_OK(ApplyInsertToSession(session.get(), client_table_, row_id++, 1, "row"));
+    RETURN_NOT_OK(session->Flush());
+    // If we successfully flush, check for errors.
+    vector<KuduError*> errors;
+    bool overflow;
+    session->GetPendingErrors(&errors, &overflow);
+    CHECK(!overflow);
+    if (PREDICT_FALSE(!errors.empty())) {
+      return errors[0]->status();
+    }
+    return Status::OK();
+  };
+
+  // Until we finish restarting, hit the tablet server with write requests.
+  CountDownLatch stop(1);
+  thread t([&] {
+    while (writer_error.ok() && stop.count() == 1) {
+      writer_error = write_and_check_error();
+    }
+  });
+  auto thread_joiner = MakeScopedCleanup([&] { t.join(); });
+  auto* ts = cluster_->mini_tablet_server(0);
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+  stop.CountDown();
+  thread_joiner.cancel();
+  t.join();
+
+  // The writer thread should have hit no issues.
+  ASSERT_OK(writer_error);
+}
+
 TEST_F(ClientTest, TestFailedDnsResolution) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
