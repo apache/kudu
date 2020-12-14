@@ -422,10 +422,11 @@ public class TestNegotiator {
           .build()));
     embedder.flushInbound();
 
-    // TODO (ghenke): For some reason the SslHandler adds an extra empty message here.
+    // TODO (ghenke): For some reason the SslHandler adds extra empty messages here.
     // This should be harmless, but it would be good to understand or fix why.
-    ByteBuf empty = embedder.readOutbound();
-    assertEquals(0, empty.readableBytes());
+    while (((ByteBuf) embedder.outboundMessages().peek()).readableBytes() == 0) {
+      embedder.readOutbound();
+    }
 
     // Should be complete now.
     assertComplete(/*isTls*/ true);

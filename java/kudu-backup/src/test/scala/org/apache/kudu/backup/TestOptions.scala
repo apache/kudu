@@ -41,7 +41,7 @@ class TestOptions extends KuduTestSuite {
         |  --failOnFirstError       Whether to fail the backup job as soon as a single table backup fails. Default: false
         |  --help                   prints this usage text
         |  <table>...               A list of tables to be backed up.""".stripMargin
-    assertEquals(expectedStr, BackupOptions.parser.renderTwoColumnsUsage)
+    assertEquals(expectedStr, BackupOptions.parser.usage)
   }
 
   @Test
@@ -59,6 +59,6 @@ class TestOptions extends KuduTestSuite {
         |  --restoreOwner <value>   If true, it restores table ownership when creating new tables, otherwise creates tables as the logged in user. Only used when createTables is true. Default: true
         |  --help                   prints this usage text
         |  <table>...               A list of tables to be restored.""".stripMargin
-    assertEquals(expectedStr, RestoreOptions.parser.renderTwoColumnsUsage)
+    assertEquals(expectedStr, RestoreOptions.parser.usage)
   }
 }
