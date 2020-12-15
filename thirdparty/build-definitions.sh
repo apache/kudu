@@ -840,16 +840,18 @@ build_boost() {
 
   # If CC and CXX are set, set the compiler in user-config.jam.
   if [ -n "$CC" -a -n "$CXX" ]; then
-    # Determine the name of the compiler referenced in $CC. This assumes
-    # the compiler prints its name in the first line of the output. The pattern
+    # Determine the name of the compiler referenced in $CC. The pattern
     # matching works for various flavors of GCC and LLVM clang. As the last
-    # resort, output the first word of the first line. The '$CC --version'
-    # approach appears to work even if the compiler is called through ccache.
-    local COMPILER=$($CC --version | \
-      awk '/(Apple )?(clang|LLVM) version [[:digit:]]+\.[[:digit:]]+/ {
-             print "clang"; exit }
-           /\(GCC\) [[:digit:]]+\.[[:digit:]]+/{ print "gcc"; exit }
-           { print $1; exit }')
+    # resort, output the first word of the line containing version information.
+    # The '$CC -v 2>&1' approach appears to work even if the compiler is
+    # called through ccache, and the version line keeps the same format on
+    # different OS and flavors, whereas '$CC --version' is plagued by many
+    # variations depending on the OS flavor and versioning/packaging nuances.
+    local COMPILER=$($CC -v 2>&1 | grep -E ' version [[:digit:]]' | awk '
+        /^(Apple )?(clang|LLVM) version [[:digit:]]+\.[[:digit:]]+/ { print "clang"; exit }
+        /^gcc version [[:digit:]]+\.[[:digit:]]+/ { print "gcc"; exit }
+        { print $1; exit }
+    ')
 
     # If the compiler binary used was 'cc' and not 'gcc', it will also report
     # itself as 'cc'. Coerce it to gcc.
@@ -866,7 +868,12 @@ build_boost() {
   fi
 
   # Build the date_time boost lib.
-  ./bootstrap.sh --prefix=$PREFIX threading=multi --with-libraries=date_time
+  if [ -z "$TOOLSET" ]; then
+    ./bootstrap.sh --prefix=$PREFIX threading=multi --with-libraries=date_time
+  else
+    ./bootstrap.sh --prefix=$PREFIX threading=multi --with-libraries=date_time \
+        --with-toolset=$COMPILER
+  fi
   ./b2 clean $TOOLSET --build-dir="$BOOST_BDIR"
   ./b2 install variant=release link=static,shared --build-dir="$BOOST_BDIR" $TOOLSET -q -d0 \
     --debug-configuration \
