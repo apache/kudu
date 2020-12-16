@@ -83,7 +83,8 @@ def parse_args():
   parser.add_argument('--bases', nargs='+', default=DEFAULT_OS, choices=[
                       'centos:6', 'centos:7', 'centos:8',
                       'debian:jessie', 'debian:stretch',
-                      'ubuntu:trusty', 'ubuntu:xenial', 'ubuntu:bionic'],
+                      'ubuntu:trusty', 'ubuntu:xenial', 'ubuntu:bionic',
+                      'opensuse/leap:15'],
                       help='The base operating systems to build with')
   # These targets are defined in the Dockerfile. Dependent targets of a passed image will be built,
   # but not tagged. Note that if a target is not tagged it is subject removal by Dockers system
@@ -161,8 +162,13 @@ def get_os_tag(base):
       The operating system is described with the version name.
       If the operating system version is numeric, the version will also be appended.
   """
-  os_name = base.split(':')[0]
-  os_version = base.split(':')[1]
+  # If the base contains a "/" remove the prefix. ex: `opensuse/leap:15`
+  if "/" in base:
+    short_base = base.split('/')[1]
+  else:
+    short_base = base
+  os_name = short_base.split(':')[0]
+  os_version = short_base.split(':')[1]
   os_tag = os_name
   if os_version.isdigit():
     os_tag += os_version

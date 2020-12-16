@@ -100,6 +100,22 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
   unset DEBIAN_FRONTEND
+# OpenSUSE/SLES
+elif [[ -f "/usr/bin/zypper" ]]; then
+  # Update the repo.
+  zypper update -y
+
+  # Install curl, used when installing pip.
+  zypper install -y ca-certificates curl
+
+  # Install python development packages.
+  # g++ is required to check for int128 support in setup.py.
+  zypper install -y gcc gcc-c++ python-devel python-xml
+  install_python_packages
+
+  # Reduce the image size by cleaning up after the install.
+  zypper clean --all
+  rm -rf /var/lib/zypp/* /tmp/* /var/tmp/*
 else
   echo "Unsupported OS"
   exit 1

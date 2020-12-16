@@ -179,6 +179,60 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
   unset DEBIAN_FRONTEND
+  # OpenSUSE/SLES
+elif [[ -f "/usr/bin/zypper" ]]; then
+  # Update the repo.
+  zypper update -y
+
+  zypper install -y \
+    autoconf \
+    automake \
+    chrony \
+    chrpath \
+    cyrus-sasl-devel \
+    cyrus-sasl-gssapi \
+    cyrus-sasl-plain \
+    curl \
+    flex \
+    gcc \
+    gcc-c++ \
+    gdb \
+    git \
+    gzip \
+    hostname \
+    krb5-devel \
+    krb5-server \
+    libtool \
+    lsb-release \
+    lsof \
+    make \
+    openssl-devel \
+    patch \
+    pkg-config \
+    python \
+    rsync \
+    sudo \
+    unzip \
+    vim \
+    which \
+    wget
+
+  # Install extra impala packages for the impala images. They are nominal in size.
+  # TODO(ghenke): tzdata equivalent package. This is not an issue given we currently
+  # only build the Impala images with in CentOS 7.
+  zypper install -y \
+    libffi-devel \
+    liblzo2-2
+
+  # Install libraries often used for Kudu development and build performance.
+  zypper install -y \
+    ccache \
+    cmake \
+    ninja
+
+  # Reduce the image size by cleaning up after the install.
+  zypper clean --all
+  rm -rf /var/lib/zypp/* /tmp/* /var/tmp/*
 else
   echo "Unsupported OS"
   exit 1

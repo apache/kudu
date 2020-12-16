@@ -70,6 +70,17 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
   unset DEBIAN_FRONTEND
+# OpenSUSE/SLES
+elif [[ -f "/usr/bin/zypper" ]]; then
+  # Update the repo.
+  zypper update -y
+
+  # Install OpenJDK 8.
+  zypper install -y java-1_8_0-openjdk-devel
+
+  # Reduce the image size by cleaning up after the install.
+  zypper clean --all
+  rm -rf /var/lib/zypp/* /tmp/* /var/tmp/*
 else
   echo "Unsupported OS"
   exit 1
