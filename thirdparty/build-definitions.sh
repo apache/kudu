@@ -692,6 +692,12 @@ build_curl() {
   if [ -n "$KRB5CONFIG_LOCATION" -a "$KRB5CONFIG_LOCATION" != "/usr/bin/krb5-config" ]; then
     export KRB5CONFIG=$KRB5CONFIG_LOCATION
   fi
+  # In the case the special SLES location is not on the PATH but exists and we haven't
+  # found another viable KRB5CONFIG_LOCATION, use the special SLES location.
+  SLES_KRB5CONFIG_LOCATION="/usr/lib/mit/bin/krb5-config"
+  if [ -z "$KRB5CONFIG_LOCATION" -a -f "$SLES_KRB5CONFIG_LOCATION" ]; then
+    export KRB5CONFIG=$SLES_KRB5CONFIG_LOCATION
+  fi
 
   # In the scope of using libcurl in Kudu tests and other simple scenarios,
   # not so much functionality is needed as of now, so configure for a fairly
