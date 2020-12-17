@@ -336,7 +336,6 @@ Status Master::InitTxnManager() {
 }
 
 Status Master::WaitForTxnManagerInit(const MonoDelta& timeout) const {
-  CHECK_EQ(state_, kRunning);
   if (timeout.Initialized()) {
     const Status* s = txn_manager_init_status_.WaitFor(timeout);
     if (!s) {

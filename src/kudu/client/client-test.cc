@@ -7598,6 +7598,101 @@ TEST_F(ClientTest, TxnKeepAlive) {
   }
 }
 
+// A scenario to explicitly show that long-running transactions are not aborted
+// if Kudu masters are not available for periods of time shorter than the txn
+// keepalive interval.
+TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerShortTime) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  // ASAN and TSAN use longer intervals to avoid flakiness: it takes some
+  // time to restart masters, and that adds up to the unavailability interval.
+  constexpr const auto kUnavailabilityIntervalMs = 5000;
+#else
+  constexpr const auto kUnavailabilityIntervalMs = 1000;
+#endif
+
+  // To avoid flakiness, set the txn keepalive interval longer than it is in
+  // other scenarios (NOTE: it's still much shorter than it's default value
+  // to be used in real life).
+  //
+  // The cluster is restarted to avoid TSAN warnings on the access to the
+  // flag values by the stale txn monitoring thread and the assignments below.
+  cluster_->Shutdown();
+  FLAGS_txn_keepalive_interval_ms = 3 * kUnavailabilityIntervalMs;
+  FLAGS_txn_staleness_tracker_interval_ms = kUnavailabilityIntervalMs / 8;
+  ASSERT_OK(cluster_->Start());
+
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(client_->NewTransaction(&txn));
+
+  // Shutdown masters -- they host TxnManager instances which proxy txn-related
+  // RPC calls from clients to corresponding TxnStatusManager.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+
+  // An attempt to commit a transaction should fail right away (i.e. no retries)
+  // due to unreachable masters.
+  {
+    auto s = txn->Commit(false /* wait */);
+    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "connection negotiation failed");
+    ASSERT_STR_CONTAINS(s.ToString(), "Connection refused");
+  }
+
+  // Wait for some time, but not too long to allow the system to get txn
+  // keepalive heartbeat before the timeout.
+  SleepFor(MonoDelta::FromMilliseconds(kUnavailabilityIntervalMs));
+
+  // Start masters back.
+  for (auto idx = 0; idx < cluster_->num_masters(); ++idx) {
+    ASSERT_OK(cluster_->mini_master(idx)->Restart());
+  }
+
+  // Now, when masters are back and running, the client should be able
+  // to commit the transaction. It should not be automatically aborted.
+  ASSERT_OK(txn->Commit(false /* wait */));
+  ASSERT_OK(FinalizeCommitTransaction(txn));
+}
+
+// A scenario to explicitly show that long-running transactions are
+// aborted if Kudu masters are not available for time period longer than
+// the txn keepalive interval.
+TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerLongTime) {
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(client_->NewTransaction(&txn));
+
+  // Shutdown masters -- they host TxnManager instances which proxy txn-related
+  // RPC calls from clients to corresponding TxnStatusManager.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+
+  // Wait for some time to allow the system to detect stale transactions.
+  SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
+
+  // An attempt to commit a transaction should fail due to unreachable masters.
+  {
+    auto s = txn->Commit(false /* wait */);
+    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "connection negotiation failed");
+    ASSERT_STR_CONTAINS(s.ToString(), "Connection refused");
+  }
+
+  // Start masters back.
+  for (auto idx = 0; idx < cluster_->num_masters(); ++idx) {
+    ASSERT_OK(cluster_->mini_master(idx)->Restart());
+  }
+
+  // Now, when masters are back and running, the client should get the
+  // Status::IllegalState() status back when trying to commit the transaction
+  // which has been automatically aborted by the system due to not receiving
+  // any txn keepalive messages for longer than prescribed by the
+  // --txn_keepalive_interval_ms flag.
+  {
+    auto s = txn->Commit(false /* wait */);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORTED");
+  }
+}
+
 // Client test that assigns locations to clients and tablet servers.
 // For now, assigns a uniform location to all clients and tablet servers.
 class ClientWithLocationTest : public ClientTest {
