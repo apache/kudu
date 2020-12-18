@@ -59,6 +59,22 @@ bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config) {
   return false;
 }
 
+bool IsRaftConfigMemberWithDetail(const std::string& uuid,
+    const RaftConfigPB& config, std::string *hostname_port) {
+  for (const RaftPeerPB& peer : config.peers()) {
+    if (peer.permanent_uuid() == uuid) {
+      const ::kudu::HostPortPB& host_port = peer.last_known_addr();
+      if (!peer.hostname().empty()) {
+        *hostname_port = Substitute("$0:$1", peer.hostname(), host_port.port());
+      } else {
+        *hostname_port = Substitute("[$0]:$1", host_port.host(), host_port.port());
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config) {
   for (const RaftPeerPB& peer : config.peers()) {
     if (peer.permanent_uuid() == uuid) {
