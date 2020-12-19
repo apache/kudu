@@ -206,3 +206,10 @@ to communicate only the most important known issues.
   link:https://www.apache.org/legal/resolved.html#category-x[Category X]. This
   issue has been addressed in 1.10.1 and 1.11.1 patch releases correspondingly
   (see link:https://issues.apache.org/jira/browse/KUDU-2990[KUDU-2990]).
+
+* Due to a bug in SSSD PAC plugin of version prior to 1.16, a KRPC connection
+  negotiation may stuck and the whole process wouldn't be able to negotiate
+  any new connection for about 5 minutes in a secure Kudu cluster using SSSD.
+  If using SSSD in secure Kudu cluster deployments, make sure SSSD packages are
+  of version 1.16 or newer
+  (see link:https://issues.apache.org/jira/browse/KUDU-3217[KUDU-3217]).
