@@ -29,6 +29,7 @@
 #include <boost/optional/optional.hpp>
 #include <boost/optional/optional_io.hpp>
 #include <gflags/gflags.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
@@ -70,6 +71,10 @@ DEFINE_int32(consensus_inject_latency_ms_in_notifications, 0,
              "consensus implementation.");
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, hidden);
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
+
+DEFINE_double(consensus_fail_log_read_ops, 0.0,
+              "Fraction of the time when reading from the log cache will fail");
+TAG_FLAG(consensus_fail_log_read_ops, hidden);
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_bool(safe_time_advancement_without_writes);
@@ -177,7 +182,8 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
                                    unique_ptr<ThreadPoolToken> raft_pool_observers_token,
                                    const atomic<bool>* server_quiescing,
                                    OpId last_locally_replicated,
-                                   const OpId& last_locally_committed)
+                                   const OpId& last_locally_committed,
+                                   const bool* allow_status_msg_for_failed_peer)
     : raft_pool_observers_token_(std::move(raft_pool_observers_token)),
       server_quiescing_(server_quiescing),
       local_peer_pb_(std::move(local_peer_pb)),
@@ -185,7 +191,8 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
       successor_watch_in_progress_(false),
       log_cache_(metric_entity, std::move(log), local_peer_pb_.permanent_uuid(), tablet_id_),
       metrics_(metric_entity),
-      time_manager_(time_manager) {
+      time_manager_(time_manager),
+      allow_status_msg_for_failed_peer_(allow_status_msg_for_failed_peer) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
   DCHECK(local_peer_pb_.has_last_known_addr());
   DCHECK(last_locally_replicated.IsInitialized());
@@ -687,10 +694,19 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   }
   *needs_tablet_copy = false;
 
+  // Should we send log messages to the peer?
   // If we've never communicated with the peer, we don't know what messages to
-  // send, so we'll send a status-only request. Otherwise, we grab requests
-  // from the log starting at the last_received point.
-  if (peer_copy.last_exchange_status != PeerStatus::NEW) {
+  // send, so we'll send a status-only request instead.
+  //
+  // There are cases where it's beneficial to send status-only messages to a peer
+  // in FAILED_UNRECOVERABLE state as it helps the peer transition out of the
+  // FAILED_UNRECOVERABLE state, case in point external system catalog copy that's done when
+  // adding a new master. In such a case don't try to send log messages which is expected
+  // to fail because the log has been GC'ed but instead send status-only message.
+  if (peer_copy.last_exchange_status != PeerStatus::NEW &&
+      (allow_status_msg_for_failed_peer_ == nullptr || !*allow_status_msg_for_failed_peer_ ||
+       peer_copy.wal_catchup_possible)) {
+    // We grab requests from the log starting at the last_received point.
 
     // The batch of messages to send to the peer.
     vector<ReplicateRefPtr> messages;
@@ -701,6 +717,13 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                   max_batch_size,
                                   &messages,
                                   &preceding_id);
+
+    // Inject failure to simulate follower falling behind and the leader has GC'ed its logs.
+    if (PREDICT_FALSE(fault_injection::MaybeTrue(FLAGS_consensus_fail_log_read_ops))) {
+      wal_catchup_failure = true;
+      return Status::NotFound("INJECTED FAILURE");
+    }
+
     if (PREDICT_FALSE(!s.ok())) {
       // It's normal to have a NotFound() here if a follower falls behind where
       // the leader has GCed its logs. The follower replica will hang around

@@ -278,7 +278,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       raft_pool->NewToken(ThreadPool::ExecutionMode::SERIAL),
       server_ctx_.quiescing,
       info.last_id,
-      info.last_committed_id));
+      info.last_committed_id,
+      server_ctx_.allow_status_msg_for_failed_peer));
 
   // A manager for the set of peers that actually send the operations both remotely
   // and to the local wal.

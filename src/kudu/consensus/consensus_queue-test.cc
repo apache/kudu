@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -56,6 +57,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -63,6 +65,7 @@
 
 DECLARE_int32(consensus_max_batch_size_bytes);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
+DECLARE_double(consensus_fail_log_read_ops);
 
 using kudu::consensus::HealthReportPB;
 using std::atomic;
@@ -87,7 +90,8 @@ class ConsensusQueueTest : public KuduTest {
         metric_entity_tablet_(METRIC_ENTITY_tablet.Instantiate(
             &metric_registry_, "consensus-queue-test::tablet")),
         registry_(new log::LogAnchorRegistry),
-        quiescing_(false) {
+        quiescing_(false),
+        allow_status_msg_for_failed_peer_(false) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -121,7 +125,8 @@ class ConsensusQueueTest : public KuduTest {
         raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL),
         &quiescing_,
         replicated_opid,
-        committed_opid));
+        committed_opid,
+        &allow_status_msg_for_failed_peer_));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -176,7 +181,7 @@ class ConsensusQueueTest : public KuduTest {
     response->mutable_status()->Clear();
   }
 
-  // Like the above but uses the last received index as the commtited index.
+  // Like the above but uses the last received index as the committed index.
   void UpdatePeerWatermarkToOp(ConsensusRequestPB* request,
                                ConsensusResponsePB* response,
                                const OpId& last_received,
@@ -246,6 +251,7 @@ class ConsensusQueueTest : public KuduTest {
   scoped_refptr<log::LogAnchorRegistry> registry_;
   unique_ptr<clock::Clock> clock_;
   atomic<bool> quiescing_;
+  bool allow_status_msg_for_failed_peer_;
 };
 
 // Observer of a PeerMessageQueue that tracks the notifications sent to
@@ -359,6 +365,50 @@ TEST_F(ConsensusQueueTest, TestTransferLeadershipWhenAppropriate) {
   NO_FATALS(verify_elections(/*election_happened*/true));
   peer_response.set_server_quiescing(false);
   NO_FATALS(verify_elections(/*election_happened*/true));
+}
+
+// Test that verifies status-only request messages are sent to the peer even if it's in
+// FAILED_UNRECOVERABLE state.
+TEST_F(ConsensusQueueTest, TestStatusMessagesToFailedUnrecoverablePeer) {
+  allow_status_msg_for_failed_peer_ = true;
+  RaftConfigPB config = BuildRaftConfigPBForTests(/*num_voters*/2);
+  queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, config);
+
+  AppendReplicateMessagesToQueue(queue_.get(), clock_.get(), 1, 10);
+  WaitForLocalPeerToAckIndex(10);
+
+  RaftPeerPB follower = MakePeer(kPeerUuid, RaftPeerPB::VOTER);
+  queue_->TrackPeer(follower);
+
+  ConsensusRequestPB request;
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kPeerUuid);
+
+  // Send request to a new peer.
+  vector<ReplicateRefPtr> refs;
+  bool needs_tablet_copy;
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_tablet_copy));
+  ASSERT_FALSE(needs_tablet_copy);
+  ASSERT_EQ(0, request.ops_size());
+
+  SetLastReceivedAndLastCommitted(&response, MinimumOpId());
+  bool send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_TRUE(send_more_immediately) << "Queue still had requests pending";
+
+  // Inject failure to read log messages. This will put the peer in FAILED_UNRECOVERABLE state.
+  FLAGS_consensus_fail_log_read_ops = 1.0;
+  Status s = queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_tablet_copy);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_EQ("INJECTED FAILURE", s.message().ToString());
+  auto health_map = queue_->ReportHealthOfPeers();
+  ASSERT_NE(health_map.count(kPeerUuid), 0);
+  auto actual_health = health_map[kPeerUuid].overall_health();
+  ASSERT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, actual_health);
+
+  // Verify status-only message can be sent.
+  ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_tablet_copy));
+  ASSERT_FALSE(needs_tablet_copy);
+  ASSERT_EQ(0, request.ops_size());
 }
 
 // Tests that the queue is able to track a peer when it starts tracking a peer

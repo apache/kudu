@@ -86,6 +86,10 @@ struct ServerContext {
 
   // Threadpool on which to run Raft tasks.
   ThreadPool* raft_pool;
+
+  // Shared boolean indicating whether Raft consensus should continue sending request messages
+  // even if a peer is considered as failed.
+  const bool* allow_status_msg_for_failed_peer = nullptr;
 };
 
 struct ConsensusOptions {

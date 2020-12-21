@@ -192,7 +192,8 @@ class PeerMessageQueue {
                    std::unique_ptr<ThreadPoolToken> raft_pool_observers_token,
                    const std::atomic<bool>* server_quiescing,
                    OpId last_locally_replicated,
-                   const OpId& last_locally_committed);
+                   const OpId& last_locally_committed,
+                   const bool* allow_status_msg_for_failed_peer = nullptr);
 
   // Changes the queue to leader mode, meaning it tracks majority replicated
   // operations and notifies observers when those change.
@@ -372,6 +373,7 @@ class PeerMessageQueue {
   FRIEND_TEST(ConsensusQueueTest, TestQueueAdvancesCommittedIndex);
   FRIEND_TEST(ConsensusQueueTest, TestQueueMovesWatermarksBackward);
   FRIEND_TEST(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics);
+  FRIEND_TEST(ConsensusQueueTest, TestStatusMessagesToFailedUnrecoverablePeer);
   FRIEND_TEST(ConsensusQueueUnitTest, PeerHealthStatus);
   FRIEND_TEST(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty);
 
@@ -579,6 +581,8 @@ class PeerMessageQueue {
   Metrics metrics_;
 
   TimeManager* time_manager_;
+
+  const bool* allow_status_msg_for_failed_peer_;
 };
 
 // The interface between RaftConsensus and the PeerMessageQueue.
