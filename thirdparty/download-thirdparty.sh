@@ -199,7 +199,6 @@ fetch_and_patch \
  $GPERFTOOLS_SOURCE \
  $GPERFTOOLS_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch" \
- "patch -p1 < $TP_DIR/patches/gperftools-osx-arm64.patch" \
  "autoreconf -fvi"
 
 # NOTE: creating an empty 'third_party/googletest/m4' subdir is a recipe from
