@@ -808,7 +808,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   static std::string NormalizeTableName(const std::string& table_name);
 
   enum ChangeConfigOp {
-    kAddMaster
+    kAddMaster,
+    kRemoveMaster
   };
 
   // Add/remove a master specified by 'hp' and 'uuid' by initiating change config request.

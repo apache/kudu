@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -57,6 +58,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -81,6 +83,7 @@ using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::rpc::RpcController;
 using std::set;
 using std::string;
+using std::tuple;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
@@ -175,6 +178,10 @@ class DynamicMultiMasterTest : public KuduTest {
       ASSERT_OK(CreateTable(cluster_.get(), table_name));
     }
     LOG(INFO) << "Number of tables created: " << i - 1;
+    if (updated_gc_count > orig_gc_count) {
+      // We are done here and no need to wait further.
+      return;
+    }
 
     MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(2);
     while (MonoTime::Now() < deadline) {
@@ -243,10 +250,12 @@ class DynamicMultiMasterTest : public KuduTest {
     ASSERT_OK(RunLeaderMasterRPC(list_masters, cluster));
   }
 
-  // Verify the cluster contains 'num_masters' and returns the master addresses in 'master_hps'.
-  void VerifyNumMastersAndGetAddresses(int num_masters, vector<HostPort>* master_hps) {
+  // Verify the ExternalMiniCluster 'cluster' contains 'num_masters' and return the master
+  // addresses in 'master_hps'.
+  void VerifyNumMastersAndGetAddresses(int num_masters, vector<HostPort>* master_hps,
+                                       ExternalMiniCluster* cluster = nullptr) {
     ListMastersResponsePB resp;
-    NO_FATALS(RunListMasters(&resp));
+    NO_FATALS(RunListMasters(&resp, cluster));
     ASSERT_EQ(num_masters, resp.masters_size());
     master_hps->clear();
     for (const auto& master : resp.masters()) {
@@ -331,6 +340,47 @@ class DynamicMultiMasterTest : public KuduTest {
     return cluster_->AddMaster(new_master_);
   }
 
+  // Remove the master specified by 'hp' and optional 'master_uuid' from the cluster.
+  // Unset 'hp' can be used to indicate to not supply RPC address in the RemoveMaster RPC request.
+  Status RemoveMasterFromCluster(const HostPort& hp, const string& master_uuid = "") {
+    auto remove_master = [&] (int leader_master_idx) {
+      RemoveMasterRequestPB req;
+      RemoveMasterResponsePB resp;
+      RpcController rpc;
+      if (hp != HostPort()) {
+        *req.mutable_rpc_addr() = HostPortToPB(hp);
+      }
+      if (!master_uuid.empty()) {
+        *req.mutable_master_uuid() = master_uuid;
+      }
+      rpc.RequireServerFeature(MasterFeatures::DYNAMIC_MULTI_MASTER);
+      Status s = cluster_->master_proxy(leader_master_idx)->RemoveMaster(req, &resp, &rpc);
+      boost::optional<MasterErrorPB::Code> err_code(resp.has_error(), resp.error().code());
+      return std::make_pair(s, err_code);
+    };
+
+    RETURN_NOT_OK(RunLeaderMasterRPC(remove_master));
+    return cluster_->RemoveMaster(hp);
+  }
+
+  // Fetch a follower (non-leader) master index from the cluster.
+  Status GetFollowerMasterIndex(int* follower_master_idx) {
+    int leader_master_idx;
+    RETURN_NOT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
+    int follower = -1;
+    for (int i = 0; i < cluster_->num_masters(); i++) {
+      if (i != leader_master_idx) {
+        follower = i;
+        break;
+      }
+    }
+    if (follower == -1) {
+      return Status::NotFound("No follower master found");
+    }
+    *follower_master_idx = follower;
+    return Status::OK();
+  }
+
   // Verify one of the 'expected_roles' and 'expected_member_type' of the new master by
   // making RPC to it directly.
   void VerifyNewMasterDirectly(const set<consensus::RaftPeerPB::Role>& expected_roles,
@@ -345,10 +395,8 @@ class DynamicMultiMasterTest : public KuduTest {
     ASSERT_EQ(expected_member_type, resp.member_type());
   }
 
-  // Verify the newly added master is in FAILED_UNRECOVERABLE state and can't be caught up
-  // from WAL.
-  void VerifyNewMasterInFailedUnrecoverableState() {
-    // GetConsensusState() RPC can be made to any master and not necessarily the leader master.
+  // Fetch consensus state of the leader master.
+  void GetLeaderMasterConsensusState(consensus::RaftConfigPB* consensus_config) {
     int leader_master_idx;
     ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
     auto leader_master_addr = cluster_->master(leader_master_idx)->bound_rpc_addr();
@@ -367,8 +415,15 @@ class DynamicMultiMasterTest : public KuduTest {
     const auto& sys_catalog = resp.tablets(0);
     ASSERT_EQ(master::SysCatalogTable::kSysCatalogTabletId, sys_catalog.tablet_id());
     const auto& cstate = sys_catalog.cstate();
-    const auto& config = cstate.has_pending_config() ?
-                         cstate.pending_config() : cstate.committed_config();
+    *consensus_config = cstate.has_pending_config() ?
+                        cstate.pending_config() : cstate.committed_config();
+  }
+
+  // Verify the newly added master is in FAILED_UNRECOVERABLE state and can't be caught up
+  // from WAL.
+  void VerifyNewMasterInFailedUnrecoverableState() {
+    consensus::RaftConfigPB config;
+    NO_FATALS(GetLeaderMasterConsensusState(&config));
     ASSERT_EQ(orig_num_masters_ + 1, config.peers_size());
     int num_new_masters_found = 0;
     for (const auto& peer : config.peers()) {
@@ -381,30 +436,55 @@ class DynamicMultiMasterTest : public KuduTest {
     ASSERT_EQ(1, num_new_masters_found);
   }
 
-  // Transfers leadership among masters in the 'cluster' to the specified 'new_master_uuid'.
-  static void TransferMasterLeadership(ExternalMiniCluster* cluster,
-                                       const string& new_master_uuid) {
-    LOG(INFO) << "Transferring leadership to new master: " << new_master_uuid;
+  void VerifyDeadMasterInSpecifiedState(const string& dead_master_uuid,
+                                        consensus::HealthReportPB::HealthStatus expected_state) {
+    consensus::RaftConfigPB config;
+    NO_FATALS(GetLeaderMasterConsensusState(&config));
+    ASSERT_EQ(orig_num_masters_, config.peers_size());
+    bool dead_master_found = false;
+    for (const auto& peer : config.peers()) {
+      if (peer.permanent_uuid() == dead_master_uuid) {
+        dead_master_found = true;
+        ASSERT_EQ(expected_state, peer.health_report().overall_health());
+        break;
+      }
+    }
+    ASSERT_TRUE(dead_master_found);
+  }
+
+  // Initiates leadership transfer to the specified master returning status of the asynchronous
+  // request.
+  static Status TransferMasterLeadershipAsync(ExternalMiniCluster* cluster,
+                                              const string& master_uuid) {
+    LOG(INFO) << "Transferring leadership to master: " << master_uuid;
 
     int leader_master_idx;
-    ASSERT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
+    RETURN_NOT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
     auto leader_master_addr = cluster->master(leader_master_idx)->bound_rpc_addr();
     consensus::ConsensusServiceProxy consensus_proxy(cluster->messenger(), leader_master_addr,
                                                      leader_master_addr.host());
     LeaderStepDownRequestPB req;
     req.set_dest_uuid(cluster->master(leader_master_idx)->uuid());
     req.set_tablet_id(master::SysCatalogTable::kSysCatalogTabletId);
-    req.set_new_leader_uuid(new_master_uuid);
+    req.set_new_leader_uuid(master_uuid);
     req.set_mode(consensus::GRACEFUL);
     LeaderStepDownResponsePB resp;
     RpcController rpc;
-    ASSERT_OK(consensus_proxy.LeaderStepDown(req, &resp, &rpc));
-    ASSERT_FALSE(resp.has_error())
-      << Substitute("Failed transferring leadership to new master: $0, error: $1", new_master_uuid,
-                    tserver::TabletServerErrorPB::Code_Name(resp.error().code()));
+    RETURN_NOT_OK(consensus_proxy.LeaderStepDown(req, &resp, &rpc));
+    if (resp.has_error()) {
+      return StatusFromPB(resp.error().status());
+    }
+    return Status::OK();
+  }
 
+  // Transfers leadership among masters in the 'cluster' to the specified 'new_master_uuid'
+  // verifies the transfer is successful.
+  static void TransferMasterLeadership(ExternalMiniCluster* cluster,
+                                       const string& new_master_uuid) {
+    ASSERT_OK(TransferMasterLeadershipAsync(cluster, new_master_uuid));
     // LeaderStepDown request is asynchronous, hence using ASSERT_EVENTUALLY.
     ASSERT_EVENTUALLY([&] {
+      int leader_master_idx = -1;
       ASSERT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
       ASSERT_EQ(new_master_uuid, cluster->master(leader_master_idx)->uuid());
     });
@@ -472,12 +552,12 @@ class DynamicMultiMasterTest : public KuduTest {
     ClusterVerifier cv(&migrated_cluster);
     NO_FATALS(cv.CheckCluster());
     LOG(INFO) << "Verifying the first table";
-    cv.CheckRowCount(kTableName, ClusterVerifier::EXACTLY, 0);
+    NO_FATALS(cv.CheckRowCount(kTableName, ClusterVerifier::EXACTLY, 0));
 
     LOG(INFO) << "Creating and verifying the second table";
     // Perform an operation that requires replication to masters.
     ASSERT_OK(CreateTable(&migrated_cluster, "second_table"));
-    cv.CheckRowCount("second_table", ClusterVerifier::EXACTLY, 0);
+    NO_FATALS(cv.CheckRowCount("second_table", ClusterVerifier::EXACTLY, 0));
 
     // Pause one master at a time and create table at the same time which will allow
     // new leader to be elected if the paused master is a leader.
@@ -488,7 +568,7 @@ class DynamicMultiMasterTest : public KuduTest {
       for (int i = 0; i < orig_num_masters_ + 1; i++) {
         ASSERT_OK(migrated_cluster.master(i)->Pause());
         cluster::ScopedResumeExternalDaemon resume_daemon(migrated_cluster.master(i));
-        cv.CheckRowCount(table_name, ClusterVerifier::EXACTLY, 0);
+        NO_FATALS(cv.CheckRowCount(table_name, ClusterVerifier::EXACTLY, 0));
 
         // See MasterFailoverTest.TestCreateTableSync to understand why we must
         // check for IsAlreadyPresent as well.
@@ -496,6 +576,17 @@ class DynamicMultiMasterTest : public KuduTest {
         Status s = CreateTable(&migrated_cluster, table_name);
         ASSERT_TRUE(s.ok() || s.IsAlreadyPresent());
       }
+    }
+  }
+
+  // Function to prevent leadership changes among masters for quick tests.
+  void DisableMasterLeadershipTransfer() {
+    for (int i = 0 ; i < cluster_->num_masters(); i++) {
+      // Starting the cluster with following flag leads to a case sometimes
+      // wherein no leader gets elected leading to failure in ConnectToMaster() RPC.
+      // So instead set the flag after the cluster is running.
+      ASSERT_OK(cluster_->SetFlag(cluster_->master(i),
+                                  "leader_failure_max_missed_heartbeat_periods", "10.0"));
     }
   }
 
@@ -518,22 +609,22 @@ class DynamicMultiMasterTest : public KuduTest {
 const char* const DynamicMultiMasterTest::kTableName = "first_table";
 
 // Parameterized DynamicMultiMasterTest class that works with different initial number of masters.
-class ParameterizedDynamicMultiMasterTest : public DynamicMultiMasterTest,
-                                            public ::testing::WithParamInterface<int> {
+class ParameterizedAddMasterTest : public DynamicMultiMasterTest,
+                                   public ::testing::WithParamInterface<int> {
  public:
   void SetUp() override {
     NO_FATALS(SetUpWithNumMasters(GetParam()));
   }
 };
 
-INSTANTIATE_TEST_CASE_P(, ParameterizedDynamicMultiMasterTest,
+INSTANTIATE_TEST_CASE_P(, ParameterizedAddMasterTest,
                         // Initial number of masters in the cluster before adding a new master
                         ::testing::Values(1, 2));
 
 // This test starts a cluster, creates a table and then adds a new master.
 // For a system catalog with little data, the new master can be caught up from WAL and
 // promoted to a VOTER without requiring tablet copy.
-TEST_P(ParameterizedDynamicMultiMasterTest, TestAddMasterCatchupFromWAL) {
+TEST_P(ParameterizedAddMasterTest, TestAddMasterCatchupFromWAL) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(StartCluster({"--master_support_change_config"}));
@@ -585,7 +676,7 @@ TEST_P(ParameterizedDynamicMultiMasterTest, TestAddMasterCatchupFromWAL) {
   // Adding one of the former masters should return an error.
   {
     Status s = AddMasterToCluster(master_hps[0]);
-    ASSERT_TRUE(s.IsRemoteError());
+    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.message().ToString(), "Master already present");
   }
 
@@ -593,7 +684,7 @@ TEST_P(ParameterizedDynamicMultiMasterTest, TestAddMasterCatchupFromWAL) {
 }
 
 // This test goes through the workflow required to copy system catalog to the newly added master.
-TEST_P(ParameterizedDynamicMultiMasterTest, TestAddMasterSysCatalogCopy) {
+TEST_P(ParameterizedAddMasterTest, TestAddMasterSysCatalogCopy) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   vector<HostPort> master_hps;
@@ -684,6 +775,122 @@ TEST_P(ParameterizedDynamicMultiMasterTest, TestAddMasterSysCatalogCopy) {
   NO_FATALS(VerifyClusterAfterMasterAddition(master_hps));
 }
 
+class ParameterizedRemoveMasterTest : public DynamicMultiMasterTest,
+                                      public ::testing::WithParamInterface<tuple<int, bool>> {
+ public:
+  void SetUp() override {
+    NO_FATALS(SetUpWithNumMasters(std::get<0>(GetParam())));
+  }
+};
+
+INSTANTIATE_TEST_CASE_P(, ParameterizedRemoveMasterTest,
+                        ::testing::Combine(
+                            // Initial number of masters in the cluster before removing a master
+                            ::testing::Values(2, 3),
+                            // Whether the master to be removed is dead/shutdown
+                            ::testing::Bool()));
+
+// Tests removing a non-leader master from the cluster.
+TEST_P(ParameterizedRemoveMasterTest, TestRemoveMaster) {
+  NO_FATALS(StartCluster({"--master_support_change_config",
+                          // Keeping RPC timeouts short to quickly detect downed servers.
+                          // This will put the health status into an UNKNOWN state until the point
+                          // where they are considered FAILED.
+                          "--consensus_rpc_timeout_ms=2000",
+                          "--follower_unavailable_considered_failed_sec=4"}));
+
+  // Verify that existing masters are running as VOTERs.
+  vector<HostPort> master_hps;
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+
+  // When an ExternalMiniCluster is restarted after removal of a master then one of the
+  // remaining masters can get reassigned to the same wal dir which was previously assigned
+  // to the removed master. This causes problems during verification, so we always try to
+  // remove the last master in terms of index for test purposes.
+  int leader_master_idx = -1;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
+  ASSERT_NE(leader_master_idx, -1);
+  const int non_leader_master_idx = orig_num_masters_ - 1;
+  if (leader_master_idx == non_leader_master_idx) {
+    // Move the leader to the first master index
+    auto first_master_uuid = cluster_->master(0)->uuid();
+    NO_FATALS(TransferMasterLeadership(cluster_.get(), first_master_uuid));
+  }
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
+  ASSERT_NE(leader_master_idx, non_leader_master_idx);
+  const auto master_to_remove = cluster_->master(non_leader_master_idx)->bound_rpc_hostport();
+  const auto master_to_remove_uuid = cluster_->master(non_leader_master_idx)->uuid();
+
+  // A NO_OP operation is issued after assuming leadership so that ChangeConfig operation
+  // can be issued against the new leader in the current term.
+  // Don't know of a good way to wait/verify that the NO_OP operation has completed. Table
+  // creation helps with a new operation in the current term and is used later for verification.
+  // Hence creating a table after possible master leadership transfer and before initiating remove
+  // master ChangeConfig request.
+  ASSERT_OK(CreateTable(cluster_.get(), kTableName));
+
+  bool shutdown = std::get<1>(GetParam());
+  if (shutdown) {
+    LOG(INFO) << "Shutting down the master to be removed";
+    cluster_->master(non_leader_master_idx)->Shutdown();
+    LOG(INFO) << "Detecting transition to terminal FAILED state";
+    ASSERT_EVENTUALLY([&] {
+      VerifyDeadMasterInSpecifiedState(master_to_remove_uuid, consensus::HealthReportPB::FAILED);
+    });
+  }
+
+  // Verify the master to be removed is part of the list of masters.
+  ASSERT_NE(std::find(master_hps.begin(), master_hps.end(), master_to_remove), master_hps.end());
+  ASSERT_OK(RemoveMasterFromCluster(master_to_remove));
+
+  // Verify we have one master less and the desired master was removed.
+  vector<HostPort> updated_master_hps;
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_ - 1, &updated_master_hps));
+  UnorderedHostPortSet expected_master_hps(master_hps.begin(), master_hps.end());
+  expected_master_hps.erase(master_to_remove);
+  UnorderedHostPortSet actual_master_hps(updated_master_hps.begin(), updated_master_hps.end());
+  ASSERT_EQ(expected_master_hps, actual_master_hps);
+
+  ClusterVerifier cv(cluster_.get());
+  NO_FATALS(cv.CheckCluster());
+  NO_FATALS(cv.CheckRowCount(kTableName, ClusterVerifier::EXACTLY, 0));
+
+  // Removing the same master again should result in an error
+  Status s = RemoveMasterFromCluster(master_to_remove, master_to_remove_uuid);
+  ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), Substitute("Master $0 not found", master_to_remove.ToString()));
+
+  // Attempt transferring leadership to the removed master
+  s = TransferMasterLeadershipAsync(cluster_.get(), master_to_remove_uuid);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      Substitute("tablet server $0 is not a voter in the active config",
+                                 master_to_remove_uuid));
+
+  LOG(INFO) << "Shutting down the old cluster";
+  cluster_.reset();
+
+  LOG(INFO) << "Bringing up the migrated cluster";
+  opts_.num_masters = orig_num_masters_ - 1;
+  opts_.master_rpc_addresses = updated_master_hps;
+  ExternalMiniCluster migrated_cluster(opts_);
+  ASSERT_OK(migrated_cluster.Start());
+  for (int i = 0; i < migrated_cluster.num_masters(); i++) {
+    ASSERT_OK(migrated_cluster.master(i)->WaitForCatalogManager());
+  }
+
+  vector<HostPort> migrated_master_hps;
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_ - 1, &migrated_master_hps,
+                                            &migrated_cluster));
+  actual_master_hps.clear();
+  actual_master_hps.insert(migrated_master_hps.begin(), migrated_master_hps.end());
+  ASSERT_EQ(expected_master_hps, actual_master_hps);
+
+  ClusterVerifier mcv(&migrated_cluster);
+  NO_FATALS(mcv.CheckCluster());
+  NO_FATALS(mcv.CheckRowCount(kTableName, ClusterVerifier::EXACTLY, 0));
+}
+
 // Test that brings up a single master cluster with 'last_known_addr' not populated by
 // not specifying '--master_addresses' and then attempts to add a new master which is
 // expected to fail due to invalid Raft config.
@@ -702,7 +909,7 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterWithNoLastKnownAddr) {
   NO_FATALS(StartNewMaster(master_hps));
 
   Status actual = AddMasterToCluster(reserved_hp_);
-  ASSERT_TRUE(actual.IsRemoteError());
+  ASSERT_TRUE(actual.IsRemoteError()) << actual.ToString();
   ASSERT_STR_MATCHES(actual.ToString(),
                      "Invalid config to set as pending: Peer:.* has no address");
 
@@ -714,7 +921,7 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterWithNoLastKnownAddr) {
 // change config.
 TEST_F(DynamicMultiMasterTest, TestAddMasterFeatureFlagNotSpecified) {
   NO_FATALS(SetUpWithNumMasters(1));
-  NO_FATALS(StartCluster({ /* Omitting "--master_support_change_config" */ }));
+  NO_FATALS(StartCluster({ "--master_support_change_config=false" }));
 
   // Verify that existing masters are running as VOTERs and collect their addresses to be used
   // for starting the new master.
@@ -726,8 +933,38 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterFeatureFlagNotSpecified) {
   NO_FATALS(StartNewMaster(master_hps, false /* master_supports_change_config */));
 
   Status actual = AddMasterToCluster(reserved_hp_);
-  ASSERT_TRUE(actual.IsRemoteError());
+  ASSERT_TRUE(actual.IsRemoteError()) << actual.ToString();
   ASSERT_STR_MATCHES(actual.ToString(), "unsupported feature flags");
+
+  // Verify no change in number of masters.
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+}
+
+// Test that attempts to remove an existing master without enabling the feature flag for master
+// Raft change config.
+TEST_F(DynamicMultiMasterTest, TestRemoveMasterFeatureFlagNotSpecified) {
+  NO_FATALS(SetUpWithNumMasters(2));
+  NO_FATALS(StartCluster({"--master_support_change_config=false"}));
+
+  // Verify that existing masters are running as VOTERs.
+  vector<HostPort> master_hps;
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+
+  // Try removing non-leader master.
+  int non_leader_master_idx = -1;
+  ASSERT_OK(GetFollowerMasterIndex(&non_leader_master_idx));
+  auto master_to_remove = cluster_->master(non_leader_master_idx)->bound_rpc_hostport();
+  Status s = RemoveMasterFromCluster(master_to_remove);
+  ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "unsupported feature flags");
+
+  // Try removing leader master
+  int leader_master_idx = -1;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
+  master_to_remove = cluster_->master(leader_master_idx)->bound_rpc_hostport();
+  s = RemoveMasterFromCluster(master_to_remove);
+  ASSERT_TRUE(s.IsRemoteError());
+  ASSERT_STR_MATCHES(s.ToString(), "unsupported feature flags");
 
   // Verify no change in number of masters.
   NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
@@ -770,6 +1007,39 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterToNonLeader) {
   NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
 }
 
+// Test that attempts to request a non-leader master to remove a master.
+TEST_F(DynamicMultiMasterTest, TestRemoveMasterToNonLeader) {
+  NO_FATALS(SetUpWithNumMasters(2));
+  NO_FATALS(StartCluster({"--master_support_change_config"}));
+
+  // Verify that existing masters are running as VOTERs and collect their addresses to be used
+  // for starting the new master.
+  vector<HostPort> master_hps;
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+
+  // In test below we use the master RPC directly to the non-leader master and a retry
+  // will have unintended consequences hence disabling master leadership transfer.
+  NO_FATALS(DisableMasterLeadershipTransfer());
+
+  // Verify sending remove master request to a non-leader master returns NOT_THE_LEADER error.
+  RemoveMasterRequestPB req;
+  RemoveMasterResponsePB resp;
+  RpcController rpc;
+
+  int leader_master_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
+  ASSERT_TRUE(leader_master_idx == 0 || leader_master_idx == 1);
+  int non_leader_master_idx = !leader_master_idx;
+  *req.mutable_rpc_addr() = HostPortToPB(cluster_->master(leader_master_idx)->bound_rpc_hostport());
+  rpc.RequireServerFeature(MasterFeatures::DYNAMIC_MULTI_MASTER);
+  ASSERT_OK(cluster_->master_proxy(non_leader_master_idx)->RemoveMaster(req, &resp, &rpc));
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(MasterErrorPB::NOT_THE_LEADER, resp.error().code());
+
+  // Verify no change in number of masters.
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+}
+
 // Test that attempts to add a master with missing master address and a non-routable incorrect
 // address.
 TEST_F(DynamicMultiMasterTest, TestAddMasterMissingAndIncorrectAddress) {
@@ -787,14 +1057,110 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterMissingAndIncorrectAddress) {
 
   // Empty HostPort
   Status actual = AddMasterToCluster(HostPort());
-  ASSERT_TRUE(actual.IsRemoteError());
+  ASSERT_TRUE(actual.IsRemoteError()) << actual.ToString();
   ASSERT_STR_CONTAINS(actual.ToString(), "RPC address of master to be added not supplied");
 
   // Non-routable incorrect hostname.
-  actual = AddMasterToCluster(HostPort("foo", Master::kDefaultPort));
-  ASSERT_TRUE(actual.IsRemoteError());
+  actual = AddMasterToCluster(HostPort("non-existent-path.local", Master::kDefaultPort));
+  ASSERT_TRUE(actual.IsRemoteError()) << actual.ToString();
   ASSERT_STR_CONTAINS(actual.ToString(),
-                      "Network error: unable to resolve address for foo");
+                      "Network error: unable to resolve address for non-existent-path.local");
+
+  // Verify no change in number of masters.
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+}
+
+// Test that attempts to remove a master with missing master address and a non-existent
+// hostname.
+TEST_F(DynamicMultiMasterTest, TestRemoveMasterMissingAndIncorrectHostname) {
+  NO_FATALS(SetUpWithNumMasters(2));
+  NO_FATALS(StartCluster({"--master_support_change_config"}));
+
+  // Verify that existing masters are running as VOTERs.
+  vector<HostPort> master_hps;
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+
+  // Empty HostPort.
+  {
+    Status actual = RemoveMasterFromCluster(HostPort(), string() /* unspecified master */);
+    ASSERT_TRUE(actual.IsRemoteError()) << actual.ToString();
+    ASSERT_STR_CONTAINS(actual.ToString(), "RPC address of the master to be removed not supplied");
+  }
+
+  // Non-existent hostname.
+  {
+    HostPort dummy_hp = HostPort("non-existent-path.local", Master::kDefaultPort);
+    Status actual = RemoveMasterFromCluster(dummy_hp);
+    ASSERT_TRUE(actual.IsRemoteError()) << actual.ToString();
+    ASSERT_STR_CONTAINS(actual.ToString(), Substitute("Master $0 not found", dummy_hp.ToString()));
+  }
+
+  // Verify no change in number of masters.
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+}
+
+// Test that attempts to remove a master with mismatching hostname and uuid.
+TEST_F(DynamicMultiMasterTest, TestRemoveMasterMismatchHostnameAndUuid) {
+  NO_FATALS(SetUpWithNumMasters(2));
+  NO_FATALS(StartCluster({"--master_support_change_config"}));
+
+  // Verify that existing masters are running as VOTERs.
+  vector<HostPort> master_hps;
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+
+  // Random uuid
+  Random rng(SeedRandom());
+  auto random_uuid = std::to_string(rng.Next64());
+  auto master_to_remove = cluster_->master(0)->bound_rpc_hostport();
+  ASSERT_NE(random_uuid, cluster_->master(0)->uuid());
+  Status actual = RemoveMasterFromCluster(master_to_remove, random_uuid);
+  ASSERT_TRUE(actual.IsRemoteError()) << actual.ToString();
+  ASSERT_STR_CONTAINS(actual.ToString(),
+                      Substitute("Mismatch in UUID of the master $0 to be removed. "
+                                 "Expected: $1, supplied: $2.", master_to_remove.ToString(),
+                                 cluster_->master(0)->uuid(), random_uuid));
+
+  // Verify no change in number of masters.
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+}
+
+// Test that attempts removing a leader master itself from a cluster with
+// 1 or 2 masters.
+class ParameterizedRemoveLeaderMasterTest : public DynamicMultiMasterTest,
+                                            public ::testing::WithParamInterface<int> {
+ public:
+  void SetUp() override {
+    NO_FATALS(SetUpWithNumMasters(GetParam()));
+  }
+};
+
+INSTANTIATE_TEST_CASE_P(, ParameterizedRemoveLeaderMasterTest, ::testing::Values(1, 2));
+
+TEST_P(ParameterizedRemoveLeaderMasterTest, TestRemoveLeaderMaster) {
+  NO_FATALS(StartCluster({"--master_support_change_config"}));
+
+  // Verify that existing masters are running as VOTERs and collect their addresses to be used
+  // for starting the new master.
+  vector<HostPort> master_hps;
+  NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));
+
+  // In test below a retry in case of master leadership transfer will have unintended
+  // consequences and hence disabling master leadership transfer.
+  NO_FATALS(DisableMasterLeadershipTransfer());
+
+  int leader_master_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
+  const auto master_to_remove = cluster_->master(leader_master_idx)->bound_rpc_hostport();
+  Status s = RemoveMasterFromCluster(master_to_remove);
+  ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+  if (orig_num_masters_ == 1) {
+    ASSERT_STR_CONTAINS(s.ToString(), Substitute("Can't remove master $0 in a single master "
+                                                 "configuration", master_to_remove.ToString()));
+  } else {
+    ASSERT_GT(orig_num_masters_, 1);
+    ASSERT_STR_CONTAINS(s.ToString(), Substitute("Can't remove the leader master $0",
+                                                 master_to_remove.ToString()));
+  }
 
   // Verify no change in number of masters.
   NO_FATALS(VerifyNumMastersAndGetAddresses(orig_num_masters_, &master_hps));

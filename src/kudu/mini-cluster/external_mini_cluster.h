@@ -479,6 +479,11 @@ class ExternalMiniCluster : public MiniCluster {
   // dynamically after bringing up the ExternalMiniCluster.
   Status AddMaster(const scoped_refptr<ExternalMaster>& master);
 
+  // Removes any bookkeeping of the master specified by 'hp' from the ExternalMiniCluster
+  // after already having run through a successful master Raft change config to remove it.
+  // This helps keep the state of the actual cluster in sync with the state in ExternalMiniCluster.
+  Status RemoveMaster(const HostPort& hp);
+
  private:
   Status StartMasters();
 

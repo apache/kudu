@@ -959,6 +959,16 @@ Status ExternalMiniCluster::AddMaster(const scoped_refptr<ExternalMaster>& new_m
   return Status::OK();
 }
 
+Status ExternalMiniCluster::RemoveMaster(const HostPort& hp) {
+  for (auto it = masters_.begin(); it != masters_.end(); ++it) {
+    if ((*it)->bound_rpc_hostport() == hp) {
+      masters_.erase(it);
+      return Status::OK();
+    }
+  }
+  return Status::NotFound(Substitute("Master $0 not found in ExternalMiniCluster", hp.ToString()));
+}
+
 //------------------------------------------------------------
 // ExternalDaemon
 //------------------------------------------------------------

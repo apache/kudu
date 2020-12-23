@@ -73,6 +73,8 @@ class PingRequestPB;
 class PingResponsePB;
 class RefreshAuthzCacheRequestPB;
 class RefreshAuthzCacheResponsePB;
+class RemoveMasterRequestPB;
+class RemoveMasterResponsePB;
 class ReplaceTabletRequestPB;
 class ReplaceTabletResponsePB;
 class TSHeartbeatRequestPB;
@@ -108,6 +110,9 @@ class MasterServiceImpl : public MasterServiceIf {
 
   void AddMaster(const AddMasterRequestPB* req,
                  AddMasterResponsePB* resp, rpc::RpcContext* rpc) override;
+
+  void RemoveMaster(const RemoveMasterRequestPB* req,
+                    RemoveMasterResponsePB* resp, rpc::RpcContext* rpc) override;
 
   void Ping(const PingRequestPB* req,
             PingResponsePB* resp,

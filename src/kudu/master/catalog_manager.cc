@@ -5623,6 +5623,7 @@ const char* CatalogManager::StateToString(State state) {
 const char* CatalogManager::ChangeConfigOpToString(ChangeConfigOp type) {
   switch (type) {
     case CatalogManager::kAddMaster: return "add";
+    case CatalogManager::kRemoveMaster: return "remove";
   }
   __builtin_unreachable();
 }
@@ -5666,6 +5667,9 @@ Status CatalogManager::InitiateMasterChangeConfig(ChangeConfigOp op, const HostP
       // copy is complete and is sufficiently caught up.
       peer->set_member_type(RaftPeerPB::NON_VOTER);
       peer->mutable_attrs()->set_promote(true);
+      break;
+    case CatalogManager::kRemoveMaster:
+      req.set_type(consensus::REMOVE_PEER);
       break;
     default:
       LOG(FATAL) << "Unsupported ChangeConfig operation: " << op;
@@ -5825,6 +5829,7 @@ INITTED_AND_LEADER_OR_RESPOND(GetTableLocationsResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTableSchemaResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTableStatisticsResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTabletLocationsResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(RemoveMasterResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(ReplaceTabletResponsePB);
 
 #undef INITTED_OR_RESPOND
