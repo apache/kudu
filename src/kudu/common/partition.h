@@ -211,7 +211,7 @@ class PartitionSchema {
                               const ConstContiguousRow& row,
                               bool* contains) const WARN_UNUSED_RESULT;
 
-  // Tests if the hash partition contians the row with given hash_idx.
+  // Tests if the hash partition contains the row with given hash_idx.
   Status HashPartitionContainsRow(const Partition& partition,
                                   const KuduPartialRow& row,
                                   int hash_idx,
@@ -220,6 +220,14 @@ class PartitionSchema {
                                   const ConstContiguousRow& row,
                                   int hash_idx,
                                   bool* contains) const WARN_UNUSED_RESULT;
+
+  // Tests if the range partition contains the row.
+  Status RangePartitionContainsRow(const Partition& partition,
+                                   const KuduPartialRow& row,
+                                   bool* contains) const WARN_UNUSED_RESULT;
+  Status RangePartitionContainsRow(const Partition& partition,
+                                   const ConstContiguousRow& row,
+                                   bool* contains) const WARN_UNUSED_RESULT;
 
   // Returns a text description of the partition suitable for debug printing.
   //
@@ -306,6 +314,9 @@ class PartitionSchema {
   // contains only one column, otherwise returns -1.
   int32_t TryGetSingleColumnHashPartitionIndex(const Schema& schema, int32_t col_idx) const;
 
+  // Given a column idx, verify that it is the only column of the range partition.
+  bool IsColumnSingleRangeSchema(const Schema& schema, int32_t col_idx) const;
+
  private:
   friend class PartitionPruner;
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionBounds);
@@ -356,6 +367,12 @@ class PartitionSchema {
                                       const Row& row,
                                       int hash_idx,
                                       bool* contains) const;
+
+  // Private templated helper for RangePartitionContainsRow.
+  template<typename Row>
+  Status RangePartitionContainsRowImpl(const Partition& partition,
+                                       const Row& row,
+                                       bool* contains) const;
 
   // Private templated helper for EncodeKey.
   template<typename Row>

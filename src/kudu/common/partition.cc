@@ -544,15 +544,7 @@ Status PartitionSchema::PartitionContainsRowImpl(const Partition& partition,
     }
   }
 
-  string range_partition_key;
-  RETURN_NOT_OK(EncodeColumns(row, range_schema_.column_ids, &range_partition_key));
-
-  // If all of the hash buckets match, then the row is contained in the
-  // partition if the row is gte the lower bound; and if there is no upper
-  // bound, or the row is lt the upper bound.
-  *contains = (Slice(range_partition_key).compare(partition.range_key_start()) >= 0)
-           && (partition.range_key_end().empty()
-                || Slice(range_partition_key).compare(partition.range_key_end()) < 0);
+  RETURN_NOT_OK(RangePartitionContainsRowImpl(partition, row, contains));
 
   return Status::OK();
 }
@@ -567,6 +559,24 @@ Status PartitionSchema::HashPartitionContainsRowImpl(const Partition& partition,
   int32_t bucket = -1;
   RETURN_NOT_OK(BucketForRow(row, hash_bucket_schema, &bucket));
   *contains = (partition.hash_buckets()[hash_idx] == bucket);
+  return Status::OK();
+}
+
+template<typename Row>
+Status PartitionSchema::RangePartitionContainsRowImpl(const Partition& partition,
+                                                      const Row& row,
+                                                      bool* contains) const {
+  string range_partition_key;
+  // If range partition is not used, column_ids would be empty and
+  // EncodedColumn() would return immediately.
+  RETURN_NOT_OK(EncodeColumns(row, range_schema_.column_ids, &range_partition_key));
+
+  // If all of the hash buckets match, then the row is contained in the
+  // partition if the row is gte the lower bound; and if there is no upper
+  // bound, or the row is lt the upper bound.
+  *contains = (Slice(range_partition_key).compare(partition.range_key_start()) >= 0)
+           && (partition.range_key_end().empty()
+                || Slice(range_partition_key).compare(partition.range_key_end()) < 0);
   return Status::OK();
 }
 
@@ -594,6 +604,18 @@ Status PartitionSchema::HashPartitionContainsRow(const Partition& partition,
                                                  int hash_idx,
                                                  bool* contains) const {
   return HashPartitionContainsRowImpl(partition, row, hash_idx, contains);
+}
+
+Status PartitionSchema::RangePartitionContainsRow(const Partition& partition,
+                                                  const KuduPartialRow& row,
+                                                  bool* contains) const {
+  return RangePartitionContainsRowImpl(partition, row, contains);
+}
+
+Status PartitionSchema::RangePartitionContainsRow(const Partition& partition,
+                                                  const ConstContiguousRow& row,
+                                                  bool* contains) const {
+  return RangePartitionContainsRowImpl(partition, row, contains);
 }
 
 Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
@@ -1386,6 +1408,12 @@ int32_t PartitionSchema::TryGetSingleColumnHashPartitionIndex(const Schema& sche
     }
   }
   return -1;
+}
+
+bool PartitionSchema::IsColumnSingleRangeSchema(const Schema& schema, int32_t col_idx) const {
+  const ColumnId column_id = schema.column_id(col_idx);
+  return range_partition_schema().column_ids.size() == 1 &&
+         range_partition_schema().column_ids[0] == column_id;
 }
 
 } // namespace kudu

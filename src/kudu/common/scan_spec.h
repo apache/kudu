@@ -74,18 +74,24 @@ class ScanSpec {
                     bool remove_pushed_predicates);
 
   // Filter in-list predicate values with given hash partition schema.
-  // Only supports pruning for single-column hash schemas.
+  // If range partition is introduced when creating table, in-list predicate
+  // can also benefit from this pruning.
+  //
+  // Only supports pruning for single-column hash schemas or single-column range schema.
   // Now support hash prune on:
   //     hash(onekey), # support.
+  //     range(onekey), # support.
   //     hash(onekey), hash(anotherkey) # support either.
-  //     hash(key_one, key_two), hash(anotherkey) # support only prune on anotherkey.
+  //     hash(onekey), range(anotherkey) # support either.
+  //     hash(key_one, key_two), hash(anotherkey) # only support prune on anotherkey.
+  //     range(key_one, key_two) # not support.
   //
-  // TODO(ningw) For IN list predicate on hash(key_one, key_two) or more columns,
+  // TODO(ningw) For IN list predicate on hash/range(key_one, key_two) or more columns,
   // if one predicate is IN list, and the rest predicate(s) are EQUAL, could
   // have IN list predicate values prune as well.
-  void PruneHashForInlistIfPossible(const Schema& schema,
-                                    const Partition& partition,
-                                    const PartitionSchema& partition_schema);
+  void PruneInlistValuesIfPossible(const Schema& schema,
+                                   const Partition& partition,
+                                   const PartitionSchema& partition_schema);
 
   // Get columns that are present in the predicates but not in the projection
   std::vector<ColumnSchema> GetMissingColumns(const Schema& projection);

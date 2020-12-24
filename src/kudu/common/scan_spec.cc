@@ -171,9 +171,9 @@ void ScanSpec::OptimizeScan(const Schema& schema,
   }
 }
 
-void ScanSpec::PruneHashForInlistIfPossible(const Schema& schema,
-                                            const Partition& partition,
-                                            const PartitionSchema& partition_schema) {
+void ScanSpec::PruneInlistValuesIfPossible(const Schema& schema,
+                                           const Partition& partition,
+                                           const PartitionSchema& partition_schema) {
   for (auto& predicate_pair : predicates_) {
     auto& predicate = predicate_pair.second;
     if (predicate.predicate_type() != PredicateType::InList) continue;
@@ -184,19 +184,36 @@ void ScanSpec::PruneHashForInlistIfPossible(const Schema& schema,
     if (!s.ok() || !schema.is_key_column(idx)) continue;
 
     int hash_idx = partition_schema.TryGetSingleColumnHashPartitionIndex(schema, idx);
-    if (hash_idx == -1) continue;
+    bool is_col_single_range_schema = partition_schema.IsColumnSingleRangeSchema(schema, idx);
+    if (hash_idx == -1 && !is_col_single_range_schema) continue;
 
     auto* predicate_values = predicate.mutable_raw_values();
+
     predicate_values->erase(std::remove_if(predicate_values->begin(), predicate_values->end(),
-          [idx, hash_idx, &schema, &partition, &partition_schema](const void* value) {
+          [idx, hash_idx, is_col_single_range_schema,
+           &schema, &partition, &partition_schema](const void* value) {
+        // Returns true indicates this value is going to be removed from the predicate values.
         KuduPartialRow partial_row(&schema);
         Status s = partial_row.Set(idx, reinterpret_cast<const uint8_t*>(value));
         if (!s.ok()) return false;
-        bool is_value_in;
-        s = partition_schema.HashPartitionContainsRow(partition, partial_row,
-                                                      hash_idx, &is_value_in);
-        if (!s.ok()) return false;
-        return !is_value_in;
+
+         // If value is not in given hash partition, remove this value from predicate values.
+        if (hash_idx != -1) {
+          bool is_value_in;
+          s = partition_schema.HashPartitionContainsRow(partition, partial_row,
+                                                        hash_idx, &is_value_in);
+          if (!s.ok()) return false;
+          if (!is_value_in) return true;
+        }
+
+        // If value is not in given range partition, remove this value from predicate values.
+        if (is_col_single_range_schema) {
+          bool is_value_in;
+          s = partition_schema.RangePartitionContainsRow(partition, partial_row, &is_value_in);
+          if (!s.ok()) return false;
+          if (!is_value_in) return true;
+        }
+        return false;
       }), predicate_values->end());
   }
 }

@@ -2458,7 +2458,7 @@ TEST_F(AdminCliTest, TestAddAndDropUnboundedPartition) {
   });
 
   // Since the unbounded partition has been dropped, now we can add a new unbounded
-  // range parititon for the table.
+  // range partition for the table.
   s = RunKuduTool({
     "table",
     "add_range_partition",
