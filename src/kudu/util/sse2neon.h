@@ -180,7 +180,7 @@ typedef union ALIGN_STRUCT(16) SIMDVec {
 
 // Older gcc does not define vld1q_u8_x4 type
 #if defined(__GNUC__) && !defined(__clang__)
-#if __GNUC__ < 9 || (__GNUC__ == 9 && (__GNUC_MINOR__ <= 2))
+#if __GNUC__ <= 9
 FORCE_INLINE uint8x16x4_t vld1q_u8_x4(const uint8_t *p) {
   uint8x16x4_t ret;
   ret.val[0] = vld1q_u8(p + 0);
