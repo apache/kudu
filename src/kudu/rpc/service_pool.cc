@@ -233,7 +233,7 @@ void ServicePool::RunThread() {
   }
 }
 
-const string ServicePool::service_name() const {
+const string& ServicePool::service_name() const {
   return service_->service_name();
 }
 

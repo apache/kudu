@@ -69,9 +69,9 @@ struct RpcMethodInfo : public RefCountedThreadSafe<RpcMethodInfo> {
 class ServiceIf {
  public:
   virtual ~ServiceIf();
-  virtual void Handle(InboundCall* incoming) = 0;
+  virtual void Handle(InboundCall* call) = 0;
   virtual void Shutdown();
-  virtual std::string service_name() const = 0;
+  virtual const std::string& service_name() const = 0;
 
   // The service should return true if it supports the provided application
   // specific feature flag.
@@ -96,8 +96,8 @@ class ServiceIf {
   }
 
  protected:
-  bool ParseParam(InboundCall* call, google::protobuf::Message* message);
-  void RespondBadMethod(InboundCall* call);
+  static bool ParseParam(InboundCall* call, google::protobuf::Message* message);
+  static void RespondBadMethod(InboundCall* call);
 };
 
 
@@ -110,23 +110,22 @@ class GeneratedServiceIf : public ServiceIf {
   // it on the current thread.
   //
   // If no such method is found, responds with an error.
-  void Handle(InboundCall* incoming) override;
+  void Handle(InboundCall* call) override;
 
   RpcMethodInfo* LookupMethod(const RemoteMethod& method) override;
 
-  // Returns the mapping from method names to method infos.
-  typedef std::unordered_map<std::string, scoped_refptr<RpcMethodInfo>> MethodInfoMap;
-  const MethodInfoMap& methods_by_name() const { return methods_by_name_; }
-
  protected:
+  explicit GeneratedServiceIf(const scoped_refptr<ResultTracker>& tracker);
+
+  // The result tracker for this service's methods.
+  const scoped_refptr<ResultTracker> result_tracker_;
+
   // For each method, stores the relevant information about how to handle the
   // call. Methods are inserted by the constructor of the generated subclass.
   // After construction, this map is accessed by multiple threads and therefore
   // must not be modified.
+  typedef std::unordered_map<std::string, scoped_refptr<RpcMethodInfo>> MethodInfoMap;
   MethodInfoMap methods_by_name_;
-
-  // The result tracker for this service's methods.
-  scoped_refptr<ResultTracker> result_tracker_;
 };
 
 } // namespace rpc

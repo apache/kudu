@@ -86,7 +86,7 @@ class ServicePool : public RpcService {
     return rpcs_queue_overflow_.get();
   }
 
-  const std::string service_name() const;
+  const std::string& service_name() const;
 
  private:
   void RunThread();

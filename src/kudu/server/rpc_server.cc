@@ -159,7 +159,6 @@ Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
 Status RpcServer::RegisterService(unique_ptr<rpc::ServiceIf> service) {
   CHECK(server_state_ == INITIALIZED ||
         server_state_ == BOUND) << "bad state: " << server_state_;
-  string service_name = service->service_name();
   scoped_refptr<rpc::ServicePool> service_pool =
     new rpc::ServicePool(std::move(service), messenger_->metric_entity(),
                          options_.service_queue_length);
@@ -170,8 +169,7 @@ Status RpcServer::RegisterService(unique_ptr<rpc::ServiceIf> service) {
         too_busy_hook_(service_pool_raw_ptr);
       }
     });
-  RETURN_NOT_OK(messenger_->RegisterService(service_name, service_pool));
-  return Status::OK();
+  return messenger_->RegisterService(service_pool->service_name(), service_pool);
 }
 
 Status RpcServer::AddBindAddress(const Sockaddr& addr) {

@@ -56,9 +56,6 @@
 
 DECLARE_bool(rpc_encrypt_loopback_connections);
 
-namespace kudu {
-namespace rpc {
-
 using kudu::rpc_test::AddRequestPB;
 using kudu::rpc_test::AddResponsePB;
 using kudu::rpc_test::CalculatorError;
@@ -86,11 +83,14 @@ using kudu::rpc_test::WhoAmIResponsePB;
 using kudu::rpc_test_diff_package::ReqDiffPackagePB;
 using kudu::rpc_test_diff_package::RespDiffPackagePB;
 
+namespace kudu {
+namespace rpc {
+
 // Implementation of CalculatorService which just implements the generic
 // RPC handler (no generated code).
 class GenericCalculatorService : public ServiceIf {
  public:
-  static const char *kFullServiceName;
+  static const std::string kFullServiceName;
   static const char *kAddMethodName;
   static const char *kSleepMethodName;
   static const char *kSleepWithSidecarMethodName;
@@ -127,8 +127,8 @@ class GenericCalculatorService : public ServiceIf {
     }
   }
 
-  std::string service_name() const override { return kFullServiceName; }
-  static std::string static_service_name() { return kFullServiceName; }
+  const std::string& service_name() const override { return kFullServiceName; }
+  static const std::string& static_service_name() { return kFullServiceName; }
 
  private:
   void DoAdd(InboundCall *incoming) {
@@ -399,7 +399,7 @@ class CalculatorService : public CalculatorServiceIf {
 
 };
 
-const char *GenericCalculatorService::kFullServiceName = "kudu.rpc.GenericCalculatorService";
+const std::string GenericCalculatorService::kFullServiceName = "kudu.rpc.GenericCalculatorService";
 const char *GenericCalculatorService::kAddMethodName = "Add";
 const char *GenericCalculatorService::kSleepMethodName = "Sleep";
 const char *GenericCalculatorService::kSleepWithSidecarMethodName = "SleepWithSidecar";
