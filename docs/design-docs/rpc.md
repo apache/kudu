@@ -93,12 +93,12 @@ currently this is just timeout functionality, but in the future may include
 other call properties such as tracing information, priority classes, deadline
 propagation, etc.
 
-Upon issuing the asynchronous request, the RPC layer enqueues the call to be sent
-to the server and immediately returns. During this period, the caller thread
-may continue to send other RPCs or perform other processing while waiting for
-the callback to be triggered. In the future, we will provide an RPC cancellation
-function on the RpcController object in case the user determines that the call
-is no longer required.
+Upon issuing the asynchronous request, the RPC layer enqueues the call to be
+sent to the server and immediately returns. During this period, the caller
+thread may continue to send other RPCs or perform other processing while
+waiting for the callback to be triggered. In addition, it's possible to cancel
+the RPC using the RpcController::Cancel() method if the user determines that
+the call is no longer required.
 
 When the call completes, the RPC layer will invoke the provided ResponseCallback
 function from within the context of the reactor thread. Given this,
@@ -130,8 +130,8 @@ The generated ServiceIf class contains pure virtual methods for each of the RPCs
 in the service. Each method to be implemented has an API like:
 
 ```
-  void MethodName(const RequestPB *req,
-     ResponsePB *resp, ::kudu::rpc::RpcContext *context);
+  void MethodName(
+      const RequestPB* req, ResponsePB* resp, ::kudu::rpc::RpcContext* context);
 ```
 
 The request PB is the user-provided request, and the response PB is a cleared
