@@ -204,7 +204,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @param txnId transaction identifier for all operations within the session
    */
   AsyncKuduSession(AsyncKuduClient client, long txnId) {
-    assert txnId >= 0;
+    assert txnId > AsyncKuduClient.INVALID_TXN_ID;
     this.client = client;
     this.txnId = txnId;
     flushMode = FlushMode.AUTO_FLUSH_SYNC;

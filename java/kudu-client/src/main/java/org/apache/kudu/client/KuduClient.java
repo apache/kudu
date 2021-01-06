@@ -300,6 +300,22 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Start a new multi-row distributed transaction.
+   * <p>
+   * Start a new multi-row transaction and return a handle for the transactional
+   * object to manage the newly started transaction. Under the hood, this makes
+   * an RPC call to the Kudu cluster and registers a newly created transaction
+   * in the system. This call is blocking.
+   *
+   * @return a handle to the newly started transaction in case of success
+   */
+  public KuduTransaction newTransaction() throws KuduException {
+    KuduTransaction txn = new KuduTransaction(asyncClient);
+    txn.begin();
+    return txn;
+  }
+
+  /**
    * Check if statistics collection is enabled for this client.
    * @return true if it is enabled, else false
    */
