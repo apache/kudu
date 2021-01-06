@@ -99,8 +99,8 @@ $ sudo yum install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
 ----
 
 . If building on RHEL or CentOS older than 8.0, install the Red Hat Developer Toolset.
-. Below are the steps required for CentOS. If you are on RHEL, follow their documentation
-. [here:https://developers.redhat.com/products/developertoolset/hello-world].
+Below are the steps required for CentOS. If you are on RHEL, follow their documentation
+https://developers.redhat.com/products/developertoolset/hello-world[here].
 +
 ----
 $ sudo yum install centos-release-scl-rh
@@ -399,9 +399,15 @@ $ sudo zypper install autoconf automake curl cyrus-sasl-devel \
   pkg-config python rsync unzip vim
 ----
 
+. If you are building on SUSE 12 or older, install GCC-8.
++
+----
+$ sudo zypper install gcc8 gcc8-c++
+----
+
 . Optional: If support for Kudu's NVM (non-volatile memory) block cache is
 desired, install the memkind library.
-+
++__
 ----
 $ sudo zypper install memkind
 ----
@@ -431,7 +437,7 @@ $ cd kudu
 +
 [source,bash]
 ----
-$ thirdparty/build-if-necessary.sh
+$ build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 ----
 
 . Build Kudu, using the utilities installed in the previous step. Choose a build
@@ -442,7 +448,8 @@ except for the `kudu` directory itself.
 ----
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/common/bin/cmake \
+../../build-support/enable_devtoolset.sh \
+  ../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
@@ -460,6 +467,7 @@ E.g., use the following variation of `cmake` command if you need to install only
 libraries and headers:
 [source,bash]
 ----
+../../build-support/enable_devtoolset.sh \
   ../../thirdparty/installed/common/bin/cmake \
   -DKUDU_CLIENT_INSTALL=OFF \
   -DKUDU_TSERVER_INSTALL=OFF \
@@ -501,12 +509,14 @@ sudo zypper install -y autoconf automake curl cyrus-sasl-devel \
   cyrus-sasl-gssapi flex gcc gcc-c++ gdb git java-1_8_0-openjdk-devel \
   krb5-devel libtool lsb-release make ntp openssl-devel patch \
   pkg-config python rsync unzip vim
+sudo zypper install gcc8 gcc8-c++
 git clone https://github.com/apache/kudu
 cd kudu
-thirdparty/build-if-necessary.sh
+build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
-../../thirdparty/installed/common/bin/cmake \
+../../build-support/enable_devtoolset.sh \
+  ../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
   ../..
 make -j4

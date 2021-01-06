@@ -17,21 +17,45 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# Enables the Red Hat devtoolset and executes the arguments on RHEL-based
-# systems where the default C++ compiler does not support all features
-# necessary to compile Kudu from source (C++17). On other (newer) RHEL-based
-# systems and non-RHEL systems, the arguments are executed without changes
-# to the environment.
+# If on a RHEL-based system where the default C++ compiler does not support
+# all features necessary to compile Kudu from source (C++17), this script
+# enables the Red Hat devtoolset and executes the arguments.
+#
+# If on a SUSE-based system where the default C++ compiler does not support
+# all features necessary to compile Kudu from source (C++17), this script
+# enables the GCC-8 compiler as the default CC and GCC.
+#
+# On other any other systems, the arguments are executed without changes to
+# the environment.
 #
 # USAGE: ./enable_devtoolset.sh <command> <args>...
 
 set -e
+
+ROOT=$(cd $(dirname "$BASH_SOURCE") ; pwd)
+
 if [[ "$OSTYPE" =~ ^linux ]] && \
    [[ "$(lsb_release -irs)" =~ (CentOS|RedHatEnterpriseServer|OracleServer)[[:space:]]+(6|7)\.[[:digit:]]+ ]]; then
-  # Invoke the inner script, which may do some additional customization within
-  # the devtoolset.
-  ROOT=$(cd $(dirname "$BASH_SOURCE") ; pwd)
+  # Enable devtoolset-8 and invoke the inner script, which may do some
+  # additional customization within the devtoolset.
   scl enable devtoolset-8 "$ROOT/enable_devtoolset_inner.sh $*"
+elif [[ "$OSTYPE" =~ ^linux ]] && \
+   [[ "$(lsb_release -irs)" =~ (SUSE)[[:space:]]+12\.[[:digit:]]+ ]]; then
+  # If ccache was on the PATH and CC/CXX have not already been set,
+  # set them to gcc-8 specific ccache helper scripts (thus enabling ccache).
+  if which ccache > /dev/null 2>&1 && [ ! "$CC" -a ! "$CXX" ]; then
+    export CC="$ROOT/ccache-gcc-8/cc"
+    export CXX="$ROOT/ccache-gcc-8/c++"
+  fi
+
+  # If CC/CXX have not already been set, set them to gcc-8.
+  if [ ! "$CC" -a ! "$CXX" ]; then
+    export CC="/usr/bin/gcc-8"
+    export CXX="/usr/bin/g++-8"
+  fi
+
+  # Execute the arguments
+  $@
 else
   $@
 fi

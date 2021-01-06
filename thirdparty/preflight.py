@@ -154,7 +154,7 @@ def check_openssl():
 def main():
   print("Running pre-flight checks")
   print("-------------------------")
-  print("Using C compiler: " + CXX)
+  print("Using C compiler: " + CC)
   print("Using C++ compiler: " + CXX)
   print("")
   print("  (Set $CC and $CXX to change compiler)")
