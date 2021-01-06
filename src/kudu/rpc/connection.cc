@@ -513,7 +513,7 @@ void Connection::ReadHandler(ev::io &watcher, int revents) {
       if (status.posix_code() == ESHUTDOWN) {
         VLOG(1) << ToString() << " shut down by remote end.";
       } else {
-        KLOG_EVERY_N_SECS(WARNING, 300) << ToString() << " recv error: " << status.ToString();
+        KLOG_EVERY_N_SECS(WARNING, 300) << ToString() << " recv error [EVERY 300 seconds]: " << status.ToString();
       }
       reactor_thread_->DestroyConnection(this, status);
       return;
@@ -659,7 +659,7 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
     last_activity_time_ = reactor_thread_->cur_time();
     Status status = transfer->SendBuffer(*socket_);
     if (PREDICT_FALSE(!status.ok())) {
-      KLOG_EVERY_N_SECS(WARNING, 300) << ToString() << " send error: " << status.ToString();
+      KLOG_EVERY_N_SECS(WARNING, 300) << ToString() << " send error [EVERY 300 seconds]: " << status.ToString();
       reactor_thread_->DestroyConnection(this, status);
       return;
     }

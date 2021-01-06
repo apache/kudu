@@ -317,14 +317,14 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
                        conn->ToString());
     }
     if (is_bad) {
-      KLOG_EVERY_N_SECS(WARNING, 300) << "Failed RPC negotiation. Details: " << msg;
+      KLOG_EVERY_N_SECS(WARNING, 300) << "Failed RPC negotiation. Details [EVERY 300 seconds]: " << msg;
     } else {
       LOG(INFO) << "RPC negotiation tracing enabled. Trace:\n" << msg;
     }
   }
 
   if (conn->direction() == ConnectionDirection::SERVER && s.IsNotAuthorized()) {
-    KLOG_EVERY_N_SECS(WARNING, 300) << "Unauthorized connection attempt: " << s.message().ToString();
+    KLOG_EVERY_N_SECS(WARNING, 300) << "Unauthorized connection attempt [EVERY 300 seconds]: " << s.message().ToString();
   }
   conn->CompleteNegotiation(std::move(s), std::move(rpc_error));
 }
