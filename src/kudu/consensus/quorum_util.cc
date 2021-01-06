@@ -910,5 +910,10 @@ void AdjustVoterDistributionWithCurrentVoters(
   }
 }
 
+bool IsStaticQuorumMode(QuorumMode mode) {
+  return (mode == QuorumMode::STATIC_DISJUNCTION ||
+    mode == QuorumMode::STATIC_CONJUNCTION);
+}
+
 }  // namespace consensus
 }  // namespace kudu

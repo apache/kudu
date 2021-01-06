@@ -156,6 +156,9 @@ void AdjustVoterDistributionWithCurrentVoters(
     const RaftConfigPB& config,
     std::map<std::string, int> *voter_distribution);
 
+// Is this mode a static quorum mode type?
+bool IsStaticQuorumMode(QuorumMode mode);
+
 }  // namespace consensus
 }  // namespace kudu
 

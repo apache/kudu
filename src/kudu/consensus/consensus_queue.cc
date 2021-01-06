@@ -945,10 +945,10 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
-int64_t PeerMessageQueue::ComputeNewWatermarkStaticMode(
-    int64_t* watermark,
+int64_t PeerMessageQueue::DoComputeNewWatermarkStaticMode(
     const std::map<std::string, int>& voter_distribution,
-    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region) {
+    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region,
+    int64_t* watermark) {
   CHECK(watermark);
   CHECK(queue_state_.active_config->has_commit_rule());
   CHECK(queue_state_.active_config->commit_rule().rule_predicates_size() > 0);
@@ -1102,10 +1102,7 @@ int64_t PeerMessageQueue::ComputeNewWatermarkStaticMode(
   return old_watermark;
 }
 
-int64_t PeerMessageQueue::ComputeNewWatermarkDynamicMode(
-    int64_t* watermark,
-    const std::map<std::string, int>& voter_distribution,
-    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region) {
+int64_t PeerMessageQueue::ComputeNewWatermarkDynamicMode(int64_t* watermark) {
   CHECK(watermark);
   CHECK(queue_state_.active_config->has_commit_rule());
   CHECK(queue_state_.active_config->commit_rule().mode() ==
@@ -1115,82 +1112,93 @@ int64_t PeerMessageQueue::ComputeNewWatermarkDynamicMode(
   CHECK(local_peer_pb_.has_attrs() && local_peer_pb_.attrs().has_region());
 
   const std::string& leader_region = local_peer_pb_.attrs().region();
-  int total_voters = FindOrDie(voter_distribution, leader_region);
+
+  // Compute the watermarks in leader region. As an example, at the end of this
+  // loop, watermarks_in_leader_region might have entries (3, 7, 5) which
+  // indicates that the leader region has 3 peers that have responded to OpId
+  // indexes 3, 7 and 5 respectively
+  std::vector<int64_t> watermarks_in_leader_region;
+  for (const PeersMap::value_type& peer : peers_map_) {
+    // Only voter members are considered for advancing watermark
+    if (peer.second->peer_pb.member_type() != RaftPeerPB::VOTER) {
+      continue;
+    }
+
+    // Refer to the comment in AdvanceQueueWatermark method for why only
+    // successful last exchanges are considered.
+    if (peer.second->last_exchange_status == PeerStatus::OK) {
+      const string& peer_region = peer.second->peer_pb.attrs().region();
+      if (peer_region == leader_region) {
+        watermarks_in_leader_region.push_back(
+            peer.second->last_received.index());
+      }
+    }
+  }
+
+  int total_voters_from_voter_distribution =
+    FindOrDie(queue_state_.active_config->voter_distribution(), leader_region);
+
+  // Compute number of voters in each region in the active config.
+  // As voter distribution provided in topology config can lag,
+  // we need to take into account the active voters as well due to
+  // membership changes.
+  // Check for more comments in AdjustVoterDistributionWithCurrentVoters() which
+  // does the same for static mode watermark calculation
+  int total_voters_from_active_config = 0;
+  for (const RaftPeerPB& peer_pb : queue_state_.active_config->peers()) {
+    if (!peer_pb.has_member_type() ||
+        peer_pb.member_type() != RaftPeerPB::VOTER) {
+      continue;
+    }
+
+    CHECK(peer_pb.has_permanent_uuid() && peer_pb.has_attrs() &&
+        peer_pb.attrs().has_region());
+    const std::string& peer_pb_region = peer_pb.attrs().region();
+    if (peer_pb_region != leader_region) {
+      // In dynamic mode, only the leader region matters
+      continue;
+    }
+
+    total_voters_from_active_config++;
+  }
+
+  int total_voters = std::max(
+      total_voters_from_voter_distribution, total_voters_from_active_config);
   int commit_req = MajoritySize(total_voters);
 
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Computing new commit index in single "
                                << "region dynamic mode.";
 
-  std::map<std::string, std::vector<int64_t> >::const_iterator it =
-      watermarks_by_region.find(leader_region);
-
   // Return without advancing the commit watermark, if majority in leader
   // region is not satisfied, ie. not enough number of replicas have responded
   // from that region.
-  if (it == watermarks_by_region.end() || it->second.size() < commit_req) {
+  if (watermarks_in_leader_region.size() < commit_req) {
     if (VLOG_IS_ON(3)) {
       VLOG_WITH_PREFIX_UNLOCKED(3)
           << "Watermarks size: "
-          << ((it == watermarks_by_region.end()) ? 0 : it->second.size())
+          << watermarks_in_leader_region.size()
           << ", Num peers required: " << commit_req
           << ", Region: " << leader_region;
     }
     return *watermark;
   }
 
-  const std::vector<int64_t>& watermarks_in_leader_region = it->second;
+  // Sort the watermarks
+  std::sort(
+      watermarks_in_leader_region.begin(), watermarks_in_leader_region.end());
+
   int64_t old_watermark = *watermark;
   *watermark = watermarks_in_leader_region[
       watermarks_in_leader_region.size() - commit_req];
   return old_watermark;
 }
 
-int64_t PeerMessageQueue::ComputeNewWatermark(
-    int64_t* watermark,
-    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region) {
+int64_t PeerMessageQueue::ComputeNewWatermarkStaticMode(int64_t* watermark) {
   CHECK(watermark);
   CHECK(queue_state_.active_config->has_commit_rule());
-
-  // Map to store the number of voters in each region from the active config.
-  std::map<std::string, int> voter_distribution;
-
-  // Compute total number of voters in each region.
-  voter_distribution.insert(
-      queue_state_.active_config->voter_distribution().begin(),
-      queue_state_.active_config->voter_distribution().end());
-
-  // Compute number of voters in each region in the active config.
-  // As voter distribution provided in topology config can lag,
-  // we need to take into account the active voters as well due to
-  // membership changes.
-  AdjustVoterDistributionWithCurrentVoters(
-      *(queue_state_.active_config), &voter_distribution);
-
-  switch (queue_state_.active_config->commit_rule().mode()) {
-    case QuorumMode::SINGLE_REGION_DYNAMIC:
-      return ComputeNewWatermarkDynamicMode(
-          watermark, voter_distribution, watermarks_by_region);
-    case QuorumMode::STATIC_DISJUNCTION:
-    case QuorumMode::STATIC_CONJUNCTION:
-      return ComputeNewWatermarkStaticMode(
-          watermark, voter_distribution, watermarks_by_region);
-    default:
-      return *watermark;
-  }
-}
-
-void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
-    int64_t* watermark, const OpId& replicated_before,
-    const OpId& replicated_after,
-    ReplicaTypes replica_types, const TrackedPeer* who_caused) {
-  CHECK(watermark);
-  CHECK(who_caused);
-
-  if (VLOG_IS_ON(2)) {
-    VLOG_WITH_PREFIX_UNLOCKED(2) << "Updating majority_replicated watermark: "
-        << "Peer (" << who_caused->ToString() << ") changed from "
-        << replicated_before << " to " << replicated_after << ". "
-                                 << "Current value: " << *watermark;
+ 
+  if (!IsStaticQuorumMode(queue_state_.active_config->commit_rule().mode())) {
+    return *watermark;
   }
 
   // For each region, we compute a vector of indexes that were replicated.
@@ -1204,8 +1212,7 @@ void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
   // 2 replicas in lla have received entries until index 5.
   std::map<std::string, std::vector<int64_t> > watermarks_by_region;
   for (const PeersMap::value_type& peer : peers_map_) {
-    if (replica_types == VOTER_REPLICAS &&
-        peer.second->peer_pb.member_type() != RaftPeerPB::VOTER) {
+    if (peer.second->peer_pb.member_type() != RaftPeerPB::VOTER) {
       continue;
     }
     // Refer to the comment in AdvanceQueueWatermark method for why only
@@ -1224,25 +1231,56 @@ void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
     std::sort(it->second.begin(), it->second.end());
   }
 
+  // Map to store the number of voters in each region from the active config.
+  std::map<std::string, int> voter_distribution;
+
+  // Compute total number of voters in each region.
+  voter_distribution.insert(
+      queue_state_.active_config->voter_distribution().begin(),
+      queue_state_.active_config->voter_distribution().end());
+
+  // Compute number of voters in each region in the active config.
+  // As voter distribution provided in topology config can lag,
+  // we need to take into account the active voters as well due to
+  // membership changes.
+  AdjustVoterDistributionWithCurrentVoters(
+      *(queue_state_.active_config), &voter_distribution);
+
+  return DoComputeNewWatermarkStaticMode(
+      voter_distribution, watermarks_by_region, watermark);
+}
+
+void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
+    int64_t* watermark, const OpId& replicated_before,
+    const OpId& replicated_after, const TrackedPeer* who_caused) {
+  CHECK(watermark);
+  CHECK(who_caused);
+
+  if (VLOG_IS_ON(2)) {
+    VLOG_WITH_PREFIX_UNLOCKED(2) << "Updating majority_replicated watermark: "
+        << "Peer (" << who_caused->ToString() << ") changed from "
+        << replicated_before << " to " << replicated_after << ". "
+                                 << "Current value: " << *watermark;
+  }
+
   // Update the watermark based on the acknowledgements so far.
-  int64_t old_watermark = ComputeNewWatermark(watermark, watermarks_by_region);
+  int64_t old_watermark = -1;
+  if (queue_state_.active_config->commit_rule().mode() ==
+      QuorumMode::SINGLE_REGION_DYNAMIC) {
+    const std::string& leader_region = local_peer_pb_.attrs().region();
+    const std::string& peer_region = who_caused->peer_pb.attrs().region();
+
+    // In SINGLE_REGION_DYNAMIC mode, only an ack from the leader region can
+    // advance the watermark. Skip this expensive operation otherwise
+    if (leader_region == peer_region) {
+      old_watermark = ComputeNewWatermarkDynamicMode(watermark);
+    }
+  } else {
+    old_watermark = ComputeNewWatermarkStaticMode(watermark);
+  }
 
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Updated majority_replicated watermark "
       << "from " << old_watermark << " to " << (*watermark);
-  if (VLOG_IS_ON(3)) {
-    VLOG_WITH_PREFIX_UNLOCKED(3) << "Peers: ";
-    for (const PeersMap::value_type& peer : peers_map_) {
-      VLOG_WITH_PREFIX_UNLOCKED(3) << "Peer: " << peer.second->ToString();
-    }
-    VLOG_WITH_PREFIX_UNLOCKED(3) << "Sorted watermarks:";
-    for (const std::pair<std::string, std::vector<int64_t> >&
-         region_watermarks : watermarks_by_region) {
-      VLOG_WITH_PREFIX_UNLOCKED(3) << "Region: " << region_watermarks.first;
-      for (const int64_t r_watermark : region_watermarks.second) {
-        VLOG_WITH_PREFIX_UNLOCKED(3) << "Watermark: " << r_watermark;
-      }
-    }
-  }
 }
 
 void PeerMessageQueue::BeginWatchForSuccessor(
@@ -1654,7 +1692,6 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
             &queue_state_.majority_replicated_index,
             /*replicated_before=*/ prev_peer_state.last_received,
             /*replicated_after=*/ peer->last_received,
-            VOTER_REPLICAS,
             peer);
       }
 
