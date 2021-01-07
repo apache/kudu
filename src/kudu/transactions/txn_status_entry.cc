@@ -36,8 +36,7 @@ namespace transactions {
 TransactionEntry::TransactionEntry(int64_t txn_id, std::string user)
     : txn_id_(txn_id),
       user_(std::move(user)),
-      last_heartbeat_time_(MonoTime::Now()),
-      state_(TxnStatePB::UNKNOWN) {
+      last_heartbeat_time_(MonoTime::Now()) {
 }
 
 scoped_refptr<ParticipantEntry> TransactionEntry::GetOrCreateParticipant(
@@ -60,6 +59,11 @@ vector<string> TransactionEntry::GetParticipantIds() const {
   vector<string> ret;
   AppendKeysFromMap(participants_, &ret);
   return ret;
+}
+
+TxnStatePB TransactionEntry::state() const {
+  CowLock<PersistentTransactionEntry> l(&metadata_, LockMode::READ);
+  return l.data().pb.state();
 }
 
 } // namespace transactions

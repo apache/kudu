@@ -23,8 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include <glog/logging.h>
-
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/util/cow_object.h"
@@ -101,13 +99,9 @@ class TransactionEntry : public RefCountedThreadSafe<TransactionEntry> {
     last_heartbeat_time_.store(hbtime);
   }
 
-  TxnStatePB state() const {
-    return state_.load();
-  }
-  void SetState(TxnStatePB state) {
-    DCHECK(metadata_.IsWriteLocked());
-    state_.store(state);
-  }
+  // An accessor to the transaction's state. Concurrent access is controlled
+  // via the locking provided by the underlying copy-on-write metadata_ object.
+  TxnStatePB state() const;
 
  private:
   friend class RefCountedThreadSafe<TransactionEntry>;
@@ -135,13 +129,6 @@ class TransactionEntry : public RefCountedThreadSafe<TransactionEntry> {
   //     different clients sending writes in the context of the same transaction
   //   * the field is read by the stale transaction tracker in TxnStatusManager
   std::atomic<MonoTime> last_heartbeat_time_;
-
-  // A shortcut for the state of the transaction stored in the metadata_ field.
-  // Callers should externally synchronize 'state_' with 'metadata_' by calling
-  // SetState() accordingly when TxnStatePB in 'metadata_' changes.
-  //
-  // TODO(aserbin): add a hook into CowObject::Commit() to do so automatically
-  std::atomic<TxnStatePB> state_;
 };
 
 typedef MetadataLock<TransactionEntry> TransactionEntryLock;

@@ -286,7 +286,6 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
     TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
     txn_lock.mutable_data()->pb.set_state(TxnStatePB::OPEN);
     txn_lock.mutable_data()->pb.set_user(user);
-    txn->SetState(txn_lock.data().pb.state());
     txn_lock.Commit();
   }
   std::lock_guard<simple_spinlock> l(lock_);
@@ -319,7 +318,6 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::COMMIT_IN_PROGRESS);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
-  txn->SetState(txn_lock.data().pb.state());
   txn_lock.Commit();
   return Status::OK();
 }
@@ -346,7 +344,6 @@ Status TxnStatusManager::FinalizeCommitTransaction(
   mutable_data->pb.set_state(TxnStatePB::COMMITTED);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(
       txn_id, mutable_data->pb, ts_error));
-  txn->SetState(txn_lock.data().pb.state());
   txn_lock.Commit();
   return Status::OK();
 }
@@ -373,7 +370,6 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id,
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::ABORTED);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
-  txn->SetState(txn_lock.data().pb.state());
   txn_lock.Commit();
   return Status::OK();
 }
