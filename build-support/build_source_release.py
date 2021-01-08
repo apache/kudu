@@ -166,11 +166,11 @@ def run_rat(tarball_path):
         ["./build-support/release/check-rat-report.py",
          "./build-support/release/rat_exclude_files.txt",
          rat_report_dest],
-        stderr=subprocess.STDOUT)
+        stderr=subprocess.STDOUT).decode('utf-8')
     print(Colors.GREEN + "RAT: LICENSES APPROVED" + Colors.RESET)
   except subprocess.CalledProcessError as e:
     print(Colors.RED + "RAT: LICENSES NOT APPROVED" + Colors.RESET)
-    print(e.output)
+    print(e.output.decode('utf-8'))
     raise e
   finally:
     shutil.rmtree(tmpdir_path)
