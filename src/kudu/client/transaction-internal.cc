@@ -214,14 +214,15 @@ Status KuduTransaction::Data::Rollback() {
   return Status::OK();
 }
 
-Status KuduTransaction::Data::Serialize(string* serialized_txn,
-                                        bool enable_keepalive) const {
+Status KuduTransaction::Data::Serialize(
+    string* serialized_txn,
+    const SerializationOptions& options) const {
   DCHECK(serialized_txn);
   DCHECK(txn_id_.IsValid());
   TxnTokenPB token;
   token.set_txn_id(txn_id_);
   token.set_keepalive_millis(txn_keep_alive_ms_);
-  token.set_enable_keepalive(enable_keepalive);
+  token.set_enable_keepalive(options.keepalive());
   if (!token.SerializeToString(serialized_txn)) {
     return Status::Corruption("unable to serialize transaction information");
   }
@@ -451,21 +452,6 @@ void KuduTransaction::Data::TxnKeepAliveCb(
         },
         next_run_after);
   }
-}
-
-KuduTransactionSerializer::Data::Data(
-    const sp::shared_ptr<KuduTransaction>& txn)
-    : txn_(txn),
-      enable_keepalive_(false) {
-  DCHECK(txn_);
-}
-
-Status KuduTransactionSerializer::Data::Serialize(string* txn_token) const {
-  DCHECK(txn_token);
-  if (PREDICT_FALSE(!txn_)) {
-    return Status::InvalidArgument("no transaction to serialize");
-  }
-  return txn_->data_->Serialize(txn_token, enable_keepalive_);
 }
 
 } // namespace client

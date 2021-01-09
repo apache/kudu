@@ -415,13 +415,120 @@ class KUDU_EXPORT KuduTransaction :
   /// @return Operation result status.
   Status Rollback() WARN_UNUSED_RESULT;
 
+  /// This class controls serialization-related parameters for a Kudu
+  /// transaction handle (i.e. @c KuduTransaction).
+  ///
+  /// One of the parameters is whether to enable sending keepalive messages for
+  /// the resulting @c KuduTransaction handle upon deserialization.
+  /// In future, the list of configurable parameters might be extended (e.g.,
+  /// by adding commit and abort permissions, i.e. whether a handle obtained by
+  /// deserializing a handle from the string representation can be used
+  /// to commit and/or abort the transaction).
+  class KUDU_EXPORT SerializationOptions {
+   public:
+    SerializationOptions();
+    ~SerializationOptions();
+
+    /// This method returns the current setting keepalive behavior, i.e. whether
+    /// to send keepalive messages for Kudu transaction handles.
+    ///
+    /// No keepalive heartbeat messages are sent from a transaction handle if
+    /// its token was created with the default "keepalive disabled" setting.
+    /// The idea here is that the most common use case for using transaction
+    /// tokens is of the "start topology" (see below), so it's enough to have
+    /// just one top-level handle sending keepalive messages. Overall, having
+    /// more than one actor sending keepalive messages for a transaction is
+    /// acceptable but it puts needless load on a cluster.
+    ///
+    /// The most common use case for a transaction's handle
+    /// serialization/deserialization is of the "star topology": a transaction
+    /// is started by a top-level application which sends the transaction token
+    /// produced by serializing the original transaction handle to other worker
+    /// applications running concurrently, where the latter write their data
+    /// in the context of the same transaction and report back to the top-level
+    /// application, which in its turn initiates committing the transaction
+    /// as needed. The important point is that the top-level application keeps
+    /// the transaction handle around all the time from the start of the
+    /// transaction to the very point when transaction is committed. Under the
+    /// hood, the original transaction handle sends keepalive messages as
+    /// required until commit phase is initiated, so the deserialized
+    /// transaction handles which are used by the worker applications don't
+    /// need to send keepalive messages.
+    ///
+    /// The other (less common) use case is of the "ring topology": a chain of
+    /// applications work sequentially as a part of the same transaction, where
+    /// the very first application starts the transaction, writes its data, and
+    /// hands over the responsibility of managing the lifecycle of the
+    /// transaction to other application down the chain. After doing so it may
+    /// exit, so now only the next application has the active transaction
+    /// handle, and so on it goes until the transaction is committed by the
+    /// application in the end of the chain. In this scenario, every
+    /// deserialized handle have to send keepalive messages to avoid automatic
+    /// rollback of the transaction, and every application in the chain should
+    /// set @c SerializationOptions::enable_keepalive to true when serializing
+    /// its transaction handle into a transaction token to pass to the
+    /// application next in the chain.
+    ///
+    /// @return whether to send keepalive messages for Kudu transaction handles
+    bool keepalive() const;
+
+    /// Enable/disable keepalive for a handle which is the result of
+    /// deserializing a previously serialized @c KuduTransaction handle.
+    ///
+    /// Sending keepalive messages for a transaction handle deserialized
+    /// from a string is disabled by default.
+    ///
+    /// @param [in] enable
+    ///   Whether to enable sending keepalive messages for @c KuduTransaction
+    ///   handle once it's deserialized from the string representation of a
+    ///   Kudu transaction handle.
+    /// @return Reference to the updated object.
+    SerializationOptions& enable_keepalive(bool enable);
+
+   private:
+    friend class KuduTransaction;
+    class KUDU_NO_EXPORT Data;
+    Data* data_; // Owned.
+
+    DISALLOW_COPY_AND_ASSIGN(SerializationOptions);
+  };
+
+  /// Export the information on this transaction in a serialized form.
+  ///
+  /// The serialized information on a Kudu transaction can be passed among
+  /// different Kudu clients running at multiple nodes, so those separate
+  /// Kudu clients can perform operations to be a part of the same distributed
+  /// transaction. The resulting string is referred as "transaction token" and
+  /// can be deserialized into a transaction handle (i.e. an object of the @c
+  /// KuduTransaction class) via the @c KuduTransaction::Deserialize() method.
+  ///
+  /// This method doesn't perform any RPC under the hood. The behavior of this
+  /// method is controlled by @c SerializationOptions set for this transaction
+  /// handle.
+  ///
+  /// @note The representation of the data in the serialized form
+  ///   (i.e. the format of a Kudu transaction token) is an implementation
+  ///   detail, not a part of the public API.
+  ///
+  /// @param [out] serialized_txn
+  ///   Result string to output the serialized transaction information.
+  /// @param [in] options
+  ///   Options to use when serializing the handle (optional). If omitted,
+  ///   the default serialization parameters are used -- the same as it would
+  ///   be for a default-constructed instance of SerializationOptions used
+  ///   for this parameter.
+  /// @return Operation result status.
+  Status Serialize(
+      std::string* serialized_txn,
+      const SerializationOptions& options = SerializationOptions()) const WARN_UNUSED_RESULT;
+
   /// Re-create KuduTransaction object given its serialized representation.
   ///
   /// This method doesn't perform any RPC under the hood. The newly created
   /// object automatically does or does not send keep-alive messages depending
-  /// on the @c KuduTransactionSerializer::enable_keepalive() setting when
-  /// the original @c KuduTransaction object was serialized using
-  /// @c KuduTransactionSerializer::Serialize().
+  /// on the @c KuduTransaction::SerializationOptions::enable_keepalive()
+  /// setting when the original @c KuduTransaction object was serialized using
+  /// @c KuduTransaction::Serialize().
   ///
   /// @param [in] client
   ///   Client instance to bound the result object to.
@@ -434,105 +541,16 @@ class KUDU_EXPORT KuduTransaction :
                             const std::string& serialized_txn,
                             sp::shared_ptr<KuduTransaction>* txn) WARN_UNUSED_RESULT;
  private:
+  DISALLOW_COPY_AND_ASSIGN(KuduTransaction);
+
   friend class KuduClient;
   friend class KuduSession;
-  friend class KuduTransactionSerializer;
   FRIEND_TEST(ClientTest, TxnIdOfTransactionalSession);
   FRIEND_TEST(ClientTest, TxnToken);
 
   class KUDU_NO_EXPORT Data;
 
   explicit KuduTransaction(const sp::shared_ptr<KuduClient>& client);
-  Data* data_; // Owned.
-};
-
-/// A utility class to help with serialization of @c KuduTransaction handles.
-///
-/// The purpose of this class is to control the keepalive behavior for the
-/// @c KuduTransaction handle once it's deserialized from the token. In future,
-/// the list of configurable parameters might be extended (e.g., by adding
-/// commit and abort permissions, i.e. whether a handle can be used to
-/// commit and/or abort the transaction).
-class KUDU_EXPORT KuduTransactionSerializer {
- public:
-  /// Create a serializer for the specified @c KuduTransaction object.
-  ///
-  /// @param [out] txn
-  ///   Smart pointer to the @c KuduTransaction object to be serialized
-  ///   by the @c Serialize() method.
-  explicit KuduTransactionSerializer(const sp::shared_ptr<KuduTransaction>& txn);
-
-  ~KuduTransactionSerializer();
-
-  /// Whether to enable sending keepalive messages for the @c KuduTransaction
-  /// handle when it's deserialized from the string produced by
-  /// @c KuduTransactionSerializer::Serialize().
-  ///
-  /// No keepalive heartbeat messages are sent from a transaction handle whose
-  /// source token was created with the default "keepalive disabled" setting.
-  /// The idea here is that the most common use case for using transaction
-  /// tokens is of the "start topology" (see below), so it's enough to have
-  /// just one top-level handle sending keepalive messages. Overall, having more
-  /// than one actor sending keepalive messages for a transaction is acceptable
-  /// but it puts needless load on a cluster.
-  ///
-  /// The most common use case for a transaction's handle
-  /// serialization/deserialization is of the "star topology": a transaction is
-  /// started by a top-level application which sends the transaction token
-  /// produced by serializing the original transaction handle to other worker
-  /// applications running concurrently, where the latter write their data
-  /// in the context of the same transaction and report back to the top-level
-  /// application, which in its turn initiates committing the transaction
-  /// as needed. The important point is that the top-level application keeps the
-  /// transaction handle around all the time from the start of the transaction
-  /// to the very point when transaction is committed. Under the hood, the
-  /// original transaction handle sends keepalive messages as required until
-  /// commit phase is initiated, so the deserialized transaction handles which
-  /// are used by the worker applications don't need to send keepalive messages.
-  ///
-  /// The other (less common) use case is of the "ring topology": a chain of
-  /// applications work sequentially as a part of the same transaction, where
-  /// the very first application starts the transaction, writes its data, and
-  /// hands over the responsibility of managing the lifecycle of the transaction
-  /// to other application down the chain. After doing so it may exit, so now
-  /// only the next application has the active transaction handle, and so on it
-  /// goes until the transaction is committed by the application in the end
-  /// of the chain. In this scenario, every deserialized handle have to send
-  /// keepalive messages to avoid automatic rollback of the transaction,
-  /// and every application in the chain should call
-  /// @c KuduTransactionSerializer::enable_keepalive() when serializing its
-  /// transaction handle into a transaction token to pass to the application
-  /// next in the chain.
-  ///
-  /// @param [in] enable
-  ///   Whether to enable sending keepalive messages for the @c KuduTransaction
-  ///   object once it's deserialized from the string to be produced by
-  ///   @c KuduTransactionSerializer::Serialize().
-  /// @return Reference to the updated object.
-  KuduTransactionSerializer& enable_keepalive(bool enable);
-
-  /// Export the information on this transaction in a serialized form.
-  ///
-  /// The serialized information on a Kudu transaction can be passed among
-  /// different Kudu clients running at multiple nodes, so those separate
-  /// Kudu clients can perform operations to be a part of the same distributed
-  /// transaction. The resulting string is referred as "transaction token" and
-  /// it can be deserialized into an object of the @c KuduTransaction class via
-  /// the @c KuduTransaction::Deserialize() method.
-  ///
-  /// This method doesn't perform any RPC under the hood.
-  ///
-  /// @note The representation of the data in the serialized form
-  ///   (i.e. the format of a Kudu transaction token) is an implementation
-  ///   detail, not a part of the public API.
-  ///
-  /// @param [out] serialized_txn
-  ///   Result string to output the serialized transaction information.
-  /// @return Operation result status.
-  Status Serialize(std::string* serialized_txn) const WARN_UNUSED_RESULT;
-
- private:
-  class KUDU_NO_EXPORT Data;
   Data* data_; // Owned.
 };
 
@@ -710,7 +728,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   ///   This 'out' parameter is populated iff the operation to begin
   ///   a transaction was successful.
   /// @return The status of underlying "begin transaction" operation.
-  Status NewTransaction(sp::shared_ptr<KuduTransaction>* txn);
+  Status NewTransaction(sp::shared_ptr<KuduTransaction>* txn) WARN_UNUSED_RESULT;
 
   /// @cond PRIVATE_API
 

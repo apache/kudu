@@ -34,6 +34,18 @@ namespace client {
 
 struct KeepaliveRpcCtx;
 
+// This class hides the implementation details of the publicly exposed
+// kudu::client::KuduTransaction::SerializationOptions class.
+class KuduTransaction::SerializationOptions::Data {
+ public:
+  Data()
+     : enable_keepalive_(false) {
+  }
+  ~Data() = default;
+
+  bool enable_keepalive_;
+};
+
 // This class implements the functionality of kudu::client::KuduTransaction.
 class KuduTransaction::Data {
  public:
@@ -46,7 +58,8 @@ class KuduTransaction::Data {
   Status IsCommitComplete(bool* is_complete, Status* completion_status);
   Status Rollback();
 
-  Status Serialize(std::string* serialized_txn, bool enable_keepalive) const;
+  Status Serialize(std::string* serialized_txn,
+                   const SerializationOptions& options) const;
   static Status Deserialize(const sp::shared_ptr<KuduClient>& client,
                             const std::string& serialized_txn,
                             sp::shared_ptr<KuduTransaction>* txn);
@@ -83,22 +96,6 @@ class KuduTransaction::Data {
   TxnId txn_id_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
-};
-
-// This class implements the functionality of
-// kudu::client::KuduTransactionSerializer.
-class KuduTransactionSerializer::Data {
- public:
-  explicit Data(const sp::shared_ptr<KuduTransaction>& client);
-
-  void enable_keepalive(bool enable) {
-    enable_keepalive_ = enable;
-  }
-
-  Status Serialize(std::string* txn_token) const;
-
-  sp::shared_ptr<KuduTransaction> txn_;
-  bool enable_keepalive_;
 };
 
 } // namespace client

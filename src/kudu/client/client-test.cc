@@ -439,7 +439,7 @@ class ClientTest : public KuduTest {
   //                once the transaction orchestration is implemented
   Status FinalizeCommitTransaction(const shared_ptr<KuduTransaction>& txn) {
     string txn_token;
-    RETURN_NOT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
+    RETURN_NOT_OK(txn->Serialize(&txn_token));
     TxnTokenPB token;
     CHECK(token.ParseFromString(txn_token));
     CHECK(token.has_txn_id());
@@ -7221,7 +7221,7 @@ TEST_F(ClientTest, TxnCommit) {
       ASSERT_FALSE(is_complete);
       ASSERT_TRUE(cs.IsIncomplete()) << cs.ToString();
       ASSERT_STR_CONTAINS(cs.ToString(), "commit is still in progress");
-      ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
+      ASSERT_OK(txn->Serialize(&txn_token));
     }
 
     // Make sure the transaction isn't aborted once its KuduTransaction handle
@@ -7345,12 +7345,12 @@ TEST_F(ClientTest, TxnToken) {
   ASSERT_GT(txn_keepalive_ms, 0);
 
   string txn_token;
-  ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
+  ASSERT_OK(txn->Serialize(&txn_token));
 
   // Serializing the same transaction again produces the same result.
   {
     string token;
-    ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&token));
+    ASSERT_OK(txn->Serialize(&token));
     ASSERT_EQ(txn_token, token);
   }
 
@@ -7373,7 +7373,7 @@ TEST_F(ClientTest, TxnToken) {
   // Make sure the KuduTransaction object deserialized from a token is fully
   // functional.
   string serdes_txn_token;
-  ASSERT_OK(KuduTransactionSerializer(serdes_txn).Serialize(&serdes_txn_token));
+  ASSERT_OK(serdes_txn->Serialize(&serdes_txn_token));
   ASSERT_EQ(txn_token, serdes_txn_token);
 
   // TODO(awong): remove once we register participants automatically before
@@ -7389,7 +7389,7 @@ TEST_F(ClientTest, TxnToken) {
     // The state of a transaction isn't stored in the token, so initiating
     // commit of the transaction doesn't change the result of the serialization.
     string token;
-    ASSERT_OK(KuduTransactionSerializer(serdes_txn).Serialize(&token));
+    ASSERT_OK(serdes_txn->Serialize(&token));
     ASSERT_EQ(serdes_txn_token, token);
   }
 
@@ -7397,14 +7397,14 @@ TEST_F(ClientTest, TxnToken) {
   shared_ptr<KuduTransaction> other_txn;
   ASSERT_OK(client_->NewTransaction(&other_txn));
   string other_txn_token;
-  ASSERT_OK(KuduTransactionSerializer(other_txn).Serialize(&other_txn_token));
+  ASSERT_OK(other_txn->Serialize(&other_txn_token));
   ASSERT_NE(txn_token, other_txn_token);
 
   // The state of a transaction isn't stored in the token, so aborting
   // the doesn't change the result of the serialization.
   string token;
   ASSERT_OK(other_txn->Rollback());
-  ASSERT_OK(KuduTransactionSerializer(other_txn).Serialize(&token));
+  ASSERT_OK(other_txn->Serialize(&token));
   ASSERT_EQ(other_txn_token, token);
 }
 
@@ -7413,11 +7413,12 @@ TEST_F(ClientTest, TxnToken) {
 // Status::NotAuthorized() status.
 TEST_F(ClientTest, AttemptToControlTxnByOtherUser) {
   static constexpr const char* const kOtherTxnUser = "other-txn-user";
+  const KuduTransaction::SerializationOptions kSerOptions;
 
   shared_ptr<KuduTransaction> txn;
   ASSERT_OK(client_->NewTransaction(&txn));
   string txn_token;
-  ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
+  ASSERT_OK(txn->Serialize(&txn_token));
 
   // Transaction identifier is surfacing here only to build the reference error
   // message for Status::NotAuthorized() returned by attempts to perform
@@ -7533,7 +7534,7 @@ TEST_F(ClientTest, TxnKeepAlive) {
     {
       shared_ptr<KuduTransaction> txn;
       ASSERT_OK(client_->NewTransaction(&txn));
-      ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
+      ASSERT_OK(txn->Serialize(&txn_token));
     }
 
     SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
@@ -7557,7 +7558,7 @@ TEST_F(ClientTest, TxnKeepAlive) {
     {
       shared_ptr<KuduTransaction> txn;
       ASSERT_OK(client_->NewTransaction(&txn));
-      ASSERT_OK(KuduTransactionSerializer(txn).Serialize(&txn_token));
+      ASSERT_OK(txn->Serialize(&txn_token));
     }
 
     shared_ptr<KuduTransaction> serdes_txn;
@@ -7583,9 +7584,9 @@ TEST_F(ClientTest, TxnKeepAlive) {
     {
       shared_ptr<KuduTransaction> txn;
       ASSERT_OK(client_->NewTransaction(&txn));
-      ASSERT_OK(KuduTransactionSerializer(txn)
-                .enable_keepalive(true)
-                .Serialize(&txn_token));
+      KuduTransaction::SerializationOptions options;
+      options.enable_keepalive(true);
+      ASSERT_OK(txn->Serialize(&txn_token, options));
     }
 
     shared_ptr<KuduTransaction> serdes_txn;
