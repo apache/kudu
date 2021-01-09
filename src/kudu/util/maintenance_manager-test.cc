@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <list>
@@ -29,6 +30,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -37,10 +39,11 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/maintenance_manager.pb.h"
+#include "kudu/util/maintenance_manager_metrics.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/mutex.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -49,6 +52,8 @@ using std::list;
 using std::shared_ptr;
 using std::string;
 using std::thread;
+using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 METRIC_DEFINE_entity(test);
@@ -72,6 +77,192 @@ namespace kudu {
 // Set this a bit bigger so that the manager could keep track of all possible completed ops.
 static const int kHistorySize = 10;
 static const char kFakeUuid[] = "12345";
+
+class TestMaintenanceOp : public MaintenanceOp {
+ public:
+  TestMaintenanceOp(const std::string& name,
+                    IOUsage io_usage,
+                    int32_t priority = 0,
+                    CountDownLatch* start_stats_latch = nullptr,
+                    CountDownLatch* continue_stats_latch = nullptr)
+    : MaintenanceOp(name, io_usage),
+      start_stats_latch_(start_stats_latch),
+      continue_stats_latch_(continue_stats_latch),
+      ram_anchored_(500),
+      logs_retained_bytes_(0),
+      perf_improvement_(0),
+      metric_entity_(METRIC_ENTITY_test.Instantiate(&metric_registry_, "test")),
+      maintenance_op_duration_(METRIC_maintenance_op_duration.Instantiate(metric_entity_)),
+      maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)),
+      remaining_runs_(1),
+      prepared_runs_(0),
+      sleep_time_(MonoDelta::FromSeconds(0)),
+      update_stats_time_(MonoDelta::FromSeconds(0)),
+      priority_(priority),
+      workload_score_(0),
+      update_stats_count_(0) {
+  }
+
+  ~TestMaintenanceOp() override = default;
+
+  bool Prepare() override {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    if (remaining_runs_ == 0) {
+      return false;
+    }
+    remaining_runs_--;
+    prepared_runs_++;
+    DLOG(INFO) << "Prepared op " << name();
+    return true;
+  }
+
+  void Perform() override {
+    {
+      std::lock_guard<simple_spinlock> guard(lock_);
+      DLOG(INFO) << "Performing op " << name();
+
+      // Ensure that we don't call Perform() more times than we returned
+      // success from Prepare().
+      CHECK_GE(prepared_runs_, 1);
+      prepared_runs_--;
+    }
+
+    SleepFor(sleep_time_);
+
+    {
+      std::lock_guard<simple_spinlock> guard(lock_);
+      completed_at_ = MonoTime::Now();
+    }
+  }
+
+  void UpdateStats(MaintenanceOpStats* stats) override {
+    if (start_stats_latch_) {
+      start_stats_latch_->CountDown();
+      DCHECK_NOTNULL(continue_stats_latch_)->Wait();
+    }
+
+    if (update_stats_time_.ToNanoseconds() > 0) {
+      const auto run_until = MonoTime::Now() + update_stats_time_;
+      volatile size_t cnt = 0;
+      while (MonoTime::Now() < run_until) {
+        ++cnt;
+      }
+    }
+
+    std::lock_guard<simple_spinlock> guard(lock_);
+    stats->set_runnable(remaining_runs_ > 0);
+    stats->set_ram_anchored(ram_anchored_);
+    stats->set_logs_retained_bytes(logs_retained_bytes_);
+    stats->set_perf_improvement(perf_improvement_);
+    stats->set_workload_score(workload_score_);
+
+    ++update_stats_count_;
+  }
+
+  void set_remaining_runs(int runs) {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    remaining_runs_ = runs;
+  }
+
+  void set_sleep_time(MonoDelta time) {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    sleep_time_ = time;
+  }
+
+  void set_update_stats_time(MonoDelta time) {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    update_stats_time_ = time;
+  }
+
+  void set_ram_anchored(uint64_t ram_anchored) {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    ram_anchored_ = ram_anchored;
+  }
+
+  void set_logs_retained_bytes(uint64_t logs_retained_bytes) {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    logs_retained_bytes_ = logs_retained_bytes;
+  }
+
+  void set_perf_improvement(uint64_t perf_improvement) {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    perf_improvement_ = perf_improvement;
+  }
+
+  void set_workload_score(uint64_t workload_score) {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    workload_score_ = workload_score;
+  }
+
+  scoped_refptr<Histogram> DurationHistogram() const override {
+    return maintenance_op_duration_;
+  }
+
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override {
+    return maintenance_ops_running_;
+  }
+
+  int32_t priority() const override {
+    return priority_;
+  }
+
+  int remaining_runs() const {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    return remaining_runs_;
+  }
+
+  uint64_t update_stats_count() const {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    return update_stats_count_;
+  }
+
+  MonoTime completed_at() const {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    return completed_at_;
+  }
+
+ private:
+  mutable simple_spinlock lock_;
+
+  // Latch used to help other threads wait for us to begin updating stats for
+  // this op. Another thread may wait for this latch, and once the countdown is
+  // complete, the maintenance manager lock will be locked while computing
+  // stats, at which point the scheduler thread will wait for
+  // 'continue_stats_latch_' to be counted down.
+  CountDownLatch* start_stats_latch_;
+  CountDownLatch* continue_stats_latch_;
+
+  uint64_t ram_anchored_;
+  uint64_t logs_retained_bytes_;
+  uint64_t perf_improvement_;
+  MetricRegistry metric_registry_;
+  scoped_refptr<MetricEntity> metric_entity_;
+  scoped_refptr<Histogram> maintenance_op_duration_;
+  scoped_refptr<AtomicGauge<uint32_t>> maintenance_ops_running_;
+
+  // The number of remaining times this operation will run before disabling
+  // itself.
+  int remaining_runs_;
+  // The number of Prepared() operations which have not yet been Perform()ed.
+  int prepared_runs_;
+
+  // The amount of time each op invocation will sleep.
+  MonoDelta sleep_time_;
+
+  // The amount of time each UpdateStats will sleep.
+  MonoDelta update_stats_time_;
+
+  // Maintenance priority.
+  int32_t priority_;
+
+  double workload_score_;
+
+  // Number of times the 'UpdateStats()' method is called on this instance.
+  uint64_t update_stats_count_;
+
+  // Timestamp of the monotonous clock when the operation was completed.
+  MonoTime completed_at_;
+};
 
 class MaintenanceManagerTest : public KuduTest {
  public:
@@ -105,6 +296,22 @@ class MaintenanceManagerTest : public KuduTest {
     manager_->Shutdown();
   }
 
+  void WaitForSchedulerThreadRunning(const string& op_name) {
+    // Register an op whose sole purpose is to make sure the MM scheduler
+    // thread is running.
+    TestMaintenanceOp canary_op(op_name, MaintenanceOp::HIGH_IO_USAGE, 0);
+    canary_op.set_perf_improvement(1);
+    manager_->RegisterOp(&canary_op);
+    // Unregister the 'canary_op' operation if it goes out of scope to avoid
+    // de-referencing invalid pointers.
+    SCOPED_CLEANUP({
+      manager_->UnregisterOp(&canary_op);
+    });
+    ASSERT_EVENTUALLY([&]() {
+      ASSERT_EQ(0, canary_op.remaining_runs());
+    });
+  }
+
  protected:
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
@@ -117,150 +324,6 @@ class MaintenanceManagerTest : public KuduTest {
 // there are no race conditions there.
 TEST_F(MaintenanceManagerTest, TestCreateAndShutdown) {
 }
-
-class TestMaintenanceOp : public MaintenanceOp {
- public:
-  TestMaintenanceOp(const std::string& name,
-                    IOUsage io_usage,
-                    int32_t priority = 0,
-                    CountDownLatch* start_stats_latch = nullptr,
-                    CountDownLatch* continue_stats_latch = nullptr)
-    : MaintenanceOp(name, io_usage),
-      start_stats_latch_(start_stats_latch),
-      continue_stats_latch_(continue_stats_latch),
-      ram_anchored_(500),
-      logs_retained_bytes_(0),
-      perf_improvement_(0),
-      metric_entity_(METRIC_ENTITY_test.Instantiate(&metric_registry_, "test")),
-      maintenance_op_duration_(METRIC_maintenance_op_duration.Instantiate(metric_entity_)),
-      maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)),
-      remaining_runs_(1),
-      prepared_runs_(0),
-      sleep_time_(MonoDelta::FromSeconds(0)),
-      priority_(priority),
-      workload_score_(0) {
-  }
-
-  ~TestMaintenanceOp() override = default;
-
-  bool Prepare() override {
-    std::lock_guard<Mutex> guard(lock_);
-    if (remaining_runs_ == 0) {
-      return false;
-    }
-    remaining_runs_--;
-    prepared_runs_++;
-    DLOG(INFO) << "Prepared op " << name();
-    return true;
-  }
-
-  void Perform() override {
-    {
-      std::lock_guard<Mutex> guard(lock_);
-      DLOG(INFO) << "Performing op " << name();
-
-      // Ensure that we don't call Perform() more times than we returned
-      // success from Prepare().
-      CHECK_GE(prepared_runs_, 1);
-      prepared_runs_--;
-    }
-
-    SleepFor(sleep_time_);
-  }
-
-  void UpdateStats(MaintenanceOpStats* stats) override {
-    if (start_stats_latch_) {
-      start_stats_latch_->CountDown();
-      DCHECK_NOTNULL(continue_stats_latch_)->Wait();
-    }
-    std::lock_guard<Mutex> guard(lock_);
-    stats->set_runnable(remaining_runs_ > 0);
-    stats->set_ram_anchored(ram_anchored_);
-    stats->set_logs_retained_bytes(logs_retained_bytes_);
-    stats->set_perf_improvement(perf_improvement_);
-    stats->set_workload_score(workload_score_);
-  }
-
-  void set_remaining_runs(int runs) {
-    std::lock_guard<Mutex> guard(lock_);
-    remaining_runs_ = runs;
-  }
-
-  void set_sleep_time(MonoDelta time) {
-    std::lock_guard<Mutex> guard(lock_);
-    sleep_time_ = time;
-  }
-
-  void set_ram_anchored(uint64_t ram_anchored) {
-    std::lock_guard<Mutex> guard(lock_);
-    ram_anchored_ = ram_anchored;
-  }
-
-  void set_logs_retained_bytes(uint64_t logs_retained_bytes) {
-    std::lock_guard<Mutex> guard(lock_);
-    logs_retained_bytes_ = logs_retained_bytes;
-  }
-
-  void set_perf_improvement(uint64_t perf_improvement) {
-    std::lock_guard<Mutex> guard(lock_);
-    perf_improvement_ = perf_improvement;
-  }
-
-  void set_workload_score(uint64_t workload_score) {
-    std::lock_guard<Mutex> guard(lock_);
-    workload_score_ = workload_score;
-  }
-
-  scoped_refptr<Histogram> DurationHistogram() const override {
-    return maintenance_op_duration_;
-  }
-
-  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override {
-    return maintenance_ops_running_;
-  }
-
-  int32_t priority() const override {
-    return priority_;
-  }
-
-  int remaining_runs() const {
-    std::lock_guard<Mutex> guard(lock_);
-    return remaining_runs_;
-  }
-
- private:
-  mutable Mutex lock_;
-
-  // Latch used to help other threads wait for us to begin updating stats for
-  // this op. Another thread may wait for this latch, and once the countdown is
-  // complete, the maintenance manager lock will be locked while computing
-  // stats, at which point the scheduler thread will wait for
-  // 'continue_stats_latch_' to be counted down.
-  CountDownLatch* start_stats_latch_;
-  CountDownLatch* continue_stats_latch_;
-
-  uint64_t ram_anchored_;
-  uint64_t logs_retained_bytes_;
-  uint64_t perf_improvement_;
-  MetricRegistry metric_registry_;
-  scoped_refptr<MetricEntity> metric_entity_;
-  scoped_refptr<Histogram> maintenance_op_duration_;
-  scoped_refptr<AtomicGauge<uint32_t> > maintenance_ops_running_;
-
-  // The number of remaining times this operation will run before disabling
-  // itself.
-  int remaining_runs_;
-  // The number of Prepared() operations which have not yet been Perform()ed.
-  int prepared_runs_;
-
-  // The amount of time each op invocation will sleep.
-  MonoDelta sleep_time_;
-
-  // Maintenance priority.
-  int32_t priority_;
-
-  double workload_score_;
-};
 
 // Create an op and wait for it to start running.  Unregister it while it is
 // running and verify that UnregisterOp waits for it to finish before
@@ -557,27 +620,15 @@ TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
   StopManager();
   StartManager(1);
 
-  // Register an op whose sole purpose is to allow us to delay the rest of this
-  // test until we know that the MM scheduler thread is running.
-  TestMaintenanceOp early_op("early", MaintenanceOp::HIGH_IO_USAGE, 0);
-  early_op.set_perf_improvement(1);
-  manager_->RegisterOp(&early_op);
-  // From this point forward if an ASSERT fires, we'll hit a CHECK failure if
-  // we don't unregister an op before it goes out of scope.
-  SCOPED_CLEANUP({
-    manager_->UnregisterOp(&early_op);
-  });
-  ASSERT_EVENTUALLY([&]() {
-    ASSERT_EQ(0, early_op.remaining_runs());
-  });
+  NO_FATALS(WaitForSchedulerThreadRunning("canary"));
 
   // The MM scheduler thread is now running. It is now safe to use
   // FLAGS_enable_maintenance_manager to temporarily disable the MM, thus
   // allowing us to register a group of ops "atomically" and ensuring the op
   // execution order that this test wants to see.
   //
-  // Without the "early op" hack above, there's a small chance that the MM
-  // scheduler thread will not have run at all at the time of
+  // Without the WaitForSchedulerThreadRunning() above, there's a small chance
+  // that the MM scheduler thread will not have run at all at the time of
   // FLAGS_enable_maintenance_manager = false, which would cause the thread
   // to exit entirely instead of sleeping.
 
@@ -675,12 +726,155 @@ TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
                             "op5",
                             "op6",
                             "op7",
-                            "early"});
+                            "canary"});
   ASSERT_EQ(ordered_ops.size(), status_pb.completed_operations().size());
   for (const auto& instance : status_pb.completed_operations()) {
     ASSERT_EQ(ordered_ops.front(), instance.name());
     ordered_ops.pop_front();
   }
+}
+
+// Check for MaintenanceManager metrics.
+TEST_F(MaintenanceManagerTest, VerifyMetrics) {
+  // Nothing has failed so far.
+  ASSERT_EQ(0, manager_->metrics_.op_prepare_failed->value());
+
+  // The oppf's Prepare() returns 'false', meaning the operation failed to
+  // prepare. However, the scores for this operation is set higher than the
+  // other two to make sure the scheduler starts working on this task before
+  // the other two.
+  class PrepareFailedMaintenanceOp : public TestMaintenanceOp {
+   public:
+    PrepareFailedMaintenanceOp()
+        : TestMaintenanceOp("oppf", MaintenanceOp::HIGH_IO_USAGE) {
+    }
+
+    bool Prepare() override {
+      set_remaining_runs(0);
+      return false;
+    }
+  } oppf;
+  oppf.set_perf_improvement(3);
+  oppf.set_workload_score(3);
+
+  TestMaintenanceOp op0("op0", MaintenanceOp::HIGH_IO_USAGE);
+  op0.set_perf_improvement(2);
+  op0.set_workload_score(2);
+  op0.set_update_stats_time(MonoDelta::FromMicroseconds(10000));
+
+  TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE);
+  op1.set_perf_improvement(1);
+  op1.set_workload_score(1);
+
+  manager_->RegisterOp(&oppf);
+  manager_->RegisterOp(&op0);
+  manager_->RegisterOp(&op1);
+  SCOPED_CLEANUP({
+    manager_->UnregisterOp(&op1);
+    manager_->UnregisterOp(&op0);
+    manager_->UnregisterOp(&oppf);
+  });
+
+  ASSERT_EVENTUALLY([&]() {
+    MaintenanceManagerStatusPB status_pb;
+    manager_->GetMaintenanceManagerStatusDump(&status_pb);
+    // Only 2 operations should successfully complete so far: op0, op1.
+    // Operation oppf should fail during Prepare().
+    ASSERT_EQ(2, status_pb.completed_operations_size());
+  });
+
+  {
+    // A sanity check: no operations should be running.
+    MaintenanceManagerStatusPB status_pb;
+    manager_->GetMaintenanceManagerStatusDump(&status_pb);
+    ASSERT_EQ(0, status_pb.running_operations_size());
+
+    ASSERT_EQ(1, op0.DurationHistogram()->TotalCount());
+    ASSERT_EQ(1, op1.DurationHistogram()->TotalCount());
+    ASSERT_EQ(0, oppf.DurationHistogram()->TotalCount());
+  }
+
+  // Exactly one operation has failed prepare: oppf.
+  ASSERT_EQ(1, manager_->metrics_.op_prepare_failed->value());
+
+  // There should be at least 3 runs of the FindBestOp() method by this time
+  // becase 3 operations have been scheduled: oppf, op0, op1,
+  // but it might be many more since the scheduler is still active.
+  ASSERT_LE(3, manager_->metrics_.op_find_duration->TotalCount());
+
+  // Max time taken by FindBestOp() should be at least 10 msec since that's
+  // the mininum duration of op0's UpdateStats().
+  ASSERT_GE(manager_->metrics_.op_find_duration->MaxValueForTests(), 10000);
+}
+
+// This test scenario verifies that maintenance manager is able to process
+// operations with high enough level of concurrency, even if their UpdateStats()
+// method is computationally heavy.
+TEST_F(MaintenanceManagerTest, ManyOperationsHeavyUpdateStats) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  StopManager();
+  StartManager(4);
+
+  NO_FATALS(WaitForSchedulerThreadRunning("canary"));
+
+  constexpr auto kOpsNum = 1000;
+  vector<unique_ptr<TestMaintenanceOp>> ops;
+  ops.reserve(kOpsNum);
+  for (auto i = 0; i < kOpsNum; ++i) {
+    unique_ptr<TestMaintenanceOp> op(new TestMaintenanceOp(
+        std::to_string(i), MaintenanceOp::HIGH_IO_USAGE));
+    op->set_perf_improvement(i + 1);
+    op->set_workload_score(i + 1);
+    op->set_remaining_runs(1);
+    op->set_sleep_time(MonoDelta::FromMilliseconds(i % 8 + 1));
+    op->set_update_stats_time(MonoDelta::FromMicroseconds(5));
+    ops.emplace_back(std::move(op));
+  }
+
+  // For cleaner timings, disable processing of the registered operations,
+  // and re-enable that after registering all operations.
+  FLAGS_enable_maintenance_manager = false;
+  for (auto& op : ops) {
+    manager_->RegisterOp(op.get());
+  }
+  FLAGS_enable_maintenance_manager = true;
+  MonoTime time_started = MonoTime::Now();
+
+  SCOPED_CLEANUP({
+    for (auto& op : ops) {
+      manager_->UnregisterOp(op.get());
+    }
+  });
+
+  // Given the performance improvement scores and workload scores assigned
+  // to the maintenance operations, the operation scheduled first should
+  // be processed last. Once it's done, no other operations should be running.
+  AssertEventually([&] {
+    ASSERT_EQ(1, ops.front()->DurationHistogram()->TotalCount());
+  }, MonoDelta::FromSeconds(60));
+
+  // A sanity check: verify no operations are left running, but all are still
+  // registered.
+  {
+    MaintenanceManagerStatusPB status_pb;
+    manager_->GetMaintenanceManagerStatusDump(&status_pb);
+    ASSERT_EQ(0, status_pb.running_operations_size());
+    ASSERT_EQ(kOpsNum, status_pb.registered_operations_size());
+  }
+
+  MonoTime time_completed = time_started;
+  for (const auto& op : ops) {
+    const auto op_time_completed = op->completed_at();
+    if (op_time_completed > time_completed) {
+      time_completed = op_time_completed;
+    }
+  }
+  const auto time_spent = time_completed - time_started;
+  LOG(INFO) << Substitute("spent $0 milliseconds to process $1 operations",
+                          time_spent.ToMilliseconds(), kOpsNum);
+  LOG(INFO) << Substitute("number of UpdateStats() calls per operation: $0",
+                          ops.front()->update_stats_count());
 }
 
 } // namespace kudu

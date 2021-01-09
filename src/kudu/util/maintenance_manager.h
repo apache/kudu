@@ -340,6 +340,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   FRIEND_TEST(MaintenanceManagerTest, TestLogRetentionPrioritization);
   FRIEND_TEST(MaintenanceManagerTest, TestPrioritizeLogRetentionUnderMemoryPressure);
   FRIEND_TEST(MaintenanceManagerTest, TestOpFactors);
+  FRIEND_TEST(MaintenanceManagerTest, VerifyMetrics);
 
   typedef std::map<MaintenanceOp*, MaintenanceOpStats,
           MaintenanceOpComparator> OpMapType;
