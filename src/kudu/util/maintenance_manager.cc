@@ -171,8 +171,10 @@ const MaintenanceManager::Options MaintenanceManager::kDefaultOptions = {
   .history_size = 0,
 };
 
-MaintenanceManager::MaintenanceManager(const Options& options,
-                                       string server_uuid)
+MaintenanceManager::MaintenanceManager(
+    const Options& options,
+    string server_uuid,
+    const scoped_refptr<MetricEntity>& metric_entity)
     : server_uuid_(std::move(server_uuid)),
       num_threads_(options.num_threads > 0
                    ? options.num_threads
@@ -186,7 +188,8 @@ MaintenanceManager::MaintenanceManager(const Options& options,
       running_ops_(0),
       completed_ops_count_(0),
       rand_(GetRandomSeed32()),
-      memory_pressure_func_(&process_memory::UnderMemoryPressure) {
+      memory_pressure_func_(&process_memory::UnderMemoryPressure),
+      metrics_(CHECK_NOTNULL(metric_entity)) {
   CHECK_OK(ThreadPoolBuilder("MaintenanceMgr")
                .set_min_threads(num_threads_)
                .set_max_threads(num_threads_)
@@ -361,6 +364,7 @@ void MaintenanceManager::RunSchedulerThread() {
     if (!op->Prepare()) {
       LOG_WITH_PREFIX(INFO) << "Prepare failed for " << op->name()
                             << ". Re-running scheduler.";
+      metrics_.SubmitOpPrepareFailed();
       std::lock_guard<Mutex> guard(running_instances_lock_);
       DecreaseOpCountAndNotifyWaiters(op);
       continue;
@@ -392,11 +396,17 @@ void MaintenanceManager::RunSchedulerThread() {
 // ops that free memory, then ops that free data disk space, then ops that
 // improve performance.
 pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 10000, "finding best maintenance operation");
   TRACE_EVENT0("maintenance", "MaintenanceManager::FindBestOp");
 
   if (!HasFreeThreads()) {
     return {nullptr, "no free threads"};
   }
+
+  const auto start_time = MonoTime::Now();
+  SCOPED_CLEANUP({
+    metrics_.SubmitOpFindDuration(MonoTime::Now() - start_time);
+  });
 
   int64_t low_io_most_logs_retained_bytes = 0;
   MaintenanceOp* low_io_most_logs_retained_bytes_op = nullptr;

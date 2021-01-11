@@ -36,6 +36,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/maintenance_manager_metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/random.h"
@@ -46,10 +47,10 @@ class Histogram;
 class MaintenanceManager;
 class MaintenanceManagerStatusPB;
 class MaintenanceManagerStatusPB_OpInstancePB;
+class MetricEntity;
 class Thread;
 class ThreadPool;
-template<class T>
-class AtomicGauge;
+template <typename T> class AtomicGauge;
 
 class MaintenanceOpStats {
  public:
@@ -303,7 +304,9 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
     uint32_t history_size;
   };
 
-  MaintenanceManager(const Options& options, std::string server_uuid);
+  MaintenanceManager(const Options& options,
+                     std::string server_uuid,
+                     const scoped_refptr<MetricEntity>& metric_entity);
   ~MaintenanceManager();
 
   // Start running the maintenance manager.
@@ -432,6 +435,9 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   //
   // Protected by running_instances_lock_;
   std::unordered_map<int64_t, OpInstance*> running_instances_;
+
+  // MM-specific metrics.
+  MaintenanceManagerMetrics metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
 };

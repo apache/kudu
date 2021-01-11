@@ -75,6 +75,11 @@ static const char kFakeUuid[] = "12345";
 
 class MaintenanceManagerTest : public KuduTest {
  public:
+  MaintenanceManagerTest()
+      : metric_entity_(METRIC_ENTITY_server.Instantiate(
+                       &metric_registry_, "test_entity")) {
+  }
+
   void SetUp() override {
     StartManager(2);
   }
@@ -88,9 +93,9 @@ class MaintenanceManagerTest : public KuduTest {
     options.num_threads = num_threads;
     options.polling_interval_ms = 1;
     options.history_size = kHistorySize;
-    manager_.reset(new MaintenanceManager(options, kFakeUuid));
+    manager_.reset(new MaintenanceManager(options, kFakeUuid, metric_entity_));
     manager_->set_memory_pressure_func_for_tests(
-        [&](double* consumption) {
+        [&](double* /* consumption */) {
           return indicate_memory_pressure_.load();
         });
     ASSERT_OK(manager_->Start());
@@ -101,6 +106,9 @@ class MaintenanceManagerTest : public KuduTest {
   }
 
  protected:
+  MetricRegistry metric_registry_;
+  scoped_refptr<MetricEntity> metric_entity_;
+
   shared_ptr<MaintenanceManager> manager_;
   std::atomic<bool> indicate_memory_pressure_ { false };
 };

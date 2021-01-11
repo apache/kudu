@@ -200,7 +200,9 @@ Status Master::Init() {
   }
 
   maintenance_manager_.reset(new MaintenanceManager(
-      MaintenanceManager::kDefaultOptions, fs_manager_->uuid()));
+      MaintenanceManager::kDefaultOptions,
+      fs_manager_->uuid(),
+      metric_entity()));
 
   // The certificate authority object is initialized upon loading
   // CA private key and certificate from the system table when the server

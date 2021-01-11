@@ -197,6 +197,7 @@ set(UTIL_SRCS
   locks.cc
   logging.cc
   maintenance_manager.cc
+  maintenance_manager_metrics.cc
   malloc.cc
   memcmpable_varint.cc
   memory/arena.cc

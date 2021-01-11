@@ -100,7 +100,7 @@ Status TabletServer::Init() {
   }
 
   maintenance_manager_ = std::make_shared<MaintenanceManager>(
-      MaintenanceManager::kDefaultOptions, fs_manager_->uuid());
+      MaintenanceManager::kDefaultOptions, fs_manager_->uuid(), metric_entity());
 
   heartbeater_.reset(new Heartbeater(std::move(master_addrs), this));
 
