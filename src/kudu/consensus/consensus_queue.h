@@ -571,6 +571,11 @@ class PeerMessageQueue {
   // does not hold. If the queue is in NON_LEADER mode, does nothing.
   void CheckPeersInActiveConfigIfLeaderUnlocked() const;
 
+  // Generates a fake response to count the local peer's (leader's) vote after
+  // appending to the log. The fake response is scheduled to run aynchronously
+  // so that it does not block on queue_lock_
+  void DoLocalPeerAppendFinished(const OpId& id);
+
   // Callback when a REPLICATE message has finished appending to the local log.
   void LocalPeerAppendFinished(const OpId& id,
                                const StatusCallback& callback,
