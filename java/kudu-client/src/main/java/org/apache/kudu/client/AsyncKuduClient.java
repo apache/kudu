@@ -177,10 +177,39 @@ import org.apache.kudu.util.Pair;
  * credentials stored in the same Subject instance as was provided when the
  * client was instantiated.
  * <p>
- * In the context of the Hadoop ecosystem, the {@code UserGroupInformation}
- * class provides utility methods to login from a keytab and then run code as
- * the resulting {@link javax.security.auth.Subject}: <pre>{@code
- *   UserGroupInformation.loginUserFromKeytab("my-app", "/path/to/app.keytab");
+ * The easiest way to authenticate using a keytab is by creating a JAAS config
+ * file such as this: <pre>
+ * ExampleLoginContextName {
+ *   com.sun.security.auth.module.Krb5LoginModule required
+ *   useKeyTab = true
+ *   keyTab = "/path/to/app.keytab"
+ *   principal = "appuser";
+ * };
+ * </pre>
+ * This can then be passed to the application by adding {@code
+ * -Djava.security.auth.login.config=/path/to/jaas.conf} to the command when
+ * starting it.
+ * This authentication method needs to be set in the code as well by wrapping
+ * the code interacting with Kudu with a {@link
+ * javax.security.auth.Subject#doAs} after creating a login context using the
+ * JAAS config, logging in, and passing the {@link javax.security.auth.Subject}
+ * to the <i>doAs</i>:
+ * <pre>
+ * LoginContext login = new LoginContext("ExampleLoginContextName");
+ * login.login();
+ * KuduClient c = Subject.doAs(login.getSubject(),
+ *                             (PrivilegedAction&lt;KuduClient&gt;) () -> {
+ *   return myClientBuilder.build();
+ * });
+ * </pre>
+ * In this case it's necessary to periodically re-login as needed and run doAs
+ * using the new subject.
+ * <p>
+ * In the context of the Hadoop ecosystem, the {@code
+ * org.apache.hadoop.security.UserGroupInformation} class provides utility
+ * methods to login from a keytab and then run code as the resulting {@link
+ * javax.security.auth.Subject}: <pre>
+ *   UserGroupInformation.loginUserFromKeytab("appuser", "/path/to/app.keytab");
  *   KuduClient c = UserGroupInformation.getLoginUser().doAs(
  *     new PrivilegedExceptionAction<KuduClient>() {
  *       &#64;Override
@@ -189,8 +218,9 @@ import org.apache.kudu.util.Pair;
  *       }
  *     }
  *   );
- * }</pre> The {@code UserGroupInformation} class will also automatically
- * start a thread to periodically re-login from the keytab.
+ * </pre> The {@code UserGroupInformation} class will also automatically
+ * start a thread to periodically re-login from the keytab. It's not necessary
+ * to pass a JAAS config.
  *
  * <h3>Debugging Kudu's usage of Kerberos credentials</h3>
  *
