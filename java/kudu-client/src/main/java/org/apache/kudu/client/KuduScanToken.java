@@ -679,6 +679,13 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
               for (LocatedTablet.Replica replica : remoteTablet.getReplicas()) {
                 Integer serverIndex = serverIndexMap.get(
                     new HostAndPort(replica.getRpcHost(), replica.getRpcPort()));
+                // If the server index is not found it means that RemoteTablet.removeTabletClient
+                // was called and removed the server likely as a result of a tablet not found error.
+                // In that case we should remove the replica as it can't be contacted.
+                if (serverIndex == null) {
+                  continue;
+                }
+
                 Client.TabletMetadataPB.ReplicaMetadataPB.Builder tabletMetadataBuilder =
                     Client.TabletMetadataPB.ReplicaMetadataPB.newBuilder()
                         .setRole(replica.getRoleAsEnum())

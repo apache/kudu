@@ -693,4 +693,44 @@ public class TestScanToken {
     assertEquals(1, resultKeys.size());
     assertEquals(PREDICATE_VAL, Iterables.getOnlyElement(resultKeys).intValue());
   }
+
+  /**
+   * Regression test for KUDU-3205.
+   */
+  @Test
+  public void testBuildTokensWithDownTabletServer() throws Exception {
+    Schema schema = getBasicSchema();
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.setRangePartitionColumns(ImmutableList.of());
+    createOptions.setNumReplicas(3);
+    KuduTable table = client.createTable(testTableName, schema, createOptions);
+
+    // Insert a row.
+    KuduSession session = client.newSession();
+    Insert insert = createBasicSchemaInsert(table, 1);
+    session.apply(insert);
+    session.close();
+
+    // Remove a tablet server from the remote tablet by calling `removeTabletClient`.
+    // This is done in normal applications via AsyncKuduClient.invalidateTabletCache
+    // when a tablet not found error is handled.
+    TableLocationsCache.Entry entry =
+        asyncClient.getTableLocationEntry(table.getTableId(), insert.partitionKey());
+    RemoteTablet remoteTablet = entry.getTablet();
+    List<ServerInfo> tabletServers = remoteTablet.getTabletServersCopy();
+    remoteTablet.removeTabletClient(tabletServers.get(0).getUuid());
+
+    // Ensure we can build and use the token without an error.
+    KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+    tokenBuilder.includeTableMetadata(true);
+    tokenBuilder.includeTabletMetadata(true);
+    List<KuduScanToken> tokens = tokenBuilder.build();
+    assertEquals(1, tokens.size());
+
+    // Use a new client to simulate hydrating in a new process.
+    KuduClient newClient =
+        new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString()).build();
+    KuduScanner scanner = tokens.get(0).intoScanner(newClient);
+    assertEquals(1, countRowsInScan(scanner));
+  }
 }

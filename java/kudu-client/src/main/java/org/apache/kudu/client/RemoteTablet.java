@@ -130,6 +130,8 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
       if (leaderUuid != null && leaderUuid.equals(uuid)) {
         leaderUuid = null;
       }
+      // TODO(ghenke): Should this also remove the related replica?
+      //  As it stands there can be a replica with a missing tablet server.
       if (tabletServers.remove(uuid) != null) {
         return true;
       }
@@ -259,6 +261,10 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
 
   /**
    * Get replicas of this tablet. The returned list may not be mutated.
+   *
+   * This list of replicas may include replicas for servers that have been
+   * removed via `removeTabletClient`, therefore won't be returned via
+   * `getTabletServersCopy`.
    *
    * @return the replicas of the tablet
    */

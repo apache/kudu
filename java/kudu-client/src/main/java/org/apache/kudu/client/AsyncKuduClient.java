@@ -2235,6 +2235,8 @@ public class AsyncKuduClient implements AutoCloseable {
     final String uuid = info.getUuid();
     LOG.info("Invalidating location {} for tablet {}: {}",
              info, tablet.getTabletId(), errorMessage);
+    // TODO(ghenke): Should this also remove the related replica?
+    //  As it stands there can be a replica with a missing tablet server.
     tablet.removeTabletClient(uuid);
   }
 
