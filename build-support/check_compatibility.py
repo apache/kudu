@@ -34,8 +34,8 @@
 #
 # NOTE: You can only compare against releases which support a Gradle build (1.5+)
 
+import argparse
 import logging
-import optparse
 import os
 import re
 import shutil
@@ -113,7 +113,7 @@ def download_japicmp(force):
     if not force:
       return
     logging.info("Forcing re-download.")
-    shutil.rmtree(get_japicmp_path())
+    os.remove(get_japicmp_path())
   subprocess.check_call(["curl", "--retry", "3", "-L", "-o",
                          get_japicmp_path(), JAPICMP_URL], cwd=get_repo_dir())
 
@@ -140,7 +140,7 @@ def get_artifact_name(jar_path):
   return ARTIFACT_NAME_PATTERN.search(jar_path).group(1)
 
 
-def run_japicmp(src, dst):
+def run_japicmp(src, dst, opts):
   """ Run the compliance checker to compare 'src' and 'dst'. """
   src_jars = find_client_jars(src)
   dst_jars = find_client_jars(dst)
@@ -175,38 +175,53 @@ def run_japicmp(src, dst):
       if src_name == dst_name:
           reports.append((src_name, src_jar, dst_jar))
 
-  # TODO(ghenke): Add support for --error-on-binary-incompatibility and --error-on-source-incompatibility.
   # CLI tool documentation: https://siom79.github.io/japicmp/CliTool.html
   for (name, src_jar, dst_jar) in reports:
     out_path = os.path.join(get_scratch_dir(), name + "-report.html")
-    subprocess.check_call(["java", "-jar", get_japicmp_path(),
-                           "--old", src_jar,
-                           "--new", dst_jar,
-                           "--include", "org.apache.kudu.*",
-                           "--exclude", ";".join(excludes),
-                           "--html-file", out_path,
-                           "--only-modified",
-                           "--ignore-missing-classes",
-                           "--report-only-filename"
-                           ])
 
+    # Add the extra flags.
+    cmd = ["java", "-jar", get_japicmp_path(),
+            "--old", src_jar,
+            "--new", dst_jar,
+            "--include", "org.apache.kudu.*",
+            "--exclude", ";".join(excludes),
+            "--html-file", out_path,
+            "--only-modified",
+            "--ignore-missing-classes",
+            "--report-only-filename"]
+    if (opts.only_incompatible):
+      cmd.append("--only-incompatible")
+    if (opts.error_on_binary_incompatibility):
+      cmd.append("--error-on-binary-incompatibility")
+    if (opts.error_on_source_incompatibility):
+      cmd.append("--error-on-source-incompatibility")
 
-def main(argv):
-  parser = optparse.OptionParser(usage="usage: %prog SRC..[DST]")
-  parser.add_option("-f", "--force-download", dest="force_download_deps",
-                    help=("Download dependencies (i.e. japicmp) even if they are " +
-                          "already present"))
-  opts, args = parser.parse_args()
+    subprocess.check_call(cmd)
 
-  if len(args) != 1:
-    parser.error("no src/dst revision specified")
-    sys.exit(1)
+def parse_args():
+  """ Parse command-line arguments """
+  parser = argparse.ArgumentParser(description='Check and report on Kudu API compatibility',
+                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser.add_argument('source',
+                      help="The source revision to compare against. Likely the previous release tag.")
+  parser.add_argument('destination',
+                      help="The destination revision to compare against the source.")
+  parser.add_argument('--only-incompatible', action='store_true',
+                      help='Outputs only classes/methods that are binary incompatible. '
+                           'If not given, all classes and methods are printed.')
+  parser.add_argument('--error-on-binary-incompatibility', action='store_true',
+                      help='Exit with an error if a binary incompatibility is detected.')
+  parser.add_argument('--error-on-source-incompatibility', action='store_true',
+                      help='Exit with an error if a source incompatibility is detected.')
+  parser.add_argument("--force-download-deps", action='store_true',
+                      help="Download dependencies (i.e. japicmp) even if they are already present")
+  return parser.parse_args()
 
-  src_rev, dst_rev = args[0].split("..", 1)
-  if dst_rev == "":
-    dst_rev = "HEAD"
-  src_rev = get_git_hash(src_rev)
-  dst_rev = get_git_hash(dst_rev)
+def main():
+  opts = parse_args()
+
+  src_rev = get_git_hash(opts.source)
+  dst_rev = get_git_hash(opts.destination)
 
   logging.info("Source revision: %s", src_rev)
   logging.info("Destination revision: %s", dst_rev)
@@ -228,9 +243,9 @@ def main(argv):
   build_tree(src_dir)
   build_tree(dst_dir)
 
-  run_japicmp(src_dir, dst_dir)
+  run_japicmp(src_dir, dst_dir, opts)
 
 
 if __name__ == "__main__":
   init_logging()
-  main(sys.argv)
+  main()
