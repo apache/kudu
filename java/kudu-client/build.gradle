@@ -15,11 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-apply from: "$rootDir/gradle/protobuf.gradle"
 apply from: "$rootDir/gradle/shadow.gradle"
 apply from: "$rootDir/gradle/benchmarks.gradle"
 
 dependencies {
+  compile project(path: ":kudu-proto")
   // Not shaded in the client JAR because it's part of the public API.
   compileUnshaded(libs.async) {
     // async uses versions ranges for slf4j making builds non-deterministic.
@@ -32,7 +32,6 @@ dependencies {
   compile libs.micrometerCore
   compile libs.murmur
   compile libs.netty
-  compile libs.protobufJava
 
   optional libs.jsr305
   optional libs.yetusAnnotations
@@ -43,15 +42,4 @@ dependencies {
   testCompile libs.log4jCore
   testCompile libs.log4jSlf4jImpl
   testCompile libs.mockitoCore
-}
-
-// Add protobuf files to the proto source set.
-sourceSets {
-  main {
-    proto {
-      srcDir "${project.rootDir}/../src"
-      // Excluded any test proto files
-      exclude "**/*test*.proto"
-    }
-  }
 }

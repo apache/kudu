@@ -15,20 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// This file contains the configuration of the project hierarchy.
-// Mainly we just define what subprojects are in the build.
+apply from: "$rootDir/gradle/protobuf.gradle"
 
-rootProject.name = "kudu-parent"
-include "kudu-backup"
-include "kudu-backup-common"
-include "kudu-backup-tools"
-include "kudu-client"
-include "kudu-client-tools"
-include "kudu-hive"
-include "kudu-jepsen"
-include "kudu-mapreduce"
-include "kudu-proto"
-include "kudu-spark"
-include "kudu-spark-tools"
-include "kudu-subprocess"
-include "kudu-test-utils"
+dependencies {
+  compile libs.protobufJava
+}
+
+// Add protobuf files to the proto source set.
+sourceSets {
+  main {
+    proto {
+      srcDir "${project.rootDir}/../src"
+      // Excluded any test proto files
+      exclude "**/*test*.proto"
+    }
+  }
+}
+
+// kudu-proto has no public Javadoc.
+javadoc {
+  enabled = false
+}
+
+// Skip publishing kudu-proto artifact because it will always be shaded into kudu-client.
+uploadArchives.enabled = false
+install.enabled = false

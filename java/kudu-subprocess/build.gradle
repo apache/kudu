@@ -15,13 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-apply from: "$rootDir/gradle/protobuf.gradle"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 // Explicitly allow slf4j to be included in this jar.
 shadowIncludeSlf4j = true
 
 dependencies {
+  compile project(path: ":kudu-proto")
   compile(libs.hadoopCommon) {
     // hadoopCommon and rangerPlugin use different versions of jersey.
     exclude group: "com.sun.jersey"
@@ -29,7 +29,6 @@ dependencies {
     exclude group: "log4j"
     exclude group: "org.slf4j"
   }
-  compile libs.protobufJava
   compile libs.protobufJavaUtil
 
   compile(libs.rangerPlugin) {
@@ -52,17 +51,6 @@ dependencies {
   testCompile project(path: ":kudu-test-utils", configuration: "shadow")
   testCompile libs.junit
   testCompile libs.mockitoCore
-}
-
-// Add protobuf files to the proto source set.
-sourceSets {
-  main {
-    proto {
-      srcDir "${project.rootDir}/../src"
-      // Excluded any test proto files
-      exclude "**/*test*.proto"
-    }
-  }
 }
 
 // kudu-subprocess has no public Javadoc.

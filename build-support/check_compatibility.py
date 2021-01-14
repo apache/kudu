@@ -132,6 +132,7 @@ def find_client_jars(path):
       "kudu-backup" not in j and
       "kudu-hive" not in j and
       "kudu-jepsen" not in j and
+      "kudu-proto" not in j and
       "kudu-subprocess" not in j)]
 
 
