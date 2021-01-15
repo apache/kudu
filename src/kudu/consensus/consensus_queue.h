@@ -596,25 +596,17 @@ class PeerMessageQueue {
   // given a pointer to it, the voter distribution and the watermarks
   // classified by region.
   // This function returns the old watermark.
-  int64_t ComputeNewWatermarkStaticMode(
-    int64_t* watermark,
+  int64_t DoComputeNewWatermarkStaticMode(
     const std::map<std::string, int>& voter_distribution,
-    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region);
+    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region,
+    int64_t* watermark);
+  int64_t ComputeNewWatermarkStaticMode(int64_t* watermark);
 
   // Function to compute the new `watermark` in the single region dynamic
   // mode given a pointer to it, the voter distribution and the watermarks
   // classified by region.
   // This function returns the old watermark.
-  int64_t ComputeNewWatermarkDynamicMode(
-    int64_t* watermark,
-    const std::map<std::string, int>& voter_distribution,
-    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region);
-
-  // Function to compute the new `watermark` given a pointer to it and the
-  // watermarks classified by region. This function returns the old watermark.
-  int64_t ComputeNewWatermark(
-    int64_t* watermark,
-    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region);
+  int64_t ComputeNewWatermarkDynamicMode(int64_t* watermark);
 
   // Function to compute the commit index in FlexiRaft. Same as
   // `AdvanceQueueWatermark` except that its only used for commit index
@@ -623,8 +615,7 @@ class PeerMessageQueue {
   // RaftConsensus instance while this function gets called.
   void AdvanceMajorityReplicatedWatermarkFlexiRaft(
       int64_t* watermark, const OpId& replicated_before,
-      const OpId& replicated_after,
-      ReplicaTypes replica_types, const TrackedPeer* who_caused);
+      const OpId& replicated_after, const TrackedPeer* who_caused);
 
   // Fetches the data commit quorum as a mapping from region to count of
   // votes required.
