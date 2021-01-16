@@ -471,7 +471,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
 
   if (IsSingleVoterConfig() && FLAGS_enable_leader_failure_detection) {
     LOG_WITH_PREFIX(INFO) << "Only one voter in the Raft config. Triggering election immediately";
-    RETURN_NOT_OK(StartElection(NORMAL_ELECTION, INITIAL_SINGLE_NODE_ELECTION));
+    RETURN_NOT_OK(StartElection(NORMAL_ELECTION, { INITIAL_SINGLE_NODE_ELECTION }));
   }
 
   // Report become visible to the Master.
@@ -504,24 +504,24 @@ Status RaftConsensus::EmulateElection() {
 }
 
 namespace {
-const char* ModeString(RaftConsensus::ElectionMode mode) {
+const char* ModeString(ElectionMode mode) {
   switch (mode) {
-    case RaftConsensus::NORMAL_ELECTION:
+    case ElectionMode::NORMAL_ELECTION:
       return "leader election";
-    case RaftConsensus::PRE_ELECTION:
+    case ElectionMode::PRE_ELECTION:
       return "pre-election";
-    case RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE:
+    case ElectionMode::ELECT_EVEN_IF_LEADER_IS_ALIVE:
       return "forced leader election";
   }
   __builtin_unreachable(); // silence gcc warnings
 }
-string ReasonString(RaftConsensus::ElectionReason reason, StringPiece leader_uuid) {
+string ReasonString(ElectionReason reason, StringPiece leader_uuid) {
   switch (reason) {
-    case RaftConsensus::INITIAL_SINGLE_NODE_ELECTION:
+    case ElectionReason::INITIAL_SINGLE_NODE_ELECTION:
       return "initial election of a single-replica configuration";
-    case RaftConsensus::EXTERNAL_REQUEST:
+    case ElectionReason::EXTERNAL_REQUEST:
       return "received explicit request";
-    case RaftConsensus::ELECTION_TIMEOUT_EXPIRED:
+    case ElectionReason::ELECTION_TIMEOUT_EXPIRED:
       if (leader_uuid.empty()) {
         return "no leader contacted us within the election timeout";
       }
@@ -531,7 +531,7 @@ string ReasonString(RaftConsensus::ElectionReason reason, StringPiece leader_uui
 }
 } // anonymous namespace
 
-Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
+Status RaftConsensus::StartElection(ElectionMode mode, ElectionContext context) {
   const char* const mode_str = ModeString(mode);
 
   TRACE_EVENT2("consensus", "RaftConsensus::StartElection",
@@ -570,7 +570,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
 
     LOG_WITH_PREFIX_UNLOCKED(INFO)
         << "Starting " << mode_str
-        << " (" << ReasonString(reason, GetLeaderUuidUnlocked()) << ")";
+        << " (" << ReasonString(context.reason, GetLeaderUuidUnlocked()) << ")";
 
     // Snooze to avoid the election timer firing again as much as possible.
     // We do not disable the election timer while running an election, so that
@@ -658,7 +658,8 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
         std::move(request), std::move(counter), timeout,
         std::bind(&RaftConsensus::ElectionCallback,
                   shared_from_this(),
-                  reason, std::placeholders::_1)));
+                  std::move(context),
+                  std::placeholders::_1)));
   }
 
   // Start the election outside the lock.
@@ -784,7 +785,7 @@ void RaftConsensus::ReportFailureDetectedTask() {
                                              std::try_to_lock);
   if (try_lock.owns_lock()) {
     WARN_NOT_OK(StartElection(FLAGS_raft_enable_pre_election ?
-        PRE_ELECTION : NORMAL_ELECTION, ELECTION_TIMEOUT_EXPIRED),
+        PRE_ELECTION : NORMAL_ELECTION, { ELECTION_TIMEOUT_EXPIRED }),
                 LogPrefixThreadSafe() + "failed to trigger leader election");
   }
 }
@@ -2931,13 +2932,13 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
   }
 }
 
-void RaftConsensus::ElectionCallback(ElectionReason reason, const ElectionResult& result) {
+void RaftConsensus::ElectionCallback(ElectionContext context, const ElectionResult& result) {
   // The election callback runs on a reactor thread, so we need to defer to our
   // threadpool. If the threadpool is already shut down for some reason, it's OK --
   // we're OK with the callback never running.
   WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::NestedElectionDecisionCallback,
                                                      shared_from_this(),
-                                                     reason,
+                                                     std::move(context),
                                                      result)),
               LogPrefixThreadSafe() + "Unable to run election callback");
 }
@@ -3041,7 +3042,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   if (was_pre_election) {
     // We just won the pre-election. So, we need to call a real election.
     lock.unlock();
-    WARN_NOT_OK(StartElection(NORMAL_ELECTION, reason),
+    WARN_NOT_OK(StartElection(NORMAL_ELECTION, { reason }),
                 "Couldn't start leader election after successful pre-election");
   } else {
     // We won a real election. Convert role to LEADER.
@@ -3056,10 +3057,10 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
 }
 
 void RaftConsensus::NestedElectionDecisionCallback(
-    ElectionReason reason, const ElectionResult& result) {
-  DoElectionCallback(reason, result);
+    ElectionContext context, const ElectionResult& result) {
+  DoElectionCallback(context.reason, result);
   if (!result.vote_request.is_pre_election() && edcb_) {
-    edcb_(result);
+    edcb_(result, std::move(context));
   }
 }
 

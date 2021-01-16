@@ -428,9 +428,18 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
 
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(tablet_manager_, resp, context, &consensus)) return;
+
+  std::string original_uuid = req->has_original_uuid() ? req->original_uuid() : "";
+  std::chrono::system_clock::time_point requestStart =
+    req->has_original_start_time() ?
+      std::chrono::system_clock::time_point(
+          std::chrono::nanoseconds(req->original_start_time())) :
+      std::chrono::system_clock::now();
   Status s = consensus->StartElection(
-      consensus::RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
-      consensus::RaftConsensus::EXTERNAL_REQUEST);
+      consensus::ElectionMode::ELECT_EVEN_IF_LEADER_IS_ALIVE,
+      { consensus::ElectionReason::EXTERNAL_REQUEST,
+        std::move(requestStart),
+        std::move(original_uuid)});
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          ServerErrorPB::UNKNOWN_ERROR,

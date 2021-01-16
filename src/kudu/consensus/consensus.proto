@@ -542,6 +542,14 @@ message RunLeaderElectionRequestPB {
 
   // the id of the tablet
   required bytes tablet_id = 1;
+
+  // Time when the original server was promoted away from. We can use this to
+  // measure the total time of a chain of promotions
+  optional fixed64 original_start_time = 3;
+
+  // UUID of original server that was promoted away from, used when current
+  // server cannot be leader
+  optional bytes original_uuid = 4;
 }
 
 message RunLeaderElectionResponsePB {

@@ -119,46 +119,75 @@ struct TabletVotingState {
 typedef int64_t ConsensusTerm;
 typedef StdStatusCallback ConsensusReplicatedCallback;
 
+// Modes for StartElection().
+enum ElectionMode {
+  // A normal leader election. Peers will not vote for this node
+  // if they believe that a leader is alive.
+  NORMAL_ELECTION,
+
+  // A "pre-election". Peers will vote as they would for a normal
+  // election, except that the votes will not be "binding". In other
+  // words, they will not durably record their vote.
+  PRE_ELECTION,
+
+  // In this mode, peers will vote for this candidate even if they
+  // think a leader is alive. This can be used for a faster hand-off
+  // between a leader and one of its replicas.
+  ELECT_EVEN_IF_LEADER_IS_ALIVE
+};
+
+// Reasons for StartElection().
+enum ElectionReason {
+  // The election is being called because the Raft configuration has only
+  // a single node and has just started up.
+  INITIAL_SINGLE_NODE_ELECTION,
+
+  // The election is being called because the timeout expired. In other
+  // words, the previous leader probably failed (or there was no leader
+  // in this term)
+  ELECTION_TIMEOUT_EXPIRED,
+
+  // The election is being started because of an explicit external request.
+  EXTERNAL_REQUEST
+};
+
+struct ElectionContext {
+  typedef const std::chrono::system_clock::time_point Timepoint;
+
+  ElectionContext(ElectionReason reason) : reason(reason) {}
+
+  ElectionContext(ElectionReason reason,
+      Timepoint chained_start_time, std::string source_uuid) :
+    reason(reason),
+    is_chained_election(true),
+    chained_start_time(std::move(chained_start_time)),
+    chained_source_uuid(std::move(source_uuid)) {}
+
+  const ElectionReason reason;
+
+  // The time the current election started at
+  const Timepoint start_time = std::chrono::system_clock::now();
+
+  // If this election is preceeded by other elections considered as a single
+  // event. E.g. Multiple chained promotions
+  const bool is_chained_election = false;
+
+  // The time the first election in the  started
+  const Timepoint chained_start_time;
+
+  // The UUID of the leader at the start of the chain
+  const std::string chained_source_uuid;
+};
+
 class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                       public enable_make_shared<RaftConsensus>,
                       public PeerMessageQueueObserver {
  public:
-  typedef std::function<void(const ElectionResult&)> ElectionDecisionCallback;
+  typedef std::function<void(const ElectionResult&, const ElectionContext&)>
+    ElectionDecisionCallback;
   typedef std::function<void(int64_t)> TermAdvancementCallback;
   typedef std::function<void(const OpId opId)> NoOpReceivedCallback;
   typedef std::function<void(int64_t)> LeaderDetectedCallback;
-
-  // Modes for StartElection().
-  enum ElectionMode {
-    // A normal leader election. Peers will not vote for this node
-    // if they believe that a leader is alive.
-    NORMAL_ELECTION,
-
-    // A "pre-election". Peers will vote as they would for a normal
-    // election, except that the votes will not be "binding". In other
-    // words, they will not durably record their vote.
-    PRE_ELECTION,
-
-    // In this mode, peers will vote for this candidate even if they
-    // think a leader is alive. This can be used for a faster hand-off
-    // between a leader and one of its replicas.
-    ELECT_EVEN_IF_LEADER_IS_ALIVE
-  };
-
-  // Reasons for StartElection().
-  enum ElectionReason {
-    // The election is being called because the Raft configuration has only
-    // a single node and has just started up.
-    INITIAL_SINGLE_NODE_ELECTION,
-
-    // The election is being called because the timeout expired. In other
-    // words, the previous leader probably failed (or there was no leader
-    // in this term)
-    ELECTION_TIMEOUT_EXPIRED,
-
-    // The election is being started because of an explicit external request.
-    EXTERNAL_REQUEST
-  };
 
   ~RaftConsensus();
 
@@ -213,7 +242,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status EmulateElection();
 
   // Triggers a leader election.
-  Status StartElection(ElectionMode mode, ElectionReason reason);
+  Status StartElection(ElectionMode mode, ElectionContext context);
 
   // Wait until the node has LEADER role.
   // Returns Status::TimedOut if the role is not LEADER within 'timeout'.
@@ -783,10 +812,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Callback for leader election driver. ElectionCallback is run on the
   // reactor thread, so it simply defers its work to DoElectionCallback.
-  void ElectionCallback(ElectionReason reason, const ElectionResult& result);
+  void ElectionCallback(ElectionContext context, const ElectionResult& result);
   void DoElectionCallback(ElectionReason reason, const ElectionResult& result);
   void NestedElectionDecisionCallback(
-      ElectionReason reason, const ElectionResult& result);
+      ElectionContext context, const ElectionResult& result);
 
   // Enables or disables the failure detector based on the role of the local
   // peer in the active config. If the local peer a VOTER, but not the leader,

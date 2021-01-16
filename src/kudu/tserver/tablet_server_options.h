@@ -32,6 +32,7 @@ namespace consensus {
 class ConsensusRoundHandler;
 class OpId;
 struct ElectionResult;
+struct ElectionContext;
 }
 
 namespace KC = kudu::consensus;
@@ -60,7 +61,8 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   kudu::consensus::ConsensusRoundHandler *round_handler = nullptr;
 
   // Election Decision Callback
-  std::function<void(const consensus::ElectionResult&)> edcb;
+  std::function<void(const consensus::ElectionResult&,
+      const consensus::ElectionContext&)> edcb;
 
   // Term Advancement Callback
   std::function<void(int64_t)> tacb;
