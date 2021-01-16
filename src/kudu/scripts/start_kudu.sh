@@ -28,16 +28,21 @@ function usage() {
 cat << EOF
 Usage:
 start_kudu.sh [flags]
--h, --help         Print help
--m, --num-masters  Number of Kudu Masters to start (default: 1)
--t, --num-tservers Number of Kudu Tablet Servers to start (default: 3)
---rpc-master       RPC port of first Kudu Master; HTTP port is the next number.
-                   Subsequent Masters will have following numbers
---rpc-tserver      RPC port of first Kudu Tablet Server; HTTP port is the next
-                   number. Subsequent Tablet Servers will have following numbers
---time_source      Time source for Kudu Masters and Tablet Servers
-                   (default: system_unsync)
--b, --builddir     Path to the Kudu build directory
+-h, --help          Print help
+-m, --num-masters   Number of Kudu Masters to start (default: 1)
+-t, --num-tservers  Number of Kudu Tablet Servers to start (default: 3)
+--rpc-master        RPC port of first Kudu Master; HTTP port is the next number.
+                    Subsequent Masters will have following numbers
+--rpc-tserver       RPC port of first Kudu Tablet Server; HTTP port is the next
+                    number. Subsequent Tablet Servers will have following numbers
+--time_source       Time source for Kudu Masters and Tablet Servers
+                    (default: system_unsync)
+-b, --builddir      Path to the Kudu build directory
+-c  --clusterdir    Path to place the Kudu masters and tablet servers.
+-T, --tserver-flags Extra flags to be used on the tablet servers. Multiple
+                    flags can be specified if wrapped in ""s.
+-M, --master-flags  Extra flags to be used on the master servers. Multiple
+                    flags can be specified if wrapped in ""s.
 EOF
 }
 
@@ -47,6 +52,9 @@ MASTER_RPC_PORT_BASE=8764
 TSERVER_RPC_PORT_BASE=9870
 TIME_SOURCE=system_unsync
 BUILDDIR="$PWD"
+CLUSTER_DIR="$PWD"
+EXTRA_TSERVER_FLAGS=""
+EXTRA_MASTER_FLAGS=""
 echo $(readlink -f $(dirname $0))
 while (( "$#" )); do
   case "$1" in
@@ -76,6 +84,18 @@ while (( "$#" )); do
       ;;
     -b|--builddir)
       BUILDDIR="$2"
+      shift 2
+      ;;
+    -c|--clusterdir)
+      CLUSTER_DIR=$2
+      shift 2
+      ;;
+    -T|--tserver-flags)
+      EXTRA_TSERVER_FLAGS=$2
+      shift 2
+      ;;
+    -M|--master-flags)
+      EXTRA_MASTER_FLAGS=$2
       shift 2
       ;;
     --) # end argument parsing
@@ -112,7 +132,7 @@ IP=127.0.0.1
 # 1) Create "data", "wal" and "log" directories for a server before start
 
 function create_dirs_and_set_vars() {
-  root_dir="$BUILDDIR/$1"
+  root_dir="$CLUSTER_DIR/$1"
   dir_data="$root_dir/data"
   dir_wal="$root_dir/wal"
   dir_log="$root_dir/log"
@@ -150,6 +170,7 @@ function start_master() {
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --webserver_interface=$IP"
   ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
+  ARGS="$ARGS $EXTRA_MASTER_FLAGS"
   $ARGS &
   pids+=($!)
 }
@@ -170,6 +191,7 @@ function start_tserver() {
   ARGS="$ARGS --webserver_interface=$IP"
   ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
   ARGS="$ARGS --tserver_master_addrs=$4"
+  ARGS="$ARGS $EXTRA_TSERVER_FLAGS"
   $ARGS &
   pids+=($!)
 }
