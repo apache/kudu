@@ -352,11 +352,7 @@ void PeerMessageQueue::CheckPeersInActiveConfigIfLeaderUnlocked() const {
   }
 }
 
-void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
-                                               const StatusCallback& callback,
-                                               const Status& status) {
-  CHECK_OK(status);
-
+void PeerMessageQueue::DoLocalPeerAppendFinished(const OpId& id) {
   // Fake an RPC response from the local peer.
   // TODO: we should probably refactor the ResponseFromPeer function
   // so that we don't need to construct this fake response, but this
@@ -370,6 +366,20 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
     fake_response.mutable_status()->set_last_committed_idx(queue_state_.committed_index);
   }
   ResponseFromPeer(local_peer_pb_.permanent_uuid(), fake_response);
+}
+
+void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
+                                               const StatusCallback& callback,
+                                               const Status& status) {
+  CHECK_OK(status);
+
+  // Schedule the function to gather local response and count local vote to run
+  // asynchronously (so as not to block the thread writing to local log from
+  // blocking on queue_lock_)
+  OpId local_id = id;
+  CHECK_OK(raft_pool_observers_token_->SubmitClosure(
+        Bind(&PeerMessageQueue::DoLocalPeerAppendFinished,
+          Unretained(this), local_id)));
 
   callback.Run(status);
 }
