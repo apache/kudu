@@ -437,21 +437,270 @@ public class TestKuduTransaction {
 
   /**
    * Test KuduTransaction to be used in auto-closable manner.
-   *
-   * TOOD(aserbin): update this once transaction handles send keepalive messages
    */
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled=true",
   })
   public void testAutoclosableUsage() throws Exception {
+    byte[] buf = null;
+
     try (KuduTransaction txn = client.newTransaction()) {
-      byte[] buf = txn.serialize();
+      buf = txn.serialize();
       assertNotNull(buf);
       txn.commit(false);
       txn.isCommitComplete();
     } catch (Exception e) {
       fail("unexpected exception: " + e.toString());
+    }
+
+    try (KuduTransaction txn = KuduTransaction.deserialize(buf, asyncClient)) {
+      buf = txn.serialize();
+      assertNotNull(buf);
+      txn.rollback();
+    } catch (Exception e) {
+      fail("unexpected exception: " + e.toString());
+    }
+
+    // Do this once more time, just in case to verify that handles created by
+    // the serialize/deserialize sequence behave as expected.
+    try (KuduTransaction txn = KuduTransaction.deserialize(buf, asyncClient)) {
+      buf = txn.serialize();
+      assertNotNull(buf);
+      txn.rollback();
+    } catch (Exception e) {
+      fail("unexpected exception: " + e.toString());
+    }
+
+    {
+      KuduTransaction txn = client.newTransaction();
+      // Explicitly call KuduTransaction.close() more than once time to make
+      // sure it's possible to do so and the method's behavior is idempotent.
+      txn.close();
+      txn.close();
+    }
+  }
+
+  /**
+   * Verify that a transaction token created by the KuduClient.serialize()
+   * method has keepalive enabled or disabled as specified by the
+   * SerializationOptions.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      "--txn_manager_enabled=true",
+  })
+  public void testSerializationOptions() throws Exception {
+    final KuduTransaction txn = client.newTransaction();
+
+    // Check the keepalive settings when serializing/deserializing with default
+    // settings for SerializationOptions.
+    {
+      byte[] buf = txn.serialize();
+      TxnTokenPB pb = TxnTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+      assertTrue(pb.hasKeepaliveMillis());
+      assertTrue(pb.getKeepaliveMillis() > 0);
+      assertTrue(pb.hasEnableKeepalive());
+      assertFalse(pb.getEnableKeepalive());
+    }
+
+    // Same as above, but supply an instance of SerializationOptions with
+    // default settings created by the constructor.
+    {
+      KuduTransaction.SerializationOptions options =
+          new KuduTransaction.SerializationOptions();
+      byte[] buf = txn.serialize(options);
+      TxnTokenPB pb = TxnTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+      assertTrue(pb.hasKeepaliveMillis());
+      assertTrue(pb.getKeepaliveMillis() > 0);
+      assertTrue(pb.hasEnableKeepalive());
+      assertFalse(pb.getEnableKeepalive());
+    }
+
+    // Same as above, but explicitly disable keepalive for an instance of
+    // SerializationOptions.
+    {
+      KuduTransaction.SerializationOptions options =
+          new KuduTransaction.SerializationOptions();
+      options.setEnableKeepalive(false);
+      byte[] buf = txn.serialize(options);
+      TxnTokenPB pb = TxnTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+      assertTrue(pb.hasKeepaliveMillis());
+      assertTrue(pb.getKeepaliveMillis() > 0);
+      assertTrue(pb.hasEnableKeepalive());
+      assertFalse(pb.getEnableKeepalive());
+    }
+
+    // Explicitly enable keepalive with SerializationOptions.
+    {
+      KuduTransaction.SerializationOptions options =
+          new KuduTransaction.SerializationOptions();
+      options.setEnableKeepalive(true);
+      byte[] buf = txn.serialize(options);
+      TxnTokenPB pb = TxnTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+      assertTrue(pb.hasKeepaliveMillis());
+      assertTrue(pb.getKeepaliveMillis() > 0);
+      assertTrue(pb.hasEnableKeepalive());
+      assertTrue(pb.getEnableKeepalive());
+    }
+  }
+
+  /**
+   * Test that a KuduTransaction handle created by KuduClient.newTransaction()
+   * automatically sends keepalive messages.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      "--txn_manager_enabled=true",
+  })
+  @TabletServerConfig(flags = {
+      "--txn_keepalive_interval_ms=200",
+      "--txn_staleness_tracker_interval_ms=50",
+  })
+  public void testKeepaliveBasic() throws Exception {
+    try (KuduTransaction txn = client.newTransaction()) {
+      final byte[] buf = txn.serialize();
+      final TxnTokenPB pb = TxnTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+      assertTrue(pb.hasKeepaliveMillis());
+      final long keepaliveMillis = pb.getKeepaliveMillis();
+      assertTrue(keepaliveMillis > 0);
+      Thread.sleep(3 * keepaliveMillis);
+      // It should be possible to commit the transaction since it supposed to be
+      // open at this point even after multiples of the inactivity timeout
+      // interval.
+      txn.commit(false);
+    } catch (Exception e) {
+      fail("unexpected exception: " + e.toString());
+    }
+
+    {
+      KuduTransaction txn = client.newTransaction();
+      final byte[] buf = txn.serialize();
+      final TxnTokenPB pb = TxnTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+      assertTrue(pb.hasKeepaliveMillis());
+      final long keepaliveMillis = pb.getKeepaliveMillis();
+      assertTrue(keepaliveMillis > 0);
+      // Call KuduTransaction.close() explicitly.
+      txn.close();
+
+      // Keep the handle around without any activity for longer than the
+      // keepalive timeout interval.
+      Thread.sleep(3 * keepaliveMillis);
+
+      // At this point, the underlying transaction should be automatically
+      // aborted by the backend. An attempt to commit the transaction should
+      // fail because the transaction is assumed to be already aborted at this
+      // point.
+      NonRecoverableException ex = assertThrows(
+          NonRecoverableException.class, new ThrowingRunnable() {
+            @Override
+            public void run() throws Throwable {
+              txn.commit(false);
+            }
+          });
+      final String errmsg = ex.getMessage();
+      assertTrue(errmsg, errmsg.matches(
+          ".* transaction ID .* is not open: state: ABORTED .*"));
+
+      // Verify that KuduTransaction.rollback() successfully runs on a transaction
+      // handle if the underlying transaction is already aborted automatically
+      // by the backend. Rolling back the transaction explicitly should succeed
+      // since it's a pure no-op: rolling back a transaction has idempotent
+      // semantics.
+      txn.rollback();
+    }
+  }
+
+  /**
+   * Test that a KuduTransaction handle created by KuduClient.deserialize()
+   * automatically sends or doesn't send keepalive heartbeat messages
+   * depending on the SerializationOptions used while serializing the handle
+   * into a transaction token.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      "--txn_manager_enabled=true",
+  })
+  @TabletServerConfig(flags = {
+      "--txn_keepalive_interval_ms=200",
+      "--txn_staleness_tracker_interval_ms=50",
+  })
+  public void testKeepaliveForDeserializedHandle() throws Exception {
+    // Check the keepalive behavior when serializing/deserializing with default
+    // settings for SerializationOptions.
+    {
+      KuduTransaction txn = client.newTransaction();
+      final byte[] buf = txn.serialize();
+      final TxnTokenPB pb = TxnTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+      assertTrue(pb.hasKeepaliveMillis());
+      final long keepaliveMillis = pb.getKeepaliveMillis();
+      assertTrue(keepaliveMillis > 0);
+
+      KuduTransaction serdesTxn = KuduTransaction.deserialize(buf, asyncClient);
+
+      // Call KuduTransaction.close() explicitly to stop sending automatic
+      // keepalive messages from 'txn' handle.
+      txn.close();
+
+      // Keep the handle around without any activity for longer than the
+      // keepalive timeout interval.
+      Thread.sleep(3 * keepaliveMillis);
+
+      // At this point, the underlying transaction should be automatically
+      // aborted by the backend: the 'txn' handle should not send any heartbeats
+      // anymore since it's closed, and the 'serdesTxn' handle should not be
+      // sending any heartbeats.
+      NonRecoverableException ex = assertThrows(
+          NonRecoverableException.class, new ThrowingRunnable() {
+            @Override
+            public void run() throws Throwable {
+              serdesTxn.commit(false);
+            }
+          });
+      final String errmsg = ex.getMessage();
+      assertTrue(errmsg, errmsg.matches(
+          ".* transaction ID .* is not open: state: ABORTED .*"));
+
+      // Verify that KuduTransaction.rollback() successfully runs on both
+      // transaction handles if the underlying transaction is already aborted
+      // automatically by the backend.
+      txn.rollback();
+      serdesTxn.rollback();
+    }
+
+    // Check the keepalive behavior when serializing/deserializing when
+    // keepalive heartbeating is enabled in SerializationOptions used
+    // during the serialization of the original transaction handle.
+    {
+      final KuduTransaction.SerializationOptions options =
+          new KuduTransaction.SerializationOptions();
+      options.setEnableKeepalive(true);
+      KuduTransaction txn = client.newTransaction();
+      final byte[] buf = txn.serialize(options);
+      final TxnTokenPB pb = TxnTokenPB.parseFrom(CodedInputStream.newInstance(buf));
+      assertTrue(pb.hasKeepaliveMillis());
+      final long keepaliveMillis = pb.getKeepaliveMillis();
+      assertTrue(keepaliveMillis > 0);
+
+      KuduTransaction serdesTxn = KuduTransaction.deserialize(buf, asyncClient);
+
+      // Call KuduTransaction.close() explicitly to stop sending automatic
+      // keepalive messages by the 'txn' handle.
+      txn.close();
+
+      // Keep the handle around without any activity for longer than the
+      // keepalive timeout interval.
+      Thread.sleep(3 * keepaliveMillis);
+
+      // At this point, the underlying transaction should be kept open
+      // because the 'serdesTxn' handle sends keepalive heartbeats even if the
+      // original handle ceased to send those after calling 'close()' on it.
+      // As an extra sanity check, call 'commit()' and 'isCommitComplete()'
+      // on both handles to make sure no exception is thrown.
+      serdesTxn.commit(false);
+      serdesTxn.isCommitComplete();
+      txn.commit(false);
+      txn.isCommitComplete();
     }
   }
 }

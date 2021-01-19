@@ -155,6 +155,8 @@ public class KuduTransaction implements AutoCloseable {
   private boolean keepaliveEnabled = true;
   private boolean isInFlight = false;
   private final Object isInFlightSync = new Object();
+  private Timeout keepaliveTaskHandle = null;
+  private final Object keepaliveTaskHandleSync = new Object();
 
   /**
    * Create an instance of a transaction handle bound to the specified client.
@@ -195,6 +197,9 @@ public class KuduTransaction implements AutoCloseable {
     this.txnId = txnId;
     this.keepaliveMillis = keepaliveMillis;
     this.keepaliveEnabled = keepaliveEnabled;
+
+    startKeepaliveHeartbeating();
+
     this.isInFlight = true;
   }
 
@@ -213,6 +218,8 @@ public class KuduTransaction implements AutoCloseable {
     // Make corresponding call to TxnManager and process the response,
     // in a synchronous way.
     doBeginTransaction();
+
+    startKeepaliveHeartbeating();
 
     // Once the heavy-lifting has successfully completed, mark this instance
     // as a handle for an in-flight transaction.
@@ -265,6 +272,17 @@ public class KuduTransaction implements AutoCloseable {
   public void commit(boolean wait) throws KuduException {
     Preconditions.checkState(isInFlight, "transaction is not open for this handle");
     CommitTransactionRequest req = doCommitTransaction();
+    // Now, there is no need to continue sending keepalive messages: the
+    // transaction should be in COMMIT_IN_PROGRESS state after successful
+    // completion of the calls above, and the backend takes care of everything
+    // else: nothing is required from the client side to successfully complete
+    // the commit phase of the transaction past this point.
+    synchronized (keepaliveTaskHandleSync) {
+      if (keepaliveTaskHandle != null) {
+        LOG.debug("stopping keepalive heartbeating after commit (txn ID {})", txnId);
+        keepaliveTaskHandle.cancel();
+      }
+    }
 
     if (wait) {
       Deferred<GetTransactionStateResponse> txnState =
@@ -319,6 +337,13 @@ public class KuduTransaction implements AutoCloseable {
   public void rollback() throws KuduException {
     Preconditions.checkState(isInFlight, "transaction is not open for this handle");
     doRollbackTransaction();
+    // Now, there is no need to continue sending keepalive messages.
+    synchronized (keepaliveTaskHandleSync) {
+      if (keepaliveTaskHandle != null) {
+        LOG.debug("stopping keepalive heartbeating after rollback (txn ID {})", txnId);
+        keepaliveTaskHandle.cancel();
+      }
+    }
 
     // Once everything else is completed successfully, mark the transaction as
     // no longer in flight.
@@ -349,7 +374,7 @@ public class KuduTransaction implements AutoCloseable {
    * @throws IOException if serialization fails
    */
   public byte[] serialize(SerializationOptions options) throws IOException {
-    LOG.debug("serializing handle for transaction ID {}", txnId);
+    LOG.debug("serializing handle (txn ID {})", txnId);
     Preconditions.checkState(
         txnId != AsyncKuduClient.INVALID_TXN_ID,
         "invalid transaction handle");
@@ -411,9 +436,11 @@ public class KuduTransaction implements AutoCloseable {
   @Override
   public void close() {
     try {
-      if (keepaliveEnabled) {
-        LOG.debug("stopping keepalive heartbeating for transaction ID {}", txnId);
-        // TODO(aserbin): stop sending keepalive heartbeats to TxnManager
+      synchronized (keepaliveTaskHandleSync) {
+        if (keepaliveTaskHandle != null) {
+          LOG.debug("stopping keepalive heartbeating (txn ID {})", txnId);
+          keepaliveTaskHandle.cancel();
+        }
       }
     } catch (Exception e) {
       LOG.error("exception while automatically rolling back a transaction", e);
@@ -541,5 +568,101 @@ public class KuduTransaction implements AutoCloseable {
       rpc.errback(e);
       return e;
     };
+  }
+
+  /**
+   * Return period for sending keepalive messages for the specified keepalive
+   * timeout (both in milliseconds). The latter is dictated by the backend
+   * which can automatically rollback a transaction after not receiving
+   * keepalive messages for longer than the specified timeout interval.
+   * Ideally, it would be enough to send a heartbeat message every
+   * {@code keepaliveMillis} interval, but given scheduling irregularities,
+   * client node timer's precision, and various network delays and latencies,
+   * it's safer to schedule sending keepalive messages from the client side
+   * more frequently.
+   *
+   * @param keepaliveMillis the keepalive timeout interval
+   * @return a proper period for sending keepalive messages from the client side
+   */
+  private static long keepalivePeriodForTimeout(long keepaliveMillis) {
+    Preconditions.checkArgument(keepaliveMillis > 0,
+        "keepalive timeout must be a positive number");
+    long period = keepaliveMillis / 2;
+    if (period <= 0) {
+      period = 1;
+    }
+    return period;
+  }
+
+  private void startKeepaliveHeartbeating() {
+    if (keepaliveEnabled) {
+      LOG.debug("starting keepalive heartbeating with period {} ms (txn ID {})",
+          txnId, keepalivePeriodForTimeout(keepaliveMillis));
+      doStartKeepaliveHeartbeating();
+    } else {
+      LOG.debug("keepalive heartbeating disabled for this handle (txn ID {})", txnId);
+    }
+  }
+
+  private final class SendKeepaliveTask implements TimerTask {
+    /**
+     * Send keepalive heartbeat message for the transaction represented by
+     * this {@link KuduTransaction} handle and re-schedule itself
+     * (i.e. this task) to send next heartbeat interval
+     *
+     * @param timeout a handle which is associated with this task
+     */
+    @Override
+    public void run(Timeout timeout) throws Exception {
+      if (timeout.isCancelled()) {
+        LOG.debug("terminating keepalive task (txn ID {})", txnId);
+        return;
+      }
+      try {
+        doSendKeepalive();
+      } catch (RecoverableException e) {
+        // Just continue sending heartbeats as required: the recoverable
+        // exception means the condition is transient.
+        // TODO(aserbin): should we send next heartbeat sooner? E.g., retry
+        //                immediately, and do such retry only once after a
+        //                failure like this. The idea is to avoid missing
+        //                heartbeats in situations where the second attempt
+        //                after keepaliveMillis/2 would as well due to a network
+        //                issue, but immediate retry could succeed.
+        LOG.debug("continuing keepalive heartbeating (txn ID {}): {}",
+            txnId, e.toString());
+      } catch (Exception e) {
+        LOG.debug("terminating keepalive task (txn ID {}) due to exception {}",
+            txnId, e.toString());
+        return;
+      }
+      synchronized (keepaliveTaskHandleSync) {
+        // Re-schedule the task, refreshing the task handle.
+        keepaliveTaskHandle = AsyncKuduClient.newTimeout(
+            timeout.timer(), this, keepalivePeriodForTimeout(keepaliveMillis));
+      }
+    }
+
+    private void doSendKeepalive() throws KuduException {
+      KeepTransactionAliveRequest request = new KeepTransactionAliveRequest(
+          client.getMasterTable(),
+          client.getTimer(),
+          client.getDefaultAdminOperationTimeoutMs(),
+          txnId);
+      Deferred<KeepTransactionAliveResponse> d = client.sendRpcToTablet(request);
+      KuduClient.joinAndHandleException(d);
+    }
+  }
+
+  void doStartKeepaliveHeartbeating() {
+    Preconditions.checkState(keepaliveEnabled);
+    synchronized (keepaliveTaskHandleSync) {
+      Preconditions.checkState(keepaliveTaskHandle == null,
+          "keepalive heartbeating has already started");
+      keepaliveTaskHandle = AsyncKuduClient.newTimeout(
+          client.getTimer(),
+          new SendKeepaliveTask(),
+          keepalivePeriodForTimeout(keepaliveMillis));
+    }
   }
 }

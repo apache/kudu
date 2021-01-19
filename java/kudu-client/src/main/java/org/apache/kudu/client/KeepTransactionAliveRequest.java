@@ -17,7 +17,7 @@
 
 package org.apache.kudu.client;
 
-import static org.apache.kudu.transactions.TxnManager.BeginTransactionResponsePB;
+import static org.apache.kudu.transactions.TxnManager.KeepTransactionAliveResponsePB;
 
 import java.util.Collection;
 import java.util.List;
@@ -32,19 +32,28 @@ import org.apache.kudu.transactions.TxnManager;
 import org.apache.kudu.util.Pair;
 
 /**
- * A wrapper class for kudu.transactions.TxnManagerService.BeginTransaction RPC.
+ * A wrapper class for kudu.transactions.TxnManagerService.CoordinateTransaction RPC.
  */
 @InterfaceAudience.Private
-class BeginTransactionRequest extends KuduRpc<BeginTransactionResponse> {
+class KeepTransactionAliveRequest extends KuduRpc<KeepTransactionAliveResponse> {
   private static final List<Integer> featureFlags = ImmutableList.of();
+  private final long txnId;
 
-  BeginTransactionRequest(KuduTable masterTable, Timer timer, long timeoutMillis) {
+  KeepTransactionAliveRequest(KuduTable masterTable,
+                              Timer timer,
+                              long timeoutMillis,
+                              long txnId) {
     super(masterTable, timer, timeoutMillis);
+    Preconditions.checkArgument(txnId > AsyncKuduClient.INVALID_TXN_ID);
+    this.txnId = txnId;
   }
 
   @Override
   Message createRequestPB() {
-    return TxnManager.BeginTransactionRequestPB.getDefaultInstance();
+    final TxnManager.KeepTransactionAliveRequestPB.Builder b =
+        TxnManager.KeepTransactionAliveRequestPB.newBuilder();
+    b.setTxnId(txnId);
+    return b.build();
   }
 
   @Override
@@ -54,23 +63,17 @@ class BeginTransactionRequest extends KuduRpc<BeginTransactionResponse> {
 
   @Override
   String method() {
-    return "BeginTransaction";
+    return "KeepTransactionAlive";
   }
 
   @Override
-  Pair<BeginTransactionResponse, Object> deserialize(
+  Pair<KeepTransactionAliveResponse, Object> deserialize(
       final CallResponse callResponse, String serverUUID) throws KuduException {
-    final BeginTransactionResponsePB.Builder b = BeginTransactionResponsePB.newBuilder();
+    final KeepTransactionAliveResponsePB.Builder b =
+        KeepTransactionAliveResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), b);
-    if (!b.hasError()) {
-      Preconditions.checkState(b.hasTxnId());
-      Preconditions.checkState(b.hasKeepaliveMillis());
-    }
-    BeginTransactionResponse response = new BeginTransactionResponse(
-        timeoutTracker.getElapsedMillis(),
-        serverUUID,
-        b.getTxnId(),
-        b.getKeepaliveMillis());
+    KeepTransactionAliveResponse response = new KeepTransactionAliveResponse(
+        timeoutTracker.getElapsedMillis(), serverUUID);
     return new Pair<>(response, b.hasError() ? b.getError() : null);
   }
 
