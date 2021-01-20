@@ -275,6 +275,19 @@ std::pair<string, unsigned int> ConsensusMetadata::leader_hostport() const {
   return {};
 }
 
+Status ConsensusMetadata::GetConfigMemberCopy(
+    const std::string& uuid,
+    RaftPeerPB *member) {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  for (const RaftPeerPB& peer : ActiveConfig().peers()) {
+    if (peer.permanent_uuid() == uuid) {
+      *member = peer;
+      return Status::OK();
+    }
+  }
+  return Status::NotFound(Substitute("Peer with uuid $0 not found in consensus config", uuid));
+}
+
 RaftPeerPB::Role ConsensusMetadata::active_role() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   return active_role_;

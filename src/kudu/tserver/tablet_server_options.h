@@ -68,11 +68,11 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   std::function<void(int64_t)> tacb;
 
   // No-OP received Callback
-  std::function<void(const consensus::OpId id)> norcb;
+  std::function<void(const consensus::OpId id, const kudu::consensus::RaftPeerPB&)> norcb;
 
   // Leader Detected Callback. This should eventually be reconciled
   // with NORCB.
-  std::function<void(int64_t)> ldcb;
+  std::function<void(int64_t, const kudu::consensus::RaftPeerPB&)> ldcb;
   bool disable_noop = false;
 
   // This is to enable a fresh instance join the ring with logs from

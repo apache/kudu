@@ -186,8 +186,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   typedef std::function<void(const ElectionResult&, const ElectionContext&)>
     ElectionDecisionCallback;
   typedef std::function<void(int64_t)> TermAdvancementCallback;
-  typedef std::function<void(const OpId opId)> NoOpReceivedCallback;
-  typedef std::function<void(int64_t)> LeaderDetectedCallback;
+  typedef std::function<void(const OpId opId, const RaftPeerPB&)> NoOpReceivedCallback;
+  typedef std::function<void(int64_t, const RaftPeerPB&)> LeaderDetectedCallback;
 
   ~RaftConsensus();
 
@@ -940,10 +940,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void DoTermAdvancmentCallback(int64_t term);
 
   void ScheduleNoOpReceivedCallback(const ReplicateRefPtr& msg);
-  void DoNoOpReceivedCallback(const OpId opid);
+  void DoNoOpReceivedCallback(const OpId opid, const RaftPeerPB& leader_details);
 
   void ScheduleLeaderDetectedCallback(int64_t term);
-  void DoLeaderDetectedCallback(int64_t term);
+  void DoLeaderDetectedCallback(int64_t term, const RaftPeerPB& leader_details);
 
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
