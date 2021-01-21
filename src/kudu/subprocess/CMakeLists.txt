@@ -43,7 +43,7 @@ add_custom_command(OUTPUT ${SUBPROCESS_JAR}
     "${JAVA_DIR}/kudu-subprocess/build/libs/kudu-subprocess-${KUDU_VERSION_NUMBER}.jar"
     "${SUBPROCESS_JAR}"
   WORKING_DIRECTORY "${JAVA_DIR}"
-  DEPENDS init_gradle)
+  DEPENDS proto_jar)
 add_custom_target(subprocess_jar DEPENDS ${SUBPROCESS_JAR})
 
 add_library(kudu_subprocess

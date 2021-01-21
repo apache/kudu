@@ -71,7 +71,7 @@ add_custom_command(OUTPUT ${HMS_PLUGIN_JAR}
     "${JAVA_DIR}/kudu-hive/build/libs/kudu-hive-${KUDU_VERSION_NUMBER}.jar"
     "${HMS_PLUGIN_JAR}"
   WORKING_DIRECTORY "${JAVA_DIR}"
-  DEPENDS init_gradle)
+  DEPENDS proto_jar)
 add_custom_target(hms_plugin_jar DEPENDS ${HMS_PLUGIN_JAR})
 
 set(MINI_HMS_SRCS
