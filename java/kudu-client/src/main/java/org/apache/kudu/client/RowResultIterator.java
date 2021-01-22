@@ -45,11 +45,10 @@ public abstract class RowResultIterator extends KuduRpcResponse implements Itera
    * @param schema schema used to parse the rows
    * @param numRows how many rows are contained in the bs slice
    */
-  protected RowResultIterator(long elapsedMillis,
-                            String tsUUID,
-                            Schema schema,
-                            int numRows,
-                            boolean reuseRowResult) {
+  RowResultIterator(long elapsedMillis,
+                    String tsUUID,
+                    Schema schema,
+                    int numRows) {
     super(elapsedMillis, tsUUID);
     this.schema = schema;
     this.numRows = numRows;

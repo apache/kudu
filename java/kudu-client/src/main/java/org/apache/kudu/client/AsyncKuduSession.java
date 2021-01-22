@@ -332,17 +332,6 @@ public class AsyncKuduSession implements SessionConfiguration {
   }
 
   /**
-   * Returns a buffer to the inactive queue after flushing.
-   * @param buffer the buffer to return to the inactive queue.
-   */
-  private void queueBuffer(Buffer buffer) {
-    inactiveBuffers.add(buffer);
-    buffer.callbackFlushNotification();
-    Deferred<Void> localFlushNotification = flushNotification.getAndSet(new Deferred<>());
-    localFlushNotification.callback(null);
-  }
-
-  /**
    * Callback which waits for all tablet location lookups to complete, groups all operations into
    * batches by tablet, and dispatches them. When all of the batches are complete, a deferred is
    * fired and the buffer is added to the inactive queue.
@@ -440,6 +429,90 @@ public class AsyncKuduSession implements SessionConfiguration {
 
       return null;
     }
+
+    /**
+     * Creates callbacks to handle a multi-put and adds them to the request.
+     * @param request the request for which we must handle the response
+     */
+    private void addBatchCallbacks(final Batch request) {
+      final class BatchCallback implements Callback<BatchResponse, BatchResponse> {
+        @Override
+        public BatchResponse call(final BatchResponse response) {
+          LOG.trace("Got a Batch response for {} rows", request.operations.size());
+          AsyncKuduSession.this.client.updateLastPropagatedTimestamp(response.getWriteTimestamp());
+
+          // Send individualized responses to all the operations in this batch.
+          for (OperationResponse operationResponse : response.getIndividualResponses()) {
+            if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && operationResponse.hasRowError()) {
+              errorCollector.addError(operationResponse.getRowError());
+            }
+
+            // Fire the callback after collecting the errors so that the errors
+            // are visible should the callback interrogate the error collector.
+            operationResponse.getOperation().callback(operationResponse);
+          }
+
+          return response;
+        }
+
+        @Override
+        public String toString() {
+          return "apply batch response";
+        }
+      }
+
+      final class BatchErrCallback implements Callback<Object, Exception> {
+        @Override
+        public Object call(Exception e) {
+          // If the exception we receive is a KuduException we're going to build OperationResponses.
+          Status status = null;
+          List<OperationResponse> responses = null;
+          boolean handleKuduException = e instanceof KuduException;
+          if (handleKuduException) {
+            status = ((KuduException) e).getStatus();
+            responses = new ArrayList<>(request.operations.size());
+          }
+
+          for (Operation operation : request.operations) {
+            // Same comment as in BatchCallback regarding the ordering of when to callback.
+            if (handleKuduException) {
+              RowError rowError = new RowError(status, operation);
+              OperationResponse response = new OperationResponse(0, null, 0, operation, rowError);
+              errorCollector.addError(rowError);
+              responses.add(response);
+
+              operation.callback(response);
+            } else {
+              // We have no idea what the exception is so we'll just send it up.
+              operation.errback(e);
+            }
+          }
+
+          // Note that returning an object that's not an exception will make us leave the
+          // errback chain. Effectively, the BatchResponse below will end up as part of the list
+          // passed to ConvertBatchToListOfResponsesCB.
+          return handleKuduException ? new BatchResponse(responses, request.operationIndexes) : e;
+        }
+
+        @Override
+        public String toString() {
+          return "apply batch error response";
+        }
+      }
+
+      request.getDeferred().addCallbacks(new BatchCallback(), new BatchErrCallback());
+    }
+
+    /**
+     * Returns a buffer to the inactive queue after flushing.
+     * @param buffer the buffer to return to the inactive queue.
+     */
+    private void queueBuffer(Buffer buffer) {
+      inactiveBuffers.add(buffer);
+      buffer.callbackFlushNotification();
+      Deferred<Void> localFlushNotification = flushNotification.getAndSet(new Deferred<>());
+      localFlushNotification.callback(null);
+    }
   }
 
   /**
@@ -531,7 +604,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   public boolean hasPendingOperations() {
     synchronized (monitor) {
       return activeBuffer == null ? inactiveBuffers.size() < 2 :
-             activeBuffer.getOperations().size() > 0 || !inactiveBufferAvailable();
+             !activeBuffer.getOperations().isEmpty() || !inactiveBufferAvailable();
     }
   }
 
@@ -718,78 +791,6 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
   }
 
-  /**
-   * Creates callbacks to handle a multi-put and adds them to the request.
-   * @param request the request for which we must handle the response
-   */
-  private void addBatchCallbacks(final Batch request) {
-    final class BatchCallback implements Callback<BatchResponse, BatchResponse> {
-      @Override
-      public BatchResponse call(final BatchResponse response) {
-        LOG.trace("Got a Batch response for {} rows", request.operations.size());
-        AsyncKuduSession.this.client.updateLastPropagatedTimestamp(response.getWriteTimestamp());
-
-        // Send individualized responses to all the operations in this batch.
-        for (OperationResponse operationResponse : response.getIndividualResponses()) {
-          if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && operationResponse.hasRowError()) {
-            errorCollector.addError(operationResponse.getRowError());
-          }
-
-          // Fire the callback after collecting the errors so that the errors are visible should the
-          // callback interrogate the error collector.
-          operationResponse.getOperation().callback(operationResponse);
-        }
-
-        return response;
-      }
-
-      @Override
-      public String toString() {
-        return "apply batch response";
-      }
-    }
-
-    final class BatchErrCallback implements Callback<Object, Exception> {
-      @Override
-      public Object call(Exception e) {
-        // If the exception we receive is a KuduException we're going to build OperationResponses.
-        Status status = null;
-        List<OperationResponse> responses = null;
-        boolean handleKuduException = e instanceof KuduException;
-        if (handleKuduException) {
-          status = ((KuduException) e).getStatus();
-          responses = new ArrayList<>(request.operations.size());
-        }
-
-        for (Operation operation : request.operations) {
-          // Same comment as in BatchCallback regarding the ordering of when to callback.
-          if (handleKuduException) {
-            RowError rowError = new RowError(status, operation);
-            OperationResponse response = new OperationResponse(0, null, 0, operation, rowError);
-            errorCollector.addError(rowError);
-            responses.add(response);
-
-            operation.callback(response);
-          } else {
-            // We have no idea what the exception is so we'll just send it up.
-            operation.errback(e);
-          }
-        }
-
-        // Note that returning an object that's not an exception will make us leave the
-        // errback chain. Effectively, the BatchResponse below will end up as part of the list
-        // passed to ConvertBatchToListOfResponsesCB.
-        return handleKuduException ? new BatchResponse(responses, request.operationIndexes) : e;
-      }
-
-      @Override
-      public String toString() {
-        return "apply batch error response";
-      }
-    }
-
-    request.getDeferred().addCallbacks(new BatchCallback(), new BatchErrCallback());
-  }
 
   /**
    * Analogous to BatchErrCallback above but for AUTO_FLUSH_SYNC which doesn't handle lists of

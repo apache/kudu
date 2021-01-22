@@ -56,14 +56,14 @@ class ColumnarRowResultIterator extends RowResultIterator {
    * @param reuseRowResult reuse same row result for next row
    */
   ColumnarRowResultIterator(long elapsedMillis,
-                                    String tsUUID,
-                                    Schema schema,
-                                    int numRows,
-                                    Slice[] data,
-                                    Slice[] varlenData,
-                                    Slice[] nonNullBitmaps,
-                                    boolean reuseRowResult) {
-    super(elapsedMillis, tsUUID, schema, numRows, reuseRowResult);
+                            String tsUUID,
+                            Schema schema,
+                            int numRows,
+                            Slice[] data,
+                            Slice[] varlenData,
+                            Slice[] nonNullBitmaps,
+                            boolean reuseRowResult) {
+    super(elapsedMillis, tsUUID, schema, numRows);
     this.data = data;
     this.varlenData = varlenData;
     this.nonNullBitmaps = nonNullBitmaps;
@@ -77,8 +77,7 @@ class ColumnarRowResultIterator extends RowResultIterator {
                                                          Schema schema,
                                                          WireProtocol.ColumnarRowBlockPB data,
                                                          final CallResponse callResponse,
-                                                         boolean reuseRowResult)
-      throws KuduException {
+                                                         boolean reuseRowResult) {
     if (data == null || data.getNumRows() == 0) {
       return new ColumnarRowResultIterator(elapsedMillis, tsUUID, schema, 0,
               null, null, null, reuseRowResult);

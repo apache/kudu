@@ -49,6 +49,10 @@ public class DecimalUtil {
   public static final int MIN_DECIMAL_PRECISION = 1;
   public static final int MAX_DECIMAL_PRECISION = MAX_DECIMAL128_PRECISION;
 
+  /** Non-constructable utility class. */
+  private DecimalUtil() {
+  }
+
   /**
    * Given a precision, returns the size of the Decimal in Bytes.
    * @return the size in Bytes.
@@ -151,5 +155,4 @@ public class DecimalUtil {
         .scale(scale)
         .build();
   }
-
 }

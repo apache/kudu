@@ -38,6 +38,10 @@ public class HashUtil {
     HASH_VAL_NULL_BYTE_BUF[3] = (byte) (HASH_VAL_NULL >>> 24);
   }
 
+  /** Non-constructable utility class. */
+  private HashUtil() {
+  }
+
   /**
    * Compute 64-bit FastHash of the supplied data backed by byte array.
    *

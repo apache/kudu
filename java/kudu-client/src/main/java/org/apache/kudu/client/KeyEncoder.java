@@ -469,7 +469,7 @@ class KeyEncoder {
       sb.append(hashBuckets);
     }
 
-    if (partitionSchema.getRangeSchema().getColumnIds().size() > 0) {
+    if (!partitionSchema.getRangeSchema().getColumnIds().isEmpty()) {
       if (!hashBuckets.isEmpty()) {
         sb.append(", ");
       }

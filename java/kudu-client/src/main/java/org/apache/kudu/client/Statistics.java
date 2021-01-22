@@ -152,7 +152,7 @@ public class Statistics {
     // which is only a Map method in Java 8.
     //
     // See KUDU-2188 for details.
-    for (String tablet : ((Map<String, Statistics.TabletStatistics>) stsMap).keySet()) {
+    for (String tablet : stsMap.keySet()) {
       tablets.add(tablet);
     }
     return tablets;

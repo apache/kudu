@@ -57,7 +57,7 @@ public class LocatedTablet {
   }
 
   /**
-   * DEPRECATED: use {@link #getPartition()}
+   * @deprecated use {@link #getPartition()}
    */
   @Deprecated
   public byte[] getStartKey() {
@@ -65,7 +65,7 @@ public class LocatedTablet {
   }
 
   /**
-   * DEPRECATED: use {@link #getPartition()}
+   * @deprecated use {@link #getPartition()}
    */
   @Deprecated()
   public byte[] getEndKey() {

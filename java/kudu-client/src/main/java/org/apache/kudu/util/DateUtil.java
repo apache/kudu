@@ -29,6 +29,10 @@ public class DateUtil {
   public static final int MAX_DATE_VALUE =
       (int)LocalDate.parse("9999-12-31").toEpochDay(); // 2932896
 
+  /** Non-constructable utility class. */
+  private DateUtil() {
+  }
+
   /**
    * Check whether the date is within the range '0001-01-01':'9999-12-31'
    *

@@ -102,8 +102,8 @@ public class ConnectToMasterRequest extends KuduRpc<ConnectToMasterResponsePB> {
         respBuilder.hasError() ? respBuilder.getError() : null);
   }
 
-  private Pair<ConnectToMasterResponsePB, Object> deserializeOldRpc(CallResponse callResponse)
-      throws KuduException {
+  private Pair<ConnectToMasterResponsePB, Object> deserializeOldRpc(
+      CallResponse callResponse) {
     final GetMasterRegistrationResponsePB.Builder resp =
         GetMasterRegistrationResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), resp);

@@ -29,6 +29,10 @@ import org.apache.yetus.audience.InterfaceAudience;
 @InterfaceAudience.Private
 public class AsyncUtil {
 
+  /** Non-constructable utility class. */
+  private AsyncUtil() {
+  }
+
   /**
    * Register a callback and an "errback".
    * <p>

@@ -132,7 +132,7 @@ public class AuthzTokenCache {
       pendingRetries = retriesForTable.remove(tableId);
     }
     Preconditions.checkState(!pendingRetries.isEmpty(),
-        "no pending retries for table " + tableId);
+        "no pending retries for table %s", tableId);
     return pendingRetries;
   }
 
@@ -150,7 +150,7 @@ public class AuthzTokenCache {
                                    @Nonnull Callback<Void, GetTableSchemaResponse> cb,
                                    @Nonnull Callback<Void, Exception> eb) {
     String tableId = parentRpc.getTable().getTableId();
-    LOG.debug("sending RPC to retrieve token for table ID " + tableId);
+    LOG.debug("sending RPC to retrieve token for table ID {}", tableId);
     GetTableSchemaRequest retrieveAuthzTokenReq = new GetTableSchemaRequest(
         client.getMasterTable(), tableId, /*name=*/null, client.getTimer(),
         client.getDefaultAdminOperationTimeoutMs(), /*requiresAuthzTokenSupport=*/true);
@@ -190,7 +190,7 @@ public class AuthzTokenCache {
           throw new NonRecoverableException(
               Status.InvalidArgument("no authz token retrieved for " + tableId));
         }
-        LOG.debug("retrieved authz token for " + tableId);
+        LOG.debug("retrieved authz token for {}", tableId);
         put(tableId, resp.getAuthzToken());
         for (RpcAndException rpcAndEx : clearPendingRetries(tableId)) {
           client.handleRetryableErrorNoDelay(rpcAndEx.rpc, rpcAndEx.ex);
@@ -237,7 +237,7 @@ public class AuthzTokenCache {
         sendRetrievalForRpc(rpc, newTokenCB, newTokenErrB);
       } else {
         Preconditions.checkState(!pendingRetries.isEmpty(),
-            "no pending retries for table " + tableId);
+            "no pending retries for table %s", tableId);
         pendingRetries.add(rpcAndEx);
       }
     }

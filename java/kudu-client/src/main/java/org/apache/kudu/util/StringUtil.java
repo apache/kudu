@@ -22,6 +22,10 @@ import org.apache.yetus.audience.InterfaceAudience;
 @InterfaceAudience.Private
 public class StringUtil {
 
+  /** Non-constructable utility class. */
+  private StringUtil() {
+  }
+
   /**
    * Escapes the provided string and appends it to the string builder. The
    * escaping is done according to the Hive/Impala escaping rules. Adapted from
@@ -83,9 +87,5 @@ public class StringUtil {
         }
       }
     }
-  }
-
-  /** Non-constructable utility class. */
-  private StringUtil() {
   }
 }

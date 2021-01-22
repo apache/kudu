@@ -104,6 +104,7 @@ public interface SessionConfiguration {
    * 0 and 1
    * @deprecated The low watermark no longer has any effect.
    */
+  @Deprecated
   void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage);
 
   /**

@@ -242,7 +242,7 @@ public class SchemaGenerator {
       default: throw new IllegalArgumentException("Unsupported type " + type);
     }
 
-    if (validEncodings.size() == 0) {
+    if (validEncodings.isEmpty()) {
       throw new IllegalArgumentException("There are no valid encodings for type " + type);
     }
 

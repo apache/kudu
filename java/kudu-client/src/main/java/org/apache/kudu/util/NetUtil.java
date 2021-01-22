@@ -42,6 +42,10 @@ public class NetUtil {
 
   private static final Logger LOG = LoggerFactory.getLogger(NetUtil.class);
 
+  /** Non-constructable utility class. */
+  private NetUtil() {
+  }
+
   /**
    * Convert a list of {@link HostAndPort} objects to a comma separate string.
    * The inverse of {@link #parseStrings(String, int)}.

@@ -28,6 +28,10 @@ import org.apache.yetus.audience.InterfaceAudience;
 @InterfaceAudience.Private
 public class TimestampUtil {
 
+  /** Non-constructable utility class. */
+  private TimestampUtil() {
+  }
+
   // Thread local DateFormat since they're not thread-safe.
   private static final ThreadLocal<DateFormat> DATE_FORMAT = new ThreadLocal<DateFormat>() {
     @Override

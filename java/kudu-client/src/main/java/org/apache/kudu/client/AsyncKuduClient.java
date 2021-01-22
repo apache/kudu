@@ -884,9 +884,9 @@ public class AsyncKuduClient implements AutoCloseable {
                                                                   timer,
                                                                   defaultAdminOperationTimeoutMs);
 
-    return sendRpcToTablet(rpc).addCallback(resp -> {
-      return new KuduTableStatistics(resp.getOnDiskSize(), resp.getLiveRowCount());
-    });
+    return sendRpcToTablet(rpc).addCallback(resp ->
+        new KuduTableStatistics(resp.getOnDiskSize(), resp.getLiveRowCount())
+    );
   }
 
   /**
@@ -972,7 +972,7 @@ public class AsyncKuduClient implements AutoCloseable {
         .addCallback(new MasterLookupCB(masterTable,
                                         /* partitionKey */ null,
                                         /* requestedBatchSize */ 1))
-        .addCallback((Callback<Void, Object>) ignored -> {
+        .addCallback(ignored -> {
           // Just call ourselves again; we're guaranteed to have the
           // authentication credentials.
           assert hasConnectedToMaster;
@@ -1025,7 +1025,7 @@ public class AsyncKuduClient implements AutoCloseable {
         .addCallback(new MasterLookupCB(masterTable,
                                         /* partitionKey */ null,
                                         /* requestedBatchSize */ 1))
-        .addCallback((Callback<Void, Object>) ignored -> {
+        .addCallback(ignored -> {
           // Just call ourselves again; we're guaranteed to have the HMS config.
           assert hasConnectedToMaster;
           doGetHiveMetastoreConfig(fakeRpc);
@@ -1452,7 +1452,7 @@ public class AsyncKuduClient implements AutoCloseable {
       @Nonnull final String method,
       @Nullable final KuduRpc<?> parent,
       long timeoutMs) {
-    KuduRpc<R> rpc = new FakeKuduRpc<R>(method, timer, timeoutMs);
+    KuduRpc<R> rpc = new FakeKuduRpc<>(method, timer, timeoutMs);
     rpc.setParentRpc(parent);
     return rpc;
   }
@@ -1711,6 +1711,14 @@ public class AsyncKuduClient implements AutoCloseable {
     public String toString() {
       return "release master lookup permit";
     }
+
+    /**
+     * Releases a master lookup permit that was acquired.
+     * See {@link AsyncKuduClient#acquireMasterLookupPermit}.
+     */
+    private void releaseMasterLookupPermit() {
+      masterLookups.release();
+    }
   }
 
   long getSleepTimeForRpcMillis(KuduRpc<?> rpc) {
@@ -1850,16 +1858,16 @@ public class AsyncKuduClient implements AutoCloseable {
                 }
               }
 
-              HiveMetastoreConfig hiveMetastoreConfig = null;
+              HiveMetastoreConfig config = null;
               Master.ConnectToMasterResponsePB respPb = resp.getConnectResponse();
               if (respPb.hasHmsConfig()) {
                 Master.HiveMetastoreConfig metastoreConf = respPb.getHmsConfig();
-                hiveMetastoreConfig = new HiveMetastoreConfig(metastoreConf.getHmsUris(),
-                                                              metastoreConf.getHmsSaslEnabled(),
-                                                              metastoreConf.getHmsUuid());
+                config = new HiveMetastoreConfig(metastoreConf.getHmsUris(),
+                                                 metastoreConf.getHmsSaslEnabled(),
+                                                 metastoreConf.getHmsUuid());
               }
               synchronized (AsyncKuduClient.this) {
-                AsyncKuduClient.this.hiveMetastoreConfig = hiveMetastoreConfig;
+                hiveMetastoreConfig = config;
                 location = respPb.getClientLocation();
                 clusterId = respPb.getClusterId();
               }
@@ -2316,14 +2324,6 @@ public class AsyncKuduClient implements AutoCloseable {
       Thread.currentThread().interrupt();  // Make this someone else's problem.
       return false;
     }
-  }
-
-  /**
-   * Releases a master lookup permit that was acquired.
-   * @see #acquireMasterLookupPermit
-   */
-  private void releaseMasterLookupPermit() {
-    masterLookups.release();
   }
 
   /**

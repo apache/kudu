@@ -580,7 +580,7 @@ public final class AsyncKuduScanner {
           sequenceId++;
           hasMore = resp.more;
           if (LOG.isDebugEnabled()) {
-            LOG.debug("Scanner " + Bytes.pretty(scannerId) + " opened on " + tablet);
+            LOG.debug("Scanner {} opened on {}", Bytes.pretty(scannerId), tablet);
           }
           return Deferred.fromResult(resp.data);
         }
@@ -665,7 +665,6 @@ public final class AsyncKuduScanner {
           }
           sequenceId++;
           hasMore = resp.more;
-          //LOG.info("Scan.next is returning rows: " + resp.data.getNumRows());
           return resp.data;
         }
 
@@ -755,8 +754,7 @@ public final class AsyncKuduScanner {
       public RowResultIterator call(Response response) {
         closed = true;
         if (LOG.isDebugEnabled()) {
-          LOG.debug("Scanner " + Bytes.pretty(scannerId) + " closed on " +
-              tablet);
+          LOG.debug("Scanner {} closed on {}", Bytes.pretty(scannerId), tablet);
         }
         invalidate();
         scannerId = "client debug closed".getBytes(UTF_8);   // Make debugging easier.
@@ -1109,10 +1107,8 @@ public final class AsyncKuduScanner {
             }
           }
 
-          if (isFaultTolerant) {
-            if (AsyncKuduScanner.this.lastPrimaryKey.length > 0) {
-              newBuilder.setLastPrimaryKey(UnsafeByteOperations.unsafeWrap(lastPrimaryKey));
-            }
+          if (isFaultTolerant && AsyncKuduScanner.this.lastPrimaryKey.length > 0) {
+            newBuilder.setLastPrimaryKey(UnsafeByteOperations.unsafeWrap(lastPrimaryKey));
           }
 
           if (AsyncKuduScanner.this.startPrimaryKey.length > 0) {
@@ -1209,7 +1205,7 @@ public final class AsyncKuduScanner {
                                         : AsyncKuduClient.NO_TIMESTAMP,
           resp.getLastPrimaryKey().toByteArray(), resourceMetricsPB);
       if (LOG.isDebugEnabled()) {
-        LOG.debug("{} for scanner {}", response.toString(), AsyncKuduScanner.this);
+        LOG.debug("{} for scanner {}", response, AsyncKuduScanner.this);
       }
       return new Pair<>(response, error);
     }

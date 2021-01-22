@@ -31,6 +31,10 @@ import org.apache.yetus.audience.InterfaceAudience;
  */
 @InterfaceAudience.Private
 public class IPCUtil {
+
+  private IPCUtil() {
+  }
+
   /**
    * Write out header, param, and cell block if there is one.
    * @param dos

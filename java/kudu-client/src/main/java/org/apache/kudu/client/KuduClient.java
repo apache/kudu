@@ -41,7 +41,7 @@ import org.apache.kudu.master.Master.TableIdentifierPB;
 @InterfaceStability.Evolving
 public class KuduClient implements AutoCloseable {
 
-  private static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
+  private static final Logger LOG = LoggerFactory.getLogger(KuduClient.class);
   public static final long NO_TIMESTAMP = -1;
 
   @InterfaceAudience.LimitedPrivate("Test")
@@ -542,7 +542,8 @@ public class KuduClient implements AutoCloseable {
      * @return this builder
      * @deprecated socket read timeouts are no longer used
      */
-    @Deprecated public KuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
+    @Deprecated
+    public KuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
       LOG.info("defaultSocketReadTimeoutMs is deprecated");
       return this;
     }

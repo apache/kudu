@@ -128,7 +128,7 @@ class RpcProxy {
       // Throw an exception to enable testing failures. See `failNextRpcs`.
       if (staticNumFail > 0) {
         staticNumFail--;
-        LOG.warn("Forcing a failure on sendRpc: " + rpc);
+        LOG.warn("Forcing a failure on sendRpc: {}", rpc);
         throw staticException;
       }
       if (!rpc.getRequiredFeatures().isEmpty()) {

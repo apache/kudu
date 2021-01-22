@@ -30,6 +30,10 @@ public class HybridTimeUtil {
   public static final int hybridTimeNumBitsToShift = 12;
   public static final int hybridTimeLogicalBitsMask = (1 << hybridTimeNumBitsToShift) - 1;
 
+  /** Non-constructable utility class. */
+  private HybridTimeUtil() {
+  }
+
   /**
    * Converts the provided timestamp, in the provided unit, to the HybridTime timestamp
    * format. Logical bits are set to 0.

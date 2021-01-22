@@ -53,13 +53,13 @@ class RowwiseRowResultIterator extends RowResultIterator {
    * @param reuseRowResult reuse same row result for next row
    */
   RowwiseRowResultIterator(long elapsedMillis,
-                                   String tsUUID,
-                                   Schema schema,
-                                   int numRows,
-                                   Slice bs,
-                                   Slice indirectBs,
-                                   boolean reuseRowResult) {
-    super(elapsedMillis, tsUUID, schema, numRows, reuseRowResult);
+                           String tsUUID,
+                           Schema schema,
+                           int numRows,
+                           Slice bs,
+                           Slice indirectBs,
+                           boolean reuseRowResult) {
+    super(elapsedMillis, tsUUID, schema, numRows);
     this.bs = bs;
     this.indirectBs = indirectBs;
 

@@ -121,7 +121,7 @@ public class KuduSession implements SessionConfiguration {
   }
 
   @Override
-  public void setFlushMode(AsyncKuduSession.FlushMode flushMode) {
+  public void setFlushMode(FlushMode flushMode) {
     session.setFlushMode(flushMode);
   }
 
@@ -135,6 +135,9 @@ public class KuduSession implements SessionConfiguration {
     session.setErrorCollectorSpace(size);
   }
 
+  /**
+   * @deprecated
+   */
   @Override
   @Deprecated
   public void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage) {

@@ -315,15 +315,6 @@ final class ConnectToCluster {
     }
   }
 
-  private void recordKnownMasters(ConnectToMasterResponsePB r) {
-    // Old versions don't set this field.
-    if (r.getMasterAddrsCount() == 0) {
-      return;
-    }
-
-    knownMasters.compareAndSet(null, r.getMasterAddrsList());
-  }
-
   /**
    * Callback for each ConnectToCluster RPC sent in connectToMaster() above.
    * If a request (paired to a specific master) returns a reply that indicates it's a leader,
@@ -363,6 +354,15 @@ final class ConnectToCluster {
     @Override
     public String toString() {
       return "ConnectToMasterCB for " + hostAndPort.toString();
+    }
+
+    private void recordKnownMasters(ConnectToMasterResponsePB r) {
+      // Old versions don't set this field.
+      if (r.getMasterAddrsCount() == 0) {
+        return;
+      }
+
+      knownMasters.compareAndSet(null, r.getMasterAddrsList());
     }
   }
 
