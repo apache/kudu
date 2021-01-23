@@ -442,7 +442,8 @@ Status TabletReplica::SubmitWrite(unique_ptr<WriteOpState> op_state) {
   unique_ptr<WriteOp> op(new WriteOp(std::move(op_state), consensus::LEADER));
   scoped_refptr<OpDriver> driver;
   RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
-  return driver->ExecuteAsync();
+  driver->ExecuteAsync();
+  return Status::OK();
 }
 
 Status TabletReplica::SubmitTxnParticipantOp(std::unique_ptr<ParticipantOpState> op_state) {
@@ -452,7 +453,8 @@ Status TabletReplica::SubmitTxnParticipantOp(std::unique_ptr<ParticipantOpState>
   unique_ptr<ParticipantOp> op(new ParticipantOp(std::move(op_state), consensus::LEADER));
   scoped_refptr<OpDriver> driver;
   RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
-  return driver->ExecuteAsync();
+  driver->ExecuteAsync();
+  return Status::OK();
 }
 
 Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaOpState> state) {
@@ -462,7 +464,8 @@ Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaOpState> state) {
       new AlterSchemaOp(std::move(state), consensus::LEADER));
   scoped_refptr<OpDriver> driver;
   RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
-  return driver->ExecuteAsync();
+  driver->ExecuteAsync();
+  return Status::OK();
 }
 
 void TabletReplica::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
@@ -695,7 +698,7 @@ Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round
   state->consensus_round()->SetConsensusReplicatedCallback(
       [driver_raw](const Status& s) { driver_raw->ReplicationFinished(s); });
 
-  RETURN_NOT_OK(driver->ExecuteAsync());
+  driver->ExecuteAsync();
   return Status::OK();
 }
 

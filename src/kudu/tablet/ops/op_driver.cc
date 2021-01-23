@@ -209,7 +209,7 @@ string OpDriver::ToStringUnlocked() const {
 }
 
 
-Status OpDriver::ExecuteAsync() {
+void OpDriver::ExecuteAsync() {
   VLOG_WITH_PREFIX(4) << "ExecuteAsync()";
   TRACE_EVENT_FLOW_BEGIN0("op", "ExecuteAsync", this);
   ADOPT_TRACE(trace());
@@ -225,12 +225,9 @@ Status OpDriver::ExecuteAsync() {
     s = prepare_pool_token_->Submit([this]() { this->PrepareTask(); });
   }
 
-  if (!s.ok()) {
+  if (PREDICT_FALSE(!s.ok())) {
     HandleFailure(s);
   }
-
-  // TODO: make this return void
-  return Status::OK();
 }
 
 void OpDriver::PrepareTask() {

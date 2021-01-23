@@ -241,10 +241,9 @@ class OpDriver : public RefCountedThreadSafe<OpDriver> {
   // be used in tight loops.
   consensus::OpId GetOpId();
 
-  // Submits the op for execution.
-  // The returned status acknowledges any error on the submission process.
-  // The op will be replied to asynchronously.
-  Status ExecuteAsync();
+  // Submits the op for execution. Any errors on the submission process are
+  // handled by this method itself. The op will be replied to asynchronously.
+  void ExecuteAsync();
 
   // Aborts the op, if possible. Since ops are executed in
   // multiple stages by multiple executors it might not be possible to stop

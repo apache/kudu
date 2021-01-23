@@ -798,7 +798,7 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
   unique_ptr<DelayedParticipantOp> op(
       new DelayedParticipantOp(&apply_start, &apply_continue, std::move(op_state)));
   ASSERT_OK(tablet_replica_->NewLeaderOpDriver(std::move(op), &driver));
-  ASSERT_OK(driver->ExecuteAsync());
+  driver->ExecuteAsync();
   // Wait for the apply to start, indicating that we have persisted and
   // replicated but not yet Raft committed the participant op.
   apply_start.Wait();

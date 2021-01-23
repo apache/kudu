@@ -426,8 +426,7 @@ TEST_F(TabletReplicaTest, TestActiveOpPreventsLogGC) {
     scoped_refptr<OpDriver> driver;
     ASSERT_OK(tablet_replica_->NewLeaderOpDriver(std::move(op),
                                                  &driver));
-
-    ASSERT_OK(driver->ExecuteAsync());
+    driver->ExecuteAsync();
     apply_started.Wait();
     ASSERT_TRUE(driver->GetOpId().IsInitialized())
       << "By the time an op is applied, it should have an Opid";
