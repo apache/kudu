@@ -50,7 +50,6 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_coordinator.h"
-#include "kudu/tablet/txn_participant-test-util.h"
 #include "kudu/tablet/txn_participant.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_system_client.h"
@@ -160,8 +159,10 @@ class TxnCommitITest : public KuduTest {
     table_name_ = w.table_name();
     initial_row_count_ = w.rows_inserted();
 
-    // TODO(awong): until we start registering participants automatically, we
-    // need to manually register them, so keep track of what tablets exist.
+    // Since the test table uses the hash partitioning scheme, every tablet gets
+    // at least one write operation when inserting several rows into the test
+    // table. So, for every transaction inserting several rows into the test
+    // table, it's easy to build the list of transaction participants.
     unordered_set<string> tablet_ids;
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       auto* ts = cluster_->mini_tablet_server(i);
@@ -176,36 +177,14 @@ class TxnCommitITest : public KuduTest {
     }
   }
 
-  // TODO(awong): register participants automatically as a part of writing to
-  // tablets for the first time.
-  Status RegisterParticipants(const TxnId& txn_id, vector<string> tablet_ids) {
-    for (const auto& prt_id : tablet_ids) {
-      RETURN_NOT_OK(txn_client_->RegisterParticipant(txn_id.value(), prt_id, client_user_));
-      RETURN_NOT_OK(txn_client_->ParticipateInTransaction(
-          prt_id,
-          tablet::MakeParticipantOp(txn_id.value(), tserver::ParticipantOpPB::BEGIN_TXN),
-          kTimeout));
-    }
-    return Status::OK();
-  }
-
   // Start a transaction, manually registering the given participants, and
   // returning the associated transaction and session handles.
-  Status BeginTransaction(const vector<string>& participant_ids,
-                          shared_ptr<KuduTransaction>* txn,
+  Status BeginTransaction(shared_ptr<KuduTransaction>* txn,
                           shared_ptr<KuduSession>* session) {
     shared_ptr<KuduTransaction> txn_local;
     RETURN_NOT_OK(client_->NewTransaction(&txn_local));
     shared_ptr<KuduSession> txn_session_local;
     RETURN_NOT_OK(txn_local->CreateSession(&txn_session_local));
-
-    string txn_token;
-    RETURN_NOT_OK(txn_local->Serialize(&txn_token));
-    TxnTokenPB token;
-    CHECK(token.ParseFromString(txn_token));
-    CHECK(token.has_txn_id());
-
-    RETURN_NOT_OK(RegisterParticipants(token.txn_id(), participant_ids_));
     *txn = std::move(txn_local);
     *session = std::move(txn_session_local);
     return Status::OK();
@@ -280,17 +259,15 @@ class TxnCommitITest : public KuduTest {
   string table_name_;
   int initial_row_count_;
 
-  // TODO(awong): Only needed until we start registering participants
-  // automatically.
+  // Needed for checking on internals of txn participants.
   string tsm_id_;
   vector<string> participant_ids_;
-  int cur_txn_id_ = 0;
 };
 
 TEST_F(TxnCommitITest, TestBasicCommits) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
 
   // Even though we've inserted, we shouldn't be able to see any new rows until
@@ -315,7 +292,7 @@ TEST_F(TxnCommitITest, TestBasicCommits) {
 TEST_F(TxnCommitITest, TestBasicAborts) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
 
   int num_rows = 0;
@@ -351,7 +328,7 @@ TEST_F(TxnCommitITest, TestAbortInProgress) {
   FLAGS_txn_schedule_background_tasks = false;
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction({}, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   ASSERT_OK(txn->Rollback());
 
@@ -384,7 +361,7 @@ TEST_F(TxnCommitITest, TestBackgroundAborts) {
   {
     shared_ptr<KuduTransaction> txn;
     shared_ptr<KuduSession> txn_session;
-    ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+    ASSERT_OK(BeginTransaction(&txn, &txn_session));
     ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
 
     int num_rows = 0;
@@ -420,7 +397,7 @@ TEST_F(TxnCommitITest, TestCommitWhileDeletingTxnStatusManager) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
 
   ASSERT_OK(txn->Commit(/*wait*/false));
@@ -436,7 +413,7 @@ TEST_F(TxnCommitITest, TestCommitWhileDeletingTxnStatusManager) {
 TEST_F(TxnCommitITest, TestCommitAfterDeletingParticipant) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   ASSERT_OK(client_->DeleteTable(table_name_));
   ASSERT_OK(txn->Commit(/*wait*/false));
@@ -455,7 +432,7 @@ TEST_F(TxnCommitITest, TestCommitAfterDeletingParticipant) {
 TEST_F(TxnCommitITest, TestCommitAfterDroppingRangeParticipant) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   ASSERT_OK(client_->DeleteTable(table_name_));
   const auto& schema = client::KuduSchema::FromSchema(GetSimpleTestSchema());
@@ -479,7 +456,7 @@ TEST_F(TxnCommitITest, TestCommitAfterDroppingRangeParticipant) {
 TEST_F(TxnCommitITest, TestRestartingWhileCommitting) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 2000;
   ASSERT_OK(txn->Commit(/*wait*/false));
   // Stop the tserver without allowing the finalize commit to complete.
@@ -526,18 +503,10 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
     SleepFor(MonoDelta::FromMilliseconds(50));
   }
   w.StopAndJoin();
-  unordered_set<string> participant_ids;
-  auto* mts = cluster_->mini_tablet_server(0);
-  for (const auto& tablet_id : mts->ListTablets()) {
-    if (tablet_id != tsm_id_) {
-      participant_ids.emplace(tablet_id);
-    }
-  }
-  vector<string> both_tables_participant_ids(participant_ids.begin(), participant_ids.end());
 
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(both_tables_participant_ids, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 2000;
   ASSERT_OK(txn->Commit(/*wait*/false));
@@ -546,6 +515,7 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
   SleepFor(MonoDelta::FromMilliseconds(1000));
 
   // Shut down without giving time for the commit to complete.
+  auto* mts = cluster_->mini_tablet_server(0);
   mts->Shutdown();
   ASSERT_OK(mts->Restart());
   ASSERT_OK(mts->server()->tablet_manager()->WaitForAllBootstrapsToFinish());
@@ -587,20 +557,20 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
 TEST_F(TxnCommitITest, TestLoadTxnStatusManagerWhenNoMasters) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
 
   cluster_->mini_master()->Shutdown();
   cluster_->mini_tablet_server(0)->Shutdown();
   ASSERT_OK(cluster_->mini_tablet_server(0)->Restart());
 
   // While the master is down, we can't contact the TxnManager.
-  Status s = BeginTransaction(participant_ids_, &txn, &txn_session);
+  Status s = BeginTransaction(&txn, &txn_session);
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 
   // Once restarted, it should be business as usual.
   ASSERT_OK(cluster_->mini_master()->Restart());
   ASSERT_EVENTUALLY([&] {
-    ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+    ASSERT_OK(BeginTransaction(&txn, &txn_session));
   });
   scoped_refptr<tablet::TabletReplica> tsm_replica;
   auto* tablet_manager = cluster_->mini_tablet_server(0)->server()->tablet_manager();
@@ -618,7 +588,7 @@ TEST_F(TxnCommitITest, TestCommitAfterParticipantAbort) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
 
   // Send an ABORT_TXN op to the participant.
@@ -645,7 +615,7 @@ TEST_F(TxnCommitITest, TestConcurrentCommitCalls) {
   int row_start = initial_row_count_;
   for (int i = 0; i < kNumTxns; i++) {
     shared_ptr<KuduSession> txn_session;
-    ASSERT_OK(BeginTransaction(participant_ids_, &txns[i], &txn_session));
+    ASSERT_OK(BeginTransaction(&txns[i], &txn_session));
     ASSERT_OK(InsertToSession(txn_session, row_start, kNumRowsPerTxn));
     row_start += kNumRowsPerTxn;
   }
@@ -684,7 +654,7 @@ TEST_F(TxnCommitITest, TestConcurrentCommitCalls) {
 TEST_F(TxnCommitITest, TestConcurrentRepeatedCommitCalls) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   int num_rows = 0;
   ASSERT_OK(CountRows(&num_rows));
@@ -721,7 +691,7 @@ TEST_F(TxnCommitITest, TestDontAbortIfCommitInProgress) {
   {
     shared_ptr<KuduTransaction> txn;
     shared_ptr<KuduSession> txn_session;
-    ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+    ASSERT_OK(BeginTransaction(&txn, &txn_session));
     ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
     ASSERT_OK(txn->Commit(/*wait*/false));
     ASSERT_OK(txn->Serialize(&serialized_txn));
@@ -788,7 +758,7 @@ TEST_F(TwoNodeTxnCommitITest, TestCommitWhenParticipantsAreDown) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   prt_ts_->Shutdown();
   ASSERT_OK(txn->Commit(/*wait*/false));
@@ -822,13 +792,13 @@ TEST_F(TwoNodeTxnCommitITest, TestStartTasksDuringStartup) {
   shared_ptr<KuduTransaction> committed_txn;
   {
     shared_ptr<KuduSession> txn_session;
-    ASSERT_OK(BeginTransaction(participant_ids_, &committed_txn, &txn_session));
+    ASSERT_OK(BeginTransaction(&committed_txn, &txn_session));
     ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   }
   shared_ptr<KuduTransaction> aborted_txn;
   {
     shared_ptr<KuduSession> txn_session;
-    ASSERT_OK(BeginTransaction(participant_ids_, &aborted_txn, &txn_session));
+    ASSERT_OK(BeginTransaction(&aborted_txn, &txn_session));
     ASSERT_OK(InsertToSession(txn_session, initial_row_count_ + kNumRowsPerTxn, kNumRowsPerTxn));
   }
 
@@ -879,7 +849,7 @@ TEST_F(TwoNodeTxnCommitITest, TestStartTasksDuringStartup) {
 TEST_F(TwoNodeTxnCommitITest, TestCommitWhileShuttingDownTxnStatusManager) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction({}, &txn, &txn_session));
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
 
   ASSERT_OK(txn->Commit(/*wait*/false));
   tsm_ts_->Shutdown();
@@ -922,12 +892,12 @@ TEST_F(ThreeNodeTxnCommitITest, TestCommitTasksReloadOnLeadershipChange) {
   shared_ptr<KuduTransaction> aborted_txn;
   {
     shared_ptr<KuduSession> txn_session;
-    ASSERT_OK(BeginTransaction(participant_ids_, &committed_txn, &txn_session));
+    ASSERT_OK(BeginTransaction(&committed_txn, &txn_session));
     ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   }
   {
     shared_ptr<KuduSession> txn_session;
-    ASSERT_OK(BeginTransaction(participant_ids_, &aborted_txn, &txn_session));
+    ASSERT_OK(BeginTransaction(&aborted_txn, &txn_session));
     ASSERT_OK(InsertToSession(txn_session, initial_row_count_ + kNumRowsPerTxn, kNumRowsPerTxn));
   }
   ASSERT_OK(committed_txn->Commit(/*wait*/ false));

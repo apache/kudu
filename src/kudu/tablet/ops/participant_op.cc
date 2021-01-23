@@ -156,13 +156,37 @@ Status ParticipantOp::Prepare() {
   state_->AcquireTxnAndLock();
   RETURN_NOT_OK(state_->ValidateOp());
 
+  const auto& op = state_->request()->op();
+  auto* replica = state_->tablet_replica();
+
   // Before we assign a timestamp, bump the clock so further ops get assigned
   // higher timestamps (including this one).
-  if (state_->request()->op().type() == ParticipantOpPB::FINALIZE_COMMIT &&
-      type() == consensus::LEADER) {
-    DCHECK(!state_->consensus_round()->replicate_msg()->has_timestamp());
-    RETURN_NOT_OK(state_->tablet_replica()->time_manager()->UpdateClockAndLastAssignedTimestamp(
-        state_->commit_timestamp()));
+  switch (op.type()) {
+    case ParticipantOpPB::BEGIN_COMMIT:
+      // To avoid inconsistencies, TxnOpDispatcher should not contain any
+      // pending write requests at this point. Those pending requests must be
+      // submitted and replied accordingly before BEGIN_COMMIT can be processed.
+      // Even if UnregisterTxnOpDispatcher() returns non-OK, the TxnOpDispatcher
+      // is marked for removal, so no write requests are accepted by the replica
+      // in the context of the specified transaction after a call to
+      // TabletReplica::UnregisterTxnOpDispatcher().
+      RETURN_NOT_OK(replica->UnregisterTxnOpDispatcher(
+          op.txn_id(), false/*abort_pending_ops*/));
+      break;
+    case ParticipantOpPB::FINALIZE_COMMIT:
+      if (type() == consensus::LEADER) {
+        DCHECK(!state_->consensus_round()->replicate_msg()->has_timestamp());
+        RETURN_NOT_OK(state_->tablet_replica()->time_manager()->
+            UpdateClockAndLastAssignedTimestamp(state_->commit_timestamp()));
+      }
+      break;
+    case ParticipantOpPB::ABORT_TXN:
+      RETURN_NOT_OK(replica->UnregisterTxnOpDispatcher(
+          op.txn_id(), true/*abort_pending_ops*/));
+      break;
+    default:
+      // Nothing to do in all other cases.
+      break;
   }
   TRACE("PREPARE: Finished.");
   return Status::OK();
@@ -183,7 +207,7 @@ Status ParticipantOp::Start() {
 
 Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* tablet) {
   const auto& op = request()->op();
-  const auto& op_type = request()->op().type();
+  const auto& op_type = op.type();
   Status s;
   switch (op_type) {
     // NOTE: these can currently never fail because we are only updating

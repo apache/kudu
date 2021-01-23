@@ -18,10 +18,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -36,11 +39,13 @@
 #include "kudu/tablet/op_order_verifier.h"
 #include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/ops/op_tracker.h"
+#include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 namespace kudu {
 class AlterTableTest;
@@ -50,6 +55,13 @@ class MaintenanceOp;
 class MonoDelta;
 class ThreadPool;
 class ThreadPoolToken;
+class TxnOpDispatcherITest;
+class TxnOpDispatcherITest_DispatcherLifecycleMultipleReplicas_Test;
+class TxnOpDispatcherITest_DuplicateTxnParticipantRegistration_Test;
+class TxnOpDispatcherITest_ErrorInProcessingWriteOp_Test;
+class TxnOpDispatcherITest_LifecycleBasic_Test;
+class TxnOpDispatcherITest_NoPendingWriteOps_Test;
+class TxnOpDispatcherITest_PreliminaryTasksTimeout_Test;
 
 namespace consensus {
 class ConsensusMetadataManager;
@@ -77,7 +89,6 @@ class ParticipantOpState;
 class TabletStatusPB;
 class TxnCoordinator;
 class TxnCoordinatorFactory;
-class WriteOpState;
 
 // A replica in a tablet consensus configuration, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -133,13 +144,33 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   bool IsShuttingDown() const;
 
   // Wait until the tablet is in a RUNNING state or if there's a timeout.
-  // TODO have a way to wait for any state?
+  // TODO(jdcryans): have a way to wait for any state?
   Status WaitUntilConsensusRunning(const MonoDelta& timeout);
+
+  // Submit a write operation 'op_state' attributed to a multi-row transaction.
+  // This is similar to SubmitWrite(), but it's more complicated because it is
+  // stateful. The necessary preliminary steps to complete before submitting the
+  // operation via SubmitWrite() are: (1) register the tablet as a participant
+  // in the corresponding transaction (2) issue BEGIN_TXN operation to the
+  // replica. The 'scheduler' functor is used to schedule the activities
+  // mentioned above.
+  Status SubmitTxnWrite(
+      std::unique_ptr<WriteOpState> op_state,
+      const std::function<Status(int64_t txn_id, StatusCallback cb)>& scheduler);
+
+  // Unregister TxnWriteOpDispacher for the specified transaction identifier
+  // 'txn_id'. If no pending write requests are accumulated by the dispatcher,
+  // the dispatcher is unregistered immediately and this method returns
+  // Status::OK. If any write request is pending, the dispatcher is marked to be
+  // unregistered and this method returns Status::ServiceUnavailable(),
+  // prompting the caller to try again later, unless 'abort_pending_ops' is set
+  // to 'true'. If 'abort_pending_ops' is set to true, all pending requests are
+  // responsed with Status::Aborted() status and the entry is removed.
+  Status UnregisterTxnOpDispatcher(int64_t txn_id, bool abort_pending_ops);
 
   // Submits a write to a tablet and executes it asynchronously.
   // The caller is expected to build and pass a WriteOpState that points to the
-  // RPC WriteRequest, WriteResponse, RpcContext and to the tablet's
-  // MvccManager.
+  // RPC's WriteRequest, and WriteResponse.
   Status SubmitWrite(std::unique_ptr<WriteOpState> op_state);
 
   // Submits an op to update transaction participant state, executing it
@@ -350,14 +381,116 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Decrease the task counter of the transaction status manager.
   void DecreaseTxnCoordinatorTaskCounter();
 
+  // Submit ParticipantOpPB::BEGIN_TXN operation for the specified transaction.
+  void BeginTxnParticipantOp(int64_t txn_id, StatusCallback cb);
+
  private:
   friend class kudu::AlterTableTest;
   friend class RefCountedThreadSafe<TabletReplica>;
   friend class TabletReplicaTest;
   friend class TabletReplicaTestBase;
-  FRIEND_TEST(TabletReplicaTest, TestMRSAnchorPreventsLogGC);
-  FRIEND_TEST(TabletReplicaTest, TestDMSAnchorPreventsLogGC);
+  friend class kudu::TxnOpDispatcherITest;
   FRIEND_TEST(TabletReplicaTest, TestActiveOpPreventsLogGC);
+  FRIEND_TEST(TabletReplicaTest, TestDMSAnchorPreventsLogGC);
+  FRIEND_TEST(TabletReplicaTest, TestMRSAnchorPreventsLogGC);
+  FRIEND_TEST(kudu::TxnOpDispatcherITest, LifecycleBasic);
+
+  // A class to properly dispatch transactional write operations arriving
+  // with TabletServerService::Write() RPC for the specified tablet replica.
+  // Before submitting the operations via TabletReplica::SubmitWrite(), it's
+  // necessary to register the tablet as a participant in the transaction and
+  // issue BEGIN_TXN operation for the target tablet. This class implements
+  // the logic to schedule those preliminary tasks while accumulating incoming
+  // write operations for the interval between the time when the very first
+  // write operation for a transaction arrives and the time when the preliminary
+  // tasks finish.
+  class TxnOpDispatcher: public std::enable_shared_from_this<TxnOpDispatcher> {
+   public:
+    // The 'max_queue_size' parameter sets the limit of how many operations
+    // this TxnOpDispatcher instance is allowed to buffer before starting to
+    // reject new ones with Status::ServiceUnavailable error.
+    TxnOpDispatcher(TabletReplica* replica,
+                    size_t max_queue_size)
+        : replica_(replica),
+          max_queue_size_(max_queue_size),
+          preliminary_tasks_completed_(false),
+          unregistered_(false),
+          inflight_status_(Status::OK()) {
+    }
+
+    // Dispatch specified write operation: either put it into the queue,
+    // or submit it immediately via TabletReplica::SubmitWrite(), or reject the
+    // operation. In the two former cases, returns Status::OK(); in the latter
+    // case returns non-OK status correspondingly. The 'scheduler' function is
+    // invoked to schedule preliminary tasks, if necessary.
+    Status Dispatch(std::unique_ptr<WriteOpState> op,
+                    const std::function<Status(int64_t txn_id,
+                                               StatusCallback cb)>& scheduler);
+
+    // Submit all pending operations. Returns OK if all operations have been
+    // submitted successfully, or 'inflight_status_' if any of those failed.
+    Status Submit();
+
+    // Invoke callbacks for every buffered operation with the 'status';
+    // the 'status' must be a non-OK one.
+    void Cancel(const Status& status);
+
+    // Mark the dispatcher as not accepting any write operations: this is to
+    // eventually unregister the dispatcher for the corresponding transaction
+    // (i.e. remove the element from the map of available dispatchers). In the
+    // unlikely event of the presence of pending write operations, this method
+    // returns Status::ServiceUnavailable().
+    Status MarkUnregistered();
+
+   private:
+    FRIEND_TEST(kudu::TxnOpDispatcherITest, DispatcherLifecycleMultipleReplicas);
+    FRIEND_TEST(kudu::TxnOpDispatcherITest, DuplicateTxnParticipantRegistration);
+    FRIEND_TEST(kudu::TxnOpDispatcherITest, ErrorInProcessingWriteOp);
+    FRIEND_TEST(kudu::TxnOpDispatcherITest, LifecycleBasic);
+    FRIEND_TEST(kudu::TxnOpDispatcherITest, NoPendingWriteOps);
+    FRIEND_TEST(kudu::TxnOpDispatcherITest, PreliminaryTasksTimeout);
+
+    // Add the specified operation into the queue.
+    Status EnqueueUnlocked(std::unique_ptr<WriteOpState> op);
+
+    // Respond to the given write operations with the specified status.
+    static Status RespondWithStatus(
+        const Status& status,
+        std::deque<std::unique_ptr<WriteOpState>> ops);
+
+    // Pointer to the parent TabletReplica instance which keeps this
+    // TxnOpDispatcher instance in its 'txn_op_dispatchers_' map.
+    TabletReplica* const replica_;
+
+    // Maximum number of transactional write operation to buffer in the
+    // 'ops_queue_' before completing all the preliminary tasks which are
+    // required to start processing transactional write operations for the
+    // tablet.
+    const size_t max_queue_size_;
+
+    // Protects the members below: preliminary_tasks_completed_, unregistered_,
+    // inflight_status_, ops_queue_.
+    mutable simple_spinlock lock_;
+
+    // Whether the preliminary tasks are completed and this instance is
+    // ready to submit incoming txn write operations directly via
+    // TabletReplica::SubmitWrite().
+    bool preliminary_tasks_completed_;
+
+    // Whether this instance has been marked as unregistered and pending
+    // destruction.
+    bool unregistered_;
+
+    // This field stores the first non-OK status (if any) returned by
+    // TabletReplica::SubmitWrite() when submitting pending operations from
+    // 'ops_queue_' upon completion of preliminary tasks.
+    Status inflight_status_;
+
+    // Queue to buffer txn write operations while the preliminary work of
+    // registering the tablet as a participant in the transaction, etc. are
+    // in progress.
+    std::deque<std::unique_ptr<WriteOpState>> ops_queue_;
+  };
 
   ~TabletReplica();
 
@@ -402,6 +535,19 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   // Track the number of on-going tasks of the transaction status manager.
   int txn_coordinator_task_counter_;
+
+  // Maps txn_id --> txn write op dispatcher. This map stores ref-counted
+  // pointers instead of instances/references because an element can be removed
+  // from the map (unregistered) while concurrently still receiving requests
+  // (the latter will be rejected with Status::IllegalState). An alternative to
+  // this scheme with ref-counted pointers would be
+  //   (a) process _all_ transactional requests under the same giant lock
+  //       (even for different transactions)
+  //   (b) change the lifecycle of an entry in the txn_op_dispatcher_ map,
+  //       introducing an alternative approach to clean-up obsolete elements
+  //       from the map
+  std::unordered_map<int64_t, std::shared_ptr<TxnOpDispatcher>> txn_op_dispatchers_;
+  simple_spinlock txn_op_dispatchers_lock_; // protects 'txn_op_dispatchers_'
 
   // Function to mark this TabletReplica's tablet as dirty in the TSTabletManager.
   //

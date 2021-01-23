@@ -516,6 +516,12 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
   // require some server-side changes). For example, IllegalState is
   // obviously way too broad an error category for this case.
   if (result.status.IsIllegalState() || result.status.IsAborted()) {
+    // TODO(aserbin): this very broad transformation of Status::IllegalState()
+    //                becomes a real issue when handling responses to write
+    //                operations in the context of multi-row transactions.
+    //                For example, Status::IllegalState() originated from
+    //                TabletServerErrorPB::TXN_ILLEGAL_STATE responses are
+    //                needlessly retried.
     result.result = RetriableRpcStatus::REPLICA_NOT_LEADER;
     return result;
   }

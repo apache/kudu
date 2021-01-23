@@ -44,6 +44,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 
 namespace boost {
 template <class T>
@@ -58,6 +59,9 @@ class Partition;
 class PartitionSchema;
 class Schema;
 class ThreadPool;
+namespace transactions {
+class TxnSystemClient;
+}  // namespace transactions
 
 namespace consensus {
 class ConsensusMetadataManager;
@@ -240,6 +244,14 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Update the tablet statistics if necessary.
   void UpdateTabletStatsIfNecessary();
 
+  // Schedule preliminary tasks to process
+  Status SchedulePreliminaryTasksForTxnWrite(
+      scoped_refptr<tablet::TabletReplica> replica,
+      int64_t txn_id,
+      const std::string& user,
+      MonoTime deadline,
+      StatusCallback cb);
+
  private:
   FRIEND_TEST(LeadershipChangeReportingTest, TestReportStatsDuringLeadershipChange);
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
@@ -257,6 +269,14 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   std::string LogPrefix(const std::string& tablet_id) const {
     return LogPrefix(tablet_id, fs_manager_);
   }
+
+  static void RegisterAndBeginParticipantTxnTask(
+      transactions::TxnSystemClient* txn_system_client,
+      scoped_refptr<tablet::TabletReplica> replica,
+      int64_t txn_id,
+      const std::string& user,
+      MonoTime deadline,
+      StatusCallback cb);
 
   // Returns Status::OK() iff state_ == MANAGER_RUNNING.
   Status CheckRunningUnlocked(TabletServerErrorPB::Code* error_code) const;
@@ -359,7 +379,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
 
-  TabletServer* server_;
+  TabletServer* const server_;
 
   consensus::RaftPeerPB local_peer_pb_;
 
@@ -417,6 +437,11 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Thread pool used to perform background tasks on transactions, e.g. to commit.
   std::unique_ptr<ThreadPool> txn_commit_pool_;
+
+  // Thread pool to perform preliminary tasks when processing write operations
+  // in the context of a multi-row transaction. Such tasks include registering
+  // tablet as a participant in the corresponding transaction, etc.
+  std::unique_ptr<ThreadPool> txn_participant_registration_pool_;
 
   // Thread pool to run TxnStatusManager tasks. As of now, this pool is
   // to run a long-running single periodic task to abort stale transactions

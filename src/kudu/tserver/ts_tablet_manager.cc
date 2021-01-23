@@ -18,6 +18,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -57,6 +58,7 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_coordinator.h"
 #include "kudu/transactions/txn_status_manager.h"
+#include "kudu/transactions/txn_system_client.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/debug/trace_event.h"
@@ -102,6 +104,13 @@ TAG_FLAG(num_txn_status_tablets_to_reload_simultaneously, advanced);
 DEFINE_int32(txn_commit_pool_num_threads, 10,
              "Number of threads available for transaction commit tasks.");
 TAG_FLAG(txn_commit_pool_num_threads, advanced);
+
+DEFINE_int32(txn_participant_registration_pool_num_threads, 10,
+             "Number of threads available for tasks to register tablets as "
+             "transaction participants upon receiving write operations "
+             "in the context of multi-row transactions");
+TAG_FLAG(txn_participant_registration_pool_num_threads, advanced);
+TAG_FLAG(txn_participant_registration_pool_num_threads, experimental);
 
 DEFINE_int32(tablet_start_warn_threshold_ms, 500,
              "If a tablet takes more than this number of millis to start, issue "
@@ -161,6 +170,18 @@ DEFINE_uint32(txn_staleness_tracker_disabled_interval_ms, 60000,
               "transaction tracker task to check whether it's been re-enabled. "
               "This is made configurable only for testing purposes.");
 TAG_FLAG(txn_staleness_tracker_disabled_interval_ms, hidden);
+
+DEFINE_int32(txn_participant_begin_op_inject_latency_ms, 0,
+             "Amount of delay in milliseconds to inject before issuing "
+             "BEGIN_TXN operation for a participating tablet");
+TAG_FLAG(txn_participant_begin_op_inject_latency_ms, runtime);
+TAG_FLAG(txn_participant_begin_op_inject_latency_ms, unsafe);
+
+DEFINE_int32(txn_participant_registration_inject_latency_ms, 0,
+             "Amount of delay in milliseconds to inject before registering "
+             "tablet as a participant in a multi-row transaction");
+TAG_FLAG(txn_participant_registration_inject_latency_ms, runtime);
+TAG_FLAG(txn_participant_registration_inject_latency_ms, unsafe);
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_uint32(txn_staleness_tracker_interval_ms);
@@ -407,6 +428,11 @@ Status TSTabletManager::Init() {
   RETURN_NOT_OK(ThreadPoolBuilder("txn-status-tablet-reload")
                 .set_max_threads(max_reload_threads)
                 .Build(&reload_txn_status_tablet_pool_));
+
+  RETURN_NOT_OK(
+      ThreadPoolBuilder("txn-participant-registration")
+      .set_max_threads(FLAGS_txn_participant_registration_pool_num_threads)
+      .Build(&txn_participant_registration_pool_));
 
   // TODO(aserbin): if better parallelism is needed to serve higher txn volume,
   //                consider using multiple threads in this pool and schedule
@@ -1093,6 +1119,61 @@ Status TSTabletManager::CheckRunningUnlocked(
                                                TSTabletManagerStatePB_Name(state_)));
 }
 
+void TSTabletManager::RegisterAndBeginParticipantTxnTask(
+    transactions::TxnSystemClient* txn_system_client,
+    scoped_refptr<TabletReplica> replica,
+    int64_t txn_id,
+    const string& user,
+    MonoTime deadline,
+    StatusCallback cb) {
+  DCHECK(txn_system_client);
+  // TODO(aserbin): add and update metrics to track how long these calls take
+  // TODO(aserbin): a future improvement to reduce overall latency is to use
+  //                the async variant of RegisterParticipant RPC that shares
+  //                a callback with the BEGIN_TXN op scheduled below. The
+  //                callback's code could check whether both the registration
+  //                and the BEGIN_TXN op are complete, and if so, submit the
+  //                pending write operations received so far in the context of
+  //                this transaction. That said, it seems like it would
+  //                complicate the error handling and would require a special
+  //                cleanup procedure for the orphaned BEGIN_TXN operations
+  //                when RegisterParticipant could not be completed even after
+  //                multiple retries.
+  VLOG(3) << Substitute("registering participant $0 for txn ID $1",
+                        replica->tablet_id(), txn_id);
+
+  // This is to simulate scheduling anomalies when the thread that runs this
+  // task has been sitting aside for too long.
+  MAYBE_INJECT_FIXED_LATENCY(FLAGS_txn_participant_registration_inject_latency_ms);
+
+  {
+    const auto now = MonoTime::Now();
+    if (deadline <= now) {
+      return cb(Status::TimedOut(
+          Substitute("time out prior registering tablet $0 as participant (txn ID $1)",
+          replica->tablet_id(), txn_id)));
+    }
+    auto s = txn_system_client->RegisterParticipant(
+        txn_id, replica->tablet_id(), user, deadline - now);
+    VLOG(2) << Substitute("RegisterParticipant() $0 for txn ID $1 returned $2",
+                          replica->tablet_id(), txn_id, s.ToString());
+    if (PREDICT_FALSE(!s.ok())) {
+      return cb(s);
+    }
+  }
+
+  // This is to simulate a situation when txn participant registration above
+  // takes too long.
+  MAYBE_INJECT_FIXED_LATENCY(FLAGS_txn_participant_begin_op_inject_latency_ms);
+
+  if (deadline <= MonoTime::Now()) {
+    return cb(Status::TimedOut(Substitute(
+        "time out prior submitting BEGIN_TXN for participant $0 (txn ID $1)",
+        replica->tablet_id(), txn_id)));
+  }
+  return replica->BeginTxnParticipantOp(txn_id, std::move(cb));
+}
+
 Status TSTabletManager::StartTabletStateTransitionUnlocked(
     const string& tablet_id,
     const string& reason,
@@ -1271,6 +1352,9 @@ void TSTabletManager::Shutdown() {
 
   // Shut down the delete pool, so no new tablets are deleted after this point.
   delete_tablet_pool_->Shutdown();
+
+  // Shut down the transaction participant registration pool.
+  txn_participant_registration_pool_->Shutdown();
 
   // Signal the only task running on the txn_status_manager_pool_ to wrap up.
   shutdown_latch_.CountDown();
@@ -1780,6 +1864,26 @@ void TSTabletManager::UpdateTabletStatsIfNecessary() {
   if (!dirty_tablets.empty()) {
     MarkTabletsDirty(dirty_tablets, "The tablet statistics have been changed");
   }
+}
+
+Status TSTabletManager::SchedulePreliminaryTasksForTxnWrite(
+    scoped_refptr<TabletReplica> replica,
+    int64_t txn_id,
+    const string& user,
+    MonoTime deadline,
+    StatusCallback cb) {
+  // An important pre-condition to running operations below: the availability
+  // of the transaction system client.
+  transactions::TxnSystemClient* tsc = nullptr;
+  RETURN_NOT_OK(server_->txn_client_initializer()->GetClient(&tsc));
+  DCHECK(tsc);
+  RETURN_NOT_OK(tsc->CheckOpenTxnStatusTable());
+  return txn_participant_registration_pool_->Submit(
+      [this, replica = std::move(replica), txn_id, tsc, user,
+          deadline, cb = std::move(cb)]() {
+    this->RegisterAndBeginParticipantTxnTask(
+        tsc, std::move(replica), txn_id, user, deadline, std::move(cb));
+  });
 }
 
 void TSTabletManager::SetNextUpdateTimeForTests() {

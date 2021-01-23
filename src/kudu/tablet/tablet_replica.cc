@@ -18,16 +18,18 @@
 #include "kudu/tablet/tablet_replica.h"
 
 #include <algorithm>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -45,10 +47,12 @@
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/result_tracker.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/ops/alter_schema_op.h"
 #include "kudu/tablet/ops/op_driver.h"
@@ -57,15 +61,27 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_replica_mm_ops.h"
 #include "kudu/tablet/txn_coordinator.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status_callback.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
+
+DEFINE_uint32(tablet_max_pending_txn_write_ops, 2,
+              "Maximum number of write operations to be pending at leader "
+              "tablet replica per transaction prior to registering the tablet "
+              "as a participant in the corresponding transaction");
+TAG_FLAG(tablet_max_pending_txn_write_ops, experimental);
+TAG_FLAG(tablet_max_pending_txn_write_ops, runtime);
 
 METRIC_DEFINE_histogram(tablet, op_prepare_queue_length, "Operation Prepare Queue Length",
                         kudu::MetricUnit::kTasks,
@@ -129,6 +145,10 @@ using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
 using kudu::rpc::ResultTracker;
+using kudu::tserver::ParticipantOpPB;
+using kudu::tserver::ParticipantRequestPB;
+using kudu::tserver::TabletServerErrorPB;
+using std::deque;
 using std::map;
 using std::shared_ptr;
 using std::string;
@@ -150,7 +170,7 @@ TabletReplica::TabletReplica(
     : meta_(DCHECK_NOTNULL(std::move(meta))),
       cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
       local_peer_pb_(std::move(local_peer_pb)),
-      log_anchor_registry_(new LogAnchorRegistry()),
+      log_anchor_registry_(new LogAnchorRegistry),
       apply_pool_(apply_pool),
       reload_txn_status_tablet_pool_(reload_txn_status_tablet_pool),
       txn_coordinator_(meta_->table_type() &&
@@ -192,14 +212,15 @@ Status TabletReplica::Init(ServerContext server_ctx) {
   return Status::OK();
 }
 
-Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
-                            shared_ptr<Tablet> tablet,
-                            clock::Clock* clock,
-                            shared_ptr<Messenger> messenger,
-                            scoped_refptr<ResultTracker> result_tracker,
-                            scoped_refptr<Log> log,
-                            ThreadPool* prepare_pool,
-                            DnsResolver* resolver) {
+Status TabletReplica::Start(
+    const ConsensusBootstrapInfo& bootstrap_info,
+    shared_ptr<Tablet> tablet,
+    clock::Clock* clock,
+    shared_ptr<Messenger> messenger,
+    scoped_refptr<ResultTracker> result_tracker,
+    scoped_refptr<Log> log,
+    ThreadPool* prepare_pool,
+    DnsResolver* resolver) {
   DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
   DCHECK(log) << "A TabletReplica must be provided with a Log";
 
@@ -513,6 +534,58 @@ Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
     backoff_exp = std::min(backoff_exp + 1, kMaxBackoffExp);
   }
   return Status::OK();
+}
+
+Status TabletReplica::SubmitTxnWrite(
+    std::unique_ptr<WriteOpState> op_state,
+    const std::function<Status(int64_t txn_id, StatusCallback cb)>& scheduler) {
+  DCHECK(op_state);
+  DCHECK(op_state->request()->has_txn_id());
+
+  RETURN_NOT_OK(CheckRunning());
+  op_state->SetResultTracker(result_tracker_);
+
+  const int64_t txn_id = op_state->request()->txn_id();
+  shared_ptr<TxnOpDispatcher> dispatcher;
+  {
+    std::lock_guard<simple_spinlock> guard(txn_op_dispatchers_lock_);
+    dispatcher = LookupOrEmplace(
+        &txn_op_dispatchers_,
+        txn_id,
+        std::make_shared<TxnOpDispatcher>(
+            this, FLAGS_tablet_max_pending_txn_write_ops));
+  }
+  return dispatcher->Dispatch(std::move(op_state), scheduler);
+}
+
+Status TabletReplica::UnregisterTxnOpDispatcher(int64_t txn_id,
+                                                bool abort_pending_ops) {
+  Status unregister_status;
+  VLOG(3) << Substitute(
+      "received request to unregister TxnOpDispatcher (txn ID $0)", txn_id);
+  std::lock_guard<simple_spinlock> guard(txn_op_dispatchers_lock_);
+  auto it = txn_op_dispatchers_.find(txn_id);
+  // It might happen that TxnOpDispatcher isn't there, and that's completely
+  // fine. One possible scenario that might lead to such condition is:
+  //   * There was a change in replica leadership, and the former leader replica
+  //     received all the write requests in the scope of the transaction, while
+  //     this new leader replica hasn't received any since its start. Now this
+  //     replica is receiving BEGIN_COMMIT transaction coordination request
+  //     for the participant (i.e. for the tablet) from TxnStatusManager.
+  if (it != txn_op_dispatchers_.end()) {
+    auto& dispatcher = it->second;
+    unregister_status = dispatcher->MarkUnregistered();
+    if (abort_pending_ops) {
+      dispatcher->Cancel(Status::Aborted("operation has been aborted"));
+      unregister_status = Status::OK();
+    }
+    if (unregister_status.ok()) {
+      txn_op_dispatchers_.erase(it);
+    }
+    VLOG(1) << Substitute("TxnOpDispatcher (txn ID $0) unregistration: $1",
+                          txn_id, unregister_status.ToString());
+  }
+  return unregister_status;
 }
 
 Status TabletReplica::SubmitWrite(unique_ptr<WriteOpState> op_state) {
@@ -1020,6 +1093,69 @@ void TabletReplica::DecreaseTxnCoordinatorTaskCounter() {
   DCHECK_GE(txn_coordinator_task_counter_, 0);
 }
 
+class ParticipantBeginTxnCallback : public OpCompletionCallback {
+ public:
+  ParticipantBeginTxnCallback(StatusCallback cb,
+                              unique_ptr<ParticipantRequestPB> req)
+      : cb_(std::move(cb)),
+        req_(std::move(req)),
+        txn_id_(req_->op().txn_id()) {
+    DCHECK(req_->has_tablet_id());
+    DCHECK(req_->has_op());
+    DCHECK(req_->op().has_txn_id());
+    DCHECK(req_->op().has_type());
+    DCHECK_EQ(ParticipantOpPB::BEGIN_TXN, req_->op().type());
+    DCHECK_LE(0, txn_id_);
+  }
+
+  void OpCompleted() override {
+    if (status_.IsIllegalState() &&
+        code_ == TabletServerErrorPB::TXN_OP_ALREADY_APPLIED) {
+      // This is the case of duplicate calls to TxnStatusManager to begin
+      // transaction for a participant tablet. Those calls may happen if a
+      // a transactional write request arrives to a tablet server which
+      // hasn't yet served a write request in the context of the specified
+      // transaction.
+      return cb_(Status::OK());
+    }
+    return cb_(status_);
+  }
+
+ private:
+  StatusCallback cb_;
+  unique_ptr<ParticipantRequestPB> req_;
+  const int64_t txn_id_;
+};
+
+void TabletReplica::BeginTxnParticipantOp(int64_t txn_id, StatusCallback cb) {
+  auto s = CheckRunning();
+  if (PREDICT_FALSE(!s.ok())) {
+    return cb(s);
+  }
+
+  unique_ptr<ParticipantRequestPB> req(new ParticipantRequestPB);
+  req->set_tablet_id(tablet_id());
+  {
+    ParticipantOpPB op_pb;
+    op_pb.set_txn_id(txn_id);
+    op_pb.set_type(ParticipantOpPB::BEGIN_TXN);
+    *req->mutable_op() = std::move(op_pb);
+  }
+  unique_ptr<ParticipantOpState> op_state(
+      new ParticipantOpState(this, tablet()->txn_participant(), req.get()));
+  op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+      new ParticipantBeginTxnCallback(cb, std::move(req))));
+  s = SubmitTxnParticipantOp(std::move(op_state));
+  VLOG(3) << Substitute(
+      "submitting BEGIN_TXN for participant $0 (txn ID $1): $2",
+      tablet_id(), txn_id, s.ToString());
+  if (PREDICT_FALSE(!s.ok())) {
+    // Now it's time to respond with appropriate error status to the RPCs
+    // corresponding to the pending write operations.
+    return cb(s);
+  }
+}
+
 void TabletReplica::MakeUnavailable(const Status& error) {
   std::shared_ptr<Tablet> tablet;
   {
@@ -1034,6 +1170,174 @@ void TabletReplica::MakeUnavailable(const Status& error) {
 
   // Set the error; when the replica is shut down, it will end up FAILED.
   SetError(error);
+}
+
+Status TabletReplica::TxnOpDispatcher::Dispatch(
+    std::unique_ptr<WriteOpState> op,
+    const std::function<Status(int64_t txn_id, StatusCallback cb)>& scheduler) {
+  const auto txn_id = op->request()->txn_id();
+  std::lock_guard<simple_spinlock> guard(lock_);
+  if (PREDICT_FALSE(unregistered_)) {
+    KLOG_EVERY_N_SECS(WARNING, 10) << Substitute(
+        "received request for unregistered TxnOpDispatcher (txn ID $0)", txn_id);
+    // TODO(aserbin): Status::ServiceUnavailable() is more appropriate here?
+    return Status::IllegalState(
+        "tablet replica could not accept txn write operation");
+  }
+
+  if (preliminary_tasks_completed_) {
+    // All preparatory work is done: submit the write operation directly.
+    DCHECK(ops_queue_.empty());
+    return replica_->SubmitWrite(std::move(op));
+  }
+
+  DCHECK(!preliminary_tasks_completed_);
+  if (!inflight_status_.ok()) {
+    // Still in process of cleaning up from prior error conditition: a request
+    // can be retried later.
+    return Status::ServiceUnavailable(Substitute(
+        "cleaning up from failure of prior write operation: $0",
+        inflight_status_.ToString()));
+  }
+
+  // This lambda is used as a status callback by the scheduler of "preliminary"
+  // tasks. In case of success, the callback is invoked after completion
+  // of the preliminary tasks with Status::OK(). In case of any failure down
+  // the road, the callback is called with corresponding non-OK status.
+  auto cb = [self = shared_from_this(), txn_id](const Status& s) {
+    if (PREDICT_TRUE(s.ok())) {
+      // The all-is-well case: it's time to submit all the write operations
+      // accumulated in the queue.
+      auto submit_status = self->Submit();
+      if (PREDICT_FALSE(!submit_status.ok())) {
+        // If submitting the accumulated write operations fails, it's necessary
+        // to remove this TxnOpDispatcher entry from the registry.
+        WARN_NOT_OK(submit_status, "fail to submit pending txn write requests");
+        CHECK_OK(self->replica_->UnregisterTxnOpDispatcher(
+            txn_id, false/*abort_pending_ops*/));
+      }
+    } else {
+      // Something went wrong: cancel all the pending write operations
+      self->Cancel(s);
+      CHECK_OK(self->replica_->UnregisterTxnOpDispatcher(
+          txn_id, false/*abort_pending_ops*/));
+    }
+  };
+
+  // If nothing is in the queue yet after checking for the state of all other
+  // related fields above, this is the very first request received by this
+  // dispatcher and it's time to schedule the preliminary tasks.
+  if (ops_queue_.empty()) {
+    RETURN_NOT_OK(scheduler(txn_id, std::move(cb)));
+  }
+  return EnqueueUnlocked(std::move(op));
+}
+
+Status TabletReplica::TxnOpDispatcher::Submit() {
+  decltype(ops_queue_) failed_ops;
+  Status failed_status;
+  {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    DCHECK(!preliminary_tasks_completed_);
+    while (!ops_queue_.empty()) {
+      auto op = std::move(ops_queue_.front());
+      ops_queue_.pop_front();
+      // Store the information necessary to recreate WriteOp instance: this is
+      // useful if TabletReplica::SubmitWrite() returns non-OK status.
+      // The pointers to the replica, request, and response are kept valid until
+      // the corresponding RPC is responded to, and the RPC response is sent
+      // upon invoking completion callback for the 'op'. Receiving non-OK status
+      // from TabletReplica::SubmitWrite() is a guarantee that the completion
+      // callback hasn't been called yet, so these pointers stay valid.
+      TabletReplica* replica = op->tablet_replica();
+      const tserver::WriteRequestPB* request = op->request();
+      const bool has_request_id = op->has_request_id();
+      rpc::RequestIdPB request_id;
+      if (has_request_id) {
+        request_id = op->request_id();
+      }
+      tserver::WriteResponsePB* response = op->response();
+      auto s = replica_->SubmitWrite(std::move(op));
+      if (PREDICT_FALSE(!s.ok())) {
+        // Put the operation back into the queue if SubmitWrite() fails: this
+        // is necessary to respond back to the corresponding RPC, as needed.
+        ops_queue_.emplace_front(new WriteOpState(
+            replica, request, has_request_id ? &request_id : nullptr, response));
+        inflight_status_ = s;
+        break;
+      }
+    }
+    if (PREDICT_TRUE(inflight_status_.ok())) {
+      DCHECK(ops_queue_.empty());
+      preliminary_tasks_completed_ = true;
+      return Status::OK();
+    }
+
+    DCHECK(!inflight_status_.ok());
+    DCHECK(!ops_queue_.empty());
+    failed_status = inflight_status_;
+    std::swap(failed_ops, ops_queue_);
+  }
+
+  return RespondWithStatus(failed_status, std::move(failed_ops));
+}
+
+void TabletReplica::TxnOpDispatcher::Cancel(const Status& status) {
+  CHECK(!status.ok());
+  LOG(WARNING) << Substitute("$0: cancelling pending write operations",
+                             status.ToString());
+  decltype(ops_queue_) ops;
+  {
+    std::lock_guard<simple_spinlock> guard(lock_);
+    inflight_status_ = status;
+    std::swap(ops, ops_queue_);
+  }
+
+  RespondWithStatus(status, std::move(ops));
+}
+
+Status TabletReplica::TxnOpDispatcher::MarkUnregistered() {
+  std::lock_guard<simple_spinlock> guard(lock_);
+  unregistered_ = true;
+
+  // If there are still pending write operations, return ServiceUnavailable()
+  // to let the caller retry later, if needed: there is a chance that pending
+  // write operations will complete when the call is retried.
+  if (PREDICT_FALSE(!ops_queue_.empty())) {
+    // It might be Status::IllegalState() instead, but ServiceUnavailable()
+    // refers to the transient nature of this state.
+    return Status::ServiceUnavailable("there are pending txn write operations");
+  }
+
+  return Status::OK();
+}
+
+Status TabletReplica::TxnOpDispatcher::EnqueueUnlocked(unique_ptr<WriteOpState> op) {
+  // TODO(aserbin): do we need to track username coming with write operations
+  //                to make sure there is no way to slip in write operations for
+  //                transactions of other users?
+  DCHECK(lock_.is_locked());
+  if (PREDICT_FALSE(ops_queue_.size() >= max_queue_size_)) {
+    return Status::ServiceUnavailable("pending operations queue is at capacity");
+  }
+  if (PREDICT_FALSE(!inflight_status_.ok())) {
+    return inflight_status_;
+  }
+  ops_queue_.emplace_back(std::move(op));
+  return Status::OK();
+}
+
+Status TabletReplica::TxnOpDispatcher::RespondWithStatus(
+    const Status& status,
+    deque<unique_ptr<WriteOpState>> ops) {
+  // Invoke the callback for every operation in the queue.
+  for (auto& op : ops) {
+    auto* cb = op->completion_callback();
+    DCHECK(cb);
+    cb->set_error(status);
+    cb->OpCompleted();
+  }
+  return status;
 }
 
 Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {

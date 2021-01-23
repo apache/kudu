@@ -110,6 +110,7 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -171,6 +172,11 @@ TAG_FLAG(tserver_enforce_access_control, runtime);
 DEFINE_double(tserver_inject_invalid_authz_token_ratio, 0.0,
               "Fraction of the time that authz token validation will fail. Used for tests.");
 TAG_FLAG(tserver_inject_invalid_authz_token_ratio, hidden);
+
+DEFINE_bool(tserver_txn_write_op_handling_enabled, true,
+            "Whether to enable appropriate handling of write operations "
+            "in the context of multi-row transactions");
+TAG_FLAG(tserver_txn_write_op_handling_enabled, hidden);
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
@@ -1581,11 +1587,10 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
       static const Status kStatus = Status::ServiceUnavailable(
           "op apply queue is overloaded");
       num_op_apply_queue_rejections_->Increment();
-      SetupErrorAndRespond(resp->mutable_error(),
-                           kStatus,
-                           TabletServerErrorPB::THROTTLED,
-                           context);
-      return;
+      return SetupErrorAndRespond(resp->mutable_error(),
+                                  kStatus,
+                                  TabletServerErrorPB::THROTTLED,
+                                  context);
     }
   }
 
@@ -1603,23 +1608,41 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     s = server_->clock()->Update(ts);
   }
   if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
-    return;
+    return SetupErrorAndRespond(
+        resp->mutable_error(), s, TabletServerErrorPB::UNKNOWN_ERROR, context);
   }
 
   op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
       new RpcOpCompletionCallback<WriteResponsePB>(context, resp)));
 
-  // Submit the write. The RPC will be responded to asynchronously.
-  s = replica->SubmitWrite(std::move(op_state));
+  const auto deadline = context->GetClientDeadline();
+  const auto& username = context->remote_user().username();
+
+  if (!req->has_txn_id() ||
+      PREDICT_FALSE(!FLAGS_tserver_txn_write_op_handling_enabled)) {
+    // Submit the write operation. The RPC will be responded asynchronously.
+    s = replica->SubmitWrite(std::move(op_state));
+  } else {
+    // If it's a write operation in the context of a multi-row transaction,
+    // schedule running preliminary tasks if necessary: register the tablet as
+    // a participant in the transaction and begin transaction for the
+    // participating tablet.
+    //
+    // This functor is to schedule preliminary tasks prior to submitting
+    // the write operation via TabletReplica::SubmitWrite().
+    const auto scheduler = [this, &username, replica, deadline](
+        int64_t txn_id, StatusCallback cb) {
+      return server_->tablet_manager()->SchedulePreliminaryTasksForTxnWrite(
+          std::move(replica), txn_id, username, deadline, std::move(cb));
+    };
+    s = replica->SubmitTxnWrite(std::move(op_state), scheduler);
+    VLOG(2) << Substitute("submitting txn write op: $0", s.ToString());
+  }
 
   // Check that we could submit the write
   if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
+    return SetupErrorAndRespond(
+        resp->mutable_error(), s, TabletServerErrorPB::UNKNOWN_ERROR, context);
   }
 }
 

@@ -80,6 +80,7 @@ DEFINE_int32(keyspace_size, 5,  "number of distinct primary keys to test with");
 DEFINE_int32(max_open_txns, 5,  "maximum number of open transactions to test with");
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(scanner_allow_snapshot_scans_with_logical_timestamps);
+DECLARE_bool(tserver_txn_write_op_handling_enabled);
 DECLARE_bool(use_hybrid_clock);
 
 using boost::optional;
@@ -314,6 +315,9 @@ class FuzzTest : public KuduTest {
     FLAGS_enable_maintenance_manager = false;
     FLAGS_use_hybrid_clock = false;
     FLAGS_scanner_allow_snapshot_scans_with_logical_timestamps = true;
+    // The scenarios of this test do not assume using the standard control path
+    // for txn-enabled write operations.
+    FLAGS_tserver_txn_write_op_handling_enabled = false;
   }
 
   void CreateTabletAndStartClusterWithSchema(const Schema& schema) {

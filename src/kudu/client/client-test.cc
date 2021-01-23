@@ -104,7 +104,6 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_coordinator.h"
-#include "kudu/tablet/txn_participant-test-util.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_status_manager.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -113,7 +112,6 @@
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/barrier.h"
@@ -210,9 +208,6 @@ using kudu::tablet::TabletReplica;
 using kudu::transactions::TxnStatusManager;
 using kudu::transactions::TxnTokenPB;
 using kudu::tserver::MiniTabletServer;
-using kudu::tserver::ParticipantOpPB;
-using kudu::tserver::ParticipantRequestPB;
-using kudu::tserver::ParticipantResponsePB;
 using std::function;
 using std::map;
 using std::pair;
@@ -391,24 +386,6 @@ class ClientTest : public KuduTest {
     }
   }
 
-  // TODO(awong): automatically begin transactions when trying to write to a
-  //              transaction for the first time.
-  void BeginTxnOnParticipants(int64_t txn_id) {
-    for (auto i = 0; i < cluster_->num_tablet_servers(); ++i) {
-      auto* tm = cluster_->mini_tablet_server(i)->server()->tablet_manager();
-      vector<scoped_refptr<TabletReplica>> replicas;
-      tm->GetTabletReplicas(&replicas);
-      for (auto& r : replicas) {
-        // Skip partitions of the transaction status manager.
-        if (r->txn_coordinator()) continue;
-        ParticipantResponsePB resp;
-        WARN_NOT_OK(CallParticipantOp(
-            r.get(), txn_id, ParticipantOpPB::BEGIN_TXN, -1, &resp),
-            "failed to start transaction on participant");;
-      }
-    }
-  }
-
   // TODO(aserbin): consider removing this method and update the scenarios it
   //                was used once the transaction orchestration is implemented
   Status FinalizeCommitTransaction(int64_t txn_id) {
@@ -464,7 +441,7 @@ class ClientTest : public KuduTest {
   // Inserts given number of tests rows into the specified table
   // in the context of the session.
   static void InsertTestRows(KuduTable* table, KuduSession* session,
-                      int num_rows, int first_row = 0) {
+                             int num_rows, int first_row = 0) {
     for (int i = first_row; i < num_rows + first_row; ++i) {
       unique_ptr<KuduInsert> insert(BuildTestInsert(table, i));
       ASSERT_OK(session->Apply(insert.release()));
@@ -7153,9 +7130,6 @@ TEST_F(ClientTest, TxnBasicOperations) {
     ASSERT_STR_CONTAINS(s.ToString(), "is not open: state: ABORT");
   }
 
-  // TODO(aserbin): uncomment this when other parts of transaction lifecycle
-  //                are properly implemented
-#if 0
   // Insert rows in a transactional session, then rollback the transaction
   // and make sure the rows are gone.
   {
@@ -7182,7 +7156,6 @@ TEST_F(ClientTest, TxnBasicOperations) {
         client_table_.get(), KuduScanner::READ_YOUR_WRITES));
     ASSERT_EQ(0, session->CountPendingErrors());
   }
-#endif
 }
 
 // Verify the basic functionality of the KuduTransaction::Commit() and
@@ -7354,9 +7327,6 @@ TEST_F(ClientTest, TxnToken) {
   ASSERT_OK(serdes_txn->Serialize(&serdes_txn_token));
   ASSERT_EQ(txn_token, serdes_txn_token);
 
-  // TODO(awong): remove once we register participants automatically before
-  // inserting.
-  BeginTxnOnParticipants(txn_id);
   {
     static constexpr auto kNumRows = 10;
     shared_ptr<KuduSession> session;
