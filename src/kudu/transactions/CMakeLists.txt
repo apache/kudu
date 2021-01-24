@@ -41,6 +41,7 @@ add_library(transactions ${TRANSACTIONS_SRCS})
 target_link_libraries(transactions
   kudu_client
   kudu_common
+  server_process
   tablet
   transactions_proto
   ${KUDU_BASE_LIBS}

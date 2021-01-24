@@ -277,7 +277,6 @@ Status SaslInit(bool kerberos_keytab_provided) {
   // Only execute SASL initialization once
   static std::once_flag once;
   std::call_once(once, DoSaslInit, kerberos_keytab_provided);
-  DCHECK_EQ(kerberos_keytab_provided, has_kerberos_keytab);
 
   return sasl_init_status;
 }

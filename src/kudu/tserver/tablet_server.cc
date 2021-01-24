@@ -31,6 +31,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/transactions/txn_system_client.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_copy_service.h"
@@ -44,6 +45,7 @@
 
 using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
+using kudu::transactions::TxnSystemClientInitializer;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -101,6 +103,9 @@ Status TabletServer::Init() {
 
   maintenance_manager_ = std::make_shared<MaintenanceManager>(
       MaintenanceManager::kDefaultOptions, fs_manager_->uuid(), metric_entity());
+
+  client_initializer_.reset(new TxnSystemClientInitializer);
+  RETURN_NOT_OK(client_initializer_->Init(messenger_, opts_.master_addresses));
 
   heartbeater_.reset(new Heartbeater(std::move(master_addrs), this));
 
@@ -169,6 +174,8 @@ void TabletServer::ShutdownImpl() {
     fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
     fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION);
     tablet_manager_->Shutdown();
+
+    client_initializer_->Shutdown();
 
     // 3. Shut down generic subsystems.
     KuduServer::Shutdown();

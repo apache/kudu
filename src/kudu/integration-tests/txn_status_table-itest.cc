@@ -532,6 +532,38 @@ TEST_F(TxnStatusTableITest, SystemClientCommitAndAbortTransaction) {
   }
 }
 
+TEST_F(TxnStatusTableITest, TServerInitializesTxnSystemClient) {
+  auto* mts = cluster_->mini_tablet_server(0);
+  auto* client_initializer = mts->server()->txn_client_initializer();
+  TxnSystemClient* txn_client = nullptr;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(client_initializer->GetClient(&txn_client));
+  });
+  // We should be able to get the client, and use it to make a call.
+  ASSERT_NE(txn_client, nullptr);
+  ASSERT_OK(txn_client->CreateTxnStatusTable(100));
+  txn_client = nullptr;
+
+  // Try shutting down the master, and then restarting the tablet server to
+  // attempt to rebuild a TxnSystemClient. This should fail until the master
+  // comes back up.
+  cluster_->mini_master()->Shutdown();
+  mts->Shutdown();
+  ASSERT_OK(mts->Restart());
+  client_initializer = mts->server()->txn_client_initializer();
+  Status s = client_initializer->GetClient(&txn_client);
+  ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
+  ASSERT_EQ(txn_client, nullptr);
+
+  ASSERT_OK(cluster_->mini_master()->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(client_initializer->GetClient(&txn_client));
+  });
+  // We should be able to get the client, and use it to make a call.
+  ASSERT_NE(txn_client, nullptr);
+  ASSERT_OK(txn_client->OpenTxnStatusTable());
+}
+
 TEST_F(TxnStatusTableITest, GetTransactionStatus) {
   const auto verify_state = [&](TxnStatePB state) {
     TxnStatusEntryPB txn_status;

@@ -20,9 +20,11 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client-internal.h"
@@ -33,15 +35,33 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/transactions/coordinator_rpc.h"
 #include "kudu/transactions/participant_rpc.h"
-#include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/transactions/transactions.pb.h"
+#include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/threadpool.h"
+
+DEFINE_bool(disable_txn_system_client_init, false,
+            "Whether or not background TxnSystemClient initialization should "
+            "be disabled. This is useful for tests that do not expect any "
+            "client connections.");
+TAG_FLAG(disable_txn_system_client_init, unsafe);
+
+DECLARE_int64(rpc_negotiation_timeout_ms);
 
 using kudu::client::KuduClient;
 using kudu::client::KuduSchema;
@@ -50,12 +70,19 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::internal::MetaCache;
+using kudu::master::MasterServiceProxy;
+using kudu::master::PingRequestPB;
+using kudu::master::PingResponsePB;
+using kudu::rpc::Messenger;
+using kudu::rpc::RpcController;
 using kudu::tserver::CoordinatorOpPB;
 using kudu::tserver::CoordinatorOpResultPB;
 using kudu::tserver::ParticipantOpPB;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace transactions {
@@ -335,6 +362,91 @@ void TxnSystemClient::ParticipateInTransactionAsync(const string& tablet_id,
             begin_commit_timestamp);
         rpc->SendRpc();
       });
+}
+
+TxnSystemClientInitializer::TxnSystemClientInitializer()
+    : init_complete_(false),
+      shutting_down_(false) {}
+
+TxnSystemClientInitializer::~TxnSystemClientInitializer() {
+  Shutdown();
+}
+
+Status TxnSystemClientInitializer::Init(const shared_ptr<Messenger>& messenger,
+                                        vector<HostPort> master_addrs) {
+  RETURN_NOT_OK(ThreadPoolBuilder("txn-client-init")
+      .set_max_threads(1)
+      .Build(&txn_client_init_pool_));
+
+  return txn_client_init_pool_->Submit([this, messenger, master_addrs = std::move(master_addrs)] {
+      unique_ptr<TxnSystemClient> txn_client;
+      while (!shutting_down_) {
+        static const MonoDelta kRetryInterval = MonoDelta::FromSeconds(1);
+        if (PREDICT_FALSE(FLAGS_disable_txn_system_client_init)) {
+          KLOG_EVERY_N_SECS(WARNING, 60) <<
+              Substitute("initialization of TxnSystemClient disabled, will retry in $0",
+                         kRetryInterval.ToString());
+          SleepFor(kRetryInterval);
+          continue;
+        }
+        // HACK: if the master addresses are all totally unreachable,
+        // KuduClientBuilder::Build() will hang, attempting fruitlessly to
+        // retry, in the below call to Create(). So first, make sure we can at
+        // least reach the masters; if not, try again.
+        // TODO(awong): there's still a small window between these pings and
+        // client creation. If this ends up being a problem, we may need to
+        // come to a more robust solution, e.g. adding a timeout to Create().
+        DnsResolver dns_resolver;
+        Status s;
+        for (const auto& hp : master_addrs) {
+          vector<Sockaddr> addrs;
+          s = dns_resolver.ResolveAddresses(hp, &addrs).AndThen([&] {
+            unique_ptr<MasterServiceProxy> proxy(
+                new MasterServiceProxy(messenger, addrs[0], hp.host()));
+            PingRequestPB req;
+            PingResponsePB resp;
+            RpcController rpc;
+            rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_timeout_ms));
+            return proxy->Ping(req, &resp, &rpc);
+          });
+          if (s.ok()) {
+            break;
+          }
+        }
+        // Only if we can reach at least one of the masters should we try
+        // connecting.
+        if (PREDICT_TRUE(s.ok())) {
+          s = TxnSystemClient::Create(master_addrs, &txn_client);
+        }
+        if (PREDICT_TRUE(s.ok())) {
+          txn_client_ = std::move(txn_client);
+          init_complete_ = true;
+          return;
+        }
+        KLOG_EVERY_N_SECS(WARNING, 60) <<
+            Substitute("unable to initialize TxnSystemClient, will retry in $0: $1",
+                       kRetryInterval.ToString(), s.ToString());
+        SleepFor(kRetryInterval);
+      }
+  });
+}
+
+Status TxnSystemClientInitializer::GetClient(TxnSystemClient** client) const {
+  // NOTE: the shutdown check is best effort. There's still room for a TOCTOU.
+  if (PREDICT_FALSE(shutting_down_)) {
+    return Status::ServiceUnavailable("could not get TxnSystemClient, shutting down");
+  }
+  if (PREDICT_TRUE(init_complete_)) {
+    *client = DCHECK_NOTNULL(txn_client_.get());
+    return Status::OK();
+  }
+  return Status::ServiceUnavailable("could not get TxnSystemClient, still initializing");
+}
+
+void TxnSystemClientInitializer::Shutdown() {
+  shutting_down_ = true;
+  txn_client_init_pool_->Wait();
+  txn_client_init_pool_->Shutdown();
 }
 
 } // namespace transactions

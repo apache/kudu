@@ -31,6 +31,10 @@ namespace kudu {
 
 class MaintenanceManager;
 
+namespace transactions {
+class TxnSystemClientInitializer;
+} // namespace transactions
+
 namespace tserver {
 
 class Heartbeater;
@@ -83,6 +87,10 @@ class TabletServer : public kserver::KuduServer {
     return maintenance_manager_.get();
   }
 
+  transactions::TxnSystemClientInitializer* txn_client_initializer() {
+    return client_initializer_.get();
+  }
+
   bool quiescing() const {
     return quiescing_;
   }
@@ -122,6 +130,9 @@ class TabletServer : public kserver::KuduServer {
   // This is always non-NULL. It is scoped only to minimize header
   // dependencies.
   std::unique_ptr<ScannerManager> scanner_manager_;
+
+  // Thread that initializes a TxnSystemClient.
+  std::unique_ptr<transactions::TxnSystemClientInitializer> client_initializer_;
 
   // Thread responsible for heartbeating to the master.
   std::unique_ptr<Heartbeater> heartbeater_;
