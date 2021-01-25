@@ -566,29 +566,37 @@ TEST_F(MaintenanceManagerTest, TestRunningInstances) {
   ASSERT_EQ(status_pb.running_operations_size(), 0);
 }
 
-// Test adding operations and make sure that the history of recently completed operations
-// is correct in that it wraps around and doesn't grow.
+// Test adding operations and make sure that the history of recently completed
+// operations is correct in that it wraps around and doesn't grow.
 TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
   for (int i = 0; i < kHistorySize + 1; i++) {
-    string name = Substitute("op$0", i);
+    const auto name = Substitute("op$0", i);
     TestMaintenanceOp op(name, MaintenanceOp::HIGH_IO_USAGE);
     op.set_perf_improvement(1);
     op.set_ram_anchored(100);
     manager_->RegisterOp(&op);
 
     ASSERT_EVENTUALLY([&]() {
-        ASSERT_EQ(op.DurationHistogram()->TotalCount(), 1);
-      });
+      ASSERT_EQ(op.DurationHistogram()->TotalCount(), 1);
+    });
     manager_->UnregisterOp(&op);
 
-    MaintenanceManagerStatusPB status_pb;
-    manager_->GetMaintenanceManagerStatusDump(&status_pb);
-    // The size should equal to the current completed OP size,
-    // and should be at most the kHistorySize.
-    ASSERT_EQ(std::min(kHistorySize, i + 1), status_pb.completed_operations_size());
-    // The most recently completed op should always be first, even if we wrap
-    // around.
-    ASSERT_EQ(name, status_pb.completed_operations(0).name());
+    // There might be a race between updating the internal container with the
+    // operations completed so far and serving the request to the embedded
+    // web server: the latter might acquire the lock guarding the container
+    // first and output the information before the operation marked 'complete'.
+    // ASSERT_EVENTUALLY() addresses the transient condition.
+    ASSERT_EVENTUALLY([&]() {
+      MaintenanceManagerStatusPB status_pb;
+      manager_->GetMaintenanceManagerStatusDump(&status_pb);
+      // The size should equal to the current completed OP size,
+      // and should be at most the kHistorySize.
+      ASSERT_EQ(std::min(kHistorySize, i + 1),
+                status_pb.completed_operations_size());
+      // The most recently completed op should always be first, even if we wrap
+      // around.
+      ASSERT_EQ(name, status_pb.completed_operations(0).name());
+    });
   }
 }
 
