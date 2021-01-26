@@ -74,9 +74,9 @@ tasks.withType(ScalaCompile) {
   }
 }
 
-// Errorprone doesn't support Java 12+
+// Errorprone doesn't support Java 11+
 // https://github.com/google/error-prone/issues/1106
-if(!JavaVersion.current().isJava12Compatible()) {
+if(!JavaVersion.current().isJava11Compatible()) {
   apply plugin: "net.ltgt.errorprone" // Performs static code analysis to look for bugs in Java code.
 
   // Configure error-prone.
