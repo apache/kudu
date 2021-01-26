@@ -549,6 +549,49 @@ TEST_F(TxnParticipantITest, TestProxyBasicCalls) {
   }
 }
 
+TEST_F(TxnParticipantITest, TestBeginCommitAfterFinalize) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kTxnId = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
+  const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_OK(ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_TXN, &code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  }
+  // Commit the transaction.
+  Timestamp begin_commit_ts;
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_OK(ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+        &code, &begin_commit_ts));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    ASSERT_NE(Timestamp::kInvalidTimestamp, begin_commit_ts);
+  }
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_OK(ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, &code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  }
+  // A call to BEGIN_COMMIT should yield the finalized commit timestamp.
+  Timestamp refetched_begin_commit_ts;
+  {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::BEGIN_COMMIT, &code,
+        &refetched_begin_commit_ts);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_OP_ALREADY_APPLIED, code);
+    ASSERT_NE(Timestamp::kInvalidTimestamp, refetched_begin_commit_ts);
+    ASSERT_EQ(Timestamp(kDummyCommitTimestamp), refetched_begin_commit_ts);
+  }
+}
+
 TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
@@ -581,7 +624,7 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
     ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
   }
 
-  // Start commititng and ensure we can't start another transaction.
+  // Start committing and ensure we can't start another transaction.
   Timestamp begin_commit_ts;
   {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
@@ -609,22 +652,21 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
     ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
   }
 
-  // Finalize the commit and ensure we can do nothing else.
+  // Finalize the commit and ensure we can't begin or abort.
   {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
     ASSERT_OK(ParticipateInTransactionCheckResp(
         admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, &code));
     ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
   }
-  {
+  for (auto type : { ParticipantOpPB::BEGIN_COMMIT, ParticipantOpPB::FINALIZE_COMMIT }) {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
     Status s = ParticipateInTransactionCheckResp(
-        admin_proxy.get(), tablet_id, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, &code);
+        admin_proxy.get(), tablet_id, kTxnId, type, &code);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     ASSERT_EQ(TabletServerErrorPB::TXN_OP_ALREADY_APPLIED, code);
   }
   for (auto type : { ParticipantOpPB::BEGIN_TXN,
-                     ParticipantOpPB::BEGIN_COMMIT,
                      ParticipantOpPB::ABORT_TXN }) {
     TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
     Status s = ParticipateInTransactionCheckResp(
@@ -816,21 +858,22 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientCommitSequence) {
   ASSERT_EQ(refetched_begin_commit_ts, begin_commit_ts);
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnId, kCommitInProgress, -1 } }));
 
-  // Once we finish committing, we should be unable to do anything.
+  // Once we finish committing, we should be unable to begin or abort.
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT, kDummyCommitTimestamp),
       kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, {{kTxnId, kCommitted, kDummyCommitTimestamp}}));
-  for (const auto type : { ParticipantOpPB::BEGIN_TXN, ParticipantOpPB::BEGIN_COMMIT,
-                           ParticipantOpPB::ABORT_TXN }) {
+  for (const auto type : { ParticipantOpPB::BEGIN_TXN, ParticipantOpPB::ABORT_TXN }) {
     Status s = txn_client->ParticipateInTransaction(
         tablet_id, MakeParticipantOp(kTxnId, type), kDefaultTimeout);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   }
   NO_FATALS(CheckReplicasMatchTxns(replicas, {{kTxnId, kCommitted, kDummyCommitTimestamp}}));
-  ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT, kDummyCommitTimestamp),
-      kDefaultTimeout));
+  for (const auto type : { ParticipantOpPB::BEGIN_COMMIT, ParticipantOpPB::FINALIZE_COMMIT }) {
+    ASSERT_OK(txn_client->ParticipateInTransaction(
+        tablet_id, MakeParticipantOp(kTxnId, type, kDummyCommitTimestamp),
+        kDefaultTimeout));
+  }
   NO_FATALS(CheckReplicasMatchTxns(replicas, {{kTxnId, kCommitted, kDummyCommitTimestamp}}));
 }
 

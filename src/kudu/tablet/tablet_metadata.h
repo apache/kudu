@@ -272,8 +272,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   void AbortTransaction(int64_t txn_id, std::unique_ptr<log::MinLogIndexAnchorer> log_anchor);
 
   // Returns whether a given transaction has metadata, and if requested, what
-  // state the transaction is in.
-  bool HasTxnMetadata(int64_t txn_id, TxnState* state = nullptr);
+  // state the transaction is in. If set, 'timestamp' is set to the begin
+  // commit timestamp or finalized commit timestamp, depending on whether
+  // 'state' is kCommitInProgress or kCommitted respectively.
+  bool HasTxnMetadata(int64_t txn_id, TxnState* state = nullptr,
+                      Timestamp* timestamp = nullptr);
 
   // Returns the transaction IDs that were persisted as being in-flight,
   // terminal (committed or aborted), and having un-flushed MRSs.

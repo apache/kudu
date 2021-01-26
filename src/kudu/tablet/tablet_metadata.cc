@@ -850,17 +850,25 @@ void TabletMetadata::AbortTransaction(int64_t txn_id, unique_ptr<MinLogIndexAnch
   anchors_needing_flush_.emplace_back(std::move(log_anchor));
 }
 
-bool TabletMetadata::HasTxnMetadata(int64_t txn_id, TxnState* state) {
+bool TabletMetadata::HasTxnMetadata(int64_t txn_id, TxnState* state, Timestamp* timestamp) {
   std::lock_guard<LockType> l(data_lock_);
   auto txn_meta = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
   if (txn_meta) {
     if (!state) return true;
     if (txn_meta->commit_timestamp()) {
       *state = kCommitted;
+      if (timestamp) {
+        DCHECK(txn_meta->commit_timestamp());
+        *timestamp = *txn_meta->commit_timestamp();
+      }
     } else if (txn_meta->aborted()) {
       *state = kAborted;
     } else if (txn_meta->commit_mvcc_op_timestamp()) {
       *state = kCommitInProgress;
+      if (timestamp) {
+        DCHECK(txn_meta->commit_mvcc_op_timestamp());
+        *timestamp = *txn_meta->commit_mvcc_op_timestamp();
+      }
     } else {
       *state = kOpen;
     }

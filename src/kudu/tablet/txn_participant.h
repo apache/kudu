@@ -25,6 +25,7 @@
 #include <vector>
 
 #include <glog/logging.h>
+#include <boost/optional/optional.hpp>
 
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -134,13 +135,41 @@ class Txn : public RefCountedThreadSafe<Txn> {
   Status ValidateBeginCommit(tserver::TabletServerErrorPB::Code* code,
                              Timestamp* begin_commit_ts) const {
     DCHECK(state_lock_.is_locked());
-    RETURN_NOT_OK(CheckFinishedInitializing(code));
+    boost::optional<Timestamp> already_applied_timestamp;
+    if (PREDICT_FALSE(state_ == kInitializing)) {
+      Timestamp timestamp;
+      TxnState meta_state;
+      if (!tablet_metadata_->HasTxnMetadata(txn_id_, &meta_state, &timestamp)) {
+        return Status::NotFound("Transaction hasn't been successfully started");
+      }
+      if (PREDICT_FALSE(meta_state != kCommitted && meta_state != kCommitInProgress)) {
+        *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
+        return Status::IllegalState(
+            strings::Substitute("Cannot begin committing transaction in state: $0",
+                                TxnStateToString(state_)));
+      }
+      // There's no in-flight transaction, but we've already committed the
+      // transaction and persisted a commit timestamp. Return the commit
+      // timestamp.
+      already_applied_timestamp = timestamp;
+    }
+    // If we're in the process of committing, return the commit timestamp we
+    // have available to us.
     if (PREDICT_FALSE(state_ == kCommitInProgress)) {
-      *begin_commit_ts = DCHECK_NOTNULL(commit_op_)->timestamp();
+      already_applied_timestamp = DCHECK_NOTNULL(commit_op_)->timestamp();
+    }
+    if (PREDICT_FALSE(state_ == kCommitted)) {
+      DCHECK_NE(-1, commit_timestamp_);
+      already_applied_timestamp = Timestamp(commit_timestamp_);
+    }
+    if (already_applied_timestamp) {
+      DCHECK_NE(Timestamp::kInvalidTimestamp, *already_applied_timestamp);
+      *begin_commit_ts = *already_applied_timestamp;
       *code = tserver::TabletServerErrorPB::TXN_OP_ALREADY_APPLIED;
       return Status::IllegalState(
           strings::Substitute("Transaction $0 commit already in progress", txn_id_));
     }
+    // If the transaction is otherwise not open, return an error.
     if (PREDICT_FALSE(state_ != kOpen)) {
       *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
       return Status::IllegalState(
