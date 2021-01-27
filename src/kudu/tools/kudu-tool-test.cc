@@ -1107,7 +1107,8 @@ TEST_F(ToolTest, TestModeHelp) {
         "status.*Get the status",
         "timestamp.*Get the current timestamp",
         "list.*List masters in a Kudu cluster",
-        "add.*Add a master to the Raft configuration"
+        "add.*Add a master to the Raft configuration",
+        "remove.*Remove a master from the Raft configuration"
     };
     NO_FATALS(RunTestHelp(kCmd, kMasterModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kCmd,
@@ -1130,6 +1131,8 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     NO_FATALS(RunTestHelp("master add --help",
                           {"-wait_secs \\(Timeout in seconds to wait for the newly added master"}));
+    NO_FATALS(RunTestHelp("master remove --help",
+                          {"-master_uuid \\(Permanent UUID of the master"}));
   }
   {
     const vector<string> kPbcModeRegexes = {
@@ -1321,6 +1324,8 @@ TEST_F(ToolTest, TestActionMissingRequiredArg) {
   NO_FATALS(RunActionMissingRequiredArg("master list", "master_addresses"));
   NO_FATALS(RunActionMissingRequiredArg("master add", "master_addresses"));
   NO_FATALS(RunActionMissingRequiredArg("master add master.example.com", "master_address"));
+  NO_FATALS(RunActionMissingRequiredArg("master remove", "master_addresses"));
+  NO_FATALS(RunActionMissingRequiredArg("master remove master.example.com", "master_address"));
   NO_FATALS(RunActionMissingRequiredArg("cluster ksck --master_addresses=master.example.com",
                                         "master_addresses"));
   NO_FATALS(RunActionMissingRequiredArg("local_replica cmeta rewrite_raft_config fake_id",

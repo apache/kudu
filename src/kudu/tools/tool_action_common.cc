@@ -984,6 +984,18 @@ Status LeaderMasterProxy::SyncRpc(
 
 template
 Status LeaderMasterProxy::SyncRpc(
+    const master::RemoveMasterRequestPB& req,
+    master::RemoveMasterResponsePB* resp,
+    string func_name,
+    const std::function<void(MasterServiceProxy*,
+                             const master::RemoveMasterRequestPB&,
+                             master::RemoveMasterResponsePB*,
+                             RpcController*,
+                             const ResponseCallback&)>& func,
+    std::vector<uint32_t> required_feature_flags);
+
+template
+Status LeaderMasterProxy::SyncRpc(
     const master::ReplaceTabletRequestPB& req,
     master::ReplaceTabletResponsePB* resp,
     string func_name,

@@ -59,6 +59,8 @@ DECLARE_bool(force);
 DECLARE_int64(timeout_ms);
 DECLARE_string(columns);
 
+DEFINE_string(master_uuid, "", "Permanent UUID of the master. Only needed to disambiguate in case "
+                               "of multiple masters with same RPC address");
 DEFINE_int64(wait_secs, 8,
              "Timeout in seconds to wait for the newly added master to be promoted as VOTER.");
 
@@ -72,6 +74,8 @@ using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
 using kudu::master::RefreshAuthzCacheRequestPB;
 using kudu::master::RefreshAuthzCacheResponsePB;
+using kudu::master::RemoveMasterRequestPB;
+using kudu::master::RemoveMasterResponsePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::rpc::RpcController;
 using std::cout;
@@ -215,6 +219,38 @@ Status AddMasterChangeConfig(const RunnerContext& context) {
                           "copy, updating master addresses etc. from the Kudu administration "
                           "documentation on \"Migrating to Multiple Kudu Masters\".",
                           hp.ToString(), master_role, master_type);
+  return Status::OK();
+}
+
+Status RemoveMasterChangeConfig(const RunnerContext& context) {
+  const string& master_hp_str = FindOrDie(context.required_args, kMasterAddressArg);
+  HostPort hp;
+  RETURN_NOT_OK(hp.ParseString(master_hp_str, Master::kDefaultPort));
+
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+
+  RemoveMasterRequestPB req;
+  RemoveMasterResponsePB resp;
+  *req.mutable_rpc_addr() = HostPortToPB(hp);
+  if (!FLAGS_master_uuid.empty()) {
+    *req.mutable_master_uuid() = FLAGS_master_uuid;
+  }
+
+  RETURN_NOT_OK((proxy.SyncRpc<RemoveMasterRequestPB, RemoveMasterResponsePB>(
+                 req, &resp, "RemoveMaster", &MasterServiceProxy::RemoveMasterAsync,
+                 { master::MasterFeatures::DYNAMIC_MULTI_MASTER })));
+
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  LOG(INFO) << Substitute("Successfully removed master $0 from the cluster. Please follow the next "
+                          "steps from the Kudu administration documentation on "
+                          "\"Removing Kudu Masters from a Multi-Master Deployment\" or "
+                          "\"Recovering from a dead Kudu Master in a Multi-Master Deployment\" "
+                          "as appropriate.",
+                          hp.ToString());
   return Status::OK();
 }
 
@@ -533,6 +569,20 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddOptionalParameter("wait_secs")
         .Build();
     builder.AddAction(std::move(add_master));
+  }
+  {
+    unique_ptr<Action> remove_master =
+        ActionBuilder("remove", &RemoveMasterChangeConfig)
+        .Description("Remove a master from the Raft configuration of the Kudu cluster. "
+                     "Please refer to the Kudu administration documentation on "
+                     "\"Removing Kudu Masters from a Multi-Master Deployment\" or "
+                     "\"Recovering from a dead Kudu Master in a Multi-Master Deployment\" "
+                     "as appropriate.")
+        .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+        .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
+        .AddOptionalParameter("master_uuid")
+        .Build();
+    builder.AddAction(std::move(remove_master));
   }
 
   return builder.Build();
