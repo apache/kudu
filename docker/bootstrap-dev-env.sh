@@ -77,7 +77,7 @@ if [[ -f "/usr/bin/yum" ]]; then
   # to install the ninja-build package.
   if [[ "$OS_MAJOR_VERSION" -gt "7" ]]; then
     yum install -y 'dnf-command(config-manager)'
-    yum config-manager --set-enabled PowerTools
+    yum config-manager --set-enabled powertools
   fi
 
   # Install libraries often used for Kudu development and build performance.
