@@ -37,6 +37,241 @@ reproduced on this page. Please consult the
 link:http://kudu.apache.org/releases/[documentation of the appropriate release]
 for a list of known issues and limitations.
 
+[[rn_1.14.0]]
+= Apache Kudu 1.14.0 Release Notes
+
+[[rn_1.14.0_upgrade_notes]]
+== Upgrade Notes
+
+[[rn_1.14.0_obsoletions]]
+== Obsoletions
+
+* Support for CentOS 6/RHEL 6, Ubuntu 14, Ubuntu 16, and Debian 8 platforms has been dropped
+given they are at or near end-of-life. We will no longer validate these platforms as a
+part of the release process, though patches will still be accepted going forward.
+
+* Developer support for OS X 10.10 Yosemite, OS X 10.11 El Capitan, and OS X 10.12 Sierra
+has been dropped. We will no longer validate these versions as a part of the release
+process, though patches will still be accepted going forward.
+
+[[rn_1.14.0_deprecations]]
+== Deprecations
+
+* Support for Python 2.x and Python 3.4 and earlier is deprecated and may be
+removed in the next minor release.
+
+* The `kudu-mapreduce` integration has been deprecated and may be removed in the
+next minor release. Similar functionality and capabilities now exist via the
+Apache Spark, Apache Hive, Apache Impala, and Apache NiFi integrations.
+
+[[rn_1.14.0_new_features]]
+== New features
+
+* Full support for `INSERT_IGNORE`, `UPDATE_IGNORE`, and `DELETE_IGNORE` operations
+was added. The `INSERT_IGNORE` operation will insert a row if one matching the key
+does not exist and ignore the operation if one already exists. The `UPDATE_IGNORE`
+operation will update the row if one matching the key exists and ignore the operation
+if one does not exist. The `DELETE_IGNORE` operation will delete the row if one matching
+the key exists and ignore the operation if one does not exist. These operations are
+particularly useful in situations where retries or duplicate operations could occur and
+you do not want to handle the errors that could result manually or you do not want to cause
+unnecessary writes and compaction work as a result of using the `UPSERT` operation.
+The Java client can check if the cluster it is communicating with supports these operations
+by calling the `supportsIgnoreOperations()` method on the KuduClient. See
+link:https://issues.apache.org/jira/browse/KUDU-1563[KUDU-1563] for more details.
+
+* Spark 3 compatible JARs compiled for Scala 2.12 are now published for the Kudu Spark integration.
+See link:https://issues.apache.org/jira/browse/KUDU-3202[KUDU-3202] for more details.
+
+* Every Kudu cluster now has an automatically generated cluster Id that can be used to uniquely
+identify a cluster. The cluster Id is shown in the masters web-UI, the `kudu master list` tool,
+and in master server logs. See link:https://issues.apache.org/jira/browse/KUDU-2574[KUDU-2574]
+for more details.
+
+* It is now possible to enforce that OpenSSL is initialized in FIPS approved mode in the servers
+and the C++ client by setting the KUDU_REQUIRE_FIPS_MODE environment variable to “1”, “yes” or
+“true”. See link:https://issues.apache.org/jira/browse/KUDU-3210[KUDU-3210] for more details.
+
+[[rn_1.14.0_improvements]]
+== Optimizations and improvements
+
+* Downloading the WAL data and data blocks when copying tablets to another tablet server is now
+parallelized, resulting in much faster tablet copy operations. These operations occur when
+recovering from a down tablet server or when running the cluster rebalancer. See
+link:https://issues.apache.org/jira/browse/KUDU-1728[KUDU-1728] and
+link:https://issues.apache.org/jira/browse/KUDU-3214[KUDU-3214] for more details.
+
+* The HMS integration now supports multiple Kudu clusters associated with a single HMS
+including Kudu clusters that do not have HMS synchronization enabled. This is possible,
+because the Kudu master will now leverage the cluster Id to ignore notifications from
+tables in a different cluster. Additionally, the HMS plugin will check if the Kudu cluster
+associated with a table has HMS synchronization enabled.
+See link:https://issues.apache.org/jira/browse/KUDU-3192[KUDU-3192] and
+link:https://issues.apache.org/jira/browse/KUDU-3187[KUDU-3187] for more details.
+
+* The HMS integration now supports gzipped HMS notifications. This is important in order to
+support Hive 4 where the default encoder was changed to be the GzipJSONMessageEncoder. See
+link:https://issues.apache.org/jira/browse/KUDU-3201[KUDU-3201] for more details.
+
+* Kudu will now fail tablet replicas that have been corrupted due to KUDU-2233 instead of
+crashing the tablet server. If a healthy majority still exists, a new replica will be created
+and the failed replica will be evicted and deleted. See
+link:https://issues.apache.org/jira/browse/KUDU-3191[KUDU-3191] and
+link:https://issues.apache.org/jira/browse/KUDU-2233[KUDU-2233] for more details.
+
+* DeltaMemStores will now be flushed as long as any DMS in a tablet is older than the point
+defined by `--flush_threshold_secs`, rather than flushing once every `--flush_threshold_secs`
+period. This can reduce memory pressure under update- or delete-heavy workloads, and lower tablet
+server restart times following such workloads. See
+link:https://issues.apache.org/jira/browse/KUDU-3195[KUDU-3195] for more details.
+
+* The `kudu perf loadgen` CLI tool now supports `UPSERT` for storing the generated data into
+the table. To switch to `UPSERT` for row operations (instead of default `INSERT`), add the
+`--use_upsert` command-line flag.
+
+* Users can now specify the level of parallelization when copying a tablet using the
+`kudu local_replica copy_from_remote` CLI tool by passing the
+`--tablet_copy_download_threads_nums_per_session` argument.
+
+* The Kudu Masters now discriminate between overlapped and exact duplicate key ranges when adding
+new partitions, returning `Status::AlreadyPresent()` for exact range duplicates and
+`Status::InvalidArgument()` for otherwise overlapped ones. In prior releases, the master
+returned `Status::InvalidArgument()` both in case of duplicate and otherwise overlapped ranges.
+
+* The handling of an empty list of master addresses in Kudu C++ client has improved. In prior
+releases, `KuduClientBuilder::Build()` would hang in `ConnectToCluster()` if no master addresses
+were provided. Now, `KuduClientBuilder::Build()` instantly returns `Status::InvalidArgument()`
+in such a case.
+
+* The connection negotiation timeout for Kudu C++ client is now programmatically configurable.
+  To customize the connection negotiation timeout, use the newly introduced
+  `KuduClientBuilder::connection_negotiation_timeout()` method in the Kudu C++ client API.
+
+* All RPC-related `kudu` CLI tools now have `--negotiation_timeout_ms` command line flag to
+control the client-side connection negotiation timeout. The default value for the new flag is
+set to 3000 milliseconds for backward compatibility. Keep in mind that the total RPC timeout
+includes the connection negotiation time, so in general it makes sense to bump `--timeout_ms`
+along with `--negotiation_timeout_ms` by the same delta.
+
+* Kudu now reports on slow SASL calls (i.e. calls taking more than 250  milliseconds to complete)
+when connecting to a server. This is to help diagnose issues like described in
+link:https://issues.apache.org/jira/browse/KUDU-3217[KUDU-3217].
+
+* MaintenanceManager now has a new histogram-based `maintenance_op_find_best_candidate_duration`
+metric to capture the stats on how long it takes (in microseconds) to find the best maintenance
+operation among available candidates. The newly introduced metric can help in diagnosing
+conditions where MaintenanceManager seems lagging behind the rate of write operations in a busy
+Kudu cluster with many replicas per tablet server.
+
+* The KuduScanToken Java API has been extended with a `deserializeIntoScannerBuilder()` method that
+can be used to further customize generated tokens.
+
+* Logging of the error message produced when applying an op while a Java KuduSession is closed
+has been throttled. See
+link:https://issues.apache.org/jira/browse/KUDU-3012[KUDU-3012] for more details.
+
+* Added a new `uptime` metric for a Kudu server. The metric's value is reported as the length of
+the time interval passed from the start of the server, in microseconds. Knowing the server's
+uptime, it's easier to interpret and compare metrics reported by different Kudu servers.
+
+* Documentation for Kudu’s metrics are now automatically generated for each release and can be seen
+link:https://kudu.apache.org/docs/metrics_reference.html[here].
+
+[[rn_1.14.0_fixed_issues]]
+== Fixed Issues
+
+* Fixed lock contention between MaintenanceManager op registration and the scheduling of new
+maintenance ops. On particularly dense tablet servers, this contention was previously shown to
+significantly slow down startup times. See
+link:https://issues.apache.org/jira/browse/KUDU-3149[KUDU-3149] for more details.
+
+* Fixed lock contention between MaintenanceManager’s threads performing already scheduled
+operations and the scheduler thread itself. This benefits clusters with heavy ingest/update
+workloads that have many replicas per tablet server. See
+link:https://issues.apache.org/jira/browse/KUDU-1954[KUDU-1954] for more details.
+
+* Fixed a bug in the merge iterator that could result in a crash. This could surface as a crash
+when performing ordered or differential scans, particularly when the underlying data contained
+deletes and reinserts. See
+link:https://issues.apache.org/jira/browse/KUDU-3108[KUDU-3108] for more details.
+
+* Fixed a heap-use-after-free bug in Kudu C++ client that might manifest itself when altering a
+table to update the partitioning schema. See
+link:https://issues.apache.org/jira/browse/KUDU-3238[KUDU-3238] for more details.
+
+* Fixed a bug where building scan tokens would result in a NullPointerException if a tablet not
+found error occurred before generating the token. See
+link:https://issues.apache.org/jira/browse/KUDU-3205[KUDU-3205] for more details.
+
+* Fixed a bug where a delete operation would fail if the row being deleted contained exactly
+64 columns and all values were set on the row. See
+link:https://issues.apache.org/jira/browse/KUDU-3198[KUDU-3198] for more details.
+
+* Fixed a bug where Slf4j classes were shaded into the Spark integration JARs. See
+link:https://issues.apache.org/jira/browse/KUDU-3157[KUDU-3157] for more details.
+
+* Fixed a bug where the 'kudu hms fix' tool mistakenly reports non-matching master addresses
+when the addresses are in-fact canonically the same. See
+link:https://issues.apache.org/jira/browse/KUDU-2884[KUDU-2884] for more details.
+
+[[rn_1.14.0_wire_compatibility]]
+== Wire Protocol compatibility
+
+Kudu 1.14.0 is wire-compatible with previous versions of Kudu:
+
+* Kudu 1.14 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.
+* Rolling upgrade between Kudu 1.13 and Kudu 1.14 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.
+* Kudu 1.0 clients may connect to servers running Kudu 1.14 with the exception of the
+below-mentioned restrictions regarding secure clusters.
+
+The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.14 and versions earlier than 1.3:
+
+* If a Kudu 1.14 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.
+* If a Kudu 1.14 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.
+
+[[rn_1.14.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.14.0
+
+
+[[rn_1.14.0_client_compatibility]]
+=== Client Library Compatibility
+
+* The Kudu 1.14 Java client library is API- and ABI-compatible with Kudu 1.13. Applications
+written against Kudu 1.13 will compile and run against the Kudu 1.14 client library and
+vice-versa.
+
+* The Kudu 1.14 {cpp} client is API- and ABI-forward-compatible with Kudu 1.13.
+Applications written and compiled against the Kudu 1.13 client library will run without
+modification against the Kudu 1.14 client library. Applications written and compiled
+against the Kudu 1.14 client library will run without modification against the Kudu 1.13
+client library.
+
+* The Kudu 1.14 Python client is API-compatible with Kudu 1.13. Applications
+written against Kudu 1.13 will continue to run against the Kudu 1.14 client
+and vice-versa.
+
+[[rn_1.14.0_known_issues]]
+== Known Issues and Limitations
+
+Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
+documentation.
+
+[[rn_1.14.0_contributors]]
+== Contributors
+
+Kudu 1.14.0 includes contributions from 12 people, including 1 first-time
+contributors:
+
+* liguohao
+
+Thank you for your contributions!
+
 [[rn_1.13.0]]
 = Apache Kudu 1.13.0 Release Notes
 
