@@ -37,6 +37,203 @@ reproduced on this page. Please consult the
 link:http://kudu.apache.org/releases/[documentation of the appropriate release]
 for a list of known issues and limitations.
 
+[[rn_1.13.0]]
+= Apache Kudu 1.13.0 Release Notes
+
+[[rn_1.13.0_upgrade_notes]]
+== Upgrade Notes
+
+* The Sentry integration has been removed and the Ranger integration should now
+be used in its place for fine-grained authorization.
+
+[[rn_1.13.0_deprecations]]
+== Deprecations
+
+* Support for Python 2.x and Python 3.4 and earlier is deprecated and may be
+removed in the next minor release.
+* The `kudu-mapreduce` integration has been deprecated and may be removed in the
+next minor release. Similar functionality and capabilities now exist via the
+Apache Spark, Apache Hive, Apache Impala, and Apache NiFi integrations.
+
+[[rn_1.13.0_new_features]]
+== New features
+
+* Added table ownership support. All newly created tables are automatically
+owned by the user creating them. It is also possible to change the owner by
+altering the table. You can also assign privileges to table owners via Apache
+Ranger (see link:https://issues.apache.org/jira/browse/KUDU-3090[KUDU-3090]).
+* An experimental feature is added to Kudu that allows it to automatically
+rebalance tablet replicas among tablet servers. The background task can be
+enabled by setting the `--auto_rebalancing_enabled` flag on the Kudu masters.
+Before starting auto-rebalancing on an existing cluster, the CLI rebalancer
+tool should be run first (see
+link:https://issues.apache.org/jira/browse/KUDU-2780[KUDU-2780]).
+* Bloom filter column predicate pushdown has been added to allow optimized
+execution of filters which match on a set of column values with a
+false-positive rate. Support for Impala queries utilizing Bloom filter
+predicate is available yielding performance improvements of 19% to 30% in TPC-H
+benchmarks and around 41% improvement for distributed joins across large
+tables. Support for Spark is not yet available. (see
+link:https://issues.apache.org/jira/browse/KUDU-2483[KUDU-2483]).
+* AArch64-based (ARM) architectures are now supported including published Docker
+images.
+* The Java client now supports the columnar row format returned from the server
+transparently. Using this format can reduce the server CPU and size of the
+request over the network for scans. The columnar format can be enabled via the
+setRowDataFormat() method on the KuduScanner.
+* An experimental feature that can be enabled by setting the
+`--enable_workload_score_for_perf_improvement_ops` prioritizes flushing and
+compacting hot tablets.
+
+[[rn_1.13.0_improvements]]
+== Optimizations and improvements
+
+* Hive metastore synchronization now supports Hive 3 and later.
+* The Spark KuduContext accumulator metrics now track operation counts per table
+instead of cumulatively for all tables.
+* The `kudu local_replica delete` CLI tool now accepts multiple tablet
+identifiers. Along with the newly added `--ignore_nonexistent` flag, this
+helps with scripting scenarios when removing multiple tablet replicas from a
+particular Tablet Server.
+* Both Master’s and Tablet Server’s web UI now displays the name for a service
+thread pool group at the `/threadz` page
+* Introduced `queue_overflow_rejections_` metrics for both Masters and Tablet
+Servers: number of RPC requests of a particular type dropped due to RPC
+service queue overflow.
+* Introduced a CoDel-like queue control mechanism for the apply queue. This
+helps to avoid accumulating too many write requests and timing them out in
+case of seek-bound workloads (e.g., uniform random inserts). The newly
+introduced queue control mechanism is disabled by default. To enable it, set
+the `--tablet_apply_pool_overload_threshold_ms` Tablet Server’s flag to
+appropriate value, e.g. 250 (see
+link:https://issues.apache.org/jira/browse/KUDU-1587[KUDU-1587]).
+* Java client’s error collector can be resized (see
+link:https://issues.apache.org/jira/browse/KUDU-1422[KUDU-1422]).
+* Calls to the Kudu master server are now drastically reduced when using scan
+tokens. Previously deserializing a scan token would result in a GetTableSchema
+request and potentially a GetTableLocations request. Now the table schema and
+location information is serialized into the scan token itself avoiding the
+need for any requests to the master when processing them.
+* The default size of Master’s RPC queue is now 100 (it was 50 in earlier
+releases). This is to optimize for use cases where a Kudu cluster has many
+clients working concurrently.
+* Masters now have an option to cache table location responses. This is
+targeted for Kudu clusters which have many clients working concurrently. By
+default, the caching of table location responses is disabled. To enable table
+location caching, set the proper capacity of the table location cache using
+Master’s `--table_locations_cache_capacity_mb` flag (setting to 0 disables the
+caching). Up to 17% of improvement is observed in GetTableLocations request
+rate when enabling the caching.
+* Removed lock contention on Raft consensus lock in Tablet Servers while
+processing a write request. This helps to avoid RPC queue overflows when
+handling concurrent write requests to the same tablet from multiple clients
+(see link:https://issues.apache.org/jira/browse/KUDU-2727[KUDU-2727]).
+* Master’s performance for handling concurrent GetTableSchema requests has been
+improved. End-to-end tests indicated up to 15% improvement in sustained
+request rate for high concurrency scenarios.
+* Kudu servers now use protobuf Arena objects to perform all RPC
+request/response-related memory allocations. This gives a boost for overall
+RPC performance, and with further optimization the result request rate
+was increased significantly for certain methods. For example, the result request
+rate increased up to 25% for Master’s GetTabletLocations() RPC in case of
+highly concurrent scenarios (see
+link:https://issues.apache.org/jira/browse/KUDU-636[KUDU-636]).
+* Tablet Servers now use protobuf Arena for allocating Raft-related runtime
+structures. This results in substantial reduction of CPU cycles used and
+increases write throughput (see
+link:https://issues.apache.org/jira/browse/KUDU-636[KUDU-636]).
+* Tablet Servers now use protobuf Arena for allocating EncodedKeys to reduce
+allocator contention and improve memory locality (see
+link:https://issues.apache.org/jira/browse/KUDU-636[KUDU-636]).
+* Bloom filter predicate evaluation for scans can be computationally expensive.
+A heuristic has been added that verifies rejection rate of the supplied Bloom
+filter predicate below which the Bloom filter predicate is automatically
+disabled. This helped reduce regression observed with Bloom filter predicate
+in TPC-H benchmark query #9 (see
+link:https://issues.apache.org/jira/browse/KUDU-3140[KUDU-3140]).
+* Improved scan performance of dictionary and plain-encoded string columns by
+avoiding copying them (see
+link:https://issues.apache.org/jira/browse/KUDU-2844[KUDU-2844]).
+* Improved maintenance manager's heuristics to prioritize larger memstores
+(see link:https://issues.apache.org/jira/browse/KUDU-3180[KUDU-3180]).
+* Spark client's KuduReadOptions now supports setting a snapshot timestamp for
+repeatable reads with READ_AT_SNAPSHOT consistency mode (see
+link:https://issues.apache.org/jira/browse/KUDU-3177[KUDU-3177]).
+
+[[rn_1.13.0_fixed_issues]]
+== Fixed Issues
+
+* Kudu scans now honor location assignments when multiple tablet servers are
+co-located with the client.
+* Fixed a bug that caused IllegalArgumentException to be thrown when trying to
+create a predicate for a DATE column in Kudu Java client (see
+link:https://issues.apache.org/jira/browse/KUDU-3152[KUDU-3152]).
+* Fixed a potential race when multiple RPCs work on the same scanner object.
+
+[[rn_1.13.0_wire_compatibility]]
+== Wire Protocol compatibility
+
+Kudu 1.13.0 is wire-compatible with previous versions of Kudu:
+
+* Kudu 1.13 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.
+* Rolling upgrade between Kudu 1.12 and Kudu 1.13 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.
+* Kudu 1.0 clients may connect to servers running Kudu 1.13 with the exception of the
+below-mentioned restrictions regarding secure clusters.
+
+The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.13 and versions earlier than 1.3:
+
+* If a Kudu 1.13 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.
+* If a Kudu 1.13 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.
+
+[[rn_1.13.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.13.0
+
+
+[[rn_1.13.0_client_compatibility]]
+=== Client Library Compatibility
+
+* The Kudu 1.13 Java client library is API- and ABI-compatible with Kudu 1.12. Applications
+written against Kudu 1.12 will compile and run against the Kudu 1.13 client library and
+vice-versa.
+
+* The Kudu 1.13 {cpp} client is API- and ABI-forward-compatible with Kudu 1.12.
+Applications written and compiled against the Kudu 1.12 client library will run without
+modification against the Kudu 1.13 client library. Applications written and compiled
+against the Kudu 1.13 client library will run without modification against the Kudu 1.12
+client library.
+
+* The Kudu 1.13 Python client is API-compatible with Kudu 1.12. Applications
+written against Kudu 1.12 will continue to run against the Kudu 1.13 client
+and vice-versa.
+
+[[rn_1.13.0_known_issues]]
+== Known Issues and Limitations
+
+Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
+documentation.
+
+[[rn_1.13.0_contributors]]
+== Contributors
+
+Kudu 1.13.0 includes contributions from 22 people, including 9 first-time
+contributors:
+
+* Jim Apple
+* Kevin J McCarthy
+* Li Zhiming
+* Mahesh Reddy
+* Romain Rigaux
+* RuiChen
+* Shuping Zhou
+* ningw
+* wenjie
+
 [[rn_1.12.0]]
 = Apache Kudu 1.12.0 Release Notes
 
