@@ -21,36 +21,29 @@ following:
   you do not want to handle the errors that could result manually or you do not want to cause
   unnecessary writes and compaction work as a result of using the `UPSERT` operation.
   The Java client can check if the cluster it is communicating with supports these operations
-  by calling the `supportsIgnoreOperations()` method on the KuduClient. See
-  link:https://issues.apache.org/jira/browse/KUDU-1563[KUDU-1563] for more details.
+  by calling the `supportsIgnoreOperations()` method on the KuduClient.
 
 - Spark 3 compatible JARs compiled for Scala 2.12 are now published for the Kudu Spark integration.
   See link:https://issues.apache.org/jira/browse/KUDU-3202[KUDU-3202] for more details.
 
 - Every Kudu cluster now has an automatically generated cluster Id that can be used to uniquely
   identify a cluster. The cluster Id is shown in the masters web-UI, the `kudu master list` tool,
-  and in master server logs. See link:https://issues.apache.org/jira/browse/KUDU-2574[KUDU-2574]
-  for more details.
+  and in master server logs.
 
 - Downloading the WAL data and data blocks when copying tablets to another tablet server is now
   parallelized, resulting in much faster tablet copy operations. These operations occur when
-  recovering from a down tablet server or when running the cluster rebalancer. See
-  link:https://issues.apache.org/jira/browse/KUDU-1728[KUDU-1728] and
-  link:https://issues.apache.org/jira/browse/KUDU-3214[KUDU-3214] for more details.
+  recovering from a down tablet server or when running the cluster rebalancer.
 
 - The HMS integration now supports multiple Kudu clusters associated with a single HMS
   including Kudu clusters that do not have HMS synchronization enabled. This is possible,
   because the Kudu master will now leverage the cluster Id to ignore notifications from
   tables in a different cluster. Additionally, the HMS plugin will check if the Kudu cluster
   associated with a table has HMS synchronization enabled.
-  See link:https://issues.apache.org/jira/browse/KUDU-3192[KUDU-3192] and
-  link:https://issues.apache.org/jira/browse/KUDU-3187[KUDU-3187] for more details.
 
 - DeltaMemStores will now be flushed as long as any DMS in a tablet is older than the point
   defined by `--flush_threshold_secs`, rather than flushing once every `--flush_threshold_secs`
   period. This can reduce memory pressure under update- or delete-heavy workloads, and lower tablet
-  server restart times following such workloads. See
-  link:https://issues.apache.org/jira/browse/KUDU-3195[KUDU-3195] for more details.
+  server restart times following such workloads.
 
 The above is just a list of the highlights, for a more complete list of new
 features, improvements and fixes please refer to the [release
