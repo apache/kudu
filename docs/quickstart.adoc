@@ -194,7 +194,7 @@ of `latest` by setting the `KUDU_QUICKSTART_VERSION` environment variable.
 
 [source,bash]
 ----
-export KUDU_QUICKSTART_VERSION="1.9.0"
+export KUDU_QUICKSTART_VERSION="1.14.0"
 ----
 
 === Changing the Kudu configuration

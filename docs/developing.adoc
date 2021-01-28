@@ -91,7 +91,7 @@ The following Maven `<dependency>` element is valid for the Apache Kudu public r
 <dependency>
   <groupId>org.apache.kudu</groupId>
   <artifactId>kudu-client</artifactId>
-  <version>1.10.0</version>
+  <version>1.14.0</version>
 </dependency>
 ----
 
@@ -125,7 +125,7 @@ on the link:http://kudu.apache.org/releases/[releases page].
 
 [source]
 ----
-spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.10.0
+spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.14.0
 ----
 
 Below is a minimal Spark SQL "select" example. We first import the kudu spark package,
@@ -344,7 +344,7 @@ system, use the `os-maven-plugin` to detect the current runtime environment.
 Finally, the `kudu-test-utils` module provides the `KuduTestHarness` class,
 which runs a Kudu mini cluster.
 
-Maven example for Kudu 1.10.0:
+Maven example for Kudu 1.14.0:
 
 [source,xml]
 ----
@@ -364,13 +364,13 @@ Maven example for Kudu 1.10.0:
   <dependency>
     <groupId>org.apache.kudu</groupId>
     <artifactId>kudu-test-utils</artifactId>
-    <version>1.10.0</version>
+    <version>1.14.0</version>
     <scope>test</scope>
   </dependency>
   <dependency>
     <groupId>org.apache.kudu</groupId>
     <artifactId>kudu-binary</artifactId>
-    <version>1.10.0</version>
+    <version>1.14.0</version>
     <classifier>${os.detected.classifier}</classifier>
     <scope>test</scope>
   </dependency>

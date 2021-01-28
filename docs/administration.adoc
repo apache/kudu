@@ -332,7 +332,7 @@ Below is a full example of a `KuduBackup` job execution which will backup the ta
 
 [source,bash]
 ----
-spark-submit --class org.apache.kudu.backup.KuduBackup kudu-backup2_2.11-1.10.0.jar \
+spark-submit --class org.apache.kudu.backup.KuduBackup kudu-backup2_2.11-1.14.0.jar \
   --kuduMasterAddresses master1-host,master-2-host,master-3-host \
   --rootPath hdfs:///kudu-backups \
   foo bar
@@ -370,7 +370,7 @@ Below is a full example of a `KuduRestore` job execution which will restore the 
 
 [source,bash]
 ----
-spark-submit --class org.apache.kudu.backup.KuduRestore kudu-backup2_2.11-1.10.0.jar \
+spark-submit --class org.apache.kudu.backup.KuduRestore kudu-backup2_2.11-1.14.0.jar \
   --kuduMasterAddresses master1-host,master-2-host,master-3-host \
   --rootPath hdfs:///kudu-backups \
   foo bar
@@ -393,7 +393,7 @@ Below is an example execution which will print the command options:
 
 [source,bash]
 ----
-java -cp $(hadoop classpath):kudu-backup-tools-1.10.0.jar org.apache.kudu.backup.KuduBackupCLI --help
+java -cp $(hadoop classpath):kudu-backup-tools-1.14.0.jar org.apache.kudu.backup.KuduBackupCLI --help
 ----
 
 [[backup_directory]]
