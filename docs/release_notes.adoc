@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.13.0 Release Notes
+= Apache Kudu 1.14.0 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
