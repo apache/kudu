@@ -68,6 +68,7 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_coordinator.h"
+#include "kudu/transactions/txn_status_manager.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -140,6 +141,7 @@ using kudu::rpc::RpcController;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::ParticipantIdsByTxnId;
 using kudu::tablet::TxnCoordinator;
+using kudu::transactions::TxnStatusManager;
 using kudu::transactions::TxnStatusTablet;
 using kudu::tserver::MiniTabletServer;
 using kudu::ClusterVerifier;
@@ -1110,6 +1112,9 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
   }
 
   static Status StartTransactions(const ParticipantIdsByTxnId& txns, TxnCoordinator* coordinator) {
+    TxnStatusManager* txn_status_manager =
+        dynamic_cast<TxnStatusManager*>(coordinator);
+    TxnStatusManager::ScopedLeaderSharedLock l(txn_status_manager);
     TabletServerErrorPB ts_error;
     for (const auto& txn_id_and_prt_ids : txns) {
       const auto& txn_id = txn_id_and_prt_ids.first;
@@ -1212,8 +1217,18 @@ TEST_F(TxnStatusTabletManagementTest, TestCopyTransactionStatusTablet) {
     ASSERT_OK(replica->WaitUntilConsensusRunning(MonoDelta::FromSeconds(3)));
     TxnCoordinator* coordinator = replica->txn_coordinator();
     ASSERT_NE(nullptr, coordinator);
+  }
+  // Restart the tserver and ensure the transactions information is
+  // correctly reloaded.
+  {
+    ts0->Shutdown();
+    ASSERT_OK(ts0->Restart());
     // Wait for the contents of the tablet to be loaded into memory.
     ASSERT_EVENTUALLY([&] {
+      scoped_refptr<TabletReplica> replica;
+      ASSERT_TRUE(ts0->server()->tablet_manager()->LookupTablet(
+          kTxnStatusTabletId, &replica));
+      TxnCoordinator* coordinator = replica->txn_coordinator();
       ASSERT_EQ(kExpectedTxns, coordinator->GetParticipantsByTxnIdForTests());
     });
   }

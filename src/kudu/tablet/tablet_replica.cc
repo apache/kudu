@@ -23,6 +23,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -36,7 +37,9 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/data_dirs.h"
@@ -58,6 +61,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -104,6 +108,7 @@ using kudu::consensus::ALTER_SCHEMA_OP;
 using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::consensus::ConsensusOptions;
 using kudu::consensus::ConsensusRound;
+using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::MarkDirtyCallback;
 using kudu::consensus::OpId;
 using kudu::consensus::PARTICIPANT_OP;
@@ -118,6 +123,7 @@ using kudu::consensus::WRITE_OP;
 using kudu::log::Log;
 using kudu::log::LogAnchorRegistry;
 using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
 using kudu::rpc::ResultTracker;
 using std::map;
@@ -135,6 +141,7 @@ TabletReplica::TabletReplica(
     scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
     consensus::RaftPeerPB local_peer_pb,
     ThreadPool* apply_pool,
+    ThreadPool* reload_txn_status_tablet_pool,
     TxnCoordinatorFactory* txn_coordinator_factory,
     MarkDirtyCallback cb)
     : meta_(DCHECK_NOTNULL(std::move(meta))),
@@ -142,10 +149,17 @@ TabletReplica::TabletReplica(
       local_peer_pb_(std::move(local_peer_pb)),
       log_anchor_registry_(new LogAnchorRegistry()),
       apply_pool_(apply_pool),
+      reload_txn_status_tablet_pool_(reload_txn_status_tablet_pool),
       txn_coordinator_(meta_->table_type() &&
                        *meta_->table_type() == TableTypePB::TXN_STATUS_TABLE ?
                        DCHECK_NOTNULL(txn_coordinator_factory)->Create(this) : nullptr),
-      mark_dirty_clbk_(std::move(cb)),
+      txn_coordinator_task_counter_(0),
+      mark_dirty_clbk_(meta_->table_type() &&
+                       *meta_->table_type() == TableTypePB::TXN_STATUS_TABLE ?
+                       [this, cb](const string& reason) {
+                         cb(reason);
+                         this->TxnStatusReplicaStateChanged(this->tablet_id(), reason);
+                       } : std::move(cb)),
       state_(NOT_INITIALIZED),
       last_status_("Tablet initializing...") {
 }
@@ -261,11 +275,6 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
     CHECK_EQ(BOOTSTRAPPING, state_); // We are still protected by 'state_change_lock_'.
     set_state(RUNNING);
   }
-  // TODO(awong): hook a callback into the TxnStatusManager that runs this when
-  // we become leader such that only leaders load the tablet into memory.
-  if (txn_coordinator_) {
-    RETURN_NOT_OK(txn_coordinator_->LoadFromTablet());
-  }
 
   return Status::OK();
 }
@@ -292,7 +301,9 @@ void TabletReplica::Stop() {
     set_state(STOPPING);
   }
 
+  WaitUntilTxnCoordinatorTasksFinished();
   std::lock_guard<simple_spinlock> l(state_change_lock_);
+
   // Even though Tablet::Shutdown() also unregisters its ops, we have to do it here
   // to ensure that any currently running operation finishes before we proceed with
   // the rest of the shutdown sequence. In particular, a maintenance operation could
@@ -354,6 +365,60 @@ void TabletReplica::WaitUntilStopped() {
   }
 }
 
+void TabletReplica::WaitUntilTxnCoordinatorTasksFinished() {
+  if (!txn_coordinator_) {
+    return;
+  }
+
+  while (true) {
+    {
+      std::lock_guard<simple_spinlock> lock(lock_);
+      if (txn_coordinator_task_counter_ == 0) {
+        return;
+      }
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+}
+
+void TabletReplica::TxnStatusReplicaStateChanged(const string& tablet_id, const string& reason) {
+  if (PREDICT_FALSE(!ShouldRunTxnCoordinatorStateChangedTask())) {
+    return;
+  }
+  auto decrement_on_failure = MakeScopedCleanup([&] {
+    DecreaseTxnCoordinatorTaskCounter();
+  });
+  CHECK_EQ(tablet_id, this->tablet_id());
+  shared_ptr<RaftConsensus> consensus = shared_consensus();
+  if (!consensus) {
+    LOG_WITH_PREFIX(WARNING) << "Received notification of TxnStatusTablet state change "
+                             << "but the raft consensus is not initialized. Tablet ID: "
+                             << tablet_id << ". Reason: " << reason;
+    return;
+  }
+  ConsensusStatePB cstate;
+  Status s = consensus->ConsensusState(&cstate);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX(WARNING) << "Consensus state is not available. " << s.ToString();
+    return;
+  }
+  LOG_WITH_PREFIX(INFO) << "TxnStatusTablet state changed. Reason: " << reason << ". "
+                        << "Latest consensus state: " << SecureShortDebugString(cstate);
+  RaftPeerPB::Role new_role = GetConsensusRole(permanent_uuid(), cstate);
+  LOG_WITH_PREFIX(INFO) << "This TxnStatusTablet replica's current role is: "
+                        << RaftPeerPB::Role_Name(new_role);
+
+  if (new_role == RaftPeerPB::LEADER) {
+    // If we're going to schedule a task, only decrement our task count when
+    // that task finishes.
+    decrement_on_failure.cancel();
+    CHECK_OK(reload_txn_status_tablet_pool_->Submit([this] {
+      txn_coordinator_->PrepareLeadershipTask();
+      DecreaseTxnCoordinatorTaskCounter();
+    }));
+  }
+}
+
 string TabletReplica::LogPrefix() const {
   return meta_->LogPrefix();
 }
@@ -398,6 +463,14 @@ Status TabletReplica::CheckRunning() const {
     }
   }
   return Status::OK();
+}
+
+bool TabletReplica::IsShuttingDown() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  if (state_ == STOPPING || state_ == STOPPED) {
+    return true;
+  }
+  return false;
 }
 
 Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
@@ -900,6 +973,43 @@ void TabletReplica::UpdateTabletStats(vector<string>* dirty_tablets) {
 ReportedTabletStatsPB TabletReplica::GetTabletStats() const {
   std::lock_guard<simple_spinlock> l(lock_);
   return stats_pb_;
+}
+
+bool TabletReplica::ShouldRunTxnCoordinatorStalenessTask() {
+  if (!txn_coordinator_) {
+    return false;
+  }
+  std::lock_guard<simple_spinlock> l(lock_);
+  if (state_ != RUNNING) {
+    LOG(WARNING) << Substitute("The tablet is not running. State: $0",
+                               TabletStatePB_Name(state_));
+    return false;
+  }
+  txn_coordinator_task_counter_++;
+  return true;
+}
+
+bool TabletReplica::ShouldRunTxnCoordinatorStateChangedTask() {
+  if (!txn_coordinator_) {
+    return false;
+  }
+  std::lock_guard<simple_spinlock> l(lock_);
+  // We only check if the tablet is shutting down here, since replica
+  // state change can happen even when the tablet is not running yet.
+  if (state_ == STOPPING || state_ == STOPPED) {
+    LOG(WARNING) << Substitute("The tablet is already shutting down or shutdown. State: $0",
+                               TabletStatePB_Name(state_));
+    return false;
+  }
+  txn_coordinator_task_counter_++;
+  return true;
+}
+
+void TabletReplica::DecreaseTxnCoordinatorTaskCounter() {
+  DCHECK(txn_coordinator_);
+  std::lock_guard<simple_spinlock> l(lock_);
+  txn_coordinator_task_counter_--;
+  DCHECK_GE(txn_coordinator_task_counter_, 0);
 }
 
 void TabletReplica::MakeUnavailable(const Status& error) {

@@ -91,6 +91,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                 scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
                 consensus::RaftPeerPB local_peer_pb,
                 ThreadPool* apply_pool,
+                ThreadPool* reload_txn_status_tablet_pool,
                 TxnCoordinatorFactory* txn_coordinator_factory,
                 consensus::MarkDirtyCallback cb);
 
@@ -127,6 +128,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   // Check that the tablet is in a RUNNING state.
   Status CheckRunning() const;
+
+  // Whether the tablet is already shutting down or shutdown.
+  bool IsShuttingDown() const;
 
   // Wait until the tablet is in a RUNNING state or if there's a timeout.
   // TODO have a way to wait for any state?
@@ -321,6 +325,31 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
     return txn_coordinator_.get();
   }
 
+  // Whether or not to run a new staleness transactions aborting task.
+  // If the tablet is part of a transaction status table and is in
+  // RUNNING state, register the task by increasing the transaction status
+  // manager task counter. Once registered, the tablet will wait the task to
+  // be executed before shutting down. More concretely, if this returns
+  // 'true', callers must call DecreaseTxnCoordinatorTaskCounter().
+  //
+  // Return true if the caller should run the staleness task. Otherwise
+  // return false.
+  bool ShouldRunTxnCoordinatorStalenessTask();
+
+  // Whether or not to run a new transaction status table reloading
+  // metadata task. If the tablet is part of a transaction status table
+  // and is not shutting down, register the task by increasing the
+  // transaction status manager task counter if the tablet is not shutting
+  // down. Similar to 'ShouldRunTxnCoordinatorStalenessTask' above. if
+  // this returns 'true', callers must call DecreaseTxnCoordinatorTaskCounter().
+  //
+  // Return true if the caller should run the metadata reloading task
+  // Otherwise return false.
+  bool ShouldRunTxnCoordinatorStateChangedTask();
+
+  // Decrease the task counter of the transaction status manager.
+  void DecreaseTxnCoordinatorTaskCounter();
+
  private:
   friend class kudu::AlterTableTest;
   friend class RefCountedThreadSafe<TabletReplica>;
@@ -335,6 +364,15 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Wait until the TabletReplica is fully in STOPPED, SHUTDOWN, or FAILED
   // state.
   void WaitUntilStopped();
+
+  // Wait until all on-going tasks for transaction status manager, if any,
+  // to finish.
+  void WaitUntilTxnCoordinatorTasksFinished();
+
+  // Handle the state change accordingly if this tablet is a part of the
+  // transaction status table.
+  void TxnStatusReplicaStateChanged(const std::string& tablet_id,
+                                    const std::string& reason);
 
   std::string LogPrefix() const;
   // Transition to another state. Requires that the caller hold 'lock_' if the
@@ -353,10 +391,17 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Tablet server.
   ThreadPool* const apply_pool_;
 
+  // Pool that executes txn status tablet in memory state reloading. This is
+  // a multi-threaded pool, constructor-injected by the tablet server.
+  ThreadPool* const reload_txn_status_tablet_pool_;
+
   // If this tablet is a part of the transaction status table, this is the
   // entity responsible for accepting and managing requests to coordinate
   // transactions.
   const std::unique_ptr<TxnCoordinator> txn_coordinator_;
+
+  // Track the number of on-going tasks of the transaction status manager.
+  int txn_coordinator_task_counter_;
 
   // Function to mark this TabletReplica's tablet as dirty in the TSTabletManager.
   //

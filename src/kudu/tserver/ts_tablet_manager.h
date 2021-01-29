@@ -412,6 +412,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Thread pool used to delete tablets asynchronously.
   std::unique_ptr<ThreadPool> delete_tablet_pool_;
 
+  // Thread pool used to reload transaction status tablets asynchronously.
+  std::unique_ptr<ThreadPool> reload_txn_status_tablet_pool_;
+
   // Thread pool to run TxnStatusManager tasks. As of now, this pool is
   // to run a long-running single periodic task to abort stale transactions
   // registered with corresponding transaction status tablets.

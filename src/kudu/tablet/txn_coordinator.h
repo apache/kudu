@@ -46,7 +46,11 @@ class TxnCoordinator {
  public:
   virtual ~TxnCoordinator() {}
 
-  virtual Status LoadFromTablet() = 0;
+  // Perform necessary work to prepare for running in the leader role.
+  // It's about reload tablet metadata into memory and do other work
+  // to update the internal state of the coordinator upon becoming
+  // the leader.
+  virtual void PrepareLeadershipTask() = 0;
 
   // Starts a transaction with the given ID as the given user.
   //

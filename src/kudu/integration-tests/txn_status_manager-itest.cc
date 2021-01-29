@@ -238,28 +238,11 @@ class TxnStatusManagerITest : public ExternalMiniClusterITestBase {
 
 const MonoDelta TxnStatusManagerITest::kTimeout = MonoDelta::FromSeconds(15);
 
-// TODO(aserbin): enable all scenarios below once [1] is committed. Without [1],
-//                these scenarios sometimes fails upon calling GetTxnState():
-//
-//   Bad status: Not found: Failed to write to server:
-//   7c968757cc19497a93b15b6c6a48e446 (127.13.78.3:33027):
-//   transaction ID 0 not found, current highest txn ID: -1
-//
-//                The issue here is that a non-leader replica might load
-//                the information from tablet that's lagging behind the
-//                leader, and once the replica becomes a new leader later on,
-//                the information is stale because TxnStatusManager's data
-//                isn't yet reloaded upon the becoming a leader. Once the
-//                patch above is merged, remove this TODO and remove '#if 0'
-//                for the code below.
-//
-//                [1] https://gerrit.cloudera.org/#/c/16648/
-
 // The test to verify basic functionality of the transaction tracker: it should
 // detect transactions that haven't received KeepTransactionAlive() requests
 // for longer than the transaction's keepalive interval and automatically abort
 // those.
-TEST_F(TxnStatusManagerITest, DISABLED_StaleTransactionsCleanup) {
+TEST_F(TxnStatusManagerITest, StaleTransactionsCleanup) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   // Check that the transaction staleness is detected and the stale transaction
@@ -300,7 +283,7 @@ TEST_F(TxnStatusManagerITest, DISABLED_StaleTransactionsCleanup) {
 // Make sure it's possible to disable and enable back the transaction
 // staleness tracking in run-time without restarting the processes hosting
 // TxnStatusManager instances (i.e. tablet servers).
-TEST_F(TxnStatusManagerITest, DISABLED_ToggleStaleTxnTrackerInRuntime) {
+TEST_F(TxnStatusManagerITest, ToggleStaleTxnTrackerInRuntime) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   // Disable txn transaction tracking in run-time.
@@ -473,7 +456,7 @@ TEST_F(TxnStatusManagerITest, DISABLED_TxnKeepAliveMultiTxnStatusManagerInstance
 // accessible for some time, and the txn keepalive messages reach the
 // destination after TxnStatusManager is back online. So, the txn should not be
 // auto-aborted when its KuduTransaction objects is kept in the scope.
-TEST_F(TxnStatusManagerITest, DISABLED_TxnKeptAliveByClientIfStatusManagerRestarted) {
+TEST_F(TxnStatusManagerITest, TxnKeptAliveByClientIfStatusManagerRestarted) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   shared_ptr<KuduClient> c;
   ASSERT_OK(cluster_->CreateClient(nullptr, &c));

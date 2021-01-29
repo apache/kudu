@@ -24,15 +24,23 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gtest/gtest_prod.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/txn_coordinator.h"
 #include "kudu/transactions/txn_status_entry.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class MonoDelta;
+namespace rpc {
+class RpcContext;
+}  // namespace rpc
 
 namespace tablet {
 class TabletReplica;
@@ -76,8 +84,56 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   explicit TxnStatusManager(tablet::TabletReplica* tablet_replica);
   ~TxnStatusManager() = default;
 
-  // Loads the contents of the status tablet into memory.
-  Status LoadFromTablet() override;
+  // Scoped "shared lock" to serialize replica leader elections.
+  //
+  // While in scope, blocks the transaction status manager in the event that
+  // it becomes the leader of its Raft configuration and needs to reload its
+  // persistent metadata. Once destroyed, the transaction status manager is
+  // unblocked.
+  class ScopedLeaderSharedLock {
+   public:
+    // Creates a new shared lock, trying to acquire the transaction status
+    // manager's leader_lock_ for reading in the process. If acquired, the
+    // lock is released when this object is destroyed.
+    //
+    // The object pointed by the 'txn_coordinator' parameter must outlive this
+    // object. 'txn_coordinator' must be a 'TxnStatusManager*' because of the
+    // downcast in the initialization.
+    explicit ScopedLeaderSharedLock(TxnCoordinator* txn_coordinator);
+
+    // First non-OK status of the transaction status manager, adhering to
+    // the checking order of replica_status_ first and then leader_status_.
+    const Status& first_failed_status() const {
+      RETURN_NOT_OK(replica_status_);
+      return leader_status_;
+    }
+
+    // Check that the transaction status manager is initialized and that it is
+    // the leader of its Raft configuration. Initialization status takes precedence
+    // over leadership status.
+    //
+    // If not initialized or if not the leader, writes the corresponding error
+    // to 'resp', responds to 'rpc', and returns false.
+    template<typename RespClass>
+    bool CheckIsInitializedAndIsLeaderOrRespond(RespClass* resp, rpc::RpcContext* rpc);
+
+   private:
+    TxnStatusManager* txn_status_manager_;
+    shared_lock<RWMutex> leader_shared_lock_;
+
+    // General status of the transaction status manager. If not OK (e.g. the tablet
+    // replica is still being initialized), all operations are illegal.
+    Status replica_status_;
+
+    // Leadership status of the transaction status manager. If not OK, the
+    // transaction status manager is not the leader.
+    Status leader_status_;
+    int64_t initial_term_;
+
+    DISALLOW_COPY_AND_ASSIGN(ScopedLeaderSharedLock);
+  };
+
+  void PrepareLeadershipTask() override;
 
   // Writes an entry to the status tablet and creates a transaction in memory.
   // Returns an error if a higher transaction ID has already been attempted
@@ -152,6 +208,16 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   tablet::ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const override;
 
  private:
+  // This test class calls LoadFromTablet() directly.
+  FRIEND_TEST(TxnStatusManagerTest, TestStartTransactions);
+  FRIEND_TEST(TxnStatusManagerTest, GetTransactionStatus);
+  friend class TxnStatusManagerTest;
+
+  // Loads the contents of the transaction status tablet into memory.
+  Status LoadFromTabletUnlocked();
+  // This is called by tests only.
+  Status LoadFromTablet();
+
   // Verifies that the transaction status data has already been loaded from the
   // underlying tablet and the replica is a leader. Returns Status::OK() if the
   // data is loaded and the replica is a leader. Otherwise, if the data hasn't
@@ -161,6 +227,17 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   // to TabletServerErrorPB::NOT_THE_LEADER.
   Status CheckTxnStatusDataLoadedUnlocked(
       tserver::TabletServerErrorPB* ts_error) const;
+
+  // Loops and sleeps until one of the following conditions occurs:
+  // 1. The current node is the leader in the current term
+  //    and at least one op from the current term is committed. Returns OK.
+  // 2. The current node is not the leader. Returns IllegalState.
+  // 3. The provided timeout expires. Returns TimedOut.
+  //
+  // This method is intended to ensure that all operations replicated by
+  // previous leader are committed and visible to the local node before
+  // reading the data, to ensure consistency across failovers.
+  Status WaitUntilCaughtUpAsLeader(const MonoDelta& timeout);
 
   // Returns the transaction entry, returning an error if the transaction ID
   // doesn't exist or if 'user' is specified but isn't the owner of the
@@ -183,6 +260,27 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
 
   // The access to underlying storage.
   TxnStatusTablet status_tablet_;
+
+  // This field is updated when a node becomes the leader, waits for all outstanding
+  // uncommitted metadata in the transaction status manager to commit, and then
+  // reads that metadata into in-memory data structures. This is used to "fence"
+  // requests that depend on the in-memory state until the node can respond
+  // correctly.
+  int64_t leader_ready_term_;
+
+  // Lock protecting 'leader_ready_term_'.
+  mutable simple_spinlock leader_term_lock_;
+
+  // Lock used to fence operations and leader elections. All logical operations
+  // (i.e. begin transaction, get transaction, etc.) should acquire this lock for
+  // reading. Following an election where this replica is elected leader, it
+  // should acquire this lock for writing before reloading the metadata.
+  //
+  // Readers should not acquire this lock directly; use ScopedLeaderSharedLock
+  // instead.
+  //
+  // Always acquire this lock before 'leader_term_lock_'.
+  RWMutex leader_lock_;
 };
 
 class TxnStatusManagerFactory : public tablet::TxnCoordinatorFactory {

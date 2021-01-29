@@ -471,6 +471,7 @@ Status SysCatalogTable::SetupTablet(
       cmeta_manager_,
       local_peer_pb_,
       master_->tablet_apply_pool(),
+      /*reload_txn_status_tablet_pool*/nullptr,
       /*txn_coordinator_factory*/ nullptr,
       [this, tablet_id](const string& reason) {
         this->SysCatalogStateChanged(tablet_id, reason);

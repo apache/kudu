@@ -78,7 +78,6 @@ class TransactionsVisitor {
 // Expected usage of this class is to have a management layer that reads and
 // writes to the underlying replica only if it is leader.
 //
-// TODO(awong): ensure that only the leader TxnStatusManager can call these.
 // TODO(awong): delete transactions that are entirely aborted or committed.
 // TODO(awong): consider batching writes.
 class TxnStatusTablet {

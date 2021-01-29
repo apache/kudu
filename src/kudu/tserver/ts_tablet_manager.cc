@@ -91,6 +91,14 @@ DEFINE_int32(num_tablets_to_delete_simultaneously, 0,
              "device such as SSD or a RAID array, it may make sense to manually tune this.");
 TAG_FLAG(num_tablets_to_delete_simultaneously, advanced);
 
+DEFINE_int32(num_txn_status_tablets_to_reload_simultaneously, 0,
+             "Number of threads available to reload transaction status tablets in memory "
+             "metadata. If this is set to 0 (the default), then the number of reload threads "
+             "will be set based on the number of data directories. If the data directories "
+             "are on some very fast storage device such as SSD or a RAID array, it may make "
+             "sense to manually tune this.");
+TAG_FLAG(num_txn_status_tablets_to_reload_simultaneously, advanced);
+
 DEFINE_int32(tablet_start_warn_threshold_ms, 500,
              "If a tablet takes more than this number of millis to start, issue "
              "a warning with a trace.");
@@ -229,6 +237,7 @@ using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletMetadata;
 using kudu::tablet::TabletReplica;
+using kudu::transactions::TxnStatusManager;
 using kudu::transactions::TxnStatusManagerFactory;
 using kudu::tserver::TabletCopyClient;
 using std::make_shared;
@@ -381,6 +390,15 @@ Status TSTabletManager::Init() {
   RETURN_NOT_OK(ThreadPoolBuilder("tablet-delete")
                 .set_max_threads(max_delete_threads)
                 .Build(&delete_tablet_pool_));
+
+  int max_reload_threads = FLAGS_num_txn_status_tablets_to_reload_simultaneously;
+  if (max_reload_threads == 0) {
+    // Default to the number of data directories.
+    max_reload_threads = fs_manager_->GetDataRootDirs().size();
+  }
+  RETURN_NOT_OK(ThreadPoolBuilder("txn-status-tablet-reload")
+                .set_max_threads(max_reload_threads)
+                .Build(&reload_txn_status_tablet_pool_));
 
   // TODO(aserbin): if better parallelism is needed to serve higher txn volume,
   //                consider using multiple threads in this pool and schedule
@@ -862,6 +880,7 @@ Status TSTabletManager::CreateAndRegisterTabletReplica(
                         cmeta_manager_,
                         local_peer_pb_,
                         server_->tablet_apply_pool(),
+                        reload_txn_status_tablet_pool_.get(),
                         &tsm_factory,
                         [this, tablet_id](const string& reason) {
                           this->MarkTabletDirty(tablet_id, reason);
@@ -1262,6 +1281,12 @@ void TSTabletManager::Shutdown() {
     replica->Shutdown();
   }
 
+  // Shut down the reload pool, so no new tablets are reloaded after this point.
+  // The shutdown takes place after the replicas are fully shutdown, to ensure
+  // on-going reloading metadata tasks of the transaction status managers are
+  // properly executed to unblock the shutdown process of replicas.
+  reload_txn_status_tablet_pool_->Shutdown();
+
   {
     std::lock_guard<RWMutex> l(lock_);
     // We don't expect anyone else to be modifying the map after we start the
@@ -1398,17 +1423,43 @@ void TSTabletManager::TxnStalenessTrackerTask() {
       shared_lock<RWMutex> l(lock_);
       for (const auto& elem : tablet_map_) {
         auto r = elem.second;
-        // Find txn status tablet replicas.
-        if (r->txn_coordinator()) {
+        // Find the running txn status tablet replicas.
+        if (r->txn_coordinator() && r->CheckRunning().ok()) {
           replicas.emplace_back(std::move(r));
         }
       }
     }
     for (auto& r : replicas) {
+      // Stop the task if the tserver is shutting down.
       if (shutdown_latch_.count() == 0) {
         return;
       }
+
+      // Only enable the staleness aborting task if the tablet replica
+      // is running.
+      if (!r->ShouldRunTxnCoordinatorStalenessTask()) {
+        continue;
+      }
+      SCOPED_CLEANUP({
+        r->DecreaseTxnCoordinatorTaskCounter();
+      });
       auto* coordinator = DCHECK_NOTNULL(r->txn_coordinator());
+      // Only leader replicas abort stale transactions registered with them.
+      // As of now, keep-alive requests are sent only to leader replicas, so only
+      // they have up-to-date information about the liveliness of corresponding
+      // transactions.
+      //
+      // If a non-leader replica erroneously (due to a network partition and
+      // the absence of leader leases) tried to abort a transaction, it would fail
+      // because aborting a transaction means writing into the transaction status
+      // tablet, so a non-leader replica's write attempt would be rejected by
+      // the Raft consensus protocol.
+      TxnStatusManager::ScopedLeaderSharedLock l(coordinator);
+      if (!l.first_failed_status().ok()) {
+        VLOG(1) << "Skipping transaction staleness track task: "
+                << l.first_failed_status().ToString();
+        continue;
+      }
       coordinator->AbortStaleTransactions();
     }
   }

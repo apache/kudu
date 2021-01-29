@@ -88,6 +88,7 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_coordinator.h"
 #include "kudu/transactions/transactions.pb.h"
+#include "kudu/transactions/txn_status_manager.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tablet_server.h"
@@ -1256,29 +1257,35 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
   const auto& user = op.user();
   const auto& txn_id = op.txn_id();
   int64_t highest_seen_txn_id = -1;
-  switch (op.type()) {
-    case CoordinatorOpPB::BEGIN_TXN:
-      s = txn_coordinator->BeginTransaction(
-          txn_id, user, &highest_seen_txn_id, &ts_error);
-      break;
-    case CoordinatorOpPB::REGISTER_PARTICIPANT:
-      s = txn_coordinator->RegisterParticipant(txn_id, op.txn_participant_id(), user, &ts_error);
-      break;
-    case CoordinatorOpPB::BEGIN_COMMIT_TXN:
-      s = txn_coordinator->BeginCommitTransaction(txn_id, user, &ts_error);
-      break;
-    case CoordinatorOpPB::ABORT_TXN:
-      s = txn_coordinator->AbortTransaction(txn_id, user, &ts_error);
-      break;
-    case CoordinatorOpPB::GET_TXN_STATUS:
-      s = txn_coordinator->GetTransactionStatus(
-          txn_id, user, &txn_status, &ts_error);
-      break;
-    case CoordinatorOpPB::KEEP_TXN_ALIVE:
-      s = txn_coordinator->KeepTransactionAlive(txn_id, user, &ts_error);
-      break;
-    default:
-      s = Status::InvalidArgument(Substitute("Unknown op type: $0", op.type()));
+  {
+    transactions::TxnStatusManager::ScopedLeaderSharedLock l(txn_coordinator);
+    if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, context)) {
+      return;
+    }
+    switch (op.type()) {
+      case CoordinatorOpPB::BEGIN_TXN:
+        s = txn_coordinator->BeginTransaction(
+            txn_id, user, &highest_seen_txn_id, &ts_error);
+        break;
+      case CoordinatorOpPB::REGISTER_PARTICIPANT:
+        s = txn_coordinator->RegisterParticipant(txn_id, op.txn_participant_id(), user, &ts_error);
+        break;
+      case CoordinatorOpPB::BEGIN_COMMIT_TXN:
+        s = txn_coordinator->BeginCommitTransaction(txn_id, user, &ts_error);
+        break;
+      case CoordinatorOpPB::ABORT_TXN:
+        s = txn_coordinator->AbortTransaction(txn_id, user, &ts_error);
+        break;
+      case CoordinatorOpPB::GET_TXN_STATUS:
+        s = txn_coordinator->GetTransactionStatus(
+            txn_id, user, &txn_status, &ts_error);
+        break;
+      case CoordinatorOpPB::KEEP_TXN_ALIVE:
+        s = txn_coordinator->KeepTransactionAlive(txn_id, user, &ts_error);
+        break;
+      default:
+        s = Status::InvalidArgument(Substitute("Unknown op type: $0", op.type()));
+   }
   }
   if (ts_error.has_status() && ts_error.status().code() != AppStatusPB::OK) {
     *resp->mutable_error() = std::move(ts_error);

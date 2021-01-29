@@ -106,6 +106,7 @@
 #include "kudu/tablet/txn_coordinator.h"
 #include "kudu/tablet/txn_participant-test-util.h"
 #include "kudu/transactions/transactions.pb.h"
+#include "kudu/transactions/txn_status_manager.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
@@ -203,6 +204,7 @@ using kudu::rpc::MessengerBuilder;
 using kudu::security::SignedTokenPB;
 using kudu::client::sp::shared_ptr;
 using kudu::tablet::TabletReplica;
+using kudu::transactions::TxnStatusManager;
 using kudu::transactions::TxnTokenPB;
 using kudu::tserver::MiniTabletServer;
 using kudu::tserver::ParticipantOpPB;
@@ -421,6 +423,7 @@ class ClientTest : public KuduTest {
         if (!c) {
           continue;
         }
+        TxnStatusManager::ScopedLeaderSharedLock l(c);
         auto highest_txn_id = c->highest_txn_id();
         if (txn_id > highest_txn_id) {
           continue;

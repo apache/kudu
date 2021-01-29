@@ -18,6 +18,7 @@
 #include "kudu/transactions/txn_status_manager.h"
 
 #include <algorithm>
+#include <functional>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -31,10 +32,13 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/rpc_context.h"
+#include "kudu/tablet/ops/op_tracker.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -45,6 +49,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 
 DEFINE_uint32(txn_keepalive_interval_ms, 30000,
               "Maximum interval (in milliseconds) between subsequent "
@@ -83,10 +88,35 @@ DEFINE_bool(txn_status_manager_finalize_commit_on_begin, false,
 TAG_FLAG(txn_status_manager_finalize_commit_on_begin, hidden);
 TAG_FLAG(txn_status_manager_finalize_commit_on_begin, unsafe);
 
+DEFINE_int32(txn_status_tablet_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
+             "Amount of time to give a newly-elected leader tserver of transaction "
+             "status tablet to load the metadata containing all operations replicated "
+             "by the previous leader and become active.");
+TAG_FLAG(txn_status_tablet_failover_catchup_timeout_ms, advanced);
+TAG_FLAG(txn_status_tablet_failover_catchup_timeout_ms, experimental);
+
+DEFINE_bool(txn_status_tablet_failover_inject_timeout_error, false,
+            "If true, inject timeout error when waiting the replica to catch up with "
+            "all replicated operations in previous term.");
+TAG_FLAG(txn_status_tablet_failover_inject_timeout_error, unsafe);
+
+DEFINE_bool(txn_status_tablet_inject_load_failure_error, false,
+            "If true, inject error when loading data from the transaction status "
+            "tablet replica");
+TAG_FLAG(txn_status_tablet_inject_load_failure_error, unsafe);
+
+DEFINE_bool(txn_status_tablet_inject_uninitialized_leader_status_error, false,
+            "If true, inject uninitialized leader status error");
+TAG_FLAG(txn_status_tablet_inject_uninitialized_leader_status_error, unsafe);
+
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::RaftConsensus;
+using kudu::consensus::RaftPeerPB;
 using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::RpcContext;
+using kudu::tablet::TabletReplica;
 using kudu::tablet::ParticipantIdsByTxnId;
 using kudu::tserver::TabletServerErrorPB;
-using kudu::consensus::RaftPeerPB;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -105,6 +135,10 @@ namespace {
 //     tablet (unless the tablet contains a record with higher txn_id)
 constexpr int64_t kIdStatusDataNotLoaded = -2;
 constexpr int64_t kIdStatusDataReady = -1;
+
+// Value to represent uninitialized 'leader_ready_term_' assigned at the
+// transaction status manager construction time.
+constexpr int64_t kUninitializedLeaderTerm = -1;
 
 Status ReportIllegalTxnState(const string& errmsg,
                              TabletServerErrorPB* ts_error) {
@@ -160,10 +194,97 @@ void TxnStatusManagerBuildingVisitor::Release(
 
 TxnStatusManager::TxnStatusManager(tablet::TabletReplica* tablet_replica)
     : highest_txn_id_(kIdStatusDataNotLoaded),
-      status_tablet_(tablet_replica) {
+      status_tablet_(tablet_replica),
+      leader_ready_term_(kUninitializedLeaderTerm),
+      leader_lock_(RWMutex::Priority::PREFER_WRITING) {
 }
 
-Status TxnStatusManager::LoadFromTablet() {
+////////////////////////////////////////////////////////////
+// TxnStatusManager::ScopedLeaderSharedLock
+////////////////////////////////////////////////////////////
+TxnStatusManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
+    TxnCoordinator* txn_coordinator)
+    : txn_status_manager_(DCHECK_NOTNULL(down_cast<TxnStatusManager*>(txn_coordinator))),
+      leader_shared_lock_(txn_status_manager_->leader_lock_, std::try_to_lock),
+      replica_status_(Status::Uninitialized(
+          "Transaction status tablet replica is not initialized")),
+      leader_status_(Status::Uninitialized(
+          "Leader status is not initialized")),
+      initial_term_(kUninitializedLeaderTerm) {
+
+  int64_t leader_ready_term;
+  {
+    std::lock_guard<simple_spinlock> l(txn_status_manager_->leader_term_lock_);
+    replica_status_ = txn_status_manager_->status_tablet_.tablet_replica_->CheckRunning();
+    if (PREDICT_FALSE(!replica_status_.ok() ||
+                      FLAGS_txn_status_tablet_inject_uninitialized_leader_status_error)) {
+      return;
+    }
+    leader_ready_term = txn_status_manager_->leader_ready_term_;
+  }
+
+  ConsensusStatePB cstate;
+  Status s =
+      txn_status_manager_->status_tablet_.tablet_replica_->consensus()->ConsensusState(&cstate);
+  if (PREDICT_FALSE(!s.ok())) {
+    DCHECK(s.IsIllegalState()) << s.ToString();
+    replica_status_ = s.CloneAndPrepend("ConsensusState is not available");
+    return;
+  }
+  DCHECK(replica_status_.ok());
+
+  // Check if the transaction status manager is the leader.
+  initial_term_ = cstate.current_term();
+  const string& uuid = txn_status_manager_->status_tablet_.tablet_replica_->permanent_uuid();
+  if (PREDICT_FALSE(cstate.leader_uuid() != uuid)) {
+    leader_status_ = Status::IllegalState(
+        Substitute("Not the leader. Local UUID: $0, Raft Consensus state: $1",
+                   uuid, SecureShortDebugString(cstate)));
+    return;
+  }
+  if (PREDICT_FALSE(leader_ready_term != initial_term_ ||
+                    !leader_shared_lock_.owns_lock())) {
+    leader_status_ = Status::ServiceUnavailable(
+        "Leader not yet ready to serve requests or the leadership has changed");
+    return;
+  }
+  leader_status_ = Status::OK();
+}
+
+template<typename RespClass>
+bool TxnStatusManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrRespond(
+    RespClass* resp, RpcContext* rpc) {
+  const Status& s = first_failed_status();
+  if (PREDICT_TRUE(s.ok())) {
+    return true;
+  }
+
+  StatusToPB(s, resp->mutable_error()->mutable_status());
+  if (!leader_status_.IsUninitialized()) {
+    resp->mutable_error()->set_code(TabletServerErrorPB::NOT_THE_LEADER);
+  } else {
+    resp->mutable_error()->set_code(TabletServerErrorPB::TABLET_NOT_RUNNING);
+  }
+  rpc->RespondSuccess();
+  return false;
+}
+
+// Explicit specialization for callers outside this compilation unit.
+#define INITTED_AND_LEADER_OR_RESPOND(RespClass) \
+  template bool \
+  TxnStatusManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrRespond( \
+      RespClass* resp, RpcContext* rpc) /* NOLINT */
+
+INITTED_AND_LEADER_OR_RESPOND(tserver::CoordinateTransactionResponsePB);
+#undef INITTED_AND_LEADER_OR_RESPOND
+
+Status TxnStatusManager::LoadFromTabletUnlocked() {
+  leader_lock_.AssertAcquiredForWriting();
+
+  if (PREDICT_FALSE(FLAGS_txn_status_tablet_inject_load_failure_error)) {
+    return Status::IllegalState("Injected transaction status tablet reload error");
+  }
+
   TxnStatusManagerBuildingVisitor v;
   RETURN_NOT_OK(status_tablet_.VisitTransactions(&v));
   int64_t highest_txn_id;
@@ -180,6 +301,14 @@ Status TxnStatusManager::LoadFromTablet() {
   return Status::OK();
 }
 
+Status TxnStatusManager::LoadFromTablet() {
+  // Block new transaction status manager operations, and wait
+  // for existing operations to finish.
+  std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+  leader_lock_.AssertAcquiredForWriting();
+  return LoadFromTabletUnlocked();
+}
+
 Status TxnStatusManager::CheckTxnStatusDataLoadedUnlocked(
     TabletServerErrorPB* ts_error) const {
   DCHECK(ts_error);
@@ -193,6 +322,9 @@ Status TxnStatusManager::CheckTxnStatusDataLoadedUnlocked(
   //                status of transactions which it is no longer aware of should
   //                be handled separately.
   if (PREDICT_FALSE(highest_txn_id_ <= kIdStatusDataNotLoaded)) {
+    // The records from the tablet is not yet be loaded only if the
+    // leadership status has not been initialized.
+    CHECK(leader_ready_term_ == kUninitializedLeaderTerm);
     return Status::ServiceUnavailable("transaction status data is not loaded");
   }
   auto* consensus = status_tablet_.tablet_replica_->consensus();
@@ -209,10 +341,26 @@ Status TxnStatusManager::CheckTxnStatusDataLoadedUnlocked(
   return Status::OK();
 }
 
+Status TxnStatusManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
+  // Verify the current node is indeed the leader.
+  ConsensusStatePB cstate;
+  RETURN_NOT_OK(status_tablet_.tablet_replica_->consensus()->ConsensusState(&cstate));
+  const string& uuid = status_tablet_.tablet_replica_->permanent_uuid();
+  if (cstate.leader_uuid() != uuid) {
+    return Status::IllegalState(
+        Substitute("Node $0 not leader. Raft Consensus state: $1",
+                   uuid, SecureShortDebugString(cstate)));
+  }
+
+  // Wait for all ops to be committed.
+  return status_tablet_.tablet_replica_->op_tracker()->WaitForAllToFinish(timeout);
+}
+
 Status TxnStatusManager::GetTransaction(int64_t txn_id,
                                         const boost::optional<string>& user,
                                         scoped_refptr<TransactionEntry>* txn,
                                         TabletServerErrorPB* ts_error) const {
+  leader_lock_.AssertAcquiredForReading();
   std::lock_guard<simple_spinlock> l(lock_);
 
   // First, make sure the transaction status data has been loaded. If not, then
@@ -234,6 +382,96 @@ Status TxnStatusManager::GetTransaction(int64_t txn_id,
   return Status::OK();
 }
 
+void TxnStatusManager::PrepareLeadershipTask() {
+  // Return early if the tablet is already not running.
+  if (PREDICT_FALSE(status_tablet_.tablet_replica_->IsShuttingDown())) {
+    LOG(WARNING) << "Not reloading transaction status tablet metadata, because "
+                 << "the tablet is already shutting down or shutdown. ";
+    return;
+  }
+  const RaftConsensus* consensus = status_tablet_.tablet_replica_->consensus();
+  const int64_t term_before_wait = consensus->CurrentTerm();
+  {
+    std::lock_guard<simple_spinlock> l(leader_term_lock_);
+    if (leader_ready_term_ == term_before_wait) {
+      // The term hasn't changed since the last time this replica was the
+      // leader. It's not possible for another replica to be leader for the same
+      // term, so there hasn't been any actual leadership change and thus
+      // there's no reason to reload the on-disk metadata.
+      VLOG(2) << Substitute("Term $0 hasn't changed, ignoring dirty callback",
+                            term_before_wait);
+      return;
+    }
+  }
+  LOG(INFO) << "Waiting until node catch up with all replicated operations in previous term...";
+  Status s = WaitUntilCaughtUpAsLeader(
+      MonoDelta::FromMilliseconds(FLAGS_txn_status_tablet_failover_catchup_timeout_ms));
+  if (PREDICT_FALSE(!s.ok() || FLAGS_txn_status_tablet_failover_inject_timeout_error)) {
+    WARN_NOT_OK(s, "Failed waiting for node to catch up after leader election");
+    // Even when we get a time out error here, it is ok to return. Since the client
+    // will get a ServiceUnavailable error and retry.
+    return;
+  }
+
+  const int64_t term = consensus->CurrentTerm();
+  if (term_before_wait != term) {
+    // If we got elected leader again while waiting to catch up then we will
+    // get another callback to reload the metadata, so bail.
+    LOG(INFO) << Substitute("Term changed from $0 to $1 while waiting for replica "
+                            "leader catchup. Not loading transaction status manager "
+                            "metadata", term_before_wait, term);
+    return;
+  }
+
+  {
+    // This lambda returns the result of calling the 'func'. If the returned status
+    // is non-OK, the caller should bail on the leadership preparation task. Non-OK
+    // status is not considered fatal, because errors on preparing transaction status
+    // table only affect transactional operations and clients can retry in such case.
+    const auto check = [this](
+        const std::function<Status()> func,
+        const RaftConsensus& consensus,
+        int64_t start_term,
+        const char* op_description) {
+
+      leader_lock_.AssertAcquiredForWriting();
+      const Status s = func();
+      if (s.ok()) {
+        // Not an error at all.
+        return s;
+      }
+
+      const int64_t term = consensus.CurrentTerm();
+      // If the term has changed we assume the new leader is about to do the
+      // necessary work in its leadership preparation task. Otherwise, log
+      // a warning.
+      if (term != start_term) {
+        LOG(INFO) << Substitute("$0 interrupted; change in term detected: $1 vs $2: $3",
+                                op_description, start_term, term, s.ToString());
+      } else {
+        LOG(WARNING) << Substitute("$0 failed: $1", op_description, s.ToString());
+      }
+      return s;
+    };
+
+    // Block new operations, and wait for existing operations to finish.
+    std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+
+    static const char* const kLoadMetaOpDescription =
+        "Loading transaction status metadata into memory";
+    LOG(INFO) << kLoadMetaOpDescription << "...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, kLoadMetaOpDescription) {
+      if (!check([this]() { return this->LoadFromTabletUnlocked(); },
+                 *consensus, term, kLoadMetaOpDescription).ok()) {
+        return;
+      }
+    }
+  }
+
+  std::lock_guard<simple_spinlock> l(leader_term_lock_);
+  leader_ready_term_ = term;
+}
+
 // NOTE: In this method, the idea is to try setting the 'highest_seen_txn_id'
 //       on return in most cases. Sending back the most recent highest
 //       transaction identifier helps to avoid extra RPC calls from
@@ -247,6 +485,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
                                           const string& user,
                                           int64_t* highest_seen_txn_id,
                                           TabletServerErrorPB* ts_error) {
+  leader_lock_.AssertAcquiredForReading();
   {
     std::lock_guard<simple_spinlock> l(lock_);
 
@@ -268,9 +507,6 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
           Substitute("transaction ID $0 is not higher than the highest ID so far: $1",
                      txn_id, highest_txn_id_));
     }
-    // TODO(awong): reduce the "damage" from followers getting requests by
-    // checking for leadership before doing anything. As is, if this replica
-    // isn't the leader, we may aggressively burn through transaction IDs.
     highest_txn_id_ = txn_id;
   }
 
@@ -311,6 +547,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
 
 Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& user,
                                                 TabletServerErrorPB* ts_error) {
+  leader_lock_.AssertAcquiredForReading();
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
 
@@ -342,6 +579,7 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
 Status TxnStatusManager::FinalizeCommitTransaction(
     int64_t txn_id,
     TabletServerErrorPB* ts_error) {
+  leader_lock_.AssertAcquiredForReading();
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, boost::none, &txn, ts_error));
 
@@ -368,6 +606,7 @@ Status TxnStatusManager::FinalizeCommitTransaction(
 Status TxnStatusManager::AbortTransaction(int64_t txn_id,
                                           const std::string& user,
                                           TabletServerErrorPB* ts_error) {
+  leader_lock_.AssertAcquiredForReading();
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
 
@@ -397,6 +636,7 @@ Status TxnStatusManager::GetTransactionStatus(
     transactions::TxnStatusEntryPB* txn_status,
     TabletServerErrorPB* ts_error) {
   DCHECK(txn_status);
+  leader_lock_.AssertAcquiredForReading();
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
 
@@ -451,6 +691,7 @@ Status TxnStatusManager::RegisterParticipant(
     const string& tablet_id,
     const string& user,
     TabletServerErrorPB* ts_error) {
+  leader_lock_.AssertAcquiredForReading();
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
 
@@ -489,24 +730,9 @@ Status TxnStatusManager::RegisterParticipant(
 }
 
 void TxnStatusManager::AbortStaleTransactions() {
+  leader_lock_.AssertAcquiredForReading();
   const MonoDelta max_staleness_interval =
       MonoDelta::FromMilliseconds(FLAGS_txn_keepalive_interval_ms);
-
-  auto* consensus = status_tablet_.tablet_replica_->consensus();
-  DCHECK(consensus);
-  if (consensus->role() != RaftPeerPB::LEADER) {
-    // Only leader replicas abort stale transactions registered with them.
-    // As of now, keep-alive requests are sent only to leader replicas, so only
-    // they have up-to-date information about the liveliness of corresponding
-    // transactions.
-    //
-    // If a non-leader replica errorneously (due to a network partition and
-    // the absence of leader leases) tried to abort a transaction, it would fail
-    // because aborting a transaction means writing into the transaction status
-    // tablet, so a non-leader replica's write attempt would be rejected by
-    // the Raft consensus protocol.
-    return;
-  }
   TransactionsMap txns_by_id;
   {
     std::lock_guard<simple_spinlock> l(lock_);
@@ -543,6 +769,7 @@ void TxnStatusManager::AbortStaleTransactions() {
             "last keepalive heartbeat (effective timeout is $2): $3",
             txn_id, staleness_interval.ToString(),
             max_staleness_interval.ToString(), s.ToString());
+        auto* consensus = DCHECK_NOTNULL(status_tablet_.tablet_replica_->consensus());
         if (consensus->role() != RaftPeerPB::LEADER ||
             !status_tablet_.tablet_replica()->CheckRunning().ok()) {
           // If the replica is no longer a leader at this point, there is
