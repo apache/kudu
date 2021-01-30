@@ -74,6 +74,9 @@ TAG_FLAG(rpc_inject_invalid_authn_token_ratio, unsafe);
 
 DECLARE_bool(rpc_encrypt_loopback_connections);
 
+// Allow using certificates signed by external CAs for full authentication.
+DECLARE_bool(rpc_allow_external_cert_authentication);
+
 // Trusting everything for now.
 DEFINE_string(trusted_subnets,
               "::/0",
@@ -86,6 +89,20 @@ DEFINE_string(trusted_subnets,
               "by a firewall, malicious users may be able to gain unauthorized access.");
 TAG_FLAG(trusted_subnets, advanced);
 TAG_FLAG(trusted_subnets, evolving);
+
+DEFINE_string(trusted_CNs,
+              "",
+              "A allow list of Common Names in Subject line. Goes hand in hand with "
+              "authenticate_via_CN flag. The allowed CN's should be comma separated.");
+TAG_FLAG(trusted_CNs, advanced);
+TAG_FLAG(trusted_CNs, evolving);
+
+DEFINE_bool(authenticate_via_CN, false, "Whether the server should use the CN"
+            " field in the Subject to validate the client or should it look "
+            "for the userId and kerberos principal fields. Setting it to true"
+            " will validate CN, false will validate userId.");
+TAG_FLAG(authenticate_via_CN, advanced);
+TAG_FLAG(authenticate_via_CN, evolving);
 
 static bool ValidateTrustedSubnets(const char* /*flagname*/, const string& value) {
   if (value.empty()) {
@@ -112,6 +129,13 @@ namespace rpc {
 
 namespace {
 vector<Network>* g_trusted_subnets = nullptr;
+
+bool ValidateTrustedCN(const std::string& value_list, const std::string& CN) {
+  std::vector<string> result = strings::Split(value_list, ",", strings::SkipEmpty());
+  auto itr = std::find(result.begin(), result.end(), CN);
+  return (itr != result.end());
+}
+
 } // anonymous namespace
 
 static int ServerNegotiationGetoptCb(ServerNegotiation* server_negotiation,
@@ -254,7 +278,12 @@ Status ServerNegotiation::Negotiate() {
       RETURN_NOT_OK(AuthenticateByToken(&recv_buf));
       break;
     case AuthenticationType::CERTIFICATE:
-      RETURN_NOT_OK(AuthenticateByCertificate());
+      RETURN_NOT_OK(
+        AuthenticateByCertificate(
+          FLAGS_authenticate_via_CN ? CertValidationCheck::CERT_VALIDATION_COMMON_NAME :
+                                      CertValidationCheck::CERT_VALIDATION_USERID
+        )
+      );
       break;
     case AuthenticationType::INVALID: LOG(FATAL) << "unreachable";
   }
@@ -448,7 +477,9 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
         case AuthenticationTypePB::kCertificate:
           // We only provide authenticated TLS if the certificates are generated
           // by the internal CA.
-          if (!tls_context_->is_external_cert()) {
+          // However for MySQL Raft we provide a backdoor to bypass this kudu restriction
+          // FLAGS_rpc_allow_external_cert_authentication = true, bypasses this limitation
+          if (FLAGS_rpc_allow_external_cert_authentication || !tls_context_->is_external_cert()) {
             authn_types.insert(AuthenticationType::CERTIFICATE);
           }
           break;
@@ -470,6 +501,10 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
     }
   }
 
+  // This is the key rule check which prioritizes TLS Based authentication
+  // over SASL based. If the client supports certificate based auth and
+  // the server has certificate based auth and encryption (consequently TLS)
+  // is not disabled, we should prioritize TLS authentication as the method.
   if (encryption_ != RpcEncryption::DISABLED &&
       ContainsKey(authn_types, AuthenticationType::CERTIFICATE) &&
       tls_context_->has_signed_cert()) {
@@ -725,7 +760,7 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
   return SendNegotiatePB(pb);
 }
 
-Status ServerNegotiation::AuthenticateByCertificate() {
+Status ServerNegotiation::AuthenticateByCertificate(CertValidationCheck mode) {
   // Sanity check that TLS has been negotiated. Cert-based authentication is
   // only possible with TLS.
   CHECK(tls_negotiated_);
@@ -734,16 +769,39 @@ Status ServerNegotiation::AuthenticateByCertificate() {
   security::Cert cert;
   RETURN_NOT_OK(tls_handshake_.GetRemoteCert(&cert));
 
-  boost::optional<string> user_id = cert.UserId();
-  boost::optional<string> principal = cert.KuduKerberosPrincipal();
+  if (mode == CertValidationCheck::CERT_VALIDATION_USERID) {
+    boost::optional<string> user_id = cert.UserId();
+    boost::optional<string> principal = cert.KuduKerberosPrincipal();
+    if (!user_id) {
+      Status s = Status::NotAuthorized("did not find expected X509 userId extension in cert");
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
+      return s;
+    }
 
-  if (!user_id) {
-    Status s = Status::NotAuthorized("did not find expected X509 userId extension in cert");
+    TRACE("Authenticated by Certificate User Id: $0", *user_id);
+    authenticated_user_.SetAuthenticatedByClientCert(*user_id, std::move(principal));
+  } else if (mode == CertValidationCheck::CERT_VALIDATION_COMMON_NAME) {
+    // This mode is what is used in production of MySQL Raft
+    boost::optional<string> common_name = cert.CommonName();
+    if (!common_name) {
+      Status s = Status::NotAuthorized("did not find expected X509 CN in subject");
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
+      return s;
+    }
+
+    if (!ValidateTrustedCN(FLAGS_trusted_CNs, *common_name)) {
+      Status s = Status::NotAuthorized("did not find expected X509 CN in subject of certificate");
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
+      return s;
+    }
+
+    TRACE("Authenticated by Certificate Common Name: $0", *common_name);
+    authenticated_user_.SetAuthenticatedByClientCert(*common_name, boost::none);
+  } else {
+    Status s = Status::NotAuthorized("Invalid mode for X509 cert validation");
     RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
     return s;
   }
-
-  authenticated_user_.SetAuthenticatedByClientCert(*user_id, std::move(principal));
 
   return Status::OK();
 }

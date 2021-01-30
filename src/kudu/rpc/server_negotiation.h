@@ -150,6 +150,11 @@ class ServerNegotiation {
   // server is properly set up.
   static Status PreflightCheckGSSAPI(const std::string& sasl_proto_name) WARN_UNUSED_RESULT;
 
+  enum class CertValidationCheck {
+    CERT_VALIDATION_USERID,
+    CERT_VALIDATION_COMMON_NAME
+  };
+
  private:
 
   // Parse a negotiate request from the client, deserializing it into 'msg'.
@@ -193,7 +198,7 @@ class ServerNegotiation {
 
   // Authenticate the client using the client's TLS certificate. Populates the
   // 'authenticated_user_' field with the certificate's subject.
-  Status AuthenticateByCertificate() WARN_UNUSED_RESULT;
+  Status AuthenticateByCertificate(CertValidationCheck mode) WARN_UNUSED_RESULT;
 
   // Handle case when client sends SASL_INITIATE request.
   // Returns Status::OK if the SASL negotiation is complete, or

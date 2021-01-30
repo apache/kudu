@@ -72,6 +72,40 @@ DEFINE_bool(rpc_encrypt_loopback_connections, false,
             "an attacker.");
 TAG_FLAG(rpc_encrypt_loopback_connections, advanced);
 
+DEFINE_bool(rpc_allow_external_cert_authentication, false,
+            "Allow the use of externally signed certificates for TLS authentication"
+            " bypassing the kudu restriction to do this only with internal CA");
+TAG_FLAG(rpc_allow_external_cert_authentication, advanced);
+
+DEFINE_bool(rpc_load_cert_files_each_negotiation, false,
+            "reload the cert files in the SSL context ech time to make sure they have not expired");
+TAG_FLAG(rpc_load_cert_files_each_negotiation, advanced);
+
+DEFINE_string(rpc_certificate_file, "",
+              "Path to a PEM encoded X509 certificate to use for securing RPC "
+              "connections with SSL/TLS. If set, '--rpc_private_key_file' and "
+              "'--rpc_ca_certificate_file' must be set as well.");
+DEFINE_string(rpc_private_key_file, "",
+              "Path to a PEM encoded private key paired with the certificate "
+              "from '--rpc_certificate_file'");
+DEFINE_string(rpc_ca_certificate_file, "",
+              "Path to the PEM encoded X509 certificate of the trusted external "
+              "certificate authority. The provided certificate should be the root "
+              "issuer of the certificate passed in '--rpc_certificate_file'.");
+DEFINE_string(rpc_private_key_password_cmd, "", "A Unix command whose output "
+              "returns the password used to decrypt the RPC server's private key "
+              "file specified in --rpc_private_key_file. If the .PEM key file is "
+              "not password-protected, this flag does not need to be set. "
+              "Trailing whitespace will be trimmed before it is used to decrypt "
+              "the private key.");
+
+// Setting TLS certs and keys via CLI flags is only necessary for external
+// PKI-based security, which is not yet production ready. Instead, see
+// internal PKI (ipki) and Kerberos-based authentication.
+TAG_FLAG(rpc_certificate_file, experimental);
+TAG_FLAG(rpc_private_key_file, experimental);
+TAG_FLAG(rpc_ca_certificate_file, experimental);
+
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
@@ -286,6 +320,21 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
                                  RpcAuthentication authentication,
                                  RpcEncryption encryption,
                                  MonoTime deadline) {
+  Messenger* messenger = conn->reactor_thread()->reactor()->messenger();
+  // In case certificate files should be rechecked each negotiation
+  if (FLAGS_rpc_load_cert_files_each_negotiation &&
+      // All 3 certificate files are properly populated
+      !FLAGS_rpc_certificate_file.empty() &&
+      !FLAGS_rpc_private_key_file.empty() &&
+      !FLAGS_rpc_ca_certificate_file.empty()) {
+    auto* tls_context = messenger->mutable_tls_context();
+    Status reload_status = tls_context->LoadCertFiles(
+        FLAGS_rpc_ca_certificate_file,
+        FLAGS_rpc_certificate_file,
+        FLAGS_rpc_private_key_file);
+    TRACE("SSL context certificate store refreshed : $0", reload_status.ToString());
+  }
+
   Status s;
   unique_ptr<ErrorStatusPB> rpc_error;
   if (conn->direction() == ConnectionDirection::SERVER) {
