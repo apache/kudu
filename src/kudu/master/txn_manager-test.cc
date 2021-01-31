@@ -61,6 +61,7 @@ using strings::Substitute;
 
 DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
+DECLARE_bool(txn_schedule_background_tasks);
 DECLARE_int32(rpc_service_queue_length);
 DECLARE_int64(txn_manager_status_table_range_partition_span);
 DECLARE_uint32(txn_manager_status_table_num_replicas);
@@ -84,6 +85,10 @@ class TxnManagerTest : public KuduTest {
     // Explicitly setting the flags just for better readability.
     FLAGS_txn_manager_enabled = true;
     FLAGS_txn_manager_lazily_initialized = true;
+
+    // To facilitate testing just the TxnManager, switch off
+    // transaction-related background tasks.
+    FLAGS_txn_schedule_background_tasks = false;
 
     // In this test, there is just a single tablet servers in the cluster.
     FLAGS_txn_manager_status_table_num_replicas = 1;

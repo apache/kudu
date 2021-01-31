@@ -27,14 +27,13 @@ enum TxnStatePB {
   COMMITTED = 4;
 }
 
-// TODO(awong): this is a bare-bones implementation so far. We'll certainly
-// need more fields as we build out the rest of the transaction workflow (e.g.
-// commmit timestamps, etc).
-//
 // Metadata encapsulating the status of a transaction.
 message TxnStatusEntryPB {
   optional TxnStatePB state = 1;
   optional string user = 2;
+
+  // Commit timestamp associated with this transaction.
+  optional fixed64 commit_timestamp = 3;
 }
 
 // Metadata encapsulating the existence of a transaction participant.

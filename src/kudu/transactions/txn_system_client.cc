@@ -443,6 +443,25 @@ Status TxnSystemClientInitializer::GetClient(TxnSystemClient** client) const {
   return Status::ServiceUnavailable("could not get TxnSystemClient, still initializing");
 }
 
+Status TxnSystemClientInitializer::WaitForClient(const MonoDelta& timeout,
+                                                 TxnSystemClient** client) const {
+  const auto deadline = MonoTime::Now() + timeout;
+  Status s;
+  do {
+    if (shutting_down_) {
+      return Status::ServiceUnavailable("could not get TxnSystemClient, shutting down");
+    }
+    s = GetClient(client);
+    if (PREDICT_TRUE(s.ok())) {
+      DCHECK(*client);
+      return Status::OK();
+    }
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  } while (MonoTime::Now() < deadline);
+  return Status::TimedOut(Substitute("Unable to get client in $0: $1",
+                                     timeout.ToString(), s.ToString()));
+}
+
 void TxnSystemClientInitializer::Shutdown() {
   shutting_down_ = true;
   txn_client_init_pool_->Wait();

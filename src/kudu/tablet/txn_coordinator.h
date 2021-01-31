@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/common/timestamp.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -45,6 +46,9 @@ typedef std::map<int64_t, std::vector<std::string>> ParticipantIdsByTxnId;
 class TxnCoordinator {
  public:
   virtual ~TxnCoordinator() {}
+
+  // Shut down the TxnCoordinator.
+  virtual void Shutdown() = 0;
 
   // Perform necessary work to prepare for running in the leader role.
   // It's about reload tablet metadata into memory and do other work
@@ -77,10 +81,9 @@ class TxnCoordinator {
   // Returns any replication-layer errors (e.g. not-the-leader errors) in
   // 'ts_error'. If there was otherwise a logical error with the request (e.g.
   // no such transaction), returns an error without populating 'ts_error'.
-  //
-  // TODO(awong): add a commit timestamp.
   virtual Status FinalizeCommitTransaction(
-      int64_t txn_id, tserver::TabletServerErrorPB* ts_error) = 0;
+      int64_t txn_id, Timestamp commit_timestamp,
+      tserver::TabletServerErrorPB* ts_error) = 0;
 
   // Aborts the given transaction as the given user.
   //

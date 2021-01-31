@@ -42,7 +42,6 @@ TransactionEntry::TransactionEntry(int64_t txn_id, std::string user)
 scoped_refptr<ParticipantEntry> TransactionEntry::GetOrCreateParticipant(
     const string& tablet_id) {
   DCHECK(metadata_.IsReadLocked());
-  DCHECK_EQ(TxnStatePB::OPEN, metadata_.state().pb.state());
 
   // In the expected case, this participant hasn't been added; add it.
   std::lock_guard<simple_spinlock> l(lock_);

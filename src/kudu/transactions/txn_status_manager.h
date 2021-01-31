@@ -16,16 +16,20 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/common/timestamp.h"
+#include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/txn_coordinator.h"
@@ -36,6 +40,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+class ThreadPool;
 
 class MonoDelta;
 namespace rpc {
@@ -51,8 +56,112 @@ class TabletServerErrorPB;
 } // namespace tserver
 
 namespace transactions {
-
 class TxnStatusEntryPB;
+class TxnStatusManager;
+class TxnSystemClient;
+class TxnSystemClientInitializer;
+
+// A handle for background tasks associated with a single transaction.
+class CommitTasks : public RefCountedThreadSafe<CommitTasks> {
+ public:
+  CommitTasks(TxnId txn_id,
+              std::vector<std::string> participant_ids,
+              TxnSystemClient* txn_client,
+              ThreadPool* commit_pool,
+              TxnStatusManager* txn_status_manager)
+     : txn_id_(std::move(txn_id)),
+       participant_ids_(std::move(participant_ids)),
+       txn_client_(txn_client),
+       commit_pool_(commit_pool),
+       txn_status_manager_(txn_status_manager),
+       ops_in_flight_(participant_ids_.size()),
+       begin_commit_timestamps_(participant_ids_.size(), Timestamp::kInvalidTimestamp),
+       stop_task_(false) {
+  }
+
+  // Asynchronously sends a BEGIN_COMMIT participant op to each participant,
+  // and on completion, schedules FINALIZE_COMMIT ops to be sent.
+  //
+  // If there are no participants for the given transaction, a commit record is
+  // written to the tablet.
+  void BeginCommitAsync();
+
+  // Asynchronously sends a BEGIN_COMMIT participant op to the participant at
+  // the given index. If this was the last one to complete, schedules
+  // FINALIZE_COMMIT ops to be sent.
+  void BeginCommitAsyncTask(int participant_idx);
+
+  // Asynchronously sends a FINALIZE_COMMIT participant op to the each
+  // participant in the transaction, and upon completion, schedules a commit
+  // record to be written to the tablet.
+  void FinalizeCommitAsyncTask(int participant_idx, const Timestamp& commit_timestamp);
+
+  // Asynchronously sends a FINALIZE_COMMIT participant op to the participant
+  // at the given index. If this was the last one to complete, schedules a
+  // commit record with the given timestamp to be written to the tablet.
+  void FinalizeCommitAsync(Timestamp commit_timestamp);
+
+  // Schedule calls to the TxnStatusManager to be made on the commit pool.
+  // NOTE: this may be called on reactor threads and thus must not
+  // synchronously do any IO.
+  void ScheduleFinalizeCommitWrite(Timestamp commit_timestamp);
+
+  // Stops further tasks from being run. Once called calls to the above methods
+  // should effectively no-op.
+  void stop() {
+    stop_task_ = true;
+  }
+
+ private:
+  friend class RefCountedThreadSafe<CommitTasks>;
+  ~CommitTasks() = default;
+
+  // Returns true if the task has been stopped or if the TxnStatusManager is
+  // being shut down. Cleans up the task state if the caller was the last op in
+  // flight.
+  //
+  // This is useful in participant op callbacks to determine whether the
+  // callback can return immediately without doing work.
+  bool IsShuttingDownCleanupIfLastOp();
+
+  // Returns true if the task has been stopped or if the TxnStatusManager is
+  // being shut down. Cleans up the task state, expecting that the caller was
+  // the last op in flight.
+  //
+  // This is useful when there are no ops in flight and the caller is about to
+  // schedule work, and needs to determine if it should opt out because of the
+  // shutdown.
+  bool IsShuttingDownCleanup() const;
+
+  // The ID of the transaction being committed.
+  const TxnId txn_id_;
+
+  // Tablet IDs of the participants of this transaction.
+  const std::vector<std::string> participant_ids_;
+
+  // Client with which to send requests.
+  TxnSystemClient* txn_client_;
+
+  // Threadpool on which to schedule tasks.
+  ThreadPool* commit_pool_;
+
+  // The TxnStatusManager that created these tasks.
+  TxnStatusManager* txn_status_manager_;
+
+  // The number of participant op RPCs in flight.
+  std::atomic<int> ops_in_flight_;
+
+  // The timestamps used to replica each participant's BEGIN_COMMIT ops.
+  std::vector<Timestamp> begin_commit_timestamps_;
+
+  // The commit timestamp for this transaction.
+  Timestamp commit_timestamp_;
+
+  // Whether the task should stop executing, e.g. since an IllegalState error
+  // was observed on a participant, or because the TxnStatusManager changed
+  // leadership.
+  std::atomic<bool> stop_task_;
+};
 
 // Maps the transaction ID to the corresponding TransactionEntry.
 typedef std::unordered_map<int64_t, scoped_refptr<TransactionEntry>> TransactionsMap;
@@ -81,8 +190,10 @@ class TxnStatusManagerBuildingVisitor : public TransactionsVisitor {
 // underlying tablet.
 class TxnStatusManager final : public tablet::TxnCoordinator {
  public:
-  explicit TxnStatusManager(tablet::TabletReplica* tablet_replica);
-  ~TxnStatusManager() = default;
+  TxnStatusManager(tablet::TabletReplica* tablet_replica,
+                   TxnSystemClientInitializer* client_initializer,
+                   ThreadPool* commit_pool);
+  ~TxnStatusManager();
 
   // Scoped "shared lock" to serialize replica leader elections.
   //
@@ -133,6 +244,7 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
     DISALLOW_COPY_AND_ASSIGN(ScopedLeaderSharedLock);
   };
 
+  void Shutdown() override;
   void PrepareLeadershipTask() override;
 
   // Writes an entry to the status tablet and creates a transaction in memory.
@@ -162,9 +274,7 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   //
   // Unlike the other transaction life-cycle calls, this isn't user-initiated,
   // so it doesn't take a user.
-  //
-  // TODO(awong): add a commit timestamp.
-  Status FinalizeCommitTransaction(int64_t txn_id,
+  Status FinalizeCommitTransaction(int64_t txn_id, Timestamp commit_timestamp,
                                    tserver::TabletServerErrorPB* ts_error) override;
 
   // Aborts the given transaction, returning an error if the transaction
@@ -207,14 +317,29 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   // associated with that transaction ID.
   tablet::ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const override;
 
+  void RemoveCommitTask(int64_t txn_id, const CommitTasks* tasks) {
+    std::lock_guard<simple_spinlock> l(lock_);
+    const auto& iter = commits_in_flight_.find(txn_id);
+    if (iter != commits_in_flight_.end() && iter->second.get() == tasks) {
+      commits_in_flight_.erase(iter);
+    }
+  }
+
+  bool shutting_down() const {
+    return shutting_down_;
+  }
+
  private:
   // This test class calls LoadFromTablet() directly.
   FRIEND_TEST(TxnStatusManagerTest, TestStartTransactions);
   FRIEND_TEST(TxnStatusManagerTest, GetTransactionStatus);
   friend class TxnStatusManagerTest;
 
-  // Loads the contents of the transaction status tablet into memory.
+  // Loads the contents of the transaction status tablet into memory, starting
+  // up any background tasks (e.g. commits) that need to be driven by the new
+  // leader.
   Status LoadFromTabletUnlocked();
+
   // This is called by tests only.
   Status LoadFromTablet();
 
@@ -248,7 +373,13 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
                         scoped_refptr<TransactionEntry>* txn,
                         tserver::TabletServerErrorPB* ts_error) const;
 
-  // Protects 'highest_txn_id_' and 'txns_by_id_'.
+  TxnSystemClientInitializer* client_initializer_;
+  ThreadPool* commit_pool_;
+
+  std::atomic<bool> shutting_down_;
+
+  // Protects 'highest_txn_id_', 'txns_by_id_', and insertions or removal from
+  // 'commits_in_flight_'.
   mutable simple_spinlock lock_;
 
   // The highest transaction ID seen by this status manager so far. Requests to
@@ -257,6 +388,10 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
 
   // Tracks the currently on-going transactions.
   TransactionsMap txns_by_id_;
+
+  // Can only be inserted to while the appropriate transaction lock is being
+  // held.
+  std::unordered_map<int64_t, scoped_refptr<CommitTasks>> commits_in_flight_;
 
   // The access to underlying storage.
   TxnStatusTablet status_tablet_;
@@ -285,11 +420,19 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
 
 class TxnStatusManagerFactory : public tablet::TxnCoordinatorFactory {
  public:
-  TxnStatusManagerFactory() {}
+  TxnStatusManagerFactory(TxnSystemClientInitializer* client_initializer,
+                          ThreadPool* commit_pool)
+      : txn_client_initializer_(client_initializer),
+        commit_pool_(commit_pool) {}
 
   std::unique_ptr<tablet::TxnCoordinator> Create(tablet::TabletReplica* replica) override {
-    return std::unique_ptr<tablet::TxnCoordinator>(new TxnStatusManager(replica));
+    return std::unique_ptr<tablet::TxnCoordinator>(
+        new TxnStatusManager(replica, txn_client_initializer_, commit_pool_));
   }
+
+ private:
+  TxnSystemClientInitializer* txn_client_initializer_;
+  ThreadPool* commit_pool_;
 };
 
 } // namespace transactions

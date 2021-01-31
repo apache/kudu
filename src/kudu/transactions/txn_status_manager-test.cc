@@ -36,6 +36,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/timestamp.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -68,6 +69,7 @@ using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 
+DECLARE_bool(txn_schedule_background_tasks);
 DECLARE_uint32(txn_keepalive_interval_ms);
 DECLARE_uint32(txn_staleness_tracker_interval_ms);
 METRIC_DECLARE_entity(tablet);
@@ -93,6 +95,7 @@ class TxnStatusManagerTest : public TabletReplicaTestBase {
     // test scenarios verifying related functionality.
     FLAGS_txn_keepalive_interval_ms = 200;
     FLAGS_txn_staleness_tracker_interval_ms = 50;
+    FLAGS_txn_schedule_background_tasks = false;
 
     NO_FATALS(TabletReplicaTestBase::SetUp());
     ConsensusBootstrapInfo info;
@@ -101,7 +104,7 @@ class TxnStatusManagerTest : public TabletReplicaTestBase {
   }
 
   Status ResetTxnStatusManager() {
-    txn_manager_.reset(new TxnStatusManager(tablet_replica_.get()));
+    txn_manager_.reset(new TxnStatusManager(tablet_replica_.get(), nullptr, nullptr));
     return txn_manager_->LoadFromTablet();
   }
 
@@ -168,7 +171,7 @@ TEST_F(TxnStatusManagerTest, TestStartTransactions) {
     ASSERT_EQ(3, txn_manager_->highest_txn_id());
     {
       // Reload the TxnStatusManager from disk and verify the state.
-      TxnStatusManager txn_manager_reloaded(tablet_replica_.get());
+      TxnStatusManager txn_manager_reloaded(tablet_replica_.get(), nullptr, nullptr);
       ASSERT_OK(txn_manager_reloaded.LoadFromTablet());
       ASSERT_EQ(expected_prts_by_txn_id,
                 txn_manager_reloaded.GetParticipantsByTxnIdForTests());
@@ -186,7 +189,7 @@ TEST_F(TxnStatusManagerTest, TestStartTransactions) {
   // if the transaction status tablet's data is not loaded yet.
   ASSERT_OK(RestartReplica());
   {
-    TxnStatusManager tsm(tablet_replica_.get());
+    TxnStatusManager tsm(tablet_replica_.get(), nullptr, nullptr);
     TxnStatusManager::ScopedLeaderSharedLock lock(&tsm);
     // Check for the special value of the highest_txn_id when the data from
     // the transaction status tablet isn't loaded yet.
@@ -206,7 +209,7 @@ TEST_F(TxnStatusManagerTest, TestStartTransactions) {
       ASSERT_TRUE(s.IsServiceUnavailable());
       ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
 
-      s = tsm.FinalizeCommitTransaction(txn_id, &ts_error);
+      s = tsm.FinalizeCommitTransaction(txn_id, Timestamp::kInitialTimestamp, &ts_error);
       ASSERT_TRUE(s.IsServiceUnavailable());
       ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
 
@@ -394,7 +397,9 @@ TEST_F(TxnStatusManagerTest, TestUpdateStateConcurrently) {
           statuses[i] = txn_manager_->BeginCommitTransaction(txn_id, kOwner, &ts_error);
           break;
         case TxnStatePB::COMMITTED:
-          statuses[i] = txn_manager_->FinalizeCommitTransaction(txn_id, &ts_error);
+          statuses[i] = txn_manager_->FinalizeCommitTransaction(txn_id,
+                                                                Timestamp::kInitialTimestamp,
+                                                                &ts_error);
           break;
         default:
           FAIL() << "bad update";
@@ -477,7 +482,7 @@ TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
     ASSERT_TRUE(txn_status.has_user());
     ASSERT_EQ(kOwner, txn_status.user());
 
-    ASSERT_OK(txn_manager_->FinalizeCommitTransaction(1, &ts_error));
+    ASSERT_OK(txn_manager_->FinalizeCommitTransaction(1, Timestamp::kInitialTimestamp, &ts_error));
     ASSERT_OK(txn_manager_->GetTransactionStatus(
         1, kOwner, &txn_status, &ts_error));
     ASSERT_TRUE(txn_status.has_state());
@@ -623,7 +628,7 @@ TEST_F(TxnStatusManagerTest, KeepTransactionAlive) {
                           "transaction ID 1 not owned by stranger");
     }
 
-    ASSERT_OK(txn_manager_->FinalizeCommitTransaction(1, &ts_error));
+    ASSERT_OK(txn_manager_->FinalizeCommitTransaction(1, Timestamp::kInitialTimestamp, &ts_error));
     s = txn_manager_->KeepTransactionAlive(1, kOwner, &ts_error);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
@@ -785,23 +790,25 @@ TEST_F(TxnStatusManagerTest, TestUpdateTransactionState) {
   // We can't begin or finalize a commit if we've aborted.
   Status s = txn_manager_->BeginCommitTransaction(kTxnId1, kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-  s = txn_manager_->FinalizeCommitTransaction(kTxnId1, &ts_error);
+  s = txn_manager_->FinalizeCommitTransaction(kTxnId1, Timestamp::kInitialTimestamp, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // We can't finalize a commit that hasn't begun committing.
   const int64_t kTxnId2 = 2;
   ASSERT_OK(txn_manager_->BeginTransaction(kTxnId2, kOwner, nullptr, &ts_error));
-  s = txn_manager_->FinalizeCommitTransaction(kTxnId2, &ts_error);
+  s = txn_manager_->FinalizeCommitTransaction(kTxnId2, Timestamp::kInitialTimestamp, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // We can't abort a transaction that has finished committing.
   ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId2, kOwner, &ts_error));
-  ASSERT_OK(txn_manager_->FinalizeCommitTransaction(kTxnId2, &ts_error));
+  ASSERT_OK(txn_manager_->FinalizeCommitTransaction(
+      kTxnId2, Timestamp::kInitialTimestamp, &ts_error));
   s = txn_manager_->AbortTransaction(kTxnId2, kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // Redundant finalize calls are also benign.
-  ASSERT_OK(txn_manager_->FinalizeCommitTransaction(kTxnId2, &ts_error));
+  ASSERT_OK(txn_manager_->FinalizeCommitTransaction(
+      kTxnId2, Timestamp::kInitialTimestamp, &ts_error));
 
   // Calls to begin committing should return an error if we've already
   // finalized the commit.
@@ -832,7 +839,8 @@ TEST_F(TxnStatusManagerTest, TestRegisterParticipantsWithStates) {
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // We can't register participants when we've finished committnig.
-  ASSERT_OK(txn_manager_->FinalizeCommitTransaction(kTxnId1, &ts_error));
+  ASSERT_OK(txn_manager_->FinalizeCommitTransaction(
+      kTxnId1, Timestamp::kInitialTimestamp, &ts_error));
   s = txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(2), kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 

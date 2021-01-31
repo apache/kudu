@@ -155,6 +155,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--txn_schedule_background_tasks=false"
+  })
   public void testCommitAnEmptyTransaction() throws Exception {
     KuduTransaction txn = client.newTransaction();
     txn.commit(false);
@@ -225,6 +228,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--txn_schedule_background_tasks=false"
   })
   public void testIsCommitComplete() throws Exception {
     KuduTransaction txn = client.newTransaction();
@@ -318,9 +324,6 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
-  })
-  @TabletServerConfig(flags = {
-      "--txn_status_manager_finalize_commit_on_begin",
   })
   public void testCommitAnEmptyTransactionWaitFake2PCO() throws Exception {
     KuduTransaction txn = client.newTransaction();
@@ -441,6 +444,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled=true",
+  })
+  @TabletServerConfig(flags = {
+      "--txn_schedule_background_tasks=false"
   })
   public void testAutoclosableUsage() throws Exception {
     byte[] buf = null;
@@ -623,7 +629,8 @@ public class TestKuduTransaction {
   })
   @TabletServerConfig(flags = {
       "--txn_keepalive_interval_ms=200",
-      "--txn_staleness_tracker_interval_ms=50",
+      "--txn_schedule_background_tasks=false",
+      "--txn_staleness_tracker_interval_ms=50"
   })
   public void testKeepaliveForDeserializedHandle() throws Exception {
     // Check the keepalive behavior when serializing/deserializing with default

@@ -63,6 +63,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(raft_enable_pre_election);
+DECLARE_bool(txn_schedule_background_tasks);
 DECLARE_bool(txn_status_tablet_failover_inject_timeout_error);
 DECLARE_bool(txn_status_tablet_inject_load_failure_error);
 DECLARE_bool(txn_status_tablet_inject_uninitialized_leader_status_error);
@@ -109,6 +110,9 @@ class TxnStatusTableITest : public KuduTest {
 
   void SetUp() override {
     KuduTest::SetUp();
+    // Several of these tests rely on checking transaction state, which is
+    // easier to work with without committing in the background.
+    FLAGS_txn_schedule_background_tasks = false;
     cluster_.reset(new InternalMiniCluster(env_, {}));
     ASSERT_OK(cluster_->Start());
 

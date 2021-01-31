@@ -429,7 +429,7 @@ class ClientTest : public KuduTest {
           continue;
         }
         tserver::TabletServerErrorPB ts_error;
-        auto s = c->FinalizeCommitTransaction(txn_id, &ts_error);
+        auto s = c->FinalizeCommitTransaction(txn_id, Timestamp::kInitialTimestamp, &ts_error);
         if (s.IsNotFound()) {
           continue;
         }
@@ -7096,10 +7096,6 @@ TEST_F(ClientTest, TestClientLocationNoLocationMappingCmd) {
 }
 
 // Check basic operations of the transaction-related API.
-// TODO(aserbin): add more scenarios and update existing ones to remove explicit
-//                FinalizeCommitTransaction() call when transaction
-//                orchestration is ready (i.e. FinalizeCommitTransaction() is
-//                called for all registered participants by the backend itself).
 TEST_F(ClientTest, TxnBasicOperations) {
   // KuduClient::NewTransaction() populates the output parameter on success.
   {
@@ -7122,22 +7118,12 @@ TEST_F(ClientTest, TxnBasicOperations) {
     ASSERT_OK(txn->Rollback());
   }
 
-  // It's possible to rollback a transaction that hasn't yet finalized
-  // its commit phase.
-  {
-    shared_ptr<KuduTransaction> txn;
-    ASSERT_OK(client_->NewTransaction(&txn));
-    ASSERT_OK(txn->Commit(false /* wait */));
-    ASSERT_OK(txn->Rollback());
-  }
-
   // It's impossible to rollback a transaction that has finalized
   // its commit phase.
   {
     shared_ptr<KuduTransaction> txn;
     ASSERT_OK(client_->NewTransaction(&txn));
-    ASSERT_OK(txn->Commit(false /* wait */));
-    ASSERT_OK(FinalizeCommitTransaction(txn));
+    ASSERT_OK(txn->Commit());
     auto cs = Status::Incomplete("other than Status::OK() initial status");
     bool is_complete = false;
     ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
@@ -7214,17 +7200,12 @@ TEST_F(ClientTest, TxnCommit) {
     {
       shared_ptr<KuduTransaction> txn;
       ASSERT_OK(client_->NewTransaction(&txn));
-      ASSERT_OK(txn->Commit(false /* wait */));
-      // TODO(aserbin): when txn lifecycle is properly implemented, inject a
-      //                delay into the txn finalizing code to make sure
-      //                the transaction stays in the COMMIT_IN_PROGRESS state
-      //                for a while
-      bool is_complete = true;
+      ASSERT_OK(txn->Commit());
+      bool is_complete = false;
       Status cs;
       ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
-      ASSERT_FALSE(is_complete);
-      ASSERT_TRUE(cs.IsIncomplete()) << cs.ToString();
-      ASSERT_STR_CONTAINS(cs.ToString(), "commit is still in progress");
+      ASSERT_TRUE(is_complete);
+      ASSERT_OK(cs);
       ASSERT_OK(txn->Serialize(&txn_token));
     }
 
@@ -7232,35 +7213,13 @@ TEST_F(ClientTest, TxnCommit) {
     // goes out of scope.
     shared_ptr<KuduTransaction> serdes_txn;
     ASSERT_OK(KuduTransaction::Deserialize(client_, txn_token, &serdes_txn));
-    bool is_complete = true;
+    bool is_complete = false;
     Status cs;
     ASSERT_OK(serdes_txn->IsCommitComplete(&is_complete, &cs));
-    ASSERT_FALSE(is_complete);
-    ASSERT_TRUE(cs.IsIncomplete()) << cs.ToString();
-    ASSERT_STR_CONTAINS(cs.ToString(), "commit is still in progress");
+    ASSERT_TRUE(is_complete);
+    ASSERT_OK(cs);
   }
 
-  {
-    shared_ptr<KuduTransaction> txn;
-    ASSERT_OK(client_->NewTransaction(&txn));
-    ASSERT_OK(txn->Commit(false /* wait */));
-    bool is_complete = true;
-    Status cs;
-    ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
-    ASSERT_FALSE(is_complete);
-    ASSERT_TRUE(cs.IsIncomplete()) << cs.ToString();
-    ASSERT_OK(FinalizeCommitTransaction(txn));
-    {
-      bool is_complete = false;
-      auto cs = Status::Incomplete("other than Status::OK() initial status");
-      ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
-      ASSERT_TRUE(is_complete);
-      ASSERT_OK(cs);
-    }
-  }
-
-  // TODO(aserbin): uncomment this when txn lifecycle is properly implemented
-#if 0
   {
     shared_ptr<KuduTransaction> txn;
     ASSERT_OK(client_->NewTransaction(&txn));
@@ -7284,7 +7243,6 @@ TEST_F(ClientTest, TxnCommit) {
     ASSERT_TRUE(is_complete);
     ASSERT_OK(cs);
   }
-#endif
 }
 
 // This test verifies the behavior of KuduTransaction instance when the bound
@@ -7526,8 +7484,7 @@ TEST_F(ClientTest, TxnKeepAlive) {
 
     SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
 
-    ASSERT_OK(txn->Commit(false /* wait */));
-    ASSERT_OK(FinalizeCommitTransaction(txn));
+    ASSERT_OK(txn->Commit());
   }
 
   // Begin a transaction and move its KuduTransaction object out of the
@@ -7598,8 +7555,7 @@ TEST_F(ClientTest, TxnKeepAlive) {
 
     SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
 
-    ASSERT_OK(serdes_txn->Commit(false /* wait */));
-    ASSERT_OK(FinalizeCommitTransaction(serdes_txn));
+    ASSERT_OK(serdes_txn->Commit());
   }
 }
 
@@ -7655,8 +7611,7 @@ TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerShortTime) {
 
   // Now, when masters are back and running, the client should be able
   // to commit the transaction. It should not be automatically aborted.
-  ASSERT_OK(txn->Commit(false /* wait */));
-  ASSERT_OK(FinalizeCommitTransaction(txn));
+  ASSERT_OK(txn->Commit());
 }
 
 // A scenario to explicitly show that long-running transactions are

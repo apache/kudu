@@ -331,6 +331,10 @@ void TabletReplica::Stop() {
     tablet_->Shutdown();
   }
 
+  if (txn_coordinator_) {
+    txn_coordinator_->Shutdown();
+  }
+
   // Only mark the peer as STOPPED when all other components have shut down.
   {
     std::lock_guard<simple_spinlock> lock(lock_);
