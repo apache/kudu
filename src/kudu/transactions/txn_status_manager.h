@@ -101,10 +101,21 @@ class CommitTasks : public RefCountedThreadSafe<CommitTasks> {
   // commit record with the given timestamp to be written to the tablet.
   void FinalizeCommitAsync(Timestamp commit_timestamp);
 
+  // Asynchronously sends a ABORT_TXN participant op to each participant in the
+  // transaction, and upon completion, schedules an abort record to be written
+  // to the tablet.
+  void AbortTxnAsync();
+
+  // Asynchronously sends an ABORT_TXN participant op to the participant at the
+  // given index. If this was the last one to complete, schedules an abort
+  // record to be written to the tablet.
+  void AbortTxnAsyncTask(int participant_idx);
+
   // Schedule calls to the TxnStatusManager to be made on the commit pool.
-  // NOTE: this may be called on reactor threads and thus must not
+  // NOTE: these may be called on reactor threads and thus must not
   // synchronously do any IO.
   void ScheduleFinalizeCommitWrite(Timestamp commit_timestamp);
+  void ScheduleAbortTxnWrite();
 
   // Stops further tasks from being run. Once called calls to the above methods
   // should effectively no-op.
@@ -277,11 +288,15 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   Status FinalizeCommitTransaction(int64_t txn_id, Timestamp commit_timestamp,
                                    tserver::TabletServerErrorPB* ts_error) override;
 
-  // Aborts the given transaction, returning an error if the transaction
-  // doesn't exist, is committed or not yet opened, or isn't owned by the given
-  // user.
+  // Begins aborting the given transaction, returning an error if the
+  // transaction doesn't exist, is committed or not yet opened, or isn't owned
+  // by the given user.
   Status AbortTransaction(int64_t txn_id, const std::string& user,
                           tserver::TabletServerErrorPB* ts_error) override;
+
+  // Writes a record to the TxnStatusManager indicating the given transaction
+  // has been successfully aborted.
+  Status FinalizeAbortTransaction(int64_t txn_id);
 
   // Retrieves the status of the specified transaction, returning an error if
   // the transaction doesn't exist or isn't owned by the specified user.

@@ -22,6 +22,7 @@ option java_package = "org.apache.kudu.transactions";
 enum TxnStatePB {
   UNKNOWN = 0;
   OPEN = 1;
+  ABORT_IN_PROGRESS = 5;
   ABORTED = 2;
   COMMIT_IN_PROGRESS = 3;
   COMMITTED = 4;

@@ -306,6 +306,10 @@ Status KuduTransaction::Data::IsCommitCompleteImpl(
       *is_complete = false;
       *completion_status = Status::IllegalState("transaction is still open");
       break;
+    case TxnStatePB::ABORT_IN_PROGRESS:
+      *is_complete = false;
+      *completion_status = Status::Aborted("transaction is being aborted");
+      break;
     case TxnStatePB::ABORTED:
       *is_complete = true;
       *completion_status = Status::Aborted("transaction has been aborted");

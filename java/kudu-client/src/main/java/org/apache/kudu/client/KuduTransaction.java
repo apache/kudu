@@ -309,6 +309,8 @@ public class KuduTransaction implements AutoCloseable {
     GetTransactionStateResponse resp = KuduClient.joinAndHandleException(d);
     final Transactions.TxnStatePB txnState = resp.txnState();
     switch (txnState) {
+      case ABORT_IN_PROGRESS:
+        throw new NonRecoverableException(Status.Aborted("transaction is being aborted"));
       case ABORTED:
         throw new NonRecoverableException(Status.Aborted("transaction was aborted"));
       case OPEN:

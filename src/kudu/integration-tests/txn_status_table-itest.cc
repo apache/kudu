@@ -594,12 +594,12 @@ TEST_F(TxnStatusTableITest, GetTransactionStatus) {
   NO_FATALS(verify_state(TxnStatePB::COMMIT_IN_PROGRESS));
 
   ASSERT_OK(txn_sys_client_->AbortTransaction(1, kUser));
-  NO_FATALS(verify_state(TxnStatePB::ABORTED));
+  NO_FATALS(verify_state(TxnStatePB::ABORT_IN_PROGRESS));
 
   {
     auto s = txn_sys_client_->BeginCommitTransaction(1, kUser);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    NO_FATALS(verify_state(TxnStatePB::ABORTED));
+    NO_FATALS(verify_state(TxnStatePB::ABORT_IN_PROGRESS));
   }
 
   // In the negative scenarios below, check for the expected status code

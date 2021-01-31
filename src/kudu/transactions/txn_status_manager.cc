@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iterator>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -49,6 +50,7 @@
 #include "kudu/util/cow_object.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -306,6 +308,86 @@ void CommitTasks::FinalizeCommitAsyncTask(int participant_idx, const Timestamp& 
       std::move(participated_cb));
 }
 
+void CommitTasks::AbortTxnAsyncTask(int participant_idx) {
+  // Status callback called with the result from the participant op.
+  auto participated_cb = [this, participant_idx] (const Status& s) {
+    if (IsShuttingDownCleanupIfLastOp()) {
+      return;
+    }
+    if (PREDICT_FALSE(s.IsTimedOut())) {
+      // Retry timeout errors. Other transient errors should be retried by the
+      // client until timeout.
+      AbortTxnAsyncTask(participant_idx);
+      return;
+    }
+    if (PREDICT_FALSE(s.IsNotFound())) {
+      // If the participant has been deleted, treat it as though it's already
+      // been aborted. The participant's data can't be read anyway.
+      LOG(INFO) << Substitute("Participant $0 was not found: $1",
+                              participant_ids_[participant_idx], s.ToString());
+    } else if (PREDICT_FALSE(!s.ok())) {
+      LOG(WARNING) << Substitute("Participant $0 ABORT_TXN op returned $1",
+                                 participant_ids_[participant_idx], s.ToString());
+      stop_task_ = true;
+    }
+    // If this was the last participant op for this task, write the abort
+    // record to the tablet.
+    if (--ops_in_flight_ == 0) {
+      if (IsShuttingDownCleanup()) {
+        return;
+      }
+      ScheduleAbortTxnWrite();
+    }
+  };
+  ParticipantOpPB op_pb;
+  op_pb.set_txn_id(txn_id_.value());
+  op_pb.set_type(ParticipantOpPB::ABORT_TXN);
+  txn_client_->ParticipateInTransactionAsync(
+      participant_ids_[participant_idx],
+      std::move(op_pb),
+      MonoDelta::FromMilliseconds(FLAGS_txn_background_rpc_timeout_ms),
+      std::move(participated_cb));
+}
+
+void CommitTasks::AbortTxnAsync() {
+  // Reset the in-flight counter to indicate we're waiting for this new set of
+  // tasks to complete.
+  if (participant_ids_.empty()) {
+    ScheduleAbortTxnWrite();
+  } else {
+    ops_in_flight_ = participant_ids_.size();
+    for (int i = 0; i < participant_ids_.size(); i++) {
+      AbortTxnAsyncTask(i);
+    }
+  }
+}
+
+void CommitTasks::ScheduleAbortTxnWrite() {
+  // Submit the task to a threadpool.
+  // NOTE: This is called by the reactor thread that catches the BeginCommit
+  // reseponse, so we can't do IO in this thread.
+  DCHECK_EQ(0, ops_in_flight_);
+  scoped_refptr<CommitTasks> scoped_this(this);
+  CHECK_OK(commit_pool_->Submit([this, scoped_this = std::move(scoped_this),
+                                 tsm = txn_status_manager_,
+                                 txn_id = txn_id_] {
+    if (IsShuttingDownCleanup()) {
+      return;
+    }
+    TxnStatusManager::ScopedLeaderSharedLock l(txn_status_manager_);
+    if (PREDICT_TRUE(l.first_failed_status().ok())) {
+      WARN_NOT_OK(tsm->FinalizeAbortTransaction(txn_id.value()),
+                  "Error writing to transaction status table");
+    }
+
+    // Regardless of whether we succeed or fail, remove the commit task.
+    // Presumably we failed either because the replica is being shut down, or
+    // because we're no longer leader. In either case, the task will be retried
+    // once a new leader is elected.
+    tsm->RemoveCommitTask(txn_id, this);
+  }));
+}
+
 void CommitTasks::FinalizeCommitAsync(Timestamp commit_timestamp) {
   // Reset the in-flight counter to indicate we're waiting for this new set of
   // tasks to complete.
@@ -489,12 +571,17 @@ Status TxnStatusManager::LoadFromTabletUnlocked() {
   }
 
   unordered_map<int64_t, scoped_refptr<CommitTasks>> commits_in_flight;
-  unordered_map<int64_t, scoped_refptr<CommitTasks>> new_tasks;
+  unordered_map<int64_t, scoped_refptr<CommitTasks>> new_commits;
+  unordered_map<int64_t, scoped_refptr<CommitTasks>> new_aborts;
   if (txn_client) {
     for (const auto& [txn_id, txn_entry] : txns_by_id) {
       const auto& state = txn_entry->state();
       if (state == TxnStatePB::COMMIT_IN_PROGRESS) {
-        new_tasks.emplace(txn_id,
+        new_commits.emplace(txn_id,
+            new CommitTasks(txn_id, txn_entry->GetParticipantIds(),
+                            txn_client, commit_pool_, this));
+      } else if (state == TxnStatePB::ABORT_IN_PROGRESS) {
+        new_aborts.emplace(txn_id,
             new CommitTasks(txn_id, txn_entry->GetParticipantIds(),
                             txn_client, commit_pool_, this));
       }
@@ -509,13 +596,21 @@ Status TxnStatusManager::LoadFromTabletUnlocked() {
     for (const auto& [_, tasks] : commits_in_flight) {
       tasks->stop();
     }
-    commits_in_flight_ = std::move(new_tasks);
-    if (!commits_in_flight_.empty()) {
-      LOG(INFO) << Substitute("Starting $0 commit tasks", commits_in_flight_.size());
-      for (const auto& [_, tasks] : commits_in_flight_) {
+    if (!new_commits.empty()) {
+      LOG(INFO) << Substitute("Starting $0 commit tasks", new_commits.size());
+      for (const auto& [_, tasks] : new_commits) {
         tasks->BeginCommitAsync();
       }
     }
+    if (!new_aborts.empty()) {
+      LOG(INFO) << Substitute("Starting $0 aborts task", new_aborts.size());
+      for (const auto& [_, tasks] : new_aborts) {
+        tasks->AbortTxnAsync();
+      }
+    }
+    commits_in_flight_ = std::move(new_commits);
+    commits_in_flight_.insert(std::make_move_iterator(new_aborts.begin()),
+                              std::make_move_iterator(new_aborts.end()));
   }
   return Status::OK();
 }
@@ -536,13 +631,16 @@ void TxnStatusManager::Shutdown() {
   shutting_down_ = true;
   // Wait for all tasks to complete.
   while (true) {
+    int num_tasks;
     {
       std::lock_guard<simple_spinlock> l(lock_);
-      if (commits_in_flight_.empty()) {
+      num_tasks = commits_in_flight_.size();
+      if (num_tasks == 0) {
         return;
       }
     }
     SleepFor(MonoDelta::FromMilliseconds(50));
+    KLOG_EVERY_N_SECS(INFO, 10) << Substitute("Waiting for $0 task(s) to stop", num_tasks);
   }
 }
 
@@ -887,12 +985,11 @@ Status TxnStatusManager::FinalizeCommitTransaction(
   return Status::OK();
 }
 
-Status TxnStatusManager::AbortTransaction(int64_t txn_id,
-                                          const std::string& user,
-                                          TabletServerErrorPB* ts_error) {
+Status TxnStatusManager::FinalizeAbortTransaction(int64_t txn_id) {
   leader_lock_.AssertAcquiredForReading();
+  TabletServerErrorPB ts_error;
   scoped_refptr<TransactionEntry> txn;
-  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
+  RETURN_NOT_OK(GetTransaction(txn_id, /*user*/boost::none, &txn, &ts_error));
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
@@ -900,24 +997,70 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id,
   if (state == TxnStatePB::ABORTED) {
     return Status::OK();
   }
+  if (PREDICT_FALSE(state != TxnStatePB::ABORT_IN_PROGRESS)) {
+    return ReportIllegalTxnState(
+        Substitute("transaction ID $0 cannot be aborted: $1",
+                   txn_id, SecureShortDebugString(pb)),
+        &ts_error);
+  }
+  auto* mutable_data = txn_lock.mutable_data();
+  mutable_data->pb.set_state(TxnStatePB::ABORTED);
+  RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, &ts_error));
+  txn_lock.Commit();
+  return Status::OK();
+}
+
+Status TxnStatusManager::AbortTransaction(int64_t txn_id,
+                                          const string& user,
+                                          TabletServerErrorPB* ts_error) {
+
+  leader_lock_.AssertAcquiredForReading();
+  TxnSystemClient* txn_client;
+  if (PREDICT_TRUE(FLAGS_txn_schedule_background_tasks)) {
+    RETURN_NOT_OK(client_initializer_->GetClient(&txn_client));
+  }
+  scoped_refptr<TransactionEntry> txn;
+  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
+
+  TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
+  const auto& pb = txn_lock.data().pb;
+  const auto& state = pb.state();
+  if (state == TxnStatePB::ABORTED ||
+      state == TxnStatePB::ABORT_IN_PROGRESS) {
+    return Status::OK();
+  }
+  // TODO(awong): if we're in COMMIT_IN_PROGRESS, we should attempt to abort
+  // any in-flight commit tasks.
   if (PREDICT_FALSE(state != TxnStatePB::OPEN &&
-      state != TxnStatePB::COMMIT_IN_PROGRESS)) {
+                    state != TxnStatePB::COMMIT_IN_PROGRESS)) {
     return ReportIllegalTxnState(
         Substitute("transaction ID $0 cannot be aborted: $1",
                    txn_id, SecureShortDebugString(pb)),
         ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
-  mutable_data->pb.set_state(TxnStatePB::ABORTED);
+  mutable_data->pb.set_state(TxnStatePB::ABORT_IN_PROGRESS);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
+
+  if (PREDICT_TRUE(FLAGS_txn_schedule_background_tasks)) {
+    auto participant_ids = txn->GetParticipantIds();
+    std::unique_lock<simple_spinlock> l(lock_);
+    auto [map_iter, emplaced] = commits_in_flight_.emplace(txn_id,
+        new CommitTasks(txn_id, std::move(participant_ids),
+                        txn_client, commit_pool_, this));
+    l.unlock();
+    if (emplaced) {
+      map_iter->second->AbortTxnAsync();
+    }
+  }
   txn_lock.Commit();
   return Status::OK();
 }
 
 Status TxnStatusManager::GetTransactionStatus(
     int64_t txn_id,
-    const std::string& user,
-    transactions::TxnStatusEntryPB* txn_status,
+    const string& user,
+    TxnStatusEntryPB* txn_status,
     TabletServerErrorPB* ts_error) {
   DCHECK(txn_status);
   leader_lock_.AssertAcquiredForReading();

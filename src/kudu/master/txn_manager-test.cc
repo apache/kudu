@@ -376,7 +376,7 @@ TEST_F(TxnManagerTest, AbortedTransactionLifecycle) {
         << StatusFromPB(resp.error().status()).ToString();
     TxnStatePB txn_state;
     NO_FATALS(fetch_txn_status(txn_id, &txn_state));
-    ASSERT_EQ(TxnStatePB::ABORTED, txn_state);
+    ASSERT_EQ(TxnStatePB::ABORT_IN_PROGRESS, txn_state);
   }
 
   // Try to send keep-alive for already aborted transaction.
@@ -396,7 +396,7 @@ TEST_F(TxnManagerTest, AbortedTransactionLifecycle) {
     // The transaction should stay in ABORTED state, of course.
     TxnStatePB txn_state;
     NO_FATALS(fetch_txn_status(txn_id, &txn_state));
-    ASSERT_EQ(TxnStatePB::ABORTED, txn_state);
+    ASSERT_EQ(TxnStatePB::ABORT_IN_PROGRESS, txn_state);
   }
 }
 

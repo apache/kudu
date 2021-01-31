@@ -7141,7 +7141,7 @@ TEST_F(ClientTest, TxnBasicOperations) {
     ASSERT_OK(txn->Rollback());
     auto s = txn->Commit(false /* wait */);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "is not open: state: ABORTED");
+    ASSERT_STR_CONTAINS(s.ToString(), "is not open: state: ABORT");
   }
 
   // TODO(aserbin): uncomment this when other parts of transaction lifecycle
@@ -7190,10 +7190,16 @@ TEST_F(ClientTest, TxnCommit) {
     ASSERT_STR_CONTAINS(cs.ToString(), "transaction is still open");
 
     ASSERT_OK(txn->Rollback());
+    // We need to ASSERT_EVENTUALLY here to allow the abort tasks to complete.
+    // Until then, we may not consider the transaction as complete.
     ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
-    ASSERT_TRUE(is_complete);
     ASSERT_TRUE(cs.IsAborted()) << cs.ToString();
-    ASSERT_STR_CONTAINS(cs.ToString(), "transaction has been aborted");
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+      ASSERT_TRUE(is_complete);
+      ASSERT_TRUE(cs.IsAborted()) << cs.ToString();
+      ASSERT_STR_CONTAINS(cs.ToString(), "transaction has been aborted");
+    });
   }
 
   {
@@ -7508,7 +7514,7 @@ TEST_F(ClientTest, TxnKeepAlive) {
     ASSERT_OK(KuduTransaction::Deserialize(client_, txn_token, &serdes_txn));
     auto s = serdes_txn->Commit(false /* wait */);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORTED");
+    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORT");
   }
 
   // Begin a new transaction and move the KuduTransaction object out of the
@@ -7531,7 +7537,7 @@ TEST_F(ClientTest, TxnKeepAlive) {
 
     auto s = serdes_txn->Commit(false /* wait */);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORTED");
+    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORT");
   }
 
   // Begin a new transaction and move the KuduTransaction object out of the
@@ -7650,7 +7656,7 @@ TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerLongTime) {
   {
     auto s = txn->Commit(false /* wait */);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORTED");
+    ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORT");
   }
 }
 

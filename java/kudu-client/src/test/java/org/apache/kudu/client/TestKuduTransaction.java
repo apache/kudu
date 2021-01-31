@@ -249,6 +249,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--txn_schedule_background_tasks=false"
+  })
   public void testIsCommitCompleteSpecialCases() throws Exception {
     KuduTransaction txn = client.newTransaction();
 
@@ -276,7 +279,7 @@ public class TestKuduTransaction {
             }
           });
       assertTrue(ex.getStatus().isAborted());
-      assertEquals("transaction was aborted", ex.getMessage());
+      assertEquals("transaction is being aborted", ex.getMessage());
     }
 
     // Try to call isCommitComplete() on a handle that isn't backed by any
@@ -606,7 +609,7 @@ public class TestKuduTransaction {
           });
       final String errmsg = ex.getMessage();
       assertTrue(errmsg, errmsg.matches(
-          ".* transaction ID .* is not open: state: ABORTED .*"));
+          ".* transaction ID .* is not open: state: ABORT.*"));
 
       // Verify that KuduTransaction.rollback() successfully runs on a transaction
       // handle if the underlying transaction is already aborted automatically
@@ -666,7 +669,7 @@ public class TestKuduTransaction {
           });
       final String errmsg = ex.getMessage();
       assertTrue(errmsg, errmsg.matches(
-          ".* transaction ID .* is not open: state: ABORTED .*"));
+          ".* transaction ID .* is not open: state: ABORT.*"));
 
       // Verify that KuduTransaction.rollback() successfully runs on both
       // transaction handles if the underlying transaction is already aborted

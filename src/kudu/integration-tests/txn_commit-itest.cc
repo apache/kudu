@@ -15,14 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -38,8 +40,8 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
@@ -90,9 +92,9 @@ using kudu::tserver::ParticipantOpPB;
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::unordered_map;
 using std::unordered_set;
 using std::vector;
-using strings::Substitute;
 
 namespace kudu {
 namespace itest {
@@ -240,6 +242,34 @@ class TxnCommitITest : public KuduTest {
     return Status::OK();
   }
 
+  // Returns the transaction IDs participated in by 'tablet_id' that have been
+  // aborted on 'num_replicas' replicas.
+  Status GetAbortedTxnsForParticipant(const string& tablet_id, int num_replicas,
+                                      vector<TxnId>* aborted_txns) {
+    vector<TxnId> txn_ids;
+    unordered_map<int64_t, int> aborts_per_txn;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      scoped_refptr<TabletReplica> r;
+      Status s = cluster_->mini_tablet_server(i)->server()->tablet_manager()->GetTabletReplica(
+          tablet_id, &r);
+      if (!s.ok()) {
+        continue;
+      }
+      for (const auto& e : r->tablet()->txn_participant()->GetTxnsForTests()) {
+        if (e.state == tablet::TxnState::kAborted) {
+          LookupOrEmplace(&aborts_per_txn, e.txn_id, 0)++;
+        }
+      }
+    }
+    for (const auto& txn_id_and_count : aborts_per_txn) {
+      if (txn_id_and_count.second == num_replicas) {
+        txn_ids.emplace_back(txn_id_and_count.first);
+      }
+    }
+    *aborted_txns = std::move(txn_ids);
+    return Status::OK();
+  }
+
  protected:
   unique_ptr<InternalMiniCluster> cluster_;
   unique_ptr<TxnSystemClient> txn_client_;
@@ -280,6 +310,108 @@ TEST_F(TxnCommitITest, TestBasicCommits) {
   ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
   ASSERT_OK(completion_status);
   ASSERT_TRUE(is_complete);
+}
+
+TEST_F(TxnCommitITest, TestBasicAborts) {
+  shared_ptr<KuduTransaction> txn;
+  shared_ptr<KuduSession> txn_session;
+  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
+
+  int num_rows = 0;
+  ASSERT_OK(CountRows(&num_rows));
+  ASSERT_EQ(initial_row_count_, num_rows);
+
+  ASSERT_OK(txn->Rollback());
+  ASSERT_OK(CountRows(&num_rows));
+  ASSERT_EQ(initial_row_count_, num_rows);
+
+  // IsCommitComplete() should verify that the transaction is aborted. We need
+  // to wait for this to happen, since 'is_complete' is contingent on the abort
+  // tasks finishing.
+  ASSERT_EVENTUALLY([&] {
+    Status completion_status;
+    bool is_complete = false;
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+    ASSERT_TRUE(is_complete);
+  });
+
+  // On the participants, we should see the transaction as aborted.
+  ASSERT_EVENTUALLY([&] {
+    for (const auto& tablet_id : participant_ids_) {
+      vector<TxnId> aborted_txns;
+      ASSERT_OK(GetAbortedTxnsForParticipant(tablet_id, 1, &aborted_txns));
+      ASSERT_EQ(1, aborted_txns.size());
+    }
+  });
+}
+
+TEST_F(TxnCommitITest, TestAbortInProgress) {
+  FLAGS_txn_schedule_background_tasks = false;
+  shared_ptr<KuduTransaction> txn;
+  shared_ptr<KuduSession> txn_session;
+  ASSERT_OK(BeginTransaction({}, &txn, &txn_session));
+  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
+  ASSERT_OK(txn->Rollback());
+
+  // When background tasks are disabled, we'll be left in ABORT_IN_PROGRESS,
+  // and we should be able to determine it isn't complete.
+  Status completion_status;
+  bool is_complete = true;
+  ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+  ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+  ASSERT_STR_CONTAINS(completion_status.ToString(), "transaction is being aborted");
+  ASSERT_FALSE(is_complete);
+
+  // Once enabled, background tasks should take hold and the abort should
+  // complete.
+  FLAGS_txn_schedule_background_tasks = true;
+  auto* mts = cluster_->mini_tablet_server(0);
+  mts->Shutdown();
+  ASSERT_OK(mts->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+    ASSERT_STR_CONTAINS(completion_status.ToString(), "transaction has been aborted");
+    ASSERT_TRUE(is_complete);
+  });
+}
+
+TEST_F(TxnCommitITest, TestBackgroundAborts) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  string serialized_txn;
+  {
+    shared_ptr<KuduTransaction> txn;
+    shared_ptr<KuduSession> txn_session;
+    ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
+    ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
+
+    int num_rows = 0;
+    ASSERT_OK(CountRows(&num_rows));
+    ASSERT_EQ(initial_row_count_, num_rows);
+    ASSERT_OK(txn->Serialize(&serialized_txn));
+  }
+  // Wait a bit for a background abort to happen.
+  SleepFor(MonoDelta::FromMilliseconds(5 * FLAGS_txn_keepalive_interval_ms));
+
+  // IsCommitComplete() should verify that the transaction is aborted.
+  Status completion_status;
+  bool is_complete = false;
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(KuduTransaction::Deserialize(client_, serialized_txn, &txn));
+  ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+  ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+  ASSERT_TRUE(is_complete);
+
+  // On the participants, we should see the transaction as aborted.
+  ASSERT_EVENTUALLY([&] {
+    for (const auto& tablet_id : participant_ids_) {
+      vector<TxnId> aborted_txns;
+      ASSERT_OK(GetAbortedTxnsForParticipant(tablet_id, 1, &aborted_txns));
+      ASSERT_EQ(1, aborted_txns.size());
+    }
+  });
 }
 
 // Test that if we delete the TxnStatusManager while tasks are on-going,
@@ -686,36 +818,60 @@ TEST_F(TwoNodeTxnCommitITest, TestCommitWhenParticipantsAreDown) {
 }
 
 // Test that when we start up, pending commits will start background tasks to
-// commit.
+// finalize the commit or abort.
 TEST_F(TwoNodeTxnCommitITest, TestStartTasksDuringStartup) {
-  shared_ptr<KuduTransaction> txn;
-  shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
-  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
+  shared_ptr<KuduTransaction> committed_txn;
+  {
+    shared_ptr<KuduSession> txn_session;
+    ASSERT_OK(BeginTransaction(participant_ids_, &committed_txn, &txn_session));
+    ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
+  }
+  shared_ptr<KuduTransaction> aborted_txn;
+  {
+    shared_ptr<KuduSession> txn_session;
+    ASSERT_OK(BeginTransaction(participant_ids_, &aborted_txn, &txn_session));
+    ASSERT_OK(InsertToSession(txn_session, initial_row_count_ + kNumRowsPerTxn, kNumRowsPerTxn));
+  }
 
   // Shut down our participant's tserver so our commit task keeps retrying.
   prt_ts_->Shutdown();
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(committed_txn->Commit(/*wait*/false));
+  ASSERT_OK(aborted_txn->Rollback());
 
   Status completion_status;
   bool is_complete;
-  ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+  ASSERT_OK(committed_txn->IsCommitComplete(&is_complete, &completion_status));
   ASSERT_FALSE(is_complete);
   ASSERT_TRUE(completion_status.IsIncomplete()) << completion_status.ToString();
+
+  ASSERT_OK(aborted_txn->IsCommitComplete(&is_complete, &completion_status));
+  ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+  ASSERT_FALSE(is_complete);
 
   // Shut down the TxnStatusManager to stop our tasks.
   tsm_ts_->Shutdown();
 
-  // Restart both tservers. The commit task should be restarted and eventually
-  // succeed.
+  // Restart both tservers. The background tasks should be restarted and
+  // eventually succeed.
   ASSERT_OK(prt_ts_->Restart());
   ASSERT_OK(tsm_ts_->Restart());
   ASSERT_EVENTUALLY([&] {
     Status completion_status;
     bool is_complete;
-    ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_OK(committed_txn->IsCommitComplete(&is_complete, &completion_status));
     ASSERT_OK(completion_status);
     ASSERT_TRUE(is_complete);
+
+    ASSERT_OK(aborted_txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+    ASSERT_TRUE(is_complete);
+  });
+  ASSERT_EVENTUALLY([&] {
+    for (const auto& tablet_id : participant_ids_) {
+      vector<TxnId> aborted_txns;
+      ASSERT_OK(GetAbortedTxnsForParticipant(tablet_id, 1, &aborted_txns));
+      ASSERT_EQ(1, aborted_txns.size());
+    }
   });
 }
 
@@ -763,17 +919,34 @@ class ThreeNodeTxnCommitITest : public TxnCommitITest {
 
 TEST_F(ThreeNodeTxnCommitITest, TestCommitTasksReloadOnLeadershipChange) {
   FLAGS_txn_schedule_background_tasks = false;
-  shared_ptr<KuduTransaction> txn;
-  shared_ptr<KuduSession> txn_session;
-  ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));
-  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
-
-  ASSERT_OK(txn->Commit(/*wait*/ false));
+  shared_ptr<KuduTransaction> committed_txn;
+  shared_ptr<KuduTransaction> aborted_txn;
+  {
+    shared_ptr<KuduSession> txn_session;
+    ASSERT_OK(BeginTransaction(participant_ids_, &committed_txn, &txn_session));
+    ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
+  }
+  {
+    shared_ptr<KuduSession> txn_session;
+    ASSERT_OK(BeginTransaction(participant_ids_, &aborted_txn, &txn_session));
+    ASSERT_OK(InsertToSession(txn_session, initial_row_count_ + kNumRowsPerTxn, kNumRowsPerTxn));
+  }
+  ASSERT_OK(committed_txn->Commit(/*wait*/ false));
   Status completion_status;
   bool is_complete = false;
-  ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+  ASSERT_OK(committed_txn->IsCommitComplete(&is_complete, &completion_status));
   ASSERT_TRUE(completion_status.IsIncomplete()) << completion_status.ToString();
   ASSERT_FALSE(is_complete);
+
+  ASSERT_OK(aborted_txn->Rollback());
+  ASSERT_OK(aborted_txn->IsCommitComplete(&is_complete, &completion_status));
+  ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+  ASSERT_FALSE(is_complete);
+  for (const auto& tablet_id : participant_ids_) {
+    vector<TxnId> aborted_txns;
+    ASSERT_OK(GetAbortedTxnsForParticipant(tablet_id, 3, &aborted_txns));
+    ASSERT_EQ(0, aborted_txns.size());
+  }
 
   FLAGS_txn_schedule_background_tasks = true;
   // Change our quiescing states so a new leader can be elected.
@@ -790,8 +963,22 @@ TEST_F(ThreeNodeTxnCommitITest, TestCommitTasksReloadOnLeadershipChange) {
   // Upon becoming leader, we should have started our commit task and completed
   // the commit.
   ASSERT_EVENTUALLY([&] {
-    ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_OK(committed_txn->IsCommitComplete(&is_complete, &completion_status));
     ASSERT_TRUE(is_complete);
+  });
+  // The aborted transaction should still be aborted, and we should be able to
+  // validate its abort status in its participants' metadata.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(aborted_txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+    ASSERT_TRUE(is_complete);
+  });
+  ASSERT_EVENTUALLY([&] {
+    for (const auto& tablet_id : participant_ids_) {
+      vector<TxnId> aborted_txns;
+      ASSERT_OK(GetAbortedTxnsForParticipant(tablet_id, 3, &aborted_txns));
+      ASSERT_EQ(1, aborted_txns.size());
+    }
   });
 }
 

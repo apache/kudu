@@ -373,7 +373,7 @@ TEST_F(TxnStatusManagerTest, TestUpdateStateConcurrently) {
   typedef std::pair<int64_t, TxnStatePB> IdAndUpdate;
   vector<IdAndUpdate> all_updates;
   for (int i = 0; i < kNumTransactions; i++) {
-    all_updates.emplace_back(std::make_pair(i, TxnStatePB::ABORTED));
+    all_updates.emplace_back(std::make_pair(i, TxnStatePB::ABORT_IN_PROGRESS));
     all_updates.emplace_back(std::make_pair(i, TxnStatePB::COMMIT_IN_PROGRESS));
     all_updates.emplace_back(std::make_pair(i, TxnStatePB::COMMITTED));
   }
@@ -390,7 +390,7 @@ TEST_F(TxnStatusManagerTest, TestUpdateStateConcurrently) {
       const auto& txn_id = updates[i].first;
       TabletServerErrorPB ts_error;
       switch (updates[i].second) {
-        case TxnStatePB::ABORTED:
+        case TxnStatePB::ABORT_IN_PROGRESS:
           statuses[i] = txn_manager_->AbortTransaction(txn_id, kOwner, &ts_error);
           break;
         case TxnStatePB::COMMIT_IN_PROGRESS:
@@ -420,7 +420,7 @@ TEST_F(TxnStatusManagerTest, TestUpdateStateConcurrently) {
       continue;
     }
     switch (updates[i].second) {
-      case TxnStatePB::ABORTED:
+      case TxnStatePB::ABORT_IN_PROGRESS:
         EmplaceIfNotPresent(&txns_with_abort, txn_id);
         break;
       case TxnStatePB::COMMIT_IN_PROGRESS:
@@ -501,7 +501,7 @@ TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
     ASSERT_OK(txn_manager_->GetTransactionStatus(
         2, kOwner, &txn_status, &ts_error));
     ASSERT_TRUE(txn_status.has_state());
-    ASSERT_EQ(TxnStatePB::ABORTED, txn_status.state());
+    ASSERT_EQ(TxnStatePB::ABORT_IN_PROGRESS, txn_status.state());
     ASSERT_TRUE(txn_status.has_user());
     ASSERT_EQ(kOwner, txn_status.user());
   }
@@ -538,7 +538,7 @@ TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
     ASSERT_OK(txn_manager_->GetTransactionStatus(
         2, kOwner, &txn_status, &ts_error));
     ASSERT_TRUE(txn_status.has_state());
-    ASSERT_EQ(TxnStatePB::ABORTED, txn_status.state());
+    ASSERT_EQ(TxnStatePB::ABORT_IN_PROGRESS, txn_status.state());
     ASSERT_TRUE(txn_status.has_user());
     ASSERT_EQ(kOwner, txn_status.user());
 

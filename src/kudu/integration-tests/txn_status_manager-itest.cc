@@ -266,7 +266,7 @@ TEST_F(TxnStatusManagerITest, StaleTransactionsCleanup) {
     // and abort it. An extra margin here is to avoid flakiness due to
     // scheduling anomalies.
     SleepFor(MonoDelta::FromMilliseconds(3 * keepalive_interval_ms));
-    NO_FATALS(CheckTxnState(txn_id, TxnStatePB::ABORTED));
+    NO_FATALS(CheckTxnState(txn_id, TxnStatePB::ABORT_IN_PROGRESS));
   }
 
   // Check that the transaction staleness is detected and the stale transaction
@@ -321,7 +321,7 @@ TEST_F(TxnStatusManagerITest, ToggleStaleTxnTrackerInRuntime) {
   // Check that the transaction staleness is detected and the stale transaction
   // is aborted once stale transaction tracking is re-enabled.
   SleepFor(MonoDelta::FromMilliseconds(3 * keepalive_interval_ms));
-  NO_FATALS(CheckTxnState(txn_id, TxnStatePB::ABORTED));
+  NO_FATALS(CheckTxnState(txn_id, TxnStatePB::ABORT_IN_PROGRESS));
 }
 
 // Verify the functionality of the stale transaction tracker in TxnStatusManager
@@ -450,7 +450,7 @@ TEST_F(TxnStatusManagerITest, TxnKeepAliveMultiTxnStatusManagerInstances) {
   // should be automatically aborted by TxnStatusManager running with the
   // leader replica of the txn status tablet.
   ASSERT_EVENTUALLY([&]{
-    NO_FATALS(CheckTxnState(txn_id, TxnStatePB::ABORTED));
+    NO_FATALS(CheckTxnState(txn_id, TxnStatePB::ABORT_IN_PROGRESS));
   });
 
   NO_FATALS(cluster_->AssertNoCrashes());
