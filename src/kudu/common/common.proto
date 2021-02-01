@@ -28,6 +28,7 @@ package kudu;
 
 option java_package = "org.apache.kudu";
 
+import "kudu/common/row_operations.proto";
 import "kudu/util/block_bloom_filter.proto";
 import "kudu/util/compression/compression.proto";
 import "kudu/util/hash.proto";
@@ -348,8 +349,21 @@ message PartitionSchemaPB {
     optional HashAlgorithm hash_algorithm = 4;
   }
 
+  message PerRangeHashBucketSchemasPB {
+    repeated HashBucketSchemaPB hash_schemas = 1;
+  }
+
   repeated HashBucketSchemaPB hash_bucket_schemas = 1;
   optional RangeSchemaPB range_schema = 2;
+
+  // Each index of 'range_bounds' represents the upper and lower bounds of
+  // ranges whose hash bucket schemas were specified. Its corresponding index
+  // of 'range_hash_schemas' represents that range's hash schema. An empty
+  // field of 'range_hash_schemas' indicates that the table wide hash schema
+  // specified in 'hash_bucket_schemas' is used. Both of these fields must have
+  // the same size.
+  repeated PerRangeHashBucketSchemasPB range_hash_schemas = 3;
+  repeated RowOperationsPB range_bounds = 4;
 }
 
 // The serialized format of a Kudu table partition.

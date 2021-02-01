@@ -71,6 +71,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
@@ -1676,8 +1677,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // partitioned on the primary key columns) will be used.
   PartitionSchema partition_schema;
   RETURN_NOT_OK(SetupError(
-        PartitionSchema::FromPB(req.partition_schema(), schema, &partition_schema),
-        resp, MasterErrorPB::INVALID_SCHEMA));
+      PartitionSchema::FromPB(req.partition_schema(), schema, client_schema, &partition_schema),
+      resp, MasterErrorPB::INVALID_SCHEMA));
 
   // Decode split rows.
   vector<KuduPartialRow> split_rows;
@@ -1708,11 +1709,11 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
         if (op.type == RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND) {
           RETURN_NOT_OK(partition_schema.MakeLowerBoundRangePartitionKeyInclusive(
-                op.split_row.get()));
+              op.split_row.get()));
         }
         if (ops[i].type == RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND) {
           RETURN_NOT_OK(partition_schema.MakeUpperBoundRangePartitionKeyExclusive(
-                ops[i].split_row.get()));
+              ops[i].split_row.get()));
         }
         range_bounds.emplace_back(*op.split_row, *ops[i].split_row);
         break;
@@ -2015,7 +2016,7 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(
   // Use the Schema object passed in, since it has the column IDs already assigned,
   // whereas the user request PB does not.
   CHECK_OK(SchemaToPB(schema, metadata->mutable_schema()));
-  partition_schema.ToPB(metadata->mutable_partition_schema());
+  CHECK_OK(partition_schema.ToPB(schema, metadata->mutable_partition_schema()));
   metadata->set_create_timestamp(time(nullptr));
   (*metadata->mutable_extra_config()) = std::move(extra_config_pb);
   table->RegisterMetrics(master_->metric_registry(), metadata->name());
@@ -2436,7 +2437,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(l.data().pb.schema(), &schema));
   PartitionSchema partition_schema;
-  RETURN_NOT_OK(PartitionSchema::FromPB(l.data().pb.partition_schema(), schema, &partition_schema));
+  RETURN_NOT_OK(PartitionSchema::FromPB(l.data().pb.partition_schema(), schema,
+                                        client_schema, &partition_schema));
 
   TableInfo::TabletInfoMap existing_tablets = table->tablet_map();
   TableInfo::TabletInfoMap new_tablets;
@@ -2556,7 +2558,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
             if (lower_bound == p.partition_key_start() &&
                 upper_bound == p.partition_key_end()) {
               return Status::AlreadyPresent(
-                  "new range partiton duplicates another newly added one",
+                  "new range partition duplicates another newly added one",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row,
                                                              *ops[1].split_row));
             }

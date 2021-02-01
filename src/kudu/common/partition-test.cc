@@ -28,10 +28,13 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/util/slice.h"
@@ -40,6 +43,7 @@
 #include "kudu/util/test_util.h"
 
 using boost::optional;
+using google::protobuf::util::MessageDifferencer;
 using std::pair;
 using std::string;
 using std::vector;
@@ -974,6 +978,23 @@ void CheckPartitions(const vector<Partition>& partitions) {
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a5\0\0b5\0\0", 16),partitions[15].partition_key_start());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a6\0\0\0\0c6", 16),partitions[15].partition_key_end());
 }
+
+void CheckSerializationFunctions(const PartitionSchemaPB& pb,
+                                 const PartitionSchema& partition_schema,
+                                 const Schema& schema) {
+
+  PartitionSchemaPB pb1;
+  ASSERT_OK(partition_schema.ToPB(schema, &pb1));
+
+  // Compares original protobuf message to encoded protobuf message.
+  MessageDifferencer::Equals(pb, pb1);
+
+  PartitionSchema partition_schema1;
+  ASSERT_OK(PartitionSchema::FromPB(pb1, schema, &partition_schema1));
+
+  ASSERT_TRUE(partition_schema.Equals(partition_schema1));
+}
+
 } // namespace
 
 TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
@@ -990,6 +1011,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
   AddHashBucketComponent(&schema_builder, { "b" }, 2, 0);
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+  CheckSerializationFunctions(schema_builder, partition_schema, schema);
 
   ASSERT_EQ("HASH (a, c) PARTITIONS 3, HASH (b) PARTITIONS 2, RANGE (a, b, c)",
             partition_schema.DebugString(schema));
@@ -1092,7 +1114,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
 
 TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
   // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
-  // PARTITION BY [HASH BUCKET (a, c), HASH BUCKET (b), RANGE (a, b, c)];
+  // PARTITION BY [HASH BUCKET (b), RANGE (a, b, c)];
   Schema schema({ ColumnSchema("a", STRING),
                   ColumnSchema("b", STRING),
                   ColumnSchema("c", STRING) },
@@ -1103,6 +1125,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
   AddHashBucketComponent(&schema_builder, { "b" }, 2, 0);
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+  CheckSerializationFunctions(schema_builder, partition_schema, schema);
 
   ASSERT_EQ("HASH (b) PARTITIONS 2, RANGE (a, b, c)",
             partition_schema.DebugString(schema));
@@ -1227,5 +1250,173 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
   EXPECT_EQ("", partitions[11].range_key_end());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[11].partition_key_start());
   EXPECT_EQ("", partitions[11].partition_key_end());
+}
+
+TEST_F(PartitionTest, TestPartitionSchemaPB) {
+  // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
+  // PARTITION BY [HASH BUCKET (b), RANGE (a, b, c)];
+  Schema schema({ ColumnSchema("a", STRING),
+                  ColumnSchema("b", STRING),
+                  ColumnSchema("c", STRING) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  PartitionSchemaPB pb;
+  // Table-wide hash schema defined below.
+  AddHashBucketComponent(&pb, { "b" }, 2, 0);
+
+  // [(a0, _, c0), (a0, _, c1))
+  {
+    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0"));
+    ASSERT_OK(lower.SetStringCopy("c", "c0"));
+    ASSERT_OK(upper.SetStringCopy("a", "a0"));
+    ASSERT_OK(upper.SetStringCopy("c", "c1"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto range_hash_component = pb.add_range_hash_schemas();
+    auto hash_component = range_hash_component->add_hash_schemas();
+    hash_component->add_columns()->set_name("a");
+    hash_component->set_num_buckets(4);
+  }
+
+  // [(a1, _, c2), (a1, _, c3))
+  {
+    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a1"));
+    ASSERT_OK(lower.SetStringCopy("c", "c2"));
+    ASSERT_OK(upper.SetStringCopy("a", "a1"));
+    ASSERT_OK(upper.SetStringCopy("c", "c3"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto range_hash_component = pb.add_range_hash_schemas();
+    auto hash_component_1 = range_hash_component->add_hash_schemas();
+    hash_component_1->add_columns()->set_name("a");
+    hash_component_1->set_num_buckets(2);
+    auto hash_component_2 = range_hash_component->add_hash_schemas();
+    hash_component_2->add_columns()->set_name("b");
+    hash_component_2->set_num_buckets(3);
+  }
+
+  // [(a2, _, c4), (a2, _, c5))
+  {
+    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a2"));
+    ASSERT_OK(lower.SetStringCopy("c", "c4"));
+    ASSERT_OK(upper.SetStringCopy("a", "a2"));
+    ASSERT_OK(upper.SetStringCopy("c", "c5"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    // empty field implies use of table wide hash schema
+    pb.add_range_hash_schemas();
+  }
+
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+
+  // Check fields of 'partition_schema' to verify decoder function.
+  ASSERT_EQ(1, partition_schema.hash_partition_schemas().size());
+  const auto& ranges_with_hash_schemas = partition_schema.ranges_with_hash_schemas();
+  ASSERT_EQ(3, ranges_with_hash_schemas.size());
+
+  EXPECT_EQ(string("a0\0\0\0\0c0", 8), ranges_with_hash_schemas[0].lower);
+  EXPECT_EQ(string("a0\0\0\0\0c1", 8), ranges_with_hash_schemas[0].upper);
+  EXPECT_EQ(1, ranges_with_hash_schemas[0].hash_schemas.size());
+
+  const auto& range1_hash_schema = ranges_with_hash_schemas[0].hash_schemas[0];
+  EXPECT_EQ(1, range1_hash_schema.column_ids.size());
+  EXPECT_EQ(0, range1_hash_schema.column_ids[0]);
+  EXPECT_EQ(4, range1_hash_schema.num_buckets);
+
+  EXPECT_EQ(string("a1\0\0\0\0c2", 8), ranges_with_hash_schemas[1].lower);
+  EXPECT_EQ(string("a1\0\0\0\0c3", 8), ranges_with_hash_schemas[1].upper);
+  EXPECT_EQ(2, ranges_with_hash_schemas[1].hash_schemas.size());
+
+  const auto& range2_hash_schema_1 = ranges_with_hash_schemas[1].hash_schemas[0];
+  EXPECT_EQ(1, range2_hash_schema_1.column_ids.size());
+  EXPECT_EQ(0, range2_hash_schema_1.column_ids[0]);
+  EXPECT_EQ(2, range2_hash_schema_1.num_buckets);
+
+  const auto& range2_hash_schema_2 = ranges_with_hash_schemas[1].hash_schemas[1];
+  EXPECT_EQ(1, range2_hash_schema_2.column_ids.size());
+  EXPECT_EQ(1, range2_hash_schema_2.column_ids[0]);
+  EXPECT_EQ(3, range2_hash_schema_2.num_buckets);
+
+  EXPECT_EQ(string("a2\0\0\0\0c4", 8), ranges_with_hash_schemas[2].lower);
+  EXPECT_EQ(string("a2\0\0\0\0c5", 8), ranges_with_hash_schemas[2].upper);
+  EXPECT_EQ(0, ranges_with_hash_schemas[2].hash_schemas.size());
+
+  CheckSerializationFunctions(pb, partition_schema, schema);
+}
+
+TEST_F(PartitionTest, TestMalformedPartitionSchemaPB) {
+  // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
+  // PARTITION BY [RANGE (a, b, c)];
+  Schema schema({ ColumnSchema("a", STRING),
+                  ColumnSchema("b", STRING),
+                  ColumnSchema("c", STRING) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  PartitionSchemaPB pb;
+
+  // Testing that only a pair of range bounds is allowed.
+  {
+    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    KuduPartialRow extra(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0"));
+    ASSERT_OK(upper.SetStringCopy("a", "a1"));
+    ASSERT_OK(extra.SetStringCopy("a", "a2"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, extra);
+  }
+
+  PartitionSchema partition_schema;
+  Status s = PartitionSchema::FromPB(pb, schema, &partition_schema);
+  ASSERT_EQ("Invalid argument: 3 ops were provided; "
+            "Only two ops are expected for this pair of range bounds.",
+            s.ToString());
+
+  pb.Clear();
+  // Testing that no split rows are allowed.
+  {
+    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    KuduPartialRow split(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(split.SetStringCopy("a", "a0"));
+    ASSERT_OK(upper.SetStringCopy("a", "a1"));
+    encoder.Add(RowOperationsPB::SPLIT_ROW, split);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+  }
+
+  Status s1 = PartitionSchema::FromPB(pb, schema, &partition_schema);
+  ASSERT_EQ("Invalid argument: Illegal row operation type in request: 4",
+            s1.ToString());
+
+  pb.Clear();
+  // Testing that 2nd bound is either RANGE_UPPER_BOUND or INCLUSIVE_RANGE_UPPER_BOUND.
+  {
+    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0"));
+    ASSERT_OK(upper.SetStringCopy("a", "a1"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::SPLIT_ROW, upper);
+  }
+
+  Status s2 = PartitionSchema::FromPB(pb, schema, &partition_schema);
+  ASSERT_EQ("Invalid argument: missing upper range bound in request",
+            s2.ToString());
 }
 } // namespace kudu

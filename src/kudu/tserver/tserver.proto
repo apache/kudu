@@ -20,6 +20,7 @@ package kudu.tserver;
 option java_package = "org.apache.kudu.tserver";
 
 import "kudu/common/common.proto";
+import "kudu/common/row_operations.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/security/token.proto";
 import "kudu/tablet/tablet.proto";

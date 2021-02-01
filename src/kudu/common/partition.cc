@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -32,6 +33,8 @@
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
+#include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/map-util.h"
@@ -177,9 +180,60 @@ Status PartitionSchema::ExtractHashBucketSchemasFromPB(
 Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
                                const Schema& schema,
                                PartitionSchema* partition_schema) {
+  return FromPB(pb, schema, schema, partition_schema);
+}
+
+Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
+                               const Schema& schema,
+                               const Schema& client_schema,
+                               PartitionSchema* partition_schema) {
   partition_schema->Clear();
   RETURN_NOT_OK(ExtractHashBucketSchemasFromPB(schema, pb.hash_bucket_schemas(),
-                             &partition_schema->hash_bucket_schemas_));
+                                               &partition_schema->hash_bucket_schemas_));
+  RangeHashSchema range_hash_schema;
+  range_hash_schema.resize(pb.range_hash_schemas_size());
+  for (int i = 0; i < pb.range_hash_schemas_size(); i++) {
+    RETURN_NOT_OK(ExtractHashBucketSchemasFromPB(schema, pb.range_hash_schemas(i).hash_schemas(),
+                                                 &range_hash_schema[i]));
+  }
+  vector<pair<KuduPartialRow, KuduPartialRow>> range_bounds;
+  for (int i = 0; i < pb.range_bounds_size(); i++) {
+    RowOperationsPBDecoder decoder(&pb.range_bounds(i), &client_schema, &schema, nullptr);
+    vector<DecodedRowOperation> ops;
+    RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
+    if (ops.size() != 2) {
+      return Status::InvalidArgument(Substitute("$0 ops were provided; Only two ops are expected "
+                                                "for this pair of range bounds.", ops.size()));
+    }
+    const DecodedRowOperation& op1 = ops[0];
+    const DecodedRowOperation& op2 = ops[1];
+    switch (op1.type) {
+      case RowOperationsPB::RANGE_LOWER_BOUND:
+      case RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND: {
+        if (op2.type != RowOperationsPB::RANGE_UPPER_BOUND &&
+            op2.type != RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND) {
+          return Status::InvalidArgument("missing upper range bound in request");
+        }
+
+        // Lower bound range partition keys are inclusive and upper bound range partition keys
+        // are exclusive by design. If the provided keys are not of this format, these keys
+        // will be transformed to their proper format.
+        if (op1.type == RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND) {
+          RETURN_NOT_OK(partition_schema->MakeLowerBoundRangePartitionKeyInclusive(
+              op1.split_row.get()));
+        }
+        if (op2.type == RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND) {
+          RETURN_NOT_OK(partition_schema->MakeUpperBoundRangePartitionKeyExclusive(
+              op2.split_row.get()));
+        }
+        range_bounds.emplace_back(*op1.split_row, *op2.split_row);
+        break;
+      }
+      default:
+        return Status::InvalidArgument(
+            Substitute("Illegal row operation type in request: $0", op1.type));
+    }
+  }
 
   if (pb.has_range_schema()) {
     const PartitionSchemaPB_RangeSchemaPB& range_pb = pb.range_schema();
@@ -194,10 +248,15 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
     }
   }
 
+  if (!range_bounds.empty()) {
+    RETURN_NOT_OK(partition_schema->EncodeRangeBounds(
+        range_bounds, range_hash_schema, schema, &partition_schema->ranges_with_hash_schemas_));
+  }
+
   return partition_schema->Validate(schema);
 }
 
-void PartitionSchema::ToPB(PartitionSchemaPB* pb) const {
+Status PartitionSchema::ToPB(const Schema& schema, PartitionSchemaPB* pb) const {
   pb->Clear();
   pb->mutable_hash_bucket_schemas()->Reserve(hash_bucket_schemas_.size());
   for (const HashBucketSchema& hash_bucket : hash_bucket_schemas_) {
@@ -207,7 +266,34 @@ void PartitionSchema::ToPB(PartitionSchemaPB* pb) const {
     hash_bucket_pb->set_seed(hash_bucket.seed);
   }
 
+  if (!ranges_with_hash_schemas_.empty()) {
+    pb->mutable_range_hash_schemas()->Reserve(ranges_with_hash_schemas_.size());
+    pb->mutable_range_bounds()->Reserve(ranges_with_hash_schemas_.size());
+    Arena arena(256);
+    for (const auto& range_hash_schema : ranges_with_hash_schemas_) {
+      RowOperationsPBEncoder encoder(pb->add_range_bounds());
+      arena.Reset();
+      KuduPartialRow lower(&schema);
+      KuduPartialRow upper(&schema);
+      Slice s_lower = Slice(range_hash_schema.lower);
+      Slice s_upper = Slice(range_hash_schema.upper);
+      RETURN_NOT_OK(DecodeRangeKey(&s_lower, &lower, &arena));
+      RETURN_NOT_OK(DecodeRangeKey(&s_upper, &upper, &arena));
+      encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+      encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+      auto* range_hash_schema_pb = pb->add_range_hash_schemas();
+      for (const auto& hash_bucket : range_hash_schema.hash_schemas) {
+        auto* hash_bucket_pb = range_hash_schema_pb->add_hash_schemas();
+        SetColumnIdentifiers(hash_bucket.column_ids, hash_bucket_pb->mutable_columns());
+        hash_bucket_pb->set_num_buckets(hash_bucket.num_buckets);
+        hash_bucket_pb->set_seed(hash_bucket.seed);
+      }
+    }
+  }
+
   SetColumnIdentifiers(range_schema_.column_ids, pb->mutable_range_schema()->mutable_columns());
+  return Status::OK();
 }
 
 template<typename Row>
@@ -1103,11 +1189,14 @@ Status PartitionSchema::BucketForRow(const ConstContiguousRow& row,
 void PartitionSchema::Clear() {
   hash_bucket_schemas_.clear();
   range_schema_.column_ids.clear();
+  ranges_with_hash_schemas_.clear();
+
 }
 
-Status PartitionSchema::Validate(const Schema& schema) const {
+Status PartitionSchema::ValidateHashBucketSchemas(const Schema& schema,
+                                                  const HashBucketSchemas& hash_schemas) {
   set<ColumnId> hash_columns;
-  for (const PartitionSchema::HashBucketSchema& hash_schema : hash_bucket_schemas_) {
+  for (const PartitionSchema::HashBucketSchema& hash_schema : hash_schemas) {
     if (hash_schema.num_buckets < 2) {
       return Status::InvalidArgument("must have at least two hash buckets");
     }
@@ -1130,6 +1219,15 @@ Status PartitionSchema::Validate(const Schema& schema) const {
                                        "hash bucket partition components");
       }
     }
+  }
+  return Status::OK();
+}
+
+Status PartitionSchema::Validate(const Schema& schema) const {
+  RETURN_NOT_OK(ValidateHashBucketSchemas(schema, hash_bucket_schemas_));
+
+  for (const auto& range_with_hash_schemas : ranges_with_hash_schemas_) {
+    RETURN_NOT_OK(ValidateHashBucketSchemas(schema, range_with_hash_schemas.hash_schemas));
   }
 
   for (const ColumnId& column_id : range_schema_.column_ids) {

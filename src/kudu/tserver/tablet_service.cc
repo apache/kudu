@@ -44,6 +44,7 @@
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/key_range.h"
 #include "kudu/common/partition.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
@@ -2188,7 +2189,8 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
     if (req->need_schema_info()) {
       CHECK_OK(SchemaToPB(replica->tablet_metadata()->schema(),
                           status->mutable_schema()));
-      replica->tablet_metadata()->partition_schema().ToPB(status->mutable_partition_schema());
+      CHECK_OK(replica->tablet_metadata()->partition_schema().ToPB(
+          replica->tablet_metadata()->schema(), status->mutable_partition_schema()));
     }
   }
   context->RespondSuccess();

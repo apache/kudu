@@ -27,7 +27,6 @@ option java_package = "org.apache.kudu";
 
 import "kudu/common/common.proto";
 import "kudu/consensus/metadata.proto";
-import "kudu/util/pb_util.proto";
 
 // Error status returned by any RPC method.
 // Every RPC method which could generate an application-level error
@@ -181,60 +180,4 @@ message ColumnarRowBlockPB {
   }
   repeated Column columns = 1;
   optional int64 num_rows = 2;
-}
-
-// A set of operations (INSERT, UPDATE, UPSERT, or DELETE) to apply to a table,
-// or the set of split rows and range bounds when creating or altering table.
-// Range bounds determine the boundaries of range partitions during table
-// creation, split rows further subdivide the ranges into more partitions.
-message RowOperationsPB {
-  enum Type {
-    UNKNOWN = 0;
-    INSERT = 1;
-    UPDATE = 2;
-    DELETE = 3;
-    UPSERT = 5;
-    INSERT_IGNORE = 10;
-    UPDATE_IGNORE = 11;
-    DELETE_IGNORE = 12;
-
-    // Used when specifying split rows on table creation.
-    SPLIT_ROW = 4;
-    // Used when specifying an inclusive lower bound range on table creation.
-    // Should be followed by the associated upper bound. If all values are
-    // missing, then signifies unbounded.
-    RANGE_LOWER_BOUND = 6;
-    // Used when specifying an exclusive upper bound range on table creation.
-    // Should be preceded by the associated lower bound. If all values are
-    // missing, then signifies unbounded.
-    RANGE_UPPER_BOUND = 7;
-    // Used when specifying an exclusive lower bound range on table creation.
-    // Should be followed by the associated upper bound. If all values are
-    // missing, then signifies unbounded.
-    EXCLUSIVE_RANGE_LOWER_BOUND = 8;
-    // Used when specifying an inclusive upper bound range on table creation.
-    // Should be preceded by the associated lower bound. If all values are
-    // missing, then signifies unbounded.
-    INCLUSIVE_RANGE_UPPER_BOUND = 9;
-  }
-
-  // The row data for each operation is stored in the following format:
-  //
-  // [operation type] (one byte):
-  //   A single-byte field which determines the type of operation. The values are
-  //   based on the 'Type' enum above.
-  // [column isset bitmap]   (one bit for each column in the Schema, rounded to nearest byte)
-  //   A set bit in this bitmap indicates that the user has specified the given column
-  //   in the row. This indicates that the column will be present in the data to follow.
-  // [null bitmap]           (one bit for each Schema column, rounded to nearest byte)
-  //   A set bit in this bitmap indicates that the given column is NULL.
-  //   This is only present if there are any nullable columns.
-  // [column data]
-  //   For each column which is set and not NULL, the column's data follows. The data
-  //   format of each cell is the canonical in-memory format (eg little endian).
-  //   For string data, the pointers are relative to 'indirect_data'.
-  //
-  // The rows are concatenated end-to-end with no padding/alignment.
-  optional bytes rows = 2 [(kudu.REDACT) = true];
-  optional bytes indirect_data = 3 [(kudu.REDACT) = true];
 }

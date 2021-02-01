@@ -22,8 +22,18 @@ PROTOBUF_GENERATE_CPP(
   PROTO_FILES common.proto)
 ADD_EXPORTABLE_LIBRARY(kudu_common_proto
   SRCS ${COMMON_PROTO_SRCS}
-  DEPS block_bloom_filter_proto hash_proto pb_util_proto protobuf util_compression_proto
+  DEPS block_bloom_filter_proto hash_proto protobuf row_operations_proto util_compression_proto
   NONLINK_DEPS ${COMMON_PROTO_TGTS})
+
+PROTOBUF_GENERATE_CPP(
+  ROW_OPERATIONS_PROTO_SRCS ROW_OPERATIONS_PROTO_HDRS ROW_OPERATIONS_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES row_operations.proto)
+ADD_EXPORTABLE_LIBRARY(row_operations_proto
+  SRCS ${ROW_OPERATIONS_PROTO_SRCS}
+  DEPS pb_util_proto protobuf
+  NONLINK_DEPS ${ROW_OPERATIONS_PROTO_TGTS})
 
 PROTOBUF_GENERATE_CPP(
   WIRE_PROTOCOL_PROTO_SRCS WIRE_PROTOCOL_PROTO_HDRS WIRE_PROTOCOL_PROTO_TGTS
@@ -77,6 +87,7 @@ set(COMMON_LIBS
   gutil
   kudu_common_proto
   kudu_util
+  row_operations_proto
   wire_protocol_proto)
 
 ADD_EXPORTABLE_LIBRARY(kudu_common

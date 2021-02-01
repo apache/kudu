@@ -40,7 +40,6 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/tablet-internal.h"
 #include "kudu/client/tablet_server-internal.h"
-#include "kudu/common/column_predicate.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/partition.h"
@@ -69,6 +68,7 @@ using strings::Substitute;
 
 namespace kudu {
 
+class ColumnPredicate;
 using master::GetTableLocationsResponsePB;
 using master::TableIdentifierPB;
 using master::TabletLocationsPB;
@@ -131,7 +131,7 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     KuduSchema kudu_schema(schema);
     PartitionSchema partition_schema;
     RETURN_NOT_OK(PartitionSchema::FromPB(metadata.partition_schema(), schema,
-        &partition_schema));
+                                          &partition_schema));
     map<string, string> extra_configs(metadata.extra_configs().begin(),
         metadata.extra_configs().end());
     table.reset(new KuduTable(client->shared_from_this(), metadata.table_name(),
@@ -341,7 +341,8 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
     RETURN_NOT_OK(SchemaToPB(KuduSchema::ToSchema(table->schema()), &schema_pb));
     *table_pb.mutable_schema() = std::move(schema_pb);
     PartitionSchemaPB partition_schema_pb;
-    table->partition_schema().ToPB(&partition_schema_pb);
+    RETURN_NOT_OK(table->partition_schema().ToPB(KuduSchema::ToSchema(table->schema()),
+                                                 &partition_schema_pb));
     table_pb.mutable_partition_schema()->CopyFrom(partition_schema_pb);
     table_pb.mutable_extra_configs()->insert(table->extra_configs().begin(),
                                              table->extra_configs().end());

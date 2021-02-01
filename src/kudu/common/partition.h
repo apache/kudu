@@ -175,8 +175,16 @@ class PartitionSchema {
                        const Schema& schema,
                        PartitionSchema* partition_schema) WARN_UNUSED_RESULT;
 
+  // Overloaded function similar to function above, used when an
+  // explicit client schema is available to decode the range bounds.
+  static Status FromPB(const PartitionSchemaPB& pb,
+                       const Schema& schema,
+                       const Schema& client_schema,
+                       PartitionSchema* partition_schema) WARN_UNUSED_RESULT;
+
   // Serializes a partition schema into a protobuf message.
-  void ToPB(PartitionSchemaPB* pb) const;
+  // Requires a schema to encode the range bounds.
+  Status ToPB(const Schema& schema, PartitionSchemaPB* pb) const;
 
   // Appends the row's encoded partition key into the provided buffer.
   // On failure, the buffer may have data partially appended.
@@ -192,7 +200,7 @@ class PartitionSchema {
   // of resulting partitions is the product of the number of hash buckets for
   // each hash bucket component, multiplied by
   // (split_rows.size() + max(1, range_bounds.size())).
-  // 'range_hash_schema' contains each range's HashBucketSchemas,
+  // 'range_hash_schemas' contains each range's HashBucketSchemas,
   // its order corresponds to the bounds in 'range_bounds'.
   // If 'range_hash_schemas' is empty, the table wide hash schema is used per range.
   // Size of 'range_hash_schemas' and 'range_bounds' are equal if 'range_hash_schema' isn't empty.
@@ -302,6 +310,10 @@ class PartitionSchema {
 
   const HashBucketSchemas& hash_partition_schemas() const {
     return hash_bucket_schemas_;
+  }
+
+  const std::vector<RangeWithHashSchemas>& ranges_with_hash_schemas() const {
+    return ranges_with_hash_schemas_;
   }
 
   // Gets the vector containing the column indexes of the range partition keys.
@@ -414,6 +426,10 @@ class PartitionSchema {
   // Clears the state of this partition schema.
   void Clear();
 
+  // Helper function that validates the hash bucket schemas.
+  static Status ValidateHashBucketSchemas(const Schema& schema,
+                                          const HashBucketSchemas& hash_schemas);
+
   // Validates that this partition schema is valid. Returns OK, or an
   // appropriate error code for an invalid partition schema.
   Status Validate(const Schema& schema) const;
@@ -453,6 +469,8 @@ class PartitionSchema {
 
   HashBucketSchemas hash_bucket_schemas_;
   RangeSchema range_schema_;
+
+  std::vector<RangeWithHashSchemas> ranges_with_hash_schemas_;
 };
 
 } // namespace kudu

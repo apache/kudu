@@ -18,8 +18,8 @@
 #include "kudu/common/partition_pruner.h"
 
 #include <algorithm>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <iterator>
 #include <memory>
 #include <numeric>
@@ -43,6 +43,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 
@@ -281,7 +282,7 @@ void PartitionPruner::Init(const Schema& schema,
   // components and a range component, then a few patterns emerge from the
   // examples above:
   //
-  // 1) The partition keys are truncated after the final constrained component
+  // 1) The partition keys are truncated after the final constrained component.
   //    Hash bucket components are constrained when the scan is limited to a
   //    subset of buckets via equality or in-list predicates on that component.
   //    Range components are constrained if they have an upper or lower bound

@@ -1875,7 +1875,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
     if (a_lower_bound == b_lower_bound && a_upper_bound == b_upper_bound) {
       ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
       ASSERT_STR_CONTAINS(s.ToString(),
-                          "new range partiton duplicates another newly added one");
+                          "new range partition duplicates another newly added one");
     } else {
       ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
       ASSERT_STR_CONTAINS(s.ToString(),

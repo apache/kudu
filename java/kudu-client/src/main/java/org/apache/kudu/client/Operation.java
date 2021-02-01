@@ -34,10 +34,10 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.RowOperations.RowOperationsPB;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.WireProtocol.AppStatusPB.ErrorCode;
-import org.apache.kudu.WireProtocol.RowOperationsPB;
 import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 import org.apache.kudu.client.Statistics.Statistic;
 import org.apache.kudu.client.Statistics.TabletStatistics;

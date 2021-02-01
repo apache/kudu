@@ -29,9 +29,9 @@ import org.junit.Test;
 import org.mockito.Mockito;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.RowOperations.RowOperationsPB;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.WireProtocol.RowOperationsPB;
 import org.apache.kudu.client.Operation.ChangeType;
 import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.tserver.Tserver.WriteRequestPBOrBuilder;

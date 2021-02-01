@@ -25,7 +25,6 @@
 #include <utility>
 
 #include <boost/optional/optional.hpp>
-#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>

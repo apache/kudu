@@ -738,7 +738,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   partition_.ToPB(pb.mutable_partition());
   pb.set_last_durable_mrs_id(last_durable_mrs_id_);
   pb.set_schema_version(schema_version_);
-  partition_schema_.ToPB(pb.mutable_partition_schema());
+  RETURN_NOT_OK(partition_schema_.ToPB(*schema_, pb.mutable_partition_schema()));
   pb.set_table_name(table_name_);
 
   for (const shared_ptr<RowSetMetadata>& meta : rowsets) {
