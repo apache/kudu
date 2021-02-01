@@ -746,8 +746,7 @@ TEST_F(MultiServerTxnStatusTableITest, TestSystemClientCrashedNodes) {
   ASSERT_FALSE(leader_uuid.empty());
   FLAGS_leader_failure_max_missed_heartbeat_periods = 1;
   cluster_->mini_tablet_server_by_uuid(leader_uuid)->Shutdown();
-  int txn_id = 2;
-  ASSERT_OK(txn_sys_client_->BeginTransaction(++txn_id, kUser));
+  ASSERT_OK(txn_sys_client_->BeginTransaction(2, kUser));
 }
 
 enum InjectedErrorType {

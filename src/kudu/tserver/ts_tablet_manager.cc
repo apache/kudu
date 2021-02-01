@@ -1458,7 +1458,9 @@ void TSTabletManager::TxnStalenessTrackerTask() {
       if (!l.first_failed_status().ok()) {
         VLOG(1) << "Skipping transaction staleness track task: "
                 << l.first_failed_status().ToString();
-        continue;
+        // Since it is very likely the leader lock check will fail for the rest
+        // replicas, we can end this round of checking earlier.
+        break;
       }
       coordinator->AbortStaleTransactions();
     }
