@@ -161,7 +161,7 @@ struct ElectionContext {
     reason(reason),
     is_chained_election(true),
     chained_start_time(std::move(chained_start_time)),
-    chained_source_uuid(std::move(source_uuid)) {}
+    source_uuid(std::move(source_uuid)) {}
 
   const ElectionReason reason;
 
@@ -175,8 +175,12 @@ struct ElectionContext {
   // The time the first election in the  started
   const Timepoint chained_start_time;
 
-  // The UUID of the leader at the start of the chain
-  const std::string chained_source_uuid;
+  // The UUID of the leader at the start of the election or election chain
+  std::string source_uuid;
+
+  // The UUID of the leader at the start of the election. If election is not
+  // a chain, this should be equal to source_uuid
+  std::string current_leader_uuid;
 };
 
 class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
@@ -813,7 +817,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Callback for leader election driver. ElectionCallback is run on the
   // reactor thread, so it simply defers its work to DoElectionCallback.
   void ElectionCallback(ElectionContext context, const ElectionResult& result);
-  void DoElectionCallback(ElectionReason reason, const ElectionResult& result);
+  void DoElectionCallback(const ElectionContext& context, const ElectionResult& result);
   void NestedElectionDecisionCallback(
       ElectionContext context, const ElectionResult& result);
 

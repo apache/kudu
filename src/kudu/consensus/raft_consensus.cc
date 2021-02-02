@@ -543,6 +543,11 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionContext context) 
     LockGuard l(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked());
 
+    context.current_leader_uuid = GetLeaderUuidUnlocked();
+    if (context.source_uuid.empty()) {
+      context.source_uuid = context.current_leader_uuid;
+    }
+
     RaftPeerPB::Role active_role = cmeta_->active_role();
     if (active_role == RaftPeerPB::LEADER) {
       LOG_WITH_PREFIX_UNLOCKED(INFO) << Substitute(
@@ -2941,7 +2946,8 @@ void RaftConsensus::ElectionCallback(ElectionContext context, const ElectionResu
               LogPrefixThreadSafe() + "Unable to run election callback");
 }
 
-void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResult& result) {
+void RaftConsensus::DoElectionCallback(
+    const ElectionContext& context, const ElectionResult& result) {
   const int64_t election_term = result.vote_request.candidate_term();
   const bool was_pre_election = result.vote_request.is_pre_election();
   const char* election_type = was_pre_election ? "pre-election" : "election";
@@ -3040,7 +3046,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   if (was_pre_election) {
     // We just won the pre-election. So, we need to call a real election.
     lock.unlock();
-    WARN_NOT_OK(StartElection(NORMAL_ELECTION, { reason }),
+    WARN_NOT_OK(StartElection(NORMAL_ELECTION, context),
                 "Couldn't start leader election after successful pre-election");
   } else {
     // We won a real election. Convert role to LEADER.
@@ -3056,7 +3062,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
 
 void RaftConsensus::NestedElectionDecisionCallback(
     ElectionContext context, const ElectionResult& result) {
-  DoElectionCallback(context.reason, result);
+  DoElectionCallback(context, result);
   if (!result.vote_request.is_pre_election() && edcb_) {
     edcb_(result, std::move(context));
   }
