@@ -77,6 +77,9 @@ add_custom_command(TARGET tserver
     COMMAND ar -t $<TARGET_FILE:kudu_common> >> touch_link
     COMMAND ar -t $<TARGET_FILE:kudu_fs> >> touch_link
     COMMAND ar -t $<TARGET_FILE:kudu_util_compression> >> touch_link
+    COMMAND ar -t $<TARGET_FILE:kudu_tools_util> >> touch_link
+    COMMAND ar -t $<TARGET_FILE:kudu_tool> >> touch_link
+    COMMAND ar -t $<TARGET_FILE:tool_proto> >> touch_link
     COMMAND ar -t $<TARGET_FILE:security> >> touch_link
     COMMAND ar -t $<TARGET_FILE:krpc> >> touch_link
     COMMAND ar -t $<TARGET_FILE:krb5_realm_override> >> touch_link
@@ -99,7 +102,7 @@ add_custom_command(TARGET tserver
     COMMAND ar -t $<TARGET_FILE:gutil> >> touch_link
     COMMAND cat touch_link | xargs ar -qcs ${C_LIB}
     COMMAND ranlib ${C_LIB}
-    DEPENDS tcmalloc profiler tserver kserver server_process consensus log kudu_fs kudu_common kudu_util clock kudu_util_compression kudu_common_proto maintenance_manager_proto util_compression_proto fs_proto log_proto consensus_metadata_proto consensus_proto histogram_proto rpc_header_proto rpc_introspection_proto token_proto pb_util_proto tserver_admin_proto server_base_proto
+    DEPENDS tcmalloc profiler tserver kserver server_process consensus log kudu_fs kudu_common kudu_util clock kudu_util_compression kudu_common_proto kudu_tools_util kudu_tool tool_proto maintenance_manager_proto util_compression_proto fs_proto log_proto consensus_metadata_proto consensus_proto histogram_proto rpc_header_proto rpc_introspection_proto token_proto pb_util_proto tserver_admin_proto server_base_proto
 )
 
 #########################################

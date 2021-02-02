@@ -252,6 +252,13 @@ using strings::Substitute;
 namespace kudu {
 namespace consensus {
 
+PeerMessageQueue::TransferContext ElectionContext::TransferContext() const {
+  if (is_chained_election_) {
+    return { chained_start_time_, source_uuid_, is_origin_dead_promotion_ };
+  }
+  return { start_time_, current_leader_uuid_, is_origin_dead_promotion_ };
+}
+
 RaftConsensus::RaftConsensus(
     ConsensusOptions options,
     RaftPeerPB local_peer_pb,
@@ -543,9 +550,9 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionContext context) 
     LockGuard l(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked());
 
-    context.current_leader_uuid = GetLeaderUuidUnlocked();
-    if (context.source_uuid.empty()) {
-      context.source_uuid = context.current_leader_uuid;
+    context.current_leader_uuid_ = GetLeaderUuidUnlocked();
+    if (context.source_uuid_.empty()) {
+      context.source_uuid_ = context.current_leader_uuid_;
     }
 
     RaftPeerPB::Role active_role = cmeta_->active_role();
@@ -575,7 +582,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionContext context) 
 
     LOG_WITH_PREFIX_UNLOCKED(INFO)
         << "Starting " << mode_str
-        << " (" << ReasonString(context.reason, GetLeaderUuidUnlocked()) << ")";
+        << " (" << ReasonString(context.reason_, GetLeaderUuidUnlocked()) << ")";
 
     // Snooze to avoid the election timer firing again as much as possible.
     // We do not disable the election timer while running an election, so that
@@ -713,6 +720,7 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
 
 Status RaftConsensus::TransferLeadership(const boost::optional<string>& new_leader_uuid,
     const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn,
+    const boost::optional<ElectionContext>& prev_election_ctx,
     LeaderStepDownResponsePB* resp) {
   TRACE_EVENT0("consensus", "RaftConsensus::TransferLeadership");
   ThreadRestrictions::AssertWaitAllowed();
@@ -746,12 +754,14 @@ Status RaftConsensus::TransferLeadership(const boost::optional<string>& new_lead
       return Status::InvalidArgument(msg);
     }
   }
-  return BeginLeaderTransferPeriodUnlocked(new_leader_uuid, filter_fn);
+  return BeginLeaderTransferPeriodUnlocked(new_leader_uuid, filter_fn, prev_election_ctx);
 }
 
 Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
     const boost::optional<string>& successor_uuid,
-    const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn) {
+    const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn,
+    const boost::optional<ElectionContext>& prev_election_ctx
+  ) {
   DCHECK(lock_.is_locked());
   if (leader_transfer_in_progress_.CompareAndSwap(false, true)) {
     return Status::ServiceUnavailable(
@@ -759,7 +769,17 @@ Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
                    options_.tablet_id));
   }
   leader_transfer_in_progress_.Store(true, kMemOrderAcquire);
-  queue_->BeginWatchForSuccessor(successor_uuid, filter_fn);
+
+  boost::optional<PeerMessageQueue::TransferContext> transfer_context =
+    boost::none;
+
+  queue_->BeginWatchForSuccessor(
+      successor_uuid,
+      filter_fn,
+      prev_election_ctx ?
+        boost::make_optional(prev_election_ctx->TransferContext()) :
+        boost::none
+  );
   transfer_period_timer_->Start();
   return Status::OK();
 }
@@ -1074,11 +1094,13 @@ void RaftConsensus::NotifyPeerToPromote(const std::string& peer_uuid) {
               LogPrefixThreadSafe() + "Unable to start TryPromoteNonVoterTask");
 }
 
-void RaftConsensus::NotifyPeerToStartElection(const string& peer_uuid) {
+void RaftConsensus::NotifyPeerToStartElection(const string& peer_uuid,
+    boost::optional<PeerMessageQueue::TransferContext> transfer_context) {
   LOG(INFO) << "Instructing follower " << peer_uuid << " to start an election";
   WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::TryStartElectionOnPeerTask,
                                                      shared_from_this(),
-                                                     peer_uuid)),
+                                                     peer_uuid,
+                                                     std::move(transfer_context))),
               LogPrefixThreadSafe() + "Unable to start TryStartElectionOnPeerTask");
 }
 
@@ -1153,7 +1175,8 @@ void RaftConsensus::TryPromoteNonVoterTask(const std::string& peer_uuid) {
               LogPrefixThreadSafe() + Substitute("Unable to promote non-voter $0", peer_uuid));
 }
 
-void RaftConsensus::TryStartElectionOnPeerTask(const string& peer_uuid) {
+void RaftConsensus::TryStartElectionOnPeerTask(const string& peer_uuid,
+    const boost::optional<PeerMessageQueue::TransferContext>& transfer_context) {
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
   // Double-check that the peer is a voter in the active config.
@@ -1165,7 +1188,20 @@ void RaftConsensus::TryStartElectionOnPeerTask(const string& peer_uuid) {
   }
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Signalling peer " << peer_uuid
                                  << "to start an election";
-  WARN_NOT_OK(peer_manager_->StartElection(peer_uuid),
+
+  RunLeaderElectionRequestPB req;
+  if (transfer_context) {
+    LeaderElectionContextPB* ctx = req.mutable_election_context();
+    ctx->set_original_start_time(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            transfer_context->original_start_time.time_since_epoch())
+            .count());
+    ctx->set_original_uuid(transfer_context->original_uuid);
+    ctx->set_is_origin_dead_promotion(
+        transfer_context->is_origin_dead_promotion);
+  }
+
+  WARN_NOT_OK(peer_manager_->StartElection(peer_uuid, std::move(req)),
               Substitute("unable to start election on peer $0", peer_uuid));
 }
 

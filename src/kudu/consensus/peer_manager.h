@@ -62,7 +62,8 @@ class PeerManager {
   void SignalRequest(bool force_if_queue_empty = false);
 
   // Start an election on the peer with UUID 'uuid'.
-  Status StartElection(const std::string& uuid);
+  Status StartElection(const std::string& uuid,
+                       RunLeaderElectionRequestPB req = {});
 
   // Closes all peers.
   void Close();

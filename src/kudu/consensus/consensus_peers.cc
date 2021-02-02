@@ -321,8 +321,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
                               });
 }
 
-Status Peer::StartElection() {
-  RunLeaderElectionRequestPB req;
+Status Peer::StartElection(RunLeaderElectionRequestPB req) {
   RunLeaderElectionResponsePB resp;
   RpcController controller;
   req.set_dest_uuid(peer_pb().permanent_uuid());

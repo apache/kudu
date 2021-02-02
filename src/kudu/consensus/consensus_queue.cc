@@ -1206,7 +1206,7 @@ int64_t PeerMessageQueue::ComputeNewWatermarkDynamicMode(int64_t* watermark) {
 int64_t PeerMessageQueue::ComputeNewWatermarkStaticMode(int64_t* watermark) {
   CHECK(watermark);
   CHECK(queue_state_.active_config->has_commit_rule());
- 
+
   if (!IsStaticQuorumMode(queue_state_.active_config->commit_rule().mode())) {
     return *watermark;
   }
@@ -1295,8 +1295,11 @@ void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
 
 void PeerMessageQueue::BeginWatchForSuccessor(
     const boost::optional<string>& successor_uuid,
-    const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn) {
+    const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn,
+    boost::optional<PeerMessageQueue::TransferContext> transfer_context) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
+
+  transfer_context_ = std::move(transfer_context);
 
   if (successor_uuid && FLAGS_synchronous_transfer_leadership &&
       PeerTransferLeadershipImmediatelyUnlocked(successor_uuid.get())) {
@@ -1311,6 +1314,7 @@ void PeerMessageQueue::BeginWatchForSuccessor(
 void PeerMessageQueue::EndWatchForSuccessor() {
   std::lock_guard<simple_spinlock> l(queue_lock_);
   successor_watch_in_progress_ = false;
+  transfer_context_ = boost::none;
   tl_filter_fn_ = nullptr;
 }
 
@@ -1968,10 +1972,13 @@ void PeerMessageQueue::NotifyObserversOfSuccessor(const string& peer_uuid) {
   DCHECK(queue_lock_.is_locked());
   WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
-           [=](PeerMessageQueueObserver* observer) {
-             observer->NotifyPeerToStartElection(peer_uuid);
+           [=, transfer_context = std::move(transfer_context_)] (
+             PeerMessageQueueObserver* observer
+           ) {
+             observer->NotifyPeerToStartElection(peer_uuid, std::move(transfer_context));
            })),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of available successor.");
+  transfer_context_ = boost::none;
 }
 
 void PeerMessageQueue::NotifyObserversOfPeerHealthChange() {

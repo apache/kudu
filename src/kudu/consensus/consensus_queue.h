@@ -191,6 +191,12 @@ class PeerMessageQueue {
     int64_t last_seen_term_;
   };
 
+  struct TransferContext {
+    std::chrono::system_clock::time_point original_start_time;
+    std::string original_uuid;
+    bool is_origin_dead_promotion;
+  };
+
   PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                    scoped_refptr<log::Log> log,
                    scoped_refptr<TimeManager> time_manager,
@@ -379,8 +385,11 @@ class PeerMessageQueue {
   // boost::none, the queue will notify its observers when 'successor_uuid' is
   // caught up to the leader. Otherwise, it will notify its observers
   // with the UUID of the first voter that is caught up.
-  void BeginWatchForSuccessor(const boost::optional<std::string>& successor_uuid,
-      const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn);
+  void BeginWatchForSuccessor(
+      const boost::optional<std::string>& successor_uuid,
+      const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn,
+      boost::optional<TransferContext> transfer_context = boost::none
+      );
   void EndWatchForSuccessor();
 
   // Get the UUID of the next routing hop from the local node.
@@ -647,6 +656,7 @@ class PeerMessageQueue {
 
   bool successor_watch_in_progress_;
   boost::optional<std::string> designated_successor_uuid_;
+  boost::optional<TransferContext> transfer_context_;
 
   std::function<bool(const kudu::consensus::RaftPeerPB&)> tl_filter_fn_;
   // We assume that we never have multiple threads racing to append to the queue.
@@ -683,7 +693,9 @@ class PeerMessageQueueObserver {
 
   // Notify the observer that the specified peer is ready to become leader, and
   // and it should be told to run an election.
-  virtual void NotifyPeerToStartElection(const std::string& peer_uuid) = 0;
+  virtual void NotifyPeerToStartElection(
+      const std::string& peer_uuid,
+      boost::optional<PeerMessageQueue::TransferContext> transfer_context) = 0;
 
   // Notify the observer that the health of one of the peers has changed.
   virtual void NotifyPeerHealthChange() = 0;

@@ -154,33 +154,45 @@ enum ElectionReason {
 struct ElectionContext {
   typedef const std::chrono::system_clock::time_point Timepoint;
 
-  ElectionContext(ElectionReason reason) : reason(reason) {}
+  ElectionContext(ElectionReason reason) :
+    reason_(reason),
+    chained_start_time_(start_time_),
+    is_origin_dead_promotion_(reason == ElectionReason::ELECTION_TIMEOUT_EXPIRED) {}
 
-  ElectionContext(ElectionReason reason,
-      Timepoint chained_start_time, std::string source_uuid) :
-    reason(reason),
-    is_chained_election(true),
-    chained_start_time(std::move(chained_start_time)),
-    source_uuid(std::move(source_uuid)) {}
+  ElectionContext(
+      ElectionReason reason,
+      Timepoint chained_start_time,
+      std::string source_uuid,
+      bool is_origin_dead_promotion) :
+    reason_(reason),
+    is_chained_election_(true),
+    chained_start_time_(std::move(chained_start_time)),
+    source_uuid_(std::move(source_uuid)),
+    is_origin_dead_promotion_(is_origin_dead_promotion) {}
 
-  const ElectionReason reason;
+  PeerMessageQueue::TransferContext TransferContext() const;
+
+  const ElectionReason reason_;
 
   // The time the current election started at
-  const Timepoint start_time = std::chrono::system_clock::now();
+  const Timepoint start_time_ = std::chrono::system_clock::now();
 
   // If this election is preceeded by other elections considered as a single
   // event. E.g. Multiple chained promotions
-  const bool is_chained_election = false;
+  const bool is_chained_election_ = false;
 
   // The time the first election in the  started
-  const Timepoint chained_start_time;
+  const Timepoint chained_start_time_;
 
   // The UUID of the leader at the start of the election or election chain
-  std::string source_uuid;
+  std::string source_uuid_;
 
   // The UUID of the leader at the start of the election. If election is not
   // a chain, this should be equal to source_uuid
-  std::string current_leader_uuid;
+  std::string current_leader_uuid_;
+
+  // True if the start of the election is a dead promotion
+  const bool is_origin_dead_promotion_;
 };
 
 class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
@@ -274,6 +286,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Additional calls to this method during the transfer period prolong it.
   Status TransferLeadership(const boost::optional<std::string>& new_leader_uuid,
                             const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn,
+                            const boost::optional<ElectionContext>& prev_election_ctx,
                             LeaderStepDownResponsePB* resp);
 
   // Begin or end a leadership transfer period. During a transfer period, a
@@ -282,7 +295,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // BeginLeaderTransferPeriodUnlocked returns ServiceUnavailable.
   Status BeginLeaderTransferPeriodUnlocked(
       const boost::optional<std::string>& successor_uuid,
-      const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn);
+      const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn,
+      const boost::optional<ElectionContext>& prev_election_ctx);
   void EndLeaderTransferPeriod();
 
   // Creates a new ConsensusRound, the entity that owns all the data
@@ -523,7 +537,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   void NotifyPeerToPromote(const std::string& peer_uuid) override;
 
-  void NotifyPeerToStartElection(const std::string& peer_uuid) override;
+  void NotifyPeerToStartElection(
+      const std::string& peer_uuid,
+      boost::optional<PeerMessageQueue::TransferContext> transfer_context) override;
 
   void NotifyPeerHealthChange() override;
 
@@ -885,7 +901,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Attempt to promote the given non-voter to a voter.
   void TryPromoteNonVoterTask(const std::string& peer_uuid);
 
-  void TryStartElectionOnPeerTask(const std::string& peer_uuid);
+  void TryStartElectionOnPeerTask(const std::string& peer_uuid,
+    const boost::optional<PeerMessageQueue::TransferContext>& transfer_context);
 
   // Called when the failure detector expires.
   // Submits ReportFailureDetectedTask() to a thread pool.

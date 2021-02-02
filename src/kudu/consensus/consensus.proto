@@ -534,6 +534,21 @@ message GetNodeInstanceResponsePB {
   required NodeInstancePB node_instance = 1;
 }
 
+message LeaderElectionContextPB {
+  // Time when the original server was promoted away from. We can use this to
+  // measure the total time of a chain of promotions
+  // Should be specified as nanoseconds since epoch
+  required fixed64 original_start_time = 1;
+
+  // UUID of original server that was promoted away from, used when current
+  // server cannot be leader
+  required bytes original_uuid = 2;
+
+  // True if the original promotion was due to the original leader specified in
+  // original_uuid being dead/unreachable
+  required bool is_origin_dead_promotion = 3 [default = false];
+}
+
 // Message that makes the local peer run leader election to be elected leader.
 // Assumes that a tablet with 'tablet_id' exists.
 message RunLeaderElectionRequestPB {
@@ -543,13 +558,10 @@ message RunLeaderElectionRequestPB {
   // the id of the tablet
   required bytes tablet_id = 1;
 
-  // Time when the original server was promoted away from. We can use this to
-  // measure the total time of a chain of promotions
-  optional fixed64 original_start_time = 3;
+  // optional fixed64 original_start_time = 3;
+  // optional bytes original_uuid = 4;
 
-  // UUID of original server that was promoted away from, used when current
-  // server cannot be leader
-  optional bytes original_uuid = 4;
+  optional LeaderElectionContextPB election_context = 5;
 }
 
 message RunLeaderElectionResponsePB {

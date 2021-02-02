@@ -89,6 +89,7 @@ using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::OpId;
 using kudu::consensus::RaftConsensus;
+using kudu::consensus::LeaderElectionContextPB;
 using kudu::consensus::RunLeaderElectionRequestPB;
 using kudu::consensus::RunLeaderElectionResponsePB;
 using kudu::consensus::TimeManager;
@@ -429,17 +430,24 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(tablet_manager_, resp, context, &consensus)) return;
 
-  std::string original_uuid = req->has_original_uuid() ? req->original_uuid() : "";
-  std::chrono::system_clock::time_point requestStart =
-    req->has_original_start_time() ?
+  Status s;
+  if (req->has_election_context()) {
+    const LeaderElectionContextPB& ctx = req->election_context();
+    std::chrono::system_clock::time_point request_start =
       std::chrono::system_clock::time_point(
-          std::chrono::nanoseconds(req->original_start_time())) :
-      std::chrono::system_clock::now();
-  Status s = consensus->StartElection(
-      consensus::ElectionMode::ELECT_EVEN_IF_LEADER_IS_ALIVE,
-      { consensus::ElectionReason::EXTERNAL_REQUEST,
-        std::move(requestStart),
-        std::move(original_uuid)});
+          std::chrono::nanoseconds(ctx.original_start_time()));
+    s = consensus->StartElection(
+        consensus::ElectionMode::ELECT_EVEN_IF_LEADER_IS_ALIVE,
+        {consensus::ElectionReason::EXTERNAL_REQUEST,
+         std::move(request_start),
+         ctx.original_uuid(),
+         ctx.is_origin_dead_promotion()});
+  } else {
+    s = consensus->StartElection(
+        consensus::ElectionMode::ELECT_EVEN_IF_LEADER_IS_ALIVE,
+        {consensus::ElectionReason::EXTERNAL_REQUEST});
+  }
+
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          ServerErrorPB::UNKNOWN_ERROR,
