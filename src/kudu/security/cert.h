@@ -69,6 +69,9 @@ class Cert : public RawDataWrapper<STACK_OF(X509)> {
   // Return the 'userId' extension of the end-user cert, if set.
   boost::optional<std::string> UserId() const;
 
+  // Return the 'commonName' from the subjectName
+  boost::optional<std::string> CommonName() const;
+
   // Return the Kerberos principal encoded in the end-user certificate, if set.
   boost::optional<std::string> KuduKerberosPrincipal() const;
 

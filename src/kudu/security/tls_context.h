@@ -57,8 +57,8 @@ class PrivateKey;
 // cert, access the CSR, and transtition to a CA-signed cert, repectively.
 //
 // When used in a client or a server, the TlsContext can immediately adopt a
-// private key and CA-signed cert using UseCertificateAndKey(). A TlsContext
-// only manages a single keypair, so if UseCertificateAndKey() is called,
+// private key and CA-signed cert using UseCertificateAndKeyUnlocked(). A TlsContext
+// only manages a single keypair, so if UseCertificateAndKeyUnlocked() is called,
 // GenerateSelfSignedCertAndKey() must not be called, and vice versa.
 //
 // TlsContext may be used with or without a keypair and cert to initiate TLS
@@ -103,10 +103,17 @@ class TlsContext {
   //
   // This determines whether other peers are trusted. It also must be called for
   // any CA certificates that are part of the certificate chain for the cert
-  // passed in to 'UseCertificateAndKey()' or 'AdoptSignedCert()'.
+  // passed in to 'UseCertificateAndKeyUnlocked()' or 'AdoptSignedCert()'.
   //
   // If this cert has already been marked as trusted, this has no effect.
-  Status AddTrustedCertificate(const Cert& cert) WARN_UNUSED_RESULT;
+  // @param use_new_store - do we get the current store from the context
+  // and push the chain into it, or do we create a fresh new store and set
+  // it finally into the context
+  Status AddTrustedCertificateUnlocked(const Cert& cert, bool use_new_store = false) WARN_UNUSED_RESULT;
+
+  // The version of above function which takes the context lock and is
+  // therefore callable from outside.
+  Status AddTrustedCertificate(const Cert& c) WARN_UNUSED_RESULT;
 
   // Dump all of the certs that are currently trusted by this context, in DER
   // form, into 'cert_ders'.
@@ -116,7 +123,7 @@ class TlsContext {
   //
   // Checks that the CA that issued the signature on 'cert' is already trusted
   // by this context (e.g. by AddTrustedCertificate()).
-  Status UseCertificateAndKey(const Cert& cert, const PrivateKey& key) WARN_UNUSED_RESULT;
+  Status UseCertificateAndKeyUnlocked(const Cert& cert, const PrivateKey& key) WARN_UNUSED_RESULT;
 
   // Generates a self-signed cert and key for use with TLS connections.
   //
@@ -145,6 +152,10 @@ class TlsContext {
 
   // Convenience functions for loading cert/CA/key from file paths.
   // -------------------------------------------------------------
+
+  Status LoadCertFiles(const std::string& ca_path,
+                       const std::string& certificate_path,
+                       const std::string& key_path) WARN_UNUSED_RESULT;
 
   // Load the server certificate and key (PEM encoded).
   Status LoadCertificateAndKey(const std::string& certificate_path,

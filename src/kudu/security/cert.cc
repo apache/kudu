@@ -111,6 +111,18 @@ boost::optional<string> Cert::UserId() const {
   return string(buf, len);
 }
 
+boost::optional<string> Cert::CommonName() const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  X509_NAME* name = X509_get_subject_name(GetTopOfChainX509());
+  if (!name) {
+    return boost::none;
+  }
+  char buf[1024];
+  int len = X509_NAME_get_text_by_NID(name, NID_commonName, buf, arraysize(buf));
+  if (len < 0) return boost::none;
+  return string(buf, len);
+}
+
 vector<string> Cert::Hostnames() const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   vector<string> result;

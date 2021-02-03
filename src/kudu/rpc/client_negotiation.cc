@@ -61,6 +61,10 @@ using strings::Substitute;
 
 DECLARE_bool(rpc_encrypt_loopback_connections);
 
+// Advertise certificate as auth mechanism even when the certificates are
+// externally signed (not by internal CA)
+DECLARE_bool(rpc_allow_external_cert_authentication);
+
 namespace kudu {
 namespace rpc {
 
@@ -321,9 +325,13 @@ Status ClientNegotiation::SendNegotiate() {
   if (!helper_.EnabledMechs().empty()) {
     msg.add_authn_types()->mutable_sasl();
   }
-  if (tls_context_->has_signed_cert() && !tls_context_->is_external_cert()) {
-    // We only provide authenticated TLS if the certificates are generated
-    // by the internal CA.
+
+  // We only provide authenticated TLS if the certificates are generated
+  // by the internal CA.
+  // However for mysql raft, in order to support pure TLS based authentication,
+  // we add a backdoor to override this kudu limitation.
+  if (tls_context_->has_signed_cert() &&
+      (FLAGS_rpc_allow_external_cert_authentication || !tls_context_->is_external_cert())) {
     msg.add_authn_types()->mutable_certificate();
   }
   if (authn_token_ && tls_context_->has_trusted_cert()) {

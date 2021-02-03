@@ -81,6 +81,12 @@ DEFINE_int32(ipki_server_key_size, 2048,
              "is used for TLS connections to and from clients and other servers.");
 TAG_FLAG(ipki_server_key_size, experimental);
 
+DEFINE_bool(create_new_x509_store_each_time, false,
+             "use an approach of creating a new x509 store followed by setting it"
+             " into SSL context to handle expiration. This is primarily to test"
+             " whether rereading new valid certs into a store with expired certs works");
+TAG_FLAG(create_new_x509_store_each_time, experimental);
+
 namespace kudu {
 namespace security {
 
@@ -235,12 +241,8 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
   return Status::OK();
 }
 
-Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key) {
+Status TlsContext::UseCertificateAndKeyUnlocked(const Cert& cert, const PrivateKey& key) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  // Verify that the cert and key match.
-  RETURN_NOT_OK(cert.CheckKeyMatch(key));
-
-  std::unique_lock<RWMutex> lock(lock_);
 
   // Verify that the appropriate CA certs have been loaded into the context
   // before we adopt a cert. Otherwise, client connections without the CA cert
@@ -257,10 +259,16 @@ Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key)
   return Status::OK();
 }
 
-Status TlsContext::AddTrustedCertificate(const Cert& cert) {
+Status TlsContext::AddTrustedCertificate(const Cert& c) {
+  std::unique_lock<RWMutex> lock(lock_);
+  return AddTrustedCertificateUnlocked(c);
+}
+
+Status TlsContext::AddTrustedCertificateUnlocked(const Cert& cert, bool use_new_store) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   VLOG(2) << "Trusting certificate " << cert.SubjectName();
 
+  // minor extra penalty of going under lock
   {
     // Workaround for a leak in OpenSSL <1.0.1:
     //
@@ -277,9 +285,12 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
     CHECK_OK(cert.GetPublicKey(&k));
   }
 
-  unique_lock<RWMutex> lock(lock_);
-  auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
-
+  X509_STORE* cert_store = nullptr;
+  if (use_new_store) {
+    cert_store = X509_STORE_new();
+  } else {
+    cert_store = SSL_CTX_get_cert_store(ctx_.get());
+  }
   // Iterate through the certificate chain and add each individual certificate to the store.
   for (int i = 0; i < cert.chain_len(); ++i) {
     X509* inner_cert = sk_X509_value(cert.GetRawData(), i);
@@ -297,6 +308,10 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
     }
   }
   trusted_cert_count_ += 1;
+
+  if (use_new_store) {
+    SSL_CTX_set_cert_store(ctx_.get(), cert_store);
+  }
   return Status::OK();
 }
 
@@ -421,6 +436,7 @@ boost::optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
   return boost::none;
 }
 
+// This function is currently not used in prod. Only in unittests
 Status TlsContext::AdoptSignedCert(const Cert& cert) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   unique_lock<RWMutex> lock(lock_);
@@ -467,8 +483,14 @@ Status TlsContext::LoadCertificateAndKey(const string& certificate_path,
   RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
   PrivateKey k;
   RETURN_NOT_OK(k.FromFile(key_path, DataFormat::PEM));
+
+  // Verify that the cert and key match.
+  RETURN_NOT_OK(c.CheckKeyMatch(k));
+
+  std::unique_lock<RWMutex> lock(lock_);
+  RETURN_NOT_OK(UseCertificateAndKeyUnlocked(c, k));
   is_external_cert_ = true;
-  return UseCertificateAndKey(c, k);
+  return Status::OK();
 }
 
 Status TlsContext::LoadCertificateAndPasswordProtectedKey(const string& certificate_path,
@@ -481,17 +503,53 @@ Status TlsContext::LoadCertificateAndPasswordProtectedKey(const string& certific
   PrivateKey k;
   RETURN_NOT_OK_PREPEND(k.FromFile(key_path, DataFormat::PEM, password_cb),
                         "failed to load private key file");
-  RETURN_NOT_OK(UseCertificateAndKey(c, k));
+  // Verify that the cert and key match.
+  RETURN_NOT_OK(c.CheckKeyMatch(k));
+
+  std::unique_lock<RWMutex> lock(lock_);
+
+  RETURN_NOT_OK(UseCertificateAndKeyUnlocked(c, k));
   is_external_cert_ = true;
   return Status::OK();
 }
 
 Status TlsContext::LoadCertificateAuthority(const string& certificate_path) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  if (has_cert_) DCHECK(is_external_cert_);
   Cert c;
   RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
-  return AddTrustedCertificate(c);
+
+  std::unique_lock<RWMutex> lock(lock_);
+  if (has_cert_) DCHECK(is_external_cert_);
+  return AddTrustedCertificateUnlocked(c);
+}
+
+Status TlsContext::LoadCertFiles(const string& ca_path,
+                                 const string& certificate_path,
+                                 const string& key_path) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  Cert ca_cert;
+  RETURN_NOT_OK(ca_cert.FromFile(ca_path, DataFormat::PEM));
+
+  Cert c;
+  RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
+
+  PrivateKey k;
+  RETURN_NOT_OK(k.FromFile(key_path, DataFormat::PEM));
+
+  // Verify that the cert and key match.
+  RETURN_NOT_OK(c.CheckKeyMatch(k));
+
+  std::unique_lock<RWMutex> lock(lock_);
+  has_cert_ = false;
+  is_external_cert_ = false;
+  trusted_cert_count_ = 0;
+
+  RETURN_NOT_OK(AddTrustedCertificateUnlocked(ca_cert, FLAGS_create_new_x509_store_each_time));
+
+  RETURN_NOT_OK(UseCertificateAndKeyUnlocked(c, k));
+
+  is_external_cert_ = true;
+  return Status::OK();
 }
 
 Status TlsContext::InitiateHandshake(TlsHandshakeType handshake_type,
