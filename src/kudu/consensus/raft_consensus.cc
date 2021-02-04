@@ -1566,7 +1566,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // The deduplicated request.
   LeaderRequest deduped_req;
   auto& messages = deduped_req.messages;
-  int64_t current_term_save = -1;
   {
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
@@ -1778,7 +1777,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Fill the response with the current state. We will not mutate anymore state until
     // we actually reply to the leader, we'll just wait for the messages to be durable.
     FillConsensusResponseOKUnlocked(response);
-    current_term_save = CurrentTermUnlocked();
+    if (new_leader_detected_failsafe_) {
+      ScheduleLeaderDetectedCallback(CurrentTermUnlocked());
+    }
   }
   // Release the lock while we wait for the log append to finish so that commits can go through.
   // We'll re-acquire it before we update the state again.
@@ -1810,9 +1811,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   VLOG_WITH_PREFIX(2) << "Replica updated. " << ToString()
                       << ". Request: " << SecureShortDebugString(*request);
 
-  if (new_leader_detected_failsafe_) {
-    ScheduleLeaderDetectedCallback(current_term_save);
-  }
   TRACE("UpdateReplicas() finished");
   return Status::OK();
 }
@@ -3470,28 +3468,53 @@ void RaftConsensus::DoTermAdvancmentCallback(int64_t new_term) {
 }
 
 void RaftConsensus::ScheduleNoOpReceivedCallback(const ReplicateRefPtr& msg) {
+  DCHECK(lock_.is_locked());
+
+  RaftPeerPB current_leader;
+  Status s_ok = cmeta_->GetConfigMemberCopy(cmeta_->leader_uuid(), &current_leader);
+  if (!s_ok.ok()) {
+    // In case the leader is not part of current config
+    // at the minimum set the uuid of the leader.
+    // leader_uuid is expected to be present due to CheckLeaderRequestUnlocked
+    // implementation
+    current_leader.set_permanent_uuid(cmeta_->leader_uuid());
+  }
+
   WARN_NOT_OK(
       raft_pool_token_->SubmitFunc(
         std::bind(&RaftConsensus::DoNoOpReceivedCallback,
                   shared_from_this(),
-                  msg->get()->id())),
+                  msg->get()->id(),
+                  std::move(current_leader))),
       LogPrefixThreadSafe() + "Unable to run no op received callback");
 }
 
-void RaftConsensus::DoNoOpReceivedCallback(const OpId id) {
-  if (norcb_) norcb_(id);
+void RaftConsensus::DoNoOpReceivedCallback(const OpId id, const RaftPeerPB& leader_details) {
+  if (norcb_) norcb_(id, leader_details);
 }
 
 void RaftConsensus::ScheduleLeaderDetectedCallback(int64_t term) {
+  DCHECK(lock_.is_locked());
+  RaftPeerPB current_leader;
+  Status s_ok = cmeta_->GetConfigMemberCopy(cmeta_->leader_uuid(), &current_leader);
+  if (!s_ok.ok()) {
+    // In case the leader is not part of current config
+    // at the minimum set the uuid of the leader.
+    // leader_uuid is expected to be present due to CheckLeaderRequestUnlocked
+    // implementation
+    current_leader.set_permanent_uuid(cmeta_->leader_uuid());
+  }
+
   WARN_NOT_OK(
       raft_pool_token_->SubmitFunc(
         std::bind(&RaftConsensus::DoLeaderDetectedCallback,
-                  shared_from_this(), term)),
+                  shared_from_this(), term,
+                  std::move(current_leader))),
       LogPrefixThreadSafe() + "Unable to run leader detected callback");
 }
 
-void RaftConsensus::DoLeaderDetectedCallback(int64_t term) {
-  if (ldcb_) ldcb_(term);
+void RaftConsensus::DoLeaderDetectedCallback(int64_t term, const RaftPeerPB& leader_details) {
+  if (ldcb_) ldcb_(term, leader_details);
 }
 
 Status RaftConsensus::SetCurrentTermBootstrap(int64_t new_term) {

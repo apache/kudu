@@ -142,6 +142,8 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // Returns the currently active role of the current node.
   RaftPeerPB::Role active_role() const;
 
+  Status GetConfigMemberCopy(const std::string& uuid, RaftPeerPB *member);
+
   // Copy the stored state into a ConsensusStatePB object.
   // To get the active configuration, specify 'type' = ACTIVE.
   // Otherwise, 'type' = COMMITTED will return a version of the
