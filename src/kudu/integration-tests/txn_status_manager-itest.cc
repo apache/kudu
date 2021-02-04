@@ -324,7 +324,7 @@ TEST_F(TxnStatusManagerITest, ToggleStaleTxnTrackerInRuntime) {
 // sure that a transaction isn't aborted if keepalive requests are sent as
 // required even in case of Raft leader re-elections and restarts
 // of the TxnStatusManager instances.
-TEST_F(TxnStatusManagerITest, DISABLED_TxnKeepAliveMultiTxnStatusManagerInstances) {
+TEST_F(TxnStatusManagerITest, TxnKeepAliveMultiTxnStatusManagerInstances) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   int64_t txn_id;
@@ -338,8 +338,8 @@ TEST_F(TxnStatusManagerITest, DISABLED_TxnKeepAliveMultiTxnStatusManagerInstance
   CountDownLatch latch(1);
   Status keep_txn_alive_status;
   thread txn_keepalive_sender([&] {
-    const auto period = MonoDelta::FromMilliseconds(keepalive_interval_ms / 2);
-    const auto timeout = MonoDelta::FromMilliseconds(keepalive_interval_ms / 4);
+    const auto period = MonoDelta::FromMilliseconds(keepalive_interval_ms / 5);
+    const auto timeout = MonoDelta::FromMilliseconds(keepalive_interval_ms / 10);
     // Keepalive thread uses its own messenger and proxy.
     std::shared_ptr<rpc::Messenger> m;
     rpc::MessengerBuilder b("txn-keepalive");
