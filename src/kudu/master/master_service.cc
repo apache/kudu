@@ -83,10 +83,9 @@ DEFINE_bool(master_non_leader_masters_propagate_tsk, false,
             "tests scenarios only and should not be used elsewhere.");
 TAG_FLAG(master_non_leader_masters_propagate_tsk, hidden);
 
-DEFINE_bool(master_client_location_assignment_enabled, true,
+DEFINE_bool(master_client_location_assignment_enabled, false,
             "Whether masters assign locations to connecting clients. "
-            "By default they do if the location assignment command is set, "
-            "but setting this flag to 'false' makes masters assign "
+            "Setting this flag to 'false' makes masters assign "
             "locations only to tablet servers, not clients.");
 TAG_FLAG(master_client_location_assignment_enabled, advanced);
 TAG_FLAG(master_client_location_assignment_enabled, runtime);

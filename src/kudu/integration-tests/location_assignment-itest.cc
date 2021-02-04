@@ -83,7 +83,13 @@ TEST_F(ClientLocationAssignmentITest, Basic) {
     EmplaceOrDie(&info, Substitute("/L$0", i), i == client_loc_idx ? 2 : 1);
   }
   FLAGS_num_replicas = FLAGS_num_tablet_servers;
-  NO_FATALS(BuildAndStart({}, {}, std::move(info)));
+  const vector<string> master_flags = {
+    // Assigning locations to clients is turned off by default, but this
+    // scenario exercises functionality related to that, so it's necessary
+    // to turn it on.
+    "--master_client_location_assignment_enabled=true",
+  };
+  NO_FATALS(BuildAndStart({}, master_flags, std::move(info)));
 
   // Find the tablet server that is colocated with the client, if there is one.
   const auto timeout = MonoDelta::FromSeconds(30);

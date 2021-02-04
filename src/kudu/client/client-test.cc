@@ -142,6 +142,7 @@ DECLARE_bool(disable_txn_system_client_init);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(location_mapping_by_uuid);
 DECLARE_bool(log_inject_latency);
+DECLARE_bool(master_client_location_assignment_enabled);
 DECLARE_bool(master_support_connect_to_master_rpc);
 DECLARE_bool(mock_table_metrics_for_testing);
 DECLARE_bool(rpc_listen_on_unix_domain_socket);
@@ -7668,6 +7669,9 @@ class ClientWithLocationTest : public ClientTest {
     // Some of these tests assume no client activity, so disable the
     // transaction system client.
     FLAGS_disable_txn_system_client_init = true;
+
+    // By default, master doesn't assing locations to connecting clients.
+    FLAGS_master_client_location_assignment_enabled = true;
   }
 };
 

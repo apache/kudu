@@ -75,6 +75,7 @@ import org.apache.kudu.test.CapturingLogAppender;
 import org.apache.kudu.test.ClientTestUtil;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.KuduTestHarness.LocationConfig;
+import org.apache.kudu.test.KuduTestHarness.MasterServerConfig;
 import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
 import org.apache.kudu.test.RandomUtils;
 import org.apache.kudu.util.DateUtil;
@@ -1316,6 +1317,9 @@ public class TestKuduClient {
   @Test(timeout = 100000)
   @LocationConfig(locations = {
       "/L0:6", // 3 masters, 1 client, 3 tablet servers: 3 * 1 + 3 = 6.
+  })
+  @MasterServerConfig(flags = {
+      "--master_client_location_assignment_enabled=true",
   })
   public void testClientLocation() throws Exception {
     // Do something that will cause the client to connect to the cluster.

@@ -118,6 +118,7 @@ using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
 DECLARE_bool(enable_per_range_hash_schemas);
+DECLARE_bool(master_client_location_assignment_enabled);
 DECLARE_bool(master_support_authz_tokens);
 DECLARE_bool(mock_table_metrics_for_testing);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
@@ -2054,6 +2055,7 @@ TEST_F(MasterTest, TestConnectToMasterAndAssignLocation) {
                                                    "testdata/first_argument.sh");
   const string location = "/foo";
   FLAGS_location_mapping_cmd = Substitute("$0 $1", kLocationCmdPath, location);
+  FLAGS_master_client_location_assignment_enabled = true;
   {
     // Restarting the master to take into account the new setting for the
     // --location_mapping_cmd flag.
