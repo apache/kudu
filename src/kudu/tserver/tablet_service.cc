@@ -211,26 +211,27 @@ using kudu::consensus::VoteResponsePB;
 using kudu::fault_injection::MaybeTrue;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
-using kudu::rpc::ParseVerificationResult;
 using kudu::rpc::ErrorStatusPB;
+using kudu::rpc::ParseVerificationResult;
 using kudu::rpc::RpcContext;
 using kudu::rpc::RpcSidecar;
-using kudu::security::TokenVerifier;
 using kudu::security::TokenPB;
+using kudu::security::TokenVerifier;
 using kudu::server::ServerBase;
 using kudu::tablet::AlterSchemaOpState;
 using kudu::tablet::MvccSnapshot;
+using kudu::tablet::OpCompletionCallback;
 using kudu::tablet::ParticipantOpState;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
-using kudu::tablet::OpCompletionCallback;
+using kudu::tablet::TabletStatePB;
 using kudu::tablet::WriteAuthorizationContext;
-using kudu::tablet::WritePrivileges;
-using kudu::tablet::WritePrivilegeType;
 using kudu::tablet::WriteOpState;
+using kudu::tablet::WritePrivilegeType;
+using kudu::tablet::WritePrivileges;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -260,7 +261,7 @@ template<class RespClass>
 bool LookupTabletReplicaOrRespond(TabletReplicaLookupIf* tablet_manager,
                                   const string& tablet_id,
                                   RespClass* resp,
-                                  rpc::RpcContext* context,
+                                  RpcContext* context,
                                   scoped_refptr<TabletReplica>* replica) {
   Status s = tablet_manager->GetTabletReplica(tablet_id, replica);
   if (PREDICT_FALSE(!s.ok())) {
@@ -280,9 +281,9 @@ bool LookupTabletReplicaOrRespond(TabletReplicaLookupIf* tablet_manager,
 
 template<class RespClass>
 void RespondTabletNotRunning(const scoped_refptr<TabletReplica>& replica,
-                             tablet::TabletStatePB tablet_state,
+                             TabletStatePB tablet_state,
                              RespClass* resp,
-                             rpc::RpcContext* context) {
+                             RpcContext* context) {
   Status s = Status::IllegalState("Tablet not RUNNING",
                                   tablet::TabletStatePB_Name(tablet_state));
   auto error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
@@ -303,9 +304,9 @@ void RespondTabletNotRunning(const scoped_refptr<TabletReplica>& replica,
 template<class RespClass>
 bool CheckTabletReplicaRunningOrRespond(const scoped_refptr<TabletReplica>& replica,
                                         RespClass* resp,
-                                        rpc::RpcContext* context) {
+                                        RpcContext* context) {
   // Check RUNNING state.
-  tablet::TabletStatePB state = replica->state();
+  TabletStatePB state = replica->state();
   if (PREDICT_FALSE(state != tablet::RUNNING)) {
     RespondTabletNotRunning(replica, state, resp, context);
     return false;
@@ -322,7 +323,7 @@ template<class RespClass>
 bool LookupRunningTabletReplicaOrRespond(TabletReplicaLookupIf* tablet_manager,
                                          const string& tablet_id,
                                          RespClass* resp,
-                                         rpc::RpcContext* context,
+                                         RpcContext* context,
                                          scoped_refptr<TabletReplica>* replica) {
   if (!LookupTabletReplicaOrRespond(tablet_manager, tablet_id, resp, context, replica)) {
     return false;
@@ -338,7 +339,7 @@ bool CheckUuidMatchOrRespond(TabletReplicaLookupIf* tablet_manager,
                              const char* method_name,
                              const ReqClass* req,
                              RespClass* resp,
-                             rpc::RpcContext* context) {
+                             RpcContext* context) {
   const string& local_uuid = tablet_manager->NodeInstance().permanent_uuid();
   if (PREDICT_FALSE(!req->has_dest_uuid())) {
     // Maintain compat in release mode, but complain.
@@ -367,7 +368,7 @@ bool CheckUuidMatchOrRespond(TabletReplicaLookupIf* tablet_manager,
 template<class RespClass>
 bool GetConsensusOrRespond(const scoped_refptr<TabletReplica>& replica,
                            RespClass* resp,
-                           rpc::RpcContext* context,
+                           RpcContext* context,
                            shared_ptr<RaftConsensus>* consensus_out) {
   shared_ptr<RaftConsensus> tmp_consensus = replica->shared_consensus();
   if (!tmp_consensus) {
@@ -383,7 +384,7 @@ bool GetConsensusOrRespond(const scoped_refptr<TabletReplica>& replica,
 
 template<class RespClass>
 bool CheckTabletServerNotQuiescingOrRespond(const TabletServer* server, RespClass* resp,
-                                            rpc::RpcContext* context) {
+                                            RpcContext* context) {
   if (PREDICT_FALSE(server->quiescing())) {
     Status s = Status::ServiceUnavailable("Tablet server is quiescing");
     SetupErrorAndRespond(resp->mutable_error(), s,
@@ -451,7 +452,7 @@ static bool GetScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const Sc
   const auto respond_not_authorized = [&] (const string& col_name) {
     LOG(WARNING) << Substitute("rejecting $0 request from $1: no column named '$2'",
                                req_type, context->requestor_string(), col_name);
-    context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+    context->RespondRpcFailure(ErrorStatusPB::FATAL_UNAUTHORIZED,
         Status::NotAuthorized(Substitute("not authorized to $0", req_type)));
   };
   // If there is no projection (i.e. this is a "counting" scan), the user
@@ -468,7 +469,7 @@ static bool GetScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const Sc
     Status s = ColumnSchemaFromPB(scan_pb.projected_columns(i), &projected_column);
     if (PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << s.ToString();
-      context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_INVALID_REQUEST, s);
+      context->RespondRpcFailure(ErrorStatusPB::ERROR_INVALID_REQUEST, s);
       return false;
     }
     // A projection may contain virtual columns, which don't exist in the
@@ -541,7 +542,7 @@ static bool CheckScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const 
       LOG(WARNING) << Substitute("rejecting $0 request from $1: authz token doesn't "
                                  "authorize column ID $2", req_type, context->requestor_string(),
                                  required_col_id);
-      context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+      context->RespondRpcFailure(ErrorStatusPB::FATAL_UNAUTHORIZED,
           Status::NotAuthorized(Substitute("not authorized to $0", req_type)));
       return false;
     }
@@ -559,7 +560,7 @@ static bool CheckMatchingTableIdOrRespond(const security::TablePrivilegePB& priv
     LOG(WARNING) << Substitute("rejecting $0 request from $1: '$2', expected '$3'",
                                req_type, context->requestor_string(),
                                privilege.table_id(), table_id);
-    context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN,
+    context->RespondRpcFailure(ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN,
         Status::NotAuthorized("authorization token is for the wrong table ID"));
     return false;
   }
@@ -588,7 +589,7 @@ static bool CheckMayHaveScanPrivilegesOrRespond(const security::TablePrivilegePB
   }
   LOG(WARNING) << Substitute("rejecting $0 request from $1: no column privileges",
                              req_type, context->requestor_string());
-  context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+  context->RespondRpcFailure(ErrorStatusPB::FATAL_UNAUTHORIZED,
       Status::NotAuthorized(Substitute("not authorized to $0", req_type)));
   return false;
 }
@@ -598,11 +599,11 @@ static bool CheckMayHaveScanPrivilegesOrRespond(const security::TablePrivilegePB
 template <class AuthorizableRequest>
 static bool VerifyAuthzTokenOrRespond(const TokenVerifier& token_verifier,
                                       const AuthorizableRequest& req,
-                                      rpc::RpcContext* context,
+                                      RpcContext* context,
                                       TokenPB* token) {
   DCHECK(token);
   if (!req.has_authz_token()) {
-    context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN,
+    context->RespondRpcFailure(ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN,
         Status::NotAuthorized("no authorization token presented"));
     return false;
   }
@@ -634,17 +635,17 @@ static bool VerifyAuthzTokenOrRespond(const TokenVerifier& token_verifier,
 static void SetupErrorAndRespond(TabletServerErrorPB* error,
                                  const Status& s,
                                  TabletServerErrorPB::Code code,
-                                 rpc::RpcContext* context) {
+                                 RpcContext* context) {
   // Non-authorized errors will drop the connection.
   if (code == TabletServerErrorPB::NOT_AUTHORIZED) {
     DCHECK(s.IsNotAuthorized());
-    context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED, s);
+    context->RespondRpcFailure(ErrorStatusPB::FATAL_UNAUTHORIZED, s);
     return;
   }
   // Generic "service unavailable" errors will cause the client to retry later.
   if ((code == TabletServerErrorPB::UNKNOWN_ERROR ||
        code == TabletServerErrorPB::THROTTLED) && s.IsServiceUnavailable()) {
-    context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY, s);
+    context->RespondRpcFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY, s);
     return;
   }
 
@@ -670,8 +671,7 @@ void HandleErrorResponse(const ReqType* req, RespType* resp, RpcContext* context
 template<class Response>
 class RpcOpCompletionCallback : public OpCompletionCallback {
  public:
-  RpcOpCompletionCallback(rpc::RpcContext* context,
-                          Response* response)
+  RpcOpCompletionCallback(RpcContext* context, Response* response)
       : context_(context),
         response_(response) {}
 
@@ -762,7 +762,7 @@ class ResultSerializer {
 
   // Serialize the pending rows into the response protobuf.
   // Must be called at most once.
-  virtual void SetupResponse(rpc::RpcContext* context, ScanResponsePB* resp) = 0;
+  virtual void SetupResponse(RpcContext* context, ScanResponsePB* resp) = 0;
 };
 
 class RowwiseResultSerializer : public ResultSerializer {
@@ -791,7 +791,7 @@ class RowwiseResultSerializer : public ResultSerializer {
     return rows_data_.size() + indirect_data_.size();
   }
 
-  void SetupResponse(rpc::RpcContext* context, ScanResponsePB* resp) override {
+  void SetupResponse(RpcContext* context, ScanResponsePB* resp) override {
     CHECK(!done_);
     done_ = true;
 
@@ -858,7 +858,7 @@ class ColumnarResultSerializer : public ResultSerializer {
     return total;
   }
 
-  void SetupResponse(rpc::RpcContext* context, ScanResponsePB* resp) override {
+  void SetupResponse(RpcContext* context, ScanResponsePB* resp) override {
     CHECK(!done_);
     done_ = true;
     ColumnarRowBlockPB* data = resp->mutable_columnar_data();
@@ -950,7 +950,7 @@ class ScanResultCopier : public ScanResultCollector {
     return Status::OK();
   }
 
-  void SetupResponse(rpc::RpcContext* context, ScanResponsePB* resp) {
+  void SetupResponse(RpcContext* context, ScanResponsePB* resp) {
     if (serializer_) {
       serializer_->SetupResponse(context, resp);
     }
@@ -1076,14 +1076,14 @@ TabletServiceImpl::TabletServiceImpl(TabletServer* server)
 
 bool TabletServiceImpl::AuthorizeClientOrServiceUser(const google::protobuf::Message* /*req*/,
                                                      google::protobuf::Message* /*resp*/,
-                                                     rpc::RpcContext* context) {
+                                                     RpcContext* context) {
   return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::USER |
                             ServerBase::SERVICE_USER);
 }
 
 bool TabletServiceImpl::AuthorizeListTablets(const google::protobuf::Message* req,
                                              google::protobuf::Message* resp,
-                                             rpc::RpcContext* context) {
+                                             RpcContext* context) {
   if (FLAGS_tserver_enforce_access_control) {
     return server_->Authorize(context, ServerBase::SUPER_USER);
   }
@@ -1092,13 +1092,13 @@ bool TabletServiceImpl::AuthorizeListTablets(const google::protobuf::Message* re
 
 bool TabletServiceImpl::AuthorizeClient(const google::protobuf::Message* /*req*/,
                                         google::protobuf::Message* /*resp*/,
-                                        rpc::RpcContext* context) {
+                                        RpcContext* context) {
   return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::USER);
 }
 
 void TabletServiceImpl::Ping(const PingRequestPB* /*req*/,
                              PingResponsePB* /*resp*/,
-                             rpc::RpcContext* context) {
+                             RpcContext* context) {
   context->RespondSuccess();
 }
 
@@ -1109,13 +1109,13 @@ TabletServiceAdminImpl::TabletServiceAdminImpl(TabletServer* server)
 
 bool TabletServiceAdminImpl::AuthorizeServiceUser(const google::protobuf::Message* /*req*/,
                                                   google::protobuf::Message* /*resp*/,
-                                                  rpc::RpcContext* context) {
+                                                  RpcContext* context) {
   return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::SERVICE_USER);
 }
 
 void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
                                          AlterSchemaResponsePB* resp,
-                                         rpc::RpcContext* context) {
+                                         RpcContext* context) {
   if (!CheckUuidMatchOrRespond(server_->tablet_manager(), "AlterSchema", req, resp, context)) {
     return;
   }
@@ -1217,7 +1217,7 @@ Status ValidateCoordinatorOpFields(const CoordinatorOpPB& op) {
 
 void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRequestPB* req,
                                                    CoordinateTransactionResponsePB* resp,
-                                                   rpc::RpcContext* context) {
+                                                   RpcContext* context) {
   if (PREDICT_FALSE(!req->has_txn_status_tablet_id() ||
                     !req->has_op())) {
     Status s = Status::InvalidArgument(
@@ -1311,7 +1311,7 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
 
 void TabletServiceAdminImpl::ParticipateInTransaction(const ParticipantRequestPB* req,
                                                       ParticipantResponsePB* resp,
-                                                      rpc::RpcContext* context) {
+                                                      RpcContext* context) {
   scoped_refptr<TabletReplica> replica;
   if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
                                            context, &replica)) {
@@ -1354,7 +1354,7 @@ bool TabletServiceAdminImpl::SupportsFeature(uint32_t feature) const {
 
 void TabletServiceAdminImpl::Quiesce(const QuiesceTabletServerRequestPB* req,
                                      QuiesceTabletServerResponsePB* resp,
-                                     rpc::RpcContext* context) {
+                                     RpcContext* context) {
   if (req->has_quiesce()) {
     bool quiesce_tserver = req->quiesce();
     *server_->mutable_quiescing() = quiesce_tserver;
@@ -1374,7 +1374,7 @@ void TabletServiceAdminImpl::Quiesce(const QuiesceTabletServerRequestPB* req,
 
 void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
                                           CreateTabletResponsePB* resp,
-                                          rpc::RpcContext* context) {
+                                          RpcContext* context) {
   if (!CheckUuidMatchOrRespond(server_->tablet_manager(), "CreateTablet", req, resp, context)) {
     return;
   }
@@ -1438,7 +1438,7 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
 
 void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
                                           DeleteTabletResponsePB* resp,
-                                          rpc::RpcContext* context) {
+                                          RpcContext* context) {
   if (!CheckUuidMatchOrRespond(server_->tablet_manager(), "DeleteTablet", req, resp, context)) {
     return;
   }
@@ -1476,13 +1476,14 @@ void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
 
 void TabletServiceImpl::Write(const WriteRequestPB* req,
                               WriteResponsePB* resp,
-                              rpc::RpcContext* context) {
+                              RpcContext* context) {
+  const auto& tablet_id = req->tablet_id();
   TRACE_EVENT1("tserver", "TabletServiceImpl::Write",
-               "tablet_id", req->tablet_id());
+               "tablet_id", tablet_id);
   DVLOG(3) << "Received Write RPC: " << SecureDebugString(*req);
   scoped_refptr<TabletReplica> replica;
-  if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
-                                           context, &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(
+        server_->tablet_manager(), tablet_id, resp, context, &replica)) {
     return;
   }
   boost::optional<WriteAuthorizationContext> authz_context;
@@ -1513,7 +1514,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
       // op after decoding the operations.
       LOG(WARNING) << Substitute("rejecting Write request from $0: no write privileges",
                                  context->requestor_string());
-      context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+      context->RespondRpcFailure(ErrorStatusPB::FATAL_UNAUTHORIZED,
           Status::NotAuthorized("not authorized to write"));
       return;
     }
@@ -1634,13 +1635,13 @@ ConsensusServiceImpl::~ConsensusServiceImpl() {
 
 bool ConsensusServiceImpl::AuthorizeServiceUser(const google::protobuf::Message* /*req*/,
                                                 google::protobuf::Message* /*resp*/,
-                                                rpc::RpcContext* rpc) {
+                                                RpcContext* rpc) {
   return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::SERVICE_USER);
 }
 
 void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                            ConsensusResponsePB* resp,
-                                           rpc::RpcContext* context) {
+                                           RpcContext* context) {
   DVLOG(3) << "Received Consensus Update RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "UpdateConsensus", req, resp, context)) {
     return;
@@ -1671,7 +1672,7 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
 
 void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
                                                 VoteResponsePB* resp,
-                                                rpc::RpcContext* context) {
+                                                RpcContext* context) {
   DVLOG(3) << "Received Consensus Request Vote RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "RequestConsensusVote", req, resp, context)) {
     return;
@@ -1818,7 +1819,7 @@ void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB*
 
 void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
                                            GetNodeInstanceResponsePB* resp,
-                                           rpc::RpcContext* context) {
+                                           RpcContext* context) {
   VLOG(1) << "Received Get Node Instance RPC: " << SecureDebugString(*req);
   resp->mutable_node_instance()->CopyFrom(tablet_manager_->NodeInstance());
   context->RespondSuccess();
@@ -1826,7 +1827,7 @@ void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
 
 void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* req,
                                              RunLeaderElectionResponsePB* resp,
-                                             rpc::RpcContext* context) {
+                                             RpcContext* context) {
   LOG(INFO) << "Received Run Leader Election RPC: " << SecureDebugString(*req)
             << " from " << context->requestor_string();
   if (!CheckUuidMatchOrRespond(tablet_manager_, "RunLeaderElection", req, resp, context)) {
@@ -1898,7 +1899,7 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
 
 void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *req,
                                        consensus::GetLastOpIdResponsePB *resp,
-                                       rpc::RpcContext *context) {
+                                       RpcContext *context) {
   DVLOG(3) << "Received GetLastOpId RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "GetLastOpId", req, resp, context)) {
     return;
@@ -1936,7 +1937,7 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
 
 void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateRequestPB* req,
                                              consensus::GetConsensusStateResponsePB* resp,
-                                             rpc::RpcContext* context) {
+                                             RpcContext* context) {
   DVLOG(3) << "Received GetConsensusState RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "GetConsensusState", req, resp, context)) {
     return;
@@ -1976,7 +1977,7 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
 
 void ConsensusServiceImpl::StartTabletCopy(const StartTabletCopyRequestPB* req,
                                            StartTabletCopyResponsePB* resp,
-                                           rpc::RpcContext* context) {
+                                           RpcContext* context) {
   if (!CheckUuidMatchOrRespond(tablet_manager_, "StartTabletCopy", req, resp, context)) {
     return;
   }
@@ -1996,7 +1997,7 @@ void ConsensusServiceImpl::StartTabletCopy(const StartTabletCopyRequestPB* req,
 
 void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
                                          ScannerKeepAliveResponsePB *resp,
-                                         rpc::RpcContext *context) {
+                                         RpcContext *context) {
   DCHECK(req->has_scanner_id());
   SharedScanner scanner;
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
@@ -2030,7 +2031,7 @@ void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
 }
 
 namespace {
-void SetResourceMetrics(const rpc::RpcContext* context,
+void SetResourceMetrics(const RpcContext* context,
                         const CpuTimes* cpu_times,
                         ResourceMetricsPB* metrics) {
   metrics->set_cfile_cache_miss_bytes(
@@ -2055,7 +2056,7 @@ void SetResourceMetrics(const rpc::RpcContext* context,
 
 void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              ScanResponsePB* resp,
-                             rpc::RpcContext* context) {
+                             RpcContext* context) {
   TRACE_EVENT0("tserver", "TabletServiceImpl::Scan");
 
   // Validate the request: user must pass a new_scan_request or
@@ -2154,7 +2155,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
 
 void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
                                     ListTabletsResponsePB* resp,
-                                    rpc::RpcContext* context) {
+                                    RpcContext* context) {
   vector<scoped_refptr<TabletReplica>> replicas;
   server_->tablet_manager()->GetTabletReplicas(&replicas);
   RepeatedPtrField<StatusAndSchemaPB>* replica_status = resp->mutable_status_and_schema();
@@ -2173,7 +2174,7 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
 
 void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
                                       SplitKeyRangeResponsePB* resp,
-                                      rpc::RpcContext* context) {
+                                      RpcContext* context) {
   TRACE_EVENT1("tserver", "TabletServiceImpl::SplitKeyRange",
                "tablet_id", req->tablet_id());
   DVLOG(3) << "Received SplitKeyRange RPC: " << SecureDebugString(*req);
@@ -2235,7 +2236,7 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
         }
       }
       if (!is_authorized) {
-        context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+        context->RespondRpcFailure(ErrorStatusPB::FATAL_UNAUTHORIZED,
             Status::NotAuthorized("not authorized to SplitKeyRange"));
         return;
       }
@@ -2338,7 +2339,7 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
 
 void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
                                  ChecksumResponsePB* resp,
-                                 rpc::RpcContext* context) {
+                                 RpcContext* context) {
   VLOG(1) << "Full request: " << SecureDebugString(*req);
 
   // Validate the request: user must pass a new_scan_request or
@@ -2643,7 +2644,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
                                                const ScanRequestPB* req,
                                                const RpcContext* rpc_context,
                                                ScanResultCollector* result_collector,
-                                               std::string* scanner_id,
+                                               string* scanner_id,
                                                Timestamp* snap_timestamp,
                                                bool* has_more_results,
                                                TabletServerErrorPB::Code* error_code) {
@@ -3178,12 +3179,11 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   const MonoTime before = MonoTime::Now();
   s = time_manager->WaitUntilSafe(tmp_snap_timestamp, final_deadline);
 
-  tablet::MvccSnapshot snap;
-  auto* mvcc_manager = tablet->mvcc_manager();
+  MvccSnapshot snap;
   if (PREDICT_TRUE(s.ok())) {
     // Wait for the in-flights in the snapshot to be finished.
     TRACE("Waiting for operations to commit");
-    s = mvcc_manager->WaitForSnapshotWithAllApplied(
+    s = tablet->mvcc_manager()->WaitForSnapshotWithAllApplied(
           tmp_snap_timestamp, &snap, client_deadline);
   }
 
@@ -3270,7 +3270,6 @@ Status TabletServiceImpl::PickAndVerifyTimestamp(const NewScanRequestPB& scan_pb
 
   Timestamp tmp_snap_timestamp;
   ReadMode read_mode = scan_pb.read_mode();
-  tablet::MvccManager* mvcc_manager = tablet->mvcc_manager();
 
   if (read_mode == READ_AT_SNAPSHOT) {
     // For READ_AT_SNAPSHOT mode,
@@ -3294,10 +3293,13 @@ Status TabletServiceImpl::PickAndVerifyTimestamp(const NewScanRequestPB& scan_pb
     //   2) the propagated timestamp was used to update the clock above and the
     //      update would have returned an error if the the timestamp was too
     //      far in the future.
-    uint64_t clean_timestamp = mvcc_manager->GetCleanTimestamp().ToUint64();
-    uint64_t propagated_timestamp = scan_pb.has_propagated_timestamp() ?
-                                    scan_pb.propagated_timestamp() : Timestamp::kMin.ToUint64();
-    tmp_snap_timestamp = Timestamp(std::max(propagated_timestamp + 1, clean_timestamp));
+    uint64_t clean_timestamp =
+        tablet->mvcc_manager()->GetCleanTimestamp().ToUint64();
+    uint64_t propagated_timestamp = scan_pb.has_propagated_timestamp()
+        ? scan_pb.propagated_timestamp()
+        : Timestamp::kMin.ToUint64();
+    tmp_snap_timestamp = Timestamp(std::max(propagated_timestamp + 1,
+                                            clean_timestamp));
   }
   *snap_timestamp = tmp_snap_timestamp;
   return Status::OK();
