@@ -3464,6 +3464,33 @@ Status RaftConsensus::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
   return Status::OK();
 }
 
+Status
+RaftConsensus::ChangeVoterDistribution(const TopologyConfigPB &topology_config) {
+  TRACE_EVENT2("consensus", "RaftConsensus::ChangeTopologyConfig", "peer",
+               peer_uuid(), "tablet", options_.tablet_id);
+  ThreadRestrictions::AssertWaitAllowed();
+  LockGuard l(lock_);
+  // Do not allow any voter distribution changes on a unsquelched ring.
+  Status s = CheckNoConfigChangePendingUnlocked();
+  RETURN_NOT_OK(s);
+
+  RaftConfigPB committed_config = cmeta_->CommittedConfig();
+  committed_config.clear_voter_distribution();
+  committed_config.mutable_voter_distribution()->insert(
+      topology_config.voter_distribution().begin(),
+      topology_config.voter_distribution().end());
+
+  cmeta_->set_committed_config(committed_config);
+  CHECK_OK(cmeta_->Flush());
+  return Status::OK();
+}
+
+Status RaftConsensus::GetVoterDistribution(std::map<std::string, int32> *vd) const {
+  ThreadRestrictions::AssertWaitAllowed();
+  LockGuard l(lock_);
+  return cmeta_->voter_distribution(vd);
+}
+
 Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit) {
   TRACE_EVENT0("consensus", "RaftConsensus::SetCommittedConfigUnlocked");
   DCHECK(lock_.is_locked());

@@ -434,6 +434,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Change the proxy topology.
   Status ChangeProxyTopology(const ProxyTopologyPB& proxy_topology);
 
+  // On a live Raft Instance allow for changes to voter_distribution map
+  Status ChangeVoterDistribution(const TopologyConfigPB &topology_config);
+
+  // Get the voter distribution from the committed config
+  Status GetVoterDistribution(std::map<std::string, int32> *vd) const;
+
   // Return the proxy topology.
   ProxyTopologyPB GetProxyTopology() const;
 
