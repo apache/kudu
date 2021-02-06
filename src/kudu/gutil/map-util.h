@@ -62,8 +62,7 @@
 #ifndef UTIL_GTL_MAP_UTIL_H_
 #define UTIL_GTL_MAP_UTIL_H_
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -463,11 +462,32 @@ bool EmplaceOrUpdate(Collection* const collection,
   return false;
 }
 
+// EmplaceOrDie() returns reference to the mapped object for map-like containers
+// or constant reference to the element itself for set-like containers given
+// the key and parameters to construct the mapped object in-place (the latter
+// is only for map-like containers).
+// Dancing with std::enable_if() is necessary to make it work for set-like
+// containers as well.
 template <class Collection, class... Args>
-void EmplaceOrDie(Collection* const collection,
-                  Args&&... args) {
-  CHECK(EmplaceIfNotPresent(collection, std::forward<Args>(args)...))
-      << "duplicate value";
+typename std::enable_if<
+    std::is_same<typename Collection::key_type,
+                 typename Collection::value_type>::value,
+    const typename Collection::value_type&>::type
+EmplaceOrDie(Collection* const collection, Args&&... args) {
+  auto res = collection->emplace(std::forward<Args>(args)...);
+  CHECK(res.second) << "duplicate value";
+  return *res.first;
+}
+
+template <class Collection, class... Args>
+typename std::enable_if<
+    !std::is_same<typename Collection::key_type,
+                  typename Collection::value_type>::value,
+    typename Collection::mapped_type&>::type
+EmplaceOrDie(Collection* const collection, Args&&... args) {
+  auto res = collection->emplace(std::forward<Args>(args)...);
+  CHECK(res.second) << "duplicate value";
+  return res.first->second;
 }
 
 //

@@ -21,6 +21,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -33,6 +34,7 @@
 template <class X> struct GoodFastHash;
 
 using std::map;
+using std::set;
 using std::string;
 using std::shared_ptr;
 using std::unique_ptr;
@@ -216,6 +218,31 @@ TEST(LookupOrEmplaceTest, UniquePtrMap) {
     ASSERT_NE(nullptr, lookup_val.get());
     ASSERT_EQ("giga", *lookup_val);
   }
+}
+
+TEST(EmplaceOrDieTest, MapLikeContainer) {
+  constexpr int key = 0;
+  const string ref_value_0 = "turbo";
+  const string ref_value_1 = "giga";
+  map<int, string> int_to_string;
+
+  {
+    auto& mapped = EmplaceOrDie(&int_to_string, key, "turbo");
+    ASSERT_EQ(ref_value_0, mapped);
+    mapped = "giga";
+  }
+  {
+    const auto& mapped = FindOrDie(int_to_string, key);
+    ASSERT_EQ(ref_value_1, mapped);
+  }
+}
+
+TEST(EmplaceOrDieTest, SetLikeContainer) {
+  const string ref_str = "turbo";
+  set<string> strings;
+
+  auto& value = EmplaceOrDie(&strings, "turbo");
+  ASSERT_EQ(ref_str, value);
 }
 
 } // namespace kudu
