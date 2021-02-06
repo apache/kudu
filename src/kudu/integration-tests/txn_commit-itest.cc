@@ -136,7 +136,9 @@ class TxnCommitITest : public KuduTest {
     TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client_);
     ASSERT_OK(txn_client_->OpenTxnStatusTable());
 
-    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+    client::KuduClientBuilder builder;
+    builder.default_admin_operation_timeout(kTimeout);
+    ASSERT_OK(cluster_->CreateClient(&builder, &client_));
     string authn_creds;
     ASSERT_OK(client_->ExportAuthenticationCredentials(&authn_creds));
     client::AuthenticationCredentialsPB pb;
