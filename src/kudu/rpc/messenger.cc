@@ -381,8 +381,9 @@ void Messenger::QueueInboundCall(unique_ptr<InboundCall> call) {
   if (PREDICT_FALSE(!service)) {
     const auto msg = Substitute("service $0 not registered on $1",
                                 call->remote_method().service_name(), name_);
-    LOG(INFO) << msg;
     if (state_ == kServicesRegistered) {
+      // NOTE: this message is only actually interesting if it's not transient.
+      LOG(INFO) << msg;
       call.release()->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_SERVICE, Status::NotFound(msg));
     } else {
       call.release()->RespondFailure(
