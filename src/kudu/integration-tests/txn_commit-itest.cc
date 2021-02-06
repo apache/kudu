@@ -749,7 +749,6 @@ class ThreeNodeTxnCommitITest : public TxnCommitITest {
       *cluster_->mini_tablet_server(i)->server()->mutable_quiescing() = i != leader_idx;
     }
     leader_ts_ = cluster_->mini_tablet_server(leader_idx);
-    non_leader_ts_ = cluster_->mini_tablet_server(leader_idx + 1);
     // We should have two leaders for our table, and one for the
     // TxnStatusManager.
     ASSERT_EVENTUALLY([&] {
@@ -758,7 +757,6 @@ class ThreeNodeTxnCommitITest : public TxnCommitITest {
   }
  protected:
   MiniTabletServer* leader_ts_;
-  MiniTabletServer* non_leader_ts_;
 };
 
 TEST_F(ThreeNodeTxnCommitITest, TestCommitTasksReloadOnLeadershipChange) {
@@ -776,13 +774,16 @@ TEST_F(ThreeNodeTxnCommitITest, TestCommitTasksReloadOnLeadershipChange) {
   ASSERT_FALSE(is_complete);
 
   FLAGS_txn_schedule_background_tasks = true;
-  // Change our quiescing state and bring the previous leader down so a new
-  // leader can be elected.
-  auto* new_leader_ts = non_leader_ts_;
-  *new_leader_ts->server()->mutable_quiescing() = false;
+  // Change our quiescing states so a new leader can be elected.
   *leader_ts_->server()->mutable_quiescing() = true;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    auto* mts = cluster_->mini_tablet_server(i);
+    if (leader_ts_ != mts) {
+      *mts->server()->mutable_quiescing() = false;
+    }
+  }
   ASSERT_EVENTUALLY([&] {
-    ASSERT_EQ(3, new_leader_ts->server()->num_raft_leaders()->value());
+    ASSERT_EQ(0, leader_ts_->server()->num_raft_leaders()->value());
   });
   // Upon becoming leader, we should have started our commit task and completed
   // the commit.
