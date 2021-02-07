@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <utility>
@@ -32,12 +33,10 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
@@ -49,6 +48,9 @@ class Message;
 }
 
 namespace kudu {
+
+class Schema;
+
 namespace tablet {
 class OpCompletionCallback;
 class OpState;
@@ -207,15 +209,8 @@ class OpState {
   }
 
   // Sets a heap object to be managed by this op's AutoReleasePool.
-  template<class T>
-  T* AddToAutoReleasePool(T* t) {
-    return pool_.Add(t);
-  }
-
-  // Sets an array heap object to be managed by this op's AutoReleasePool.
-  template<class T>
-  T* AddArrayToAutoReleasePool(T* t) {
-    return pool_.AddArray(t);
+  void AddToAutoReleasePool(std::unique_ptr<Schema> t) {
+    schemas_pool_.emplace_back(std::move(t));
   }
 
   // Return the arena associated with this op.
@@ -288,7 +283,7 @@ class OpState {
   // Optional callback to be called once the op completes.
   std::unique_ptr<OpCompletionCallback> completion_clbk_;
 
-  AutoReleasePool pool_;
+  std::deque<std::unique_ptr<Schema>> schemas_pool_;
 
   // This operation's timestamp.
   // This is only set once during the operation lifecycle, using external synchronization.
@@ -325,7 +320,6 @@ class OpState {
 // which avoids callers having to keep checking for NULL.
 class OpCompletionCallback {
  public:
-
   OpCompletionCallback();
 
   // Allows to set an error for this op and a mapping to a server level code.
@@ -338,7 +332,7 @@ class OpCompletionCallback {
 
   const Status& status() const;
 
-  const tserver::TabletServerErrorPB::Code error_code() const;
+  tserver::TabletServerErrorPB::Code error_code() const;
 
   // Subclasses should override this.
   virtual void OpCompleted();
@@ -364,7 +358,7 @@ class LatchOpCompletionCallback : public OpCompletionCallback {
       response_(DCHECK_NOTNULL(response)) {
   }
 
-  virtual void OpCompleted() OVERRIDE {
+  void OpCompleted() override {
     if (!status_.ok()) {
       StatusToPB(status_, response_->mutable_error()->mutable_status());
       response_->mutable_error()->set_code(code_);

@@ -17,7 +17,10 @@
 
 #include "kudu/tablet/ops/op.h"
 
+#include "kudu/common/schema.h"
 #include "kudu/rpc/result_tracker.h"
+
+using kudu::tserver::TabletServerErrorPB;
 
 namespace kudu {
 namespace tablet {
@@ -42,11 +45,11 @@ OpState::~OpState() {
 }
 
 OpCompletionCallback::OpCompletionCallback()
-    : code_(tserver::TabletServerErrorPB::UNKNOWN_ERROR) {
+    : code_(TabletServerErrorPB::UNKNOWN_ERROR) {
 }
 
 void OpCompletionCallback::set_error(const Status& status,
-                                     tserver::TabletServerErrorPB::Code code) {
+                                     TabletServerErrorPB::Code code) {
   status_ = status;
   code_ = code;
 }
@@ -63,7 +66,7 @@ const Status& OpCompletionCallback::status() const {
   return status_;
 }
 
-const tserver::TabletServerErrorPB::Code OpCompletionCallback::error_code() const {
+TabletServerErrorPB::Code OpCompletionCallback::error_code() const {
   return code_;
 }
 
@@ -72,14 +75,14 @@ void OpCompletionCallback::OpCompleted() {}
 OpCompletionCallback::~OpCompletionCallback() {}
 
 OpMetrics::OpMetrics()
-  : successful_inserts(0),
-    insert_ignore_errors(0),
-    successful_upserts(0),
-    successful_updates(0),
-    update_ignore_errors(0),
-    successful_deletes(0),
-    delete_ignore_errors(0),
-    commit_wait_duration_usec(0) {
+    : successful_inserts(0),
+      insert_ignore_errors(0),
+      successful_upserts(0),
+      successful_updates(0),
+      update_ignore_errors(0),
+      successful_deletes(0),
+      delete_ignore_errors(0),
+      commit_wait_duration_usec(0) {
 }
 
 void OpMetrics::Reset() {

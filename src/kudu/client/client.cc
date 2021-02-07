@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <set>
@@ -1625,12 +1626,12 @@ Status KuduScanner::SetTimeoutMillis(int millis) {
 }
 
 Status KuduScanner::AddConjunctPredicate(KuduPredicate* pred) {
+  // Take ownership even if returning non-OK status.
+  unique_ptr<KuduPredicate> p(pred);
   if (data_->open_) {
-    // Take ownership even if we return a bad status.
-    delete pred;
     return Status::IllegalState("Predicate must be set before Open()");
   }
-  return data_->mutable_configuration()->AddConjunctPredicate(pred);
+  return data_->mutable_configuration()->AddConjunctPredicate(std::move(p));
 }
 
 Status KuduScanner::AddLowerBound(const KuduPartialRow& key) {
@@ -2043,7 +2044,8 @@ Status KuduScanTokenBuilder::IncludeTabletMetadata(bool include_metadata) {
 }
 
 Status KuduScanTokenBuilder::AddConjunctPredicate(KuduPredicate* pred) {
-  return data_->mutable_configuration()->AddConjunctPredicate(pred);
+  unique_ptr<KuduPredicate> p(pred);
+  return data_->mutable_configuration()->AddConjunctPredicate(std::move(p));
 }
 
 Status KuduScanTokenBuilder::AddLowerBound(const KuduPartialRow& key) {

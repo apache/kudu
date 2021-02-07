@@ -90,10 +90,11 @@ Status ScanConfiguration::SetProjectedColumnIndexes(const vector<int>& col_index
   return CreateProjection(cols);
 }
 
-Status ScanConfiguration::AddConjunctPredicate(KuduPredicate* pred) {
-  // Take ownership even if we return a bad status.
-  pool_.Add(pred);
-  return pred->data_->AddToScanSpec(&spec_, &arena_);
+Status ScanConfiguration::AddConjunctPredicate(unique_ptr<KuduPredicate> pred) {
+  // Take ownership even if returning non-OK status.
+  auto* pred_raw_ptr = pred.get();
+  predicates_pool_.emplace_back(std::move(pred));
+  return pred_raw_ptr->data_->AddToScanSpec(&spec_, &arena_);
 }
 
 void ScanConfiguration::AddConjunctPredicate(ColumnPredicate pred) {
@@ -248,9 +249,10 @@ void ScanConfiguration::OptimizeScanSpec() {
 }
 
 Status ScanConfiguration::CreateProjection(const vector<ColumnSchema>& cols) {
-  unique_ptr<Schema> s(new Schema());
+  unique_ptr<Schema> s(new Schema);
   RETURN_NOT_OK(s->Reset(cols, 0));
-  projection_ = pool_.Add(s.release());
+  projection_ = s.get();
+  schemas_pool_.push_back(std::move(s));
   client_projection_ = KuduSchema::FromSchema(*projection_);
   return Status::OK();
 }

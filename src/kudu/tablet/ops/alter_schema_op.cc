@@ -34,6 +34,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/pb_util.h"
@@ -105,7 +106,7 @@ Status AlterSchemaOp::Prepare() {
   Tablet* tablet = state_->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->CreatePreparedAlterSchema(state(), schema.get()));
 
-  state_->AddToAutoReleasePool(schema.release());
+  state_->AddToAutoReleasePool(std::move(schema));
 
   TRACE("PREPARE ALTER-SCHEMA: finished");
   return s;

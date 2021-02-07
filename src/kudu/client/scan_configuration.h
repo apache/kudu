@@ -18,16 +18,19 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/port.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
@@ -36,13 +39,9 @@
 namespace kudu {
 
 class ColumnPredicate;
-class ColumnSchema;
 class KuduPartialRow;
-class Schema;
 
 namespace client {
-
-class KuduPredicate;
 
 // A configuration object which holds Kudu scan options.
 //
@@ -57,7 +56,7 @@ class ScanConfiguration {
 
   Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes) WARN_UNUSED_RESULT;
 
-  Status AddConjunctPredicate(KuduPredicate* pred) WARN_UNUSED_RESULT;
+  Status AddConjunctPredicate(std::unique_ptr<KuduPredicate> pred) WARN_UNUSED_RESULT;
 
   void AddConjunctPredicate(ColumnPredicate pred);
 
@@ -231,9 +230,10 @@ class ScanConfiguration {
   // Manages interior allocations for the scan spec and copied bounds.
   Arena arena_;
 
-  // Manages objects which need to live for the lifetime of the configuration,
-  // such as schemas, predicates, and keys.
-  AutoReleasePool pool_;
+  // Two containers below are to manage objects which need to live
+  // for the lifetime of the configuration, such as schemas and predicates.
+  std::deque<std::unique_ptr<Schema>> schemas_pool_;
+  std::deque<std::unique_ptr<KuduPredicate>> predicates_pool_;
 
   uint64_t row_format_flags_;
 };
