@@ -30,9 +30,10 @@
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/condition_variable.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
 
@@ -92,6 +93,23 @@ class LogCache {
                  const ReadContext& context,
                  std::vector<ReplicateRefPtr>* messages,
                  OpId* preceding_op);
+
+  // Similar to ReadOps(...), but blocks for 'max_duration_ms' if
+  // 'after_op_index' is not available in the local log.
+  //
+  // max_duration_ms is the maximum duration to wait for 'after_op_index' (in
+  // milliseconds)
+  //
+  // Returns "Incomplete" if the op has not yet been written to the log even
+  // after waiting for 'max_duration_ms'
+  // Returns "NotFound" if the op has been GCed.
+  // Returns another bad Status if the log index fails to load (eg. due to an IO error).
+  Status BlockingReadOps(int64_t after_op_index,
+                         int max_size_bytes,
+                         const ReadContext& context,
+                         int64_t max_duration_ms,
+                         std::vector<ReplicateRefPtr>* messages,
+                         OpId* preceding_op);
 
   // Append the operations into the log and the cache.
   // When the messages have completed writing into the on-disk log, fires 'callback'.
@@ -216,7 +234,8 @@ class LogCache {
   // The id of the tablet.
   const std::string tablet_id_;
 
-  mutable simple_spinlock lock_;
+  mutable Mutex  lock_;
+  ConditionVariable next_index_cond_;
 
   // An ordered map that serves as the buffer for the cached messages.
   // Maps from log index -> ReplicateMsg

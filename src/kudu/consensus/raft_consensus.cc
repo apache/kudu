@@ -3889,6 +3889,8 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
     // TODO(mpercy): Switch this from polling to event-triggered.
 
     vector<ReplicateRefPtr> messages;
+    messages.clear();
+
     PeerMessageQueue::TrackedPeer peer_to_send;
     Status s = queue_->FindPeer(request->dest_uuid(), &peer_to_send);
     ReadContext read_context;
@@ -3900,67 +3902,46 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
         peer_to_send.peer_pb.last_known_addr().port();
     }
 
-    do {
-      messages.clear();
+    int64_t first_op_index = -1;
+    int64_t max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSizeLong();
 
-      // We assume and enforce that a single request is composed of a range of ops.
-      int64_t first_op_index = -1;
-
-      int64_t max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSizeLong();
-      for (int i = 0; i < request->ops_size(); i++) {
-        auto& msg = request->ops(i);
-        if (PREDICT_FALSE(msg.op_type() != PROXY_OP)) {
+    for (int i = 0; i < request->ops_size(); i++) {
+      auto& msg = request->ops(i);
+      if (PREDICT_FALSE(msg.op_type() != PROXY_OP)) {
+        RET_RESPOND_ERROR_NOT_OK(Status::InvalidArgument(Substitute(
+            "proxy expected PROXY_OP but received opid {} of type {}",
+            OpIdToString(msg.id()),
+            OperationType_Name(msg.op_type()))));
+      }
+      if (i == 0) {
+        first_op_index = msg.id().index();
+      } else {
+        // TODO(mpercy): It would be nice not to require consecutive indexes in the batch.
+        // We should see if we can support it without a big perf penalty in IOPS.
+        if (PREDICT_FALSE(msg.id().index() != first_op_index + i)) {
           RET_RESPOND_ERROR_NOT_OK(Status::InvalidArgument(Substitute(
-              "proxy expected PROXY_OP but received opid {} of type {}",
+              "proxy requires consecutive indexes in batch, but received {} after index {}",
               OpIdToString(msg.id()),
-              OperationType_Name(msg.op_type()))));
-        }
-        if (i == 0) {
-          first_op_index = msg.id().index();
-        } else {
-          // TODO(mpercy): It would be nice not to require consecutive indexes in the batch.
-          // We should see if we can support it without a big perf penalty in IOPS.
-          if (PREDICT_FALSE(msg.id().index() != first_op_index + i)) {
-            RET_RESPOND_ERROR_NOT_OK(Status::InvalidArgument(Substitute(
-                "proxy requires consecutive indexes in batch, but received {} after index {}",
-                OpIdToString(msg.id()),
-                first_op_index + i - 1)));
-          }
+              first_op_index + i - 1)));
         }
       }
-      // Now we know that all ops we are reconstituting are consecutive.
+    }
 
-      // TODO(mpercy): Check whether we have the event in our LogCache yet. If not,
-      // wait and retry, or subscribe to the event being available. Most likely we
-      // should try be simple / greedy and wait until we have all events in the
-      // cache? Or we could be aggressive and fill what we can?
-
-      OpId preceding_id;
-      // TODO(mpercy): Add an API for ReadOps() to take number of ops we want,
-      // instead of the max batch size.
-      if (request->ops_size() > 0) {
-        RET_RESPOND_ERROR_NOT_OK(queue_->log_cache()->ReadOps(
-              first_op_index - 1,
-              max_batch_size,
-              read_context,
-              &messages,
-              &preceding_id));
-      }
-
-      // Exit retry loop if we managed to get what we wanted.
-      if (messages.size() >= request->ops_size()) {
-        break;
-      }
-
-      // Exit retry loop if we time out.
-      if (MonoTime::Now() > wal_wait_deadline) {
-        break;
-      }
-
-      // Else, sleep and retry.
-      SleepFor(MonoDelta::FromMilliseconds(5));
-
-    } while (true);
+    // Now we know that all ops we are reconstituting are consecutive.
+    //
+    // Block until the required op is available in local log. This might timeout
+    // based on FLAGS_raft_log_cache_proxy_wait_time_ms in which case we return
+    // an error
+    OpId preceding_id;
+    if (request->ops_size() > 0) {
+      RET_RESPOND_ERROR_NOT_OK(queue_->log_cache()->BlockingReadOps(
+            first_op_index - 1,
+            max_batch_size,
+            read_context,
+            FLAGS_raft_log_cache_proxy_wait_time_ms,
+            &messages,
+            &preceding_id));
+    }
 
     if (request->ops_size() > 0 && messages.size() == 0) {
       // We timed out and got nothing from the log cache.
