@@ -15,6 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/security/crypto.h"
+
+#include <openssl/crypto.h>
+
 #include <cstring>
 #include <string>
 #include <utility>
@@ -24,7 +28,6 @@
 
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/util/env.h"
@@ -92,6 +95,10 @@ class CryptoTest : public KuduTest {
 
 // Check input/output of RSA private keys in PEM format.
 TEST_F(CryptoTest, RsaPrivateKeyInputOutputPEM) {
+  // TODO(KUDU-3207): Skip when run in FIPS mode due to different private key format.
+  if (FIPS_mode()) {
+    return;
+  }
   PrivateKey key;
   ASSERT_OK(key.FromFile(private_key_file_, DataFormat::PEM));
   string key_str;
