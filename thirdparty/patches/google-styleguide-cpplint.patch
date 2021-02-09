@@ -109,6 +109,17 @@
  def CheckVlogArguments(filename, clean_lines, linenum, error):
    """Checks that VLOG() is only used for defining a logging level.
  
+@@ -3111,8 +3111,8 @@
+   line = clean_lines.elided[linenum]
+
+   # You shouldn't have spaces before your brackets, except maybe after
+-  # 'delete []' or 'return []() {};'
+-  if Search(r'\w\s+\[', line) and not Search(r'(?:delete|return)\s+\[', line):
++  # 'delete []', 'return []() {};', or 'auto [abc, ...] = ...;'.
++  if Search(r'\w\s+\[', line) and not Search(r'(?:auto&?|delete|return)\s+\[', line):
+     error(filename, linenum, 'whitespace/braces', 5,
+           'Extra space before [')
+
 @@ -5488,7 +5574,7 @@
      ('<stack>', ('stack',)),
      ('<string>', ('char_traits', 'basic_string',)),

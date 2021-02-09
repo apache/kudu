@@ -288,7 +288,7 @@ fetch_and_patch \
  $MUSTACHE_SOURCE \
  $MUSTACHE_PATCHLEVEL
 
-GSG_PATCHLEVEL=2
+GSG_PATCHLEVEL=3
 fetch_and_patch \
  google-styleguide-${GSG_VERSION}.tar.gz \
  $GSG_SOURCE \

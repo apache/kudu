@@ -22,6 +22,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -362,10 +363,7 @@ void TxnStatusManagerBuildingVisitor::VisitTransactionEntries(
   {
     // Lock the transaction while we build the participants.
     TransactionEntryLock txn_lock(txn.get(), LockMode::READ);
-    for (auto& participant_and_state : participants) {
-      const auto& prt_id = participant_and_state.first;
-      auto& prt_entry_pb = participant_and_state.second;
-
+    for (auto& [prt_id, prt_entry_pb] : participants) {
       // Register a participant entry for this transaction.
       auto prt = txn->GetOrCreateParticipant(prt_id);
       ParticipantEntryLock l(prt.get(), LockMode::WRITE);
@@ -493,10 +491,9 @@ Status TxnStatusManager::LoadFromTabletUnlocked() {
   unordered_map<int64_t, scoped_refptr<CommitTasks>> commits_in_flight;
   unordered_map<int64_t, scoped_refptr<CommitTasks>> new_tasks;
   if (txn_client) {
-    for (const auto& txn_id_and_entry : txns_by_id) {
-      const auto& txn_entry = txn_id_and_entry.second;
-      if (txn_id_and_entry.second->state() == TxnStatePB::COMMIT_IN_PROGRESS) {
-        const auto& txn_id = txn_id_and_entry.first;
+    for (const auto& [txn_id, txn_entry] : txns_by_id) {
+      const auto& state = txn_entry->state();
+      if (state == TxnStatePB::COMMIT_IN_PROGRESS) {
         new_tasks.emplace(txn_id,
             new CommitTasks(txn_id, txn_entry->GetParticipantIds(),
                             txn_client, commit_pool_, this));
@@ -509,15 +506,15 @@ Status TxnStatusManager::LoadFromTabletUnlocked() {
     txns_by_id_ = std::move(txns_by_id);
     commits_in_flight = std::move(commits_in_flight_);
     // Stop any previously on-going tasks.
-    for (const auto& txn_id_and_tasks : commits_in_flight) {
-      txn_id_and_tasks.second->stop();
+    for (const auto& [_, tasks] : commits_in_flight) {
+      tasks->stop();
     }
     commits_in_flight_ = std::move(new_tasks);
     if (!commits_in_flight_.empty()) {
       LOG(INFO) << Substitute("Starting $0 commit tasks", commits_in_flight_.size());
-    }
-    for (const auto& id_and_commit_task : commits_in_flight_) {
-      id_and_commit_task.second->BeginCommitAsync();
+      for (const auto& [_, tasks] : commits_in_flight_) {
+        tasks->BeginCommitAsync();
+      }
     }
   }
   return Status::OK();
@@ -843,12 +840,12 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
   if (PREDICT_TRUE(FLAGS_txn_schedule_background_tasks)) {
     auto participant_ids = txn->GetParticipantIds();
     std::unique_lock<simple_spinlock> l(lock_);
-    auto iter_and_emplaced = commits_in_flight_.emplace(txn_id,
+    auto [map_iter, emplaced] = commits_in_flight_.emplace(txn_id,
         new CommitTasks(txn_id, std::move(participant_ids),
                         txn_client, commit_pool_, this));
     l.unlock();
-    if (iter_and_emplaced.second) {
-      iter_and_emplaced.first->second->BeginCommitAsync();
+    if (emplaced) {
+      map_iter->second->BeginCommitAsync();
     }
   }
   txn_lock.Commit();
@@ -1074,11 +1071,10 @@ void TxnStatusManager::AbortStaleTransactions() {
 ParticipantIdsByTxnId TxnStatusManager::GetParticipantsByTxnIdForTests() const {
   ParticipantIdsByTxnId ret;
   std::lock_guard<simple_spinlock> l(lock_);
-  for (const auto& id_and_txn : txns_by_id_) {
-    const auto& txn = id_and_txn.second;
+  for (const auto& [id, txn] : txns_by_id_) {
     vector<string> prt_ids = txn->GetParticipantIds();
     std::sort(prt_ids.begin(), prt_ids.end());
-    EmplaceOrDie(&ret, id_and_txn.first, std::move(prt_ids));
+    EmplaceOrDie(&ret, id, std::move(prt_ids));
   }
   return ret;
 }
