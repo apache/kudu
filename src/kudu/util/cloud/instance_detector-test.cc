@@ -29,6 +29,7 @@
 #include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/status.h"
 
+DECLARE_string(cloud_curl_dns_servers_for_testing);
 DECLARE_uint32(cloud_metadata_server_request_timeout_ms);
 
 using std::string;
@@ -104,6 +105,10 @@ TEST(InstanceDetectorTest, Basic) {
 TEST(InstanceDetectorTest, Timeout) {
   // Set very short interval for the timeout.
   FLAGS_cloud_metadata_server_request_timeout_ms = 1;
+  // Configure a bad DNS server to ensure a timeout,
+  // even when run on fast cloud instances.
+  FLAGS_cloud_curl_dns_servers_for_testing = "192.0.2.0";
+
   InstanceDetector detector;
   unique_ptr<InstanceMetadata> metadata;
   const auto s = detector.Detect(&metadata);

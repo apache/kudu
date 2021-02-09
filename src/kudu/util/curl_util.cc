@@ -195,6 +195,11 @@ Status EasyCurl::DoRequest(const string& url,
     CURL_RETURN_NOT_OK(curl_easy_setopt(
         curl_, CURLOPT_TIMEOUT_MS, timeout_.ToMilliseconds()));
   }
+
+  if (!dns_servers_.empty()) {
+    CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_DNS_SERVERS, dns_servers_.c_str()));
+  }
+
   CURL_RETURN_NOT_OK(curl_easy_perform(curl_));
   long val; // NOLINT(*) curl wants a long
   CURL_RETURN_NOT_OK(curl_easy_getinfo(curl_, CURLINFO_NUM_CONNECTS, &val));

@@ -79,6 +79,13 @@ class EasyCurl {
     timeout_ = t;
   }
 
+  // Set the list of DNS servers to be used instead of the system default.
+  // The format of the dns servers option is:
+  //   host[:port][,host[:port]]...
+  void set_dns_servers(std::string dns_servers) {
+    dns_servers_ = std::move(dns_servers);
+  }
+
   Status set_auth(CurlAuthType auth_type, std::string username = "", std::string password = "") {
     auth_type_ = std::move(auth_type);
     username_ = std::move(username);
@@ -152,6 +159,8 @@ class EasyCurl {
   bool fail_on_http_error_ = false;
 
   MonoDelta timeout_;
+
+  std::string dns_servers_;
 
   int num_connects_ = 0;
 

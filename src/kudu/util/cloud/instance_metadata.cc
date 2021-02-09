@@ -103,6 +103,11 @@ DEFINE_string(cloud_openstack_metadata_url,
 TAG_FLAG(cloud_openstack_metadata_url, advanced);
 TAG_FLAG(cloud_openstack_metadata_url, runtime);
 
+DEFINE_string(cloud_curl_dns_servers_for_testing, "",
+          "Set the list of DNS servers to be used instead of the system default.");
+TAG_FLAG(cloud_curl_dns_servers_for_testing, hidden);
+TAG_FLAG(cloud_curl_dns_servers_for_testing, runtime);
+
 DEFINE_validator(cloud_metadata_server_request_timeout_ms,
                  [](const char* name, const uint32_t val) {
   if (val == 0) {
@@ -169,6 +174,11 @@ Status InstanceMetadata::Fetch(const string& url,
   EasyCurl curl;
   curl.set_timeout(timeout);
   curl.set_fail_on_http_error(true);
+
+  if (PREDICT_FALSE(!FLAGS_cloud_curl_dns_servers_for_testing.empty())) {
+    curl.set_dns_servers(FLAGS_cloud_curl_dns_servers_for_testing);
+  }
+
   faststring resp;
   RETURN_NOT_OK(curl.FetchURL(url, &resp, headers));
   if (out) {
