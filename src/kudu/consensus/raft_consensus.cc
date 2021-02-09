@@ -4024,6 +4024,11 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
   context->RespondSuccess();
 }
 
+Status RaftConsensus::SetCompressionCodec(const std::string& codec) {
+  LockGuard l(lock_);
+  return queue_->log_cache()->SetCompressionCodec(codec);
+}
+
 ////////////////////////////////////////////////////////////////////////
 // ConsensusBootstrapInfo
 ////////////////////////////////////////////////////////////////////////

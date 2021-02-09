@@ -32,6 +32,7 @@ import "kudu/consensus/metadata.proto";
 import "kudu/consensus/opid.proto";
 import "kudu/consensus/replica_management.proto";
 import "kudu/rpc/rpc_header.proto";
+import "kudu/util/compression/compression.proto";
 // NOTE: anirbanr-fb
 //import "kudu/tablet/metadata.proto";
 //import "kudu/tablet/tablet.proto";
@@ -254,6 +255,13 @@ message ChangeConfigResponsePB {
 // Payload for replicate message (for write requests)
 message WritePayloadPB {
   optional bytes payload = 1;
+
+  // Compression codec used to compress payload
+  optional CompressionType compression_codec = 2 [ default = NO_COMPRESSION ];
+
+  // Uncompressed size of payload. Should be present when
+  // compression_codec != NO_COMPRESSION
+  optional int64 uncompressed_size = 3;
 }
 
 // A Replicate message, sent to replicas by leader to indicate this operation must
