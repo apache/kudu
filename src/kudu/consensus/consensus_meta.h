@@ -108,6 +108,12 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   const RaftConfigPB& CommittedConfig() const;
   void set_committed_config(const RaftConfigPB& config);
 
+  // Same as above but dont update active role
+  void set_committed_config_raw(const RaftConfigPB &config);
+
+  // Getter for Voter Distribution map
+  Status voter_distribution(std::map<std::string, int32> *vd) const;
+
   // Returns whether a pending configuration is set.
   bool has_pending_config() const;
 

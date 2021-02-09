@@ -192,6 +192,22 @@ void ConsensusMetadata::set_committed_config(const RaftConfigPB& config) {
   }
 }
 
+void ConsensusMetadata::set_committed_config_raw(const RaftConfigPB &config) {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  *pb_.mutable_committed_config() = config;
+}
+
+kudu::Status ConsensusMetadata::voter_distribution(std::map<std::string, int32> *vd) const {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  if (!pb_.has_committed_config()) {
+    return kudu::Status::NotFound("Committed config not present to get voter distribution");
+  }
+  vd->insert(
+      pb_.committed_config().voter_distribution().begin(),
+      pb_.committed_config().voter_distribution().end());
+  return kudu::Status::OK();
+}
+
 bool ConsensusMetadata::has_pending_config() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   return has_pending_config_;
