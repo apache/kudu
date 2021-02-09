@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -88,6 +89,7 @@ using kudu::transactions::TxnStatePB;
 using kudu::transactions::TxnStatusEntryPB;
 using kudu::transactions::TxnStatusTablet;
 using kudu::transactions::TxnSystemClient;
+using std::atomic;
 using std::map;
 using std::string;
 using std::thread;
@@ -658,6 +660,92 @@ TEST_F(TxnStatusTableITest, TestSystemClientConcurrentCalls) {
   for (const auto& s : statuses) {
     EXPECT_OK(s);
   }
+}
+
+// Check the operation of the CheckOpenTxnStatusTable() method; make sure
+// it's possible to register txn participants even with stale information
+// on the range parititions.
+TEST_F(TxnStatusTableITest, CheckOpenTxnStatusTable) {
+  static constexpr auto kPartitionWidth = 1000;
+  static constexpr const char* const kUser = "CheckOpen";
+
+  {
+    // At this point, the transaction status table doesn't exist yet.
+    auto s = txn_sys_client_->CheckOpenTxnStatusTable();
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+
+  ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(kPartitionWidth));
+  ASSERT_OK(txn_sys_client_->CheckOpenTxnStatusTable());
+  const auto* sys_table_ptr_ref = txn_sys_client_->txn_status_table().get();
+
+  cluster_->mini_master()->Shutdown();
+  // Now, once CheckOpenTxnStatusTable() succeeded, there should be no RPC calls
+  // to the cluster upon subsequent invocations, and CheckOpenTxnStatusTable()
+  // should return Status::OK(), keeping the original shared pointer.
+  ASSERT_OK(txn_sys_client_->CheckOpenTxnStatusTable());
+  const auto* sys_table_ptr = txn_sys_client_->txn_status_table().get();
+  ASSERT_EQ(sys_table_ptr_ref, sys_table_ptr);
+
+  ASSERT_OK(cluster_->mini_master()->Restart());
+  ASSERT_OK(txn_sys_client_->BeginTransaction(0, kUser));
+
+  static constexpr auto kNewTxnId = kPartitionWidth + 1;
+  {
+    // Behind the scenes, create tablets for the next transaction IDs range
+    // and start a new transaction.
+    unique_ptr<TxnSystemClient> tsc;
+    ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &tsc));
+    // Re-open the system table.
+    ASSERT_OK(tsc->OpenTxnStatusTable());
+    ASSERT_OK(tsc->AddTxnStatusTableRange(kPartitionWidth, 2 * kPartitionWidth));
+    ASSERT_OK(tsc->BeginTransaction(kNewTxnId, kUser));
+  }
+
+  // It would be great if it were possible to use the same client which was not
+  // aware of a new range in the txn status table to register a participant
+  // in a transaction with ID in the new range. This assumes the client would
+  // automatically re-fetch metadata from masters upon getting a request
+  // for a non-covered range. However, this isn't implemented yet.
+  //
+  // TODO(aserbin): change this to expected Status::OK() after implementing that
+  auto s = txn_sys_client_->RegisterParticipant(
+      kNewTxnId, "txn_participant", kUser, MonoDelta::FromSeconds(10));
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "No tablet covering the requested range partition");
+}
+
+TEST_F(TxnStatusTableITest, CheckOpenTxnStatusTableConcurrent) {
+  static constexpr auto kNumThreads = 8;
+  static constexpr const char* const kUser = "CheckOpenConcurrent";
+  static constexpr const char* const kParticipant = "txn_participant";
+
+  ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(2 * kNumThreads));
+  atomic<size_t> success_count_begin = 0;
+  atomic<size_t> success_count_register = 0;
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  for (int idx = 0; idx < kNumThreads; ++idx) {
+    threads.emplace_back([&] {
+      CHECK_OK(txn_sys_client_->CheckOpenTxnStatusTable());
+      // The call below is of "best effort" approach: the essence here is just
+      // to make concurrent requests to the txn system client once
+      // CheckOpenTxnStatusTable() has been called.
+      auto s = txn_sys_client_->BeginTransaction(0, kUser);
+      if (s.ok()) {
+        ++success_count_begin;
+      }
+      s = txn_sys_client_->RegisterParticipant(
+          0, kParticipant, kUser, MonoDelta::FromSeconds(10));
+      if (s.ok()) {
+        ++success_count_register;
+      }
+    });
+  }
+  std::for_each(threads.begin(), threads.end(), [&] (thread& t) { t.join(); });
+  ASSERT_EQ(1, success_count_begin);
+  ASSERT_LE(1, success_count_register);
 }
 
 class MultiServerTxnStatusTableITest : public TxnStatusTableITest {

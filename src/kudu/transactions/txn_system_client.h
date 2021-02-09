@@ -45,6 +45,7 @@ class KuduTable;
 namespace itest {
 class TxnStatusTableITest;
 class TxnStatusTableITest_TestProtectCreateAndAlter_Test;
+class TxnStatusTableITest_CheckOpenTxnStatusTable_Test;
 } // namespace itest
 
 namespace rpc {
@@ -137,6 +138,11 @@ class TxnSystemClient {
   // masters.
   Status OpenTxnStatusTable();
 
+  // Check if the transaction status table is already open, returning
+  // Status::OK() if so. Otherwise, open the transaction status table. In the
+  // latter case, the result status of opening the table is returned.
+  Status CheckOpenTxnStatusTable();
+
   // Sends an RPC to the leader of the given tablet to participate in a
   // transaction.
   //
@@ -155,6 +161,7 @@ class TxnSystemClient {
 
   friend class itest::TxnStatusTableITest;
   FRIEND_TEST(itest::TxnStatusTableITest, TestProtectCreateAndAlter);
+  FRIEND_TEST(itest::TxnStatusTableITest, CheckOpenTxnStatusTable);
 
   explicit TxnSystemClient(client::sp::shared_ptr<client::KuduClient> client)
       : client_(std::move(client)) {}
