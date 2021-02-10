@@ -33,5 +33,5 @@ find_library(CRCUTIL_STATIC_LIB libcrcutil.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(CRCUTIL REQUIRED_VARS
+find_package_handle_standard_args(Crcutil REQUIRED_VARS
   CRCUTIL_SHARED_LIB CRCUTIL_STATIC_LIB CRCUTIL_INCLUDE_DIR)

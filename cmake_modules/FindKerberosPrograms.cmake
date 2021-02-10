@@ -34,5 +34,5 @@ foreach(bin ${bins})
                /usr/lib/mit/sbin)
 endforeach(bin)
 
-find_package_handle_standard_args(Kerberos REQUIRED_VARS ${bins}
+find_package_handle_standard_args(KerberosPrograms REQUIRED_VARS ${bins}
   FAIL_MESSAGE "Kerberos binaries not found: security tests will fail")

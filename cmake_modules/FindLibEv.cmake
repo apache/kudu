@@ -34,5 +34,5 @@ find_library(LIBEV_STATIC_LIB libev.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(LIBEV REQUIRED_VARS
+find_package_handle_standard_args(LibEv REQUIRED_VARS
   LIBEV_SHARED_LIB LIBEV_STATIC_LIB LIBEV_INCLUDE_DIR)

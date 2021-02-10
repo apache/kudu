@@ -162,6 +162,6 @@ find_program(THRIFT_EXECUTABLE thrift
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(THRIFT REQUIRED_VARS
+find_package_handle_standard_args(Thrift REQUIRED_VARS
   THRIFT_SHARED_LIBRARY THRIFT_STATIC_LIBRARY
   THRIFT_INCLUDE_DIR THRIFT_EXECUTABLE)

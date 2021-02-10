@@ -34,5 +34,5 @@ find_library(ZLIB_STATIC_LIB libz.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(ZLIB REQUIRED_VARS
+find_package_handle_standard_args(Zlib REQUIRED_VARS
   ZLIB_SHARED_LIB ZLIB_STATIC_LIB ZLIB_INCLUDE_DIR)

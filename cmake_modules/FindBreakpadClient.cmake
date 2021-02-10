@@ -32,5 +32,5 @@ find_library(BREAKPAD_CLIENT_SHARED_LIB breakpad_client
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(BREAKPAD_CLIENT REQUIRED_VARS
+find_package_handle_standard_args(BreakpadClient REQUIRED_VARS
   BREAKPAD_CLIENT_SHARED_LIB BREAKPAD_CLIENT_STATIC_LIB BREAKPAD_CLIENT_INCLUDE_DIR)

@@ -30,5 +30,5 @@ find_library(MUSTACHE_STATIC_LIB libmustache.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(MUSTACHE REQUIRED_VARS
+find_package_handle_standard_args(Mustache REQUIRED_VARS
   MUSTACHE_STATIC_LIB MUSTACHE_INCLUDE_DIR)

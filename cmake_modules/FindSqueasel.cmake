@@ -30,5 +30,5 @@ find_library(SQUEASEL_STATIC_LIB libsqueasel.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(SQUEASEL REQUIRED_VARS
+find_package_handle_standard_args(Squeasel REQUIRED_VARS
   SQUEASEL_STATIC_LIB SQUEASEL_INCLUDE_DIR)

@@ -34,5 +34,5 @@ find_library(GFLAGS_STATIC_LIB libgflags.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(GFLAGS REQUIRED_VARS
+find_package_handle_standard_args(GFlags REQUIRED_VARS
   GFLAGS_SHARED_LIB GFLAGS_STATIC_LIB GFLAGS_INCLUDE_DIR)

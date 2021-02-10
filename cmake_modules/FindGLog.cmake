@@ -34,5 +34,5 @@ find_library(GLOG_STATIC_LIB libglog.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(GLOG REQUIRED_VARS
+find_package_handle_standard_args(GLog REQUIRED_VARS
   GLOG_SHARED_LIB GLOG_STATIC_LIB GLOG_INCLUDE_DIR)

@@ -42,5 +42,5 @@ find_library(BOOST_DATE_TIME_STATIC_LIB libboost_date_time.a
     NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(BOOST_DATE_TIME REQUIRED_VARS
+find_package_handle_standard_args(KuduBoost REQUIRED_VARS
     BOOST_DATE_TIME_SHARED_LIB BOOST_DATE_TIME_STATIC_LIB BOOST_INCLUDE_DIR)

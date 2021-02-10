@@ -37,5 +37,5 @@ set(CMAKE_FIND_LIBRARY_SUFFIXES ${__CURRENT_FIND_LIBRARY_SUFFIXES})
 unset(__CURRENT_FIND_LIBRARY_SUFFIXES)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(YAML REQUIRED_VARS
+find_package_handle_standard_args(Yaml REQUIRED_VARS
   YAML_STATIC_LIB YAML_SHARED_LIB YAML_INCLUDE_DIR)

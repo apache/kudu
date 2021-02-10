@@ -38,5 +38,5 @@ find_path(CYRUS_SASL_INCLUDE_DIR sasl/sasl.h)
 find_library(CYRUS_SASL_SHARED_LIB sasl2)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(CYRUS_SASL REQUIRED_VARS
+find_package_handle_standard_args(CyrusSASL REQUIRED_VARS
   CYRUS_SASL_SHARED_LIB CYRUS_SASL_INCLUDE_DIR)

@@ -31,5 +31,5 @@ find_library(BITSHUFFLE_STATIC_LIB bitshuffle.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(BITSHUFFLE REQUIRED_VARS
+find_package_handle_standard_args(Bitshuffle REQUIRED_VARS
   BITSHUFFLE_STATIC_LIB BITSHUFFLE_INCLUDE_DIR)

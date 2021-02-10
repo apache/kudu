@@ -33,5 +33,5 @@ find_library(UNWIND_STATIC_LIB libunwind.a
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(UNWIND REQUIRED_VARS
+find_package_handle_standard_args(LibUnwind REQUIRED_VARS
   UNWIND_SHARED_LIB UNWIND_STATIC_LIB UNWIND_INCLUDE_DIR)

@@ -30,5 +30,5 @@ find_path(GSSAPI_INCLUDE_DIR gssapi/gssapi.h)
 find_library(GSSAPI_SHARED_LIB gssapi_krb5)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(GSSAPI_VARS
+find_package_handle_standard_args(GSSAPI
   GSSAPI_SHARED_LIB GSSAPI_INCLUDE_DIR)

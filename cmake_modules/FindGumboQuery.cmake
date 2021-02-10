@@ -37,5 +37,5 @@ set(CMAKE_FIND_LIBRARY_SUFFIXES ${__CURRENT_FIND_LIBRARY_SUFFIXES})
 unset(__CURRENT_FIND_LIBRARY_SUFFIXES)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(GUMBO_QUERY REQUIRED_VARS
+find_package_handle_standard_args(GumboQuery REQUIRED_VARS
   GUMBO_QUERY_STATIC_LIB GUMBO_QUERY_SHARED_LIB GUMBO_QUERY_INCLUDE_DIR)

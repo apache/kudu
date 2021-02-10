@@ -53,5 +53,5 @@ find_library(GMOCK_STATIC_LIBRARY libgmock.a
 
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(GMOCK REQUIRED_VARS
+find_package_handle_standard_args(GMock REQUIRED_VARS
   GMOCK_SHARED_LIBRARY GMOCK_STATIC_LIBRARY GMOCK_INCLUDE_DIR GTEST_INCLUDE_DIR)
