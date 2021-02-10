@@ -89,11 +89,17 @@ fixup_libtool() {
 }
 
 build_cmake() {
+  # Use system curl if it is available: this shortens build times a bit.
+  local use_system_curl=""
+  if pkg-config --exists libcurl; then
+    use_system_curl="--system-curl"
+  fi
   CMAKE_BDIR=$TP_BUILD_DIR/$CMAKE_NAME$MODE_SUFFIX
   mkdir -p $CMAKE_BDIR
   pushd $CMAKE_BDIR
   $CMAKE_SOURCE/bootstrap \
     --prefix=$PREFIX \
+    $use_system_curl \
     --parallel=$PARALLEL -- \
     -DBUILD_TESTING=OFF
   # Unfortunately, cmake's bootstrap always uses Makefiles
