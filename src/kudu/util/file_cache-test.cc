@@ -115,7 +115,7 @@ class FileCacheTest : public KuduTest {
 };
 
 typedef ::testing::Types<RWFile, RandomAccessFile> FileTypes;
-TYPED_TEST_CASE(FileCacheTest, FileTypes);
+TYPED_TEST_SUITE(FileCacheTest, FileTypes);
 
 TYPED_TEST(FileCacheTest, TestBasicOperations) {
   // Open a non-existent file.

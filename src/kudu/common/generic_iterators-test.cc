@@ -830,6 +830,6 @@ TEST_P(PredicateEffectivenessTest, MaterializingIterator) {
   VerifyPredicateEffectiveness(all_values, mat_iter);
 }
 
-INSTANTIATE_TEST_CASE_P(, PredicateEffectivenessTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(, PredicateEffectivenessTest, ::testing::Bool());
 
 } // namespace kudu

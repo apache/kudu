@@ -375,7 +375,7 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GPERFTOOLS" ]; then
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GMOCK" ]; then
-  build_gmock
+  build_gmock_gtest
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_PROTOBUF" ]; then
@@ -561,7 +561,7 @@ if [ -n "$F_TSAN" -o -n "$F_GLOG" ]; then
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_GMOCK" ]; then
-  build_gmock
+  build_gmock_gtest
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_SNAPPY" ]; then

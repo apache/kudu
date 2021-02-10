@@ -509,7 +509,7 @@ typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
 #else
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif
-TYPED_TEST_CASE(BlockManagerStressTest, BlockManagers);
+TYPED_TEST_SUITE(BlockManagerStressTest, BlockManagers);
 
 TYPED_TEST(BlockManagerStressTest, StressTest) {
   OverrideFlagForSlowTests("test_duration_secs", "30");

@@ -779,9 +779,9 @@ class UpdaterThreads {
 // never hit disk.
 class Kudu969Test : public TsRecoveryITest {
 };
-INSTANTIATE_TEST_CASE_P(DifferentFaultPoints,
-                        Kudu969Test,
-                        ::testing::Values("fault_crash_before_flush_tablet_meta_after_compaction",
+INSTANTIATE_TEST_SUITE_P(DifferentFaultPoints,
+                         Kudu969Test,
+                         ::testing::Values("fault_crash_before_flush_tablet_meta_after_compaction",
                                           "fault_crash_before_flush_tablet_meta_after_flush_mrs"));
 
 TEST_P(Kudu969Test, Test) {
@@ -857,7 +857,7 @@ TEST_P(Kudu969Test, Test) {
 
 // Passes block manager types to the recovery test so we get some extra
 // testing to cover non-default block manager types.
-INSTANTIATE_TEST_CASE_P(BlockManagerType, TsRecoveryITest,
-    ::testing::ValuesIn(BlockManager::block_manager_types()));
+INSTANTIATE_TEST_SUITE_P(BlockManagerType, TsRecoveryITest,
+                         ::testing::ValuesIn(BlockManager::block_manager_types()));
 
 } // namespace kudu

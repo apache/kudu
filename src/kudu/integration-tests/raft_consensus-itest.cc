@@ -2458,8 +2458,8 @@ class RaftConsensusParamReplicationModesITest :
     public RaftConsensusITest,
     public ::testing::WithParamInterface<bool> {
 };
-INSTANTIATE_TEST_CASE_P(, RaftConsensusParamReplicationModesITest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(, RaftConsensusParamReplicationModesITest,
+                         ::testing::Bool());
 
 // Regression test for KUDU-1735, a crash in the case where a pending
 // config change operation is aborted during tablet deletion when that config

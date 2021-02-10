@@ -24,6 +24,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -279,7 +280,7 @@ TEST_F(TestRowSetTree, TestTreeRandomized) {
 class TestRowSetTreePerformance : public TestRowSetTree,
                                   public testing::WithParamInterface<std::tuple<int, int>> {
 };
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     Parameters, TestRowSetTreePerformance,
     testing::Combine(
         // Number of rowsets.

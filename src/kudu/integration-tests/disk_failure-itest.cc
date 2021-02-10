@@ -20,6 +20,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -162,7 +163,7 @@ TEST_P(DiskFailureITest, TestFailDuringServerStartup) {
                             write_workload.batches_completed()));
 }
 
-INSTANTIATE_TEST_CASE_P(DiskFailure, DiskFailureITest,
+INSTANTIATE_TEST_SUITE_P(DiskFailure, DiskFailureITest,
     ::testing::Combine(
         ::testing::ValuesIn(BlockManager::block_manager_types()),
         ::testing::Bool()));
@@ -291,8 +292,8 @@ class TabletServerDiskErrorITest : public DiskErrorITestBase {
   }
 };
 
-INSTANTIATE_TEST_CASE_P(TabletServerDiskError, TabletServerDiskErrorITest,
-                        ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE));
+INSTANTIATE_TEST_SUITE_P(TabletServerDiskError, TabletServerDiskErrorITest,
+                         ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE));
 
 TEST_P(TabletServerDiskErrorITest, TestFailOnBootstrap) {
   // Inject the errors into one of the non-empty servers.
@@ -420,15 +421,15 @@ TEST_P(CompactionsAndDeletionsFailureITest, TestRecovery) {
   NO_FATALS(v.CheckCluster());
 }
 
-INSTANTIATE_TEST_CASE_P(ErrorType, CompactionsAndDeletionsFailureITest,
-                        ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE,
-                                          ErrorType::KUDU_2233_CORRUPTION));
+INSTANTIATE_TEST_SUITE_P(ErrorType, CompactionsAndDeletionsFailureITest,
+                         ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE,
+                                           ErrorType::KUDU_2233_CORRUPTION));
 
 class MasterDiskErrorITest : public DiskErrorITestBase {
 };
 
-INSTANTIATE_TEST_CASE_P(MasterDiskError, MasterDiskErrorITest,
-                        ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE));
+INSTANTIATE_TEST_SUITE_P(MasterDiskError, MasterDiskErrorITest,
+                         ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE));
 
 // Test that triggers disk error in master during maintenance manager operations like compaction.
 TEST_P(MasterDiskErrorITest, TestMasterDiskFailure) {

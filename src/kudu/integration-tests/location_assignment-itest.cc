@@ -20,6 +20,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -298,8 +299,8 @@ TEST_P(TsLocationAssignmentITest, LocationMappingCacheOnTabletServerRestart) {
   });
 }
 
-INSTANTIATE_TEST_CASE_P(, TsLocationAssignmentITest,
-    ::testing::Combine(::testing::Values(1, 3),
-                       ::testing::Values(1, 8, 16, 32)));
+INSTANTIATE_TEST_SUITE_P(, TsLocationAssignmentITest,
+                         ::testing::Combine(::testing::Values(1, 3),
+                                            ::testing::Values(1, 8, 16, 32)));
 
 } // namespace kudu

@@ -496,7 +496,7 @@ class AuthTokenIssuingTest :
     public ::testing::WithParamInterface<AuthTokenIssuingTestParams> {
 };
 
-INSTANTIATE_TEST_CASE_P(, AuthTokenIssuingTest, ::testing::ValuesIn(
+INSTANTIATE_TEST_SUITE_P(, AuthTokenIssuingTest, ::testing::ValuesIn(
     vector<AuthTokenIssuingTestParams>{
       // The following 3 test cases cover passing authn token over an
       // encrypted loopback connection.
@@ -631,7 +631,7 @@ class ConnectToFollowerMasterTest :
     public SecurityITest,
     public ::testing::WithParamInterface<ConnectToFollowerMasterTestParams> {
 };
-INSTANTIATE_TEST_CASE_P(, ConnectToFollowerMasterTest, ::testing::ValuesIn(
+INSTANTIATE_TEST_SUITE_P(, ConnectToFollowerMasterTest, ::testing::ValuesIn(
     vector<ConnectToFollowerMasterTestParams>{
       { "required", "optional", },
       { "required", "required", },

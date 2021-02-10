@@ -606,8 +606,8 @@ TEST_P(TimestampPropagationParamTest, Test) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(Params, TimestampPropagationParamTest,
-                        testing::ValuesIn(read_modes));
+INSTANTIATE_TEST_SUITE_P(Params, TimestampPropagationParamTest,
+                         testing::ValuesIn(read_modes));
 
 // Tests the results of creating scan tokens, altering the columns being
 // scanned, and then executing the scan tokens.

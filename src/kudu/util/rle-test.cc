@@ -593,7 +593,7 @@ class TestRleLiteralGetNextRun : public KuduTest {
 };
 
 typedef ::testing::Types<int8_t, int16_t, int32_t, int64_t> IntDataTypes;
-TYPED_TEST_CASE(TestRleLiteralGetNextRun, IntDataTypes);
+TYPED_TEST_SUITE(TestRleLiteralGetNextRun, IntDataTypes);
 
 TYPED_TEST(TestRleLiteralGetNextRun, RleGetNextRunIntDataTypes) {
   this->RunTest();

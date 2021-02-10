@@ -434,9 +434,9 @@ class TestCFileBothCacheMemoryTypes :
   }
 };
 
-INSTANTIATE_TEST_CASE_P(CacheMemoryTypes, TestCFileBothCacheMemoryTypes,
-                        ::testing::Values(Cache::MemoryType::DRAM,
-                                          Cache::MemoryType::NVM));
+INSTANTIATE_TEST_SUITE_P(CacheMemoryTypes, TestCFileBothCacheMemoryTypes,
+                         ::testing::Values(Cache::MemoryType::DRAM,
+                                           Cache::MemoryType::NVM));
 
 template <DataType type>
 void CopyOne(CFileIterator* it, typename TypeTraits<type>::cpp_type* ret, RowBlockMemory* mem) {
@@ -601,7 +601,7 @@ typedef ::testing::Types<UInt8DataGenerator<false>,
                          Int128DataGenerator<false>,
                          FPDataGenerator<FLOAT, false>,
                          FPDataGenerator<DOUBLE, false> > MyTypes;
-TYPED_TEST_CASE(BitShuffleTest, MyTypes);
+TYPED_TEST_SUITE(BitShuffleTest, MyTypes);
 TYPED_TEST(BitShuffleTest, TestFixedSizeReadWriteBitShuffle) {
   this->TestBitShuffle();
 }
@@ -1109,8 +1109,8 @@ class TestCFileDifferentCodecs : public TestCFile,
                                  public testing::WithParamInterface<CompressionType> {
 };
 
-INSTANTIATE_TEST_CASE_P(Codecs, TestCFileDifferentCodecs,
-                        ::testing::Values(NO_COMPRESSION, SNAPPY, LZ4, ZLIB));
+INSTANTIATE_TEST_SUITE_P(Codecs, TestCFileDifferentCodecs,
+                         ::testing::Values(NO_COMPRESSION, SNAPPY, LZ4, ZLIB));
 
 // Read/write a file with uncompressible data (random int32s)
 TEST_P(TestCFileDifferentCodecs, TestUncompressible) {

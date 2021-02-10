@@ -222,8 +222,8 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
 
 ClientTestBehavior test_type[] = { kWrite, kRead, kReadWrite };
 
-INSTANTIATE_TEST_CASE_P(ClientBehavior, ClientFailoverParamITest,
-                        ::testing::ValuesIn(test_type));
+INSTANTIATE_TEST_SUITE_P(ClientBehavior, ClientFailoverParamITest,
+                         ::testing::ValuesIn(test_type));
 
 
 class ClientFailoverITest : public ExternalMiniClusterITestBase {

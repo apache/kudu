@@ -26,6 +26,7 @@ set(MINI_CLUSTER_LIBS
   gflags
   glog
   gmock
+  gtest
   gutil
   krpc
   kudu_client

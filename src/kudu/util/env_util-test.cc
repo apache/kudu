@@ -108,7 +108,7 @@ TEST_F(EnvUtilTest, TestCreateDirsRecursively) {
 
   // Relative path.
   ASSERT_OK(env_->ChangeDir(test_dir_)); // Change to test dir to keep CWD clean.
-  string rel_base = Substitute("$0-$1", CURRENT_TEST_CASE_NAME(), CURRENT_TEST_NAME());
+  string rel_base = Substitute("$0-$1", CURRENT_TEST_SUITE_NAME(), CURRENT_TEST_NAME());
   ASSERT_FALSE(env_->FileExists(rel_base));
   path = JoinPathSegments(rel_base, "x/y/z");
   ASSERT_OK(CreateDirsRecursively(env_, path));

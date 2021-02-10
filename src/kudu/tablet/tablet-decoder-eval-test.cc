@@ -327,10 +327,10 @@ TEST_P(TabletDecoderEvalTest, MultipleColumns) {
   TestMultipleColumnPredicates(10, 3, 5);
 }
 
-INSTANTIATE_TEST_CASE_P(DecoderEvaluation, TabletDecoderEvalTest, ::testing::Values(EMPTY,
-                                                                                    SMALL,
-                                                                                    MEDIUM,
-                                                                                    LARGE));
+INSTANTIATE_TEST_SUITE_P(DecoderEvaluation, TabletDecoderEvalTest, ::testing::Values(EMPTY,
+                                                                                     SMALL,
+                                                                                     MEDIUM,
+                                                                                     LARGE));
 
 }   // namespace tablet
 }   // namespace kudu

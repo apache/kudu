@@ -54,7 +54,7 @@ class AtomicIntTest : public KuduTest {
 };
 
 typedef ::testing::Types<int32_t, int64_t, uint32_t, uint64_t> IntTypes;
-TYPED_TEST_CASE(AtomicIntTest, IntTypes);
+TYPED_TEST_SUITE(AtomicIntTest, IntTypes);
 
 TYPED_TEST(AtomicIntTest, LoadStore) {
   for (const MemoryOrder mem_order : this->acquire_release_) {

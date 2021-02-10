@@ -20,6 +20,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -729,7 +730,7 @@ class MasterAuthzITest : public MasterAuthzITestBase,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(AuthzProviders, MasterAuthzITest,
+INSTANTIATE_TEST_SUITE_P(AuthzProviders, MasterAuthzITest,
     ::testing::Values(kRanger),
     [] (const testing::TestParamInfo<MasterAuthzITest::ParamType>& info) {
       return HarnessEnumToString(info.param);
@@ -984,7 +985,7 @@ class MasterAuthzOwnerITest : public MasterAuthzITestBase,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AuthzProvidersWithOwner, MasterAuthzOwnerITest,
     ::testing::Combine(::testing::Values(kRanger),
                        ::testing::Values(kTestUser, "{OWNER}")),
@@ -1208,7 +1209,7 @@ static const AuthzDescriptor kAuthzCombinations[] = {
       kTableName,
     },
 };
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AuthzCombinations, TestAuthzTable,
     ::testing::Combine(::testing::Values(kRanger),
                        ::testing::ValuesIn(kAuthzCombinations),
@@ -1301,14 +1302,13 @@ static const AuthzFuncs kAuthzFuncCombinations[] = {
     },
 };
 
-INSTANTIATE_TEST_CASE_P(AuthzFuncCombinations,
-                        AuthzErrorHandlingTest,
-                        ::testing::Combine(
-                            ::testing::Values(kRanger),
-                            ::testing::ValuesIn(kAuthzFuncCombinations)),
-                        [] (const testing::TestParamInfo<AuthzErrorHandlingTest::ParamType>& info) {
-                          return Substitute("$0_$1", HarnessEnumToString(std::get<0>(info.param)),
-                                            std::get<1>(info.param).description);
-                        });
+INSTANTIATE_TEST_SUITE_P(AuthzFuncCombinations,
+                         AuthzErrorHandlingTest,
+                         ::testing::Combine(::testing::Values(kRanger),
+                                            ::testing::ValuesIn(kAuthzFuncCombinations)),
+                         [](const testing::TestParamInfo<AuthzErrorHandlingTest::ParamType>& info) {
+                           return Substitute("$0_$1", HarnessEnumToString(std::get<0>(info.param)),
+                                             std::get<1>(info.param).description);
+                         });
 
 } // namespace kudu

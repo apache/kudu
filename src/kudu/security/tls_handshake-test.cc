@@ -143,7 +143,7 @@ class TestTlsHandshakeConcurrent : public TestTlsHandshakeBase,
 // Test concurrently running handshakes while changing the certificates on the TLS
 // context. We parameterize across different numbers of threads, because surprisingly,
 // fewer threads seems to trigger issues more easily in some cases.
-INSTANTIATE_TEST_CASE_P(NumThreads, TestTlsHandshakeConcurrent, ::testing::Values(1, 2, 4, 8));
+INSTANTIATE_TEST_SUITE_P(NumThreads, TestTlsHandshakeConcurrent, ::testing::Values(1, 2, 4, 8));
 TEST_P(TestTlsHandshakeConcurrent, TestConcurrentAdoptCert) {
   const int kNumThreads = GetParam();
 
@@ -296,9 +296,9 @@ TEST_P(TestTlsHandshake, TestHandshake) {
   ASSERT_STR_MATCHES(s.ToString(), test_case.expected_status.message().ToString());
 }
 
-INSTANTIATE_TEST_CASE_P(CertCombinations,
-                        TestTlsHandshake,
-                        ::testing::Values(
+INSTANTIATE_TEST_SUITE_P(CertCombinations,
+                         TestTlsHandshake,
+                         ::testing::Values(
 
         // We don't test any cases where the server has no cert or the client
         // has a self-signed cert, since we don't expect those to occur in

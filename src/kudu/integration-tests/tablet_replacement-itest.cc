@@ -22,7 +22,6 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -554,9 +553,9 @@ TEST_P(EvictAndReplaceDeadFollowerITest, UnreachableFollower) {
   ASSERT_OK(cluster_->tablet_server_by_uuid(kFollowerId)->Restart());
 }
 
-INSTANTIATE_TEST_CASE_P(,
-                        EvictAndReplaceDeadFollowerITest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(,
+                         EvictAndReplaceDeadFollowerITest,
+                         ::testing::Bool());
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -575,9 +574,9 @@ TEST_P(DontEvictIfRemainingConfigIsUnstableITest, NodesStopped) {
   TestDontEvictIfRemainingConfigIsUnstable(NODE_STOPPED, GetParam());
 }
 
-INSTANTIATE_TEST_CASE_P(,
-                        DontEvictIfRemainingConfigIsUnstableITest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(,
+                         DontEvictIfRemainingConfigIsUnstableITest,
+                         ::testing::Bool());
 
 /////////////////////////////////////////////////////////////////////////////
 

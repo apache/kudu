@@ -428,7 +428,7 @@ TEST_P(ParticipantCopyITest, TestCopyParticipantOps) {
     }
   });
 }
-INSTANTIATE_TEST_CASE_P(ShouldGCWals, ParticipantCopyITest, ::testing::Values(true, false));
+INSTANTIATE_TEST_SUITE_P(ShouldGCWals, ParticipantCopyITest, ::testing::Values(true, false));
 
 // Test to ensure that the mechanisms built to allow snapshot scans to wait for
 // safe time advancement will actually wait for transactions to commit.

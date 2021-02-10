@@ -156,7 +156,7 @@ class CacheBench : public KuduTest,
 
 // Test both distributions, and for each, test both the case where the data
 // fits in the cache and where it is a bit larger.
-INSTANTIATE_TEST_CASE_P(Patterns, CacheBench, testing::ValuesIn(std::vector<BenchSetup>{
+INSTANTIATE_TEST_SUITE_P(Patterns, CacheBench, testing::ValuesIn(std::vector<BenchSetup>{
       {BenchSetup::Pattern::ZIPFIAN, 1.0},
       {BenchSetup::Pattern::ZIPFIAN, 3.0},
       {BenchSetup::Pattern::UNIFORM, 1.0},

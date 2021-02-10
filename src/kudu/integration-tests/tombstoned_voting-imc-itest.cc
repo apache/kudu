@@ -388,8 +388,8 @@ class TsRecoveryTombstonedIMCITest : public MiniClusterITestBase,
                                      public ::testing::WithParamInterface<RestartAfterTombstone> {
 };
 
-INSTANTIATE_TEST_CASE_P(Restart, TsRecoveryTombstonedIMCITest,
-                        ::testing::Values(kNoRestart, kRestart));
+INSTANTIATE_TEST_SUITE_P(Restart, TsRecoveryTombstonedIMCITest,
+                         ::testing::Values(kNoRestart, kRestart));
 
 // Basic tombstoned voting test.
 TEST_P(TsRecoveryTombstonedIMCITest, TestTombstonedVoter) {

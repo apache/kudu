@@ -25,6 +25,7 @@
 #include <ostream>
 #include <random>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -632,7 +633,7 @@ BenchmarkColumnsSpec UniformColumns(int n_cols, DataType type, double null_fract
                            null_str) };
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ColumnarRowBlockToPBBenchmarkParams, WireProtocolBenchmark,
     testing::Combine(
         testing::Values(

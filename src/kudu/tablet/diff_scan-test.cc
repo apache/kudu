@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -56,8 +57,8 @@ class DiffScanTest : public TabletTestBase<IntKeyTestSetup<INT64>>,
   using Superclass = TabletTestBase<IntKeyTestSetup<INT64>>;
 };
 
-INSTANTIATE_TEST_CASE_P(DiffScanModes, DiffScanTest,
-                        ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(DiffScanModes, DiffScanTest,
+                         ::testing::Combine(
                             /*order_mode*/ ::testing::Values(UNORDERED, ORDERED),
                             /*include_deleted_rows*/ ::testing::Bool()));
 

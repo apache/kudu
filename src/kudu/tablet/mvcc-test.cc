@@ -934,8 +934,9 @@ TEST_P(ParamedTransactionMvccTest, TestConcurrentLatestSnapshots) {
     ASSERT_EQ(is_committed[i], snaps[i].IsCommitted(*txn_meta.get()));
   }
 }
-INSTANTIATE_TEST_CASE_P(Op, ParamedTransactionMvccTest,
-    ::testing::Values(kCommit, kAbortAfterBeginCommit, kAbortBeforeBeginCommit));
+INSTANTIATE_TEST_SUITE_P(Op, ParamedTransactionMvccTest,
+                         ::testing::Values(kCommit, kAbortAfterBeginCommit,
+                                           kAbortBeforeBeginCommit));
 
 } // namespace tablet
 } // namespace kudu

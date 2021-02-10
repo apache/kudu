@@ -128,8 +128,8 @@ enum IncludeColumnIds {
 class ParameterizedSchemaTest : public KuduTest,
                                 public ::testing::WithParamInterface<IncludeColumnIds> {};
 
-INSTANTIATE_TEST_CASE_P(SchemaTypes, ParameterizedSchemaTest,
-                        ::testing::Values(INCLUDE_COL_IDS, NO_COL_IDS));
+INSTANTIATE_TEST_SUITE_P(SchemaTypes, ParameterizedSchemaTest,
+                         ::testing::Values(INCLUDE_COL_IDS, NO_COL_IDS));
 
 TEST_P(ParameterizedSchemaTest, TestCopyAndMove) {
   auto check_schema = [](const Schema& schema) {

@@ -19,7 +19,7 @@
 #include <deque>
 #include <ostream>
 #include <string>
-#include <type_traits>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -127,7 +127,7 @@ class WebserverCrawlITest : public KuduTest,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(,
+INSTANTIATE_TEST_SUITE_P(,
     WebserverCrawlITest,
     ::testing::Combine(
         ::testing::Values(UseSsl::NO, UseSsl::YES),

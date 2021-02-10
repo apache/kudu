@@ -141,7 +141,7 @@ class AlterTableRandomized : public KuduTest,
 };
 
 // Run the test with the HMS integration enabled and disabled.
-INSTANTIATE_TEST_CASE_P(HmsConfigurations, AlterTableRandomized, ::testing::ValuesIn(
+INSTANTIATE_TEST_SUITE_P(HmsConfigurations, AlterTableRandomized, ::testing::ValuesIn(
     vector<HmsMode> { HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION }
 ));
 

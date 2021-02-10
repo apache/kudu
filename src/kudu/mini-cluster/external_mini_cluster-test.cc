@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -109,7 +110,7 @@ class ExternalMiniClusterTest :
 {
 };
 
-INSTANTIATE_TEST_CASE_P(,
+INSTANTIATE_TEST_SUITE_P(,
     ExternalMiniClusterTest,
     ::testing::Combine(
         ::testing::Values(Kerberos::DISABLED, Kerberos::ENABLED),

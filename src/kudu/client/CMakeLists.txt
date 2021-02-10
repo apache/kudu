@@ -249,6 +249,7 @@ add_library(kudu_client_test_util
   client-test-util.cc)
 target_link_libraries(kudu_client_test_util
   gmock
+  gtest
   kudu_client)
 
 # Tests

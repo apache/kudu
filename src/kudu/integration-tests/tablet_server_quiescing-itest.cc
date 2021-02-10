@@ -765,7 +765,7 @@ TEST_P(TServerQuiescingParamITest, TestAbruptStepdownWhileAllQuiescing) {
   });
 }
 
-INSTANTIATE_TEST_CASE_P(NumReplicas, TServerQuiescingParamITest, ::testing::Values(1, 3));
+INSTANTIATE_TEST_SUITE_P(NumReplicas, TServerQuiescingParamITest, ::testing::Values(1, 3));
 
 } // namespace itest
 } // namespace kudu

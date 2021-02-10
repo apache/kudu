@@ -176,7 +176,8 @@ class LogTestOptionalCompression : public LogTest,
     FLAGS_log_compression_codec = name;
   }
 };
-INSTANTIATE_TEST_CASE_P(Codecs, LogTestOptionalCompression, ::testing::Values(NO_COMPRESSION, LZ4));
+INSTANTIATE_TEST_SUITE_P(Codecs, LogTestOptionalCompression,
+                         ::testing::Values(NO_COMPRESSION, LZ4));
 
 // If we write more than one entry in a batch, we should be able to
 // read all of those entries back.

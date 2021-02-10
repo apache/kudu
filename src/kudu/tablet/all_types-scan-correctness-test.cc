@@ -748,7 +748,7 @@ typedef ::testing::Types<NumTypeRowOps<KeyTypeWrapper<INT8, BIT_SHUFFLE>>,
                          SliceTypeRowOps<KeyTypeWrapper<BINARY, PREFIX_ENCODING>>
                          > KeyTypes;
 
-TYPED_TEST_CASE(AllTypesScanCorrectnessTest, KeyTypes);
+TYPED_TEST_SUITE(AllTypesScanCorrectnessTest, KeyTypes);
 
 TYPED_TEST(AllTypesScanCorrectnessTest, AllNonNullSequential) {
   int null_upper = 0;

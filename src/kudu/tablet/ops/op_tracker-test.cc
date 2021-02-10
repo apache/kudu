@@ -283,7 +283,7 @@ TEST_P(OpTrackerTest, TestTooManyOps) {
 
 // Tests too many ops with two memory tracker limits. First is the root tracker
 // memory limit and the second is current tracker memory limit.
-INSTANTIATE_TEST_CASE_P(MemoryLimitsMb, OpTrackerTest, ::testing::ValuesIn(
+INSTANTIATE_TEST_SUITE_P(MemoryLimitsMb, OpTrackerTest, ::testing::ValuesIn(
     vector<pair<int, int>> { {2, 1}, {1, 2}, {2, 2} }));
 
 } // namespace tablet

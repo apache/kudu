@@ -106,7 +106,7 @@ public:
     ASSERT_EQ(expect, count);
   }
 };
-TYPED_TEST_CASE(TestTablet, TabletTestHelperTypes);
+TYPED_TEST_SUITE(TestTablet, TabletTestHelperTypes);
 
 TYPED_TEST(TestTablet, TestFlush) {
   // Insert 1000 rows into memrowset

@@ -294,8 +294,8 @@ class TestDeltaMemStoreNumUpdates : public TestDeltaMemStore,
                                     public ::testing::WithParamInterface<int> {
 };
 
-INSTANTIATE_TEST_CASE_P(DifferentNumUpdates,
-                        TestDeltaMemStoreNumUpdates, ::testing::Values(2, 20, 200));
+INSTANTIATE_TEST_SUITE_P(DifferentNumUpdates,
+                         TestDeltaMemStoreNumUpdates, ::testing::Values(2, 20, 200));
 
 TEST_P(TestDeltaMemStoreNumUpdates, BenchmarkSnapshotScans) {
   const int kNumRows = 100;
@@ -340,8 +340,8 @@ class TestDeltaMemStoreNumDeletes : public TestDeltaMemStore,
                                     public ::testing::WithParamInterface<int> {
 };
 
-INSTANTIATE_TEST_CASE_P(DifferentNumDeletes,
-                        TestDeltaMemStoreNumDeletes, ::testing::Values(0, 10, 100, 1000));
+INSTANTIATE_TEST_SUITE_P(DifferentNumDeletes,
+                         TestDeltaMemStoreNumDeletes, ::testing::Values(0, 10, 100, 1000));
 
 TEST_P(TestDeltaMemStoreNumDeletes, BenchmarkScansWithVaryingNumberOfDeletes) {
   const int kNumUpdates = 10000;

@@ -1230,8 +1230,8 @@ const char* kTabletCopyFailureITestFlags[] = {
   "--tablet_copy_early_session_timeout_prob=1.0",
   "--tablet_copy_fault_crash_on_fetch_all=1.0"
 };
-INSTANTIATE_TEST_CASE_P(FailureCause, TabletCopyFailureITest,
-                        ::testing::ValuesIn(kTabletCopyFailureITestFlags));
+INSTANTIATE_TEST_SUITE_P(FailureCause, TabletCopyFailureITest,
+                         ::testing::ValuesIn(kTabletCopyFailureITestFlags));
 
 // Test that a failed tablet copy of a brand-new replica results in still being
 // able to vote while tombstoned.
@@ -1426,8 +1426,8 @@ class BadTabletCopyITest : public TabletCopyITest,
 const char* kFlagFaultOnFetch = "fault_crash_on_handle_tc_fetch_data";
 const char* kFlagEarlyTimeout = "tablet_copy_early_session_timeout_prob";
 const char* kBadTabletCopyITestFlags[] = { kFlagFaultOnFetch, kFlagEarlyTimeout };
-INSTANTIATE_TEST_CASE_P(FaultFlags, BadTabletCopyITest,
-                        ::testing::ValuesIn(kBadTabletCopyITestFlags));
+INSTANTIATE_TEST_SUITE_P(FaultFlags, BadTabletCopyITest,
+                         ::testing::ValuesIn(kBadTabletCopyITestFlags));
 
 void BadTabletCopyITest::LoadTable(TestWorkload* workload, int min_rows, int min_blocks) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);

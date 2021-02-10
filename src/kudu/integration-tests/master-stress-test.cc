@@ -526,7 +526,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
 };
 
 // Run the test with the HMS integration enabled and disabled.
-INSTANTIATE_TEST_CASE_P(HmsConfigurations, MasterStressTest, ::testing::ValuesIn(
+INSTANTIATE_TEST_SUITE_P(HmsConfigurations, MasterStressTest, ::testing::ValuesIn(
     vector<HmsMode> { HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION }
 ));
 

@@ -276,8 +276,8 @@ class AuthTokenExpireDuringWorkloadITest : public AuthTokenExpireITest,
                                               GetParam().authz_validity_secs);
 };
 
-INSTANTIATE_TEST_CASE_P(ValidityIntervals, AuthTokenExpireDuringWorkloadITest,
-    ::testing::Values(kEvenValidity, kLongerAuthn, kLongerAuthz));
+INSTANTIATE_TEST_SUITE_P(ValidityIntervals, AuthTokenExpireDuringWorkloadITest,
+                         ::testing::Values(kEvenValidity, kLongerAuthn, kLongerAuthz));
 
 // Run a mixed write/read test workload and check that client retries upon
 // receiving the appropriate invalid token error, eventually succeeding with

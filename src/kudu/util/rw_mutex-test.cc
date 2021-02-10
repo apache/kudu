@@ -49,9 +49,9 @@ class RWMutexTest : public KuduTest,
 };
 
 // Instantiate every test for each kind of RWMutex priority.
-INSTANTIATE_TEST_CASE_P(Priorities, RWMutexTest,
-                        ::testing::Values(RWMutex::Priority::PREFER_READING,
-                                          RWMutex::Priority::PREFER_WRITING));
+INSTANTIATE_TEST_SUITE_P(Priorities, RWMutexTest,
+                         ::testing::Values(RWMutex::Priority::PREFER_READING,
+                                           RWMutex::Priority::PREFER_WRITING));
 
 // Multi-threaded test that tries to find deadlocks in the RWMutex wrapper.
 TEST_P(RWMutexTest, TestDeadlocks) {

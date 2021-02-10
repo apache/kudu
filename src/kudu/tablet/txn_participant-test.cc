@@ -800,8 +800,8 @@ TEST_P(MetadataFlushTxnParticipantTest, TestReplayUpdatesToTransactionalMRS) {
   ASSERT_EQ(1, rows.size());
 }
 
-INSTANTIATE_TEST_CASE_P(ShouldFlushMetadata, MetadataFlushTxnParticipantTest,
-    ::testing::Values(true, false));
+INSTANTIATE_TEST_SUITE_P(ShouldFlushMetadata, MetadataFlushTxnParticipantTest,
+                         ::testing::Values(true, false));
 
 // Similar to the above test, but checking that in-flight ops anchor the WALs.
 TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
@@ -1365,7 +1365,7 @@ TEST_P(TxnParticipantConcurrencyTest, TestConcurrentDisjointInsertsTxn) {
     ASSERT_EQ(kNumThreads * rows_per_thread * (txn_id + 1) / num_txns, rows.size());
   }
 }
-INSTANTIATE_TEST_CASE_P(ConcurrencyParams, TxnParticipantConcurrencyTest,
+INSTANTIATE_TEST_SUITE_P(ConcurrencyParams, TxnParticipantConcurrencyTest,
     ::testing::Values(
       ConcurrencyParams{ /*num_txns*/1, /*num_rows_per_thread*/1 },
       ConcurrencyParams{ /*num_txns*/10, /*num_rows_per_thread*/1 },

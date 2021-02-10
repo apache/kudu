@@ -674,10 +674,10 @@ TEST_F(TestEnv, TestIsDirectory) {
 class ResourceLimitTypeTest : public TestEnv,
                               public ::testing::WithParamInterface<Env::ResourceLimitType> {};
 
-INSTANTIATE_TEST_CASE_P(ResourceLimitTypes,
-                        ResourceLimitTypeTest,
-                        ::testing::Values(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS,
-                                          Env::ResourceLimitType::RUNNING_THREADS_PER_EUID));
+INSTANTIATE_TEST_SUITE_P(ResourceLimitTypes,
+                         ResourceLimitTypeTest,
+                         ::testing::Values(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS,
+                                           Env::ResourceLimitType::RUNNING_THREADS_PER_EUID));
 
 // Regression test for KUDU-1798.
 TEST_P(ResourceLimitTypeTest, TestIncreaseLimit) {

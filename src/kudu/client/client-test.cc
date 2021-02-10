@@ -41,7 +41,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
-#include <gmock/gmock-generated-matchers.h>
 #include <gmock/gmock-matchers.h>
 #include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
@@ -1404,8 +1403,8 @@ TEST_P(ScanMultiTabletParamTest, Test) {
   ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, kTabletsNum * kRowsPerTablet,
                                    kNoBound));
 }
-INSTANTIATE_TEST_CASE_P(Params, ScanMultiTabletParamTest,
-                        testing::ValuesIn(read_modes));
+INSTANTIATE_TEST_SUITE_P(Params, ScanMultiTabletParamTest,
+                         testing::ValuesIn(read_modes));
 
 TEST_F(ClientTest, TestScanEmptyTable) {
   KuduScanner scanner(client_table_.get());
@@ -3906,9 +3905,8 @@ TEST_P(FlushModeOpRatesTest, RunComparison) {
   EXPECT_GT(t_afs_wall, t_afb_wall);
 }
 
-INSTANTIATE_TEST_CASE_P(,
-                        FlushModeOpRatesTest,
-                        ::testing::Values(RowSize::CONSTANT, RowSize::RANDOM));
+INSTANTIATE_TEST_SUITE_P(, FlushModeOpRatesTest,
+                         ::testing::Values(RowSize::CONSTANT, RowSize::RANDOM));
 
 // A test to verify that it's safe to perform synchronous and/or asynchronous
 // flush while having the auto-flusher thread running in the background.
@@ -5665,8 +5663,8 @@ TEST_P(LatestObservedTimestampParamTest, Test) {
     latest_ts = ts;
   }
 }
-INSTANTIATE_TEST_CASE_P(Params, LatestObservedTimestampParamTest,
-                        testing::ValuesIn(read_modes));
+INSTANTIATE_TEST_SUITE_P(Params, LatestObservedTimestampParamTest,
+                         testing::ValuesIn(read_modes));
 
 // Insert bunch of rows, delete a row, and then insert the row back.
 // Run scans several scan and check the results are consistent with the
@@ -6041,9 +6039,9 @@ TEST_P(IntEncodingNullPredicatesTest, TestIntEncodings) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(IntColEncodings,
-                        IntEncodingNullPredicatesTest,
-                        ::testing::Values(kPlain, kBitShuffle, kRunLength));
+INSTANTIATE_TEST_SUITE_P(IntColEncodings,
+                         IntEncodingNullPredicatesTest,
+                         ::testing::Values(kPlain, kBitShuffle, kRunLength));
 
 
 enum BinaryEncoding {
@@ -6138,9 +6136,9 @@ TEST_P(BinaryEncodingNullPredicatesTest, TestBinaryEncodings) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(BinaryColEncodings,
-                        BinaryEncodingNullPredicatesTest,
-                        ::testing::Values(kPlainBin, kPrefix, kDictionary));
+INSTANTIATE_TEST_SUITE_P(BinaryColEncodings,
+                         BinaryEncodingNullPredicatesTest,
+                         ::testing::Values(kPlainBin, kPrefix, kDictionary));
 
 TEST_F(ClientTest, TestClonePredicates) {
   NO_FATALS(InsertTestRows(client_table_.get(), 2, 0));
@@ -6617,7 +6615,7 @@ static const ServiceUnavailableRetryParams service_unavailable_retry_cases[] = {
   },
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     , ServiceUnavailableRetryClientTest,
     ::testing::ValuesIn(service_unavailable_retry_cases));
 

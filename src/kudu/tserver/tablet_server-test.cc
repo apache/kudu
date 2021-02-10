@@ -754,8 +754,8 @@ TEST_P(TabletServerDiskSpaceTest, TestFullGroupAddsDir) {
   ASSERT_TRUE(dd_manager->IsTabletInFailedDir(kTabletId));
 }
 
-INSTANTIATE_TEST_CASE_P(BlockManager, TabletServerDiskSpaceTest,
-    ::testing::ValuesIn(BlockManager::block_manager_types()));
+INSTANTIATE_TEST_SUITE_P(BlockManager, TabletServerDiskSpaceTest,
+                         ::testing::ValuesIn(BlockManager::block_manager_types()));
 
 enum class ErrorType {
   DISK_FAILURE,
@@ -781,7 +781,7 @@ class TabletServerDiskErrorTest : public TabletServerTestBase,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(ErrorType, TabletServerDiskErrorTest, ::testing::Values(
+INSTANTIATE_TEST_SUITE_P(ErrorType, TabletServerDiskErrorTest, ::testing::Values(
     ErrorType::DISK_FAILURE, ErrorType::CFILE_CORRUPTION, ErrorType::KUDU_2233_CORRUPTION));
 
 // Test that applies random write operations to a tablet with a high
@@ -2043,8 +2043,8 @@ static const ReadMode kReadModes[] = {
     READ_YOUR_WRITES,
 };
 
-INSTANTIATE_TEST_CASE_P(Params, ExpiredScannerParamTest,
-                        testing::ValuesIn(kReadModes));
+INSTANTIATE_TEST_SUITE_P(Params, ExpiredScannerParamTest,
+                         testing::ValuesIn(kReadModes));
 
 class ScanCorruptedDeltasParamTest :
     public TabletServerTest,
@@ -2134,8 +2134,8 @@ TEST_P(ScanCorruptedDeltasParamTest, Test) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(Params, ScanCorruptedDeltasParamTest,
-                        testing::ValuesIn(kReadModes));
+INSTANTIATE_TEST_SUITE_P(Params, ScanCorruptedDeltasParamTest,
+                         testing::ValuesIn(kReadModes));
 
 class ScannerOpenWhenServerShutsDownParamTest :
     public TabletServerTest,
@@ -2157,8 +2157,8 @@ TEST_P(ScannerOpenWhenServerShutsDownParamTest, Test) {
   // stayed open longer than the anchor registry
 }
 
-INSTANTIATE_TEST_CASE_P(Params, ScannerOpenWhenServerShutsDownParamTest,
-                        testing::ValuesIn(kReadModes));
+INSTANTIATE_TEST_SUITE_P(Params, ScannerOpenWhenServerShutsDownParamTest,
+                         testing::ValuesIn(kReadModes));
 
 TEST_F(TabletServerTest, TestSnapshotScan) {
   const int num_rows = AllowSlowTests() ? 1000 : 100;
@@ -3195,8 +3195,8 @@ TEST_P(InvalidScanRequest_NewScanAndScannerIDParamTest, Test) {
   ASSERT_STR_CONTAINS(s.ToString(), "Must not pass both a scanner_id and new_scan_request");
 }
 
-INSTANTIATE_TEST_CASE_P(Params, InvalidScanRequest_NewScanAndScannerIDParamTest,
-                        testing::ValuesIn(kReadModes));
+INSTANTIATE_TEST_SUITE_P(Params, InvalidScanRequest_NewScanAndScannerIDParamTest,
+                         testing::ValuesIn(kReadModes));
 
 // Test that passing a projection with fields not present in the tablet schema
 // throws an exception.
@@ -3276,8 +3276,8 @@ TEST_P(InvalidScanRequest_WithIdsParamTest, Test) {
                            "User requests should not have Column IDs");
 }
 
-INSTANTIATE_TEST_CASE_P(Params, InvalidScanRequest_WithIdsParamTest,
-                        testing::ValuesIn(kReadModes));
+INSTANTIATE_TEST_SUITE_P(Params, InvalidScanRequest_WithIdsParamTest,
+                         testing::ValuesIn(kReadModes));
 
 // Test scanning a tablet that has no entries.
 TEST_F(TabletServerTest, TestScan_NoResults) {
@@ -3353,8 +3353,8 @@ TEST_P(InvalidScanSeqIdParamTest, Test) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(Params, InvalidScanSeqIdParamTest,
-                        testing::ValuesIn(kReadModes));
+INSTANTIATE_TEST_SUITE_P(Params, InvalidScanSeqIdParamTest,
+                         testing::ValuesIn(kReadModes));
 
 // Regression test for KUDU-1789: when ScannerKeepAlive is called on a non-existent
 // scanner, it should properly respond with an error.

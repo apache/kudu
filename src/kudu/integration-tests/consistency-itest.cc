@@ -797,8 +797,8 @@ TEST_P(ScanYourWritesParamTest, Test) {
   EXPECT_EQ(rows_to_insert, row_count);
 }
 
-INSTANTIATE_TEST_CASE_P(Params, ScanYourWritesParamTest,
-                        testing::ValuesIn(replica_selectors));
+INSTANTIATE_TEST_SUITE_P(Params, ScanYourWritesParamTest,
+                         testing::ValuesIn(replica_selectors));
 
 class ScanYourWritesMultiClientsParamTest :
     public ConsistencyITest,
@@ -859,7 +859,7 @@ TEST_P(ScanYourWritesMultiClientsParamTest, Test) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(Params, ScanYourWritesMultiClientsParamTest,
-                        testing::ValuesIn(replica_selectors));
+INSTANTIATE_TEST_SUITE_P(Params, ScanYourWritesMultiClientsParamTest,
+                         testing::ValuesIn(replica_selectors));
 } // namespace client
 } // namespace kudu

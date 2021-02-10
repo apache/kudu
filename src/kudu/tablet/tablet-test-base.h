@@ -292,7 +292,7 @@ struct NullableValueTestSetup {
   }
 };
 
-// Use this with TYPED_TEST_CASE from gtest
+// Use this with TYPED_TEST_SUITE from gtest
 typedef ::testing::Types<
                          StringKeyTestSetup,
                          IntKeyTestSetup<INT8>,

@@ -465,7 +465,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 };
 
 
-TYPED_TEST_CASE(MultiThreadedTabletTest, TabletTestHelperTypes);
+TYPED_TEST_SUITE(MultiThreadedTabletTest, TabletTestHelperTypes);
 
 
 TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
@@ -563,7 +563,7 @@ class MultiThreadedHybridClockTabletTest : public MultiThreadedTabletTest<SETUP>
   }
 };
 
-TYPED_TEST_CASE(MultiThreadedHybridClockTabletTest, TabletTestHelperTypes);
+TYPED_TEST_SUITE(MultiThreadedHybridClockTabletTest, TabletTestHelperTypes);
 
 // Perform many updates and continuously flush and major compact deltas, as
 // well as run undo delta gc.

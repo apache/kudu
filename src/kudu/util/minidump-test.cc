@@ -146,7 +146,7 @@ TEST_P(MinidumpSignalDeathTest, TestHaveMinidumpAndStackTrace) {
   NO_FATALS(WaitForMinidumps(num_expected_minidumps, minidump_handler.minidump_dir()));
 }
 
-INSTANTIATE_TEST_CASE_P(DeadlySignals, MinidumpSignalDeathTest,
-    ::testing::Values(SIGABRT, SIGBUS, SIGSEGV, SIGILL, SIGFPE, SIGTERM));
+INSTANTIATE_TEST_SUITE_P(DeadlySignals, MinidumpSignalDeathTest,
+                         ::testing::Values(SIGABRT, SIGBUS, SIGSEGV, SIGILL, SIGFPE, SIGTERM));
 
 } // namespace kudu

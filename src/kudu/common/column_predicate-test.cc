@@ -1553,7 +1553,7 @@ using test_types = ::testing::Types<
   DataTypeTraits<FLOAT>,
   DataTypeTraits<DOUBLE>>;
 
-TYPED_TEST_CASE(RangePredicateBenchmark, test_types);
+TYPED_TEST_SUITE(RangePredicateBenchmark, test_types);
 
 TYPED_TEST(RangePredicateBenchmark, TestEquals) {
   const typename TypeParam::cpp_type ref_val = 0;

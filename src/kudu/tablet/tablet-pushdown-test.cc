@@ -220,9 +220,9 @@ TEST_P(TabletPushdownTest, TestPushdownIntValueRange) {
   // were not read.
 }
 
-INSTANTIATE_TEST_CASE_P(AllMemory, TabletPushdownTest, ::testing::Values(ALL_IN_MEMORY));
-INSTANTIATE_TEST_CASE_P(SplitMemoryDisk, TabletPushdownTest, ::testing::Values(SPLIT_MEMORY_DISK));
-INSTANTIATE_TEST_CASE_P(AllDisk, TabletPushdownTest, ::testing::Values(ALL_ON_DISK));
+INSTANTIATE_TEST_SUITE_P(AllMemory, TabletPushdownTest, ::testing::Values(ALL_IN_MEMORY));
+INSTANTIATE_TEST_SUITE_P(SplitMemoryDisk, TabletPushdownTest, ::testing::Values(SPLIT_MEMORY_DISK));
+INSTANTIATE_TEST_SUITE_P(AllDisk, TabletPushdownTest, ::testing::Values(ALL_ON_DISK));
 
 class TabletSparsePushdownTest : public KuduTabletTest {
  public:

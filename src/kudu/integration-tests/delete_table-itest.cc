@@ -1345,8 +1345,8 @@ const char* deleted_faults[] = {"fault_crash_after_blocks_deleted",
                                 "fault_crash_after_wal_deleted",
                                 "fault_crash_after_cmeta_deleted"};
 
-INSTANTIATE_TEST_CASE_P(FaultFlags, DeleteTableDeletedParamTest,
-                        ::testing::ValuesIn(deleted_faults));
+INSTANTIATE_TEST_SUITE_P(FaultFlags, DeleteTableDeletedParamTest,
+                         ::testing::ValuesIn(deleted_faults));
 
 // Parameterized test case for TABLET_DATA_TOMBSTONED deletions.
 class DeleteTableTombstonedParamTest : public DeleteTableITest,
@@ -1503,8 +1503,8 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
 // Tombstoning a tablet does not delete the consensus metadata.
 const char* tombstoned_faults[] = {"fault_crash_after_blocks_deleted",
                                    "fault_crash_after_wal_deleted"};
-INSTANTIATE_TEST_CASE_P(FaultFlags, DeleteTableTombstonedParamTest,
-                        ::testing::ValuesIn(tombstoned_faults));
+INSTANTIATE_TEST_SUITE_P(FaultFlags, DeleteTableTombstonedParamTest,
+                         ::testing::ValuesIn(tombstoned_faults));
 
 
 class DeleteTableWhileScanInProgressParamTest :
@@ -1655,7 +1655,7 @@ const KuduClient::ReplicaSelection replica_selectors[] = {
   KuduClient::CLOSEST_REPLICA,
   KuduClient::FIRST_REPLICA,
 };
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     Params, DeleteTableWhileScanInProgressParamTest,
     ::testing::Combine(::testing::ValuesIn(read_modes),
                        ::testing::ValuesIn(replica_selectors)));

@@ -1431,8 +1431,8 @@ TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
       total / kRunInterval.ToSeconds(), supports_authz_ ? "enabled" : "disabled");
 }
 
-INSTANTIATE_TEST_CASE_P(SupportsAuthzTokens,
-                        ConcurrentGetTableSchemaTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(SupportsAuthzTokens,
+                         ConcurrentGetTableSchemaTest, ::testing::Bool());
 
 // Verifies that on-disk master metadata is self-consistent and matches a set
 // of expected contents.
@@ -2424,7 +2424,7 @@ TEST_P(AuthzTokenMasterTest, TestGenerateAuthzTokens) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(SupportsAuthzTokens, AuthzTokenMasterTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(SupportsAuthzTokens, AuthzTokenMasterTest, ::testing::Bool());
 
 } // namespace master
 } // namespace kudu

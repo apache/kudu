@@ -910,11 +910,11 @@ TEST_P(TxnStatusTableRetryITest, TestRetryOnError) {
 //   1) timeout on waiting the replica to catch up with all replicated
 //      operations in previous term.
 //   2) leader status is not initialized yet.
-INSTANTIATE_TEST_CASE_P(TestTxnStatusTableRetryOnError,
-                        TxnStatusTableRetryITest,
-                        ::testing::Values(kFailoverTimeoutError,
-                                          kLeaderStatusError,
-                                          kLoadFromTabletError));
+INSTANTIATE_TEST_SUITE_P(TestTxnStatusTableRetryOnError,
+                         TxnStatusTableRetryITest,
+                         ::testing::Values(kFailoverTimeoutError,
+                                           kLeaderStatusError,
+                                           kLoadFromTabletError));
 
 class TxnStatusTableElectionStormITest : public TxnStatusTableITest {
  public:

@@ -23,6 +23,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -1880,9 +1881,9 @@ class IncompatibleReplicaReplacementSchemesITest :
     public RaftConsensusNonVoterITest,
     public ::testing::WithParamInterface<std::tuple<bool, bool>> {
 };
-INSTANTIATE_TEST_CASE_P(, IncompatibleReplicaReplacementSchemesITest,
-                        ::testing::Combine(::testing::Bool(),
-                                           ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(, IncompatibleReplicaReplacementSchemesITest,
+                         ::testing::Combine(::testing::Bool(),
+                                            ::testing::Bool()));
 TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;
@@ -1968,7 +1969,7 @@ class ReplicaBehindWalGcThresholdITest :
     public ::testing::WithParamInterface<
         std::tuple<RaftConsensusITestBase::BehindWalGcBehavior, bool>> {
 };
-INSTANTIATE_TEST_CASE_P(,
+INSTANTIATE_TEST_SUITE_P(,
     ReplicaBehindWalGcThresholdITest,
     ::testing::Combine(
         ::testing::Values(RaftConsensusITestBase::BehindWalGcBehavior::STOP_CONTINUE,

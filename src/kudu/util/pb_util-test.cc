@@ -110,8 +110,8 @@ class TestPBContainerVersions : public TestPBUtil,
   const int version_; // The parameterized container version we are testing.
 };
 
-INSTANTIATE_TEST_CASE_P(SupportedVersions, TestPBContainerVersions,
-                        ::testing::Values(1, 2, kUseDefaultVersion));
+INSTANTIATE_TEST_SUITE_P(SupportedVersions, TestPBContainerVersions,
+                         ::testing::Values(1, 2, kUseDefaultVersion));
 
 Status TestPBUtil::CreateKnownGoodContainerFile(CreateMode create, SyncMode sync) {
   ProtoContainerTestPB test_pb;

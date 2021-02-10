@@ -322,7 +322,7 @@ TEST_P(StopTabletITest, TestShutdownWhileWriting) {
   NO_FATALS(cv.CheckCluster());
 }
 
-INSTANTIATE_TEST_CASE_P(StopTablets, StopTabletITest, ::testing::Values(LEADER, FOLLOWER));
+INSTANTIATE_TEST_SUITE_P(StopTablets, StopTabletITest, ::testing::Values(LEADER, FOLLOWER));
 
 }  // namespace tserver
 }  // namespace kudu

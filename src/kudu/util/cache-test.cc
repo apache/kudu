@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -192,7 +193,7 @@ class CacheTest :
   }
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     CacheTypes, CacheTest,
     ::testing::Values(
         make_tuple(Cache::MemoryType::DRAM,
@@ -504,7 +505,7 @@ class LRUCacheTest :
   }
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     CacheTypes, LRUCacheTest,
     ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM,
                                          Cache::MemoryType::NVM),

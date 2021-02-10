@@ -24,7 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/none_t.hpp>
 #include <boost/optional/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -90,9 +89,9 @@ class HmsClientTest : public KuduTest,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(ProtectionTypes,
-                        HmsClientTest,
-                        ::testing::Values(boost::none
+INSTANTIATE_TEST_SUITE_P(ProtectionTypes,
+                         HmsClientTest,
+                         ::testing::Values(boost::none
                                         , SaslProtection::kIntegrity
 // On macos, krb5 has issues repeatedly spinning up new KDCs ('unable to reach
 // any KDC in realm KRBTEST.COM, tried 1 KDC'). Integrity protection gives us

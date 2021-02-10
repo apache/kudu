@@ -481,7 +481,8 @@ build_gperftools() {
   popd
 }
 
-build_gmock() {
+build_gmock_gtest() {
+  # Build both gmock and gtest
   GMOCK_SHARED_BDIR=$TP_BUILD_DIR/$GMOCK_NAME.shared$MODE_SUFFIX
   GMOCK_STATIC_BDIR=$TP_BUILD_DIR/$GMOCK_NAME.static$MODE_SUFFIX
   for SHARED in ON OFF; do
@@ -494,7 +495,6 @@ build_gmock() {
     pushd $GMOCK_BDIR
     rm -rf CMakeCache.txt CMakeFiles/
     cmake \
-      -DCMAKE_BUILD_TYPE=Debug \
       -DCMAKE_POSITION_INDEPENDENT_CODE=On \
       -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
       -DCMAKE_EXE_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS" \
@@ -502,7 +502,7 @@ build_gmock() {
       -DCMAKE_SHARED_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS" \
       -DBUILD_SHARED_LIBS=$SHARED \
       $EXTRA_CMAKE_FLAGS \
-      $GMOCK_SOURCE/googlemock
+      $GMOCK_SOURCE
     ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS
     popd
   done
@@ -510,9 +510,11 @@ build_gmock() {
   # Install gmock/gtest libraries and headers manually instead of using make
   # install. Make install results in libraries with a malformed lib name on
   # macOS.
-  echo Installing gmock...
-  cp -a $GMOCK_SHARED_BDIR/libgmock.$DYLIB_SUFFIX $PREFIX/lib/
-  cp -a $GMOCK_STATIC_BDIR/libgmock.a $PREFIX/lib/
+  echo Installing gmock and gtest...
+  cp -a $GMOCK_SHARED_BDIR/lib/libgmock.$DYLIB_SUFFIX $PREFIX/lib/
+  cp -a $GMOCK_STATIC_BDIR/lib/libgmock.a $PREFIX/lib/
+  cp -a $GMOCK_SHARED_BDIR/lib/libgtest.$DYLIB_SUFFIX $PREFIX/lib/
+  cp -a $GMOCK_STATIC_BDIR/lib/libgtest.a $PREFIX/lib/
   rsync -av $GMOCK_SOURCE/googlemock/include/ $PREFIX/include/
   rsync -av $GMOCK_SOURCE/googletest/include/ $PREFIX/include/
 }

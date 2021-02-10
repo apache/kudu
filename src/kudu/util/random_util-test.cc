@@ -132,7 +132,7 @@ class TemplateRandomUtilTest : public RandomUtilTest {
 // Testing with char, short data-types will result in compile-time error, as expected.
 // Hence no run-time unit tests for non-32/64-bit integers.
 typedef ::testing::Types<int32_t, uint32_t, int64_t, uint64_t> IntTypes;
-TYPED_TEST_CASE(TemplateRandomUtilTest, IntTypes);
+TYPED_TEST_SUITE(TemplateRandomUtilTest, IntTypes);
 
 TYPED_TEST(TemplateRandomUtilTest, RunCreateRandomUniqueIntegers) {
   this->RunCreateRandomUniqueIntegers();

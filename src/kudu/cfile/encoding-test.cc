@@ -881,8 +881,8 @@ class IntEncodingTest : public TestEncoding, public ::testing::WithParamInterfac
     TestIntBlockRoundTrip<IntType>(GetParam());
   }
 };
-INSTANTIATE_TEST_CASE_P(Encodings, IntEncodingTest,
-                        ::testing::Values(RLE, PLAIN_ENCODING, BIT_SHUFFLE));
+INSTANTIATE_TEST_SUITE_P(Encodings, IntEncodingTest,
+                         ::testing::Values(RLE, PLAIN_ENCODING, BIT_SHUFFLE));
 
 TEST_P(IntEncodingTest, TestSeekAllTypes) {
   this->template DoIntSeekTest<UINT8>(100, 1000, true);

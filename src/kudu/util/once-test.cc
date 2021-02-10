@@ -79,7 +79,7 @@ static void InitOrGetInitted(Thing<KuduOnceType>* t, int i) {
 }  // anonymous namespace
 
 typedef ::testing::Types<KuduOnceDynamic, KuduOnceLambda> KuduOnceTypes;
-TYPED_TEST_CASE(TestOnce, KuduOnceTypes);
+TYPED_TEST_SUITE(TestOnce, KuduOnceTypes);
 
 template<class KuduOnceType>
 class TestOnce : public KuduTest {};

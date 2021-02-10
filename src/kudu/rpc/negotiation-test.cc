@@ -397,9 +397,9 @@ TEST_P(TestNegotiation, TestNegotiation) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
-                        TestNegotiation,
-                        ::testing::Values(
+INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
+                         TestNegotiation,
+                         ::testing::Values(
 
         // client: no authn/mechs
         // server: no authn/mechs
@@ -1291,7 +1291,7 @@ class TestDisableInit : public KuduTest {
 
     // Invoke the currently-running test case in a new subprocess.
     string filter_flag = strings::Substitute("--gtest_filter=$0.$1",
-                                             CURRENT_TEST_CASE_NAME(), CURRENT_TEST_NAME());
+                                             CURRENT_TEST_SUITE_NAME(), CURRENT_TEST_NAME());
     string executable_path;
     CHECK_OK(env_->GetExecutablePath(&executable_path));
     string stdout;

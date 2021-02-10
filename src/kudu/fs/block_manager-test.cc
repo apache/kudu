@@ -437,7 +437,7 @@ typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
 #else
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif
-TYPED_TEST_CASE(BlockManagerTest, BlockManagers);
+TYPED_TEST_SUITE(BlockManagerTest, BlockManagers);
 
 // Test to make sure that we don't break the file block manager, which depends
 // on a static set of directories to function properly. Internally, the

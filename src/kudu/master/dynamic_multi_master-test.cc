@@ -22,6 +22,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -628,9 +629,9 @@ class ParameterizedAddMasterTest : public DynamicMultiMasterTest,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(, ParameterizedAddMasterTest,
-                        // Initial number of masters in the cluster before adding a new master
-                        ::testing::Values(1, 2));
+INSTANTIATE_TEST_SUITE_P(, ParameterizedAddMasterTest,
+                         // Initial number of masters in the cluster before adding a new master
+                         ::testing::Values(1, 2));
 
 // This test starts a cluster, creates a table and then adds a new master.
 // For a system catalog with little data, the new master can be caught up from WAL and

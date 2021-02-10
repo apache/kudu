@@ -162,9 +162,9 @@ TEST_P(AsyncUtilTimedWaitTest, SynchronizerTimedWaitTimeout) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(WaitFlavors,
-                        AsyncUtilTimedWaitTest,
-                        ::testing::Values(TimedWaitFlavor::WaitFor,
-                                          TimedWaitFlavor::WaitUntil));
+INSTANTIATE_TEST_SUITE_P(WaitFlavors,
+                         AsyncUtilTimedWaitTest,
+                         ::testing::Values(TimedWaitFlavor::WaitFor,
+                                           TimedWaitFlavor::WaitUntil));
 
 } // namespace kudu

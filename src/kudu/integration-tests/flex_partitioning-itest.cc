@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -33,9 +34,9 @@
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
@@ -607,8 +608,8 @@ const vector<RangePartitionOptions> kRangeOptions {
 };
 
 // Instantiate all combinations of hash options and range options.
-INSTANTIATE_TEST_CASE_P(Shards, FlexPartitioningITest,
-                        testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Shards, FlexPartitioningITest,
+                         testing::Combine(
                             testing::ValuesIn(kHashOptions),
                             testing::ValuesIn(kRangeOptions)));
 

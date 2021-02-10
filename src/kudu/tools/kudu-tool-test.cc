@@ -683,8 +683,8 @@ class ToolTestKerberosParameterized : public ToolTest, public ::testing::WithPar
     return GetParam();
   }
 };
-INSTANTIATE_TEST_CASE_P(ToolTestKerberosParameterized, ToolTestKerberosParameterized,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(ToolTestKerberosParameterized, ToolTestKerberosParameterized,
+                         ::testing::Values(false, true));
 
 enum RunCopyTableCheckArgsType {
   kTestCopyTableDstTableExist,
@@ -919,14 +919,14 @@ const char ToolTestCopyTableParameterized::kComplexSchemaColumns[]
     = "key_hash0,key_hash1,key_hash2,key_range,int8_val,int16_val,int32_val,int64_val,"
       "timestamp_val,string_val,bool_val,float_val,double_val,binary_val,decimal_val";
 
-INSTANTIATE_TEST_CASE_P(CopyTableParameterized,
-                        ToolTestCopyTableParameterized,
-                        ::testing::Values(kTestCopyTableDstTableExist,
-                                          kTestCopyTableDstTableNotExist,
-                                          kTestCopyTableUpsert,
-                                          kTestCopyTableSchemaOnly,
-                                          kTestCopyTableComplexSchema,
-                                          kTestCopyTablePredicates));
+INSTANTIATE_TEST_SUITE_P(CopyTableParameterized,
+                         ToolTestCopyTableParameterized,
+                         ::testing::Values(kTestCopyTableDstTableExist,
+                                           kTestCopyTableDstTableNotExist,
+                                           kTestCopyTableUpsert,
+                                           kTestCopyTableSchemaOnly,
+                                           kTestCopyTableComplexSchema,
+                                           kTestCopyTablePredicates));
 
 void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
@@ -4921,11 +4921,11 @@ class ControlShellToolTest :
   unique_ptr<SubprocessProtocol> proto_;
 };
 
-INSTANTIATE_TEST_CASE_P(SerializationModes, ControlShellToolTest,
-                        ::testing::Combine(::testing::Values(
-                            SubprocessProtocol::SerializationMode::PB,
-                            SubprocessProtocol::SerializationMode::JSON),
-                                           ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(SerializationModes, ControlShellToolTest,
+                         ::testing::Combine(::testing::Values(
+                             SubprocessProtocol::SerializationMode::PB,
+                             SubprocessProtocol::SerializationMode::JSON),
+                                            ::testing::Bool()));
 
 TEST_P(ControlShellToolTest, TestControlShell) {
   const int kNumMasters = 1;
@@ -5915,7 +5915,7 @@ class Is343ReplicaUtilTest :
     public ToolTest,
     public ::testing::WithParamInterface<bool> {
 };
-INSTANTIATE_TEST_CASE_P(, Is343ReplicaUtilTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(, Is343ReplicaUtilTest, ::testing::Bool());
 TEST_P(Is343ReplicaUtilTest, Is343Cluster) {
   constexpr auto kReplicationFactor = 3;
   const auto is_343_scheme = GetParam();

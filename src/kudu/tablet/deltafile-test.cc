@@ -423,7 +423,7 @@ class DeltaTypeTestDeltaFile : public TestDeltaFile {
 };
 
 using MyTypes = ::testing::Types<DeltaTypeSelector<REDO>, DeltaTypeSelector<UNDO>>;
-TYPED_TEST_CASE(DeltaTypeTestDeltaFile, MyTypes);
+TYPED_TEST_SUITE(DeltaTypeTestDeltaFile, MyTypes);
 
 // Generates a series of random deltas,  writes them to a DeltaFile, reads them
 // back using a DeltaFileIterator, and verifies the results.

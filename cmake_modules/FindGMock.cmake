@@ -21,37 +21,28 @@
 # Author: Konstantin Lepa <konstantin.lepa@gmail.com>
 #
 # Find the Google Mock Framework, heavily cribbed from FindGTest.cmake.
-# gmock ships a copy of gtest and bundles it in its libraries, so this also
-# finds the gtest headers.
 #
 # This module defines
 # GMOCK_INCLUDE_DIR, where to find gmock include files, etc.
-# GTEST_INCLUDE_DIR, where to find gtest include files
 # GMOCK_SHARED_LIBRARY, Location of libgmock's shared library
 # GMOCK_STATIC_LIBRARY, Location of libgmock's static library
-# GMOCK_FOUND, If false, do not try to use gmock.
+# GMock_FOUND, If false, do not try to use gmock.
 
 find_path(GMOCK_INCLUDE_DIR gmock/gmock.h
-          DOC   "Path to the gmock header file"
-          NO_CMAKE_SYSTEM_PATH
-          NO_SYSTEM_ENVIRONMENT_PATH)
-
-find_path(GTEST_INCLUDE_DIR gtest/gtest.h
-          DOC   "Path to the gtest header file"
-          NO_CMAKE_SYSTEM_PATH
-          NO_SYSTEM_ENVIRONMENT_PATH)
+  DOC   "Path to the gmock header file"
+  NO_CMAKE_SYSTEM_PATH
+  NO_SYSTEM_ENVIRONMENT_PATH)
 
 find_library(GMOCK_SHARED_LIBRARY gmock
-             DOC   "Google's framework for writing C++ tests (gmock)"
-             NO_CMAKE_SYSTEM_PATH
-             NO_SYSTEM_ENVIRONMENT_PATH)
+  DOC   "Google's framework for writing C++ tests (gmock)"
+  NO_CMAKE_SYSTEM_PATH
+  NO_SYSTEM_ENVIRONMENT_PATH)
 
 find_library(GMOCK_STATIC_LIBRARY libgmock.a
-             DOC   "Google's framework for writing C++ tests (gmock) static"
-             NO_CMAKE_SYSTEM_PATH
-             NO_SYSTEM_ENVIRONMENT_PATH)
-
+  DOC   "Google's framework for writing C++ tests (gmock) static"
+  NO_CMAKE_SYSTEM_PATH
+  NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(GMock REQUIRED_VARS
-  GMOCK_SHARED_LIBRARY GMOCK_STATIC_LIBRARY GMOCK_INCLUDE_DIR GTEST_INCLUDE_DIR)
+  GMOCK_SHARED_LIBRARY GMOCK_STATIC_LIBRARY GMOCK_INCLUDE_DIR)

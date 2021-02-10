@@ -325,8 +325,9 @@ TEST_P(ReacquireAuthzTokenTest, TestExpiredAuthzTokens) {
   ASSERT_GT(NumGetTableSchemaRequests(), initial_reqs);
 }
 
-INSTANTIATE_TEST_CASE_P(RequestorFuncs, ReacquireAuthzTokenTest,
-    ::testing::ValuesIn(vector<RequestorFunc>({ &InsertRequestor, &ScanRequestor })));
+INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ReacquireAuthzTokenTest,
+                         ::testing::ValuesIn(vector<RequestorFunc>({&InsertRequestor,
+                                                                    &ScanRequestor})));
 
 // Test to ensure tokens with no privileges will disallow operations.
 TEST_F(AuthzTokenTest, TestUnprivilegedAuthzTokens) {

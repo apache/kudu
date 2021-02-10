@@ -291,8 +291,8 @@ class HmsCatalogTestParameterized : public HmsCatalogTest,
     return GetParam();
   }
 };
-INSTANTIATE_TEST_CASE_P(HmsCatalogTests, HmsCatalogTestParameterized,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(HmsCatalogTests, HmsCatalogTestParameterized,
+                         ::testing::Values(false, true));
 
 // Test creating, altering, and dropping a table with the HMS Catalog.
 TEST_P(HmsCatalogTestParameterized, TestTableLifecycle) {

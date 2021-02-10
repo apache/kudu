@@ -24,7 +24,7 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <type_traits>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -351,7 +351,7 @@ TEST_P(AuthzTabletServerTest, TestInvalidAuthzTokens) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(RequestorFuncs, AuthzTabletServerTest,
+INSTANTIATE_TEST_SUITE_P(RequestorFuncs, AuthzTabletServerTest,
     ::testing::Values(&WriteGenerator, &ScanGenerator,
                       &SplitKeyRangeGenerator, &ChecksumGenerator));
 
@@ -895,7 +895,7 @@ TEST_P(ScanPrivilegeAuthzTest, TestWrongTableId) {
   NO_FATALS(check_wrong_table());
 }
 
-INSTANTIATE_TEST_CASE_P(RequestorFuncs, ScanPrivilegeAuthzTest,
+INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeAuthzTest,
     ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
             &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::NONE>,
@@ -937,8 +937,8 @@ TEST_P(ScanPrivilegeNoProjectionAuthzTest, TestNoProjection) {
     NO_FATALS(CheckPrivileges(req_func, scan, privileges, ExpectedAuthz::DENIED));
   }
 }
-INSTANTIATE_TEST_CASE_P(RequestorFuncs, ScanPrivilegeNoProjectionAuthzTest,
-    ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeNoProjectionAuthzTest,
+                         ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
             &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::NONE>,
             &ScanRequestor<DeprecatedField::USE, SpecialColumn::NONE>,
@@ -1005,7 +1005,7 @@ TEST_P(ScanPrivilegeWithBadNamesTest, TestColumnNotFound) {
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), kDummyColumn);
 }
-INSTANTIATE_TEST_CASE_P(RequestorFuncs, ScanPrivilegeWithBadNamesTest,
+INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeWithBadNamesTest,
     ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
             &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::MISNAMED>,
@@ -1055,7 +1055,7 @@ TEST_P(ScanPrivilegeWithVirtualColumnsTest, TestIsDeletedColumn) {
   SCOPED_TRACE(scan.ToString());
   NO_FATALS(CheckPrivileges(req_func, scan, privileges, ExpectedAuthz::DENIED));
 }
-INSTANTIATE_TEST_CASE_P(RequestorFuncs, ScanPrivilegeWithVirtualColumnsTest,
+INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeWithVirtualColumnsTest,
     ::testing::Combine(
         ::testing::ValuesIn(vector<ScanFunc>({
             &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::VIRTUAL>,

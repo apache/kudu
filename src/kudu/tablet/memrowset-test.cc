@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
@@ -658,9 +659,9 @@ class ParameterizedTestMemRowSet : public TestMemRowSet,
 // Tests the Cartesian product of two boolean parameters:
 // 1. Whether to include deleted rows in the scan.
 // 2. Whether to include the "is deleted" virtual column in the scan's projection.
-INSTANTIATE_TEST_CASE_P(RowIteratorOptionsPermutations, ParameterizedTestMemRowSet,
-                        ::testing::Combine(::testing::Bool(),
-                                           ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(RowIteratorOptionsPermutations, ParameterizedTestMemRowSet,
+                         ::testing::Combine(::testing::Bool(),
+                                            ::testing::Bool()));
 
 TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
   shared_ptr<MemRowSet> mrs;

@@ -20,7 +20,6 @@
 #include <ostream>
 #include <string>
 #include <thread>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -655,7 +654,7 @@ TEST_P(TSAuthzITest, TestAlters) {
   ASSERT_OK(PerformScan({ another_column }, nullptr, table.get()));
 }
 
-INSTANTIATE_TEST_CASE_P(AuthzProviders, TSAuthzITest,
+INSTANTIATE_TEST_SUITE_P(AuthzProviders, TSAuthzITest,
     ::testing::Values(kRanger),
     [] (const testing::TestParamInfo<TSAuthzITest::ParamType>& info) {
       return HarnessEnumToString(info.param);

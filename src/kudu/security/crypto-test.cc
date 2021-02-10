@@ -192,7 +192,7 @@ TEST_P(CryptoKeySerDesTest, ToAndFromString) {
   NO_FATALS(CheckToAndFromString(public_key, format));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     DataFormats, CryptoKeySerDesTest,
     ::testing::Values(DataFormat::DER, DataFormat::PEM));
 

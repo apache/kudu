@@ -99,9 +99,9 @@ class JitteredPeriodicTimerTest : public PeriodicTimerTest,
   shared_ptr<PeriodicTimer> timer_;
 };
 
-INSTANTIATE_TEST_CASE_P(AllJitterModes,
-                        JitteredPeriodicTimerTest,
-                        ::testing::Values(0.0, 0.25));
+INSTANTIATE_TEST_SUITE_P(AllJitterModes,
+                         JitteredPeriodicTimerTest,
+                         ::testing::Values(0.0, 0.25));
 
 TEST_P(JitteredPeriodicTimerTest, TestStartStop) {
   // Before the timer starts, the counter's value should not change.
@@ -210,9 +210,9 @@ class JitteredOneShotPeriodicTimerTest : public JitteredPeriodicTimerTest {
   }
 };
 
-INSTANTIATE_TEST_CASE_P(AllJitterModes,
-                        JitteredOneShotPeriodicTimerTest,
-                        ::testing::Values(0.0, 0.25));
+INSTANTIATE_TEST_SUITE_P(AllJitterModes,
+                         JitteredOneShotPeriodicTimerTest,
+                         ::testing::Values(0.0, 0.25));
 
 TEST_P(JitteredOneShotPeriodicTimerTest, TestBasics) {
   // Kick off the one-shot timer a few times.

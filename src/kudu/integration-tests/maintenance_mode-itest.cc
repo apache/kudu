@@ -759,7 +759,7 @@ TEST_P(RollingRestartITest, TestWorkloads) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(RollingRestartArgs, RollingRestartITest, ::testing::Values(
+INSTANTIATE_TEST_SUITE_P(RollingRestartArgs, RollingRestartITest, ::testing::Values(
     // Basic RF=3 case.
     ArgsBuilder().num_tservers(4)
                  .num_locations(1)

@@ -431,7 +431,7 @@ TEST_P(RaftConsensusNumLeadersMetricTest, TestNumLeadersMetric) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(NumReplicas, RaftConsensusNumLeadersMetricTest, ::testing::Values(1, 3));
+INSTANTIATE_TEST_SUITE_P(NumReplicas, RaftConsensusNumLeadersMetricTest, ::testing::Values(1, 3));
 
 // Test for KUDU-699: sets the consensus RPC timeout to be long,
 // and freezes both followers before asking the leader to step down.

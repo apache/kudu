@@ -657,7 +657,7 @@ typedef ::testing::Types<IntKeysTestSetup<KeyTypeWrapper<INT8> >,
                          SliceKeysTestSetup<KeyTypeWrapper<BINARY> >
                          > KeyTypes;
 
-TYPED_TEST_CASE(AllTypesItest, KeyTypes);
+TYPED_TEST_SUITE(AllTypesItest, KeyTypes);
 
 TYPED_TEST(AllTypesItest, TestAllKeyTypes) {
   vector<string> projection;

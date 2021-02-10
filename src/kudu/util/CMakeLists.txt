@@ -392,6 +392,7 @@ target_link_libraries(kudu_test_util
   gflags
   glog
   gmock
+  gtest
   kudu_util)
 
 #######################################
@@ -405,6 +406,7 @@ if(NOT NO_TESTS)
     gflags
     glog
     gmock
+    gtest
     kudu_util
     kudu_test_util)
 

@@ -27,6 +27,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -179,8 +180,8 @@ class RebalanceStartCriteriaTest :
     public AdminCliTest,
     public ::testing::WithParamInterface<Kudu1097> {
 };
-INSTANTIATE_TEST_CASE_P(, RebalanceStartCriteriaTest,
-                        ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
+INSTANTIATE_TEST_SUITE_P(, RebalanceStartCriteriaTest,
+                         ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(RebalanceStartCriteriaTest, TabletServerIsDown) {
   const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
   const vector<string> kMasterFlags = {
@@ -240,8 +241,8 @@ class RebalanceStartSafetyTest :
     public AdminCliTest,
     public ::testing::WithParamInterface<Kudu1097> {
 };
-INSTANTIATE_TEST_CASE_P(, RebalanceStartSafetyTest,
-                        ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
+INSTANTIATE_TEST_SUITE_P(, RebalanceStartSafetyTest,
+                         ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(RebalanceStartSafetyTest, TooManyIgnoredTservers) {
   const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
   const vector<string> kMasterFlags = {
@@ -470,7 +471,7 @@ class RebalanceParamTest :
     public AdminCliTest,
     public ::testing::WithParamInterface<tuple<int, Kudu1097>> {
 };
-INSTANTIATE_TEST_CASE_P(, RebalanceParamTest,
+INSTANTIATE_TEST_SUITE_P(, RebalanceParamTest,
     ::testing::Combine(::testing::Values(1, 2, 3, 5),
                        ::testing::Values(Kudu1097::Disable, Kudu1097::Enable)));
 TEST_P(RebalanceParamTest, Rebalance) {
@@ -891,8 +892,8 @@ class DDLDuringRebalancingTest : public RebalancingTest,
     return GetParam() == Kudu1097::Enable;
   }
 };
-INSTANTIATE_TEST_CASE_P(, DDLDuringRebalancingTest,
-                        ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
+INSTANTIATE_TEST_SUITE_P(, DDLDuringRebalancingTest,
+                         ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(DDLDuringRebalancingTest, TablesCreatedAndDeletedDuringRebalancing) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
@@ -1083,8 +1084,8 @@ class ConcurrentRebalancersTest : public RebalancingTest,
     return GetParam() == Kudu1097::Enable;
   }
 };
-INSTANTIATE_TEST_CASE_P(, ConcurrentRebalancersTest,
-    ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
+INSTANTIATE_TEST_SUITE_P(, ConcurrentRebalancersTest,
+                         ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(ConcurrentRebalancersTest, TwoConcurrentRebalancers) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
@@ -1176,8 +1177,8 @@ class TserverGoesDownDuringRebalancingTest : public RebalancingTest,
     return GetParam() == Kudu1097::Enable;
   }
 };
-INSTANTIATE_TEST_CASE_P(, TserverGoesDownDuringRebalancingTest,
-    ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
+INSTANTIATE_TEST_SUITE_P(, TserverGoesDownDuringRebalancingTest,
+                         ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(TserverGoesDownDuringRebalancingTest, TserverDown) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
@@ -1263,8 +1264,8 @@ class TserverAddedDuringRebalancingTest : public RebalancingTest,
     return GetParam() == Kudu1097::Enable;
   }
 };
-INSTANTIATE_TEST_CASE_P(, TserverAddedDuringRebalancingTest,
-    ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
+INSTANTIATE_TEST_SUITE_P(, TserverAddedDuringRebalancingTest,
+                         ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(TserverAddedDuringRebalancingTest, TserverStarts) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
@@ -1335,8 +1336,8 @@ class RebalancingDuringElectionStormTest : public RebalancingTest,
     return GetParam() == Kudu1097::Enable;
   }
 };
-INSTANTIATE_TEST_CASE_P(, RebalancingDuringElectionStormTest,
-    ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
+INSTANTIATE_TEST_SUITE_P(, RebalancingDuringElectionStormTest,
+                         ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(RebalancingDuringElectionStormTest, RoundRobin) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
@@ -1484,7 +1485,7 @@ class RebalancerAndSingleReplicaTablets :
     public AdminCliTest,
     public ::testing::WithParamInterface<tuple<string, Kudu1097>> {
 };
-INSTANTIATE_TEST_CASE_P(, RebalancerAndSingleReplicaTablets,
+INSTANTIATE_TEST_SUITE_P(, RebalancerAndSingleReplicaTablets,
     ::testing::Combine(::testing::Values("auto", "enabled", "disabled"),
                        ::testing::Values(Kudu1097::Disable, Kudu1097::Enable)));
 TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
@@ -1930,9 +1931,9 @@ class LocationAwareRebalancingParamTest :
     return true;
   }
 };
-INSTANTIATE_TEST_CASE_P(, LocationAwareRebalancingParamTest,
-                        ::testing::ValuesIn(kLaRebalancingParams),
-                        LaRebalancingTestName);
+INSTANTIATE_TEST_SUITE_P(, LocationAwareRebalancingParamTest,
+                         ::testing::ValuesIn(kLaRebalancingParams),
+                         LaRebalancingTestName);
 TEST_P(LocationAwareRebalancingParamTest, Rebalance) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";

@@ -28,6 +28,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -138,14 +139,14 @@ class TestRpc : public RpcTestBase, public ::testing::WithParamInterface<tuple<b
 
 // This is used to run all parameterized tests with and without SSL, on Unix sockets
 // and TCP.
-INSTANTIATE_TEST_CASE_P(Parameters, TestRpc,
-                        testing::Combine(testing::Values(false, true),
-                                         testing::Values(false, true)),
-                        [](const testing::TestParamInfo<tuple<bool, bool>>& info) {
-                          return Substitute("$0_$1",
-                                            std::get<0>(info.param) ? "SSL" : "NoSSL",
-                                            std::get<1>(info.param) ? "UnixSocket" : "TCP");
-                        });
+INSTANTIATE_TEST_SUITE_P(Parameters, TestRpc,
+                         testing::Combine(testing::Values(false, true),
+                                          testing::Values(false, true)),
+                         [](const testing::TestParamInfo<tuple<bool, bool>>& info) {
+                           return Substitute("$0_$1",
+                                             std::get<0>(info.param) ? "SSL" : "NoSSL",
+                                             std::get<1>(info.param) ? "UnixSocket" : "TCP");
+                         });
 
 
 TEST_P(TestRpc, TestMessengerCreateDestroy) {

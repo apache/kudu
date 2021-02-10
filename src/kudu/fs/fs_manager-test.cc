@@ -28,7 +28,6 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -140,8 +139,8 @@ class FsManagerTestBase : public KuduTest,
  private:
   unique_ptr<FsManager> fs_manager_;
 };
-INSTANTIATE_TEST_CASE_P(BlockManagerTypes, FsManagerTestBase,
-    ::testing::ValuesIn(BlockManager::block_manager_types()));
+INSTANTIATE_TEST_SUITE_P(BlockManagerTypes, FsManagerTestBase,
+                         ::testing::ValuesIn(BlockManager::block_manager_types()));
 
 TEST_P(FsManagerTestBase, TestBaseOperations) {
   fs_manager()->DumpFileSystemTree(std::cout);
