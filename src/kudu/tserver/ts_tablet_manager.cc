@@ -376,7 +376,6 @@ Status TSTabletManager::Init() {
                 .Build(&tablet_copy_pool_));
 
   RETURN_NOT_OK(ThreadPoolBuilder("txn-commit")
-                .set_max_queue_size(0)
                 .set_max_threads(FLAGS_txn_commit_pool_num_threads)
                 .Build(&txn_commit_pool_));
 

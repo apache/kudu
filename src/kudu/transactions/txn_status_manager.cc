@@ -365,7 +365,7 @@ void CommitTasks::AbortTxnAsync() {
 void CommitTasks::ScheduleAbortTxnWrite() {
   // Submit the task to a threadpool.
   // NOTE: This is called by the reactor thread that catches the BeginCommit
-  // reseponse, so we can't do IO in this thread.
+  // response, so we can't do IO in this thread.
   DCHECK_EQ(0, ops_in_flight_);
   scoped_refptr<CommitTasks> scoped_this(this);
   CHECK_OK(commit_pool_->Submit([this, scoped_this = std::move(scoped_this),
@@ -402,7 +402,7 @@ void CommitTasks::FinalizeCommitAsync(Timestamp commit_timestamp) {
 void CommitTasks::ScheduleFinalizeCommitWrite(Timestamp commit_timestamp) {
   // Submit the task to a threadpool.
   // NOTE: This is called by the reactor thread that catches the BeginCommit
-  // reseponse, so we can't do IO in this thread.
+  // response, so we can't do IO in this thread.
   DCHECK_EQ(0, ops_in_flight_);
   scoped_refptr<CommitTasks> scoped_this(this);
   CHECK_OK(commit_pool_->Submit([this, scoped_this = std::move(scoped_this),
