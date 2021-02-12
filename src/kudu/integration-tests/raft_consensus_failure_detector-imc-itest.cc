@@ -17,7 +17,6 @@
 
 #include <functional>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -62,10 +61,7 @@ class RaftConsensusFailureDetectorIMCTest : public MiniClusterITestBase {
 // configuration change.
 // Regression test for KUDU-2229.
 TEST_F(RaftConsensusFailureDetectorIMCTest, TestFailureDetectorActivation) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
 

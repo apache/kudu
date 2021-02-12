@@ -858,11 +858,7 @@ TEST_F(DeleteTableITest, TestMergeConsensusMetadata) {
 // state, which means they have not yet been committed to a majority, cannot
 // shut down during a DeleteTablet() call.
 TEST_F(DeleteTableITest, TestDeleteFollowerWithReplicatingOps) {
-  if (!AllowSlowTests()) {
-    // We will typically wait at least 5 seconds for timeouts to occur.
-    LOG(INFO) << "Skipping test in fast-test mode.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
 
@@ -1154,10 +1150,7 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
 // Ensure that the master doesn't try to delete tombstoned tablets.
 // Regression test for KUDU-2114.
 TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "This test sleeps for several seconds and only runs in slow-test mode";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   const vector<string> master_flags = {

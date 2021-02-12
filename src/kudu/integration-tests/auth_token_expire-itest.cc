@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <vector>
 
@@ -285,10 +284,7 @@ INSTANTIATE_TEST_SUITE_P(ValidityIntervals, AuthTokenExpireDuringWorkloadITest,
 TEST_P(AuthTokenExpireDuringWorkloadITest, InvalidTokenDuringMixedWorkload) {
   static const int32_t kTimeoutMs = 10 * 60 * 1000;
 
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   ASSERT_OK(cluster_->Start());
 
@@ -327,10 +323,7 @@ TEST_P(AuthTokenExpireDuringWorkloadITest, InvalidTokenDuringSeparateWorkloads) 
   const string table_name = "authn-token-expire-separate-workloads";
   static const int32_t kTimeoutMs = 10 * 60 * 1000;
 
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   ASSERT_OK(cluster_->Start());
 
@@ -547,10 +540,7 @@ class MultiMasterIdleConnectionsITest : public AuthTokenExpireITestBase {
 // when the client tried to open the test table after master leader re-election:
 //   Timed out: GetTableSchema timed out after deadline expired
 TEST_F(MultiMasterIdleConnectionsITest, ClientReacquiresAuthnToken) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const string kTableName = "keep-connection-to-former-master-leader";
   const auto time_start = MonoTime::Now();

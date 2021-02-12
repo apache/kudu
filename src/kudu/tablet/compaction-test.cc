@@ -1124,20 +1124,14 @@ TEST_F(TestCompaction, TestMergeMRSWithAllInvisibleRows) {
 // contain non-overlapping data. In this case the merge can be optimized
 // to be block-wise.
 TEST_F(TestCompaction, BenchmarkMergeWithoutOverlap) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipped: must enable slow tests.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   NO_FATALS(DoBenchmark<false>());
 }
 
 // Benchmark for the compaction merge input when the inputs are entirely
 // overlapping (i.e the inputs become fully interleaved in the output)
 TEST_F(TestCompaction, BenchmarkMergeWithOverlap) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipped: must enable slow tests.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   NO_FATALS(DoBenchmark<true>());
 }
 #endif

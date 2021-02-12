@@ -2098,7 +2098,7 @@ static void EnableLogLatency(server::GenericServiceProxy* proxy) {
 
 // Run a regular workload with a leader that's writing to its WAL slowly.
 TEST_F(RaftConsensusITest, TestSlowLeader) {
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(BuildAndStart());
 
@@ -2178,7 +2178,7 @@ TEST_F(RaftConsensusITest, TestLargeBatches) {
 TEST_F(RaftConsensusITest, TestCommitIndexFarBehindAfterLeaderElection) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
 
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   // Set the batch size low so that, after the new leader takes
   // over below, the ops required to catch up from the committed index
@@ -2265,7 +2265,7 @@ TEST_F(RaftConsensusITest, TestCommitIndexFarBehindAfterLeaderElection) {
 
 // Run a regular workload with one follower that's writing to its WAL slowly.
 TEST_F(RaftConsensusITest, TestSlowFollower) {
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(BuildAndStart());
 
@@ -2296,7 +2296,7 @@ TEST_F(RaftConsensusITest, TestSlowFollower) {
 // Run a special workload that constantly updates a single row on a cluster
 // where every replica is writing to its WAL slowly.
 TEST_F(RaftConsensusITest, TestHammerOneRow) {
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(BuildAndStart());
 
@@ -3070,10 +3070,7 @@ TEST_P(RaftConsensusParamReplicationModesITest, TestRestartWithDifferentUUID) {
 // Designating graceful leadership transfer to a follower that cannot catch up
 // should eventually fail.
 TEST_F(RaftConsensusITest, TestLeaderTransferWhenFollowerFallsBehindLeaderGC) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   const auto kTimeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags = {
     // Disable follower eviction.

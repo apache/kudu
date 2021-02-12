@@ -586,10 +586,7 @@ TEST_F(AlterTableTest, TestShutdownWithPendingTasks) {
 //  - get the new schema state, and mark the alter as complete
 //  - get the old schema state, and ask the TS again to perform the alter.
 TEST_F(AlterTableTest, TestRestartTSDuringAlter) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping slow test";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   ASSERT_EQ(0, tablet_replica_->tablet()->metadata()->schema_version());
 

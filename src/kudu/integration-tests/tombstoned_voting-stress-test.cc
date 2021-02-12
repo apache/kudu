@@ -217,7 +217,7 @@ void TombstonedVotingStressTest::RunVoteRequestLoop() {
 // copying replicas.
 TEST_F(TombstonedVotingStressTest, TestTombstonedVotingUnderStress) {
   // This test waits for several seconds, so only run it in slow mode.
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
 

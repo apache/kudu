@@ -1475,10 +1475,7 @@ TEST_F(AdminCliTest, TestLeaderTransferToNonVoter) {
 // abrupt stepdowns are happening, as long as the writes have long enough
 // timeouts to ride over the unstable leadership.
 TEST_F(AdminCliTest, TestSimultaneousLeaderTransferAndAbruptStepdown) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
   FLAGS_num_tablet_servers = 3;

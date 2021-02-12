@@ -170,10 +170,7 @@ TEST(TestMonoTime, TestSleepFor) {
 }
 
 TEST(TestMonoTime, TestSleepForOverflow) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping test because it sleeps for ~4s";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   // This quantity (~4s sleep) overflows a 32-bit integer such that
   // the value becomes 0.

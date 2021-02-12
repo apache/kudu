@@ -79,7 +79,7 @@ class TombstonedVotingIMCITest : public MiniClusterITestBase {
 // Ensure that a tombstoned replica cannot vote after we call Shutdown() on it.
 TEST_F(TombstonedVotingIMCITest, TestNoVoteAfterShutdown) {
   // This test waits for several seconds, so only run it in slow mode.
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   FLAGS_allow_unsafe_replication_factor = true; // Allow an even replication factor.
   FLAGS_enable_tablet_copy = false; // Tablet copy would interfere with this test.
@@ -152,7 +152,7 @@ TEST_F(TombstonedVotingIMCITest, TestNoVoteAfterShutdown) {
 // This is implemented by directly exercising the RPC API with different vote request parameters.
 TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
   // This test waits for several seconds, so only run it in slow mode.
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   FLAGS_allow_unsafe_replication_factor = true; // Allow an even replication factor.
   FLAGS_enable_tablet_copy = false; // Tablet copy would interfere with this test.
@@ -251,7 +251,7 @@ TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
 // Disable tombstoned voting and ensure that an election that would require it fails.
 TEST_F(TombstonedVotingIMCITest, TestNoVoteIfTombstonedVotingDisabled) {
   // This test waits for several seconds, so only run it in slow mode.
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   FLAGS_raft_enable_tombstoned_voting = false; // Disable tombstoned voting.
   FLAGS_allow_unsafe_replication_factor = true; // Allow an even replication factor.
@@ -301,7 +301,7 @@ TEST_F(TombstonedVotingIMCITest, TestNoVoteIfTombstonedVotingDisabled) {
 // the last-logged opid was unknown. This may occur if a tablet is tombstoned
 // while in a FAILED state.
 TEST_F(TombstonedVotingIMCITest, TestNoVoteIfNoLastLoggedOpId) {
-  if (!AllowSlowTests()) return; // This test waits for several seconds.
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   FLAGS_allow_unsafe_replication_factor = true; // Allow an even replication factor.
 

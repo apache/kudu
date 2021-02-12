@@ -111,11 +111,7 @@ class RaftConfigChangeITest : public ExternalMiniClusterITestBase {
 // 8. Once that process completes, all 3 replicas will have identical logs,
 //    which is what we wait for at the end of the test.
 TEST_F(RaftConfigChangeITest, TestKudu2147) {
-  if (!AllowSlowTests()) {
-    // This test injects seconds of latency so can take a while to converge.
-    LOG(WARNING) << "Skipping test in fast-test mode.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   // Slow down leader heartbeats so that in the explicit election below, the
   // second leader does not immediately heartbeat to the initial leader. If

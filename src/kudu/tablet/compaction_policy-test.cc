@@ -265,10 +265,7 @@ static RowSetVector LoadFile(const string& name) {
 // data. This test can be used as a benchmark for optimizing the compaction
 // policy, and also serves as a basic regression/stress test using real data.
 TEST_F(TestCompactionPolicy, TestYcsbCompaction) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   const RowSetVector rowsets = LoadFile("testdata/ycsb-test-rowsets.tsv");
   RowSetTree tree;
   ASSERT_OK(tree.Reset(rowsets));

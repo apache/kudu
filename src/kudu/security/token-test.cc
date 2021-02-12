@@ -791,10 +791,7 @@ TEST_F(TokenTest, TestVaryingTokenValidityIntervals) {
 // Test to check the invariant that all tokens signed within a TSK's activity
 // interval must be expired by the end of the TSK's validity interval.
 TEST_F(TokenTest, TestKeyValidity) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   // Note: this test's runtime is roughly the length of a key-validity
   // interval, which is determined by the token validity intervals and the key
   // rotation interval.

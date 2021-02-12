@@ -3861,10 +3861,7 @@ class FlushModeOpRatesTest : public ClientTest,
 // in AUTO_FLUSH and AUTO_FLUSH_BACKGROUND mode; all the operations have
 // the same pre-defined size.
 TEST_P(FlushModeOpRatesTest, RunComparison) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const size_t kBufferSizeBytes = 1024;
   const size_t kRowNum = 256;
@@ -5246,10 +5243,7 @@ shared_ptr<KuduSession> LoadedSession(const shared_ptr<KuduClient>& client,
 // half update rows in descending order.
 // This ensures that we don't hit a deadlock in such a situation.
 TEST_F(ClientTest, TestDeadlockSimulation) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "TestDeadlockSimulation disabled since slow.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   // Make reverse client who will make batches that update rows
   // in reverse order. Separate client used so rpc calls come in at same time.

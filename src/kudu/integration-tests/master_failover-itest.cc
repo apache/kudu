@@ -173,10 +173,7 @@ INSTANTIATE_TEST_SUITE_P(HmsConfigurations, MasterFailoverTest, ::testing::Value
 TEST_P(MasterFailoverTest, TestCreateTableSync) {
   const char* kTableName = "default.test_create_table_sync";
 
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "This test can only be run in slow mode.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   LOG(INFO) << "Pausing leader master";
   int leader_idx;
@@ -206,10 +203,7 @@ TEST_P(MasterFailoverTest, TestCreateTableSync) {
 TEST_P(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
   const char* kTableName = "default.test_pause_after_create_table_issued";
 
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "This test can only be run in slow mode.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   ASSERT_OK(CreateTable(kTableName, kNoWaitForCreate));
 
@@ -236,10 +230,7 @@ TEST_P(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
 // elected leader master and succeed.
 TEST_P(MasterFailoverTest, TestDeleteTableSync) {
   const char* kTableName = "default.test_delete_table_sync";
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "This test can only be run in slow mode.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   ASSERT_OK(CreateTable(kTableName, kWaitForCreate));
 
@@ -270,11 +261,7 @@ TEST_P(MasterFailoverTest, TestRenameTableSync) {
   const char* kTableNameOrig = "default.test_alter_table_sync";
   const char* kTableNameNew = "default.test_alter_table_sync_renamed";
 
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "This test can only be run in slow mode.";
-    return;
-  }
-
+  SKIP_IF_SLOW_NOT_ALLOWED();
   ASSERT_OK(CreateTable(kTableNameOrig, kWaitForCreate));
 
   LOG(INFO) << "Pausing leader master";

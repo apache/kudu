@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <vector>
 
@@ -214,10 +213,7 @@ TEST_F(TokenSignerITest, TskMasterLeadershipChange) {
 //   * Make sure the TSK stays valid and can be used for token verification
 //     up to the very end of the token validity interval.
 TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   vector<TokenSigningPublicKeyPB> public_keys;
   ASSERT_OK(GetLeaderPublicKeys(&public_keys));
   ASSERT_EQ(1, public_keys.size());

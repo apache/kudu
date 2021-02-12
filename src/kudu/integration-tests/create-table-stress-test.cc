@@ -170,10 +170,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
 }
 
 TEST_F(CreateTableStressTest, CreateAndDeleteBigTable) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping slow test";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   string table_name = "test_table";
   NO_FATALS(CreateBigTable(table_name, FLAGS_num_test_tablets));
   master::GetTableLocationsResponsePB resp;
@@ -204,10 +201,7 @@ TEST_F(CreateTableStressTest, CreateAndDeleteBigTable) {
 }
 
 TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping slow test";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   string table_name = "test_table";
   NO_FATALS(CreateBigTable(table_name, FLAGS_num_test_tablets));
@@ -232,10 +226,7 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
 }
 
 TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping slow test";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   string table_name = "test_table";
   LOG(INFO) << CURRENT_TEST_NAME() << ": Step 1. Creating big table " << table_name << " ...";

@@ -301,10 +301,7 @@ class RebalanceIgnoredTserversTest :
     public AdminCliTest {
 };
 TEST_F(RebalanceIgnoredTserversTest, Basic) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   FLAGS_num_tablet_servers = 5;
   // Start a cluster with a single tablet.
@@ -475,10 +472,7 @@ INSTANTIATE_TEST_SUITE_P(, RebalanceParamTest,
     ::testing::Combine(::testing::Values(1, 2, 3, 5),
                        ::testing::Values(Kudu1097::Disable, Kudu1097::Enable)));
 TEST_P(RebalanceParamTest, Rebalance) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const auto& param = GetParam();
   const auto kRepFactor = std::get<0>(param);
@@ -771,10 +765,7 @@ class IgnoredTserverGoesDownDuringRebalancingTest : public RebalancingTest {
   }
 };
 TEST_F(IgnoredTserverGoesDownDuringRebalancingTest, TserverDown) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const vector<string> kTserverExtraFlags = {
     // Slow down tablet copy to make rebalancing step running longer
@@ -895,10 +886,7 @@ class DDLDuringRebalancingTest : public RebalancingTest,
 INSTANTIATE_TEST_SUITE_P(, DDLDuringRebalancingTest,
                          ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(DDLDuringRebalancingTest, TablesCreatedAndDeletedDuringRebalancing) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(Prepare());
 
@@ -1087,10 +1075,7 @@ class ConcurrentRebalancersTest : public RebalancingTest,
 INSTANTIATE_TEST_SUITE_P(, ConcurrentRebalancersTest,
                          ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(ConcurrentRebalancersTest, TwoConcurrentRebalancers) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(Prepare());
 
@@ -1180,10 +1165,7 @@ class TserverGoesDownDuringRebalancingTest : public RebalancingTest,
 INSTANTIATE_TEST_SUITE_P(, TserverGoesDownDuringRebalancingTest,
                          ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(TserverGoesDownDuringRebalancingTest, TserverDown) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const vector<string> kTserverExtraFlags = {
     // Slow down tablet copy to make rebalancing step running longer
@@ -1267,10 +1249,7 @@ class TserverAddedDuringRebalancingTest : public RebalancingTest,
 INSTANTIATE_TEST_SUITE_P(, TserverAddedDuringRebalancingTest,
                          ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(TserverAddedDuringRebalancingTest, TserverStarts) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const vector<string> kTserverExtraFlags = {
     // Slow down tablet copy to make rebalancing step running longer
@@ -1339,10 +1318,7 @@ class RebalancingDuringElectionStormTest : public RebalancingTest,
 INSTANTIATE_TEST_SUITE_P(, RebalancingDuringElectionStormTest,
                          ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
 TEST_P(RebalancingDuringElectionStormTest, RoundRobin) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(Prepare());
 
@@ -1598,10 +1574,7 @@ class LocationAwareRebalancingBasicTest : public RebalancingTest {
 // and the placement policy constraints should be reimposed after running
 // the rebalancer tool.
 TEST_F(LocationAwareRebalancingBasicTest, Basic) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const LocationInfo location_info = { { "/A", 2 }, { "/B", 2 }, { "/C", 2 }, };
   vector<string> table_names;
@@ -1935,10 +1908,7 @@ INSTANTIATE_TEST_SUITE_P(, LocationAwareRebalancingParamTest,
                          ::testing::ValuesIn(kLaRebalancingParams),
                          LaRebalancingTestName);
 TEST_P(LocationAwareRebalancingParamTest, Rebalance) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   const auto& param = GetParam();
   const auto& location_info = param.location_info;
   const auto& excluded_locations = param.excluded_locations;
@@ -2012,10 +1982,7 @@ public:
 };
 
 TEST_F(IntraLocationRebalancingBasicTest, LocationsWithEmptyTabletServers) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   const string first_table_name_pattern = "rebalance_test_first_table_$0";
   const string second_table_name_pattern = "rebalance_test_second_table_$0";
   const LocationInfo location_info = { { "/A", 3 }, { "/B", 3 }, { "/C", 3 },

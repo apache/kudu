@@ -599,10 +599,7 @@ TYPED_TEST(BlockManagerTest, CloseTwiceTest) {
 TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
   const int kNumBlocks = 1000;
 
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Not running in slow-tests mode";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   Random rand(SeedRandom());
   unique_ptr<BlockCreationTransaction> creation_transaction =

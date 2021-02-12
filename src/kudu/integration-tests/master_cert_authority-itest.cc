@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -462,10 +461,7 @@ TEST_F(SingleMasterConnectToClusterTest, ConnectToCluster) {
 }
 
 TEST_F(MultiMasterConnectToClusterTest, ConnectToCluster) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   ASSERT_OK(cluster_->Start());
   Run();
 }

@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -346,10 +345,7 @@ TEST_F(SecurityUnknownTskTest, ErrorUnavailableCommonOperations) {
 // this gives coverage of ERROR_UNAVAILABLE handling for all RPC calls involved
 // in the workload scenario.
 TEST_F(SecurityUnknownTskTest, ErrorUnavailableDuringWorkload) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   static const int64_t kTimeoutMs = 20 * 1000;
   int64_t tsk_seq_num = 100;

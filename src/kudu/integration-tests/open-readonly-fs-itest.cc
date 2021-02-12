@@ -99,7 +99,7 @@ class OpenReadonlyFsITest : public KuduTest {
 // This is a regression test for KUDU-1657. It typically takes about 35 seconds
 // to trigger that bug.
 TEST_F(OpenReadonlyFsITest, TestWriteAndVerify) {
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   KuduSchema schema;
   KuduSchemaBuilder b;

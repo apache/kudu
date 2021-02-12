@@ -20,7 +20,6 @@
 #include <unistd.h>
 
 #include <functional>
-#include <ostream>
 #include <string>
 #include <vector>
 
@@ -46,10 +45,7 @@ class ThreadTest : public KuduTest {};
 // Join with a thread and emit warnings while waiting to join.
 // This has to be manually verified.
 TEST_F(ThreadTest, TestJoinAndWarn) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping test in quick test mode, since this sleeps";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   scoped_refptr<Thread> holder;
   ASSERT_OK(Thread::Create("test", "sleeper thread",
@@ -61,10 +57,7 @@ TEST_F(ThreadTest, TestJoinAndWarn) {
 }
 
 TEST_F(ThreadTest, TestFailedJoin) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping test in quick test mode, since this sleeps";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   scoped_refptr<Thread> holder;
   ASSERT_OK(Thread::Create("test", "sleeper thread",

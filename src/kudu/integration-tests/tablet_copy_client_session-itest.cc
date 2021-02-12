@@ -122,10 +122,7 @@ void TabletCopyClientSessionITest::PrepareClusterForTabletCopy(
 // Regression test for KUDU-1785. Ensure that starting a tablet copy session
 // while a tablet is bootstrapping will result in a simple failure, not a crash.
 TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Test only runs in slow test mode";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   const MonoDelta kTimeout = MonoDelta::FromSeconds(90); // Can be very slow on TSAN.
   NO_FATALS(PrepareClusterForTabletCopy());
 
@@ -282,10 +279,7 @@ TEST_F(TabletCopyClientSessionITest, TestCopyFromCrashedSource) {
 // Regression for KUDU-2125: ensure that a heavily loaded source cluster can
 // satisfy many concurrent tablet copies.
 TEST_F(TabletCopyClientSessionITest, TestTabletCopyWithBusySource) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   const int kNumTablets = 20;
 
   ExternalMiniClusterOptions opts;

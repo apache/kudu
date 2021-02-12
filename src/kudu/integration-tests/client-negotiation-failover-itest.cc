@@ -17,7 +17,6 @@
 
 #include <cstdlib>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -137,10 +136,7 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu1580ConnectToTServer) {
   static const int kTimeoutMs = 5 * 60 * 1000;
   static const char* kTableName = "kudu1580";
 
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   cluster_opts_.num_tablet_servers = kNumTabletServers;
   ASSERT_OK(CreateAndStartCluster());

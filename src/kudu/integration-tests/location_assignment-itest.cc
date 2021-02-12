@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -215,10 +214,7 @@ class TsLocationAssignmentITest :
 // is assigned the same location after restart once the location assignment
 // script is kept the same between restarts.
 TEST_P(TsLocationAssignmentITest, Basic) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(StartCluster());
   NO_FATALS(CheckLocationInfo());
@@ -234,10 +230,7 @@ TEST_P(TsLocationAssignmentITest, Basic) {
 // Verify the behavior of the location mapping cache upon tablet server
 // registrations.
 TEST_P(TsLocationAssignmentITest, LocationMappingCacheOnTabletServerRestart) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   NO_FATALS(StartCluster());
   NO_FATALS(CheckLocationInfo());

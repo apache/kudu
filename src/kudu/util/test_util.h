@@ -35,7 +35,7 @@
 #define SKIP_IF_SLOW_NOT_ALLOWED() do { \
   if (!AllowSlowTests()) { \
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run"; \
-    return; \
+    GTEST_SKIP(); \
   } \
 } while (0)
 

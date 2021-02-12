@@ -106,10 +106,7 @@ class RaftConsensusStressITest : public RaftConsensusITestBase {
 // some point all replacement replicas are placed on top of previously
 // tombstoned ones.
 TEST_F(RaftConsensusStressITest, RemoveReplaceInCycle) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const bool is_343_scheme = FLAGS_test_raft_prepare_replacement_before_eviction;
   const int kReplicaUnavailableSec = FLAGS_test_follower_unavailable_considered_failed_sec;

@@ -785,7 +785,7 @@ INSTANTIATE_TEST_SUITE_P(DifferentFaultPoints,
                                           "fault_crash_before_flush_tablet_meta_after_flush_mrs"));
 
 TEST_P(Kudu969Test, Test) {
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   // We use a replicated cluster here so that the 'REPLICATE' messages
   // and 'COMMIT' messages are spread out further in time, and it's

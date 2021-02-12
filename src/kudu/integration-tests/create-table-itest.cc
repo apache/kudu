@@ -443,10 +443,7 @@ static void LookUpRandomKeysLoop(const std::shared_ptr<master::MasterServiceProx
 // This test replicates these conditions and hammers the master with key
 // lookups, attempting to reproduce the master crashes.
 TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping slow test";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const char* kTableName = "test";
 

@@ -62,10 +62,7 @@ class ConsensusPeerHealthStatusITest : public RaftConsensusITestBase {
 // This is a functional test that verifies that when a replica goes into a bad
 // state, its health status is detected by the leader replica.
 TEST_F(ConsensusPeerHealthStatusITest, TestPeerHealthStatusTransitions) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "Test disabled in fast test mode. Set KUDU_ALLOW_SLOW_TESTS=1 to enable.";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   const vector<string> kMasterFlags = {

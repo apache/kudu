@@ -509,10 +509,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
 TEST_F(RemoteKsckTest, TestChecksumSnapshotLastingLongerThanAHM) {
   // This test is really slow because -tablet_history_max_age_sec's lowest
   // acceptable value is 1.
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   // This test relies on somewhat precise timing: the timestamp update must
   // happen during the wait to start the checksum, for each tablet. It's likely
