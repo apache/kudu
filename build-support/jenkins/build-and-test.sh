@@ -96,6 +96,12 @@
 #     might report total number of cores available to the _host_ OS in case of
 #     containerized VM instances: for optimal results, it's useful to override
 #     this variable to reflect actual restrictions.
+#
+#  PARALLEL_TESTS Default: the value of PARALLEL above
+#     Parallelism to use when testing locally (not using dist-test).
+#     By default this is set the PARALLEL described above.
+#     This value can be important to set on resource constrained machines
+#     running some of the more intense long running integration tests.
 
 if [ "$KUDU_ALLOW_SKIPPED_TESTS" == "1" ]; then
   # If the commit only contains changes that do not impact the build or tests, exit immediately.
@@ -148,6 +154,7 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 export PARALLEL=${PARALLEL:-$(getconf _NPROCESSORS_ONLN)}
+export PARALLEL_TESTS=${PARALLEL_TESTS:-$PARALLEL}
 BUILD_JAVA=${BUILD_JAVA:-1}
 BUILD_GRADLE=${BUILD_GRADLE:-1}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
@@ -501,7 +508,7 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -L no_dist_test"
 fi
 
-if ! $THIRDPARTY_BIN/ctest -j$PARALLEL $EXTRA_TEST_FLAGS ; then
+if ! $THIRDPARTY_BIN/ctest -j$PARALLEL_TESTS $EXTRA_TEST_FLAGS ; then
   TESTS_FAILED=1
   FAILURES="$FAILURES"$'C++ tests failed\n'
 fi
