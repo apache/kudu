@@ -148,7 +148,7 @@ class TxnCommitITest : public KuduTest {
     ASSERT_TRUE(pb.has_real_user());
     client_user_ = pb.real_user();
 
-    TestWorkload w(cluster_.get());
+    TestWorkload w(cluster_.get(), TestWorkload::PartitioningType::HASH);
     w.set_num_replicas(num_replicas);
     w.set_num_tablets(2);
     w.Setup();
