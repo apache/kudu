@@ -682,7 +682,6 @@ TEST_F(TxnCommitITest, TestConcurrentCommitCalls) {
 // Test that committing the same transaction concurrently doesn't lead to any
 // issues.
 TEST_F(TxnCommitITest, TestConcurrentRepeatedCommitCalls) {
-  FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 1000;
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
   ASSERT_OK(BeginTransaction(participant_ids_, &txn, &txn_session));

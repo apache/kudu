@@ -806,14 +806,10 @@ TEST_F(TxnStatusManagerTest, TestUpdateTransactionState) {
   s = txn_manager_->AbortTransaction(kTxnId2, kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
-  // Redundant finalize calls are also benign.
+  // Redundant begin commit or finalize calls are also benign.
+  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId2, kOwner, &ts_error));
   ASSERT_OK(txn_manager_->FinalizeCommitTransaction(
       kTxnId2, Timestamp::kInitialTimestamp, &ts_error));
-
-  // Calls to begin committing should return an error if we've already
-  // finalized the commit.
-  s = txn_manager_->BeginCommitTransaction(kTxnId2, kOwner, &ts_error);
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 }
 
 // Test that we can only add participants to a transaction when it's in an

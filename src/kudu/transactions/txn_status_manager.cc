@@ -923,7 +923,8 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
   const auto& state = pb.state();
-  if (state == TxnStatePB::COMMIT_IN_PROGRESS) {
+  if (state == TxnStatePB::COMMIT_IN_PROGRESS ||
+      state == TxnStatePB::COMMITTED) {
     return Status::OK();
   }
   if (PREDICT_FALSE(state != TxnStatePB::OPEN)) {
