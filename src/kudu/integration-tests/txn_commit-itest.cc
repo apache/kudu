@@ -515,8 +515,6 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommitting) {
 // assigned commit timestamps across participants.
 TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
   // First, create another table that we'll delete later on.
-  unordered_set<string> first_table_tablet_ids(
-      participant_ids_.begin(), participant_ids_.end());
   const string kSecondTableName = "default.second_table";
   TestWorkload w(cluster_.get());
   w.set_num_replicas(1);
@@ -540,6 +538,7 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
   ASSERT_OK(BeginTransaction(both_tables_participant_ids, &txn, &txn_session));
+  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 2000;
   ASSERT_OK(txn->Commit(/*wait*/false));
 
