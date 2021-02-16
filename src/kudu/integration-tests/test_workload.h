@@ -59,7 +59,22 @@ class TestWorkload {
  public:
   static const char* const kDefaultTableName;
 
-  explicit TestWorkload(cluster::MiniCluster* cluster);
+  // Kudu provides two types of partitioning for a table: range partitioning and
+  // hash partitioning. This enum contains corresponding elements to be used
+  // to define partitioning type for the test table. Multi-level partitioning
+  // for the test table automatically created by TestWorkload isn't supported
+  // yet: as a workaround, point TestWorkload to already existing table
+  // with desired partitioning type.
+  enum class PartitioningType {
+    RANGE,
+    HASH,
+  };
+
+  // Create an test workload object to run against the specified cluster
+  // using a test table of the specified partitioning type.
+  explicit TestWorkload(
+      cluster::MiniCluster* cluster,
+      PartitioningType partitioning = PartitioningType::RANGE);
   ~TestWorkload();
 
   // Sets whether the read thread should crash if scanning to the cluster fails
@@ -154,11 +169,16 @@ class TestWorkload {
     num_replicas_ = r;
   }
 
-  // Set the number of tablets for the table created by this workload.
-  // The split points are evenly distributed through positive int32s.
-  void set_num_tablets(int tablets) {
-    CHECK_GE(tablets, 1);
-    num_tablets_ = tablets;
+  // Set the number of tablets for the test table created by this workload.
+  // In case of range partitioning, the split points are evenly distributed
+  // through positive int32s.
+  void set_num_tablets(int num_tablets) {
+    if (partitioning_ == PartitioningType::RANGE) {
+      CHECK_GE(num_tablets, 1);
+    } else {
+      CHECK_GE(num_tablets, 2);
+    }
+    num_tablets_ = num_tablets;
   }
 
   void set_table_name(const std::string& table_name) {
@@ -262,6 +282,7 @@ class TestWorkload {
   size_t GetNumberOfErrors(client::KuduSession* session);
 
   cluster::MiniCluster* cluster_;
+  const PartitioningType partitioning_;
   client::KuduClientBuilder client_builder_;
   client::sp::shared_ptr<client::KuduClient> client_;
   ThreadSafeRandom rng_;

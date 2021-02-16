@@ -58,8 +58,10 @@ namespace kudu {
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
 
-TestWorkload::TestWorkload(MiniCluster* cluster)
+TestWorkload::TestWorkload(MiniCluster* cluster,
+                           PartitioningType partitioning)
   : cluster_(cluster),
+    partitioning_(partitioning),
     rng_(SeedRandom()),
     num_write_threads_(4),
     num_read_threads_(0),
@@ -79,7 +81,7 @@ TestWorkload::TestWorkload(MiniCluster* cluster)
     selection_(client::KuduClient::CLOSEST_REPLICA),
     schema_(KuduSchema::FromSchema(GetSimpleTestSchema())),
     num_replicas_(3),
-    num_tablets_(1),
+    num_tablets_(partitioning_ == PartitioningType::RANGE ? 1 : 2),
     table_name_(kDefaultTableName),
     start_latch_(0),
     should_run_(false),
@@ -304,25 +306,44 @@ void TestWorkload::Setup() {
   CHECK_OK(s);
 
   if (!table_exists) {
-    // Create split rows.
-    vector<const KuduPartialRow*> splits;
-    for (int i = 1; i < num_tablets_; i++) {
-      KuduPartialRow* r = schema_.NewRow();
-      CHECK_OK(r->SetInt32("key", MathLimits<int32_t>::kMax / num_tablets_ * i));
-      splits.push_back(r);
-    }
-
     // Create the table.
-    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> creator_ptr(client_->NewTableCreator());
+
+    // Just an eye candy to use dots (.) only, not dots and arrows (->) mix.
+    KuduTableCreator& table_creator = *creator_ptr;
+    table_creator
+        .table_name(table_name_)
+        .schema(&schema_)
+        .num_replicas(num_replicas_);
+
+    switch (partitioning_) {
+      case PartitioningType::HASH:
+        table_creator.add_hash_partitions({ "key" }, num_tablets_);
+        break;
+      case PartitioningType::RANGE:
+        {
+          // Create split rows.
+          vector<const KuduPartialRow*> splits;
+          for (int i = 1; i < num_tablets_; i++) {
+            KuduPartialRow* r = schema_.NewRow();
+            CHECK_OK(r->SetInt32("key",
+                                 MathLimits<int32_t>::kMax / num_tablets_ * i));
+            splits.push_back(r);
+          }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-    Status s = table_creator->table_name(table_name_)
-        .schema(&schema_)
-        .num_replicas(num_replicas_)
-        .set_range_partition_columns({ "key" })
-        .split_rows(splits)
-        .Create();
+          table_creator
+              .set_range_partition_columns({ "key" })
+              .split_rows(splits);
 #pragma GCC diagnostic pop
+        }
+        break;
+      default:
+        LOG(FATAL) << "unexpected partitioning type for test table";
+        return; // unreachable
+    }
+
+    const auto s = table_creator.Create();
     if (!s.ok()) {
       if (!s.IsAlreadyPresent() && !s.IsServiceUnavailable()) {
         // TODO(KUDU-1537): Should be fixed with Exactly Once semantics.
