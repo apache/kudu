@@ -191,7 +191,10 @@ setup(
         'clean': clean,
         'build_ext': build_ext
     },
-    setup_requires=['pytest-runner'],
+    # pytest-runner 5.3.0 [1] started requiring python 3.6 or later.
+    #
+    # 1. https://github.com/pytest-dev/pytest-runner/blob/v5.3.0/CHANGES.rst
+    setup_requires=['pytest-runner <5.3.0'],
 
     # Note: dependencies in tests_require should also be listed in
     # requirements.txt so that dependencies aren't downloaded at test-time
