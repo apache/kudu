@@ -164,7 +164,7 @@ class Master : public kserver::KuduServer {
     kStopping,
   };
 
-  MasterState state_;
+  std::atomic<MasterState> state_;
 
   std::unique_ptr<MasterCertAuthority> cert_authority_;
   std::unique_ptr<security::TokenSigner> token_signer_;
