@@ -18,7 +18,7 @@
 #include "kudu/tablet/lock_manager.h"
 
 #include <cstddef>
-#include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -28,10 +28,13 @@
 
 #include <glog/logging.h>
 
+#include "kudu/common/txn_id.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
@@ -40,10 +43,12 @@
 #include "kudu/util/semaphore.h"
 #include "kudu/util/trace.h"
 
+using kudu::tserver::TabletServerErrorPB;
 using std::string;
 using std::unique_lock;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -356,15 +361,175 @@ void ScopedRowLock::Release() {
 }
 
 // ============================================================================
+//  ScopedPartitionLock
+// ============================================================================
+
+// A coarse grained partition level lock to prevent concurrent transactions to
+// a given tablet. Each lock is associated with a single transaction at a time.
+class PartitionLockState {
+ public:
+  explicit PartitionLockState(const TxnId& txn_id)
+      : txn_id_(txn_id) {}
+  TxnId txn_id() const {
+    return txn_id_;
+  }
+ private:
+  // The transaction ID that holds the partition lock.
+  const TxnId txn_id_;
+};
+
+ScopedPartitionLock::ScopedPartitionLock(LockManager* manager,
+                                         const TxnId& txn_id,
+                                         LockManager::LockWaitMode wait_mode)
+    : manager_(DCHECK_NOTNULL(manager)),
+      code_(TabletServerErrorPB::UNKNOWN_ERROR) {
+  switch (wait_mode) {
+    case LockManager::TRY_LOCK:
+      lock_state_ = manager_->TryAcquirePartitionLock(txn_id, &code_, MonoDelta::FromSeconds(1));
+      break;
+    case LockManager::WAIT_FOR_LOCK:
+      lock_state_ = manager_->WaitUntilAcquiredPartitionLock(txn_id);
+      DCHECK(lock_state_);
+      break;
+    default:
+      LOG(DFATAL) << "not reachable";
+      break;
+  }
+}
+
+ScopedPartitionLock::~ScopedPartitionLock() {
+  if (manager_) {
+    Release();
+  }
+}
+
+bool ScopedPartitionLock::IsAcquired(tserver::TabletServerErrorPB::Code* code) const {
+  if (lock_state_) {
+    return true;
+  }
+  *code = code_;
+  return false;
+}
+
+void ScopedPartitionLock::Release() {
+  // Already released.
+  if (!lock_state_) {
+    return;
+  }
+  manager_->ReleasePartitionLock();
+  lock_state_ = nullptr;
+}
+
+ScopedPartitionLock::ScopedPartitionLock(ScopedPartitionLock&& other) noexcept {
+  TakeState(&other);
+}
+
+ScopedPartitionLock& ScopedPartitionLock::operator=(ScopedPartitionLock&& other) noexcept {
+  TakeState(&other);
+  return *this;
+}
+
+void ScopedPartitionLock::TakeState(ScopedPartitionLock* other) {
+  DCHECK(other != this);
+  manager_ = other->manager_;
+  lock_state_ = other->lock_state_;
+  code_ = other->code_;
+  other->lock_state_ = nullptr;
+}
+
+// ============================================================================
 //  LockManager
 // ============================================================================
 
 LockManager::LockManager()
-  : locks_(new LockTable()) {
+  : partition_sem_(1),
+    partition_lock_refs_(0),
+    locks_(new LockTable) {
 }
 
 LockManager::~LockManager() {
   delete locks_;
+}
+
+PartitionLockState* LockManager::TryAcquirePartitionLock(
+    const TxnId& txn_id,
+    TabletServerErrorPB::Code* code,
+    const MonoDelta& timeout) {
+  // Favor transactional ops over non-transactional ones by giving a
+  // non-transactional ops the maximum txn ID. We favor transactional ops here
+  // because aborting and retrying a transaction likely entails retrying
+  // several ops.
+  //
+  // TODO(hao): this may result in lock starvation for non-transactional ops.
+  // We should evaluate strategies to avoid this.
+  const auto requested_id = txn_id.IsValid() ?
+      txn_id.value() : std::numeric_limits<int64_t>::max();
+
+  // The most anticipated case is the lock is being re-acquired multiple times.
+  {
+    std::lock_guard<simple_spinlock> l(p_lock_);
+    if (partition_lock_ &&
+        PREDICT_TRUE(requested_id == partition_lock_->txn_id().value())) {
+      DCHECK_GT(partition_lock_refs_, 0);
+      DCHECK_GE(0, partition_sem_.GetValue());
+      partition_lock_refs_ += 1;
+      return partition_lock_.get();
+    }
+  }
+
+  // We expect low contention, so use TryAcquire first so we don't have to do a
+  // syscall to get the current time.
+  if (!partition_sem_.TryAcquire()) {
+    const MonoTime start(MonoTime::Now());
+    while (!partition_sem_.TimedAcquire(MonoDelta::FromMilliseconds(250))) {
+      bool has_timeout = timeout.Initialized();
+      MonoDelta elapsed;
+      if (has_timeout) {
+        elapsed = MonoTime::Now() - start;
+      }
+      if (has_timeout && elapsed > timeout) {
+        LOG(WARNING) << Substitute("Txn $0 has not acquired the partition lock after $1ms",
+                                  requested_id, elapsed.ToMilliseconds());
+        // If we're still unable to take 'partition_sem_', but 'partition_lock_'
+        // is unset, just try again -- another thread is likely in the midsts of
+        // unsetting it and 'partition_sem_' should be available soon.
+        std::lock_guard<simple_spinlock> l(p_lock_);
+        if (!partition_lock_) {
+          continue;
+        }
+        // If the requestor requires a lock held by another transaction. Abort
+        // the requested transaction immediately if it has a higher txn ID than
+        // the transaction holding the lock. Otherwise, let the requestor retry.
+        //
+        // TODO(hao): generalize deadlock prevention scheme when adding new
+        // scheme or lock type.
+        *code = requested_id > partition_lock_->txn_id().value() ?
+            TabletServerErrorPB::TXN_LOCKED_ABORT : TabletServerErrorPB::TXN_LOCKED_RETRY_OP;
+        return nullptr;
+      }
+    }
+  }
+  std::lock_guard<simple_spinlock> l(p_lock_);
+  DCHECK_GE(0, partition_sem_.GetValue());
+  DCHECK(!partition_lock_);
+  DCHECK_EQ(partition_lock_refs_, 0);
+  // No one is holding the lock -- take it now.
+  partition_lock_.reset(new PartitionLockState(requested_id));
+  partition_lock_refs_ = 1;
+  return partition_lock_.get();
+}
+
+PartitionLockState* LockManager::WaitUntilAcquiredPartitionLock(const TxnId& txn_id) {
+  MicrosecondsInt64 start_wait_us = GetMonoTimeMicros();
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  PartitionLockState* lock = TryAcquirePartitionLock(txn_id, &code);
+  CHECK(lock);
+  MicrosecondsInt64 wait_us = GetMonoTimeMicros() - start_wait_us;
+  TRACE_COUNTER_INCREMENT("partition_lock_wait_us", wait_us);
+  if (wait_us > 100 * 1000) {
+    TRACE("Waited $0us to acquire the partition lock", wait_us);
+  }
+  return lock;
 }
 
 std::vector<LockEntry*> LockManager::LockBatch(ArrayView<Slice> keys, const OpState* op) {
@@ -378,6 +543,15 @@ std::vector<LockEntry*> LockManager::LockBatch(ArrayView<Slice> keys, const OpSt
 
 void LockManager::ReleaseBatch(ArrayView<LockEntry*> locks) { locks_->ReleaseLockEntries(locks); }
 
+void LockManager::ReleasePartitionLock() {
+  std::lock_guard<simple_spinlock> l(p_lock_);
+  DCHECK_GT(partition_lock_refs_, 0);
+  if (--partition_lock_refs_ == 0) {
+    partition_sem_.unlock();
+    partition_lock_.reset();
+  }
+}
+
 void LockManager::AcquireLockOnEntry(LockEntry* entry, const OpState* op) {
   // We expect low contention, so just try to try_lock first. This is faster
   // than a timed_lock, since we don't have to do a syscall to get the current
@@ -385,7 +559,6 @@ void LockManager::AcquireLockOnEntry(LockEntry* entry, const OpState* op) {
   if (!entry->sem.TryAcquire()) {
     // If the current holder of this lock is the same op just increment
     // the recursion count without acquiring the mutex.
-    //
     //
     // NOTE: This is not a problem for the current way locks are managed since
     // they are obtained and released in bulk (all locks for an op are

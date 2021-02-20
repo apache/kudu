@@ -109,6 +109,13 @@ message TabletServerErrorPB {
 
     // The requested transaction participant op was already applied.
     TXN_OP_ALREADY_APPLIED = 23;
+
+    // The requested transaction needs to be aborted for deadlock prevention.
+    TXN_LOCKED_ABORT = 24;
+
+    // The requested transaction participant op or write op needs to be
+    // retried, because the required lock is held by another transaction.
+    TXN_LOCKED_RETRY_OP = 25;
   }
 
   // The error code.

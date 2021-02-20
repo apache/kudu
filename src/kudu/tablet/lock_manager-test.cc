@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -30,14 +31,20 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/array_view.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
+using kudu::tserver::TabletServerErrorPB;
 using std::shared_ptr;
 using std::string;
 using std::thread;
@@ -53,7 +60,7 @@ class LockEntry;
 class OpState;
 
 static const OpState* kFakeTransaction =
-  reinterpret_cast<OpState*>(0xdeadbeef);
+    reinterpret_cast<OpState*>(0xdeadbeef);
 
 class LockManagerTest : public KuduTest {
  public:
@@ -116,7 +123,7 @@ TEST_F(LockManagerTest, TestRelockSameRow) {
   VerifyAlreadyLocked(key_a[0]);
 }
 
-TEST_F(LockManagerTest, TestMoveLock) {
+TEST_F(LockManagerTest, TestMoveRowLock) {
   // Acquire a lock.
   Slice key_a[] = {"a"};
   ScopedRowLock row_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
@@ -126,6 +133,228 @@ TEST_F(LockManagerTest, TestMoveLock) {
   ScopedRowLock moved_lock(std::move(row_lock));
   ASSERT_TRUE(moved_lock.acquired());
   ASSERT_FALSE(row_lock.acquired()); // NOLINT(bugprone-use-after-move)
+}
+
+TEST_F(LockManagerTest, TestLockUnlockPartitionSingleTxn) {
+  TxnId id(0);
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  {
+    ScopedPartitionLock l(&lock_manager_, id);
+    ASSERT_TRUE(l.IsAcquired(&code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+  }
+
+  // The same transaction should be able to acquire the partition lock multiple
+  // times.
+  ScopedPartitionLock first_lock(&lock_manager_, id);
+  ASSERT_TRUE(first_lock.IsAcquired(&code));
+  ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  {
+    ScopedPartitionLock second_lock(&lock_manager_, id);
+    ASSERT_TRUE(second_lock.IsAcquired(&code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    ASSERT_EQ(2, lock_manager_.partition_lock_refs());
+  }
+
+  // 'partition_lock_refs' should decrease automatically when a
+  // ScopedPartitionLock goes out of scope.
+  ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+  ASSERT_TRUE(first_lock.IsAcquired(&code));
+  ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+}
+
+TEST_F(LockManagerTest, TestLockUnlockPartitionAbort) {
+  // Acquiring a lock that is held by another transaction with a lower txn ID
+  // will get a TXN_LOCKED_ABORT server error code.
+  TxnId txn1(1);
+  ScopedPartitionLock first_lock(&lock_manager_, txn1);
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  ASSERT_TRUE(first_lock.IsAcquired(&code));
+  ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+
+  TxnId txn2(2);
+  ScopedPartitionLock second_lock(&lock_manager_, txn2);
+  ASSERT_FALSE(second_lock.IsAcquired(&code));
+  ASSERT_EQ(TabletServerErrorPB::TXN_LOCKED_ABORT, code);
+  ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+}
+
+TEST_F(LockManagerTest, TestLockUnlockPartitionRetry) {
+  // Acquiring a lock that is held by another transaction with a higher txn ID
+  // will get a 'TXN_LOCKED_RETRY' server error code.
+  TxnId txn2(2);
+  ScopedPartitionLock first_lock(&lock_manager_, txn2);
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  ASSERT_TRUE(first_lock.IsAcquired(&code));
+  ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+
+  TxnId txn1(1);
+  ScopedPartitionLock second_lock(&lock_manager_, txn1);
+  ASSERT_FALSE(second_lock.IsAcquired(&code));
+  ASSERT_EQ(TabletServerErrorPB::TXN_LOCKED_RETRY_OP, code);
+  ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+}
+
+TEST_F(LockManagerTest, TestSerialWaitForLockPartition) {
+  // Run serially in an order that we know for sure the lock can be taken.  And
+  // it is safe to use 'WAIT_FOR_LOCK' lock mode.
+  constexpr const int kNumTxn = 5;
+  for (int i = 0; i < kNumTxn; i++) {
+    TxnId id(i);
+    ScopedPartitionLock l(&lock_manager_, id, LockManager::WAIT_FOR_LOCK);
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    CHECK(l.IsAcquired(&code));
+    CHECK_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    CHECK_EQ(1, lock_manager_.partition_lock_refs());
+  }
+}
+
+TEST_F(LockManagerTest, TestConcurrentWaitForLockPartition) {
+  // The txn ID doesn't matter much for WAIT_FOR_LOCK, since it's assumed that
+  // callers have already ensured that the lock acquisition order is valid
+  // (e.g. by using TRY_LOCK mode on participant leaders).
+  constexpr const int kMaxTxnId = 5;
+  ScopedPartitionLock l(&lock_manager_, rand() % kMaxTxnId, LockManager::WAIT_FOR_LOCK);
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  ASSERT_TRUE(l.IsAcquired(&code));
+  ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+  thread t([&] {
+    ScopedPartitionLock l(&lock_manager_, rand() % kMaxTxnId, LockManager::WAIT_FOR_LOCK);
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    CHECK(l.IsAcquired(&code));
+    CHECK_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    CHECK_EQ(1, lock_manager_.partition_lock_refs());
+  });
+  SCOPED_CLEANUP({ t.join(); });
+  SleepFor(MonoDelta::FromSeconds(3));
+  ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+  l.Release();
+}
+
+TEST_F(LockManagerTest, TestWaitDieDeadlockPrevention) {
+  LockManager other_lock_manager;
+  vector<thread> threads;
+  constexpr const int kNumTxns = 10;
+  CountDownLatch latch(kNumTxns);
+  for (int t = 0; t < kNumTxns; t++) {
+    threads.emplace_back([&, t] {
+      latch.CountDown();
+      TxnId id(t);
+      ScopedPartitionLock locks[2];
+      // Functor that acquires the given lock manager following the wait-die
+      // scheme.
+      const auto lock_txn = [&] (LockManager* lm, int lock_idx) {
+        bool acquired = false;
+        while (true) {
+          locks[lock_idx] = ScopedPartitionLock(lm, id);
+          TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+          acquired = locks[lock_idx].IsAcquired(&code);
+          if (acquired) {
+            LOG(INFO) << "Acquired lock from txn " << t;
+            CHECK_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+            CHECK_GE(lm->partition_lock_refs(), 1);
+            break;
+          } else if (code == TabletServerErrorPB::TXN_LOCKED_ABORT) {
+            LOG(INFO) << "Aborting txn " << t;
+            break;
+          } else if (code == TabletServerErrorPB::TXN_LOCKED_RETRY_OP) {
+            LOG(INFO) << "Retrying txn " << t;
+            continue;
+          } else {
+            FAIL() << "Unexpected code " << code;
+          }
+        }
+      };
+      // Have each transaction attempt to lock one lock manager and then the
+      // other, at random. With a correct wait-die scheme, this should not get
+      // stuck in a deadlock.
+      // NOTE: this simulates multiple transactions attempting to lock multiple
+      // participants at once.
+      LockManager* lm1 = rand() % 2 ? &lock_manager_ : &other_lock_manager;
+      LockManager* lm2 = lm1 == &lock_manager_ ? &other_lock_manager : &lock_manager_;
+      lock_txn(lm1, 0);
+      lock_txn(lm2, 1);
+    });
+  }
+  std::for_each(threads.begin(), threads.end(), [&] (thread& t) { t.join(); });
+  ASSERT_EQ(0, lock_manager_.partition_lock_refs());
+}
+
+TEST_F(LockManagerTest, TestConcurrentLockUnlockPartitionWithInvalidID) {
+  vector<thread> threads;
+  constexpr const int kNumStartAtOnce = 5;
+  CountDownLatch latch(kNumStartAtOnce);
+  for (int t = 0; t < kNumStartAtOnce - 1; t++) {
+    threads.emplace_back([&] {
+      latch.CountDown();
+      TxnId id(1);
+      ScopedPartitionLock l(&lock_manager_, id);
+      TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+      bool acquired = l.IsAcquired(&code);
+      // Lock may not acquired if non-transactional op take the lock
+      // first.
+      if (acquired) {
+        CHECK_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+        CHECK_GE(lock_manager_.partition_lock_refs(), 1);
+      }
+    });
+  }
+
+  // Actors with an invalid ID (i.e. non-transactional ops) can also acquire
+  // the lock.
+  threads.emplace_back([&] {
+    latch.CountDown();
+    TxnId id(TxnId::kInvalidTxnId);
+    ScopedPartitionLock l(&lock_manager_, id);
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    bool acquired = l.IsAcquired(&code);
+    if (acquired) {
+      CHECK_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+      CHECK_EQ(1, lock_manager_.partition_lock_refs());
+    }
+  });
+
+  std::for_each(threads.begin(), threads.end(), [&] (thread& t) { t.join(); });
+  ASSERT_EQ(0, lock_manager_.partition_lock_refs());
+}
+
+TEST_F(LockManagerTest, TestMovePartitionLock) {
+  {
+    // Acquire a lock.
+    TxnId id(0);
+    ScopedPartitionLock partition_lock(&lock_manager_, id);
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_TRUE(partition_lock.IsAcquired(&code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+
+    // Move it to a new instance.
+    ScopedPartitionLock moved_lock(std::move(partition_lock));
+    ASSERT_TRUE(moved_lock.IsAcquired(&code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    ASSERT_FALSE(partition_lock.IsAcquired(&code)); // NOLINT(bugprone-use-after-move)
+    ASSERT_EQ(1, lock_manager_.partition_lock_refs());
+  }
+
+  {
+    // Acquire an empty lock.
+    ScopedPartitionLock partition_lock;
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    ASSERT_FALSE(partition_lock.IsAcquired(&code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    ASSERT_EQ(0, lock_manager_.partition_lock_refs());
+
+    // Move it to a new instance.
+    ScopedPartitionLock moved_lock(std::move(partition_lock));
+    ASSERT_FALSE(moved_lock.IsAcquired(&code));
+    ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+    ASSERT_FALSE(partition_lock.IsAcquired(&code));  // NOLINT(bugprone-use-after-move)
+    ASSERT_EQ(0, lock_manager_.partition_lock_refs());
+  }
 }
 
 class LmTestResource {
