@@ -449,6 +449,11 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
   RETURN_NOT_OK(EncodeRangeSplits(split_rows, schema, &splits));
   RETURN_NOT_OK(SplitRangeBounds(schema, std::move(splits), &bounds_with_hash_schemas));
 
+  // Maps each partition to its respective hash schemas within 'bounds_with_hash_schemas',
+  // needed for logic later in function for filling in holes in partition key space. Will be
+  // empty if no per range hash schemas are used.
+  vector<int> partition_idx_to_hash_schemas_idx;
+
   if (!range_hash_schemas.empty()) {
     // The number of ranges should match the size of range_hash_schemas.
     DCHECK_EQ(range_hash_schemas.size(), bounds_with_hash_schemas.size());
@@ -456,7 +461,8 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
     DCHECK(split_rows.empty());
     vector<Partition> result_partitions;
     // Iterate through each bound and its hash schemas to generate hash partitions.
-    for (const auto& bound : bounds_with_hash_schemas) {
+    for (int i = 0; i < bounds_with_hash_schemas.size(); i++) {
+      const auto& bound = bounds_with_hash_schemas[i];
       const auto& current_range_hash_schemas = bound.hash_schemas;
       vector<Partition> current_bound_hash_partitions;
       // If current bound's HashBucketSchema is empty, implies use of default table-wide schema.
@@ -467,20 +473,23 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
         current_bound_hash_partitions = GenerateHashPartitions(current_range_hash_schemas,
                                                                hash_encoder);
       }
-      // Adds range part to partition key.
+      // Add range part to partition key.
       for (Partition& partition : current_bound_hash_partitions) {
         partition.partition_key_start_.append(bound.lower);
         partition.partition_key_end_.append(bound.upper);
+        int index = current_range_hash_schemas.empty() ? -1 : i;
+        partition_idx_to_hash_schemas_idx.emplace_back(index);
       }
       result_partitions.insert(result_partitions.end(),
                                std::make_move_iterator(current_bound_hash_partitions.begin()),
                                std::make_move_iterator(current_bound_hash_partitions.end()));
     }
+    DCHECK_EQ(partition_idx_to_hash_schemas_idx.size(), result_partitions.size());
     *partitions = std::move(result_partitions);
   } else {
     // Create a partition per range bound and hash bucket combination.
     vector<Partition> new_partitions;
-    for (const Partition &base_partition : base_hash_partitions) {
+    for (const Partition& base_partition : base_hash_partitions) {
       for (const auto& bound : bounds_with_hash_schemas) {
         Partition partition = base_partition;
         partition.partition_key_start_.append(bound.lower);
@@ -508,7 +517,11 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
   // the absolute start and end case, these holes are filled by clearing the
   // partition key beginning at the hash component. For a concrete example,
   // see PartitionTest::TestCreatePartitions.
-  for (Partition& partition : *partitions) {
+  const HashBucketSchema* hash_bucket_schema;
+  for (int j = 0; j < partitions->size(); j++) {
+    Partition& partition = (*partitions)[j];
+    // Find the first zero-valued bucket from the end and truncate the partition key
+    // starting from that bucket onwards for zero-valued buckets.
     if (partition.range_key_start().empty()) {
       for (int i = static_cast<int>(partition.hash_buckets().size()) - 1; i >= 0; i--) {
         if (partition.hash_buckets()[i] != 0) {
@@ -517,11 +530,26 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
         partition.partition_key_start_.erase(kEncodedBucketSize * i);
       }
     }
+    // Starting from the last hash bucket, truncate the partition key until we hit the first
+    // non-max-valued bucket, at which point, replace the encoding with the next-incremented
+    // bucket value. For example, the following range end partition keys should be transformed,
+    // where the key is (hash_comp1, hash_comp2, range_comp):
+    //
+    // [ (0, 0, "a2b2") -> (0, 1, "a2b2") ]
+    // [ (0, 1, "a2b2") -> (1, _, "a2b2") ]
+    // [ (1, 0, "a2b2") -> (1, 1, "a2b2") ]
+    // [ (1, 1, "a2b2") -> (_, _, "a2b2") ]
     if (partition.range_key_end().empty()) {
       for (int i = static_cast<int>(partition.hash_buckets().size()) - 1; i >= 0; i--) {
         partition.partition_key_end_.erase(kEncodedBucketSize * i);
         int32_t hash_bucket = partition.hash_buckets()[i] + 1;
-        if (hash_bucket != hash_bucket_schemas_[i].num_buckets) {
+        if (range_hash_schemas.empty() || partition_idx_to_hash_schemas_idx[j] == -1) {
+          hash_bucket_schema = &hash_bucket_schemas_[i];
+        } else {
+          const auto& hash_schemas_idx = partition_idx_to_hash_schemas_idx[j];
+          hash_bucket_schema = &bounds_with_hash_schemas[hash_schemas_idx].hash_schemas[i];
+        }
+        if (hash_bucket != hash_bucket_schema->num_buckets) {
           hash_encoder.Encode(&hash_bucket, &partition.partition_key_end_);
           break;
         }

@@ -1089,4 +1089,143 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
             "range hash schemas.", s1.ToString());
 
 }
+
+TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
+  // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
+  // PARTITION BY [HASH BUCKET (a, c), HASH BUCKET (b), RANGE (a, b, c)];
+  Schema schema({ ColumnSchema("a", STRING),
+                  ColumnSchema("b", STRING),
+                  ColumnSchema("c", STRING) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  PartitionSchemaPB schema_builder;
+  // Table-wide hash schema defined below.
+  AddHashBucketComponent(&schema_builder, { "b" }, 2, 0);
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+
+  ASSERT_EQ("HASH (b) PARTITIONS 2, RANGE (a, b, c)",
+            partition_schema.DebugString(schema));
+
+  vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
+  PartitionSchema::RangeHashSchema range_hash_schemas;
+
+  { // [(_, _, _), (a1, _, c1))
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a1"));
+    ASSERT_OK(upper.SetStringCopy("c", "c1"));
+    PartitionSchema::HashBucketSchemas hash_schema_4_buckets = {{{ColumnId(0)}, 4, 0}};
+    bounds.emplace_back(lower, upper);
+    range_hash_schemas.emplace_back(hash_schema_4_buckets);
+  }
+
+  { // [(a2, b2, _), (a3, b3, _))
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a2"));
+    ASSERT_OK(lower.SetStringCopy("b", "b2"));
+    ASSERT_OK(upper.SetStringCopy("a", "a3"));
+    ASSERT_OK(upper.SetStringCopy("b", "b3"));
+    bounds.emplace_back(lower, upper);
+    range_hash_schemas.emplace_back(PartitionSchema::HashBucketSchemas());
+  }
+
+  { // [(a4, b4, _), (_, _, _))
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a4"));
+    ASSERT_OK(lower.SetStringCopy("b", "b4"));
+    PartitionSchema::HashBucketSchemas hash_schema_2_buckets_by_3 = {
+        {{ColumnId(0)}, 2, 0},
+        {{ColumnId(2)}, 3, 0}
+    };
+    bounds.emplace_back(lower, upper);
+    range_hash_schemas.emplace_back(hash_schema_2_buckets_by_3);
+  }
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
+  ASSERT_EQ(12, partitions.size());
+  // Partitions below sorted by range, can verify that the partition keyspace is filled by checking
+  // that the start key of the first partition and the end key of the last partition is cleared.
+
+  EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
+  EXPECT_EQ("", partitions[0].range_key_start());
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[0].range_key_end());
+  EXPECT_EQ("", partitions[0].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "a1\0\0\0\0c1", 12), partitions[0].partition_key_end());
+
+  EXPECT_EQ(1, partitions[1].hash_buckets()[0]);
+  EXPECT_EQ("", partitions[1].range_key_start());
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[1].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1", 4),partitions[1].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "a1\0\0\0\0c1", 12), partitions[1].partition_key_end());
+
+  EXPECT_EQ(2, partitions[2].hash_buckets()[0]);
+  EXPECT_EQ("", partitions[2].range_key_start());
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[2].range_key_end());
+  EXPECT_EQ(string("\0\0\0\2", 4), partitions[2].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\2" "a1\0\0\0\0c1", 12), partitions[2].partition_key_end());
+
+  EXPECT_EQ(3, partitions[3].hash_buckets()[0]);
+  EXPECT_EQ("", partitions[3].range_key_start());
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[3].range_key_end());
+  EXPECT_EQ(string("\0\0\0\3", 4), partitions[3].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\3" "a1\0\0\0\0c1", 12), partitions[3].partition_key_end());
+
+  EXPECT_EQ(0, partitions[4].hash_buckets()[0]);
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].range_key_start());
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[4].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "a2\0\0b2\0\0", 12), partitions[4].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "a3\0\0b3\0\0", 12), partitions[4].partition_key_end());
+
+  EXPECT_EQ(1, partitions[5].hash_buckets()[0]);
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[5].range_key_start());
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[5].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "a2\0\0b2\0\0", 12), partitions[5].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "a3\0\0b3\0\0", 12), partitions[5].partition_key_end());
+
+  EXPECT_EQ(0, partitions[6].hash_buckets()[0]);
+  EXPECT_EQ(0, partitions[6].hash_buckets()[1]);
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[6].range_key_start());
+  EXPECT_EQ("", partitions[6].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a4\0\0b4\0\0", 16), partitions[6].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[6].partition_key_end());
+
+  EXPECT_EQ(0, partitions[7].hash_buckets()[0]);
+  EXPECT_EQ(1, partitions[7].hash_buckets()[1]);
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[7].range_key_start());
+  EXPECT_EQ("", partitions[7].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[7].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2", 8), partitions[7].partition_key_end());
+
+  EXPECT_EQ(0, partitions[8].hash_buckets()[0]);
+  EXPECT_EQ(2, partitions[8].hash_buckets()[1]);
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[8].range_key_start());
+  EXPECT_EQ("", partitions[8].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[8].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1", 4), partitions[8].partition_key_end());
+
+  EXPECT_EQ(1, partitions[9].hash_buckets()[0]);
+  EXPECT_EQ(0, partitions[9].hash_buckets()[1]);
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[9].range_key_start());
+  EXPECT_EQ("", partitions[9].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a4\0\0b4\0\0", 16), partitions[9].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[9].partition_key_end());
+
+  EXPECT_EQ(1, partitions[10].hash_buckets()[0]);
+  EXPECT_EQ(1, partitions[10].hash_buckets()[1]);
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[10].range_key_start());
+  EXPECT_EQ("", partitions[10].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[10].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2", 8), partitions[10].partition_key_end());
+
+  EXPECT_EQ(1, partitions[11].hash_buckets()[0]);
+  EXPECT_EQ(2, partitions[11].hash_buckets()[1]);
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[11].range_key_start());
+  EXPECT_EQ("", partitions[11].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[11].partition_key_start());
+  EXPECT_EQ("", partitions[11].partition_key_end());
+}
 } // namespace kudu
