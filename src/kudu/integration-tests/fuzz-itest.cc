@@ -231,24 +231,27 @@ struct TestOp {
   }
 };
 
-enum RedoType {
+enum class RedoType {
   INSERT,
   UPDATE,
   DELETE,
 };
 
 struct Redo {
+
   Redo(RedoType t, int32_t k, optional<int32_t> v = boost::none)
       : rtype(t),
         key(k),
-        val(std::move(v)) {}
+        val(v) {}
 
   string ToString() const {
-    if (rtype == DELETE) {
+    if (rtype == RedoType::DELETE) {
       return strings::Substitute("{DELETE key=$0}", key);
     }
     return strings::Substitute("{$0 key=$1 val=$2}",
-                               rtype == INSERT ? "INSERT" : "UPDATE", key,
+                               rtype == RedoType::INSERT ? "INSERT"
+                                                         : "UPDATE",
+                               key,
                                val ? std::to_string(*val) : "NULL");
   }
   RedoType rtype;
@@ -671,14 +674,14 @@ class FuzzTest : public KuduTest {
 
           if (!selected_rows[redo.key]) {
             // This is the first relevant redo for this row.
-            is_deleted_start[redo.key] = redo.rtype == INSERT;
+            is_deleted_start[redo.key] = redo.rtype == RedoType::INSERT;
             selected_rows[redo.key] = true;
           }
         }
 
         // The redo is relevant as per the apply criteria.
-        is_deleted_end[redo.key] = redo.rtype == DELETE;
-        if (redo.rtype != DELETE) {
+        is_deleted_end[redo.key] = redo.rtype == RedoType::DELETE;
+        if (redo.rtype != RedoType::DELETE) {
           // Deleted rows still exist in 'expected_rows'. This is OK;
           // 'expected_is_deleted' will reflect the deletion.
           expected_rows[redo.key] = { redo.key, redo.val };
@@ -1332,7 +1335,7 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         const auto& row_key = test_op.val;
         const auto& txn_id = test_op.val2;
         const auto& old_row = pending_row_by_key_for_txn(row_key, txn_id);
-        RedoType rtype = old_row ? UPDATE : INSERT;
+        RedoType rtype = old_row ? RedoType::UPDATE : RedoType::INSERT;
         auto pending_row = InsertOrUpsertRow(
             row_key, i++, old_row, test_op.type, txn_id);
 
@@ -1345,7 +1348,7 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         if ((test_op.type == TEST_INSERT_IGNORE ||
              test_op.type == TEST_INSERT_IGNORE_PK_ONLY ||
              test_op.type == TEST_UPSERT_PK_ONLY) &&
-            rtype == UPDATE) {
+            rtype == RedoType::UPDATE) {
           break;
         }
 
@@ -1369,7 +1372,8 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         for (int j = 0; j < update_multiplier; j++) {
           latest_update = MutateRow(row_key, i++, test_op.type);
         }
-        FindOrDie(pending_redos_per_txn, kNoTxnId).emplace_back(UPDATE, row_key, latest_update.val);
+        FindOrDie(pending_redos_per_txn, kNoTxnId).emplace_back(
+            RedoType::UPDATE, row_key, latest_update.val);
         auto& pending_row_by_key =
             LookupOrEmplace(&pending_vals_per_txn, kNoTxnId, ValueByRowKey{});
         EmplaceOrUpdate(&pending_row_by_key, row_key, latest_update);
@@ -1384,7 +1388,8 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
           // However don't adjust the pending values given the operation will be ignored.
           break;
         }
-        FindOrDie(pending_redos_per_txn, kNoTxnId).emplace_back(DELETE, row_key, boost::none);
+        FindOrDie(pending_redos_per_txn, kNoTxnId).emplace_back(
+            RedoType::DELETE, row_key, boost::none);
         auto& pending_row_by_key =
             LookupOrEmplace(&pending_vals_per_txn, kNoTxnId, ValueByRowKey{});
         EmplaceOrUpdate(&pending_row_by_key, row_key, boost::none);
