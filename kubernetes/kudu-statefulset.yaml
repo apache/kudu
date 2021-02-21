@@ -53,9 +53,9 @@ spec:
               value: "kudu-master-0.kudu-masters.apache-kudu.svc.cluster.local,kudu-master-1.kudu-masters.apache-kudu.svc.cluster.local,kudu-master-2.kudu-masters.apache-kudu.svc.cluster.local"
           args: ["master"]
           ports:
-            - containerPort: 8050
-              name: master-ui
             - containerPort: 8051
+              name: master-ui
+            - containerPort: 7051
               name: master-rpc
           volumeMounts:
             - name: datadir
@@ -94,7 +94,7 @@ metadata:
 spec:
   serviceName: kudu-tservers
   podManagementPolicy: "Parallel"
-  replicas: 3
+  replicas: 4
   selector:
     matchLabels:
       app: kudu-tserver
@@ -122,9 +122,9 @@ spec:
               value: "kudu-master-0.kudu-masters.apache-kudu.svc.cluster.local,kudu-master-1.kudu-masters.apache-kudu.svc.cluster.local,kudu-master-2.kudu-masters.apache-kudu.svc.cluster.local"
           args: ["tserver"]
           ports:
-            - containerPort: 7050
+            - containerPort: 8050
               name: tserver-ui
-            - containerPort: 7051
+            - containerPort: 7050
               name: tserver-rpc
           volumeMounts:
             - name: datadir

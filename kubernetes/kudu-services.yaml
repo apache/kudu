@@ -15,6 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+
+# From https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/
+# > StatefulSets currently require a Headless Service to be responsible for the
+#   network identity of the Pods. You are responsible for creating this Service.
+
 ---
 # headless service for kudu masters
 
@@ -31,7 +36,7 @@ spec:
     - name: ui
       port: 8051
     - name: rpc-port
-      port: 8050
+      port: 7051
   selector:
     app: kudu-master
 
@@ -68,8 +73,8 @@ spec:
   clusterIP: None
   ports:
     - name: ui
-      port: 7050
+      port: 8050
     - name: rpc-port
-      port: 7051
+      port: 7050
   selector:
     app: kudu-tserver

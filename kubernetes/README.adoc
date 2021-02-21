@@ -27,9 +27,10 @@ NOTE: Read more about Kubernetes here https://kubernetes.io/docs/tutorials/kuber
 
 ==== System Requirements
 
-    kubectl
-    minikube or kubeadm
-    docker
+- `minikube` or `kubeadm` to deploy your Kubernetes cluster. Start a Kubernetes
+  cluster before running through the next steps
+- `kubectl` to run commands against the Kubernetes cluster
+- `docker` to serve containers
 
 ==== Build Kudu Docker Image
 
@@ -50,11 +51,10 @@ Check status of kudu services:
 You should see below output on stdout
 
 ```
-NAME             TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)             AGE
-kudu-master-ui   NodePort    10.110.150.101   <none>        8051:30082/TCP      8m2s
-kudu-masters     ClusterIP   None             <none>        8051/TCP,8050/TCP   8m2s
-kudu-tservers    ClusterIP   None             <none>        7050/TCP,7051/TCP   8m2s
-tiller-deploy    ClusterIP   10.96.104.11     <none>        44134/TCP           47h
+NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)             AGE
+kudu-master-ui   NodePort    10.108.52.243   <none>        8051:30239/TCP      87m
+kudu-masters     ClusterIP   None            <none>        8051/TCP,7051/TCP   87m
+kudu-tservers    ClusterIP   None            <none>        8050/TCP,7050/TCP   87m
 ```
 
 === Create StatefulSet for Kudu Masters and Kudu TServers
@@ -71,17 +71,18 @@ You should see below output on stdout
 
 ```
 NAME           READY   AGE
-kudu-master    2/3     16s
-kudu-tserver   3/3     16s
+kudu-master    3/3     89m
+kudu-tserver   4/4     89m
 
 
-NAME                             READY   STATUS    RESTARTS   AGE
-kudu-master-0                    1/1     Running   0          9m9s
-kudu-master-1                    1/1     Running   0          9m9s
-kudu-master-2                    1/1     Running   0          9m9s
-kudu-tserver-0                   1/1     Running   0          9m19s
-kudu-tserver-1                   1/1     Running   0          9m5s
-kudu-tserver-2                   1/1     Running   0          9m5s
+NAME             READY   STATUS    RESTARTS   AGE
+kudu-master-0    1/1     Running   1          90m
+kudu-master-1    1/1     Running   1          90m
+kudu-master-2    1/1     Running   0          89m
+kudu-tserver-0   1/1     Running   1          90m
+kudu-tserver-1   1/1     Running   1          90m
+kudu-tserver-2   1/1     Running   1          90m
+kudu-tserver-3   1/1     Running   1          90m
 ```
 
 ==== Port Forward The Kudu Master UI
