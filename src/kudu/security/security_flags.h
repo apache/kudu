@@ -28,7 +28,11 @@ typedef TriStateFlag RpcAuthentication;
 typedef TriStateFlag RpcEncryption;
 
 struct SecurityDefaults {
-  static const char* const kDefaultTlsCiphers;
+  // The names for the 'kDefaultTlsCiphers' and 'kDefaultTlsCipherSuites'
+  // constants are confusingly close, but likely 'kDefaultTlsCiphers' is likely
+  // to be removed when obsoleting TLSv1.2 at some point in the future.
+  static const char* const kDefaultTlsCiphers;      // pre-TLSv1.3 ciphers
+  static const char* const kDefaultTlsCipherSuites; // TLSv1.3 and later ciphers
   static const char* const kDefaultTlsMinVersion;
 };
 

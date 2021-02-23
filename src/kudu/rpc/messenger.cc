@@ -77,6 +77,7 @@ MessengerBuilder::MessengerBuilder(string name)
       rpc_authentication_("optional"),
       rpc_encryption_("optional"),
       rpc_tls_ciphers_(kudu::security::SecurityDefaults::kDefaultTlsCiphers),
+      rpc_tls_ciphersuites_(kudu::security::SecurityDefaults::kDefaultTlsCipherSuites),
       rpc_tls_min_protocol_(kudu::security::SecurityDefaults::kDefaultTlsMinVersion),
       enable_inbound_tls_(false),
       reuseport_(false) {
@@ -307,19 +308,22 @@ void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote
 }
 
 Messenger::Messenger(const MessengerBuilder &bld)
-  : name_(bld.name_),
-    state_(kStarted),
-    authentication_(RpcAuthentication::REQUIRED),
-    encryption_(RpcEncryption::REQUIRED),
-    tls_context_(new security::TlsContext(bld.rpc_tls_ciphers_, bld.rpc_tls_min_protocol_)),
-    token_verifier_(new security::TokenVerifier()),
-    rpcz_store_(new RpczStore()),
-    metric_entity_(bld.metric_entity_),
-    rpc_negotiation_timeout_ms_(bld.rpc_negotiation_timeout_ms_),
-    sasl_proto_name_(bld.sasl_proto_name_),
-    keytab_file_(bld.keytab_file_),
-    reuseport_(bld.reuseport_),
-    retain_self_(this) {
+    : name_(bld.name_),
+      state_(kStarted),
+      authentication_(RpcAuthentication::REQUIRED),
+      encryption_(RpcEncryption::REQUIRED),
+      tls_context_(new security::TlsContext(bld.rpc_tls_ciphers_,
+                                            bld.rpc_tls_ciphersuites_,
+                                            bld.rpc_tls_min_protocol_,
+                                            bld.rpc_tls_excluded_protocols_)),
+      token_verifier_(new security::TokenVerifier),
+      rpcz_store_(new RpczStore),
+      metric_entity_(bld.metric_entity_),
+      rpc_negotiation_timeout_ms_(bld.rpc_negotiation_timeout_ms_),
+      sasl_proto_name_(bld.sasl_proto_name_),
+      keytab_file_(bld.keytab_file_),
+      reuseport_(bld.reuseport_),
+      retain_self_(this) {
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));
   }

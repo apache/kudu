@@ -22,6 +22,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -159,18 +160,45 @@ class MessengerBuilder {
     return *this;
   }
 
-  // Set the cipher suite preferences to use for TLS-secured RPC connections. Uses the OpenSSL
-  // cipher preference list format. See man (1) ciphers for more information.
+  // Set TLSv1.2 and earlier cipher suite preferences to use for TLS-secured RPC
+  // connections. Uses the OpenSSL cipher preference list format. Under the
+  // hood, SSL_CTX_set_cipher_list() is eventually being called with
+  // 'rpc_tls_ciphers'. See 'man (1) ciphers' for more information on the syntax
+  // of the cipher suite preference list and
+  // https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_set_ciphersuites.html
+  // for SSL_CTX_set_cipher_list() API details.
   MessengerBuilder& set_rpc_tls_ciphers(const std::string& rpc_tls_ciphers) {
     rpc_tls_ciphers_ = rpc_tls_ciphers;
     return *this;
   }
 
-  // Set the minimum protocol version to allow when for securing RPC connections with TLS. May be
-  // one of 'TLSv1', 'TLSv1.1', or 'TLSv1.2'.
-  MessengerBuilder& set_rpc_tls_min_protocol(
+  // Set TLSv1.3-specific cipher suite preferences to use for TLS-secured RPC
+  // connections. Uses the OpenSSL ciphersuite preference list format for
+  // TLSv1.3. Under the hood, SSL_CTX_set_ciphersuites() is eventually being
+  // called with 'rpc_tls_ciphersuites'. See 'man (1) ciphers' for more
+  // information on the TLSv1.3-specific syntax for the cipher suite preference
+  // list and
+  // https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_set_ciphersuites.html
+  // for SSL_CTX_set_ciphersuites() API details.
+  MessengerBuilder &set_rpc_tls_ciphersuites(
+      const std::string& rpc_tls_ciphersuites) {
+    rpc_tls_ciphersuites_ = rpc_tls_ciphersuites;
+    return *this;
+  }
+
+  // Set the minimum protocol version to allow when for securing RPC connections
+  // with TLS. May be one of 'TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'.
+  MessengerBuilder &set_rpc_tls_min_protocol(
       const std::string& rpc_tls_min_protocol) {
     rpc_tls_min_protocol_ = rpc_tls_min_protocol;
+    return *this;
+  }
+
+  // Set the list of TLS protocols to avoid when securing RPC connections. The
+  // elements might be from the list of 'TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'.
+  MessengerBuilder& set_rpc_tls_excluded_protocols(
+      std::vector<std::string> rpc_tls_excluded_protocols) {
+    rpc_tls_excluded_protocols_ = std::move(rpc_tls_excluded_protocols);
     return *this;
   }
 
@@ -233,8 +261,10 @@ class MessengerBuilder {
   std::string sasl_proto_name_;
   std::string rpc_authentication_;
   std::string rpc_encryption_;
-  std::string rpc_tls_ciphers_;
+  std::string rpc_tls_ciphers_;       // pre-TLSv1.3 cipher suites
+  std::string rpc_tls_ciphersuites_;  // TLSv1.3-related cipher suites
   std::string rpc_tls_min_protocol_;
+  std::vector<std::string> rpc_tls_excluded_protocols_;
   std::string rpc_certificate_file_;
   std::string rpc_private_key_file_;
   std::string rpc_ca_certificate_file_;

@@ -71,7 +71,19 @@ class TlsContext {
 
   TlsContext();
 
-  TlsContext(std::string tls_ciphers, std::string tls_min_protocol);
+  // Create TLS context using the specified parameters:
+  //  * tls_ciphers
+  //      cipher suites preference list for TLSv1.2 and prior versions
+  //  * tls_ciphersuites
+  //      cipher suites preference list for TLSv1.3
+  //  * tls_min_protocol
+  //      minimum TLS protocol version to enable
+  //  * tls_excluded_protocols
+  //      TLS protocol versions to exclude from the list of enabled ones
+  TlsContext(std::string tls_ciphers,
+             std::string tls_ciphersuites,
+             std::string tls_min_protocol,
+             std::vector<std::string> tls_excluded_protocols = {});
 
   ~TlsContext() = default;
 
@@ -175,13 +187,26 @@ class TlsContext {
 
   Status VerifyCertChainUnlocked(const Cert& cert) WARN_UNUSED_RESULT;
 
-  // The cipher suite preferences to use for TLS-secured RPC connections. Uses the OpenSSL
-  // cipher preference list format. See man (1) ciphers for more information.
+  // The cipher suite preferences to use for RPC connections secured with
+  // pre-TLSv1.3 protocols. Uses the OpenSSL cipher preference list format.
+  // See man (1) ciphers for more information.
   std::string tls_ciphers_;
 
-  // The minimum protocol version to allow when for securing RPC connections with TLS. May be
-  // one of 'TLSv1', 'TLSv1.1', or 'TLSv1.2'.
+  // TLSv1.3-specific ciphersuites. These are controlled separately from the
+  // pre-TLSv1.3 ones because the OpenSSL API provides separate calls to set
+  // those and the syntax for the TLSv1.3 list differs from the syntax for
+  // the legacy pre-TLSv1.3 ones. See man (1) ciphers for more information.
+  std::string tls_ciphersuites_;
+
+  // The minimum protocol version to allow for securing RPC connections with
+  // TLS. May be one of 'TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'.
   std::string tls_min_protocol_;
+
+  // TLS protocol versions to exclude from the list of acceptable ones to secure
+  // RPC connections with TLS. An empty container means the set of acceptable
+  // protocol version is defined by 'tls_min_protocol_' and the OpenSSL library
+  // itself.
+  std::vector<std::string> tls_excluded_protocols_;
 
   // Protects all members.
   //

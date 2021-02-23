@@ -17,6 +17,7 @@
 
 #include "kudu/security/tls_handshake.h"
 
+#include <openssl/crypto.h>
 #include <openssl/ssl.h>
 
 #include <atomic>
@@ -35,6 +36,7 @@
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/security-test-util.h"
+#include "kudu/security/security_flags.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -116,7 +118,6 @@ class TestTlsHandshakeBase : public KuduTest {
         }
       }
       if (!server_done) {
-        CHECK(!client_done);
         Status s = server.Continue(to_server, &to_client);
         VLOG(1) << "server->client: " << to_client.size() << " bytes";
         if (s.ok()) {
@@ -241,33 +242,50 @@ TEST_P(TestTlsHandshakeConcurrent, TestConcurrentAdoptCert) {
   SleepFor(MonoDelta::FromMilliseconds(10));
 }
 
-TEST_F(TestTlsHandshake, TestHandshakeSequence) {
+TEST_F(TestTlsHandshake, HandshakeSequenceNoTLSv1dot3) {
+  static const vector<string> kTlsExcludedProtocols = { "TLSv1.3" };
+
   PrivateKey ca_key;
   Cert ca_cert;
   ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
 
+  TlsContext client_tls(SecurityDefaults::kDefaultTlsCiphers,
+                        SecurityDefaults::kDefaultTlsCipherSuites,
+                        SecurityDefaults::kDefaultTlsMinVersion,
+                        kTlsExcludedProtocols);
+  ASSERT_OK(client_tls.Init());
+
+  TlsContext server_tls(SecurityDefaults::kDefaultTlsCiphers,
+                        SecurityDefaults::kDefaultTlsCipherSuites,
+                        SecurityDefaults::kDefaultTlsMinVersion,
+                        kTlsExcludedProtocols);
+  ASSERT_OK(server_tls.Init());
+
   // Both client and server have certs and CA.
-  ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &client_tls_));
-  ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &server_tls_));
+  ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &client_tls));
+  ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &server_tls));
 
   TlsHandshake server(TlsHandshakeType::SERVER);
-  ASSERT_OK(client_tls_.InitiateHandshake(&server));
+  ASSERT_OK(client_tls.InitiateHandshake(&server));
   TlsHandshake client(TlsHandshakeType::CLIENT);
-  ASSERT_OK(server_tls_.InitiateHandshake(&client));
+  ASSERT_OK(server_tls.InitiateHandshake(&client));
 
   string buf1;
   string buf2;
 
   // Client sends Hello
-  ASSERT_TRUE(client.Continue(buf1, &buf2).IsIncomplete());
+  auto s = client.Continue(buf1, &buf2);
+  ASSERT_TRUE(s.IsIncomplete()) << s.ToString();
   ASSERT_GT(buf2.size(), 0);
 
   // Server receives client Hello, and sends server Hello
-  ASSERT_TRUE(server.Continue(buf2, &buf1).IsIncomplete());
+  s = server.Continue(buf2, &buf1);
+  ASSERT_TRUE(s.IsIncomplete()) << s.ToString();
   ASSERT_GT(buf1.size(), 0);
 
   // Client receives server Hello and sends client Finished
-  ASSERT_TRUE(client.Continue(buf1, &buf2).IsIncomplete());
+  s = client.Continue(buf1, &buf2);
+  ASSERT_TRUE(s.IsIncomplete()) << s.ToString();
   ASSERT_GT(buf2.size(), 0);
 
   // Server receives client Finished and sends server Finished
@@ -291,6 +309,118 @@ TEST_F(TestTlsHandshake, TestHandshakeSequence) {
   NO_FATALS(Transfer(client_ssl, server_ssl));
   NO_FATALS(ReadAndCompare(server_ssl, "bye"));
 }
+
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+// This scenario is specific to TLSv1.3 handshake negotiation, so it's enabled
+// only if the OpenSSL library supports TLSv1.3.
+TEST_F(TestTlsHandshake, HandshakeSequenceTLSv1dot3) {
+  // NOTE: since --rpc_tls_min_protocol=TLSv1.3 flag isn't added, this scenario
+  //       also verifies that the client and the server sides behave as expected
+  //       by choosing TLSv1.3 in accordance to the cipher suite preference list
+  //       specified by the --rpc_tls_ciphersuites and --rpc_tls_ciphers flags.
+  PrivateKey ca_key;
+  Cert ca_cert;
+  ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
+
+  // Server has certificate signed by CA, client has self-signed certificate.
+  ASSERT_OK(ConfigureTlsContext(PkiConfig::SELF_SIGNED, ca_cert, ca_key, &client_tls_));
+  ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &server_tls_));
+
+  TlsHandshake server(TlsHandshakeType::SERVER);
+  ASSERT_OK(client_tls_.InitiateHandshake(&server));
+  // The client has a self-signed certificate, so the server has nothing to
+  // verify during the connection negotiation.
+  server.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
+
+  TlsHandshake client(TlsHandshakeType::CLIENT);
+  ASSERT_OK(server_tls_.InitiateHandshake(&client));
+  // That's the first connection from the client to the server/cluster, and the
+  // client hasn't yet seen a certificate of this Kudu cluster, hence it cannot
+  // verify the certificate of the server regardless the fact that the server's
+  // certificate is valid and signed by the cluster's CA private key.
+  client.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
+
+  auto* client_ssl = client.ssl();
+  auto* server_ssl = server.ssl();
+
+  string buf1;
+  string buf2;
+
+  // Client sends "Hello" (supported ciphersuites, keyshares, etc.).
+  auto s = client.Continue(buf1, &buf2);
+  ASSERT_TRUE(s.IsIncomplete()) << s.ToString();
+  ASSERT_GT(buf2.size(), 0);
+
+  // Server receives client's "Hello", chooses cipher, calculates keyshares,
+  // encrypts certificate, Finish messages and sends all this back to client.
+  s = server.Continue(buf2, &buf1);
+  ASSERT_TRUE(s.IsIncomplete()) << s.ToString();
+  ASSERT_GT(buf1.size(), 0);
+
+  // Client receives server's Hello and Finish messages.
+  ASSERT_OK(client.Continue(buf1, &buf2));
+  ASSERT_GT(buf2.size(), 0);
+
+  // This isn't a part of the TLSv1.3 handshake you'd see in the docs, but it's
+  // here due to the nature of the step-by-step connection negotiation protocol
+  // used by Kudu RPC. In the wild (i.e. if using the direct connection over the
+  // network, not the intermediate SASL framework), 'buf2' data would get to the
+  // server side with encrypted data from the very first request sent by the
+  // client to the server.
+  ASSERT_OK(server.Continue(buf2, &buf1));
+  ASSERT_GT(buf1.size(), 0);
+
+  // An extra sanity check: since the initial phase of the handshake is done,
+  // make sure it's indeed TLSv1.3 protocol, as expected.
+  ASSERT_EQ(TLS1_3_VERSION, SSL_version(client_ssl));
+  ASSERT_EQ(TLS1_3_VERSION, SSL_version(server_ssl));
+
+  // The code block below passes the data produced by the server's final TLS
+  // handshake message to the client side. It's not an application data: it
+  // should be passed by the encrypted/raw side of the communication channel,
+  // not via the SSL_{read,write}() API. In case of a regular over-the-network
+  // TLS negotiation, this data would get to the client side over the wire along
+  // with the encrypted data of the very first response sent by the server to
+  // the client. However, since Kudu RPC connection negotiation works in a
+  // step-by-step manner and runs on top of the SASL framework, this scenario
+  // emulates that by moving the data to the read BIO of the client-side SSL
+  // object. Once the data is in the buffer of the appropriate BIO, it will be
+  // pushed through and processed by the TLS engine with next chunk of encrypted
+  // application data received by the client.
+  {
+    BIO* rbio = SSL_get_rbio(client_ssl);
+    auto bytes_written = BIO_write(rbio, buf1.data(), buf1.size());
+    DCHECK_EQ(buf1.size(), bytes_written);
+    DCHECK_EQ(buf1.size(), BIO_ctrl_pending(rbio));
+  }
+
+  // The TLS handshake is now complete: both sides can send and receive data
+  // using OpenSSL's API. In other words, it's possible to use SSL_{read,write}
+  // to successfully send application data from the client to the server and
+  // back.
+  {
+    // The sequence of messages in this sub-scenario matches those produced by
+    // the TestRpc.TestCall/TCP_SSL scenario in src/kudu/rpc/rpc-test.cc.
+    const string client_msg_0 = "0123456789012345";
+    NO_FATALS(Write(client_ssl, client_msg_0));
+    const string client_msg_1 = "01234567890123456789012";
+    NO_FATALS(Write(client_ssl, client_msg_1));
+
+    NO_FATALS(Transfer(client_ssl, server_ssl));
+    NO_FATALS(ReadAndCompare(server_ssl, "0123"));
+    NO_FATALS(ReadAndCompare(server_ssl, "45678901234501234567890123456789012"));
+
+    const string server_msg_0 = "0123456789012345";
+    NO_FATALS(Write(server_ssl, server_msg_0));
+    const string server_msg_1 = "012";
+    NO_FATALS(Write(server_ssl, server_msg_1));
+
+    NO_FATALS(Transfer(server_ssl, client_ssl));
+    NO_FATALS(ReadAndCompare(client_ssl, "0123"));
+    NO_FATALS(ReadAndCompare(client_ssl, "456789012345012"));
+  }
+}
+#endif // #if OPENSSL_VERSION_NUMBER >= 0x10101000L ...
 
 // Tests that the TlsContext can transition from self signed cert to signed
 // cert, and that it rejects invalid certs along the way. We are testing this

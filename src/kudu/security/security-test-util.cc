@@ -29,14 +29,14 @@
 #include "kudu/security/tls_context.h"
 #include "kudu/util/test_util.h"
 
+using kudu::security::ca::CaCertRequestGenerator;
+using kudu::security::ca::CertSigner;
+
 namespace kudu {
 namespace security {
 
-using ca::CaCertRequestGenerator;
-using ca::CertSigner;
-
 Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert) {
-  static const int64_t kRootCaCertExpirationSeconds = 24 * 60 * 60;
+  constexpr int64_t kRootCaCertExpirationSeconds = 24 * 60 * 60;
   // Create a key for the self-signed CA.
   //
   // OpenSSL has a concept of "security levels" which, amongst other things,
@@ -48,13 +48,10 @@ Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert) {
   // See https://www.openssl.org/docs/man1.1.0/ssl/SSL_CTX_get_security_level.html
   // for more details.
   RETURN_NOT_OK(GeneratePrivateKey(1024, ca_key));
-
-  CaCertRequestGenerator::Config config = { "test-ca-cn" };
-  RETURN_NOT_OK(CertSigner::SelfSignCA(*ca_key,
-                                       config,
-                                       kRootCaCertExpirationSeconds,
-                                       ca_cert));
-  return Status::OK();
+  return CertSigner::SelfSignCA(*ca_key,
+                                CaCertRequestGenerator::Config{ "test-ca-cn" },
+                                kRootCaCertExpirationSeconds,
+                                ca_cert);
 }
 
 std::ostream& operator<<(std::ostream& o, PkiConfig c) {

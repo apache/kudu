@@ -68,6 +68,9 @@
 #ifndef SSL_OP_NO_TLSv1_1
 #define SSL_OP_NO_TLSv1_1 0x10000000U
 #endif
+#ifndef SSL_OP_NO_TLSv1_2
+#define SSL_OP_NO_TLSv1_2 0x08000000U
+#endif
 #ifndef SSL_OP_NO_TLSv1_3
 #define SSL_OP_NO_TLSv1_3 0x20000000U
 #endif
@@ -77,12 +80,15 @@
 #ifndef TLS1_2_VERSION
 #define TLS1_2_VERSION 0x0303
 #endif
+#ifndef TLS1_3_VERSION
+#define TLS1_3_VERSION 0x0304
+#endif
 
 using kudu::security::ca::CertRequestGenerator;
-using strings::Substitute;
 using std::string;
 using std::unique_lock;
 using std::vector;
+using strings::Substitute;
 
 DEFINE_int32(ipki_server_key_size, 2048,
              "the number of bits for server cert's private key. The server cert "
@@ -107,10 +113,15 @@ template<> struct SslTypeTraits<X509_STORE_CTX> {
 
 namespace {
 
+constexpr const char* const kTLSv1 = "TLSv1";
+constexpr const char* const kTLSv1_1 = "TLSv1.1";
+constexpr const char* const kTLSv1_2 = "TLSv1.2";
+constexpr const char* const kTLSv1_3 = "TLSv1.3";
+
 Status CheckMaxSupportedTlsVersion(int tls_version, const char* tls_version_str) {
-  // OpenSSL 1.1 and newer supports all of the TLS versions we care about, so
+  // OpenSSL 1.1.1 and newer supports all of the TLS versions we care about, so
   // the below check is only necessary in older versions of OpenSSL.
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if OPENSSL_VERSION_NUMBER < 0x10101000L
   auto max_supported_tls_version = SSLv23_method()->version;
   DCHECK_GE(max_supported_tls_version, TLS1_VERSION);
 
@@ -127,6 +138,7 @@ Status CheckMaxSupportedTlsVersion(int tls_version, const char* tls_version_str)
 
 TlsContext::TlsContext()
     : tls_ciphers_(SecurityDefaults::kDefaultTlsCiphers),
+      tls_ciphersuites_(SecurityDefaults::kDefaultTlsCipherSuites),
       tls_min_protocol_(SecurityDefaults::kDefaultTlsMinVersion),
       lock_(RWMutex::Priority::PREFER_READING),
       trusted_cert_count_(0),
@@ -135,9 +147,14 @@ TlsContext::TlsContext()
   security::InitializeOpenSSL();
 }
 
-TlsContext::TlsContext(std::string tls_ciphers, std::string tls_min_protocol)
+TlsContext::TlsContext(std::string tls_ciphers,
+                       std::string tls_ciphersuites,
+                       std::string tls_min_protocol,
+                       std::vector<std::string> tls_excluded_protocols)
     : tls_ciphers_(std::move(tls_ciphers)),
+      tls_ciphersuites_(std::move(tls_ciphersuites)),
       tls_min_protocol_(std::move(tls_min_protocol)),
+      tls_excluded_protocols_(std::move(tls_excluded_protocols)),
       lock_(RWMutex::Priority::PREFER_READING),
       trusted_cert_count_(0),
       has_cert_(false),
@@ -158,9 +175,11 @@ Status TlsContext::Init() {
   if (!ctx_) {
     return Status::RuntimeError("failed to create TLS context", GetOpenSSLErrors());
   }
-  SSL_CTX_set_mode(
-      ctx_.get(),
-      SSL_MODE_AUTO_RETRY | SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+  auto* ctx = ctx_.get();
+  SSL_CTX_set_mode(ctx,
+                   SSL_MODE_AUTO_RETRY |
+                   SSL_MODE_ENABLE_PARTIAL_WRITE |
+                   SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
   // Disable SSLv2 and SSLv3 which are vulnerable to various issues such as POODLE.
   // We support versions back to TLSv1.0 since OpenSSL on RHEL 6.4 and earlier does not
@@ -171,15 +190,17 @@ Status TlsContext::Init() {
   //   https://tools.ietf.org/html/rfc7525#section-3.3
   auto options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION;
 
-  if (iequals(tls_min_protocol_, "TLSv1.2")) {
-    RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_2_VERSION, "TLSv1.2"));
+  if (iequals(tls_min_protocol_, kTLSv1_3)) {
+    RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_3_VERSION, kTLSv1_3));
+    options |= SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1_2;
+  } else if (iequals(tls_min_protocol_, kTLSv1_2)) {
+    RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_2_VERSION, kTLSv1_2));
     options |= SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1;
-  } else if (iequals(tls_min_protocol_, "TLSv1.1")) {
-    RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_1_VERSION, "TLSv1.1"));
+  } else if (iequals(tls_min_protocol_, kTLSv1_1)) {
+    RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_1_VERSION, kTLSv1_1));
     options |= SSL_OP_NO_TLSv1;
-  } else if (!iequals(tls_min_protocol_, "TLSv1")) {
-    return Status::InvalidArgument("unknown value provided for --rpc_tls_min_protocol flag",
-                                   tls_min_protocol_);
+  } else if (!iequals(tls_min_protocol_, kTLSv1)) {
+    return Status::InvalidArgument("unknown TLS protocol", tls_min_protocol_);
   }
 
 #if OPENSSL_VERSION_NUMBER > 0x1010007fL
@@ -198,11 +219,27 @@ Status TlsContext::Init() {
   options |= SSL_OP_NO_RENEGOTIATION;
 #endif
 
-  // We don't currently support TLS 1.3 because the one-and-a-half-RTT negotiation
-  // confuses our RPC negotiation protocol. See KUDU-2871.
-  options |= SSL_OP_NO_TLSv1_3;
+  for (const auto& proto : tls_excluded_protocols_) {
+    if (iequals(proto, kTLSv1_3)) {
+      options |= SSL_OP_NO_TLSv1_3;
+      continue;
+    }
+    if (iequals(proto, kTLSv1_2)) {
+      options |= SSL_OP_NO_TLSv1_2;
+      continue;
+    }
+    if (iequals(proto, kTLSv1_1)) {
+      options |= SSL_OP_NO_TLSv1_1;
+      continue;
+    }
+    if (iequals(proto, kTLSv1)) {
+      options |= SSL_OP_NO_TLSv1;
+      continue;
+    }
+    return Status::InvalidArgument("unknown TLS protocol", proto);
+  }
 
-  SSL_CTX_set_options(ctx_.get(), options);
+  SSL_CTX_set_options(ctx, options);
 
   // Disable the TLS session cache on both the client and server sides. In Kudu
   // RPC, connections are not re-established based on TLS sessions anyway. Every
@@ -211,11 +248,37 @@ Status TlsContext::Init() {
   // resources to store TLS session information and running the automatic check
   // for expired sessions every 255 connections, as mentioned at
   // https://www.openssl.org/docs/manmaster/man3/SSL_CTX_set_session_cache_mode.html
-  SSL_CTX_set_session_cache_mode(ctx_.get(), SSL_SESS_CACHE_OFF);
+  SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
 
+  // The sequence of SSL_CTX_set_ciphersuites() and SSL_CTX_set_cipher_list()
+  // calls below is essential to make sure the TLS engine ends up with usable,
+  // non-empty set of ciphers in case of early 1.1.1 releases of OpenSSL
+  // (like OpenSSL 1.1.1 shipped with Ubuntu 18).
+  //
+  // The SSL_CTX_set_ciphersuites() call cares only about TLSv1.3 ciphers, and
+  // those might be none. From the other side, the implementation of
+  // SSL_CTX_set_cipher_list() verifies that the overall result list of ciphers
+  // is valid and usable, reporting an error otherwise.
+  //
+  // If the sequence is reversed, no error would be reported from
+  // TlsContext::Init() in case of empty list of ciphers for some early-1.1.1
+  // releases of OpenSSL. That's because SSL_CTX_set_cipher_list() would see
+  // a non-empty list of default TLSv1.3 ciphers when given an empty list of
+  // TLSv1.2 ciphers, and SSL_CTX_set_ciphersuites() would allow an empty set
+  // of TLSv1.3 ciphers in a subsequent call.
+
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+  // Set TLSv1.3 ciphers.
   OPENSSL_RET_NOT_OK(
-      SSL_CTX_set_cipher_list(ctx_.get(), tls_ciphers_.c_str()),
-      "failed to set TLS ciphers");
+      SSL_CTX_set_ciphersuites(ctx, tls_ciphersuites_.c_str()),
+      Substitute("failed to set TLSv1.3 ciphers: $0", tls_ciphersuites_));
+#endif
+
+  // It's OK to configure pre-TLSv1.3 ciphers even if all pre-TLSv1.3 protocols
+  // are disabled. At least, SSL_CTX_set_cipher_list() call doesn't report
+  // any errors.
+  OPENSSL_RET_NOT_OK(SSL_CTX_set_cipher_list(ctx, tls_ciphers_.c_str()),
+                     Substitute("failed to set TLS ciphers: $0", tls_ciphers_));
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
   // OpenSSL 1.1 and newer supports the 'security level' concept:
@@ -252,8 +315,8 @@ Status TlsContext::Init() {
   // the best curve to use.
   OPENSSL_RET_NOT_OK(SSL_CTX_set_ecdh_auto(ctx_.get(), 1),
                      "failed to configure ECDH support");
-#endif
-#endif
+#endif // #if OPENSSL_VERSION_NUMBER < 0x10002000L ... #elif ...
+#endif // #ifndef OPENSSL_NO_ECDH ...
 
   return Status::OK();
 }

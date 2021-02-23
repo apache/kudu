@@ -42,6 +42,7 @@
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
@@ -158,17 +159,41 @@ TAG_FLAG(rpc_listen_on_unix_domain_socket, experimental);
 
 DEFINE_string(rpc_tls_ciphers,
               kudu::security::SecurityDefaults::kDefaultTlsCiphers,
-              "The cipher suite preferences to use for TLS-secured RPC connections. "
-              "Uses the OpenSSL cipher preference list format. See man (1) ciphers "
-              "for more information.");
+              "TLSv1.2 (and prior) cipher suite preferences to use for "
+              "TLS-secured RPC connections. Uses the OpenSSL cipher preference "
+              "list format for TLSv1.2 and prior TLS protocol versions, "
+              "for customizing TLSv1.3 cipher suites see "
+              "--rpc_tls_ciphersuites flag. See 'man (1) ciphers' for more "
+              "information.");
 TAG_FLAG(rpc_tls_ciphers, advanced);
+
+// The names for the '--rpc_tls_ciphers' and '--rpc_tls_ciphersuites' flags are
+// confusingly close to each other, but the idea of leaking TLS versions into
+// the flag names sounds even worse. Probably, at some point '--rpc_tls_ciphers'
+// may become deprecated once TLSv1.2 is declared obsolete.
+DEFINE_string(rpc_tls_ciphersuites,
+              kudu::security::SecurityDefaults::kDefaultTlsCipherSuites,
+              "TLSv1.3 cipher suite preferences to use for TLS-secured RPC "
+              "connections. Uses the OpenSSL TLSv1.3 ciphersuite format. "
+              "See 'man (1) ciphers' for more information. This flag is "
+              "effective only if Kudu is built with OpenSSL v1.1.1 or newer.");
+TAG_FLAG(rpc_tls_ciphersuites, advanced);
 
 DEFINE_string(rpc_tls_min_protocol,
               kudu::security::SecurityDefaults::kDefaultTlsMinVersion,
               "The minimum protocol version to allow when for securing RPC "
-              "connections with TLS. May be one of 'TLSv1', 'TLSv1.1', or "
-              "'TLSv1.2'.");
+              "connections with TLS. May be one of 'TLSv1', 'TLSv1.1', "
+              "'TLSv1.2', 'TLSv1.3'.");
 TAG_FLAG(rpc_tls_min_protocol, advanced);
+
+DEFINE_string(rpc_tls_excluded_protocols, "",
+              "A comma-separated list of TLS protocol versions to exclude from "
+              "the set of advertised by the server when securing RPC "
+              "connections with TLS. An empty string means the set of "
+              "available TLS protocol versions is defined by the OpenSSL "
+              "library and --rpc_tls_min_protocol flag.");
+TAG_FLAG(rpc_tls_excluded_protocols, advanced);
+TAG_FLAG(rpc_tls_excluded_protocols, experimental);
 
 DEFINE_string(rpc_certificate_file, "",
               "Path to a PEM encoded X509 certificate to use for securing RPC "
@@ -236,9 +261,40 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+bool IsValidTlsProtocolStr(const string& str) {
+  return
+      iequals(str, "TLSv1.3") ||
+      iequals(str, "TLSv1.2") ||
+      iequals(str, "TLSv1.1") ||
+      iequals(str, "TLSv1");
+}
+
 namespace server {
 
 namespace {
+
+bool ValidateTlsProtocol(const char* /*flagname*/, const string& value) {
+  return IsValidTlsProtocolStr(value);
+}
+DEFINE_validator(rpc_tls_min_protocol, &ValidateTlsProtocol);
+
+bool ValidateTlsExcludedProtocols(const char* /*flagname*/,
+                                  const std::string& value) {
+  if (value.empty()) {
+    return true;
+  }
+
+  vector<string> str_protos = strings::Split(value, ",", strings::SkipEmpty());
+  for (const auto& str : str_protos) {
+    if (IsValidTlsProtocolStr(str)) {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(rpc_tls_excluded_protocols, &ValidateTlsExcludedProtocols);
 
 bool ValidateKeytabPermissions() {
   if (!FLAGS_keytab_file.empty() && !FLAGS_allow_world_readable_credentials) {
@@ -508,6 +564,9 @@ Status ServerBase::Init() {
 
   RETURN_NOT_OK(InitAcls());
 
+  vector<string> rpc_tls_excluded_protocols = strings::Split(
+      FLAGS_rpc_tls_excluded_protocols, ",", strings::SkipEmpty());
+
   // Create the Messenger.
   rpc::MessengerBuilder builder(name_);
   builder.set_num_reactors(FLAGS_num_reactor_threads)
@@ -519,6 +578,8 @@ Status ServerBase::Init() {
          .set_rpc_authentication(FLAGS_rpc_authentication)
          .set_rpc_encryption(FLAGS_rpc_encryption)
          .set_rpc_tls_ciphers(FLAGS_rpc_tls_ciphers)
+         .set_rpc_tls_ciphersuites(FLAGS_rpc_tls_ciphersuites)
+         .set_rpc_tls_excluded_protocols(std::move(rpc_tls_excluded_protocols))
          .set_rpc_tls_min_protocol(FLAGS_rpc_tls_min_protocol)
          .set_epki_cert_key_files(FLAGS_rpc_certificate_file, FLAGS_rpc_private_key_file)
          .set_epki_certificate_authority_file(FLAGS_rpc_ca_certificate_file)

@@ -105,6 +105,22 @@ class TlsHandshake {
   // Returns any other status code on error.
   Status Continue(const std::string& recv, std::string* send) WARN_UNUSED_RESULT;
 
+  // Whether an extra step of negotiation is needed at this point given the
+  // return status of a prior call to the Continue() method.
+  bool NeedsExtraStep(const Status& continue_status,
+                      const std::string& token) const;
+
+  // This method is used to store the data produced by the server's final TLS
+  // handshake message. It's not an application data and should be passed by the
+  // encrypted/raw side of the communication channel, not via the regular
+  // SSL_{read,write}() API. Once stored, the data is written to the underlying
+  // socket by the Finish() method upon transitioning from memory-based BIOs
+  // to the socket-based BIOs when the negotiation is complete. Once it's
+  // written to the socket, it will be sent over the wire along with next chunk
+  // of encryped data sent by the server to the client, prepending the encrypted
+  // server's response.
+  void StorePendingData(std::string data);
+
   // Finishes the handshake, wrapping the provided socket in the negotiated TLS
   // channel. This 'TlsHandshake' instance should not be used again after
   // calling this.
@@ -139,7 +155,8 @@ class TlsHandshake {
   std::string GetCipherDescription() const;
 
  private:
-  FRIEND_TEST(TestTlsHandshake, TestHandshakeSequence);
+  FRIEND_TEST(TestTlsHandshake, HandshakeSequenceNoTLSv1dot3);
+  FRIEND_TEST(TestTlsHandshake, HandshakeSequenceTLSv1dot3);
 
   // Set the verification mode on the underlying SSL object.
   void SetSSLVerify();
@@ -165,6 +182,10 @@ class TlsHandshake {
 
   Cert local_cert_;
   Cert remote_cert_;
+
+  // Data which is left pending in the write BIO after the last call to
+  // Continue(), i.e. the data left pending after completing the TLS handshake.
+  std::string rbio_pending_data_;
 };
 
 } // namespace security

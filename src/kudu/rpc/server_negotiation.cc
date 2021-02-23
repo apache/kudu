@@ -236,8 +236,12 @@ Status ServerNegotiation::Negotiate() {
       NegotiatePB request;
       RETURN_NOT_OK(RecvNegotiatePB(&request, &recv_buf));
       Status s = HandleTlsHandshake(request);
-      if (s.ok()) break;
-      if (!s.IsIncomplete()) return s;
+      if (s.ok()) {
+        break;
+      }
+      if (!s.IsIncomplete()) {
+        return s;
+      }
     }
     tls_negotiated_ = true;
   }
@@ -593,17 +597,25 @@ Status ServerNegotiation::HandleTlsHandshake(const NegotiatePB& request) {
   }
 
   string token;
-  Status s = tls_handshake_.Continue(request.tls_handshake(), &token);
-
+  const Status s = tls_handshake_.Continue(request.tls_handshake(), &token);
   if (PREDICT_FALSE(!s.IsIncomplete() && !s.ok())) {
     RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
+  const bool needs_extra_step = tls_handshake_.NeedsExtraStep(s, token);
+  if (needs_extra_step) {
+    RETURN_NOT_OK(SendTlsHandshake(std::move(token)));
+  }
 
-  // Regardless of whether this is the final handshake roundtrip (in which case
-  // Continue would have returned OK), we still need to return a response.
-  RETURN_NOT_OK(SendTlsHandshake(std::move(token)));
+  // Check that the handshake step didn't produce an error. It also propagates
+  // any non-OK status.
   RETURN_NOT_OK(s);
+
+  if (!needs_extra_step && !token.empty()) {
+    DCHECK(s.ok());
+    DCHECK(!token.empty());
+    tls_handshake_.StorePendingData(std::move(token));
+  }
 
   // TLS handshake is finished.
   if (ContainsKey(server_features_, TLS_AUTHENTICATION_ONLY) &&

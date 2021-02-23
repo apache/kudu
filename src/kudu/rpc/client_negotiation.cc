@@ -496,8 +496,7 @@ Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
 
   string token;
   Status s = tls_handshake_.Continue(response.tls_handshake(), &token);
-  if (s.IsIncomplete()) {
-    // Another roundtrip is required to complete the handshake.
+  if (tls_handshake_.NeedsExtraStep(s, token)) {
     RETURN_NOT_OK(SendTlsHandshake(std::move(token)));
   }
 

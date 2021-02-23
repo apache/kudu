@@ -26,15 +26,23 @@ namespace security {
 // list. These additional ciphers maintain compatibility with RHEL 6.5 and
 // below. The DH AES ciphers are not included since we are not configured to
 // use DH key agreement.
+// TODO(aserbin): refresh the list to drop RHEL6/CentOS6 ciphers and
+//                sync it with https://wiki.mozilla.org/Security/Server_Side_TLS
 const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsCiphers =
-                                   "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
-                                   "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
-                                   "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
-                                   "ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:"
-                                   "ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:"
-                                   "AES256-GCM-SHA384:AES128-GCM-SHA256:"
-                                   "AES256-SHA256:AES128-SHA256:"
-                                   "AES256-SHA:AES128-SHA";
+    "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
+    "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+    "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+    "ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:"
+    "ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:"
+    "AES256-GCM-SHA384:AES128-GCM-SHA256:"
+    "AES256-SHA256:AES128-SHA256:"
+    "AES256-SHA:AES128-SHA";
+
+// This is the "modern compatibility" TLSv1.3 cipher list of the Mozilla
+// Security Server Side TLS recommendations, accessed March 2021.
+// https://wiki.mozilla.org/Security/Server_Side_TLS
+const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsCipherSuites =
+    "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
 
 const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsMinVersion = "TLSv1";
 
