@@ -113,10 +113,15 @@ class Master : public kserver::KuduServer {
   // request.
   Status ListMasters(std::vector<ServerEntryPB>* masters) const;
 
-  // Gets the HostPorts for all of the VOTER masters in the cluster.
+  enum MasterType {
+    ALL,
+    VOTER_ONLY
+  };
+
+  // Gets the HostPorts of masters in the cluster of the specified 'type'.
   // This is not as complete as ListMasters() above, but operates just
   // based on local state.
-  Status GetMasterHostPorts(std::vector<HostPort>* hostports) const;
+  Status GetMasterHostPorts(std::vector<HostPort>* hostports, MasterType type = VOTER_ONLY) const;
 
   bool IsShutdown() const {
     return state_ == kStopped;

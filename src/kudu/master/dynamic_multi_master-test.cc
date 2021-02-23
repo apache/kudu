@@ -756,6 +756,20 @@ TEST_P(ParameterizedAddMasterTest, TestAddMasterSysCatalogCopy) {
     NO_FATALS(VerifyNewMasterInFailedUnrecoverableState());
   });
 
+  // Adding the same master again should print a message but not throw an error.
+  {
+    string err;
+    ASSERT_OK(AddMasterToClusterUsingCLITool(reserved_hp_, &err));
+    ASSERT_STR_CONTAINS(err, "Master already present");
+  }
+
+  // Adding one of the former masters should print a message but not throw an error.
+  {
+    string err;
+    ASSERT_OK(AddMasterToClusterUsingCLITool(master_hps[0], &err));
+    ASSERT_STR_CONTAINS(err, "Master already present");
+  }
+
   // Without system catalog copy, the new master will remain in the FAILED_UNRECOVERABLE state.
   // So lets proceed with the tablet copy process for system catalog.
   // Shutdown the new master

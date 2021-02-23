@@ -468,16 +468,25 @@ Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
   return Status::OK();
 }
 
-Status Master::GetMasterHostPorts(vector<HostPort>* hostports) const {
+Status Master::GetMasterHostPorts(vector<HostPort>* hostports, MasterType type) const {
   auto consensus = catalog_manager_->master_consensus();
   if (!consensus) {
     return Status::IllegalState("consensus not running");
   }
 
+  auto get_raft_member_type = [] (MasterType type) constexpr {
+    switch (type) {
+      case MasterType::VOTER_ONLY:
+        return RaftPeerPB::VOTER;
+      default:
+        LOG(FATAL) << "No matching Raft member type for master type: " << type;
+    }
+  };
+
   hostports->clear();
   consensus::RaftConfigPB config = consensus->CommittedConfig();
   for (const auto& peer : *config.mutable_peers()) {
-    if (peer.member_type() == consensus::RaftPeerPB::VOTER) {
+    if (type == MasterType::ALL || get_raft_member_type(type) == peer.member_type()) {
       // In non-distributed master configurations, we may not store our own
       // last known address in the Raft config. So, we'll fill it in from
       // the server Registration instead.
@@ -497,8 +506,8 @@ Status Master::GetMasterHostPorts(vector<HostPort>* hostports) const {
 Status Master::AddMaster(const HostPort& hp, rpc::RpcContext* rpc) {
   // Ensure requested master to be added is not already part of list of masters.
   vector<HostPort> masters;
-  // Here the check is made against committed config with voters only.
-  RETURN_NOT_OK(GetMasterHostPorts(&masters));
+  // Here the check is made against committed config with all member types.
+  RETURN_NOT_OK(GetMasterHostPorts(&masters, MasterType::ALL));
   if (std::find(masters.begin(), masters.end(), hp) != masters.end()) {
     return Status::AlreadyPresent("Master already present");
   }
