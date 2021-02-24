@@ -161,7 +161,8 @@ void TestWorkload::WriteThread() {
           unique_ptr<KuduInsert> insert(table->NewInsert());
           KuduPartialRow* row = insert->mutable_row();
           int32_t key;
-          if (write_pattern_ == INSERT_SEQUENTIAL_ROWS) {
+          if (write_pattern_ == INSERT_SEQUENTIAL_ROWS ||
+              write_pattern_ == INSERT_SEQUENTIAL_ROWS_WITH_DELETE) {
             key = sequential_key_gen_.Increment();
           } else {
             key = rng_.Next();
@@ -195,7 +196,8 @@ void TestWorkload::WriteThread() {
       SleepFor(MonoDelta::FromMilliseconds(write_interval_millis_));
     }
     // Write delete row to cluster.
-    if (write_pattern_ == INSERT_RANDOM_ROWS_WITH_DELETE) {
+    if (write_pattern_ == INSERT_RANDOM_ROWS_WITH_DELETE ||
+        write_pattern_ == INSERT_SEQUENTIAL_ROWS_WITH_DELETE) {
       for (auto key : keys) {
         unique_ptr<KuduDelete> op(table->NewDelete());
         KuduPartialRow* row = op->mutable_row();

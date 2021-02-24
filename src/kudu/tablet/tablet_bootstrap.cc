@@ -93,6 +93,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 
+DECLARE_bool(prevent_kudu_2233_corruption);
 DECLARE_int32(group_commit_queue_size_bytes);
 
 DEFINE_double(fault_crash_during_log_replay, 0.0,
@@ -1151,7 +1152,8 @@ Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB*
     default:
       break;
   }
-  if (!timestamp_assigned_in_opid_order) {
+  if (!timestamp_assigned_in_opid_order ||
+      PREDICT_FALSE(!FLAGS_prevent_kudu_2233_corruption)) {
     return Status::OK();
   }
 

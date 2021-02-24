@@ -97,6 +97,10 @@
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
 
+DEFINE_bool(prevent_kudu_2233_corruption, true,
+            "Whether or not to prevent KUDU-2233 corruptions. Used for testing only!");
+TAG_FLAG(prevent_kudu_2233_corruption, unsafe);
+
 DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction");
 TAG_FLAG(tablet_compaction_budget_mb, experimental);
@@ -2136,7 +2140,8 @@ Status Tablet::Compact(CompactFlags flags) {
 
 void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
-  if (mvcc_.GetCleanTimestamp() == Timestamp::kInitialTimestamp) {
+  if (mvcc_.GetCleanTimestamp() == Timestamp::kInitialTimestamp &&
+      PREDICT_TRUE(FLAGS_prevent_kudu_2233_corruption)) {
     KLOG_EVERY_N_SECS(WARNING, 30) << LogPrefix() <<  "Can't schedule compaction. Clean time has "
                                    << "not been advanced past its initial value.";
     stats->set_runnable(false);

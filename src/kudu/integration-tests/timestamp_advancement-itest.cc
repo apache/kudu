@@ -52,6 +52,7 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -68,13 +69,22 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_maintenance_manager);
+DECLARE_bool(compaction_force_small_rowset_tradeoff);
+DECLARE_bool(prevent_kudu_2233_corruption);
 DECLARE_bool(log_preallocate_segments);
 DECLARE_bool(log_async_preallocate_segments);
 DECLARE_bool(raft_enable_pre_election);
+DECLARE_double(compaction_minimum_improvement);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
+DECLARE_int32(tablet_compaction_budget_mb);
+DECLARE_int32(tablet_history_max_age_sec);
+
+#ifndef NDEBUG
+DECLARE_bool(dcheck_on_kudu_2233_invariants);
+#endif
 
 namespace kudu {
 
@@ -106,7 +116,10 @@ class TimestampAdvancementITest : public MiniClusterITestBase {
 
   // Sets up a cluster and returns the tablet replica on 'ts' that has written
   // to its WAL. 'replica' will write further messages to a new WAL segment.
-  void SetupClusterWithWritesInWAL(int ts, scoped_refptr<TabletReplica>* replica) {
+  // If 'delete_and_reinsert' is set to true, rows will be flushed, deleted,
+  // reinserted, and flushed again.
+  void SetupClusterWithWritesInWAL(int ts, bool delete_and_reinsert,
+                                   scoped_refptr<TabletReplica>* replica) {
     // We're going to manually trigger maintenance ops, so disable maintenance op
     // scheduling.
     FLAGS_enable_maintenance_manager = false;
@@ -124,26 +137,47 @@ class TimestampAdvancementITest : public MiniClusterITestBase {
     // Set a low batch size so we have finer-grained control over flushing of
     // the WAL. Too large, and the WAL may end up flushing in the background.
     write.set_write_batch_size(1);
+    // Certain corruptions only happen when there are deletes and reinserts, so
+    // perform those ops here and below.
+    if (delete_and_reinsert) {
+      write.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS_WITH_DELETE);
+    }
     write.Setup();
     write.Start();
-    while (write.rows_inserted() < 10) {
+    table_name_ = write.table_name();
+    while (write.batches_completed() < 10) {
       SleepFor(MonoDelta::FromMilliseconds(1));
     }
     write.StopAndJoin();
-
+    auto batches_completed = write.batches_completed();
+    scoped_refptr<TabletReplica> tablet_replica = tablet_replica_on_ts(ts);
+    if (delete_and_reinsert) {
+      // Flush so we get a disk rowset with our deleted rows, before inserting
+      // to a new rowset.
+      ASSERT_OK(tablet_replica->tablet()->Flush());
+      TestWorkload write(cluster_.get());
+      write.set_write_batch_size(1);
+      write.set_table_name(table_name_);
+      write.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+      write.Setup();
+      write.Start();
+      while (write.batches_completed() < 10) {
+        SleepFor(MonoDelta::FromMilliseconds(1));
+      }
+      write.StopAndJoin();
+      batches_completed += write.batches_completed();
+    }
     // Ensure that the replicas eventually get to a point where all of them
     // have all the rows. This will allow us to GC the WAL, as they will not
     // need to retain them if fully-replicated.
-    scoped_refptr<TabletReplica> tablet_replica = tablet_replica_on_ts(ts);
     ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30),
-          ts_map_, tablet_replica->tablet_id(), write.batches_completed()));
+        ts_map_, tablet_replica->tablet_id(), batches_completed));
 
     // Flush the current log batch and roll over to get a fresh WAL segment.
     ASSERT_OK(tablet_replica->log()->WaitUntilAllFlushed());
     ASSERT_OK(tablet_replica->log()->AllocateSegmentAndRollOverForTests());
-
-    // Also flush the MRS so we're free to GC the WAL segment we just wrote.
     ASSERT_OK(tablet_replica->tablet()->Flush());
+
     *replica = std::move(tablet_replica);
   }
 
@@ -244,7 +278,86 @@ class TimestampAdvancementITest : public MiniClusterITestBase {
     TServerDetails* ts_details = FindOrDie(ts_map_, tserver->uuid());
     return WaitUntilTabletRunning(ts_details, tablet_id, kTimeout);
   }
+ protected:
+  string table_name_;
 };
+
+// Simulate being on an older version of Kudu and set up the conditions for
+// KUDU-2233, where there are no writes in the WAL, and perform a compaction.
+// Then, "upgrade" to a more recent version that handles KUDU-2233 corruption,
+// and ensure that compacting corrupted data is handled gracefully.
+TEST_F(TimestampAdvancementITest, TestUpgradeFromOlderCorruptedData) {
+  FLAGS_prevent_kudu_2233_corruption = false;
+  // Set a low Raft heartbeat interval so we can inject churn elections.
+  FLAGS_raft_heartbeat_interval_ms = 100;
+
+  // This test case starts out with two overlapping rowsets, and to witness
+  // corruption in a way that causes compaction failures post-upgrade, we'll
+  // need to KUDU-2233-compact just one of them. Do so by reducing the
+  // compaction budget, and allowing small minimum improvement scores.
+  FLAGS_tablet_compaction_budget_mb = 1;
+  FLAGS_compaction_force_small_rowset_tradeoff = true;
+  FLAGS_compaction_minimum_improvement = -1;
+
+  // Setup a cluster with some writes and a new WAL segment.
+  scoped_refptr<TabletReplica> replica;
+  NO_FATALS(SetupClusterWithWritesInWAL(kTserver, /*delete_and_reinsert=*/true, &replica));
+
+  MiniTabletServer* ts = tserver(kTserver);
+  const string tablet_id = replica->tablet_id();
+
+  // Now that we're on a new WAL segment, inject latency to consensus so we
+  // trigger elections, and wait for some terms to pass.
+  FLAGS_raft_enable_pre_election = false;
+  FLAGS_leader_failure_max_missed_heartbeat_periods = 1.0;
+  FLAGS_consensus_inject_latency_ms_in_notifications = 100;
+  const int64_t kNumExtraTerms = 10;
+  int64_t initial_raft_term = replica->consensus()->CurrentTerm();
+  int64_t raft_term = initial_raft_term;
+  while (raft_term < initial_raft_term + kNumExtraTerms) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+    raft_term = replica->consensus()->CurrentTerm();
+  }
+
+  // Reduce election churn so we can achieve a stable quorum and get to a point
+  // where we can GC our logs. Note: we won't GC if there are replicas that
+  // need to be caught up.
+  FLAGS_consensus_inject_latency_ms_in_notifications = 0;
+  NO_FATALS(GCUntilNoWritesInWAL(ts, replica));
+  replica.reset();
+  ASSERT_OK(ShutdownAllNodesAndRestartTserver(ts, tablet_id));
+
+  replica = tablet_replica_on_ts(kTserver);
+  Timestamp cleantime = replica->tablet()->mvcc_manager()->GetCleanTimestamp();
+  ASSERT_EQ(Timestamp::kInitialTimestamp, cleantime);
+
+  // Perform a compaction with the low budget so only a single rowset is
+  // "compacted" (yes, we can compact a single rowset, no it's not natural to
+  // do so, but it's what we need here). This will ensure that only one of the
+  // two version of a given row is corrupted, which should allow us to perform
+  // a compaction later that fails.
+  ASSERT_OK(replica->tablet()->Compact(tablet::Tablet::COMPACT_NO_FLAGS));
+
+  // Now restart the server with more normal flags. Despite disallowing further
+  // corruptions, when we compact, we should still be left with an error, as
+  // our data has been corrupted on an simulated older version.
+  replica.reset();
+  FLAGS_prevent_kudu_2233_corruption = true;
+  FLAGS_tablet_compaction_budget_mb = 128;
+  // Don't crash in the event of broken invariants though, since we're working
+  // with corrupted data here.
+#ifndef NDEBUG
+  FLAGS_dcheck_on_kudu_2233_invariants = false;
+#endif
+  ASSERT_OK(ShutdownAllNodesAndRestartTserver(ts, tablet_id));
+
+  replica = tablet_replica_on_ts(kTserver);
+  Status s = replica->tablet()->Compact(tablet::Tablet::COMPACT_NO_FLAGS);
+  ASSERT_TRUE(s.IsCorruption());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(tablet::TabletStatePB::FAILED, replica->state());
+  });
+}
 
 // Test that bootstrapping a Raft no-op from the WAL will advance the replica's
 // MVCC clean time timestamps.
@@ -254,7 +367,7 @@ TEST_F(TimestampAdvancementITest, TestNoOpAdvancesMvccSafeTimeOnBootstrap) {
 
   // Setup a cluster with some writes and a new WAL segment.
   scoped_refptr<TabletReplica> replica;
-  NO_FATALS(SetupClusterWithWritesInWAL(kTserver, &replica));
+  NO_FATALS(SetupClusterWithWritesInWAL(kTserver, /*delete_and_reinsert=*/false, &replica));
   MiniTabletServer* ts = tserver(kTserver);
   const string tablet_id = replica->tablet_id();
 
@@ -296,7 +409,7 @@ TEST_F(TimestampAdvancementITest, TestNoOpAdvancesMvccSafeTimeOnBootstrap) {
 // configs, and the tablet cannot join a quorum.
 TEST_F(TimestampAdvancementITest, Kudu2463Test) {
   scoped_refptr<TabletReplica> replica;
-  NO_FATALS(SetupClusterWithWritesInWAL(kTserver, &replica));
+  NO_FATALS(SetupClusterWithWritesInWAL(kTserver, /*delete_and_reinsert=*/false, &replica));
   MiniTabletServer* ts = tserver(kTserver);
 
   const string tablet_id = replica->tablet_id();

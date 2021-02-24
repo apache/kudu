@@ -212,7 +212,10 @@ class TestWorkload {
 
     // Insert sequential rows.
     // This causes flushes but no compactions.
-    INSERT_SEQUENTIAL_ROWS
+    INSERT_SEQUENTIAL_ROWS,
+
+    // Insert sequential rows, then delete them.
+    INSERT_SEQUENTIAL_ROWS_WITH_DELETE,
   };
 
   void set_write_pattern(WritePattern pattern) {
@@ -225,6 +228,7 @@ class TestWorkload {
       case INSERT_RANDOM_ROWS_WITH_DELETE:
       case UPDATE_ONE_ROW:
       case INSERT_SEQUENTIAL_ROWS:
+      case INSERT_SEQUENTIAL_ROWS_WITH_DELETE:
         set_already_present_allowed(false);
         break;
       default: LOG(FATAL) << "Unsupported WritePattern.";

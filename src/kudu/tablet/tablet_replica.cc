@@ -27,6 +27,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -103,6 +104,8 @@ METRIC_DEFINE_gauge_uint64(tablet, live_row_count, "Tablet Live Row Count",
                            kudu::MetricUnit::kRows,
                            "Number of live rows in this tablet, excludes deleted rows.",
                            kudu::MetricLevel::kInfo);
+
+DECLARE_bool(prevent_kudu_2233_corruption);
 
 using kudu::consensus::ALTER_SCHEMA_OP;
 using kudu::consensus::ConsensusBootstrapInfo;
@@ -800,7 +803,8 @@ void TabletReplica::FinishConsensusOnlyRound(ConsensusRound* round) {
   // a no-op to assert a new leadership term, in which case it would be in order.
   if (op_type == consensus::NO_OP &&
       (!replicate_msg->noop_request().has_timestamp_in_opid_order() ||
-       replicate_msg->noop_request().timestamp_in_opid_order())) {
+       replicate_msg->noop_request().timestamp_in_opid_order()) &&
+      PREDICT_TRUE(FLAGS_prevent_kudu_2233_corruption)) {
     DCHECK(replicate_msg->has_noop_request());
     int64_t ts = replicate_msg->timestamp();
     // We are guaranteed that the prepare pool token is running now because

@@ -74,10 +74,19 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+#ifndef NDEBUG
+DEFINE_bool(dcheck_on_kudu_2233_invariants, true,
+            "Whether to DCHECK on broken invariants caused by KUDU-2233. "
+            "Used in tests only when NDEBUG is not defined!");
+TAG_FLAG(dcheck_on_kudu_2233_invariants, unsafe);
+TAG_FLAG(dcheck_on_kudu_2233_invariants, hidden);
+#endif
+
 DEFINE_double(tablet_inject_kudu_2233, 0,
               "Fraction of the time that compactions that merge the history "
               "of a single row spread across multiple rowsets will return "
               "with a corruption status");
+TAG_FLAG(tablet_inject_kudu_2233, unsafe);
 TAG_FLAG(tablet_inject_kudu_2233, hidden);
 
 namespace kudu {
@@ -300,15 +309,23 @@ int CompareDuplicatedRows(const CompactionInputRow& left,
   AdvanceToLastInList(&right_last);
 
   if (left.redo_head == nullptr) {
+#ifndef NDEBUG
     // left must still be alive, meaning right must have at least a DELETE redo.
-    DCHECK(right_last != nullptr);
-    DCHECK(right_last->changelist().is_delete());
+    if (PREDICT_TRUE(FLAGS_dcheck_on_kudu_2233_invariants)) {
+      DCHECK(right_last != nullptr);
+      DCHECK(right_last->changelist().is_delete());
+    }
+#endif
     return 1;
   }
   if (right.redo_head == nullptr) {
+#ifndef NDEBUG
     // right must still be alive, meaning left must have at least a DELETE redo.
-    DCHECK(left_last != nullptr);
-    DCHECK(left_last->changelist().is_delete());
+    if (PREDICT_TRUE(FLAGS_dcheck_on_kudu_2233_invariants)) {
+      DCHECK(left_last != nullptr);
+      DCHECK(left_last->changelist().is_delete());
+    }
+#endif
     return -1;
   }
 
@@ -808,9 +825,13 @@ Status MergeDuplicatedRowHistory(const string& tablet_id,
                                                  &previous_ghost->row));
 
     // We should be left with only one redo, the delete.
-    DCHECK(pv_delete_redo != nullptr);
-    DCHECK(pv_delete_redo->changelist().is_delete());
-    DCHECK(pv_delete_redo->next() == nullptr);
+#ifndef NDEBUG
+    if (PREDICT_TRUE(FLAGS_dcheck_on_kudu_2233_invariants)) {
+      DCHECK(pv_delete_redo != nullptr);
+      DCHECK(pv_delete_redo->changelist().is_delete());
+      DCHECK(pv_delete_redo->next() == nullptr);
+    }
+#endif
     if (PREDICT_FALSE(
         pv_delete_redo == nullptr ||
         !pv_delete_redo->changelist().is_delete() ||
