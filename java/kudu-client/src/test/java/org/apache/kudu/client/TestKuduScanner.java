@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -52,6 +53,7 @@ import org.apache.kudu.client.Operation.ChangeType;
 import org.apache.kudu.test.CapturingLogAppender;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.RandomUtils;
+import org.apache.kudu.test.cluster.KuduBinaryLocator;
 import org.apache.kudu.util.DataGenerator;
 import org.apache.kudu.util.Pair;
 
@@ -77,6 +79,56 @@ public class TestKuduScanner {
     generator = new DataGenerator.DataGeneratorBuilder()
         .random(random)
         .build();
+  }
+
+  /**
+   * Test that scans get retried at other tablet servers when they're quiescing.
+   */
+  @Test(timeout = 100000)
+  public void testScanQuiescingTabletServer() throws Exception {
+    int rowCount = 500;
+    Schema tableSchema = new Schema(Collections.singletonList(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build()
+    ));
+
+    // Create a table with some rows in it. For simplicity, use a
+    // single-partition table with replicas on each server (we're required
+    // to set some partitioning though).
+    CreateTableOptions tableOptions = new CreateTableOptions()
+        .setRangePartitionColumns(Collections.singletonList("key"))
+        .setNumReplicas(3);
+    KuduTable table = client.createTable(tableName, tableSchema, tableOptions);
+    KuduSession session = client.newSession();
+    for (int i = 0; i < rowCount; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addInt(0, i);
+      session.apply(insert);
+    }
+
+    // Quiesce a single tablet server.
+    List<HostAndPort> tservers = harness.getTabletServers();
+    KuduBinaryLocator.ExecutableInfo exeInfo = KuduBinaryLocator.findBinary("kudu");
+    List<String> commandLine = Lists.newArrayList(exeInfo.exePath(),
+        "tserver",
+        "quiesce",
+        "start",
+        tservers.get(0).toString());
+    ProcessBuilder processBuilder = new ProcessBuilder(commandLine);
+    processBuilder.environment().putAll(exeInfo.environment());
+    Process quiesceTserver = processBuilder.start();
+    assertEquals(0, quiesceTserver.waitFor());
+
+    // Now start a scan. Even if the scan goes to the quiescing server, the
+    // scan request should eventually be routed to a non-quiescing server
+    // and complete. We aren't guaranteed to hit the quiescing server, but this
+    // test would frequently fail if we didn't handle quiescing servers properly.
+    KuduScanner scanner = client.newScannerBuilder(table).build();
+    KuduScannerIterator iterator = scanner.iterator();
+    assertTrue(iterator.hasNext());
+    while (iterator.hasNext()) {
+      iterator.next();
+    }
   }
 
   @Test(timeout = 100000)

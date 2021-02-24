@@ -357,12 +357,15 @@ class RpcProxy {
     Tserver.TabletServerErrorPB.Code errCode = error.getCode();
     WireProtocol.AppStatusPB.ErrorCode errStatusCode = error.getStatus().getCode();
     Status status = Status.fromTabletServerErrorPB(error);
-    if (errCode == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
+    if (errCode == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND ||
+        errCode == Tserver.TabletServerErrorPB.Code.TABLET_NOT_RUNNING) {
+      // TODO(awong): for TABLET_NOT_FOUND, we may want to force a location
+      // lookup for the tablet. For now, this just invalidates the location
+      // and tries somewhere else.
       client.handleTabletNotFound(
           rpc, new RecoverableException(status), connection.getServerInfo());
       // we're not calling rpc.callback() so we rely on the client to retry that RPC
-    } else if (errCode == Tserver.TabletServerErrorPB.Code.TABLET_NOT_RUNNING ||
-        errStatusCode == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+    } else if (errStatusCode == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
       client.handleRetryableError(rpc, new RecoverableException(status));
       // The following two error codes are an indication that the tablet isn't a leader.
     } else if (errStatusCode == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE ||

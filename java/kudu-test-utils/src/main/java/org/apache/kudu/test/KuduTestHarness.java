@@ -334,7 +334,7 @@ public class KuduTestHarness extends ExternalResource {
    * @return the list of tablet servers
    */
   public List<HostAndPort> getTabletServers() {
-    return miniCluster.getMasterServers();
+    return miniCluster.getTabletServers();
   }
 
   /**
