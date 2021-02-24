@@ -136,7 +136,7 @@ Status OpDriver::Init(unique_ptr<Op> op,
   }
   op_ = std::move(op);
 
-  if (type == consensus::REPLICA) {
+  if (type == consensus::FOLLOWER) {
     std::lock_guard<simple_spinlock> lock(opid_lock_);
     op_id_copy_ = op_->state()->op_id();
     DCHECK(op_id_copy_.IsInitialized());
@@ -290,7 +290,7 @@ Status OpDriver::Prepare() {
     // atomically with the change of the prepared state. Otherwise if the
     // prepare thread gets preempted after the state is prepared apply can be
     // triggered by another thread without the rpc being registered.
-    if (op_->type() == consensus::REPLICA) {
+    if (op_->type() == consensus::FOLLOWER) {
       RegisterFollowerOpOnResultTracker();
     // ... else we're a client-started op. Make sure we're still the driver of the
     // RPC and give up if we aren't.

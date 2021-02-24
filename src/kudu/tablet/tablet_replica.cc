@@ -732,7 +732,7 @@ Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round
               &replicate_msg->write_request(),
               replicate_msg->has_request_id() ? &replicate_msg->request_id() : nullptr));
       op_state->SetResultTracker(result_tracker_);
-      op.reset(new WriteOp(std::move(op_state), consensus::REPLICA));
+      op.reset(new WriteOp(std::move(op_state), consensus::FOLLOWER));
       break;
     }
     case PARTICIPANT_OP:
@@ -745,7 +745,7 @@ Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round
               tablet_->txn_participant(),
               &replicate_msg->participant_request()));
       op_state->SetResultTracker(result_tracker_);
-      op.reset(new ParticipantOp(std::move(op_state), consensus::REPLICA));
+      op.reset(new ParticipantOp(std::move(op_state), consensus::FOLLOWER));
       break;
     }
     case ALTER_SCHEMA_OP:
@@ -756,7 +756,7 @@ Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round
           new AlterSchemaOpState(this, &replicate_msg->alter_schema_request(),
                                  nullptr));
       op.reset(
-          new AlterSchemaOp(std::move(op_state), consensus::REPLICA));
+          new AlterSchemaOp(std::move(op_state), consensus::FOLLOWER));
       break;
     }
     default:
@@ -840,7 +840,7 @@ Status TabletReplica::NewReplicaOpDriver(unique_ptr<Op> op,
     prepare_pool_token_.get(),
     apply_pool_,
     &op_order_verifier_);
-  RETURN_NOT_OK(op_driver->Init(std::move(op), consensus::REPLICA));
+  RETURN_NOT_OK(op_driver->Init(std::move(op), consensus::FOLLOWER));
   *driver = std::move(op_driver);
 
   return Status::OK();

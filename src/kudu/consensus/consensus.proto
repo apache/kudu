@@ -97,12 +97,12 @@ enum OperationType {
   PARTICIPANT_OP = 6;
 }
 
-// The op driver type: indicates whether an op is being executed on a leader or
-// a replica.
+// The op driver type: indicates whether an op is being executed on a leader
+// or follower replica.
 enum DriverType {
   UNKNOWN_DRIVER = 0;
   LEADER = 1;
-  REPLICA = 2;
+  FOLLOWER = 2;
 }
 
 // A configuration change request for the tablet with 'tablet_id'.
