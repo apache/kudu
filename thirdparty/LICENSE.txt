@@ -489,7 +489,7 @@ Source: https://code.google.com/archive/p/crcutil/
 
 --------------------------------------------------------------------------------
 thirdparty/src/curl-*/: MIT/X derivative license
-libraries: libcurl
+libraries: libcurl, libnghttp2
 Source: http://curl.haxx.se/
 
   Copyright (c) 1996 - 2020, Daniel Stenberg, daniel@haxx.se, and many
@@ -616,8 +616,8 @@ Source: https://github.com/gcovr/gcovr
 NOTE: optional build-time dependency
 
 --------------------------------------------------------------------------------
-thirdparty/src/gmock-*/: BSD 3-clause license
-libraries: libgmock
+thirdparty/src/googletest-release-*/: BSD 3-clause license
+libraries: libgmock, libgtest
 Source: https://github.com/google/googletest
 NOTE: build-time dependency
 TODO(KUDU-2696): gmock is unnecessarily linked into the kudu cli binary
