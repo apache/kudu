@@ -635,6 +635,17 @@ HealthReportPB::HealthStatus PeerMessageQueue::PeerHealthStatus(const TrackedPee
   return HealthReportPB::UNKNOWN;
 }
 
+Status PeerMessageQueue::FindPeer(const std::string& uuid, TrackedPeer* peer) {
+  std::lock_guard<simple_spinlock> lock(queue_lock_);
+  TrackedPeer* peer_copy = FindPtrOrNull(peers_map_, uuid);
+
+  if (peer_copy == nullptr)
+    return Status::NotFound(Substitute("peer $0 is no longer tracked", uuid));
+
+  *peer = *peer_copy;
+  return Status::OK();
+}
+
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,
                                         vector<ReplicateRefPtr>* msg_refs,
@@ -713,10 +724,15 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     vector<ReplicateRefPtr> messages;
     int max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSize();
 
+    ReadContext read_context;
+    read_context.for_peer_uuid = &uuid;
+    read_context.for_peer_host = &peer_copy.peer_pb.last_known_addr().host();
+    read_context.for_peer_port = peer_copy.peer_pb.last_known_addr().port();
+
     // We try to get the follower's next_index from our log.
     Status s = log_cache_.ReadOps(peer_copy.next_index - 1,
                                   max_batch_size,
-                                  uuid,
+                                  read_context,
                                   &messages,
                                   &preceding_id);
     if (PREDICT_FALSE(!s.ok())) {
