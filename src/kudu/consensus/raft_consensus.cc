@@ -3889,6 +3889,17 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
     // TODO(mpercy): Switch this from polling to event-triggered.
 
     vector<ReplicateRefPtr> messages;
+    PeerMessageQueue::TrackedPeer peer_to_send;
+    Status s = queue_->FindPeer(request->dest_uuid(), &peer_to_send);
+    ReadContext read_context;
+    read_context.for_peer_uuid = &request->dest_uuid();
+    if (s.ok()) {
+      read_context.for_peer_host =
+        &peer_to_send.peer_pb.last_known_addr().host();
+      read_context.for_peer_port =
+        peer_to_send.peer_pb.last_known_addr().port();
+    }
+
     do {
       messages.clear();
 
@@ -3931,7 +3942,7 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
         RET_RESPOND_ERROR_NOT_OK(queue_->log_cache()->ReadOps(
               first_op_index - 1,
               max_batch_size,
-              request->dest_uuid(),
+              read_context,
               &messages,
               &preceding_id));
       }

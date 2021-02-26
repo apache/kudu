@@ -546,7 +546,7 @@ int64_t TotalByteSizeForMessage(const ReplicateMsg& msg) {
 
 Status LogCache::ReadOps(int64_t after_op_index,
                          int max_size_bytes,
-                         const boost::optional<std::string>& for_peer_uuid,
+                         const ReadContext& context,
                          std::vector<ReplicateRefPtr>* messages,
                          OpId* preceding_op) {
   DCHECK_GE(after_op_index, 0);
@@ -561,7 +561,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
       // chance to update the error manager and report the error to upper layer
       vector<ReplicateMsg*> raw_replicate_ptrs;
       log_->ReadReplicatesInRange(
-          after_op_index, after_op_index + 1, max_size_bytes, for_peer_uuid,
+          after_op_index, after_op_index + 1, max_size_bytes, context,
           &raw_replicate_ptrs);
       for (ReplicateMsg* msg : raw_replicate_ptrs) {
         delete msg;
@@ -596,7 +596,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
       vector<ReplicateMsg*> raw_replicate_ptrs;
       RETURN_NOT_OK_PREPEND(
         log_->ReadReplicatesInRange(
-          next_index, up_to, remaining_space, for_peer_uuid, &raw_replicate_ptrs),
+          next_index, up_to, remaining_space, context, &raw_replicate_ptrs),
         Substitute("Failed to read ops $0..$1", next_index, up_to));
       l.lock();
       VLOG_WITH_PREFIX_UNLOCKED(2)

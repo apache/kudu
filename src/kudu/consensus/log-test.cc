@@ -586,7 +586,7 @@ TEST_P(LogTestOptionalCompression, TestGCWithLogRunning) {
     vector<ReplicateMsg*> repls;
     ElementDeleter d(&repls);
     Status s = log_->reader()->ReadReplicatesInRange(
-      1, 2, LogReader::kNoSizeLimit, /*for_peer_uuid=*/boost::none, &repls);
+      1, 2, LogReader::kNoSizeLimit, ReadContext(), &repls);
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   }
 
@@ -980,7 +980,7 @@ TEST_P(LogTestOptionalCompression, TestReadLogWithReplacedReplicates) {
                     start_index,
                     end_index,
                     LogReader::kNoSizeLimit,
-                    /*for_peer_uuid=*/boost::none,
+                    ReadContext(),
                     &repls));
         ASSERT_EQ(end_index - start_index + 1, repls.size());
         int expected_index = start_index;
@@ -1009,7 +1009,7 @@ TEST_P(LogTestOptionalCompression, TestReadLogWithReplacedReplicates) {
               start_index,
               end_index,
               size_limit,
-              /*for_peer_uuid=*/boost::none,
+              ReadContext(),
               &repls));
         ASSERT_LE(repls.size(), end_index - start_index + 1);
         int total_size = 0;
@@ -1057,7 +1057,7 @@ TEST_P(LogTestOptionalCompression, TestReadReplicatesHighIndex) {
         first_log_index,
         first_log_index + kSequenceLength - 1,
         LogReader::kNoSizeLimit,
-        /*for_peer_uuid=*/boost::none,
+        ReadContext(),
         &replicates));
   ASSERT_EQ(kSequenceLength, replicates.size());
   ASSERT_GT(op_id.index(), std::numeric_limits<int32_t>::max());

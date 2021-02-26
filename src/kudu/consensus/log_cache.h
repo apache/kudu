@@ -49,6 +49,7 @@ namespace consensus {
 
 class OpId;
 class ReplicateMsg;
+struct ReadContext;
 
 // Write-through cache for the log.
 //
@@ -88,7 +89,7 @@ class LogCache {
   // of time and should not be called with important locks held, etc.
   Status ReadOps(int64_t after_op_index,
                  int max_size_bytes,
-                 const boost::optional<std::string>& for_peer_uuid,
+                 const ReadContext& context,
                  std::vector<ReplicateRefPtr>* messages,
                  OpId* preceding_op);
 

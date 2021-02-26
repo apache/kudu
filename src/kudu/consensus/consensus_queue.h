@@ -269,6 +269,14 @@ class PeerMessageQueue {
   // Return the next OpId to be appended to the queue in the current term.
   OpId GetNextOpId() const;
 
+  // Get the TrackedPeer corresponding to uuid. The tracked-peer is returned in
+  // 'peer'
+  //
+  // Returns Status::OK() if peer exists.
+  // Returns Status::NotFound() if peer does not exist (and peer is set to
+  // nullptr)
+  Status FindPeer(const std::string& uuid, TrackedPeer* peer);
+
   // Assembles a request for a peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
   // Returns OK if the request was assembled, or Status::NotFound() if the
