@@ -256,7 +256,7 @@ TEST_F(TxnParticipantTest, TestTransactionNotFound) {
       ASSERT_TRUE(resp.has_error());
       ASSERT_TRUE(resp.error().has_status());
       ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, resp.error().code());
-      ASSERT_EQ(AppStatusPB::NOT_FOUND, resp.error().status().code());
+      ASSERT_EQ(AppStatusPB::ILLEGAL_STATE, resp.error().status().code());
       ASSERT_FALSE(resp.has_timestamp());
     }
   };

@@ -140,7 +140,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
       Timestamp timestamp;
       TxnState meta_state;
       if (!tablet_metadata_->HasTxnMetadata(txn_id_, &meta_state, &timestamp)) {
-        return Status::NotFound("Transaction hasn't been successfully started");
+        return Status::IllegalState("Transaction hasn't been successfully started");
       }
       if (PREDICT_FALSE(meta_state != kCommitted && meta_state != kCommitInProgress)) {
         *code = tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE;
@@ -293,7 +293,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
                                 txn_id_));
       }
       // TODO(awong): add another code for this?
-      return Status::NotFound("Transaction hasn't been successfully started");
+      return Status::IllegalState("Transaction hasn't been successfully started");
     }
     return Status::OK();
   }
