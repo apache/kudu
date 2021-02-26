@@ -86,6 +86,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/master/catalog_manager.h"
@@ -165,6 +166,7 @@ DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
+DECLARE_int32(stress_cpu_threads);
 DECLARE_int32(table_locations_ttl_ms);
 DECLARE_int32(txn_status_manager_inject_latency_load_from_tablet_ms);
 DECLARE_int64(live_row_count_for_testing);
@@ -6908,16 +6910,26 @@ TEST_F(ClientTest, TestCacheAuthzTokens) {
 // Test to ensure that we don't send calls to retrieve authz tokens when one is
 // already in-flight for the same table ID.
 TEST_F(ClientTest, TestRetrieveAuthzTokenInParallel) {
-  const int kThreads = 20;
+  const auto kThreads = base::NumCPUs();
+  if (kThreads < 2) {
+    LOG(WARNING) << "no sense to run at a single CPU core";
+    GTEST_SKIP();
+  }
+  if (FLAGS_stress_cpu_threads > 0) {
+    LOG(WARNING) << "test is not designed to run with --stress_cpu_threads";
+    GTEST_SKIP();
+  }
+
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   vector<Synchronizer> syncs(kThreads);
   vector<thread> threads;
   Barrier barrier(kThreads);
+  const auto deadline = MonoTime::Now() + kTimeout;
   for (auto& s : syncs) {
     threads.emplace_back([&] {
       barrier.Wait();
-      client_->data_->RetrieveAuthzTokenAsync(client_table_.get(), s.AsStatusCallback(),
-                                              MonoTime::Now() + kTimeout);
+      client_->data_->RetrieveAuthzTokenAsync(
+          client_table_.get(), s.AsStatusCallback(), deadline);
     });
   }
   for (int i = 0 ; i < kThreads; i++) {
