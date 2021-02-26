@@ -57,7 +57,13 @@ import org.apache.kudu.consensus.Metadata;
 public class RemoteTablet implements Comparable<RemoteTablet> {
 
   private static final Logger LOG = LoggerFactory.getLogger(RemoteTablet.class);
-  private static final int randomInt = new Random().nextInt(Integer.MAX_VALUE);
+
+  // This random integer is used when making any random choice for replica
+  // selection. It is static to provide a deterministic selection for any given
+  // process and therefore also better cache affinity while ensuring that we can
+  // still benefit from spreading the load across replicas for other processes
+  // and applications.
+  private static final int RANDOM_SELECTION_INT = new Random().nextInt(Integer.MAX_VALUE);
 
   private final String tableId;
   private final String tabletId;
@@ -206,7 +212,7 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
       ServerInfo result = null;
       List<ServerInfo> localServers = new ArrayList<>();
       List<ServerInfo> serversInSameLocation = new ArrayList<>();
-      int randomIndex = randomInt % tabletServers.size();
+      int randomIndex = RANDOM_SELECTION_INT % tabletServers.size();
       int index = 0;
       for (ServerInfo e : tabletServers.values()) {
         boolean serverInSameLocation = !location.isEmpty() && e.inSameLocation(location);
@@ -228,11 +234,11 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
         index++;
       }
       if (!localServers.isEmpty()) {
-        randomIndex = randomInt % localServers.size();
+        randomIndex = RANDOM_SELECTION_INT % localServers.size();
         return localServers.get(randomIndex);
       }
       if (!serversInSameLocation.isEmpty()) {
-        randomIndex = randomInt % serversInSameLocation.size();
+        randomIndex = RANDOM_SELECTION_INT % serversInSameLocation.size();
         return serversInSameLocation.get(randomIndex);
       }
       return result;

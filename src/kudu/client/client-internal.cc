@@ -19,13 +19,13 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -183,6 +183,22 @@ KuduClient::Data::~Data() {
   dns_resolver_.reset();
 }
 
+namespace {
+
+// This random integer is used when making any random choice for replica
+// selection. It is static to provide a deterministic selection for any given
+// process and therefore also better cache affinity while ensuring that we can
+// still benefit from spreading the load across replicas for other processes
+// and applications.
+int InitRandomSelectionInt() {
+  std::random_device rdev;
+  std::mt19937 gen(rdev());
+  return gen();
+}
+static const int kRandomSelectionInt = InitRandomSelectionInt();
+
+} // anonymous namespace
+
 RemoteTabletServer* KuduClient::Data::SelectTServer(
     const scoped_refptr<RemoteTablet>& rt,
     const ReplicaSelection selection,
@@ -249,11 +265,11 @@ RemoteTabletServer* KuduClient::Data::SelectTServer(
         }
       }
       if (!local.empty()) {
-        ret = local[rand() % local.size()];
+        ret = local[kRandomSelectionInt % local.size()];
       } else if (!same_location.empty()) {
-        ret = same_location[rand() % same_location.size()];
+        ret = same_location[kRandomSelectionInt % same_location.size()];
       } else if (!filtered.empty()) {
-        ret = filtered[rand() % filtered.size()];
+        ret = filtered[kRandomSelectionInt % filtered.size()];
       }
       break;
     }

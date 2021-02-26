@@ -302,8 +302,11 @@ enum ReplicaSelection {
   UNKNOWN_REPLICA_SELECTION = 0;
   // Select the LEADER replica.
   LEADER_ONLY = 1;
-  // Select the closest replica to the client, or a random one if all replicas
-  // are equidistant.
+  // Select the closest replica to the client. Replicas are classified from
+  // closest to furthest as follows:
+  //   - Local replicas
+  //   - Replicas whose tablet server has the same location as the client
+  //   - All other replicas
   CLOSEST_REPLICA = 2;
 }
 

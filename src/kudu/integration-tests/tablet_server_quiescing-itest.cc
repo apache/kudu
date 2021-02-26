@@ -246,13 +246,18 @@ TEST_F(TServerQuiescingITest, TestDoesntAllowNewScans) {
   rw_workload->Setup();
   rw_workload->Start();
 
-  // Wait for some scans to begin.
-  auto* ts = cluster_->mini_tablet_server(0);
+  // Wait for some scans to begin on a tablet server.
+  int ts_id = 0;
+  auto* ts = cluster_->mini_tablet_server(ts_id);
   ASSERT_EVENTUALLY([&] {
+    // Pick the next tablet server on each try to handle the
+    // case where certain tablet servers will never have an active scanner.
+    ts_id = (ts_id + 1) % cluster_->num_tablet_servers();
+    ts = cluster_->mini_tablet_server(ts_id);
     ASSERT_LT(0, ts->server()->scanner_manager()->CountActiveScanners());
   });
 
-  // Mark a tablet server as quiescing. It should eventually stop serving scans.
+  // Mark the tablet server as quiescing. It should eventually stop serving scans.
   *ts->server()->mutable_quiescing() = true;
   ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(0, ts->server()->scanner_manager()->CountActiveScanners());

@@ -56,6 +56,7 @@ METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 METRIC_DECLARE_gauge_uint32(tablets_num_failed);
 
 using kudu::client::sp::shared_ptr;
+using kudu::client::KuduClient;
 using kudu::client::KuduDelete;
 using kudu::client::KuduInsert;
 using kudu::client::KuduSession;
@@ -224,7 +225,7 @@ class TabletServerDiskErrorITest : public DiskErrorITestBase {
   // Also configure the cluster to not delete or copy tablets, even on error.
   // This allows us to check all tablets are failed appropriately.
   void SetUp() override {
-    const int kNumRows = 5000;
+    const int kNumRows = 10000;
     ExternalMiniClusterOptions opts;
     // Use 3 tservers at first; we'll add an empty one later.
     opts.num_tablet_servers = 3;
@@ -243,7 +244,8 @@ class TabletServerDiskErrorITest : public DiskErrorITestBase {
     NO_FATALS(StartClusterWithOpts(std::move(opts)));
 
     // Write some rows to the three servers.
-    TestWorkload writes(cluster_.get());
+    // Uses HASH partitioning to be sure we hit all tablets.
+    TestWorkload writes(cluster_.get(), TestWorkload::PartitioningType::HASH);
     writes.set_num_tablets(kNumTablets);
     writes.Setup();
     writes.Start();
@@ -281,13 +283,14 @@ class TabletServerDiskErrorITest : public DiskErrorITestBase {
 
   // Waits for the number of failed tablets on the tablet server to reach
   // `num_failed`.
-  void WaitForFailedTablets(ExternalTabletServer* ts, int num_failed) const {
+  void WaitForFailedTablets(ExternalTabletServer* ts, int num_failed,
+                            bool require_all_fail = true) const {
     ASSERT_EVENTUALLY([&] {
       int64_t failed_on_ts;
       ASSERT_OK(itest::GetInt64Metric(ts->bound_http_hostport(),
           &METRIC_ENTITY_server, nullptr, &METRIC_tablets_num_failed, "value", &failed_on_ts));
       LOG(INFO) << "Currently has " << failed_on_ts << " failed tablets";
-      ASSERT_EQ(num_failed, failed_on_ts);
+      ASSERT_TRUE(failed_on_ts == num_failed || (!require_all_fail && failed_on_ts > 0));
     });
   }
 };
@@ -327,8 +330,10 @@ TEST_P(TabletServerDiskErrorITest, TestFailDuringScanWorkload) {
   ExternalTabletServer* error_ts = cluster_->tablet_server(0);
   ASSERT_OK(SetFlags(error_ts, InjectionFlags(GetParam(), error_ts)));
 
-  // Wait for all the tablets to reach a failed state.
-  NO_FATALS(WaitForFailedTablets(error_ts, kNumTablets));
+  // Wait for some of the tablets to reach a failed state.
+  // We can't wait for all of the tablets in this case because
+  // some may not be scanned and will therefore not be marked as failed.
+  NO_FATALS(WaitForFailedTablets(error_ts, kNumTablets, /*require_all_fail*/false));
   ASSERT_OK(AllowRecovery());
   NO_FATALS(read.StopAndJoin());
 

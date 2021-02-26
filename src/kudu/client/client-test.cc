@@ -2562,6 +2562,56 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   }
 }
 
+TEST_F(ClientTest, TestGetTabletServerDeterministic) {
+  shared_ptr<KuduTable> table;
+  NO_FATALS(CreateTable("selection",
+                        3,
+                        GenerateSplitRows(),
+                        {},
+                        &table));
+  InsertTestRows(table.get(), 1, 0);
+
+  // Look up the tablet and its replicas into the metadata cache.
+  // We have to loop since some replicas may have been created slowly.
+  scoped_refptr<internal::RemoteTablet> rt;
+  while (true) {
+    rt = MetaCacheLookup(table.get(), "");
+    ASSERT_TRUE(rt.get() != nullptr);
+    vector<internal::RemoteTabletServer*> tservers;
+    rt->GetRemoteTabletServers(&tservers);
+    if (tservers.size() == 3) {
+      break;
+    }
+    // Marking stale forces a lookup.
+    rt->MarkStale();
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  // Get the closest replica from the same client twice and ensure they match.
+  set<string> blacklist;
+  vector<internal::RemoteTabletServer*> candidates;
+  internal::RemoteTabletServer* rts1;
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt,
+                                            KuduClient::CLOSEST_REPLICA,
+                                            blacklist, &candidates, &rts1));
+  internal::RemoteTabletServer *rts2;
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt,
+                                            KuduClient::CLOSEST_REPLICA,
+                                            blacklist, &candidates, &rts2));
+  ASSERT_EQ(rts1->permanent_uuid(), rts2->permanent_uuid());
+
+  // Get the closest replica from a different client and ensure it matches.
+  shared_ptr<KuduClient> c2;
+  ASSERT_OK(KuduClientBuilder()
+      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+      .Build(&c2));
+  internal::RemoteTabletServer *rts3;
+  ASSERT_OK(c2->data_->GetTabletServer(c2.get(), rt,
+                                       KuduClient::CLOSEST_REPLICA,
+                                       blacklist, &candidates, &rts3));
+  ASSERT_EQ(rts2->permanent_uuid(), rts3->permanent_uuid());
+}
+
 TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   shared_ptr<KuduTable> table;
   NO_FATALS(CreateTable("split-table",
