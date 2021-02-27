@@ -830,12 +830,12 @@ class ParameterizedRemoveMasterTest : public DynamicMultiMasterTest,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(, ParameterizedRemoveMasterTest,
-                        ::testing::Combine(
-                            // Initial number of masters in the cluster before removing a master
-                            ::testing::Values(2, 3),
-                            // Whether the master to be removed is dead/shutdown
-                            ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(, ParameterizedRemoveMasterTest,
+                         ::testing::Combine(
+                             // Initial number of masters in the cluster before removing a master
+                             ::testing::Values(2, 3),
+                             // Whether the master to be removed is dead/shutdown
+                             ::testing::Bool()));
 
 // Tests removing a non-leader master from the cluster.
 TEST_P(ParameterizedRemoveMasterTest, TestRemoveMaster) {
@@ -1206,7 +1206,8 @@ class ParameterizedRemoveLeaderMasterTest : public DynamicMultiMasterTest,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(, ParameterizedRemoveLeaderMasterTest, ::testing::Values(1, 2));
+INSTANTIATE_TEST_SUITE_P(, ParameterizedRemoveLeaderMasterTest,
+                         ::testing::Values(1, 2));
 
 TEST_P(ParameterizedRemoveLeaderMasterTest, TestRemoveLeaderMaster) {
   NO_FATALS(StartCluster({"--master_support_change_config"}));
