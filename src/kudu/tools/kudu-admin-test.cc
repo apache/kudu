@@ -53,7 +53,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -97,6 +96,8 @@ using kudu::client::KuduTableCreator;
 using kudu::client::KuduValue;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalTabletServer;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::EXCLUDE_HEALTH_REPORT;
@@ -2236,11 +2237,12 @@ TEST_F(AdminCliTest, TestDumpMemTrackers) {
 }
 
 TEST_F(AdminCliTest, TestAuthzResetCacheIncorrectMasterAddressList) {
-  NO_FATALS(BuildAndStart());
-
-  const auto& master_addr = cluster_->master()->bound_rpc_hostport().ToString();
-  const vector<string> dup_master_addresses = { master_addr, master_addr, };
-  const auto& dup_master_addresses_str = JoinStrings(dup_master_addresses, ",");
+  ExternalMiniClusterOptions opts;
+  opts.num_masters = 3;
+  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
+  ASSERT_OK(cluster_->Start());
+  auto master_addrs_str = HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs());
+  auto incorrect_master_addrs_str = cluster_->master(0)->bound_rpc_hostport().ToString();
   string out;
   string err;
   Status s;
@@ -2249,14 +2251,14 @@ TEST_F(AdminCliTest, TestAuthzResetCacheIncorrectMasterAddressList) {
     "master",
     "authz_cache",
     "refresh",
-    dup_master_addresses_str,
+    incorrect_master_addrs_str,
   }, &out, &err);
   ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, out, err);
 
   const auto ref_err_msg = Substitute(
       "Invalid argument: list of master addresses provided ($0) "
       "does not match the actual cluster configuration ($1)",
-      dup_master_addresses_str, master_addr);
+      incorrect_master_addrs_str, master_addrs_str);
   ASSERT_STR_CONTAINS(err, ref_err_msg);
 
   // However, the '--force' option makes it possible to run the tool even
@@ -2269,7 +2271,7 @@ TEST_F(AdminCliTest, TestAuthzResetCacheIncorrectMasterAddressList) {
     "authz_cache",
     "refresh",
     "--force",
-    dup_master_addresses_str,
+    incorrect_master_addrs_str,
   }, &out, &err));
 }
 

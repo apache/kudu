@@ -6100,5 +6100,19 @@ TEST_F(ToolTest, ConnectionNegotiationTimeoutOption) {
   }
 }
 
+// Execute a ksck giving the hostname of the local machine twice
+// and it should report the duplicates found.
+TEST_F(ToolTest, TestDuplicateMastersInKsck) {
+  string master_addr;
+  if (!GetHostname(&master_addr).ok()) {
+    master_addr = "<unknown_host>";
+  }
+  string out;
+  string cmd = Substitute("cluster ksck $0,$0", master_addr);
+  Status s = RunActionStderrString(cmd, &out);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(out, "Duplicate master addresses specified");
+}
+
 } // namespace tools
 } // namespace kudu

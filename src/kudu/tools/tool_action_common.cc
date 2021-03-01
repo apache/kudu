@@ -648,7 +648,24 @@ Status ParseMasterAddresses(const RunnerContext& context,
   CHECK(master_addresses);
   string master_addresses_str;
   RETURN_NOT_OK(ParseMasterAddressesStr(context, master_addresses_arg, &master_addresses_str));
-  *master_addresses = strings::Split(master_addresses_str, ",");
+  vector<string> master_addresses_local = strings::Split(master_addresses_str, ",");
+  std::unordered_set<string> unique_masters;
+  std::unordered_set<string> duplicate_masters;
+  // Loop through the master addresses to find the duplicate. If there is no master specified
+  // do not report as a duplicate
+  for (const auto& master : master_addresses_local) {
+    if (master.empty()) continue;
+    if (ContainsKey(unique_masters, master)) {
+      duplicate_masters.insert(master);
+    } else {
+      unique_masters.insert(master);
+    }
+  }
+  if (!duplicate_masters.empty()) {
+    return Status::InvalidArgument(
+      "Duplicate master addresses specified: " + JoinStrings(duplicate_masters, ","));
+  }
+  *master_addresses = std::move(master_addresses_local);
   return Status::OK();
 }
 
