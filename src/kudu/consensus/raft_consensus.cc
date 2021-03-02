@@ -905,7 +905,7 @@ Status RaftConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
   return Status::OK();
 }
 
-Status RaftConsensus::TruncateCallbackWithRaftLock() {
+Status RaftConsensus::TruncateCallbackWithRaftLock(int64_t *index_if_truncated) {
   DCHECK(FLAGS_raft_derived_log_mode);
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
@@ -914,7 +914,7 @@ Status RaftConsensus::TruncateCallbackWithRaftLock() {
   // We pass -1 to TruncateOpsAfter in the log abstraction
   // It is the responsibility of the derived log to truncate from
   // the cached truncation index and clear it.
-  return log_->TruncateOpsAfter(-1);
+  return log_->TruncateOpsAfter(-1, index_if_truncated);
 }
 
 Status RaftConsensus::CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRound>& round) {
