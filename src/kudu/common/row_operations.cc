@@ -408,6 +408,14 @@ class ClientServerMapping {
   DISALLOW_COPY_AND_ASSIGN(ClientServerMapping);
 };
 
+size_t RowOperationsPBDecoder::GetTabletColIdx(const ClientServerMapping& mapping,
+                                               size_t client_col_idx) {
+  if (client_schema_ != tablet_schema_) {
+    return mapping.client_to_tablet_idx(client_col_idx);
+  }
+  return client_col_idx;
+}
+
 Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
                                                     const ClientServerMapping& mapping,
                                                     DecodedRowOperation* op) {
@@ -446,7 +454,7 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
     // Look up the corresponding column from the tablet. We use the server-side
     // ColumnSchema object since it has the most up-to-date default, nullability,
     // etc.
-    size_t tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
+    size_t tablet_col_idx = GetTabletColIdx(mapping, client_col_idx);
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
     bool isset = BitmapTest(client_isset_map, client_col_idx);
@@ -515,8 +523,10 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
     // Look up the corresponding column from the tablet. We use the server-side
     // ColumnSchema object since it has the most up-to-date default, nullability,
     // etc.
-    DCHECK_EQ(mapping.client_to_tablet_idx(client_col_idx),
-              client_col_idx) << "key columns should match";
+    if (client_schema_ != tablet_schema_) {
+      DCHECK_EQ(mapping.client_to_tablet_idx(client_col_idx),
+                client_col_idx) << "key columns should match";
+    }
     size_t tablet_col_idx = client_col_idx;
 
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
@@ -550,7 +560,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
 
     // Now process the rest of columns as updates.
     for (; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
-      size_t tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
+      size_t tablet_col_idx = GetTabletColIdx(mapping, client_col_idx);
       const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
       if (BitmapTest(client_isset_map, client_col_idx)) {
@@ -592,7 +602,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
     // Ensure that no other columns are set.
     for (; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
       if (PREDICT_FALSE(BitmapTest(client_isset_map, client_col_idx))) {
-        size_t tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
+        size_t tablet_col_idx = GetTabletColIdx(mapping, client_col_idx);
         const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
         op->SetFailureStatusOnce(Status::InvalidArgument(
             "DELETE should not have a value for column", col.ToString()));
@@ -634,7 +644,7 @@ Status RowOperationsPBDecoder::DecodeSplitRow(const ClientServerMapping& mapping
     // Look up the corresponding column from the tablet. We use the server-side
     // ColumnSchema object since it has the most up-to-date default, nullability,
     // etc.
-    size_t tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
+    size_t tablet_col_idx = GetTabletColIdx(mapping, client_col_idx);
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
     if (BitmapTest(client_isset_map, client_col_idx)) {
@@ -662,12 +672,14 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
   // then drop the column, expecting it to be compatible, but all writes would
   // start failing until clients refreshed their schema.
   // See DISABLED_TestProjectUpdatesSubsetOfColumns
-  CHECK(!client_schema_->has_column_ids());
+  CHECK_EQ(client_schema_->has_column_ids(), client_schema_ == tablet_schema_);
   DCHECK(tablet_schema_->has_column_ids());
   ClientServerMapping mapping(client_schema_, tablet_schema_);
-  RETURN_NOT_OK(client_schema_->GetProjectionMapping(*tablet_schema_, &mapping));
-  DCHECK_EQ(mapping.num_mapped(), client_schema_->num_columns());
-  RETURN_NOT_OK(mapping.CheckAllRequiredColumnsPresent());
+  if (client_schema_ != tablet_schema_) {
+    RETURN_NOT_OK(client_schema_->GetProjectionMapping(*tablet_schema_, &mapping));
+    DCHECK_EQ(mapping.num_mapped(), client_schema_->num_columns());
+    RETURN_NOT_OK(mapping.CheckAllRequiredColumnsPresent());
+  }
 
   // Make a "prototype row" which has all the defaults filled in. We can copy
   // this to create a starting point for each row as we decode it, with

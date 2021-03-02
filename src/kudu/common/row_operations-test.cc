@@ -33,8 +33,8 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
-#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
@@ -757,7 +757,10 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
   }
 }
 
-TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
+namespace {
+// If 'use_tablet_schema_as_client_schema' is true, the tablet schema with its
+// column IDs is passed in as the client_schema for the RowOperationsPBDecoder.
+void TestSplitKeys(bool use_tablet_schema_as_client_schema) {
   Schema client_schema = Schema({ ColumnSchema("int8", INT8),
                                   ColumnSchema("int16", INT16),
                                   ColumnSchema("int32", INT32),
@@ -787,7 +790,8 @@ TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
   RowOperationsPBEncoder(&pb).Add(RowOperationsPB::SPLIT_ROW, row);
 
   Schema schema = client_schema.CopyWithColumnIds();
-  RowOperationsPBDecoder decoder(&pb, &client_schema, &schema, nullptr);
+  RowOperationsPBDecoder decoder(
+      &pb, use_tablet_schema_as_client_schema ? &schema : &client_schema, &schema, nullptr);
   vector<DecodedRowOperation> ops;
   ASSERT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
   ASSERT_EQ(1, ops.size());
@@ -821,7 +825,6 @@ TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
   CHECK(!row2->IsColumnSet("missing"));
 }
 
-namespace {
 void CheckExceedCellLimit(const Schema& client_schema,
                           const vector<string>& col_values,
                           RowOperationsPB::Type op_type,
@@ -930,6 +933,14 @@ void CheckSplitExceedCellLimit(const Schema& client_schema,
   }
 }
 } // anonymous namespace
+
+// Decodes a split row using RowOperationsPBDecoder with DecoderMode::SPLIT_ROWS under
+// two conditions, one where the client schema doesn't have column IDs as expected and
+// another where both the client schema and the tablet schema are the same object.
+TEST_F(RowOperationsTest, SplitKeysRoundTrip) {
+  TestSplitKeys(false);
+  TestSplitKeys(true);
+}
 
 TEST_F(RowOperationsTest, ExceedCellLimit) {
   Schema client_schema = Schema({ ColumnSchema("key_string", STRING),

@@ -137,6 +137,9 @@ class RowOperationsPBDecoder {
   // columns and rows.
   Status ReadColumnAndDiscard(const ColumnSchema& col);
   bool HasNext() const;
+  // Returns 'client_col_idx' if client and tablet schemas match, if not uses
+  // 'mapping' to translate client schema idx to tablet schema idx.
+  size_t GetTabletColIdx(const ClientServerMapping& mapping, size_t client_col_idx);
 
   Status DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
                               const ClientServerMapping& mapping,
@@ -160,6 +163,9 @@ class RowOperationsPBDecoder {
                   const ClientServerMapping& mapping, DecodedRowOperation* op);
 
   const RowOperationsPB* const pb_;
+  // If 'client_schema_' and 'tablet_schema_' are the same object, the mapping
+  // between the two schemas is effectively useless since only one schema
+  // exists. This is the only time when the client_schema_ can have column IDs.
   const Schema* const client_schema_;
   const Schema* const tablet_schema_;
   Arena* const dst_arena_;
