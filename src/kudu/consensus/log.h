@@ -187,7 +187,9 @@ class Log : public RefCountedThreadSafe<Log> {
   // are flushed and fsynced (if fsync of log entries is enabled).
   virtual Status WaitUntilAllFlushed();
 
-  virtual Status TruncateOpsAfter(int64_t index);
+  // index_if_truncated - if caller e.g. Log Cache passes in index_if_truncated,
+  // the log specialization is expected to return the index of truncation
+  virtual Status TruncateOpsAfter(int64_t index, int64_t *index_if_truncated = nullptr);
 
   // Kick off an asynchronous task that pre-allocates a new
   // log-segment, setting 'allocation_status_'. To wait for the

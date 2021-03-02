@@ -448,7 +448,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // while holding Raft Consensus lock. This is to serialize
   // the operation with Raft Consensus lock, which is the same locking
   // pattern that is used by UpdateReplica while invoking TruncateOpsAfter
-  Status TruncateCallbackWithRaftLock();
+  // @param index_if_truncated - the log specialization will return the
+  // truncated index if truncation happened.
+  Status TruncateCallbackWithRaftLock(int64_t *index_if_truncated);
 
   // Returns the last OpId (either received or committed, depending on the
   // 'type' argument) that the Consensus implementation knows about.

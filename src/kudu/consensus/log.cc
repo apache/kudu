@@ -876,7 +876,7 @@ Status Log::WaitUntilAllFlushed() {
   return s.Wait();
 }
 
-Status Log::TruncateOpsAfter(int64_t index) {
+Status Log::TruncateOpsAfter(int64_t index, int64_t *index_if_truncated) {
   // In base implementation, truncation is not needed
   // as next_sequential_op_index_ is updated, as an alternative
   // to actual trimming
