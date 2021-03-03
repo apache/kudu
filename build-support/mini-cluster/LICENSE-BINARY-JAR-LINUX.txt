@@ -85,7 +85,7 @@ Source: http://curl.haxx.se/
 --------------------------------------------------------------------------------
 Cyrus SASL: BSD license
 libraries: libsasl2, libanonymous, libgssapiv2, liblogin, libplain, libsasldb
-libraries: libgs2, libdigestmd5, libcrammd5, libscram, libntlm
+libraries: libgs2, libdigestmd5, libcrammd5, libscram, libntlm, libpcre2
 Source: Centos 6.6 yum repository
 
   Copyright (c) 1998-2003 Carnegie Mellon University.  All rights reserved.
