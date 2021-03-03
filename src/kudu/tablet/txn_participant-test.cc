@@ -245,9 +245,9 @@ TEST_F(TxnParticipantTest, TestSuccessfulSequences) {
   }), txn_participant()->GetTxnsForTests());
 }
 
-TEST_F(TxnParticipantTest, TestTransactionNotFound) {
+TEST_F(TxnParticipantTest, TestParticipantOpsWhenNotBegun) {
   const auto check_bad_ops = [&] (const vector<ParticipantOpPB::ParticipantOpType>& ops,
-                                       int64_t txn_id) {
+                                  int64_t txn_id) {
     for (const auto& type : ops) {
       ParticipantResponsePB resp;
       ASSERT_OK(CallParticipantOp(

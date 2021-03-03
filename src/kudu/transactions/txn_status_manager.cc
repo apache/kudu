@@ -194,6 +194,24 @@ bool CommitTasks::IsShuttingDownCleanup() const {
   return false;
 }
 
+bool CommitTasks::ScheduleAbortIfNecessary() {
+  switch (abort_txn_) {
+    case ABORT_IN_PROGRESS:
+      LOG(INFO) << Substitute("Scheduling write for ABORT_IN_PROGRESS for txn $0",
+                              txn_id_.ToString());
+      ScheduleBeginAbortTxnWrite();
+      return true;
+    case ABORTED:
+      LOG(INFO) << Substitute("Scheduling ABORT_TXNs on participants for txn $0",
+                              txn_id_.ToString());
+      AbortTxnAsync();
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+
 void CommitTasks::BeginCommitAsyncTask(int participant_idx) {
   DCHECK_LT(participant_idx, participant_ids_.size());
   // Status callback called with the result from the participant op. This is
@@ -218,12 +236,16 @@ void CommitTasks::BeginCommitAsyncTask(int participant_idx) {
       // been committed, rather than attempting to abort or something. This is
       // important to ensure retries of the commit tasks reliably result in the
       // same operations being performed.
-      LOG(INFO) << Substitute("Participant $0 was not found: $1",
+      LOG(INFO) << Substitute("Participant $0 was not found for BEGIN_COMMIT, aborting: $1",
                               participant_ids_[participant_idx], s.ToString());
+      SetNeedsBeginAbort();
     } else if (PREDICT_FALSE(!s.ok())) {
       // For any other kind of error, just exit without completing.
       // TODO(awong): we're presuming that such errors wouldn't benefit from
       // just retrying.
+      // TODO(awong): we don't expect them, but if we ever somehow find
+      // ourselves with an aborted transaction on the participant, we should
+      // probably abort here.
       LOG(WARNING) << Substitute("Participant $0 BEGIN_COMMIT op returned $1",
                                  participant_ids_[participant_idx], s.ToString());
       stop_task_ = true;
@@ -235,12 +257,16 @@ void CommitTasks::BeginCommitAsyncTask(int participant_idx) {
       if (IsShuttingDownCleanup()) {
         return;
       }
+      if (ScheduleAbortIfNecessary()) {
+        return;
+      }
       Timestamp max_timestamp(Timestamp::kInitialTimestamp);
       for (const auto& ts : begin_commit_timestamps_) {
         max_timestamp = std::max(ts, max_timestamp);
       }
       DCHECK_NE(Timestamp::kInitialTimestamp, max_timestamp);
-      FinalizeCommitAsync(max_timestamp);
+      set_commit_timestamp(max_timestamp);
+      ScheduleFinalizeCommitWrite();
     }
   };
   ParticipantOpPB op_pb;
@@ -254,27 +280,26 @@ void CommitTasks::BeginCommitAsyncTask(int participant_idx) {
       &begin_commit_timestamps_[participant_idx]);
 }
 
-void CommitTasks::FinalizeCommitAsyncTask(int participant_idx, const Timestamp& commit_timestamp) {
+void CommitTasks::FinalizeCommitAsyncTask(int participant_idx) {
+  DCHECK_EQ(TxnStatePB::UNKNOWN, abort_txn_);
   DCHECK_LT(participant_idx, participant_ids_.size());
   // Status callback called with the result from the participant op.
   scoped_refptr<CommitTasks> scoped_this(this);
   auto participated_cb = [this, scoped_this = std::move(scoped_this),
-                          participant_idx, commit_timestamp] (const Status& s) {
+                          participant_idx] (const Status& s) {
     if (IsShuttingDownCleanupIfLastOp()) {
       return;
     }
     if (PREDICT_FALSE(s.IsTimedOut())) {
       LOG(WARNING) << Substitute("Retrying FINALIZE_COMMIT op for txn $0: $1",
                                  txn_id_.ToString(), s.ToString());
-      FinalizeCommitAsyncTask(participant_idx, commit_timestamp);
+      FinalizeCommitAsyncTask(participant_idx);
       return;
-    } else if (PREDICT_FALSE(!s.ok())) {
+    }
+    if (PREDICT_FALSE(!s.ok())) {
       // Presumably the error is not transient (e.g. not found) so retrying
       // won't help. But we've already begun sending out FINALIZE_TXN ops, so
       // we must complete the transaction.
-      // TODO(awong): revisit this; if we include an intermediate state between
-      // kCommitInProgress and kCommitted, that might be an opportune moment to
-      // abort.
       LOG(WARNING) << Substitute("Participant $0 FINALIZE_COMMIT op returned $1",
                                  participant_ids_[participant_idx], s.ToString());
     }
@@ -284,13 +309,13 @@ void CommitTasks::FinalizeCommitAsyncTask(int participant_idx, const Timestamp& 
       if (IsShuttingDownCleanup()) {
         return;
       }
-      ScheduleFinalizeCommitWrite(commit_timestamp);
+      ScheduleCompleteCommitWrite();
     }
   };
   ParticipantOpPB op_pb;
   op_pb.set_txn_id(txn_id_.value());
   op_pb.set_type(ParticipantOpPB::FINALIZE_COMMIT);
-  op_pb.set_finalized_commit_timestamp(commit_timestamp.value());
+  op_pb.set_finalized_commit_timestamp(commit_timestamp_.value());
   txn_client_->ParticipateInTransactionAsync(
       participant_ids_[participant_idx],
       std::move(op_pb),
@@ -313,7 +338,8 @@ void CommitTasks::AbortTxnAsyncTask(int participant_idx) {
     if (PREDICT_FALSE(s.IsNotFound())) {
       // If the participant has been deleted, treat it as though it's already
       // been aborted. The participant's data can't be read anyway.
-      LOG(INFO) << Substitute("Participant $0 was not found: $1",
+      LOG(INFO) << Substitute("Participant $0 was not found for ABORT_TXN, proceeding "
+                              "as if op succeeded: $1",
                               participant_ids_[participant_idx], s.ToString());
     } else if (PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << Substitute("Participant $0 ABORT_TXN op returned $1",
@@ -326,7 +352,7 @@ void CommitTasks::AbortTxnAsyncTask(int participant_idx) {
       if (IsShuttingDownCleanup()) {
         return;
       }
-      ScheduleAbortTxnWrite();
+      ScheduleFinalizeAbortTxnWrite();
     }
   };
   ParticipantOpPB op_pb;
@@ -343,7 +369,7 @@ void CommitTasks::AbortTxnAsync() {
   // Reset the in-flight counter to indicate we're waiting for this new set of
   // tasks to complete.
   if (participant_ids_.empty()) {
-    ScheduleAbortTxnWrite();
+    ScheduleFinalizeAbortTxnWrite();
   } else {
     ops_in_flight_ = participant_ids_.size();
     for (int i = 0; i < participant_ids_.size(); i++) {
@@ -352,7 +378,41 @@ void CommitTasks::AbortTxnAsync() {
   }
 }
 
-void CommitTasks::ScheduleAbortTxnWrite() {
+void CommitTasks::ScheduleBeginAbortTxnWrite() {
+  DCHECK_NE(TxnStatePB::UNKNOWN, abort_txn_);
+  DCHECK_EQ(0, ops_in_flight_);
+  // Submit the task to a threadpool.
+  // NOTE: This is called by the reactor thread that catches the BeginCommit
+  // response, so we can't do IO in this thread.
+  scoped_refptr<CommitTasks> scoped_this(this);
+  CHECK_OK(commit_pool_->Submit([this, scoped_this = std::move(scoped_this),
+                                 tsm = txn_status_manager_,
+                                 txn_id = txn_id_] {
+    if (stop_task_ || tsm->shutting_down()) {
+      tsm->RemoveCommitTask(txn_id, this);
+      return;
+    }
+    TxnStatusManager::ScopedLeaderSharedLock l(txn_status_manager_);
+    if (PREDICT_TRUE(l.first_failed_status().ok())) {
+      if (abort_txn_ == ABORT_IN_PROGRESS) {
+        TabletServerErrorPB ts_error;
+        // Clear out these commit tasks so we can start new ones focused on
+        // aborting.
+        tsm->RemoveCommitTask(txn_id, this);
+        WARN_NOT_OK(tsm->BeginAbortTransaction(txn_id.value(), boost::none, &ts_error),
+                    "Error writing to transaction status table");
+      } else {
+        // It's possible that while we were waiting to be scheduled, a client
+        // already called BeginAbortTransaction(). If so, we just need to go
+        // about aborting the transaction.
+        DCHECK_EQ(ABORTED, abort_txn_);
+        AbortTxnAsync();
+      }
+    }
+  }));
+}
+
+void CommitTasks::ScheduleFinalizeAbortTxnWrite() {
   // Submit the task to a threadpool.
   // NOTE: This is called by the reactor thread that catches the BeginCommit
   // response, so we can't do IO in this thread.
@@ -378,36 +438,39 @@ void CommitTasks::ScheduleAbortTxnWrite() {
   }));
 }
 
-void CommitTasks::FinalizeCommitAsync(Timestamp commit_timestamp) {
+void CommitTasks::FinalizeCommitAsync() {
+  DCHECK_NE(Timestamp::kInitialTimestamp, commit_timestamp_);
   // Reset the in-flight counter to indicate we're waiting for this new set of
   // tasks to complete.
   auto old_val = ops_in_flight_.exchange(participant_ids_.size());
   DCHECK_EQ(0, old_val);
   ops_in_flight_ = participant_ids_.size();
   for (int i = 0; i < participant_ids_.size(); i++) {
-    FinalizeCommitAsyncTask(i, commit_timestamp);
+    FinalizeCommitAsyncTask(i);
   }
 }
 
-void CommitTasks::ScheduleFinalizeCommitWrite(Timestamp commit_timestamp) {
+void CommitTasks::ScheduleCompleteCommitWrite() {
   // Submit the task to a threadpool.
-  // NOTE: This is called by the reactor thread that catches the BeginCommit
+  // NOTE: This is called by the reactor thread that catches the FinalizeCommit
   // response, so we can't do IO in this thread.
+  DCHECK_EQ(TxnStatePB::UNKNOWN, abort_txn_);
   DCHECK_EQ(0, ops_in_flight_);
   scoped_refptr<CommitTasks> scoped_this(this);
   CHECK_OK(commit_pool_->Submit([this, scoped_this = std::move(scoped_this),
                                  tsm = this->txn_status_manager_,
-                                 txn_id = this->txn_id_, commit_timestamp] {
+                                 txn_id = this->txn_id_] {
     MAYBE_INJECT_RANDOM_LATENCY(
         FLAGS_txn_status_manager_inject_latency_finalize_commit_ms);
 
-    if (IsShuttingDownCleanup()) {
+    if (stop_task_ || tsm->shutting_down()) {
+      tsm->RemoveCommitTask(txn_id, this);
       return;
     }
     TxnStatusManager::ScopedLeaderSharedLock l(txn_status_manager_);
     if (PREDICT_TRUE(l.first_failed_status().ok())) {
       TabletServerErrorPB error_pb;
-      WARN_NOT_OK(tsm->FinalizeCommitTransaction(txn_id.value(), commit_timestamp, &error_pb),
+      WARN_NOT_OK(tsm->CompleteCommitTransaction(txn_id.value()),
                   "Error writing to transaction status table");
     }
 
@@ -416,6 +479,53 @@ void CommitTasks::ScheduleFinalizeCommitWrite(Timestamp commit_timestamp) {
     // because we're no longer leader. In either case, the task will be retried
     // once a new leader is elected.
     tsm->RemoveCommitTask(txn_id, this);
+  }));
+}
+
+void CommitTasks::ScheduleFinalizeCommitWrite() {
+  // Submit the task to a threadpool.
+  // NOTE: This is called by the reactor thread that catches the BeginCommit
+  // response, so we can't do IO in this thread.
+  DCHECK_EQ(0, ops_in_flight_);
+  scoped_refptr<CommitTasks> scoped_this(this);
+  CHECK_OK(commit_pool_->Submit([this, scoped_this = std::move(scoped_this),
+                                 tsm = this->txn_status_manager_,
+                                 txn_id = this->txn_id_] {
+    MAYBE_INJECT_RANDOM_LATENCY(
+        FLAGS_txn_status_manager_inject_latency_finalize_commit_ms);
+
+    if (IsShuttingDownCleanup()) {
+      return;
+    }
+    TxnStatusManager::ScopedLeaderSharedLock l(txn_status_manager_);
+    // TODO(awong): the race handling here specific to concurrent aborts is
+    // messy. Consider a less ad-hoc way to define on-going tasks.
+    // NOTE: the special handling of aborts is only critical in this scheduling
+    // to finalize the commit because the only non-OPEN state an abort can
+    // occur with is COMMIT_IN_PROGRESS, which is the expected state of the
+    // transaction when this is called.
+    if (PREDICT_TRUE(l.first_failed_status().ok())) {
+      // It's possible that a user called BeginAbortTransaction while we were
+      // waiting, so before attempting to commit, with the leader lock held,
+      // check if that's the case.
+      if (ScheduleAbortIfNecessary()) {
+        return;
+      }
+      TabletServerErrorPB error_pb;
+      Status s = tsm->FinalizeCommitTransaction(txn_id.value(), commit_timestamp_, &error_pb);
+      if (PREDICT_TRUE(s.ok())) {
+        return;
+      }
+      // It's again possible the FinalizeCommitTransaction call raced with
+      // BeginAbortTransaction, resulting in an aborted transaction. If so,
+      // schedule an abort.
+      if (ScheduleAbortIfNecessary()) {
+        return;
+      }
+      LOG(WARNING) << Substitute("Error writing to transaction status table: $0",
+                                 s.ToString());
+    }
+    tsm->RemoveCommitTask(txn_id.value(), this);
   }));
 }
 
@@ -560,23 +670,37 @@ Status TxnStatusManager::LoadFromTabletUnlocked() {
                 "Unable to initialize TxnSystemClient");
   }
 
-  unordered_map<int64_t, scoped_refptr<CommitTasks>> commits_in_flight;
   unordered_map<int64_t, scoped_refptr<CommitTasks>> new_commits;
+  unordered_map<int64_t, scoped_refptr<CommitTasks>> new_finalizes;
   unordered_map<int64_t, scoped_refptr<CommitTasks>> new_aborts;
   if (txn_client) {
     for (const auto& [txn_id, txn_entry] : txns_by_id) {
       const auto& state = txn_entry->state();
-      if (state == TxnStatePB::COMMIT_IN_PROGRESS) {
-        new_commits.emplace(txn_id,
-            new CommitTasks(txn_id, txn_entry->GetParticipantIds(),
-                            txn_client, commit_pool_, this));
-      } else if (state == TxnStatePB::ABORT_IN_PROGRESS) {
-        new_aborts.emplace(txn_id,
-            new CommitTasks(txn_id, txn_entry->GetParticipantIds(),
-                            txn_client, commit_pool_, this));
+      switch (state) {
+        case TxnStatePB::COMMIT_IN_PROGRESS:
+          new_commits.emplace(txn_id,
+              new CommitTasks(txn_id, txn_entry->GetParticipantIds(),
+                              txn_client, commit_pool_, this));
+          break;
+        case TxnStatePB::FINALIZE_IN_PROGRESS: {
+          scoped_refptr<CommitTasks> tasks(
+              new CommitTasks(txn_id, txn_entry->GetParticipantIds(),
+                              txn_client, commit_pool_, this));
+          tasks->set_commit_timestamp(Timestamp(txn_entry->commit_timestamp()));
+          new_finalizes.emplace(txn_id, std::move(tasks));
+          break;
+        }
+        case TxnStatePB::ABORT_IN_PROGRESS:
+          new_aborts.emplace(txn_id,
+              new CommitTasks(txn_id, txn_entry->GetParticipantIds(),
+                              txn_client, commit_pool_, this));
+          break;
+        default:
+          break;
       }
     }
   }
+  unordered_map<int64_t, scoped_refptr<CommitTasks>> commits_in_flight;
   {
     std::lock_guard<simple_spinlock> l(lock_);
     highest_txn_id_ = std::max(highest_txn_id, highest_txn_id_);
@@ -590,6 +714,12 @@ Status TxnStatusManager::LoadFromTabletUnlocked() {
       LOG(INFO) << Substitute("Starting $0 commit tasks", new_commits.size());
       for (const auto& [_, tasks] : new_commits) {
         tasks->BeginCommitAsync();
+      }
+    }
+    if (!new_finalizes.empty()) {
+      LOG(INFO) << Substitute("Starting $0 finalize tasks", new_finalizes.size());
+      for (const auto& [_, tasks] : new_finalizes) {
+        tasks->FinalizeCommitAsync();
       }
     }
     if (!new_aborts.empty()) {
@@ -883,9 +1013,9 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
 
 void CommitTasks::BeginCommitAsync() {
   if (participant_ids_.empty()) {
-    // If there are no participants for this transaction; just write an invalid
-    // timestamp.
-    ScheduleFinalizeCommitWrite(Timestamp::kInvalidTimestamp);
+    // If there are no participants for this transaction; just change its state
+    // to committed.
+    ScheduleCompleteCommitWrite();
   } else {
     // If there are some participants, schedule beginning commit tasks so
     // we can determine a finalized commit timestamp.
@@ -914,6 +1044,7 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
   const auto& pb = txn_lock.data().pb;
   const auto& state = pb.state();
   if (state == TxnStatePB::COMMIT_IN_PROGRESS ||
+      state == TxnStatePB::FINALIZE_IN_PROGRESS ||
       state == TxnStatePB::COMMITTED) {
     return Status::OK();
   }
@@ -953,7 +1084,8 @@ Status TxnStatusManager::FinalizeCommitTransaction(
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
   const auto& state = pb.state();
-  if (state == TxnStatePB::COMMITTED) {
+  if (state == TxnStatePB::FINALIZE_IN_PROGRESS ||
+      state == TxnStatePB::COMMITTED) {
     return Status::OK();
   }
   if (PREDICT_FALSE(state != TxnStatePB::COMMIT_IN_PROGRESS)) {
@@ -963,9 +1095,50 @@ Status TxnStatusManager::FinalizeCommitTransaction(
         ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
-  mutable_data->pb.set_state(TxnStatePB::COMMITTED);
+  mutable_data->pb.set_state(TxnStatePB::FINALIZE_IN_PROGRESS);
+  mutable_data->pb.set_commit_timestamp(commit_timestamp.value());
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(
       txn_id, mutable_data->pb, ts_error));
+
+  if (PREDICT_TRUE(FLAGS_txn_schedule_background_tasks)) {
+    std::lock_guard<simple_spinlock> l(lock_);
+    auto& task = FindOrDie(commits_in_flight_, txn_id);
+    task->FinalizeCommitAsync();
+  }
+
+  txn_lock.Commit();
+  return Status::OK();
+}
+
+Status TxnStatusManager::CompleteCommitTransaction(int64_t txn_id) {
+  leader_lock_.AssertAcquiredForReading();
+  scoped_refptr<TransactionEntry> txn;
+  TabletServerErrorPB ts_error;
+  RETURN_NOT_OK(GetTransaction(txn_id, boost::none, &txn, &ts_error));
+
+  TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
+  const auto& pb = txn_lock.data().pb;
+  const auto& state = pb.state();
+  if (state == TxnStatePB::COMMITTED) {
+    return Status::OK();
+  }
+  if (PREDICT_FALSE(state != TxnStatePB::COMMIT_IN_PROGRESS &&
+                    state != TxnStatePB::FINALIZE_IN_PROGRESS)) {
+    return ReportIllegalTxnState(
+        Substitute("transaction ID $0 is not finalizing its commit: $1",
+                   txn_id, SecureShortDebugString(pb)),
+        &ts_error);
+  }
+  auto* mutable_data = txn_lock.mutable_data();
+  mutable_data->pb.set_state(TxnStatePB::COMMITTED);
+  RETURN_NOT_OK(status_tablet_.UpdateTransaction(
+      txn_id, mutable_data->pb, &ts_error));
+
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    commits_in_flight_.erase(txn_id);
+  }
+
   txn_lock.Commit();
   return Status::OK();
 }
@@ -995,9 +1168,9 @@ Status TxnStatusManager::FinalizeAbortTransaction(int64_t txn_id) {
   return Status::OK();
 }
 
-Status TxnStatusManager::AbortTransaction(int64_t txn_id,
-                                          const string& user,
-                                          TabletServerErrorPB* ts_error) {
+Status TxnStatusManager::BeginAbortTransaction(int64_t txn_id,
+                                               const boost::optional<string>& user,
+                                               TabletServerErrorPB* ts_error) {
 
   leader_lock_.AssertAcquiredForReading();
   TxnSystemClient* txn_client;
@@ -1010,12 +1183,28 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id,
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
   const auto& state = pb.state();
-  if (state == TxnStatePB::ABORTED ||
-      state == TxnStatePB::ABORT_IN_PROGRESS) {
+  if (state == TxnStatePB::ABORT_IN_PROGRESS) {
+    if (PREDICT_TRUE(FLAGS_txn_schedule_background_tasks)) {
+      // It's possible we don't have any tasks running even though we're in
+      // ABORT_IN_PROGRESS, e.g. if we're in the middle of aborting a commit
+      // (and have removed the commit tasks), while at the same time, we've
+      // just served a client-initiated abort and so the state is already
+      // ABORT_IN_PROGRESS. If so, we should start abort tasks.
+      std::unique_lock<simple_spinlock> l(lock_);
+      if (PREDICT_FALSE(!ContainsKey(commits_in_flight_, txn_id))) {
+        auto participant_ids = txn->GetParticipantIds();
+        auto tasks = EmplaceOrDie(&commits_in_flight_, txn_id,
+          new CommitTasks(txn_id, std::move(participant_ids),
+                          txn_client, commit_pool_, this));
+        l.unlock();
+        tasks->AbortTxnAsync();
+      }
+    }
     return Status::OK();
   }
-  // TODO(awong): if we're in COMMIT_IN_PROGRESS, we should attempt to abort
-  // any in-flight commit tasks.
+  if (state == TxnStatePB::ABORTED) {
+    return Status::OK();
+  }
   if (PREDICT_FALSE(state != TxnStatePB::OPEN &&
                     state != TxnStatePB::COMMIT_IN_PROGRESS)) {
     return ReportIllegalTxnState(
@@ -1035,11 +1224,22 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id,
                         txn_client, commit_pool_, this));
     l.unlock();
     if (emplaced) {
+      // If we didn't have commit tasks on-going, finalize the abort on
+      // participants.
       map_iter->second->AbortTxnAsync();
+    } else {
+      // If we did have commit tasks, set them up so they finalize the abort.
+      map_iter->second->SetNeedsFinalizeAbort();
     }
   }
   txn_lock.Commit();
   return Status::OK();
+}
+
+Status TxnStatusManager::AbortTransaction(int64_t txn_id,
+                                          const string& user,
+                                          TabletServerErrorPB* ts_error) {
+  return BeginAbortTransaction(txn_id, user, ts_error);
 }
 
 Status TxnStatusManager::GetTransactionStatus(
@@ -1058,6 +1258,9 @@ Status TxnStatusManager::GetTransactionStatus(
   txn_status->set_user(pb.user());
   DCHECK(pb.has_state());
   txn_status->set_state(pb.state());
+  if (pb.has_commit_timestamp()) {
+    txn_status->set_commit_timestamp(pb.commit_timestamp());
+  }
 
   return Status::OK();
 }
@@ -1076,19 +1279,19 @@ Status TxnStatusManager::KeepTransactionAlive(int64_t txn_id,
 
   const auto& pb = txn_lock.data().pb;
   const auto& state = pb.state();
-  if (state != TxnStatePB::OPEN &&
-      state != TxnStatePB::COMMIT_IN_PROGRESS) {
-    return ReportIllegalTxnState(
-        Substitute("transaction ID $0 is already in terminal state: $1",
-                   txn_id, SecureShortDebugString(pb)),
-        ts_error);
-  }
   // Keepalive updates are not required for a transaction in COMMIT_IN_PROGRESS
   // state. The system takes care of a transaction once the client side
   // initiates the commit phase.
-  if (state == TxnStatePB::COMMIT_IN_PROGRESS) {
+  if (state == TxnStatePB::COMMIT_IN_PROGRESS ||
+      state == TxnStatePB::FINALIZE_IN_PROGRESS) {
     return ReportIllegalTxnState(
         Substitute("transaction ID $0 is in commit phase: $1",
+                   txn_id, SecureShortDebugString(pb)),
+        ts_error);
+  }
+  if (state != TxnStatePB::OPEN) {
+    return ReportIllegalTxnState(
+        Substitute("transaction ID $0 is not available for further commits: $1",
                    txn_id, SecureShortDebugString(pb)),
         ts_error);
   }

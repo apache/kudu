@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/timestamp.h"
@@ -33,6 +34,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/txn_coordinator.h"
+#include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_status_entry.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/util/locks.h"
@@ -40,9 +42,9 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+class MonoDelta;
 class ThreadPool;
 
-class MonoDelta;
 namespace rpc {
 class RpcContext;
 }  // namespace rpc
@@ -56,12 +58,25 @@ class TabletServerErrorPB;
 } // namespace tserver
 
 namespace transactions {
-class TxnStatusEntryPB;
 class TxnStatusManager;
 class TxnSystemClient;
 class TxnSystemClientInitializer;
 
-// A handle for background tasks associated with a single transaction.
+// A handle for background tasks associated with a single transaction. The
+// following state changes are expected:
+//
+//     BeginCommit           FinalizeCommit        CompleteCommit
+//   OPEN --> COMMIT_IN_PROGRESS --> FINALIZE_IN_PROGRESS --> COMMITTED
+//
+//     BeginCommit           BeginAbort            FinalizeAbort
+//   OPEN --> COMMIT_IN_PROGRESS --> ABORT_IN_PROGRESS --> ABORTED
+//
+//     AbortTxn              FinalizeAbort
+//   OPEN --> ABORT_IN_PROGRESS --> ABORTED
+//
+// In each of these sequences, only the first state change is initiated by
+// clients -- subsequent changes are scheduled automatically by the reactor
+// threads.
 class CommitTasks : public RefCountedThreadSafe<CommitTasks> {
  public:
   CommitTasks(TxnId txn_id,
@@ -76,6 +91,8 @@ class CommitTasks : public RefCountedThreadSafe<CommitTasks> {
        txn_status_manager_(txn_status_manager),
        ops_in_flight_(participant_ids_.size()),
        begin_commit_timestamps_(participant_ids_.size(), Timestamp::kInvalidTimestamp),
+       commit_timestamp_(Timestamp::kInitialTimestamp),
+       abort_txn_(TxnStatePB::UNKNOWN),
        stop_task_(false) {
   }
 
@@ -94,12 +111,12 @@ class CommitTasks : public RefCountedThreadSafe<CommitTasks> {
   // Asynchronously sends a FINALIZE_COMMIT participant op to the each
   // participant in the transaction, and upon completion, schedules a commit
   // record to be written to the tablet.
-  void FinalizeCommitAsyncTask(int participant_idx, const Timestamp& commit_timestamp);
+  void FinalizeCommitAsyncTask(int participant_idx);
 
   // Asynchronously sends a FINALIZE_COMMIT participant op to the participant
   // at the given index. If this was the last one to complete, schedules a
-  // commit record with the given timestamp to be written to the tablet.
-  void FinalizeCommitAsync(Timestamp commit_timestamp);
+  // commit record with 'commit_timestamp_' to be written to the tablet.
+  void FinalizeCommitAsync();
 
   // Asynchronously sends a ABORT_TXN participant op to each participant in the
   // transaction, and upon completion, schedules an abort record to be written
@@ -114,13 +131,45 @@ class CommitTasks : public RefCountedThreadSafe<CommitTasks> {
   // Schedule calls to the TxnStatusManager to be made on the commit pool.
   // NOTE: these may be called on reactor threads and thus must not
   // synchronously do any IO.
-  void ScheduleFinalizeCommitWrite(Timestamp commit_timestamp);
-  void ScheduleAbortTxnWrite();
+  void ScheduleFinalizeCommitWrite();
+  void ScheduleCompleteCommitWrite();
+  void ScheduleBeginAbortTxnWrite();
+  void ScheduleFinalizeAbortTxnWrite();
 
   // Stops further tasks from being run. Once called calls to the above methods
   // should effectively no-op.
   void stop() {
     stop_task_ = true;
+  }
+
+  // Indicates to the on-going tasks that these tasks should focus on changing
+  // the state to ABORT_IN_PROGRESS and driving the rest of the abort.
+  //
+  // NOTE: this can be called from multiple tasks, and thus, abort_txn_ may
+  // already be set ABORT_IN_PROGRESS, or even ABORTED if there has been a
+  // client-initiated call to BeginAbortTransaction() while this commit was
+  // already in progress. In the latter case, this should no-op, since the
+  // transaction's state has already been set to ABORT_IN_PROGRESS.
+  void SetNeedsBeginAbort() {
+    auto expected_unknown_state = TxnStatePB::UNKNOWN;
+    abort_txn_.compare_exchange_strong(expected_unknown_state, TxnStatePB::ABORT_IN_PROGRESS);
+  }
+
+  // Indicates to the on-going tasks that these tasks should focus on sending
+  // out ABORT_TXN ops and changing the transaction state to ABORTED. Expected
+  // to be run after a ABORT_IN_PROGRESS record has been persisted to disk.
+  //
+  // NOTE: this can be called while the 'abort_txn_' is already
+  // ABORT_IN_PROGRESS if we're racing with a botched commit.
+  void SetNeedsFinalizeAbort() {
+    abort_txn_ = TxnStatePB::ABORTED;
+  }
+
+  // Sets the timestamp that this commit task should finalize across
+  // transaction participants.
+  void set_commit_timestamp(Timestamp commit_timestamp) {
+    DCHECK_EQ(Timestamp::kInitialTimestamp, commit_timestamp_);
+    commit_timestamp_ = commit_timestamp;
   }
 
  private:
@@ -143,6 +192,10 @@ class CommitTasks : public RefCountedThreadSafe<CommitTasks> {
   // schedule work, and needs to determine if it should opt out because of the
   // shutdown.
   bool IsShuttingDownCleanup() const;
+
+  // Returns true if the transaction has been aborted, and schedules abort
+  // mechanics to proceed.
+  bool ScheduleAbortIfNecessary();
 
   // The ID of the transaction being committed.
   const TxnId txn_id_;
@@ -167,6 +220,36 @@ class CommitTasks : public RefCountedThreadSafe<CommitTasks> {
 
   // The commit timestamp for this transaction.
   Timestamp commit_timestamp_;
+
+  // Whether an on-going commit should abort instead.
+  // If ABORT_IN_PROGRESS, an on-going commit should call
+  // BeginAbortTransaction, indicating the commit failed an needs to be cleaned
+  // up. If ABORTED, an on-going commit should call FinalizeAbortTransaction,
+  // indicating the commit was interrupted by the user, and an
+  // ABORT_IN_PROGRESS record has already been written to the table.
+  //
+  // The following state changes are expected for 'abort_txn_':
+  //         SetNeedsBeginAbort
+  // UNKNOWN --> ABORT_IN_PROGRESS
+  // - The commit tasks fail (e.g. because a participant was deleted) and one
+  //   of the tasks calls SetNeedsBeginAbort(). The commit task should
+  //   transition to writing an ABORT_IN_PROGRESS record and then driving
+  //   aborts on participants.
+  //
+  //         SetNeedsBeginAbort    SetNeedsFinalizeAbort
+  // UNKNOWN --> ABORT_IN_PROGRESS --> ABORTED
+  // - The commit tasks fail and one of the tasks calls SetNeedsBeginAbort().
+  //   Concurrently, a user calls AbortTransaction(), persisting a
+  //   ABORT_IN_PROGRESS record and then calling SetNeedsFinalizeAbort() on the
+  //   in-flight commit task. The tasks should then focus on driving aborts on
+  //   participants.
+  //
+  //         SetNeedsFinalizeAbort
+  // UNKNOWN --> ABORTED
+  // - A user calls AbortTransaction() without having attempting to abort
+  //   otherwise. This will have written an ABORT_IN_PROGRESS record, and the
+  //   tasks should focus on driving aborts on participants.
+  std::atomic<TxnStatePB> abort_txn_;
 
   // Whether the task should stop executing, e.g. since an IllegalState error
   // was observed on a participant, or because the TxnStatusManager changed
@@ -288,11 +371,22 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   Status FinalizeCommitTransaction(int64_t txn_id, Timestamp commit_timestamp,
                                    tserver::TabletServerErrorPB* ts_error) override;
 
+  // Updates the state of the transaction to COMMITTED, returning an error if
+  // the transaction isn't in an appropriate state.
+  Status CompleteCommitTransaction(int64_t txn_id);
+
   // Begins aborting the given transaction, returning an error if the
   // transaction doesn't exist, is committed or not yet opened, or isn't owned
   // by the given user.
   Status AbortTransaction(int64_t txn_id, const std::string& user,
                           tserver::TabletServerErrorPB* ts_error) override;
+
+  // Sets the state to ABORT_IN_PROGRESS and asynchronously sends ABORT_TXN ops
+  // to each participant in the transaction. This may not be directly called by
+  // a user -- as such, the 'user' field is optional.
+  Status BeginAbortTransaction(int64_t txn_id,
+                               const boost::optional<std::string>& user,
+                               tserver::TabletServerErrorPB* ts_error);
 
   // Writes a record to the TxnStatusManager indicating the given transaction
   // has been successfully aborted.

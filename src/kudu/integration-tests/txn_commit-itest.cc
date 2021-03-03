@@ -17,9 +17,11 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -40,8 +42,10 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
@@ -94,6 +98,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace itest {
@@ -190,18 +195,25 @@ class TxnCommitITest : public KuduTest {
     return Status::OK();
   }
 
-  // Insert 'num_rows' rows to the given session, starting with 'start_row'.
+  // Insert 'num_rows' rows to the given session, starting with 'start_row', to
+  // every table in 'table_names' or 'table_name_' if not set.
   Status InsertToSession(
-      const shared_ptr<KuduSession>& txn_session, int start_row, int num_rows) {
-    shared_ptr<KuduTable> table;
-    RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
-    const int target_row_id = start_row + num_rows;
-    for (int i = start_row; i < target_row_id; i++) {
-      auto* insert = table->NewInsert();
-      RETURN_NOT_OK(insert->mutable_row()->SetInt32(0, i));
-      RETURN_NOT_OK(insert->mutable_row()->SetInt32(1, i));
-      RETURN_NOT_OK(txn_session->Apply(insert));
-      RETURN_NOT_OK(txn_session->Flush());
+      const shared_ptr<KuduSession>& txn_session, int start_row, int num_rows,
+      vector<string> table_names = {}) {
+    if (table_names.empty()) {
+      table_names = { table_name_ };
+    }
+    for (const auto& table_name : table_names) {
+      shared_ptr<KuduTable> table;
+      RETURN_NOT_OK(client_->OpenTable(table_name, &table));
+      const int target_row_id = start_row + num_rows;
+      for (int i = start_row; i < target_row_id; i++) {
+        auto* insert = table->NewInsertIgnore();
+        RETURN_NOT_OK(insert->mutable_row()->SetInt32(0, i));
+        RETURN_NOT_OK(insert->mutable_row()->SetInt32(1, i));
+        RETURN_NOT_OK(txn_session->Apply(insert));
+        RETURN_NOT_OK(txn_session->Flush());
+      }
     }
     return Status::OK();
   }
@@ -418,13 +430,13 @@ TEST_F(TxnCommitITest, TestCommitAfterDeletingParticipant) {
   ASSERT_OK(client_->DeleteTable(table_name_));
   ASSERT_OK(txn->Commit(/*wait*/false));
 
-  // The transaction should eventually succeed, treating the deleted
-  // participant as committed.
+  // The transaction should eventually fail, treating the deleted participant
+  // as a fatal error.
   ASSERT_EVENTUALLY([&] {
     Status completion_status;
     bool is_complete = false;
     ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
-    ASSERT_OK(completion_status);
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
     ASSERT_TRUE(is_complete);
   });
 }
@@ -442,22 +454,23 @@ TEST_F(TxnCommitITest, TestCommitAfterDroppingRangeParticipant) {
 
   ASSERT_OK(txn->Commit(/*wait*/false));
 
-  // The transaction should eventually succeed, treating the deleted
-  // participant as committed.
+  // The transaction should eventually abort, treating the deleted participant
+  // as fatal, resulting in an aborted transaction.
   ASSERT_EVENTUALLY([&] {
     Status completion_status;
     bool is_complete = false;
     ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
-    ASSERT_OK(completion_status);
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
     ASSERT_TRUE(is_complete);
   });
 }
 
 TEST_F(TxnCommitITest, TestRestartingWhileCommitting) {
+  FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 10000;
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
   ASSERT_OK(BeginTransaction(&txn, &txn_session));
-  FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 2000;
+  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   ASSERT_OK(txn->Commit(/*wait*/false));
   // Stop the tserver without allowing the finalize commit to complete.
   cluster_->mini_tablet_server(0)->Shutdown();
@@ -487,13 +500,13 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommitting) {
   });
 }
 
-// Test restarting while commit tasks are on-going, while at the same time,
-// some participants are deleted. There should be no inconsistencies in
-// assigned commit timestamps across participants.
-TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
+// Test aborting a botched commit mid-way by deleting some of its participants
+// while committing. The result should be that the transaction gets aborted and
+// all participants abort the local transactions.
+TEST_F(TxnCommitITest, TestAbortRacingWithBotchedCommit) {
   // First, create another table that we'll delete later on.
   const string kSecondTableName = "default.second_table";
-  TestWorkload w(cluster_.get());
+  TestWorkload w(cluster_.get(), TestWorkload::PartitioningType::HASH);
   w.set_num_replicas(1);
   w.set_num_tablets(2);
   w.set_table_name(kSecondTableName);
@@ -503,31 +516,29 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
     SleepFor(MonoDelta::FromMilliseconds(50));
   }
   w.StopAndJoin();
-
+  unordered_set<string> participant_ids;
+  auto* mts = cluster_->mini_tablet_server(0);
+  for (const auto& tablet_id : mts->ListTablets()) {
+    if (tablet_id != tsm_id_) {
+      participant_ids.emplace(tablet_id);
+    }
+  }
+  ASSERT_EQ(4, participant_ids.size());
+  vector<string> both_tables_participant_ids(participant_ids.begin(), participant_ids.end());
   shared_ptr<KuduTransaction> txn;
   shared_ptr<KuduSession> txn_session;
   ASSERT_OK(BeginTransaction(&txn, &txn_session));
-  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
+  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn,
+                            { table_name_, kSecondTableName }));
+  ASSERT_OK(client_->DeleteTable(kSecondTableName));
   FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 2000;
   ASSERT_OK(txn->Commit(/*wait*/false));
-
-  // Wait a bit to let the commit tasks start.
-  SleepFor(MonoDelta::FromMilliseconds(1000));
-
-  // Shut down without giving time for the commit to complete.
-  auto* mts = cluster_->mini_tablet_server(0);
-  mts->Shutdown();
-  ASSERT_OK(mts->Restart());
-  ASSERT_OK(mts->server()->tablet_manager()->WaitForAllBootstrapsToFinish());
-
-  // Delete some of the participants. Despite this, the commit process should
-  // complete.
-  ASSERT_OK(client_->DeleteTable(kSecondTableName));
+  ASSERT_OK(txn->Rollback());
   ASSERT_EVENTUALLY([&] {
     Status completion_status;
     bool is_complete = false;
     ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
-    ASSERT_OK(completion_status);
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
     ASSERT_TRUE(is_complete);
   });
 
@@ -546,7 +557,70 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
     const auto& txns = txn_entries_per_replica[i];
     ASSERT_FALSE(txns.empty());
     for (const auto& txn_entry : txns) {
-      ASSERT_NE(-1, txn_entry.commit_timestamp);
+      ASSERT_EQ(tablet::kAborted, txn_entry.state);
+    }
+    EXPECT_EQ(txn_entries_per_replica[0], txns);
+  }
+}
+
+// Test restarting while commit tasks are on-going, while at the same time,
+// some participants are deleted. The transaction should be aborted on all
+// participants.
+TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
+  // First, create another table that we'll delete later on.
+  const string kSecondTableName = "default.second_table";
+  TestWorkload w(cluster_.get());
+  w.set_num_replicas(1);
+  w.set_num_tablets(2);
+  w.set_table_name(kSecondTableName);
+  w.Setup();
+  w.Start();
+  while (w.rows_inserted() < 1) {
+    SleepFor(MonoDelta::FromMilliseconds(50));
+  }
+  w.StopAndJoin();
+
+  shared_ptr<KuduTransaction> txn;
+  shared_ptr<KuduSession> txn_session;
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
+  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn,
+                            { table_name_, kSecondTableName }));
+  ASSERT_OK(client_->DeleteTable(kSecondTableName));
+  FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 10000;
+  ASSERT_OK(txn->Commit(/*wait*/false));
+
+  // Shut down without giving time for the commit to complete.
+  auto* mts = cluster_->mini_tablet_server(0);
+  mts->Shutdown();
+  ASSERT_OK(mts->Restart());
+
+  // Delete some of the participants. Upon completion, the commit process
+  // should result in an abort.
+  ASSERT_OK(mts->server()->tablet_manager()->WaitForAllBootstrapsToFinish());
+  ASSERT_EVENTUALLY([&] {
+    Status completion_status;
+    bool is_complete = false;
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+    ASSERT_TRUE(is_complete);
+  });
+
+  // Let's confirm that all remaining participants see the same transaction
+  // metadata.
+  vector<scoped_refptr<TabletReplica>> replicas;
+  mts->server()->tablet_manager()->GetTabletReplicas(&replicas);
+  vector<vector<TxnParticipant::TxnEntry>> txn_entries_per_replica;
+  for (const auto& r : replicas) {
+    if (r->tablet_id() != tsm_id_ && r->tablet_metadata()->table_name() != kSecondTableName) {
+      txn_entries_per_replica.emplace_back(r->tablet()->txn_participant()->GetTxnsForTests());
+    }
+  }
+  ASSERT_GT(txn_entries_per_replica.size(), 1);
+  for (int i = 1; i < txn_entries_per_replica.size(); i++) {
+    const auto& txns = txn_entries_per_replica[i];
+    ASSERT_FALSE(txns.empty());
+    for (const auto& txn_entry : txns) {
+      ASSERT_EQ(tablet::kAborted, txn_entry.state);
     }
     EXPECT_EQ(txn_entries_per_replica[0], txns);
   }
@@ -610,7 +684,7 @@ TEST_F(TxnCommitITest, TestCommitAfterParticipantAbort) {
 
 // Try concurrently beginning to commit a bunch of different transactions.
 TEST_F(TxnCommitITest, TestConcurrentCommitCalls) {
-  const int kNumTxns = 4;
+  constexpr const int kNumTxns = 4;
   vector<shared_ptr<KuduTransaction>> txns(kNumTxns);
   int row_start = initial_row_count_;
   for (int i = 0; i < kNumTxns; i++) {
@@ -649,6 +723,65 @@ TEST_F(TxnCommitITest, TestConcurrentCommitCalls) {
   ASSERT_EQ(initial_row_count_ + kNumRowsPerTxn * kNumTxns, num_rows);
 }
 
+TEST_F(TxnCommitITest, TestConcurrentAbortsAndCommits) {
+  constexpr const int kNumTxns = 10;
+  vector<shared_ptr<KuduTransaction>> txns(kNumTxns);
+  int row_start = initial_row_count_;
+  for (int i = 0; i < kNumTxns; i++) {
+    shared_ptr<KuduSession> txn_session;
+    ASSERT_OK(BeginTransaction(&txns[i], &txn_session));
+    ASSERT_OK(InsertToSession(txn_session, row_start, kNumRowsPerTxn));
+    row_start += kNumRowsPerTxn;
+  }
+  int num_rows = 0;
+  ASSERT_OK(CountRows(&num_rows));
+  ASSERT_EQ(initial_row_count_, num_rows);
+  // To encourage races between concurrent aborts and commits, inject a random
+  // sleep before each call.
+  constexpr const int kMaxSleepMs = 1000;
+  std::atomic<int> num_committed_txns = 0;
+  vector<thread> threads;
+  for (int i = 0; i < kNumTxns; i++) {
+    threads.emplace_back([&, i] {
+      SleepFor(MonoDelta::FromMilliseconds(rand() % kMaxSleepMs));
+      Status s = txns[i]->Commit(/*wait*/true);
+      if (s.ok()) {
+        num_committed_txns++;
+      }
+    });
+    threads.emplace_back([&, i] {
+      SleepFor(MonoDelta::FromMilliseconds(rand() % kMaxSleepMs));
+      ignore_result(txns[i]->Rollback());
+    });
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  ASSERT_OK(CountRows(&num_rows));
+  // NOTE: we can compare an exact count here and not worry about whether we
+  // completed aborting rows because even if we didn't complete the abort, they
+  // shouldn't be visible to clients anyway.
+  const int expected_rows = initial_row_count_ + kNumRowsPerTxn * num_committed_txns;
+  VLOG(1) << Substitute("Expecting $0 rows from $1 committed transactions",
+                        expected_rows, num_committed_txns.load());
+  ASSERT_EQ(expected_rows, num_rows);
+
+  // Ensure all transactions are either committed or aborted.
+  vector<scoped_refptr<TabletReplica>> replicas;
+  cluster_->mini_tablet_server(0)->server()->tablet_manager()->GetTabletReplicas(&replicas);
+  for (const auto& r : replicas) {
+    ASSERT_EVENTUALLY([&] {
+      if (r->tablet_metadata()->table_name() == table_name_) {
+        const auto txns = r->tablet()->txn_participant()->GetTxnsForTests();
+        for (const auto& txn : txns) {
+          ASSERT_TRUE(txn.state == tablet::kAborted || txn.state == tablet::kCommitted)
+              << Substitute("Txn in unexpected state: $0", txn.state);;
+        }
+      }
+    });
+  }
+}
+
 // Test that committing the same transaction concurrently doesn't lead to any
 // issues.
 TEST_F(TxnCommitITest, TestConcurrentRepeatedCommitCalls) {
@@ -660,7 +793,7 @@ TEST_F(TxnCommitITest, TestConcurrentRepeatedCommitCalls) {
   ASSERT_OK(CountRows(&num_rows));
   ASSERT_EQ(initial_row_count_, num_rows);
 
-  const int kNumThreads = 4;
+  constexpr const int kNumThreads = 4;
   vector<thread> threads;
   vector<Status> results(kNumThreads);
   for (int i = 0; i < kNumThreads; i++) {
@@ -685,7 +818,7 @@ TEST_F(TxnCommitITest, TestConcurrentRepeatedCommitCalls) {
   ASSERT_EQ(initial_row_count_ + kNumRowsPerTxn, num_rows);
 }
 
-TEST_F(TxnCommitITest, TestDontAbortIfCommitInProgress) {
+TEST_F(TxnCommitITest, TestDontBackgroundAbortIfCommitInProgress) {
   FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 1000;
   string serialized_txn;
   {
@@ -710,6 +843,24 @@ TEST_F(TxnCommitITest, TestDontAbortIfCommitInProgress) {
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
     ASSERT_OK(completion_status);
+    ASSERT_TRUE(is_complete);
+  });
+}
+
+// Test that we can abort if a transaction hasn't finalized its commit yet.
+TEST_F(TxnCommitITest, TestAbortIfCommitInProgress) {
+  FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 1000;
+  shared_ptr<KuduTransaction> txn;
+  shared_ptr<KuduSession> txn_session;
+  ASSERT_OK(BeginTransaction(&txn, &txn_session));
+  ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
+  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->Rollback());
+  ASSERT_EVENTUALLY([&] {
+    Status completion_status;
+    bool is_complete;
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_TRUE(completion_status.IsAborted());
     ASSERT_TRUE(is_complete);
   });
 }

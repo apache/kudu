@@ -314,6 +314,7 @@ Status KuduTransaction::Data::IsCommitCompleteImpl(
       *is_complete = true;
       *completion_status = Status::Aborted("transaction has been aborted");
       break;
+    case TxnStatePB::FINALIZE_IN_PROGRESS:
     case TxnStatePB::COMMIT_IN_PROGRESS:
       *is_complete = false;
       *completion_status = Status::Incomplete("commit is still in progress");

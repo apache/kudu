@@ -19,12 +19,45 @@ package kudu.transactions;
 
 option java_package = "org.apache.kudu.transactions";
 
+// The following state changes are expected:
+//
+//     BeginCommit           FinalizeCommit        CompleteCommit
+//   OPEN --> COMMIT_IN_PROGRESS --> FINALIZE_IN_PROGRESS --> COMMITTED
+//
+//     BeginCommit           BeginAbort            FinalizeAbort
+//   OPEN --> COMMIT_IN_PROGRESS --> ABORT_IN_PROGRESS --> ABORTED
+//
+//     AbortTxn              FinalizeAbort
+//   OPEN --> ABORT_IN_PROGRESS --> ABORTED
 enum TxnStatePB {
   UNKNOWN = 0;
+  // The transaction is open. Users can write to participants, and register new
+  // participants.
   OPEN = 1;
+
+  // A user or Kudu's transaction staleness tracker has signaled that the
+  // transaction should be aborted. No further participants can be registered,
+  // and the transaction can only be moved to the ABORTED state after sending
+  // ABORT_TXN ops to all participants.
   ABORT_IN_PROGRESS = 5;
+
+  // The transaction has been fully aborted -- all participants have
+  // successfully replicated ABORT_TXN ops and cleared the transaction. No
+  // further tasks are required to abort the transaction.
   ABORTED = 2;
+
+  // The user has signaled that the transaction should be committed. No further
+  // participants can be registered. The transaction may still be aborted if
+  // prompted by a user or if sending any BEGIN_COMMIT op fails.
   COMMIT_IN_PROGRESS = 3;
+
+  // Kudu has successfully sent BEGIN_COMMIT ops to all participants, and has
+  // started sending FINALIZE_COMMIT ops to participants. The transaction can
+  // only be moved to the COMMITTED state.
+  FINALIZE_IN_PROGRESS = 6;
+
+  // All FINALIZE_COMMIT ops have succeeded. No further tasks are required to
+  // commit the transaction.
   COMMITTED = 4;
 }
 

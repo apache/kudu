@@ -317,6 +317,7 @@ public class KuduTransaction implements AutoCloseable {
         throw new NonRecoverableException(Status.IllegalState("transaction is still open"));
       case COMMITTED:
         return true;
+      case FINALIZE_IN_PROGRESS:
       case COMMIT_IN_PROGRESS:
         return false;
       default:

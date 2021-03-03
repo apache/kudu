@@ -392,7 +392,7 @@ TEST_F(TxnManagerTest, AbortedTransactionLifecycle) {
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     ASSERT_STR_CONTAINS(
         s.ToString(),
-        Substitute("transaction ID $0 is already in terminal state", txn_id));
+        Substitute("transaction ID $0 is not available for further commits", txn_id));
     // The transaction should stay in ABORTED state, of course.
     TxnStatePB txn_state;
     NO_FATALS(fetch_txn_status(txn_id, &txn_state));

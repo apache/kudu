@@ -103,6 +103,12 @@ class TransactionEntry : public RefCountedThreadSafe<TransactionEntry> {
   // via the locking provided by the underlying copy-on-write metadata_ object.
   TxnStatePB state() const;
 
+  // An accessor to the transaction's commit timestamp. Concurrent access is
+  // controlled via the locking provided by the underlying copy-on-write
+  // metadata_ object. Should only be used if the transaction is expected to
+  // have a commit timestamp already set.
+  int64_t commit_timestamp() const;
+
  private:
   friend class RefCountedThreadSafe<TransactionEntry>;
   ~TransactionEntry() = default;

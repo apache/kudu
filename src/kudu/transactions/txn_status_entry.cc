@@ -65,5 +65,11 @@ TxnStatePB TransactionEntry::state() const {
   return l.data().pb.state();
 }
 
+int64_t TransactionEntry::commit_timestamp() const {
+  CowLock<PersistentTransactionEntry> l(&metadata_, LockMode::READ);
+  DCHECK(l.data().pb.has_commit_timestamp());
+  return l.data().pb.commit_timestamp();
+}
+
 } // namespace transactions
 } // namespace kudu
