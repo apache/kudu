@@ -46,7 +46,7 @@
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/locks.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -95,6 +95,7 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
   : log_(std::move(log)),
     local_uuid_(std::move(local_uuid)),
     tablet_id_(std::move(tablet_id)),
+    next_index_cond_(&lock_),
     next_sequential_op_index_(0),
     min_pinned_op_index_(0),
     metrics_(metric_entity),
@@ -128,7 +129,7 @@ LogCache::~LogCache() {
 }
 
 void LogCache::Init(const OpId& preceding_op) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<Mutex> l(lock_);
   CHECK_EQ(cache_.size(), 1)
     << "Cache should have only our special '0' op";
   next_sequential_op_index_ = preceding_op.index() + 1;
@@ -159,7 +160,7 @@ Status LogCache::SetCompressionCodec(const std::string& codec) {
 
 void LogCache::TruncateOpsAfter(int64_t index) {
   {
-    std::unique_lock<simple_spinlock> l(lock_);
+    std::unique_lock<Mutex> l(lock_);
     TruncateOpsAfterUnlocked(index);
   }
 
@@ -380,7 +381,7 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   int64_t first_idx_in_batch = msgs.front()->get()->id().index();
   int64_t last_idx_in_batch = msgs.back()->get()->id().index();
 
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::unique_lock<Mutex> l(lock_);
   // If we're not appending a consecutive op we're likely overwriting and
   // need to replace operations in the cache.
   if (first_idx_in_batch != next_sequential_op_index_) {
@@ -476,6 +477,9 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
     return log_status;
   }
 
+  // Now signal any threads that might be waiting for Ops to be appended to the
+  // log
+  next_index_cond_.Broadcast();
   return Status::OK();
 }
 
@@ -484,7 +488,7 @@ void LogCache::LogCallback(int64_t last_idx_in_batch,
                            const StatusCallback& user_callback,
                            const Status& log_status) {
   if (log_status.ok()) {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard<Mutex> l(lock_);
     if (min_pinned_op_index_ <= last_idx_in_batch) {
       VLOG_WITH_PREFIX_UNLOCKED(1) << "Updating pinned index to " << (last_idx_in_batch + 1);
       min_pinned_op_index_ = last_idx_in_batch + 1;
@@ -503,14 +507,14 @@ void LogCache::LogCallback(int64_t last_idx_in_batch,
 }
 
 bool LogCache::HasOpBeenWritten(int64_t index) const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<Mutex> l(lock_);
   return index < next_sequential_op_index_;
 }
 
 Status LogCache::LookupOpId(int64_t op_index, OpId* op_id) const {
   // First check the log cache itself.
   {
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard<Mutex> l(lock_);
 
     // We sometimes try to look up OpIds that have never been written
     // on the local node. In that case, don't try to read the op from
@@ -544,6 +548,41 @@ int64_t TotalByteSizeForMessage(const ReplicateMsg& msg) {
 }
 } // anonymous namespace
 
+Status LogCache::BlockingReadOps(int64_t after_op_index,
+                                 int max_size_bytes,
+                                 const ReadContext& context,
+                                 int64_t max_duration_ms,
+                                 std::vector<ReplicateRefPtr>* messages,
+                                 OpId* preceding_op) {
+  MonoTime deadline =
+    MonoTime::Now() + MonoDelta::FromMilliseconds(max_duration_ms);
+
+  {
+    std::lock_guard<Mutex> l(lock_);
+    while (after_op_index >= next_sequential_op_index_) {
+      (void) next_index_cond_.WaitUntil(deadline);
+
+      if (MonoTime::Now() > deadline)
+        break;
+    }
+
+    if (after_op_index >= next_sequential_op_index_) {
+      // Waited for max_duration_ms, but 'after_op_index' is still not available
+      // in the local log
+      return Status::Incomplete(Substitute("Op with index $0 is ahead of the local log "
+                                           "(next sequential op: $1)",
+                                           after_op_index, next_sequential_op_index_));
+    }
+  }
+
+  return ReadOps(
+      after_op_index,
+      max_size_bytes,
+      context,
+      messages,
+      preceding_op);
+}
+
 Status LogCache::ReadOps(int64_t after_op_index,
                          int max_size_bytes,
                          const ReadContext& context,
@@ -571,7 +610,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
     return lookUpStatus;
   }
 
-  std::unique_lock<simple_spinlock> l(lock_);
+  std::unique_lock<Mutex> l(lock_);
   int64_t next_index = after_op_index + 1;
 
   // Return as many operations as we can, up to the limit
@@ -640,13 +679,12 @@ Status LogCache::ReadOps(int64_t after_op_index,
 
 
 void LogCache::EvictThroughOp(int64_t index) {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard<Mutex> lock(lock_);
 
   EvictSomeUnlocked(index, MathLimits<int64_t>::kMax);
 }
 
 void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evict) {
-  DCHECK(lock_.is_locked());
   VLOG_WITH_PREFIX_UNLOCKED(2) << "Evicting log cache index <= "
                       << stop_after_index
                       << " or " << HumanReadableNumBytes::ToString(bytes_to_evict)
@@ -699,7 +737,7 @@ int64_t LogCache::BytesUsed() const {
 }
 
 string LogCache::StatsString() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard<Mutex> lock(lock_);
   return StatsStringUnlocked();
 }
 
@@ -710,7 +748,7 @@ string LogCache::StatsStringUnlocked() const {
 }
 
 std::string LogCache::ToString() const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard<Mutex> lock(lock_);
   return ToStringUnlocked();
 }
 
@@ -735,7 +773,7 @@ void LogCache::DumpToLog() const {
 }
 
 void LogCache::DumpToStrings(vector<string>* lines) const {
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard<Mutex> lock(lock_);
   int counter = 0;
   lines->push_back(ToStringUnlocked());
   lines->push_back("Messages:");
@@ -752,7 +790,7 @@ void LogCache::DumpToStrings(vector<string>* lines) const {
 void LogCache::DumpToHtml(std::ostream& out) const {
   using std::endl;
 
-  std::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard<Mutex> lock(lock_);
   out << "<h3>Messages:</h3>" << endl;
   out << "<table>" << endl;
   out << "<tr><th>Entry</th><th>OpId</th><th>Type</th><th>Size</th><th>Status</th></tr>" << endl;
