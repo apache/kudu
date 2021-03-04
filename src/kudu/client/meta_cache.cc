@@ -1121,9 +1121,12 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
           entry->refresh_expiration_time(expiration_time);
         } else {
           // A remote tablet exists, but isn't indexed for key-based lookups.
-          // Index it now.
+          // This might happen if the entry was removed after tablet range
+          // was dropped, but then a scan token with stale information on tablet
+          // locations was provided to start a scan. Let's index it now.
           MetaCacheEntry entry(expiration_time, remote);
-          VLOG(3) << Substitute("Caching '$0' entry $1", table->name(), entry.DebugString(table));
+          VLOG(3) << Substitute("Caching '$0' entry $1",
+              table->name(), entry.DebugString(table));
           EmplaceOrDie(&tablets_by_key, tablet_lower_bound, std::move(entry));
         }
         continue;
