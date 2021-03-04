@@ -940,10 +940,21 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
                               Substitute("failed to refresh locations for tablet $0",
                                          tablet_id));
         // Update the entry TTL.
-        auto& entry = FindOrDie(tablets_by_key, tablet_lower_bound);
-        DCHECK(!entry.is_non_covered_range() &&
-               entry.upper_bound_partition_key() == tablet_upper_bound);
-        entry.refresh_expiration_time(expiration_time);
+        auto* entry = FindOrNull(tablets_by_key, tablet_lower_bound);
+        if (entry) {
+          DCHECK(!entry->is_non_covered_range() &&
+                 entry->upper_bound_partition_key() == tablet_upper_bound);
+          entry->refresh_expiration_time(expiration_time);
+        } else {
+          // A remote tablet exists, but isn't indexed for key-based lookups.
+          // This might happen if the entry was removed after tablet range
+          // was dropped, but then a scan token with stale information on tablet
+          // locations was provided to start a scan.
+          MetaCacheEntry entry(expiration_time, remote);
+          VLOG(3) << Substitute("Caching '$0' entry $1",
+              table->name(), entry.DebugString(table));
+          EmplaceOrDie(&tablets_by_key, tablet_lower_bound, std::move(entry));
+        }
         continue;
       }
 
