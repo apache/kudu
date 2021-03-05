@@ -63,24 +63,23 @@ DECLARE_bool(tserver_enforce_access_control);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
 
-namespace kudu {
-namespace client {
-
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
-using sp::shared_ptr;
+using kudu::client::KuduTableCreator;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
+using kudu::tserver::MiniTabletServer;
 using std::atomic;
 using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
-using tserver::MiniTabletServer;
+
+namespace kudu {
+namespace client {
 
 class ScanTokenTest : public KuduTest {
-
  protected:
-
   void SetUp() override {
     // Enable access control so we can validate the requests in secure environment.
     // Specifically that authz tokens in the scan tokens work.
@@ -104,13 +103,12 @@ class ScanTokenTest : public KuduTest {
 
       threads.emplace_back([this, &rows] (string serialized_token) {
         shared_ptr<KuduClient> client;
-        ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+        CHECK_OK(cluster_->CreateClient(nullptr, &client));
         KuduScanner* scanner_ptr;
-        ASSERT_OK(KuduScanToken::DeserializeIntoScanner(client.get(),
-                                                        serialized_token,
-                                                        &scanner_ptr));
+        CHECK_OK(KuduScanToken::DeserializeIntoScanner(
+            client.get(), serialized_token, &scanner_ptr));
         unique_ptr<KuduScanner> scanner(scanner_ptr);
-        ASSERT_OK(scanner->Open());
+        CHECK_OK(scanner->Open());
 
         while (scanner->HasMoreRows()) {
           KuduScanBatch batch;
@@ -144,8 +142,7 @@ class ScanTokenTest : public KuduTest {
       // Check that the tserver associated with the replica is the sole tserver
       // started for this cluster.
       const MiniTabletServer* ts = cluster_->mini_tablet_server(0);
-      ASSERT_EQ(ts->server()->instance_pb().permanent_uuid(),
-                r->ts().uuid());
+      ASSERT_EQ(ts->server()->instance_pb().permanent_uuid(), r->ts().uuid());
       ASSERT_EQ(ts->bound_rpc_addr().host(), r->ts().hostname());
       ASSERT_EQ(ts->bound_rpc_addr().port(), r->ts().port());
     }
@@ -157,13 +154,26 @@ class ScanTokenTest : public KuduTest {
                                   const KuduScanToken& token,
                                   unique_ptr<KuduScanner>* scanner_ptr) {
     string serialized_token;
-    CHECK_OK(token.Serialize(&serialized_token));
+    RETURN_NOT_OK(token.Serialize(&serialized_token));
     KuduScanner* scanner_ptr_raw;
-    RETURN_NOT_OK(KuduScanToken::DeserializeIntoScanner(client,
-                                                        serialized_token,
-                                                        &scanner_ptr_raw));
+    RETURN_NOT_OK(KuduScanToken::DeserializeIntoScanner(
+        client, serialized_token, &scanner_ptr_raw));
     scanner_ptr->reset(scanner_ptr_raw);
     return Status::OK();
+  }
+
+  // Create a table with the specified name and schema with replicaction factor
+  // of one and empty list of range partitions.
+  Status CreateAndOpenTable(const string& table_name,
+                            const KuduSchema& schema,
+                            shared_ptr<KuduTable>* table) {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    RETURN_NOT_OK(table_creator->table_name(table_name)
+                  .schema(&schema)
+                  .set_range_partition_columns({})
+                  .num_replicas(1)
+                  .Create());
+    return client_->OpenTable(table_name, table);
   }
 
   uint64_t NumGetTableSchemaRequests() const {
@@ -196,15 +206,15 @@ TEST_F(ScanTokenTest, TestScanTokens) {
   {
     unique_ptr<KuduPartialRow> split(schema.NewRow());
     ASSERT_OK(split->SetInt64("col", 0));
-    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     ASSERT_OK(table_creator->table_name("table")
-                            .schema(&schema)
-                            .add_hash_partitions({ "col" }, 4)
-                            .split_rows({ split.release() })
-                            .num_replicas(1)
-                            .Create());
+              .schema(&schema)
+              .add_hash_partitions({ "col" }, 4)
+              .split_rows({ split.release() })
+              .num_replicas(1)
+              .Create());
 #pragma GCC diagnostic pop
     ASSERT_OK(client_->OpenTable("table", &table));
   }
@@ -216,9 +226,9 @@ TEST_F(ScanTokenTest, TestScanTokens) {
 
   // Insert rows
   for (int i = -100; i < 100; i++) {
-      unique_ptr<KuduInsert> insert(table->NewInsert());
-      ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
-      ASSERT_OK(session->Apply(insert.release()));
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
+    ASSERT_OK(session->Apply(insert.release()));
   }
   ASSERT_OK(session->Flush());
 
@@ -286,9 +296,8 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
     KuduScanTokenBuilder builder(table.get());
-    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate("col",
-                                                                      KuduPredicate::GREATER_EQUAL,
-                                                                      KuduValue::FromInt(0)));
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(0)));
     ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
     ASSERT_OK(builder.Build(&tokens));
 
@@ -301,9 +310,8 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
     KuduScanTokenBuilder builder(table.get());
-    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate("col",
-                                                                      KuduPredicate::EQUAL,
-                                                                      KuduValue::FromInt(42)));
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::EQUAL, KuduValue::FromInt(42)));
     ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
     ASSERT_OK(builder.Build(&tokens));
 
@@ -365,10 +373,12 @@ TEST_F(ScanTokenTest, TestScanTokens) {
       string buf;
       ASSERT_OK(token->Serialize(&buf));
       KuduScanner* scanner_raw;
-      ASSERT_OK(KuduScanToken::DeserializeIntoScanner(client_.get(), buf, &scanner_raw));
+      ASSERT_OK(KuduScanToken::DeserializeIntoScanner(
+          client_.get(), buf, &scanner_raw));
       unique_ptr<KuduScanner> scanner(scanner_raw); // Caller gets ownership of the scanner.
       // Ensure the timeout configuration gets carried through the serialization process.
-      ASSERT_EQ(kTimeoutMillis, scanner->data_->configuration().timeout().ToMilliseconds());
+      ASSERT_EQ(kTimeoutMillis,
+                scanner->data_->configuration().timeout().ToMilliseconds());
     }
 
     ASSERT_GE(8, tokens.size());
@@ -391,7 +401,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
   {
     unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
     unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
-    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     table_creator->table_name("table");
     table_creator->num_replicas(1);
     table_creator->schema(&schema);
@@ -422,14 +432,14 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
 
   // Insert rows
   for (int i = 0; i < 100; i++) {
-      unique_ptr<KuduInsert> insert(table->NewInsert());
-      ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
-      ASSERT_OK(session->Apply(insert.release()));
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
+    ASSERT_OK(session->Apply(insert.release()));
   }
   for (int i = 200; i < 400; i++) {
-      unique_ptr<KuduInsert> insert(table->NewInsert());
-      ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
-      ASSERT_OK(session->Apply(insert.release()));
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
+    ASSERT_OK(session->Apply(insert.release()));
   }
   ASSERT_OK(session->Flush());
 
@@ -447,9 +457,8 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
     KuduScanTokenBuilder builder(table.get());
-    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate("col",
-                                                                      KuduPredicate::GREATER_EQUAL,
-                                                                      KuduValue::FromInt(200)));
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(200)));
     ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
     ASSERT_OK(builder.Build(&tokens));
 
@@ -462,9 +471,8 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
     KuduScanTokenBuilder builder(table.get());
-    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate("col",
-                                                                      KuduPredicate::EQUAL,
-                                                                      KuduValue::FromInt(42)));
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::EQUAL, KuduValue::FromInt(42)));
     ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
     ASSERT_OK(builder.Build(&tokens));
 
@@ -515,16 +523,11 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
   }
 }
 
-const kudu::ReadMode read_modes[] = {
-    kudu::READ_LATEST,
-    kudu::READ_AT_SNAPSHOT,
-    kudu::READ_YOUR_WRITES,
-};
-
 class TimestampPropagationParamTest :
     public ScanTokenTest,
     public ::testing::WithParamInterface<kudu::ReadMode> {
 };
+
 // When building a scanner from a serialized scan token,
 // verify that the propagated timestamp from the token makes its way into the
 // latest observed timestamp of the client object.
@@ -549,7 +552,7 @@ TEST_P(TimestampPropagationParamTest, Test) {
     {
       unique_ptr<KuduPartialRow> split(schema.NewRow());
       ASSERT_OK(split->SetInt64(kKeyColumnName, 0));
-      unique_ptr<client::KuduTableCreator> creator(client_->NewTableCreator());
+      unique_ptr<KuduTableCreator> creator(client_->NewTableCreator());
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
       ASSERT_OK(creator->table_name(kTableName)
@@ -575,9 +578,8 @@ TEST_P(TimestampPropagationParamTest, Test) {
   EXPECT_EQ(ts_prev, client_->GetLatestObservedTimestamp());
 
   KuduScanner* scanner_raw;
-  ASSERT_OK(KuduScanToken::DeserializeIntoScanner(client_.get(),
-                                                  serialized_token,
-                                                  &scanner_raw));
+  ASSERT_OK(KuduScanToken::DeserializeIntoScanner(
+      client_.get(), serialized_token, &scanner_raw));
   // The caller of the DeserializeIntoScanner() is responsible for
   // de-allocating the result scanner object.
   unique_ptr<KuduScanner> scanner(scanner_raw);
@@ -606,8 +608,13 @@ TEST_P(TimestampPropagationParamTest, Test) {
   }
 }
 
+const kudu::ReadMode kReadModes[] = {
+  kudu::READ_LATEST,
+  kudu::READ_AT_SNAPSHOT,
+  kudu::READ_YOUR_WRITES,
+};
 INSTANTIATE_TEST_SUITE_P(Params, TimestampPropagationParamTest,
-                         testing::ValuesIn(read_modes));
+                         testing::ValuesIn(kReadModes));
 
 // Tests the results of creating scan tokens, altering the columns being
 // scanned, and then executing the scan tokens.
@@ -624,15 +631,7 @@ TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
 
   // Create table
   shared_ptr<KuduTable> table;
-  {
-    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
-    ASSERT_OK(table_creator->table_name(kTableName)
-                            .schema(&schema)
-                            .set_range_partition_columns({})
-                            .num_replicas(1)
-                            .Create());
-    ASSERT_OK(client_->OpenTable(kTableName, &table));
-  }
+  ASSERT_OK(CreateAndOpenTable(kTableName, schema, &table));
 
   vector<KuduScanToken*> tokens;
   vector<KuduScanToken*> tokens_with_metadata;
@@ -703,7 +702,7 @@ TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
 // Tests the results of creating scan tokens, renaming the table being
 // scanned, and then executing the scan tokens.
 TEST_F(ScanTokenTest, TestConcurrentRenameTable) {
-  const char* kTableName = "scan-token-rename";
+  constexpr const char* const kTableName = "scan-token-rename";
   // Create schema
   KuduSchema schema;
   {
@@ -715,15 +714,7 @@ TEST_F(ScanTokenTest, TestConcurrentRenameTable) {
 
   // Create table
   shared_ptr<KuduTable> table;
-  {
-    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
-    ASSERT_OK(table_creator->table_name(kTableName)
-                            .schema(&schema)
-                            .set_range_partition_columns({})
-                            .num_replicas(1)
-                            .Create());
-    ASSERT_OK(client_->OpenTable(kTableName, &table));
-  }
+  ASSERT_OK(CreateAndOpenTable(kTableName, schema, &table));
 
   vector<KuduScanToken*> tokens;
   ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
@@ -758,15 +749,7 @@ TEST_F(ScanTokenTest, TestMasterRequestsWithMetadata) {
 
   // Create table
   shared_ptr<KuduTable> table;
-  {
-    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
-    ASSERT_OK(table_creator->table_name(kTableName)
-                            .schema(&schema)
-                            .set_range_partition_columns({})
-                            .num_replicas(1)
-                            .Create());
-    ASSERT_OK(client_->OpenTable(kTableName, &table));
-  }
+  ASSERT_OK(CreateAndOpenTable(kTableName, schema, &table));
 
   vector<KuduScanToken*> tokens;
   KuduScanTokenBuilder builder(table.get());
@@ -814,15 +797,7 @@ TEST_F(ScanTokenTest, TestMasterRequestsNoMetadata) {
 
   // Create table
   shared_ptr<KuduTable> table;
-  {
-    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
-    ASSERT_OK(table_creator->table_name(kTableName)
-                  .schema(&schema)
-                  .set_range_partition_columns({})
-                  .num_replicas(1)
-                  .Create());
-    ASSERT_OK(client_->OpenTable(kTableName, &table));
-  }
+  ASSERT_OK(CreateAndOpenTable(kTableName, schema, &table));
 
   shared_ptr<KuduClient> new_client;
   ASSERT_OK(cluster_->CreateClient(nullptr, &new_client));
