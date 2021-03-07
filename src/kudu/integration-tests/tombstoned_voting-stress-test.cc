@@ -34,7 +34,6 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid.pb.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
@@ -181,7 +180,7 @@ void TombstonedVotingStressTest::RunVoteRequestLoop() {
                                   /*ignore_live_leader=*/ true, /*is_pre_election=*/ false,
                                   kTimeout);
     switch (state) {
-      case kRunning: FALLTHROUGH_INTENDED;
+      case kRunning: [[fallthrough]];
       case kTombstoned:
         // We should always be able to vote in this case.
         if (s.ok()) {
@@ -195,7 +194,7 @@ void TombstonedVotingStressTest::RunVoteRequestLoop() {
       // because there is a small window of time where we have stopped
       // RaftConsensus but we haven't yet recorded the last-logged opid in the
       // tablet metadata.
-      case kTombstoning: FALLTHROUGH_INTENDED;
+      case kTombstoning: [[fallthrough]];
       case kCopying:
         if (s.ok()) {
           LOG(INFO) << "Vote OK: state = " << state;

@@ -472,7 +472,7 @@ void TabletReplica::set_state(TabletStatePB new_state) {
     case STOPPED:
       CHECK_EQ(STOPPING, state_);
       break;
-    case SHUTDOWN: FALLTHROUGH_INTENDED;
+    case SHUTDOWN: [[fallthrough]];
     case FAILED:
       CHECK_EQ(STOPPED, state_) << TabletStatePB_Name(state_);
       break;

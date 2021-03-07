@@ -29,13 +29,11 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.pb.h"
 
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-
-using std::string;
-using std::vector;
-
 namespace tablet {
 
 DeltaStats::DeltaStats()
@@ -65,23 +63,25 @@ Status DeltaStats::UpdateStats(const Timestamp& timestamp,
   RowChangeListDecoder decoder(update);
   RETURN_NOT_OK(decoder.Init());
   switch (decoder.get_type()) {
-    case RowChangeList::kReinsert: {
+    case RowChangeList::kReinsert:
       IncrReinsertCount(1);
-    } // FALLTHROUGH INTENDED. REINSERTs contain column updates so we need to account
-      // for those in the updated column stats.
-    case RowChangeList::kUpdate: {
-      vector<ColumnId> col_ids;
-      RETURN_NOT_OK(decoder.GetIncludedColumnIds(&col_ids));
-      for (const ColumnId& col_id : col_ids) {
-        IncrUpdateCount(col_id, 1);
+      [[fallthrough]];
+      // FALLTHROUGH INTENDED: REINSERTs contain column updates so we need
+      // to account for those in the updated column stats.
+    case RowChangeList::kUpdate:
+      {
+        vector<ColumnId> col_ids;
+        RETURN_NOT_OK(decoder.GetIncludedColumnIds(&col_ids));
+        for (const ColumnId& col_id : col_ids) {
+          IncrUpdateCount(col_id, 1);
+        }
       }
       break;
-    }
-    case RowChangeList::kDelete: {
+    case RowChangeList::kDelete:
       IncrDeleteCount(1);
       break;
-    }
-    default: LOG(FATAL) << "Invalid mutation type: " << decoder.get_type();
+    default:
+      LOG(FATAL) << "Invalid mutation type: " << decoder.get_type();
   }
 
   if (min_timestamp_ > timestamp) {
@@ -147,7 +147,6 @@ void DeltaStats::AddColumnIdsWithUpdates(std::set<ColumnId>* col_ids) const {
     }
   }
 }
-
 
 } // namespace tablet
 } // namespace kudu

@@ -1206,7 +1206,7 @@ void FuzzTest::ValidateFuzzCase(const vector<TestOp>& test_ops) {
       case TEST_INSERT:
       case TEST_INSERT_PK_ONLY:
         CHECK(!exists[test_op.val]) << "invalid case: inserting already-existing row";
-        FALLTHROUGH_INTENDED;
+        [[fallthrough]];
       case TEST_INSERT_IGNORE:
       case TEST_INSERT_IGNORE_PK_ONLY: {
         const auto& txn_id = test_op.val2;
@@ -1249,7 +1249,7 @@ void FuzzTest::ValidateFuzzCase(const vector<TestOp>& test_ops) {
             case TEST_INSERT:
             case TEST_INSERT_PK_ONLY:
               CHECK(!exists[row]);
-              FALLTHROUGH_INTENDED;
+              [[fallthrough]];
             case TEST_INSERT_IGNORE:
             case TEST_INSERT_IGNORE_PK_ONLY:
               exists[row] = true;

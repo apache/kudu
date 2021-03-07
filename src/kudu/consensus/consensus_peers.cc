@@ -360,7 +360,7 @@ void Peer::ProcessResponse() {
     TabletServerErrorPB resp_error = response_.error();
     switch (response_.error().code()) {
       // We treat WRONG_SERVER_UUID as failed.
-      case TabletServerErrorPB::WRONG_SERVER_UUID: FALLTHROUGH_INTENDED;
+      case TabletServerErrorPB::WRONG_SERVER_UUID: [[fallthrough]];
       case TabletServerErrorPB::TABLET_FAILED:
         ps = PeerStatus::TABLET_FAILED;
         break;

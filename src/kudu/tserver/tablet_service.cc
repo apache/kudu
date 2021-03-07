@@ -1203,7 +1203,7 @@ Status ValidateCoordinatorOpFields(const CoordinatorOpPB& op) {
         return Status::InvalidArgument(Substitute("Missing participant id: $0",
                                                   SecureShortDebugString(op)));
       }
-      FALLTHROUGH_INTENDED;
+      [[fallthrough]];
     case CoordinatorOpPB::BEGIN_TXN:
     case CoordinatorOpPB::BEGIN_COMMIT_TXN:
     case CoordinatorOpPB::ABORT_TXN:

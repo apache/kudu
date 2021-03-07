@@ -28,7 +28,6 @@
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
@@ -563,7 +562,7 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
       case HealthReportPB::HEALTHY:
         priority = 0;
         break;
-      case HealthReportPB::UNKNOWN:   FALLTHROUGH_INTENDED;
+      case HealthReportPB::UNKNOWN:   [[fallthrough]];
       default:
         priority = 1;
         break;

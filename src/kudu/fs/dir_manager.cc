@@ -125,7 +125,7 @@ Status Dir::RefreshAvailableSpace(RefreshMode mode) {
       if (MonoTime::Now() < expiry) {
         break;
       }
-      FALLTHROUGH_INTENDED; // Root was previously full, check again.
+      [[fallthrough]]; // Root was previously full, check again.
     }
     case RefreshMode::ALWAYS: {
       int64_t available_bytes_new;

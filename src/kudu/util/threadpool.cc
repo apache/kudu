@@ -28,7 +28,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
@@ -164,7 +163,7 @@ void ThreadPoolToken::Shutdown() {
         break;
       }
       Transition(State::QUIESCING);
-      FALLTHROUGH_INTENDED;
+      [[fallthrough]];
     case State::QUIESCING:
       // The token is already quiescing. Just wait for a worker thread to
       // switch it to QUIESCED.

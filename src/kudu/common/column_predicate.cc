@@ -29,7 +29,6 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -328,16 +327,14 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
   CHECK(predicate_type_ == PredicateType::Range);
 
   switch (other.predicate_type()) {
-    case PredicateType::None: {
+    case PredicateType::None:
       SetToNone();
       return;
-    };
-    case PredicateType::InBloomFilter: {
+    case PredicateType::InBloomFilter:
       bloom_filters_ = other.bloom_filters_;
       predicate_type_ = PredicateType::InBloomFilter;
-      FALLTHROUGH_INTENDED;
-    }
-    case PredicateType::Range: {
+      [[fallthrough]];
+    case PredicateType::Range:
       // Set the lower bound to the larger of the two.
       if (other.lower_ != nullptr &&
           (lower_ == nullptr || column_.type_info()->Compare(lower_, other.lower_) < 0)) {
@@ -352,8 +349,7 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
 
       Simplify();
       return;
-    };
-    case PredicateType::Equality: {
+    case PredicateType::Equality:
       if ((lower_ != nullptr && column_.type_info()->Compare(lower_, other.lower_) > 0) ||
           (upper_ != nullptr && column_.type_info()->Compare(upper_, other.lower_) <= 0)) {
         // The equality value does not fall in this range.
@@ -364,13 +360,12 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
         upper_ = nullptr;
       }
       return;
-    };
-    case PredicateType::IsNotNull: return;
-    case PredicateType::IsNull: {
+    case PredicateType::IsNotNull:
+      return;
+    case PredicateType::IsNull:
       SetToNone();
       return;
-    };
-    case PredicateType::InList : {
+    case PredicateType::InList:
       // The InList predicate values are examined to check whether
       // they lie in the range.
       // The current predicate is then converted from a range predicate to
@@ -388,7 +383,6 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
       predicate_type_ = PredicateType::InList;
       Simplify();
       return;
-    };
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -591,16 +585,14 @@ void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate &other) {
   DCHECK(!bloom_filters_.empty());
 
   switch (other.predicate_type()) {
-    case PredicateType::None: {
+    case PredicateType::None:
       SetToNone();
       return;
-    };
-    case PredicateType::InBloomFilter: {
+    case PredicateType::InBloomFilter:
       bloom_filters_.insert(bloom_filters_.end(), other.bloom_filters().begin(),
                             other.bloom_filters().end());
-      FALLTHROUGH_INTENDED;
-    }
-    case PredicateType::Range: {
+      [[fallthrough]];
+    case PredicateType::Range:
       // Merge the optional lower and upper bound.
       if (other.lower_ != nullptr &&
           (lower_ == nullptr || column_.type_info()->Compare(lower_, other.lower_) < 0)) {
@@ -612,8 +604,7 @@ void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate &other) {
       }
       Simplify();
       return;
-    }
-    case PredicateType::Equality: {
+    case PredicateType::Equality:
       if (CheckValueInBloomFilter(other.lower_)) {
         // Value falls in bloom filters so change to Equality predicate.
         predicate_type_ = PredicateType::Equality;
@@ -624,13 +615,12 @@ void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate &other) {
         SetToNone(); // Value does not fall in bloom filters.
       }
       return;
-    }
-    case PredicateType::IsNotNull: return;
-    case PredicateType::IsNull: {
+    case PredicateType::IsNotNull:
+      return;
+    case PredicateType::IsNull:
       SetToNone();
       return;
-    }
-    case PredicateType::InList: {
+    case PredicateType::InList:
       DCHECK(other.values_.size() > 1);
       std::vector<const void*> new_values;
       std::copy_if(other.values_.begin(), other.values_.end(), std::back_inserter(new_values),
@@ -642,7 +632,6 @@ void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate &other) {
       bloom_filters_.clear();
       Simplify();
       return;
-    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -884,8 +873,9 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
     return false;
   }
   switch (predicate_type_) {
-    case PredicateType::Equality: return column_.type_info()->Compare(lower_, other.lower_) == 0;
-    case PredicateType::InBloomFilter: {
+    case PredicateType::Equality:
+      return column_.type_info()->Compare(lower_, other.lower_) == 0;
+    case PredicateType::InBloomFilter:
       if (bloom_filters_.size() != other.bloom_filters().size()) {
         return false;
       }
@@ -897,25 +887,26 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
                       })) {
         return false;
       }
-      FALLTHROUGH_INTENDED;
-    };
+      [[fallthrough]];
     case PredicateType::Range: {
       auto bound_equal = [&] (const void* eleml, const void* elemr) {
           return (eleml == elemr || (eleml != nullptr && elemr != nullptr &&
                                      column_.type_info()->Compare(eleml, elemr) == 0));
       };
       return bound_equal(lower_, other.lower_) && bound_equal(upper_, other.upper_);
-    };
-    case PredicateType::InList: {
-      if (values_.size() != other.values_.size()) return false;
+    }
+    case PredicateType::InList:
+      if (values_.size() != other.values_.size()) {
+        return false;
+      }
       for (int i = 0; i < values_.size(); i++) {
         if (column_.type_info()->Compare(values_[i], other.values_[i]) != 0) return false;
       }
       return true;
-    };
     case PredicateType::None:
     case PredicateType::IsNotNull:
-    case PredicateType::IsNull: return true;
+    case PredicateType::IsNull:
+      return true;
   }
   LOG(FATAL) << "unknown predicate type";
 }

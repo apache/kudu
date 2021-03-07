@@ -842,8 +842,8 @@ void MasterServiceImpl::RefreshAuthzCache(
 
 bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
   switch (feature) {
-    case MasterFeatures::RANGE_PARTITION_BOUNDS:    FALLTHROUGH_INTENDED;
-    case MasterFeatures::ADD_DROP_RANGE_PARTITIONS: FALLTHROUGH_INTENDED;
+    case MasterFeatures::RANGE_PARTITION_BOUNDS:    [[fallthrough]];
+    case MasterFeatures::ADD_DROP_RANGE_PARTITIONS: [[fallthrough]];
     case MasterFeatures::REPLICA_MANAGEMENT:
       return true;
     case MasterFeatures::GENERATE_AUTHZ_TOKEN:

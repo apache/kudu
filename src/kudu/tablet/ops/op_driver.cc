@@ -339,7 +339,7 @@ Status OpDriver::Prepare() {
     }
     case REPLICATION_FAILED:
       DCHECK(!op_status_.ok());
-      FALLTHROUGH_INTENDED;
+      [[fallthrough]];
     case REPLICATED:
     {
       // We can move on to apply.
@@ -376,7 +376,7 @@ void OpDriver::HandleFailure(const Status& s) {
             << ": " << op_status_.ToString()
             << " op:" << ToString();
       }
-      FALLTHROUGH_INTENDED;
+      [[fallthrough]];
     }
     case NOT_REPLICATING:
     case REPLICATION_FAILED:

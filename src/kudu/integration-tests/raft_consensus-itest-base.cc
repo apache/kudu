@@ -38,7 +38,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid.pb.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -227,7 +226,7 @@ void RaftConsensusITestBase::CauseSpecificFollowerToFallBehindLogGC(
     case BehindWalGcBehavior::STOP_CONTINUE:
       ASSERT_OK(replica_ets->Pause());
       break;
-    case BehindWalGcBehavior::SHUTDOWN_RESTART: FALLTHROUGH_INTENDED;
+    case BehindWalGcBehavior::SHUTDOWN_RESTART: [[fallthrough]];
     case BehindWalGcBehavior::SHUTDOWN:
       replica_ets->Shutdown();
       break;
