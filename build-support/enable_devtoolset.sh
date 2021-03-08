@@ -40,7 +40,7 @@ if [[ "$OSTYPE" =~ ^linux ]] && \
   # additional customization within the devtoolset.
   scl enable devtoolset-8 "$ROOT/enable_devtoolset_inner.sh $*"
 elif [[ "$OSTYPE" =~ ^linux ]] && \
-   [[ "$(lsb_release -irs)" =~ (SUSE)[[:space:]]+12\.[[:digit:]]+ ]]; then
+   [[ "$(lsb_release -irs)" =~ (SUSE)[[:space:]]+1[25]\.[[:digit:]]+ ]]; then
   # If ccache was on the PATH and CC/CXX have not already been set,
   # set them to gcc-8 specific ccache helper scripts (thus enabling ccache).
   if which ccache > /dev/null 2>&1 && [ ! "$CC" -a ! "$CXX" ]; then
@@ -53,6 +53,12 @@ elif [[ "$OSTYPE" =~ ^linux ]] && \
     export CC="/usr/bin/gcc-8"
     export CXX="/usr/bin/g++-8"
   fi
+
+  # TODO(aserbin): patch the protobuf in thirdparty to allow building with
+  #                gcc-8/g++-8 and remove these x_FOR_BUILD below
+  export CC_FOR_BUILD="$CC"
+  export CPP_FOR_BUILD="$CC -E"
+  export CXXCPP_FOR_BUILD="$CXX -E"
 
   # Execute the arguments
   $@

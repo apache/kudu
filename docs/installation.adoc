@@ -393,16 +393,17 @@ make -j4
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ sudo zypper install autoconf automake curl cyrus-sasl-devel \
-  cyrus-sasl-gssapi flex gcc gcc-c++ gdb git java-1_8_0-openjdk-devel \
-  krb5-devel krb5-server libtool lsb-release make ntp openssl-devel patch \
+$ sudo zypper install autoconf automake cmake curl cyrus-sasl-devel \
+  cyrus-sasl-gssapi flex gcc8 gcc8-c++ gdb git java-1_8_0-openjdk-devel \
+  krb5-devel libtool lsb-release make ntp patch \
   pkg-config python rsync unzip vim
+$ sudo zypper install libopenssl-devel
 ----
 
-. If you are building on SUSE 12 or older, install GCC-8.
+. If you are building on something older that SUSE 15:
 +
 ----
-$ sudo zypper install gcc8 gcc8-c++
+$ sudo zypper install openssl-devel
 ----
 
 . Optional: If support for Kudu's NVM (non-volatile memory) block cache is
@@ -499,17 +500,18 @@ sudo make DESTDIR=/opt/kudu install
 ====
 This script provides an overview of the procedure to build Kudu on SLES, and
 can be used as the basis for an automated deployment scenario. It skips
-the steps marked *Optional* above.
+the steps marked *Optional* above. If running this on something older than
+SLES 15, replace `libopenssl-devel` with `openssl-devel`.
 
 [source,bash]
 ----
 #!/bin/bash
 
-sudo zypper install -y autoconf automake curl cyrus-sasl-devel \
-  cyrus-sasl-gssapi flex gcc gcc-c++ gdb git java-1_8_0-openjdk-devel \
-  krb5-devel libtool lsb-release make ntp openssl-devel patch \
+sudo zypper install -y autoconf automake cmake curl cyrus-sasl-devel \
+  cyrus-sasl-gssapi flex gcc8 gcc8-c++ gdb git java-1_8_0-openjdk-devel \
+  krb5-devel libtool lsb-release make ntp patch \
   pkg-config python rsync unzip vim
-sudo zypper install gcc8 gcc8-c++
+sudo zypper install libopenssl-devel
 git clone https://github.com/apache/kudu
 cd kudu
 build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
