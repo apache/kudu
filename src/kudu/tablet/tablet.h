@@ -158,9 +158,16 @@ class Tablet {
   Status DecodeWriteOperations(const Schema* client_schema,
                                WriteOpState* op_state);
 
-  // Acquire locks for each of the operations in the given op.
+  // Acquire locks for each of the operations in the given write op.
   // This also sets the row op's RowSetKeyProbe.
   Status AcquireRowLocks(WriteOpState* op_state);
+
+  // Acquire locks for the given write op. If 'must_acquire' is true,
+  // then wait until the lock is acquired. Otherwise, return
+  // 'TXN_LOCKED_ABORT' or 'TXN_LOCKED_RETRY_OP' error if lock
+  // cannot be acquired.
+  Status AcquirePartitionLock(WriteOpState* op_state,
+                              LockManager::LockWaitMode wait_mode);
 
   // Acquire a shared lock on the given transaction, to ensure the
   // transaction's state doesn't change while the given write is in flight.
@@ -793,13 +800,14 @@ class Tablet {
 
   MvccManager mvcc_;
 
+  LockManager lock_manager_;
+
   // Maintains the set of in-flight transactions, and any WAL anchors
   // associated with them.
   // NOTE: the participant may retain MVCC ops, so define it after the
   // MvccManager, to ensure those ops get destructed before the MvccManager.
+  // The same goes for locks and the LockManager.
   TxnParticipant txn_participant_;
-
-  LockManager lock_manager_;
 
   std::unique_ptr<CompactionPolicy> compaction_policy_;
 

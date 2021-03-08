@@ -22,12 +22,14 @@
 #include <cstdlib>
 #include <deque>
 #include <functional>
+#include <initializer_list>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <ostream>
+#include <random>
 #include <set>
 #include <string>
 #include <thread>
@@ -293,6 +295,87 @@ class TxnWriteOpsITest : public ExternalMiniClusterITestBase {
   string tablet_uuid_;
 };
 
+// Test that our deadlock prevention mechanisms work by writing across
+// different tablets concurrently from multiple transactions.
+// TODO(awong): it'd be much more convenient to take control of aborting the
+// transactions ourselves, rather than relying on the application user.
+TEST_F(TxnWriteOpsITest, TestClientSideDeadlockPrevention) {
+  constexpr const int kNumTxns = 8;
+  const vector<string> master_flags = {
+    "--txn_manager_enabled=true",
+
+    // Scenarios based on this test fixture assume the txn status table
+    // is created at start, not on first transaction-related operation.
+    "--txn_manager_lazily_initialized=false",
+  };
+  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+  vector<string> tablets_uuids;
+  NO_FATALS(Prepare(&tablets_uuids));
+  vector<thread> threads;
+  threads.reserve(kNumTxns);
+  vector<int> random_keys(kNumTxns * 2);
+  std::iota(random_keys.begin(), random_keys.end(), 1);
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(random_keys.begin(), random_keys.end(), gen);
+  for (int i = 0; i < kNumTxns; i++) {
+    threads.emplace_back([&, i] {
+      bool succeeded = false;
+      while (!succeeded) {
+        shared_ptr<KuduTransaction> txn;
+        ASSERT_OK(client_->NewTransaction(&txn));
+        shared_ptr<KuduSession> session;
+        ASSERT_OK(txn->CreateSession(&session));
+        ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+        string txn_str;
+        ASSERT_OK(txn->Serialize(&txn_str));
+        TxnTokenPB token;
+        ASSERT_TRUE(token.ParseFromString(txn_str));
+        bool needs_retry = false;
+        for (const auto key_idx : { 2 * i, 2 * i + 1 }) {
+          const auto& row_key = random_keys[key_idx];
+          unique_ptr<KuduInsert> insert(BuildInsert(table_.get(), row_key));
+          Status s = session->Apply(insert.release());
+          LOG(INFO) << Substitute("Txn $0 wrote row $1: $2",
+                                  token.txn_id(), row_key, s.ToString());
+          // If the write op failed because of a locking error, roll the
+          // transaction back and retry the transaction after waiting a bit.
+          if (!s.ok()) {
+            vector<KuduError*> errors;
+            ElementDeleter d(&errors);
+            bool overflow;
+            session->GetPendingErrors(&errors, &overflow);
+            ASSERT_EQ(1, errors.size());
+            const auto& error = errors[0]->status();
+            LOG(INFO) << Substitute("Txn $0 wrote row $1: $2",
+                                    token.txn_id(), row_key, error.ToString());
+            // While the below delay between retries should help prevent
+            // deadlocks, it's possible that "waiting" write ops (i.e. "wait"
+            // in wait-die, that get retried) will still time out, after
+            // contending a bit with other ops.
+            ASSERT_TRUE(error.IsAborted() || error.IsTimedOut()) << error.ToString();
+            ASSERT_OK(txn->Rollback());
+            needs_retry = true;
+
+            // Wait a bit before retrying the entire transaction to allow for
+            // the current lock holder to complete.
+            SleepFor(MonoDelta::FromSeconds(5));
+            break;
+          }
+        }
+        if (!needs_retry) {
+          succeeded = true;
+          ASSERT_OK(txn->Commit(/*wait*/true));
+        }
+      }
+    });
+  }
+  for (auto& t : threads) { t.join(); }
+  size_t count;
+  ASSERT_OK(CountRows(table_.get(), &count));
+  ASSERT_EQ(kNumTxns * 2, count);
+}
+
 // Send multiple one-row write operations to a tablet server in the context of a
 // multi-row transaction, and commit the transaction. This scenario verifies
 // that tablet servers are able to accept high number of write requests
@@ -343,6 +426,10 @@ TEST_F(TxnWriteOpsITest, FrequentElections) {
     // Custom settings for heartbeat interval helps to complete Raft elections
     // rounds faster than with the default settings.
     Substitute("--heartbeat_interval_ms=$0", hb_interval_ms_),
+
+    // Disable the partition lock as there are concurrent transactions.
+    // TODO(awong): update this when implementing finer grained locking.
+    "--enable_txn_partition_lock=false"
   };
   const vector<string> master_flags = {
     // Enable TxnManager in Kudu masters.
@@ -458,6 +545,10 @@ TEST_F(TxnWriteOpsITest, WriteOpPerf) {
   const vector<string> ts_flags = {
     Substitute("--tablet_max_pending_txn_write_ops=$0",
                FLAGS_max_pending_txn_write_ops),
+
+    // Disable the partition lock as there are concurrent transactions.
+    // TODO(awong): update this when implementing finer grained locking.
+    "--enable_txn_partition_lock=false"
   };
   const vector<string> master_flags = {
     // Enable TxnManager in Kudu masters.
@@ -969,6 +1060,131 @@ TEST_F(TxnOpDispatcherITest, LifecycleBasic) {
     });
     // No dispatchers should be registered once the transaction is rolled back.
     ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
+  }
+}
+
+TEST_F(TxnOpDispatcherITest, BeginTxnLockAbort) {
+  NO_FATALS(Prepare(1));
+
+  // Next value for the primary key column in the test table.
+  int64_t key = 0;
+  vector<scoped_refptr<TabletReplica>> replicas = GetAllReplicas();
+  ASSERT_EQ(kNumPartitions, replicas.size());
+  shared_ptr<KuduTransaction> first_txn;
+  shared_ptr<KuduTransaction> second_txn;
+
+  // Start a single transaction and perform some writes with it.
+  {
+    ASSERT_OK(client_->NewTransaction(&first_txn));
+
+    // There should be no TxnOpDispatchers yet because not a single write
+    // operations has been sent to tablet servers yet.
+    ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
+
+    // Insert a single row.
+    ASSERT_OK(InsertRows(first_txn.get(), 1, &key));
+
+    // Only one tablet replica should get the txn write request and register
+    // TxnOpDispatcher for the transaction.
+    ASSERT_EQ(1, GetTxnOpDispatchersTotalCount());
+
+    // Write some more rows ensuring all hash buckets of the table's partition
+    // will get at least one element.
+    ASSERT_OK(InsertRows(first_txn.get(), 5, &key));
+    ASSERT_EQ(kNumPartitions, GetTxnOpDispatchersTotalCount());
+
+    // Non transactional operations should fail as the partition lock
+    // is held by the transaction at the moment.
+    shared_ptr<KuduSession> session;
+    Status s = InsertRows(nullptr /* txn */, 1, &key, &session);
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    auto row_status = GetSingleRowError(session.get());
+    ASSERT_TRUE(row_status.IsAborted()) << row_status.ToString();
+    ASSERT_STR_CONTAINS(row_status.ToString(),
+                        "Write op should be aborted");
+  }
+
+  // Start a new transaction.
+  {
+    ASSERT_OK(client_->NewTransaction(&second_txn));
+    ASSERT_EQ(kNumPartitions, GetTxnOpDispatchersTotalCount());
+
+    // Operations of the transaction should fail as the partition
+    // lock is held by the transaction at the moment.
+    shared_ptr<KuduSession> session;
+    Status s = InsertRows(second_txn.get(), 1, &key, &session);
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    auto row_status = GetSingleRowError(session.get());
+    ASSERT_TRUE(row_status.IsAborted()) << row_status.ToString();
+    ASSERT_STR_CONTAINS(row_status.ToString(), "should be aborted");
+
+    // We should have an extra dispatcher for the new transactional write.
+    ASSERT_EQ(1 + kNumPartitions, GetTxnOpDispatchersTotalCount());
+  }
+  {
+    // Now, commit the first transaction.
+    ASSERT_OK(first_txn->Commit());
+
+    // All dispatchers should be unregistered once the transaction is committed.
+    ASSERT_EQ(1, GetTxnOpDispatchersTotalCount());
+
+    // Writes to the second transaction should now succeed.
+    ASSERT_OK(InsertRows(second_txn.get(), 1, &key));
+    ASSERT_EQ(1, GetTxnOpDispatchersTotalCount());
+
+    ASSERT_OK(second_txn->Commit());
+    ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
+  }
+}
+
+TEST_F(TxnOpDispatcherITest, BeginTxnLockRetry) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  NO_FATALS(Prepare(1));
+
+  // Next value for the primary key column in the test table.
+  int64_t key = 0;
+
+  vector<scoped_refptr<TabletReplica>> replicas = GetAllReplicas();
+  ASSERT_EQ(kNumPartitions, replicas.size());
+  shared_ptr<KuduTransaction> first_txn;
+  shared_ptr<KuduTransaction> second_txn;
+
+  // Start a single transaction.
+  {
+    ASSERT_OK(client_->NewTransaction(&second_txn));
+
+    // There should be no TxnOpDispatchers yet because not a single write
+    // operations has been sent to tablet servers yet.
+    ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
+  }
+
+  // Start another single transaction and perform some writes with it.
+  {
+    ASSERT_OK(client_->NewTransaction(&first_txn));
+    ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
+
+    // Write some more rows ensuring all hash buckets of the table's partition
+    // will get at least one element.
+    ASSERT_OK(InsertRows(first_txn.get(), 5, &key));
+    ASSERT_EQ(kNumPartitions, GetTxnOpDispatchersTotalCount());
+  }
+
+  {
+    // Operations of the second transaction should fail as the partition
+    // lock is held by the first transaction at the moment.
+    shared_ptr<KuduSession> session;
+    Status s = InsertRows(second_txn.get(), 1, &key, &session);
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    auto row_status = GetSingleRowError(session.get());
+    ASSERT_TRUE(row_status.IsTimedOut()) << row_status.ToString();
+    ASSERT_STR_CONTAINS(row_status.ToString(), "passed its deadline");
+
+    // We should have an extra dispatcher for the new transactional write.
+    ASSERT_EQ(1 + kNumPartitions, GetTxnOpDispatchersTotalCount());
+
+    ASSERT_OK(first_txn->Commit());
+    // We should still have an op dispatcher for the second transaction.
+    ASSERT_EQ(1, GetTxnOpDispatchersTotalCount());
   }
 }
 

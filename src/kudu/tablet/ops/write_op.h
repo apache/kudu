@@ -176,6 +176,13 @@ class WriteOpState : public OpState {
   // Acquire row locks for all of the rows in this Write.
   void AcquireRowLocks(LockManager* lock_manager);
 
+  // Acquire the partition lock for writes of the transaction associated with
+  // this request. If 'wait_mode' is 'WAIT_FOR_LOCK', then wait until the lock is
+  // acquired. Otherwise, if lock cannot be acquired, return 'Aborted' error if
+  // the op should be aborted or 'ServiceUnavailable' if the op should be retried.
+  Status AcquirePartitionLock(LockManager* lock_manager,
+                              LockManager::LockWaitMode wait_mode);
+
   // Acquires the lock on the given transaction, setting 'txn_' and
   // 'txn_lock_', which must be freed upon finishing this op. Checks if the
   // transaction is available to be written to, returning an error if not.
@@ -245,6 +252,14 @@ class WriteOpState : public OpState {
 
   std::string ToString() const override;
 
+  // Releases the partition lock acquired by this op. Unlike the other
+  // unlocking methods that just release locks, this transfers the ownership of
+  // the partition lock to the Txn that this write is a part of.
+  //
+  // If this is write was not a part of a transaction, this is just releases
+  // the partition lock.
+  void TransferOrReleasePartitionLock();
+
  private:
   // Releases all the row locks acquired by this op.
   void ReleaseRowLocks();
@@ -274,8 +289,11 @@ class WriteOpState : public OpState {
   // Protected by op_state_lock_.
   std::vector<RowOp*> row_ops_;
 
-  // Holds the LockManager locks acquired for this operation.
+  // Holds the row locks acquired for this operation.
   ScopedRowLock rows_lock_;
+
+  // Holds the partition lock acquired for this operation.
+  ScopedPartitionLock partition_lock_;
 
   // Array of ProbeStats for each of the operations in 'row_ops_'.
   // Allocated from this op's arena during SetRowOps().

@@ -34,6 +34,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -107,6 +108,13 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // a single thread.
   void AcquireWriteLock(std::unique_lock<rw_semaphore>* txn_lock);
   void AcquireReadLock(shared_lock<rw_semaphore>* txn_lock);
+
+  // Adopts the input partition lock, maintaining it until the transaction is
+  // complete (aborted or finalized). Rather than maintaining multiple
+  // ScopedPartitionLocks, this will release any currently-held lock and
+  // acquire the new one. It is thus expected that repeat callers are taking
+  // the same lock.
+  void AdoptPartitionLock(ScopedPartitionLock partition_lock);
 
   // Validates that the transaction is in the appropriate state to perform the
   // given operation. Should be called while holding the state lock before
@@ -256,6 +264,10 @@ class Txn : public RefCountedThreadSafe<Txn> {
     return commit_op_.get();
   }
 
+  void ReleasePartitionLock() {
+    partition_lock_.Release();
+  }
+
  private:
   friend class RefCountedThreadSafe<Txn>;
 
@@ -344,6 +356,9 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // before proceeding with a scan. This ensures scans on this participant are
   // repeatable.
   std::unique_ptr<ScopedOp> commit_op_;
+
+  // Holds the partition lock acquired for this transaction.
+  ScopedPartitionLock partition_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(Txn);
 };

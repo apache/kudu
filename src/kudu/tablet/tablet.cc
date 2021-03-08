@@ -576,8 +576,13 @@ Status Tablet::AcquireRowLocks(WriteOpState* op_state) {
 
   op_state->AcquireRowLocks(&lock_manager_);
 
-  TRACE("Locks acquired");
+  TRACE("Row locks acquired");
   return Status::OK();
+}
+
+Status Tablet::AcquirePartitionLock(WriteOpState* op_state,
+                                    LockManager::LockWaitMode wait_mode) {
+  return op_state->AcquirePartitionLock(&lock_manager_, wait_mode);
 }
 
 Status Tablet::AcquireTxnLock(int64_t txn_id, WriteOpState* op_state) {
@@ -1172,7 +1177,8 @@ Status Tablet::CheckHasNotBeenStopped(State* cur_state) const {
   return Status::OK();
 }
 
-void Tablet::BeginTransaction(Txn* txn, const OpId& op_id) {
+void Tablet::BeginTransaction(Txn* txn,
+                              const OpId& op_id) {
   unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
         Substitute("BEGIN_TXN-$0-$1", txn->txn_id(), txn)));
   anchor->AnchorIfMinimum(op_id.index());

@@ -67,6 +67,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(enable_txn_partition_lock);
 DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
 DECLARE_bool(txn_schedule_background_tasks);
@@ -684,6 +685,9 @@ TEST_F(TxnCommitITest, TestCommitAfterParticipantAbort) {
 
 // Try concurrently beginning to commit a bunch of different transactions.
 TEST_F(TxnCommitITest, TestConcurrentCommitCalls) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   constexpr const int kNumTxns = 4;
   vector<shared_ptr<KuduTransaction>> txns(kNumTxns);
   int row_start = initial_row_count_;
@@ -724,6 +728,9 @@ TEST_F(TxnCommitITest, TestConcurrentCommitCalls) {
 }
 
 TEST_F(TxnCommitITest, TestConcurrentAbortsAndCommits) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   constexpr const int kNumTxns = 10;
   vector<shared_ptr<KuduTransaction>> txns(kNumTxns);
   int row_start = initial_row_count_;
@@ -940,6 +947,9 @@ TEST_F(TwoNodeTxnCommitITest, TestCommitWhenParticipantsAreDown) {
 // Test that when we start up, pending commits will start background tasks to
 // finalize the commit or abort.
 TEST_F(TwoNodeTxnCommitITest, TestStartTasksDuringStartup) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   shared_ptr<KuduTransaction> committed_txn;
   {
     shared_ptr<KuduSession> txn_session;
@@ -1038,6 +1048,9 @@ class ThreeNodeTxnCommitITest : public TxnCommitITest {
 };
 
 TEST_F(ThreeNodeTxnCommitITest, TestCommitTasksReloadOnLeadershipChange) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   FLAGS_txn_schedule_background_tasks = false;
   shared_ptr<KuduTransaction> committed_txn;
   shared_ptr<KuduTransaction> aborted_txn;

@@ -72,6 +72,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(enable_txn_partition_lock);
 DECLARE_bool(raft_enable_pre_election);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
@@ -830,6 +831,32 @@ TEST_F(TxnParticipantITest, TestProxyTabletNotFound) {
   }
 }
 
+// Test that we can start multiple transactions on the same participant.
+TEST_F(TxnParticipantITest, TestTxnSystemClientBeginTxnDoesntLock) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kFirstTxn = 0;
+  constexpr const int kSecondTxn = 1;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  const auto tablet_id = leader_replica->tablet_id();
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+
+  // Start a transaction and make sure it results in the expected state
+  // server-side.
+  unique_ptr<TxnSystemClient> txn_client;
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kFirstTxn, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+  NO_FATALS(CheckReplicasMatchTxns(replicas, { { kFirstTxn, kOpen, -1 } }));
+
+  // Begin another transaction with a lower txn ID. This is allowed, since
+  // partition locks are only taken once we write.
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kSecondTxn, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+  NO_FATALS(CheckReplicasMatchTxns(replicas,
+        { { kFirstTxn, kOpen, -1 }, { kSecondTxn, kOpen, -1 } }));
+}
+
 TEST_F(TxnParticipantITest, TestTxnSystemClientCommitSequence) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
@@ -899,6 +926,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientCommitSequence) {
 }
 
 TEST_F(TxnParticipantITest, TestTxnSystemClientAbortSequence) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnOne = 0;
   constexpr const int kTxnTwo = 1;
@@ -974,6 +1004,38 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientErrorWhenNotBegun) {
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(txn_id++, ParticipantOpPB::ABORT_TXN), kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { 2, kAborted, -1 } }));
+}
+
+TEST_F(TxnParticipantITest, TestTxnSystemClientRepeatCalls) {
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kTxnOne = 1;
+  constexpr const int kTxnTwo = 2;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  const auto tablet_id = leader_replica->tablet_id();
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  unique_ptr<TxnSystemClient> txn_client;
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  // Repeat each op twice. There should be no issues here since each op is
+  // idempotent. There should also be no issues with the partition lock.
+  for (const auto& type : kCommitSequence) {
+    ASSERT_OK(txn_client->ParticipateInTransaction(
+        tablet_id, MakeParticipantOp(kTxnOne, type, kDummyCommitTimestamp),
+        kDefaultTimeout));
+    ASSERT_OK(txn_client->ParticipateInTransaction(
+        tablet_id, MakeParticipantOp(kTxnOne, type, kDummyCommitTimestamp),
+        kDefaultTimeout));
+  }
+  for (const auto& type : kAbortSequence) {
+    ASSERT_OK(txn_client->ParticipateInTransaction(
+        tablet_id, MakeParticipantOp(kTxnTwo, type, kDummyCommitTimestamp),
+        kDefaultTimeout));
+    ASSERT_OK(txn_client->ParticipateInTransaction(
+        tablet_id, MakeParticipantOp(kTxnTwo, type, kDummyCommitTimestamp),
+        kDefaultTimeout));
+  }
+  NO_FATALS(CheckReplicasMatchTxns(
+      replicas, { { kTxnOne, kCommitted, kDummyCommitTimestamp }, { kTxnTwo, kAborted, -1 } }));
 }
 
 TEST_F(TxnParticipantITest, TestTxnSystemClientTimeoutWhenNoMajority) {

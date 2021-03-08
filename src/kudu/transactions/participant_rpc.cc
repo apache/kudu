@@ -171,12 +171,14 @@ RetriableRpcStatus ParticipantRpc::AnalyzeResponse(const Status& rpc_cb_status) 
         return result;
       case TabletServerErrorPB::TABLET_NOT_RUNNING:
       case TabletServerErrorPB::THROTTLED:
+      case TabletServerErrorPB::TXN_LOCKED_RETRY_OP:
         result.result = RetriableRpcStatus::SERVICE_UNAVAILABLE;
         return result;
       case TabletServerErrorPB::NOT_THE_LEADER:
         result.result = RetriableRpcStatus::REPLICA_NOT_LEADER;
         return result;
       case TabletServerErrorPB::TXN_ILLEGAL_STATE:
+      case TabletServerErrorPB::TXN_LOCKED_ABORT:
         result.result = RetriableRpcStatus::NON_RETRIABLE_ERROR;
         return result;
       case TabletServerErrorPB::TXN_OP_ALREADY_APPLIED:

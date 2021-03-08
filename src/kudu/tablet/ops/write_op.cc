@@ -36,6 +36,7 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/opid.pb.h"
@@ -69,6 +70,8 @@ DEFINE_int32(tablet_inject_latency_on_apply_write_op_ms, 0,
              "For testing only!");
 TAG_FLAG(tablet_inject_latency_on_apply_write_op_ms, unsafe);
 TAG_FLAG(tablet_inject_latency_on_apply_write_op_ms, runtime);
+
+DECLARE_bool(enable_txn_partition_lock);
 
 using std::string;
 using std::unique_ptr;
@@ -211,7 +214,14 @@ Status WriteOp::Prepare() {
     }
   }
 
-  // Now acquire row locks and prepare everything for apply
+  // Now first acquire partition lock and then row locks, and prepare
+  // everything for apply. For followers, we wait until the partition lock is
+  // held, since we know the op will not be replicated if the leader cannot
+  // take the partition lock.
+  if (PREDICT_TRUE(FLAGS_enable_txn_partition_lock)) {
+    RETURN_NOT_OK(tablet->AcquirePartitionLock(state(),
+        type() == consensus::LEADER ? LockManager::TRY_LOCK : LockManager::WAIT_FOR_LOCK));
+  }
   RETURN_NOT_OK(tablet->AcquireRowLocks(state()));
 
   TRACE("PREPARE: Finished.");
@@ -427,8 +437,13 @@ void WriteOpState::StartApplying() {
 void WriteOpState::FinishApplyingOrAbort(Op::OpResult result) {
   ReleaseMvccTxn(result);
 
-  TRACE("Releasing row and schema locks");
+  TRACE("Releasing partition, row and schema locks");
   ReleaseRowLocks();
+  if (result == Op::APPLIED) {
+    // NOTE: if the op was not successful, the lock will be released when this
+    // state is destructed.
+    TransferOrReleasePartitionLock();
+  }
   ReleaseSchemaLock();
 
   // After committing, if there is an RPC going on, the driver will respond to it.
@@ -529,6 +544,49 @@ void WriteOpState::AcquireRowLocks(LockManager* lock_manager) {
 
 void WriteOpState::ReleaseRowLocks() {
   rows_lock_.Release();
+}
+
+Status WriteOpState::AcquirePartitionLock(
+    LockManager* lock_manager,
+    LockManager::LockWaitMode wait_mode) {
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  DCHECK(!partition_lock_.IsAcquired(&code));
+  TxnId txn_id;
+  if (request()->has_txn_id()) {
+    txn_id = request()->txn_id();
+  }
+  TRACE("Acquiring the partition lock for write op");
+  partition_lock_ = ScopedPartitionLock(lock_manager, txn_id, wait_mode);
+  bool acquired = partition_lock_.IsAcquired(&code);
+  if (!acquired) {
+    Status s;
+    if (code == TabletServerErrorPB::TXN_LOCKED_ABORT) {
+      s = Status::Aborted("Write op should be aborted since it tries to acquire the "
+                          "partition lock that is held by another transaction that "
+                          "has lower txn ID");
+    } else if (code == TabletServerErrorPB::TXN_LOCKED_RETRY_OP) {
+      s = Status::ServiceUnavailable("Write op should retry since it tries to acquire "
+                                     "the partition lock that is held by another transaction "
+                                     "that has higher txn ID");
+    } else {
+      LOG(DFATAL) << "unexpected error code " << code;
+    }
+    CHECK(!s.ok()) << s.ToString();
+    completion_callback()->set_error(s, code);
+    return s;
+  }
+  DCHECK_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+  TRACE("Partition lock acquired for write op");
+  return Status::OK();
+}
+
+void WriteOpState::TransferOrReleasePartitionLock() {
+  if (txn_) {
+    txn_->AdoptPartitionLock(std::move(partition_lock_));
+  } else {
+    // If this isn't a transactional write, just release the partition lock.
+    partition_lock_.Release();
+  }
 }
 
 void WriteOpState::ReleaseTxnLock() {

@@ -78,6 +78,7 @@
 
 DEFINE_int32(keyspace_size, 5,  "number of distinct primary keys to test with");
 DEFINE_int32(max_open_txns, 5,  "maximum number of open transactions to test with");
+DECLARE_bool(enable_txn_partition_lock);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(scanner_allow_snapshot_scans_with_logical_timestamps);
 DECLARE_bool(tserver_txn_write_op_handling_enabled);
@@ -1495,6 +1496,9 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
 // The logs of this test are designed to easily be copy-pasted and create
 // more specific test cases like TestFuzz<N> below.
 TEST_F(FuzzTest, TestRandomFuzzPksOnly) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   CreateTabletAndStartClusterWithSchema(Schema({ColumnSchema("key", INT32)}, 1));
   SeedRandom();
   vector<TestOp> test_ops;
@@ -1506,6 +1510,9 @@ TEST_F(FuzzTest, TestRandomFuzzPksOnly) {
 // The logs of this test are designed to easily be copy-pasted and create
 // more specific test cases like TestFuzz<N> below.
 TEST_F(FuzzTest, TestRandomFuzz) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
   SeedRandom();
   vector<TestOp> test_ops;
@@ -1517,6 +1524,9 @@ TEST_F(FuzzTest, TestRandomFuzz) {
 // This results in very large batches which are likely to span multiple delta blocks
 // when flushed.
 TEST_F(FuzzTest, TestRandomFuzzHugeBatches) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
   SeedRandom();
   vector<TestOp> test_ops;

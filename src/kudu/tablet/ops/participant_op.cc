@@ -20,6 +20,7 @@
 #include <memory>
 #include <ostream>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/arena.h>
 
@@ -29,6 +30,7 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -39,9 +41,15 @@
 #include "kudu/tablet/txn_participant.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
+
+DEFINE_bool(enable_txn_partition_lock, true,
+            "Whether or not to enable partition lock for transactions");
+TAG_FLAG(enable_txn_partition_lock, unsafe);
+TAG_FLAG(enable_txn_partition_lock, hidden);
 
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ReplicateMsg;
@@ -231,6 +239,7 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* table
       if (txn_->commit_op()) {
         txn_->commit_op()->FinishApplying();
       }
+      txn_->ReleasePartitionLock();
       break;
     }
     case ParticipantOpPB::ABORT_TXN: {
@@ -240,6 +249,7 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* table
       if (txn_->commit_op()) {
         txn_->commit_op()->Abort();
       }
+      txn_->ReleasePartitionLock();
       break;
     }
     case ParticipantOpPB::UNKNOWN: {

@@ -25,16 +25,18 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
 
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/txn_metadata.h"
 
+DECLARE_bool(enable_txn_partition_lock);
+
 using kudu::log::LogAnchorRegistry;
+using kudu::tserver::TabletServerErrorPB;
 using std::vector;
-using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -70,6 +72,24 @@ void Txn::AcquireWriteLock(std::unique_lock<rw_semaphore>* txn_lock) {
 void Txn::AcquireReadLock(shared_lock<rw_semaphore>* txn_lock) {
   shared_lock<rw_semaphore> l(state_lock_);
   *txn_lock = std::move(l);
+}
+
+void Txn::AdoptPartitionLock(ScopedPartitionLock partition_lock) {
+  if (PREDICT_TRUE(FLAGS_enable_txn_partition_lock)) {
+    TabletServerErrorPB::Code code = tserver::TabletServerErrorPB::UNKNOWN_ERROR;
+#ifndef NDEBUG
+    CHECK(partition_lock.IsAcquired(&code)) << code;
+    if (partition_lock_.IsAcquired(&code)) {
+      // Make sure if we're adopting a lock while one is already held, that
+      // they're the same lock.
+      CHECK(partition_lock.HasSameState(partition_lock_));
+    }
+#endif
+    // Release the current lock and acquire the new one.
+    partition_lock_.Release();
+    partition_lock_ = std::move(partition_lock);
+    DCHECK(partition_lock_.IsAcquired(&code)) << code;
+  }
 }
 
 void TxnParticipant::CreateOpenTransaction(int64_t txn_id,

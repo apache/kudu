@@ -70,6 +70,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ConsensusBootstrapInfo;
@@ -87,6 +88,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(enable_maintenance_manager);
+DECLARE_bool(enable_txn_partition_lock);
 DECLARE_bool(log_preallocate_segments);
 DECLARE_bool(log_async_preallocate_segments);
 
@@ -358,6 +360,9 @@ TEST_F(TxnParticipantTest, TestIllegalTransitions) {
 
 // Test that we have no trouble operating on separate transactions.
 TEST_F(TxnParticipantTest, TestConcurrentTransactions) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   const int kNumTxns = 10;
   vector<thread> threads;
   Status statuses[kNumTxns];
@@ -503,10 +508,93 @@ TEST_F(TxnParticipantTest, TestAllOpsRegisterAnchors) {
   }));
 }
 
+TEST_F(TxnParticipantTest, TestTakePartitionLockOnRestart) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // Get to write some rows.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN,
+                                       kDummyCommitTimestamp));
+
+  // We should be able to at least start another transaction.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN,
+                                       kDummyCommitTimestamp));
+  ASSERT_OK(Write(0, kTxnOne));
+  const auto check_other_txns_cant_write = [&] {
+    // We'll try writing a couple times to make sure the act of writing doesn't
+    // somehow permit further writes to the transaction.
+    for (int i = 0; i < 2; i++) {
+      Status s = Write(0);
+      ASSERT_TRUE(s.IsAborted()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "partition lock that is held by another");
+
+      s = Write(0, kTxnTwo);
+      ASSERT_TRUE(s.IsAborted()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "partition lock that is held by another");
+    }
+  };
+  NO_FATALS(check_other_txns_cant_write());
+
+  // We shouldn't be able to write even after restarting.
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  NO_FATALS(check_other_txns_cant_write());
+
+  // We should be able to write as a part of the transaction though.
+  ASSERT_OK(Write(1, kTxnOne));
+
+  // Once we begin committing, we still shouldn't be able to write, even after
+  // restarting.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_COMMIT,
+                                       kDummyCommitTimestamp));
+  NO_FATALS(check_other_txns_cant_write());
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  NO_FATALS(check_other_txns_cant_write());
+  // We also shouldn't be able to write as a part of the transaction, since
+  // it's not open for further writes.
+  Status s = Write(2, kTxnOne);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "not open: COMMIT_IN_PROGRESS");
+
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+
+  s = Write(2, kTxnOne);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "not open: COMMIT_IN_PROGRESS");
+
+  s = Write(0, kTxnTwo);
+  ASSERT_TRUE(s.IsAborted()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "partition lock that is held by another");
+
+  // Once we finalize the commit, we should be able to write again.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::FINALIZE_COMMIT,
+                                       kDummyCommitTimestamp));
+
+  // And we shouldn't be able to write to the same transaction once committed.
+  s = Write(2, kTxnOne);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "not open");
+
+  // We should be able to write to the other transaction now that the partition
+  // lock isn't held.
+  ASSERT_OK(Write(2, kTxnTwo));
+
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+
+  s = Write(2, kTxnOne);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "not open");
+
+  // We should be able to write to the other transaction now that the partition
+  // lock isn't held.
+  ASSERT_OK(Write(3, kTxnTwo));
+}
+
 // Test that participant ops result in tablet metadata updates that can survive
 // restarts, and that the appropriate anchors are in place as we progress
 // through a transaction's life cycle.
 TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   // First, do a sanity check that there's nothing GCable.
   int64_t gcable_size;
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
@@ -741,6 +829,9 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
 
 // Test rebuilding transaction state, including writes, from WALs and metadata.
 TEST_P(MetadataFlushTxnParticipantTest, TestReplayTransactionalInserts) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   const bool should_flush = GetParam();
   constexpr const int64_t kAbortedTxnId = 2;
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
@@ -815,6 +906,9 @@ INSTANTIATE_TEST_SUITE_P(ShouldFlushMetadata, MetadataFlushTxnParticipantTest,
 
 // Similar to the above test, but checking that in-flight ops anchor the WALs.
 TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   ParticipantRequestPB req;
   ParticipantResponsePB resp;
   auto op_state = NewParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
@@ -931,6 +1025,9 @@ TEST_F(TxnParticipantTest, TestUnsupportedOps) {
 // Test that rows inserted to transactional stores only show up when the
 // transactions complete.
 TEST_F(TxnParticipantTest, TestInsertToTransactionMRS) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(Write(0, kTxnOne));
@@ -964,6 +1061,9 @@ TEST_F(TxnParticipantTest, TestInsertToTransactionMRS) {
 // Test that rows inserted to transactional stores don't show up if the
 // transaction is aborted.
 TEST_F(TxnParticipantTest, TestDontReadAbortedInserts) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(Write(0, kTxnOne));
@@ -1018,6 +1118,9 @@ TEST_F(TxnParticipantTest, TestUpdateAfterAborting) {
 // Test that we can update rows that were inserted and committed as a part of a
 // transaction.
 TEST_F(TxnParticipantTest, TestUpdateCommittedTransactionMRS) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(Write(0, kTxnId));
 
@@ -1026,7 +1129,7 @@ TEST_F(TxnParticipantTest, TestUpdateCommittedTransactionMRS) {
   ASSERT_OK(IterateToStrings(&rows));
   ASSERT_EQ(0, rows.size());
   Status s = Delete(0);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
 
   // We still haven't finished committing, so we should see no rows.
@@ -1059,6 +1162,9 @@ TEST_F(TxnParticipantTest, TestUpdateCommittedTransactionMRS) {
 // Test that we can flush multiple MRSs, and that when restarting, ops are
 // replayed (or not) as appropriate.
 TEST_F(TxnParticipantTest, TestFlushMultipleMRSs) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   const int kNumTxns = 3;
   const int kNumRowsPerTxn = 100;
   vector<string> rows;
@@ -1137,6 +1243,9 @@ TEST_F(TxnParticipantTest, TestInsertIgnoreInTransactionMRS) {
 
 // Test that INSERT_IGNORE ops work when the row exists in the main MRS.
 TEST_F(TxnParticipantTest, TestInsertIgnoreInMainMRS) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
   // Insert into the main MRS, and then INSERT_IGNORE as a part of a
   // transaction.
@@ -1160,6 +1269,9 @@ TEST_F(TxnParticipantTest, TestInsertIgnoreInMainMRS) {
 
 // Test that the live row count accounts for transactional MRSs.
 TEST_F(TxnParticipantTest, TestLiveRowCountAccountsForTransactionalMRSs) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(Write(0));
@@ -1183,6 +1295,9 @@ TEST_F(TxnParticipantTest, TestLiveRowCountAccountsForTransactionalMRSs) {
 
 // Test that the MRS size metrics account for transactional MRSs.
 TEST_F(TxnParticipantTest, TestSizeAccountsForTransactionalMRS) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_TRUE(tablet_replica_->tablet()->MemRowSetEmpty());
@@ -1216,6 +1331,9 @@ TEST_F(TxnParticipantTest, TestSizeAccountsForTransactionalMRS) {
 
 // Test that the MRS anchored WALs metric accounts for transactional MRSs.
 TEST_F(TxnParticipantTest, TestWALsAnchoredAccountsForTransactionalMRS) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   const auto mrs_wal_size = [&] {
     map<int64_t, int64_t> replay_size_map;
     CHECK_OK(tablet_replica_->GetReplaySizeMap(&replay_size_map));
@@ -1288,6 +1406,9 @@ TEST_F(TxnParticipantTest, TestRacingCommitAndWrite) {
 
 // Test that the write metrics account for transactional rowsets.
 TEST_F(TxnParticipantTest, TestMRSLookupsMetric) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
 
@@ -1340,6 +1461,9 @@ class TxnParticipantConcurrencyTest : public TxnParticipantTest,
 
 // Test inserting into multiple transactions from multiple threads.
 TEST_P(TxnParticipantConcurrencyTest, TestConcurrentDisjointInsertsTxn) {
+  // Disable the partition lock as there are concurrent transactions.
+  // TODO(awong): update this when implementing finer grained locking.
+  FLAGS_enable_txn_partition_lock = false;
   const auto& params = GetParam();
   const auto& num_txns = params.num_txns;
   const int kNumThreads = 10;

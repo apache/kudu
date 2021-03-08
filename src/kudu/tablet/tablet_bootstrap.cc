@@ -65,6 +65,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/ops/alter_schema_op.h"
@@ -1629,7 +1630,19 @@ Status TabletBootstrap::PlayRowOperations(const IOContext* io_context,
                         Substitute("Could not decode row operations: $0",
                                    SecureDebugString(op_state->request()->row_operations())));
 
-  // Run AcquireRowLocks, Apply, etc!
+  // If the write is a part of a transaction that's currently open (i.e., it
+  // has an in-flight Txn associated with it), lock the Txn now and make sure
+  // it's open.
+  // NOTE: we shouldn't take this lock if we've persisted that the transaction
+  // has completed, since there is no corresponding in-flight Txn.
+  if (op_state->txn_id() && !ContainsKey(terminal_txn_ids_, *op_state->txn_id())) {
+    RETURN_NOT_OK_PREPEND(tablet_->AcquireTxnLock(*op_state->txn_id(), op_state),
+                          "Failed to acquire txn lock");;
+  }
+
+  // Acquire partition/row locks, Apply, etc!
+  RETURN_NOT_OK_PREPEND(tablet_->AcquirePartitionLock(op_state, LockManager::WAIT_FOR_LOCK),
+                        "Failed to acquire partition lock");
   RETURN_NOT_OK_PREPEND(tablet_->AcquireRowLocks(op_state),
                         "Failed to acquire row locks");
 

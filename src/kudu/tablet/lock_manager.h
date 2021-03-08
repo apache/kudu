@@ -218,6 +218,11 @@ class ScopedPartitionLock {
   // Disable the copy constructor.
   ScopedPartitionLock(const ScopedPartitionLock&) = delete;
 
+  // Returns true if this points at the same lock state as 'other'.
+  bool HasSameState(const ScopedPartitionLock& other) {
+    return lock_state_ == other.lock_state_;
+  }
+
   // Check whether the partition lock is acquired by the transaction.
   // If false, set the tablet server error code accordingly to abort
   // or retry the transaction. Otherwise, no error code is set.
