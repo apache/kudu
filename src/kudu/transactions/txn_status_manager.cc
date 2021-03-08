@@ -91,16 +91,6 @@ DEFINE_uint32(txn_staleness_tracker_interval_ms, 10000,
 TAG_FLAG(txn_staleness_tracker_interval_ms, experimental);
 TAG_FLAG(txn_staleness_tracker_interval_ms, runtime);
 
-// TODO(aserbin): remove this test-only crutch once the orchestration of
-//                the two phase commit is implemented
-DEFINE_bool(txn_status_manager_finalize_commit_on_begin, false,
-            "Finalize committing a transaction automatically right after "
-            "changing its state to COMMIT_IN_PROGRESS during processing "
-            "a call to CoordinateTransaction() of the BEGIN_COMMIT_TXN type. "
-            "Used only for tests.");
-TAG_FLAG(txn_status_manager_finalize_commit_on_begin, hidden);
-TAG_FLAG(txn_status_manager_finalize_commit_on_begin, unsafe);
-
 DEFINE_int32(txn_status_tablet_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
              "Amount of time to give a newly-elected leader tserver of transaction "
              "status tablet to load the metadata containing all operations replicated "
@@ -948,12 +938,6 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
     }
   }
   txn_lock.Commit();
-
-  // TODO(aserbin): remove this test-only crutch once the orchestration of
-  //                the two phase commit is implemented
-  if (PREDICT_FALSE(FLAGS_txn_status_manager_finalize_commit_on_begin)) {
-    RETURN_NOT_OK(FinalizeCommitTransaction(txn_id, Timestamp::kInitialTimestamp, ts_error));
-  }
 
   return Status::OK();
 }
