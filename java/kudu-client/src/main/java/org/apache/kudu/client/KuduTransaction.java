@@ -301,6 +301,12 @@ public class KuduTransaction implements AutoCloseable {
    * Check whether the commit phase for a transaction is complete.
    *
    * @return {@code true} if transaction has finalized, otherwise {@code false}
+   * @throws NonRecoverableException with Status.Aborted()
+   *   if transaction has been or is being aborted
+   * @throws NonRecoverableException with Status.IllegalState()
+   *   if transaction is still open (i.e. commit() hasn't been called yet)
+   * @throws NonRecoverableException with Status.NotSupported()
+   *   if transaction is in unexpected state (non-compatible backend?)
    * @throws KuduException if an error happens while querying the system about
    *                       the state of the transaction
    */

@@ -442,7 +442,7 @@ class RpcProxy {
 
     // TODO(aserbin): try sending request to other TxnManager instance,
     //                if possible. The idea is that Kudu clusters are expected
-    //                expected to have multiple masters, so if one TxnManager
+    //                to have multiple masters, so if one TxnManager
     //                instance is not available, there is a high chance that
     //                others are still available (TxnManager is hosted by a
     //                kudu-master process).
