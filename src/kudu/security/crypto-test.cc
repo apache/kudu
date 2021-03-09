@@ -17,15 +17,11 @@
 
 #include "kudu/security/crypto.h"
 
-#include <openssl/crypto.h>
-
 #include <cstring>
-#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/strip.h"
@@ -97,11 +93,6 @@ class CryptoTest : public KuduTest {
 
 // Check input/output of RSA private keys in PEM format.
 TEST_F(CryptoTest, RsaPrivateKeyInputOutputPEM) {
-  // TODO(KUDU-3207): Skip when run in FIPS mode due to different private key format.
-  if (FIPS_mode()) {
-    LOG(WARNING) << "Skipping test in FIPS mode. See KUDU-3207.";
-    GTEST_SKIP();
-  }
   PrivateKey key;
   ASSERT_OK(key.FromFile(private_key_file_, DataFormat::PEM));
   string key_str;

@@ -51,9 +51,7 @@ namespace {
 // signature than the rest of the write functions, so we
 // have to provide this wrapper.
 int PemWritePrivateKey(BIO* bio, EVP_PKEY* key) {
-  auto rsa = ssl_make_unique(EVP_PKEY_get1_RSA(key));
-  return PEM_write_bio_RSAPrivateKey(
-      bio, rsa.get(), nullptr, nullptr, 0, nullptr, nullptr);
+  return PEM_write_bio_PKCS8PrivateKey(bio, key, nullptr, nullptr, 0, nullptr, nullptr);
 }
 
 int PemWritePublicKey(BIO* bio, EVP_PKEY* key) {
