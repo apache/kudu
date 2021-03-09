@@ -43,7 +43,6 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -1058,9 +1057,8 @@ TEST_P(StaleScanTokensParamTest, DroppingFirstRange) {
   ASSERT_EQ(expected_row_count, row_count_b);
 }
 
-INSTANTIATE_TEST_CASE_P(FirstRangeDropped, StaleScanTokensParamTest,
-                        testing::Range(FirstRangeChangeMode::BEGIN,
-                                       FirstRangeChangeMode::END));
-
+INSTANTIATE_TEST_SUITE_P(FirstRangeDropped, StaleScanTokensParamTest,
+                         testing::Range(FirstRangeChangeMode::BEGIN,
+                                        FirstRangeChangeMode::END));
 } // namespace client
 } // namespace kudu
