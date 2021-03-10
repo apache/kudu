@@ -37,7 +37,7 @@ function install_python_packages() {
   if [[ "$PYTHON_MAJOR" == "2" && "$PYTHON_MINOR" == "7" ]]; then
     # The standard get-pip.py URL no longer supports Python 2.7,
     # so we need to use the version specific one.
-    curl https://bootstrap.pypa.io/2.7/get-pip.py | python
+    curl https://bootstrap.pypa.io/pip/2.7/get-pip.py | python
   else
     # Use a stable version of pip that works with Python 2 and 3.
     curl https://bootstrap.pypa.io/get-pip.py | python - "pip < 20.3.4"
