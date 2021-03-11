@@ -485,7 +485,7 @@ Status Master::GetMasterHostPorts(vector<HostPort>* hostports, MasterType type) 
 
   hostports->clear();
   consensus::RaftConfigPB config = consensus->CommittedConfig();
-  for (const auto& peer : *config.mutable_peers()) {
+  for (const auto& peer : config.peers()) {
     if (type == MasterType::ALL || get_raft_member_type(type) == peer.member_type()) {
       // In non-distributed master configurations, we may not store our own
       // last known address in the Raft config. So, we'll fill it in from
@@ -510,6 +510,24 @@ Status Master::AddMaster(const HostPort& hp, rpc::RpcContext* rpc) {
   RETURN_NOT_OK(GetMasterHostPorts(&masters, MasterType::ALL));
   if (std::find(masters.begin(), masters.end(), hp) != masters.end()) {
     return Status::AlreadyPresent("Master already present");
+  }
+
+  // If a new master is being added to a single master configuration, check that
+  // the current leader master has the 'last_known_addr' populated. Otherwise
+  // Raft will return an error which isn't very actionable.
+  if (masters.size() == 1) {
+    auto consensus = catalog_manager_->master_consensus();
+    if (!consensus) {
+      return Status::IllegalState("consensus not running");
+    }
+    const auto& config = consensus->CommittedConfig();
+    DCHECK_EQ(1, config.peers_size());
+    if (!config.peers(0).has_last_known_addr()) {
+      return Status::IllegalState("'last_known_addr' field in single master Raft configuration not "
+                                  "set. Please restart master with --master_addresses flag set "
+                                  "to the single master which will populate the 'last_known_addr' "
+                                  "field.");
+    }
   }
 
   // Check whether the master to be added is reachable and fetch its uuid.

@@ -1127,7 +1127,8 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterWithNoLastKnownAddr) {
   string err;
   Status actual = AddMasterToClusterUsingCLITool(reserved_hp_, &err);
   ASSERT_TRUE(actual.IsRuntimeError()) << actual.ToString();
-  ASSERT_STR_MATCHES(err, "Invalid config to set as pending: Peer:.* has no address");
+  ASSERT_STR_MATCHES(err, "'last_known_addr' field in single master Raft configuration not set. "
+                          "Please restart master with --master_addresses flag");
 
   // Verify no change in number of masters.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
