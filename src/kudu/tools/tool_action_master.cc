@@ -553,7 +553,7 @@ unique_ptr<Mode> BuildMasterMode() {
             string("Comma-separated list of master info fields to "
                    "include in output.\nPossible values: uuid, cluster_id"
                    "rpc-addresses, http-addresses, version, seqno, "
-                   "start_time and role"))
+                   "start_time, role and member_type"))
         .AddOptionalParameter("format")
         .Build();
     builder.AddAction(std::move(list_masters));

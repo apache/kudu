@@ -3336,11 +3336,14 @@ TEST_F(ToolTest, TestMasterList) {
 
   string out;
   NO_FATALS(RunActionStdoutString(
-        Substitute("master list $0 --columns=uuid,rpc-addresses", master_addr),
+        Substitute("master list $0 --columns=uuid,rpc-addresses,role,member_type", master_addr),
         &out));
 
   ASSERT_STR_CONTAINS(out, master->uuid());
   ASSERT_STR_CONTAINS(out, master->bound_rpc_hostport().ToString());
+  ASSERT_STR_MATCHES(out, "LEADER|FOLLOWER|LEARNER|NON_PARTICIPANT");
+  // Following check will match both VOTER AND NON_VOTER.
+  ASSERT_STR_CONTAINS(out, "VOTER");
 }
 
 // Operate on Kudu tables:
