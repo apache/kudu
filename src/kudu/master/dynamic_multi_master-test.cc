@@ -834,9 +834,7 @@ TEST_P(ParameterizedAddMasterTest, TestAddMasterSysCatalogCopy) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   vector<HostPort> master_hps;
-  NO_FATALS(StartClusterWithSysCatalogGCed(
-      &master_hps,
-      {"--master_consensus_allow_status_msg_for_failed_peer"}));
+  NO_FATALS(StartClusterWithSysCatalogGCed(&master_hps));
 
   ASSERT_OK(CreateTable(cluster_.get(), kTableName));
   // Bring up the new master and add to the cluster.
@@ -1064,11 +1062,10 @@ TEST_P(ParameterizedRecoverMasterTest, TestRecoverDeadMasterSysCatalogCopy) {
   vector<HostPort> master_hps;
   NO_FATALS(StartClusterWithSysCatalogGCed(
       &master_hps,
-      {"--master_consensus_allow_status_msg_for_failed_peer",
-       // Keeping RPC timeouts short to quickly detect downed servers.
-       // This will put the health status into an UNKNOWN state until the point
-       // where they are considered FAILED.
-       "--consensus_rpc_timeout_ms=2000",
+      // Keeping RPC timeouts short to quickly detect downed servers.
+      // This will put the health status into an UNKNOWN state until the point
+      // where they are considered FAILED.
+      {"--consensus_rpc_timeout_ms=2000",
        "--follower_unavailable_considered_failed_sec=4"}));
 
   // Verify that existing masters are running as VOTERs.

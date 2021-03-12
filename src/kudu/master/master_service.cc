@@ -98,7 +98,8 @@ TAG_FLAG(master_support_authz_tokens, hidden);
 DEFINE_bool(master_support_change_config, false,
             "Whether the master supports adding/removing master servers dynamically.");
 TAG_FLAG(master_support_change_config, hidden);
-TAG_FLAG(master_support_change_config, unsafe);
+TAG_FLAG(master_support_change_config, advanced);
+TAG_FLAG(master_support_change_config, runtime);
 
 DEFINE_bool(master_support_ignore_operations, true,
             "Whether the cluster supports support ignore operations.");
