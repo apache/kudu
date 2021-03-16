@@ -193,8 +193,8 @@ Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
     const string remote_str = s.ok() ? remote.ToString() : "unknown";
     string kErrString = Substitute("failed to read from TLS socket (remote: $0)",
                                    remote_str);
-
     if (bytes_read == 0 && SSL_get_shutdown(ssl_.get()) == SSL_RECEIVED_SHUTDOWN) {
+      kErrString += GetOpenSSLErrors();
       return Status::NetworkError(kErrString, ErrnoToString(ESHUTDOWN), ESHUTDOWN);
     }
     auto error_code = SSL_get_error(ssl_.get(), bytes_read);
