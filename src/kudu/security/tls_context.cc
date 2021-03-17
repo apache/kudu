@@ -531,33 +531,21 @@ Status TlsContext::LoadCertificateAuthority(const string& certificate_path) {
   return AddTrustedCertificate(c);
 }
 
-Status TlsContext::InitiateHandshake(TlsHandshakeType handshake_type,
-                                     TlsHandshake* handshake) const {
+Status TlsContext::InitiateHandshake(TlsHandshake* handshake) const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  DCHECK(handshake);
   CHECK(ctx_);
-  CHECK(!handshake->ssl_);
+  c_unique_ptr<SSL> ssl;
   {
+    // This lock is to protect against concurrent change of certificates
+    // while calling SSL_new() here.
     shared_lock<RWMutex> lock(lock_);
-    handshake->adopt_ssl(ssl_make_unique(SSL_new(ctx_.get())));
+    ssl = ssl_make_unique(SSL_new(ctx_.get()));
   }
-  if (!handshake->ssl_) {
+  if (!ssl) {
     return Status::RuntimeError("failed to create SSL handle", GetOpenSSLErrors());
   }
-
-  SSL_set_bio(handshake->ssl(),
-              BIO_new(BIO_s_mem()),
-              BIO_new(BIO_s_mem()));
-
-  switch (handshake_type) {
-    case TlsHandshakeType::SERVER:
-      SSL_set_accept_state(handshake->ssl());
-      break;
-    case TlsHandshakeType::CLIENT:
-      SSL_set_connect_state(handshake->ssl());
-      break;
-  }
-
-  return Status::OK();
+  return handshake->Init(std::move(ssl));
 }
 
 } // namespace security

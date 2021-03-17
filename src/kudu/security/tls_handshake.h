@@ -20,7 +20,6 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <utility>
 
 #include <glog/logging.h>
 
@@ -65,12 +64,15 @@ enum class TlsVerificationMode {
 // TlsHandshake manages an ongoing TLS handshake between a client and server.
 //
 // TlsHandshake instances are default constructed, but must be initialized
-// before use using TlsContext::InitiateHandshake.
+// before using: call the Init() method to initialize an instance.
 class TlsHandshake {
  public:
-
-   TlsHandshake() = default;
+   explicit TlsHandshake(TlsHandshakeType type);
    ~TlsHandshake() = default;
+
+   // Initialize the instance for the specified type of handshake
+   // using the given SSL handle.
+   Status Init(c_unique_ptr<SSL> s) WARN_UNUSED_RESULT;
 
   // Set the verification mode for this handshake. The default verification mode
   // is VERIFY_REMOTE_CERT_AND_HOST.
@@ -136,20 +138,8 @@ class TlsHandshake {
   std::string GetCipherDescription() const;
 
  private:
-  friend class TlsContext;
-
-  bool has_started_ = false;
-  TlsVerificationMode verification_mode_ = TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST;
-
   // Set the verification mode on the underlying SSL object.
   void SetSSLVerify();
-
-  // Set the SSL to use during the handshake. Called once by
-  // TlsContext::InitiateHandshake before starting the handshake processes.
-  void adopt_ssl(c_unique_ptr<SSL> ssl) {
-    CHECK(!ssl_);
-    ssl_ = std::move(ssl);
-  }
 
   SSL* ssl() {
     return ssl_.get();
@@ -161,8 +151,14 @@ class TlsHandshake {
   // Verifies that the handshake is valid for the provided socket.
   Status Verify(const Socket& socket) const WARN_UNUSED_RESULT;
 
+  // The type of TLS handshake this wrapper represents: client or server.
+  const TlsHandshakeType type_;
+
   // Owned SSL handle.
   c_unique_ptr<SSL> ssl_;
+
+  bool has_started_ = false;
+  TlsVerificationMode verification_mode_ = TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST;
 
   Cert local_cert_;
   Cert remote_cert_;

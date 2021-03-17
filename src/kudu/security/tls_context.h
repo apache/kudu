@@ -26,19 +26,17 @@
 #include <boost/optional/optional.hpp>
 
 #include "kudu/gutil/port.h"
+#include "kudu/security/cert.h" // IWYU pragma: keep
 #include "kudu/security/openssl_util.h"
-#include "kudu/security/tls_handshake.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
-// IWYU pragma: no_include "kudu/security/cert.h"
 
 namespace kudu {
 namespace security {
 
-class Cert;           // IWYU pragma: keep
-class CertSignRequest;// IWYU pragma: keep
 class PrivateKey;
+class TlsHandshake;
 
 // TlsContext wraps data required by the OpenSSL library for creating and
 // accepting TLS protected channels. A single TlsContext instance should be used
@@ -162,8 +160,7 @@ class TlsContext {
   Status LoadCertificateAuthority(const std::string& certificate_path) WARN_UNUSED_RESULT;
 
   // Initiates a new TlsHandshake instance.
-  Status InitiateHandshake(TlsHandshakeType handshake_type,
-                           TlsHandshake* handshake) const WARN_UNUSED_RESULT;
+  Status InitiateHandshake(TlsHandshake* handshake) const WARN_UNUSED_RESULT;
 
   // Return the number of certs that have been marked as trusted.
   // Used by tests.

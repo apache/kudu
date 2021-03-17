@@ -126,6 +126,7 @@ ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
     : socket_(std::move(socket)),
       helper_(SaslHelper::CLIENT),
       tls_context_(tls_context),
+      tls_handshake_(security::TlsHandshakeType::CLIENT),
       encryption_(encryption),
       tls_negotiated_(false),
       authn_token_(std::move(authn_token)),
@@ -191,8 +192,7 @@ Status ClientNegotiation::Negotiate(unique_ptr<ErrorStatusPB>* rpc_error) {
   // TODO(KUDU-1921): allow the client to require TLS.
   if (encryption_ != RpcEncryption::DISABLED &&
       ContainsKey(server_features_, TLS)) {
-    RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::CLIENT,
-                                                  &tls_handshake_));
+    RETURN_NOT_OK(tls_context_->InitiateHandshake(&tls_handshake_));
 
     if (negotiated_authn_ == AuthenticationType::SASL) {
       // When using SASL authentication, verifying the server's certificate is

@@ -40,6 +40,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::security::ca::CertSigner;
 using std::string;
 using std::vector;
 
@@ -47,8 +48,6 @@ DECLARE_int32(ipki_server_key_size);
 
 namespace kudu {
 namespace security {
-
-using ca::CertSigner;
 
 struct Case {
   PkiConfig client_pki;
@@ -91,9 +90,10 @@ class TestTlsHandshakeBase : public KuduTest {
   // verification modes are set to 'client_verify' and 'server_verify' respectively.
   Status RunHandshake(TlsVerificationMode client_verify,
                       TlsVerificationMode server_verify) {
-    TlsHandshake client, server;
-    RETURN_NOT_OK(client_tls_.InitiateHandshake(TlsHandshakeType::CLIENT, &client));
-    RETURN_NOT_OK(server_tls_.InitiateHandshake(TlsHandshakeType::SERVER, &server));
+    TlsHandshake client(TlsHandshakeType::CLIENT);
+    RETURN_NOT_OK(client_tls_.InitiateHandshake(&client));
+    TlsHandshake server(TlsHandshakeType::SERVER);
+    RETURN_NOT_OK(server_tls_.InitiateHandshake(&server));
 
     client.set_verification_mode(client_verify);
     server.set_verification_mode(server_verify);
@@ -186,10 +186,10 @@ TEST_F(TestTlsHandshake, TestHandshakeSequence) {
   ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &client_tls_));
   ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &server_tls_));
 
-  TlsHandshake server;
-  TlsHandshake client;
-  ASSERT_OK(client_tls_.InitiateHandshake(TlsHandshakeType::SERVER, &server));
-  ASSERT_OK(server_tls_.InitiateHandshake(TlsHandshakeType::CLIENT, &client));
+  TlsHandshake server(TlsHandshakeType::SERVER);
+  ASSERT_OK(client_tls_.InitiateHandshake(&server));
+  TlsHandshake client(TlsHandshakeType::CLIENT);
+  ASSERT_OK(server_tls_.InitiateHandshake(&client));
 
   string buf1;
   string buf2;

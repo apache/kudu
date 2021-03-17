@@ -160,6 +160,7 @@ ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
     : socket_(std::move(socket)),
       helper_(SaslHelper::SERVER),
       tls_context_(tls_context),
+      tls_handshake_(security::TlsHandshakeType::SERVER),
       encryption_(encryption),
       tls_negotiated_(false),
       token_verifier_(token_verifier),
@@ -223,8 +224,7 @@ Status ServerNegotiation::Negotiate() {
   if (encryption_ != RpcEncryption::DISABLED &&
       tls_context_->has_cert() &&
       ContainsKey(client_features_, TLS)) {
-    RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::SERVER,
-                                                  &tls_handshake_));
+    RETURN_NOT_OK(tls_context_->InitiateHandshake(&tls_handshake_));
 
     if (negotiated_authn_ != AuthenticationType::CERTIFICATE) {
       // The server does not need to verify the client's certificate unless it's

@@ -23,10 +23,12 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_socket.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
@@ -79,22 +81,60 @@ void TlsHandshake::SetSSLVerify() {
   SSL_set_verify(ssl_.get(), ssl_mode, /* callback = */nullptr);
 }
 
+TlsHandshake::TlsHandshake(TlsHandshakeType type)
+    : type_(type) {
+}
+
+Status TlsHandshake::Init(c_unique_ptr<SSL> s) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  DCHECK(s);
+
+  if (ssl_) {
+    return Status::IllegalState("TlsHandshake is already initialized");
+  }
+
+  auto rbio = ssl_make_unique(BIO_new(BIO_s_mem()));
+  if (!rbio) {
+    return Status::RuntimeError(
+        "failed to create memory-based read BIO", GetOpenSSLErrors());
+  }
+  auto wbio = ssl_make_unique(BIO_new(BIO_s_mem()));
+  if (!wbio) {
+    return Status::RuntimeError(
+        "failed to create memory-based write BIO", GetOpenSSLErrors());
+  }
+  ssl_ = std::move(s);
+  auto* ssl = ssl_.get();
+  SSL_set_bio(ssl, rbio.release(), wbio.release());
+
+  switch (type_) {
+    case TlsHandshakeType::SERVER:
+      SSL_set_accept_state(ssl);
+      break;
+    case TlsHandshakeType::CLIENT:
+      SSL_set_connect_state(ssl);
+      break;
+  }
+  return Status::OK();
+}
+
 Status TlsHandshake::Continue(const string& recv, string* send) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   if (!has_started_) {
     SetSSLVerify();
     has_started_ = true;
   }
-  CHECK(ssl_);
+  DCHECK(ssl_);
+  auto* ssl = ssl_.get();
 
-  BIO* rbio = SSL_get_rbio(ssl_.get());
+  BIO* rbio = SSL_get_rbio(ssl);
   int n = BIO_write(rbio, recv.data(), recv.size());
   DCHECK(n == recv.size() || (n == -1 && recv.empty()));
   DCHECK_EQ(BIO_ctrl_pending(rbio), recv.size());
 
-  int rc = SSL_do_handshake(ssl_.get());
+  int rc = SSL_do_handshake(ssl);
   if (rc != 1) {
-    int ssl_err = SSL_get_error(ssl_.get(), rc);
+    int ssl_err = SSL_get_error(ssl, rc);
     // WANT_READ and WANT_WRITE indicate that the handshake is not yet complete.
     if (ssl_err != SSL_ERROR_WANT_READ && ssl_err != SSL_ERROR_WANT_WRITE) {
       return Status::RuntimeError("TLS Handshake error", GetSSLErrorDescription(ssl_err));

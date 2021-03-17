@@ -114,8 +114,8 @@ void TlsSocketTest::ConnectClient(const Sockaddr& addr, unique_ptr<Socket>* sock
   ASSERT_OK(client_sock->Init(addr.family(), 0));
   ASSERT_OK(client_sock->Connect(addr));
 
-  TlsHandshake client;
-  ASSERT_OK(client_tls_.InitiateHandshake(TlsHandshakeType::CLIENT, &client));
+  TlsHandshake client(TlsHandshakeType::CLIENT);
+  ASSERT_OK(client_tls_.InitiateHandshake(&client));
   ASSERT_OK(DoNegotiationSide(client_sock.get(), &client, "client"));
   ASSERT_OK(client.Finish(&client_sock));
   *sock = std::move(client_sock);
@@ -146,8 +146,8 @@ class EchoServer {
         Sockaddr remote;
         CHECK_OK(listener_.Accept(sock.get(), &remote, /*flags=*/0));
 
-        TlsHandshake server;
-        CHECK_OK(server_tls_.InitiateHandshake(TlsHandshakeType::SERVER, &server));
+        TlsHandshake server(TlsHandshakeType::SERVER);
+        CHECK_OK(server_tls_.InitiateHandshake(&server));
         CHECK_OK(DoNegotiationSide(sock.get(), &server, "server"));
         CHECK_OK(server.Finish(&sock));
 
