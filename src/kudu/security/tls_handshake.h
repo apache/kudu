@@ -22,6 +22,7 @@
 #include <string>
 
 #include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/security/cert.h"
@@ -138,6 +139,8 @@ class TlsHandshake {
   std::string GetCipherDescription() const;
 
  private:
+  FRIEND_TEST(TestTlsHandshake, TestHandshakeSequence);
+
   // Set the verification mode on the underlying SSL object.
   void SetSSLVerify();
 

@@ -247,7 +247,7 @@ Status ClientNegotiation::SendNegotiatePB(const NegotiatePB& msg) {
   DCHECK(msg.has_step()) << "message must have a step";
 
   TRACE("Sending $0 NegotiatePB request", NegotiatePB::NegotiateStep_Name(msg.step()));
-  return SendFramedMessageBlocking(socket(), header, msg, deadline_);
+  return SendFramedMessageBlocking(socket_.get(), header, msg, deadline_);
 }
 
 Status ClientNegotiation::RecvNegotiatePB(NegotiatePB* msg,
@@ -255,7 +255,8 @@ Status ClientNegotiation::RecvNegotiatePB(NegotiatePB* msg,
                                           unique_ptr<ErrorStatusPB>* rpc_error) {
   ResponseHeader header;
   Slice param_buf;
-  RETURN_NOT_OK(ReceiveFramedMessageBlocking(socket(), buffer, &header, &param_buf, deadline_));
+  RETURN_NOT_OK(ReceiveFramedMessageBlocking(
+      socket_.get(), buffer, &header, &param_buf, deadline_));
   RETURN_NOT_OK(helper_.CheckNegotiateCallId(header.call_id()));
 
   if (header.is_error()) {
@@ -263,7 +264,8 @@ Status ClientNegotiation::RecvNegotiatePB(NegotiatePB* msg,
   }
 
   RETURN_NOT_OK(helper_.ParseNegotiatePB(param_buf, msg));
-  TRACE("Received $0 NegotiatePB response", NegotiatePB::NegotiateStep_Name(msg->step()));
+  TRACE("Received $0 NegotiatePB response",
+        NegotiatePB::NegotiateStep_Name(msg->step()));
   return Status::OK();
 }
 
@@ -288,7 +290,7 @@ Status ClientNegotiation::SendConnectionHeader() {
   uint8_t buf[buflen];
   serialization::SerializeConnHeader(buf);
   size_t nsent;
-  return socket()->BlockingWrite(buf, buflen, &nsent, deadline_);
+  return socket_->BlockingWrite(buf, buflen, &nsent, deadline_);
 }
 
 Status ClientNegotiation::InitSaslClient() {
@@ -352,8 +354,7 @@ Status ClientNegotiation::SendNegotiate() {
     return Status::NotAuthorized("client is not configured with an authentication type");
   }
 
-  RETURN_NOT_OK(SendNegotiatePB(msg));
-  return Status::OK();
+  return SendNegotiatePB(msg);
 }
 
 Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
@@ -434,7 +435,6 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
   // TODO(KUDU-1921): allow the client to require authentication.
   if (ContainsKey(client_mechs, SaslMechanism::GSSAPI) &&
       ContainsKey(server_mechs, SaslMechanism::GSSAPI)) {
-
     // Check that the client has local Kerberos credentials, and if not fall
     // back to an alternate mechanism.
     Status s = CheckGSSAPI();
@@ -730,7 +730,7 @@ Status ClientNegotiation::SendConnectionContext() {
     *conn_context.mutable_encoded_nonce() = ciphertext.ToString();
   }
 
-  return SendFramedMessageBlocking(socket(), header, conn_context, deadline_);
+  return SendFramedMessageBlocking(socket_.get(), header, conn_context, deadline_);
 }
 
 int ClientNegotiation::GetOptionCb(const char* plugin_name, const char* option,

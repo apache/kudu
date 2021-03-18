@@ -17,6 +17,8 @@
 
 #include "kudu/security/tls_handshake.h"
 
+#include <openssl/ssl.h>
+
 #include <atomic>
 #include <iostream>
 #include <string>
@@ -31,6 +33,7 @@
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/security-test-util.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/util/monotime.h"
@@ -127,6 +130,67 @@ class TestTlsHandshakeBase : public KuduTest {
     return Status::OK();
   }
 
+  // Read data through the specified SSL handle using OpenSSL API.
+  static void ReadAndCompare(SSL* ssl, const string& expected_data) {
+    ASSERT_GT(expected_data.size(), 0);
+    string result;
+    string buf;
+    buf.resize(expected_data.size());
+    int yet_to_read = expected_data.size();
+    while (yet_to_read > 0) {
+      auto bytes_read = SSL_read(ssl, buf.data(), yet_to_read);
+      if (bytes_read <= 0) {
+        auto error_code = SSL_get_error(ssl, bytes_read);
+        EXPECT_EQ(SSL_ERROR_WANT_READ, error_code);
+        if (error_code != SSL_ERROR_WANT_READ) {
+          FAIL() << "OpenSSL error: " << GetSSLErrorDescription(error_code);
+        }
+        continue;
+      }
+      yet_to_read -= bytes_read;
+      result += buf.substr(0, bytes_read);
+    }
+    ASSERT_EQ(expected_data, result);
+  }
+
+  // Write data through the specified SSL handle using OpenSSL API.
+  static void Write(SSL* ssl, const string& data) {
+    // TODO(aserbin): handle SSL_ERROR_WANT_WRITE if transferring more data
+    auto bytes_written = SSL_write(ssl, data.data(), data.size());
+    EXPECT_EQ(data.size(), bytes_written);
+    if (bytes_written != data.size()) {
+      auto error_code = SSL_get_error(ssl, bytes_written);
+      FAIL() << "OpenSSL error: " << GetSSLErrorDescription(error_code);
+    }
+  }
+
+  // Transfer data between the source and the destination SSL handles.
+  //
+  // Since the TlsHandshake class uses memory BIO for running the TLS handshake,
+  // data between the client and the server TlsHandshake objects is transferred
+  // using the BIO read/write API on the encrypted side of the TLS engine.
+  // This diagram illustrates the approach used by the data transfer method
+  // below:
+  //                         +-----+
+  // +--> BIO_write(rbio) -->|     |--> SSL_read(ssl)  --> application data IN
+  // |                       | SSL |
+  // +---- BIO_read(wbio) <--|     |<-- SSL_write(ssl) <-- application data OUT
+  //                         +-----+
+  static void Transfer(SSL* src, SSL* dst) {
+    BIO* wbio = SSL_get_wbio(src);
+    int pending_wr = BIO_ctrl_pending(wbio);
+
+    string data;
+    data.resize(pending_wr);
+    auto bytes_read = BIO_read(wbio, &data[0], data.size());
+    ASSERT_EQ(data.size(), bytes_read);
+    ASSERT_EQ(0, BIO_ctrl_pending(wbio));
+
+    BIO* rbio = SSL_get_rbio(dst);
+    auto bytes_written = BIO_write(rbio, &data[0], data.size());
+    ASSERT_EQ(data.size(), bytes_written);
+  }
+
   TlsContext client_tls_;
   TlsContext server_tls_;
 
@@ -213,6 +277,19 @@ TEST_F(TestTlsHandshake, TestHandshakeSequence) {
   // Client receives server Finished
   ASSERT_OK(client.Continue(buf1, &buf2));
   ASSERT_EQ(buf2.size(), 0);
+
+  auto* client_ssl = client.ssl();
+  auto* server_ssl = server.ssl();
+
+  // Make sure it's possible to exchange data between the client and the server
+  // once the TLS handshake is complete.
+  NO_FATALS(Write(client_ssl, "hello"));
+  NO_FATALS(Transfer(client_ssl, server_ssl));
+  NO_FATALS(ReadAndCompare(server_ssl, "hello"));
+
+  NO_FATALS(Write(client_ssl, "bye"));
+  NO_FATALS(Transfer(client_ssl, server_ssl));
+  NO_FATALS(ReadAndCompare(server_ssl, "bye"));
 }
 
 // Tests that the TlsContext can transition from self signed cert to signed

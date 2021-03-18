@@ -78,6 +78,7 @@
 #define TLS1_2_VERSION 0x0303
 #endif
 
+using kudu::security::ca::CertRequestGenerator;
 using strings::Substitute;
 using std::string;
 using std::unique_lock;
@@ -96,8 +97,6 @@ TAG_FLAG(openssl_security_level_override, unsafe);
 
 namespace kudu {
 namespace security {
-
-using ca::CertRequestGenerator;
 
 template<> struct SslTypeTraits<SSL> {
   static constexpr auto kFreeFunc = &SSL_free;
@@ -127,8 +126,8 @@ Status CheckMaxSupportedTlsVersion(int tls_version, const char* tls_version_str)
 } // anonymous namespace
 
 TlsContext::TlsContext()
-    : tls_ciphers_(kudu::security::SecurityDefaults::kDefaultTlsCiphers),
-      tls_min_protocol_(kudu::security::SecurityDefaults::kDefaultTlsMinVersion),
+    : tls_ciphers_(SecurityDefaults::kDefaultTlsCiphers),
+      tls_min_protocol_(SecurityDefaults::kDefaultTlsMinVersion),
       lock_(RWMutex::Priority::PREFER_READING),
       trusted_cert_count_(0),
       has_cert_(false),
