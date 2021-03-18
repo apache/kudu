@@ -182,6 +182,22 @@ Status TlsContext::Init() {
                                    tls_min_protocol_);
   }
 
+#if OPENSSL_VERSION_NUMBER > 0x1010007fL
+  // KUDU-1926: disable TLS/SSL renegotiation.
+  // See https://www.openssl.org/docs/man1.1.0/man3/SSL_set_options.html for
+  // details. SSL_OP_NO_RENEGOTIATION option was back-ported from 1.1.1-dev to
+  // 1.1.0h, so this is a best-effort approach if the binary compiled with
+  // newer as per information in the CHANGES file for
+  // 'Changes between 1.1.0g and 1.1.0h [27 Mar 2018]':
+  //     Note that if an application built against 1.1.0h headers (or above) is
+  //     run using an older version of 1.1.0 (prior to 1.1.0h) then the option
+  //     will be accepted but nothing will happen, i.e. renegotiation will
+  //     not be prevented.
+  // The case of OpenSSL 1.0.2 and prior is handled by the InitiateHandshake()
+  // method.
+  options |= SSL_OP_NO_RENEGOTIATION;
+#endif
+
   // We don't currently support TLS 1.3 because the one-and-a-half-RTT negotiation
   // confuses our RPC negotiation protocol. See KUDU-2871.
   options |= SSL_OP_NO_TLSv1_3;
@@ -239,8 +255,6 @@ Status TlsContext::Init() {
 #endif
 #endif
 
-  // TODO(KUDU-1926): is it possible to disable client-side renegotiation? it seems there
-  // have been various CVEs related to this feature that we don't need.
   return Status::OK();
 }
 
@@ -553,6 +567,15 @@ Status TlsContext::InitiateHandshake(TlsHandshake* handshake) const {
   if (!ssl) {
     return Status::RuntimeError("failed to create SSL handle", GetOpenSSLErrors());
   }
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  // KUDU-1926: disable TLS/SSL renegotiation. In version 1.0.2 and prior it's
+  // possible to use the undocumented SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS flag.
+  // TlsContext::Init() takes care of that for OpenSSL version 1.1.0h and newer.
+  // For more context, see a note on the SSL_OP_NO_RENEGOTIATION option in the
+  // $OPENSSL_ROOT/CHANGES and https://github.com/openssl/openssl/issues/4739.
+  ssl->s3->flags |= SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS;
+#endif
   return handshake->Init(std::move(ssl));
 }
 
