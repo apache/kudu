@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.kudu.mapreduce.tools;
+package org.apache.kudu.spark.tools;
 
 import java.math.BigInteger;
 import java.util.Collections;
@@ -119,7 +119,7 @@ public class BigLinkedListCommon {
       BigInteger min = BigInteger.valueOf(Long.MIN_VALUE);
       BigInteger max = BigInteger.valueOf(Long.MAX_VALUE);
       BigInteger step = max.multiply(BigInteger.valueOf(2))
-                           .divide(BigInteger.valueOf(rangePartitions));
+          .divide(BigInteger.valueOf(rangePartitions));
 
       PartialRow splitRow = schema.newPartialRow();
       for (int i = 1; i < rangePartitions; i++) {

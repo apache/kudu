@@ -18,8 +18,8 @@
 package org.apache.kudu.spark.tools
 
 import org.apache.kudu.client.SessionConfiguration.FlushMode
-import org.apache.kudu.mapreduce.tools.BigLinkedListCommon._
 import org.apache.kudu.spark.kudu.KuduTestSuite
+import org.apache.kudu.spark.tools.BigLinkedListCommon._
 import org.junit.Assert._
 import org.junit.Test
 

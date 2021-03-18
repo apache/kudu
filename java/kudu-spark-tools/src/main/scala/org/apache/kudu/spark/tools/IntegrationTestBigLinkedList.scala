@@ -24,9 +24,9 @@ import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client.KuduClient
 import org.apache.kudu.client.KuduSession
 import org.apache.kudu.client.KuduTable
-import org.apache.kudu.mapreduce.tools.BigLinkedListCommon.Xoroshiro128PlusRandom
-import org.apache.kudu.mapreduce.tools.BigLinkedListCommon._
 import org.apache.kudu.spark.kudu.KuduContext
+import org.apache.kudu.spark.tools.BigLinkedListCommon.Xoroshiro128PlusRandom
+import org.apache.kudu.spark.tools.BigLinkedListCommon._
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.SparkConf
 import org.apache.spark.TaskContext
@@ -38,7 +38,8 @@ import org.slf4j.LoggerFactory
 import scala.util.Try
 
 /**
- * Spark port of [[org.apache.kudu.mapreduce.tools.IntegrationTestBigLinkedList]].
+ * Spark port of legacy IntegrationTestBigLinkedList:
+ * https://github.com/apache/kudu/blob/branch-1.14.x/java/kudu-spark-tools/src/main/scala/org/apache/kudu/spark/tools/IntegrationTestBigLinkedList.scala
  *
  * Major differences:
  *   * Currently, only the generator and verifier jobs are implemented.

@@ -26,7 +26,6 @@ ext {
 
 versions += [
     async          : "1.4.1",
-    avro           : "1.10.0",
     checkstyle     : "8.36.1",
     clojure        : "1.10.1",
     clojureToolsCli: "1.0.194",
@@ -52,7 +51,6 @@ versions += [
     murmur         : "1.0.0",
     netty          : "4.1.56.Final",
     osdetector     : "1.6.2",
-    parquet        : "1.11.1",
     protobuf       : "3.14.0",
     ranger         : "2.1.0",
     scala211       : "2.11.12",
@@ -86,7 +84,6 @@ versions["sparkBase"] = versions.spark.substring(0, versions.spark.indexOf("."))
 
 libs += [
     async                : "com.stumbleupon:async:$versions.async",
-    avro                 : "org.apache.avro:avro:$versions.avro",
     clojure              : "org.clojure:clojure:$versions.clojure",
     clojureToolsCli      : "org.clojure:tools.cli:$versions.clojureToolsCli",
     commonsIo            : "commons-io:commons-io:$versions.commonsIo",
@@ -120,7 +117,6 @@ libs += [
     murmur               : "com.sangupta:murmur:$versions.murmur",
     netty                : "io.netty:netty-all:$versions.netty",
     osdetector           : "com.google.gradle:osdetector-gradle-plugin:$versions.osdetector",
-    parquetHadoop        : "org.apache.parquet:parquet-hadoop:$versions.parquet",
     protobufJava         : "com.google.protobuf:protobuf-java:$versions.protobuf",
     protobufJavaUtil     : "com.google.protobuf:protobuf-java-util:$versions.protobuf",
     protoc               : "com.google.protobuf:protoc:$versions.protobuf",
