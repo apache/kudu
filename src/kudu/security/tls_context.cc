@@ -189,6 +189,15 @@ Status TlsContext::Init() {
 
   SSL_CTX_set_options(ctx_.get(), options);
 
+  // Disable the TLS session cache on both the client and server sides. In Kudu
+  // RPC, connections are not re-established based on TLS sessions anyway. Every
+  // connection attempt from a client to a server results in a new connection
+  // negotiation. Disabling the TLS session cache helps to avoid using extra
+  // resources to store TLS session information and running the automatic check
+  // for expired sessions every 255 connections, as mentioned at
+  // https://www.openssl.org/docs/manmaster/man3/SSL_CTX_set_session_cache_mode.html
+  SSL_CTX_set_session_cache_mode(ctx_.get(), SSL_SESS_CACHE_OFF);
+
   OPENSSL_RET_NOT_OK(
       SSL_CTX_set_cipher_list(ctx_.get(), tls_ciphers_.c_str()),
       "failed to set TLS ciphers");
