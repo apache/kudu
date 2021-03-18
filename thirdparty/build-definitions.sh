@@ -114,9 +114,7 @@ build_libcxxabi() {
   pushd $LIBCXXABI_BDIR
   rm -Rf CMakeCache.txt CMakeFiles/
 
-  # libcxxabi requires gcc5 or newer. Since we can't guarantee that universally,
-  # let's always build it with clang.
-  CC="$CLANG" CXX="$CLANGXX" cmake \
+  cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS" \
@@ -146,9 +144,7 @@ build_libcxx() {
   mkdir -p $LIBCXX_BDIR
   pushd $LIBCXX_BDIR
   rm -Rf CMakeCache.txt CMakeFiles/
-  # Since libcxxabi requires gcc5 or newer, we build it with clang. As libcxx is
-  # a dependency, let's also always use clang to build it.
-  CC="$CLANG" CXX="$CLANGXX" cmake \
+  cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
