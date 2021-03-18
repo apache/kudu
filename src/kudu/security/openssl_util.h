@@ -164,6 +164,9 @@ template<> struct SslTypeTraits<EVP_PKEY> {
 template<> struct SslTypeTraits<SSL_CTX> {
   static constexpr auto kFreeFunc = &SSL_CTX_free;
 };
+template<> struct SslTypeTraits<BIO> {
+  static constexpr auto kFreeFunc = &BIO_free;
+};
 
 template<typename SSL_TYPE, typename Traits = SslTypeTraits<SSL_TYPE>>
 c_unique_ptr<SSL_TYPE> ssl_make_unique(SSL_TYPE* d) {

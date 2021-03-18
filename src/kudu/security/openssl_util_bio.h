@@ -31,9 +31,6 @@
 namespace kudu {
 namespace security {
 
-template<> struct SslTypeTraits<BIO> {
-  static constexpr auto kFreeFunc = &BIO_free;
-};
 
 template<typename TYPE, typename Traits = SslTypeTraits<TYPE>>
 Status ToBIO(BIO* bio, DataFormat format, TYPE* obj) {
