@@ -598,9 +598,19 @@ class DynamicMultiMasterTest : public KuduTest {
       LOG(INFO) << "Pausing and resuming individual masters";
       string table_name = kTableName;
       for (int i = 0; i < expected_num_masters; i++) {
-        ASSERT_OK(migrated_cluster.master(i)->Pause());
-        cluster::ScopedResumeExternalDaemon resume_daemon(migrated_cluster.master(i));
-        NO_FATALS(cv.CheckRowCount(table_name, ClusterVerifier::EXACTLY, 0));
+        auto* master = migrated_cluster.master(i);
+        LOG(INFO) << Substitute("Pausing master $0, $1", master->uuid(),
+                                master->bound_rpc_hostport().ToString());
+        ASSERT_OK(master->Pause());
+        cluster::ScopedResumeExternalDaemon resume_daemon(master);
+
+        // We can run into table not found error in cases where the
+        // previously paused master that's leader of prior term resumes
+        // and the up to date follower doesn't become leader and the resumed
+        // master from previous term isn't up to date. See KUDU-3266 for details.
+        ASSERT_EVENTUALLY([&] {
+          NO_FATALS(cv.CheckRowCount(table_name, ClusterVerifier::EXACTLY, 0));
+        });
 
         // See MasterFailoverTest.TestCreateTableSync to understand why we must
         // check for IsAlreadyPresent as well.
