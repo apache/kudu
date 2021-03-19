@@ -515,13 +515,21 @@ Status ThreadPool::DoSubmit(std::function<void()> f, ThreadPoolToken* token) {
     idle_threads_.pop_front();
   }
   NotifyLoadMeterUnlocked();
+
+  // Update the token's queue length histogram under a lock. Submitting a task
+  // via a pool token and destroying the token might be run concurrently by
+  // differen threads. If updating the metric after releasing the 'lock_', the
+  // destructor for the token might run after 'lock_' is released since the
+  // other thread might already be executing the code of the ThreadPoolToken's
+  // destructor, just waiting to acquire 'lock_' in ThreadPoolToken::Shutdown().
+  if (token->metrics_.queue_length_histogram) {
+    token->metrics_.queue_length_histogram->Increment(length_at_submit);
+  }
+
   guard.Unlock();
 
   if (metrics_.queue_length_histogram) {
     metrics_.queue_length_histogram->Increment(length_at_submit);
-  }
-  if (token->metrics_.queue_length_histogram) {
-    token->metrics_.queue_length_histogram->Increment(length_at_submit);
   }
 
   if (need_a_thread) {
