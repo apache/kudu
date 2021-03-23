@@ -17,6 +17,7 @@
 
 #include "kudu/rpc/negotiation.h"
 
+#include <krb5/krb5.h> // IWYU pragma: keep
 #include <sasl/sasl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -31,7 +32,6 @@
 #include <utility>
 #include <vector>
 
-#include <krb5/krb5.h> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -42,7 +42,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/client_negotiation.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/sasl_common.h"
@@ -93,19 +92,19 @@ DEFINE_bool(is_test_child, false,
 DECLARE_bool(rpc_encrypt_loopback_connections);
 DECLARE_bool(rpc_trace_negotiation);
 
-using std::string;
-using std::thread;
-using std::unique_ptr;
-using std::vector;
-
 using kudu::security::Cert;
 using kudu::security::PkiConfig;
 using kudu::security::PrivateKey;
+using kudu::security::RpcEncryption;
 using kudu::security::SignedTokenPB;
 using kudu::security::TlsContext;
 using kudu::security::TokenSigner;
 using kudu::security::TokenSigningPrivateKey;
 using kudu::security::TokenVerifier;
+using std::string;
+using std::thread;
+using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace rpc {

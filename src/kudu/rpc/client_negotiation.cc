@@ -24,7 +24,6 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
-#include <map>
 #include <memory>
 #include <ostream>
 #include <set>
@@ -40,7 +39,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_helper.h"
@@ -64,14 +62,13 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif // #if defined(__APPLE__)
 
-using std::map;
+DECLARE_bool(rpc_encrypt_loopback_connections);
+
+using kudu::security::RpcEncryption;
 using std::set;
 using std::string;
 using std::unique_ptr;
-
 using strings::Substitute;
-
-DECLARE_bool(rpc_encrypt_loopback_connections);
 
 namespace kudu {
 namespace rpc {

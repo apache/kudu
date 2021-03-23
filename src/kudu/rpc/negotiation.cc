@@ -43,7 +43,6 @@
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/security/tls_context.h"
-#include "kudu/security/token.pb.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -72,6 +71,8 @@ DEFINE_bool(rpc_encrypt_loopback_connections, false,
             "an attacker.");
 TAG_FLAG(rpc_encrypt_loopback_connections, advanced);
 
+using kudu::security::RpcAuthentication;
+using kudu::security::RpcEncryption;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;

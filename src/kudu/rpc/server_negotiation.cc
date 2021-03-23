@@ -41,7 +41,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_verification_util.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/security/cert.h"
@@ -68,6 +67,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif // #if defined(__APPLE__)
 
+using kudu::security::RpcEncryption;
 using std::set;
 using std::string;
 using std::unique_ptr;

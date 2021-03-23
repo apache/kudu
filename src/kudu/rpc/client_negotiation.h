@@ -30,7 +30,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/negotiation.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
@@ -66,7 +65,7 @@ class ClientNegotiation {
   ClientNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
                     boost::optional<security::SignedTokenPB> authn_token,
-                    RpcEncryption encryption,
+                    security::RpcEncryption encryption,
                     std::string sasl_proto_name);
 
   // Enable PLAIN authentication.
@@ -228,7 +227,7 @@ class ClientNegotiation {
   // TLS state.
   const security::TlsContext* tls_context_;
   security::TlsHandshake tls_handshake_;
-  const RpcEncryption encryption_;
+  const security::RpcEncryption encryption_;
   bool tls_negotiated_;
 
   // TSK state.

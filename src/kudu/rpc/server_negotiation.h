@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <sasl/sasl.h>
+
 #include <memory>
 #include <set>
 #include <string>
@@ -25,10 +27,8 @@
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
-#include <sasl/sasl.h>
 
 #include "kudu/gutil/port.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/negotiation.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -65,7 +65,7 @@ class ServerNegotiation {
   ServerNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
                     const security::TokenVerifier* token_verifier,
-                    RpcEncryption encryption,
+                    security::RpcEncryption encryption,
                     std::string sasl_proto_name);
 
   // Enable PLAIN authentication.
@@ -227,7 +227,7 @@ class ServerNegotiation {
   // TLS state.
   const security::TlsContext* tls_context_;
   security::TlsHandshake tls_handshake_;
-  const RpcEncryption encryption_;
+  const security::RpcEncryption encryption_;
   bool tls_negotiated_;
 
   // TSK state.
