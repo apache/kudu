@@ -56,6 +56,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/stopwatch.h"
 
 using kudu::consensus::RaftPeerPB;
 using kudu::master::ANY_REPLICA;
@@ -284,8 +285,9 @@ void RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
   std::lock_guard<simple_spinlock> l(lock_);
   VLOG(2) << "Tablet " << tablet_id_ << ": Current remote replicas in meta cache: "
           << ReplicasAsStringUnlocked();
-  KLOG_EVERY_N_SECS(WARNING, 1) << "Tablet " << tablet_id_ << ": Replica " << ts->ToString()
-               << " has failed: " << status.ToString();
+  KLOG_EVERY_N_SECS(WARNING, 1) << Substitute(
+      "tablet $0: replica $1 has failed: $2",
+                                     tablet_id_, ts->ToString(), status.ToString());
   for (RemoteReplica& rep : replicas_) {
     if (rep.ts == ts) {
       rep.failed = true;
@@ -965,6 +967,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
 Status MetaCache::ProcessGetTabletLocationsResponse(const string& tablet_id,
                                                     const GetTabletLocationsResponsePB& resp,
                                                     MetaCacheEntry* cache_entry) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "processing tablet locations response");
   MonoTime expiration_time = MonoTime::Now() +
       MonoDelta::FromMilliseconds(FLAGS_client_tablet_locations_by_id_ttl_ms);
   const auto& tablet_locations = resp.tablet_locations();
@@ -1020,6 +1023,7 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
                                                    const GetTableLocationsResponsePB& resp,
                                                    MetaCacheEntry* cache_entry,
                                                    int max_returned_locations) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "processing table locations response");
   MonoTime expiration_time = MonoTime::Now() +
       MonoDelta::FromMilliseconds(resp.ttl_millis());
 
@@ -1177,6 +1181,7 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
 bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
                                          const string& partition_key,
                                          MetaCacheEntry* entry) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "slow lookup of entry by key");
   shared_lock<rw_spinlock> l(lock_.get_lock());
   const TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
@@ -1229,6 +1234,7 @@ Status MetaCache::DoFastPathLookup(const KuduTable* table,
 
 bool MetaCache::LookupEntryByIdFastPath(const string& tablet_id,
                                         MetaCacheEntry* entry) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "slow lookup of entry by ID");
   shared_lock<rw_spinlock> l(lock_.get_lock());
   const auto* cache_entry = FindOrNull(entry_by_tablet_id_, tablet_id);
   if (PREDICT_FALSE(!cache_entry)) {
@@ -1328,11 +1334,12 @@ void MetaCache::LookupTabletById(KuduClient* client,
 
 void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
                              const Status& status) {
-  LOG(INFO) << "Marking tablet server " << ts->ToString() << " as failed.";
-  Status ts_status = status.CloneAndPrepend("TS failed");
+  LOG(INFO) << Substitute("marking tablet server $0 as failed", ts->ToString());
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "marking tablet server as failed");
+  const auto ts_status = status.CloneAndPrepend("TS failed");
 
   shared_lock<rw_spinlock> l(lock_.get_lock());
-  // TODO: replace with a ts->tablet multimap for faster lookup?
+  // TODO(adar): replace with a ts->tablet multimap for faster lookup?
   for (const auto& tablet : tablets_by_id_) {
     // We just loop on all tablets; if a tablet does not have a replica on this
     // TS, MarkReplicaFailed() returns false and we ignore the return value.
