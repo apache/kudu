@@ -679,7 +679,7 @@ TEST_F(TxnCommitITest, TestCommitAfterParticipantAbort) {
   Status completion_status;
   bool is_complete;
   ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
-  ASSERT_TRUE(completion_status.IsIncomplete()) << completion_status.ToString();
+  ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
 }
 
 // Try concurrently beginning to commit a bunch of different transactions.

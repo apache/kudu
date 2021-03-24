@@ -659,12 +659,14 @@ TEST_F(TxnWriteOpsITest, WriteOpForNonExistentTxn) {
 
 // Try to write an extra row in the context of a transaction which has already
 // been committed.
-//
-// TODO(aserbin): due to conversion of Status::IllegalState() into
-//                RetriableRpcStatus::REPLICA_NOT_LEADER result code,
-//                these sub-scenarios fail with Status::TimedOut() because
-//                they retry in vain until RPC timeout elapses
-TEST_F(TxnWriteOpsITest, DISABLED_TxnWriteAfterCommit) {
+TEST_F(TxnWriteOpsITest, TxnWriteAfterCommit) {
+  const vector<string> master_flags = {
+    // Enable TxnManager in Kudu masters.
+    // TODO(aserbin): remove this customization once the flag is 'on' by default
+    "--txn_manager_enabled=true",
+  };
+  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+  NO_FATALS(Prepare());
   int idx = 0;
   {
     shared_ptr<KuduTransaction> txn;
@@ -685,10 +687,10 @@ TEST_F(TxnWriteOpsITest, DISABLED_TxnWriteAfterCommit) {
       ASSERT_TRUE(s.IsIOError()) << s.ToString();
       ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
       const auto err_status = GetSingleRowError(session.get());
-      ASSERT_TRUE(err_status.IsInvalidArgument()) << err_status.ToString();
+      ASSERT_TRUE(err_status.IsIllegalState()) << err_status.ToString();
       ASSERT_STR_CONTAINS(err_status.ToString(),
                           "Failed to write batch of 1 ops to tablet");
-      ASSERT_STR_MATCHES(err_status.ToString(), "txn .* is not open");
+      ASSERT_STR_MATCHES(err_status.ToString(), "transaction .* not open");
     }
   }
   // A scenario similar to one above, but restart tablet servers before an
@@ -722,10 +724,10 @@ TEST_F(TxnWriteOpsITest, DISABLED_TxnWriteAfterCommit) {
       ASSERT_TRUE(s.IsIOError()) << s.ToString();
       ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
       const auto err_status = GetSingleRowError(session.get());
-      ASSERT_TRUE(err_status.IsNotFound()) << err_status.ToString();
+      ASSERT_TRUE(err_status.IsIllegalState()) << err_status.ToString();
       ASSERT_STR_CONTAINS(err_status.ToString(),
                           "Failed to write batch of 1 ops to tablet");
-      ASSERT_STR_MATCHES(err_status.ToString(), "txn .* is not open");
+      ASSERT_STR_MATCHES(err_status.ToString(), "transaction .* not open");
     }
   }
 }
@@ -1031,11 +1033,6 @@ TEST_F(TxnOpDispatcherITest, ErrorInParticipantRegistration) {
     // Here a custom client with shorter timeout is used to avoid making
     // too many pointless retries upon receiving Status::IllegalState()
     // from the tablet server.
-    //
-    // TODO(aserbin): stop using the custom client with shorter timeout as soon
-    //                as the issue in client/batcher.cc with the transformation
-    //                of both Status::IllegalState() and Status::Aborted() into
-    //                RetriableRpcStatus::REPLICA_NOT_LEADER result if fixed
     const MonoDelta kCustomTimeout = MonoDelta::FromSeconds(2);
     KuduClientBuilder builder;
     builder.default_admin_operation_timeout(kCustomTimeout);
@@ -1057,7 +1054,7 @@ TEST_F(TxnOpDispatcherITest, ErrorInParticipantRegistration) {
     auto s = InsertRows(txn.get(), 1, &key, &session);
     ASSERT_TRUE(s.IsIOError()) << s.ToString();
     auto row_status = GetSingleRowError(session.get());
-    ASSERT_TRUE(row_status.IsTimedOut()) << row_status.ToString();
+    ASSERT_TRUE(row_status.IsIllegalState()) << row_status.ToString();
     ASSERT_STR_CONTAINS(row_status.ToString(),
                         "Failed to write batch of 1 ops to tablet");
 
@@ -1370,11 +1367,7 @@ TEST_F(TxnOpDispatcherITest, PreliminaryTasksTimeout) {
     } else {
       // This is the case when tablets have been registered as participants.
       // In this case, the transaction should not be able to finalize.
-      //
-      // TODO(aserbin): this should result in IllegalState() after addressing
-      //                the issue with convertion of IllegalState() into
-      //                retriable error status in Kudu client
-      ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+      ASSERT_TRUE(s.IsAborted()) << s.ToString();
     }
 
     // No rows should be persisted.
@@ -1485,13 +1478,7 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantNotYetRegistered
   const auto s = InsertRows(txn.get(), 1, &key, &session);
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
   const auto row_status = GetSingleRowError(session.get());
-  // TODO(aserbin): due to conversion of Status::IllegalState() into
-  //                RetriableRpcStatus::REPLICA_NOT_LEADER result code,
-  //                the write RPC times out after many retries instead of
-  //                bailing out right away. Update the expected error code after
-  //                the issue is fixed.
-  //ASSERT_TRUE(row_status.IsIllegalState());
-  ASSERT_TRUE(row_status.IsTimedOut()) << s.ToString();
+  ASSERT_TRUE(row_status.IsIllegalState()) << s.ToString();
 
   committer.join();
   cleanup.cancel();
@@ -1521,7 +1508,7 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantNotYetRegistered
 //
 // TODO(aserbin): enable the scenario after the follow-up for
 //                https://gerrit.cloudera.org/#/c/17127/ is merged
-TEST_F(TxnOpDispatcherITest, DISABLED_CommitWithWriteOpPendingParticipantRegistered) {
+TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantRegistered) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   constexpr auto kDelayMs = 1000;
@@ -1545,21 +1532,26 @@ TEST_F(TxnOpDispatcherITest, DISABLED_CommitWithWriteOpPendingParticipantRegiste
 
   shared_ptr<KuduSession> session;
   int64_t key = 0;
-  ASSERT_OK(InsertRows(txn.get(), 1, &key, &session));
+  Status s = InsertRows(txn.get(), 1, &key, &session);
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
 
+  // Since we tried to commit without allowing all participants to quiesce ops,
+  // the transaction should automatically fail.
   committer.join();
   cleanup.cancel();
   ASSERT_OK(commit_init_status);
 
   bool is_complete = false;
   Status completion_status;
-  ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
-  ASSERT_TRUE(is_complete);
-  ASSERT_OK(completion_status);
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_TRUE(is_complete);
+    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+  });
 
   size_t num_rows = 0;
   ASSERT_OK(CountRows(table_.get(), &num_rows));
-  ASSERT_EQ(1, num_rows);
+  ASSERT_EQ(0, num_rows);
 
   // Since the commit has been successfully finalized, there should be no
   // TxnOpDispatcher for the transaction.

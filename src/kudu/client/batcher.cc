@@ -506,6 +506,12 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
     return result;
   }
 
+  if (resp_.has_error() &&
+      resp_.error().code() == tserver::TabletServerErrorPB::TXN_ILLEGAL_STATE) {
+    result.result = RetriableRpcStatus::NON_RETRIABLE_ERROR;
+    return result;
+  }
+
   // Alternatively, when we get a status code of IllegalState or Aborted, we
   // assume this means that the replica we attempted to write to is not the
   // current leader (maybe it got partitioned or slow and another node took

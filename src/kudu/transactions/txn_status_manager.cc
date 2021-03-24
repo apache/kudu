@@ -231,24 +231,14 @@ void CommitTasks::BeginCommitAsyncTask(int participant_idx) {
       BeginCommitAsyncTask(participant_idx);
       return;
     }
-    if (PREDICT_FALSE(s.IsNotFound())) {
-      // If the participant has been deleted, treat it as though it's already
-      // been committed, rather than attempting to abort or something. This is
-      // important to ensure retries of the commit tasks reliably result in the
-      // same operations being performed.
-      LOG(INFO) << Substitute("Participant $0 was not found for BEGIN_COMMIT, aborting: $1",
-                              participant_ids_[participant_idx], s.ToString());
+    if (PREDICT_FALSE(!s.ok())) {
+      // We might see errors if the participant was deleted, or because the
+      // participant didn't successfully start the transaction. In any case,
+      // abort the transaction.
+      LOG(INFO) << Substitute("Participant $0 of txn $1 returned error for BEGIN_COMMIT op, "
+                              "aborting: $2", participant_ids_[participant_idx],
+                              txn_id_.ToString(), s.ToString());
       SetNeedsBeginAbort();
-    } else if (PREDICT_FALSE(!s.ok())) {
-      // For any other kind of error, just exit without completing.
-      // TODO(awong): we're presuming that such errors wouldn't benefit from
-      // just retrying.
-      // TODO(awong): we don't expect them, but if we ever somehow find
-      // ourselves with an aborted transaction on the participant, we should
-      // probably abort here.
-      LOG(WARNING) << Substitute("Participant $0 BEGIN_COMMIT op returned $1",
-                                 participant_ids_[participant_idx], s.ToString());
-      stop_task_ = true;
     }
 
     // If this was the last participant op for this task, we have some cleanup

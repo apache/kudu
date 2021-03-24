@@ -44,7 +44,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
-#include "kudu/util/status_callback.h"
 
 namespace boost {
 template <class T>
@@ -59,6 +58,7 @@ class Partition;
 class PartitionSchema;
 class Schema;
 class ThreadPool;
+
 namespace transactions {
 class TxnSystemClient;
 }  // namespace transactions
@@ -250,7 +250,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
       int64_t txn_id,
       const std::string& user,
       MonoTime deadline,
-      StatusCallback cb);
+      tablet::RegisteredTxnCallback cb);
 
  private:
   FRIEND_TEST(LeadershipChangeReportingTest, TestReportStatsDuringLeadershipChange);
@@ -276,7 +276,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
       int64_t txn_id,
       const std::string& user,
       MonoTime deadline,
-      StatusCallback cb);
+      tablet::RegisteredTxnCallback began_txn_cb);
 
   // Returns Status::OK() iff state_ == MANAGER_RUNNING.
   Status CheckRunningUnlocked(TabletServerErrorPB::Code* error_code) const;

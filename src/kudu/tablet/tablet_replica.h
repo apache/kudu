@@ -42,10 +42,10 @@
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
-#include "kudu/util/status_callback.h"
 
 namespace kudu {
 class AlterTableTest;
@@ -89,6 +89,11 @@ class ParticipantOpState;
 class TabletStatusPB;
 class TxnCoordinator;
 class TxnCoordinatorFactory;
+
+// Callback to run once the work to register a participant and start a
+// transaction on the participant has completed (whether successful or not).
+typedef std::function<void(const Status& status, tserver::TabletServerErrorPB::Code code)>
+    RegisteredTxnCallback;
 
 // A replica in a tablet consensus configuration, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -156,7 +161,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // mentioned above.
   Status SubmitTxnWrite(
       std::unique_ptr<WriteOpState> op_state,
-      const std::function<Status(int64_t txn_id, StatusCallback cb)>& scheduler);
+      const std::function<Status(int64_t txn_id, RegisteredTxnCallback cb)>& scheduler);
 
   // Unregister TxnWriteOpDispacher for the specified transaction identifier
   // 'txn_id'. If no pending write requests are accumulated by the dispatcher,
@@ -382,7 +387,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   void DecreaseTxnCoordinatorTaskCounter();
 
   // Submit ParticipantOpPB::BEGIN_TXN operation for the specified transaction.
-  void BeginTxnParticipantOp(int64_t txn_id, StatusCallback cb);
+  void BeginTxnParticipantOp(int64_t txn_id, RegisteredTxnCallback began_txn_cb);
 
  private:
   friend class kudu::AlterTableTest;
@@ -425,7 +430,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
     // invoked to schedule preliminary tasks, if necessary.
     Status Dispatch(std::unique_ptr<WriteOpState> op,
                     const std::function<Status(int64_t txn_id,
-                                               StatusCallback cb)>& scheduler);
+                                               RegisteredTxnCallback cb)>& scheduler);
 
     // Submit all pending operations. Returns OK if all operations have been
     // submitted successfully, or 'inflight_status_' if any of those failed.
@@ -433,7 +438,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
     // Invoke callbacks for every buffered operation with the 'status';
     // the 'status' must be a non-OK one.
-    void Cancel(const Status& status);
+    void Cancel(const Status& status, tserver::TabletServerErrorPB::Code code);
 
     // Mark the dispatcher as not accepting any write operations: this is to
     // eventually unregister the dispatcher for the corresponding transaction
@@ -456,6 +461,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
     // Respond to the given write operations with the specified status.
     static Status RespondWithStatus(
         const Status& status,
+        tserver::TabletServerErrorPB::Code code,
         std::deque<std::unique_ptr<WriteOpState>> ops);
 
     // Pointer to the parent TabletReplica instance which keeps this

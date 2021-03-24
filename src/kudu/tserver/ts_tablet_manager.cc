@@ -1125,7 +1125,7 @@ void TSTabletManager::RegisterAndBeginParticipantTxnTask(
     int64_t txn_id,
     const string& user,
     MonoTime deadline,
-    StatusCallback cb) {
+    tablet::RegisteredTxnCallback began_txn_cb) {
   DCHECK(txn_system_client);
   // TODO(aserbin): add and update metrics to track how long these calls take
   // TODO(aserbin): a future improvement to reduce overall latency is to use
@@ -1149,16 +1149,18 @@ void TSTabletManager::RegisterAndBeginParticipantTxnTask(
   {
     const auto now = MonoTime::Now();
     if (deadline <= now) {
-      return cb(Status::TimedOut(
-          Substitute("time out prior registering tablet $0 as participant (txn ID $1)",
-          replica->tablet_id(), txn_id)));
+      return began_txn_cb(
+          Status::TimedOut(
+              Substitute("time out prior registering tablet $0 as participant (txn ID $1)",
+                         replica->tablet_id(), txn_id)),
+          TabletServerErrorPB::UNKNOWN_ERROR);
     }
     auto s = txn_system_client->RegisterParticipant(
         txn_id, replica->tablet_id(), user, deadline - now);
     VLOG(2) << Substitute("RegisterParticipant() $0 for txn ID $1 returned $2",
                           replica->tablet_id(), txn_id, s.ToString());
     if (PREDICT_FALSE(!s.ok())) {
-      return cb(s);
+      return began_txn_cb(s, TabletServerErrorPB::TXN_ILLEGAL_STATE);
     }
   }
 
@@ -1167,11 +1169,12 @@ void TSTabletManager::RegisterAndBeginParticipantTxnTask(
   MAYBE_INJECT_FIXED_LATENCY(FLAGS_txn_participant_begin_op_inject_latency_ms);
 
   if (deadline <= MonoTime::Now()) {
-    return cb(Status::TimedOut(Substitute(
+    return began_txn_cb(Status::TimedOut(Substitute(
         "time out prior submitting BEGIN_TXN for participant $0 (txn ID $1)",
-        replica->tablet_id(), txn_id)));
+        replica->tablet_id(), txn_id)),
+        TabletServerErrorPB::UNKNOWN_ERROR);
   }
-  return replica->BeginTxnParticipantOp(txn_id, std::move(cb));
+  return replica->BeginTxnParticipantOp(txn_id, std::move(began_txn_cb));
 }
 
 Status TSTabletManager::StartTabletStateTransitionUnlocked(
@@ -1871,7 +1874,7 @@ Status TSTabletManager::SchedulePreliminaryTasksForTxnWrite(
     int64_t txn_id,
     const string& user,
     MonoTime deadline,
-    StatusCallback cb) {
+    tablet::RegisteredTxnCallback cb) {
   // An important pre-condition to running operations below: the availability
   // of the transaction system client.
   transactions::TxnSystemClient* tsc = nullptr;

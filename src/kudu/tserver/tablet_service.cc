@@ -110,7 +110,6 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/util/status_callback.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -1631,9 +1630,9 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     // This functor is to schedule preliminary tasks prior to submitting
     // the write operation via TabletReplica::SubmitWrite().
     const auto scheduler = [this, &username, replica, deadline](
-        int64_t txn_id, StatusCallback cb) {
+        int64_t txn_id, tablet::RegisteredTxnCallback began_txn_cb) {
       return server_->tablet_manager()->SchedulePreliminaryTasksForTxnWrite(
-          std::move(replica), txn_id, username, deadline, std::move(cb));
+          std::move(replica), txn_id, username, deadline, std::move(began_txn_cb));
     };
     s = replica->SubmitTxnWrite(std::move(op_state), scheduler);
     VLOG(2) << Substitute("submitting txn write op: $0", s.ToString());

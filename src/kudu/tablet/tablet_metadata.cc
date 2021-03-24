@@ -822,8 +822,7 @@ void TabletMetadata::AddTxnMetadata(int64_t txn_id, unique_ptr<MinLogIndexAnchor
 void TabletMetadata::BeginCommitTransaction(int64_t txn_id, Timestamp mvcc_op_timestamp,
                                             unique_ptr<MinLogIndexAnchorer> log_anchor) {
   std::lock_guard<LockType> l(data_lock_);
-  auto txn_metadata = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
-  CHECK(txn_metadata);
+  auto txn_metadata = FindOrDie(txn_metadata_by_txn_id_, txn_id);
   // NOTE: we may already have an MVCC op timestamp if we are bootstrapping and
   // the timestamp was persisted already, in which case, we don't need to
   // anchor the WAL to ensure the timestamp's persistence in metadata.
@@ -836,8 +835,7 @@ void TabletMetadata::BeginCommitTransaction(int64_t txn_id, Timestamp mvcc_op_ti
 void TabletMetadata::AddCommitTimestamp(int64_t txn_id, Timestamp commit_timestamp,
                                         unique_ptr<MinLogIndexAnchorer> log_anchor) {
   std::lock_guard<LockType> l(data_lock_);
-  auto txn_metadata = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
-  CHECK(txn_metadata);
+  auto txn_metadata = FindOrDie(txn_metadata_by_txn_id_, txn_id);
   txn_metadata->set_commit_timestamp(commit_timestamp);
   anchors_needing_flush_.emplace_back(std::move(log_anchor));
 }

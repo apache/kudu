@@ -71,7 +71,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
-#include "kudu/util/status_callback.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -538,7 +537,7 @@ Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
 
 Status TabletReplica::SubmitTxnWrite(
     std::unique_ptr<WriteOpState> op_state,
-    const std::function<Status(int64_t txn_id, StatusCallback cb)>& scheduler) {
+    const std::function<Status(int64_t txn_id, RegisteredTxnCallback cb)>& scheduler) {
   DCHECK(op_state);
   DCHECK(op_state->request()->has_txn_id());
 
@@ -576,7 +575,8 @@ Status TabletReplica::UnregisterTxnOpDispatcher(int64_t txn_id,
     auto& dispatcher = it->second;
     unregister_status = dispatcher->MarkUnregistered();
     if (abort_pending_ops) {
-      dispatcher->Cancel(Status::Aborted("operation has been aborted"));
+      dispatcher->Cancel(Status::Aborted("operation has been aborted"),
+                         TabletServerErrorPB::TXN_ILLEGAL_STATE);
       unregister_status = Status::OK();
     }
     if (unregister_status.ok()) {
@@ -1095,7 +1095,7 @@ void TabletReplica::DecreaseTxnCoordinatorTaskCounter() {
 
 class ParticipantBeginTxnCallback : public OpCompletionCallback {
  public:
-  ParticipantBeginTxnCallback(StatusCallback cb,
+  ParticipantBeginTxnCallback(RegisteredTxnCallback cb,
                               unique_ptr<ParticipantRequestPB> req)
       : cb_(std::move(cb)),
         req_(std::move(req)),
@@ -1116,21 +1116,21 @@ class ParticipantBeginTxnCallback : public OpCompletionCallback {
       // a transactional write request arrives to a tablet server which
       // hasn't yet served a write request in the context of the specified
       // transaction.
-      return cb_(Status::OK());
+      return cb_(Status::OK(), TabletServerErrorPB::UNKNOWN_ERROR);
     }
-    return cb_(status_);
+    return cb_(status_, code_);
   }
 
  private:
-  StatusCallback cb_;
+  RegisteredTxnCallback cb_;
   unique_ptr<ParticipantRequestPB> req_;
   const int64_t txn_id_;
 };
 
-void TabletReplica::BeginTxnParticipantOp(int64_t txn_id, StatusCallback cb) {
+void TabletReplica::BeginTxnParticipantOp(int64_t txn_id, RegisteredTxnCallback began_txn_cb) {
   auto s = CheckRunning();
   if (PREDICT_FALSE(!s.ok())) {
-    return cb(s);
+    return began_txn_cb(s, TabletServerErrorPB::UNKNOWN_ERROR);
   }
 
   unique_ptr<ParticipantRequestPB> req(new ParticipantRequestPB);
@@ -1144,7 +1144,7 @@ void TabletReplica::BeginTxnParticipantOp(int64_t txn_id, StatusCallback cb) {
   unique_ptr<ParticipantOpState> op_state(
       new ParticipantOpState(this, tablet()->txn_participant(), req.get()));
   op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
-      new ParticipantBeginTxnCallback(cb, std::move(req))));
+      new ParticipantBeginTxnCallback(began_txn_cb, std::move(req))));
   s = SubmitTxnParticipantOp(std::move(op_state));
   VLOG(3) << Substitute(
       "submitting BEGIN_TXN for participant $0 (txn ID $1): $2",
@@ -1152,7 +1152,7 @@ void TabletReplica::BeginTxnParticipantOp(int64_t txn_id, StatusCallback cb) {
   if (PREDICT_FALSE(!s.ok())) {
     // Now it's time to respond with appropriate error status to the RPCs
     // corresponding to the pending write operations.
-    return cb(s);
+    return began_txn_cb(s, TabletServerErrorPB::UNKNOWN_ERROR);
   }
 }
 
@@ -1174,7 +1174,7 @@ void TabletReplica::MakeUnavailable(const Status& error) {
 
 Status TabletReplica::TxnOpDispatcher::Dispatch(
     std::unique_ptr<WriteOpState> op,
-    const std::function<Status(int64_t txn_id, StatusCallback cb)>& scheduler) {
+    const std::function<Status(int64_t txn_id, RegisteredTxnCallback cb)>& scheduler) {
   const auto txn_id = op->request()->txn_id();
   std::lock_guard<simple_spinlock> guard(lock_);
   if (PREDICT_FALSE(unregistered_)) {
@@ -1204,7 +1204,7 @@ Status TabletReplica::TxnOpDispatcher::Dispatch(
   // tasks. In case of success, the callback is invoked after completion
   // of the preliminary tasks with Status::OK(). In case of any failure down
   // the road, the callback is called with corresponding non-OK status.
-  auto cb = [self = shared_from_this(), txn_id](const Status& s) {
+  auto cb = [self = shared_from_this(), txn_id](const Status& s, TabletServerErrorPB::Code code) {
     if (PREDICT_TRUE(s.ok())) {
       // The all-is-well case: it's time to submit all the write operations
       // accumulated in the queue.
@@ -1218,7 +1218,7 @@ Status TabletReplica::TxnOpDispatcher::Dispatch(
       }
     } else {
       // Something went wrong: cancel all the pending write operations
-      self->Cancel(s);
+      self->Cancel(s, code);
       CHECK_OK(self->replica_->UnregisterTxnOpDispatcher(
           txn_id, false/*abort_pending_ops*/));
     }
@@ -1279,13 +1279,16 @@ Status TabletReplica::TxnOpDispatcher::Submit() {
     std::swap(failed_ops, ops_queue_);
   }
 
-  return RespondWithStatus(failed_status, std::move(failed_ops));
+  return RespondWithStatus(failed_status,
+                           TabletServerErrorPB::UNKNOWN_ERROR,
+                           std::move(failed_ops));
 }
 
-void TabletReplica::TxnOpDispatcher::Cancel(const Status& status) {
+void TabletReplica::TxnOpDispatcher::Cancel(const Status& status,
+                                            TabletServerErrorPB::Code code) {
   CHECK(!status.ok());
-  LOG(WARNING) << Substitute("$0: cancelling pending write operations",
-                             status.ToString());
+  KLOG_EVERY_N_SECS(WARNING, 1) << Substitute("$0: cancelling pending write operations",
+                                              status.ToString());
   decltype(ops_queue_) ops;
   {
     std::lock_guard<simple_spinlock> guard(lock_);
@@ -1293,7 +1296,7 @@ void TabletReplica::TxnOpDispatcher::Cancel(const Status& status) {
     std::swap(ops, ops_queue_);
   }
 
-  RespondWithStatus(status, std::move(ops));
+  RespondWithStatus(status, code, std::move(ops));
 }
 
 Status TabletReplica::TxnOpDispatcher::MarkUnregistered() {
@@ -1329,12 +1332,13 @@ Status TabletReplica::TxnOpDispatcher::EnqueueUnlocked(unique_ptr<WriteOpState> 
 
 Status TabletReplica::TxnOpDispatcher::RespondWithStatus(
     const Status& status,
+    TabletServerErrorPB::Code code,
     deque<unique_ptr<WriteOpState>> ops) {
   // Invoke the callback for every operation in the queue.
   for (auto& op : ops) {
     auto* cb = op->completion_callback();
     DCHECK(cb);
-    cb->set_error(status);
+    cb->set_error(status, code);
     cb->OpCompleted();
   }
   return status;
