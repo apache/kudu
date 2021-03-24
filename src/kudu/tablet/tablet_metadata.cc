@@ -844,7 +844,10 @@ void TabletMetadata::AddCommitTimestamp(int64_t txn_id, Timestamp commit_timesta
 
 void TabletMetadata::AbortTransaction(int64_t txn_id, unique_ptr<MinLogIndexAnchorer> log_anchor) {
   std::lock_guard<LockType> l(data_lock_);
-  auto txn_metadata = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
+  // NOTE: we can't emplace with a raw pointer here; if the lookup succeeds, we
+  // wouldn't use it and we'd have a memory leak, so use scoped_refptr.
+  auto txn_metadata = LookupOrEmplace(&txn_metadata_by_txn_id_, txn_id,
+                                      scoped_refptr<TxnMetadata>(new TxnMetadata));
   CHECK(txn_metadata);
   txn_metadata->set_aborted();
   anchors_needing_flush_.emplace_back(std::move(log_anchor));

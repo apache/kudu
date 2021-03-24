@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -246,26 +247,30 @@ TEST_F(TxnParticipantTest, TestSuccessfulSequences) {
 }
 
 TEST_F(TxnParticipantTest, TestParticipantOpsWhenNotBegun) {
-  const auto check_bad_ops = [&] (const vector<ParticipantOpPB::ParticipantOpType>& ops,
-                                  int64_t txn_id) {
-    for (const auto& type : ops) {
-      ParticipantResponsePB resp;
-      ASSERT_OK(CallParticipantOp(
-          tablet_replica_.get(), txn_id, type, kDummyCommitTimestamp, &resp));
-      SCOPED_TRACE(SecureShortDebugString(resp));
-      ASSERT_TRUE(resp.has_error());
-      ASSERT_TRUE(resp.error().has_status());
-      ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, resp.error().code());
-      ASSERT_EQ(AppStatusPB::ILLEGAL_STATE, resp.error().status().code());
-      ASSERT_FALSE(resp.has_timestamp());
-    }
-  };
-  NO_FATALS(check_bad_ops({
-    ParticipantOpPB::BEGIN_COMMIT,
-    ParticipantOpPB::FINALIZE_COMMIT,
-    ParticipantOpPB::ABORT_TXN,
-  }, 1));
-  ASSERT_TRUE(txn_participant()->GetTxnsForTests().empty());
+  auto txn_id = 0;
+  for (auto type : { ParticipantOpPB::BEGIN_COMMIT,
+                     ParticipantOpPB::FINALIZE_COMMIT }) {
+    ParticipantResponsePB resp;
+    ASSERT_OK(CallParticipantOp(
+        tablet_replica_.get(), txn_id++, type, kDummyCommitTimestamp, &resp));
+    SCOPED_TRACE(SecureShortDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_TRUE(resp.error().has_status());
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, resp.error().code());
+    ASSERT_EQ(AppStatusPB::ILLEGAL_STATE, resp.error().status().code());
+    ASSERT_FALSE(resp.has_timestamp());
+    ASSERT_TRUE(txn_participant()->GetTxnsForTests().empty());
+  }
+  ParticipantResponsePB resp;
+  ASSERT_OK(CallParticipantOp(
+      tablet_replica_.get(), txn_id++, ParticipantOpPB::ABORT_TXN, kDummyCommitTimestamp, &resp));
+  SCOPED_TRACE(SecureShortDebugString(resp));
+  ASSERT_FALSE(resp.has_error());
+  ASSERT_FALSE(resp.error().has_status());
+  ASSERT_TRUE(resp.has_timestamp());
+  ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
+      { 2, kAborted, -1 },
+  }), txn_participant()->GetTxnsForTests());
 }
 
 TEST_F(TxnParticipantTest, TestIllegalTransitions) {
@@ -408,13 +413,11 @@ TEST_F(TxnParticipantTest, TestConcurrentOps) {
   // Regardless of order, we should have been able to begin the transaction.
   ASSERT_OK(status_for_op(ParticipantOpPB::BEGIN_TXN));
 
-  // If we finalized the commit, we should have begun committing, and we must
-  // not have been able to abort.
+  // If we finalized the commit, we must not have been able to abort.
   if (status_for_op(ParticipantOpPB::FINALIZE_COMMIT).ok()) {
     ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
         { kTxnId, kCommitted, kDummyCommitTimestamp },
     }), txn_participant()->GetTxnsForTests());
-    ASSERT_OK(statuses[FindOrDie(kIndexByOps, ParticipantOpPB::BEGIN_COMMIT)]);
     ASSERT_FALSE(statuses[FindOrDie(kIndexByOps, ParticipantOpPB::ABORT_TXN)].ok());
 
   // If we aborted the commit, we could not have finalized the commit.

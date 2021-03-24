@@ -57,8 +57,8 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
   void set_commit_timestamp(Timestamp commit_ts) {
     std::lock_guard<simple_spinlock> l(lock_);
     CHECK(boost::none == commit_timestamp_);
-    CHECK(boost::none != commit_mvcc_op_timestamp_);
     CHECK(!aborted_);
+    CHECK(boost::none != commit_mvcc_op_timestamp_);
     commit_timestamp_ = commit_ts;
   }
   void set_commit_mvcc_op_timestamp(Timestamp op_ts) {

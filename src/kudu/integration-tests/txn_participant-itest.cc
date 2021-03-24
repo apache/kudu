@@ -592,6 +592,27 @@ TEST_F(TxnParticipantITest, TestBeginCommitAfterFinalize) {
   }
 }
 
+TEST_F(TxnParticipantITest, TestProxyErrorWhenNotBegun) {
+  constexpr const int kLeaderIdx = 0;
+  auto txn_id = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
+  const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
+  for (auto type : { ParticipantOpPB::BEGIN_COMMIT,
+                     ParticipantOpPB::FINALIZE_COMMIT }) {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ParticipateInTransactionCheckResp(
+        admin_proxy.get(), tablet_id, txn_id++, type, &code);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_EQ(TabletServerErrorPB::TXN_ILLEGAL_STATE, code);
+  }
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  ASSERT_OK(ParticipateInTransactionCheckResp(
+      admin_proxy.get(), tablet_id, txn_id++, ParticipantOpPB::ABORT_TXN, &code));
+  ASSERT_EQ(TabletServerErrorPB::UNKNOWN_ERROR, code);
+}
+
 TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
@@ -930,6 +951,29 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientAbortSequence) {
       kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas,
       { { kTxnOne, kAborted, -1 }, { kTxnTwo, kAborted, -1 } }));
+}
+
+TEST_F(TxnParticipantITest, TestTxnSystemClientErrorWhenNotBegun) {
+  constexpr const int kLeaderIdx = 0;
+  int txn_id = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  const auto tablet_id = leader_replica->tablet_id();
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  unique_ptr<TxnSystemClient> txn_client;
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+
+  for (auto type : { ParticipantOpPB::BEGIN_COMMIT,
+                     ParticipantOpPB::FINALIZE_COMMIT }) {
+    Status s = txn_client->ParticipateInTransaction(
+        tablet_id, MakeParticipantOp(txn_id++, type), kDefaultTimeout);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    NO_FATALS(CheckReplicasMatchTxns(replicas, {}));
+  }
+
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(txn_id++, ParticipantOpPB::ABORT_TXN), kDefaultTimeout));
+  NO_FATALS(CheckReplicasMatchTxns(replicas, { { 2, kAborted, -1 } }));
 }
 
 TEST_F(TxnParticipantITest, TestTxnSystemClientTimeoutWhenNoMajority) {

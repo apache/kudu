@@ -1220,8 +1220,7 @@ void Tablet::AbortTransaction(Txn* txn,  const OpId& op_id) {
   metadata_->AbortTransaction(txn_id, std::move(anchor));
   {
     std::lock_guard<rw_spinlock> lock(component_lock_);
-    auto txn_rowsets = EraseKeyReturnValuePtr(&uncommitted_rowsets_by_txn_id_, txn_id);
-    CHECK(txn_rowsets);
+    uncommitted_rowsets_by_txn_id_.erase(txn_id);
   }
   txn->AbortTransaction();
 }
