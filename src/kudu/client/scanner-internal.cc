@@ -55,25 +55,25 @@
 #include "kudu/util/hexdump.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/stopwatch.h"
 
 using google::protobuf::FieldDescriptor;
 using google::protobuf::Reflection;
+using kudu::rpc::ComputeExponentialBackoff;
+using kudu::rpc::CredentialsPolicy;
+using kudu::rpc::RpcController;
+using kudu::security::SignedTokenPB;
+using kudu::tserver::NewScanRequestPB;
+using kudu::tserver::RowFormatFlags;
+using kudu::tserver::ScanResponsePB;
+using kudu::tserver::TabletServerFeatures;
 using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
-
-using rpc::ComputeExponentialBackoff;
-using rpc::CredentialsPolicy;
-using rpc::RpcController;
-using security::SignedTokenPB;
-using strings::Substitute;
-using tserver::NewScanRequestPB;
-using tserver::RowFormatFlags;
-using tserver::ScanResponsePB;
-using tserver::TabletServerFeatures;
 
 namespace client {
 
@@ -403,6 +403,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
 Status KuduScanner::Data::OpenTablet(const string& partition_key,
                                      const MonoTime& deadline,
                                      set<string>* blacklist) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 500, "opening tablet");
 
   PrepareRequest(KuduScanner::Data::NEW);
   next_req_.clear_scanner_id();
