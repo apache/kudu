@@ -19,11 +19,10 @@
 
 #include <cstddef>
 #include <string>
-#include <tuple>
 #include <vector>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/common/partition.h"
+#include "kudu/gutil/macros.h"
 
 namespace kudu {
 
@@ -41,6 +40,27 @@ class PartitionPruner {
  public:
 
   PartitionPruner() = default;
+
+  struct RangeBounds {
+    RangeBounds() = default;
+
+    std::string lower;
+    std::string upper;
+  };
+
+  struct PartitionKeyRange {
+    PartitionKeyRange() = default;
+
+    std::string start;
+    std::string end;
+  };
+
+  struct RangeBoundsAndPartitionKeyRanges {
+    RangeBoundsAndPartitionKeyRanges() = default;
+
+    RangeBounds range_bounds;
+    std::vector<PartitionKeyRange> partition_key_ranges;
+  };
 
   // Initializes the partition pruner for a new scan. The scan spec should
   // already be optimized by the ScanSpec::Optimize method.
@@ -61,8 +81,12 @@ class PartitionPruner {
   bool ShouldPrune(const Partition& partition) const;
 
   // Returns the number of partition key ranges remaining in the scan.
-  size_t NumRangesRemainingForTests() const {
-    return partition_key_ranges_.size();
+  size_t NumRangesRemaining() const {
+    size_t num_ranges = 0;
+    for (const auto& range: range_bounds_to_partition_key_ranges_) {
+      num_ranges += range.partition_key_ranges.size();
+    }
+    return num_ranges;
   }
 
   // Returns a text description of this partition pruner suitable for debug
@@ -70,17 +94,25 @@ class PartitionPruner {
   std::string ToString(const Schema& schema, const PartitionSchema& partition_schema) const;
 
  private:
-  // Search all combination of in-list and equality predicates.
-  // Return hash values bitset of these combination.
-  std::vector<bool> PruneHashComponent(
-      const PartitionSchema& partition_schema,
+  // Search all combinations of in-list and equality predicates.
+  // Return hash values bitset of these combinations.
+  static std::vector<bool> PruneHashComponent(
       const PartitionSchema::HashBucketSchema& hash_bucket_schema,
       const Schema& schema,
       const ScanSpec& scan_spec);
 
-  // The reverse sorted set of partition key ranges. Each range has an inclusive
-  // lower and exclusive upper bound.
-  std::vector<std::tuple<std::string, std::string>> partition_key_ranges_;
+  // Given the range bounds and the hash bucket schemas, constructs a set of partition key ranges.
+  static void ConstructPartitionKeyRanges(
+      const Schema& schema,
+      const ScanSpec& scan_spec,
+      const PartitionSchema::HashBucketSchemas& hash_bucket_schemas,
+      const RangeBounds& range_bounds,
+      std::vector<PartitionKeyRange>* partition_key_ranges);
+
+  // A vector of a pair of lower and upper range bounds mapped to a
+  // reverse sorted set of partition key ranges. Each partition key range within the set
+  // has an inclusive lower bound and an exclusive upper bound.
+  std::vector<RangeBoundsAndPartitionKeyRanges> range_bounds_to_partition_key_ranges_;
 
   DISALLOW_COPY_AND_ASSIGN(PartitionPruner);
 };

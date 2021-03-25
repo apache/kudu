@@ -658,6 +658,7 @@ class KUDU_EXPORT KuduPartialRow {
   FRIEND_TEST(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning);
   FRIEND_TEST(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning);
   FRIEND_TEST(PartitionPrunerTest, TestPrimaryKeyRangePruning);
+  FRIEND_TEST(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePruning);
   FRIEND_TEST(RowOperationsTest, ProjectionTestWholeSchemaSpecified);
   FRIEND_TEST(RowOperationsTest, TestProjectUpdates);
   FRIEND_TEST(RowOperationsTest, TestProjectDeletes);
