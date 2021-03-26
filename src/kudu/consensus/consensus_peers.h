@@ -154,14 +154,14 @@ class Peer :
   // Signals there was an error sending the request to the peer.
   void ProcessResponseErrorUnlocked(const Status& status);
 
-  std::string LogPrefixUnlocked() const;
+  const std::string& LogPrefixUnlocked() const;
 
   const std::string& tablet_id() const { return tablet_id_; }
 
   const std::string tablet_id_;
   const std::string leader_uuid_;
-
-  RaftPeerPB peer_pb_;
+  const RaftPeerPB peer_pb_;
+  const std::string log_prefix_;
 
   std::unique_ptr<PeerProxy> proxy_;
 

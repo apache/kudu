@@ -135,6 +135,9 @@ Peer::Peer(RaftPeerPB peer_pb,
     : tablet_id_(std::move(tablet_id)),
       leader_uuid_(std::move(leader_uuid)),
       peer_pb_(std::move(peer_pb)),
+      log_prefix_(Substitute("T $0 P $1 -> Peer $2 ($3:$4): ",
+                  tablet_id_, leader_uuid_, peer_pb_.permanent_uuid(),
+                  peer_pb_.last_known_addr().host(), peer_pb_.last_known_addr().port())),
       proxy_(std::move(proxy)),
       queue_(queue),
       failed_attempts_(0),
@@ -208,7 +211,6 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   // negotiation round.
   if (!has_sent_first_request_) {
     even_if_queue_empty = true;
-    has_sent_first_request_ = true;
   }
 
   // If our last request generated an error, and this is not a normal
@@ -259,10 +261,6 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
     return;
   }
 
-  request_.set_tablet_id(tablet_id_);
-  request_.set_caller_uuid(leader_uuid_);
-  request_.set_dest_uuid(peer_pb_.permanent_uuid());
-
   bool req_has_ops = request_.ops_size() > 0 || (commit_index_after > commit_index_before);
   // If the queue is empty, check if we were told to send a status-only
   // message, if not just return.
@@ -273,6 +271,14 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   if (req_has_ops) {
     // If we're actually sending ops there's no need to heartbeat for a while.
     heartbeater_->Snooze();
+  }
+
+  if (!has_sent_first_request_) {
+    // Set the 'immutable' fields in the request only once upon first request.
+    request_.set_tablet_id(tablet_id_);
+    request_.set_caller_uuid(leader_uuid_);
+    request_.set_dest_uuid(peer_pb_.permanent_uuid());
+    has_sent_first_request_ = true;
   }
 
   MAYBE_FAULT(FLAGS_fault_crash_on_leader_request_fraction);
@@ -390,8 +396,9 @@ void Peer::ProcessResponse() {
     }
   });
   if (PREDICT_FALSE(!s.ok())) {
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to process peer response: " << s.ToString()
-        << ": " << SecureShortDebugString(response_);
+    LOG_WITH_PREFIX_UNLOCKED(WARNING) << Substitute(
+        "unable to process peer response: $0: $1",
+         s.ToString(), SecureShortDebugString(response_));
     request_pending_ = false;
   }
 }
@@ -482,10 +489,8 @@ void Peer::ProcessResponseErrorUnlocked(const Status& status) {
   request_pending_ = false;
 }
 
-string Peer::LogPrefixUnlocked() const {
-  return Substitute("T $0 P $1 -> Peer $2 ($3:$4): ",
-                    tablet_id_, leader_uuid_, peer_pb_.permanent_uuid(),
-                    peer_pb_.last_known_addr().host(), peer_pb_.last_known_addr().port());
+const string& Peer::LogPrefixUnlocked() const {
+  return log_prefix_;
 }
 
 void Peer::Close() {
