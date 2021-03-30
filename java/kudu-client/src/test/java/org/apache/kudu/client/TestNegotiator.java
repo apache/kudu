@@ -72,6 +72,15 @@ public class TestNegotiator {
 
   private static final char[] KEYSTORE_PASSWORD = "password".toCharArray();
 
+  // This test handles pre-TLSv1.3 protocols only. See TestNegotiationTLSv13
+  // for TLSv1.3-specific test scenarios.
+  // TODO(aserbin): update corresponding test scenarios to work with TLSv1.3
+  static final String[] ENABLED_PROTOCOLS = new String[]{
+      "TLSv1.2",
+      "TLSv1.1",
+      "TLSv1",
+  };
+
   /**
    * The cert stored in the keystore, in base64ed DER format.
    * The real certs we'll get from the server will not be in Base64,
@@ -136,7 +145,9 @@ public class TestNegotiator {
       kmf.init(loadTestKeystore(), KEYSTORE_PASSWORD);
       SSLContext ctx = SSLContext.getInstance("TLS");
       ctx.init(kmf.getKeyManagers(), null, null);
-      return ctx.createSSLEngine();
+      SSLEngine engine = ctx.createSSLEngine();
+      engine.setEnabledProtocols(ENABLED_PROTOCOLS);
+      return engine;
     } catch (Exception e) {
       throw new RuntimeException(e);
     }

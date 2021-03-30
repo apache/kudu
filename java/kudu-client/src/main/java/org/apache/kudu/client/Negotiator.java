@@ -115,26 +115,40 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
 
   /**
    * The cipher suites, in order of our preference.
-   * This list is based on the kDefaultTlsCiphers list in security_flags.cc,
-   * See that file for details on how it was derived.
+   * This list is based on the kDefaultTls13Ciphers and kDefaultTlsCiphers lists
+   * in security_flags.cc: see that file for details on how it was derived.
    */
   static final String[] PREFERRED_CIPHER_SUITES = new String[] {
-      "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", // Java 8
-      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",   // Java 8
-      "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", // Java 8
-      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",   // Java 8
-      "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", // Java 7 (TLS 1.2+ only)
-      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",   // Java 7 (TLS 1.2+ only)
-      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", // Java 7 (TLS 1.2+ only)
-      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",   // Java 7 (TLS 1.2+ only)
-      "TLS_RSA_WITH_AES_256_GCM_SHA384",         // Java 8
-      "TLS_RSA_WITH_AES_128_GCM_SHA256",         // Java 8
-      "TLS_RSA_WITH_AES_256_CBC_SHA256",         // Java 7 (TLS 1.2+ only)
-      "TLS_RSA_WITH_AES_128_CBC_SHA256",         // Java 7 (TLS 1.2+ only)
+      "TLS_AES_128_GCM_SHA256",                   // Java 8 (updated), Java 11 (TLS 1.3+ only)
+      "TLS_AES_256_GCM_SHA384",                   // Java 8 (updated), Java 11 (TLS 1.3+ only)
+      "TLS_CHACHA20_POLY1305_SHA256",             // Java 8 (updated), Java 11 (TLS 1.3+ only)
+      "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",  // Java 8
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",    // Java 8
+      "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",  // Java 8
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",    // Java 8
+      "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",  // Java 7 (TLS 1.2+ only)
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",    // Java 7 (TLS 1.2+ only)
+      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",  // Java 7 (TLS 1.2+ only)
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",    // Java 7 (TLS 1.2+ only)
+      "TLS_RSA_WITH_AES_256_GCM_SHA384",          // Java 8
+      "TLS_RSA_WITH_AES_128_GCM_SHA256",          // Java 8
+      "TLS_RSA_WITH_AES_256_CBC_SHA256",          // Java 7 (TLS 1.2+ only)
+      "TLS_RSA_WITH_AES_128_CBC_SHA256",          // Java 7 (TLS 1.2+ only)
       // The following two are critical to allow the client to connect to
       // servers running versions of OpenSSL that don't support TLS 1.2.
-      "TLS_RSA_WITH_AES_256_CBC_SHA",            // All Java versions
-      "TLS_RSA_WITH_AES_128_CBC_SHA"             // All Java versions
+      "TLS_RSA_WITH_AES_256_CBC_SHA",             // All Java versions
+      "TLS_RSA_WITH_AES_128_CBC_SHA"              // All Java versions
+  };
+
+  /**
+   * TLS protocols to enable among those supported by SSLEngine.
+   * This list is based on the kDefaultTlsMinVersion in security_flags.cc.
+   */
+  static final String[] PREFERRED_PROTOCOLS = new String[]{
+      "TLSv1.3",
+      "TLSv1.2",
+      "TLSv1.1",
+      "TLSv1",
   };
 
   private enum State {
@@ -545,21 +559,55 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
         throw new AssertionError("unreachable");
     }
     engine.setUseClientMode(true);
-    Set<String> supported = Sets.newHashSet(engine.getSupportedCipherSuites());
-    List<String> toEnable = Lists.newArrayList();
-    for (String cipher : PREFERRED_CIPHER_SUITES) {
-      if (supported.contains(cipher)) {
-        toEnable.add(cipher);
+
+    // Set the preferred cipher suites.
+    {
+      Set<String> supported = Sets.newHashSet(engine.getSupportedCipherSuites());
+      List<String> toEnable = Lists.newArrayList();
+      for (String c: PREFERRED_CIPHER_SUITES) {
+        if (supported.contains(c)) {
+          toEnable.add(c);
+        }
       }
+      if (toEnable.isEmpty()) {
+        // This should never be the case given the cipher suites we picked are
+        // supported by the standard JDK, but just in case, better to have a clear
+        // exception.
+        throw new RuntimeException("found no preferred cipher suite among supported: " +
+            Joiner.on(',').join(supported));
+      }
+      engine.setEnabledCipherSuites(toEnable.toArray(new String[0]));
     }
-    if (toEnable.isEmpty()) {
-      // This should never be the case given the cipher suites we picked are
-      // supported by the standard JDK, but just in case, better to have a clear
-      // exception.
-      throw new RuntimeException("No preferred cipher suites were supported. " +
-          "Supported suites: " + Joiner.on(',').join(supported));
+
+    // Enable preferred TLS protocols, if supported. This is to match the set
+    // of TLS protocols supported by Kudu servers: no other protocols need to
+    // be enabled. In addition, this is to enable TLSv1.3 in Java 8. The latest
+    // builds of OpenJDK 8 and Oracle JDK 8 support TLSv1.3, but TLSv1.3 is not
+    // enabled by default for SSLEngine.
+    // For example, see Oracle JDK 8u261 update release notes at
+    // https://www.oracle.com/java/technologies/javase/8u261-relnotes.html
+    // TLSv1.3 is enabled by default in Java 11, at least with OpenJDK.
+    {
+      Set<String> supported = Sets.newHashSet(engine.getSupportedProtocols());
+      List<String> toEnable = Lists.newArrayList();
+      for (String p : PREFERRED_PROTOCOLS) {
+        if (supported.contains(p)) {
+          toEnable.add(p);
+        }
+      }
+      if (toEnable.isEmpty()) {
+        // This should never be the case given that at least one preferred TLS
+        // protocol (TLSv1) is supported by the standard JDK. It's better to
+        // have a clear exception, just in case.
+        throw new RuntimeException("found no preferred TLS protocol among supported: " +
+            Joiner.on(',').join(supported));
+      }
+      engine.setEnabledProtocols(toEnable.toArray(new String[0]));
     }
-    engine.setEnabledCipherSuites(toEnable.toArray(new String[0]));
+
+    // TODO(aserbin): maybe, check that at least one cipher is enabled per each
+    //                enabled protocol?
+
     SharableSslHandler handler = new SharableSslHandler(engine);
 
     sslEmbedder = new EmbeddedChannel(handler);
@@ -634,10 +682,10 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
     ByteString data = ByteString.copyFrom(bufs);
     if (sslHandshakeFuture.isDone()) {
       // TODO(todd): should check sslHandshakeFuture.isSuccess()
-      // TODO(danburkert): is this a correct assumption? would the
-      // client ever be "done" but also produce handshake data?
-      // if it did, would we want to encrypt the SSL message or no?
-      assert data.isEmpty();
+      if (!data.isEmpty()) {
+        // This is a case of TLSv1.3 protocol.
+        sendTunneledTls(ctx, data);
+      }
       return false;
     } else {
       assert data.size() > 0;
