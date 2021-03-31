@@ -2931,7 +2931,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     RETURN_NOT_OK(ExtraConfigPBToPBMap(l.data().pb.extra_config(),
                                        &new_extra_configs));
     // Merge table's extra configuration properties.
-    for (auto config : req.new_extra_configs()) {
+    for (const auto& config : req.new_extra_configs()) {
       new_extra_configs[config.first] = config.second;
     }
     RETURN_NOT_OK(ExtraConfigPBFromPBMap(new_extra_configs,
