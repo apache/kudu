@@ -767,6 +767,20 @@ Status DumpMemTrackers(const string& address, uint16_t default_port) {
   return Status::OK();
 }
 
+Status GetKuduToolAbsolutePathSafe(string* path) {
+  static const char* const kKuduCtlFileName = "kudu";
+  string exe;
+  RETURN_NOT_OK(Env::Default()->GetExecutablePath(&exe));
+  const string binroot = DirName(exe);
+  string tool_abs_path = JoinPathSegments(binroot, kKuduCtlFileName);
+  if (!Env::Default()->FileExists(tool_abs_path)) {
+    return Status::NotFound(Substitute(
+        "$0 binary not found at $1", kKuduCtlFileName, tool_abs_path));
+  }
+  *path = std::move(tool_abs_path);
+  return Status::OK();
+}
+
 namespace {
 
 // Pretty print a table using the psql format. For example:

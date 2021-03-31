@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -39,10 +40,13 @@ std::string GetKuduToolAbsolutePath();
 //
 // If 'out' or 'err' is set, the tool's stdout or stderr output will be
 // written to each respectively.
+// Optionally allows a passed map of environment variables to be set
+// on the kudu tool via 'env_vars'.
 Status RunKuduTool(const std::vector<std::string>& args,
                    std::string* out = nullptr,
                    std::string* err = nullptr,
-                   const std::string& in = "");
+                   const std::string& in = "",
+                   std::map<std::string, std::string> env_vars = {});
 
 // Runs the 'kudu' tool binary with the given argument string, returning an
 // error prepended with stdout and stderr if the run was unsuccessful.

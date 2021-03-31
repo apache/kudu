@@ -480,10 +480,6 @@ class ExternalMiniCluster : public MiniCluster {
   // files that reside in the log dir.
   std::string GetLogPath(const std::string& daemon_id) const;
 
-  // Adds a master to the ExternalMiniCluster when the new master has been added
-  // dynamically after bringing up the ExternalMiniCluster.
-  Status AddMaster(const scoped_refptr<ExternalMaster>& master);
-
   // Removes any bookkeeping of the master specified by 'hp' from the ExternalMiniCluster
   // after already having run through a successful master Raft change config to remove it.
   // This helps keep the state of the actual cluster in sync with the state in ExternalMiniCluster.
@@ -565,6 +561,15 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Overrides the extra flags specified in the constructor.
   void SetMetastoreIntegration(const std::string& hms_uris,
                                bool enable_kerberos);
+
+  // Create a Kerberos principal and keytab using the 'principal_base' and 'bind_host' hostname
+  // of the form <principal_base>/<bind_host>.
+  // Returns the generated keytab file and service principal as 'flags' and the appropriate
+  // environment variables in 'env_vars' output parameters.
+  static Status CreateKerberosConfig(MiniKdc* kdc, const std::string& principal_base,
+                                     const std::string& bind_host,
+                                     std::vector<std::string>* flags,
+                                     std::map<std::string, std::string>* env_vars);
 
   // Enable Kerberos for this daemon. This creates a Kerberos principal
   // and keytab, and sets the appropriate environment variables in the

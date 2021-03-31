@@ -18,9 +18,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <iterator>
+#include <map>
 #include <memory>
 #include <ostream>
-#include <set>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -28,6 +29,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -39,6 +41,8 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/dir_manager.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
@@ -54,6 +58,8 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -63,6 +69,9 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_string(fs_wal_dir);
+DECLARE_string(fs_data_dirs);
 
 METRIC_DECLARE_histogram(log_gc_duration);
 METRIC_DECLARE_entity(tablet);
@@ -85,7 +94,7 @@ using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::rpc::RpcController;
-using std::set;
+using std::map;
 using std::string;
 using std::tuple;
 using std::unique_ptr;
@@ -115,6 +124,8 @@ static Status CreateTable(ExternalMiniCluster* cluster,
 // Test class for testing addition/removal of masters to a Kudu cluster.
 class DynamicMultiMasterTest : public KuduTest {
  protected:
+  typedef map<string, string> EnvVars;
+
   void SetUpWithNumMasters(int num_masters) {
     // Initial number of masters in the cluster before adding a master.
     orig_num_masters_ = num_masters;
@@ -294,51 +305,38 @@ class DynamicMultiMasterTest : public KuduTest {
   void StartNewMaster(const vector<HostPort>& master_hps,
                       const HostPort& new_master_hp,
                       int new_master_idx,
-                      bool master_supports_change_config = true) {
+                      scoped_refptr<ExternalMaster>* new_master_out) {
     vector<string> master_addresses;
     master_addresses.reserve(master_hps.size());
     for (const auto& hp : master_hps) {
       master_addresses.emplace_back(hp.ToString());
     }
 
-    // Start with an existing master daemon's options, but modify them for use in a new master
-    ExternalDaemonOptions new_master_opts = cluster_->master(0)->opts();
-    const string new_master_id = Substitute("master-$0", new_master_idx);
-    new_master_opts.wal_dir = cluster_->GetWalPath(new_master_id);
-    new_master_opts.data_dirs = cluster_->GetDataPaths(new_master_id);
-    new_master_opts.log_dir = cluster_->GetLogPath(new_master_id);
-    new_master_opts.rpc_bind_address = new_master_hp;
+    ExternalDaemonOptions new_master_opts;
+    ASSERT_OK(BuildMasterOpts(new_master_idx, new_master_hp, &new_master_opts));
     auto& flags = new_master_opts.extra_flags;
     flags.insert(flags.end(),
                  {"--master_addresses=" + JoinStrings(master_addresses, ","),
                   "--master_address_add_new_master=" + new_master_hp.ToString()});
 
     LOG(INFO) << "Bringing up the new master at: " << new_master_hp.ToString();
-    new_master_.reset(new ExternalMaster(new_master_opts));
-    ASSERT_OK(new_master_->Start());
-    ASSERT_OK(new_master_->WaitForCatalogManager());
+    scoped_refptr<ExternalMaster> master = new ExternalMaster(new_master_opts);
+    ASSERT_OK(master->Start());
+    ASSERT_OK(master->WaitForCatalogManager());
 
     Sockaddr new_master_addr;
     ASSERT_OK(SockaddrFromHostPort(new_master_hp, &new_master_addr));
-    new_master_proxy_.reset(
-        new MasterServiceProxy(new_master_opts.messenger, new_master_addr, new_master_hp.host()));
-    {
-      GetMasterRegistrationRequestPB req;
-      GetMasterRegistrationResponsePB resp;
-      RpcController rpc;
+    MasterServiceProxy new_master_proxy(new_master_opts.messenger, new_master_addr,
+                                        new_master_hp.host());
 
-      ASSERT_OK(new_master_proxy_->GetMasterRegistration(req, &resp, &rpc));
-      ASSERT_FALSE(resp.has_error());
-      if (master_supports_change_config) {
-        ASSERT_EQ(RaftPeerPB::NON_VOTER, resp.member_type());
-        ASSERT_EQ(RaftPeerPB::LEARNER, resp.role());
-      } else {
-        // For a new master brought that doesn't support change config, it'll be started
-        // as a VOTER and become FOLLOWER if the other masters are reachable.
-        ASSERT_EQ(RaftPeerPB::VOTER, resp.member_type());
-        ASSERT_EQ(RaftPeerPB::FOLLOWER, resp.role());
-      }
-    }
+    GetMasterRegistrationRequestPB req;
+    GetMasterRegistrationResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(new_master_proxy.GetMasterRegistration(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(RaftPeerPB::NON_VOTER, resp.member_type());
+    ASSERT_EQ(RaftPeerPB::LEARNER, resp.role());
+    *new_master_out = std::move(master);
   }
 
   // Fetch a follower (non-leader) master index from the cluster.
@@ -359,13 +357,44 @@ class DynamicMultiMasterTest : public KuduTest {
     return Status::OK();
   }
 
+  // Builds and returns ExternalDaemonOptions used to add master with address 'rpc_addr' and
+  // 'master_idx' which helps with naming master's directories.
+  // Output 'kerberos_env_vars' parameter must be supplied for a secure cluster i.e. when Kerberos
+  // is enabled and returns Kerberos related environment variables.
+  Status BuildMasterOpts(int master_idx, const HostPort& rpc_addr,
+                         ExternalDaemonOptions* master_opts,
+                         EnvVars* kerberos_env_vars = nullptr) {
+    // Start with an existing master daemon's options, but modify them for use in a new master.
+    const string new_master_id = Substitute("master-$0", master_idx);
+    ExternalDaemonOptions opts = cluster_->master(0)->opts();
+    opts.rpc_bind_address = rpc_addr;
+    opts.wal_dir = cluster_->GetWalPath(new_master_id);
+    opts.data_dirs = cluster_->GetDataPaths(new_master_id);
+    opts.log_dir = cluster_->GetLogPath(new_master_id);
+    if (opts_.enable_kerberos) {
+      CHECK(kerberos_env_vars);
+      vector<string> flags;
+      RETURN_NOT_OK(cluster::ExternalDaemon::CreateKerberosConfig(
+          cluster_->kdc(), opts_.principal, rpc_addr.host(), &flags, kerberos_env_vars));
+      // Inserting the Kerberos related flags at the end will override flags from the master
+      // which was used as a basis for the new master.
+      opts.extra_flags.insert(opts.extra_flags.end(), std::make_move_iterator(flags.begin()),
+                              std::make_move_iterator(flags.end()));
+    }
+    *master_opts = std::move(opts);
+    return Status::OK();
+  }
+
   // Adds the specified master to the cluster using the CLI tool.
-  // Unset 'master' can be used to indicate to not supply master address.
+  // Unset 'rpc_bind_address' in 'opts' can be used to indicate to not supply master address.
+  // Optional 'env_vars' can be used to set environment variables while running kudu tool.
   // Optional 'wait_secs' can be used to supply wait timeout to the master add CLI tool.
+  // Optional 'kudu_binary' can be used to supply the path to the kudu binary.
   // Returns generic RuntimeError() on failure with the actual error in the optional 'err'
   // output parameter.
-  Status AddMasterToClusterUsingCLITool(const HostPort& master, string* err = nullptr,
-                                        int wait_secs = 0) {
+  Status AddMasterToClusterUsingCLITool(const ExternalDaemonOptions& opts, string* err = nullptr,
+                                        EnvVars env_vars = {}, int wait_secs = 0,
+                                        const string& kudu_binary = "") {
     auto hps = cluster_->master_rpc_addrs();
     vector<string> addresses;
     addresses.reserve(hps.size());
@@ -374,19 +403,29 @@ class DynamicMultiMasterTest : public KuduTest {
     }
 
     vector<string> cmd = {"master", "add", JoinStrings(addresses, ",")};
-    if (master.Initialized()) {
-      cmd.emplace_back(master.ToString());
+    if (opts.rpc_bind_address.Initialized()) {
+      cmd.emplace_back(opts.rpc_bind_address.ToString());
     }
+
+    vector<string> new_master_flags = ExternalMaster::GetMasterFlags(opts);
+    cmd.insert(cmd.end(), std::make_move_iterator(new_master_flags.begin()),
+               std::make_move_iterator(new_master_flags.end()));
+    cmd.insert(cmd.end(), opts.extra_flags.begin(), opts.extra_flags.end());
+
     if (wait_secs != 0) {
       cmd.emplace_back("-wait_secs=" + std::to_string(wait_secs));
     }
-    RETURN_NOT_OK(tools::RunKuduTool(cmd, nullptr, err));
-    // master add CLI doesn't return an error if the master is already present.
-    // So don't try adding to the ExternalMiniCluster.
-    if (err != nullptr && err->find("Master already present") != string::npos)  {
-      return Status::OK();
+    if (!kudu_binary.empty()) {
+      cmd.emplace_back("-kudu_abs_path=" + kudu_binary);
     }
-    return cluster_->AddMaster(new_master_);
+
+    RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), opts.log_dir));
+    Status s = tools::RunKuduTool(cmd, nullptr, err, "", std::move(env_vars));
+    if (!s.ok() && err != nullptr) {
+      LOG(INFO) << "Add master stderr: " << *err;
+    }
+    RETURN_NOT_OK(s);
+    return Status::OK();
   }
 
   // Removes the specified master from the cluster using the CLI tool.
@@ -414,20 +453,6 @@ class DynamicMultiMasterTest : public KuduTest {
     return cluster_->RemoveMaster(master_to_remove);
   }
 
-  // Verify one of the 'expected_roles' and 'expected_member_type' of the new master by
-  // making RPC to it directly.
-  void VerifyNewMasterDirectly(const set<RaftPeerPB::Role>& expected_roles,
-                               RaftPeerPB::MemberType expected_member_type) {
-    GetMasterRegistrationRequestPB req;
-    GetMasterRegistrationResponsePB resp;
-    RpcController rpc;
-
-    ASSERT_OK(new_master_proxy_->GetMasterRegistration(req, &resp, &rpc));
-    ASSERT_FALSE(resp.has_error());
-    ASSERT_TRUE(ContainsKey(expected_roles, resp.role()));
-    ASSERT_EQ(expected_member_type, resp.member_type());
-  }
-
   // Fetch consensus state of the leader master.
   void GetLeaderMasterConsensusState(RaftConfigPB* consensus_config) {
     int leader_master_idx;
@@ -450,22 +475,6 @@ class DynamicMultiMasterTest : public KuduTest {
     const auto& cstate = sys_catalog.cstate();
     *consensus_config = cstate.has_pending_config() ?
                         cstate.pending_config() : cstate.committed_config();
-  }
-
-  // Verify the newly added master is in FAILED_UNRECOVERABLE state and can't be caught up
-  // from WAL.
-  void VerifyNewMasterInFailedUnrecoverableState(int expected_num_masters) {
-    RaftConfigPB config;
-    NO_FATALS(GetLeaderMasterConsensusState(&config));
-    ASSERT_EQ(expected_num_masters, config.peers_size());
-    int num_new_masters_found = 0;
-    for (const auto& peer : config.peers()) {
-      if (peer.permanent_uuid() == new_master_->uuid()) {
-        ASSERT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, peer.health_report().overall_health());
-        num_new_masters_found++;
-      }
-    }
-    ASSERT_EQ(1, num_new_masters_found);
   }
 
   void VerifyDeadMasterInSpecifiedState(const string& dead_master_uuid,
@@ -522,6 +531,21 @@ class DynamicMultiMasterTest : public KuduTest {
     });
   }
 
+  // Fetch uuid of the specified 'fs_wal_dir' and 'fs_data_dirs'.
+  static Status GetFsUuid(const string& fs_wal_dir, const vector<string>& fs_data_dirs,
+                          string* uuid) {
+    google::FlagSaver saver;
+    FLAGS_fs_wal_dir = fs_wal_dir;
+    FLAGS_fs_data_dirs = JoinStrings(fs_data_dirs, ",");
+    FsManagerOpts fs_opts;
+    fs_opts.read_only = true;
+    fs_opts.update_instances = fs::UpdateInstanceBehavior::DONT_UPDATE;
+    FsManager fs_manager(Env::Default(), std::move(fs_opts));
+    RETURN_NOT_OK(fs_manager.PartialOpen());
+    *uuid = fs_manager.uuid();
+    return Status::OK();
+  }
+
   // Verification steps after the new master has been added successfully and it's promoted
   // as VOTER. The supplied 'master_hps' includes the new_master as well.
   void VerifyClusterAfterMasterAddition(const vector<HostPort>& master_hps,
@@ -535,13 +559,14 @@ class DynamicMultiMasterTest : public KuduTest {
     for (int i = 0; i < cluster_->num_masters(); i++) {
       master_uuids.emplace(cluster_->master(i)->uuid());
     }
-    master_uuids.emplace(new_master_->uuid());
+    string new_master_uuid;
+    ASSERT_OK(GetFsUuid(new_master_opts_.wal_dir, new_master_opts_.data_dirs, &new_master_uuid));
+    master_uuids.emplace(new_master_uuid);
 
     // Shutdown the cluster and the new master daemon process.
     // This allows ExternalMiniCluster to manage the newly added master and allows
     // client to connect to the new master if it's elected the leader.
     LOG(INFO) << "Shutting down the old cluster";
-    new_master_->Shutdown();
     cluster_.reset();
 
     LOG(INFO) << "Bringing up the migrated cluster";
@@ -576,7 +601,7 @@ class DynamicMultiMasterTest : public KuduTest {
     }
 
     // Transfer leadership to the new master.
-    NO_FATALS(TransferMasterLeadership(&migrated_cluster, new_master_->uuid()));
+    NO_FATALS(TransferMasterLeadership(&migrated_cluster, new_master_uuid));
 
     shared_ptr<KuduClient> client;
     ASSERT_OK(migrated_cluster.CreateClient(nullptr, &client));
@@ -694,61 +719,6 @@ class DynamicMultiMasterTest : public KuduTest {
     *dead_master_hp = master_to_recover_hp;
   }
 
-  // Helper function that verifies that the newly added master can't be caught up from WAL
-  // and remains as NON_VOTER.
-  void VerifyNewNonVoterMaster(const HostPort& new_master_hp,
-                               int expected_num_masters) {
-    // Newly added master will be added to the master Raft config but won't be caught up
-    // from the WAL and hence remain as a NON_VOTER.
-    ListMastersResponsePB list_resp;
-    NO_FATALS(RunListMasters(&list_resp));
-    ASSERT_EQ(expected_num_masters, list_resp.masters_size());
-
-    for (const auto& master : list_resp.masters()) {
-      ASSERT_EQ(1, master.registration().rpc_addresses_size());
-      auto hp = HostPortFromPB(master.registration().rpc_addresses(0));
-      if (hp == new_master_hp) {
-        ASSERT_EQ(RaftPeerPB::NON_VOTER, master.member_type());
-        ASSERT_TRUE(master.role() == RaftPeerPB::LEARNER);
-      }
-    }
-
-    // Double check by directly contacting the new master.
-    NO_FATALS(VerifyNewMasterDirectly({ RaftPeerPB::LEARNER }, RaftPeerPB::NON_VOTER));
-
-    // Verify new master is in FAILED_UNRECOVERABLE state.
-    // This health state update may take some round trips between the masters and
-    // hence wrapping it under ASSERT_EVENTUALLY.
-    ASSERT_EVENTUALLY([&] {
-      NO_FATALS(VerifyNewMasterInFailedUnrecoverableState(expected_num_masters));
-    });
-  }
-
-  // Helper function to copy system catalog from 'src_master_hp' master.
-  void CopySystemCatalog(const HostPort& src_master_hp) {
-    LOG(INFO) << "Shutting down the new master";
-    new_master_->Shutdown();
-
-    LOG(INFO) << "Deleting the system catalog";
-    // Delete sys catalog on local master
-    ASSERT_OK(tools::RunKuduTool({"local_replica", "delete",
-                                  master::SysCatalogTable::kSysCatalogTabletId,
-                                  "-fs_data_dirs=" + JoinStrings(new_master_->data_dirs(), ","),
-                                  "-fs_wal_dir=" + new_master_->wal_dir(),
-                                  "-clean_unsafe"}));
-
-    // Copy from remote system catalog from specified master
-    LOG(INFO) << "Copying from remote master: " << src_master_hp.ToString();
-    ASSERT_OK(tools::RunKuduTool({"local_replica", "copy_from_remote",
-                                  master::SysCatalogTable::kSysCatalogTabletId,
-                                  src_master_hp.ToString(),
-                                  "-fs_data_dirs=" + JoinStrings(new_master_->data_dirs(), ","),
-                                  "-fs_wal_dir=" + new_master_->wal_dir()}));
-
-    LOG(INFO) << "Restarting the new master";
-    ASSERT_OK(new_master_->Restart());
-  }
-
   // Tracks the current number of masters in the cluster
   int orig_num_masters_;
   ExternalMiniClusterOptions opts_;
@@ -758,26 +728,31 @@ class DynamicMultiMasterTest : public KuduTest {
   unique_ptr<Socket> reserved_socket_;
   Sockaddr reserved_addr_;
   HostPort reserved_hp_;
-  unique_ptr<MasterServiceProxy> new_master_proxy_;
-  scoped_refptr<ExternalMaster> new_master_;
+  ExternalDaemonOptions new_master_opts_;
 
   static const char* const kTableName;
 };
 
 const char* const DynamicMultiMasterTest::kTableName = "first_table";
 
-// Parameterized DynamicMultiMasterTest class that works with different initial number of masters.
+// Parameterized DynamicMultiMasterTest class that works with different initial number of masters
+// and secure/unsecure clusters.
 class ParameterizedAddMasterTest : public DynamicMultiMasterTest,
-                                   public ::testing::WithParamInterface<int> {
+                                   public ::testing::WithParamInterface<tuple<int, bool>> {
  public:
   void SetUp() override {
-    NO_FATALS(SetUpWithNumMasters(GetParam()));
+    NO_FATALS(SetUpWithNumMasters(std::get<0>(GetParam())));
+    opts_.enable_kerberos = std::get<1>(GetParam());
   }
 };
 
 INSTANTIATE_TEST_SUITE_P(, ParameterizedAddMasterTest,
-                         // Initial number of masters in the cluster before adding a new master
-                         ::testing::Values(1, 2));
+                           ::testing::Combine(
+                               // Initial number of masters in the cluster before adding a new
+                               // master
+                               ::testing::Values(1, 2),
+                               // Whether Kerberos is enabled
+                               ::testing::Bool()));
 
 // This test starts a cluster, creates a table and then adds a new master.
 // For a system catalog with little data, the new master can be caught up from WAL and
@@ -794,38 +769,40 @@ TEST_P(ParameterizedAddMasterTest, TestAddMasterCatchupFromWAL) {
 
   ASSERT_OK(CreateTable(cluster_.get(), kTableName));
 
-  // Bring up the new master and add to the cluster.
-  master_hps.emplace_back(reserved_hp_);
-  NO_FATALS(StartNewMaster(master_hps, reserved_hp_, orig_num_masters_));
-  NO_FATALS(VerifyVoterMasters(orig_num_masters_));
-  ASSERT_OK(AddMasterToClusterUsingCLITool(reserved_hp_, nullptr, 4));
-
-  // Newly added master will be caught up from WAL itself without requiring tablet copy
-  // since the system catalog is fresh with a single table.
-  // Catching up from WAL and promotion to VOTER will not be instant after adding the
-  // new master. Hence using ASSERT_EVENTUALLY.
-  ASSERT_EVENTUALLY([&] {
-    VerifyVoterMasters(orig_num_masters_ + 1);
-  });
-
-  // Double check by directly contacting the new master.
-  NO_FATALS(VerifyNewMasterDirectly(
-      { RaftPeerPB::FOLLOWER, RaftPeerPB::LEADER }, RaftPeerPB::VOTER));
+  // Add new master to the cluster.
+  {
+    string err;
+    EnvVars env_vars;
+    ASSERT_OK(BuildMasterOpts(orig_num_masters_, reserved_hp_, &new_master_opts_, &env_vars));
+    ASSERT_OK(AddMasterToClusterUsingCLITool(new_master_opts_, &err, std::move(env_vars),
+                                             4 /* wait_secs */, tools::GetKuduToolAbsolutePath()));
+    ASSERT_STR_CONTAINS(err, Substitute("Master $0 successfully caught up from WAL.",
+                                        new_master_opts_.rpc_bind_address.ToString()));
+  }
 
   // Adding the same master again should print a message but not throw an error.
   {
     string err;
-    ASSERT_OK(AddMasterToClusterUsingCLITool(reserved_hp_, &err));
+    ExternalDaemonOptions opts;
+    EnvVars env_vars;
+    ASSERT_OK(BuildMasterOpts(orig_num_masters_, reserved_hp_, &opts, &env_vars));
+    ASSERT_OK(AddMasterToClusterUsingCLITool(opts, &err, std::move(env_vars)));
     ASSERT_STR_CONTAINS(err, "Master already present");
   }
 
-  // Adding one of the former masters should print a message but not throw an error.
+  // Adding one of the running former masters will throw an error.
   {
     string err;
-    ASSERT_OK(AddMasterToClusterUsingCLITool(master_hps[0], &err));
-    ASSERT_STR_CONTAINS(err, "Master already present");
+    const auto& hp = master_hps[0];
+    ExternalDaemonOptions opts;
+    EnvVars env_vars;
+    ASSERT_OK(BuildMasterOpts(0, hp, &opts, &env_vars));
+    Status s = AddMasterToClusterUsingCLITool(opts, &err, std::move(env_vars));
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(err, Substitute("Master $0 already running", hp.ToString()));
   }
 
+  master_hps.emplace_back(reserved_hp_);
   NO_FATALS(VerifyClusterAfterMasterAddition(master_hps, orig_num_masters_ + 1));
 }
 
@@ -837,51 +814,45 @@ TEST_P(ParameterizedAddMasterTest, TestAddMasterSysCatalogCopy) {
   NO_FATALS(StartClusterWithSysCatalogGCed(&master_hps));
 
   ASSERT_OK(CreateTable(cluster_.get(), kTableName));
-  // Bring up the new master and add to the cluster.
-  master_hps.emplace_back(reserved_hp_);
-  NO_FATALS(StartNewMaster(master_hps, reserved_hp_, orig_num_masters_));
-  NO_FATALS(VerifyVoterMasters(orig_num_masters_));
-  string err;
-  ASSERT_OK(AddMasterToClusterUsingCLITool(reserved_hp_, &err));
-  ASSERT_STR_MATCHES(err, Substitute("New master $0 part of the Raft configuration.*"
-                                     "Please follow the next steps which includes system catalog "
-                                     "tablet copy", reserved_hp_.ToString()));
 
-  // Newly added master will be added to the master Raft config but won't be caught up
-  // from the WAL and hence remain as a NON_VOTER and transition to FAILED_UNRECOVERABLE state.
-  NO_FATALS(VerifyNewNonVoterMaster(reserved_hp_, orig_num_masters_ + 1));
+  // Add new master to the cluster.
+  {
+    string err;
+    EnvVars env_vars;
+    ASSERT_OK(BuildMasterOpts(orig_num_masters_, reserved_hp_, &new_master_opts_, &env_vars));
+    ASSERT_OK(AddMasterToClusterUsingCLITool(new_master_opts_, &err, std::move(env_vars),
+                                             4 /* wait_secs */));
+    ASSERT_STR_CONTAINS(err, Substitute("Master $0 could not be caught up from WAL.",
+                                        reserved_hp_.ToString()));
+    ASSERT_STR_CONTAINS(err, "Successfully copied system catalog and new master is healthy");
+  }
 
   // Adding the same master again should print a message but not throw an error.
   {
     string err;
-    ASSERT_OK(AddMasterToClusterUsingCLITool(reserved_hp_, &err));
+    ExternalDaemonOptions opts;
+    EnvVars env_vars;
+    ASSERT_OK(BuildMasterOpts(orig_num_masters_, reserved_hp_, &opts, &env_vars));
+    ASSERT_OK(AddMasterToClusterUsingCLITool(opts, &err, std::move(env_vars)));
     ASSERT_STR_CONTAINS(err, "Master already present");
   }
 
-  // Adding one of the former masters should print a message but not throw an error.
+  // Adding one of the running former masters will throw an error.
   {
     string err;
-    ASSERT_OK(AddMasterToClusterUsingCLITool(master_hps[0], &err));
-    ASSERT_STR_CONTAINS(err, "Master already present");
+    const auto& hp = master_hps[0];
+    ExternalDaemonOptions opts;
+    EnvVars env_vars;
+    ASSERT_OK(BuildMasterOpts(0, hp, &opts, &env_vars));
+    Status s = AddMasterToClusterUsingCLITool(opts, &err, std::move(env_vars));
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(err, Substitute("Master $0 already running", hp.ToString()));
   }
 
-  // Without system catalog copy, the new master will remain in the FAILED_UNRECOVERABLE state.
-  // So lets proceed with the tablet copy process for system catalog.
-  NO_FATALS(CopySystemCatalog(cluster_->master(0)->bound_rpc_hostport()));
-
-  // Wait for the new master to be up and running and the leader master to send status only Raft
-  // message to allow the new master to be considered caught up and promoted to be being a VOTER.
-  ASSERT_EVENTUALLY([&] {
-    VerifyVoterMasters(orig_num_masters_ + 1);
-  });
-
-  // Verify the same state from the new master directly.
-  // Double check by directly contacting the new master.
-  NO_FATALS(VerifyNewMasterDirectly(
-      { RaftPeerPB::FOLLOWER, RaftPeerPB::LEADER }, RaftPeerPB::VOTER));
-
+  master_hps.emplace_back(reserved_hp_);
   NO_FATALS(VerifyClusterAfterMasterAddition(master_hps, orig_num_masters_ + 1));
 }
+
 
 class ParameterizedRemoveMasterTest : public DynamicMultiMasterTest,
                                       public ::testing::WithParamInterface<tuple<int, bool>> {
@@ -1000,6 +971,7 @@ TEST_P(ParameterizedRemoveMasterTest, TestRemoveMaster) {
   NO_FATALS(mcv.CheckRowCount(kTableName, ClusterVerifier::EXACTLY, 0));
 }
 
+
 class ParameterizedRecoverMasterTest : public DynamicMultiMasterTest,
                                        public ::testing::WithParamInterface<int> {
  public:
@@ -1034,23 +1006,16 @@ TEST_P(ParameterizedRecoverMasterTest, TestRecoverDeadMasterCatchupfromWAL) {
   HostPort src_master_hp;
   NO_FATALS(FailAndRemoveFollowerMaster(master_hps, &master_to_recover_idx, &master_to_recover_hp,
                                         &src_master_hp));
+  NO_FATALS(VerifyVoterMasters(orig_num_masters_ - 1));
 
   // Add new master at the same HostPort
-  NO_FATALS(StartNewMaster(master_hps, master_to_recover_hp, master_to_recover_idx));
-  NO_FATALS(VerifyVoterMasters(orig_num_masters_ - 1));
-  ASSERT_OK(AddMasterToClusterUsingCLITool(master_to_recover_hp));
-
-  // Newly added master will be caught up from WAL itself without requiring tablet copy
-  // since the system catalog is fresh with a single table.
-  // Catching up from WAL and promotion to VOTER will not be instant after adding the
-  // new master. Hence using ASSERT_EVENTUALLY.
-  ASSERT_EVENTUALLY([&] {
-    VerifyVoterMasters(orig_num_masters_);
-  });
-
-  // Double check by directly contacting the new master.
-  NO_FATALS(VerifyNewMasterDirectly(
-      { RaftPeerPB::FOLLOWER, RaftPeerPB::LEADER }, RaftPeerPB::VOTER));
+  {
+    string err;
+    ASSERT_OK(BuildMasterOpts(master_to_recover_idx, master_to_recover_hp, &new_master_opts_));
+    ASSERT_OK(AddMasterToClusterUsingCLITool(new_master_opts_, &err));
+    ASSERT_STR_CONTAINS(err, Substitute("Master $0 successfully caught up from WAL.",
+                                        new_master_opts_.rpc_bind_address.ToString()));
+  }
 
   NO_FATALS(VerifyClusterAfterMasterAddition(master_hps, orig_num_masters_));
 }
@@ -1078,30 +1043,15 @@ TEST_P(ParameterizedRecoverMasterTest, TestRecoverDeadMasterSysCatalogCopy) {
   HostPort src_master_hp;
   NO_FATALS(FailAndRemoveFollowerMaster(master_hps, &master_to_recover_idx, &master_to_recover_hp,
                                         &src_master_hp));
+  NO_FATALS(VerifyVoterMasters(orig_num_masters_ - 1));
 
   // Add new master at the same HostPort
-  NO_FATALS(StartNewMaster(master_hps, master_to_recover_hp, master_to_recover_idx));
-  NO_FATALS(VerifyVoterMasters(orig_num_masters_ - 1));
   string err;
-  ASSERT_OK(AddMasterToClusterUsingCLITool(master_to_recover_hp, &err));
-  ASSERT_STR_MATCHES(err, Substitute("New master $0 part of the Raft configuration.*"
-                                     "Please follow the next steps which includes system catalog "
-                                     "tablet copy", master_to_recover_hp.ToString()));
-
-  // Verify the new master will remain as NON_VOTER and transition to FAILED_UNRECOVERABLE state.
-  NO_FATALS(VerifyNewNonVoterMaster(master_to_recover_hp, orig_num_masters_));
-
-  // Without system catalog copy, the new master will remain in the FAILED_UNRECOVERABLE state.
-  // So lets proceed with the tablet copy process for system catalog.
-  NO_FATALS(CopySystemCatalog(src_master_hp));
-
-  // Wait for the new master to be up and running and the leader master to send status only Raft
-  // message to allow the new master to be considered caught up and promoted to be being a VOTER.
-  ASSERT_EVENTUALLY([&] {
-    VerifyVoterMasters(orig_num_masters_);
-  });
-
-  VerifyNewMasterDirectly({ RaftPeerPB::FOLLOWER, RaftPeerPB::LEADER }, RaftPeerPB::VOTER);
+  ASSERT_OK(BuildMasterOpts(master_to_recover_idx, master_to_recover_hp, &new_master_opts_));
+  ASSERT_OK(AddMasterToClusterUsingCLITool(new_master_opts_, &err));
+  ASSERT_STR_CONTAINS(err, Substitute("Master $0 could not be caught up from WAL.",
+                                      master_to_recover_hp.ToString()));
+  ASSERT_STR_CONTAINS(err, "Successfully copied system catalog and new master is healthy");
 
   NO_FATALS(VerifyClusterAfterMasterAddition(master_hps, orig_num_masters_));
 }
@@ -1111,21 +1061,16 @@ TEST_P(ParameterizedRecoverMasterTest, TestRecoverDeadMasterSysCatalogCopy) {
 // expected to fail due to invalid Raft config.
 TEST_F(DynamicMultiMasterTest, TestAddMasterWithNoLastKnownAddr) {
   NO_FATALS(SetUpWithNumMasters(1));
-  NO_FATALS(
-      StartCluster({"--master_support_change_config"}, false /* supply_single_master_addr */));
+  NO_FATALS(StartCluster({"--master_support_change_config"}, false/* supply_single_master_addr */));
 
-  // Verify that existing masters are running as VOTERs and collect their addresses to be used
-  // for starting the new master.
-  vector<HostPort> master_hps;
-  NO_FATALS(VerifyVoterMasters(orig_num_masters_, &master_hps));
-
-  // Bring up the new master and add to the cluster.
-  master_hps.emplace_back(reserved_hp_);
-  NO_FATALS(StartNewMaster(master_hps, reserved_hp_, orig_num_masters_));
+  // Verify that existing masters are running as VOTERs.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
 
+  // Add master to the cluster.
   string err;
-  Status actual = AddMasterToClusterUsingCLITool(reserved_hp_, &err);
+  ExternalDaemonOptions opts;
+  ASSERT_OK(BuildMasterOpts(orig_num_masters_, reserved_hp_, &opts));
+  Status actual = AddMasterToClusterUsingCLITool(opts, &err);
   ASSERT_TRUE(actual.IsRuntimeError()) << actual.ToString();
   ASSERT_STR_MATCHES(err, "'last_known_addr' field in single master Raft configuration not set. "
                           "Please restart master with --master_addresses flag");
@@ -1140,19 +1085,14 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterFeatureFlagNotSpecified) {
   NO_FATALS(SetUpWithNumMasters(1));
   NO_FATALS(StartCluster({ "--master_support_change_config=false" }));
 
-  // Verify that existing masters are running as VOTERs and collect their addresses to be used
-  // for starting the new master.
-  vector<HostPort> master_hps;
-  NO_FATALS(VerifyVoterMasters(orig_num_masters_, &master_hps));
-
-  // Bring up the new master and add to the cluster.
-  master_hps.emplace_back(reserved_hp_);
-  NO_FATALS(StartNewMaster(master_hps, reserved_hp_, orig_num_masters_,
-                           false /* master_supports_change_config */));
+  // Verify that existing masters are running as VOTERs.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
 
+  // Add master to the cluster.
   string err;
-  Status actual = AddMasterToClusterUsingCLITool(reserved_hp_, &err);
+  ExternalDaemonOptions opts;
+  ASSERT_OK(BuildMasterOpts(orig_num_masters_, reserved_hp_, &opts));
+  Status actual = AddMasterToClusterUsingCLITool(opts, &err);
   ASSERT_TRUE(actual.IsRuntimeError()) << actual.ToString();
   ASSERT_STR_MATCHES(err, "Cluster does not support AddMaster");
 
@@ -1208,7 +1148,8 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterToNonLeader) {
 
   // Bring up the new master and add to the cluster.
   master_hps.emplace_back(reserved_hp_);
-  NO_FATALS(StartNewMaster(master_hps, reserved_hp_, orig_num_masters_));
+  scoped_refptr<ExternalMaster> master;
+  NO_FATALS(StartNewMaster(master_hps, reserved_hp_, orig_num_masters_, &master));
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
 
   // Verify sending add master request to a non-leader master returns NOT_THE_LEADER error.
@@ -1275,20 +1216,15 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterMissingAndIncorrectAddress) {
   NO_FATALS(SetUpWithNumMasters(1));
   NO_FATALS(StartCluster({"--master_support_change_config"}));
 
-  // Verify that existing masters are running as VOTERs and collect their addresses to be used
-  // for starting the new master.
-  vector<HostPort> master_hps;
-  NO_FATALS(VerifyVoterMasters(orig_num_masters_, &master_hps));
-
-  // Bring up the new master and add to the cluster.
-  master_hps.emplace_back(reserved_hp_);
-  NO_FATALS(StartNewMaster(master_hps, reserved_hp_, orig_num_masters_));
+  // Verify that existing masters are running as VOTERs.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
 
   // Empty HostPort
   {
     string err;
-    Status actual = AddMasterToClusterUsingCLITool(HostPort(), &err);
+    ExternalDaemonOptions opts;
+    ASSERT_OK(BuildMasterOpts(orig_num_masters_, HostPort(), &opts));
+    Status actual = AddMasterToClusterUsingCLITool(opts, &err);
     ASSERT_TRUE(actual.IsRuntimeError()) << actual.ToString();
     ASSERT_STR_CONTAINS(err, "must provide positional argument master_address");
   }
@@ -1296,15 +1232,16 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterMissingAndIncorrectAddress) {
   // Non-routable incorrect hostname.
   {
     string err;
-    Status actual = AddMasterToClusterUsingCLITool(
-        HostPort("non-existent-path.local", Master::kDefaultPort), &err);
+    ExternalDaemonOptions opts;
+    ASSERT_OK(BuildMasterOpts(orig_num_masters_,
+                              HostPort("non-existent-path.local", Master::kDefaultPort), &opts));
+    Status actual = AddMasterToClusterUsingCLITool(opts, &err);
     ASSERT_TRUE(actual.IsRuntimeError()) << actual.ToString();
-    ASSERT_STR_CONTAINS(err,
-                        "Network error: unable to resolve address for non-existent-path.local");
+    ASSERT_STR_CONTAINS(err, "unable to resolve address for non-existent-path.local");
   }
 
   // Verify no change in number of masters.
-  NO_FATALS(VerifyVoterMasters(orig_num_masters_, &master_hps));
+  NO_FATALS(VerifyVoterMasters(orig_num_masters_));
 }
 
 // Test that attempts to remove a master with missing master address and a non-existent
@@ -1367,6 +1304,27 @@ TEST_F(DynamicMultiMasterTest, TestRemoveMasterMismatchHostnameAndUuid) {
 
   // Verify no change in number of masters.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_, &master_hps));
+}
+
+// Test that attempts to add a master with non-existent kudu executable path.
+TEST_F(DynamicMultiMasterTest, TestAddMasterIncorrectKuduBinary) {
+  NO_FATALS(SetUpWithNumMasters(1));
+  NO_FATALS(StartCluster({ "--master_support_change_config" }));
+
+  // Verify that existing masters are running as VOTERs.
+  NO_FATALS(VerifyVoterMasters(orig_num_masters_));
+
+  // Add master to the cluster.
+  string err;
+  string kudu_abs_path = "/tmp/path/to/nowhere";
+  ExternalDaemonOptions opts;
+  ASSERT_OK(BuildMasterOpts(orig_num_masters_, reserved_hp_, &opts));
+  Status actual = AddMasterToClusterUsingCLITool(opts, &err, {} /* env_vars */, 4, kudu_abs_path);
+  ASSERT_TRUE(actual.IsRuntimeError()) << actual.ToString();
+  ASSERT_STR_CONTAINS(err, Substitute("kudu binary not found at $0", kudu_abs_path));
+
+  // Verify no change in number of masters.
+  NO_FATALS(VerifyVoterMasters(orig_num_masters_));
 }
 
 // Test that attempts removing a leader master itself from a cluster with

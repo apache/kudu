@@ -16,7 +16,9 @@
 // under the License.
 
 #include <algorithm>
+#include <csignal>
 #include <cstdint>
+#include <fstream> // IWYU pragma: keep
 #include <functional>
 #include <iostream>
 #include <iterator>
@@ -45,24 +47,37 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_runner.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tools/ksck.h"
+#include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/env.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/init.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
+#include "kudu/util/subprocess.h"
 
 DECLARE_bool(force);
+DECLARE_int64(negotiation_timeout_ms);
 DECLARE_int64(timeout_ms);
 DECLARE_string(columns);
+DECLARE_string(fs_wal_dir);
+DECLARE_string(fs_data_dirs);
 
 DEFINE_string(master_uuid, "", "Permanent UUID of the master. Only needed to disambiguate in case "
                                "of multiple masters with same RPC address");
 DEFINE_int64(wait_secs, 8,
-             "Timeout in seconds to wait for the newly added master to be promoted as VOTER.");
+             "Timeout in seconds to wait while retrying operations like bringing up new master, "
+             "running ksck, waiting for the new master to be promoted as VOTER, etc.");
+DEFINE_string(kudu_abs_path, "", "Absolute file path of the 'kudu' executable used to bring up "
+                                 "new master and other workflow steps.");
 
 using kudu::master::AddMasterRequestPB;
 using kudu::master::AddMasterResponsePB;
@@ -127,49 +142,90 @@ Status MasterTimestamp(const RunnerContext& context) {
   return PrintServerTimestamp(address, Master::kDefaultPort);
 }
 
-Status AddMasterChangeConfig(const RunnerContext& context) {
-  const string& new_master_address = FindOrDie(context.required_args, kMasterAddressArg);
+// Bring up new master at the specified HostPort 'hp' with user-supplied 'flags' using kudu
+// executable 'kudu_abs_path'.
+// 'master_addresses' is list of masters in existing cluster including the new
+// master.
+Status BringUpNewMaster(const string& kudu_abs_path,
+                        vector<string> flags,
+                        const HostPort& hp,
+                        const vector<string>& master_addresses,
+                        unique_ptr<Subprocess>* new_master_out) {
+  // Ensure the new master is not already running at the specified RPC address.
+  unique_ptr<MasterServiceProxy> proxy;
+  RETURN_NOT_OK_PREPEND(BuildProxy(hp.ToString(), Master::kDefaultPort, &proxy),
+                        "Failed building proxy for new master");
 
-  LeaderMasterProxy proxy;
-  RETURN_NOT_OK(proxy.Init(context));
+  auto is_catalog_mngr_running = [](MasterServiceProxy* master_proxy) {
+    master::GetMasterRegistrationRequestPB req;
+    master::GetMasterRegistrationResponsePB resp;
+    RpcController rpc;
+    Status s = master_proxy->GetMasterRegistration(req, &resp, &rpc);
+    return s.ok() && !resp.has_error();
+  };
 
-  HostPort hp;
-  RETURN_NOT_OK(hp.ParseString(new_master_address, Master::kDefaultPort));
-  {
-    AddMasterRequestPB req;
-    AddMasterResponsePB resp;
-    *req.mutable_rpc_addr() = HostPortToPB(hp);
-
-    Status s = proxy.SyncRpc<AddMasterRequestPB, AddMasterResponsePB>(
-        req, &resp, "AddMaster", &MasterServiceProxy::AddMasterAsync,
-        {master::MasterFeatures::DYNAMIC_MULTI_MASTER});
-    // It's possible this is a retry request in which case instead of returning
-    // the master is already present in the Raft config error we make further checks
-    // whether the master has been promoted to a VOTER.
-    bool master_already_present =
-        resp.has_error() && resp.error().code() == master::MasterErrorPB::MASTER_ALREADY_PRESENT;
-    if (!s.ok() && !master_already_present) {
-      return s;
-    }
-    if (master_already_present) {
-      LOG(INFO) << "Master already present. Checking for promotion to VOTER...";
-    }
+  if (is_catalog_mngr_running(proxy.get())) {
+    return Status::IllegalState(Substitute("Master $0 already running", hp.ToString()));
   }
 
-  // If the system catalog of the new master can be caught up from the WAL then the new master will
-  // be promoted to a VOTER and become a FOLLOWER. However this can take some time, so we'll
-  // try for a few seconds. It's perfectly normal for the new master to be not caught up from
-  // the WAL in which case subsequent steps of system catalog tablet copy need to be carried out
-  // as outlined in the documentation for adding a new master to Kudu cluster.
+  flags.emplace_back("--master_addresses=" + JoinStrings(master_addresses, ","));
+  flags.emplace_back("--master_address_add_new_master=" + hp.ToString());
+  flags.emplace_back("--master_support_change_config");
+  vector<string> argv = { kudu_abs_path, "master", "run" };
+  argv.insert(argv.end(), std::make_move_iterator(flags.begin()),
+              std::make_move_iterator(flags.end()));
+  auto new_master = std::make_unique<Subprocess>(argv);
+  RETURN_NOT_OK_PREPEND(new_master->Start(), "Failed starting new master");
+  auto stop_master = MakeScopedCleanup([&] {
+    WARN_NOT_OK(new_master->KillAndWait(SIGKILL), "Failed stopping new master");
+  });
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(FLAGS_wait_secs);
-  RaftPeerPB::Role master_role = RaftPeerPB::UNKNOWN_ROLE;
-  RaftPeerPB::MemberType master_type = RaftPeerPB::UNKNOWN_MEMBER_TYPE;
+  do {
+    Status wait_status = new_master->WaitNoBlock();
+    if (!wait_status.IsTimedOut()) {
+      return Status::RuntimeError("Failed to bring up new master");
+    }
+    if (is_catalog_mngr_running(proxy.get())) {
+      stop_master.cancel();
+      *new_master_out = std::move(new_master);
+      return Status::OK();
+    }
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  } while (MonoTime::Now() < deadline);
+
+  return Status::TimedOut("Timed out waiting for the new master to come up");
+}
+
+// Check health and consensus status of masters in ksck.
+Status CheckMastersHealthy(const vector<string>& master_addresses) {
+  std::shared_ptr<KsckCluster> cluster;
+  RETURN_NOT_OK(RemoteKsckCluster::Build(master_addresses, &cluster));
+
+  // Print to an unopened ofstream to discard ksck output.
+  // See https://stackoverflow.com/questions/8243743.
+  std::ofstream null_stream;
+  Ksck ksck(cluster, &null_stream);
+  RETURN_NOT_OK(ksck.CheckMasterHealth());
+  RETURN_NOT_OK(ksck.CheckMasterConsensus());
+  return Status::OK();
+}
+
+// Check new master 'new_master_hp' is promoted to a VOTER and all masters are healthy.
+// Returns the last Raft role and member_type in output parameters 'master_role' and 'master_type'
+// respectively.
+Status CheckMasterVoterAndHealthy(LeaderMasterProxy* proxy,
+                                  const vector<string>& master_addresses,
+                                  const HostPort& new_master_hp,
+                                  RaftPeerPB::Role* master_role,
+                                  RaftPeerPB::MemberType* master_type) {
+  *master_role = RaftPeerPB::UNKNOWN_ROLE;
+  *master_type = RaftPeerPB::UNKNOWN_MEMBER_TYPE;
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(FLAGS_wait_secs);
   do {
     ListMastersRequestPB req;
     ListMastersResponsePB resp;
-    RETURN_NOT_OK((proxy.SyncRpc<ListMastersRequestPB, ListMastersResponsePB>(
-                   req, &resp, "ListMasters", &MasterServiceProxy::ListMastersAsync)));
-
+    RETURN_NOT_OK((proxy->SyncRpc<ListMastersRequestPB, ListMastersResponsePB>(
+        req, &resp, "ListMasters", &MasterServiceProxy::ListMastersAsync)));
     if (resp.has_error()) {
       return StatusFromPB(resp.error().status());
     }
@@ -184,7 +240,7 @@ Status AddMasterChangeConfig(const RunnerContext& context) {
         continue;
       }
       for (const auto& master_hp : master.registration().rpc_addresses()) {
-        if (hp == HostPortFromPB(master_hp)) {
+        if (new_master_hp == HostPortFromPB(master_hp)) {
           // Found the newly added master
           new_master_found = true;
           break;
@@ -196,29 +252,212 @@ Status AddMasterChangeConfig(const RunnerContext& context) {
     }
     if (!new_master_found) {
       return Status::NotFound(Substitute("New master $0 not found. Retry adding the master",
-                                         hp.ToString()));
+                                         new_master_hp.ToString()));
     }
     CHECK_LT(i, resp.masters_size());
     const auto& master = resp.masters(i);
-    master_role = master.role();
-    master_type = master.member_type();
-    if (master_type == RaftPeerPB::VOTER &&
-        (master_role == RaftPeerPB::FOLLOWER || master_role == RaftPeerPB::LEADER)) {
-      LOG(INFO) << Substitute("Successfully added master $0 to the cluster. Please follow the "
-                              "next steps which includes updating master addresses, updating "
-                              "client configuration etc. from the Kudu administration "
-                              "documentation on \"Migrating to Multiple Kudu Masters\".",
-                              hp.ToString());
-      return Status::OK();
+    *master_role = master.role();
+    *master_type = master.member_type();
+    if (*master_type == RaftPeerPB::VOTER &&
+        (*master_role == RaftPeerPB::FOLLOWER || *master_role == RaftPeerPB::LEADER)) {
+      // Check the master ksck state as well.
+      if (CheckMastersHealthy(master_addresses).ok()) {
+        return Status::OK();
+      }
     }
     SleepFor(MonoDelta::FromMilliseconds(100));
   } while (MonoTime::Now() < deadline);
 
-  LOG(INFO) << Substitute("New master $0 part of the Raft configuration; role: $1, member_type: "
-                          "$2. Please follow the next steps which includes system catalog tablet "
-                          "copy, updating master addresses etc. from the Kudu administration "
-                          "documentation on \"Migrating to Multiple Kudu Masters\".",
-                          hp.ToString(), master_role, master_type);
+  return Status::TimedOut("Timed out waiting for master to catch up from WAL");
+}
+
+// Deletes local system catalog on 'dst_master' and copies system catalog from one of the masters
+// in 'master_addresses' which includes the dst_master using the kudu executable 'kudu_abs_path'.
+Status CopyRemoteSystemCatalog(const string& kudu_abs_path,
+                               const HostPort& dst_master,
+                               const vector<string>& master_addresses) {
+  // Find source master to copy system catalog from.
+  string src_master;
+  const auto& dst_master_str = dst_master.ToString();
+  for (const auto& addr : master_addresses) {
+    if (addr != dst_master_str) {
+      src_master = addr;
+      break;
+    }
+  }
+  if (src_master.empty()) {
+    return Status::RuntimeError("Failed to find source master to copy system catalog");
+  }
+
+  LOG(INFO) << Substitute("Deleting system catalog on $0", dst_master_str);
+  RETURN_NOT_OK_PREPEND(
+      Subprocess::Call(
+          { kudu_abs_path, "local_replica", "delete", master::SysCatalogTable::kSysCatalogTabletId,
+            "--fs_wal_dir=" + FLAGS_fs_wal_dir, "--fs_data_dirs=" + FLAGS_fs_data_dirs,
+            "-clean_unsafe" }),
+      "Failed to delete system catalog");
+
+  LOG(INFO) << Substitute("Copying system catalog from master $0", src_master);
+  RETURN_NOT_OK_PREPEND(
+      Subprocess::Call(
+      { kudu_abs_path, "local_replica", "copy_from_remote",
+        master::SysCatalogTable::kSysCatalogTabletId, src_master,
+        "--fs_wal_dir=" + FLAGS_fs_wal_dir, "--fs_data_dirs=" + FLAGS_fs_data_dirs }),
+      "Failed to copy system catalog");
+
+  return Status::OK();
+}
+
+// Invoke the add master Raft change config RPC to add the supplied master 'hp'.
+// If the master is already present then Status::OK is returned and a log message is printed.
+Status AddMasterRaftConfig(const RunnerContext& context,
+                           const HostPort& hp) {
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+  AddMasterRequestPB req;
+  AddMasterResponsePB resp;
+  *req.mutable_rpc_addr() = HostPortToPB(hp);
+
+  Status s = proxy.SyncRpc<AddMasterRequestPB, AddMasterResponsePB>(
+      req, &resp, "AddMaster", &MasterServiceProxy::AddMasterAsync,
+      {master::MasterFeatures::DYNAMIC_MULTI_MASTER});
+  // It's possible this is a retry request in which case instead of returning
+  // the master is already present in the Raft config error we make further checks
+  // whether the master has been promoted to a VOTER.
+  bool master_already_present =
+      resp.has_error() && resp.error().code() == master::MasterErrorPB::MASTER_ALREADY_PRESENT;
+  if (!s.ok() && !master_already_present) {
+    return s;
+  }
+  if (master_already_present) {
+    LOG(INFO) << "Master already present.";
+  }
+  LOG(INFO) << Substitute("Successfully added master $0 to the Raft configuration.",
+                          hp.ToString());
+  return Status::OK();
+}
+
+Status AddMaster(const RunnerContext& context) {
+  static const char* const kPostSuccessMsg =
+      "Please follow the next steps which includes updating master addresses, updating client "
+      "configuration etc. from the Kudu administration documentation on "
+      "\"Migrating to Multiple Kudu Masters\".";
+  static const char* const kFailedStopMsg =
+      "Failed to stop new master after successfully adding to the cluster. Stop the master before "
+      "proceeding further.";
+
+  // Parse input arguments.
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  const string& new_master_address = FindOrDie(context.required_args, kMasterAddressArg);
+  HostPort hp;
+  RETURN_NOT_OK(hp.ParseString(new_master_address, Master::kDefaultPort));
+
+  // Check for the 'kudu' executable if the user has supplied one.
+  if (!FLAGS_kudu_abs_path.empty() && !Env::Default()->FileExists(FLAGS_kudu_abs_path)) {
+    return Status::NotFound(Substitute("kudu binary not found at $0", FLAGS_kudu_abs_path));
+  }
+  string kudu_abs_path = FLAGS_kudu_abs_path;
+  if (kudu_abs_path.empty()) {
+    RETURN_NOT_OK(GetKuduToolAbsolutePathSafe(&kudu_abs_path));
+  }
+
+  // Get the flags that'll be needed to bring up new master and for system catalog copy.
+  if (FLAGS_fs_wal_dir.empty()) {
+    return Status::InvalidArgument("Flag -fs_wal_dir not supplied");
+  }
+  if (FLAGS_fs_data_dirs.empty()) {
+    return Status::InvalidArgument("Flag -fs_data_dirs not supplied");
+  }
+  GFlagsMap flags_map = GetFlagsMap();
+  // Remove the optional parameters for this command.
+  // Remaining optional flags need to be passed to the new master.
+  flags_map.erase("wait_secs");
+  flags_map.erase("kudu_abs_path");
+
+  // Bring up the new master.
+  vector<string> new_master_flags;
+  new_master_flags.reserve(flags_map.size());
+  for (const auto& name_flag_pair : flags_map)  {
+    const auto& flag = name_flag_pair.second;
+    new_master_flags.emplace_back(Substitute("--$0=$1", flag.name, flag.current_value));
+  }
+
+  // Bring up the new master that includes master addresses of the cluster and itself.
+  // It's possible this is a retry in which case the new master is already part of
+  // master_addresses.
+  if (std::find(master_addresses.begin(), master_addresses.end(), hp.ToString()) ==
+      master_addresses.end()) {
+    master_addresses.emplace_back(hp.ToString());
+  }
+
+  unique_ptr<Subprocess> new_master;
+  RETURN_NOT_OK_PREPEND(BringUpNewMaster(kudu_abs_path, new_master_flags, hp, master_addresses,
+                                         &new_master),
+                        "Failed bringing up new master. See Kudu Master log for details.");
+  auto stop_master = MakeScopedCleanup([&] {
+    auto* master_ptr = new_master.get();
+    if (master_ptr != nullptr) {
+      WARN_NOT_OK(master_ptr->KillAndWait(SIGKILL), "Failed stopping new master");
+    }
+  });
+  // Call the add master Raft change config RPC.
+  RETURN_NOT_OK(AddMasterRaftConfig(context, hp));
+
+  // If the system catalog of the new master can be caught up from the WAL then the new master will
+  // transition to FAILED_UNRECOVERABLE state. However this can take some time, so we'll
+  // try for a few seconds. It's perfectly normal for the new master to be not caught up from
+  // the WAL in which case subsequent steps of system catalog tablet copy need to be carried out.
+  RaftPeerPB::Role master_role;
+  RaftPeerPB::MemberType master_type;
+  LeaderMasterProxy proxy;
+  // Since new master is now part of the Raft configuration, use updated 'master_addresses'.
+  RETURN_NOT_OK(proxy.Init(
+      master_addresses, MonoDelta::FromMilliseconds(FLAGS_timeout_ms),
+      MonoDelta::FromMilliseconds(FLAGS_negotiation_timeout_ms)));
+
+  LOG(INFO) << "Checking for master consensus and health status...";
+  Status wal_catchup_status = CheckMasterVoterAndHealthy(&proxy, master_addresses, hp,
+                                                         &master_role, &master_type);
+  if (wal_catchup_status.ok()) {
+    stop_master.cancel();
+    RETURN_NOT_OK_PREPEND(new_master->KillAndWait(SIGTERM), kFailedStopMsg);
+    LOG(INFO) << Substitute("Master $0 successfully caught up from WAL.", hp.ToString());
+    LOG(INFO) << kPostSuccessMsg;
+    return Status::OK();
+  }
+  if (!wal_catchup_status.IsTimedOut()) {
+    RETURN_NOT_OK_PREPEND(wal_catchup_status,
+                          "Unexpected error waiting for master to catchup from WAL.");
+    return wal_catchup_status;
+  }
+
+  // New master could not be caught up from WAL, so next we'll attempt copying
+  // system catalog.
+  LOG(INFO) << Substitute("Master $0 status; role: $1, member_type: $2",
+                          hp.ToString(), RaftPeerPB::Role_Name(master_role),
+                          RaftPeerPB::MemberType_Name(master_type));
+  LOG(INFO) << Substitute("Master $0 could not be caught up from WAL.", hp.ToString());
+
+  RETURN_NOT_OK_PREPEND(new_master->KillAndWait(SIGTERM),
+                        "Unable to stop master to proceed with system catalog copy");
+  new_master.reset();
+
+  RETURN_NOT_OK(CopyRemoteSystemCatalog(kudu_abs_path, hp, master_addresses));
+
+  RETURN_NOT_OK_PREPEND(BringUpNewMaster(kudu_abs_path, new_master_flags, hp, master_addresses,
+                                         &new_master),
+                        "Failed bringing up new master after system catalog copy. "
+                        "See Kudu Master log for details.");
+
+  RETURN_NOT_OK_PREPEND(CheckMasterVoterAndHealthy(&proxy, master_addresses, hp, &master_role,
+                                                   &master_type),
+                        "Failed waiting for new master to be healthy after system catalog copy");
+
+  stop_master.cancel();
+  RETURN_NOT_OK_PREPEND(new_master->KillAndWait(SIGTERM), kFailedStopMsg);
+  LOG(INFO) << "Successfully copied system catalog and new master is healthy.";
+  LOG(INFO) << kPostSuccessMsg;
   return Status::OK();
 }
 
@@ -560,24 +799,44 @@ unique_ptr<Mode> BuildMasterMode() {
   }
   {
     unique_ptr<Action> add_master =
-        ActionBuilder("add", &AddMasterChangeConfig)
-        .Description("Add a master to the Raft configuration of the Kudu cluster. "
-                     "Please refer to the Kudu administration documentation on "
-                     "\"Migrating to Multiple Kudu Masters\" for the complete steps.")
+        ActionBuilder("add", &AddMaster)
+        .Description("Add a master to the Kudu cluster")
+        .ExtraDescription(
+            "This is an advanced command that orchestrates the workflow to bring up and add a "
+            "new master to the Kudu cluster. It must be run locally on the new master being added "
+            "and not on the leader master. This tool shuts down the new master after completion "
+            "of the command regardless of whether the new master addition is successful. "
+            "After the command completes successfully, user is expected to explicitly "
+            "start the new master using the same flags as supplied to this tool.\n\n"
+            "Supply all the necessary flags to bring up the new master. "
+            "The most common configuration flags used to bring up a master are described "
+            "below. See \"Kudu Configuration Reference\" for all the configuration options that "
+            "apply to a Kudu master.\n\n"
+            "Please refer to the Kudu administration documentation on "
+            "\"Migrating to Multiple Kudu Masters\" for the complete steps.")
         .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
         .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .AddOptionalParameter("wait_secs")
+        .AddOptionalParameter("kudu_abs_path")
+        .AddOptionalParameter("fs_wal_dir")
+        .AddOptionalParameter("fs_data_dirs")
+        .AddOptionalParameter("fs_metadata_dir")
+        .AddOptionalParameter("log_dir")
+        // Unlike most tools we don't log to stderr by default to match the
+        // kudu-master binary as closely as possible.
+        .AddOptionalParameter("logtostderr", string("false"))
         .Build();
     builder.AddAction(std::move(add_master));
   }
   {
     unique_ptr<Action> remove_master =
         ActionBuilder("remove", &RemoveMasterChangeConfig)
-        .Description("Remove a master from the Raft configuration of the Kudu cluster. "
-                     "Please refer to the Kudu administration documentation on "
-                     "\"Removing Kudu Masters from a Multi-Master Deployment\" or "
-                     "\"Recovering from a dead Kudu Master in a Multi-Master Deployment\" "
-                     "as appropriate.")
+        .Description("Remove a master from the Kudu cluster")
+        .ExtraDescription(
+            "Removes a master from the Raft configuration of the Kudu cluster.\n\n"
+            "Please refer to the Kudu administration documentation on "
+            "\"Removing Kudu Masters from a Multi-Master Deployment\" or "
+            "\"Recovering from a dead Kudu Master in a Multi-Master Deployment\" as appropriate.")
         .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
         .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .AddOptionalParameter("master_uuid")

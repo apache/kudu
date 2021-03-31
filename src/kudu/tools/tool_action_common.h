@@ -216,6 +216,10 @@ Status ParseMasterAddresses(
     const RunnerContext& context,
     std::vector<std::string>* master_addresses);
 
+// Get full path to the top-level 'kudu' tool binary in the output 'path' parameter.
+// Returns appropriate error if the binary is not found.
+Status GetKuduToolAbsolutePathSafe(std::string* path);
+
 // Parses a comma separated list of "host:port" pairs into an unordered set of
 // HostPort objects. If no port is specified for an entry in the comma separated list,
 // the default master port is used for that entry's pair.

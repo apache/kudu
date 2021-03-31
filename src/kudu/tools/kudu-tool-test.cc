@@ -54,11 +54,11 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
@@ -1107,8 +1107,8 @@ TEST_F(ToolTest, TestModeHelp) {
         "status.*Get the status",
         "timestamp.*Get the current timestamp",
         "list.*List masters in a Kudu cluster",
-        "add.*Add a master to the Raft configuration",
-        "remove.*Remove a master from the Raft configuration"
+        "add.*Add a master to the Kudu cluster",
+        "remove.*Remove a master from the Kudu cluster"
     };
     NO_FATALS(RunTestHelp(kCmd, kMasterModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kCmd,
@@ -1130,9 +1130,10 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     NO_FATALS(RunTestHelp("master add --help",
-                          {"-wait_secs \\(Timeout in seconds to wait for the newly added master"}));
+                          {"-wait_secs.*\\(Timeout in seconds to wait while retrying operations",
+                           "-kudu_abs_path.*\\(Absolute file path of the 'kudu' executable used"}));
     NO_FATALS(RunTestHelp("master remove --help",
-                          {"-master_uuid \\(Permanent UUID of the master"}));
+                          {"-master_uuid.*\\(Permanent UUID of the master"}));
   }
   {
     const vector<string> kPbcModeRegexes = {

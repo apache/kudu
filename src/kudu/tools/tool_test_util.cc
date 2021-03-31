@@ -20,18 +20,18 @@
 #include "kudu/tools/tool_test_util.h"
 
 #include <cstdio>
-#include <ostream>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/env.h"
-#include "kudu/util/path_util.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 
+using std::map;
 using std::string;
 using std::vector;
 using strings::Split;
@@ -41,18 +41,13 @@ namespace kudu {
 namespace tools {
 
 string GetKuduToolAbsolutePath() {
-  static const string kKuduCtlFileName = "kudu";
-  string exe;
-  CHECK_OK(Env::Default()->GetExecutablePath(&exe));
-  const string binroot = DirName(exe);
-  const string tool_abs_path = JoinPathSegments(binroot, kKuduCtlFileName);
-  CHECK(Env::Default()->FileExists(tool_abs_path))
-      << kKuduCtlFileName << " binary not found at " << tool_abs_path;
-  return tool_abs_path;
+  string path;
+  CHECK_OK(GetKuduToolAbsolutePathSafe(&path));
+  return path;
 }
 
 Status RunKuduTool(const vector<string>& args, string* out, string* err,
-                   const std::string& in) {
+                   const string& in, map<string, string> env_vars) {
   vector<string> total_args = { GetKuduToolAbsolutePath() };
 
   // Some scenarios might add unsafe flags for testing purposes.
@@ -74,7 +69,7 @@ Status RunKuduTool(const vector<string>& args, string* out, string* err,
   total_args.emplace_back("--openssl_security_level_override=0");
 
   total_args.insert(total_args.end(), args.begin(), args.end());
-  return Subprocess::Call(total_args, in, out, err);
+  return Subprocess::Call(total_args, in, out, err, std::move(env_vars));
 }
 
 Status RunActionPrependStdoutStderr(const string& arg_str) {

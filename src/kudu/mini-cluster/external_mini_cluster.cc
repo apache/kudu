@@ -90,6 +90,7 @@ using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
 using std::copy;
+using std::map;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -949,20 +950,6 @@ string ExternalMiniCluster::UuidForTS(int ts_idx) const {
   return tablet_server(ts_idx)->uuid();
 }
 
-Status ExternalMiniCluster::AddMaster(const scoped_refptr<ExternalMaster>& new_master) {
-  const auto& new_master_uuid = new_master->instance_id().permanent_uuid();
-  for (const auto& m : masters_) {
-    if (m->instance_id().permanent_uuid() == new_master_uuid) {
-      CHECK(m->bound_rpc_hostport() == new_master->bound_rpc_hostport());
-      return Status::AlreadyPresent(Substitute(
-          "Master $0, uuid: $1 already present in ExternalMiniCluster",
-          m->bound_rpc_hostport().ToString(), new_master_uuid));
-    }
-  }
-  masters_.emplace_back(new_master);
-  return Status::OK();
-}
-
 Status ExternalMiniCluster::RemoveMaster(const HostPort& hp) {
   for (auto it = masters_.begin(); it != masters_.end(); ++it) {
     if ((*it)->bound_rpc_hostport() == hp) {
@@ -1165,25 +1152,35 @@ void ExternalDaemon::SetMetastoreIntegration(const string& hms_uris,
   opts_.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0", enable_kerberos));
 }
 
-Status ExternalDaemon::EnableKerberos(MiniKdc* kdc,
-                                      const string& principal,
-                                      const string& bind_host) {
-  string spn = principal + "/" + bind_host;
+Status ExternalDaemon::CreateKerberosConfig(MiniKdc* kdc,
+                                            const string& principal_base,
+                                            const string& bind_host,
+                                            vector<string>* flags,
+                                            map<string, string>* env_vars) {
+  string spn = principal_base + "/" + bind_host;
   string ktpath;
   RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
                         "could not create keytab");
-  extra_env_ = kdc->GetEnvVars();
+  *env_vars = kdc->GetEnvVars();
+  *flags =  {
+      Substitute("--keytab_file=$0", ktpath),
+      Substitute("--principal=$0", spn),
+      "--rpc_authentication=required",
+      "--superuser_acl=test-admin",
+      "--user_acl=test-user",
+  };
 
+  return Status::OK();
+}
+
+Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& principal_base,
+                                      const string& bind_host) {
+  vector<string> flags;
+  RETURN_NOT_OK(CreateKerberosConfig(kdc, principal_base, bind_host, &flags, &extra_env_));
   // Insert Kerberos flags at the front of extra_flags, so that user specified
   // flags will override them.
-  opts_.extra_flags.insert(opts_.extra_flags.begin(), {
-    Substitute("--keytab_file=$0", ktpath),
-    Substitute("--principal=$0", spn),
-    "--rpc_authentication=required",
-    "--superuser_acl=test-admin",
-    "--user_acl=test-user",
-  });
-
+  opts_.extra_flags.insert(opts_.extra_flags.begin(), std::make_move_iterator(flags.begin()),
+                           std::make_move_iterator(flags.end()));
   return Status::OK();
 }
 
