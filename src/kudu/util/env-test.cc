@@ -1249,4 +1249,115 @@ TEST_F(TestEnv, TestCreateFifo) {
   ASSERT_OK(env_->NewFifo(kFifo, &fifo));
 }
 
+TEST_F(TestEnv, TestEncryption) {
+  const string kFile = JoinPathSegments(test_dir_, "encrypted_file");
+  unique_ptr<RWFile> rw;
+  RWFileOptions opts;
+  opts.encrypted = true;
+  ASSERT_OK(env_->NewRWFile(opts, kFile, &rw));
+
+  string kTestData =
+      "Hello world! This text is slightly longer than usual to make sure multiple blocks are "
+      "encrypted and we can read at unaligned offsets correctly. Lorem ipsum dolor sit amet, "
+      "consectetur adipiscing elit.";
+
+  string kTestData2 =
+      "We also need to append to this file to make sure initialization vectors are calculated "
+      "correctly.";
+
+  ASSERT_OK(rw->Write(0, kTestData));
+  ASSERT_OK(rw->Write(kTestData.length(), kTestData2));
+
+  // Setup read parameters
+  constexpr size_t size1 = 9;
+  uint8_t scratch1[size1];
+  Slice result1(scratch1, size1);
+  constexpr size_t size2 = 19;
+  uint8_t scratch2[size2];
+  Slice result2(scratch2, size2);
+  vector<Slice> results = { result1, result2 };
+
+  // Reading back from the RWFile should succeed
+  ASSERT_OK(rw->ReadV(13, results));
+  ASSERT_EQ(result1, "This text");
+  ASSERT_EQ(result2, " is slightly longer");
+
+  ASSERT_OK(rw->Close());
+
+  unique_ptr<RandomAccessFile> unencrpyted;
+  RandomAccessFileOptions unencrpyted_opts;
+  unencrpyted_opts.encrypted = false;
+  ASSERT_OK(env_->NewRandomAccessFile(unencrpyted_opts, kFile, &unencrpyted));
+
+  // Treating it as an unencrypted file should yield garbage and not contain the
+  // cleartext written to the file.
+  string unencrypted_string;
+  ASSERT_OK(unencrpyted->Read(0, unencrypted_string));
+  ASSERT_EQ(string::npos, unencrypted_string.find("This text is slightly longer"));
+
+  // Check if the file can be read into a SequentialFile.
+  unique_ptr<SequentialFile> seq_file;
+  SequentialFileOptions seq_opts;
+  seq_opts.encrypted = true;
+  ASSERT_OK(env_->NewSequentialFile(seq_opts, kFile, &seq_file));
+
+  ASSERT_OK(seq_file->Read(&result1));
+  ASSERT_OK(seq_file->Read(&result2));
+  ASSERT_EQ(result1, "Hello wor");
+  ASSERT_EQ(result2, "ld! This text is sl");
+
+  // Check if the file can be read into a RandomAccessFile if treated properly
+  // as an encrypted file.
+  unique_ptr<RandomAccessFile> random;
+  RandomAccessFileOptions random_opts;
+  random_opts.encrypted = true;
+  ASSERT_OK(env_->NewRandomAccessFile(random_opts, kFile, &random));
+  size_t size = kTestData.length() + kTestData2.length();
+  uint8_t scratch[size];
+  Slice result(scratch, size);
+  ASSERT_OK(random->Read(0, result));
+  ASSERT_EQ(kTestData + kTestData2, result);
+
+  // Read a SequentialFile until EOF.
+  ASSERT_OK(env_->NewSequentialFile(seq_opts, kFile, &seq_file));
+  uint8_t scratch3[size + 10];
+  Slice result3(scratch3, size + 10);
+  ASSERT_OK(seq_file->Read(&result3));
+  ASSERT_EQ(kTestData + kTestData2, result3);
+}
+
+TEST_F(TestEnv, TestPreallocatedReadEncryptedFile) {
+  const string kFile = JoinPathSegments(test_dir_, "encrypted_file");
+  unique_ptr<RWFile> rw;
+  RWFileOptions opts;
+  opts.encrypted = true;
+  ASSERT_OK(env_->NewRWFile(opts, kFile, &rw));
+
+  ASSERT_OK(rw->PreAllocate(0, 1024, RWFile::CHANGE_FILE_SIZE));
+
+  size_t size = 10;
+  uint8_t scratch[size];
+  Slice result(scratch, size);
+  vector<Slice> results = {result};
+  ASSERT_OK(rw->ReadV(0, results));
+  ASSERT_TRUE(IsAllZeros(result));
+}
+
+TEST_F(TestEnv, TestEncryptionMultipleSlices) {
+  const string kFile = JoinPathSegments(test_dir_, "encrypted_file");
+  unique_ptr<RWFile> rw;
+  RWFileOptions opts;
+  opts.encrypted = true;
+  ASSERT_OK(env_->NewRWFile(opts, kFile, &rw));
+
+  vector<Slice> data = {"foo", "bar", "hello", "world"};
+
+  ASSERT_OK(rw->WriteV(0, data));
+
+  uint8_t scratch[16];
+  Slice result(scratch, 16);
+  ASSERT_OK(rw->Read(0, result));
+  ASSERT_EQ("foobarhelloworld", result);
+}
+
 }  // namespace kudu

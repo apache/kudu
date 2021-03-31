@@ -53,12 +53,12 @@ typedef struct x509_st X509;
 
 #define OPENSSL_RET_NOT_OK(call, msg) \
   if ((call) <= 0) { \
-    return Status::RuntimeError((msg), GetOpenSSLErrors()); \
+    return Status::RuntimeError((msg), security::GetOpenSSLErrors()); \
   }
 
 #define OPENSSL_RET_IF_NULL(call, msg) \
   if ((call) == nullptr) { \
-    return Status::RuntimeError((msg), GetOpenSSLErrors()); \
+    return Status::RuntimeError((msg), security::GetOpenSSLErrors()); \
   }
 
 // Scoped helper which DCHECKs that on both scope entry and exit, there are no

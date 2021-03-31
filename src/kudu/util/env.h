@@ -37,6 +37,7 @@ class WritableFile;
 struct RandomAccessFileOptions;
 struct RWFileOptions;
 struct WritableFileOptions;
+struct SequentialFileOptions;
 
 template <typename T>
 class ArrayView;
@@ -82,6 +83,11 @@ class Env {
   //
   // The returned file will only be accessed by one thread at a time.
   virtual Status NewSequentialFile(const std::string& fname,
+                                   std::unique_ptr<SequentialFile>* result) = 0;
+
+  // Like the previous NewSequentialFile, but allows options to be specified.
+  virtual Status NewSequentialFile(const SequentialFileOptions& opts,
+                                   const std::string& fname,
                                    std::unique_ptr<SequentialFile>* result) = 0;
 
   // Create a brand new random access read-only file with the
@@ -407,10 +413,16 @@ class Fifo : public File {
   virtual int write_fd() const = 0;
 };
 
+struct SequentialFileOptions {
+  bool encrypted;
+
+  SequentialFileOptions() : encrypted(false) {}
+};
+
 // A file abstraction for reading sequentially through a file
 class SequentialFile : public File {
  public:
-  SequentialFile() { }
+  SequentialFile() {}
 
   // Read up to "result.size" bytes from the file.
   // Sets "result.data" to the data that was read.
@@ -482,14 +494,17 @@ struct WritableFileOptions {
   // See CreateMode for details.
   Env::OpenMode mode;
 
+  bool encrypted;
+
   WritableFileOptions()
-    : sync_on_close(false),
-      mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE) { }
+      : sync_on_close(false), mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE), encrypted(false) {}
 };
 
 // Options specified when a file is opened for random access.
 struct RandomAccessFileOptions {
-  RandomAccessFileOptions() {}
+  bool encrypted;
+
+  RandomAccessFileOptions() : encrypted(false) {}
 };
 
 // A file abstraction for sequential writing.  The implementation
@@ -549,9 +564,10 @@ struct RWFileOptions {
   // See CreateMode for details.
   Env::OpenMode mode;
 
+  bool encrypted;
+
   RWFileOptions()
-    : sync_on_close(false),
-      mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE) { }
+      : sync_on_close(false), mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE), encrypted(false) {}
 };
 
 // A file abstraction for both reading and writing. No notion of a built-in
