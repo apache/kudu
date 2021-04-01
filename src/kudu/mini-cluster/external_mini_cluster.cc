@@ -986,61 +986,50 @@ ExternalDaemon::ExternalDaemon(ExternalDaemonOptions opts)
 ExternalDaemon::~ExternalDaemon() {
 }
 
-Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
-  CHECK(!process_);
-  const auto this_tid = std::this_thread::get_id();
-  CHECK_EQ(parent_tid_, this_tid)
-    << "Process being started from thread " << this_tid << " which is different"
-    << " from the instantiating thread " << parent_tid_;
+std::vector<std::string> ExternalDaemon::GetDaemonFlags(const ExternalDaemonOptions& opts) {
+  const string info_path = JoinPathSegments(opts.data_dirs[0], "info.pb");
+  vector<string> flags = {
+      // Basic flags for a Kudu server.
+      "--fs_wal_dir=" + opts.wal_dir,
+      "--fs_data_dirs=" + JoinStrings(opts.data_dirs, ","),
+      "--block_manager=" + opts.block_manager_type,
+      "--webserver_interface=localhost",
 
-  RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), log_dir()));
-  const string info_path = JoinPathSegments(data_dirs()[0], "info.pb");
+      // Disable fsync to dramatically speed up runtime. This is safe as no tests
+      // rely on forcefully cutting power to a machine or equivalent.
+      "--never_fsync",
 
-  vector<string> argv = {
-    // First the exe for argv[0].
-    opts_.exe,
+      // Disable minidumps by default since many tests purposely inject faults.
+      "--enable_minidumps=false",
 
-    // Basic flags for Kudu server.
-    "--fs_wal_dir=" + wal_dir(),
-    "--fs_data_dirs=" + JoinStrings(data_dirs(), ","),
-    "--block_manager=" + opts_.block_manager_type,
-    "--webserver_interface=localhost",
+      // Disable redaction of the information in logs and Web UI.
+      "--redact=none",
 
-    // Disable fsync to dramatically speed up runtime. This is safe as no tests
-    // rely on forcefully cutting power to a machine or equivalent.
-    "--never_fsync",
+      // Enable metrics logging.
+      "--metrics_log_interval_ms=1000",
 
-    // Disable minidumps by default since many tests purposely inject faults.
-    "--enable_minidumps=false",
+      // Even if we are logging to stderr, metrics logs and minidumps end up being
+      // written based on -log_dir. So, we have to set that too.
+      "--log_dir=" + opts.log_dir,
 
-    // Disable redaction of the information in logs and Web UI.
-    "--redact=none",
+      // Tell the server to dump its port information so we can pick it up.
+      "--server_dump_info_path=" + info_path,
+      "--server_dump_info_format=pb",
 
-    // Enable metrics logging.
-    "--metrics_log_interval_ms=1000",
+      // We use ephemeral ports in many tests. They don't work for production,
+      // but are OK in unit tests.
+      "--rpc_server_allow_ephemeral_ports",
 
-    // Even if we are logging to stderr, metrics logs and minidumps end up being
-    // written based on -log_dir. So, we have to set that too.
-    "--log_dir=" + log_dir(),
-
-    // Tell the server to dump its port information so we can pick it up.
-    "--server_dump_info_path=" + info_path,
-    "--server_dump_info_format=pb",
-
-    // We use ephemeral ports in many tests. They don't work for production,
-    // but are OK in unit tests.
-    "--rpc_server_allow_ephemeral_ports",
-
-    // Allow unsafe and experimental flags from tests, since we often use
-    // fault injection, etc.
-    "--unlock_experimental_flags",
-    "--unlock_unsafe_flags",
+      // Allow unsafe and experimental flags from tests, since we often use
+      // fault injection, etc.
+      "--unlock_experimental_flags",
+      "--unlock_unsafe_flags",
   };
 
-  if (opts_.logtostderr) {
+  if (opts.logtostderr) {
     // Ensure that logging goes to the test output and doesn't get buffered.
-    argv.emplace_back("--logtostderr");
-    argv.emplace_back("--logbuflevel=-1");
+    flags.emplace_back("--logtostderr");
+    flags.emplace_back("--logbuflevel=-1");
   }
 
   // If large keys are not enabled.
@@ -1052,13 +1041,31 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     // since we are using strong/high TLS v1.2 cipher suites, so the minimum
     // size of TLS-related RSA key is 768 bits (due to the usage of
     // the ECDHE-RSA-AES256-GCM-SHA384 suite).
-    argv.emplace_back("--ipki_server_key_size=768");
+    flags.emplace_back("--ipki_server_key_size=768");
 
     // The RSA key of 768 bits is too short if OpenSSL security level is set to
     // 1 or higher (applicable for OpenSSL 1.1.0 and newer). Lowering the
     // security level to 0 makes possible ot use shorter keys in such cases.
-    argv.emplace_back("--openssl_security_level_override=0");
+    flags.emplace_back("--openssl_security_level_override=0");
   }
+
+  return flags;
+}
+
+Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
+  CHECK(!process_);
+  const auto this_tid = std::this_thread::get_id();
+  CHECK_EQ(parent_tid_, this_tid)
+    << "Process being started from thread " << this_tid << " which is different"
+    << " from the instantiating thread " << parent_tid_;
+
+  RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), log_dir()));
+  const string info_path = JoinPathSegments(data_dirs()[0], "info.pb");
+
+  vector<string> argv = { /* First the exe for argv[0] */ opts_.exe };
+  vector<string> flags = GetDaemonFlags(opts_);
+  argv.insert(argv.end(), std::make_move_iterator(flags.begin()),
+              std::make_move_iterator(flags.end()));
 
   // Add all the flags coming from the minicluster framework.
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
@@ -1415,10 +1422,10 @@ ExternalMaster::~ExternalMaster() {
 }
 
 Status ExternalMaster::Start() {
-  vector<string> flags(GetCommonFlags());
-  flags.push_back(Substitute("--rpc_bind_addresses=$0", rpc_bind_address().ToString()));
-  flags.push_back(Substitute("--webserver_interface=$0", rpc_bind_address().host()));
-  flags.emplace_back("--webserver_port=0");
+  vector<string> flags { "master", "run" };
+  auto common_flags = GetCommonFlags(rpc_bind_address());
+  flags.insert(flags.end(), std::make_move_iterator(common_flags.begin()),
+               std::make_move_iterator(common_flags.end()));
   return StartProcess(flags);
 }
 
@@ -1428,16 +1435,10 @@ Status ExternalMaster::Restart() {
     return Status::IllegalState("Master cannot be restarted. Must call Shutdown() first.");
   }
 
-  vector<string> flags(GetCommonFlags());
-  flags.push_back(Substitute("--rpc_bind_addresses=$0", bound_rpc_.ToString()));
-  if (bound_http_.Initialized()) {
-    flags.push_back(Substitute("--webserver_interface=$0", bound_http_.host()));
-    flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
-  } else {
-    flags.push_back(Substitute("--webserver_interface=$0", bound_rpc_.host()));
-    flags.emplace_back("--webserver_port=0");
-  }
-
+  vector<string> flags { "master", "run" };
+  auto common_flags = GetCommonFlags(bound_rpc_, bound_http_);
+  flags.insert(flags.end(), std::make_move_iterator(common_flags.begin()),
+               std::make_move_iterator(common_flags.end()));
   return StartProcess(flags);
 }
 
@@ -1486,17 +1487,37 @@ Status ExternalMaster::WaitForCatalogManager(WaitMode wait_mode) {
   return Status::OK();
 }
 
-const vector<string>& ExternalMaster::GetCommonFlags() {
-  static vector<string> kFlags { "master", "run" };
+vector<string> ExternalMaster::GetCommonFlags(const HostPort& rpc_bind_addr,
+                                              const HostPort& http_addr) {
+  vector<string> flags;
   if (!UseLargeKeys()) {
     // See the in-line comment for "--ipki_server_key_size" flag in
     // ExternalDaemon::StartProcess() method.
-    kFlags.emplace_back("--ipki_ca_key_size=768");
+    flags.emplace_back("--ipki_ca_key_size=768");
     // As for the TSK keys, 512 bits is the minimum since we are using
     // SHA256 digest for token signing/verification.
-    kFlags.emplace_back("--tsk_num_rsa_bits=512");
+    flags.emplace_back("--tsk_num_rsa_bits=512");
   }
-  return kFlags;
+
+  flags.emplace_back(Substitute("--rpc_bind_addresses=$0", rpc_bind_addr.ToString()));
+
+  if (http_addr.Initialized()) {
+    flags.emplace_back(Substitute("--webserver_interface=$0", http_addr.host()));
+    flags.emplace_back(Substitute("--webserver_port=$0", http_addr.port()));
+  } else {
+    flags.emplace_back(Substitute("--webserver_interface=$0", rpc_bind_addr.host()));
+    flags.emplace_back("--webserver_port=0");
+  }
+
+  return flags;
+}
+
+vector<string> ExternalMaster::GetMasterFlags(const ExternalDaemonOptions& opts) {
+  vector<string> flags(ExternalDaemon::GetDaemonFlags(opts));
+  auto common_flags = GetCommonFlags(opts.rpc_bind_address);
+  flags.insert(flags.end(), std::make_move_iterator(common_flags.begin()),
+               std::make_move_iterator(common_flags.end()));
+  return flags;
 }
 
 //------------------------------------------------------------

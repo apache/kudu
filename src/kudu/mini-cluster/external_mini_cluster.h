@@ -658,6 +658,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // LOG(FATAL) if there are any leaks.
   void CheckForLeaks();
 
+  // Get flags for an ExternalDaemon from the supplied 'opts'.
+  // It does not include executable or any positional arguments.
+  static std::vector<std::string> GetDaemonFlags(const ExternalDaemonOptions& opts);
+
   // Get RPC bind address for daemon.
   const HostPort& rpc_bind_address() const {
     return opts_.rpc_bind_address;
@@ -727,9 +731,16 @@ class ExternalMaster : public ExternalDaemon {
   Status WaitForCatalogManager(
       WaitMode wait_mode = DONT_WAIT_FOR_LEADERSHIP) WARN_UNUSED_RESULT;
 
+  // Get all flags for a master from the supplied 'opts'.
+  // It does not include executable or any positional arguments like "master run".
+  static std::vector<std::string> GetMasterFlags(const ExternalDaemonOptions& opts);
  private:
   friend class RefCountedThreadSafe<ExternalMaster>;
-  static const std::vector<std::string>& GetCommonFlags();
+  // Get flags specific to ExternalMaster where 'rpc_bind_addr' and 'http_addr' are
+  // the RPC and HTTP addresses to bind in case of start or the corresponding bound
+  // addresses in case of restart.
+  static std::vector<std::string> GetCommonFlags(const HostPort& rpc_bind_addr,
+                                                 const HostPort& http_addr = HostPort());
   virtual ~ExternalMaster();
 };
 
