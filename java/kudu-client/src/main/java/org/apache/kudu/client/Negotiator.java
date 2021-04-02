@@ -115,29 +115,29 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
 
   /**
    * The cipher suites, in order of our preference.
+   *
    * This list is based on the kDefaultTls13Ciphers and kDefaultTlsCiphers lists
    * in security_flags.cc: see that file for details on how it was derived.
+   *
+   * For the mapping between IANA and OpenSSL cipher names, run
+   * `openssl ciphers -stdname` on OpenSSL 1.1.1 (and newer) or see
+   *   https://www.openssl.org/docs/man1.1.1/man1/ciphers.html
+   *   https://wiki.mozilla.org/Security/Cipher_Suites
+   *
+   * For information on TLSv1.3 (JEP 332) and appropriate ciphers in Java 8
+   * updates, see
+   *   https://www.oracle.com/java/technologies/javase/8all-relnotes.html
    */
   static final String[] PREFERRED_CIPHER_SUITES = new String[] {
-      "TLS_AES_128_GCM_SHA256",                   // Java 8 (updated), Java 11 (TLS 1.3+ only)
-      "TLS_AES_256_GCM_SHA384",                   // Java 8 (updated), Java 11 (TLS 1.3+ only)
-      "TLS_CHACHA20_POLY1305_SHA256",             // Java 8 (updated), Java 11 (TLS 1.3+ only)
-      "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",  // Java 8
-      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",    // Java 8
-      "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",  // Java 8
-      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",    // Java 8
-      "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",  // Java 7 (TLS 1.2+ only)
-      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",    // Java 7 (TLS 1.2+ only)
-      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",  // Java 7 (TLS 1.2+ only)
-      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",    // Java 7 (TLS 1.2+ only)
-      "TLS_RSA_WITH_AES_256_GCM_SHA384",          // Java 8
-      "TLS_RSA_WITH_AES_128_GCM_SHA256",          // Java 8
-      "TLS_RSA_WITH_AES_256_CBC_SHA256",          // Java 7 (TLS 1.2+ only)
-      "TLS_RSA_WITH_AES_128_CBC_SHA256",          // Java 7 (TLS 1.2+ only)
-      // The following two are critical to allow the client to connect to
-      // servers running versions of OpenSSL that don't support TLS 1.2.
-      "TLS_RSA_WITH_AES_256_CBC_SHA",             // All Java versions
-      "TLS_RSA_WITH_AES_128_CBC_SHA"              // All Java versions
+      "TLS_AES_128_GCM_SHA256",                 // TLSv1.3: Java 8 updates (8u261), Java 11
+      "TLS_AES_256_GCM_SHA384",                 // TLSv1.3: Java 8 updates (8u261), Java 11
+      "TLS_CHACHA20_POLY1305_SHA256",           // TLSv1.3: Java 12
+      "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",// TLSv1.2: Java 8
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",  // TLSv1.2: Java 8
+      "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",// TLSv1.2: Java 8
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",  // TLSv1.2: Java 8
+      "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",  // TLSv1.2: Java 12
+      "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",    // TLSv1.2: Java 12
   };
 
   /**
@@ -145,10 +145,8 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
    * This list is based on the kDefaultTlsMinVersion in security_flags.cc.
    */
   static final String[] PREFERRED_PROTOCOLS = new String[]{
-      "TLSv1.3",
-      "TLSv1.2",
-      "TLSv1.1",
-      "TLSv1",
+      "TLSv1.3",  // Java 8 updates (8u261), Java 11
+      "TLSv1.2",  // Java 8
   };
 
   private enum State {

@@ -17,26 +17,20 @@
 
 #include "kudu/security/security_flags.h"
 
+// The list of ciphers and minimum TLS protocol versions are influenced by the
+// Mozilla Security Server Side TLS recommendations accessed March 2021, at
+// https://wiki.mozilla.org/Security/Server_Side_TLS
 namespace kudu {
 namespace security {
 
-// This is the "modern compatibility" cipher list of the Mozilla Security
-// Server Side TLS recommendations, accessed Feb. 2017, with the addition of
-// the non ECDH/DH AES cipher suites from the "intermediate compatibility"
-// list. These additional ciphers maintain compatibility with RHEL 6.5 and
-// below. The DH AES ciphers are not included since we are not configured to
-// use DH key agreement.
-// TODO(aserbin): refresh the list to drop RHEL6/CentOS6 ciphers and
-//                sync it with https://wiki.mozilla.org/Security/Server_Side_TLS
+// This is TLSv1.2-related section from the "intermediate compatibility" cipher
+// list of the Mozilla Security Server Side TLS recommendations without the
+// DH AES ciphers: they are not included since we are not configured to use
+// the DH key agreement.
 const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsCiphers =
-    "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
-    "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
     "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
-    "ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:"
-    "ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:"
-    "AES256-GCM-SHA384:AES128-GCM-SHA256:"
-    "AES256-SHA256:AES128-SHA256:"
-    "AES256-SHA:AES128-SHA";
+    "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
+    "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305";
 
 // This is the "modern compatibility" TLSv1.3 cipher list of the Mozilla
 // Security Server Side TLS recommendations, accessed March 2021.
@@ -44,7 +38,9 @@ const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsCiphers =
 const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsCipherSuites =
     "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
 
-const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsMinVersion = "TLSv1";
+// According to the cipher lists above, the minimum supported TLS version among
+// all the cipher suites is TLSv1.2.
+const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsMinVersion = "TLSv1.2";
 
 } // namespace security
 } // namespace kudu
