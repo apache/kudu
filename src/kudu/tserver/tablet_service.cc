@@ -681,7 +681,7 @@ class RpcOpCompletionCallback : public OpCompletionCallback {
       : context_(context),
         response_(response) {}
 
-  virtual void OpCompleted() OVERRIDE {
+  void OpCompleted() override {
     if (!status_.ok()) {
       LOG(WARNING) << Substitute("failed op from $0: $1",
                                  context_->requestor_string(), status_.ToString());
@@ -698,6 +698,24 @@ class RpcOpCompletionCallback : public OpCompletionCallback {
 
   rpc::RpcContext* context_;
   Response* response_;
+};
+
+class TxnWriteCompletionCallback : public RpcOpCompletionCallback<WriteResponsePB> {
+ public:
+  TxnWriteCompletionCallback(RpcContext* context, WriteResponsePB* response,
+                             std::function<Status(void)> abort_func)
+      : RpcOpCompletionCallback(context, response),
+        abort_func_(std::move(abort_func)) {}
+
+  void OpCompleted() override {
+    if (PREDICT_FALSE(code_ == TabletServerErrorPB::TXN_LOCKED_ABORT)) {
+      WARN_NOT_OK(abort_func_(), "Error running txn abort callback");
+    }
+    RpcOpCompletionCallback::OpCompleted();
+  }
+
+ private:
+  std::function<Status(void)> abort_func_;
 };
 
 // Generic interface to handle scan results.
@@ -1612,17 +1630,23 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
         resp->mutable_error(), s, TabletServerErrorPB::UNKNOWN_ERROR, context);
   }
 
-  op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
-      new RpcOpCompletionCallback<WriteResponsePB>(context, resp)));
-
   const auto deadline = context->GetClientDeadline();
   const auto& username = context->remote_user().username();
 
   if (!req->has_txn_id() ||
       PREDICT_FALSE(!FLAGS_tserver_txn_write_op_handling_enabled)) {
+    op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+        new RpcOpCompletionCallback<WriteResponsePB>(context, resp)));
+
     // Submit the write operation. The RPC will be responded asynchronously.
     s = replica->SubmitWrite(std::move(op_state));
   } else {
+    auto abort_func = [this, txn_id = req->txn_id(), &username] {
+      return server_->tablet_manager()->ScheduleAbortTxn(txn_id, username);
+    };
+    op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+        new TxnWriteCompletionCallback(context, resp, std::move(abort_func))));
+
     // If it's a write operation in the context of a multi-row transaction,
     // schedule running preliminary tasks if necessary: register the tablet as
     // a participant in the transaction and begin transaction for the

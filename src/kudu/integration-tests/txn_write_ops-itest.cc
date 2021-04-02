@@ -50,8 +50,8 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/map-util.h"
@@ -297,9 +297,7 @@ class TxnWriteOpsITest : public ExternalMiniClusterITestBase {
 
 // Test that our deadlock prevention mechanisms work by writing across
 // different tablets concurrently from multiple transactions.
-// TODO(awong): it'd be much more convenient to take control of aborting the
-// transactions ourselves, rather than relying on the application user.
-TEST_F(TxnWriteOpsITest, TestClientSideDeadlockPrevention) {
+TEST_F(TxnWriteOpsITest, TestDeadlockPrevention) {
   constexpr const int kNumTxns = 8;
   const vector<string> master_flags = {
     "--txn_manager_enabled=true",
@@ -338,8 +336,8 @@ TEST_F(TxnWriteOpsITest, TestClientSideDeadlockPrevention) {
           Status s = session->Apply(insert.release());
           LOG(INFO) << Substitute("Txn $0 wrote row $1: $2",
                                   token.txn_id(), row_key, s.ToString());
-          // If the write op failed because of a locking error, roll the
-          // transaction back and retry the transaction after waiting a bit.
+          // If the write op failed because of a locking error, retry the
+          // transaction after waiting a bit.
           if (!s.ok()) {
             vector<KuduError*> errors;
             ElementDeleter d(&errors);
@@ -354,7 +352,6 @@ TEST_F(TxnWriteOpsITest, TestClientSideDeadlockPrevention) {
             // in wait-die, that get retried) will still time out, after
             // contending a bit with other ops.
             ASSERT_TRUE(error.IsAborted() || error.IsTimedOut()) << error.ToString();
-            ASSERT_OK(txn->Rollback());
             needs_retry = true;
 
             // Wait a bit before retrying the entire transaction to allow for
@@ -1063,6 +1060,8 @@ TEST_F(TxnOpDispatcherITest, LifecycleBasic) {
   }
 }
 
+// Test that when attempting to lock a transaction that is locked by an earlier
+// transaction, we abort the newer transaction.
 TEST_F(TxnOpDispatcherITest, BeginTxnLockAbort) {
   NO_FATALS(Prepare(1));
 
@@ -1118,21 +1117,31 @@ TEST_F(TxnOpDispatcherITest, BeginTxnLockAbort) {
     ASSERT_TRUE(row_status.IsAborted()) << row_status.ToString();
     ASSERT_STR_CONTAINS(row_status.ToString(), "should be aborted");
 
-    // We should have an extra dispatcher for the new transactional write.
-    ASSERT_EQ(1 + kNumPartitions, GetTxnOpDispatchersTotalCount());
+    // The dispatcher for the new transactional write should eventually
+    // disappear because the transaction is automatically aborted.
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_EQ(kNumPartitions, GetTxnOpDispatchersTotalCount());
+    });
   }
   {
     // Now, commit the first transaction.
     ASSERT_OK(first_txn->Commit());
 
     // All dispatchers should be unregistered once the transaction is committed.
-    ASSERT_EQ(1, GetTxnOpDispatchersTotalCount());
+    ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
 
-    // Writes to the second transaction should now succeed.
-    ASSERT_OK(InsertRows(second_txn.get(), 1, &key));
-    ASSERT_EQ(1, GetTxnOpDispatchersTotalCount());
-
-    ASSERT_OK(second_txn->Commit());
+    // The second transaction should have been automatically aborted in its
+    // attempt to write to avoid deadlock.
+    Status s = InsertRows(second_txn.get(), 1, &key);
+    ASSERT_TRUE(s.IsIOError());
+    ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
+    ASSERT_EVENTUALLY([&] {
+      bool is_complete;
+      Status commit_status;
+      ASSERT_OK(second_txn->IsCommitComplete(&is_complete, &commit_status));
+      ASSERT_TRUE(is_complete);
+      ASSERT_TRUE(commit_status.IsAborted()) << commit_status.ToString();
+    });
     ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
   }
 }

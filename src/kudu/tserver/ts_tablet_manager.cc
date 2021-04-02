@@ -1889,6 +1889,27 @@ Status TSTabletManager::SchedulePreliminaryTasksForTxnWrite(
   });
 }
 
+Status TSTabletManager::ScheduleAbortTxn(int64_t txn_id, const string& user) {
+  {
+    std::lock_guard<simple_spinlock> l(txn_aborts_lock_);
+    if (!InsertIfNotPresent(&txn_aborts_in_progress_, txn_id)) {
+      return Status::OK();
+    }
+  }
+  transactions::TxnSystemClient* tsc = nullptr;
+  RETURN_NOT_OK(server_->txn_client_initializer()->GetClient(&tsc));
+  DCHECK(tsc);
+  RETURN_NOT_OK(tsc->CheckOpenTxnStatusTable());
+  return txn_participant_registration_pool_->Submit(
+      [this, txn_id, tsc, user] () {
+        LOG(INFO) << Substitute("Sending abort request for transaction $0", txn_id);
+        WARN_NOT_OK(tsc->AbortTransaction(txn_id, user),
+                    Substitute("Error aborting transaction $0 as user $1", txn_id, user));
+        std::lock_guard<simple_spinlock> l(txn_aborts_lock_);
+        txn_aborts_in_progress_.erase(txn_id);
+      });
+}
+
 void TSTabletManager::SetNextUpdateTimeForTests() {
   std::lock_guard<rw_spinlock> l(lock_update_);
   next_update_time_ = MonoTime::Now();

@@ -244,13 +244,18 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Update the tablet statistics if necessary.
   void UpdateTabletStatsIfNecessary();
 
-  // Schedule preliminary tasks to process
+  // Schedule preliminary tasks to begin transaction 'txn_id' started by 'user'
+  // with 'replica' as a participant, with the given deadline. Calls 'cb' if
+  // any of the tasks fail.
   Status SchedulePreliminaryTasksForTxnWrite(
       scoped_refptr<tablet::TabletReplica> replica,
       int64_t txn_id,
       const std::string& user,
       MonoTime deadline,
       tablet::RegisteredTxnCallback cb);
+
+  // Schedule the rollback of the given transaction as the given user.
+  Status ScheduleAbortTxn(int64_t txn_id, const std::string& user);
 
  private:
   FRIEND_TEST(LeadershipChangeReportingTest, TestReportStatsDuringLeadershipChange);
@@ -420,6 +425,11 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Holds cached tablet states from tablet_map_.
   std::map<tablet::TabletStatePB, int> tablet_state_counts_;
+
+  // Set of transactions that have a pending call to abort, indicating that
+  // further attempts to schedule such a call can be ignored.
+  simple_spinlock txn_aborts_lock_;
+  std::unordered_set<int64_t> txn_aborts_in_progress_;
 
   TSTabletManagerStatePB state_;
 
