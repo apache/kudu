@@ -155,14 +155,6 @@ if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
   DYLIB_SUFFIX="so"
   PARALLEL=${PARALLEL:-$(grep -c processor /proc/cpuinfo)}
-
-  if [ -d "$OPENSSL_WORKAROUND_DIR" ]; then
-    # If the el6 workaround openssl is present, we must build dependencies
-    # against that version of openssl, not the system version, because at test
-    # runtime we use the workaround openssl.
-    OPENSSL_CFLAGS="-I$OPENSSL_WORKAROUND_DIR/usr/include"
-    OPENSSL_LDFLAGS="-L$OPENSSL_WORKAROUND_DIR/usr/lib64 -Wl,-rpath,$OPENSSL_WORKAROUND_DIR/usr/lib64"
-  fi
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   OS_OSX=1
   DYLIB_SUFFIX="dylib"

@@ -18,11 +18,7 @@
 #include "kudu/server/webserver.h"
 
 #include <netinet/in.h>
-#if defined(KUDU_OPENSSL_REQUIRE_FIPS_HEADER)
-#include <openssl/fips.h>
-#else
 #include <openssl/crypto.h>
-#endif
 #include <sys/socket.h>
 
 #include <algorithm>

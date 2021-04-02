@@ -18,9 +18,6 @@
 #include "kudu/security/openssl_util.h"
 
 #include <openssl/crypto.h>
-#if defined(KUDU_OPENSSL_REQUIRE_FIPS_HEADER)
-#include <openssl/fips.h>
-#endif
 #include <openssl/err.h>
 #include <openssl/rand.h> // IWYU pragma: keep
 

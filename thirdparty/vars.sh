@@ -170,8 +170,6 @@ BOOST_VERSION=1_74_0
 BOOST_NAME=boost_$BOOST_VERSION
 BOOST_SOURCE=$TP_SOURCE_DIR/$BOOST_NAME
 
-OPENSSL_WORKAROUND_DIR="$TP_DIR/installed/openssl-el6-workaround"
-
 # The breakpad source artifact is created using the script found in
 # scripts/make-breakpad-src-archive.sh
 BREAKPAD_VERSION=9eac2058b70615519b2c4d8c6bdbfca1bd079e39

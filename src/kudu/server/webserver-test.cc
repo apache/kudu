@@ -17,11 +17,7 @@
 
 #include "kudu/server/webserver.h"
 
-#if defined(KUDU_OPENSSL_REQUIRE_FIPS_HEADER)
-#include <openssl/fips.h>
-#else
 #include <openssl/crypto.h>
-#endif
 
 #include <cstdlib>
 #include <functional>
