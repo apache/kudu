@@ -600,7 +600,7 @@ public class KuduTransaction implements AutoCloseable {
   private void startKeepaliveHeartbeating() {
     if (keepaliveEnabled) {
       LOG.debug("starting keepalive heartbeating with period {} ms (txn ID {})",
-          txnId, keepalivePeriodForTimeout(keepaliveMillis));
+          keepalivePeriodForTimeout(keepaliveMillis), txnId);
       doStartKeepaliveHeartbeating();
     } else {
       LOG.debug("keepalive heartbeating disabled for this handle (txn ID {})", txnId);
