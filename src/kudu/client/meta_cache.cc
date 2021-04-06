@@ -661,6 +661,8 @@ LookupRpcById::LookupRpcById(scoped_refptr<MetaCache> meta_cache,
       tablet_id_(tablet_id),
       meta_cache_(std::move(meta_cache)),
       remote_tablet_(remote_tablet) {
+  req_.add_tablet_ids(tablet_id_);
+  req_.set_intern_ts_infos_in_response(true);
 }
 
 void LookupRpcById::SendRpc() {
@@ -675,8 +677,6 @@ void LookupRpcById::SendRpc() {
 }
 
 void LookupRpcById::SendRpcSlowPath() {
-  req_.add_tablet_ids(tablet_id_);
-  req_.set_intern_ts_infos_in_response(true);
   AsyncLeaderMasterRpc::SendRpc();
 }
 
