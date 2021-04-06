@@ -270,6 +270,14 @@ struct PersistentTableInfo {
 // spin-lock.
 class TableInfo : public RefCountedThreadSafe<TableInfo> {
  public:
+  enum {
+    // It is useful to place size limits on tables that may be ingested to
+    // by long-lived applications. To avoid breaking existing tables, there
+    // is no limit enforced.
+    // The default value -1 means no limit.
+    TABLE_WRITE_DEFAULT_LIMIT = -1L
+  };
+
   typedef PersistentTableInfo cow_state;
   typedef std::map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
 
@@ -836,6 +844,11 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
   typedef std::unordered_map<std::string, scoped_refptr<TableInfo>> TableInfoMap;
   typedef std::unordered_map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
+
+  // Check whether the table's write limit is reached,
+  // if true, the write permission should be disabled.
+  static bool IsTableWriteDisabled(const scoped_refptr<TableInfo>& table,
+                                   const std::string& table_name);
 
   // Delete the specified table in the catalog. If 'user' is provided,
   // checks that the user is authorized to delete the table. Otherwise,

@@ -145,6 +145,7 @@ ADD_KUDU_TEST(ts_tablet_manager-itest)
 ADD_KUDU_TEST(update_scan_delta_compact-test RUN_SERIAL true)
 ADD_KUDU_TEST(webserver-crawl-itest LABELS no_dist_test)
 ADD_KUDU_TEST(webserver-stress-itest RUN_SERIAL true)
+ADD_KUDU_TEST(write_limit-itest)
 ADD_KUDU_TEST(write_throttling-itest)
 
 if (NOT APPLE)

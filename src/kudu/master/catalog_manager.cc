@@ -332,6 +332,29 @@ DEFINE_bool(enable_per_range_hash_schemas, false,
             "Whether the ability to specify different hash schemas per range is enabled");
 TAG_FLAG(enable_per_range_hash_schemas, unsafe);
 
+DEFINE_bool(enable_table_write_limit, false,
+            "Enable the table write limit. "
+            "When the table's size or row count is approaching the limit, "
+            "the write may be forbidden.");
+TAG_FLAG(enable_table_write_limit, experimental);
+TAG_FLAG(enable_table_write_limit, runtime);
+
+DEFINE_int64(table_disk_size_limit, -1,
+             "Set the target size in bytes of a table to write. "
+             "This is a system wide configuration for every newly "
+             "created table.");
+TAG_FLAG(table_disk_size_limit, experimental);
+
+DEFINE_int64(table_row_count_limit, -1,
+             "Set the target row count of a table to write. "
+             "This is a system wide configuration for every newly "
+             "created table.");
+TAG_FLAG(table_row_count_limit, experimental);
+
+DEFINE_double(table_write_limit_ratio, 0.95,
+              "Set the ratio of how much write limit can be reached");
+TAG_FLAG(table_write_limit_ratio, experimental);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int64(tsk_rotation_seconds);
 
@@ -399,6 +422,30 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
+static bool ValidateTableWriteLimitRatio(const char* flagname, double value) {
+  if (value > 1.0) {
+    LOG(ERROR) << Substitute("$0 must be less than or equal to 1.0, value $1 is invalid.",
+                             flagname, value);
+    return false;
+  }
+  if (value < 0) {
+    LOG(ERROR) << Substitute("$0 must be greater than 0, value $1 is invalid",
+                               flagname, value);
+  }
+  return true;
+}
+DEFINE_validator(table_write_limit_ratio, &ValidateTableWriteLimitRatio);
+
+static bool ValidateTableLimit(const char* flag, int64_t limit) {
+  if (limit != -1 && limit < 0) {
+     LOG(ERROR) << Substitute("$0 must be greater than or equal to -1, "
+                              "$1 is invalid", flag, limit);
+     return false;
+  }
+  return true;
+}
+DEFINE_validator(table_disk_size_limit, &ValidateTableLimit);
+DEFINE_validator(table_row_count_limit, &ValidateTableLimit);
 ////////////////////////////////////////////////////////////
 // Table Loader
 ////////////////////////////////////////////////////////////
@@ -2023,6 +2070,23 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(
   if (req.has_owner()) {
     metadata->set_owner(req.owner());
   }
+  // Set the table limit
+  if (FLAGS_enable_table_write_limit) {
+    if (FLAGS_table_disk_size_limit != TableInfo::TABLE_WRITE_DEFAULT_LIMIT) {
+      metadata->set_table_disk_size_limit(FLAGS_table_disk_size_limit);
+    } else {
+      metadata->clear_table_disk_size_limit();
+    }
+    if (FLAGS_table_row_count_limit != TableInfo::TABLE_WRITE_DEFAULT_LIMIT) {
+      metadata->set_table_row_count_limit(FLAGS_table_row_count_limit);
+    } else {
+      metadata->clear_table_row_count_limit();
+    }
+
+    LOG(INFO) << Substitute("table size write limit: $0, table row write limit: $1",
+                            FLAGS_table_disk_size_limit,
+                            FLAGS_table_row_count_limit);
+  }
   return table;
 }
 
@@ -2655,7 +2719,6 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
   if (rpc) {
     user = rpc->remote_user().username();
   }
-
   // If the HMS integration is enabled, the alteration includes a table
   // rename and the table should be altered in the HMS, then don't directly
   // rename the table in the Kudu catalog. Instead, rename the table
@@ -2797,6 +2860,21 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     }
   }
 
+  // Pre-check the modifications' validity:
+  // Alterations done by admin should not be combined with other table alterations.
+  bool table_limit_change = req.has_disk_size_limit() ||
+                            req.has_row_count_limit();
+  bool other_schema_change = req.has_new_table_name() ||
+                             req.has_new_table_owner() ||
+                             !req.new_extra_configs().empty() ||
+                             !alter_schema_steps.empty() ||
+                             !alter_partitioning_steps.empty();
+  if (table_limit_change && other_schema_change) {
+    return SetupError(Status::ConfigurationError(
+                      "Alter table limit cannot be combined with other alterations"),
+                      resp, MasterErrorPB::UNKNOWN_ERROR);
+  }
+
   // 2. Lookup the table, verify if it exists, lock it for modification, and then
   //    checks that the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
@@ -2815,7 +2893,16 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
                                                               username == owner),
                         resp, MasterErrorPB::NOT_AUTHORIZED);
     }
-
+    if (req.has_disk_size_limit() || req.has_row_count_limit()) {
+      // Table limit is used to stop writing from the table owner,
+      // so, the owner is disallowed to change the table limit.
+      if (user && !master_->IsServiceUserOrSuperUser(*user)) {
+        return SetupError(
+              Status::NotAuthorized("must be a service user or "
+              "a super user to modify table limit"),
+              resp, MasterErrorPB::NOT_AUTHORIZED);
+      }
+    }
     return SetupError(authz_provider_->AuthorizeAlterTable(table_name, new_table, username,
                                                            username == owner),
                       resp, MasterErrorPB::NOT_AUTHORIZED);
@@ -2831,6 +2918,32 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
 
   string normalized_table_name = NormalizeTableName(l.data().name());
   *resp->mutable_table_id() = table->id();
+
+  // Modify the table limit.
+  if (table_limit_change) {
+    if (req.has_disk_size_limit()) {
+      if (req.disk_size_limit() == TableInfo::TABLE_WRITE_DEFAULT_LIMIT) {
+        l.mutable_data()->pb.clear_table_disk_size_limit();
+      } else if (req.disk_size_limit() >= 0) {
+        l.mutable_data()->pb.set_table_disk_size_limit(req.disk_size_limit());
+      } else {
+        return SetupError(Status::InvalidArgument("disk size limit must "
+            "be greater than or equal to -1"),
+            resp, MasterErrorPB::UNKNOWN_ERROR);
+      }
+    }
+    if (req.has_row_count_limit()) {
+      if (req.row_count_limit() == TableInfo::TABLE_WRITE_DEFAULT_LIMIT) {
+        l.mutable_data()->pb.clear_table_row_count_limit();
+      } else if (req.row_count_limit() >= 0) {
+        l.mutable_data()->pb.set_table_row_count_limit(req.row_count_limit());
+      } else {
+        return SetupError(Status::InvalidArgument("row count limit must "
+            "be greater than or equal to -1"),
+            resp, MasterErrorPB::UNKNOWN_ERROR);
+      }
+    }
+  }
 
   // 3. Calculate and validate new schema for the on-disk state, not persisted yet.
   Schema new_schema;
@@ -2946,7 +3059,8 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   // or extra configuration has changed.
   bool has_metadata_changes = has_schema_changes ||
       req.has_new_table_name() || req.has_new_table_owner() ||
-      !req.new_extra_configs().empty();
+      !req.new_extra_configs().empty() || req.has_disk_size_limit() ||
+      req.has_row_count_limit();
   // Set to true if there are partitioning changes.
   bool has_partitioning_changes = !alter_partitioning_steps.empty();
   // Set to true if metadata changes need to be applied to existing tablets.
@@ -3174,6 +3288,11 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
                                                          *user == l.data().owner(),
                                                          schema_pb, &table_privilege),
                    resp, MasterErrorPB::UNKNOWN_ERROR));
+    if (FLAGS_enable_table_write_limit &&
+        PREDICT_FALSE(IsTableWriteDisabled(table, l.data().name()))) {
+      table_privilege.clear_insert_privilege();
+      table_privilege.clear_update_privilege();
+    }
     security::SignedTokenPB authz_token;
     RETURN_NOT_OK(token_signer->GenerateAuthzToken(
         *user, std::move(table_privilege), &authz_token));
@@ -3308,8 +3427,64 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
       resp->set_live_row_count(table->GetMetrics()->live_row_count->value());
     }
   }
-
+  if (FLAGS_enable_table_write_limit) {
+    resp->set_disk_size_limit(l.data().pb.table_disk_size_limit());
+    resp->set_row_count_limit(l.data().pb.table_row_count_limit());
+  }
   return Status::OK();
+}
+
+bool CatalogManager::IsTableWriteDisabled(const scoped_refptr<TableInfo>& table,
+                                          const std::string& table_name) {
+  uint64_t table_disk_size = 0;
+  uint64_t table_rows = 0;
+  if (table->GetMetrics()->TableSupportsOnDiskSize()) {
+    table_disk_size = table->GetMetrics()->on_disk_size->value();
+  }
+  if (table->GetMetrics()->TableSupportsLiveRowCount()) {
+    table_rows = table->GetMetrics()->live_row_count->value();
+  }
+  bool disallow_write = false;
+  int64_t table_disk_size_limit = TableInfo::TABLE_WRITE_DEFAULT_LIMIT;
+  int64_t table_rows_limit = TableInfo::TABLE_WRITE_DEFAULT_LIMIT;
+  {
+    // Release the table_lock in time
+    TableMetadataLock table_lock(table.get(), LockMode::READ);
+    const auto& pb = table_lock.data().pb;
+
+    // If we are approaching the limit target of the table, we treat it
+    // as limit reached, because here depends on authz token to disable
+    // writing, and authz token has a fixed expiration time. We cannot
+    // disable write immediately.
+    if (pb.has_table_disk_size_limit()) {
+      table_disk_size_limit = pb.table_disk_size_limit();
+      if (static_cast<double>(table_disk_size) >=
+           (static_cast<double>(table_disk_size_limit) *
+            FLAGS_table_write_limit_ratio)) {
+        disallow_write = true;
+      }
+    }
+    if (!disallow_write && pb.has_table_row_count_limit()) {
+      table_rows_limit = pb.table_row_count_limit();
+      if (static_cast<double>(table_rows) >=
+              (static_cast<double>(table_rows_limit) *
+               FLAGS_table_write_limit_ratio)) {
+        disallow_write = true;
+      }
+    }
+  }
+
+  if (disallow_write) {
+    // The writing into the table is disallowed.
+    LOG(INFO) << Substitute("table $0 row count is $1, on disk size is $2, "
+                            "row count limit is $3, size limit is $4, writing is forbidden",
+                            table_name,
+                            table_rows,
+                            table_disk_size,
+                            table_rows_limit,
+                            table_disk_size_limit);
+  }
+  return disallow_write;
 }
 
 Status CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {

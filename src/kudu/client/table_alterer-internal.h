@@ -17,6 +17,7 @@
 #ifndef KUDU_CLIENT_TABLE_ALTERER_INTERNAL_H
 #define KUDU_CLIENT_TABLE_ALTERER_INTERNAL_H
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -77,6 +78,9 @@ class KuduTableAlterer::Data {
   boost::optional<std::string> set_owner_to_;
 
   boost::optional<std::map<std::string, std::string>> new_extra_configs_;
+
+  boost::optional<int64_t> disk_size_limit_;
+  boost::optional<int64_t> row_count_limit_;
 
   // Set to true if there are alter partition steps.
   bool has_alter_partitioning_steps = false;

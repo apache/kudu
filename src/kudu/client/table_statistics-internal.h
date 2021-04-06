@@ -33,9 +33,14 @@ using strings::Substitute;
 
 class KuduTableStatistics::Data {
  public:
-  Data(boost::optional<int64_t> on_disk_size, boost::optional<int64_t> live_row_count)
-      : on_disk_size_(std::move(on_disk_size)),
-        live_row_count_(std::move(live_row_count)) {
+  Data(boost::optional<int64_t> on_disk_size,
+       boost::optional<int64_t> live_row_count,
+       boost::optional<int64_t> on_disk_size_limit,
+       boost::optional<int64_t> live_row_count_limit)
+      : on_disk_size_(on_disk_size),
+        live_row_count_(live_row_count),
+        on_disk_size_limit_(on_disk_size_limit),
+        live_row_count_limit_(live_row_count_limit) {
   }
 
   ~Data() {
@@ -43,13 +48,20 @@ class KuduTableStatistics::Data {
 
   string ToString() const {
     return Substitute("on disk size: $0\n"
-                      "live row count: $1\n",
+                      "live row count: $1\n"
+                      "on disk size limit: $2\n"
+                      "live row count limit: $3\n",
                       on_disk_size_ ? std::to_string(*on_disk_size_) : "N/A",
-                      live_row_count_ ? std::to_string(*live_row_count_) : "N/A");
+                      live_row_count_ ? std::to_string(*live_row_count_) : "N/A",
+                      on_disk_size_limit_ ? std::to_string(*on_disk_size_limit_) : "N/A",
+                      live_row_count_limit_ ? std::to_string(*live_row_count_limit_) : "N/A");
+
   }
 
   const boost::optional<int64_t> on_disk_size_;
   const boost::optional<int64_t> live_row_count_;
+  const boost::optional<int64_t> on_disk_size_limit_;
+  const boost::optional<int64_t> live_row_count_limit_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);
