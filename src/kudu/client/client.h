@@ -306,6 +306,18 @@ class KUDU_EXPORT KuduClientBuilder {
   /// @return Reference to the updated object.
   KuduClientBuilder& num_reactors(int num_reactors);
 
+  /// Set the SASL protocol name for the connection to a remote server.
+  ///
+  /// If the servers use a non-default Kerberos service principal name (other
+  /// than "kudu" or "kudu/<hostname>", this needs to be set for the client to
+  /// be able to connect to the servers. If unset, the client will assume the
+  /// server is using the default service principal.
+  ///
+  /// @param [in] sasl_protocol_name
+  ///   SASL protocol name.
+  /// @return Reference to the updated object.
+  KuduClientBuilder& sasl_protocol_name(const std::string& sasl_protocol_name);
+
   /// Create a client object.
   ///
   /// @note KuduClients objects are shared amongst multiple threads and,

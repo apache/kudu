@@ -591,6 +591,12 @@ Status ServerBase::Init() {
     builder.set_reuseport();
   }
 
+  if (!FLAGS_keytab_file.empty()) {
+    string service_name;
+    RETURN_NOT_OK(security::MapPrincipalToLocalName(FLAGS_principal, &service_name));
+    builder.set_sasl_proto_name(service_name);
+  }
+
   RETURN_NOT_OK(builder.Build(&messenger_));
   rpc_server_->set_too_busy_hook([this](rpc::ServicePool* pool) {
     this->ServiceQueueOverflowed(pool);

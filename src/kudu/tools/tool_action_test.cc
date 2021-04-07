@@ -175,6 +175,9 @@ Status ProcessRequest(const ControlShellRequestPB& req,
         opts.mini_kdc_options.data_root = JoinPathSegments(opts.cluster_root, "krb5kdc");
         opts.mini_kdc_options.ticket_lifetime = cc.mini_kdc_options().ticket_lifetime();
         opts.mini_kdc_options.renew_lifetime = cc.mini_kdc_options().renew_lifetime();
+        if (cc.has_principal()) {
+          opts.principal = cc.principal();
+        }
       }
 
       cluster->reset(new ExternalMiniCluster(std::move(opts)));

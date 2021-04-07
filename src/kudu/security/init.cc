@@ -75,12 +75,8 @@ TAG_FLAG(use_system_auth_to_local, advanced);
 DEFINE_string(principal, "kudu/_HOST",
               "Kerberos principal that this daemon will log in as. The special token "
               "_HOST will be replaced with the FQDN of the local host.");
-TAG_FLAG(principal, experimental);
-// This is currently tagged as unsafe because there is no way for users to configure
-// clients to expect a non-default principal. As such, configuring a server to login
-// as a different one would end up with a cluster that can't be connected to.
-// See KUDU-1884.
-TAG_FLAG(principal, unsafe);
+TAG_FLAG(principal, advanced);
+TAG_FLAG(principal, stable);
 
 DEFINE_string(keytab_file, "",
               "Path to the Kerberos Keytab file for this server. Specifying a "

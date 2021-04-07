@@ -17,10 +17,9 @@
 
 #include "kudu/tools/tool_action_common.h"
 
-#include <stdlib.h>
-
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
@@ -145,6 +144,12 @@ DEFINE_validator(num_threads, &ValidateNumThreads);
 DEFINE_int64(negotiation_timeout_ms, 3000,
              "Timeout for negotiating an RPC connection to a Kudu server, "
              "in milliseconds");
+
+DEFINE_string(sasl_protocol_name,
+              "kudu",
+              "SASL protocol name used to connnect to a Kerberos-enabled cluster. Must match the "
+              "servers' service principal name base (e.g. if it's \"kudu/_HOST\", then "
+              "sasl_protocol_name must be \"kudu\" to be able to connect.");
 
 bool ValidateTimeoutSettings() {
   if (FLAGS_timeout_ms < FLAGS_negotiation_timeout_ms) {
@@ -413,9 +418,10 @@ TServerActionBuilder::TServerActionBuilder(std::string name, ActionRunner runner
 
 Status BuildMessenger(std::string name, shared_ptr<Messenger>* messenger) {
   shared_ptr<Messenger> m;
-  MessengerBuilder b(std::move(name));
-  b.set_rpc_negotiation_timeout_ms(FLAGS_negotiation_timeout_ms);
-  auto s = b.Build(&m);
+  Status s = MessengerBuilder(std::move(name))
+                 .set_rpc_negotiation_timeout_ms(FLAGS_negotiation_timeout_ms)
+                 .set_sasl_proto_name(FLAGS_sasl_protocol_name)
+                 .Build(&m);
   if (s.ok()) {
     *messenger = std::move(m);
   }
@@ -582,11 +588,11 @@ Status CreateKuduClient(const vector<string>& master_addresses,
   if (can_see_all_replicas) {
     ReplicaController::SetVisibility(&b, ReplicaController::Visibility::ALL);
   }
-  return b
-      .master_server_addrs(master_addresses)
+  return b.master_server_addrs(master_addresses)
       .default_rpc_timeout(rpc_timeout)
       .default_admin_operation_timeout(rpc_timeout)
       .connection_negotiation_timeout(negotiation_timeout)
+      .sasl_protocol_name(FLAGS_sasl_protocol_name)
       .Build(client);
 }
 

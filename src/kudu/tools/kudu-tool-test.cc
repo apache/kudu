@@ -6117,5 +6117,16 @@ TEST_F(ToolTest, TestDuplicateMastersInKsck) {
   ASSERT_STR_CONTAINS(out, "Duplicate master addresses specified");
 }
 
+TEST_F(ToolTest, TestNonDefaultPrincipal) {
+  ExternalMiniClusterOptions opts;
+  opts.enable_kerberos = true;
+  opts.principal = "oryx";
+  NO_FATALS(StartExternalMiniCluster(opts));
+  ASSERT_OK(RunKuduTool({"cluster",
+                         "ksck",
+                         "--sasl_protocol_name=oryx",
+                         HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())}));
+}
+
 } // namespace tools
 } // namespace kudu

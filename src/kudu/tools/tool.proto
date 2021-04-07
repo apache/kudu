@@ -42,6 +42,10 @@ message CreateClusterRequestPB {
   // Whether or not the cluster should be Kerberized.
   optional bool enable_kerberos = 3;
 
+  // Service principal name used by the cluster if Kerberos is enabled (default:
+  // "kudu").
+  optional string principal = 10;
+
   // Whether or not Ranger should be enabled
   optional bool enable_ranger = 9;
 

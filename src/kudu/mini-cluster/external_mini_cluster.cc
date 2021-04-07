@@ -118,14 +118,16 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       bind_mode(kDefaultBindMode),
       num_data_dirs(1),
       enable_kerberos(false),
+      principal("kudu"),
       hms_mode(HmsMode::NONE),
       enable_ranger(false),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3))
 #if !defined(NO_CHRONY)
-      , num_ntp_servers(1)
-      , ntp_config_mode(BuiltinNtpConfigMode::ALL_SERVERS)
+      ,
+      num_ntp_servers(1),
+      ntp_config_mode(BuiltinNtpConfigMode::ALL_SERVERS)
 #endif // #if !defined(NO_CHRONY) ...
 {
 }
@@ -219,13 +221,14 @@ Status ExternalMiniCluster::Start() {
       << tablet_servers_.size() << "). Maybe you meant Restart()?";
   RETURN_NOT_OK(HandleOptions());
 
-  RETURN_NOT_OK_PREPEND(rpc::MessengerBuilder("minicluster-messenger")
-                        .set_num_reactors(1)
-                        .set_max_negotiation_threads(1)
-                        .set_rpc_negotiation_timeout_ms(
-                            opts_.rpc_negotiation_timeout.ToMilliseconds())
-                        .Build(&messenger_),
-                        "Failed to start Messenger for minicluster");
+  RETURN_NOT_OK_PREPEND(
+      rpc::MessengerBuilder("minicluster-messenger")
+          .set_num_reactors(1)
+          .set_max_negotiation_threads(1)
+          .set_rpc_negotiation_timeout_ms(opts_.rpc_negotiation_timeout.ToMilliseconds())
+          .set_sasl_proto_name(opts_.principal)
+          .Build(&messenger_),
+      "Failed to start Messenger for minicluster");
 
   Status s = env()->CreateDir(opts_.cluster_root);
   if (!s.ok() && !s.IsAlreadyPresent()) {
@@ -573,8 +576,9 @@ Status ExternalMiniCluster::StartMasters() {
 
     scoped_refptr<ExternalMaster> peer = new ExternalMaster(opts);
     if (opts_.enable_kerberos) {
-      RETURN_NOT_OK_PREPEND(peer->EnableKerberos(kdc_.get(), master_rpc_addrs[i].host()),
-                            "could not enable Kerberos");
+      RETURN_NOT_OK_PREPEND(
+          peer->EnableKerberos(kdc_.get(), opts_.principal, master_rpc_addrs[i].host()),
+          "could not enable Kerberos");
     }
     RETURN_NOT_OK_PREPEND(peer->Start(),
                           Substitute("Unable to start Master at index $0", i));
@@ -630,7 +634,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   vector<HostPort> master_hostports = master_rpc_addrs();
   scoped_refptr<ExternalTabletServer> ts = new ExternalTabletServer(opts, master_hostports);
   if (opts_.enable_kerberos) {
-    RETURN_NOT_OK_PREPEND(ts->EnableKerberos(kdc_.get(), bind_host),
+    RETURN_NOT_OK_PREPEND(ts->EnableKerberos(kdc_.get(), opts_.principal, bind_host),
                           "could not enable Kerberos");
   }
 
@@ -1154,8 +1158,10 @@ void ExternalDaemon::SetMetastoreIntegration(const string& hms_uris,
   opts_.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0", enable_kerberos));
 }
 
-Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
-  string spn = "kudu/" + bind_host;
+Status ExternalDaemon::EnableKerberos(MiniKdc* kdc,
+                                      const string& principal,
+                                      const string& bind_host) {
+  string spn = principal + "/" + bind_host;
   string ktpath;
   RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
                         "could not create keytab");

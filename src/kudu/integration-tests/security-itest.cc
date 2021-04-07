@@ -134,6 +134,7 @@ class SecurityITest : public KuduTest {
   }
 
   // Create a table, insert a row, scan it back, and delete the table.
+  void SmokeTestCluster(const client::sp::shared_ptr<KuduClient>& client);
   void SmokeTestCluster();
 
   Status TryRegisterAsTS() {
@@ -198,10 +199,7 @@ class SecurityITest : public KuduTest {
   unique_ptr<ExternalMiniCluster> cluster_;
 };
 
-void SecurityITest::SmokeTestCluster() {
-  client::sp::shared_ptr<KuduClient> client;
-  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
-
+void SecurityITest::SmokeTestCluster(const client::sp::shared_ptr<KuduClient>& client) {
   // Create a table.
   ASSERT_OK(CreateTestTable(client));
 
@@ -221,6 +219,13 @@ void SecurityITest::SmokeTestCluster() {
 
   // Delete the table.
   ASSERT_OK(client->DeleteTable(kTableName));
+}
+
+void SecurityITest::SmokeTestCluster() {
+  client::sp::shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+
+  SmokeTestCluster(client);
 }
 
 // Test authorizing list tablets.
@@ -443,6 +448,50 @@ TEST_F(SecurityITest, TestCorruptKerberosCC) {
     ASSERT_OK(kinit_ctx.DoRenewal());
     ASSERT_OK(TrySetFlagOnTS());
   }
+}
+
+TEST_F(SecurityITest, TestNonDefaultPrincipal) {
+  const string kPrincipal = "oryx";
+  cluster_opts_.principal = kPrincipal;
+  ASSERT_OK(StartCluster());
+
+  // A client with the default SASL proto shouldn't be able to connect
+  client::sp::shared_ptr<KuduClient> default_client;
+  Status s = cluster_->CreateClient(nullptr, &default_client);
+  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_STR_CONTAINS(s.ToString(), "not found in Kerberos database");
+
+  // Create a client with the matching SASL proto name and verify it's able to
+  // connect to the cluster and perform basic actions.
+  KuduClientBuilder b;
+  b.sasl_protocol_name(kPrincipal);
+  client::sp::shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(&b, &client));
+  SmokeTestCluster(client);
+}
+
+TEST_F(SecurityITest, TestNonExistentPrincipal) {
+  cluster_opts_.extra_master_flags.emplace_back("--principal=oryx");
+  cluster_opts_.extra_tserver_flags.emplace_back("--principal=oryx");
+  Status s = StartCluster();
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(s.ToString(), "failed to start masters");
+}
+
+TEST_F(SecurityITest, TestMismatchingPrincipals) {
+  ASSERT_OK(StartCluster());
+  string keytab_path;
+  const string kPrincipalBase = "oryx";
+  for (auto i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster::ExternalTabletServer* tserver = cluster_->tablet_server(i);
+    const string kPrincipal = kPrincipalBase + "/" + tserver->bound_rpc_addr().host();
+    ASSERT_OK(cluster_->kdc()->CreateServiceKeytab(kPrincipal, &keytab_path));
+    tserver->mutable_flags()->emplace_back("--principal=" + kPrincipal);
+    tserver->mutable_flags()->emplace_back("--keytab_file=" + keytab_path);
+  }
+  cluster_->Shutdown();
+  Status s = cluster_->Restart();
+  ASSERT_TRUE(s.IsTimedOut());
 }
 
 Status AssignIPToClient(bool external) {

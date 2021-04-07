@@ -194,6 +194,11 @@ struct ExternalMiniClusterOptions {
   // Default: false.
   bool enable_kerberos;
 
+  // Service principal name for the servers.
+  //
+  // Default: "kudu".
+  std::string principal;
+
   // Tri state mode flag that indicates whether to set up a Hive Metastore as
   // part of this ExternalMiniCluster and enable Kudu Hive Metastore integration.
   //
@@ -566,10 +571,13 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // subprocess such that the server will use Kerberos authentication.
   //
   // 'bind_host' is the hostname that will be used to generate the Kerberos
-  // service principal.
+  // service principal, 'principal_base' will be the first part (i.e.
+  // <principal_base>/<bind_host>).
   //
   // Must be called before 'StartProcess()'.
-  Status EnableKerberos(MiniKdc* kdc, const std::string& bind_host);
+  Status EnableKerberos(MiniKdc* kdc,
+                        const std::string& principal_base,
+                        const std::string& bind_host);
 
   // Sends a SIGSTOP signal to the daemon.
   Status Pause() WARN_UNUSED_RESULT;

@@ -318,6 +318,11 @@ KuduClientBuilder& KuduClientBuilder::num_reactors(int num_reactors) {
   return *this;
 }
 
+KuduClientBuilder& KuduClientBuilder::sasl_protocol_name(const string& sasl_protocol_name) {
+  data_->sasl_protocol_name_ = sasl_protocol_name;
+  return *this;
+}
+
 namespace {
 Status ImportAuthnCreds(const string& authn_creds,
                         Messenger* messenger,
@@ -360,6 +365,9 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   }
   if (data_->num_reactors_) {
     builder.set_num_reactors(data_->num_reactors_.get());
+  }
+  if (!data_->sasl_protocol_name_.empty()) {
+    builder.set_sasl_proto_name(data_->sasl_protocol_name_);
   }
   std::shared_ptr<Messenger> messenger;
   RETURN_NOT_OK(builder.Build(&messenger));
