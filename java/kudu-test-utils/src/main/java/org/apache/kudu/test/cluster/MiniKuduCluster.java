@@ -106,6 +106,7 @@ public final class MiniKuduCluster implements AutoCloseable {
   private final ImmutableList<String> extraMasterFlags;
   private final ImmutableList<String> locationInfo;
   private final String clusterRoot;
+  private final String principal;
 
   private MiniKdcOptionsPB kdcOptionsPb;
   private final Common.HmsMode hmsMode;
@@ -118,7 +119,8 @@ public final class MiniKuduCluster implements AutoCloseable {
       List<String> locationInfo,
       MiniKdcOptionsPB kdcOptionsPb,
       String clusterRoot,
-      Common.HmsMode hmsMode) {
+      Common.HmsMode hmsMode,
+      String principal) {
     this.enableKerberos = enableKerberos;
     this.numMasters = numMasters;
     this.numTservers = numTservers;
@@ -126,6 +128,7 @@ public final class MiniKuduCluster implements AutoCloseable {
     this.extraMasterFlags = ImmutableList.copyOf(extraMasterFlags);
     this.locationInfo = ImmutableList.copyOf(locationInfo);
     this.kdcOptionsPb = kdcOptionsPb;
+    this.principal = principal;
     this.hmsMode = hmsMode;
 
     if (clusterRoot == null) {
@@ -220,7 +223,8 @@ public final class MiniKuduCluster implements AutoCloseable {
         .addAllExtraMasterFlags(extraMasterFlags)
         .addAllExtraTserverFlags(extraTserverFlags)
         .setMiniKdcOptions(kdcOptionsPb)
-        .setClusterRoot(clusterRoot);
+        .setClusterRoot(clusterRoot)
+        .setPrincipal(principal);
 
     // Set up the location mapping command flag if there is location info.
     if (!locationInfo.isEmpty()) {
@@ -610,6 +614,7 @@ public final class MiniKuduCluster implements AutoCloseable {
     private final List<String> extraMasterServerFlags = new ArrayList<>();
     private final List<String> locationInfo = new ArrayList<>();
     private String clusterRoot = null;
+    private String principal = "kudu";
 
     private MiniKdcOptionsPB.Builder kdcOptionsPb = MiniKdcOptionsPB.newBuilder();
     private Common.HmsMode hmsMode = Common.HmsMode.NONE;
@@ -690,6 +695,11 @@ public final class MiniKuduCluster implements AutoCloseable {
       return this;
     }
 
+    public MiniKuduClusterBuilder principal(String principal) {
+      this.principal = principal;
+      return this;
+    }
+
     /**
      * Builds and starts a new {@link MiniKuduCluster} using builder state.
      * @return the newly started {@link MiniKuduCluster}
@@ -700,7 +710,7 @@ public final class MiniKuduCluster implements AutoCloseable {
           new MiniKuduCluster(enableKerberos,
               numMasterServers, numTabletServers,
               extraTabletServerFlags, extraMasterServerFlags, locationInfo,
-              kdcOptionsPb.build(), clusterRoot, hmsMode);
+              kdcOptionsPb.build(), clusterRoot, hmsMode, principal);
       try {
         cluster.start();
       } catch (IOException e) {

@@ -108,6 +108,8 @@ class Connection extends SimpleChannelInboundHandler<Object> {
   /** The Netty client bootstrap used to configure and initialize a connected channel. */
   private final Bootstrap bootstrap;
 
+  private final String saslProtocolName;
+
   /** The underlying Netty's socket channel. */
   private SocketChannel channel;
 
@@ -178,14 +180,17 @@ class Connection extends SimpleChannelInboundHandler<Object> {
    * @param credentialsPolicy policy controlling which credentials to use while negotiating on the
    *                          connection to the target server:
    *                          if {@link CredentialsPolicy#PRIMARY_CREDENTIALS}, the authentication
-   *                          token from the security context is ignored
+   * @param saslProtocolName SASL protocol name used when connecting to secure
+   *                         clusters. Must match the servers' service principal name.
    */
   Connection(ServerInfo serverInfo,
              SecurityContext securityContext,
              Bootstrap bootstrap,
-             CredentialsPolicy credentialsPolicy) {
+             CredentialsPolicy credentialsPolicy,
+             String saslProtocolName) {
     this.serverInfo = serverInfo;
     this.securityContext = securityContext;
+    this.saslProtocolName = saslProtocolName;
     this.state = State.NEW;
     this.credentialsPolicy = credentialsPolicy;
     this.bootstrap = bootstrap.clone();
@@ -208,7 +213,7 @@ class Connection extends SimpleChannelInboundHandler<Object> {
     }
     ctx.writeAndFlush(Unpooled.wrappedBuffer(CONNECTION_HEADER), ctx.voidPromise());
     Negotiator negotiator = new Negotiator(serverInfo.getAndCanonicalizeHostname(), securityContext,
-        (credentialsPolicy == CredentialsPolicy.PRIMARY_CREDENTIALS));
+        (credentialsPolicy == CredentialsPolicy.PRIMARY_CREDENTIALS), saslProtocolName);
     ctx.pipeline().addBefore(ctx.name(), "negotiation", negotiator);
     negotiator.sendHello(ctx);
   }

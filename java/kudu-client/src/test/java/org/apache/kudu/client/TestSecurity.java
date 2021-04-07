@@ -55,6 +55,7 @@ public class TestSecurity {
   private static final String TABLE_NAME = "TestSecurity-table";
   private static final int TICKET_LIFETIME_SECS = 10;
   private static final int RENEWABLE_LIFETIME_SECS = 20;
+  public static final String CUSTOM_PRINCIPAL = "oryx";
 
   private CapturingLogAppender cla;
   private MiniKuduCluster miniCluster;
@@ -64,6 +65,7 @@ public class TestSecurity {
     LONG_LEADER_ELECTION,
     SHORT_TOKENS_AND_TICKETS,
     START_TSERVERS,
+    CUSTOM_PRINCIPAL,
   }
 
   private static class KeyValueMessage {
@@ -88,6 +90,9 @@ public class TestSecurity {
       mcb.addMasterServerFlag("--authn_token_validity_seconds=" + TICKET_LIFETIME_SECS)
               .kdcRenewLifetime(RENEWABLE_LIFETIME_SECS + "s")
               .kdcTicketLifetime(TICKET_LIFETIME_SECS + "s");
+    }
+    if (opts.contains(Option.CUSTOM_PRINCIPAL)) {
+      mcb.principal(CUSTOM_PRINCIPAL);
     }
     miniCluster = mcb.numMasterServers(3)
         .numTabletServers(opts.contains(Option.START_TSERVERS) ? 3 : 0)
@@ -491,4 +496,26 @@ public class TestSecurity {
       }
     }
   }
+
+  @Test(timeout = 60000)
+  public void testNonDefaultPrincipal() throws Exception {
+    startCluster(ImmutableSet.of(Option.CUSTOM_PRINCIPAL, Option.START_TSERVERS));
+    try {
+      this.client.createTable("TestSecurity-nondefault-principal-1",
+          getBasicSchema(),
+          getBasicCreateTableOptions());
+      Assert.fail("default client shouldn't be able to connect to the cluster.");
+    } catch (NonRecoverableException e) {
+      Assert.assertThat(e.getMessage(), CoreMatchers.containsString(
+          "this client is not authenticated"
+      ));
+    }
+    KuduClient client = new KuduClient.KuduClientBuilder(miniCluster.getMasterAddressesAsString())
+            .saslProtocolName(CUSTOM_PRINCIPAL)
+            .build();
+    Assert.assertNotNull(client.createTable( "TestSecurity-nondefault-principal-2",
+        getBasicSchema(),
+        getBasicCreateTableOptions()));
+  }
+
 }

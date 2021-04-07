@@ -56,6 +56,8 @@ class ConnectionCache {
   /** Netty's bootstrap to use by connections. */
   private final Bootstrap bootstrap;
 
+  private final String saslProtocolName;
+
   /**
    * Container mapping server IP/port into the established connection from the client to the
    * server. It may be up to two connections per server: one established with secondary
@@ -67,9 +69,11 @@ class ConnectionCache {
 
   /** Create a new empty ConnectionCache given the specified parameters. */
   ConnectionCache(SecurityContext securityContext,
-                  Bootstrap bootstrap) {
+                  Bootstrap bootstrap,
+                  String saslProtocolName) {
     this.securityContext = securityContext;
     this.bootstrap = bootstrap;
+    this.saslProtocolName = saslProtocolName;
   }
 
   /**
@@ -122,7 +126,8 @@ class ConnectionCache {
         result = new Connection(serverInfo,
                                 securityContext,
                                 bootstrap,
-                                credentialsPolicy);
+                                credentialsPolicy,
+                                saslProtocolName);
         connections.add(result);
         // There can be at most 2 connections to the same destination: one with primary and another
         // with secondary credentials.

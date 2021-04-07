@@ -222,14 +222,18 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
 
   private Certificate peerCert;
 
+  private String saslProtocolName;
+
   @InterfaceAudience.LimitedPrivate("Test")
   boolean overrideLoopbackForTests;
 
   public Negotiator(String remoteHostname,
                     SecurityContext securityContext,
-                    boolean ignoreAuthnToken) {
+                    boolean ignoreAuthnToken,
+                    String saslProtocolName) {
     this.remoteHostname = remoteHostname;
     this.securityContext = securityContext;
+    this.saslProtocolName = saslProtocolName;
     SignedTokenPB token = securityContext.getAuthenticationToken();
     if (token != null) {
       if (ignoreAuthnToken) {
@@ -456,7 +460,7 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
       try {
         saslClient = Sasl.createSaslClient(new String[]{ clientMech.name() },
                                            null,
-                                           "kudu",
+                                           saslProtocolName,
                                            remoteHostname,
                                            props,
                                            saslCallback);

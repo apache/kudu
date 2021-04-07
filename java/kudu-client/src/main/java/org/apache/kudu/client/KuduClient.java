@@ -609,6 +609,20 @@ public class KuduClient implements AutoCloseable {
     }
 
     /**
+     * Set the SASL protocol name.
+     * SASL protocol name is used when connecting to a secure (Kerberos-enabled)
+     * cluster. It must match the servers' service principal name (SPN).
+     *
+     * Optional.
+     * If not provided, it will use the default SASL protocol name ("kudu").
+     * @return this builder
+     */
+    public KuduClientBuilder saslProtocolName(String saslProtocolName) {
+      clientBuilder.saslProtocolName(saslProtocolName);
+      return this;
+    }
+
+    /**
      * Creates a new client that connects to the masters.
      * Doesn't block and won't throw an exception if the masters don't exist.
      * @return a new asynchronous Kudu client
