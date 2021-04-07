@@ -50,6 +50,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/ops/op_driver.h"
 #include "kudu/tablet/ops/op_tracker.h"
@@ -83,6 +84,7 @@ using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(log_preallocate_segments);
@@ -410,22 +412,27 @@ TEST_F(TxnParticipantTest, TestConcurrentOps) {
   const auto status_for_op = [&] (ParticipantOpPB::ParticipantOpType type) {
     return statuses[FindOrDie(kIndexByOps, type)];
   };
-  // Regardless of order, we should have been able to begin the transaction.
-  ASSERT_OK(status_for_op(ParticipantOpPB::BEGIN_TXN));
+  // The only way we could have failed to begin a transaction is if we
+  // replicated an ABORT_TXN first.
+  ASSERT_TRUE(status_for_op(ParticipantOpPB::BEGIN_TXN).ok() ||
+              status_for_op(ParticipantOpPB::ABORT_TXN).ok()) <<
+      Substitute("BEGIN_TXN error: $0, ABORT_TXN error: $1",
+                 status_for_op(ParticipantOpPB::BEGIN_TXN).ToString(),
+                 status_for_op(ParticipantOpPB::ABORT_TXN).ToString());
 
   // If we finalized the commit, we must not have been able to abort.
   if (status_for_op(ParticipantOpPB::FINALIZE_COMMIT).ok()) {
     ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
         { kTxnId, kCommitted, kDummyCommitTimestamp },
     }), txn_participant()->GetTxnsForTests());
-    ASSERT_FALSE(statuses[FindOrDie(kIndexByOps, ParticipantOpPB::ABORT_TXN)].ok());
+    ASSERT_FALSE(status_for_op(ParticipantOpPB::ABORT_TXN).ok());
 
   // If we aborted the commit, we could not have finalized the commit.
   } else if (status_for_op(ParticipantOpPB::ABORT_TXN).ok()) {
     ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
         { kTxnId, kAborted, -1 },
     }), txn_participant()->GetTxnsForTests());
-    ASSERT_FALSE(statuses[FindOrDie(kIndexByOps, ParticipantOpPB::FINALIZE_COMMIT)].ok());
+    ASSERT_FALSE(status_for_op(ParticipantOpPB::FINALIZE_COMMIT).ok());
 
   // If we neither aborted nor finalized, but we began to commit, we should be
   // left with the commit in progress.
