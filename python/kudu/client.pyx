@@ -281,7 +281,7 @@ cdef class Client:
     """
 
     def __cinit__(self, addr_or_addrs, admin_timeout_ms=None,
-                  rpc_timeout_ms=None):
+                  rpc_timeout_ms=None, sasl_protocol_name=None):
         cdef:
             string c_addr
             vector[string] c_addrs
@@ -322,6 +322,9 @@ cdef class Client:
         if rpc_timeout_ms is not None:
             timeout = TimeDelta.from_millis(rpc_timeout_ms)
             builder.default_rpc_timeout(timeout.delta)
+
+        if sasl_protocol_name is not None:
+            builder.sasl_protocol_name(sasl_protocol_name)
 
         check_status(builder.Build(&self.client))
 

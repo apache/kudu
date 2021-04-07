@@ -577,6 +577,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout)
 
+        KuduClientBuilder& sasl_protocol_name(const string& sasl_protocol_name)
+
         Status Build(shared_ptr[KuduClient]* client)
 
     cdef cppclass KuduTabletServer:
