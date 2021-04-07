@@ -361,8 +361,11 @@ void CommitTasks::AbortTxnAsync() {
   if (participant_ids_.empty()) {
     ScheduleFinalizeAbortTxnWrite();
   } else {
-    ops_in_flight_ = participant_ids_.size();
-    for (int i = 0; i < participant_ids_.size(); i++) {
+    // NOTE: the final AbortTxnAsyncTask() call may destruct this CommitTask
+    // and its members, so cache the participant ID size.
+    const auto participant_ids_size = participant_ids_.size();
+    ops_in_flight_ = participant_ids_size;
+    for (int i = 0; i < participant_ids_size; i++) {
       AbortTxnAsyncTask(i);
     }
   }
@@ -434,8 +437,11 @@ void CommitTasks::FinalizeCommitAsync() {
   // tasks to complete.
   auto old_val = ops_in_flight_.exchange(participant_ids_.size());
   DCHECK_EQ(0, old_val);
-  ops_in_flight_ = participant_ids_.size();
-  for (int i = 0; i < participant_ids_.size(); i++) {
+  // NOTE: the final FinalizeCommitAsyncTask() call may destruct this
+  // CommitTask and its members, so cache the participant ID size.
+  const auto participant_ids_size = participant_ids_.size();
+  ops_in_flight_ = participant_ids_size;
+  for (int i = 0; i < participant_ids_size; i++) {
     FinalizeCommitAsyncTask(i);
   }
 }
@@ -1010,10 +1016,14 @@ void CommitTasks::BeginCommitAsync() {
     // If there are some participants, schedule beginning commit tasks so
     // we can determine a finalized commit timestamp.
     //
+    // NOTE: the final BeginCommitAsyncTask() call may destruct this CommitTask
+    // and its members, so cache the participant ID size.
+    //
     // TODO(awong): consider an approach in which clients propagate
     // timestamps in such a way that the client's call to begin commit
     // includes the expected finalized commit timestamp.
-    for (int i = 0; i < participant_ids_.size(); i++) {
+    const auto participant_ids_size = participant_ids_.size();
+    for (int i = 0; i < participant_ids_size; i++) {
       BeginCommitAsyncTask(i);
     }
   }
