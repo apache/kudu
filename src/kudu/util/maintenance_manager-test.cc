@@ -389,8 +389,8 @@ TEST_F(MaintenanceManagerTest, TestNewOpsDontGetScheduledDuringUnregister) {
 
   // Wait until two instances of the ops start running, since we have two MM threads.
   ASSERT_EVENTUALLY([&]() {
-      ASSERT_EQ(op1.RunningGauge()->value(), 2);
-    });
+    ASSERT_EQ(op1.RunningGauge()->value(), 2);
+  });
 
   // Trigger Unregister while they are running. This should wait for the currently-
   // running operations to complete, but no new operations should be scheduled.
@@ -883,6 +883,20 @@ TEST_F(MaintenanceManagerTest, ManyOperationsHeavyUpdateStats) {
                           time_spent.ToMilliseconds(), kOpsNum);
   LOG(INFO) << Substitute("number of UpdateStats() calls per operation: $0",
                           ops.front()->update_stats_count());
+}
+
+// Regression test for KUDU-3268, where the unregistering and destruction of an
+// op may race with the scheduling of that op, resulting in a segfault.
+TEST_F(MaintenanceManagerTest, TestUnregisterWhileScheduling) {
+  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE);
+  op1.set_perf_improvement(10);
+  // Set a bunch of runs so we continually schedule the op.
+  op1.set_remaining_runs(1000000);
+  manager_->RegisterOp(&op1);
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_GE(op1.DurationHistogram()->TotalCount(), 1);
+  });
+  op1.Unregister();
 }
 
 } // namespace kudu
