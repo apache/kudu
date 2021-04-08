@@ -257,7 +257,18 @@ public class TestRemoteTablet {
   static RemoteTablet getTablet(int leaderIndex,
                                 int localReplicaIndex,
                                 int sameLocationReplicaIndex) {
-    Partition partition = ProtobufHelper.pbToPartition(ProtobufUtils.getFakePartitionPB().build());
+    return getTablet(
+            leaderIndex, localReplicaIndex, sameLocationReplicaIndex,
+            AsyncKuduClient.EMPTY_ARRAY, AsyncKuduClient.EMPTY_ARRAY);
+  }
+
+  static RemoteTablet getTablet(int leaderIndex,
+                                int localReplicaIndex,
+                                int sameLocationReplicaIndex,
+                                byte[] partitionKeyStart,
+                                byte[] partitionKeyEnd) {
+    Partition partition = ProtobufHelper.pbToPartition(
+            ProtobufUtils.getFakePartitionPB(partitionKeyStart, partitionKeyEnd).build());
     List<LocatedTablet.Replica> replicas = new ArrayList<>();
     List<ServerInfo> servers = new ArrayList<>();
     for (int i = 0; i < 3; i++) {

@@ -18,7 +18,10 @@
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import com.google.common.base.Ticker;
@@ -66,5 +69,33 @@ public class TestTableLocationsCache {
     assertEquals("[Tablet{lowerBoundPartitionKey=0x, upperBoundPartitionKey=0x, " +
                  "ttl=90, tablet=" + tablet.toString() + "}]",
                  cache.toString());
+  }
+
+  /**
+   * Test to reproduce the issue in KUDU-3273.
+   *
+   * For TableLocationsCache, if get(key) is called immediately after
+   * cacheTabletLocations(key), it should not return null.
+   * But if partitions change and a call to cacheTabletLocations(otherKey)
+   * occurs between calls to cacheTableLocations(key) and get(key),
+   * the latter might return null.
+   */
+  @Test
+  public void testGet() {
+    byte[] keyB = "b".getBytes(StandardCharsets.UTF_8);
+    List<RemoteTablet> tablets = ImmutableList.of(
+            TestRemoteTablet.getTablet(0, 1, -1, keyB, AsyncKuduClient.EMPTY_ARRAY));
+    cache.cacheTabletLocations(tablets, AsyncKuduClient.EMPTY_ARRAY, 1, 100);
+    assertNotNull(cache.get(AsyncKuduClient.EMPTY_ARRAY));
+
+    byte[] keyA = "a".getBytes(StandardCharsets.UTF_8);
+    tablets = ImmutableList.of(
+            TestRemoteTablet.getTablet(0, 1, -1, keyA, AsyncKuduClient.EMPTY_ARRAY));
+    cache.cacheTabletLocations(tablets, keyA, 1, 100);
+
+    assertNull(cache.get(AsyncKuduClient.EMPTY_ARRAY));
+
+    cache.cacheTabletLocations(tablets, AsyncKuduClient.EMPTY_ARRAY, 1, 100);
+    assertNotNull(cache.get(AsyncKuduClient.EMPTY_ARRAY));
   }
 }

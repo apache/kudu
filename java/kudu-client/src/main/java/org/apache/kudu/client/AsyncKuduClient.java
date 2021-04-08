@@ -2427,9 +2427,10 @@ public class AsyncKuduClient implements AutoCloseable {
     // right away. If not, we throw an exception that RetryRpcErrback will understand as needing to
     // sleep before retrying.
     TableLocationsCache.Entry entry = locationsCache.get(requestPartitionKey);
-    if (!entry.isNonCoveredRange() && entry.getTablet().getLeaderServerInfo() == null) {
+    if (entry != null && !entry.isNonCoveredRange() &&
+        entry.getTablet().getLeaderServerInfo() == null) {
       throw new NoLeaderFoundException(
-          Status.NotFound("Tablet " + entry.toString() + " doesn't have a leader"));
+          Status.NotFound("Tablet " + entry + " doesn't have a leader"));
     }
   }
 

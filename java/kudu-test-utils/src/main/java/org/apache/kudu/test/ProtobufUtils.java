@@ -41,6 +41,20 @@ public class ProtobufUtils {
   }
 
   /**
+   * Get a PartitionPB with specified start and end keys.
+   * @param partitionKeyStart start key
+   * @param partitionKeyEnd end key
+   * @return a fake partition
+   */
+  public static Common.PartitionPB.Builder getFakePartitionPB(
+          byte[] partitionKeyStart, byte[] partitionKeyEnd) {
+    Common.PartitionPB.Builder partition = Common.PartitionPB.newBuilder();
+    partition.setPartitionKeyStart(ByteString.copyFrom(partitionKeyStart));
+    partition.setPartitionKeyEnd(ByteString.copyFrom(partitionKeyEnd));
+    return partition;
+  }
+
+  /**
    * Create a InternedReplicaPB based on the passed information.
    * @param tsInfoIndex server's index in the TSInfoPB list
    * @param role server's role in the configuration
