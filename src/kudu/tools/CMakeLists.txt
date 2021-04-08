@@ -115,6 +115,7 @@ add_executable(kudu
   tool_action_tablet.cc
   tool_action_test.cc
   tool_action_tserver.cc
+  tool_action_txn.cc
   tool_action_wal.cc
   tool_main.cc
 )
@@ -137,6 +138,7 @@ target_link_libraries(kudu
   mini_cluster
   tablet
   tool_proto
+  transactions
   tserver
   ${KUDU_BASE_LIBS}
 )
@@ -193,6 +195,9 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
   kudu)
 ADD_KUDU_TEST(kudu-ts-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
+  kudu)
+ADD_KUDU_TEST(kudu-txn-cli-test)
+ADD_KUDU_TEST_DEPENDENCIES(kudu-txn-cli-test
   kudu)
 ADD_KUDU_TEST(rebalancer_tool-test
   NUM_SHARDS 8 PROCESSORS 3

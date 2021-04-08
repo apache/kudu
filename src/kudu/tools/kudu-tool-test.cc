@@ -1303,6 +1303,15 @@ TEST_F(ToolTest, TestModeHelp) {
     NO_FATALS(RunTestHelpRpcFlags(kSubCmd, {"status", "start", "stop"}));
   }
   {
+    const string kCmd = "txn";
+    const vector<string> kTxnsModeRegexes = {
+        "list.*Show details of multi-row transactions",
+    };
+    NO_FATALS(RunTestHelp(kCmd, kTxnsModeRegexes));
+    NO_FATALS(RunTestHelpRpcFlags(kCmd,
+        { "list" }));
+  }
+  {
     const vector<string> kWalModeRegexes = {
         "dump.*Dump a WAL",
     };

@@ -71,6 +71,7 @@ unique_ptr<Mode> RootMode(const string& name) {
       .AddMode(BuildTableMode())
       .AddMode(BuildTabletMode())
       .AddMode(BuildTestMode())
+      .AddMode(BuildTxnMode())
       .AddMode(BuildTServerMode())
       .AddMode(BuildWalMode())
       .Build();
