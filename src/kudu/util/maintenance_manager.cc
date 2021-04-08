@@ -348,7 +348,16 @@ void MaintenanceManager::RunSchedulerThread() {
         op_note = std::move(best_op_and_why.second);
       }
       if (op) {
+        // While 'running_instances_lock_' is held, check one more time for
+        // whether the op is cancelled. This ensures that we don't attempt to
+        // launch an op that has been destructed in UnregisterOp(). See
+        // KUDU-3268 for more details.
         std::lock_guard<Mutex> guard(running_instances_lock_);
+        if (op->cancelled()) {
+          VLOG_AND_TRACE_WITH_PREFIX("maintenance", 2)
+              << "picked maintenance operation that has been cancelled";
+          continue;
+        }
         IncreaseOpCount(op);
         prev_iter_found_no_work = false;
       } else {
