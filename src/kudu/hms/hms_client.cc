@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <thrift/TApplicationException.h>
 #include <thrift/Thrift.h>
@@ -34,6 +35,7 @@
 #include <thrift/transport/TTransport.h>
 #include <thrift/transport/TTransportException.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
@@ -42,9 +44,19 @@
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/thrift/client.h"
 #include "kudu/thrift/sasl_client_transport.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/string_case.h"
+
+DEFINE_bool(disable_hms_incompatible_column_type_check, false,
+            "Whether or not to disable the check for the "
+            "'hive.metastore.disallow.incompatible.col.type.changes' "
+            "configuration in the Hive Metastore. This check is important to "
+            "ensure Hive will allow dropping columns, but may not be necessary "
+            "in some versions of Hive. See HIVE-24987 for more details.");
+TAG_FLAG(disable_hms_incompatible_column_type_check, advanced);
+TAG_FLAG(disable_hms_incompatible_column_type_check, hidden);
 
 using apache::thrift::TApplicationException;
 using apache::thrift::TException;
@@ -190,17 +202,19 @@ Status HmsClient::Start() {
   // operations properly.
   //
   // See org.apache.hadoop.hive.metastore.MetaStoreUtils.throwExceptionIfIncompatibleColTypeChange.
-  string disallow_incompatible_column_type_changes;
-  HMS_RET_NOT_OK(client_.get_config_value(disallow_incompatible_column_type_changes,
-                                          kDisallowIncompatibleColTypeChanges,
-                                          "false"),
-                 Substitute("failed to get Hive Metastore $0 configuration",
-                            kDisallowIncompatibleColTypeChanges));
+  if (!FLAGS_disable_hms_incompatible_column_type_check) {
+    string disallow_incompatible_column_type_changes;
+    HMS_RET_NOT_OK(client_.get_config_value(disallow_incompatible_column_type_changes,
+                                            kDisallowIncompatibleColTypeChanges,
+                                            "false"),
+                  Substitute("failed to get Hive Metastore $0 configuration",
+                              kDisallowIncompatibleColTypeChanges));
 
-  if (iequals(disallow_incompatible_column_type_changes, "true")) {
-    return Status::IllegalState(Substitute(
-        "Hive Metastore configuration is invalid: $0 must be set to false",
-        kDisallowIncompatibleColTypeChanges));
+    if (iequals(disallow_incompatible_column_type_changes, "true")) {
+      return Status::IllegalState(Substitute(
+          "Hive Metastore configuration is invalid: $0 must be set to false",
+          kDisallowIncompatibleColTypeChanges));
+    }
   }
 
   // Check that the HMS is configured to add the entire thrift Table/Partition
