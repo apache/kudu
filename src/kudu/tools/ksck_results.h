@@ -85,11 +85,12 @@ struct PrintSections {
     VERSION_SUMMARIES = 1 << 3,
     TABLET_SUMMARIES = 1 << 4,
     TABLE_SUMMARIES = 1 << 5,
-    CHECKSUM_RESULTS = 1 << 6,
-    TOTAL_COUNT = 1 << 7,
+    SYSTEM_TABLE_SUMMARIES = 1 << 6,
+    CHECKSUM_RESULTS = 1 << 7,
+    TOTAL_COUNT = 1 << 8,
 
     // Print all sections above.
-    ALL_SECTIONS = 0b011111111
+    ALL_SECTIONS = 0b0111111111
   };
 };
 
@@ -189,8 +190,10 @@ Status PrintVersionTable(const KsckVersionToServersMap& version_summaries,
                          std::ostream& out);
 
 // Print a formatted summary of the tables in 'table_summaries' to 'out'.
+// 'table_type' is used to print the kind of tables being printed.
 Status PrintTableSummaries(
     const std::vector<cluster_summary::TableSummary>& table_summaries,
+    const std::string& table_type,
     std::ostream& out);
 
 // Print a formatted summary of the tablets in 'tablet_summaries' to 'out'.

@@ -56,6 +56,7 @@
 #include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_results.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
@@ -89,6 +90,7 @@ using kudu::master::ListTabletServersResponsePB;
 using kudu::master::TServerStatePB;
 using kudu::rpc::Messenger;
 using kudu::rpc::RpcController;
+using kudu::transactions::TxnStatusTablet;
 using kudu::server::GenericServiceProxy;
 using kudu::server::GetFlagsRequestPB;
 using kudu::server::GetFlagsResponsePB;
@@ -577,10 +579,35 @@ Status RemoteKsckCluster::RetrieveTabletServers() {
 }
 
 Status RemoteKsckCluster::RetrieveTablesList() {
+  shared_ptr<KsckTable> txn_sys_table;
+  RETURN_NOT_OK(pool_->Submit([&]() {
+    // There is no public API to list the txn status table -- just open it
+    // manually.
+    client::sp::shared_ptr<KuduTable> t;
+    Status s = client_->OpenTable(TxnStatusTablet::kTxnStatusTableName, &t);
+    if (s.IsNotFound()) {
+      // If there is no table, just exit without logging anything (e.g. if
+      // we're communicating with an older version of Kudu that doesn't support
+      // transactions).
+      return;
+    }
+    if (!s.ok()) {
+      LOG(ERROR) << Substitute("unable to open txn status table $0: $1",
+                               TxnStatusTablet::kTxnStatusTableName, s.ToString());
+      return;
+    }
+    auto table(make_shared<KsckTable>(
+        t->id(), TxnStatusTablet::kTxnStatusTableName,
+        KuduSchema::ToSchema(t->schema()), t->num_replicas()));
+    txn_sys_table = std::move(table);
+  }));
+
   vector<string> table_names;
   RETURN_NOT_OK(client_->ListTables(&table_names));
 
   if (table_names.empty()) {
+    pool_->Wait();
+    txn_sys_table_ = std::move(txn_sys_table);
     return Status::OK();
   }
 
@@ -606,17 +633,16 @@ Status RemoteKsckCluster::RetrieveTablesList() {
                                  table_name, s.ToString());
         return;
       }
-      {
-        auto table(make_shared<KsckTable>(
-            t->id(), table_name, KuduSchema::ToSchema(t->schema()), t->num_replicas()));
-        std::lock_guard<simple_spinlock> l(tables_lock);
-        tables.emplace_back(std::move(table));
-      }
+      auto table(make_shared<KsckTable>(
+          t->id(), table_name, KuduSchema::ToSchema(t->schema()), t->num_replicas()));
+      std::lock_guard<simple_spinlock> l(tables_lock);
+      tables.emplace_back(std::move(table));
     }));
   }
   pool_->Wait();
 
-  tables_.swap(tables);
+  txn_sys_table_ = std::move(txn_sys_table);
+  tables_ = std::move(tables);
 
   if (tables_.size() < tables_count) {
     return Status::NetworkError(
@@ -628,6 +654,11 @@ Status RemoteKsckCluster::RetrieveTablesList() {
 }
 
 Status RemoteKsckCluster::RetrieveAllTablets() {
+  if (txn_sys_table_) {
+    RETURN_NOT_OK(pool_->Submit(
+        [this]() { this->RetrieveTabletsList(txn_sys_table_); }));
+    pool_->Wait();
+  }
   if (tables_.empty()) {
     return Status::OK();
   }

@@ -564,6 +564,9 @@ void Ksck::set_print_sections(const std::vector<std::string>& sections) {
     if (section_upper == "TABLE_SUMMARIES") {
       print_sections_flags_ |= PrintSections::TABLE_SUMMARIES;
     }
+    if (section_upper == "SYSTEM_TABLE_SUMMARIES") {
+      print_sections_flags_ |= PrintSections::SYSTEM_TABLE_SUMMARIES;
+    }
     if (section_upper == "CHECKSUM_RESULTS") {
       print_sections_flags_ |= PrintSections::CHECKSUM_RESULTS;
     }
@@ -799,16 +802,23 @@ Status Ksck::RunAndPrintResults() {
 
 Status Ksck::CheckTablesConsistency() {
   int bad_tables_count = 0;
+  auto& cluster_status = results_.cluster_status;
+  if (cluster_->txn_sys_table()) {
+    if (!VerifyTable(cluster_->txn_sys_table(), &cluster_status.system_table_summaries)) {
+      bad_tables_count++;
+    }
+  }
   for (const shared_ptr<KsckTable> &table : cluster_->tables()) {
-    if (!VerifyTable(table)) {
+    if (!VerifyTable(table, &cluster_status.table_summaries)) {
       bad_tables_count++;
     }
   }
 
   if (bad_tables_count > 0) {
       return Status::Corruption(
-          Substitute("$0 out of $1 table(s) are not healthy",
-                     bad_tables_count, results_.cluster_status.table_summaries.size()));
+          Substitute("$0 out of $1 table(s) are not healthy", bad_tables_count,
+                     cluster_status.table_summaries.size() +
+                         cluster_status.system_table_summaries.size()));
   }
   return Status::OK();
 }
@@ -823,7 +833,7 @@ Status Ksck::ChecksumData(const KsckChecksumOptions& opts) {
                                   out_for_progress_updates);
 }
 
-bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
+bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table, vector<TableSummary>* table_summaries) {
   if (table->tablets().empty()) {
     VLOG(1) << Substitute("Skipping table $0 as it has no matching tablets",
                           table->name());
@@ -858,7 +868,7 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
   }
   bool all_healthy = ts.healthy_tablets == ts.TotalTablets();
   if (ts.TotalTablets() > 0) {
-    results_.cluster_status.table_summaries.push_back(std::move(ts));
+    table_summaries->emplace_back(std::move(ts));
   }
   return all_healthy;
 }

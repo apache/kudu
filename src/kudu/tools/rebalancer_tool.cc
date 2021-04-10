@@ -272,25 +272,30 @@ Status RebalancerTool::KsckResultsToClusterRawInfo(
 
   // Filter out entities that are not relevant to the specified location.
   vector<ServerHealthSummary> tserver_summaries;
-  tserver_summaries.reserve(ksck_info.cluster_status.tserver_summaries.size());
+  const auto& cluster_status = ksck_info.cluster_status;
+  tserver_summaries.reserve(cluster_status.tserver_summaries.size());
 
   vector<TabletSummary> tablet_summaries;
-  tablet_summaries.reserve(ksck_info.cluster_status.tablet_summaries.size());
+  tablet_summaries.reserve(cluster_status.tablet_summaries.size());
 
   vector<TableSummary> table_summaries;
-  table_summaries.reserve(table_summaries.size());
+  table_summaries.reserve(cluster_status.table_summaries.size() +
+                          cluster_status.system_table_summaries.size());
 
   if (!location) {
     // Information on the whole cluster.
-    tserver_summaries = ksck_info.cluster_status.tserver_summaries;
-    tablet_summaries = ksck_info.cluster_status.tablet_summaries;
-    table_summaries = ksck_info.cluster_status.table_summaries;
+    tserver_summaries = cluster_status.tserver_summaries;
+    tablet_summaries = cluster_status.tablet_summaries;
+    table_summaries = cluster_status.table_summaries;
+    for (const auto& sys_table : cluster_status.system_table_summaries) {
+      table_summaries.emplace_back(sys_table);
+    }
   } else {
     // Information on the specified location only: filter out non-relevant info.
     const auto& location_str =  *location;
 
     unordered_set<string> ts_ids_at_location;
-    for (const auto& summary : ksck_info.cluster_status.tserver_summaries) {
+    for (const auto& summary : cluster_status.tserver_summaries) {
       if (summary.ts_location == location_str) {
         tserver_summaries.push_back(summary);
         InsertOrDie(&ts_ids_at_location, summary.uuid);
@@ -298,7 +303,7 @@ Status RebalancerTool::KsckResultsToClusterRawInfo(
     }
 
     unordered_set<string> table_ids_at_location;
-    for (const auto& summary : ksck_info.cluster_status.tablet_summaries) {
+    for (const auto& summary : cluster_status.tablet_summaries) {
       const auto& replicas = summary.replicas;
       decltype(summary.replicas) replicas_at_location;
       replicas_at_location.reserve(replicas.size());
@@ -314,7 +319,12 @@ Status RebalancerTool::KsckResultsToClusterRawInfo(
       }
     }
 
-    for (const auto& summary : ksck_info.cluster_status.table_summaries) {
+    for (const auto& summary : cluster_status.table_summaries) {
+      if (ContainsKey(table_ids_at_location, summary.id)) {
+        table_summaries.push_back(summary);
+      }
+    }
+    for (const auto& summary : cluster_status.system_table_summaries) {
       if (ContainsKey(table_ids_at_location, summary.id)) {
         table_summaries.push_back(summary);
       }

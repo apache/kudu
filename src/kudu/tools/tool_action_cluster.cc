@@ -74,7 +74,7 @@ DEFINE_string(sections, "*",
               "Sections to print (comma-separated list of sections, "
               "available sections are: MASTER_SUMMARIES, TSERVER_SUMMARIES, "
               "VERSION_SUMMARIES, TABLET_SUMMARIES, TABLE_SUMMARIES, "
-              "CHECKSUM_RESULTS and TOTAL_COUNT.) "
+              "SYSTEM_TABLE_SUMMARIES, CHECKSUM_RESULTS and TOTAL_COUNT.) "
               "If not specified, print all sections.");
 
 DEFINE_uint32(max_moves_per_server, 5,

@@ -28,7 +28,6 @@
 #include <set>
 #include <sstream>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -50,6 +49,7 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_results.h"
+#include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -74,6 +74,7 @@ using kudu::cluster_summary::TableSummary;
 using kudu::cluster_summary::TabletSummary;
 using kudu::server::GetFlagsResponsePB;
 using kudu::tablet::TabletDataState;
+using kudu::transactions::TxnStatusTablet;
 
 using std::make_shared;
 using std::ostringstream;
@@ -256,6 +257,7 @@ class MockKsckCluster : public KsckCluster {
   using KsckCluster::masters_;
   using KsckCluster::tables_;
   using KsckCluster::tablet_servers_;
+  using KsckCluster::txn_sys_table_;
 };
 
 class KsckTest : public KuduTest {
@@ -312,7 +314,7 @@ class KsckTest : public KuduTest {
     table_summary.consensus_mismatch_tablets = consensus_mismatch_tablets;
     table_summary.unavailable_tablets = unavailable_tablets;
     std::ostringstream oss;
-    PrintTableSummaries({ table_summary }, oss);
+    PrintTableSummaries({ table_summary }, "table", oss);
     return oss.str();
   }
 
@@ -331,13 +333,20 @@ class KsckTest : public KuduTest {
     }
   }
 
-  void CreateOneTableOneTablet() {
-    CreateDefaultAssignmentPlan(1);
+  void CreateOneTableOneTablet(bool create_txn_status_table = false) {
+    NO_FATALS(CreateDefaultAssignmentPlan(create_txn_status_table ? 2 : 1));
 
     auto table = CreateAndAddTable("test", 1);
     auto tablet(make_shared<KsckTablet>(table.get(), "tablet-id-1"));
-    CreateAndFillTablet(tablet, 1, true, true);
+    NO_FATALS(CreateAndFillTablet(tablet, 1, true, true));
     table->set_tablets({ tablet });
+
+    if (create_txn_status_table) {
+      auto sys_table = CreateAndAddTxnStatusTable(1);
+      auto sys_tablet(make_shared<KsckTablet>(sys_table.get(), "sys-tablet-id-1"));
+      NO_FATALS(CreateAndFillTablet(sys_tablet, 1, true, true));
+      sys_table->set_tablets({ sys_tablet });
+    }
   }
 
   void CreateOneSmallReplicatedTable(const string& table_name = "test",
@@ -384,6 +393,14 @@ class KsckTest : public KuduTest {
     table->set_tablets({ tablet });
   }
 
+  shared_ptr<KsckTable> CreateAndAddTxnStatusTable(int num_replicas) {
+    auto table(make_shared<KsckTable>(
+        TxnStatusTablet::kTxnStatusTableName, TxnStatusTablet::kTxnStatusTableName,
+        TxnStatusTablet::GetSchema(), num_replicas));
+    cluster_->txn_sys_table_ = table;
+    return table;
+  }
+
   shared_ptr<KsckTable> CreateAndAddTable(const string& id_and_name, int num_replicas) {
     auto table(make_shared<KsckTable>(
         id_and_name, id_and_name, Schema(), num_replicas));
@@ -396,11 +413,11 @@ class KsckTest : public KuduTest {
     {
       vector<shared_ptr<KsckTabletReplica>> replicas;
       if (has_leader) {
-        CreateReplicaAndAdd(&replicas, tablet->id(), true, is_running);
+        NO_FATALS(CreateReplicaAndAdd(&replicas, tablet->id(), true, is_running));
         num_replicas--;
       }
       for (int i = 0; i < num_replicas; i++) {
-        CreateReplicaAndAdd(&replicas, tablet->id(), false, is_running);
+        NO_FATALS(CreateReplicaAndAdd(&replicas, tablet->id(), false, is_running));
       }
       tablet->set_replicas(std::move(replicas));
     }
@@ -419,7 +436,7 @@ class KsckTest : public KuduTest {
     for (const auto& replica : tablet->replicas()) {
       shared_ptr<MockKsckTabletServer> ts =
         static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_.at(replica->ts_uuid()));
-      InsertOrDieNoPrint(&ts->tablet_consensus_state_map_,
+      InsertIfNotPresent(&ts->tablet_consensus_state_map_,
                          std::make_pair(replica->ts_uuid(), tablet->id()),
                          cstate);
     }
@@ -856,27 +873,29 @@ void CheckPlainStringSection(const string& plain, const string& header, bool pre
 }
 
 void CheckPlainStringSections(const string& plain, int sections) {
-  CheckPlainStringSection(plain,
-                          "Master Summary\n",
-                          sections & PrintSections::Values::MASTER_SUMMARIES);
-  CheckPlainStringSection(plain,
-                          "Tablet Server Summary\n",
-                          sections & PrintSections::Values::TSERVER_SUMMARIES);
-  CheckPlainStringSection(plain,
-                          "Version Summary\n",
-                          sections & PrintSections::Values::VERSION_SUMMARIES);
-  CheckPlainStringSection(plain,
-                          "Tablet Summary\n",
-                          sections & PrintSections::Values::TABLET_SUMMARIES);
-  CheckPlainStringSection(plain,
-                          "Summary by table\n",
-                          sections & PrintSections::Values::TABLE_SUMMARIES);
-  CheckPlainStringSection(plain,
-                          "Checksum Summary\n",
-                          sections & PrintSections::Values::CHECKSUM_RESULTS);
-  CheckPlainStringSection(plain,
-                          "Total Count Summary\n",
-                          sections & PrintSections::Values::TOTAL_COUNT);
+  NO_FATALS(CheckPlainStringSection(plain,
+                                    "Master Summary\n",
+                                    sections & PrintSections::Values::MASTER_SUMMARIES));
+  NO_FATALS(CheckPlainStringSection(plain,
+                                    "Tablet Server Summary\n",
+                                    sections & PrintSections::Values::TSERVER_SUMMARIES));
+  NO_FATALS(CheckPlainStringSection(plain,
+                                    "Version Summary\n",
+                                    sections & PrintSections::Values::VERSION_SUMMARIES));
+  NO_FATALS(CheckPlainStringSection(plain,
+                                    "Tablet Summary\n",
+                                    sections & PrintSections::Values::TABLET_SUMMARIES));
+  NO_FATALS(CheckPlainStringSection(plain,
+                                    "Summary by table\n",
+                                    sections & PrintSections::Values::TABLE_SUMMARIES));
+  NO_FATALS(CheckPlainStringSection(plain, "Summary by system table\n",
+                                    sections & PrintSections::Values::SYSTEM_TABLE_SUMMARIES));
+  NO_FATALS(CheckPlainStringSection(plain,
+                                    "Checksum Summary\n",
+                                    sections & PrintSections::Values::CHECKSUM_RESULTS));
+  NO_FATALS(CheckPlainStringSection(plain,
+                                    "Total Count Summary\n",
+                                    sections & PrintSections::Values::TOTAL_COUNT));
 }
 
 void CheckJsonStringVsKsckResults(const string& json,
@@ -885,53 +904,59 @@ void CheckJsonStringVsKsckResults(const string& json,
   JsonReader r(json);
   ASSERT_OK(r.Init());
 
-  CheckJsonVsServerHealthSummaries(
+  NO_FATALS(CheckJsonVsServerHealthSummaries(
       r,
       "master_summaries",
       sections & PrintSections::Values::MASTER_SUMMARIES ?
       boost::optional<vector<ServerHealthSummary>>
-        (results.cluster_status.master_summaries) : boost::none);
-  CheckJsonVsMasterConsensus(
+        (results.cluster_status.master_summaries) : boost::none));
+  NO_FATALS(CheckJsonVsMasterConsensus(
       r,
       results.cluster_status.master_consensus_conflict,
       sections & PrintSections::Values::MASTER_SUMMARIES ?
       boost::optional<ConsensusStateMap>
-        (results.cluster_status.master_consensus_state_map) : boost::none);
-  CheckJsonVsServerHealthSummaries(
+        (results.cluster_status.master_consensus_state_map) : boost::none));
+  NO_FATALS(CheckJsonVsServerHealthSummaries(
       r,
       "tserver_summaries",
       sections & PrintSections::Values::TSERVER_SUMMARIES ?
       boost::optional<vector<ServerHealthSummary>>
-        (results.cluster_status.tserver_summaries) : boost::none);
-  CheckJsonVsVersionSummaries(
+        (results.cluster_status.tserver_summaries) : boost::none));
+  NO_FATALS(CheckJsonVsVersionSummaries(
       r,
       "version_summaries",
       sections & PrintSections::Values::VERSION_SUMMARIES ?
       boost::optional<KsckVersionToServersMap>
-        (results.version_summaries) : boost::none);
-  CheckJsonVsTabletSummaries(
+        (results.version_summaries) : boost::none));
+  NO_FATALS(CheckJsonVsTabletSummaries(
       r,
       "tablet_summaries",
       sections & PrintSections::Values::TABLET_SUMMARIES ?
       boost::optional<vector<TabletSummary>>
-        (results.cluster_status.tablet_summaries) : boost::none);
-  CheckJsonVsTableSummaries(
+        (results.cluster_status.tablet_summaries) : boost::none));
+  NO_FATALS(CheckJsonVsTableSummaries(
       r,
       "table_summaries",
       sections & PrintSections::Values::TABLE_SUMMARIES ?
       boost::optional<vector<TableSummary>>
-        (results.cluster_status.table_summaries) : boost::none);
-  CheckJsonVsChecksumResults(
+        (results.cluster_status.table_summaries) : boost::none));
+  NO_FATALS(CheckJsonVsTableSummaries(
+      r,
+      "system_table_summaries",
+      sections & PrintSections::Values::SYSTEM_TABLE_SUMMARIES ?
+      boost::optional<vector<TableSummary>>
+        (results.cluster_status.system_table_summaries) : boost::none));
+  NO_FATALS(CheckJsonVsChecksumResults(
       r,
       "checksum_results",
       sections & PrintSections::Values::CHECKSUM_RESULTS ?
-      boost::optional<KsckChecksumResults>(results.checksum_results) : boost::none);
-  CheckJsonVsCountSummaries(
+      boost::optional<KsckChecksumResults>(results.checksum_results) : boost::none));
+  NO_FATALS(CheckJsonVsCountSummaries(
       r,
       "count_summaries",
       sections & PrintSections::Values::TOTAL_COUNT ?
-      boost::optional<KsckResults>(results) : boost::none);
-  CheckJsonVsErrors(r, "errors", results.error_messages);
+      boost::optional<KsckResults>(results) : boost::none));
+  NO_FATALS(CheckJsonVsErrors(r, "errors", results.error_messages));
 }
 
 void CheckMessageNotPresent(const vector<Status>& messages, const string& msg) {
@@ -1872,25 +1897,25 @@ TEST_F(KsckTest, TestSectionFilter) {
           {PrintSections::Values::VERSION_SUMMARIES, "VERSION_SUMMARIES"},
           {PrintSections::Values::TABLET_SUMMARIES, "TABLET_SUMMARIES"},
           {PrintSections::Values::TABLE_SUMMARIES, "TABLE_SUMMARIES"},
+          {PrintSections::Values::SYSTEM_TABLE_SUMMARIES, "SYSTEM_TABLE_SUMMARIES"},
           {PrintSections::Values::CHECKSUM_RESULTS, "CHECKSUM_RESULTS"},
           {PrintSections::Values::TOTAL_COUNT, "TOTAL_COUNT"}};
-  CreateOneTableOneTablet();
-  for (const auto& section : sections) {
-    if (section.first == PrintSections::Values::CHECKSUM_RESULTS) {
+  NO_FATALS(CreateOneTableOneTablet(/*create_txn_status_table=*/true));
+  for (const auto& [s_enum, s_str] : sections) {
+    if (s_enum == PrintSections::Values::CHECKSUM_RESULTS) {
       FLAGS_checksum_scan = true;
     }
-    int selected_sections = section.first;
-    ksck_->set_print_sections({section.second});
+    ksck_->set_print_sections({s_str});
     err_stream_.str("");
     err_stream_.clear();
     ASSERT_OK(RunKsck());
 
     // Check plain string output.
-    CheckPlainStringSections(err_stream_.str(), selected_sections);
+    NO_FATALS(CheckPlainStringSections(err_stream_.str(), s_enum));
 
     // Check json string output.
-    const string& json_output = KsckResultsToJsonString(selected_sections);
-    CheckJsonStringVsKsckResults(json_output, ksck_->results(), selected_sections);
+    const string& json_output = KsckResultsToJsonString(s_enum);
+    NO_FATALS(CheckJsonStringVsKsckResults(json_output, ksck_->results(), s_enum));
   }
 }
 

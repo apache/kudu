@@ -298,17 +298,27 @@ Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
 
   // Then, summarize the tablets by table.
   // Sort the tables so unhealthy tables are easy to see at the bottom.
-  if (sections & PrintSections::TABLE_SUMMARIES) {
-    std::sort(cluster_status.table_summaries.begin(),
-              cluster_status.table_summaries.end(),
+  const auto sort_and_print_tables = [&] (vector<TableSummary>* table_summaries,
+                                          const string& table_type) {
+    std::sort(table_summaries->begin(),
+              table_summaries->end(),
               [](const TableSummary &left,
-                 const TableSummary &right) {
+                const TableSummary &right) {
                   return std::make_pair(left.TableStatus() != HealthCheckResult::HEALTHY,
                                         left.name) <
-                         std::make_pair(right.TableStatus() != HealthCheckResult::HEALTHY,
+                        std::make_pair(right.TableStatus() != HealthCheckResult::HEALTHY,
                                         right.name);
               });
-    RETURN_NOT_OK(PrintTableSummaries(cluster_status.table_summaries, out));
+    return PrintTableSummaries(*table_summaries, table_type, out);
+  };
+  if (sections & PrintSections::SYSTEM_TABLE_SUMMARIES) {
+    sort_and_print_tables(&cluster_status.system_table_summaries, "system table");
+    if (!cluster_status.system_table_summaries.empty()) {
+      out << endl;
+    }
+  }
+  if (sections & PrintSections::TABLE_SUMMARIES) {
+    sort_and_print_tables(&cluster_status.table_summaries, "table");
     if (!cluster_status.table_summaries.empty()) {
       out << endl;
     }
@@ -541,13 +551,14 @@ Status PrintVersionTable(const KsckVersionToServersMap& version_summaries,
 }
 
 Status PrintTableSummaries(const vector<TableSummary>& table_summaries,
+                           const string& table_type,
                            ostream& out) {
   if (table_summaries.empty()) {
-    out << "The cluster doesn't have any matching tables" << endl;
+    out << Substitute("The cluster doesn't have any matching $0s", table_type) << endl;
     return Status::OK();
   }
 
-  out << "Summary by table" << endl;
+  out << Substitute("Summary by $0", table_type) << endl;
   DataTable table({ "Name", "RF", "Status", "Total Tablets",
                     "Healthy", "Recovering", "Under-replicated", "Unavailable"});
   for (const TableSummary& ts : table_summaries) {
@@ -1024,6 +1035,12 @@ void KsckResults::ToPb(KsckResultsPB* pb, int sections) const {
       KsckVersionSummaryToPb(version_summary.first,
                              version_summary.second,
                              pb->add_version_summaries());
+    }
+  }
+
+  if (sections & PrintSections::SYSTEM_TABLE_SUMMARIES) {
+    for (const auto &table : cluster_status.system_table_summaries) {
+      TableSummaryToPb(table, pb->add_system_table_summaries());
     }
   }
 

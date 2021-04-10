@@ -47,8 +47,6 @@
 
 namespace kudu {
 
-class MonoDelta;
-
 namespace rpc {
 class Messenger;
 } // namespace rpc
@@ -503,6 +501,10 @@ class KsckCluster {
     return ts_states_;
   }
 
+  const std::shared_ptr<KsckTable>& txn_sys_table() const {
+    return txn_sys_table_;
+  }
+
   const std::vector<std::shared_ptr<KsckTable>>& tables() const {
     return tables_;
   }
@@ -545,6 +547,7 @@ class KsckCluster {
   MasterList masters_;
   TSMap tablet_servers_;
   KsckTServerStateMap ts_states_;
+  std::shared_ptr<KsckTable> txn_sys_table_;
   std::vector<std::shared_ptr<KsckTable>> tables_;
   std::unique_ptr<ThreadPool> pool_;
 
@@ -683,11 +686,11 @@ class Ksck {
                                  KsckFlagToServersMap* flags_to_servers_map,
                                  KsckFlagTagsMap* flag_tags_map = nullptr);
 
-  bool VerifyTable(const std::shared_ptr<KsckTable>& table);
-
-  bool VerifyTableWithTimeout(const std::shared_ptr<KsckTable>& table,
-                              const MonoDelta& timeout,
-                              const MonoDelta& retry_interval);
+  // Returns true if the table is healthy, creating a health summary for it and
+  // adding the table to 'table_summaries'. Only adds a summary if there are
+  // tablets in the table.
+  bool VerifyTable(const std::shared_ptr<KsckTable>& table,
+                   std::vector<cluster_summary::TableSummary>* table_summaries);
 
   cluster_summary::HealthCheckResult VerifyTablet(
       const std::shared_ptr<KsckTablet>& tablet,

@@ -242,6 +242,7 @@ message KsckResultsPB {
 
   repeated TabletSummaryPB tablet_summaries = 7;
   repeated TableSummaryPB table_summaries = 8;
+  repeated TableSummaryPB system_table_summaries = 12;
 
   optional KsckChecksumResultsPB checksum_results = 9;
   repeated KsckVersionSummaryPB version_summaries = 10;

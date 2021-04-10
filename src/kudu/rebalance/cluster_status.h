@@ -236,6 +236,7 @@ struct ClusterStatus {
   // Tablet information includes consensus state.
   std::vector<TabletSummary> tablet_summaries;
   std::vector<TableSummary> table_summaries;
+  std::vector<TableSummary> system_table_summaries;
 };
 
 } // namespace cluster_summary

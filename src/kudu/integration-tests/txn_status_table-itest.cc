@@ -40,6 +40,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
@@ -51,6 +52,7 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tools/tool_test_util.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/transactions/txn_system_client.h"
@@ -58,6 +60,7 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -85,6 +88,7 @@ using kudu::cluster::InternalMiniClusterOptions;
 using kudu::itest::TServerDetails;
 using kudu::itest::TabletServerMap;
 using kudu::tablet::TabletReplica;
+using kudu::tools::RunKuduTool;
 using kudu::transactions::TxnStatePB;
 using kudu::transactions::TxnStatusEntryPB;
 using kudu::transactions::TxnStatusTablet;
@@ -205,6 +209,54 @@ TEST_F(TxnStatusTableITest, TestTxnStatusTableNotListed) {
   shared_ptr<KuduTable> table;
   ASSERT_OK(client->OpenTable(kTableName, &table));
   ASSERT_NE(nullptr, table);
+}
+
+// Test that the transaction status table is visible in a separate section in
+// ksck, and that its health is reported as other tables are.
+TEST_F(TxnStatusTableITest, TestTxnStatusTableInKsck) {
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  string out;
+  string err;
+  vector<string> ksck_args = { "cluster", "ksck", JoinStrings(master_addrs, ",") };
+  ASSERT_OK(RunKuduTool(ksck_args, &out, &err));
+  ASSERT_STR_CONTAINS(out, "The cluster doesn't have any matching system tables");
+
+  // Nothing should be logged on error for finding the txn status table.
+  ASSERT_STR_NOT_CONTAINS(err, TxnStatusTablet::kTxnStatusTableName) << err;
+  ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
+
+  ASSERT_OK(RunKuduTool(ksck_args, &out));
+  ASSERT_STR_MATCHES(out,
+      "^Summary by system table.*\n"
+      "^             Name              | RF | Status  | Total Tablets | Healthy .*\n"
+      "^-------------------------------+----+---------+---------------+---------.*\n"
+      "^ kudu_system.kudu_transactions | 1  | HEALTHY | 1             | 1       .*\n");
+
+  // Now bring down a tablet server and we should see the health update.
+  cluster_->mini_tablet_server(0)->Shutdown();
+  Status s = RunKuduTool(ksck_args, &out);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_MATCHES(out,
+      "^Summary by system table.*\n"
+      "^             Name              | RF | Status      | Total Tablets | Healthy .*\n"
+      "^-------------------------------+----+-------------+---------------+---------.*\n"
+      "^ kudu_system.kudu_transactions | 1  | UNAVAILABLE | 1             | 0       .*\n");
+}
+
+// Test that despite being unable to list the transaction status table, we are
+// able to run the tool. In previous iterations of the rebalancer, the tool may
+// have crashed attempting to find the RF for a table it didn't know about.
+TEST_F(TxnStatusTableITest, TestTxnStatusTableInRebalancer) {
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
+  vector<string> rebalancer_args = { "cluster", "rebalance", JoinStrings(master_addrs, ",") };
+  ASSERT_OK(RunKuduTool(rebalancer_args));
 }
 
 // Test that only the service- or super-user can create or alter the
