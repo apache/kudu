@@ -873,6 +873,74 @@ public class TestKuduTransaction {
     assertEquals(1, scanner.nextRows().getNumRows());
   }
 
+  /**
+   * Test to verify that Kudu client is able to switch to another TxnManager
+   * instance when the kudu-master process which hosts currently used TxnManager
+   * becomes temporarily unavailable (e.g. shut down, restarted, stopped, etc.).
+   *
+   * The essence of this scenario is to make sure that Kudu Java client connects
+   * to a different TxnManager instance and starts sending txn keepalive
+   * messages there in a timely manner, keeping the transaction alive even if
+   * the originally used TxnManager instance isn't available.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+
+      // Set Raft heartbeat interval short for faster test runtime: speed up
+      // leader failure detection and new leader election.
+      "--raft_heartbeat_interval_ms=100",
+  })
+  @TabletServerConfig(flags = {
+      // The txn keepalive interval should be long enough to accommodate Raft
+      // leader failure detection and election.
+      "--txn_keepalive_interval_ms=3000",
+      "--txn_staleness_tracker_interval_ms=500"
+  })
+  public void testTxnKeepaliveSwitchesToOtherTxnManager() throws Exception {
+    final String TABLE_NAME = "txn_manager_fallback";
+    client.createTable(
+        TABLE_NAME,
+        ClientTestUtil.getBasicSchema(),
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 2));
+
+    KuduTransaction txn = client.newTransaction();
+    KuduSession session = txn.newKuduSession();
+
+    KuduTable table = client.openTable(TABLE_NAME);
+
+    Insert insert = createBasicSchemaInsert(table, 0);
+    session.apply(insert);
+    session.flush();
+
+    harness.killLeaderMasterServer();
+
+    // Wait for two keepalive intervals to make sure the backend got a chance
+    // to automatically abort the transaction if not receiving txn keepalive
+    // messages.
+    Thread.sleep(2 * 3000);
+
+    // It should be possible to commit the transaction. This is to verify that
+    //
+    //   * the client eventually starts sending txn keepalive messages to other
+    //     TxnManager instance (the original was hosted by former leader master
+    //     which is no longer available), so the backend doesn't abort the
+    //     transaction automatically due to not receiving keepalive messages
+    //
+    //   * the client switches to the new TxnManager for other txn-related
+    //     operations as well
+    txn.commit(true /*wait*/);
+
+    // An extra sanity check: read back the row written into the table in the
+    // context of the transaction.
+    KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+        .replicaSelection(ReplicaSelection.LEADER_ONLY)
+        .build();
+
+    assertEquals(1, scanner.nextRows().getNumRows());
+  }
+
   // TODO(aserbin): when test harness allows for sending Kudu servers particular
   //                signals, add a test scenario to verify that timeout for
   //                TxnManager request is set low enough to detect 'frozen'

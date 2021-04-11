@@ -2200,9 +2200,10 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * This methods enable putting RPCs on hold for a period of time determined by
-   * {@link #getSleepTimeForRpcMillis(KuduRpc)}. If the RPC is out of time/retries, its errback will
-   * be immediately called.
+   * This method puts RPC on hold for a time interval determined by
+   * {@link #getSleepTimeForRpcMillis(KuduRpc)}. If the RPC is out of
+   * time/retries, its errback is called immediately.
+   *
    * @param rpc the RPC to retry later
    * @param ex the reason why we need to retry
    * @return a Deferred object to use if this method is called inline with the user's original
@@ -2726,8 +2727,8 @@ public class AsyncKuduClient implements AutoCloseable {
     private long defaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
     private long defaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
 
-    private final HashedWheelTimer timer =
-        new HashedWheelTimer(new ThreadFactoryBuilder().setDaemon(true).build(), 20, MILLISECONDS);
+    private final HashedWheelTimer timer = new HashedWheelTimer(
+        new ThreadFactoryBuilder().setDaemon(true).build(), 20, MILLISECONDS);
     private Executor workerExecutor;
     private int workerCount = DEFAULT_WORKER_COUNT;
     private boolean statisticsDisabled = false;
