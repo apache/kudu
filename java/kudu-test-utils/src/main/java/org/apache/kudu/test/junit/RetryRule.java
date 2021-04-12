@@ -190,6 +190,14 @@ public class RetryRule implements TestRule {
           // and we don't need the logs of successful tests.
           report(ResultReporter.Result.SUCCESS, /*logFile=*/ null);
           return;
+        }  catch (org.junit.internal.AssumptionViolatedException  e) {
+          // The test was skipped because an assumption failed.
+          // A test for which an assumption fails should not generate a test case failure.
+          //
+          // We skip the file upload; this saves space and network bandwidth,
+          // and we don't need the logs of skipped tests.
+          report(ResultReporter.Result.SUCCESS, /*logFile=*/ null);
+          return;
         } catch (Throwable t) {
           // The test failed.
           //
@@ -215,6 +223,10 @@ public class RetryRule implements TestRule {
     private void doOneAttempt(int attempt) throws Throwable {
       try {
         base.evaluate();
+      } catch (org.junit.internal.AssumptionViolatedException e) {
+        // The test was skipped because an assumption failed.
+        // A test for which an assumption fails should not generate a test case failure.
+        LOG.warn("{}: skipped due to failed assumption", humanReadableTestName, e);
       } catch (Throwable t) {
         LOG.error("{}: failed attempt {}", humanReadableTestName, attempt, t);
         throw t;

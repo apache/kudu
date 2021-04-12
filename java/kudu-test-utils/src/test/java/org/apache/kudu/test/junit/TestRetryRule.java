@@ -18,6 +18,7 @@
 package org.apache.kudu.test.junit;
 
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeTrue;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -43,6 +44,14 @@ public class TestRetryRule {
       fail(String.format("%d failures", failures));
     }
     // Pass the test (by not throwing) on the final retry.
+  }
+
+  // Ensure that the RetryRule does not cause test failures when
+  // assumeTrue and other similar assumption statements are used.
+  @Test
+  public void testAssumeTrue() {
+    assumeTrue(false);
+    fail("This is unreachable!");
   }
 
 }
