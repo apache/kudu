@@ -4931,8 +4931,8 @@ INSTANTIATE_TEST_SUITE_P(SerializationModes, ControlShellToolTest,
                                             ::testing::Bool()));
 
 TEST_P(ControlShellToolTest, TestControlShell) {
-  const int kNumMasters = 1;
-  const int kNumTservers = 3;
+  constexpr auto kNumMasters = 1;
+  constexpr auto kNumTservers = 3;
 
   // Create an illegal cluster first, to make sure that the shell continues to
   // work in the event of an error.
@@ -5068,11 +5068,53 @@ TEST_P(ControlShellToolTest, TestControlShell) {
     ASSERT_OK(SendReceive(req, &resp));
   }
 
+  // Try to pause a tserver which isn't running.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_pause_daemon()->mutable_id() = tservers[0].id();
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "the process is not there");
+  }
+
+  // Try to resume a tserver which isn't running.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_resume_daemon()->mutable_id() = tservers[0].id();
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "the process is not there");
+  }
+
   // Restart it.
   {
     ControlShellRequestPB req;
     ControlShellResponsePB resp;
     *req.mutable_start_daemon()->mutable_id() = tservers[0].id();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Pause it.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_pause_daemon()->mutable_id() = tservers[0].id();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Resume it.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_resume_daemon()->mutable_id() = tservers[0].id();
     ASSERT_OK(SendReceive(req, &resp));
   }
 
@@ -5084,11 +5126,53 @@ TEST_P(ControlShellToolTest, TestControlShell) {
     ASSERT_OK(SendReceive(req, &resp));
   }
 
+  // Try to pause a master which isn't running.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_pause_daemon()->mutable_id() = masters[0].id();
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "the process is not there");
+  }
+
+  // Try to resume a master which isn't running.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_resume_daemon()->mutable_id() = masters[0].id();
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "the process is not there");
+  }
+
   // Restart it.
   {
     ControlShellRequestPB req;
     ControlShellResponsePB resp;
     *req.mutable_start_daemon()->mutable_id() = masters[0].id();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Pause it.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_pause_daemon()->mutable_id() = masters[0].id();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Resume it.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_resume_daemon()->mutable_id() = masters[0].id();
     ASSERT_OK(SendReceive(req, &resp));
   }
 
@@ -5126,6 +5210,61 @@ TEST_P(ControlShellToolTest, TestControlShell) {
     ASSERT_OK(proto_->SendMessage(req));
     ASSERT_OK(proto_->ReceiveMessage(&resp));
     ASSERT_TRUE(resp.has_error());
+  }
+
+  // Attempt to pause/resume some non-existent daemons.
+  {
+    vector<DaemonIdentifierPB> daemons;
+    {
+      // Unknown daemon type.
+      DaemonIdentifierPB id;
+      id.set_type(UNKNOWN_DAEMON);
+      daemons.emplace_back(std::move(id));
+    }
+    {
+      // Tablet server #5.
+      DaemonIdentifierPB id;
+      id.set_type(TSERVER);
+      id.set_index(5);
+      daemons.emplace_back(std::move(id));
+    }
+    {
+      // Tablet server without an index.
+      DaemonIdentifierPB id;
+      id.set_type(TSERVER);
+      daemons.emplace_back(std::move(id));
+    }
+    {
+      // Master without an index.
+      DaemonIdentifierPB id;
+      id.set_type(MASTER);
+      daemons.emplace_back(std::move(id));
+    }
+    {
+      // Master #100.
+      DaemonIdentifierPB id;
+      id.set_type(MASTER);
+      id.set_index(100);
+      daemons.emplace_back(std::move(id));
+    }
+    for (const auto& daemon : daemons) {
+      {
+        ControlShellRequestPB req;
+        ControlShellResponsePB resp;
+        *req.mutable_pause_daemon()->mutable_id() = daemon;
+        ASSERT_OK(proto_->SendMessage(req));
+        ASSERT_OK(proto_->ReceiveMessage(&resp));
+        ASSERT_TRUE(resp.has_error());
+      }
+      {
+        ControlShellRequestPB req;
+        ControlShellResponsePB resp;
+        *req.mutable_resume_daemon()->mutable_id() = daemon;
+        ASSERT_OK(proto_->SendMessage(req));
+        ASSERT_OK(proto_->ReceiveMessage(&resp));
+        ASSERT_TRUE(resp.has_error());
+      }
+    }
   }
 
   // Stop the cluster.
@@ -5206,6 +5345,38 @@ TEST_P(ControlShellToolTest, TestControlShell) {
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
                         "mini-KDC doesn't support SetFlag()");
+  }
+
+  // Try pause KDC: this should fail since mini-KDC doesn't support that (yet).
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    auto* r = req.mutable_pause_daemon();
+    r->mutable_id()->set_index(0);
+    r->mutable_id()->set_type(KDC);
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "mini-KDC doesn't support pausing");
+  }
+
+  // Try resume KDC: this should fail since mini-KDC doesn't support that (yet).
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    auto* r = req.mutable_resume_daemon();
+    r->mutable_id()->set_index(0);
+    r->mutable_id()->set_type(KDC);
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "mini-KDC doesn't support resuming");
   }
 
   if (enable_kerberos()) {

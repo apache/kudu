@@ -254,6 +254,15 @@ public class KuduTestHarness extends ExternalResource {
   }
 
   /**
+   * Find the host and port of the leader master.
+   * @return the host and port of the leader master
+   * @throws Exception if we are unable to find the leader master
+   */
+  public HostAndPort findLeaderMasterServer() throws Exception {
+    return client.findLeaderMasterServer();
+  }
+
+  /**
    * Helper method to easily kill the leader master.
    *
    * This method is thread-safe.
@@ -262,15 +271,6 @@ public class KuduTestHarness extends ExternalResource {
   public void killLeaderMasterServer() throws Exception {
     HostAndPort hp = findLeaderMasterServer();
     miniCluster.killMasterServer(hp);
-  }
-
-  /**
-   * Find the host and port of the leader master.
-   * @return the host and port of the leader master
-   * @throws Exception if we are unable to find the leader master
-   */
-  public HostAndPort findLeaderMasterServer() throws Exception {
-    return client.findLeaderMasterServer();
   }
 
   /**
@@ -312,6 +312,33 @@ public class KuduTestHarness extends ExternalResource {
     HostAndPort hp = findLeaderMasterServer();
     miniCluster.killMasterServer(hp);
     miniCluster.startMasterServer(hp);
+  }
+
+  /**
+   * Finds and pauses the leader master.
+   * @return the host and port of the paused master
+   * @throws Exception
+   */
+  public HostAndPort pauseLeaderMaster() throws Exception {
+    HostAndPort hp = findLeaderMasterServer();
+    miniCluster.pauseMasterServer(hp);
+    return hp;
+  }
+
+  /**
+   * Pauses the specified master.
+   * @throws Exception
+   */
+  public void pauseMaster(HostAndPort hp) throws Exception {
+    miniCluster.pauseMasterServer(hp);
+  }
+
+  /**
+   * Resumes the specified master.
+   * @throws Exception
+   */
+  public void resumeMaster(HostAndPort hp) throws Exception {
+    miniCluster.resumeMasterServer(hp);
   }
 
   /**

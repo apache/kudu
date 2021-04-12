@@ -69,6 +69,16 @@ public class TestMiniKuduCluster {
 
         // Test we can reach it.
         testHostPort(masterHostPort, true);
+
+        // Pause master.
+        cluster.pauseMasterServer(masterHostPort);
+        // Pausing master again doesn't do anything.
+        cluster.pauseMasterServer(masterHostPort);
+
+        // Resume master.
+        cluster.resumeMasterServer(masterHostPort);
+        // Resuming master while it's not paused doesn't do anything.
+        cluster.resumeMasterServer(masterHostPort);
       }
 
       {
@@ -83,6 +93,16 @@ public class TestMiniKuduCluster {
         cluster.startTabletServer(tsHostPort);
 
         testHostPort(tsHostPort, true);
+
+        // Pause the first TS.
+        cluster.pauseTabletServer(tsHostPort);
+        // Pausing master again doesn't do anything.
+        cluster.pauseTabletServer(tsHostPort);
+
+        // Resume test first TS.
+        cluster.resumeTabletServer(tsHostPort);
+        // Resuming master while it's not paused doesn't do anything.
+        cluster.resumeTabletServer(tsHostPort);
       }
     }
   }

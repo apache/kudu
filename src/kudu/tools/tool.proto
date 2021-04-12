@@ -113,8 +113,20 @@ message StartDaemonRequestPB {
 //
 // No-op for already stopped daemons.
 message StopDaemonRequestPB {
-  // The identifier for the daemon to be stopped. This identifier is unique
+  // The identifier of the daemon to be stopped. This identifier is unique
   // and immutable for the lifetime of the cluster.
+  optional DaemonIdentifierPB id = 1;
+}
+
+// Pause a daemon: send SIGSTOP signal to the process.
+message PauseDaemonRequestPB {
+  // The identifier of the daemon to be paused.
+  optional DaemonIdentifierPB id = 1;
+}
+
+// Resume a paused daemon: send SIGCONT signal to the process.
+message ResumeDaemonRequestPB {
+  // The identifier of the daemon to be resumed.
   optional DaemonIdentifierPB id = 1;
 }
 
@@ -168,7 +180,7 @@ message KinitRequestPB {
 
 // Call SetFlag() on the specific daemon.
 message SetDaemonFlagRequestPB {
-  // The identifier for the daemon to sent the request to.
+  // The identifier of the daemon to sent the request to.
   optional DaemonIdentifierPB id = 1;
   // The name of the flag to set.
   optional string flag = 2;
@@ -211,6 +223,8 @@ message ControlShellRequestPB {
     KdestroyRequestPB kdestroy = 10;
     KinitRequestPB kinit = 11;
     SetDaemonFlagRequestPB set_daemon_flag = 12;
+    PauseDaemonRequestPB pause_daemon = 13;
+    ResumeDaemonRequestPB resume_daemon = 14;
   }
 }
 

@@ -58,6 +58,8 @@ import org.apache.kudu.tools.Tool.GetMastersRequestPB;
 import org.apache.kudu.tools.Tool.GetTServersRequestPB;
 import org.apache.kudu.tools.Tool.KdestroyRequestPB;
 import org.apache.kudu.tools.Tool.KinitRequestPB;
+import org.apache.kudu.tools.Tool.PauseDaemonRequestPB;
+import org.apache.kudu.tools.Tool.ResumeDaemonRequestPB;
 import org.apache.kudu.tools.Tool.SetDaemonFlagRequestPB;
 import org.apache.kudu.tools.Tool.StartClusterRequestPB;
 import org.apache.kudu.tools.Tool.StartDaemonRequestPB;
@@ -90,6 +92,7 @@ public final class MiniKuduCluster implements AutoCloseable {
   private static class DaemonInfo {
     DaemonIdentifierPB id;
     boolean isRunning;
+    boolean isPaused;
   }
 
   // Map of master addresses to daemon information.
@@ -276,6 +279,7 @@ public final class MiniKuduCluster implements AutoCloseable {
       DaemonInfo d = new DaemonInfo();
       d.id = info.getId();
       d.isRunning = true;
+      d.isPaused = false;
       masterServers.put(ProtobufHelper.hostAndPortFromPB(info.getBoundRpcAddress()), d);
     }
     resp = sendRequestToCluster(
@@ -286,6 +290,7 @@ public final class MiniKuduCluster implements AutoCloseable {
       DaemonInfo d = new DaemonInfo();
       d.id = info.getId();
       d.isRunning = true;
+      d.isPaused = false;
       tabletServers.put(ProtobufHelper.hostAndPortFromPB(info.getBoundRpcAddress()), d);
     }
   }
@@ -350,6 +355,44 @@ public final class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
+   * Pauses a master identified identified by the specified host and port.
+   * Does nothing if the master is already paused.
+   *
+   * @param hp unique host and port identifying the server
+   * @throws IOException if something went wrong in transit
+   */
+  public void pauseMasterServer(HostAndPort hp) throws IOException {
+    DaemonInfo d = getMasterServer(hp);
+    if (d.isPaused) {
+      return;
+    }
+    LOG.info("pausing master server {}", hp);
+    sendRequestToCluster(ControlShellRequestPB.newBuilder()
+        .setPauseDaemon(PauseDaemonRequestPB.newBuilder().setId(d.id).build())
+        .build());
+    d.isPaused = true;
+  }
+
+  /**
+   * Resumes a master identified identified by the specified host and port.
+   * Does nothing if the master isn't paused.
+   *
+   * @param hp unique host and port identifying the server
+   * @throws IOException if something went wrong in transit
+   */
+  public void resumeMasterServer(HostAndPort hp) throws IOException {
+    DaemonInfo d = getMasterServer(hp);
+    if (!d.isPaused) {
+      return;
+    }
+    LOG.info("resuming master server {}", hp);
+    sendRequestToCluster(ControlShellRequestPB.newBuilder()
+        .setResumeDaemon(ResumeDaemonRequestPB.newBuilder().setId(d.id).build())
+        .build());
+    d.isPaused = false;
+  }
+
+  /**
    * Starts a tablet server identified by an host and port.
    * Does nothing if the server was already running.
    *
@@ -385,6 +428,44 @@ public final class MiniKuduCluster implements AutoCloseable {
         .setStopDaemon(StopDaemonRequestPB.newBuilder().setId(d.id).build())
         .build());
     d.isRunning = false;
+  }
+
+  /**
+   * Pauses a tablet server identified by the specified host and port.
+   * Does nothing if the tablet server is already paused.
+   *
+   * @param hp unique host and port identifying the server
+   * @throws IOException if something went wrong in transit
+   */
+  public void pauseTabletServer(HostAndPort hp) throws IOException {
+    DaemonInfo d = getTabletServer(hp);
+    if (d.isPaused) {
+      return;
+    }
+    LOG.info("pausing tablet server {}", hp);
+    sendRequestToCluster(ControlShellRequestPB.newBuilder()
+        .setPauseDaemon(PauseDaemonRequestPB.newBuilder().setId(d.id).build())
+        .build());
+    d.isPaused = true;
+  }
+
+  /**
+   * Resumes a tablet server identified by the specified host and port.
+   * Does nothing if the tablet server isn't paused.
+   *
+   * @param hp unique host and port identifying the server
+   * @throws IOException if something went wrong in transit
+   */
+  public void resumeTabletServer(HostAndPort hp) throws IOException {
+    DaemonInfo d = getTabletServer(hp);
+    if (!d.isPaused) {
+      return;
+    }
+    LOG.info("resuming tablet server {}", hp);
+    sendRequestToCluster(ControlShellRequestPB.newBuilder()
+        .setResumeDaemon(ResumeDaemonRequestPB.newBuilder().setId(d.id).build())
+        .build());
+    d.isPaused = true;
   }
 
   /**
