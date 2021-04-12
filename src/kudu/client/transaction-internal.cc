@@ -79,6 +79,25 @@ KuduTransaction::Data::Data(const sp::shared_ptr<KuduClient>& client)
   CHECK(client);
 }
 
+MonoDelta KuduTransaction::Data::GetKeepaliveRpcPeriod() const {
+  // Ideally, it would be enough to send a heartbeat message every
+  // txn_keep_alive_ms_ interval, but given scheduling irregularities,
+  // client node timer's precision, and various network delays and latencies,
+  // it's safer to schedule sending keepalive messages from the client side
+  // more frequently.
+  return MonoDelta::FromMilliseconds(
+      std::max<uint32_t>(1, txn_keep_alive_ms_ / 2));
+}
+
+MonoDelta KuduTransaction::Data::GetKeepaliveRpcTimeout() const {
+  // If something goes wrong and keepalive RPC fails, it should be possible
+  // to retry sending keepalive message a couple of times before the transaction
+  // is automatically aborted by the backend after not receiving keepalive
+  // messages for longer than the keepalive timeout for the transaction.
+  return MonoDelta::FromMilliseconds(
+      std::max<uint32_t>(1, txn_keep_alive_ms_ / 4));
+}
+
 Status KuduTransaction::Data::CreateSession(sp::shared_ptr<KuduSession>* session) {
   auto c = weak_client_.lock();
   if (!c) {
@@ -127,8 +146,6 @@ Status KuduTransaction::Data::Begin(const sp::shared_ptr<KuduTransaction>& txn) 
   DCHECK_GT(txn_keep_alive_ms_, 0);
 
   // Start sending regular heartbeats for the new transaction.
-  auto next_run_after = MonoDelta::FromMilliseconds(
-      std::max<uint32_t>(1, txn_keep_alive_ms_ / 2));
   auto m = c->data_->messenger_;
   if (PREDICT_FALSE(!m)) {
     return Status::IllegalState("null messenger in Kudu client");
@@ -139,7 +156,7 @@ Status KuduTransaction::Data::Begin(const sp::shared_ptr<KuduTransaction>& txn) 
       [weak_txn](const Status& s) {
         SendTxnKeepAliveTask(s, weak_txn);
       },
-      next_run_after);
+      GetKeepaliveRpcPeriod());
 
   return Status::OK();
 }
@@ -261,13 +278,11 @@ Status KuduTransaction::Data::Deserialize(
     auto m = client->data_->messenger_;
     if (PREDICT_TRUE(m)) {
       sp::weak_ptr<KuduTransaction> weak_txn(ret);
-      auto next_run_after = MonoDelta::FromMilliseconds(
-          std::max<uint32_t>(1, ret->data_->txn_keep_alive_ms_ / 2));
       m->ScheduleOnReactor(
           [weak_txn](const Status& s) {
             SendTxnKeepAliveTask(s, weak_txn);
           },
-          next_run_after);
+          ret->data_->GetKeepaliveRpcPeriod());
     }
   }
 
@@ -388,9 +403,7 @@ void KuduTransaction::Data::SendTxnKeepAliveTask(
   }
 
   const auto& txn_id = txn->data_->txn_id_;
-  const auto next_run_after = MonoDelta::FromMilliseconds(
-      std::max<uint32_t>(1, txn->data_->txn_keep_alive_ms_ / 2));
-  auto deadline = MonoTime::Now() + next_run_after;
+  auto deadline = MonoTime::Now() + txn->data_->GetKeepaliveRpcTimeout();
 
   sp::shared_ptr<KeepaliveRpcCtx> ctx(new KeepaliveRpcCtx);
   ctx->weak_txn = weak_txn;
@@ -446,11 +459,23 @@ void KuduTransaction::Data::TxnKeepAliveCb(
   if (PREDICT_FALSE(!c)) {
     return;
   }
+  // If there was an error with the prior request, send the next one sooner
+  // since one heartbeat has just been missed. If the prior request timed out,
+  // send the next one as soon as possible. It's been a long interval since the
+  // previous successfully sent keepalive message and it's been a long enough
+  // interval since issuing preivous KeepTransactionAlive() RPC, so this should
+  // not put too much pressure on the cluster (assuming the keepalive intervals
+  // for a transaction is in order of a minute). Sending next message sooner
+  // increases the chances of eventually getting through in such a case.
+  const auto next_run_after =
+      s.ok() ? txn->data_->GetKeepaliveRpcPeriod()
+             : (s.IsTimedOut() ? MonoDelta::FromMilliseconds(1)
+                               : txn->data_->GetKeepaliveRpcTimeout());
+  DCHECK_GE(txn->data_->GetKeepaliveRpcPeriod().ToMilliseconds(),
+            txn->data_->GetKeepaliveRpcTimeout().ToMilliseconds());
   auto m = c->data_->messenger_;
   if (PREDICT_TRUE(m)) {
     auto weak_txn = ctx->weak_txn;
-    const auto next_run_after = MonoDelta::FromMilliseconds(
-        std::max<uint32_t>(1, txn->data_->txn_keep_alive_ms_ / 2));
     m->ScheduleOnReactor(
         [weak_txn](const Status& s) {
           SendTxnKeepAliveTask(s, weak_txn);

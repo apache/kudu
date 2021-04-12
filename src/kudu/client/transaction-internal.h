@@ -24,12 +24,10 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class MonoTime;
-
 namespace client {
 
 struct KeepaliveRpcCtx;
@@ -50,6 +48,13 @@ class KuduTransaction::SerializationOptions::Data {
 class KuduTransaction::Data {
  public:
   explicit Data(const sp::shared_ptr<KuduClient>& client);
+
+  // A utility method returning the period for sending txn keepalive messages
+  // (i.e. issuing KeepTransactionAlive() RPCs) for this multi-row transaction.
+  MonoDelta GetKeepaliveRpcPeriod() const;
+
+  // A utility method returning the timeout for KeepTransactionAlive() RPCs.
+  MonoDelta GetKeepaliveRpcTimeout() const;
 
   Status CreateSession(sp::shared_ptr<KuduSession>* session);
 
