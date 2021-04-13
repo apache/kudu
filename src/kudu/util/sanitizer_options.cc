@@ -45,6 +45,15 @@ SANITIZER_HOOK_ATTRIBUTE const char *__asan_default_options() {
   // file paths in symbolized reports.
   "strip_path_prefix=/../ ";
 }
+
+SANITIZER_HOOK_ATTRIBUTE const char *__asan_default_suppressions() {
+  return
+  // Ignore buffer overflow in sasl_seterror() (see: KUDU-3274)
+  // TODO(abukor): remove this suppression once it's fixed upstream and
+  // backported to CentOS 7.
+  "interceptor_via_fun:sasl_seterror";
+}
+
 #endif  // ADDRESS_SANITIZER
 
 #if defined(THREAD_SANITIZER)
