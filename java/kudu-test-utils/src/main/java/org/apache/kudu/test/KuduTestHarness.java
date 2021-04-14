@@ -201,37 +201,42 @@ public class KuduTestHarness extends ExternalResource {
   }
 
   /**
-   * Helper method to kill a tablet server that serves the given tablet's
-   * leader. The currently running test case will be failed if the tablet has no
-   * leader after some retries, or if the tablet server was already killed.
-   *
+   * Helper method to kill a tablet server that hosts the given tablet's leader
+   * replica.
    * This method is thread-safe.
+   *
    * @param tablet a RemoteTablet which will get its leader killed
-   * @throws Exception
+   * @return the host and port of the tablet server which hosted the tablet's
+   *         leader replica
+   * @throws Exception if no leader replica found after a few retries,
+   *         or if the tablet server isn't running
    */
-  public void killTabletLeader(RemoteTablet tablet) throws Exception {
-    killTabletLeader(new LocatedTablet(tablet));
+  public HostAndPort killTabletLeader(RemoteTablet tablet) throws Exception {
+    return killTabletLeader(new LocatedTablet(tablet));
   }
 
   /**
-   * Helper method to kill a tablet server that serves the given tablet's
-   * leader. The currently running test case will be failed if the tablet has no
-   * leader after some retries, or if the tablet server was already killed.
+   * Helper method to kill a tablet server that serves the given tablet's leader
+   * replica.
    *
    * This method is thread-safe.
    * @param tablet a LocatedTablet which will get its leader killed
-   * @throws Exception
+   * @return the host and port of the tablet server which hosted the tablet's
+   *         leader replica
+   * @throws Exception if no leader replica found or if the tablet server isn't
+   *                   running
    */
-  public void killTabletLeader(LocatedTablet tablet) throws Exception {
+  public HostAndPort killTabletLeader(LocatedTablet tablet) throws Exception {
     HostAndPort hp = findLeaderTabletServer(tablet);
     miniCluster.killTabletServer(hp);
+    return hp;
   }
 
   /**
    * Finds the RPC port of the given tablet's leader tserver.
    * @param tablet a LocatedTablet
    * @return the host and port of the given tablet's leader tserver
-   * @throws Exception if we are unable to find the leader tserver
+   * @throws Exception if unable to find a tablet server with leader replica
    */
   public HostAndPort findLeaderTabletServer(LocatedTablet tablet)
       throws Exception {
@@ -254,6 +259,17 @@ public class KuduTestHarness extends ExternalResource {
   }
 
   /**
+   * Start tablet server which has previously been registered at the specified
+   * host and port.
+   *
+   * @param hp host and port of the tablet server to start back
+   * @throws Exception
+   */
+  public void startTabletServer(HostAndPort hp) throws Exception {
+    miniCluster.startTabletServer(hp);
+  }
+
+  /**
    * Find the host and port of the leader master.
    * @return the host and port of the leader master
    * @throws Exception if we are unable to find the leader master
@@ -266,11 +282,13 @@ public class KuduTestHarness extends ExternalResource {
    * Helper method to easily kill the leader master.
    *
    * This method is thread-safe.
+   * @return the host and port of the detected leader master
    * @throws Exception if there is an error finding or killing the leader master.
    */
-  public void killLeaderMasterServer() throws Exception {
+  public HostAndPort killLeaderMasterServer() throws Exception {
     HostAndPort hp = findLeaderMasterServer();
     miniCluster.killMasterServer(hp);
+    return hp;
   }
 
   /**
@@ -296,21 +314,36 @@ public class KuduTestHarness extends ExternalResource {
   /**
    * Kills a tablet server that serves the given tablet's leader and restarts it.
    * @param tablet a RemoteTablet which will get its leader killed and restarted
+   * @return the host and port of the restarted tablet server
    * @throws Exception
    */
-  public void restartTabletServer(RemoteTablet tablet) throws Exception {
+  public HostAndPort restartTabletServer(RemoteTablet tablet) throws Exception {
     HostAndPort hp = findLeaderTabletServer(new LocatedTablet(tablet));
     miniCluster.killTabletServer(hp);
     miniCluster.startTabletServer(hp);
+    return hp;
   }
 
   /**
    * Kills and restarts the leader master.
+   * @return the host and port of the restarted master
    * @throws Exception
    */
-  public void restartLeaderMaster() throws Exception {
+  public HostAndPort restartLeaderMaster() throws Exception {
     HostAndPort hp = findLeaderMasterServer();
     miniCluster.killMasterServer(hp);
+    miniCluster.startMasterServer(hp);
+    return hp;
+  }
+
+  /**
+   * Start master which has previously been registered at the specified
+   * host and port.
+   *
+   * @param hp host and port of the master to start back
+   * @throws Exception
+   */
+  public void startMaster(HostAndPort hp) throws Exception {
     miniCluster.startMasterServer(hp);
   }
 
