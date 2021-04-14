@@ -301,11 +301,12 @@ fetch_and_patch \
  $GCOVR_SOURCE \
  $GCOVR_PATCHLEVEL
 
-CURL_PATCHLEVEL=0
+CURL_PATCHLEVEL=1
 fetch_and_patch \
  curl-${CURL_VERSION}.tar.gz \
  $CURL_SOURCE \
  $CURL_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/curl-custom-openssl-library.patch" \
  "autoreconf -fvi"
 
 CRCUTIL_PATCHLEVEL=0

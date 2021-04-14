@@ -1,0 +1,19 @@
+--- a/configure.ac	2021-04-14 12:03:20.819257209 -0700
++++ b/configure.ac	2021-04-14 12:27:51.050220736 -0700
+@@ -1715,9 +1715,13 @@
+     fi
+   fi
+ 
+-  dnl finally, set flags to use SSL
+-  CPPFLAGS="$CPPFLAGS $SSL_CPPFLAGS"
+-  LDFLAGS="$LDFLAGS $SSL_LDFLAGS"
++  dnl Finally, set flags to use SSL.
++  dnl If another version of OpenSSL library is present under the 'standard'
++  dnl system paths, it's necessary to pick up the header and binary files
++  dnl of the custom OpenSSL library, so put OpenSSL's custom paths first
++  dnl for both the preprocessor and the linker.
++  CPPFLAGS="$SSL_CPPFLAGS $CPPFLAGS"
++  LDFLAGS="$SSL_LDFLAGS $LDFLAGS"
+ 
+   AC_CHECK_LIB(crypto, HMAC_Update,[
+      HAVECRYPTO="yes"
