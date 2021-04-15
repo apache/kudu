@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -769,9 +770,10 @@ public class TestKuduTransaction {
       // It should be possible to commit the transaction.
       txn.commit(true /*wait*/);
 
-      // An extra sanity check: read back the row written into the table in the
+      // An extra sanity check: read back the rows written into the table in the
       // context of the transaction.
       KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+          .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
           .replicaSelection(ReplicaSelection.LEADER_ONLY)
           .build();
 
@@ -798,9 +800,10 @@ public class TestKuduTransaction {
       // txn-related operations routed through TxnManager should succeed.
       txn.commit(true /*wait*/);
 
-      // An extra sanity check: read back the row written into the table in the
+      // An extra sanity check: read back the rows written into the table in the
       // context of the transaction.
       KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+          .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
           .replicaSelection(ReplicaSelection.LEADER_ONLY)
           .build();
 
@@ -864,13 +867,14 @@ public class TestKuduTransaction {
     // the call to KuduTransaction.commit() above could not succeed.
     t.join(250);
 
-    // An extra sanity check: read back the row written into the table in the
+    // An extra sanity check: read back the rows written into the table in the
     // context of the transaction.
     KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+        .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
         .replicaSelection(ReplicaSelection.LEADER_ONLY)
         .build();
 
-    assertEquals(1, scanner.nextRows().getNumRows());
+    assertEquals(1, countRowsInScan(scanner));
   }
 
   /**
@@ -895,8 +899,8 @@ public class TestKuduTransaction {
   @TabletServerConfig(flags = {
       // The txn keepalive interval should be long enough to accommodate Raft
       // leader failure detection and election.
-      "--txn_keepalive_interval_ms=3000",
-      "--txn_staleness_tracker_interval_ms=500"
+      "--txn_keepalive_interval_ms=1000",
+      "--txn_staleness_tracker_interval_ms=250"
   })
   public void testTxnKeepaliveSwitchesToOtherTxnManager() throws Exception {
     final String TABLE_NAME = "txn_manager_fallback";
@@ -919,7 +923,7 @@ public class TestKuduTransaction {
     // Wait for two keepalive intervals to make sure the backend got a chance
     // to automatically abort the transaction if not receiving txn keepalive
     // messages.
-    Thread.sleep(2 * 3000);
+    Thread.sleep(2 * 1000);
 
     // It should be possible to commit the transaction. This is to verify that
     //
@@ -932,13 +936,113 @@ public class TestKuduTransaction {
     //     operations as well
     txn.commit(true /*wait*/);
 
-    // An extra sanity check: read back the row written into the table in the
+    // An extra sanity check: read back the rows written into the table in the
     // context of the transaction.
     KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+        .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
         .replicaSelection(ReplicaSelection.LEADER_ONLY)
         .build();
+    assertEquals(1, countRowsInScan(scanner));
+  }
 
-    assertEquals(1, scanner.nextRows().getNumRows());
+  /**
+   * Similar to the {@link #testTxnKeepaliveSwitchesToOtherTxnManager()} above,
+   * but with additional twist of "rolling" unavailability of leader masters.
+   * In addition, make sure the errors sent from TxnManager are processed
+   * accordingly when TxnStatusManager is not around.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+
+      // Set Raft heartbeat interval short for faster test runtime: speed up
+      // leader failure detection and new leader election.
+      "--raft_heartbeat_interval_ms=100",
+  })
+  @TabletServerConfig(flags = {
+      // The txn keepalive interval should be long enough to accommodate Raft
+      // leader failure detection and election.
+      "--txn_keepalive_interval_ms=1000",
+      "--txn_staleness_tracker_interval_ms=250"
+  })
+  public void testTxnKeepaliveRollingSwitchToOtherTxnManager() throws Exception {
+    final String TABLE_NAME = "txn_manager_fallback_rolling";
+    client.createTable(
+        TABLE_NAME,
+        ClientTestUtil.getBasicSchema(),
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 2));
+
+    KuduTransaction txn = client.newTransaction();
+    KuduSession session = txn.newKuduSession();
+
+    KuduTable table = client.openTable(TABLE_NAME);
+
+    // Cycle the leadership among masters, making sure the client successfully
+    // switches to every newly elected leader master to send keepalive messages.
+    final int numMasters = harness.getMasterServers().size();
+    for (int i = 0; i < numMasters; ++i) {
+      // Shutdown the leader master.
+      final HostAndPort hp = harness.killLeaderMasterServer();
+
+      // Wait for two keepalive intervals to give the backend a chance
+      // to automatically abort the transaction if not receiving txn keepalive
+      // messages.
+      Thread.sleep(2 * 1000);
+
+      // The transaction should be still alive.
+      try {
+        txn.isCommitComplete();
+        fail("KuduTransaction.isCommitComplete should have thrown");
+      } catch (NonRecoverableException e) {
+        assertTrue(e.getStatus().toString(), e.getStatus().isIllegalState());
+        assertEquals("transaction is still open", e.getMessage());
+      }
+
+      // In addition, it should be possible to insert rows in the context
+      // of the transaction.
+      session.apply(createBasicSchemaInsert(table, i));
+      session.flush();
+
+      // Start the master back.
+      harness.startMaster(hp);
+    }
+
+    // Make sure Java client properly processes error responses sent back by
+    // TxnManager when the TxnStatusManager isn't available. So, shutdown all
+    // tablet servers: this is to make sure TxnStatusManager isn't there.
+    harness.killAllTabletServers();
+
+    Thread t = new Thread(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          // Sleep for some time to allow the KuduTransaction.commit() call
+          // below issue RPCs when TxnStatusManager is not yet around.
+          Thread.sleep(2 * 1000);
+
+          // Start all the tablet servers back so the TxnStatusManager is back.
+          harness.startAllTabletServers();
+        } catch (Exception e) {
+          fail("failed to start all tablet servers back: " + e);
+        }
+      }
+    });
+    t.start();
+
+    // The transaction should be still alive, and it should be possible to
+    // commit it.
+    txn.commit(true /*wait*/);
+
+    t.join();
+
+    // An extra sanity check: read back the rows written into the table in the
+    // context of the transaction.
+    KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+        .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+        .replicaSelection(ReplicaSelection.LEADER_ONLY)
+        .build();
+    assertEquals(numMasters, countRowsInScan(scanner));
   }
 
   // TODO(aserbin): when test harness allows for sending Kudu servers particular
