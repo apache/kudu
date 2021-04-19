@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <ostream>
+#include <string>
 
 #include <glog/logging.h>
 
@@ -27,12 +28,14 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/mini-cluster/mini_cluster.h"
+#include "kudu/transactions/transactions.pb.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
@@ -48,9 +51,12 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduTransaction;
 using kudu::client::KuduUpdate;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::MiniCluster;
+using kudu::transactions::TxnTokenPB;
+using std::string;
 using std::unique_ptr;
 using std::vector;
 
@@ -71,6 +77,10 @@ TestWorkload::TestWorkload(MiniCluster* cluster,
     write_batch_size_(50),
     write_interval_millis_(0),
     write_timeout_millis_(20000),
+    txn_id_(TxnId::kInvalidTxnId),
+    begin_txn_(false),
+    commit_txn_(false),
+    rollback_txn_(false),
     fault_tolerant_(true),
     verify_num_rows_(true),
     read_errors_allowed_(false),
@@ -141,7 +151,12 @@ void TestWorkload::WriteThread() {
   shared_ptr<KuduTable> table;
   OpenTable(&table);
 
-  shared_ptr<KuduSession> session = client_->NewSession();
+  shared_ptr<KuduSession> session;
+  if (txn_) {
+    CHECK_OK(txn_->CreateSession(&session));
+  } else {
+    session = client_->NewSession();
+  }
   session->SetTimeoutMillis(write_timeout_millis_);
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
@@ -247,7 +262,8 @@ void TestWorkload::ReadThread() {
     // Note: when INSERT_RANDOM_ROWS_WITH_DELETE is used, ReadThread doesn't really verify
     // anything except that a scan works.
     int64_t expected_min_rows = 0;
-    if (write_pattern_ != INSERT_RANDOM_ROWS_WITH_DELETE && verify_num_rows_) {
+    if (write_pattern_ != INSERT_RANDOM_ROWS_WITH_DELETE && verify_num_rows_ &&
+        !begin_txn_ && !txn_id_.IsValid()) {
       expected_min_rows = rows_inserted_.Load();
     }
     size_t row_count = 0;
@@ -290,6 +306,12 @@ shared_ptr<KuduClient> TestWorkload::CreateClient() {
 }
 
 void TestWorkload::Setup() {
+  if (begin_txn_) {
+    CHECK(!txn_id_.IsValid()) << "Cannot begin txn and supply txn ID at the same time";
+  }
+  if (commit_txn_ || rollback_txn_) {
+    CHECK(txn_id_.IsValid() || begin_txn_) << "Must participate in a txn to commit or abort";
+  }
   if (!client_) {
     CHECK_OK(cluster_->CreateClient(&client_builder_, &client_));
   }
@@ -396,6 +418,29 @@ void TestWorkload::Start() {
   CHECK(!should_run_.Load()) << "Already started";
   should_run_.Store(true);
   start_latch_.Reset(num_write_threads_ + num_read_threads_);
+  if (txn_id_.IsValid()) {
+    // TODO(awong): add an API to set the keepalive. For now just use an
+    // arbitrary, short default value.
+    CHECK(!txn_);
+    TxnTokenPB txn_token_pb;
+    txn_token_pb.set_txn_id(txn_id_.value());
+    txn_token_pb.set_enable_keepalive(true);
+    txn_token_pb.set_keepalive_millis(1000);
+    string txn_token_str;
+    CHECK(txn_token_pb.SerializeToString(&txn_token_str));
+    CHECK_OK(KuduTransaction::Deserialize(client_, txn_token_str, &txn_));
+  }
+  if (begin_txn_) {
+    CHECK(!txn_);
+    CHECK(!txn_id_.IsValid());
+    CHECK_OK(client_->NewTransaction(&txn_));
+    string txn_str;
+    CHECK_OK(txn_->Serialize(&txn_str));
+    TxnTokenPB txn_token_pb;
+    CHECK(txn_token_pb.ParseFromString(txn_str));
+    CHECK(txn_token_pb.has_txn_id());
+    txn_id_ = TxnId(txn_token_pb.txn_id());
+  }
   for (int i = 0; i < num_write_threads_; i++) {
     threads_.emplace_back(&TestWorkload::WriteThread, this);
   }
@@ -422,6 +467,14 @@ void TestWorkload::StopAndJoin() {
     t.join();
   }
   threads_.clear();
+  if (txn_) {
+    if (commit_txn_) {
+      CHECK_OK(txn_->Commit());
+    }
+    if (rollback_txn_) {
+      CHECK_OK(txn_->Rollback());
+    }
+  }
 }
 
 } // namespace kudu

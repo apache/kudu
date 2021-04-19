@@ -31,6 +31,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
@@ -76,6 +77,44 @@ class TestWorkload {
       cluster::MiniCluster* cluster,
       PartitioningType partitioning = PartitioningType::RANGE);
   ~TestWorkload();
+
+  // Ingest the workload as part of the given transaction. set_begin_txn() must
+  // not be called if this is set.
+  void set_txn_id(int64_t txn_id) {
+    txn_id_ = TxnId(txn_id);
+    CHECK(txn_id_.IsValid());
+  }
+
+  // Ingest the workload as a part of a new transaction. set_txn_id() must not
+  // be called if this is set.
+  void set_begin_txn() {
+    begin_txn_ = true;
+    CHECK(!txn_id_.IsValid());
+  }
+
+  // Commit the transaction that this workload is a part of upon calling
+  // StopAndJoin(). If set, either set_begin_txn() or set_txn_id() must be set
+  // as well. If not set, but either set_begin_txn() or set_txn_id() is set,
+  // the workload will ingest as a part of the transaction, but not call
+  // commit on completion.
+  //
+  // set_rollback_txn() must not be called if this is set.
+  void set_commit_txn() {
+    commit_txn_ = true;
+    CHECK(!rollback_txn_);
+  }
+
+  // Abort the transaction that this workload is a part of upon calling
+  // StopAndJoin(). If set, either set_begin_txn() or set_txn_id() must be set
+  // as well. If not set, but either set_begin_txn() or set_txn_id() is set,
+  // the workload will ingest as a part of the transaction, but not call abort
+  // on completion.
+  //
+  // set_commit_txn() must not be called if this is set.
+  void set_rollback_txn() {
+    rollback_txn_ = true;
+    CHECK(!commit_txn_);
+  }
 
   // Sets whether the read thread should crash if scanning to the cluster fails
   // for whatever reason. If set to true, errors will be populated in
@@ -152,6 +191,9 @@ class TestWorkload {
 
   // Set whether we should attempt to verify the number of rows when scanning.
   // An incorrect number of rows may be indicative of a stale read.
+  //
+  // If either set_begin_txn() or set_txn_id() has been called, does not verify
+  // the number of rows.
   void set_verify_num_rows(bool should_verify) {
     verify_num_rows_ = should_verify;
   }
@@ -250,8 +292,14 @@ class TestWorkload {
   // Delete created table, etc.
   Status Cleanup();
 
+  int64_t txn_id() const {
+    CHECK(txn_id_.IsValid());
+    return txn_id_.value();
+  }
+
   // Return the number of rows inserted so far. This may be called either
-  // during or after the write workload.
+  // during or after the write workload. If writing as a part of a transaction,
+  // these rows may have not been committed.
   int64_t rows_inserted() const {
     return rows_inserted_.Load();
   }
@@ -298,6 +346,10 @@ class TestWorkload {
   int write_batch_size_;
   int write_interval_millis_;
   int write_timeout_millis_;
+  TxnId txn_id_;
+  bool begin_txn_;
+  bool commit_txn_;
+  bool rollback_txn_;
   bool fault_tolerant_;
   bool verify_num_rows_;
   bool read_errors_allowed_;
@@ -320,6 +372,8 @@ class TestWorkload {
   AtomicInt<int64_t> rows_deleted_;
   AtomicInt<int64_t> batches_completed_;
   AtomicInt<int32_t> sequential_key_gen_;
+
+  client::sp::shared_ptr<client::KuduTransaction> txn_;
 
   std::vector<std::thread> threads_;
 
