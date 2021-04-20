@@ -59,7 +59,11 @@ import org.apache.kudu.Type
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 @SerialVersionUID(1L)
-class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeoutMs: Option[Long])
+class KuduContext(
+    val kuduMaster: String,
+    sc: SparkContext,
+    val socketReadTimeoutMs: Option[Long],
+    val saslProtocolName: Option[String] = None)
     extends Serializable {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
@@ -149,7 +153,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   @transient lazy val syncClient: KuduClient = asyncClient.syncClient()
 
   @transient lazy val asyncClient: AsyncKuduClient = {
-    val c = KuduClientCache.getAsyncClient(kuduMaster)
+    val c = KuduClientCache.getAsyncClient(kuduMaster, saslProtocolName)
     if (authnCredentials != null) {
       c.importAuthenticationCredentials(authnCredentials)
     }
@@ -607,10 +611,14 @@ private object KuduClientCache {
     clientCache.clear()
   }
 
-  def getAsyncClient(kuduMaster: String): AsyncKuduClient = {
+  def getAsyncClient(kuduMaster: String, saslProtocolName: Option[String]): AsyncKuduClient = {
     clientCache.synchronized {
       if (!clientCache.contains(kuduMaster)) {
-        val asyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster).build()
+        val builder = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster)
+        if (saslProtocolName.nonEmpty) {
+          builder.saslProtocolName(saslProtocolName.get)
+        }
+        val asyncClient = builder.build()
         val hookHandle = new Runnable {
           override def run(): Unit = asyncClient.close()
         }

@@ -72,6 +72,7 @@ class DefaultSource
   val HANDLE_SCHEMA_DRIFT = "kudu.handleSchemaDrift"
   val USE_DRIVER_METADATA = "kudu.useDriverMetadata"
   val SNAPSHOT_TIMESTAMP_MS = "kudu.snapshotTimestampMs"
+  val SASL_PROTOCOL_NAME = "kudu.saslProtocolName"
 
   /**
    * A nice alias for the data source so that when specifying the format
@@ -109,6 +110,7 @@ class DefaultSource
     val tableName = getTableName(parameters)
     val kuduMaster = getMasterAddrs(parameters)
     val operationType = getOperationType(parameters)
+    val saslProtocolName = getSaslProtocolName(parameters)
     val schemaOption = Option(schema)
     val readOptions = getReadOptions(parameters)
     val writeOptions = getWriteOptions(parameters)
@@ -116,6 +118,7 @@ class DefaultSource
     new KuduRelation(
       tableName,
       kuduMaster,
+      saslProtocolName,
       operationType,
       schemaOption,
       readOptions,
@@ -157,12 +160,14 @@ class DefaultSource
     val tableName = getTableName(parameters)
     val masterAddrs = getMasterAddrs(parameters)
     val operationType = getOperationType(parameters)
+    val saslProtocolName = getSaslProtocolName(parameters)
     val readOptions = getReadOptions(parameters)
     val writeOptions = getWriteOptions(parameters)
 
     new KuduSink(
       tableName,
       masterAddrs,
+      saslProtocolName,
       operationType,
       readOptions,
       writeOptions
@@ -227,6 +232,10 @@ class DefaultSource
     parameters.getOrElse(KUDU_MASTER, InetAddress.getLocalHost.getCanonicalHostName)
   }
 
+  private def getSaslProtocolName(parameters: Map[String, String]): String = {
+    parameters.getOrElse(SASL_PROTOCOL_NAME, "kudu")
+  }
+
   private def getScanLocalityType(opParam: String): ReplicaSelection = {
     opParam.toLowerCase(Locale.ENGLISH) match {
       case "leader_only" => ReplicaSelection.LEADER_ONLY
@@ -274,6 +283,7 @@ class DefaultSource
 class KuduRelation(
     val tableName: String,
     val masterAddrs: String,
+    val saslProtocolName: String,
     val operationType: OperationType,
     val userSchema: Option[StructType],
     val readOptions: KuduReadOptions = new KuduReadOptions,
@@ -282,7 +292,7 @@ class KuduRelation(
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   private val context: KuduContext =
-    new KuduContext(masterAddrs, sqlContext.sparkContext)
+    new KuduContext(masterAddrs, sqlContext.sparkContext, None, Some(saslProtocolName))
 
   private val table: KuduTable = context.syncClient.openTable(tableName)
 
@@ -498,13 +508,14 @@ private[spark] object KuduRelation {
 class KuduSink(
     val tableName: String,
     val masterAddrs: String,
+    val saslProtocolName: String,
     val operationType: OperationType,
     val readOptions: KuduReadOptions = new KuduReadOptions,
     val writeOptions: KuduWriteOptions)(val sqlContext: SQLContext)
     extends Sink {
 
   private val context: KuduContext =
-    new KuduContext(masterAddrs, sqlContext.sparkContext)
+    new KuduContext(masterAddrs, sqlContext.sparkContext, None, Some(saslProtocolName))
 
   override def addBatch(batchId: Long, data: DataFrame): Unit = {
     context.writeRows(data, tableName, operationType, writeOptions)

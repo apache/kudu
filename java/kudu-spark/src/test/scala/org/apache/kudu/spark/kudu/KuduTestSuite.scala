@@ -139,7 +139,11 @@ trait KuduTestSuite {
   @Before
   def setUpBase(): Unit = {
     ss = SparkSession.builder().config(conf).getOrCreate()
-    kuduContext = new KuduContext(harness.getMasterAddressesAsString, ss.sparkContext)
+    kuduContext = new KuduContext(
+      harness.getMasterAddressesAsString,
+      ss.sparkContext,
+      None,
+      Some(harness.getPrincipal()))
 
     // Spark tests should use the client from the kuduContext.
     kuduClient = kuduContext.syncClient

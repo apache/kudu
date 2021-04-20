@@ -19,7 +19,6 @@ package org.apache.kudu.spark.kudu
 
 import java.nio.charset.StandardCharsets
 import java.util
-
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import org.apache.spark.SparkException
@@ -35,6 +34,7 @@ import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.test.KuduTestHarness
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
+import org.apache.kudu.test.KuduTestHarness.EnableKerberos
 import org.apache.kudu.test.KuduTestHarness.MasterServerConfig
 import org.junit.Before
 import org.junit.Test
@@ -875,5 +875,26 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     val dataFrame = sqlContext.read.options(kuduOptions).format("kudu").load
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
     assert(kuduRelation.sizeInBytes == 1024)
+  }
+
+  @Test
+  @EnableKerberos(principal = "oryx")
+  def testNonDefaultPrincipal(): Unit = {
+    KuduClientCache.clearCacheForTests()
+    val exception = intercept[Exception] {
+      val df = sqlContext.read.options(kuduOptions).format("kudu").load
+      df.count()
+    }
+    assertTrue(exception.getCause.getMessage.contains("this client is not authenticated"))
+
+    KuduClientCache.clearCacheForTests()
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.saslProtocolName" -> "oryx"
+    )
+
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+    assertEquals(rowCount, df.count())
   }
 }
