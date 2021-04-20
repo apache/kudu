@@ -317,6 +317,13 @@ public final class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
+   * @return the service principal name
+   */
+  public String getPrincipal() {
+    return principal;
+  }
+
+  /**
    * Starts a master identified by a host and port.
    * Does nothing if the server was already running.
    *

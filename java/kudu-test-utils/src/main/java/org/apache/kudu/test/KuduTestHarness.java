@@ -130,6 +130,13 @@ public class KuduTestHarness extends ExternalResource {
       }
     }
 
+    // Enable Kerberos if needed and set the SPN.
+    EnableKerberos enableKerberos = description.getAnnotation(EnableKerberos.class);
+    if (enableKerberos != null) {
+      clusterBuilder.enableKerberos();
+      clusterBuilder.principal(enableKerberos.principal());
+    }
+
     // Generate the ExternalResource Statement.
     Statement statement = super.apply(base, description);
     // Wrap in the RetryRule to rerun flaky tests.
@@ -146,6 +153,7 @@ public class KuduTestHarness extends ExternalResource {
     LOG.info("Creating a new Kudu client...");
     asyncClient = new AsyncKuduClientBuilder(miniCluster.getMasterAddressesAsString())
         .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
+        .saslProtocolName(miniCluster.getPrincipal())
         .build();
     client = asyncClient.syncClient();
   }
@@ -405,6 +413,13 @@ public class KuduTestHarness extends ExternalResource {
   }
 
   /**
+   * @return the service principal name
+   */
+  public String getPrincipal() {
+    return miniCluster.getPrincipal();
+  }
+
+  /**
    * Kills all the master servers.
    * Does nothing to the servers that are already dead.
    *
@@ -519,5 +534,15 @@ public class KuduTestHarness extends ExternalResource {
   @Target({ElementType.METHOD})
   public @interface LocationConfig {
     String[] locations();
+  }
+
+  /**
+   * An annotation that can be added to each test method to enable Kerberos.
+   * The service principal name can be configured by specifying 'principal'.
+   */
+  @Retention(RetentionPolicy.RUNTIME)
+  @Target({ElementType.METHOD})
+  public @interface EnableKerberos {
+    String principal() default "kudu";
   }
 }

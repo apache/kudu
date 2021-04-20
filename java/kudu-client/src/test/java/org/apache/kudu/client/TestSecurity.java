@@ -43,6 +43,7 @@ import org.junit.Test;
 import org.apache.kudu.client.Client.AuthenticationCredentialsPB;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.test.CapturingLogAppender;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.cluster.FakeDNS;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
 import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
@@ -56,6 +57,9 @@ public class TestSecurity {
   private static final int TICKET_LIFETIME_SECS = 10;
   private static final int RENEWABLE_LIFETIME_SECS = 20;
   public static final String CUSTOM_PRINCIPAL = "oryx";
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   private CapturingLogAppender cla;
   private MiniKuduCluster miniCluster;
@@ -498,10 +502,12 @@ public class TestSecurity {
   }
 
   @Test(timeout = 60000)
+  @KuduTestHarness.EnableKerberos(principal = CUSTOM_PRINCIPAL)
   public void testNonDefaultPrincipal() throws Exception {
-    startCluster(ImmutableSet.of(Option.CUSTOM_PRINCIPAL, Option.START_TSERVERS));
     try {
-      this.client.createTable("TestSecurity-nondefault-principal-1",
+      KuduClient client = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
+          .build();
+      client.createTable("TestSecurity-nondefault-principal-1",
           getBasicSchema(),
           getBasicCreateTableOptions());
       Assert.fail("default client shouldn't be able to connect to the cluster.");
@@ -510,7 +516,7 @@ public class TestSecurity {
           "this client is not authenticated"
       ));
     }
-    KuduClient client = new KuduClient.KuduClientBuilder(miniCluster.getMasterAddressesAsString())
+    KuduClient client = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
             .saslProtocolName(CUSTOM_PRINCIPAL)
             .build();
     Assert.assertNotNull(client.createTable( "TestSecurity-nondefault-principal-2",
