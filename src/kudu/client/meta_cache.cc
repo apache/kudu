@@ -1181,7 +1181,7 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
 bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
                                          const string& partition_key,
                                          MetaCacheEntry* entry) {
-  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "slow lookup of entry by key");
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "looking up entry by key");
   shared_lock<rw_spinlock> l(lock_.get_lock());
   const TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
@@ -1234,7 +1234,7 @@ Status MetaCache::DoFastPathLookup(const KuduTable* table,
 
 bool MetaCache::LookupEntryByIdFastPath(const string& tablet_id,
                                         MetaCacheEntry* entry) {
-  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "slow lookup of entry by ID");
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "looking up entry by ID");
   shared_lock<rw_spinlock> l(lock_.get_lock());
   const auto* cache_entry = FindOrNull(entry_by_tablet_id_, tablet_id);
   if (PREDICT_FALSE(!cache_entry)) {
