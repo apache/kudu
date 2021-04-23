@@ -716,11 +716,13 @@ TEST_F(MasterHmsUpgradeTest, TestConflictingNormalizedNames) {
   // itself leader, in which case ExternalMiniCluster::Restart() can succeed. In
   // this situation a fallback to a leader-only API will deterministically fail.
   Status s = cluster_->Restart();
-  if (s.ok()) {
+  if (!s.ok()) {
+    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  } else {
     vector<string> tables;
     s = client_->ListTables(&tables);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
-  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 
   // Disable the metastore integration and rename one of the conflicting tables.
   cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);

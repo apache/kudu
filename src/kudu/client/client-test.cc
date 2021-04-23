@@ -1010,7 +1010,7 @@ TEST_F(ClientTest, TestMasterDown) {
   shared_ptr<KuduTable> t;
   client_->data_->default_admin_operation_timeout_ = MonoDelta::FromSeconds(1);
   Status s = client_->OpenTable("other-tablet", &t);
-  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
 // Test that we get errors when we try incorrectly configuring the scanner, and
@@ -3564,19 +3564,13 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
 
   unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
-  switch (which) {
-    case DEAD_MASTER:
-      // Only one master, so no retry for finding the new leader master.
-      ASSERT_TRUE(error->status().IsNetworkError());
-      break;
-    case DEAD_TSERVER:
-      ASSERT_TRUE(error->status().IsTimedOut());
-      // TODO(KUDU-1466) Re-enable this assertion once the jira gets solved. We can't actually
-      // make an assertion on the reason for the timeout since sometimes tablet server connection
-      // errors get reported as GetTabletLocations timeouts.
-      // ASSERT_STR_CONTAINS(error->status().ToString(), "Connection refused");
-      break;
-  }
+  ASSERT_TRUE(error->status().IsTimedOut());
+  // TODO(KUDU-1466) Re-enable this assertion once the jira gets solved. We can't actually
+  // make an assertion on the reason for the timeout since sometimes tablet server connection
+  // errors get reported as GetTabletLocations timeouts.
+  // if (which == DEAD_TSERVER) {
+  //   ASSERT_STR_CONTAINS(error->status().ToString(), "Connection refused");
+  // }
 
   ASSERT_EQ(error->failed_op().ToString(),
             R"(INSERT int32 key=1, int32 int_val=1, string string_val="x")");
@@ -7456,6 +7450,10 @@ TEST_F(ClientTest, AttemptToControlTxnByOtherUser) {
 
 TEST_F(ClientTest, NoTxnManager) {
   shared_ptr<KuduTransaction> txn;
+  KuduClientBuilder builder;
+  builder.default_admin_operation_timeout(MonoDelta::FromSeconds(1));
+  builder.default_rpc_timeout(MonoDelta::FromMilliseconds(100));
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
   ASSERT_OK(client_->NewTransaction(&txn));
 
   // Shutdown all masters: a TxnManager is a part of master, so after shutting
@@ -7465,8 +7463,7 @@ TEST_F(ClientTest, NoTxnManager) {
   {
     shared_ptr<KuduTransaction> txn;
     auto s = client_->NewTransaction(&txn);
-    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "Client connection negotiation failed");
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
 
   const vector<pair<string, Status>> txn_ctl_results = {
@@ -7476,8 +7473,7 @@ TEST_F(ClientTest, NoTxnManager) {
   for (const auto& op_and_status : txn_ctl_results) {
     SCOPED_TRACE(op_and_status.first);
     const auto& s = op_and_status.second;
-    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "Client connection negotiation failed");
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
 }
 
@@ -7601,13 +7597,14 @@ TEST_F(ClientTest, TxnKeepAlive) {
 TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerShortTime) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
-#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
-  // ASAN and TSAN use longer intervals to avoid flakiness: it takes some
-  // time to restart masters, and that adds up to the unavailability interval.
   constexpr const auto kUnavailabilityIntervalMs = 5000;
-#else
-  constexpr const auto kUnavailabilityIntervalMs = 1000;
-#endif
+  // Use a short timeout for the RPC so our attempts to commit don't trigger a
+  // keepalive failure.
+  const auto kShortTimeout = MonoDelta::FromMilliseconds(kUnavailabilityIntervalMs / 2);
+  KuduClientBuilder builder;
+  builder.default_admin_operation_timeout(kShortTimeout);
+  builder.default_rpc_timeout(kShortTimeout);
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
 
   // To avoid flakiness, set the txn keepalive interval longer than it is in
   // other scenarios (NOTE: it's still much shorter than it's default value
@@ -7627,18 +7624,11 @@ TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerShortTime) {
   // RPC calls from clients to corresponding TxnStatusManager.
   cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
 
-  // An attempt to commit a transaction should fail right away (i.e. no retries)
-  // due to unreachable masters.
+  // An attempt to commit a transaction should fail due to unreachable masters.
   {
     auto s = txn->Commit(false /* wait */);
-    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "connection negotiation failed");
-    ASSERT_STR_CONTAINS(s.ToString(), "Connection refused");
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
-
-  // Wait for some time, but not too long to allow the system to get txn
-  // keepalive heartbeat before the timeout.
-  SleepFor(MonoDelta::FromMilliseconds(kUnavailabilityIntervalMs));
 
   // Start masters back.
   for (auto idx = 0; idx < cluster_->num_masters(); ++idx) {
@@ -7654,6 +7644,16 @@ TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerShortTime) {
 // aborted if Kudu masters are not available for time period longer than
 // the txn keepalive interval.
 TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerLongTime) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // Set the timeout to be long so when we fail to commit, the system will
+  // automatically abort the transaction.
+  KuduClientBuilder builder;
+  builder.default_admin_operation_timeout(
+      MonoDelta::FromMilliseconds(5 * FLAGS_txn_keepalive_interval_ms));
+  builder.default_rpc_timeout(MonoDelta::FromSeconds(1));
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+
   shared_ptr<KuduTransaction> txn;
   ASSERT_OK(client_->NewTransaction(&txn));
 
@@ -7661,15 +7661,10 @@ TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerLongTime) {
   // RPC calls from clients to corresponding TxnStatusManager.
   cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
 
-  // Wait for some time to allow the system to detect stale transactions.
-  SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
-
   // An attempt to commit a transaction should fail due to unreachable masters.
   {
     auto s = txn->Commit(false /* wait */);
-    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "connection negotiation failed");
-    ASSERT_STR_CONTAINS(s.ToString(), "Connection refused");
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
 
   // Start masters back.

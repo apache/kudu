@@ -389,6 +389,7 @@ struct KeepaliveRpcCtx {
   unique_ptr<AsyncRandomTxnManagerRpc<KeepTransactionAliveRequestPB,
                                       KeepTransactionAliveResponsePB>> rpc;
   sp::weak_ptr<KuduTransaction> weak_txn;
+  sp::shared_ptr<KuduClient> client;
 };
 
 void KuduTransaction::Data::SendTxnKeepAliveTask(
@@ -422,6 +423,10 @@ void KuduTransaction::Data::SendTxnKeepAliveTask(
 
   sp::shared_ptr<KeepaliveRpcCtx> ctx(new KeepaliveRpcCtx);
   ctx->weak_txn = weak_txn;
+
+  // We need to ensure the KuduClient outlives each RPC, so maintain a
+  // reference to the KuduClient until the callback is called.
+  ctx->client = c;
 
   {
     KeepTransactionAliveRequestPB req;
@@ -470,10 +475,7 @@ void KuduTransaction::Data::TxnKeepAliveCb(
 
   // Re-schedule the task, so it will send another keepalive heartbeat as
   // necessary.
-  sp::shared_ptr<KuduClient> c(txn->data_->weak_client_.lock());
-  if (PREDICT_FALSE(!c)) {
-    return;
-  }
+  //
   // If there was an error with the prior request, send the next one sooner
   // since one heartbeat has just been missed. If the prior request timed out,
   // send the next one as soon as possible. It's been a long interval since the
@@ -488,7 +490,7 @@ void KuduTransaction::Data::TxnKeepAliveCb(
                                : txn->data_->GetKeepaliveRpcTimeout());
   DCHECK_GE(txn->data_->GetKeepaliveRpcPeriod().ToMilliseconds(),
             txn->data_->GetKeepaliveRpcTimeout().ToMilliseconds());
-  auto m = c->data_->messenger_;
+  auto m = ctx->client->data_->messenger_;
   if (PREDICT_TRUE(m)) {
     auto weak_txn = ctx->weak_txn;
     m->ScheduleOnReactor(

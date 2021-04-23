@@ -450,6 +450,44 @@ TEST_F(TxnStatusTableITest, TestSystemClientFindTablets) {
   ASSERT_OK(txn_sys_client_->AbortTransaction(100, kUser));
 }
 
+TEST_F(TxnStatusTableITest, TestSystemClientMasterDown) {
+  ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
+  ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
+
+  cluster_->mini_master(0)->Shutdown();
+
+  // When the only server is down, the system client should keep trying until
+  // it times out.
+  {
+    int64_t highest_seen_txn_id = -1;
+    auto s = txn_sys_client_->BeginTransaction(
+        1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
+        MonoDelta::FromMilliseconds(100));
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    // The 'highest_seen_txn_id' should be left untouched.
+    ASSERT_EQ(-1, highest_seen_txn_id);
+  }
+
+  // Now try with a longer timeout and ensure that if the server comes back up,
+  // the system client will succeed.
+  thread t([&] {
+    // Wait a bit to give some time for the system client to make its request
+    // and retry some.
+    SleepFor(MonoDelta::FromMilliseconds(500));
+    CHECK_OK(cluster_->mini_master(0)->Restart());
+  });
+  SCOPED_CLEANUP({
+    t.join();
+  });
+
+  int64_t highest_seen_txn_id = -1;
+  ASSERT_OK(txn_sys_client_->BeginTransaction(
+      1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
+      MonoDelta::FromSeconds(10)));
+  // Make sure the highest txn ID we've seen matches the one we just started.
+  ASSERT_EQ(1, highest_seen_txn_id);
+}
+
 TEST_F(TxnStatusTableITest, TestSystemClientTServerDown) {
   ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
   ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
@@ -474,7 +512,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientTServerDown) {
     // Wait a bit to give some time for the system client to make its request
     // and retry some.
     SleepFor(MonoDelta::FromMilliseconds(500));
-    ASSERT_OK(cluster_->mini_tablet_server(0)->Restart());
+    CHECK_OK(cluster_->mini_tablet_server(0)->Restart());
   });
   SCOPED_CLEANUP({
     t.join();
@@ -483,8 +521,9 @@ TEST_F(TxnStatusTableITest, TestSystemClientTServerDown) {
   int64_t highest_seen_txn_id = -1;
   ASSERT_OK(txn_sys_client_->BeginTransaction(
       1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
-      MonoDelta::FromSeconds(3)));
-  ASSERT_EQ(highest_seen_txn_id, 1);
+      MonoDelta::FromSeconds(10)));
+  // Make sure the highest txn ID we've seen matches the one we just started.
+  ASSERT_EQ(1, highest_seen_txn_id);
 }
 
 TEST_F(TxnStatusTableITest, TestSystemClientBeginTransactionErrors) {

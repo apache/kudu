@@ -640,7 +640,7 @@ TEST_F(TxnCommitITest, TestLoadTxnStatusManagerWhenNoMasters) {
 
   // While the master is down, we can't contact the TxnManager.
   Status s = BeginTransaction(&txn, &txn_session);
-  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
   // Once restarted, it should be business as usual.
   ASSERT_OK(cluster_->mini_master()->Restart());
