@@ -268,17 +268,17 @@ Status TxnSystemClient::GetTransactionStatus(int64_t txn_id,
                                            timeout,
                                            s.AsStatusCallback(),
                                            &result));
-  const auto ret = s.Wait();
-  if (ret.ok()) {
+  const auto rs = s.Wait();
+  if (rs.ok()) {
     // Retrieve the response and set corresponding output parameters.
     DCHECK(!result.has_op_error());
     DCHECK(result.has_txn_status());
+    DCHECK(result.txn_status().has_state());
     TxnStatusEntryPB ret;
-    ret.set_state(result.txn_status().state());
-    ret.set_allocated_user(result.mutable_txn_status()->release_user());
+    ret.Swap(result.mutable_txn_status());
     *txn_status = std::move(ret);
   }
-  return ret;
+  return rs;
 }
 
 Status TxnSystemClient::KeepTransactionAlive(int64_t txn_id,

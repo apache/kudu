@@ -186,6 +186,7 @@ int64_t GetTxnId(const shared_ptr<KuduTransaction>& txn) {
 
 Status CountRows(KuduTable* table, size_t* num_rows) {
   KuduScanner scanner(table);
+  RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_YOUR_WRITES));
   RETURN_NOT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
   RETURN_NOT_OK(scanner.Open());
   size_t count = 0;
@@ -295,9 +296,113 @@ class TxnWriteOpsITest : public ExternalMiniClusterITestBase {
   string tablet_uuid_;
 };
 
+// Make sure txn commit timestamp is being propagated to a client with a call
+// to KuduTransaction::IsCommitComplete(). This includes committing a
+// transaction synchronously by calling KuduTransaction::Commit().
+TEST_F(TxnWriteOpsITest, CommitTimestampPropagation) {
+  static constexpr int kRowsNum = 1000;
+
+  const vector<string> master_flags = {
+    // Enable TxnManager in Kudu masters.
+    // TODO(aserbin): remove this customization once the flag is 'on' by default
+    "--txn_manager_enabled=true",
+
+    // Scenarios based on this test fixture assume the txn status table
+    // is created at start, not on first transaction-related operation.
+    "--txn_manager_lazily_initialized=false",
+  };
+  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+  NO_FATALS(Prepare());
+
+  // Start a transaction, write a bunch or rows into the test table, and then
+  // commit the transaction asynchronously. Check for transaction status and
+  // make sure the latest observed timestamp changes accordingly once the
+  // transaction is committed.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    NO_FATALS(InsertRows(table_.get(), session.get(), kRowsNum));
+    ASSERT_OK(session->Flush());
+    ASSERT_EQ(0, session->CountPendingErrors());
+
+    const auto ts_before_commit = client_->GetLatestObservedTimestamp();
+    ASSERT_OK(txn->Commit(false));
+    const auto ts_after_commit_async = client_->GetLatestObservedTimestamp();
+    ASSERT_EQ(ts_before_commit, ts_after_commit_async);
+
+    uint64_t ts_after_committed = 0;
+    ASSERT_EVENTUALLY([&] {
+      bool is_complete = false;
+      Status completion_status;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+      ASSERT_TRUE(is_complete);
+      ts_after_committed = client_->GetLatestObservedTimestamp();
+    });
+    ASSERT_GT(ts_after_committed, ts_before_commit);
+
+    // A sanity check: calling IsCommitComplete() again after the commit
+    // timestamp has been propagated doesn't change the timestamp observed
+    // by the client.
+    for (auto i = 0; i < 10; ++i) {
+      bool is_complete = false;
+      Status completion_status;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+      ASSERT_TRUE(is_complete);
+      ASSERT_EQ(ts_after_committed, client_->GetLatestObservedTimestamp());
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+
+    size_t count;
+    ASSERT_OK(CountRows(table_.get(), &count));
+    ASSERT_EQ(kRowsNum, count);
+  }
+
+  // Start a transaction, write a bunch or rows into the test table, and then
+  // commit the transaction synchronously. Make sure the latest observed
+  // timestamp changes accordingly once the transaction is committed.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    NO_FATALS(InsertRows(table_.get(), session.get(), kRowsNum, kRowsNum));
+    ASSERT_OK(session->Flush());
+    ASSERT_EQ(0, session->CountPendingErrors());
+
+    const auto ts_before_commit = client_->GetLatestObservedTimestamp();
+    ASSERT_OK(txn->Commit());
+    const auto ts_after_sync_commit = client_->GetLatestObservedTimestamp();
+    ASSERT_GT(ts_after_sync_commit, ts_before_commit);
+
+    size_t count;
+    ASSERT_OK(CountRows(table_.get(), &count));
+    ASSERT_EQ(2 * kRowsNum, count);
+  }
+
+  // An empty transaction doesn't have a timestamp, so there is nothing to
+  // propagate back to client when an empty transaction is committed.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+
+    const auto ts_before_commit = client_->GetLatestObservedTimestamp();
+    ASSERT_OK(txn->Commit());
+    const auto ts_after_sync_commit = client_->GetLatestObservedTimestamp();
+    ASSERT_EQ(ts_before_commit, ts_after_sync_commit);
+
+    size_t count;
+    ASSERT_OK(CountRows(table_.get(), &count));
+    ASSERT_EQ(2 * kRowsNum, count);
+  }
+}
+
 // Test that our deadlock prevention mechanisms work by writing across
 // different tablets concurrently from multiple transactions.
-TEST_F(TxnWriteOpsITest, TestDeadlockPrevention) {
+TEST_F(TxnWriteOpsITest, DeadlockPrevention) {
   constexpr const int kNumTxns = 8;
   const vector<string> master_flags = {
     "--txn_manager_enabled=true",
@@ -307,8 +412,7 @@ TEST_F(TxnWriteOpsITest, TestDeadlockPrevention) {
     "--txn_manager_lazily_initialized=false",
   };
   NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
-  vector<string> tablets_uuids;
-  NO_FATALS(Prepare(&tablets_uuids));
+  NO_FATALS(Prepare());
   vector<thread> threads;
   threads.reserve(kNumTxns);
   vector<int> random_keys(kNumTxns * 2);
@@ -391,8 +495,7 @@ TEST_F(TxnWriteOpsITest, TxnMultipleSingleRowWritesCommit) {
   };
   NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
 
-  vector<string> tablets_uuids;
-  NO_FATALS(Prepare(&tablets_uuids));
+  NO_FATALS(Prepare());
   shared_ptr<KuduTransaction> txn;
   ASSERT_OK(client_->NewTransaction(&txn));
   shared_ptr<KuduSession> session;

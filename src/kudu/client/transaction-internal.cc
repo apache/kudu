@@ -344,6 +344,21 @@ Status KuduTransaction::Data::IsCommitCompleteImpl(
         return Status::IllegalState(errmsg);
       }
   }
+  // Update last observed timestamp -- this is necessary to achieve consistency
+  // in the READ_YOUR_WRITES mode when trying to read back the data of a
+  // transaction that has just been committed. The commit phase might take some
+  // time and may even be retried when the involved participants are not
+  // available, so even the client has observed timestamps for all the write
+  // operations sent in the context this transaction, the maximum timestamp
+  // among all the transaction participants might be far ahead of the latest
+  // timestamp observed by the client while performing the transactional write
+  // operations.
+  // NOTE: an empty transaction doesn't have the commit timestamp assigned.
+  if (resp.has_commit_timestamp()) {
+    DCHECK(state == TxnStatePB::COMMITTED ||
+           state == TxnStatePB::FINALIZE_IN_PROGRESS);
+    client->data_->UpdateLatestObservedTimestamp(resp.commit_timestamp());
+  }
   return Status::OK();
 }
 

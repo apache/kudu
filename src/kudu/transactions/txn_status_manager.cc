@@ -1120,7 +1120,8 @@ Status TxnStatusManager::CompleteCommitTransaction(int64_t txn_id) {
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
-  const auto& state = pb.state();
+  DCHECK(pb.has_state());
+  const auto state = pb.state();
   if (state == TxnStatePB::COMMITTED) {
     return Status::OK();
   }

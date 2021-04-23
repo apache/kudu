@@ -94,8 +94,12 @@ message GetTransactionStateResponsePB {
 
   // The transaction state at the time of processing the request.
   optional TxnStatePB state = 2;
-}
 
+  // Commit timestamp associated with the transaction if it is a non-empty one
+  // (i.e. has at least one row written) and has already been in the COMMITTED
+  // or FINALIZE_IN_PROGRESS state at the time of processing the request.
+  optional fixed64 commit_timestamp = 3;
+}
 
 message KeepTransactionAliveRequestPB {
   optional int64 txn_id = 1;

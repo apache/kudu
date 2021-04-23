@@ -120,6 +120,13 @@ void TxnManagerServiceImpl::GetTransactionState(
   if (PREDICT_TRUE(s.ok())) {
     DCHECK(txn_status.has_state());
     resp->set_state(txn_status.state());
+    // An empty transaction doesn't have a commit timestamp; only non-empty ones
+    // have their commit timestamps assigned and persisted.
+    if (txn_status.has_commit_timestamp()) {
+      DCHECK(txn_status.state() == TxnStatePB::COMMITTED ||
+             txn_status.state() == TxnStatePB::FINALIZE_IN_PROGRESS);
+      resp->set_commit_timestamp(txn_status.commit_timestamp());
+    }
   }
   CheckRespErrorOrSetUnknown(s, resp);
   return ctx->RespondSuccess();
