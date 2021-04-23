@@ -155,6 +155,7 @@ add_library(kudu_tools_test_util
   tool_test_util.cc
 )
 target_link_libraries(kudu_tools_test_util
+  kudu_tools_util
   kudu_util
 )
 
