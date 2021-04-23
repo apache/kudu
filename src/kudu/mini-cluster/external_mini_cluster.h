@@ -137,7 +137,7 @@ struct ExternalMiniClusterOptions {
   int num_masters;
 
   // Whether to supply 'master_addresses' field for single master configuration.
-  // Default: False
+  // Default: True
   bool supply_single_master_addr;
 
   // Number of TS to start.

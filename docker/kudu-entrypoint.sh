@@ -96,6 +96,7 @@ fi
 if [[ "$1" == "master" ]]; then
   mkdir -p "$SERVICE_DIR"
   wait_for_master_hosts
+  # Supply --master_addresses even if a single master address is specified.
   if [[ -n "$KUDU_MASTERS" ]]; then
     MASTER_ARGS="--master_addresses=$KUDU_MASTERS $MASTER_ARGS"
   fi

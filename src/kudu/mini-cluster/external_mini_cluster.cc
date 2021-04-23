@@ -114,7 +114,7 @@ static double kMasterCatalogManagerTimeoutSeconds = 60.0;
 
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
-      supply_single_master_addr(false),
+      supply_single_master_addr(true),
       num_tablet_servers(1),
       bind_mode(kDefaultBindMode),
       num_data_dirs(1),

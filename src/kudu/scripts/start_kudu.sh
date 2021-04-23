@@ -158,9 +158,7 @@ function start_master() {
   create_dirs_and_set_vars $1
   set_port_vars_and_print $1 $2 $3
   ARGS="$KUDUMASTER"
-  if [ $NUM_MASTERS -gt 1 ]; then
-    ARGS="$ARGS --master_addresses=$MASTER_ADDRESSES"
-  fi
+  ARGS="$ARGS --master_addresses=$MASTER_ADDRESSES"
   ARGS="$ARGS --fs_data_dirs=$dir_data"
   ARGS="$ARGS --fs_wal_dir=$dir_wal"
   ARGS="$ARGS --log_dir=$dir_log"
