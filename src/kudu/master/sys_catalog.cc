@@ -541,7 +541,7 @@ Status SysCatalogTable::WaitUntilRunning() {
                                << seconds_waited << " seconds)";
       continue;
     }
-    // if the status is not OK or TimedOut return it.
+    // If the status is not OK or not TimedOut, then return it.
     return status;
   }
   return Status::OK();
