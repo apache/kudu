@@ -58,13 +58,15 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 
-DEFINE_uint32(txn_keepalive_interval_ms, 30000,
+DEFINE_uint32(txn_keepalive_interval_ms, 30 * 1000, // 30 sec
               "Maximum interval (in milliseconds) between subsequent "
               "keep-alive heartbeats to let the transaction status manager "
               "know that a transaction is not abandoned. If the transaction "
-              "status manager does not receive a keepalive message for a "
-              "longer interval than the specified, the transaction is "
-              "automatically aborted.");
+              "status manager does not receive a keepalive message for a time "
+              "interval longer than the specified, the transaction is deemed "
+              "abandoned and automatically aborted. See the description of the "
+              "--txn_staleness_tracker_interval_ms flag for more information "
+              "on abandoned transactions tracking.");
 TAG_FLAG(txn_keepalive_interval_ms, experimental);
 TAG_FLAG(txn_keepalive_interval_ms, runtime);
 
@@ -82,7 +84,7 @@ DEFINE_int32(txn_status_manager_inject_latency_finalize_commit_ms, 0,
 TAG_FLAG(txn_status_manager_inject_latency_finalize_commit_ms, hidden);
 TAG_FLAG(txn_status_manager_inject_latency_finalize_commit_ms, unsafe);
 
-DEFINE_uint32(txn_staleness_tracker_interval_ms, 10000,
+DEFINE_uint32(txn_staleness_tracker_interval_ms, 10 * 1000,  // 10 sec
               "Period (in milliseconds) of the task that tracks and aborts "
               "stale/abandoned transactions. If this flag is set to 0, "
               "TxnStatusManager doesn't automatically abort stale/abandoned "
