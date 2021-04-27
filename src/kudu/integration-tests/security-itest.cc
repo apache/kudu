@@ -456,18 +456,24 @@ TEST_F(SecurityITest, TestNonDefaultPrincipal) {
   ASSERT_OK(StartCluster());
 
   // A client with the default SASL proto shouldn't be able to connect
-  client::sp::shared_ptr<KuduClient> default_client;
-  Status s = cluster_->CreateClient(nullptr, &default_client);
-  ASSERT_TRUE(s.IsNotAuthorized());
-  ASSERT_STR_CONTAINS(s.ToString(), "not found in Kerberos database");
+  {
+    client::sp::shared_ptr<KuduClient> client;
+    KuduClientBuilder builder;
+    for (auto i = 0; i < cluster_->num_masters(); ++i) {
+      builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
+    }
+    const auto s = builder.Build(&client);
+    ASSERT_TRUE(s.IsNotAuthorized());
+    ASSERT_STR_CONTAINS(s.ToString(), "not found in Kerberos database");
+  }
 
-  // Create a client with the matching SASL proto name and verify it's able to
-  // connect to the cluster and perform basic actions.
-  KuduClientBuilder b;
-  b.sasl_protocol_name(kPrincipal);
-  client::sp::shared_ptr<KuduClient> client;
-  ASSERT_OK(cluster_->CreateClient(&b, &client));
-  SmokeTestCluster(client);
+  {
+    // Create a client with the matching SASL proto name and verify it's able to
+    // connect to the cluster and perform basic actions.
+    client::sp::shared_ptr<KuduClient> client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+    SmokeTestCluster(client);
+  }
 }
 
 TEST_F(SecurityITest, TestNonExistentPrincipal) {

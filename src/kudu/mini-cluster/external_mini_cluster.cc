@@ -334,6 +334,10 @@ Status ExternalMiniCluster::Start() {
                             "could not create keytab");
       hms_->EnableKerberos(kdc_->GetEnvVars()["KRB5_CONFIG"], spn, ktpath,
                            rpc::SaslProtection::kAuthentication);
+
+      // Set the protocol name in the environment so that the KuduMetastorePlugin
+      // can communicate with Kudu when a custom name is used.
+      hms_->AddEnvVar("KUDU_SASL_PROTOCOL_NAME", opts_.principal);
     }
 
     RETURN_NOT_OK_PREPEND(hms_->Start(),
@@ -917,6 +921,7 @@ Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder* builder,
   for (const scoped_refptr<ExternalMaster>& master : masters_) {
     builder->add_master_server_addr(master->bound_rpc_hostport().ToString());
   }
+  builder->sasl_protocol_name(opts_.principal);
   return builder->Build(client);
 }
 

@@ -104,6 +104,10 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   // are too many requests to the master.
   static final String SYNC_ENABLED_ENV = "KUDU_HMS_SYNC_ENABLED";
 
+  // System env to set a custom sasl protocol name for the Kudu client.
+  // TODO(ghenke): Use a Hive config parameter from the KuduStorageHandler instead.
+  static final String SASL_PROTOCOL_NAME_ENV = "KUDU_SASL_PROTOCOL_NAME";
+
   // Maps lists of master addresses to KuduClients to cache clients.
   private static final Map<String, KuduClient> KUDU_CLIENTS =
       new ConcurrentHashMap<String, KuduClient>();
@@ -512,7 +516,9 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       try {
         client = UserGroupInformation.getLoginUser().doAs(
             (PrivilegedExceptionAction<KuduClient>) () ->
-                new KuduClient.KuduClientBuilder(kuduMasters).build()
+                new KuduClient.KuduClientBuilder(kuduMasters)
+                    .saslProtocolName(getSaslProtocolName())
+                    .build()
         );
       } catch (IOException | InterruptedException e) {
         throw new RuntimeException("Failed to create the Kudu client");
@@ -520,5 +526,13 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       KUDU_CLIENTS.put(kuduMasters, client);
     }
     return client;
+  }
+
+  private static String getSaslProtocolName() {
+    String saslProtocolName = System.getenv(SASL_PROTOCOL_NAME_ENV);
+    if (saslProtocolName == null || saslProtocolName.isEmpty()) {
+      saslProtocolName = "kudu";
+    }
+    return saslProtocolName;
   }
 }
