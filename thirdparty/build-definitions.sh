@@ -834,6 +834,14 @@ build_boost() {
   # Compile with PIC and set nanosecond resolution for impala compatibility.
   BOOST_CFLAGS="$EXTRA_CFLAGS -fPIC -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG"
   BOOST_CXXFLAGS="$EXTRA_CXXFLAGS -fPIC -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG"
+
+  # Force Boost UUID to use /dev/random instead of getrandom(2) when compiled on
+  # Linux 3.17 or later. Using getrandom(2) has caused crashes, especially in the
+  # binary jar, when getrandom(2) is not available.
+  # https://www.boost.org/doc/libs/1_68_0/libs/uuid/doc/uuid.html#Random%20Generator
+  BOOST_CFLAGS="$BOOST_CFLAGS -DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX"
+  BOOST_CXXFLAGS="$BOOST_CFLAGS -DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX"
+
   BOOST_LDFLAGS="$EXTRA_LDFLAGS"
 
   case $BUILD_TYPE in
