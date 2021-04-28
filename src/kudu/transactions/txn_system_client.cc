@@ -61,6 +61,12 @@ DEFINE_bool(disable_txn_system_client_init, false,
             "client connections.");
 TAG_FLAG(disable_txn_system_client_init, unsafe);
 
+DEFINE_int64(txn_system_client_op_timeout_ms, 10 * 1000,
+             "Op timeout used by the TxnSystemClient when making transactions-related "
+             "RPCs to the TxnStatusManager.");
+TAG_FLAG(txn_system_client_op_timeout_ms, advanced);
+TAG_FLAG(txn_system_client_op_timeout_ms, runtime);
+
 DECLARE_int64(rpc_negotiation_timeout_ms);
 
 using kudu::client::KuduClient;
@@ -185,6 +191,9 @@ Status TxnSystemClient::BeginTransaction(int64_t txn_id,
                                          uint32_t* txn_keepalive_ms,
                                          int64_t* highest_seen_txn_id,
                                          MonoDelta timeout) {
+  if (!timeout.Initialized()) {
+    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+  }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::BEGIN_TXN);
   coordinate_txn_op.set_txn_id(txn_id);
@@ -213,6 +222,9 @@ Status TxnSystemClient::BeginTransaction(int64_t txn_id,
 
 Status TxnSystemClient::RegisterParticipant(int64_t txn_id, const string& participant_id,
                                             const string& user, MonoDelta timeout) {
+  if (!timeout.Initialized()) {
+    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+  }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::REGISTER_PARTICIPANT);
   coordinate_txn_op.set_txn_id(txn_id);
@@ -228,6 +240,9 @@ Status TxnSystemClient::RegisterParticipant(int64_t txn_id, const string& partic
 Status TxnSystemClient::BeginCommitTransaction(int64_t txn_id,
                                                const string& user,
                                                MonoDelta timeout) {
+  if (!timeout.Initialized()) {
+    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+  }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::BEGIN_COMMIT_TXN);
   coordinate_txn_op.set_txn_id(txn_id);
@@ -242,6 +257,9 @@ Status TxnSystemClient::BeginCommitTransaction(int64_t txn_id,
 Status TxnSystemClient::AbortTransaction(int64_t txn_id,
                                          const string& user,
                                          MonoDelta timeout) {
+  if (!timeout.Initialized()) {
+    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+  }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::ABORT_TXN);
   coordinate_txn_op.set_txn_id(txn_id);
@@ -257,6 +275,9 @@ Status TxnSystemClient::GetTransactionStatus(int64_t txn_id,
                                              const string& user,
                                              TxnStatusEntryPB* txn_status,
                                              MonoDelta timeout) {
+  if (!timeout.Initialized()) {
+    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+  }
   DCHECK(txn_status);
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::GET_TXN_STATUS);
@@ -284,6 +305,9 @@ Status TxnSystemClient::GetTransactionStatus(int64_t txn_id,
 Status TxnSystemClient::KeepTransactionAlive(int64_t txn_id,
                                              const string& user,
                                              MonoDelta timeout) {
+  if (!timeout.Initialized()) {
+    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+  }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::KEEP_TXN_ALIVE);
   coordinate_txn_op.set_txn_id(txn_id);

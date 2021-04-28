@@ -102,24 +102,24 @@ class TxnSystemClient {
                           std::string& user,
                           uint32_t* txn_keepalive_ms = nullptr,
                           int64_t* highest_seen_txn_id = nullptr,
-                          MonoDelta timeout = MonoDelta::FromSeconds(10));
+                          MonoDelta timeout = MonoDelta());
 
   // Attempts to register the given participant with the given transaction.
   // Returns an error if the transaction hasn't yet been started, or if the
   // 'user' isn't permitted to modify the transaction.
   Status RegisterParticipant(int64_t txn_id, const std::string& participant_id,
                              const std::string& user,
-                             MonoDelta timeout = MonoDelta::FromSeconds(10));
+                             MonoDelta timeout = MonoDelta());
 
   // Initiates committing a transaction with the given identifier.
   Status BeginCommitTransaction(int64_t txn_id,
                                 const std::string& user,
-                                MonoDelta timeout = MonoDelta::FromSeconds(10));
+                                MonoDelta timeout = MonoDelta());
 
   // Aborts a transaction with the given identifier.
   Status AbortTransaction(int64_t txn_id,
                           const std::string& user,
-                          MonoDelta timeout = MonoDelta::FromSeconds(10));
+                          MonoDelta timeout = MonoDelta());
 
   // Retrieves transactions status. On success, returns Status::OK() and stores
   // the result status in the 'txn_status' output parameter. On failure,
@@ -127,12 +127,12 @@ class TxnSystemClient {
   Status GetTransactionStatus(int64_t txn_id,
                               const std::string& user,
                               TxnStatusEntryPB* txn_status,
-                              MonoDelta timeout = MonoDelta::FromSeconds(10));
+                              MonoDelta timeout = MonoDelta());
 
   // Send keep-alive heartbeat for the specified transaction as the given user.
   Status KeepTransactionAlive(int64_t txn_id,
                               const std::string& user,
-                              MonoDelta timeout = MonoDelta::FromSeconds(10));
+                              MonoDelta timeout = MonoDelta());
 
   // Opens the transaction status table, refreshing metadata with that from the
   // masters.

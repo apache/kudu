@@ -1903,8 +1903,18 @@ Status TSTabletManager::ScheduleAbortTxn(int64_t txn_id, const string& user) {
   return txn_participant_registration_pool_->Submit(
       [this, txn_id, tsc, user] () {
         LOG(INFO) << Substitute("Sending abort request for transaction $0", txn_id);
-        WARN_NOT_OK(tsc->AbortTransaction(txn_id, user),
-                    Substitute("Error aborting transaction $0 as user $1", txn_id, user));
+        auto s = tsc->AbortTransaction(txn_id, user);
+        if (s.IsTimedOut()) {
+          // Presumably this was a transient error. Try again.
+          {
+            std::lock_guard<simple_spinlock> l(txn_aborts_lock_);
+            txn_aborts_in_progress_.erase(txn_id);
+          }
+          WARN_NOT_OK(ScheduleAbortTxn(txn_id, user),
+              Substitute("Could not reschedule abort of transaction $0", txn_id));
+          return;
+        }
+        WARN_NOT_OK(s, Substitute("Error aborting transaction $0 as user $1", txn_id, user));
         std::lock_guard<simple_spinlock> l(txn_aborts_lock_);
         txn_aborts_in_progress_.erase(txn_id);
       });
