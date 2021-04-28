@@ -313,6 +313,9 @@ public class KuduTransaction implements AutoCloseable {
     Deferred<GetTransactionStateResponse> d = isTransactionCommittedAsync();
     GetTransactionStateResponse resp = KuduClient.joinAndHandleException(d);
     final Transactions.TxnStatePB txnState = resp.txnState();
+    if (resp.hasCommitTimestamp()) {
+      client.updateLastPropagatedTimestamp(resp.getCommitTimestamp());
+    }
     switch (txnState) {
       case ABORT_IN_PROGRESS:
         throw new NonRecoverableException(Status.Aborted("transaction is being aborted"));
@@ -551,6 +554,9 @@ public class KuduTransaction implements AutoCloseable {
   private Callback<Deferred<GetTransactionStateResponse>, GetTransactionStateResponse>
       isTransactionCommittedCb(final KuduRpc<GetTransactionStateResponse> rpc) {
     return resp -> {
+      if (resp.hasCommitTimestamp()) {
+        client.updateLastPropagatedTimestamp(resp.getCommitTimestamp());
+      }
       // Store the Deferred locally; callback() below will reset it and we'd
       // return a different, non-triggered Deferred.
       Deferred<GetTransactionStateResponse> d = rpc.getDeferred();

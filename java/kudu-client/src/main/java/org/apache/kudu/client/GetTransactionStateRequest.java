@@ -21,6 +21,7 @@ import static org.apache.kudu.transactions.TxnManager.GetTransactionStateRespons
 
 import java.util.Collection;
 import java.util.List;
+import java.util.OptionalLong;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -73,8 +74,10 @@ class GetTransactionStateRequest extends KuduRpc<GetTransactionStateResponse> {
     if (!b.hasError()) {
       Preconditions.checkState(b.hasState());
     }
+    OptionalLong ts = b.hasCommitTimestamp() ? OptionalLong.of(b.getCommitTimestamp())
+                                             : OptionalLong.empty();
     GetTransactionStateResponse response = new GetTransactionStateResponse(
-        timeoutTracker.getElapsedMillis(), serverUUID, b.getState());
+        timeoutTracker.getElapsedMillis(), serverUUID, b.getState(), ts);
     return new Pair<>(response, b.hasError() ? b.getError() : null);
   }
 

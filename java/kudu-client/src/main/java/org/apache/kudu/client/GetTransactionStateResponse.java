@@ -17,6 +17,9 @@
 
 package org.apache.kudu.client;
 
+import java.util.OptionalLong;
+
+import com.google.common.base.Preconditions;
 import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.transactions.Transactions;
@@ -24,6 +27,7 @@ import org.apache.kudu.transactions.Transactions;
 @InterfaceAudience.Private
 public class GetTransactionStateResponse extends KuduRpcResponse {
   private final Transactions.TxnStatePB txnState;
+  private final OptionalLong txnCommitTimestamp;
 
   /**
    * @param elapsedMillis time in milliseconds since RPC creation to now
@@ -31,13 +35,26 @@ public class GetTransactionStateResponse extends KuduRpcResponse {
    * @param txnState the state of the transaction
    */
   GetTransactionStateResponse(
-      long elapsedMillis, String serverUUID, Transactions.TxnStatePB txnState) {
+      long elapsedMillis,
+      String serverUUID,
+      Transactions.TxnStatePB txnState,
+      OptionalLong txnCommitTimestamp) {
     super(elapsedMillis, serverUUID);
     this.txnState = txnState;
+    this.txnCommitTimestamp = txnCommitTimestamp;
   }
 
   public Transactions.TxnStatePB txnState() {
     return txnState;
+  }
+
+  boolean hasCommitTimestamp() {
+    return txnCommitTimestamp.isPresent();
+  }
+
+  long getCommitTimestamp() {
+    Preconditions.checkState(hasCommitTimestamp());
+    return txnCommitTimestamp.getAsLong();
   }
 
   public boolean isCommitted() {
