@@ -17,6 +17,7 @@
 
 #include "kudu/util/hash_util.h"
 
+#include <array>
 #include <cstdint>
 
 #include <gtest/gtest.h>
@@ -62,7 +63,19 @@ TEST(HashUtilTest, TestFastHash64) {
   ASSERT_EQ(12680076593665652444UL, hash);
 
   hash = HashUtil::FastHash64("", 0, 0);
-  ASSERT_EQ(0, hash);
+  ASSERT_EQ(4144680785095980158UL, hash);
+
+  hash = HashUtil::FastHash64("", 0, 1234);
+  ASSERT_EQ(3296774803014270295UL, hash);
+
+  // 15 byte buffer with negative and positive numbers help test the 8 byte loop iteration
+  // and the remainder of 7 bytes in the fast hash implementation.
+  std::array<char, 15> buffer;
+  for (int i = 0; i < buffer.size(); i++) {
+    buffer[i] = static_cast<char>(i - 8);
+  }
+  hash = HashUtil::FastHash64(buffer.data(), buffer.size(), 0);
+  ASSERT_EQ(7308577902719593318, hash);
 }
 
 TEST(HashUtilTest, TestFastHash32) {
@@ -81,7 +94,17 @@ TEST(HashUtilTest, TestFastHash32) {
   ASSERT_EQ(842467426U, hash);
 
   hash = HashUtil::FastHash32("", 0, 0);
-  ASSERT_EQ(0, hash);
+  ASSERT_EQ(3045300040U, hash);
+
+  hash = HashUtil::FastHash32("", 0, 1234);
+  ASSERT_EQ(811548192U, hash);
+
+  std::array<char, 15> buffer;
+  for (int i = 0; i < buffer.size(); i++) {
+    buffer[i] = static_cast<char>(i - 8);
+  }
+  hash = HashUtil::FastHash32(buffer.data(), buffer.size(), 0);
+  ASSERT_EQ(3815875205, hash);
 }
 
 TEST(HashUtilTest, TestComputeHash32Available) {

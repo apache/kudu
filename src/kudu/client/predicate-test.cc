@@ -1543,12 +1543,13 @@ TEST_P(ParameterizedBloomFilterPredicateTest, TestDisabledBloomFilterWithRepeate
   // Use a set of predetermined strings and populate the table.
   // Create a BF predicate with same set of strings.
   deque<string> values = {"Alice", "Bob", "Charlie", "Doug", "Elizabeth", "Frank", "George",
-                          "Harry"};
+                          "Harry", ""};
 
   // Populate table with a small set of strings that are repeated.
   static constexpr int kNumRows = 10000;
   auto upsert_rows = [&]() {
     int i = 0;
+    int last_flush = i;
     while (i < kNumRows) {
       for (int j = 0; j < values.size() && i < kNumRows; j++, i++) {
         const string &value = values[j];
@@ -1558,8 +1559,9 @@ TEST_P(ParameterizedBloomFilterPredicateTest, TestDisabledBloomFilterWithRepeate
         ASSERT_OK(session->Apply(upsert.release()));
       }
       // TSAN builds timeout and fail on flushing with large number of rows.
-      if ((i % (kNumRows / 10))  == 0) {
+      if (i - last_flush >= 1000) {
         ASSERT_OK(session->Flush());
+        last_flush = i;
       }
     }
     ASSERT_OK(session->Flush());

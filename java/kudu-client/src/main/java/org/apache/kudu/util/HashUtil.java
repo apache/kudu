@@ -21,9 +21,9 @@ package org.apache.kudu.util;
  * Hash utility functions.
  */
 public class HashUtil {
-  // Constant imported from Apache Impala used to compute hash values for special cases.
-  // It's an arbitrary constant obtained by taking lower bytes of generated UUID. Helps
-  // distinguish NULL values from empty objects.
+  // Constants imported from Apache Impala used to compute hash values for special cases.
+  // They are arbitrary constant obtained by taking lower bytes of generated UUID. Helps
+  // distinguish NULL values and zero-length objects like empty strings.
   // Impala uses the direct BlockBloomFilter C++ API and inserts hash value directly using
   // its own implementation of the Fast hash. Hence the value must match with Impala.
   // Though Impala will use C++ API, keeping the implementation of the Fast hash algorithm
@@ -31,11 +31,19 @@ public class HashUtil {
   private static final int HASH_VAL_NULL = 0x58081667;
   private static final byte[] HASH_VAL_NULL_BYTE_BUF = new byte[4];
 
+  private static final int HASH_VAL_EMPTY = 0x7dca7eee;
+  private static final byte[] HASH_VAL_EMPTY_BYTE_BUF = new byte[4];
+
   static {
     HASH_VAL_NULL_BYTE_BUF[0] = (byte) (HASH_VAL_NULL >>> 0);
     HASH_VAL_NULL_BYTE_BUF[1] = (byte) (HASH_VAL_NULL >>> 8);
     HASH_VAL_NULL_BYTE_BUF[2] = (byte) (HASH_VAL_NULL >>> 16);
     HASH_VAL_NULL_BYTE_BUF[3] = (byte) (HASH_VAL_NULL >>> 24);
+
+    HASH_VAL_EMPTY_BYTE_BUF[0] = (byte) (HASH_VAL_EMPTY >>> 0);
+    HASH_VAL_EMPTY_BYTE_BUF[1] = (byte) (HASH_VAL_EMPTY >>> 8);
+    HASH_VAL_EMPTY_BYTE_BUF[2] = (byte) (HASH_VAL_EMPTY >>> 16);
+    HASH_VAL_EMPTY_BYTE_BUF[3] = (byte) (HASH_VAL_EMPTY >>> 24);
   }
 
   /** Non-constructable utility class. */
@@ -59,6 +67,8 @@ public class HashUtil {
     // case with nullable column values.
     if (buf == null) {
       buf = HASH_VAL_NULL_BYTE_BUF;
+    } else if (buf.length == 0) {
+      buf = HASH_VAL_EMPTY_BYTE_BUF;
     }
     final int len = buf.length;
     final long m = 0x880355f21e6d1965L;
@@ -68,11 +78,11 @@ public class HashUtil {
     int len8 = len / 8;
     for (int i = 0; i < len8; ++i) {
       int pos = i * 8;
-      v = buf[pos] +
-          ((long)buf[pos + 1] << 8) +  ((long)buf[pos + 2] << 16) +
-          ((long)buf[pos + 3] << 24) + ((long)buf[pos + 4] << 32) +
-          ((long)buf[pos + 5] << 40) + ((long)buf[pos + 6] << 48) +
-          ((long)buf[pos + 7] << 56);
+      v = (buf[pos] & 0xFF) |
+          ((long)(buf[pos + 1] & 0xFF) << 8) |  ((long)(buf[pos + 2] & 0xFF) << 16) |
+          ((long)(buf[pos + 3] & 0xFF) << 24) | ((long)(buf[pos + 4] & 0xFF) << 32) |
+          ((long)(buf[pos + 5] & 0xFF) << 40) | ((long)(buf[pos + 6] & 0xFF) << 48) |
+          ((long)(buf[pos + 7] & 0xFF) << 56);
       h ^= fastHashMix(v);
       h *= m;
     }
@@ -82,25 +92,25 @@ public class HashUtil {
     //CHECKSTYLE:OFF
     switch (len & 7) {
       case 7:
-        v ^= (long)buf[pos2 + 6] << 48;
+        v ^= (long)(buf[pos2 + 6] & 0xFF) << 48;
       // fall through
       case 6:
-        v ^= (long)buf[pos2 + 5] << 40;
+        v ^= (long)(buf[pos2 + 5] & 0xFF) << 40;
       // fall through
       case 5:
-        v ^= (long)buf[pos2 + 4] << 32;
+        v ^= (long)(buf[pos2 + 4] & 0xFF) << 32;
       // fall through
       case 4:
-        v ^= (long)buf[pos2 + 3] << 24;
+        v ^= (long)(buf[pos2 + 3] & 0xFF) << 24;
       // fall through
       case 3:
-        v ^= (long)buf[pos2 + 2] << 16;
+        v ^= (long)(buf[pos2 + 2] & 0xFF) << 16;
       // fall through
       case 2:
-        v ^= (long)buf[pos2 + 1] << 8;
+        v ^= (long)(buf[pos2 + 1] & 0xFF) << 8;
       // fall through
       case 1:
-        v ^= buf[pos2];
+        v ^= (buf[pos2] & 0xFF);
         h ^= fastHashMix(v);
         h *= m;
     }

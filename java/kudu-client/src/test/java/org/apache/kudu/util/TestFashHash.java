@@ -52,7 +52,19 @@ public class TestFashHash {
     assertEquals(Long.parseUnsignedLong("12680076593665652444"), hash);
 
     hash = HashUtil.fastHash64("".getBytes(UTF_8), 0);
-    assertEquals(0, hash);
+    assertEquals(Long.parseUnsignedLong("4144680785095980158"), hash);
+
+    hash = HashUtil.fastHash64("".getBytes(UTF_8), 1234);
+    assertEquals(Long.parseUnsignedLong("3296774803014270295"), hash);
+
+    // 15 byte buffer with negative and positive numbers help test the 8 byte loop iteration
+    // and the remainder of 7 bytes in the fast hash implementation.
+    byte[] buffer = new byte[15];
+    for (int i = 0; i < buffer.length; i++) {
+      buffer[i] = (byte)(i - 8);
+    }
+    hash = HashUtil.fastHash64(buffer, 0);
+    assertEquals(Long.parseUnsignedLong("7308577902719593318"), hash);
   }
 
   @Test
@@ -72,6 +84,16 @@ public class TestFashHash {
     assertEquals(Integer.parseUnsignedInt("842467426"), hash);
 
     hash = HashUtil.fastHash32("".getBytes(UTF_8), 0);
-    assertEquals(0, hash);
+    assertEquals(Integer.parseUnsignedInt("3045300040"), hash);
+
+    hash = HashUtil.fastHash32("".getBytes(UTF_8), 1234);
+    assertEquals(Integer.parseUnsignedInt("811548192"), hash);
+
+    byte[] buffer = new byte[15];
+    for (int i = 0; i < buffer.length; i++) {
+      buffer[i] = (byte)(i - 8);
+    }
+    hash = HashUtil.fastHash32(buffer, 0);
+    assertEquals(Integer.parseUnsignedInt("3815875205"), hash);
   }
 }

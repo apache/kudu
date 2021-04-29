@@ -355,7 +355,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   // Capture previously sent Bloom filter predicate feature flag so that we don't have to make
   // expensive call to determine the flag on scan continuations.
   bool prev_bloom_filter_feature = ContainsKey(controller_.required_server_features(),
-                                               TabletServerFeatures::BLOOM_FILTER_PREDICATE);
+                                               TabletServerFeatures::BLOOM_FILTER_PREDICATE_V2);
 
   controller_.Reset();
   controller_.set_deadline(rpc_deadline);
@@ -364,7 +364,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
     if (prev_bloom_filter_feature ||
         (next_req_.has_new_scan_request() &&
          configuration().spec().ContainsBloomFilterPredicate())) {
-      controller_.RequireServerFeature(TabletServerFeatures::BLOOM_FILTER_PREDICATE);
+      controller_.RequireServerFeature(TabletServerFeatures::BLOOM_FILTER_PREDICATE_V2);
     }
   }
   if (configuration().row_format_flags() & KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES) {
