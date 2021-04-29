@@ -37,6 +37,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
 
@@ -241,7 +242,8 @@ bool AsyncLeaderMasterRpc<ReqClass, RespClass>::RetryOrReconnectIfNecessary(
       return true;
     }
     // And if we've passed the overall deadline, we shouldn't retry.
-    s = s.CloneAndPrepend(Substitute("$0 timed out after deadline expired", rpc_name_));
+    s = Status::TimedOut(Substitute("$0 timed out after deadline expired: $1",
+                                    rpc_name_, s.message().ToString()));
   }
 
   // Next, parse RPC errors that happened after the connection succeeded.
