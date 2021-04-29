@@ -29,9 +29,9 @@
 
 namespace kudu {
 
-// Constant imported from Apache Impala used to compute hash values for special cases. It's an
-// arbitrary constant obtained by taking lower bytes of generated UUID. Helps distinguish NULL
-// values from empty objects.
+// Constants imported from Apache Impala used to compute hash values for special cases.
+// They are arbitrary constants obtained by taking lower bytes of generated UUID.
+// Helps distinguish NULL values and zero-length objects like empty strings.
 // Impala uses the direct BlockBloomFilter API and inserts hash value directly using its own
 // implementation of the Fast hash. Hence the value must match with Impala.
 //
@@ -39,6 +39,7 @@ namespace kudu {
 //       a member variable of HashUtil requires an explicit definition in .cc file
 //       and this class is completely defined in the header file to allow inlining.
 static constexpr uint32_t kHashValNull = 0x58081667;
+static constexpr uint32_t kHashValEmpty = 0x7dca7eee;
 
 // Utility class to compute hash values.
 class HashUtil {
@@ -86,17 +87,22 @@ class HashUtil {
   // FastHash is simple, robust, and efficient general-purpose hash function from Google.
   // Implementation is adapted from https://code.google.com/archive/p/fast-hash/
   //
-  // Adds special handling for nullptr input.
+  // Adds special handling for nullptr and zero-length input.
   //
   // Compute 64-bit FastHash.
   ATTRIBUTE_NO_SANITIZE_INTEGER
   static uint64_t FastHash64(const void* buf, size_t len, uint64_t seed) {
-    // Special handling for nullptr input with possible non-zero length as could be the
-    // case with nullable column values.
     if (buf == nullptr) {
+      // Special handling for nullptr input with possible non-zero length as could be the
+      // case with nullable column values.
       buf = &kHashValNull;
       len = sizeof(kHashValNull);
+    } else if (len == 0) {
+      // Special handling for zero-length input which is the case for empty strings.
+      buf = &kHashValEmpty;
+      len = sizeof(kHashValEmpty);
     }
+
     static constexpr uint64_t kMultiplier = 0x880355f21e6d1965UL;
     const uint64_t* pos = static_cast<const uint64_t*>(buf);
     const uint64_t* end = pos + (len / 8);

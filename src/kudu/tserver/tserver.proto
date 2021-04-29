@@ -494,7 +494,11 @@ enum TabletServerFeatures {
   // Whether the server supports padding UNIXTIME_MICROS slots to 16 bytes.
   PAD_UNIXTIME_MICROS_TO_16_BYTES = 2;
   QUIESCING = 3;
+  // Deprecated. See note below for BLOOM_FILTER_PREDICATE_V2.
   BLOOM_FILTER_PREDICATE = 4;
   // Whether the server supports the COLUMNAR_LAYOUT format flag.
   COLUMNAR_LAYOUT_FEATURE = 5;
+  // Update to implementation of Fast hash for Bloom filter predicate leads
+  // to incorrect results if incompatible client and server versions are used.
+  BLOOM_FILTER_PREDICATE_V2 = 6;
 }
