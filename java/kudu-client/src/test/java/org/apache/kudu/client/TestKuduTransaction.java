@@ -205,7 +205,7 @@ public class TestKuduTransaction {
     } catch (NonRecoverableException e) {
       final String errmsg = e.getMessage();
       final Status status = e.getStatus();
-      assertTrue(status.toString(), status.isNotFound());
+      assertTrue(status.toString(), status.isInvalidArgument());
       assertTrue(errmsg, errmsg.matches(".*transaction ID .* not found.*"));
     } catch (Exception e) {
       fail("unexpected exception: " + e.toString());
@@ -219,7 +219,7 @@ public class TestKuduTransaction {
     } catch (NonRecoverableException e) {
       final String errmsg = e.getMessage();
       final Status status = e.getStatus();
-      assertTrue(status.toString(), status.isNotFound());
+      assertTrue(status.toString(), status.isInvalidArgument());
       assertTrue(errmsg, errmsg.matches(".*transaction ID .* not found.*"));
     } catch (Exception e) {
       fail("unexpected exception: " + e.toString());
@@ -298,7 +298,7 @@ public class TestKuduTransaction {
             }
           });
       final Status status = ex.getStatus();
-      assertTrue(status.toString(), status.isNotFound());
+      assertTrue(status.toString(), status.isInvalidArgument());
       final String errmsg = ex.getMessage();
       assertTrue(errmsg, errmsg.matches(".*transaction ID .* not found.*"));
     }
@@ -336,7 +336,7 @@ public class TestKuduTransaction {
     } catch (NonRecoverableException e) {
       final String errmsg = e.getMessage();
       final Status status = e.getStatus();
-      assertTrue(status.toString(), status.isNotFound());
+      assertTrue(status.toString(), status.isInvalidArgument());
       assertTrue(errmsg, errmsg.matches(".*transaction ID .* not found.*"));
     } catch (Exception e) {
       fail("unexpected exception: " + e.toString());

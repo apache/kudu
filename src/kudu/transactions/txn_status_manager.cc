@@ -834,7 +834,7 @@ Status TxnStatusManager::GetTransaction(int64_t txn_id,
 
   scoped_refptr<TransactionEntry> ret = FindPtrOrNull(txns_by_id_, txn_id);
   if (PREDICT_FALSE(!ret)) {
-    return Status::NotFound(
+    return Status::InvalidArgument(
         Substitute("transaction ID $0 not found, current highest txn ID: $1",
                   txn_id, highest_txn_id_));
   }

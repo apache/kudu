@@ -178,7 +178,7 @@ TEST_F(TxnManagerTest, LazyInitialization) {
     ASSERT_OK(proxy_->GetTransactionState(req, &resp, &ctx));
     ASSERT_TRUE(resp.has_error());
     auto s = StatusFromPB(resp.error().status());
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 0 not found");
   }
 
@@ -218,7 +218,7 @@ TEST_F(TxnManagerTest, LazyInitialization) {
     ASSERT_OK(proxy_->CommitTransaction(req, &resp, &ctx));
     ASSERT_TRUE(resp.has_error());
     auto s = StatusFromPB(resp.error().status());
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 0 not found");
   }
   ASSERT_OK(master_->WaitForTxnManagerInit());
@@ -247,7 +247,7 @@ TEST_F(TxnManagerTest, LazyInitializationConcurrentCalls) {
       CHECK_OK(proxy_->GetTransactionState(req, &resp, &ctx));
       CHECK(resp.has_error());
       auto s = StatusFromPB(resp.error().status());
-      CHECK(s.IsNotFound()) << s.ToString();
+      CHECK(s.IsInvalidArgument()) << s.ToString();
     }
   };
 
@@ -298,7 +298,7 @@ TEST_F(TxnManagerTest, NonlazyInitialization) {
     ASSERT_OK(proxy_->CommitTransaction(req, &resp, &ctx));
     ASSERT_TRUE(resp.has_error());
     auto s = StatusFromPB(resp.error().status());
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 0 not found");
   }
 }
@@ -543,7 +543,7 @@ TEST_F(TxnManagerTest, KeepTransactionAliveNonExistingTxnId) {
   ASSERT_OK(proxy_->KeepTransactionAlive(req, &resp, &ctx));
   ASSERT_TRUE(resp.has_error());
   auto s = StatusFromPB(resp.error().status());
-  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 123 not found");
 }
 

@@ -162,7 +162,7 @@ TEST_F(TxnStatusManagerTest, TestStartTransactions) {
     // Registering participants to transactions that don't exist should also
     // result in errors.
     auto s = txn_manager_->RegisterParticipant(2, kParticipant1, kOwner, &ts_error);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
 
     // The underlying participants map should only reflect the successful
     // operations.
@@ -456,7 +456,7 @@ TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
     TabletServerErrorPB ts_error;
     auto s = txn_manager_->GetTransactionStatus(
         1, kOwner, &txn_status, &ts_error);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 1 not found");
     ASSERT_FALSE(txn_status.has_state());
     ASSERT_FALSE(txn_status.has_user());
@@ -590,7 +590,7 @@ TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
     TabletServerErrorPB ts_error;
     auto s = txn_manager_->GetTransactionStatus(
         kNoTxnId, kOwner, &txn_status, &ts_error);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   }
 
   // Supplying wrong user and not-yet-used transaction ID.
@@ -600,7 +600,7 @@ TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
     TabletServerErrorPB ts_error;
     auto s = txn_manager_->GetTransactionStatus(
         kNoTxnId, "stranger", &txn_status, &ts_error);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   }
 }
 
@@ -613,7 +613,7 @@ TEST_F(TxnStatusManagerTest, KeepTransactionAlive) {
     TxnStatusManager::ScopedLeaderSharedLock l(txn_manager_.get());
     TabletServerErrorPB ts_error;
     auto s = txn_manager_->KeepTransactionAlive(1, kOwner, &ts_error);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 1 not found");
   }
 
@@ -836,7 +836,7 @@ TEST_F(TxnStatusManagerTest, TestRegisterParticipantsWithStates) {
 
   // We can't register a participant to a transaction that hasn't started.
   Status s = txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(1), kOwner, &ts_error);
-  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
 
   ASSERT_OK(txn_manager_->BeginTransaction(kTxnId1, kOwner, nullptr, &ts_error));
   ASSERT_OK(txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(1), kOwner, &ts_error));

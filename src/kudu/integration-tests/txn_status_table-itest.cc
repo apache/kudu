@@ -561,7 +561,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientRegisterParticipantErrors) {
   ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
   ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
   Status s = txn_sys_client_->RegisterParticipant(1, "participant", kUser);
-  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_MATCHES(s.ToString(), "transaction ID.*not found, current highest txn ID:.*");
 
   ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser));
@@ -603,14 +603,14 @@ TEST_F(TxnStatusTableITest, SystemClientCommitAndAbortTransaction) {
   // an error.
   {
     auto s = txn_sys_client_->BeginCommitTransaction(2, kUser);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 2 not found");
   }
 
   // An attempt to abort a non-existent transaction should report an error.
   {
     auto s = txn_sys_client_->AbortTransaction(2, kUser);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 2 not found");
   }
 
@@ -708,7 +708,7 @@ TEST_F(TxnStatusTableITest, GetTransactionStatus) {
   {
     TxnStatusEntryPB empty;
     auto s = txn_sys_client_->GetTransactionStatus(2, kUser, &empty);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_FALSE(empty.has_user());
     ASSERT_FALSE(empty.has_state());
   }
@@ -716,7 +716,7 @@ TEST_F(TxnStatusTableITest, GetTransactionStatus) {
   {
     TxnStatusEntryPB empty;
     auto s = txn_sys_client_->GetTransactionStatus(2, "", &empty);
-    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_FALSE(empty.has_user());
     ASSERT_FALSE(empty.has_state());
   }

@@ -486,6 +486,33 @@ TEST_F(TxnWriteOpsITest, DeadlockPrevention) {
   ASSERT_EQ(kNumTxns * 2, count);
 }
 
+// Send transactions that span more than a single range of the transaction
+// status table, ensuring we can write to newly-added ranges.
+TEST_F(TxnWriteOpsITest, TestWriteToNewRangeOfTxnIds) {
+  constexpr const auto kNumTxns = 10;
+  const vector<string> kMasterFlags = {
+    // Enable TxnManager in Kudu masters.
+    "--txn_manager_enabled=true",
+    // Set a small range so we can write to a new range of transactions IDs.
+    Substitute("--txn_manager_status_table_range_partition_span=$0", kNumTxns / 3),
+  };
+  NO_FATALS(StartCluster({}, kMasterFlags, kNumTabletServers));
+  NO_FATALS(Prepare());
+  for (int i = 0; i < kNumTxns; i++) {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+    NO_FATALS(InsertRows(table_.get(), session.get(), 1, i));
+    ASSERT_OK(txn->Commit());
+    ASSERT_EQ(0, session->CountPendingErrors());
+  }
+  size_t count;
+  ASSERT_OK(CountRows(table_.get(), &count));
+  ASSERT_EQ(kNumTxns, count);
+}
+
 // Send multiple one-row write operations to a tablet server in the context of a
 // multi-row transaction, and commit the transaction. This scenario verifies
 // that tablet servers are able to accept high number of write requests
@@ -849,7 +876,7 @@ TEST_F(TxnWriteOpsITest, WriteOpForNonExistentTxn) {
     ASSERT_TRUE(s.IsIOError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
     const auto err_status = GetSingleRowError(session.get());
-    ASSERT_TRUE(err_status.IsNotFound()) << err_status.ToString();
+    ASSERT_TRUE(err_status.IsInvalidArgument()) << err_status.ToString();
     ASSERT_STR_CONTAINS(err_status.ToString(),
                         "Failed to write batch of 1 ops to tablet");
     ASSERT_STR_CONTAINS(err_status.ToString(),
@@ -1424,7 +1451,7 @@ TEST_F(TxnOpDispatcherITest, ErrorInParticipantRegistration) {
     auto s = InsertRows(fake_txn.get(), 1, &key, &session);
     ASSERT_TRUE(s.IsIOError()) << s.ToString();
     auto row_status = GetSingleRowError(session.get());
-    ASSERT_TRUE(row_status.IsNotFound()) << row_status.ToString();
+    ASSERT_TRUE(row_status.IsInvalidArgument()) << row_status.ToString();
     ASSERT_STR_CONTAINS(row_status.ToString(),
                         "transaction ID 10 not found, current highest txn ID");
 
