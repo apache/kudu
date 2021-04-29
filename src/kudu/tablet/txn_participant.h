@@ -265,6 +265,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
   }
 
   void ReleasePartitionLock() {
+    std::lock_guard<simple_spinlock> l(lock_);
     partition_lock_.Release();
   }
 
@@ -358,6 +359,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
   std::unique_ptr<ScopedOp> commit_op_;
 
   // Holds the partition lock acquired for this transaction.
+  simple_spinlock lock_;
   ScopedPartitionLock partition_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(Txn);

@@ -77,6 +77,7 @@ void Txn::AcquireReadLock(shared_lock<rw_semaphore>* txn_lock) {
 void Txn::AdoptPartitionLock(ScopedPartitionLock partition_lock) {
   if (PREDICT_TRUE(FLAGS_enable_txn_partition_lock)) {
     TabletServerErrorPB::Code code = tserver::TabletServerErrorPB::UNKNOWN_ERROR;
+    std::lock_guard<simple_spinlock> l(lock_);
 #ifndef NDEBUG
     CHECK(partition_lock.IsAcquired(&code)) << code;
     if (partition_lock_.IsAcquired(&code)) {

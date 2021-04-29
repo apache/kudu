@@ -39,6 +39,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
@@ -386,6 +387,25 @@ TEST_F(TxnParticipantTest, TestConcurrentTransactions) {
   const auto& txns = txn_participant()->GetTxnsForTests();
   for (int i = 0; i < kNumTxns; i++) {
     ASSERT_EQ(TxnParticipant::TxnEntry({ i, kCommitted, kDummyCommitTimestamp }), txns[i]);
+  }
+}
+
+TEST_F(TxnParticipantTest, TestConcurrentWrites) {
+  constexpr const auto kNumRows = 10;
+  constexpr const auto kTxnId = 0;
+  ParticipantResponsePB resp;
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId,
+                              ParticipantOpPB::BEGIN_TXN, -1, &resp));
+  vector<thread> threads;
+  Status statuses[kNumRows];
+  for (int i = 0; i < kNumRows; i++) {
+    threads.emplace_back([&, i] {
+      statuses[i] = Write(i, kTxnId);
+    });
+  }
+  std::for_each(threads.begin(), threads.end(), [] (thread& t) { t.join(); });
+  for (const auto& s : statuses) {
+    EXPECT_OK(s);
   }
 }
 
