@@ -68,7 +68,7 @@ DEFINE_int32(max_log_files, 10,
     "Maximum number of log files to retain per severity level. The most recent "
     "log files are retained. If set to 0, all log files are retained.");
 TAG_FLAG(max_log_files, runtime);
-TAG_FLAG(max_log_files, experimental);
+TAG_FLAG(max_log_files, stable);
 
 #define PROJ_NAME "kudu"
 
