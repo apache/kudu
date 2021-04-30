@@ -43,7 +43,8 @@ object KuduBackupLister {
     val io: BackupIO = new BackupIO(new Configuration(), options.rootPath)
     val backupGraphs =
       if (sortedTables.isEmpty)
-        io.readAllBackupGraphs()
+        // Sort by table name for a consistent ordering.
+        io.readAllBackupGraphs().sortBy(_.backupBase.metadata.getTableName)
       else
         io.readBackupGraphsByTableName(sortedTables)
 
