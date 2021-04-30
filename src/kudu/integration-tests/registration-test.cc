@@ -226,7 +226,7 @@ class RegistrationTest : public KuduTest {
 
 TEST_F(RegistrationTest, TestTSRegisters) {
   // Wait for the TS to register.
-  vector<shared_ptr<TSDescriptor> > descs;
+  vector<shared_ptr<TSDescriptor>> descs;
   ASSERT_OK(cluster_->WaitForTabletServerCount(
       1, InternalMiniCluster::MatchMode::MATCH_TSERVERS, &descs));
   ASSERT_EQ(1, descs.size());
@@ -247,7 +247,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   cluster_->mini_master()->Shutdown();
   ASSERT_OK(cluster_->mini_master()->Restart());
 
-  int64_t seqno = descs.back()->latest_seqno();
+  const int64_t seqno = descs.back()->latest_seqno();
   descs.clear();
   ASSERT_OK(cluster_->WaitForTabletServerCount(
       1, InternalMiniCluster::MatchMode::MATCH_TSERVERS, &descs));
@@ -258,7 +258,6 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   cluster_->mini_tablet_server(0)->Shutdown();
   ASSERT_OK(cluster_->mini_tablet_server(0)->Restart());
 
-  seqno = descs.back()->latest_seqno();
   descs.clear();
   ASSERT_OK(cluster_->WaitForTabletServerCount(
       1, InternalMiniCluster::MatchMode::MATCH_TSERVERS, &descs));
