@@ -22,6 +22,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
@@ -53,6 +54,7 @@ class ReactorThread;
 class RpcConnectionPB;
 class RpczStore;
 class SocketStatsPB;
+class TransportDetailsPB;
 
 enum class CredentialsPolicy;
 
@@ -319,6 +321,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
   void MaybeInjectCancellation(const std::shared_ptr<OutboundCall> &call);
 
   Status GetSocketStatsPB(SocketStatsPB* pb) const;
+
+  Status GetTransportDetailsPB(TransportDetailsPB* pb) const;
 
   // The reactor thread that created this connection.
   ReactorThread* const reactor_thread_;

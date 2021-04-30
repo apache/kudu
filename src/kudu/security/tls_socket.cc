@@ -257,5 +257,14 @@ Status TlsSocket::Close() {
   return ssl_shutdown;
 }
 
+string TlsSocket::GetProtocolName() const {
+  return ::kudu::security::GetProtocolName(ssl_.get());
+}
+
+string TlsSocket::GetCipherDescription() const {
+  return ::kudu::security::GetCipherDescription(ssl_.get());
+}
+
+
 } // namespace security
 } // namespace kudu

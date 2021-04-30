@@ -74,7 +74,34 @@ message SocketStatsPB {
 
   // Calculated sender throughput.
   optional int64 send_bytes_per_sec = 13;
-};
+}
+
+// Transport-related information for an RPC connection.
+message TransportDetailsPB {
+
+  // TCP-specific details.
+  message TcpDetails {
+    // Maximum segment size for the packets: this directly maps into the
+    // TCP_MAXSEG socket option.
+    optional int32 max_segment_size = 1;
+  }
+
+  // TLS-specific details.
+  //
+  // NOTE: TLS/SSL doesn't map nicely into a single layer of the TCP/IP or
+  // the OSI model, but intuitively that's something related to the transport.
+  message TlsDetails {
+    // The name of the TLS protocol negotiated to protect the connection
+    // (e.g. TLSv1.3).
+    optional string protocol = 1;
+
+    // Description of the TLS cipher suite used.
+    optional string cipher_suite = 2;
+  }
+
+  optional TcpDetails tcp = 1;
+  optional TlsDetails tls = 2;
+}
 
 // Debugging information about a currently-open RPC connection.
 message RpcConnectionPB {
@@ -82,7 +109,7 @@ message RpcConnectionPB {
     UNKNOWN = 999;
     NEGOTIATING = 0;  // Connection is still being negotiated.
     OPEN = 1;         // Connection is active.
-  };
+  }
 
   required string remote_ip = 1;
   required StateType state = 2;
@@ -93,6 +120,9 @@ message RpcConnectionPB {
 
   // Information on the actual TCP connection as reported by the kernel.
   optional SocketStatsPB socket_stats = 6;
+
+  // Transport-specific details.
+  optional TransportDetailsPB transport_details = 7;
 }
 
 message DumpConnectionsRequestPB {

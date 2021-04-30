@@ -116,6 +116,14 @@ std::string GetSSLErrorDescription(int error_code);
 // An error Status object is returned otherwise.
 Status GetPasswordFromShellCommand(const std::string& cmd, std::string* password);
 
+// Retrieve the negotiated TLS protocol version. Only valid after the
+// TLS handshake is complete.
+std::string GetProtocolName(const SSL* ssl);
+
+// Retrive the description of the negotiated TLS cipher.
+// Only valid to call after the handshake is complete.
+std::string GetCipherDescription(const SSL* ssl);
+
 // A generic wrapper for OpenSSL structures.
 template <typename T>
 using c_unique_ptr = std::unique_ptr<T, std::function<void(T*)>>;

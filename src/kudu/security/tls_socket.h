@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include "kudu/gutil/port.h"
 #include "kudu/security/openssl_util.h" // IWYU pragma: keep
@@ -49,6 +50,12 @@ class TlsSocket : public Socket {
   Status Recv(uint8_t *buf, int32_t amt, int32_t *nread) override WARN_UNUSED_RESULT;
 
   Status Close() override WARN_UNUSED_RESULT;
+
+  // Get the name of the negotiated TLS protocol for the connection.
+  std::string GetProtocolName() const;
+
+  // Get the description of the negotiated TLS cipher suite for the connection.
+  std::string GetCipherDescription() const;
 
  private:
 

@@ -18,6 +18,7 @@
 #include "kudu/rpc/connection.h"
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <string.h>
 
 #include <algorithm>
@@ -44,18 +45,20 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/security/tls_socket.h"
+#include "kudu/util/errno.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+#include <sys/socket.h>
 #ifdef __linux__
 #include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <linux/tcp.h>
 #endif
 
+using kudu::security::TlsSocket;
 using std::includes;
 using std::set;
 using std::shared_ptr;
@@ -887,7 +890,7 @@ Status Connection::DumpPB(const DumpConnectionsRequestPB& req,
 
   if (direction_ == CLIENT) {
     for (const car_map_t::value_type& entry : awaiting_response_) {
-      CallAwaitingResponse *c = entry.second;
+      CallAwaitingResponse* c = entry.second;
       if (c->call) {
         c->call->DumpPB(req, resp->add_calls_in_flight());
       }
@@ -916,6 +919,11 @@ Status Connection::DumpPB(const DumpConnectionsRequestPB& req,
                 "could not fill in TCP info for RPC connection");
   }
 #endif // __linux__
+
+  if (negotiation_complete_ && remote_.is_ip()) {
+    WARN_NOT_OK(GetTransportDetailsPB(resp->mutable_transport_details()),
+                "could not fill in transport info for RPC connection");
+  }
   return Status::OK();
 }
 
@@ -996,6 +1004,36 @@ Status Connection::GetSocketStatsPB(SocketStatsPB* pb) const {
   return Status::OK();
 }
 #endif // __linux__
+
+Status Connection::GetTransportDetailsPB(TransportDetailsPB* pb) const {
+  DCHECK(reactor_thread_->IsCurrentThread());
+  DCHECK(pb);
+
+  // As for the dynamic_cast below: this is not very elegant or performant code,
+  // but introducing a generic virtual method with vague semantics into the base
+  // Socket class doesn't look like a good choice either. Also, the
+  // GetTransportDetailsPB() method isn't supposed to be a part of any hot path.
+  const TlsSocket* tls_socket = dynamic_cast<TlsSocket*>(socket_.get());
+  if (tls_socket) {
+    auto* tls = pb->mutable_tls();
+    tls->set_protocol(tls_socket->GetProtocolName());
+    tls->set_cipher_suite(tls_socket->GetCipherDescription());
+  }
+
+  int fd = socket_->GetFd();
+  CHECK_GE(fd, 0);
+  int32_t max_seg_size = 0;
+  socklen_t optlen = sizeof(max_seg_size);
+  int ret = ::getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &max_seg_size, &optlen);
+  if (ret) {
+    int err = errno;
+    return Status::NetworkError(
+        "getsockopt(TCP_MAXSEG) failed", ErrnoToString(err), err);
+  }
+  pb->mutable_tcp()->set_max_segment_size(max_seg_size);
+
+  return Status::OK();
+}
 
 } // namespace rpc
 } // namespace kudu

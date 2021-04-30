@@ -367,5 +367,27 @@ Status GetPasswordFromShellCommand(const string& cmd, string* password) {
   return Status::OK();
 }
 
+string GetProtocolName(const SSL* ssl) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  return SSL_get_version(ssl);
+}
+
+string GetCipherDescription(const SSL* ssl) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl);
+  if (!cipher) {
+    return "NONE";
+  }
+  char buf[512];
+  const char* description = SSL_CIPHER_description(cipher, buf, sizeof(buf));
+  if (!description) {
+    return "NONE";
+  }
+  string ret(description);
+  StripTrailingNewline(&ret);
+  StripDupCharacters(&ret, ' ', 0);
+  return ret;
+}
+
 } // namespace security
 } // namespace kudu
