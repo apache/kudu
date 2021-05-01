@@ -188,7 +188,7 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
 
     // NOTE: timing on the exact slept time sometimes yields a small error, so
     // leave some buffer in checking for correctness.
-    final int BUFFER_MS = 5;
+    final int BUFFER_MS = 50;
     m = receiveResponse().getMetrics();
     Assert.assertEquals(1, m.getOutboundQueueLength());
     Assert.assertTrue(
