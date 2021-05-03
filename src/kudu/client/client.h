@@ -383,7 +383,7 @@ class KUDU_EXPORT KuduTransaction :
   /// @c wait parameter, either returns right after that or awaits
   /// for the commit to finalize.
   ///
-  /// @param [in] mode
+  /// @param [in] wait
   ///   This parameter controls the way how this method operates:
   ///     @li @c true means synchronous operation mode
   ///     @li @c false means asynchronous operation mode
@@ -410,7 +410,7 @@ class KUDU_EXPORT KuduTransaction :
   ///   succeeded or failed by the time of processing the request.
   ///   This parameter is assigned a meaningful value iff the method returns
   ///   @c Status::OK().
-  /// @param [out] commit_status
+  /// @param [out] completion_status
   ///   The status of finalization of the transaction's commit phase:
   ///     @li Status::OK() if the commit phase successfully finalized
   ///     @li non-OK status if the commit phase failed to finalize
