@@ -53,6 +53,10 @@ class TestOptions extends KuduTestSuite {
         |  --kuduMasterAddresses <value>
         |                           Comma-separated addresses of Kudu masters. Default: localhost
         |  --createTables <value>   If true, create the tables during restore. Set to false if the target tables already exist. Default: true
+        |  --removeImpalaPrefix <value>
+        |                           If true, removes the "impala::" prefix, if present from the restored table names. This is advisable if backup was taken in a Kudu cluster without HMS sync and restoring to Kudu cluster which has HMS sync in place. Only used when createTables is true. Default: false
+        |  --newDatabaseName <value>
+        |                           If set, replaces the existing database name and if there is no existing database name, a new database name is added. Setting this to an empty string will have the same effect of not using the flag at all. For example, if this is set to newdb for the tables testtable and impala::db.testtable the restored tables will have the names newdb.testtable and impala::newdb.testtable respectively, assuming removeImpalaPrefix is set to false
         |  --tableSuffix <value>    If set, the suffix to add to the restored table names. Only used when createTables is true.
         |  --timestampMs <value>    A UNIX timestamp in milliseconds that defines the latest time to use when selecting restore candidates. Default: `System.currentTimeMillis()`
         |  --failOnFirstError       Whether to fail the restore job as soon as a single table restore fails. Default: false

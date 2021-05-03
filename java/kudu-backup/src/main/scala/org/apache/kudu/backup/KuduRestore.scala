@@ -44,6 +44,40 @@ import scala.util.Try
 @InterfaceStability.Unstable
 object KuduRestore {
   val log: Logger = LoggerFactory.getLogger(getClass)
+  val ImpalaPrefix = "impala::"
+
+  /**
+   * Returns the table name in which the data will be restored considering the flags removeImpalaPrefix,
+   * newDatabaseName and tableSuffix
+   */
+  def getRestoreTableName(fullTableName: String, options: RestoreOptions): String = {
+    // Break the table down into prefix::databaseName.tableName
+    var prefix = ""
+    var databaseName = ""
+    var tableName = fullTableName
+    val hasImpalaPrefix = tableName.startsWith(ImpalaPrefix)
+    if (hasImpalaPrefix) {
+      prefix = ImpalaPrefix
+      tableName = tableName.substring(ImpalaPrefix.length)
+    }
+    val hasDatabase = tableName.contains(".")
+    if (hasDatabase) {
+      databaseName = tableName.substring(0, tableName.indexOf(".") + 1)
+      tableName = tableName.substring(tableName.indexOf(".") + 1)
+    }
+
+    // If the user does not want the Impala prefix, drop it
+    if (options.removeImpalaPrefix) {
+      prefix = ""
+    }
+
+    // If there is a databaseName specified by the user, use that
+    if (options.newDatabaseName.nonEmpty) {
+      databaseName = options.newDatabaseName.concat(".")
+    }
+
+    s"${prefix}${databaseName}${tableName}${options.tableSuffix}"
+  }
 
   private def doRestore(
       tableName: String,
@@ -58,7 +92,7 @@ object KuduRestore {
     val graph = backupMap(tableName)
     val restorePath = graph.restorePath
     val lastMetadata = restorePath.backups.last.metadata
-    val restoreName = s"${lastMetadata.getTableName}${options.tableSuffix}"
+    val restoreName = getRestoreTableName(lastMetadata.getTableName, options)
     val numJobs = restorePath.backups.size
     var currentJob = 1
     restorePath.backups.foreach { backup =>
