@@ -483,7 +483,7 @@ TEST_F(TxnStatusManagerITest, TxnKeptAliveByClientIfStatusManagerRestarted) {
 
   SleepFor(MonoDelta::FromMilliseconds(5 * kTxnKeepaliveIntervalMs));
 
-  ASSERT_OK(txn->Commit(false /* wait */));
+  ASSERT_OK(txn->StartCommit());
   NO_FATALS(cluster_->AssertNoCrashes());
 }
 

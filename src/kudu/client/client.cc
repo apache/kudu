@@ -141,6 +141,7 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+
 MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
                  kudu::client::KuduSession::AUTO_FLUSH_SYNC,
                  kudu::client::KuduSession::MANUAL_FLUSH);
@@ -439,8 +440,12 @@ Status KuduTransaction::CreateSession(sp::shared_ptr<KuduSession>* session) {
   return data_->CreateSession(session);
 }
 
-Status KuduTransaction::Commit(bool wait) {
-  return data_->Commit(wait);
+Status KuduTransaction::Commit() {
+  return data_->Commit(KuduTransaction::Data::CommitMode::WAIT_FOR_COMPLETION);
+}
+
+Status KuduTransaction::StartCommit() {
+  return data_->Commit(KuduTransaction::Data::CommitMode::START_ONLY);
 }
 
 Status KuduTransaction::IsCommitComplete(

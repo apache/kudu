@@ -380,18 +380,25 @@ class KUDU_EXPORT KuduTransaction :
 
   /// Commit the transaction.
   ///
-  /// This method initiates committing the transaction, and, depending on the
-  /// @c wait parameter, either returns right after that or awaits
-  /// for the commit to finalize.
+  /// This method initiates committing the transaction and then awaits
+  /// for the transaction's commit phase to finalize.
   ///
-  /// @param [in] wait
-  ///   This parameter controls the way how this method operates:
-  ///     @li @c true means synchronous operation mode
-  ///     @li @c false means asynchronous operation mode
-  ///   In case of asynchronous mode, @c KuduTransaction::IsCommitComplete()
-  ///   can be used to detect whether the commit has successfully finalized.
-  /// @return Operation result status.
-  Status Commit(bool wait = true) WARN_UNUSED_RESULT;
+  /// @return Returns @c Status::OK() if all the stages of the transaction's
+  ///   commit sequence were successful, i.e. the status of various pre-commit
+  ///   work, the status of starting the commit phase, the status of the commit
+  ///   phase itself once it's completed. Returns non-OK status of the very
+  ///   first failed stage of the transaction's commit sequence.
+  Status Commit() WARN_UNUSED_RESULT;
+
+  /// Start committing this transaction, but don't wait for the commit phase
+  /// to finalize.
+  ///
+  /// This method initiates the commit phase for this transaction, not awaiting
+  /// for the commit phase to finalize. To check for the transaction's commit
+  /// status, use the @c KuduTransaction::IsCommitComplete() method.
+  ///
+  /// @return Status of starting the commit phase for this transaction.
+  Status StartCommit() WARN_UNUSED_RESULT;
 
   /// Whether the commit has completed i.e. no longer in progress of finalizing.
   ///

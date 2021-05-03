@@ -413,7 +413,7 @@ TEST_F(TxnCommitITest, TestCommitWhileDeletingTxnStatusManager) {
   ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
 
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
   ASSERT_OK(cluster_->mini_tablet_server(0)->server()->tablet_manager()->DeleteTablet(
       tsm_id_, tablet::TABLET_DATA_TOMBSTONED, boost::none));
 
@@ -429,7 +429,7 @@ TEST_F(TxnCommitITest, TestCommitAfterDeletingParticipant) {
   ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   ASSERT_OK(client_->DeleteTable(table_name_));
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
 
   // The transaction should eventually fail, treating the deleted participant
   // as a fatal error.
@@ -453,7 +453,7 @@ TEST_F(TxnCommitITest, TestCommitAfterDroppingRangeParticipant) {
   alterer->DropRangePartition(schema.NewRow(), schema.NewRow());
   alterer.reset();
 
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
 
   // The transaction should eventually abort, treating the deleted participant
   // as fatal, resulting in an aborted transaction.
@@ -472,7 +472,7 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommitting) {
   shared_ptr<KuduSession> txn_session;
   ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
   // Stop the tserver without allowing the finalize commit to complete.
   cluster_->mini_tablet_server(0)->Shutdown();
 
@@ -533,7 +533,7 @@ TEST_F(TxnCommitITest, TestAbortRacingWithBotchedCommit) {
                             { table_name_, kSecondTableName }));
   ASSERT_OK(client_->DeleteTable(kSecondTableName));
   FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 2000;
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
   ASSERT_OK(txn->Rollback());
   ASSERT_EVENTUALLY([&] {
     Status completion_status;
@@ -588,7 +588,7 @@ TEST_F(TxnCommitITest, TestRestartingWhileCommittingAndDeleting) {
                             { table_name_, kSecondTableName }));
   ASSERT_OK(client_->DeleteTable(kSecondTableName));
   FLAGS_txn_status_manager_inject_latency_finalize_commit_ms = 10000;
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
 
   // Shut down without giving time for the commit to complete.
   auto* mts = cluster_->mini_tablet_server(0);
@@ -674,7 +674,7 @@ TEST_F(TxnCommitITest, TestCommitAfterParticipantAbort) {
       participant_ids_[0], op_pb, MonoDelta::FromSeconds(3)));
 
   // When we try to commit, we should end up not completing.
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
 
   SleepFor(MonoDelta::FromSeconds(3));
   Status completion_status;
@@ -705,7 +705,7 @@ TEST_F(TxnCommitITest, TestConcurrentCommitCalls) {
   vector<Status> results(kNumTxns);
   for (int i = 0; i < kNumTxns; i++) {
     threads.emplace_back([&, i] {
-      results[i] = txns[i]->Commit(/*wait*/false);
+      results[i] = txns[i]->StartCommit();
     });
   }
   for (auto& t : threads) {
@@ -751,7 +751,7 @@ TEST_F(TxnCommitITest, TestConcurrentAbortsAndCommits) {
   for (int i = 0; i < kNumTxns; i++) {
     threads.emplace_back([&, i] {
       SleepFor(MonoDelta::FromMilliseconds(rand() % kMaxSleepMs));
-      Status s = txns[i]->Commit(/*wait*/true);
+      Status s = txns[i]->Commit();
       if (s.ok()) {
         num_committed_txns++;
       }
@@ -805,7 +805,7 @@ TEST_F(TxnCommitITest, TestConcurrentRepeatedCommitCalls) {
   vector<Status> results(kNumThreads);
   for (int i = 0; i < kNumThreads; i++) {
     threads.emplace_back([&, i] {
-      results[i] = txn->Commit(/*wait*/false);
+      results[i] = txn->StartCommit();
     });
   }
   for (auto& t : threads) {
@@ -833,7 +833,7 @@ TEST_F(TxnCommitITest, TestDontBackgroundAbortIfCommitInProgress) {
     shared_ptr<KuduSession> txn_session;
     ASSERT_OK(BeginTransaction(&txn, &txn_session));
     ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
-    ASSERT_OK(txn->Commit(/*wait*/false));
+    ASSERT_OK(txn->StartCommit());
     ASSERT_OK(txn->Serialize(&serialized_txn));
   }
   // Wait a bit to allow would-be background aborts to happen.
@@ -861,7 +861,7 @@ TEST_F(TxnCommitITest, TestAbortIfCommitInProgress) {
   shared_ptr<KuduSession> txn_session;
   ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
   ASSERT_OK(txn->Rollback());
   ASSERT_EVENTUALLY([&] {
     Status completion_status;
@@ -919,7 +919,7 @@ TEST_F(TwoNodeTxnCommitITest, TestCommitWhenParticipantsAreDown) {
   ASSERT_OK(BeginTransaction(&txn, &txn_session));
   ASSERT_OK(InsertToSession(txn_session, initial_row_count_, kNumRowsPerTxn));
   prt_ts_->Shutdown();
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
 
   // Since our participant is down, we can't proceed with the commit.
   Status completion_status;
@@ -965,7 +965,7 @@ TEST_F(TwoNodeTxnCommitITest, TestStartTasksDuringStartup) {
 
   // Shut down our participant's tserver so our commit task keeps retrying.
   prt_ts_->Shutdown();
-  ASSERT_OK(committed_txn->Commit(/*wait*/false));
+  ASSERT_OK(committed_txn->StartCommit());
   ASSERT_OK(aborted_txn->Rollback());
 
   Status completion_status;
@@ -1012,7 +1012,7 @@ TEST_F(TwoNodeTxnCommitITest, TestCommitWhileShuttingDownTxnStatusManager) {
   shared_ptr<KuduSession> txn_session;
   ASSERT_OK(BeginTransaction(&txn, &txn_session));
 
-  ASSERT_OK(txn->Commit(/*wait*/false));
+  ASSERT_OK(txn->StartCommit());
   tsm_ts_->Shutdown();
   ASSERT_OK(tsm_ts_->Restart());
 
@@ -1064,7 +1064,7 @@ TEST_F(ThreeNodeTxnCommitITest, TestCommitTasksReloadOnLeadershipChange) {
     ASSERT_OK(BeginTransaction(&aborted_txn, &txn_session));
     ASSERT_OK(InsertToSession(txn_session, initial_row_count_ + kNumRowsPerTxn, kNumRowsPerTxn));
   }
-  ASSERT_OK(committed_txn->Commit(/*wait*/ false));
+  ASSERT_OK(committed_txn->StartCommit());
   Status completion_status;
   bool is_complete = false;
   ASSERT_OK(committed_txn->IsCommitComplete(&is_complete, &completion_status));

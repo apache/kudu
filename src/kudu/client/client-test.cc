@@ -7169,7 +7169,7 @@ TEST_F(ClientTest, TxnBasicOperations) {
     shared_ptr<KuduTransaction> txn;
     ASSERT_OK(client_->NewTransaction(&txn));
     ASSERT_OK(txn->Rollback());
-    auto s = txn->Commit(false /* wait */);
+    auto s = txn->StartCommit();
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "is not open: state: ABORT");
   }
@@ -7256,7 +7256,7 @@ TEST_F(ClientTest, TxnCommit) {
   {
     shared_ptr<KuduTransaction> txn;
     ASSERT_OK(client_->NewTransaction(&txn));
-    ASSERT_OK(txn->Commit(false /* wait */));
+    ASSERT_OK(txn->StartCommit());
     ASSERT_EVENTUALLY([&] {
       bool is_complete = false;
       Status cs;
@@ -7376,7 +7376,7 @@ TEST_F(ClientTest, TxnToken) {
     shared_ptr<KuduSession> session;
     ASSERT_OK(serdes_txn->CreateSession(&session));
     NO_FATALS(InsertTestRows(client_table_.get(), session.get(), kNumRows));
-    ASSERT_OK(serdes_txn->Commit(false /* wait */));
+    ASSERT_OK(serdes_txn->StartCommit());
 
     // The state of a transaction isn't stored in the token, so initiating
     // commit of the transaction doesn't change the result of the serialization.
@@ -7438,7 +7438,7 @@ TEST_F(ClientTest, AttemptToControlTxnByOtherUser) {
   ASSERT_OK(KuduTransaction::Deserialize(client, txn_token, &serdes_txn));
   const vector<pair<string, Status>> txn_ctl_results = {
     { "rollback", serdes_txn->Rollback() },
-    { "commit", serdes_txn->Commit(false /* wait */) },
+    { "commit", serdes_txn->StartCommit() },
   };
   for (const auto& op_and_status : txn_ctl_results) {
     SCOPED_TRACE(op_and_status.first);
@@ -7468,7 +7468,7 @@ TEST_F(ClientTest, NoTxnManager) {
 
   const vector<pair<string, Status>> txn_ctl_results = {
     { "rollback", txn->Rollback() },
-    { "commit", txn->Commit(false /* wait */) },
+    { "commit", txn->StartCommit() },
   };
   for (const auto& op_and_status : txn_ctl_results) {
     SCOPED_TRACE(op_and_status.first);
@@ -7537,7 +7537,7 @@ TEST_F(ClientTest, TxnKeepAlive) {
     // of the scope.
     shared_ptr<KuduTransaction> serdes_txn;
     ASSERT_OK(KuduTransaction::Deserialize(client_, txn_token, &serdes_txn));
-    auto s = serdes_txn->Commit(false /* wait */);
+    auto s = serdes_txn->StartCommit();
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORT");
   }
@@ -7560,7 +7560,7 @@ TEST_F(ClientTest, TxnKeepAlive) {
 
     SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_txn_keepalive_interval_ms));
 
-    auto s = serdes_txn->Commit(false /* wait */);
+    auto s = serdes_txn->StartCommit();
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORT");
   }
@@ -7626,7 +7626,7 @@ TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerShortTime) {
 
   // An attempt to commit a transaction should fail due to unreachable masters.
   {
-    auto s = txn->Commit(false /* wait */);
+    auto s = txn->StartCommit();
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
 
@@ -7663,7 +7663,7 @@ TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerLongTime) {
 
   // An attempt to commit a transaction should fail due to unreachable masters.
   {
-    auto s = txn->Commit(false /* wait */);
+    auto s = txn->StartCommit();
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
 
@@ -7678,7 +7678,7 @@ TEST_F(ClientTest, TxnKeepAliveAndUnavailableTxnManagerLongTime) {
   // any txn keepalive messages for longer than prescribed by the
   // --txn_keepalive_interval_ms flag.
   {
-    auto s = txn->Commit(false /* wait */);
+    auto s = txn->StartCommit();
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "not open: state: ABORT");
   }

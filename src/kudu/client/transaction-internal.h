@@ -59,8 +59,19 @@ class KuduTransaction::Data {
   Status CreateSession(sp::shared_ptr<KuduSession>* session);
 
   Status Begin(const sp::shared_ptr<KuduTransaction>& txn);
-  Status Commit(bool wait);
+
+  // Transaction commit mode.
+  enum class CommitMode {
+    // Only start/initiate the commit phase, don't wait for the completion.
+    START_ONLY,
+
+    // Start the commit phase and wait until it succeeds or fails.
+    WAIT_FOR_COMPLETION,
+  };
+
+  Status Commit(CommitMode mode);
   Status IsCommitComplete(bool* is_complete, Status* completion_status);
+
   Status Rollback();
 
   Status Serialize(std::string* serialized_txn,

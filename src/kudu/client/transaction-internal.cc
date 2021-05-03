@@ -161,7 +161,7 @@ Status KuduTransaction::Data::Begin(const sp::shared_ptr<KuduTransaction>& txn) 
   return Status::OK();
 }
 
-Status KuduTransaction::Data::Commit(bool wait) {
+Status KuduTransaction::Data::Commit(CommitMode mode) {
   DCHECK(txn_id_.IsValid());
   auto c = weak_client_.lock();
   if (!c) {
@@ -185,7 +185,7 @@ Status KuduTransaction::Data::Commit(bool wait) {
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
-  if (wait) {
+  if (mode == CommitMode::WAIT_FOR_COMPLETION) {
     RETURN_NOT_OK(WaitForTxnCommitToFinalize(c.get(), deadline, txn_id_));
   }
   return Status::OK();

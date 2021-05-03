@@ -338,7 +338,7 @@ TEST_F(TxnWriteOpsITest, CommitTimestampPropagation) {
     ASSERT_EQ(0, session->CountPendingErrors());
 
     const auto ts_before_commit = client_->GetLatestObservedTimestamp();
-    ASSERT_OK(txn->Commit(false));
+    ASSERT_OK(txn->StartCommit());
     const auto ts_after_commit_async = client_->GetLatestObservedTimestamp();
     ASSERT_EQ(ts_before_commit, ts_after_commit_async);
 
@@ -475,7 +475,7 @@ TEST_F(TxnWriteOpsITest, DeadlockPrevention) {
         }
         if (!needs_retry) {
           succeeded = true;
-          ASSERT_OK(txn->Commit(/*wait*/true));
+          ASSERT_OK(txn->Commit());
         }
       }
     });
@@ -579,7 +579,7 @@ TEST_F(TxnWriteOpsITest, FrequentElections) {
           CHECK_OK(session->Apply(op.release()));
         }
         if (iter % 8 == 0) {
-          CHECK_OK(txn->Commit(false/*wait*/));
+          CHECK_OK(txn->StartCommit());
           row_count += kNumRowsPerTxn;
         } else {
           CHECK_OK(txn->Rollback());
@@ -1881,7 +1881,7 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantNotYetRegistered
     SleepFor(MonoDelta::FromMilliseconds(kDelayMs));
     // Initiate committing the transaction after the delay, but don't wait
     // for the commit to finalize.
-    commit_init_status = txn->Commit(false/*wait*/);
+    commit_init_status = txn->StartCommit();
   });
   auto cleanup = MakeScopedCleanup([&]() {
     committer.join();
@@ -1938,7 +1938,7 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantRegistered) {
     SleepFor(MonoDelta::FromMilliseconds(kDelayMs));
     // Initiate committing the transaction after the delay, but don't wait
     // for the commit to finalize.
-    commit_init_status = txn->Commit(false/*wait*/);
+    commit_init_status = txn->StartCommit();
   });
   auto cleanup = MakeScopedCleanup([&]() {
     committer.join();
