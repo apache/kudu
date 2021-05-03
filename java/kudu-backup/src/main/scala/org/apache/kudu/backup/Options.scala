@@ -186,6 +186,8 @@ case class RestoreOptions(
     tables: Seq[String],
     rootPath: String,
     kuduMasterAddresses: String = InetAddress.getLocalHost.getCanonicalHostName,
+    removeImpalaPrefix: Boolean = RestoreOptions.DefaultRemoveImpalaPrefix,
+    newDatabaseName: String = "",
     tableSuffix: String = "",
     createTables: Boolean = RestoreOptions.DefaultCreateTables,
     timestampMs: Long = System.currentTimeMillis(),
@@ -194,6 +196,7 @@ case class RestoreOptions(
     restoreOwner: Boolean = RestoreOptions.DefaultRestoreOwner)
 
 object RestoreOptions {
+  val DefaultRemoveImpalaPrefix: Boolean = false
   val DefaultCreateTables: Boolean = true
   val DefaultFailOnFirstError = false
   val DefaultNumParallelRestores = 1
@@ -219,6 +222,24 @@ object RestoreOptions {
         .action((v, o) => o.copy(createTables = v))
         .text("If true, create the tables during restore. Set to false if the target tables " +
           "already exist. Default: " + DefaultCreateTables)
+        .optional()
+
+      opt[Boolean]("removeImpalaPrefix")
+        .action((v, o) => o.copy(removeImpalaPrefix = v))
+        .text("If true, removes the \"impala::\" prefix, if present from the restored table names. This is " +
+          "advisable if backup was taken in a Kudu cluster without HMS sync and restoring to " +
+          "Kudu cluster which has HMS sync in place. Only used when createTables is true. Default: " +
+          DefaultRemoveImpalaPrefix)
+        .optional()
+
+      opt[String]("newDatabaseName")
+        .action((v, o) => o.copy(newDatabaseName = v))
+        .text(
+          "If set, replaces the existing database name and if there is no existing database name, a new database " +
+            "name is added. Setting this to an empty string will have the same effect of not using the flag at all. " +
+            "For example, if this is set to newdb for the tables testtable and impala::db.testtable the restored " +
+            "tables will have the names newdb.testtable and impala::newdb.testtable respectively, assuming " +
+            "removeImpalaPrefix is set to false")
         .optional()
 
       opt[String]("tableSuffix")

@@ -591,6 +591,70 @@ class TestKuduBackup extends KuduTestSuite {
   }
 
   @Test
+  def testTableNameChangeFlags() {
+    // Create four tables and load data
+    val rowCount = 100
+    val tableNameWithImpalaPrefix = "impala::oldDatabase.testTableWithImpalaPrefix"
+    val tableWithImpalaPrefix =
+      kuduClient.createTable(tableNameWithImpalaPrefix, schema, tableOptions)
+    val tableNameWithoutImpalaPrefix = "oldDatabase.testTableWithoutImpalaPrefix"
+    val tableWithoutImpalaPrefix =
+      kuduClient.createTable(tableNameWithoutImpalaPrefix, schema, tableOptions)
+    val tableNameWithImpalaPrefixWithoutDb = "impala::testTableWithImpalaPrefixWithoutDb"
+    val tableWithImpalaPrefixWithoutDb =
+      kuduClient.createTable(tableNameWithImpalaPrefixWithoutDb, schema, tableOptions)
+    val tableNameWithoutImpalaPrefixWithoutDb = "testTableWithoutImpalaPrefixWithoutDb"
+    val tableWithoutImpalaPrefixWithoutDb =
+      kuduClient.createTable(tableNameWithoutImpalaPrefixWithoutDb, schema, tableOptions)
+    insertRows(tableWithImpalaPrefix, rowCount)
+    insertRows(tableWithoutImpalaPrefix, rowCount)
+    insertRows(tableWithImpalaPrefixWithoutDb, rowCount)
+    insertRows(tableWithoutImpalaPrefixWithoutDb, rowCount)
+
+    // Backup the four tables
+    backupAndValidateTable(tableNameWithImpalaPrefix, rowCount, false)
+    backupAndValidateTable(tableNameWithoutImpalaPrefix, rowCount, false)
+    backupAndValidateTable(tableNameWithImpalaPrefixWithoutDb, rowCount, false)
+    backupAndValidateTable(tableNameWithoutImpalaPrefixWithoutDb, rowCount, false)
+
+    // Restore with removeImpalaPrefix = true and newDatabase = newDatabase and validate the tables
+    val withImpalaPrefix =
+      createRestoreOptions(Seq(tableNameWithImpalaPrefix))
+        .copy(removeImpalaPrefix = true, newDatabaseName = "newDatabase")
+    assertTrue(runRestore(withImpalaPrefix))
+    val rddWithImpalaPrefix =
+      kuduContext
+        .kuduRDD(ss.sparkContext, s"newDatabase.testTableWithImpalaPrefix-restore")
+    assertEquals(rddWithImpalaPrefix.collect.length, rowCount)
+
+    val withoutImpalaPrefix =
+      createRestoreOptions(Seq(tableNameWithoutImpalaPrefix))
+        .copy(removeImpalaPrefix = true, newDatabaseName = "newDatabase")
+    assertTrue(runRestore(withoutImpalaPrefix))
+    val rddWithoutImpalaPrefix =
+      kuduContext.kuduRDD(ss.sparkContext, s"newDatabase.testTableWithoutImpalaPrefix-restore")
+    assertEquals(rddWithoutImpalaPrefix.collect.length, rowCount)
+
+    val withImpalaPrefixWithoutDb =
+      createRestoreOptions(Seq(tableNameWithImpalaPrefixWithoutDb))
+        .copy(removeImpalaPrefix = true, newDatabaseName = "newDatabase")
+    assertTrue(runRestore(withImpalaPrefixWithoutDb))
+    val rddWithImpalaPrefixWithoutDb =
+      kuduContext
+        .kuduRDD(ss.sparkContext, s"newDatabase.testTableWithImpalaPrefixWithoutDb-restore")
+    assertEquals(rddWithImpalaPrefixWithoutDb.collect.length, rowCount)
+
+    val withoutImpalaPrefixWithoutDb =
+      createRestoreOptions(Seq(tableNameWithoutImpalaPrefixWithoutDb))
+        .copy(removeImpalaPrefix = true, newDatabaseName = "newDatabase")
+    assertTrue(runRestore(withoutImpalaPrefixWithoutDb))
+    val rddWithoutImpalaPrefixWithoutDb =
+      kuduContext
+        .kuduRDD(ss.sparkContext, s"newDatabase.testTableWithoutImpalaPrefixWithoutDb-restore")
+    assertEquals(rddWithoutImpalaPrefixWithoutDb.collect.length, rowCount)
+  }
+
+  @Test
   def testDeleteIgnore(): Unit = {
     doDeleteIgnoreTest()
   }
@@ -763,9 +827,8 @@ class TestKuduBackup extends KuduTestSuite {
   def restoreAndValidateTable(tableName: String, expectedRowCount: Long) = {
     val options = createRestoreOptions(Seq(tableName))
     assertTrue(runRestore(options))
-
-    // Verify the table data.
-    val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore")
+    val restoreTableName = KuduRestore.getRestoreTableName(tableName, options)
+    val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$restoreTableName")
     assertEquals(rdd.collect.length, expectedRowCount)
   }
 
