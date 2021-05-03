@@ -147,6 +147,8 @@ public class KuduTransaction implements AutoCloseable {
       LoggerFactory.getLogger(KuduTransaction.class);
   private static final SerializationOptions defaultSerializationOptions =
       new SerializationOptions();
+  private static final String ERRMSG_TXN_NOT_OPEN =
+      "transaction is not open for this handle";
 
   private final AsyncKuduClient client;
   private long txnId = AsyncKuduClient.INVALID_TXN_ID;
@@ -259,41 +261,28 @@ public class KuduTransaction implements AutoCloseable {
 
   /**
    * Commit the multi-row distributed transaction represented by this handle.
+   * <p>
+   * This method starts committing the transaction and awaits for the commit
+   * phase to finalize.
    *
-   * @param wait whether to wait for the transaction's commit phase to finalize.
-   *             If {@code true}, this method blocks until the commit is
-   *             finalized, otherwise it starts committing the transaction and
-   *             returns. In the latter case, it's possible to check for the
-   *             transaction status using the
-   *             {@link KuduTransaction#isCommitComplete} method.
    * @throws KuduException if something went wrong
    */
-  public void commit(boolean wait) throws KuduException {
-    Preconditions.checkState(isInFlight, "transaction is not open for this handle");
-    CommitTransactionRequest req = doCommitTransaction();
-    // Now, there is no need to continue sending keepalive messages: the
-    // transaction should be in COMMIT_IN_PROGRESS state after successful
-    // completion of the calls above, and the backend takes care of everything
-    // else: nothing is required from the client side to successfully complete
-    // the commit phase of the transaction past this point.
-    synchronized (keepaliveTaskHandleSync) {
-      if (keepaliveTaskHandle != null) {
-        LOG.debug("stopping keepalive heartbeating after commit (txn ID {})", txnId);
-        keepaliveTaskHandle.cancel();
-      }
-    }
+  public void commit() throws KuduException {
+    commitWithMode(CommitMode.WAIT_FOR_COMPLETION);
+  }
 
-    if (wait) {
-      Deferred<GetTransactionStateResponse> txnState =
-          getDelayedIsTransactionCommittedDeferred(req);
-      KuduClient.joinAndHandleException(txnState);
-    }
-
-    // Once everything else is completed successfully, mark the transaction as
-    // no longer in flight.
-    synchronized (isInFlightSync) {
-      isInFlight = false;
-    }
+  /**
+   * Start committing the multi-row distributed transaction represented by
+   * this handle.
+   * <p>
+   * This method only starts committing the transaction, not awaiting for the
+   * commit phase to finalize. Use {@link KuduTransaction#isCommitComplete()}
+   * to check whether the transaction is committed.
+   *
+   * @throws KuduException if something went wrong upon starting to commit
+   */
+  public void startCommit() throws KuduException {
+    commitWithMode(CommitMode.START_ONLY);
   }
 
   /**
@@ -346,7 +335,7 @@ public class KuduTransaction implements AutoCloseable {
    * @throws KuduException if something went wrong
    */
   public void rollback() throws KuduException {
-    Preconditions.checkState(isInFlight, "transaction is not open for this handle");
+    Preconditions.checkState(isInFlight, ERRMSG_TXN_NOT_OPEN);
     doRollbackTransaction();
     // Now, there is no need to continue sending keepalive messages.
     synchronized (keepaliveTaskHandleSync) {
@@ -488,6 +477,45 @@ public class KuduTransaction implements AutoCloseable {
     Deferred<CommitTransactionResponse> d = client.sendRpcToTablet(request);
     KuduClient.joinAndHandleException(d);
     return request;
+  }
+
+  /**
+   * Transaction commit mode.
+   */
+  private enum CommitMode {
+    /** Only start/initiate the commit phase, don't wait for the completion. */
+    START_ONLY,
+
+    /** Start the commit phase and wait until it succeeds or fails. */
+    WAIT_FOR_COMPLETION,
+  }
+
+  private void commitWithMode(CommitMode mode) throws KuduException {
+    Preconditions.checkState(isInFlight, ERRMSG_TXN_NOT_OPEN);
+    CommitTransactionRequest req = doCommitTransaction();
+    // Now, there is no need to continue sending keepalive messages: the
+    // transaction should be in COMMIT_IN_PROGRESS state after successful
+    // completion of the calls above, and the backend takes care of everything
+    // else: nothing is required from the client side to successfully complete
+    // the commit phase of the transaction past this point.
+    synchronized (keepaliveTaskHandleSync) {
+      if (keepaliveTaskHandle != null) {
+        LOG.debug("stopping keepalive heartbeating after initiating commit (txn ID {})", txnId);
+        keepaliveTaskHandle.cancel();
+      }
+    }
+
+    if (mode == CommitMode.WAIT_FOR_COMPLETION) {
+      Deferred<GetTransactionStateResponse> txnState =
+          getDelayedIsTransactionCommittedDeferred(req);
+      KuduClient.joinAndHandleException(txnState);
+    }
+
+    // Once everything else is completed successfully, mark the transaction as
+    // no longer in flight.
+    synchronized (isInFlightSync) {
+      isInFlight = false;
+    }
   }
 
   private Deferred<GetTransactionStateResponse> isTransactionCommittedAsync() {
@@ -664,8 +692,8 @@ public class KuduTransaction implements AutoCloseable {
   }
 
   /**
-   * Schedule a timer to send a KeepTransactiveAlive RPC to TxnManager after
-   * @c sleepTimeMillis milliseconds.
+   * Schedule a timer to send a KeepTransactionAlive RPC to TxnManager after
+   * sleepTimeMillis milliseconds.
    *
    * @param runAfterMillis time delta from now when to run the task
    * @param callback callback to call on successfully sent RPC
@@ -683,7 +711,8 @@ public class KuduTransaction implements AutoCloseable {
       }
     }
 
-    return client.newTimeout(client.getTimer(), new RetryTimer(), runAfterMillis);
+    return AsyncKuduClient.newTimeout(
+        client.getTimer(), new RetryTimer(), runAfterMillis);
   }
 
   private Callback<Void, KeepTransactionAliveResponse> getSendKeepTransactionAliveCB() {

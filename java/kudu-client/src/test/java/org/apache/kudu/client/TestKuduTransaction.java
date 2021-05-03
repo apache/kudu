@@ -166,14 +166,14 @@ public class TestKuduTransaction {
   })
   public void testCommitAnEmptyTransaction() throws Exception {
     KuduTransaction txn = client.newTransaction();
-    txn.commit(false);
+    txn.startCommit();
     // A duplicate call to commit the transaction using the same handle
     // should fail.
     IllegalStateException ex = assertThrows(
         IllegalStateException.class, new ThrowingRunnable() {
           @Override
           public void run() throws Throwable {
-            txn.commit(false);
+            txn.startCommit();
           }
         });
     assertEquals("transaction is not open for this handle", ex.getMessage());
@@ -183,7 +183,7 @@ public class TestKuduTransaction {
     // since committing a transaction has idempotent semantics for the back-end.
     byte[] buf = txn.serialize();
     KuduTransaction serdesTxn = KuduTransaction.deserialize(buf, asyncClient);
-    serdesTxn.commit(false);
+    serdesTxn.startCommit();
   }
 
   /**
@@ -200,7 +200,7 @@ public class TestKuduTransaction {
     try {
       // Try to commit the transaction in non-synchronous mode, i.e. just
       // initiate committing the transaction.
-      fakeTxn.commit(false);
+      fakeTxn.startCommit();
       fail("committing a non-existing transaction should have failed");
     } catch (NonRecoverableException e) {
       final String errmsg = e.getMessage();
@@ -214,7 +214,7 @@ public class TestKuduTransaction {
     try {
       // Try to commit the transaction in synchronous mode, i.e. initiate
       // committing the transaction and wait for the commit phase to finalize.
-      fakeTxn.commit(true);
+      fakeTxn.commit();
       fail("committing a non-existing transaction should have failed");
     } catch (NonRecoverableException e) {
       final String errmsg = e.getMessage();
@@ -241,7 +241,7 @@ public class TestKuduTransaction {
   })
   public void testIsCommitComplete() throws Exception {
     KuduTransaction txn = client.newTransaction();
-    txn.commit(false);
+    txn.startCommit();
     assertFalse(txn.isCommitComplete());
   }
 
@@ -315,7 +315,7 @@ public class TestKuduTransaction {
   })
   public void testCommitAnEmptyTransactionWait() throws Exception {
     KuduTransaction txn = client.newTransaction();
-    txn.commit(true);
+    txn.commit();
     assertTrue(txn.isCommitComplete());
   }
 
@@ -467,7 +467,7 @@ public class TestKuduTransaction {
     try (KuduTransaction txn = client.newTransaction()) {
       buf = txn.serialize();
       assertNotNull(buf);
-      txn.commit(false);
+      txn.startCommit();
       txn.isCommitComplete();
     } catch (Exception e) {
       fail("unexpected exception: " + e.toString());
@@ -587,7 +587,7 @@ public class TestKuduTransaction {
       // It should be possible to commit the transaction since it supposed to be
       // open at this point even after multiples of the inactivity timeout
       // interval.
-      txn.commit(false);
+      txn.startCommit();
     } catch (Exception e) {
       fail("unexpected exception: " + e.toString());
     }
@@ -614,7 +614,7 @@ public class TestKuduTransaction {
           NonRecoverableException.class, new ThrowingRunnable() {
             @Override
             public void run() throws Throwable {
-              txn.commit(false);
+              txn.startCommit();
             }
           });
       final String errmsg = ex.getMessage();
@@ -674,7 +674,7 @@ public class TestKuduTransaction {
           NonRecoverableException.class, new ThrowingRunnable() {
             @Override
             public void run() throws Throwable {
-              serdesTxn.commit(false);
+              serdesTxn.startCommit();
             }
           });
       final String errmsg = ex.getMessage();
@@ -715,11 +715,11 @@ public class TestKuduTransaction {
       // At this point, the underlying transaction should be kept open
       // because the 'serdesTxn' handle sends keepalive heartbeats even if the
       // original handle ceased to send those after calling 'close()' on it.
-      // As an extra sanity check, call 'commit()' and 'isCommitComplete()'
+      // As an extra sanity check, call 'startCommit()' and 'isCommitComplete()'
       // on both handles to make sure no exception is thrown.
-      serdesTxn.commit(false);
+      serdesTxn.startCommit();
       serdesTxn.isCommitComplete();
-      txn.commit(false);
+      txn.startCommit();
       txn.isCommitComplete();
     }
   }
@@ -727,7 +727,7 @@ public class TestKuduTransaction {
   /**
    * This scenario validates the propagation of the commit timestamp for a
    * multi-row transaction when committing the transaction synchronously via
-   * {@link KuduTransaction#commit(boolean wait = true)} or calling
+   * {@link KuduTransaction#commit()} or calling
    * {@link KuduTransaction#isCommitComplete()} once the transaction's commit
    * has started to run asynchronously.
    */
@@ -769,7 +769,7 @@ public class TestKuduTransaction {
       assertEquals(0, session.countPendingErrors());
 
       final long tsBeforeCommit = client.getLastPropagatedTimestamp();
-      txn.commit(true /*wait*/);
+      txn.commit();
       final long tsAfterCommit = client.getLastPropagatedTimestamp();
       assertTrue(tsAfterCommit > tsBeforeCommit);
     }
@@ -792,7 +792,7 @@ public class TestKuduTransaction {
       assertEquals(0, session.countPendingErrors());
 
       final long tsBeforeCommit = client.getLastPropagatedTimestamp();
-      txn.commit(false /*wait*/);
+      txn.startCommit();
       assertEquals(tsBeforeCommit, client.getLastPropagatedTimestamp());
 
       assertEventuallyTrue("commit should eventually finalize",
@@ -821,7 +821,7 @@ public class TestKuduTransaction {
     {
       KuduTransaction txn = client.newTransaction();
       final long tsBeforeCommit = client.getLastPropagatedTimestamp();
-      txn.commit(true /*wait*/);
+      txn.commit();
 
       // Just in case, linger a bit after commit has been finalized, checking
       // for the timestamp propagated to the client side.
@@ -882,7 +882,7 @@ public class TestKuduTransaction {
       harness.startAllMasterServers();
 
       // It should be possible to commit the transaction.
-      txn.commit(true /*wait*/);
+      txn.commit();
 
       // An extra sanity check: read back the rows written into the table in the
       // context of the transaction.
@@ -912,7 +912,7 @@ public class TestKuduTransaction {
       // It should be possible to commit the transaction: 2 out of 3 masters are
       // running and Raft should be able to establish a leader master. So,
       // txn-related operations routed through TxnManager should succeed.
-      txn.commit(true /*wait*/);
+      txn.commit();
 
       // An extra sanity check: read back the rows written into the table in the
       // context of the transaction.
@@ -975,7 +975,7 @@ public class TestKuduTransaction {
     t.start();
 
     // It should be possible to commit the transaction.
-    txn.commit(true /*wait*/);
+    txn.commit();
 
     // Just an extra sanity check: the thread should join pretty fast, otherwise
     // the call to KuduTransaction.commit() above could not succeed.
@@ -1048,7 +1048,7 @@ public class TestKuduTransaction {
     //
     //   * the client switches to the new TxnManager for other txn-related
     //     operations as well
-    txn.commit(true /*wait*/);
+    txn.commit();
 
     // An extra sanity check: read back the rows written into the table in the
     // context of the transaction.
@@ -1146,7 +1146,7 @@ public class TestKuduTransaction {
 
     // The transaction should be still alive, and it should be possible to
     // commit it.
-    txn.commit(true /*wait*/);
+    txn.commit();
 
     t.join();
 
