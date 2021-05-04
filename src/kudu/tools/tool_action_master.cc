@@ -73,11 +73,17 @@ DECLARE_string(fs_data_dirs);
 
 DEFINE_string(master_uuid, "", "Permanent UUID of the master. Only needed to disambiguate in case "
                                "of multiple masters with same RPC address");
-DEFINE_int64(wait_secs, 8,
+
+// For catching up system catalog of a new master from WAL, we expect 8-10 secs.
+// However bringing up a new master can take longer due to --ntp_initial_sync_wait_secs (60 secs)
+// hence the wait secs is set higher.
+DEFINE_int64(wait_secs, 64,
              "Timeout in seconds to wait while retrying operations like bringing up new master, "
-             "running ksck, waiting for the new master to be promoted as VOTER, etc.");
+             "running ksck, waiting for the new master to be promoted as VOTER, etc. This flag "
+             "is not passed to the new master.");
 DEFINE_string(kudu_abs_path, "", "Absolute file path of the 'kudu' executable used to bring up "
-                                 "new master and other workflow steps.");
+                                 "new master and other workflow steps. This flag is not passed "
+                                 "to the new master.");
 
 using kudu::master::AddMasterRequestPB;
 using kudu::master::AddMasterResponsePB;
@@ -170,7 +176,9 @@ Status BringUpNewMaster(const string& kudu_abs_path,
 
   flags.emplace_back("--master_addresses=" + JoinStrings(master_addresses, ","));
   flags.emplace_back("--master_address_add_new_master=" + hp.ToString());
-  flags.emplace_back("--master_support_change_config");
+  // In case of an error in bringing up the master we want to ensure the last log lines
+  // are emitted to help debug the issue. Hence don't use async logging.
+  flags.emplace_back("--log_async=false");
   vector<string> argv = { kudu_abs_path, "master", "run" };
   argv.insert(argv.end(), std::make_move_iterator(flags.begin()),
               std::make_move_iterator(flags.end()));

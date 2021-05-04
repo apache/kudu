@@ -95,9 +95,8 @@ DEFINE_bool(master_support_authz_tokens, true,
             "testing version compatibility in the client.");
 TAG_FLAG(master_support_authz_tokens, hidden);
 
-DEFINE_bool(master_support_change_config, false,
+DEFINE_bool(master_support_change_config, true,
             "Whether the master supports adding/removing master servers dynamically.");
-TAG_FLAG(master_support_change_config, hidden);
 TAG_FLAG(master_support_change_config, advanced);
 TAG_FLAG(master_support_change_config, runtime);
 
