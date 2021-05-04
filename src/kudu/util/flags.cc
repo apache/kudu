@@ -21,10 +21,12 @@
 #include <sys/stat.h>
 #include <unistd.h> // IWYU pragma: keep
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <string>
 #include <unordered_set>
@@ -560,26 +562,41 @@ string CommandlineFlagsIntoString(EscapeMode mode) {
   return ret_value;
 }
 
+vector<CommandLineFlagInfo> GetNonDefaultFlagsHelper() {
+  vector<CommandLineFlagInfo> all_flags;
+  GetAllFlags(&all_flags);
+  vector<CommandLineFlagInfo> non_default_flags;
+  std::copy_if(all_flags.begin(), all_flags.end(), std::back_inserter(non_default_flags),
+               [] (const auto& flag) {
+                 // In addition to checking that the flag has been rewritten with 'is_default',
+                 // we also check that the value is different from the default value.
+                 return !flag.is_default && flag.current_value != flag.default_value;
+               });
+  return non_default_flags;
+}
+
 string GetNonDefaultFlags() {
   ostringstream args;
-  vector<CommandLineFlagInfo> flags;
-  GetAllFlags(&flags);
-  for (const auto& flag : flags) {
-    if (!flag.is_default) {
-      // This only means that the flag has been rewritten.
-      // We need to check that the value is different from the default value.
-      if (flag.current_value != flag.default_value) {
-        if (!args.str().empty()) {
-          args << '\n';
-        }
-
-        // Redact the flags tagged as sensitive, if redaction is enabled.
-        string flag_value = CheckFlagAndRedact(flag, EscapeMode::NONE);
-        args << "--" << flag.name << '=' << flag_value;
-      }
+  for (const auto& flag : GetNonDefaultFlagsHelper()) {
+    if (!args.str().empty()) {
+      args << '\n';
     }
+    // Redact the flags tagged as sensitive, if redaction is enabled.
+    string flag_value = CheckFlagAndRedact(flag, EscapeMode::NONE);
+    args << "--" << flag.name << '=' << flag_value;
   }
   return args.str();
+}
+
+GFlagsMap GetNonDefaultFlagsMap() {
+  GFlagsMap flags_by_name;
+  for (auto& flag : GetNonDefaultFlagsHelper()) {
+    // Instead of "flags_by_name.emplace(flag.name, std::move(flag))" using
+    // following approach as order of evaluation of parameters could be different
+    // leading to unexpected value in "flag.name".
+    flags_by_name[flag.name] = std::move(flag);
+  }
+  return flags_by_name;
 }
 
 GFlagsMap GetFlagsMap() {
@@ -587,7 +604,8 @@ GFlagsMap GetFlagsMap() {
   GetAllFlags(&default_flags);
   GFlagsMap flags_by_name;
   for (auto& flag : default_flags) {
-    flags_by_name.emplace(flag.name, std::move(flag));
+    // See the note in GetNonDefaultFlagsMap() above.
+    flags_by_name[flag.name] = std::move(flag);
   }
   return flags_by_name;
 }

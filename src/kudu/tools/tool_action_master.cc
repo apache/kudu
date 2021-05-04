@@ -369,7 +369,7 @@ Status AddMaster(const RunnerContext& context) {
   if (FLAGS_fs_data_dirs.empty()) {
     return Status::InvalidArgument("Flag -fs_data_dirs not supplied");
   }
-  GFlagsMap flags_map = GetFlagsMap();
+  GFlagsMap flags_map = GetNonDefaultFlagsMap();
   // Remove the optional parameters for this command.
   // Remaining optional flags need to be passed to the new master.
   flags_map.erase("wait_secs");

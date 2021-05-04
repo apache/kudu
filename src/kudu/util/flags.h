@@ -21,11 +21,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "kudu/util/status.h"
+#include <gflags/gflags.h>
 
-namespace google {
-  struct CommandLineFlagInfo;
-}
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -76,6 +74,9 @@ typedef std::unordered_map<std::string, google::CommandLineFlagInfo> GFlagsMap;
 // formatted string with --flag=value pairs per line. Redact any flags that
 // are tagged as sensitive, if redaction is enabled.
 std::string GetNonDefaultFlags();
+
+// Same as 'GetNonDefaultFlags' but returns the output as a map.
+GFlagsMap GetNonDefaultFlagsMap();
 
 GFlagsMap GetFlagsMap();
 
