@@ -138,7 +138,7 @@ class DynamicMultiMasterTest : public KuduTest {
     reserved_hp_ = HostPort(reserved_addr_);
   }
 
-  void StartCluster(const vector<string>& extra_master_flags,
+  void StartCluster(const vector<string>& extra_master_flags = {},
                     bool supply_single_master_addr = true) {
     opts_.num_masters = orig_num_masters_;
     opts_.supply_single_master_addr = supply_single_master_addr;
@@ -158,8 +158,7 @@ class DynamicMultiMasterTest : public KuduTest {
                                       const vector<string>& extra_flags = {}) {
     // Using low values of log flush threshold and segment size to trigger GC of the
     // sys catalog WAL
-    vector<string> flags = {"--master_support_change_config", "--flush_threshold_secs=0",
-                            "--log_segment_size_mb=1"};
+    vector<string> flags = {"--flush_threshold_secs=0", "--log_segment_size_mb=1"};
     flags.insert(flags.end(), extra_flags.begin(), extra_flags.end());
     NO_FATALS(StartCluster(flags));
 
@@ -393,7 +392,7 @@ class DynamicMultiMasterTest : public KuduTest {
   // Returns generic RuntimeError() on failure with the actual error in the optional 'err'
   // output parameter.
   Status AddMasterToClusterUsingCLITool(const ExternalDaemonOptions& opts, string* err = nullptr,
-                                        EnvVars env_vars = {}, int wait_secs = 0,
+                                        EnvVars env_vars = {}, int wait_secs = 10,
                                         const string& kudu_binary = "") {
     auto hps = cluster_->master_rpc_addrs();
     vector<string> addresses;
@@ -760,7 +759,7 @@ INSTANTIATE_TEST_SUITE_P(, ParameterizedAddMasterTest,
 TEST_P(ParameterizedAddMasterTest, TestAddMasterCatchupFromWAL) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
-  NO_FATALS(StartCluster({"--master_support_change_config"}));
+  NO_FATALS(StartCluster());
 
   // Verify that masters are running as VOTERs and collect their addresses to be used
   // for starting the new master.
@@ -871,8 +870,7 @@ INSTANTIATE_TEST_SUITE_P(, ParameterizedRemoveMasterTest,
 
 // Tests removing a non-leader master from the cluster.
 TEST_P(ParameterizedRemoveMasterTest, TestRemoveMaster) {
-  NO_FATALS(StartCluster({"--master_support_change_config",
-                          // Keeping RPC timeouts short to quickly detect downed servers.
+  NO_FATALS(StartCluster({// Keeping RPC timeouts short to quickly detect downed servers.
                           // This will put the health status into an UNKNOWN state until the point
                           // where they are considered FAILED.
                           "--consensus_rpc_timeout_ms=2000",
@@ -988,8 +986,7 @@ INSTANTIATE_TEST_SUITE_P(, ParameterizedRecoverMasterTest,
 TEST_P(ParameterizedRecoverMasterTest, TestRecoverDeadMasterCatchupfromWAL) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
-  NO_FATALS(StartCluster({"--master_support_change_config",
-                          // Keeping RPC timeouts short to quickly detect downed servers.
+  NO_FATALS(StartCluster({// Keeping RPC timeouts short to quickly detect downed servers.
                           // This will put the health status into an UNKNOWN state until the point
                           // where they are considered FAILED.
                           "--consensus_rpc_timeout_ms=2000",
@@ -1061,7 +1058,7 @@ TEST_P(ParameterizedRecoverMasterTest, TestRecoverDeadMasterSysCatalogCopy) {
 // expected to fail due to invalid Raft config.
 TEST_F(DynamicMultiMasterTest, TestAddMasterWithNoLastKnownAddr) {
   NO_FATALS(SetUpWithNumMasters(1));
-  NO_FATALS(StartCluster({"--master_support_change_config"}, false/* supply_single_master_addr */));
+  NO_FATALS(StartCluster({}, false/* supply_single_master_addr */));
 
   // Verify that existing masters are running as VOTERs.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
@@ -1139,7 +1136,7 @@ TEST_F(DynamicMultiMasterTest, TestRemoveMasterFeatureFlagNotSpecified) {
 // Test that attempts to request a non-leader master to add a new master.
 TEST_F(DynamicMultiMasterTest, TestAddMasterToNonLeader) {
   NO_FATALS(SetUpWithNumMasters(2));
-  NO_FATALS(StartCluster({"--master_support_change_config"}));
+  NO_FATALS(StartCluster());
 
   // Verify that existing masters are running as VOTERs and collect their addresses to be used
   // for starting the new master.
@@ -1178,7 +1175,7 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterToNonLeader) {
 // Test that attempts to request a non-leader master to remove a master.
 TEST_F(DynamicMultiMasterTest, TestRemoveMasterToNonLeader) {
   NO_FATALS(SetUpWithNumMasters(2));
-  NO_FATALS(StartCluster({"--master_support_change_config"}));
+  NO_FATALS(StartCluster());
 
   // Verify that existing masters are running as VOTERs and collect their addresses to be used
   // for starting the new master.
@@ -1214,7 +1211,7 @@ TEST_F(DynamicMultiMasterTest, TestRemoveMasterToNonLeader) {
 // address.
 TEST_F(DynamicMultiMasterTest, TestAddMasterMissingAndIncorrectAddress) {
   NO_FATALS(SetUpWithNumMasters(1));
-  NO_FATALS(StartCluster({"--master_support_change_config"}));
+  NO_FATALS(StartCluster());
 
   // Verify that existing masters are running as VOTERs.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
@@ -1248,7 +1245,7 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterMissingAndIncorrectAddress) {
 // hostname.
 TEST_F(DynamicMultiMasterTest, TestRemoveMasterMissingAndIncorrectHostname) {
   NO_FATALS(SetUpWithNumMasters(2));
-  NO_FATALS(StartCluster({"--master_support_change_config"}));
+  NO_FATALS(StartCluster());
 
   // Verify that existing masters are running as VOTERs.
   vector<HostPort> master_hps;
@@ -1278,7 +1275,7 @@ TEST_F(DynamicMultiMasterTest, TestRemoveMasterMissingAndIncorrectHostname) {
 // Test that attempts to remove a master with mismatching hostname and uuid.
 TEST_F(DynamicMultiMasterTest, TestRemoveMasterMismatchHostnameAndUuid) {
   NO_FATALS(SetUpWithNumMasters(2));
-  NO_FATALS(StartCluster({"--master_support_change_config"}));
+  NO_FATALS(StartCluster());
 
   // Verify that existing masters are running as VOTERs.
   vector<HostPort> master_hps;
@@ -1309,7 +1306,7 @@ TEST_F(DynamicMultiMasterTest, TestRemoveMasterMismatchHostnameAndUuid) {
 // Test that attempts to add a master with non-existent kudu executable path.
 TEST_F(DynamicMultiMasterTest, TestAddMasterIncorrectKuduBinary) {
   NO_FATALS(SetUpWithNumMasters(1));
-  NO_FATALS(StartCluster({ "--master_support_change_config" }));
+  NO_FATALS(StartCluster());
 
   // Verify that existing masters are running as VOTERs.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
@@ -1341,7 +1338,7 @@ INSTANTIATE_TEST_SUITE_P(, ParameterizedRemoveLeaderMasterTest,
                          ::testing::Values(1, 2));
 
 TEST_P(ParameterizedRemoveLeaderMasterTest, TestRemoveLeaderMaster) {
-  NO_FATALS(StartCluster({"--master_support_change_config"}));
+  NO_FATALS(StartCluster());
 
   // Verify that existing masters are running as VOTERs and collect their addresses to be used
   // for starting the new master.
