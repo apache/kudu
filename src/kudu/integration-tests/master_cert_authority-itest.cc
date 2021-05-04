@@ -330,7 +330,7 @@ TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
   }
 
   // Shutdown the leader master and check the new leader signs
-  // certificate request sent in a tablet server hearbeat.
+  // certificate request sent in a tablet server heartbeat.
   int leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
   MiniMaster* leader_master = cluster_->mini_master(leader_idx);

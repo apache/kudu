@@ -1271,7 +1271,7 @@ TEST_F(TableLocationsCacheMultiMasterTest, ResetCache) {
     // number of masters in the cluster).
     for (auto idx = 0; idx < cluster_->num_masters(); ++idx) {
       ASSERT_OK(cluster_->master(idx)->Pause());
-      // Make one master to stop sending hearbeats, and give the rest about
+      // Make one master to stop sending heartbeats, and give the rest about
       // three heartbeat periods to elect a new leader in case if the stopped
       // master was a leader.
       SleepFor(MonoDelta::FromMilliseconds(
