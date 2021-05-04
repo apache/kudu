@@ -160,6 +160,15 @@ Status HmsITestHarness::ChangeHmsOwner(const string& database_name,
   return hms_client_->AlterTable(database_name, table_name, table);
 }
 
+Status HmsITestHarness::ChangeHmsTableComment(const string& database_name,
+                                              const string& table_name,
+                                              const string& new_table_comment) {
+  hive::Table table;
+  RETURN_NOT_OK(hms_client_->GetTable(database_name, table_name, &table));
+  table.parameters[HmsClient::kTableCommentKey] = new_table_comment;
+  return hms_client_->AlterTable(database_name, table_name, table);
+}
+
 Status HmsITestHarness::AlterHmsTableDropColumns(const string& database_name,
                                                  const string& table_name) {
     hive::Table table;
@@ -224,6 +233,7 @@ void HmsITestHarness::CheckTable(const string& database_name,
   ASSERT_EQ(table->client()->cluster_id(), hms_table.parameters[hms::HmsClient::kKuduClusterIdKey]);
   ASSERT_TRUE(iequals(table->name(),
       hms_table.parameters[hms::HmsClient::kKuduTableNameKey]));
+  ASSERT_EQ(table->comment(), hms_table.parameters[hms::HmsClient::kTableCommentKey]);
   ASSERT_EQ(HostPort::ToCommaSeparatedString(cluster->master_rpc_addrs()),
             hms_table.parameters[hms::HmsClient::kKuduMasterAddrsKey]);
   ASSERT_EQ(hms::HmsClient::kKuduStorageHandler,

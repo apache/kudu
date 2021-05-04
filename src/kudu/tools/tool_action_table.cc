@@ -236,6 +236,9 @@ Status DescribeTable(const RunnerContext& context) {
   // Finally, the replication factor.
   cout << "REPLICAS " << table->num_replicas() << endl;
 
+  // The comment.
+  cout << "COMMENT " << table->comment() << endl;
+
   return Status::OK();
 }
 

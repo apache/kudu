@@ -149,6 +149,7 @@ class KuduClient::Data {
   //   'table_name'       The table unique name.
   //   'num_replicas'     The table replication factor.
   //   'owner'            The owner of the table.
+  //   'comment'          The comment for the table.
   //   'extra_configs'    The table's extra configuration properties.
   Status GetTableSchema(KuduClient* client,
                         const MonoTime& deadline,
@@ -159,6 +160,7 @@ class KuduClient::Data {
                         std::string* table_name,
                         int* num_replicas,
                         std::string* owner,
+                        std::string* comment,
                         std::map<std::string, std::string>* extra_configs);
 
   Status InitLocalHostNames();

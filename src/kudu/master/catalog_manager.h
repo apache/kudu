@@ -255,6 +255,11 @@ struct PersistentTableInfo {
     return pb.owner();
   }
 
+  // Return the table's comment.
+  const std::string& comment() const {
+    return pb.comment();
+  }
+
   // Helper to set the state of the tablet with a custom message.
   void set_state(SysTablesEntryPB::State state, const std::string& msg);
 
@@ -627,6 +632,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                         const std::string& table_name,
                         const boost::optional<std::string>& new_table_name,
                         const boost::optional<std::string>& new_table_owner,
+                        const boost::optional<std::string>& new_table_comment,
                         int64_t notification_log_event_id) WARN_UNUSED_RESULT;
 
   // Get the information about an in-progress alter operation. If 'user' is

@@ -4094,6 +4094,7 @@ Status AlterHmsWithReplacedParam(HmsClient* hms_client,
 TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   string kUsername = "alice";
   string kOtherUsername = "bob";
+  string kOtherComment = "a table comment";
   ExternalMiniClusterOptions opts;
   opts.hms_mode = HmsMode::DISABLE_HIVE_METASTORE;
   opts.enable_kerberos = EnableKerberos();
@@ -4136,7 +4137,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.control", &control));
   ASSERT_OK(hms_catalog.CreateTable(
         control->id(), control->name(), kudu_client->cluster_id(), kUsername,
-        KuduSchema::ToSchema(control->schema())));
+        KuduSchema::ToSchema(control->schema()), control->comment()));
 
   // Control case: the check tool should not flag this external synchronized table.
   shared_ptr<KuduTable> control_external;
@@ -4144,7 +4145,8 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.control_external", &control_external));
   ASSERT_OK(hms_catalog.CreateTable(
       control_external->id(), control_external->name(), kudu_client->cluster_id(),
-      kUsername, KuduSchema::ToSchema(control_external->schema()), HmsClient::kExternalTable));
+      kUsername, KuduSchema::ToSchema(control_external->schema()), control_external->comment(),
+      HmsClient::kExternalTable));
   hive::Table hms_control_external;
   ASSERT_OK(hms_client.GetTable("default", "control_external", &hms_control_external));
   hms_control_external.parameters[HmsClient::kKuduTableIdKey] = control_external->id();
@@ -4159,7 +4161,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.UPPERCASE", &test_uppercase));
   ASSERT_OK(hms_catalog.CreateTable(
         test_uppercase->id(), test_uppercase->name(), kudu_client->cluster_id(),
-        kUsername, KuduSchema::ToSchema(test_uppercase->schema())));
+        kUsername, KuduSchema::ToSchema(test_uppercase->schema()), test_uppercase->comment()));
 
   // Test case: inconsistent schema.
   shared_ptr<KuduTable> inconsistent_schema;
@@ -4167,7 +4169,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.inconsistent_schema", &inconsistent_schema));
   ASSERT_OK(hms_catalog.CreateTable(
         inconsistent_schema->id(), inconsistent_schema->name(), kudu_client->cluster_id(),
-        kUsername, SchemaBuilder().Build()));
+        kUsername, SchemaBuilder().Build(), inconsistent_schema->comment()));
 
   // Test case: inconsistent name.
   shared_ptr<KuduTable> inconsistent_name;
@@ -4175,7 +4177,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.inconsistent_name", &inconsistent_name));
   ASSERT_OK(hms_catalog.CreateTable(
       inconsistent_name->id(), "default.inconsistent_name_hms", kudu_client->cluster_id(),
-      kUsername, KuduSchema::ToSchema(inconsistent_name->schema())));
+      kUsername, KuduSchema::ToSchema(inconsistent_name->schema()), inconsistent_name->comment()));
 
   // Test case: inconsistent cluster id.
   shared_ptr<KuduTable> inconsistent_cluster;
@@ -4183,7 +4185,8 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.inconsistent_cluster", &inconsistent_cluster));
   ASSERT_OK(hms_catalog.CreateTable(
       inconsistent_cluster->id(), "default.inconsistent_cluster", "inconsistent_cluster",
-      kUsername, KuduSchema::ToSchema(inconsistent_cluster->schema())));
+      kUsername, KuduSchema::ToSchema(inconsistent_cluster->schema()),
+      inconsistent_cluster->comment()));
 
   // Test case: inconsistent master addresses.
   shared_ptr<KuduTable> inconsistent_master_addrs;
@@ -4196,7 +4199,8 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(invalid_hms_catalog.CreateTable(
         inconsistent_master_addrs->id(), inconsistent_master_addrs->name(),
         kudu_client->cluster_id(), kUsername,
-        KuduSchema::ToSchema(inconsistent_master_addrs->schema())));
+        KuduSchema::ToSchema(inconsistent_master_addrs->schema()),
+        inconsistent_master_addrs->comment()));
 
   // Test case: bad table id.
   shared_ptr<KuduTable> bad_id;
@@ -4204,18 +4208,18 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.bad_id", &bad_id));
   ASSERT_OK(hms_catalog.CreateTable(
       "not_a_table_id", "default.bad_id", kudu_client->cluster_id(),
-      kUsername, KuduSchema::ToSchema(bad_id->schema())));
+      kUsername, KuduSchema::ToSchema(bad_id->schema()), bad_id->comment()));
 
   // Test case: orphan table in the HMS.
   ASSERT_OK(hms_catalog.CreateTable(
         "orphan-hms-table-id", "default.orphan_hms_table", "orphan-hms-cluster-id",
-        kUsername, SchemaBuilder().Build()));
+        kUsername, SchemaBuilder().Build(), ""));
 
   // Test case: orphan table in the HMS with different, but functionally
   // the same master addresses.
   ASSERT_OK(hms_catalog.CreateTable(
       "orphan-hms-masters-id", "default.orphan_hms_table_masters", "orphan-hms-cluster-id",
-      kUsername, SchemaBuilder().Build()));
+      kUsername, SchemaBuilder().Build(), ""));
   // Reverse the address order and duplicate the addresses.
   vector<string> modified_addrs;
   for (const auto& hp : cluster_->master_rpc_addrs()) {
@@ -4231,7 +4235,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(hms_catalog.CreateTable(
       "orphan-hms-table-id-external", "default.orphan_hms_table_external",
       "orphan-hms-cluster-id-external", kUsername,
-      SchemaBuilder().Build(), HmsClient::kExternalTable));
+      SchemaBuilder().Build(), "", HmsClient::kExternalTable));
   hive::Table hms_orphan_external;
   ASSERT_OK(hms_client.GetTable("default", "orphan_hms_table_external", &hms_orphan_external));
   hms_orphan_external.parameters[HmsClient::kExternalPurgeKey] = "true";
@@ -4299,7 +4303,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.no_owner_in_hms", &no_owner_in_hms));
   ASSERT_OK(hms_catalog.CreateTable(
       no_owner_in_hms->id(), no_owner_in_hms->name(), kudu_client->cluster_id(),
-      boost::none, KuduSchema::ToSchema(no_owner_in_hms->schema())));
+      boost::none, KuduSchema::ToSchema(no_owner_in_hms->schema()), no_owner_in_hms->comment()));
 
   // Test case: no owner in Kudu
   shared_ptr<KuduTable> no_owner_in_kudu;
@@ -4307,7 +4311,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.no_owner_in_kudu", &no_owner_in_kudu));
   ASSERT_OK(hms_catalog.CreateTable(
       no_owner_in_kudu->id(), no_owner_in_kudu->name(), kudu_client->cluster_id(),
-      kUsername, KuduSchema::ToSchema(no_owner_in_kudu->schema())));
+      kUsername, KuduSchema::ToSchema(no_owner_in_kudu->schema()), no_owner_in_kudu->comment()));
 
   // Test case: different owner in Kudu and HMS
   shared_ptr<KuduTable> different_owner;
@@ -4315,7 +4319,17 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.different_owner", &different_owner));
   ASSERT_OK(hms_catalog.CreateTable(
       different_owner->id(), different_owner->name(), kudu_client->cluster_id(),
-      kOtherUsername, KuduSchema::ToSchema(different_owner->schema())));
+      kOtherUsername, KuduSchema::ToSchema(different_owner->schema()),
+      different_owner->comment()));
+
+  // Test case: different comment in Kudu and HMS
+  shared_ptr<KuduTable> different_comment;
+  ASSERT_OK(CreateKuduTable(kudu_client, "default.different_comment", kUsername));
+  ASSERT_OK(kudu_client->OpenTable("default.different_comment", &different_comment));
+  ASSERT_OK(hms_catalog.CreateTable(
+      different_comment->id(), different_comment->name(), kudu_client->cluster_id(),
+      different_comment->owner(), KuduSchema::ToSchema(different_comment->schema()),
+      kOtherComment));
 
   unordered_set<string> consistent_tables = {
     "default.control",
@@ -4329,6 +4343,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.inconsistent_cluster",
     "default.inconsistent_master_addrs",
     "default.bad_id",
+    "default.different_comment",
     "default.different_owner",
     "default.no_owner_in_hms",
     "default.no_owner_in_kudu",
@@ -4432,6 +4447,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.inconsistent_cluster",
     "default.inconsistent_master_addrs",
     "default.bad_id",
+    "default.different_comment",
     "default.different_owner",
     "default.no_owner_in_hms",
     "default.no_owner_in_kudu",
@@ -4468,6 +4484,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.bad_id",
     "default.control",
     "default.control_external",
+    "default.different_comment",
     "default.different_owner",
     "default.inconsistent_cluster",
     "default.inconsistent_master_addrs",
@@ -4536,11 +4553,11 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   ASSERT_OK(hms_catalog.CreateTable(
         duplicate_hms_tables->id(), "default.duplicate_hms_tables",
         kudu_client->cluster_id(), kUsername,
-        KuduSchema::ToSchema(duplicate_hms_tables->schema())));
+        KuduSchema::ToSchema(duplicate_hms_tables->schema()), duplicate_hms_tables->comment()));
   ASSERT_OK(hms_catalog.CreateTable(
         duplicate_hms_tables->id(), "default.duplicate_hms_tables_2",
         kudu_client->cluster_id(), kUsername,
-        KuduSchema::ToSchema(duplicate_hms_tables->schema())));
+        KuduSchema::ToSchema(duplicate_hms_tables->schema()), duplicate_hms_tables->comment()));
 
   // Test case: Kudu tables Hive-incompatible names.
   ASSERT_OK(CreateKuduTable(kudu_client, "default.hive-incompatible-name"));
@@ -4821,11 +4838,11 @@ TEST_F(ToolTest, TestHmsList) {
   ASSERT_OK(hms_catalog.CreateTable(
       "1", "default.table1", "cluster-id", kUsername,
       KuduSchema::ToSchema(simple_table->schema()),
-      hms::HmsClient::kManagedTable));
+      "comment 1", hms::HmsClient::kManagedTable));
   ASSERT_OK(hms_catalog.CreateTable(
       "2", "default.table2", "cluster-id", boost::none,
       KuduSchema::ToSchema(simple_table->schema()),
-      hms::HmsClient::kExternalTable));
+      "", hms::HmsClient::kExternalTable));
 
   // Test the output when HMS integration is disabled.
   string err;
@@ -4850,10 +4867,11 @@ TEST_F(ToolTest, TestHmsList) {
       "default  | table2 | EXTERNAL_TABLE | default.table2");
 
   // Run the list tool filtering columns and using a different format.
-  RunActionStdoutString(Substitute("hms list --columns table,owner,kudu.table_id, --format=csv $0",
-                                   master_addr), &out);
-  ASSERT_STR_CONTAINS(out, "table1,alice,1");
-  ASSERT_STR_CONTAINS(out, "table2,,");
+  RunActionStdoutString(
+      Substitute("hms list --columns table,owner,comment,kudu.table_id, --format=csv $0",
+          master_addr), &out);
+  ASSERT_STR_CONTAINS(out, "table1,alice,comment 1,1");
+  ASSERT_STR_CONTAINS(out, "table2,,,");
 }
 
 // This test is parameterized on the serialization mode and Kerberos.

@@ -148,10 +148,11 @@ Status HmsCatalog::CreateTable(const string& id,
                                const string& cluster_id,
                                const optional<const string&>& owner,
                                const Schema& schema,
+                               const string& comment,
                                const string& table_type) {
   hive::Table table;
-  RETURN_NOT_OK(PopulateTable(id, name, owner, schema, cluster_id, master_addresses_,
-      table_type, &table));
+  RETURN_NOT_OK(PopulateTable(id, name, owner, schema, comment, cluster_id,
+      master_addresses_, table_type, &table));
   return ha_client_.Execute([&] (HmsClient* client) {
       return client->CreateTable(table, EnvironmentContext());
   });
@@ -180,7 +181,8 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
                                             const string& cluster_id,
                                             const string& db_name,
                                             const string& tb_name,
-                                            const Schema& schema) {
+                                            const Schema& schema,
+                                            const string& comment) {
   return ha_client_.Execute([&] (HmsClient* client) {
     hive::Table table;
     RETURN_NOT_OK(client->GetTable(db_name, tb_name, &table));
@@ -199,7 +201,7 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
       table.parameters[HmsClient::kStorageHandlerKey] = HmsClient::kKuduStorageHandler;
     } else {
       RETURN_NOT_OK(PopulateTable(id, Substitute("$0.$1", db_name, tb_name), table.owner, schema,
-                                  cluster_id, master_addresses_, table.tableType, &table));
+                                  comment, cluster_id, master_addresses_, table.tableType, &table));
     }
     return client->AlterTable(db_name, tb_name, table, EnvironmentContext());
   });
@@ -261,6 +263,7 @@ Status HmsCatalog::AlterTable(const string& id,
                               const string& cluster_id,
                               optional<const string&> owner,
                               const Schema& schema,
+                              const std::string& comment,
                               const bool& check_id) {
   Slice hms_database;
   Slice hms_table;
@@ -294,8 +297,8 @@ Status HmsCatalog::AlterTable(const string& id,
       }
 
       // Overwrite fields in the table that have changed, including the new name.
-      RETURN_NOT_OK(PopulateTable(id, new_name, owner, schema, cluster_id, master_addresses_,
-          table.tableType, &table));
+      RETURN_NOT_OK(PopulateTable(id, new_name, owner, schema, comment, cluster_id,
+          master_addresses_, table.tableType, &table));
       return client->AlterTable(hms_database.ToString(), hms_table.ToString(),
                                 table, EnvironmentContext(check_id));
   });
@@ -365,6 +368,7 @@ Status HmsCatalog::PopulateTable(const string& id,
                                  const string& name,
                                  const optional<const string&>& owner,
                                  const Schema& schema,
+                                 const std::string& comment,
                                  const string& cluster_id,
                                  const string& master_addresses,
                                  const string& table_type,
@@ -374,6 +378,7 @@ Status HmsCatalog::PopulateTable(const string& id,
   RETURN_NOT_OK(ParseHiveTableIdentifier(name, &hms_database_name, &hms_table_name));
   table->dbName = hms_database_name.ToString();
   table->tableName = hms_table_name.ToString();
+  table->parameters[HmsClient::kTableCommentKey] = comment;
   if (owner) {
     table->owner = *owner;
   }

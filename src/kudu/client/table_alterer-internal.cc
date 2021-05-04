@@ -60,6 +60,7 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
   if (!rename_to_.is_initialized() &&
       !new_extra_configs_ &&
       !set_owner_to_.is_initialized() &&
+      !set_comment_to_.is_initialized() &&
       !disk_size_limit_ &&
       !row_count_limit_ &&
       steps_.empty()) {
@@ -78,6 +79,9 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
   }
   if (set_owner_to_.is_initialized()) {
     req->set_new_table_owner(set_owner_to_.get());
+  }
+  if (set_comment_to_.is_initialized()) {
+    req->set_new_table_comment(set_comment_to_.get());
   }
 
   if (schema_ != nullptr) {

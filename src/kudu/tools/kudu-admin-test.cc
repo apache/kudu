@@ -1756,7 +1756,8 @@ TEST_F(AdminCliTest, TestDescribeTable) {
                       "\n"
                       ")\n"
                       "OWNER alice\n"
-                      "REPLICAS 1");
+                      "REPLICAS 1\n"
+                      "COMMENT ");
 
   // Test a table with all types in its schema, multiple hash partitioning
   // levels, multiple range partitions, and non-covered ranges.
@@ -1821,6 +1822,7 @@ TEST_F(AdminCliTest, TestDescribeTable) {
                   .add_range_partition(lower_bound1.release(), upper_bound1.release())
                   .num_replicas(FLAGS_num_replicas)
                   .set_owner("alice")
+                  .set_comment("table comment")
                   .Create());
   }
 
@@ -1862,7 +1864,8 @@ TEST_F(AdminCliTest, TestDescribeTable) {
                       "    PARTITION 2 <= VALUES < 3\n"
                       ")\n"
                       "OWNER alice\n"
-                      "REPLICAS 1");
+                      "REPLICAS 1\n"
+                      "COMMENT table comment");
 
   // Test the describe output with `-show_attributes=true`.
   stdout.clear();

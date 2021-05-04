@@ -43,6 +43,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
@@ -125,6 +126,7 @@ DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
 DECLARE_int32(diagnostics_log_stack_traces_interval_ms);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
+DECLARE_int32(max_table_comment_length);
 DECLARE_int32(rpc_service_queue_length);
 DECLARE_int64(live_row_count_for_testing);
 DECLARE_int64(on_disk_size_for_testing);
@@ -180,6 +182,7 @@ class MasterTest : public KuduTest {
                      const vector<KuduPartialRow>& split_rows,
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
                      const optional<string>& owner,
+                     const optional<string>& comment = boost::none,
                      const optional<TableTypePB>& table_type = boost::none,
                      const vector<vector<HashBucketSchema>>& range_hash_schema = {});
 
@@ -547,7 +550,7 @@ Status MasterTest::CreateTable(const string& table_name,
   RETURN_NOT_OK(split2.SetInt32("key", 20));
 
   return CreateTable(
-      table_name, schema, { split1, split2 }, {}, boost::none, table_type);
+      table_name, schema, { split1, split2 }, {}, boost::none, boost::none, table_type);
 }
 
 Status MasterTest::CreateTable(const string& table_name,
@@ -555,6 +558,7 @@ Status MasterTest::CreateTable(const string& table_name,
                                const vector<KuduPartialRow>& split_rows,
                                const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
                                const optional<string>& owner,
+                               const optional<string>& comment,
                                const optional<TableTypePB>& table_type,
                                const vector<vector<HashBucketSchema>>& range_hash_schema) {
   CreateTableRequestPB req;
@@ -589,6 +593,9 @@ Status MasterTest::CreateTable(const string& table_name,
 
   if (owner) {
     req.set_owner(*owner);
+  }
+  if (comment) {
+    req.set_comment(*comment);
   }
   if (!bounds.empty()) {
     controller.RequireServerFeature(MasterFeatures::RANGE_PARTITION_BOUNDS);
@@ -838,7 +845,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(a_upper.SetInt32("key", 100));
     vector<vector<HashBucketSchema>> range_hash_schema = { vector<HashBucketSchema>() };
     Status s = CreateTable(kTableName, kTableSchema, { split1 }, { { a_lower, a_upper } },
-                           none, none, range_hash_schema);
+                           none, none, none, range_hash_schema);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Both 'split_rows' and 'range_hash_schemas' cannot be "
@@ -857,7 +864,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     vector<vector<HashBucketSchema>> range_hash_schema = {std::move(hash_schemas_2),
                                                           std::move(hash_schemas_4)};
     Status s = CreateTable(kTableName, kTableSchema, { }, { { a_lower, a_upper } },
-                           none, none, range_hash_schema);
+                           none, none, none, range_hash_schema);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "The number of range bounds does not match the number of per "
@@ -994,6 +1001,15 @@ TEST_F(MasterTest, TestCreateTableOwnerNameTooLong) {
   Status s = CreateTable(kTableName, kTableSchema, {}, {}, kOwnerName);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "invalid owner name");
+}
+
+TEST_F(MasterTest, TestCreateTableCommentTooLong) {
+  constexpr const char* const kTableName = "testb";
+  const string kComment = string(FLAGS_max_table_comment_length + 1, 'x');
+  const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
+  Status s = CreateTable(kTableName, kTableSchema, {}, {}, none, kComment);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid table comment");
 }
 
 // Regression test for KUDU-253/KUDU-592: crash if the schema passed to CreateTable

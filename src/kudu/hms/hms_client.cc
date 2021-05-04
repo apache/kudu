@@ -137,6 +137,7 @@ const char* const HmsClient::kDbNotificationListener =
 const char* const HmsClient::kExternalTableKey = "EXTERNAL";
 const char* const HmsClient::kExternalPurgeKey = "external.table.purge";
 const char* const HmsClient::kStorageHandlerKey = "storage_handler";
+const char* const HmsClient::kTableCommentKey = "comment";
 const char* const HmsClient::kKuduMetastorePlugin =
   "org.apache.kudu.hive.metastore.KuduMetastorePlugin";
 const char* const HmsClient::kHiveFilterFieldParams = "hive_filter_field_params__";

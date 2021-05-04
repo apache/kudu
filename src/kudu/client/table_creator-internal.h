@@ -62,6 +62,8 @@ class KuduTableCreator::Data {
 
   boost::optional<std::string> owner_;
 
+  boost::optional<std::string> comment_;
+
   boost::optional<int> num_replicas_;
 
   boost::optional<std::string> dimension_label_;

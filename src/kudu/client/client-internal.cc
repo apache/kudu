@@ -517,6 +517,7 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
   string table_name;
   int num_replicas;
   string owner;
+  string comment;
   PartitionSchema partition_schema;
   map<string, string> extra_configs;
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout_;
@@ -529,6 +530,7 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
                                &table_name,
                                &num_replicas,
                                &owner,
+                               &comment,
                                &extra_configs));
 
   // When the table name is specified, use the caller-provided table name.
@@ -542,7 +544,7 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
   //                   map to reuse KuduTable instances.
   table->reset(new KuduTable(client->shared_from_this(),
                              effective_table_name, table_id, num_replicas,
-                             owner, schema, partition_schema, extra_configs));
+                             owner, comment, schema, partition_schema, extra_configs));
 
   // When opening a table, clear the existing cached non-covered range entries.
   // This avoids surprises where a new table instance won't be able to see the
@@ -561,6 +563,7 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
                                         std::string* table_name,
                                         int* num_replicas,
                                         std::string* owner,
+                                        std::string* comment,
                                         map<string, string>* extra_configs) {
   GetTableSchemaRequestPB req;
   GetTableSchemaResponsePB resp;
@@ -603,6 +606,9 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   }
   if (owner) {
     *owner = resp.owner();
+  }
+  if (comment) {
+    *comment = resp.comment();
   }
   if (extra_configs) {
     map<string, string> result(resp.extra_configs().begin(), resp.extra_configs().end());

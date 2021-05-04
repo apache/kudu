@@ -81,6 +81,11 @@ class HmsITestHarness {
                         const std::string& table_name,
                         const std::string& new_table_owner) WARN_UNUSED_RESULT;
 
+  // Changes the table comment in the HMS catalog.
+  Status ChangeHmsTableComment(const std::string& database_name,
+                               const std::string& table_name,
+                               const std::string& new_table_comment) WARN_UNUSED_RESULT;
+
   // Checks that the Kudu table schema and the HMS table entry in their
   // respective catalogs are synchronized for a particular table. It also
   // verifies that the table owner is the given user (if not provided,

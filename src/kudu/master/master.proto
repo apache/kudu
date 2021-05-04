@@ -211,6 +211,9 @@ message SysTablesEntryPB {
   optional int64 table_disk_size_limit = 15;
   // Table row count limit.
   optional int64 table_row_count_limit = 16;
+
+  // The comment on the table.
+  optional string comment = 17;
 }
 
 // The on-disk entry in the sys.catalog table ("metadata" column) to represent
@@ -533,6 +536,9 @@ message CreateTableRequestPB {
   // The table type. If not set, it is assumed this table is a user-defined
   // table, rather than a system table.
   optional TableTypePB table_type = 11;
+
+  // The comment on the table.
+  optional string comment = 13;
 }
 
 message CreateTableResponsePB {
@@ -725,6 +731,8 @@ message AlterTableRequestPB {
 
   optional int64 disk_size_limit = 8;
   optional int64 row_count_limit = 9;
+
+  optional string new_table_comment = 10;
 }
 
 message AlterTableResponsePB {
@@ -791,6 +799,9 @@ message GetTableSchemaResponsePB {
 
   // The user that owns the table.
   optional string owner = 10;
+
+  // The comment on the table.
+  optional string comment = 11;
 }
 
 message ConnectToMasterRequestPB {

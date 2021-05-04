@@ -529,6 +529,7 @@ Status KuduClient::GetTableSchema(const string& table_name,
                                nullptr, // table name
                                nullptr, // number of replicas
                                nullptr, // owner
+                               nullptr, // comment
                                nullptr); // extra configs
 }
 
@@ -842,6 +843,11 @@ KuduTableCreator& KuduTableCreator::set_owner(const string& owner) {
   return *this;
 }
 
+KuduTableCreator& KuduTableCreator::set_comment(const string& comment) {
+  data_->comment_ = comment;
+  return *this;
+}
+
 KuduTableCreator& KuduTableCreator::split_rows(const vector<const KuduPartialRow*>& rows) {
   for (const KuduPartialRow* row : rows) {
     data_->range_partition_splits_.emplace_back(const_cast<KuduPartialRow*>(row));
@@ -917,6 +923,9 @@ Status KuduTableCreator::Create() {
   }
   if (data_->owner_ != boost::none) {
     req.set_owner(data_->owner_.get());
+  }
+  if (data_->comment_ != boost::none) {
+    req.set_comment(data_->comment_.get());
   }
   RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema(),
                                    SCHEMA_PB_WITHOUT_WRITE_DEFAULT),
@@ -1022,10 +1031,11 @@ KuduTable::KuduTable(const shared_ptr<KuduClient>& client,
                      const string& id,
                      int num_replicas,
                      const string& owner,
+                     const string& comment,
                      const KuduSchema& schema,
                      const PartitionSchema& partition_schema,
                      const map<string, string>& extra_configs)
-  : data_(new KuduTable::Data(client, name, id, num_replicas, owner,
+  : data_(new KuduTable::Data(client, name, id, num_replicas, owner, comment,
                               schema, partition_schema, extra_configs)) {
 }
 
@@ -1043,6 +1053,10 @@ const string& KuduTable::id() const {
 
 const KuduSchema& KuduTable::schema() const {
   return data_->schema_;
+}
+
+const string& KuduTable::comment() const {
+  return data_->comment_;
 }
 
 int KuduTable::num_replicas() const {
@@ -1378,6 +1392,11 @@ KuduTableAlterer* KuduTableAlterer::RenameTo(const string& new_name) {
 
 KuduTableAlterer* KuduTableAlterer::SetOwner(const string& new_owner) {
   data_->set_owner_to_ = new_owner;
+  return this;
+}
+
+KuduTableAlterer* KuduTableAlterer::SetComment(const string& new_comment) {
+  data_->set_comment_to_ = new_comment;
   return this;
 }
 

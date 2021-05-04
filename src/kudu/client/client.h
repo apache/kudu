@@ -1207,6 +1207,13 @@ class KUDU_EXPORT KuduTableCreator {
   /// @return Reference to the modified table creator.
   KuduTableCreator& set_owner(const std::string& owner);
 
+  /// Set the table comment.
+  ///
+  /// @param [in] comment
+  ///   The comment on the table.
+  /// @return Reference to the modified table creator.
+  KuduTableCreator& set_comment(const std::string& comment);
+
   /// @deprecated Use @c add_range_partition_split() instead.
   ///
   /// @param [in] split_rows
@@ -1385,6 +1392,9 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
 
   /// @return Reference to the table's schema object.
   const KuduSchema& schema() const;
+
+  /// @return Comment string for the table.
+  const std::string& comment() const;
 
   /// @return Replication factor of the table.
   int num_replicas() const;
@@ -1619,6 +1629,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
             const std::string& id,
             int num_replicas,
             const std::string& owner,
+            const std::string& comment,
             const KuduSchema& schema,
             const PartitionSchema& partition_schema,
             const std::map<std::string, std::string>& extra_configs);
@@ -1657,6 +1668,13 @@ class KUDU_EXPORT KuduTableAlterer {
   ///   The new owner for the table.
   /// @return Raw pointer to this alterer object.
   KuduTableAlterer* SetOwner(const std::string& new_owner);
+
+  /// Set the comment on the table.
+  ///
+  /// @param [in] new_comment
+  ///   The new comment on the table.
+  /// @return Raw pointer to this alterer object.
+  KuduTableAlterer* SetComment(const std::string& new_comment);
 
   /// Add a new column to the table.
   ///

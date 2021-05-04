@@ -116,6 +116,16 @@ Status ChangeOwnerInKuduCatalog(KuduClient* kudu_client,
                 ->Alter();
 }
 
+// Only alter the table in Kudu but not in the Hive Metastore.
+Status ChangeTableCommentInKuduCatalog(KuduClient* kudu_client,
+                                       const string& name,
+                                       const string& comment) {
+  unique_ptr<KuduTableAlterer> alterer(kudu_client->NewTableAlterer(name));
+  return alterer->SetComment(comment)
+      ->modify_external_catalogs(false)
+      ->Alter();
+}
+
 Status Init(const RunnerContext& context,
             shared_ptr<KuduClient>* kudu_client,
             unique_ptr<HmsCatalog>* hms_catalog,
@@ -189,8 +199,9 @@ bool IsSynced(const set<string>& master_addresses,
     return false;
   }
   Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(), kudu_table.owner(),
-                                       schema, kudu_table.client()->cluster_id(),
-                                       *hms_masters_field, hms_table.tableType, &hms_table_copy);
+                                       schema, kudu_table.comment(),
+                                       kudu_table.client()->cluster_id(), *hms_masters_field,
+                                       hms_table.tableType, &hms_table_copy);
   return s.ok() && hms_table_copy == hms_table;
 }
 
@@ -286,6 +297,10 @@ Status PrintHMSTables(vector<hive::Table> tables, ostream& out) {
     } else if (iequals(column.ToString(), "owner")) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.owner);
+      }
+    } else if (iequals(column.ToString(), "comment")) {
+      for (auto& hms_table : tables) {
+        values.emplace_back(hms_table.parameters[HmsClient::kTableCommentKey]);
       }
     } else if (iequals(column.ToString(), HmsClient::kKuduTableNameKey)) {
       for (auto& hms_table : tables) {
@@ -665,7 +680,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
         LOG(INFO) << "[dryrun] Creating HMS table for Kudu table " << TableIdent(*kudu_table);
       } else {
         Status s = hms_catalog->CreateTable(table_id, table_name, cluster_id,
-            kudu_table->owner(), schema);
+            kudu_table->owner(), schema, kudu_table->comment());
         if (s.IsAlreadyPresent()) {
           LOG(ERROR) << "Failed to create HMS table for Kudu table "
                      << TableIdent(*kudu_table)
@@ -720,7 +735,8 @@ Status FixHmsMetadata(const RunnerContext& context) {
       } else {
         RETURN_NOT_OK_PREPEND(hms_catalog->UpgradeLegacyImpalaTable(
                   kudu_table.id(), kudu_table.client()->cluster_id(), hms_table.dbName,
-                  hms_table.tableName, KuduSchema::ToSchema(kudu_table.schema())),
+                  hms_table.tableName, KuduSchema::ToSchema(kudu_table.schema()),
+                  kudu_table.comment()),
             Substitute("failed to upgrade legacy Impala HMS metadata for table $0",
               hms_table_name));
       }
@@ -761,6 +777,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
       const hive::Table& hms_table = table_pair.second;
       string hms_table_name = Substitute("$0.$1", hms_table.dbName, hms_table.tableName);
       string owner = kudu_table.owner();
+      string comment = kudu_table.comment();
 
       if (hms_table_name != kudu_table.name()) {
         // Update the Kudu table name to match the HMS table name.
@@ -799,6 +816,24 @@ Status FixHmsMetadata(const RunnerContext& context) {
         }
       }
 
+      // If the HMS table has a table comment and Kudu does not, update the Kudu table comment
+      // to match the HMS table comment. Otherwise the metadata step below will ensure the Kudu
+      // comment is updated in the HMS.
+      const string hms_table_comment =
+          FindWithDefault(hms_table.parameters, hms::HmsClient::kTableCommentKey, "");
+      if (hms_table_comment != comment && comment.empty()) {
+        if (FLAGS_dryrun) {
+          LOG(INFO) << "[dryrun] Changing table comment for " << TableIdent(kudu_table)
+                    << " to " << hms_table_comment << " in Kudu catalog.";
+        } else {
+          RETURN_NOT_OK_PREPEND(ChangeTableCommentInKuduCatalog(kudu_client.get(),
+              kudu_table.name(), hms_table_comment),
+              Substitute("failed to change table comment of $0 to $1 in Kudu catalog",
+                  TableIdent(kudu_table), hms_table_comment));
+          comment = hms_table_comment;
+        }
+      }
+
       // Update the HMS table metadata to match Kudu.
       if (FLAGS_dryrun) {
         LOG(INFO) << "[dryrun] Refreshing HMS table metadata for Kudu table "
@@ -809,7 +844,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
             // Disable table ID checking to support fixing tables with unsynchronized IDs.
             hms_catalog->AlterTable(kudu_table.id(), hms_table_name, hms_table_name,
                                     kudu_table.client()->cluster_id(), owner, schema,
-                                    /* check_id */ false),
+                                    comment, /* check_id */ false),
             Substitute("failed to refresh HMS table metadata for Kudu table $0",
               TableIdent(kudu_table)));
       }
@@ -938,7 +973,7 @@ unique_ptr<Mode> BuildHmsMode() {
                                               HmsClient::kKuduTableNameKey),
                             Substitute("Comma-separated list of HMS entry fields to "
                                        "include in output.\nPossible values: database, "
-                                       "table, type, owner, $0, $1, $2, $3, $4",
+                                       "table, type, owner, comment, $0, $1, $2, $3, $4",
                                        HmsClient::kKuduTableNameKey,
                                        HmsClient::kKuduTableIdKey,
                                        HmsClient::kKuduClusterIdKey,

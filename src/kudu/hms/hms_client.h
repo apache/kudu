@@ -67,6 +67,7 @@ class HmsClient {
   static const char* const kKuduMasterEventKey;
   static const char* const kKuduCheckIdKey;
   static const char* const kStorageHandlerKey;
+  static const char* const kTableCommentKey;
   static const char* const kKuduStorageHandler;
   static const char* const kHiveFilterFieldParams;
 

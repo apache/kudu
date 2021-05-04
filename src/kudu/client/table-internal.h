@@ -44,6 +44,7 @@ class KuduTable::Data {
        std::string id,
        int num_replicas,
        std::string owner,
+       std::string comment,
        const KuduSchema& schema,
        PartitionSchema partition_schema,
        std::map<std::string, std::string> extra_configs);
@@ -71,6 +72,7 @@ class KuduTable::Data {
   const std::string id_;
   const int num_replicas_;
   const std::string owner_;
+  const std::string comment_;
 
   // TODO(unknown): figure out how we deal with a schema change from the client
   // perspective. Do we make them call a RefreshSchema() method? Or maybe

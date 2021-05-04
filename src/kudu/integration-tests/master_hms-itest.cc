@@ -130,6 +130,12 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     return harness_.ChangeHmsOwner(database_name, table_name, new_table_owner);
   }
 
+  Status ChangeHmsTableComment(const std::string& database_name,
+                               const std::string& table_name,
+                               const std::string& new_table_comment) {
+    return harness_.ChangeHmsTableComment(database_name, table_name, new_table_comment);
+  }
+
   Status AlterHmsTableDropColumns(const std::string& database_name,
                                   const std::string& table_name) {
     return harness_.AlterHmsTableDropColumns(database_name, table_name);
@@ -325,6 +331,27 @@ TEST_F(MasterHmsTest, TestAlterTableOwner) {
   ASSERT_OK(table_alterer->SetOwner(user_b)->Alter());
   ASSERT_EVENTUALLY([&] {
     NO_FATALS(CheckTable("default", "userTable", user_b));
+  });
+}
+
+TEST_F(MasterHmsTest, TestAlterTableComment) {
+  // Create the Kudu table.
+  ASSERT_OK(CreateKuduTable("default", "commentTable"));
+  NO_FATALS(CheckTable("default", "commentTable", /*user=*/ none));
+
+  // Change the table comment through the HMS, and ensure the comment is handled in Kudu.
+  const string comment_a = "comment a";
+  ASSERT_OK(ChangeHmsTableComment("default", "commentTable", comment_a));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTable("default", "commentTable", /*user=*/ none));
+  });
+
+  // Change the table comment through Kudu, and ensure the comment is reflected in HMS.
+  const string comment_b = "comment b";
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("default.commentTable"));
+  ASSERT_OK(table_alterer->SetComment(comment_b)->Alter());
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTable("default", "commentTable", /*user=*/ none));
   });
 }
 

@@ -75,6 +75,7 @@ class HmsCatalog {
                      const std::string& cluster_id,
                      const boost::optional<const std::string&>& owner,
                      const Schema& schema,
+                     const std::string& comment,
                      const std::string& table_type = hms::HmsClient::kManagedTable)
                      WARN_UNUSED_RESULT;
 
@@ -106,6 +107,7 @@ class HmsCatalog {
                     const std::string& cluster_id,
                     boost::optional<const std::string&> owner,
                     const Schema& schema,
+                    const std::string& comment,
                     const bool& check_id = true) WARN_UNUSED_RESULT;
 
   // Upgrades a legacy Impala table entry in the HMS.
@@ -116,7 +118,8 @@ class HmsCatalog {
                                   const std::string& cluster_id,
                                   const std::string& db_name,
                                   const std::string& tb_name,
-                                  const Schema& schema) WARN_UNUSED_RESULT;
+                                  const Schema& schema,
+                                  const std::string& comment) WARN_UNUSED_RESULT;
 
   // Downgrades to a legacy Impala table entry in the HMS.
   //
@@ -166,6 +169,7 @@ class HmsCatalog {
                               const std::string& name,
                               const boost::optional<const std::string&>& owner,
                               const Schema& schema,
+                              const std::string& comment,
                               const std::string& cluster_id,
                               const std::string& master_addresses,
                               const std::string& table_type,
