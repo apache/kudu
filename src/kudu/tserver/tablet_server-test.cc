@@ -187,6 +187,7 @@ DECLARE_double(tablet_inject_kudu_2233);
 DECLARE_double(workload_score_upper_bound);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
+DECLARE_int32(flush_upper_bound_ms);
 DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_int32(maintenance_manager_inject_latency_ms);
@@ -4441,14 +4442,16 @@ TEST_F(TabletServerTest, TestStarvePerfImprovementOpsInColdTablet) {
   // so there are always something to do in the hot tablet.
   FLAGS_flush_threshold_secs = 1;
   FLAGS_maintenance_manager_inject_latency_ms = 1000;
+  // Make the original perf improvement score of a flush op smaller than that of a compaction op.
+  FLAGS_flush_threshold_mb = 10 * 1024;
+  FLAGS_flush_upper_bound_ms = 10 * 60 * 60 * 1000;
 
   // Make the default tablet 'hot'.
   std::atomic<bool> keep_inserting_and_scanning(true);
   thread insert_thread([&] {
     int cur_row = 0;
     while (keep_inserting_and_scanning) {
-      NO_FATALS(InsertTestRowsDirect(cur_row, 1000));
-      cur_row += 1000;
+      NO_FATALS(InsertTestRowsDirect(cur_row++, 1));
       ScanResponsePB resp;
       NO_FATALS(OpenScannerWithAllColumns(&resp));
       ASSERT_TRUE(!resp.scanner_id().empty());
