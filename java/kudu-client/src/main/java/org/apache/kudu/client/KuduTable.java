@@ -51,6 +51,7 @@ public class KuduTable {
   private final int numReplicas;
   private final Map<String, String> extraConfig;
   private final String owner;
+  private final String comment;
 
   /**
    * Package-private constructor, use {@link KuduClient#openTable(String)} to get an instance.
@@ -62,10 +63,11 @@ public class KuduTable {
    * @param numReplicas this table's replication factor
    * @param extraConfig this table's extra configuration properties
    * @param owner this table's owner
+   * @param comment this table's comment
    */
   KuduTable(AsyncKuduClient client, String name, String tableId,
             Schema schema, PartitionSchema partitionSchema, int numReplicas,
-            Map<String, String> extraConfig, String owner) {
+            Map<String, String> extraConfig, String owner, String comment) {
     this.schema = schema;
     this.partitionSchema = partitionSchema;
     this.client = client;
@@ -74,6 +76,7 @@ public class KuduTable {
     this.numReplicas = numReplicas;
     this.extraConfig = extraConfig;
     this.owner = owner;
+    this.comment = comment;
   }
 
   /**
@@ -136,6 +139,15 @@ public class KuduTable {
    */
   public String getOwner() {
     return owner;
+  }
+
+  /**
+   * Get this table's comment.
+   *
+   * @return this table's comment.
+   */
+  public String getComment() {
+    return comment;
   }
 
   /**

@@ -138,4 +138,6 @@ message TableMetadataPB {
   map<string, PartitionMetadataPB> tablets = 11;
   // The owner of the table.
   string table_owner = 12;
+  // The comment on the table.
+  string table_comment = 13;
 }

@@ -782,6 +782,7 @@ class TestKuduBackup extends KuduTestSuite {
       assertNotEquals(tA.getOwner, tB.getOwner)
     }
     assertNotEquals("", tA.getOwner);
+    assertEquals(tA.getComment, tB.getComment)
     assertEquals(tA.getNumReplicas, tB.getNumReplicas)
     assertTrue(schemasMatch(tA.getSchema, tB.getSchema))
     assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))

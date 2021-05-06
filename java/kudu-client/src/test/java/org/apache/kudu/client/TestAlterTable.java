@@ -590,4 +590,23 @@ public class TestAlterTable {
     table = client.openTable(table.getName());
     assertEquals(newOwner, table.getOwner());
   }
+
+  @Test
+  public void testAlterChangeComment() throws Exception {
+    String originalComment = "original comment";
+    ArrayList<ColumnSchema> columns = new ArrayList<>(1);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("val", Type.INT32).build());
+    Schema schema = new Schema(columns);
+    CreateTableOptions createOptions = new CreateTableOptions()
+        .setRangePartitionColumns(ImmutableList.of("key"))
+        .setComment(originalComment);
+    KuduTable table = client.createTable(tableName, schema, createOptions);
+    assertEquals(originalComment, table.getComment());
+
+    String newComment = "new comment";
+    client.alterTable(table.getName(), new AlterTableOptions().setComment(newComment));
+    table = client.openTable(table.getName());
+    assertEquals(newComment, table.getComment());
+  }
 }

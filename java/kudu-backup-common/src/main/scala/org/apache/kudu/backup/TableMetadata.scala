@@ -104,6 +104,7 @@ object TableMetadata {
       .setPartitions(getPartitionSchemaMetadata(table))
       .putAllTablets(tablets.asJava)
       .setTableOwner(table.getOwner)
+      .setTableComment(table.getComment)
     builder.build()
   }
 
@@ -333,6 +334,7 @@ object TableMetadata {
     if (restoreOwner) {
       options.setOwner(metadata.getTableOwner)
     }
+    options.setComment(metadata.getTableComment)
     options.setNumReplicas(metadata.getNumReplicas)
     metadata.getPartitions.getHashPartitionsList.asScala.foreach { hp =>
       options

@@ -64,6 +64,16 @@ public class AlterTableOptions {
   }
 
   /**
+   * Change a table's comment.
+   * @param comment the new table comment
+   * @return this instance
+   */
+  public AlterTableOptions setComment(String comment) {
+    pb.setNewTableComment(comment);
+    return this;
+  }
+
+  /**
    * Add a new column.
    * @param colSchema the schema of the new column
    * @return this instance

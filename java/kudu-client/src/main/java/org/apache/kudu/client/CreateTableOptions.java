@@ -259,6 +259,17 @@ public class CreateTableOptions {
     return this;
   }
 
+  /**
+   * Set the table comment.
+   *
+   * @param comment the table comment
+   * @return this instance
+   */
+  public CreateTableOptions setComment(String comment) {
+    pb.setComment(comment);
+    return this;
+  }
+
   Master.CreateTableRequestPB.Builder getBuilder() {
     if (!splitRows.isEmpty() || !rangePartitions.isEmpty()) {
       pb.setSplitRowsRangeBounds(new Operation.OperationsEncoder()
