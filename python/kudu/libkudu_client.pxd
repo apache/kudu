@@ -605,6 +605,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduTableCreator& num_replicas(int n_replicas)
         KuduTableCreator& wait(c_bool wait)
         KuduTableCreator& set_owner(const string& owner)
+        KuduTableCreator& set_comment(const string& comment)
 
         Status Create()
 
@@ -622,6 +623,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
                                              RangePartitionBound lower_bound_type,
                                              RangePartitionBound upper_bound_type)
         KuduTableAlterer& SetOwner(const string& new_owner)
+        KuduTableAlterer& SetComment(const string& new_comment)
 
         KuduTableAlterer& wait(c_bool wait)
 
@@ -634,6 +636,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         string& name()
         string& id()
         string& owner()
+        string& comment()
         KuduSchema& schema()
         int num_replicas()
 

@@ -170,6 +170,22 @@ class TestClient(KuduTestBase, unittest.TestCase):
             except:
                 pass
 
+    def test_create_table_with_different_comment(self):
+        name = 'table_with_different_comment'
+        try:
+            self.client.create_table(
+                name, self.schema,
+                partitioning=Partitioning().add_hash_partitions(['key'], 2),
+                comment='new comment')
+
+            self.assertEqual('new comment', self.client.table(name).comment)
+
+        finally:
+            try:
+                self.client.delete_table(name)
+            except:
+                pass
+
     def test_insert_nonexistent_field(self):
         table = self.client.table(self.ex_table)
         op = table.new_insert()
@@ -387,6 +403,21 @@ class TestClient(KuduTestBase, unittest.TestCase):
             self.assertEqual('alice', self.client.table(name).owner)
             with self.assertRaises(TypeError):
                 alterer.set_owner(None).alter()
+        finally:
+            self.client.delete_table(name)
+
+    def test_alter_table_change_comment(self):
+        name = 'alter-comment'
+        try:
+            self.client.create_table(name,
+                                     self.schema,
+                                     self.partitioning)
+            table = self.client.table(name)
+            alterer = self.client.new_table_alterer(table)
+            table = alterer.set_comment('change comment').alter()
+            self.assertEqual('change comment', self.client.table(name).comment)
+            with self.assertRaises(TypeError):
+                alterer.set_comment(None).alter()
         finally:
             self.client.delete_table(name)
 

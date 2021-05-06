@@ -363,7 +363,7 @@ cdef class Client:
         return from_hybridtime(self.cp.GetLatestObservedTimestamp())
 
     def create_table(self, table_name, Schema schema, partitioning,
-            n_replicas=None, owner=None):
+            n_replicas=None, owner=None, comment=None):
         """
         Creates a new Kudu table from the passed Schema and options.
 
@@ -388,6 +388,8 @@ cdef class Client:
                 c.num_replicas(n_replicas)
             if owner:
                 c.set_owner(tobytes(owner))
+            if comment:
+                c.set_comment(tobytes(comment))
             s = c.Create()
             check_status(s)
         finally:
@@ -839,6 +841,11 @@ cdef class Table:
         """Name of the owner of the table."""
         def __get__(self):
             return frombytes(self.ptr().owner())
+
+    property comment:
+        """Comment on the table."""
+        def __get__(self):
+            return frombytes(self.ptr().comment())
 
     def rename(self, new_name):
         raise NotImplementedError
@@ -3254,6 +3261,21 @@ cdef class TableAlterer:
         self : TableAlterer
         """
         self._alterer.SetOwner(tobytes(new_owner))
+        return self
+
+    def set_comment(self, new_comment):
+        """
+        Set the comment on the table.
+
+        Parameters
+        ----------
+        new_comment : string
+
+        Returns
+        -------
+        self : TableAlterer
+        """
+        self._alterer.SetComment(tobytes(new_comment))
         return self
 
     def alter(self):
