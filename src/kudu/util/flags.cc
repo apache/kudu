@@ -578,12 +578,9 @@ vector<CommandLineFlagInfo> GetNonDefaultFlagsHelper() {
 string GetNonDefaultFlags() {
   ostringstream args;
   for (const auto& flag : GetNonDefaultFlagsHelper()) {
-    if (!args.str().empty()) {
-      args << '\n';
-    }
     // Redact the flags tagged as sensitive, if redaction is enabled.
     string flag_value = CheckFlagAndRedact(flag, EscapeMode::NONE);
-    args << "--" << flag.name << '=' << flag_value;
+    args << "--" << flag.name << '=' << flag_value << "\n";
   }
   return args.str();
 }
