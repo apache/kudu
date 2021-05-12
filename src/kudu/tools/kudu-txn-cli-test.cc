@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,6 +32,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
@@ -45,7 +47,10 @@ namespace tools {
 class KuduTxnsCliTest : public ExternalMiniClusterITestBase {
   void SetUp() override {
     NO_FATALS(ExternalMiniClusterITestBase::SetUp());
-    NO_FATALS(StartCluster({}, {"--txn_manager_enabled=true"}));
+    // Some tests will depend on flushing MRSs quickly, so ensure flushes
+    // happen quickly.
+    NO_FATALS(StartCluster({ "--flush_threshold_mb=1", "--flush_threshold_secs=1" },
+                            {"--txn_manager_enabled=true"}));
   }
 };
 
@@ -167,7 +172,138 @@ TEST_F(KuduTxnsCliTest, TestTxnsListHybridTimestamps) {
   ASSERT_STR_MATCHES(out,
       R"( txn_id \| *user *\|   state   \| *commit_datetime *| *commit_hybridtime
 --------\+-*\+-----------\+-------------------------------
- 0      \| *[a-z]* *\| COMMITTED \| .* GMT | P: .* usec, L: .*)");
+ 0      \| *[a-z]* *\| COMMITTED \| .* GMT \| P: .* usec, L: .*)");
+}
+
+TEST_F(KuduTxnsCliTest, TestBasicShowTxn) {
+  TestWorkload w(cluster_.get());
+  w.set_begin_txn();
+  w.set_commit_txn();
+  w.Setup();
+  w.Start();
+  while (w.rows_inserted() < 10) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  w.StopAndJoin();
+
+  // Check the output of the tool with no arguments.
+  string out;
+  ASSERT_OK(RunKuduTool({ "txn", "show", cluster_->master_rpc_addrs()[0].ToString(), "0" }, &out));
+  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
+--------\+-*\+-----------\+-*
+ 0      \| *[a-z]* *\| COMMITTED \| .* GMT
+
+            tablet_id             \| *begin_commit_datetime *\| *commit_datetime
+----------------------------------\+-*\+-*
+ [a-z0-9]* \| .*GMT \| .*GMT)");
+
+  // Check the output specifying none of the transaction status columns. We
+  // shouldn't display the status table at all.
+  ASSERT_OK(RunKuduTool({ "txn", "show", cluster_->master_rpc_addrs()[0].ToString(), "0",
+                          "--columns=participant_tablet_id,participant_begin_commit_datetime,"
+                                    "participant_commit_datetime" }, &out));
+  ASSERT_STR_NOT_CONTAINS(out, "txn_id");
+  ASSERT_STR_MATCHES(out,
+      R"(            tablet_id             \| *begin_commit_datetime *\| *commit_datetime
+----------------------------------\+-*\+-*
+ [a-z0-9]* \| .*GMT \| .*GMT)");
+
+  // Check the output specifying none of the participant columns. We shouldn't
+  // display the participant table at all.
+  ASSERT_OK(RunKuduTool({ "txn", "show", cluster_->master_rpc_addrs()[0].ToString(), "0",
+                          "--columns=txn_id,user,state,commit_datetime" }, &out));
+  ASSERT_STR_NOT_CONTAINS(out, "tablet_id");
+  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
+--------\+-*\+-----------\+-*
+ 0      \| *[a-z]* *\| COMMITTED \| .* GMT)");
+}
+
+TEST_F(KuduTxnsCliTest, TestShowTxnHybridTimestamps) {
+  TestWorkload w(cluster_.get());
+  w.set_begin_txn();
+  w.set_commit_txn();
+  w.Setup();
+  w.Start();
+  while (w.rows_inserted() < 10) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  w.StopAndJoin();
+  string out;
+  // Check that we can specify date time in the transaction status display and
+  // hybrid time in the participant status display.
+  ASSERT_OK(RunKuduTool({ "txn", "show", cluster_->master_rpc_addrs()[0].ToString(), "0",
+                          "--columns=txn_id,user,state,commit_datetime,participant_tablet_id,"
+                                    "participant_begin_commit_hybridtime,"
+                                    "participant_commit_hybridtime"}, &out));
+  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
+--------\+-*\+-----------\+-*
+ 0      \| *[a-z]* *\| COMMITTED \| .* GMT
+
+            tablet_id             \| *begin_commit_hybridtime *\| *commit_hybridtime
+----------------------------------\+-*\+-*
+ [a-z0-9]* \| P: .* usec, L: .* \| P: .* usec, L: .*)");
+
+  // Check that we can specify hybrid time in the transaction status display and
+  // date time in the participant status display.
+  ASSERT_OK(RunKuduTool({ "txn", "show", cluster_->master_rpc_addrs()[0].ToString(), "0",
+                          "--columns=txn_id,user,state,commit_hybridtime,participant_tablet_id,"
+                                    "participant_begin_commit_datetime,"
+                                    "participant_commit_datetime"}, &out));
+  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_hybridtime
+--------\+-*\+-----------\+-*
+ 0      \| *[a-z]* *\| COMMITTED \| P: .* usec, L: .*
+
+            tablet_id             \| *begin_commit_datetime *\| *commit_datetime
+----------------------------------\+-*\+-*
+ [a-z0-9]* \| .* GMT \| .* GMT)");
+}
+
+TEST_F(KuduTxnsCliTest, TestShowTxnFlushedMRS) {
+  {
+    TestWorkload w(cluster_.get());
+    w.set_begin_txn();
+    w.set_commit_txn();
+    w.Setup();
+    w.Start();
+    while (w.rows_inserted() < 10) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+    w.StopAndJoin();
+  }
+  // Our cluster is set up to flush MRSs quickly, so we should eventually
+  // report that we've flushed the committed MRS.
+  ASSERT_EVENTUALLY([&] {
+    string out;
+    ASSERT_OK(RunKuduTool({ "txn", "show", cluster_->master_rpc_addrs()[0].ToString(), "0",
+                            "--columns=participant_tablet_id,participant_flushed_committed_mrs" },
+                            &out));
+    ASSERT_STR_NOT_CONTAINS(out, "txn_id");
+    ASSERT_STR_MATCHES(out,
+      R"(            tablet_id             \| *flushed_committed_mrs
+----------------------------------\+-*
+ [a-z0-9]* \| true)");
+  });
+
+  // In an aborted workload, the report should always report we didn't flush
+  // the transactional MRS.
+  TestWorkload w(cluster_.get());
+  w.set_begin_txn();
+  w.set_rollback_txn();
+  w.Setup();
+  w.Start();
+  while (w.rows_inserted() < 10) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  w.StopAndJoin();
+  string out;
+  ASSERT_OK(RunKuduTool({ "txn", "show", cluster_->master_rpc_addrs()[0].ToString(), "1",
+                          "--columns=participant_tablet_id,participant_flushed_committed_mrs" },
+                          &out));
+  ASSERT_STR_NOT_CONTAINS(out, "txn_id");
+  ASSERT_STR_MATCHES(out,
+      R"(            tablet_id             \| *flushed_committed_mrs
+----------------------------------\+-*
+ [a-z0-9]* \| false)");
 }
 
 } // namespace tools
