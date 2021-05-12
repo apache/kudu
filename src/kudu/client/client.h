@@ -380,8 +380,14 @@ class KUDU_EXPORT KuduTransaction :
 
   /// Commit the transaction.
   ///
-  /// This method initiates committing the transaction and then awaits
-  /// for the transaction's commit phase to finalize.
+  /// This method automatically flushes all transactional sessions created off
+  /// this transaction handle via @c KuduTransaction::CreateSession(), initiates
+  /// committing the transaction, and then waits for the commit phase to
+  /// finalize. The flushing of all the derivative transactional sessions helps
+  /// avoiding unintentional data loss when those sessions are not flushed
+  /// explicitly before committing. No new operations should be pushed into the
+  /// derivative transactional sessions created off this handle
+  /// once the method has been called.
   ///
   /// @return Returns @c Status::OK() if all the stages of the transaction's
   ///   commit sequence were successful, i.e. the status of various pre-commit
@@ -393,11 +399,17 @@ class KUDU_EXPORT KuduTransaction :
   /// Start committing this transaction, but don't wait for the commit phase
   /// to finalize.
   ///
-  /// This method initiates the commit phase for this transaction, not awaiting
-  /// for the commit phase to finalize. To check for the transaction's commit
-  /// status, use the @c KuduTransaction::IsCommitComplete() method.
+  /// This method initiates the commit phase for this transaction, not waiting
+  /// for the commit phase to finalize. It requires all the transactional
+  /// sessions created off this handle via @c KuduTransaction::CreateSession()
+  /// to be flushed already. No new operations should be pushed into the
+  /// derivative transactional sessions created off this handle once the method
+  /// has been called. To check for the transaction's commit status, use the
+  /// @c KuduTransaction::IsCommitComplete() method.
   ///
-  /// @return Status of starting the commit phase for this transaction.
+  /// @return Status of starting the commit phase for this transaction if all
+  ///   the transactional sessions created off this handle are flushed,
+  ///   otherwise returns @c Status::IllegalState().
   Status StartCommit() WARN_UNUSED_RESULT;
 
   /// Whether the commit has completed i.e. no longer in progress of finalizing.
@@ -2269,7 +2281,7 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// Flush any pending writes.
   ///
   /// This method initiates flushing of the current batch of buffered
-  /// write operations, if any, and then awaits for completion of all
+  /// write operations, if any, and then waits for the completion of all
   /// pending operations of the session. I.e., after successful return
   /// from this method no pending operations should be left in the session.
   ///

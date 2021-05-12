@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <string>
 
@@ -75,7 +76,8 @@ MonoTime GetRpcDeadline(const KuduClient* c) {
 
 KuduTransaction::Data::Data(const sp::shared_ptr<KuduClient>& client)
     : weak_client_(client),
-      txn_keep_alive_ms_(0) {
+      txn_keep_alive_ms_(0),
+      commit_started_(false) {
   CHECK(client);
 }
 
@@ -112,6 +114,18 @@ Status KuduTransaction::Data::CreateSession(sp::shared_ptr<KuduSession>* session
   // there isn't much sense duplicating that at the client side.
   sp::shared_ptr<KuduSession> ret(new KuduSession(c, txn_id_));
   ret->data_->Init(ret);
+
+  {
+    std::lock_guard<simple_spinlock> l(commit_started_lock_);
+    if (PREDICT_FALSE(commit_started_)) {
+      return Status::IllegalState("transaction commit has already started");
+    }
+    // Store the information about the newly created session: this is needed
+    // to automatically flush every associated session upon call of
+    // KuduTransaction::Commit() for the corresponding transaction handle.
+    txn_sessions_.emplace_back(ret);
+  }
+
   *session = std::move(ret);
   return Status::OK();
 }
@@ -166,6 +180,26 @@ Status KuduTransaction::Data::Commit(CommitMode mode) {
   auto c = weak_client_.lock();
   if (!c) {
     return Status::IllegalState("associated KuduClient is gone");
+  }
+
+  {
+    std::lock_guard<simple_spinlock> l(commit_started_lock_);
+    commit_started_ = true;
+  }
+  // In case of 'synchronous' commit mode (i.e. if waiting for the transaction
+  // to finalize), flush all transactional sessions created out of this handle.
+  // In case of 'asynchronous' commit mode, make sure no transactional session
+  // contains pending operations.
+  for (auto& session : txn_sessions_) {
+    if (mode == CommitMode::WAIT_FOR_COMPLETION) {
+      RETURN_NOT_OK(session->Flush());
+    } else {
+      if (session->HasPendingOperations()) {
+        return Status::IllegalState(
+            "cannot start committing transaction: at least one transactional "
+            "session has write operations pending");
+      }
+    }
   }
 
   const auto deadline = GetRpcDeadline(c.get());

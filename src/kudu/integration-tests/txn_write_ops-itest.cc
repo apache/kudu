@@ -1561,9 +1561,19 @@ TEST_F(TxnOpDispatcherITest, ErrorInProcessingWriteOp) {
   ASSERT_EQ(2, GetTxnOpDispatchersTotalCount());
 
   // Try to insert rows with duplicate keys.
-  int64_t duplicate_key = 0;
-  s = InsertRows(txn.get(), kNumRows, &duplicate_key);
-  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  {
+    int64_t duplicate_key = 0;
+    shared_ptr<KuduSession> session;
+    s = InsertRows(txn.get(), kNumRows, &duplicate_key, &session);
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    vector<KuduError*> errors;
+    ElementDeleter drop(&errors);
+    session->GetPendingErrors(&errors, nullptr);
+    for (const auto* e : errors) {
+      const auto& s = e->status();
+      EXPECT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+    }
+  }
 
   // Same TxnOpDispatchers should be handling all the write operations.
   ASSERT_EQ(2, GetTxnOpDispatchersTotalCount());
@@ -1888,11 +1898,11 @@ TEST_F(TxnOpDispatcherITest, DuplicateTxnParticipantRegistration) {
   ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
 }
 
-// This scenario exercises the case when a request to commit a transaction
+// This scenario exercises the case when a request to rollback a transaction
 // arrives while TxnOpDispatcher still has pending write requests in its queue.
-// Neither the registration of the txn participant is complete nor BEGIN_TXN is
-// sent when client issues the commit request.
-TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantNotYetRegistered) {
+// The registration of the txn participant is not yet complete when the rollback
+// request arrives.
+TEST_F(TxnOpDispatcherITest, RollbackWriteOpPendingParticipantNotYetRegistered) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   constexpr auto kDelayMs = 1000;
@@ -1903,15 +1913,13 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantNotYetRegistered
   shared_ptr<KuduTransaction> txn;
   ASSERT_OK(client_->NewTransaction(&txn));
 
-  Status commit_init_status;
-  thread committer([&txn, &commit_init_status]{
+  Status rollback_status;
+  thread rollback([&txn, &rollback_status]{
     SleepFor(MonoDelta::FromMilliseconds(kDelayMs));
-    // Initiate committing the transaction after the delay, but don't wait
-    // for the commit to finalize.
-    commit_init_status = txn->StartCommit();
+    rollback_status = txn->Rollback();
   });
   auto cleanup = MakeScopedCleanup([&]() {
-    committer.join();
+    rollback.join();
   });
 
   shared_ptr<KuduSession> session;
@@ -1921,15 +1929,19 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantNotYetRegistered
   const auto row_status = GetSingleRowError(session.get());
   ASSERT_TRUE(row_status.IsIllegalState()) << s.ToString();
 
-  committer.join();
+  rollback.join();
   cleanup.cancel();
-  ASSERT_OK(commit_init_status);
+  ASSERT_OK(rollback_status);
 
   bool is_complete = false;
   Status completion_status;
-  ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
-  ASSERT_TRUE(is_complete);
-  ASSERT_OK(completion_status);
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+    ASSERT_TRUE(is_complete);
+  });
+  const auto errmsg = completion_status.ToString();
+  ASSERT_TRUE(completion_status.IsAborted()) << errmsg;
+  ASSERT_STR_MATCHES(errmsg, "transaction has been aborted");
 
   size_t num_rows;
   ASSERT_OK(CountRows(table_.get(), &num_rows));
@@ -1941,15 +1953,12 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantNotYetRegistered
   ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
 }
 
-// This scenario exercises the case when a request to commit a transaction
+// This scenario exercises the case when a request to rollback a transaction
 // arrives while TxnOpDispatcher still has pending write requests in its queue
 // but it has already completed the registration of the txn participant.
-// BEGIN_TXN hasn't yet been sent for the participant tablet when the commit
-// request is issued by the client.
-//
-// TODO(aserbin): enable the scenario after the follow-up for
-//                https://gerrit.cloudera.org/#/c/17127/ is merged
-TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantRegistered) {
+// BEGIN_TXN hasn't yet been sent for the participant tablet when the rollback
+// request arrives.
+TEST_F(TxnOpDispatcherITest, RollbackWriteOpPendingParticipantRegistered) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   constexpr auto kDelayMs = 1000;
@@ -1960,15 +1969,13 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantRegistered) {
   shared_ptr<KuduTransaction> txn;
   ASSERT_OK(client_->NewTransaction(&txn));
 
-  Status commit_init_status;
-  thread committer([&txn, &commit_init_status]{
+  Status rollback_status;
+  thread rollback([&txn, &rollback_status]{
     SleepFor(MonoDelta::FromMilliseconds(kDelayMs));
-    // Initiate committing the transaction after the delay, but don't wait
-    // for the commit to finalize.
-    commit_init_status = txn->StartCommit();
+    rollback_status = txn->Rollback();
   });
   auto cleanup = MakeScopedCleanup([&]() {
-    committer.join();
+    rollback.join();
   });
 
   shared_ptr<KuduSession> session;
@@ -1976,26 +1983,23 @@ TEST_F(TxnOpDispatcherITest, CommitWithWriteOpPendingParticipantRegistered) {
   Status s = InsertRows(txn.get(), 1, &key, &session);
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
 
-  // Since we tried to commit without allowing all participants to quiesce ops,
-  // the transaction should automatically fail.
-  committer.join();
+  rollback.join();
   cleanup.cancel();
-  ASSERT_OK(commit_init_status);
+  ASSERT_OK(rollback_status);
 
   bool is_complete = false;
   Status completion_status;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
     ASSERT_TRUE(is_complete);
-    ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
   });
+  const auto errmsg = completion_status.ToString();
+  ASSERT_TRUE(completion_status.IsAborted()) << errmsg;
+  ASSERT_STR_MATCHES(errmsg, "transaction has been aborted");
 
   size_t num_rows = 0;
   ASSERT_OK(CountRows(table_.get(), &num_rows));
   ASSERT_EQ(0, num_rows);
-
-  // Since the commit has been successfully finalized, there should be no
-  // TxnOpDispatcher for the transaction.
   ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
 }
 

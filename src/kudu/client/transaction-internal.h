@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <string>
 
@@ -24,6 +25,7 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
@@ -110,6 +112,19 @@ class KuduTransaction::Data {
   sp::weak_ptr<KuduClient> weak_client_;
   uint32_t txn_keep_alive_ms_;
   TxnId txn_id_;
+
+  // Sessions created in the context of this transaction. This per-transaction
+  // information is retained to flush all sessions created in the context
+  // of this transaction upon calling Commit().
+  std::list<sp::shared_ptr<KuduSession>> txn_sessions_;
+
+  // Whether the commit of the transaction identified by 'txn_id_' is about
+  // to start or has already started. Guarded by 'commit_started_lock_'.
+  bool commit_started_;
+
+  // Protects against concurrent access to 'commit_started_' and
+  // 'txn_sessions_' above.
+  simple_spinlock commit_started_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

@@ -876,6 +876,22 @@ class ClientTest : public KuduTest {
     return Status::OK();
   }
 
+  static string FlushModeToString(KuduSession::FlushMode mode) {
+    string mode_str = "UNKNOWN";
+    switch (mode) {
+      case KuduSession::AUTO_FLUSH_BACKGROUND:
+        mode_str = "AUTO_FLUSH_BACKGROND";
+        break;
+      case KuduSession::AUTO_FLUSH_SYNC:
+        mode_str = "AUTO_FLUSH_SYNC";
+        break;
+      case KuduSession::MANUAL_FLUSH:
+        mode_str = "MANUAL_FLUSH";
+        break;
+    }
+    return mode_str;
+  }
+
   enum WhichServerToKill {
     DEAD_MASTER,
     DEAD_TSERVER
@@ -3732,20 +3748,7 @@ void ClientTest::TimeInsertOpBatch(
     size_t run_num,
     const vector<size_t>& string_sizes,
     CpuTimes* elapsed) {
-
-  string mode_str = "unknown";
-  switch (mode) {
-    case KuduSession::AUTO_FLUSH_BACKGROUND:
-      mode_str = "AUTO_FLUSH_BACKGROND";
-      break;
-    case KuduSession::AUTO_FLUSH_SYNC:
-      mode_str = "AUTO_FLUSH_SYNC";
-      break;
-    case KuduSession::MANUAL_FLUSH:
-      mode_str = "MANUAL_FLUSH";
-      break;
-  }
-
+  const string mode_str = FlushModeToString(mode);
   const size_t row_num = string_sizes.size();
   shared_ptr<KuduSession> session(client_->NewSession());
   ASSERT_OK(session->SetMutationBufferSpace(buffer_size));
@@ -7338,6 +7341,534 @@ TEST_F(ClientTest, TxnCommit) {
     ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
     ASSERT_TRUE(is_complete);
     ASSERT_OK(cs);
+  }
+}
+
+// Make sure transactional sessions are automatically flushed upon committing
+// the corresponding transaction.
+TEST_F(ClientTest, FlushTxnSessionsOnCommit) {
+  constexpr auto kNumRows = 64;
+  auto rows_inserted = 0;
+
+  for (auto mode : { KuduSession::AUTO_FLUSH_BACKGROUND,
+                     KuduSession::AUTO_FLUSH_SYNC,
+                     KuduSession::MANUAL_FLUSH, }) {
+    SCOPED_TRACE(Substitute("session flush mode $0", FlushModeToString(mode)));
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_NE(nullptr, session.get());
+    ASSERT_OK(session->SetFlushMode(mode));
+
+    NO_FATALS(InsertTestRows(
+        client_table_.get(), session.get(), kNumRows, rows_inserted));
+    rows_inserted += kNumRows;
+
+    if (mode == KuduSession::MANUAL_FLUSH) {
+      // In AUTO_FLUSH_SYNC there will be no pending operations since ops are
+      // flushed upon KuduSession::Apply(). Due to scheduling anomalies,
+      // in AUTO_FLUSH_BACKGROUND there might be a case when the background
+      // flushing thread flushes the accumulated operations if the main test
+      // thread is put off CPU for a long enough time: to avoid flakiness,
+      // check for the pending operations only in case of MANUAL_FLUSH.
+      ASSERT_TRUE(session->HasPendingOperations());
+    }
+    ASSERT_OK(txn->Commit());
+    ASSERT_FALSE(session->HasPendingOperations());
+    ASSERT_EQ(0, session->CountPendingErrors());
+    // Just in case, check how it works when closing the session explicitly
+    // after it's been automatically flushed by committing its transaction.
+    ASSERT_OK(session->Close());
+
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(rows_inserted, row_count);
+  }
+
+  // Make sure that all the sessions originated from a transaction are flushed
+  // automatically upon committing a transaction, even if there are many.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+
+    vector<shared_ptr<KuduSession>> sessions;
+    for (auto i = 0; i < 10; ++i) {
+      shared_ptr<KuduSession> session;
+      ASSERT_OK(txn->CreateSession(&session));
+      ASSERT_NE(nullptr, session.get());
+      ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+      NO_FATALS(InsertTestRows(
+          client_table_.get(), session.get(), kNumRows, rows_inserted));
+      rows_inserted += kNumRows;
+      ASSERT_TRUE(session->HasPendingOperations());
+
+      sessions.emplace_back(std::move(session));
+    }
+
+    ASSERT_OK(txn->Commit());
+    for (const auto& session : sessions) {
+      ASSERT_FALSE(session->HasPendingOperations());
+      ASSERT_EQ(0, session->CountPendingErrors());
+    }
+
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(rows_inserted, row_count);
+  }
+
+  // A sub-scenario where the handle of a non-flushed session has gone
+  // out of the scope when its originating transaction starts committing.
+  // This is scenario is added to be explicit on what happens in such a case.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    {
+      shared_ptr<KuduSession> session;
+      ASSERT_OK(txn->CreateSession(&session));
+      ASSERT_NE(nullptr, session.get());
+      ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+      NO_FATALS(InsertTestRows(
+          client_table_.get(), session.get(), kNumRows, rows_inserted));
+      rows_inserted += kNumRows;
+      ASSERT_TRUE(session->HasPendingOperations());
+    }
+    ASSERT_OK(txn->Commit());
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    // The rows inserted above should be there even if the session handle went
+    // out of the scope.
+    ASSERT_EQ(rows_inserted, row_count);
+  }
+}
+
+// Make sure it's possible to retry committing a transaction with rows from
+// multiple sessions, even if one session failed to flush its rows on the first
+// commit attempt. Since the first attempt to commit failed due to an error
+// while flushing a session's pending operations, the transaction is still open.
+// It should be still possible to insert more rows and commit those rows
+// originated from already existing transactional sessions.
+TEST_F(ClientTest, TxnRetryCommitAfterSessionFlushErrors) {
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(client_->NewTransaction(&txn));
+
+  shared_ptr<KuduSession> session;
+  ASSERT_OK(txn->CreateSession(&session));
+  ASSERT_NE(nullptr, session.get());
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  NO_FATALS(InsertTestRows(client_table_.get(), session.get(), 1));
+  auto rows_inserted = 1;
+
+  // Try to insert a row with the same key. With a duplicate row, at attempt
+  // to flush this session should fail.
+  NO_FATALS(InsertTestRows(client_table_.get(), session.get(), 1));
+  ASSERT_TRUE(session->HasPendingOperations());
+
+  // Attempt to commit the transaction.
+  const auto s = txn->Commit();
+  const auto errmsg = s.ToString();
+  ASSERT_TRUE(s.IsIOError()) << errmsg;
+  ASSERT_STR_MATCHES(errmsg, "Some errors occurred");
+
+  ASSERT_FALSE(session->HasPendingOperations());
+  ASSERT_EQ(1, session->CountPendingErrors());
+  {
+    vector<KuduError*> errors;
+    ElementDeleter drop(&errors);
+    session->GetPendingErrors(&errors, nullptr);
+    ASSERT_EQ(1, errors.size());
+    EXPECT_TRUE(errors[0]->status().IsAlreadyPresent());
+  }
+
+  // Nothing is committed yet.
+  auto row_count = CountRowsFromClient(client_table_.get(),
+                                       KuduClient::LEADER_ONLY,
+                                       KuduScanner::READ_YOUR_WRITES);
+  ASSERT_EQ(0, row_count);
+
+  // However, it's not possible to start another transactional session once
+  // KuduTransaction::{Commit,StartCommit}() has already been called.
+  {
+    shared_ptr<KuduSession> null_session;
+    const auto s = txn->CreateSession(&null_session);
+    ASSERT_EQ(nullptr, null_session.get());
+  }
+
+  // Retrying the commit with one row from the first session and extra rows
+  // from the new session. Since the first attempt to commit failed due
+  // to an error while flushing first session's pending operations,
+  // the transaction is still open. It should be still possible to insert more
+  // rows and commit those along with the rows successfully flushed in the
+  // context of the first session.
+  NO_FATALS(InsertTestRows(client_table_.get(), session.get(), 10, 1));
+  rows_inserted += 10;
+  ASSERT_OK(txn->Commit());
+
+  // There should be no pending operations for either session. All pending
+  // errors have been handled for the first session, no new ones should appear.
+  ASSERT_FALSE(session->HasPendingOperations());
+  ASSERT_EQ(0, session->CountPendingErrors());
+
+  row_count = CountRowsFromClient(client_table_.get(),
+                                  KuduClient::LEADER_ONLY,
+                                  KuduScanner::READ_YOUR_WRITES);
+  ASSERT_EQ(rows_inserted, row_count);
+}
+
+// Make sure KuduTransaction::StartCommit() succeeds when called on
+// a transaction handle which has all of its transactional sessions flushed.
+TEST_F(ClientTest, StartCommitWithFlushedTxnSessions) {
+  constexpr auto kNumRows = 1024;
+  auto rows_inserted = 0;
+
+  for (auto mode : { KuduSession::AUTO_FLUSH_BACKGROUND,
+                     KuduSession::AUTO_FLUSH_SYNC,
+                     KuduSession::MANUAL_FLUSH, }) {
+    SCOPED_TRACE(Substitute("session flush mode $0", FlushModeToString(mode)));
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_NE(nullptr, session.get());
+    ASSERT_OK(session->SetFlushMode(mode));
+
+    NO_FATALS(InsertTestRows(
+        client_table_.get(), session.get(), kNumRows, rows_inserted));
+    rows_inserted += kNumRows;
+
+    ASSERT_OK(session->Flush());
+    ASSERT_FALSE(session->HasPendingOperations());
+    ASSERT_EQ(0, session->CountPendingErrors());
+    ASSERT_OK(txn->StartCommit());
+
+    // Wait for the transaction to finalize its commit phase.
+    ASSERT_EVENTUALLY([&] {
+      bool is_complete = false;
+      Status commit_status;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &commit_status));
+      ASSERT_OK(commit_status);
+      ASSERT_TRUE(is_complete);
+    });
+
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(rows_inserted, row_count);
+  }
+
+  // A sub-scenario where the handle of an already flushed session has gone
+  // out of the scope when its originating transaction starts committing.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    {
+      shared_ptr<KuduSession> session;
+      ASSERT_OK(txn->CreateSession(&session));
+      ASSERT_NE(nullptr, session.get());
+      ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+      NO_FATALS(InsertTestRows(
+          client_table_.get(), session.get(), kNumRows, rows_inserted));
+      rows_inserted += kNumRows;
+      ASSERT_OK(session->Flush());
+      ASSERT_FALSE(session->HasPendingOperations());
+    }
+    ASSERT_OK(txn->StartCommit());
+
+    // Wait for the transaction to finalize its commit phase.
+    ASSERT_EVENTUALLY([&] {
+      bool is_complete = false;
+      Status commit_status;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &commit_status));
+      ASSERT_OK(commit_status);
+      ASSERT_TRUE(is_complete);
+    });
+
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(rows_inserted, row_count);
+  }
+}
+
+// Check the behavior of KuduTransaction::StartCommit() when there are
+// transactional non-flushed sessions started off a transaction handle.
+TEST_F(ClientTest, TxnNonFlushedSessionsOnStartCommit) {
+  constexpr auto kNumRows = 1024;
+  auto rows_inserted = 0;
+
+  // It should not be possible to call KuduTransaction::StartCommit()
+  // when there are transactional sessions with pending write operations.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_NE(nullptr, session.get());
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+    NO_FATALS(InsertTestRows(
+        client_table_.get(), session.get(), kNumRows, rows_inserted));
+    rows_inserted += kNumRows;
+
+    ASSERT_TRUE(session->HasPendingOperations());
+    ASSERT_EQ(0, session->CountPendingErrors());
+    const auto s = txn->StartCommit();
+    const auto errmsg = s.ToString();
+    ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+    ASSERT_STR_MATCHES(errmsg,
+        "cannot start committing transaction: "
+        "at least one transactional session has write operations pending");
+  }
+
+  // A sub-scenario where the handle of a non-flushed session has gone
+  // out of the scope when its originating transaction starts committing.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    {
+      shared_ptr<KuduSession> session;
+      ASSERT_OK(txn->CreateSession(&session));
+      ASSERT_NE(nullptr, session.get());
+      ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+      NO_FATALS(InsertTestRows(
+          client_table_.get(), session.get(), kNumRows, rows_inserted));
+      ASSERT_TRUE(session->HasPendingOperations());
+    }
+    const auto s = txn->StartCommit();
+    const auto errmsg = s.ToString();
+    ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+    ASSERT_STR_MATCHES(errmsg,
+        "cannot start committing transaction: "
+        "at least one transactional session has write operations pending");
+  }
+}
+
+// Verify the behavior of KuduTransaction::CreateSession() when the commit
+// process has already been started for the corresponding transaction.
+TEST_F(ClientTest, TxnCreateSessionAfterCommit) {
+  // An empty transaction case.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->Commit());
+
+    shared_ptr<KuduSession> session;
+    const auto s = txn->CreateSession(&session);
+    const auto errmsg = s.ToString();
+    ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+    ASSERT_STR_MATCHES(errmsg, "transaction commit has already started");
+    ASSERT_EQ(nullptr, session.get());
+  }
+
+  // A non-empty transaction case: a transaction with one empty session.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    {
+      shared_ptr<KuduSession> session;
+      ASSERT_OK(txn->CreateSession(&session));
+      ASSERT_NE(nullptr, session.get());
+      ASSERT_OK(txn->Commit());
+      ASSERT_FALSE(session->HasPendingOperations());
+      ASSERT_EQ(0, session->CountPendingErrors());
+    }
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(0, row_count);
+
+    // Now attempt to create a new session based off the committed transaction.
+    {
+      shared_ptr<KuduSession> session;
+      const auto s = txn->CreateSession(&session);
+      const auto errmsg = s.ToString();
+      ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+      ASSERT_STR_MATCHES(errmsg, "transaction commit has already started");
+      ASSERT_EQ(nullptr, session.get());
+    }
+  }
+
+  // A non-empty transaction case: a transaction with a session that inserts
+  // at least one row in a table.
+  {
+    constexpr auto kNumRows = 1;
+
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_NE(nullptr, session.get());
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    NO_FATALS(InsertTestRows(client_table_.get(), session.get(), kNumRows));
+    ASSERT_OK(txn->Commit());
+
+    ASSERT_FALSE(session->HasPendingOperations());
+    ASSERT_EQ(0, session->CountPendingErrors());
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(kNumRows, row_count);
+
+    // Now try to create a new session based off the committed transaction.
+    {
+      shared_ptr<KuduSession> session;
+      const auto s = txn->CreateSession(&session);
+      const auto errmsg = s.ToString();
+      ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+      ASSERT_STR_MATCHES(errmsg, "transaction commit has already started");
+      ASSERT_EQ(nullptr, session.get());
+    }
+  }
+}
+
+// Similar to the TxnCreateSessionAfterCommit scenario above, but calls
+// KuduTransaction::StartCommit() instead of KuduTransaction::Commit().
+TEST_F(ClientTest, TxnCreateSessionAfterStartCommit) {
+  // An empty transaction case.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->StartCommit());
+
+    shared_ptr<KuduSession> session;
+    const auto s = txn->CreateSession(&session);
+    const auto errmsg = s.ToString();
+    ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+    ASSERT_STR_MATCHES(errmsg, "transaction commit has already started");
+    ASSERT_EQ(nullptr, session.get());
+  }
+
+  // A non-empty transaction case: a transaction with one empty session.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    {
+      shared_ptr<KuduSession> session;
+      ASSERT_OK(txn->CreateSession(&session));
+      ASSERT_NE(nullptr, session.get());
+      ASSERT_OK(txn->StartCommit());
+    }
+
+    // Now attempt to create a new session based off the transaction that
+    // has started committing.
+    {
+      shared_ptr<KuduSession> session;
+      const auto s = txn->CreateSession(&session);
+      const auto errmsg = s.ToString();
+      ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+      ASSERT_STR_MATCHES(errmsg, "transaction commit has already started");
+      ASSERT_EQ(nullptr, session.get());
+    }
+
+    // Wait for the transaction to finalize its commit phase.
+    ASSERT_EVENTUALLY([&] {
+      bool is_complete = false;
+      Status commit_status;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &commit_status));
+      ASSERT_OK(commit_status);
+      ASSERT_TRUE(is_complete);
+    });
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(0, row_count);
+  }
+
+  // A non-empty transaction case: a transaction with a session that inserts
+  // at least one row in a table.
+  {
+    constexpr auto kNumRows = 1;
+
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_NE(nullptr, session.get());
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    NO_FATALS(InsertTestRows(client_table_.get(), session.get(), kNumRows));
+    ASSERT_OK(session->Flush());
+    ASSERT_FALSE(session->HasPendingOperations());
+    ASSERT_OK(txn->StartCommit());
+
+    // Now try to create a new session based off the committed transaction.
+    {
+      shared_ptr<KuduSession> session;
+      const auto s = txn->CreateSession(&session);
+      const auto errmsg = s.ToString();
+      ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+      ASSERT_STR_MATCHES(errmsg, "transaction commit has already started");
+      ASSERT_EQ(nullptr, session.get());
+    }
+
+    // Wait for the transaction to finalize its commit phase.
+    ASSERT_EVENTUALLY([&] {
+      bool is_complete = false;
+      Status commit_status;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &commit_status));
+      ASSERT_OK(commit_status);
+      ASSERT_TRUE(is_complete);
+    });
+    ASSERT_EQ(0, session->CountPendingErrors());
+    const auto row_count = CountRowsFromClient(client_table_.get(),
+                                               KuduClient::LEADER_ONLY,
+                                               KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(kNumRows, row_count);
+  }
+}
+
+// A test scenario to verify the behavior of the client API when a write
+// operation submitted into a transaction session after the transaction
+// has been committed.
+TEST_F(ClientTest, SubmitWriteOpAfterTxnCommit) {
+  constexpr auto kNumRows = 1024;
+  auto rows_inserted = 0;
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_NE(nullptr, session.get());
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+    NO_FATALS(InsertTestRows(
+        client_table_.get(), session.get(), kNumRows, rows_inserted));
+    rows_inserted += kNumRows;
+    ASSERT_TRUE(session->HasPendingOperations());
+    ASSERT_OK(txn->Commit());
+    ASSERT_FALSE(session->HasPendingOperations());
+    ASSERT_EQ(0, session->CountPendingErrors());
+
+    auto row_count = CountRowsFromClient(client_table_.get(),
+                                         KuduClient::LEADER_ONLY,
+                                         KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(kNumRows, row_count);
+
+    // Try to insert one more row.
+    NO_FATALS(InsertTestRows(
+        client_table_.get(), session.get(), 1, rows_inserted));
+    const auto s = session->Flush();
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    {
+      vector<KuduError*> errors;
+      ElementDeleter drop(&errors);
+      session->GetPendingErrors(&errors, nullptr);
+      ASSERT_EQ(1, errors.size());
+      const auto& s = errors[0]->status();
+      const auto errmsg = s.ToString();
+      ASSERT_TRUE(s.IsIllegalState()) << errmsg;
+      ASSERT_STR_MATCHES(errmsg, "transaction ID .* not open: COMMITTED");
+    }
+
+    // Row count stays the same as before, of course.
+    row_count = CountRowsFromClient(client_table_.get(),
+                                    KuduClient::LEADER_ONLY,
+                                    KuduScanner::READ_YOUR_WRITES);
+    ASSERT_EQ(kNumRows, row_count);
   }
 }
 
