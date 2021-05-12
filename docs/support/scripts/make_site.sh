@@ -109,7 +109,8 @@ mkdir -p "$RELEASE_OUTPUT_DIR"
 DOC_SUBDIR="docs"
 rm -Rf "$RELEASE_OUTPUT_DIR/$DOC_SUBDIR"
 $SOURCE_ROOT/docs/support/scripts/make_docs.sh --build_root $BUILD_ROOT --site "$SITE_OUTPUT_DIR" \
-                                               --output_subdir "$RELEASE_SUBDIR/$DOC_SUBDIR"
+                                               --output_subdir "$RELEASE_SUBDIR/$DOC_SUBDIR" \
+                                               --version "$VERSION"
 if [ -f "$RELEASE_OUTPUT_DIR/docs/index.html" ]; then
   echo "Successfully built docs."
 else

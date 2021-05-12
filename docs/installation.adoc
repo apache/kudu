@@ -28,6 +28,8 @@
 :sectlinks:
 :experimental:
 
+include::top.adoc[tags=version]
+
 The Apache Kudu project only publishes source code releases, to deploy Kudu on a
 cluster follow the steps below to build Kudu from source.
 
