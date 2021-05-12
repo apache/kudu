@@ -28,6 +28,8 @@
 :sectlinks:
 :experimental:
 
+include::top.adoc[tags=version]
+
 Kudu includes security features which allow Kudu clusters to be hardened against
 access from unauthorized users. This guide describes the security features
 provided by Kudu. <<configuration>> lists essential configuration options when

@@ -31,7 +31,8 @@
 set -e
 
 usage() {
-  echo usage: "$0 --build_root <path> --output_subdir <relative path> [--site <path to gh-pages checkout>]"
+  echo usage: "$0 --build_root <path> --output_subdir <relative path> --version <version>\
+  [--site <path to gh-pages checkout>]"
 }
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -87,6 +88,15 @@ while [[ $# > 0 ]] ; do
         ;;
       --no-jekyll)
         NO_JEKYLL=1
+        shift
+        ;;
+      --version|-v)
+        VERSION=$2
+        if [ -z "$VERSION" ]; then
+          usage
+          exit 1
+        fi
+        shift
         shift
         ;;
       *)
@@ -239,7 +249,11 @@ else
     TEMPLATE_FLAG=""
 fi
 
-bundle exec asciidoctor -d book $TEMPLATE_FLAG \
+# The top include file is also needed in the generated doc directory to be included
+# by docs like metrics_reference.adoc that are generated above.
+cp $SOURCE_ROOT/docs/top.adoc $GEN_DOC_DIR/
+
+bundle exec asciidoctor -d book $TEMPLATE_FLAG -a KUDU_VERSION="$VERSION" \
     $SOURCE_ROOT/docs/*.adoc ${GEN_DOC_DIR}/*.adoc -D "$OUTPUT_DIR"
 
 mkdir -p "$OUTPUT_DIR/images"

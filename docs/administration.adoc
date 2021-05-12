@@ -28,6 +28,8 @@
 :sectlinks:
 :experimental:
 
+include::top.adoc[tags=version]
+
 == Starting and Stopping Kudu Processes
 
 NOTE: These instructions are relevant only when Kudu is installed using operating system packages

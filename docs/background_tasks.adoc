@@ -27,6 +27,8 @@
 :sectlinks:
 :experimental:
 
+include::top.adoc[tags=version]
+
 Kudu relies on running background tasks for many important automatic
 maintenance activities. These tasks include flushing data from memory to disk,
 compacting data to improve performance, freeing up disk space, and more.

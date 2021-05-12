@@ -28,6 +28,8 @@
 :sectlinks:
 :experimental:
 
+include::top.adoc[tags=version]
+
 == Configure Kudu
 
 === Configuration Basics

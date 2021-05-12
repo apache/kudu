@@ -26,6 +26,8 @@
 :sectlinks:
 :experimental:
 
+include::top.adoc[tags=version]
+
 [[schema_design]]
 == Overview
 

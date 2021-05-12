@@ -28,6 +28,8 @@
 :sectlinks:
 :experimental:
 
+include::top.adoc[tags=version]
+
 ****
 This is a brief introduction to Kudu's transaction and consistency semantics. For an
 in-depth technical exposition of most of what is mentioned here, and why it is correct,
