@@ -18,6 +18,7 @@
 #include <sys/types.h>
 
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -41,10 +42,17 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
+#include "kudu/master/master.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_status_tablet.h"
+#include "kudu/transactions/txn_system_client.h"
+#include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -52,9 +60,6 @@
 
 DECLARE_string(columns);
 
-DEFINE_bool(show_hybrid_timestamps, false,
-            "Whether to show commit timestamps as hybrid timestamps in "
-            "addition to datetimes.");
 DEFINE_int64(min_txn_id, -1, "Inclusive minimum transaction ID to display, or -1 for no minimum.");
 DEFINE_int64(max_txn_id, -1, "Inclusive maximum transaction ID to display, or -1 for no maximum.");
 DEFINE_string(included_states, "open,abort_in_progress,commit_in_progress,finalize_in_progress",
@@ -62,6 +67,8 @@ DEFINE_string(included_states, "open,abort_in_progress,commit_in_progress,finali
               "are 'open', 'abort_in_progress', 'aborted', 'commit_in_progress', "
               "'finalize_in_progress', and 'committed', or '*' for all states. By default, shows "
               "currently active transactions.");
+
+DECLARE_int64(timeout_ms);
 
 using kudu::client::sp::shared_ptr;
 using kudu::client::KuduClient;
@@ -71,9 +78,12 @@ using kudu::client::KuduScanBatch;
 using kudu::client::KuduTable;
 using kudu::client::KuduValue;
 using kudu::clock::HybridClock;
+using kudu::tablet::TxnMetadataPB;
 using kudu::transactions::TxnStatePB;
 using kudu::transactions::TxnStatusEntryPB;
 using kudu::transactions::TxnStatusTablet;
+using kudu::transactions::TxnSystemClient;
+using kudu::tserver::ParticipantOpPB;
 using std::cout;
 using std::string;
 using std::unique_ptr;
@@ -88,7 +98,7 @@ namespace tools {
 
 namespace {
 
-enum ListTxnsField : int {
+enum class ListTxnsField : int {
   kTxnId,
   kUser,
   kState,
@@ -96,14 +106,36 @@ enum ListTxnsField : int {
   kCommitHybridTime,
 };
 
-const unordered_map<string, ListTxnsField> kStrToListField {
-  { "txn_id", kTxnId },
-  { "user", kUser },
-  { "state", kState },
-  { "commit_datetime", kCommitDateTime },
-  { "commit_hybridtime", kCommitHybridTime },
+const unordered_map<string, ListTxnsField> kStrToTxnField {
+  { "txn_id", ListTxnsField::kTxnId },
+  { "user", ListTxnsField::kUser },
+  { "state", ListTxnsField::kState },
+  { "commit_datetime", ListTxnsField::kCommitDateTime },
+  { "commit_hybridtime", ListTxnsField::kCommitHybridTime },
 };
 
+enum class ParticipantField : int {
+  kTabletId,
+  kAborted,
+  kFlushedCommittedMrs,
+  kBeginCommitDateTime,
+  kBeginCommitHybridTime,
+  kCommitDateTime,
+  kCommitHybridTime,
+};
+
+constexpr const char* kParticipantPrefix = "participant_";
+const unordered_map<string, ParticipantField> kStrToParticipantFields {
+  { "tablet_id", ParticipantField::kTabletId },
+  { "aborted", ParticipantField::kAborted },
+  { "flushed_committed_mrs", ParticipantField::kFlushedCommittedMrs },
+  { "begin_commit_datetime", ParticipantField::kBeginCommitDateTime },
+  { "begin_commit_hybridtime", ParticipantField::kBeginCommitHybridTime },
+  { "commit_datetime", ParticipantField::kCommitDateTime },
+  { "commit_hybridtime", ParticipantField::kCommitHybridTime },
+};
+
+constexpr const char* kTxnIdArg = "txn_id";
 const unordered_map<string, TxnStatePB> kStrToState = {
   { "open", TxnStatePB::OPEN },
   { "abort_in_progress", TxnStatePB::ABORT_IN_PROGRESS },
@@ -138,27 +170,86 @@ bool ValidateStatesList(const char* /*flag_name*/, const string& flag_val) {
 }
 DEFINE_validator(included_states, &ValidateStatesList);
 
-} // anonymous namespace
+string HybridTimeToDateTime(int64_t ht) {
+  const auto physical_micros = HybridClock::GetPhysicalValueMicros(Timestamp(ht));
+  time_t physical_secs(physical_micros / 1000000);
+  char buf[kFastToBufferSize];
+  return FastTimeToBuffer(physical_secs, buf);
+}
 
-Status ListTxns(const RunnerContext& context) {
-  vector<ListTxnsField> fields;
-  vector<string> col_names;
+Status GetFields(vector<string>* txn_field_names, vector<ListTxnsField>* txn_fields,
+                 vector<string>* participant_field_names = nullptr,
+                 vector<ParticipantField>* participant_fields = nullptr) {
   for (const auto& column : strings::Split(FLAGS_columns, ",", strings::SkipEmpty())) {
     string column_lower;
     ToLowerCase(column.ToString(), &column_lower);
-    auto* field = FindOrNull(kStrToListField, column_lower);
-    if (!field) {
-      return Status::InvalidArgument("unknown column (--columns)", column);
+    if (participant_field_names && participant_fields) {
+      // If the field is prefixed with "participant_", get the suffix and look
+      // through the participant fields.
+      const char* participant_field_suffix =
+          strnprefix(column_lower.c_str(), column_lower.size(),
+                     kParticipantPrefix, strlen(kParticipantPrefix));
+      if (participant_field_suffix) {
+        auto* field = FindOrNull(kStrToParticipantFields, participant_field_suffix);
+        if (field) {
+          participant_fields->emplace_back(*field);
+          participant_field_names->emplace_back(participant_field_suffix);
+          continue;
+        }
+      }
     }
-    fields.emplace_back(*field);
-    col_names.emplace_back(std::move(column_lower));
+    // Otherwise, check the transaction fields.
+    auto* field = FindOrNull(kStrToTxnField, column_lower);
+    if (!field) {
+      return Status::InvalidArgument("unknown column specified in --columns", column);
+    }
+    txn_fields->emplace_back(*field);
+    txn_field_names->emplace_back(std::move(column_lower));
   }
+  return Status::OK();
+}
 
+void AddTxnStatusRow(const vector<ListTxnsField>& fields, int64_t txn_id,
+                       const TxnStatusEntryPB& txn_entry_pb, DataTable* data_table) {
+  string commit_ts_ht_str = "<none>";
+  string commit_ts_date_str = "<none>";
+  vector<string> col_vals;
+  for (const auto& field : fields) {
+    switch (field) {
+      case ListTxnsField::kTxnId:
+        col_vals.emplace_back(SimpleItoa(txn_id));
+        break;
+      case ListTxnsField::kUser:
+        col_vals.emplace_back(txn_entry_pb.user());
+        break;
+      case ListTxnsField::kState:
+        col_vals.emplace_back(TxnStatePB_Name(txn_entry_pb.state()));
+        break;
+      case ListTxnsField::kCommitDateTime:
+        col_vals.emplace_back(txn_entry_pb.has_commit_timestamp() ?
+            HybridTimeToDateTime(txn_entry_pb.commit_timestamp()) : "<none>");
+        break;
+      case ListTxnsField::kCommitHybridTime:
+        col_vals.emplace_back(txn_entry_pb.has_commit_timestamp() ?
+            HybridClock::StringifyTimestamp(Timestamp(txn_entry_pb.commit_timestamp())) : "<none>");
+        break;
+    }
+  }
+  data_table->AddRow(std::move(col_vals));
+}
+
+} // anonymous namespace
+
+Status ListTxns(const RunnerContext& context) {
   shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
 
   shared_ptr<KuduTable> table;
   RETURN_NOT_OK(client->OpenTable(TxnStatusTablet::kTxnStatusTableName, &table));
+
+  vector<string> field_names;
+  vector<ListTxnsField> fields;
+  RETURN_NOT_OK(GetFields(&field_names, &fields));
 
   KuduScanner scanner(table.get());
   RETURN_NOT_OK(scanner.SetFaultTolerant());
@@ -181,7 +272,7 @@ Status ListTxns(const RunnerContext& context) {
   }
   RETURN_NOT_OK(scanner.Open());
 
-  DataTable data_table(col_names);
+  DataTable data_table(field_names);
   KuduScanBatch batch;
   while (scanner.HasMoreRows()) {
     RETURN_NOT_OK(scanner.NextBatch(&batch));
@@ -200,44 +291,132 @@ Status ListTxns(const RunnerContext& context) {
       RETURN_NOT_OK(iter.GetInt8(TxnStatusTablet::kEntryTypeColName, &entry_type));
       CHECK_EQ(TxnStatusTablet::TRANSACTION, entry_type);
       RETURN_NOT_OK(iter.GetInt64(TxnStatusTablet::kTxnIdColName, &txn_id));
-      string commit_ts_ht_str = "<none>";
-      string commit_ts_date_str = "<none>";
-      vector<string> col_vals;
-      for (const auto& field : fields) {
-        switch (field) {
-          case kTxnId:
-            col_vals.emplace_back(SimpleItoa(txn_id));
-            break;
-          case kUser:
-            col_vals.emplace_back(txn_entry_pb.user());
-            break;
-          case kState:
-            col_vals.emplace_back(TxnStatePB_Name(txn_entry_pb.state()));
-            break;
-          case kCommitDateTime: {
-            if (txn_entry_pb.has_commit_timestamp()) {
-              const auto commit_ts = Timestamp(txn_entry_pb.commit_timestamp());
-              auto physical_micros = HybridClock::GetPhysicalValueMicros(commit_ts);
-              time_t physical_secs(physical_micros / 1000000);
-              char buf[kFastToBufferSize];
-              commit_ts_date_str = FastTimeToBuffer(physical_secs, buf);
-            }
-            col_vals.emplace_back(commit_ts_date_str);
-            break;
-          }
-          case kCommitHybridTime:
-            if (txn_entry_pb.has_commit_timestamp()) {
-              const auto commit_ts = Timestamp(txn_entry_pb.commit_timestamp());
-              commit_ts_ht_str = HybridClock::StringifyTimestamp(commit_ts);
-            }
-            col_vals.emplace_back(commit_ts_ht_str);
-            break;
-        }
-      }
-      data_table.AddRow(col_vals);
+      AddTxnStatusRow(fields, txn_id, txn_entry_pb, &data_table);
     }
   }
   return data_table.PrintTo(std::cout);
+}
+
+Status ShowTxn(const RunnerContext& context) {
+  const auto& txn_id_str = FindOrDie(context.required_args, kTxnIdArg);
+  int64_t txn_id = -1;
+  if (!SimpleAtoi(txn_id_str, &txn_id) || txn_id < 0) {
+    return Status::InvalidArgument(
+        Substitute("Must supply a valid transaction ID: $0", txn_id_str));
+  }
+  vector<string> txn_field_names;
+  vector<ListTxnsField> txn_fields;
+  vector<string> participant_field_names;
+  vector<ParticipantField> participant_fields;
+  RETURN_NOT_OK(GetFields(&txn_field_names, &txn_fields,
+                          &participant_field_names, &participant_fields));
+  DCHECK_EQ(txn_field_names.size(), txn_fields.size());
+  DCHECK_EQ(participant_field_names.size(), participant_fields.size());
+
+  // First set up our clients so we can be sure we can connect to the cluster.
+  std::unique_ptr<TxnSystemClient> txn_client;
+  vector<HostPort> master_hps;
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, kMasterAddressesArg, &master_addresses));
+  for (const auto& m : master_addresses) {
+    HostPort hp;
+    hp.ParseString(m, master::Master::kDefaultPort);
+    master_hps.emplace_back(hp);
+  }
+  RETURN_NOT_OK(TxnSystemClient::Create(master_hps, &txn_client));
+  RETURN_NOT_OK(txn_client->OpenTxnStatusTable());
+  shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
+  // Scan the transaction status table for its table entries.
+  shared_ptr<KuduTable> table;
+  RETURN_NOT_OK(client->OpenTable(TxnStatusTablet::kTxnStatusTableName, &table));
+  KuduScanner scanner(table.get());
+  RETURN_NOT_OK(scanner.SetFaultTolerant());
+  RETURN_NOT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
+  auto* pred = table->NewComparisonPredicate(
+      TxnStatusTablet::kTxnIdColName, KuduPredicate::EQUAL, KuduValue::FromInt(txn_id));
+  RETURN_NOT_OK(scanner.AddConjunctPredicate(pred));
+  RETURN_NOT_OK(scanner.Open());
+  KuduScanBatch batch;
+
+  // Extract transaction statuses and participant IDs from the results.
+  vector<string> participant_ids;
+  DataTable txn_table(txn_field_names);
+  while (scanner.HasMoreRows()) {
+    RETURN_NOT_OK(scanner.NextBatch(&batch));
+    for (const auto& iter : batch) {
+      Slice metadata_bytes;
+      string metadata;
+      RETURN_NOT_OK(iter.GetString(TxnStatusTablet::kMetadataColName, &metadata_bytes));
+      int8_t entry_type;
+      int64_t fetched_txn_id;
+      RETURN_NOT_OK(iter.GetInt8(TxnStatusTablet::kEntryTypeColName, &entry_type));
+      if (entry_type == TxnStatusTablet::TRANSACTION && !txn_fields.empty()) {
+        TxnStatusEntryPB txn_entry_pb;
+        RETURN_NOT_OK(pb_util::ParseFromArray(&txn_entry_pb, metadata_bytes.data(),
+                                              metadata_bytes.size()));
+        RETURN_NOT_OK(iter.GetInt64(TxnStatusTablet::kTxnIdColName, &fetched_txn_id));
+        DCHECK_EQ(txn_id, fetched_txn_id);
+        AddTxnStatusRow(txn_fields, fetched_txn_id, txn_entry_pb, &txn_table);
+      } else if (entry_type == TxnStatusTablet::PARTICIPANT && !participant_fields.empty()) {
+        Slice participant_id;
+        RETURN_NOT_OK(iter.GetString(TxnStatusTablet::kIdentifierColName, &participant_id));
+        participant_ids.emplace_back(participant_id.ToString());
+      }
+    }
+  }
+  if (!txn_fields.empty()) {
+    RETURN_NOT_OK(txn_table.PrintTo(std::cout));
+    std::cout << std::endl;
+  }
+  if (participant_field_names.empty()) {
+    return Status::OK();
+  }
+
+  // Get further details from the participants.
+  DataTable participant_table(participant_field_names);
+  for (const auto& id : participant_ids) {
+    TxnMetadataPB meta_pb;
+    ParticipantOpPB pb;
+    pb.set_txn_id(txn_id);
+    pb.set_type(ParticipantOpPB::GET_METADATA);
+    RETURN_NOT_OK(txn_client->ParticipateInTransaction(
+        id, pb, MonoDelta::FromMilliseconds(FLAGS_timeout_ms), nullptr, &meta_pb));
+    vector<string> col_vals;
+    for (const auto& field : participant_fields) {
+      switch (field) {
+        case ParticipantField::kTabletId:
+          col_vals.emplace_back(id);
+          break;
+        case ParticipantField::kAborted:
+          col_vals.emplace_back(meta_pb.aborted() ? "true" : "false");
+          break;
+        case ParticipantField::kFlushedCommittedMrs:
+          col_vals.emplace_back(meta_pb.flushed_committed_mrs() ? "true" : "false");
+          break;
+        case ParticipantField::kBeginCommitDateTime:
+          col_vals.emplace_back(meta_pb.has_commit_mvcc_op_timestamp() ?
+              HybridTimeToDateTime(meta_pb.commit_mvcc_op_timestamp()) : "<none>");
+          break;
+        case ParticipantField::kBeginCommitHybridTime:
+          col_vals.emplace_back(meta_pb.has_commit_mvcc_op_timestamp() ?
+              HybridClock::StringifyTimestamp(Timestamp(meta_pb.commit_mvcc_op_timestamp())) :
+              "<none>");
+          break;
+        case ParticipantField::kCommitDateTime:
+          col_vals.emplace_back(meta_pb.has_commit_timestamp() ?
+              HybridTimeToDateTime(meta_pb.commit_timestamp()) : "<none>");
+          break;
+        case ParticipantField::kCommitHybridTime:
+          col_vals.emplace_back(meta_pb.has_commit_timestamp() ?
+              HybridClock::StringifyTimestamp(Timestamp(meta_pb.commit_timestamp())) : "<none>");
+          break;
+      }
+    }
+    participant_table.AddRow(std::move(col_vals));
+  }
+  return participant_table.PrintTo(std::cout);
 }
 
 unique_ptr<Mode> BuildTxnMode() {
@@ -254,9 +433,30 @@ unique_ptr<Mode> BuildTxnMode() {
       .AddOptionalParameter("min_txn_id")
       .AddOptionalParameter("included_states")
       .Build();
+
+  // TODO(awong): extend the GET_METADATA call for participants to also return
+  // table ID, partition info, etc. so we can display it.
+  unique_ptr<Action> show =
+      ClusterActionBuilder("show", &ShowTxn)
+      .AddRequiredParameter({ kTxnIdArg, "Transaction ID on which to operate" })
+      .AddOptionalParameter(
+          "columns",
+          string("txn_id,user,state,commit_datetime,participant_tablet_id,"
+                 "participant_begin_commit_datetime,participant_commit_datetime"),
+          string("Comma-separated list of transaction-related info fields to include "
+                 "in the output.\nPossible values: txn_id, user, state, commit_datetime, "
+                 "commit_hybridtime, participant_tablet_id, participant_is_aborted, "
+                 "participant_flushed_committed_mrs, participant_begin_commit_datetime, "
+                 "participant_begin_commit_hybridtime, participant_commit_datetime, "
+                 "participant_commit_hybridtime"))
+      .AddOptionalParameter("timeout_ms")
+      .Description("Show details of a specific transaction")
+      .Build();
+
   return ModeBuilder("txn")
       .Description("Operate on multi-row transactions")
       .AddAction(std::move(list))
+      .AddAction(std::move(show))
       .Build();
 }
 
