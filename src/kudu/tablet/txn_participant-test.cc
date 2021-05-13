@@ -52,6 +52,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/ops/op_driver.h"
 #include "kudu/tablet/ops/op_tracker.h"
@@ -606,6 +607,59 @@ TEST_F(TxnParticipantTest, TestTakePartitionLockOnRestart) {
   // We should be able to write to the other transaction now that the partition
   // lock isn't held.
   ASSERT_OK(Write(3, kTxnTwo));
+}
+
+TEST_F(TxnParticipantTest, TestGetAbortedTxnMetadata) {
+  TxnMetadataPB pb;
+  const auto& meta = tablet_replica_->tablet_metadata();
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::ABORT_TXN,
+                                       kDummyCommitTimestamp));
+  ASSERT_TRUE(meta->GetTxnMetadataPB(kTxnId, &pb));
+  ASSERT_TRUE(pb.aborted());
+  ASSERT_FALSE(pb.has_commit_mvcc_op_timestamp());
+  ASSERT_FALSE(pb.has_commit_timestamp());
+  ASSERT_FALSE(pb.has_flushed_committed_mrs());
+}
+
+TEST_F(TxnParticipantTest, TestGetCommittedTxnMetadata) {
+  TxnMetadataPB pb;
+  const auto& meta = tablet_replica_->tablet_metadata();
+  ASSERT_FALSE(meta->GetTxnMetadataPB(kTxnId, &pb));
+  ASSERT_FALSE(pb.has_aborted());
+  ASSERT_FALSE(pb.has_commit_mvcc_op_timestamp());
+  ASSERT_FALSE(pb.has_commit_timestamp());
+  ASSERT_FALSE(pb.has_flushed_committed_mrs());
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN,
+                                       kDummyCommitTimestamp));
+  // There will be metadata, but it will be empty since there is not
+  // commit/abort information yet.
+  ASSERT_TRUE(meta->GetTxnMetadataPB(kTxnId, &pb));
+  ASSERT_FALSE(pb.has_aborted());
+  ASSERT_FALSE(pb.has_commit_mvcc_op_timestamp());
+  ASSERT_FALSE(pb.has_commit_timestamp());
+  ASSERT_FALSE(pb.has_flushed_committed_mrs());
+
+  // Once we begin committing, we should see the BEGIN_COMMIT op timestamp.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+                                       kDummyCommitTimestamp));
+  ASSERT_TRUE(meta->GetTxnMetadataPB(kTxnId, &pb));
+  ASSERT_FALSE(pb.has_aborted());
+  ASSERT_TRUE(pb.has_commit_mvcc_op_timestamp());
+  ASSERT_LT(0, pb.commit_mvcc_op_timestamp());
+  ASSERT_FALSE(pb.has_commit_timestamp());
+  ASSERT_FALSE(pb.has_flushed_committed_mrs());
+
+  // Once we finalize the commit, we should see a commit timestamp.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       kDummyCommitTimestamp));
+  ASSERT_TRUE(meta->GetTxnMetadataPB(kTxnId, &pb));
+  ASSERT_FALSE(pb.has_aborted());
+  ASSERT_TRUE(pb.has_commit_mvcc_op_timestamp());
+  ASSERT_LT(0, pb.commit_mvcc_op_timestamp());
+  ASSERT_TRUE(pb.has_commit_timestamp());
+  ASSERT_EQ(kDummyCommitTimestamp, pb.commit_timestamp());
+  ASSERT_FALSE(pb.has_flushed_committed_mrs());
 }
 
 // Test that participant ops result in tablet metadata updates that can survive

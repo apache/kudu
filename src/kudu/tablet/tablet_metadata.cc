@@ -654,7 +654,7 @@ Status TabletMetadata::UpdateUnlocked(
   }
   for (const auto& txn_id : txns_being_flushed) {
     auto txn_meta = FindOrDie(txn_metadata_by_txn_id_, txn_id);
-    txn_meta->set_flushed_committed_mrs_unlocked();
+    txn_meta->set_flushed_committed_mrs();
   }
 
   RowSetMetadataVector new_rowsets = rowsets_;
@@ -746,22 +746,8 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   }
 
   for (const auto& txn_id_and_metadata : txn_metadata_by_txn_id_) {
-    TxnMetadataPB meta_pb;
     const auto& txn_meta = txn_id_and_metadata.second;
-    const auto& commit_ts = txn_meta->commit_timestamp();
-    if (commit_ts) {
-      meta_pb.set_commit_timestamp(commit_ts->value());
-    }
-    const auto& commit_mvcc_op_ts = txn_meta->commit_mvcc_op_timestamp();
-    if (commit_mvcc_op_ts) {
-      meta_pb.set_commit_mvcc_op_timestamp(commit_mvcc_op_ts->value());
-    }
-    if (txn_meta->aborted()) {
-      meta_pb.set_aborted(true);
-    }
-    if (txn_meta->flushed_committed_mrs_unlocked()) {
-      meta_pb.set_flushed_committed_mrs(true);
-    }
+    TxnMetadataPB meta_pb = txn_meta->ToPB();
     InsertOrDie(pb.mutable_txn_metadata(), txn_id_and_metadata.first, meta_pb);
   }
 
@@ -898,7 +884,7 @@ void TabletMetadata::GetTxnIds(unordered_set<int64_t>* in_flight_txn_ids,
     // If we have not flushed the MRS after committing, the bootstrap process
     // will need to create an MRS for it, even if the transaction is committed.
     if (txn_ids_with_mrs &&
-        !txn_meta->flushed_committed_mrs_unlocked() &&
+        !txn_meta->flushed_committed_mrs() &&
         !txn_meta->aborted()) {
       EmplaceOrDie(&needs_mrs, txn_id);
     }
@@ -915,6 +901,16 @@ void TabletMetadata::GetTxnIds(unordered_set<int64_t>* in_flight_txn_ids,
 unordered_map<int64_t, scoped_refptr<TxnMetadata>> TabletMetadata::GetTxnMetadata() const {
   std::lock_guard<LockType> l(data_lock_);
   return txn_metadata_by_txn_id_;
+}
+
+bool TabletMetadata::GetTxnMetadataPB(int64_t txn_id, TxnMetadataPB* pb) const {
+  std::lock_guard<LockType> l(data_lock_);
+  auto txn_meta = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
+  if (!txn_meta) {
+    return false;
+  }
+  *pb = txn_meta->ToPB();
+  return true;
 }
 
 const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {

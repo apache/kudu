@@ -21,6 +21,7 @@
 
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/mutex.h"
 
@@ -39,13 +40,12 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
         commit_timestamp_(std::move(commit_ts)),
         flushed_committed_mrs_(flushed_committed_mrs) {}
 
-  // NOTE: access to 'flushed_committed_mrs_' is not inherently threadsafe --
-  // it is expected that the caller will ensure thread safety (e.g.
-  // TabletMetadata only calls this with its flush lock held).
-  void set_flushed_committed_mrs_unlocked() {
+  void set_flushed_committed_mrs() {
+    std::lock_guard<simple_spinlock> l(lock_);
     flushed_committed_mrs_ = true;
   }
-  bool flushed_committed_mrs_unlocked() const {
+  bool flushed_committed_mrs() const {
+    std::lock_guard<simple_spinlock> l(lock_);
     return flushed_committed_mrs_;
   }
 
@@ -85,6 +85,24 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
     std::lock_guard<simple_spinlock> l(lock_);
     *op_ts = commit_mvcc_op_timestamp_;
     *commit_ts = commit_timestamp_;
+  }
+
+  TxnMetadataPB ToPB() {
+    TxnMetadataPB pb;
+    std::lock_guard<simple_spinlock> l(lock_);
+    if (commit_timestamp_) {
+      pb.set_commit_timestamp(commit_timestamp_->value());
+    }
+    if (commit_mvcc_op_timestamp_) {
+      pb.set_commit_mvcc_op_timestamp(commit_mvcc_op_timestamp_->value());
+    }
+    if (aborted_) {
+      pb.set_aborted(true);
+    }
+    if (flushed_committed_mrs_) {
+      pb.set_flushed_committed_mrs(true);
+    }
+    return pb;
   }
 
  private:

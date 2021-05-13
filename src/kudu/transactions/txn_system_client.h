@@ -52,6 +52,10 @@ namespace rpc {
 class Messenger;
 } // namespace rpc
 
+namespace tablet {
+class TxnMetadataPB;
+} // namespace tablet
+
 namespace tserver {
 class CoordinatorOpPB;
 class CoordinatorOpResultPB;
@@ -151,12 +155,14 @@ class TxnSystemClient {
   Status ParticipateInTransaction(const std::string& tablet_id,
                                   const tserver::ParticipantOpPB& participant_op,
                                   const MonoDelta& timeout,
-                                  Timestamp* begin_commit_timestamp = nullptr);
+                                  Timestamp* begin_commit_timestamp = nullptr,
+                                  tablet::TxnMetadataPB* metadata_pb = nullptr);
   void ParticipateInTransactionAsync(const std::string& tablet_id,
                                      tserver::ParticipantOpPB participant_op,
                                      const MonoDelta& timeout,
                                      StatusCallback cb,
-                                     Timestamp* begin_commit_timestamp = nullptr);
+                                     Timestamp* begin_commit_timestamp = nullptr,
+                                     tablet::TxnMetadataPB* metadata_pb = nullptr);
  private:
 
   friend class itest::TxnStatusTableITest;

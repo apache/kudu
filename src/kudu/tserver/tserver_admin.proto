@@ -102,6 +102,9 @@ message ParticipantOpPB {
     BEGIN_COMMIT = 2;
     FINALIZE_COMMIT = 3;
     ABORT_TXN = 4;
+
+    // Get metadata about the given participant.
+    GET_METADATA = 5;
   }
   optional ParticipantOpType type = 1;
   optional int64 txn_id = 2;
@@ -120,6 +123,10 @@ message ParticipantResponsePB {
 
   // The timestamp chosen by the server for this participant op.
   optional fixed64 timestamp = 2;
+
+  // Metadata returned for a GET_METADATA op. May be absent if no metadata
+  // existed on the given participant for the given transaction.
+  optional tablet.TxnMetadataPB metadata = 3;
 }
 
 message AlterSchemaRequestPB {

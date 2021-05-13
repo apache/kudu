@@ -38,6 +38,10 @@ namespace client {
 class KuduClient;
 } // namespace client
 
+namespace tablet {
+class TxnMetadataPB;
+} // namespace tablet
+
 namespace transactions {
 
 // Context to be used when sending RPCs to specific tablets.
@@ -59,7 +63,8 @@ class ParticipantRpc final : public rpc::RetriableRpc<client::internal::RemoteTa
   static ParticipantRpc* NewRpc(std::unique_ptr<TxnParticipantContext> ctx,
                                 const MonoTime& deadline,
                                 StatusCallback user_cb,
-                                Timestamp* begin_commit_timestamp = nullptr);
+                                Timestamp* begin_commit_timestamp = nullptr,
+                                tablet::TxnMetadataPB* metadata_pb = nullptr);
   ~ParticipantRpc() {}
   std::string ToString() const override;
 
@@ -79,12 +84,14 @@ class ParticipantRpc final : public rpc::RetriableRpc<client::internal::RemoteTa
                  scoped_refptr<client::internal::MetaCacheServerPicker> replica_picker,
                  const MonoTime& deadline,
                  StatusCallback user_cb,
-                 Timestamp* begin_commit_timestamp);
+                 Timestamp* begin_commit_timestamp,
+                 tablet::TxnMetadataPB* metadata_pb);
 
   client::KuduClient* client_;
   scoped_refptr<client::internal::RemoteTablet> tablet_;
   const StatusCallback user_cb_;
   Timestamp* begin_commit_timestamp_;
+  tablet::TxnMetadataPB* metadata_pb_;
 };
 
 } // namespace transactions

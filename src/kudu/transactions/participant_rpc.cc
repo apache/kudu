@@ -38,6 +38,7 @@
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
@@ -53,6 +54,7 @@ using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::ResponseCallback;
 using kudu::rpc::RetriableRpc;
 using kudu::rpc::RetriableRpcStatus;
+using kudu::tablet::TxnMetadataPB;
 using kudu::tserver::TabletServerErrorPB;
 using std::string;
 using std::unique_ptr;
@@ -67,7 +69,8 @@ ParticipantRpc* ParticipantRpc::NewRpc(
     unique_ptr<TxnParticipantContext> ctx,
     const MonoTime& deadline,
     StatusCallback user_cb,
-    Timestamp* begin_commit_timestamp) {
+    Timestamp* begin_commit_timestamp,
+    TxnMetadataPB* metadata_pb) {
   scoped_refptr<MetaCacheServerPicker> server_picker(
       new MetaCacheServerPicker(ctx->client,
                                 ctx->client->data_->meta_cache_,
@@ -77,20 +80,23 @@ ParticipantRpc* ParticipantRpc::NewRpc(
                             std::move(server_picker),
                             deadline,
                             std::move(user_cb),
-                            begin_commit_timestamp);
+                            begin_commit_timestamp,
+                            metadata_pb);
 }
 
 ParticipantRpc::ParticipantRpc(unique_ptr<TxnParticipantContext> ctx,
                                scoped_refptr<MetaCacheServerPicker> replica_picker,
                                const MonoTime& deadline,
                                StatusCallback user_cb,
-                               Timestamp* begin_commit_timestamp)
+                               Timestamp* begin_commit_timestamp,
+                               TxnMetadataPB* metadata_pb)
     : RetriableRpc(std::move(replica_picker), ctx->client->data_->request_tracker_,
                    deadline, ctx->client->data_->messenger_),
       client_(ctx->client),
       tablet_(std::move(ctx->tablet)),
       user_cb_(std::move(user_cb)),
-      begin_commit_timestamp_(begin_commit_timestamp) {
+      begin_commit_timestamp_(begin_commit_timestamp),
+      metadata_pb_(metadata_pb) {
   req_.set_tablet_id(tablet_->tablet_id());
   *req_.mutable_op() = std::move(ctx->participant_op);
 }
@@ -223,8 +229,13 @@ RetriableRpcStatus ParticipantRpc::AnalyzeResponse(const Status& rpc_cb_status) 
 void ParticipantRpc::Finish(const Status& status) {
   // Free memory upon completion.
   unique_ptr<ParticipantRpc> delete_me(this);
-  if (status.ok() && begin_commit_timestamp_ && resp_.has_timestamp()) {
-    *begin_commit_timestamp_ = Timestamp(resp_.timestamp());
+  if (status.ok()) {
+    if (begin_commit_timestamp_ && resp_.has_timestamp()) {
+      *begin_commit_timestamp_ = Timestamp(resp_.timestamp());
+    }
+    if (metadata_pb_ && resp_.has_metadata()) {
+      *metadata_pb_ = resp_.metadata();
+    }
   }
   user_cb_(status);
 }

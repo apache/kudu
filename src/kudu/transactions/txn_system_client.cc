@@ -81,6 +81,7 @@ using kudu::master::PingRequestPB;
 using kudu::master::PingResponsePB;
 using kudu::rpc::Messenger;
 using kudu::rpc::RpcController;
+using kudu::tablet::TxnMetadataPB;
 using kudu::tserver::CoordinatorOpPB;
 using kudu::tserver::CoordinatorOpResultPB;
 using kudu::tserver::ParticipantOpPB;
@@ -370,10 +371,11 @@ Status TxnSystemClient::CoordinateTransactionAsync(CoordinatorOpPB coordinate_tx
 Status TxnSystemClient::ParticipateInTransaction(const string& tablet_id,
                                                  const ParticipantOpPB& participant_op,
                                                  const MonoDelta& timeout,
-                                                 Timestamp* begin_commit_timestamp) {
+                                                 Timestamp* begin_commit_timestamp,
+                                                 TxnMetadataPB* metadata_pb) {
   Synchronizer sync;
   ParticipateInTransactionAsync(tablet_id, participant_op, timeout,
-                                sync.AsStatusCallback(), begin_commit_timestamp);
+                                sync.AsStatusCallback(), begin_commit_timestamp, metadata_pb);
   return sync.Wait();
 }
 
@@ -381,7 +383,8 @@ void TxnSystemClient::ParticipateInTransactionAsync(const string& tablet_id,
                                                     ParticipantOpPB participant_op,
                                                     const MonoDelta& timeout,
                                                     StatusCallback cb,
-                                                    Timestamp* begin_commit_timestamp) {
+                                                    Timestamp* begin_commit_timestamp,
+                                                    TxnMetadataPB* metadata_pb) {
   MonoTime deadline = MonoTime::Now() + timeout;
   unique_ptr<TxnParticipantContext> ctx(
       new TxnParticipantContext({
@@ -396,7 +399,8 @@ void TxnSystemClient::ParticipateInTransactionAsync(const string& tablet_id,
   // See https://taylorconor.com/blog/noncopyable-lambdas/ for more details.
   client_->data_->meta_cache_->LookupTabletById(
       client_.get(), tablet_id, deadline, &ctx_raw->tablet,
-      [cb = std::move(cb), deadline, ctx_raw, begin_commit_timestamp] (const Status& s) mutable {
+      [cb = std::move(cb), deadline, ctx_raw, begin_commit_timestamp, metadata_pb]
+          (const Status& s) mutable {
         unique_ptr<TxnParticipantContext> unique_ctx(ctx_raw);
         if (PREDICT_FALSE(!s.ok())) {
           cb(s);
@@ -406,7 +410,8 @@ void TxnSystemClient::ParticipateInTransactionAsync(const string& tablet_id,
             std::move(unique_ctx),
             deadline,
             std::move(cb),
-            begin_commit_timestamp);
+            begin_commit_timestamp,
+            metadata_pb);
         rpc->SendRpc();
       });
 }

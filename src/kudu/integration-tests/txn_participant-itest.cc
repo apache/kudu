@@ -34,10 +34,10 @@
 #include "kudu/clock/clock.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/ref_counted.h"
@@ -98,7 +98,7 @@ using kudu::tablet::kInitializing;
 using kudu::tablet::kOpen;
 using kudu::tablet::MakeParticipantOp;
 using kudu::tablet::TabletReplica;
-using kudu::tablet::TxnState;
+using kudu::tablet::TxnMetadataPB;
 using kudu::tablet::TxnParticipant;
 using kudu::tablet::TxnState;
 using kudu::transactions::TxnSystemClient;
@@ -829,6 +829,64 @@ TEST_F(TxnParticipantITest, TestProxyTabletNotFound) {
     ASSERT_TRUE(resp_error.IsNotFound()) << resp_error.ToString();
     ASSERT_STR_CONTAINS(resp_error.ToString(), "not found");
   }
+}
+
+TEST_F(TxnParticipantITest, TestTxnSystemClientGetMetadata) {
+  unique_ptr<TxnSystemClient> txn_client;
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  constexpr const auto kTxnId = 0;
+  constexpr const int kLeaderIdx = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  const auto tablet_id = leader_replica->tablet_id();
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+
+  // Get commit-related metadata.
+  TxnMetadataPB meta_pb;
+  Status s = txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      /*begin_commit_timestamp*/nullptr, &meta_pb);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      /*begin_commit_timestamp*/nullptr, &meta_pb));
+  ASSERT_FALSE(meta_pb.has_aborted());
+  ASSERT_FALSE(meta_pb.has_commit_mvcc_op_timestamp());
+  ASSERT_FALSE(meta_pb.has_commit_timestamp());
+
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_COMMIT), kDefaultTimeout));
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      /*begin_commit_timestamp*/nullptr, &meta_pb));
+  ASSERT_FALSE(meta_pb.has_aborted());
+  ASSERT_TRUE(meta_pb.has_commit_mvcc_op_timestamp());
+  ASSERT_FALSE(meta_pb.has_commit_timestamp());
+
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT), kDefaultTimeout));
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      /*begin_commit_timestamp*/nullptr, &meta_pb));
+  ASSERT_FALSE(meta_pb.has_aborted());
+  ASSERT_TRUE(meta_pb.has_commit_mvcc_op_timestamp());
+  ASSERT_TRUE(meta_pb.has_commit_timestamp());
+
+  // Get abort-related metadata.
+  constexpr const auto kAbortedTxnId = 1;
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::ABORT_TXN), kDefaultTimeout));
+  ASSERT_OK(txn_client->ParticipateInTransaction(
+      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      /*begin_commit_timestamp*/nullptr, &meta_pb));
+  ASSERT_TRUE(meta_pb.has_aborted());
+  ASSERT_FALSE(meta_pb.has_commit_mvcc_op_timestamp());
+  ASSERT_FALSE(meta_pb.has_commit_timestamp());
 }
 
 // Test that we can start multiple transactions on the same participant.
