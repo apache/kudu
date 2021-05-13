@@ -18,6 +18,8 @@
 package org.apache.kudu.client;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.google.common.base.Preconditions;
 import com.google.protobuf.CodedInputStream;
@@ -158,6 +160,9 @@ public class KuduTransaction implements AutoCloseable {
   private final Object isInFlightSync = new Object();
   private Timeout keepaliveTaskHandle = null;
   private final Object keepaliveTaskHandleSync = new Object();
+  private boolean isCommitStarted = false;
+  private final Object isCommitStartedSync = new Object();
+  private List<AsyncKuduSession> sessions = new ArrayList<>();
 
   /**
    * Create an instance of a transaction handle bound to the specified client.
@@ -213,6 +218,9 @@ public class KuduTransaction implements AutoCloseable {
    */
   void begin() throws KuduException {
     synchronized (isInFlightSync) {
+      // Perform a cursory state check to make sure begin() hasn't been called
+      // yet (this isn't intended to help if begin() is called concurrently from
+      // different threads, though).
       Preconditions.checkState(!isInFlight);
     }
 
@@ -239,9 +247,17 @@ public class KuduTransaction implements AutoCloseable {
    */
   public AsyncKuduSession newAsyncKuduSession() {
     synchronized (isInFlightSync) {
-      Preconditions.checkState(isInFlight);
+      Preconditions.checkState(isInFlight, ERRMSG_TXN_NOT_OPEN);
     }
-    return client.newTransactionalSession(txnId);
+
+    AsyncKuduSession session = null;
+    synchronized (isCommitStartedSync) {
+      Preconditions.checkState(!isCommitStarted, "commit already started");
+      session = client.newTransactionalSession(txnId);
+      sessions.add(session);
+    }
+    Preconditions.checkNotNull(session);
+    return session;
   }
 
   /**
@@ -488,7 +504,36 @@ public class KuduTransaction implements AutoCloseable {
   }
 
   private void commitWithMode(CommitMode mode) throws KuduException {
-    Preconditions.checkState(isInFlight, ERRMSG_TXN_NOT_OPEN);
+    synchronized (isInFlightSync) {
+      Preconditions.checkState(isInFlight, ERRMSG_TXN_NOT_OPEN);
+    }
+    synchronized (isCommitStartedSync) {
+      isCommitStarted = true;
+    }
+    for (AsyncKuduSession s : sessions) {
+      if (mode == CommitMode.WAIT_FOR_COMPLETION) {
+        // Flush each session's pending operations.
+        List<OperationResponse> results =
+            KuduClient.joinAndHandleException(s.flush());
+        for (OperationResponse result : results) {
+          if (result.hasRowError()) {
+            throw new NonRecoverableException(Status.Incomplete(String.format(
+                "failed to flush a transactional session: %s",
+                result.getRowError().toString())));
+          }
+        }
+      } else {
+        // Make sure no write operations are pending in any of the transactional
+        // sessions, i.e. everything has been flushed. This is rather a cursory
+        // check, it's not intended to protect against concurrent activity on
+        // transaction sessions when startCommit() is being called.
+        if (s.hasPendingOperations()) {
+          throw new NonRecoverableException(Status.IllegalState(
+              "cannot start committing transaction: at least one " +
+              "transactional session has write operations pending"));
+        }
+      }
+    }
     CommitTransactionRequest req = doCommitTransaction();
     // Now, there is no need to continue sending keepalive messages: the
     // transaction should be in COMMIT_IN_PROGRESS state after successful

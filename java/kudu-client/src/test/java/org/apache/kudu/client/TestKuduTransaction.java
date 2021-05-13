@@ -1209,6 +1209,403 @@ public class TestKuduTransaction {
     assertEquals(numMasters, countRowsInScan(scanner));
   }
 
+  /**
+   * Make sure {@link KuduTransaction#commit} flushes pending operations
+   * for all sessions created off the {@link KuduTransaction} handle.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+  })
+  public void testFlushSessionsOnCommit() throws Exception {
+    final String TABLE_NAME = "flush_sessions_on_commit";
+    client.createTable(
+        TABLE_NAME,
+        ClientTestUtil.getBasicSchema(),
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 2));
+    KuduTable table = client.openTable(TABLE_NAME);
+    int key = 0;
+
+    // Regardless of the flush mode, a transactional session is automatically
+    // flushed when the transaction is committed.
+    {
+      final SessionConfiguration.FlushMode[] kFlushModes = {
+          SessionConfiguration.FlushMode.MANUAL_FLUSH,
+          SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND,
+          SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC,
+      };
+
+      for (SessionConfiguration.FlushMode mode : kFlushModes) {
+        KuduTransaction txn = client.newTransaction();
+        KuduSession session = txn.newKuduSession();
+        session.setFlushMode(mode);
+        Insert insert = createBasicSchemaInsert(table, key++);
+        session.apply(insert);
+
+        if (mode == SessionConfiguration.FlushMode.MANUAL_FLUSH) {
+          assertTrue(session.hasPendingOperations());
+        }
+
+        txn.commit();
+
+        assertFalse(session.hasPendingOperations());
+        assertEquals(0, session.getPendingErrors().getRowErrors().length);
+      }
+
+      // Make sure all the applied rows have been persisted.
+      KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+          .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+          .build();
+      assertEquals(key, countRowsInScan(scanner));
+    }
+
+    // Make sure that all the transactional sessions are flushed upon committing
+    // a transaction.
+    {
+      KuduTransaction txn = client.newTransaction();
+      List<KuduSession> sessions = new ArrayList<>(10);
+      for (int i = 0; i < 10; ++i) {
+        KuduSession s = txn.newKuduSession();
+        s.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+        Insert insert = createBasicSchemaInsert(table, key++);
+        s.apply(insert);
+        assertTrue(s.hasPendingOperations());
+        sessions.add(s);
+      }
+
+      txn.commit();
+
+      for (KuduSession session : sessions) {
+        assertFalse(session.hasPendingOperations());
+        assertEquals(0, session.getPendingErrors().getRowErrors().length);
+      }
+
+      // Make sure all the applied rows have been persisted.
+      KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+          .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+          .build();
+      assertEquals(key, countRowsInScan(scanner));
+    }
+
+    // Closing and flushing transactional sessions explicitly prior to commit
+    // is totally fine as well.
+    {
+      KuduTransaction txn = client.newTransaction();
+      {
+        KuduSession s = txn.newKuduSession();
+        s.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+        Insert insert = createBasicSchemaInsert(table, key++);
+        s.apply(insert);
+        s.close();
+      }
+      KuduSession session = txn.newKuduSession();
+      session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+      Insert insert = createBasicSchemaInsert(table, key++);
+      session.apply(insert);
+      session.flush();
+
+      txn.commit();
+
+      assertFalse(session.hasPendingOperations());
+      assertEquals(0, session.getPendingErrors().getRowErrors().length);
+
+      // Make sure all the applied rows have been persisted.
+      KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+          .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+          .build();
+      assertEquals(key, countRowsInScan(scanner));
+    }
+  }
+
+  /**
+   * Make sure it's possible to recover from an error occurred while flushing
+   * a transactional session: a transaction handle stays valid and it's possible
+   * to retry calling {@link KuduTransaction#commit()} after handling session
+   * flush errors.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+  })
+  public void testRetryCommitAfterSessionFlushError() throws Exception {
+    final String TABLE_NAME = "retry_commit_after_session_flush_error";
+    client.createTable(
+        TABLE_NAME,
+        ClientTestUtil.getBasicSchema(),
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 2));
+    KuduTable table = client.openTable(TABLE_NAME);
+    int key = 0;
+
+    KuduTransaction txn = client.newTransaction();
+    KuduSession session = txn.newKuduSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+    {
+      Insert insert = createBasicSchemaInsert(table, key);
+      session.apply(insert);
+    }
+    // Try to insert a row with a duplicate key.
+    {
+      Insert insert = createBasicSchemaInsert(table, key++);
+      session.apply(insert);
+    }
+
+    try {
+      txn.commit();
+      fail("committing a transaction with duplicate row should have failed");
+    } catch (NonRecoverableException e) {
+      final String errmsg = e.getMessage();
+      final Status status = e.getStatus();
+      assertTrue(status.toString(), status.isIncomplete());
+      assertTrue(errmsg, errmsg.matches(
+          "failed to flush a transactional session: .*"));
+    }
+
+    // Insert one more row using the same session.
+    {
+      Insert insert = createBasicSchemaInsert(table, key++);
+      session.apply(insert);
+    }
+
+    // Now, retry committing the transaction.
+    txn.commit();
+
+    assertEquals(0, session.getPendingErrors().getRowErrors().length);
+
+    // Make sure all the applied rows have been persisted.
+    KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+        .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+        .build();
+    assertEquals(key, countRowsInScan(scanner));
+  }
+
+  /**
+   * Make sure {@link KuduTransaction#startCommit} succeeds when called on
+   * a transaction handle which has all of its transactional sessions flushed.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+  })
+  public void testStartCommitWithFlushedSessions() throws Exception {
+    final String TABLE_NAME = "start_commit_with_flushed_sessions";
+    client.createTable(
+        TABLE_NAME,
+        ClientTestUtil.getBasicSchema(),
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 2));
+    KuduTable table = client.openTable(TABLE_NAME);
+    int key = 0;
+
+    KuduTransaction txn = client.newTransaction();
+    {
+      KuduSession session = txn.newKuduSession();
+      session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
+      Insert insert = createBasicSchemaInsert(table, key++);
+      session.apply(insert);
+      assertFalse(session.hasPendingOperations());
+      assertEquals(0, session.getPendingErrors().getRowErrors().length);
+    }
+
+    KuduSession session = txn.newKuduSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+    Insert insert = createBasicSchemaInsert(table, key);
+    session.apply(insert);
+    assertTrue(session.hasPendingOperations());
+    session.flush();
+    assertFalse(session.hasPendingOperations());
+
+    // KuduTransaction.startCommit() should succeed now.
+    txn.startCommit();
+  }
+
+  /**
+   * Check the behavior of {@link KuduTransaction#startCommit} when there are
+   * non-flushed transactional sessions started off a transaction handle.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+  })
+  public void testStartCommitWithNonFlushedSessions() throws Exception {
+    final String TABLE_NAME = "non_flushed_sessions_on_start_commit";
+    client.createTable(
+        TABLE_NAME,
+        ClientTestUtil.getBasicSchema(),
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 2));
+    KuduTable table = client.openTable(TABLE_NAME);
+    int key = 0;
+
+    KuduTransaction txn = client.newTransaction();
+
+    // Create one session which will have no pending operations upon
+    // startCommit()
+    {
+      KuduSession session = txn.newKuduSession();
+      session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
+      Insert insert = createBasicSchemaInsert(table, key++);
+      session.apply(insert);
+      assertFalse(session.hasPendingOperations());
+      assertEquals(0, session.getPendingErrors().getRowErrors().length);
+    }
+
+    KuduSession session = txn.newKuduSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+    Insert insert = createBasicSchemaInsert(table, key);
+    session.apply(insert);
+    assertTrue(session.hasPendingOperations());
+
+    try {
+      txn.startCommit();
+      fail("startCommit() should have failed when operations are pending");
+    } catch (NonRecoverableException e) {
+      final String errmsg = e.getMessage();
+      final Status status = e.getStatus();
+      assertTrue(status.toString(), status.isIllegalState());
+      assertTrue(errmsg, errmsg.matches(
+          ".* at least one transactional session has write operations pending"));
+    }
+
+    assertTrue(session.hasPendingOperations());
+    assertEquals(0, session.getPendingErrors().getRowErrors().length);
+  }
+
+  /**
+   * Verify the behavior of {@link KuduTransaction#newAsyncKuduSession} when the
+   * commit process has already been started for the corresponding transaction.
+   * This automatically verifies the behavior of
+   * {@link KuduTransaction#newKuduSession} because it works via
+   * {@link KuduTransaction#newAsyncKuduSession}.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+  })
+  public void testNewSessionAfterCommit() throws Exception {
+    final String TABLE_NAME = "new_session_after_commit";
+    client.createTable(
+        TABLE_NAME,
+        ClientTestUtil.getBasicSchema(),
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 2));
+    KuduTable table = client.openTable(TABLE_NAME);
+    int key = 0;
+
+    {
+      KuduTransaction txn = client.newTransaction();
+      KuduSession session = txn.newKuduSession();
+      session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+      {
+        Insert insert = createBasicSchemaInsert(table, key);
+        session.apply(insert);
+      }
+      // Try to insert a row with a duplicate key.
+      {
+        Insert insert = createBasicSchemaInsert(table, key);
+        session.apply(insert);
+      }
+      try {
+        txn.commit();
+        fail("committing a transaction with duplicate row should have failed");
+      } catch (NonRecoverableException e) {
+        final String errmsg = e.getMessage();
+        final Status status = e.getStatus();
+        assertTrue(status.toString(), status.isIncomplete());
+        assertTrue(errmsg, errmsg.matches(
+            "failed to flush a transactional session: .*"));
+      }
+
+      try {
+        txn.newAsyncKuduSession();
+        fail("newKuduSession() should throw when transaction already committed");
+      } catch (IllegalStateException e) {
+        final String errmsg = e.getMessage();
+        assertTrue(errmsg, errmsg.matches("commit already started"));
+      }
+      txn.rollback();
+    }
+
+    {
+      KuduTransaction txn = client.newTransaction();
+      txn.commit();
+      try {
+        txn.newAsyncKuduSession();
+        fail("newKuduSession() should throw when transaction already committed");
+      } catch (IllegalStateException e) {
+        final String errmsg = e.getMessage();
+        assertTrue(errmsg, errmsg.matches(
+            "transaction is not open for this handle"));
+      }
+    }
+  }
+
+  /**
+   * This scenario is similar to the scenario above, but it calls
+   * {@link KuduTransaction#startCommit} instead of
+   * {@link KuduTransaction#commit}.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+  })
+  public void testCreateSessionAfterStartCommit() throws Exception {
+    KuduTransaction txn = client.newTransaction();
+    txn.startCommit();
+    try {
+      txn.newAsyncKuduSession();
+      fail("newKuduSession() should throw when transaction already committed");
+    } catch (IllegalStateException e) {
+      final String errmsg = e.getMessage();
+      assertTrue(errmsg, errmsg.matches(
+          "transaction is not open for this handle"));
+    }
+  }
+
+  /**
+   * A test scenario to verify the behavior of the client API when a write
+   * operation submitted into a transaction session after the transaction
+   * has already been committed.
+   */
+  @Test(timeout = 100000)
+  @MasterServerConfig(flags = {
+      // TxnManager functionality is necessary for this scenario.
+      "--txn_manager_enabled",
+  })
+  public void testSubmitWriteOpAfterCommit() throws Exception {
+    final String TABLE_NAME = "submit_write_op_after_commit";
+    client.createTable(
+        TABLE_NAME,
+        ClientTestUtil.getBasicSchema(),
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 2));
+    KuduTable table = client.openTable(TABLE_NAME);
+    int key = 0;
+
+    KuduTransaction txn = client.newTransaction();
+    KuduSession session = txn.newKuduSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+    {
+      Insert insert = createBasicSchemaInsert(table, key++);
+      session.apply(insert);
+    }
+
+    txn.commit();
+
+    {
+      Insert insert = createBasicSchemaInsert(table, key);
+      session.apply(insert);
+    }
+    List<OperationResponse> results = session.flush();
+    assertEquals(1, results.size());
+    OperationResponse rowResult = results.get(0);
+    assertTrue(rowResult.hasRowError());
+    String errmsg = rowResult.getRowError().toString();
+    assertTrue(errmsg, errmsg.matches(
+        ".* transaction ID .* not open: COMMITTED .*"));
+  }
+
   // TODO(aserbin): when test harness allows for sending Kudu servers particular
   //                signals, add a test scenario to verify that timeout for
   //                TxnManager request is set low enough to detect 'frozen'
