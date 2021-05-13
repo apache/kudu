@@ -278,6 +278,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   bool HasTxnMetadata(int64_t txn_id, TxnState* state = nullptr,
                       Timestamp* timestamp = nullptr);
 
+  // Populates 'pb' with metadata for the given transaction, returning false if
+  // the transaction doesn't exist and true otherwise.
+  bool GetTxnMetadataPB(int64_t txn_id, TxnMetadataPB* pb) const;
+
   // Returns the transaction IDs that were persisted as being in-flight,
   // terminal (committed or aborted), and having un-flushed MRSs.
   void GetTxnIds(std::unordered_set<int64_t>* in_flight_txn_ids,
