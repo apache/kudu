@@ -412,6 +412,40 @@ Status LocateRow(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status SetDiskSizeLimit(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& disk_size_limit_str = FindOrDie(context.required_args, "disk_size");
+  int64_t disk_size_limit;
+  if (iequals(disk_size_limit_str, "unlimited")) {
+    disk_size_limit = -1;
+  } else if (!safe_strto64(disk_size_limit_str, &disk_size_limit)) {
+    return Status::InvalidArgument(Substitute(
+        "Could not parse $0 as disk size limit", disk_size_limit_str));
+  }
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->SetTableDiskSizeLimit(disk_size_limit);
+  return alterer->Alter();
+}
+
+Status SetRowCountLimit(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& row_count_limit_str = FindOrDie(context.required_args, "row_count");
+  int64_t row_count_limit;
+  if (iequals(row_count_limit_str, "unlimited")) {
+    row_count_limit = -1;
+  } else if (!safe_strto64(row_count_limit_str, &row_count_limit)) {
+    return Status::InvalidArgument(Substitute(
+        "Could not parse $0 as row count limit", row_count_limit_str));
+  }
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->SetTableRowCountLimit(row_count_limit);
+  return alterer->Alter();
+}
+
 Status RenameTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   const string& new_table_name = FindOrDie(context.required_args, kNewTableNameArg);
@@ -1175,6 +1209,28 @@ Status CreateTable(const RunnerContext& context) {
 
 } // anonymous namespace
 
+unique_ptr<Mode> BuildSetTableLimitMode() {
+  unique_ptr<Action> set_disk_size_limit =
+      ClusterActionBuilder("disk_size", &SetDiskSizeLimit)
+      .Description("Set the disk size limit")
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to set limit" })
+      .AddRequiredParameter({ "disk_size",
+                              "The disk size limit, 'unlimited' for no write limit" })
+      .Build();
+  unique_ptr<Action> set_row_count_limit =
+      ClusterActionBuilder("row_count", &SetRowCountLimit)
+      .Description("Set the row count limit")
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to set limit" })
+      .AddRequiredParameter({ "row_count",
+                              "The row count limit, 'unlimited' for no write limit" })
+      .Build();
+  return ModeBuilder("set_limit")
+      .Description("Set the write limit for a table")
+      .AddAction(std::move(set_disk_size_limit))
+      .AddAction(std::move(set_row_count_limit))
+      .Build();
+}
+
 unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> delete_table =
       ClusterActionBuilder("delete", &DeleteTable)
@@ -1393,6 +1449,7 @@ unique_ptr<Mode> BuildTableMode() {
 
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
+      .AddMode(BuildSetTableLimitMode())
       .AddAction(std::move(add_range_partition))
       .AddAction(std::move(column_remove_default))
       .AddAction(std::move(column_set_block_size))
