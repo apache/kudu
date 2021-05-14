@@ -297,22 +297,6 @@ public class TestKuduMetastorePlugin {
                 "Kudu table entry must contain a Kudu storage handler property"));
       }
 
-      // Try to alter the Kudu table to a different type.
-      try {
-        Table alteredTable = table.deepCopy();
-        alteredTable.setTableType(TableType.MANAGED_TABLE.toString());
-        // Also change the location to avoid MetastoreDefaultTransformer validation
-        // that exists in some Hive versions.
-        alteredTable.getSd().setLocation(String.format("%s/%s/%s",
-            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
-            table.getDbName(), table.getTableName()));
-        client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
-        fail();
-      } catch (TException e) {
-        assertTrue(e.getMessage(),
-                   e.getMessage().contains("Kudu table type may not be altered"));
-      }
-
       // Alter the Kudu table to a different type by setting the external property fails.
       try {
         Table alteredTable = table.deepCopy();
@@ -354,7 +338,7 @@ public class TestKuduMetastorePlugin {
         alteredTable.getSd().setLocation(String.format("%s/%s/%s",
             clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
             table.getDbName(), table.getTableName()));
-        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
@@ -375,6 +359,36 @@ public class TestKuduMetastorePlugin {
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
         client.alter_table_with_environmentContext(table.getDbName(), table.getTableName(),
             alteredTable, masterContext());
+      }
+
+      // Altering the table type in a what that maintains sync works.
+      // In this case an external purge table is the same as a managed table.
+      {
+        Table alteredTable = table.deepCopy();
+        alteredTable.setTableType(TableType.MANAGED_TABLE.toString());
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "FALSE");
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
+        // Also change the location to avoid MetastoreDefaultTransformer validation
+        // that exists in some Hive versions.
+        alteredTable.getSd().setLocation(String.format("%s/%s/%s",
+            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            table.getDbName(), table.getTableName()));
+        client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
+      }
+
+      // Altering back the table type in a what that maintains sync works.
+      // In this case a managed table is the same as an external purge table.
+      {
+        Table alteredTable = table.deepCopy();
+        alteredTable.setTableType(TableType.EXTERNAL_TABLE.toString());
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
+        // Also change the location to avoid MetastoreDefaultTransformer validation
+        // that exists in some Hive versions.
+        alteredTable.getSd().setLocation(String.format("%s/%s/%s",
+            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            table.getDbName(), table.getTableName()));
+        client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
       }
 
       // Check that adding a column fails.

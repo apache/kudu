@@ -232,17 +232,15 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     }
 
     // Prevent altering the table type (managed/external) of Kudu tables (or via
-    // altering table properties 'EXTERNAL' or `external.table.purge`).
-    // This can cause orphaned tables.
+    // altering table properties 'EXTERNAL' or `external.table.purge`) in a way
+    // that changes if a table is synchronized. This can cause orphaned tables.
     // Note: This doesn't prevent altering the table type for legacy tables
     // because they should continue to work as they always have primarily for
     // migration purposes.
     // The Kudu master is allowed to make these changes if necessary as it is a trusted user.
     if (isKuduTable(oldTable) &&
         !isKuduMasterAction(tableEvent) &&
-        (!Objects.equals(oldTable.getTableType(), newTable.getTableType()) ||
-            isExternalTable(oldTable) != isExternalTable(newTable) ||
-            isPurgeTable(oldTable) != isPurgeTable(newTable))) {
+        isSynchronizedTable(oldTable) != isSynchronizedTable(newTable) ) {
       throw new MetaException("Kudu table type may not be altered");
     }
 
