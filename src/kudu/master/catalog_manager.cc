@@ -2894,9 +2894,15 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
                              !req.new_extra_configs().empty() ||
                              !alter_schema_steps.empty() ||
                              !alter_partitioning_steps.empty();
+  if (table_limit_change && !FLAGS_enable_table_write_limit) {
+    return SetupError(Status::NotSupported(
+                      "altering table limit is not supported because "
+                      "--enable_table_write_limit is not enabled"),
+                      resp, MasterErrorPB::UNKNOWN_ERROR);
+  }
   if (table_limit_change && other_schema_change) {
     return SetupError(Status::ConfigurationError(
-                      "Alter table limit cannot be combined with other alterations"),
+                      "altering table limit cannot be combined with other alterations"),
                       resp, MasterErrorPB::UNKNOWN_ERROR);
   }
 
@@ -2944,13 +2950,17 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   string normalized_table_name = NormalizeTableName(l.data().name());
   *resp->mutable_table_id() = table->id();
 
-  // Modify the table limit.
+  // Set the table limit.
   if (table_limit_change) {
     if (req.has_disk_size_limit()) {
       if (req.disk_size_limit() == TableInfo::TABLE_WRITE_DEFAULT_LIMIT) {
         l.mutable_data()->pb.clear_table_disk_size_limit();
+        LOG(INFO) << Substitute("Resetting table $0 disk_size_limit to the default setting",
+                                normalized_table_name);
       } else if (req.disk_size_limit() >= 0) {
         l.mutable_data()->pb.set_table_disk_size_limit(req.disk_size_limit());
+        LOG(INFO) << Substitute("Setting table $0 disk_size_limit to $1",
+                                 normalized_table_name, req.disk_size_limit());
       } else {
         return SetupError(Status::InvalidArgument("disk size limit must "
             "be greater than or equal to -1"),
@@ -2960,8 +2970,12 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     if (req.has_row_count_limit()) {
       if (req.row_count_limit() == TableInfo::TABLE_WRITE_DEFAULT_LIMIT) {
         l.mutable_data()->pb.clear_table_row_count_limit();
+        LOG(INFO) << Substitute("Resetting table $0 row_count_limit to the default setting",
+                                normalized_table_name);
       } else if (req.row_count_limit() >= 0) {
         l.mutable_data()->pb.set_table_row_count_limit(req.row_count_limit());
+        LOG(INFO) << Substitute("Setting table $0 row_count_limit to $1",
+                                 normalized_table_name, req.row_count_limit());
       } else {
         return SetupError(Status::InvalidArgument("row count limit must "
             "be greater than or equal to -1"),
@@ -3463,8 +3477,16 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
     }
   }
   if (FLAGS_enable_table_write_limit) {
-    resp->set_disk_size_limit(l.data().pb.table_disk_size_limit());
-    resp->set_row_count_limit(l.data().pb.table_row_count_limit());
+    if (l.data().pb.has_table_disk_size_limit()) {
+      resp->set_disk_size_limit(l.data().pb.table_disk_size_limit());
+    } else {
+      resp->set_disk_size_limit(TableInfo::TABLE_WRITE_DEFAULT_LIMIT);
+    }
+    if (l.data().pb.has_table_row_count_limit()) {
+      resp->set_row_count_limit(l.data().pb.table_row_count_limit());
+    } else {
+      resp->set_row_count_limit(TableInfo::TABLE_WRITE_DEFAULT_LIMIT);
+    }
   }
   return Status::OK();
 }

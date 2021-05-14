@@ -164,6 +164,7 @@ using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduTableStatistics;
 using kudu::client::KuduValue;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
@@ -1195,6 +1196,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "rename_table.*Rename a table",
         "scan.*Scan rows from a table",
         "set_extra_config.*Change a extra configuration value on a table",
+        "set_limit.*Set the write limit for a table",
         "statistics.*Get table statistics",
     };
     NO_FATALS(RunTestHelp(kCmd, kTableModeRegexes));
@@ -1221,6 +1223,13 @@ TEST_F(ToolTest, TestModeHelp) {
           "set_extra_config",
           "statistics",
         }));
+  }
+  {
+    const vector<string> kSetLimitModeRegexes = {
+        "disk_size.*Set the disk size limit",
+        "row_count.*Set the row count limit",
+    };
+    NO_FATALS(RunTestHelp("table set_limit", kSetLimitModeRegexes));
   }
   {
     const string kCmd = "tablet";
@@ -3365,6 +3374,7 @@ TEST_F(ToolTest, TestMasterList) {
 // (6)copy a table
 // (7)alter a column
 // (8)delete a column
+// (9)set the table limit when kudu-master unsupported and supported it
 TEST_F(ToolTest, TestDeleteTable) {
   NO_FATALS(StartExternalMiniCluster());
   shared_ptr<KuduClient> client;
@@ -3956,6 +3966,153 @@ TEST_F(ToolTest, TestDeleteColumn) {
                                            master_addr, kTableName, kColumnName)));
   ASSERT_OK(client->OpenTable(kTableName, &table));
   ASSERT_STR_NOT_CONTAINS(table->schema().ToString(), kColumnName);
+}
+
+TEST_F(ToolTest, TestChangeTableLimitNotSupported) {
+  const string kTableName = "kudu.table.failtochangelimit";
+  // Disable table write limit by default, then set limit will not take effect.
+  NO_FATALS(StartExternalMiniCluster());
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  // Report unsupported table limit through kudu CLI.
+  string stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("table statistics $0 $1",
+                 master_addr, kTableName),
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, "on disk size limit: N/A");
+  ASSERT_STR_CONTAINS(stdout, "live row count limit: N/A");
+
+  // Report unsupported table limit through kudu client.
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  unique_ptr<KuduTableStatistics> statistics;
+  KuduTableStatistics *table_statistics;
+  ASSERT_OK(client->GetTableStatistics(kTableName, &table_statistics));
+  statistics.reset(table_statistics);
+  ASSERT_EQ(-1, statistics->live_row_count_limit());
+  ASSERT_EQ(-1, statistics->on_disk_size_limit());
+
+  // Fail to set table limit if kudu-master does not enable it. Verify the error message.
+  string stderr;
+  Status s = RunActionStderrString(
+      Substitute("table set_limit disk_size $0 $1 1000000",
+                 master_addr, kTableName),
+      &stderr);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(stderr, "altering table limit is not supported");
+  s = RunActionStderrString(
+      Substitute("table set_limit row_count $0 $1 1000000",
+                 master_addr, kTableName),
+      &stderr);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(stderr, "altering table limit is not supported");
+}
+
+TEST_F(ToolTest, TestChangeTableLimitSupported) {
+  const string kTableName = "kudu.table.changelimit";
+  const int64_t kDiskSizeLimit = 999999;
+  const int64_t kRowCountLimit = 100000;
+
+  ExternalMiniClusterOptions opts;
+  opts.extra_master_flags.emplace_back("--enable_table_write_limit=true");
+  opts.extra_master_flags.emplace_back("--superuser_acl=*");
+
+  NO_FATALS(StartExternalMiniCluster(opts));
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  unique_ptr<KuduTableStatistics> statistics;
+  KuduTableStatistics *table_statistics;
+  ASSERT_OK(client->GetTableStatistics(kTableName, &table_statistics));
+  statistics.reset(table_statistics);
+  ASSERT_EQ(-1, statistics->live_row_count_limit());
+  ASSERT_EQ(-1, statistics->on_disk_size_limit());
+  // Check the invalid disk_size_limit.
+  string stderr;
+  Status s = RunActionStderrString(
+      Substitute("table set_limit disk_size $0 $1 abc",
+                 master_addr, kTableName),
+      &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr, "Could not parse");
+  stderr.clear();
+  // Check the invalid row_count_limit.
+  s = RunActionStderrString(
+      Substitute("table set_limit row_count $0 $1 abc",
+                 master_addr, kTableName),
+      &stderr);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(stderr, "Could not parse");
+  stderr.clear();
+  // Check the invalid setting parameter: negative value
+  s = RunActionStderrString(
+      Substitute("table set_limit disk_size $0 $1 -1",
+                 master_addr, kTableName),
+      &stderr);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(stderr, "ERROR: unknown command line flag");
+  stderr.clear();
+  s = RunActionStderrString(
+      Substitute("table set_limit row_count $0 $1 -1",
+                 master_addr, kTableName),
+      &stderr);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(stderr, "ERROR: unknown command line flag");
+  stderr.clear();
+  // Chech the invalid setting parameter: larger than INT64_MAX
+  s = RunActionStderrString(
+      Substitute("table set_limit disk_size $0 $1 99999999999999999999999999",
+                 master_addr, kTableName),
+      &stderr);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(stderr, "Could not parse");
+  stderr.clear();
+  s = RunActionStderrString(
+      Substitute("table set_limit row_count $0 $1 99999999999999999999999999",
+                 master_addr, kTableName),
+      &stderr);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(stderr, "Could not parse");
+  stderr.clear();
+  // Check the normal limit setting.
+  NO_FATALS(RunActionStdoutNone(Substitute("table set_limit disk_size $0 $1 $2",
+                                           master_addr, kTableName, kDiskSizeLimit)));
+  NO_FATALS(RunActionStdoutNone(Substitute("table set_limit row_count $0 $1 $2",
+                                           master_addr, kTableName, kRowCountLimit)));
+  ASSERT_OK(client->GetTableStatistics(kTableName, &table_statistics));
+  statistics.reset(table_statistics);
+  ASSERT_EQ(kRowCountLimit, statistics->live_row_count_limit());
+  ASSERT_EQ(kDiskSizeLimit, statistics->on_disk_size_limit());
+  // Check unlimited setting.
+  NO_FATALS(RunActionStdoutNone(Substitute("table set_limit disk_size $0 $1 unlimited",
+                                           master_addr, kTableName)));
+  NO_FATALS(RunActionStdoutNone(Substitute("table set_limit row_count $0 $1 unlimited",
+                                           master_addr, kTableName)));
+  ASSERT_OK(client->GetTableStatistics(kTableName, &table_statistics));
+  statistics.reset(table_statistics);
+  ASSERT_EQ(-1, statistics->live_row_count_limit());
+  ASSERT_EQ(-1, statistics->on_disk_size_limit());
 }
 
 Status CreateLegacyHmsTable(HmsClient* client,
