@@ -241,7 +241,7 @@ public class KuduTransaction implements AutoCloseable {
     synchronized (isInFlightSync) {
       Preconditions.checkState(isInFlight);
     }
-    return new AsyncKuduSession(client, txnId);
+    return client.newTransactionalSession(txnId);
   }
 
   /**
@@ -253,10 +253,7 @@ public class KuduTransaction implements AutoCloseable {
    * @return a new {@link KuduSession} instance
    */
   public KuduSession newKuduSession() {
-    synchronized (isInFlightSync) {
-      Preconditions.checkState(isInFlight);
-    }
-    return new KuduSession(new AsyncKuduSession(client, txnId));
+    return new KuduSession(newAsyncKuduSession());
   }
 
   /**
