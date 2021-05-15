@@ -2614,6 +2614,17 @@ public class AsyncKuduClient implements AutoCloseable {
     return closeAllSessions().addCallbackDeferring(new DisconnectCB());
   }
 
+  // Create a new transactional session in the context of the transaction
+  // with the specified identifier.
+  AsyncKuduSession newTransactionalSession(long txnId) {
+    checkIsClosed();
+    AsyncKuduSession session = new AsyncKuduSession(this, txnId);
+    synchronized (sessions) {
+      sessions.add(session);
+    }
+    return session;
+  }
+
   private void checkIsClosed() {
     if (closed) {
       throw new IllegalStateException("Cannot proceed, the client has already been closed");
