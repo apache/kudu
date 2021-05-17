@@ -39,16 +39,17 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.Closeable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.sql.Date;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -56,9 +57,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
@@ -78,6 +81,7 @@ import org.apache.kudu.test.KuduTestHarness.LocationConfig;
 import org.apache.kudu.test.KuduTestHarness.MasterServerConfig;
 import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
 import org.apache.kudu.test.RandomUtils;
+import org.apache.kudu.test.cluster.KuduBinaryInfo;
 import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.util.TimestampUtil;
@@ -1418,5 +1422,133 @@ public class TestKuduClient {
     rowOld.addString("c4", "c4_3");
     OperationResponse respOld = session.apply(insertOld);
     assertFalse(respOld.hasRowError());
+  }
+
+  /**
+   * This is a test scenario to reproduce conditions described in KUDU-3277.
+   * The scenario was failing before the fix:
+   *   ** 'java.lang.AssertionError: This Deferred was already called' was
+   *       encountered multiple times with the stack exactly as described in
+   *       KUDU-3277
+   *   ** some flusher threads were unable to join since KuduSession.flush()
+   *      would hang (i.e. would not return)
+   */
+  @MasterServerConfig(flags = {
+      // A shorter TTL for tablet locations is necessary to induce more frequent
+      // calls to TabletLookupCB.queueBuffer().
+      "--table_locations_ttl_ms=500",
+  })
+  @Test(timeout = 100000)
+  public void testConcurrentFlush() throws Exception {
+    // This is a very intensive and stressful test scenario, so run it only
+    // against Kudu binaries built without sanitizers.
+    assumeTrue("this scenario is to run against non-sanitized binaries only",
+        KuduBinaryInfo.getSanitizerType() == KuduBinaryInfo.SanitizerType.NONE);
+    try {
+      AsyncKuduSession.injectLatencyBufferFlushCb(true);
+
+      CreateTableOptions opts = new CreateTableOptions()
+          .addHashPartitions(ImmutableList.of("key"), 8)
+          .setRangePartitionColumns(ImmutableList.of("key"));
+
+      Schema schema = ClientTestUtil.getBasicSchema();
+      PartialRow lowerBoundA = schema.newPartialRow();
+      PartialRow upperBoundA = schema.newPartialRow();
+      upperBoundA.addInt("key", 0);
+      opts.addRangePartition(lowerBoundA, upperBoundA);
+
+      PartialRow lowerBoundB = schema.newPartialRow();
+      lowerBoundB.addInt("key", 0);
+      PartialRow upperBoundB = schema.newPartialRow();
+      opts.addRangePartition(lowerBoundB, upperBoundB);
+
+      KuduTable table = client.createTable(TABLE_NAME, schema, opts);
+
+      final CountDownLatch keepRunning = new CountDownLatch(1);
+      final int numSessions = 50;
+
+      List<KuduSession> sessions = new ArrayList<>(numSessions);
+      for (int i = 0; i < numSessions; ++i) {
+        KuduSession session = client.newSession();
+        session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+        sessions.add(session);
+      }
+
+      List<Thread> flushers = new ArrayList<>(numSessions);
+      Random random = RandomUtils.getRandom();
+      {
+        for (int idx = 0; idx < numSessions; ++idx) {
+          final int threadIdx = idx;
+          Thread flusher = new Thread(new Runnable() {
+            @Override
+            public void run() {
+              KuduSession session = sessions.get(threadIdx);
+              try {
+                while (!keepRunning.await(random.nextInt(250), TimeUnit.MILLISECONDS)) {
+                  session.flush();
+                  assertEquals(0, session.countPendingErrors());
+                }
+              } catch (Exception e) {
+                fail("unexpected exception: " + e);
+              }
+            }
+          });
+          flushers.add(flusher);
+        }
+      }
+
+      final int numRowsPerSession = 10000;
+      final CountDownLatch insertersCompleted = new CountDownLatch(numSessions);
+      List<Thread> inserters = new ArrayList<>(numSessions);
+      {
+        for (int idx = 0; idx < numSessions; ++idx) {
+          final int threadIdx = idx;
+          final int keyStart = threadIdx * numRowsPerSession;
+          Thread inserter = new Thread(new Runnable() {
+            @Override
+            public void run() {
+              KuduSession session = sessions.get(threadIdx);
+              try {
+                for (int key = keyStart; key < keyStart + numRowsPerSession; ++key) {
+                  Insert insert = ClientTestUtil.createBasicSchemaInsert(table, key);
+                  assertNull(session.apply(insert));
+                }
+                session.flush();
+              } catch (Exception e) {
+                fail("unexpected exception: " + e);
+              }
+              insertersCompleted.countDown();
+            }
+          });
+          inserters.add(inserter);
+        }
+      }
+
+      for (Thread flusher : flushers) {
+        flusher.start();
+      }
+      for (Thread inserter : inserters) {
+        inserter.start();
+      }
+
+      // Wait for the inserter threads to finish.
+      insertersCompleted.await();
+      // Signal the flusher threads to stop.
+      keepRunning.countDown();
+
+      for (Thread inserter : inserters) {
+        inserter.join();
+      }
+      for (Thread flusher : flushers) {
+        flusher.join();
+      }
+
+      KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+          .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+          .build();
+      assertEquals(numSessions * numRowsPerSession, countRowsInScan(scanner));
+    } finally {
+      AsyncKuduSession.injectLatencyBufferFlushCb(false);
+    }
   }
 }
