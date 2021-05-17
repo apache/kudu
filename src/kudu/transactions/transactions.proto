@@ -68,6 +68,14 @@ message TxnStatusEntryPB {
 
   // Commit timestamp associated with this transaction.
   optional fixed64 commit_timestamp = 3;
+
+  // The timestamp in seconds since the epoch that this transaction was
+  // started.
+  optional int64 start_timestamp = 4;
+
+  // The timestamp in seconds since the epoch that this transaction had a state
+  // change.
+  optional int64 last_transition_timestamp = 5;
 }
 
 // Metadata encapsulating the existence of a transaction participant.

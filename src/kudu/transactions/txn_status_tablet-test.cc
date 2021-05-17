@@ -62,6 +62,7 @@ const char kParticipant[] = "peanutbutter";
 string ParticipantId(int i) {
   return Substitute("$0$1", kParticipant, i);
 }
+constexpr const int64_t kFakeTime = 43110;
 
 // Simple representation of an entry in the transaction status tablet.
 struct SimpleEntry {
@@ -73,6 +74,8 @@ struct SimpleEntry {
   static SimpleEntry Create(int64_t txn_id, const string& user, TxnStatePB txn_state_pb,
                             vector<std::pair<string, TxnStatePB>> participants) {
     TxnStatusEntryPB txn_pb;
+    txn_pb.set_start_timestamp(kFakeTime);
+    txn_pb.set_last_transition_timestamp(kFakeTime);
     txn_pb.set_state(txn_state_pb);
     txn_pb.set_user(user);
     vector<ParticipantIdAndPB> prt_pbs;
@@ -140,16 +143,18 @@ TEST_F(TxnStatusTabletTest, TestWriteTransactions) {
   TabletServerErrorPB ts_error;
   // We can make multiple calls to add a single transaction. This will only
   // insert a single row to the table.
-  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, &ts_error));
-  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, &ts_error));
+  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, kFakeTime, &ts_error));
+  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, kFakeTime, &ts_error));
 
   // The storage abstraction doesn't prevent us from writing a new transaction
   // entry for a lower transaction ID.
-  ASSERT_OK(status_tablet_->AddNewTransaction(5, kOwner, &ts_error));
-  ASSERT_OK(status_tablet_->AddNewTransaction(2, kOwner, &ts_error));
+  ASSERT_OK(status_tablet_->AddNewTransaction(5, kOwner, kFakeTime, &ts_error));
+  ASSERT_OK(status_tablet_->AddNewTransaction(2, kOwner, kFakeTime, &ts_error));
 
   // Also try updating the status of one of our transaction entries.
   TxnStatusEntryPB status_entry_pb;
+  status_entry_pb.set_start_timestamp(kFakeTime);
+  status_entry_pb.set_last_transition_timestamp(kFakeTime);
   status_entry_pb.set_user(kOwner);
   status_entry_pb.set_state(TxnStatePB::ABORTED);
   ASSERT_OK(status_tablet_->UpdateTransaction(2, status_entry_pb, &ts_error));
@@ -173,7 +178,7 @@ TEST_F(TxnStatusTabletTest, TestWriteTransactions) {
 
 TEST_F(TxnStatusTabletTest, TestWriteParticipants) {
   TabletServerErrorPB ts_error;
-  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, &ts_error));
+  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, kFakeTime, &ts_error));
 
   // Participants will be de-duplicated.
   ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(1), &ts_error));
@@ -214,7 +219,7 @@ TEST_F(TxnStatusTabletTest, TestFailedVisitor) {
   ASSERT_STR_CONTAINS(s.ToString(), "missing transaction status entry");
 
   // Now try again but with the transaction ID written.
-  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, &ts_error));
+  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, kFakeTime, &ts_error));
   ASSERT_OK(status_tablet_->VisitTransactions(&visitor));
 
   // And again with a new transaction ID.
@@ -244,7 +249,7 @@ TEST_F(TxnStatusTabletTest, TestMultithreadedAccess) {
   for (int i = 0; i < kNumThreads; i++) {
     threads.emplace_back([&, i] {
       TabletServerErrorPB ts_error;
-      RET_IF_NOT_OK(status_tablet_->AddNewTransaction(i, kOwner, &ts_error));
+      RET_IF_NOT_OK(status_tablet_->AddNewTransaction(i, kOwner, kFakeTime, &ts_error));
       for (int p = 0; p < kNumParticipantsPerTransaction; p++) {
         RET_IF_NOT_OK(status_tablet_->AddNewParticipant(i, Substitute("prt-$0", p), &ts_error));
       }

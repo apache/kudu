@@ -107,7 +107,7 @@ class TxnStatusTablet {
   // error. If there was otherwise a logical error with the request (e.g. row
   // already exists), returns an error without populating 'ts_error'.
   Status AddNewTransaction(int64_t txn_id, const std::string& user,
-                           tserver::TabletServerErrorPB* ts_error);
+                           int64_t start_timestamp, tserver::TabletServerErrorPB* ts_error);
   Status UpdateTransaction(int64_t txn_id, const TxnStatusEntryPB& pb,
                            tserver::TabletServerErrorPB* ts_error);
   Status AddNewParticipant(int64_t txn_id, const std::string& tablet_id,

@@ -18,6 +18,7 @@
 #include "kudu/transactions/txn_status_manager.h"
 
 #include <algorithm>
+#include <ctime>
 #include <functional>
 #include <iterator>
 #include <mutex>
@@ -987,7 +988,8 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
     }
   });
   // Write an entry to the status tablet for this transaction.
-  RETURN_NOT_OK(status_tablet_.AddNewTransaction(txn_id, user, ts_error));
+  const auto start_timestamp = time(nullptr);
+  RETURN_NOT_OK(status_tablet_.AddNewTransaction(txn_id, user, start_timestamp, ts_error));
 
   // Now that we've successfully persisted the new transaction ID, initialize
   // the in-memory state and make it visible to clients.
@@ -996,6 +998,8 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
     TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
     txn_lock.mutable_data()->pb.set_state(TxnStatePB::OPEN);
     txn_lock.mutable_data()->pb.set_user(user);
+    txn_lock.mutable_data()->pb.set_start_timestamp(start_timestamp);
+    txn_lock.mutable_data()->pb.set_last_transition_timestamp(start_timestamp);
     txn_lock.Commit();
   }
   std::lock_guard<simple_spinlock> l(lock_);
@@ -1056,6 +1060,7 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
                                  ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
+  mutable_data->pb.set_last_transition_timestamp(time(nullptr));
   mutable_data->pb.set_state(TxnStatePB::COMMIT_IN_PROGRESS);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
 
@@ -1097,6 +1102,7 @@ Status TxnStatusManager::FinalizeCommitTransaction(
         ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
+  mutable_data->pb.set_last_transition_timestamp(time(nullptr));
   mutable_data->pb.set_state(TxnStatePB::FINALIZE_IN_PROGRESS);
   mutable_data->pb.set_commit_timestamp(commit_timestamp.value());
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(
@@ -1133,6 +1139,7 @@ Status TxnStatusManager::CompleteCommitTransaction(int64_t txn_id) {
         &ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
+  mutable_data->pb.set_last_transition_timestamp(time(nullptr));
   mutable_data->pb.set_state(TxnStatePB::COMMITTED);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(
       txn_id, mutable_data->pb, &ts_error));
@@ -1165,6 +1172,7 @@ Status TxnStatusManager::FinalizeAbortTransaction(int64_t txn_id) {
         &ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
+  mutable_data->pb.set_last_transition_timestamp(time(nullptr));
   mutable_data->pb.set_state(TxnStatePB::ABORTED);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, &ts_error));
   txn_lock.Commit();
@@ -1216,6 +1224,7 @@ Status TxnStatusManager::BeginAbortTransaction(int64_t txn_id,
         ts_error);
   }
   auto* mutable_data = txn_lock.mutable_data();
+  mutable_data->pb.set_last_transition_timestamp(time(nullptr));
   mutable_data->pb.set_state(TxnStatePB::ABORT_IN_PROGRESS);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
 

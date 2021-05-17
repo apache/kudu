@@ -31,13 +31,13 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/ops/op.h"
@@ -297,12 +297,14 @@ Status TxnStatusTablet::VisitTransactions(TransactionsVisitor* visitor) {
 }
 
 Status TxnStatusTablet::AddNewTransaction(int64_t txn_id, const string& user,
-                                          TabletServerErrorPB* ts_error) {
+                                          int64_t start_timestamp, TabletServerErrorPB* ts_error) {
   WriteRequestPB req = BuildWriteReqPB(tablet_replica_->tablet_id());
 
   TxnStatusEntryPB entry;
   entry.set_state(OPEN);
   entry.set_user(user);
+  entry.set_start_timestamp(start_timestamp);
+  entry.set_last_transition_timestamp(start_timestamp);
   faststring metadata_buf;
   pb_util::SerializeToString(entry, &metadata_buf);
 
