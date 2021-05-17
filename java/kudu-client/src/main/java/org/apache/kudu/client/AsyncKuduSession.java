@@ -508,8 +508,9 @@ public class AsyncKuduSession implements SessionConfiguration {
      * @param buffer the buffer to return to the inactive queue.
      */
     private void queueBuffer(Buffer buffer) {
-      inactiveBuffers.add(buffer);
-      buffer.callbackFlushNotification();
+      if (buffer.callbackFlushNotification()) {
+        inactiveBuffers.add(buffer);
+      }
       Deferred<Void> localFlushNotification = flushNotification.getAndSet(new Deferred<>());
       localFlushNotification.callback(null);
     }
@@ -861,6 +862,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     private FlusherTask flusherTask = null;
 
     private Deferred<Void> flushNotification = Deferred.fromResult(null);
+    private boolean flushNotificationFired = false;
 
     public List<BufferedOperation> getOperations() {
       return operations;
@@ -884,12 +886,27 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
 
     /**
-     * Completes the buffer's flush notification. Should be called when the buffer has been
-     * successfully flushed.
+     * Completes the buffer's flush notification. Should be called when
+     * the buffer has been successfully flushed.
      */
-    void callbackFlushNotification() {
+    boolean callbackFlushNotification() {
       LOG.trace("buffer flush notification fired: {}", this);
-      flushNotification.callback(null);
+      if (injectLatencyBufferFlushCb) {
+        try {
+          Thread.sleep(randomizer.nextInt(16));
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+      synchronized (monitor) {
+        if (flushNotificationFired) {
+          // Do nothing: the callback has been called already.
+          return false;
+        }
+        flushNotificationFired = true;
+        flushNotification.callback(null);
+      }
+      return true;
     }
 
     /**
@@ -901,6 +918,7 @@ public class AsyncKuduSession implements SessionConfiguration {
       LOG.trace("buffer resetUnlocked: {}", this);
       operations.clear();
       flushNotification = new Deferred<>();
+      flushNotificationFired = false;
       flusherTask = null;
     }
 
@@ -975,5 +993,17 @@ public class AsyncKuduSession implements SessionConfiguration {
                         .add("operation", operation)
                         .toString();
     }
+  }
+
+  private static boolean injectLatencyBufferFlushCb = false;
+
+  /**
+   * Inject latency into {@link Buffer#callbackFlushNotification}.
+   */
+  @InterfaceAudience.LimitedPrivate("Test")
+  static void injectLatencyBufferFlushCb(boolean injectLatency) {
+    injectLatencyBufferFlushCb = injectLatency;
+    LOG.warn("latency injection for Buffer flush notification is {}",
+        injectLatency ? "enabled" : "disabled");
   }
 }
