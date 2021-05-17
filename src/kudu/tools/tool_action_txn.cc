@@ -104,6 +104,8 @@ enum class ListTxnsField : int {
   kState,
   kCommitDateTime,
   kCommitHybridTime,
+  kStartDatetime,
+  kLastTransitionDatetime,
 };
 
 const unordered_map<string, ListTxnsField> kStrToTxnField {
@@ -112,6 +114,8 @@ const unordered_map<string, ListTxnsField> kStrToTxnField {
   { "state", ListTxnsField::kState },
   { "commit_datetime", ListTxnsField::kCommitDateTime },
   { "commit_hybridtime", ListTxnsField::kCommitHybridTime },
+  { "start_datetime", ListTxnsField::kStartDatetime },
+  { "last_transition_datetime", ListTxnsField::kLastTransitionDatetime },
 };
 
 enum class ParticipantField : int {
@@ -210,7 +214,7 @@ Status GetFields(vector<string>* txn_field_names, vector<ListTxnsField>* txn_fie
 }
 
 void AddTxnStatusRow(const vector<ListTxnsField>& fields, int64_t txn_id,
-                       const TxnStatusEntryPB& txn_entry_pb, DataTable* data_table) {
+                     const TxnStatusEntryPB& txn_entry_pb, DataTable* data_table) {
   string commit_ts_ht_str = "<none>";
   string commit_ts_date_str = "<none>";
   vector<string> col_vals;
@@ -233,6 +237,18 @@ void AddTxnStatusRow(const vector<ListTxnsField>& fields, int64_t txn_id,
         col_vals.emplace_back(txn_entry_pb.has_commit_timestamp() ?
             HybridClock::StringifyTimestamp(Timestamp(txn_entry_pb.commit_timestamp())) : "<none>");
         break;
+      case ListTxnsField::kStartDatetime: {
+        char buf[kFastToBufferSize];
+        col_vals.emplace_back(txn_entry_pb.has_start_timestamp() ?
+            FastTimeToBuffer(txn_entry_pb.start_timestamp(), buf) : "<none>");
+        break;
+      }
+      case ListTxnsField::kLastTransitionDatetime: {
+        char buf[kFastToBufferSize];
+        col_vals.emplace_back(txn_entry_pb.has_last_transition_timestamp() ?
+            FastTimeToBuffer(txn_entry_pb.last_transition_timestamp(), buf) : "<none>");
+        break;
+      }
     }
   }
   data_table->AddRow(std::move(col_vals));
@@ -425,10 +441,10 @@ unique_ptr<Mode> BuildTxnMode() {
       .Description("Show details of multi-row transactions in the cluster")
       .AddOptionalParameter(
           "columns",
-          string("txn_id,user,state,commit_datetime"),
+          string("txn_id,user,state,commit_datetime,start_datetime,last_transition_datetime"),
           string("Comma-separated list of transaction-related info fields to include "
                  "in the output.\nPossible values: txn_id, user, state, commit_datetime, "
-                 "commit_hybridtime"))
+                 "commit_hybridtime, start_datetime, last_transition_datetime"))
       .AddOptionalParameter("max_txn_id")
       .AddOptionalParameter("min_txn_id")
       .AddOptionalParameter("included_states")
@@ -441,11 +457,13 @@ unique_ptr<Mode> BuildTxnMode() {
       .AddRequiredParameter({ kTxnIdArg, "Transaction ID on which to operate" })
       .AddOptionalParameter(
           "columns",
-          string("txn_id,user,state,commit_datetime,participant_tablet_id,"
-                 "participant_begin_commit_datetime,participant_commit_datetime"),
+          string("txn_id,user,state,commit_datetime,start_datetime,last_transition_datetime,"
+                 "participant_tablet_id,participant_begin_commit_datetime,"
+                 "participant_commit_datetime"),
           string("Comma-separated list of transaction-related info fields to include "
                  "in the output.\nPossible values: txn_id, user, state, commit_datetime, "
-                 "commit_hybridtime, participant_tablet_id, participant_is_aborted, "
+                 "commit_hybridtime, start_datetime, last_transition_datetime, "
+                 "participant_tablet_id, participant_is_aborted, "
                  "participant_flushed_committed_mrs, participant_begin_commit_datetime, "
                  "participant_begin_commit_hybridtime, participant_commit_datetime, "
                  "participant_commit_hybridtime"))

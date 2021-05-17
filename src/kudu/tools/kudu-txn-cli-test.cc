@@ -87,27 +87,31 @@ TEST_F(KuduTxnsCliTest, TestBasicTxnsList) {
   string out;
   ASSERT_OK(RunKuduTool({ "txn", "list", cluster_->master_rpc_addrs()[0].ToString(),
                           "--included_states=*" }, &out));
-  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
---------\+-*\+-----------\+-*
- 0      \| *[a-z]* *\| COMMITTED \| .* GMT
- 1      \| *[a-z]* *\| ABORTED   \| <none>
- 2      \| *[a-z]* *\| OPEN      \| <none>)");
+  ASSERT_STR_MATCHES(out,
+R"(txn_id \| *user *\| *state *\| *commit_datetime *\| *start_datetime *\| *last_transition_datetime
+--------\+-*\+-----------\+-*\+-*\+-*
+ 0      \| *[a-z]* *\| COMMITTED \| .* GMT *\| .* GMT *\| .* GMT
+ 1      \| *[a-z]* *\| ABORTED   \| <none> *\| .* GMT *\| .* GMT
+ 2      \| *[a-z]* *\| OPEN      \| <none> *\| .* GMT *\| .* GMT)");
   ASSERT_OK(RunKuduTool({ "txn", "list", cluster_->master_rpc_addrs()[0].ToString(),
                           "--included_states=aborted,open" }, &out));
-  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|  state  \| *commit_datetime
---------\+-*\+---------\+-*
- 1      \| *[a-z]* *\| ABORTED \| <none>
- 2      \| *[a-z]* *\| OPEN    \| <none>)");
+  ASSERT_STR_MATCHES(out,
+R"(txn_id \| *user *\| *state *\| *commit_datetime *\| *start_datetime *\| *last_transition_datetime
+--------\+-*\+---------\+-*\+-*\+-*
+ 1      \| *[a-z]* *\| ABORTED \| <none> *\| .* GMT *\| .* GMT
+ 2      \| *[a-z]* *\| OPEN    \| <none> *\| .* GMT *\| .* GMT)");
   ASSERT_OK(RunKuduTool({ "txn", "list", cluster_->master_rpc_addrs()[0].ToString(),
                           "--included_states=open,committed" }, &out));
-  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
---------\+-*\+-----------\+-*
- 0      \| *[a-z]* *\| COMMITTED \| .* GMT
- 2      \| *[a-z]* *\| OPEN      \| <none>)");
+  ASSERT_STR_MATCHES(out,
+R"(txn_id \| *user *\| *state *\| *commit_datetime *\| *start_datetime *\| *last_transition_datetime
+--------\+-*\+-----------\+-*\+-*\+-*
+ 0      \| *[a-z]* *\| COMMITTED \| .* GMT *\| .* GMT *\| .* GMT
+ 2      \| *[a-z]* *\| OPEN      \| <none> *\| .* GMT *\| .* GMT)");
   ASSERT_OK(RunKuduTool({ "txn", "list", cluster_->master_rpc_addrs()[0].ToString() }, &out));
-  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\| state \| *commit_datetime
---------\+-*\+-------\+-*
- 2      \| *[a-z]* *\| OPEN  \| <none>)");
+  ASSERT_STR_MATCHES(out,
+R"(txn_id \| *user *\| *state *\| *commit_datetime *\| *start_datetime *\| *last_transition_datetime
+--------\+-*\+-------\+-*\+-*\+-*
+ 2      \| *[a-z]* *\| OPEN  \| <none> *\| .* GMT *\| .* GMT)");
 }
 
 TEST_F(KuduTxnsCliTest, TestTxnsListMinMaxFilter) {
@@ -125,6 +129,7 @@ TEST_F(KuduTxnsCliTest, TestTxnsListMinMaxFilter) {
   }
   string out;
   ASSERT_OK(RunKuduTool({ "txn", "list", cluster_->master_rpc_addrs()[0].ToString(),
+                          "--columns=txn_id,user,state,commit_datetime",
                           "--min_txn_id=7", "--included_states=*" }, &out));
   ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
 --------\+-*\+-----------\+-*
@@ -132,6 +137,7 @@ TEST_F(KuduTxnsCliTest, TestTxnsListMinMaxFilter) {
  8      \| *[a-z]* *\| COMMITTED \| .* GMT
  9      \| *[a-z]* *\| COMMITTED \| .* GMT)");
   ASSERT_OK(RunKuduTool({ "txn", "list", cluster_->master_rpc_addrs()[0].ToString(),
+                          "--columns=txn_id,user,state,commit_datetime",
                           "--max_txn_id=2", "--included_states=*" }, &out));
   ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
 --------\+-*\+-----------\+-*
@@ -139,6 +145,7 @@ TEST_F(KuduTxnsCliTest, TestTxnsListMinMaxFilter) {
  1      \| *[a-z]* *\| COMMITTED \| .* GMT
  2      \| *[a-z]* *\| COMMITTED \| .* GMT)");
   ASSERT_OK(RunKuduTool({ "txn", "list", cluster_->master_rpc_addrs()[0].ToString(),
+                          "--columns=txn_id,user,state,commit_datetime",
                           "--min_txn_id=5", "--max_txn_id=7", "--included_states=*" }, &out));
   ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
 --------\+-*\+-----------\+-*
@@ -146,6 +153,7 @@ TEST_F(KuduTxnsCliTest, TestTxnsListMinMaxFilter) {
  6      \| *[a-z]* *\| COMMITTED \| .* GMT
  7      \| *[a-z]* *\| COMMITTED \| .* GMT)");
   ASSERT_OK(RunKuduTool({ "txn", "list", cluster_->master_rpc_addrs()[0].ToString(),
+                          "--columns=txn_id,user,state,commit_datetime",
                           "--min_txn_id=10", "--max_txn_id=0", "--included_states=*" }, &out));
   ASSERT_EQ(
       " txn_id | user | state | commit_datetime\n"
@@ -189,9 +197,10 @@ TEST_F(KuduTxnsCliTest, TestBasicShowTxn) {
   // Check the output of the tool with no arguments.
   string out;
   ASSERT_OK(RunKuduTool({ "txn", "show", cluster_->master_rpc_addrs()[0].ToString(), "0" }, &out));
-  ASSERT_STR_MATCHES(out, R"( txn_id \| *user *\|   state   \| *commit_datetime
---------\+-*\+-----------\+-*
- 0      \| *[a-z]* *\| COMMITTED \| .* GMT
+  ASSERT_STR_MATCHES(out,
+R"(txn_id \| *user *\| *state *\| *commit_datetime *\| *start_datetime *\| *last_transition_datetime
+--------\+-*\+-----------\+-*\+-*\+-*
+ 0      \| *[a-z]* *\| COMMITTED \| .* GMT \| .* GMT \| .* GMT
 
             tablet_id             \| *begin_commit_datetime *\| *commit_datetime
 ----------------------------------\+-*\+-*
