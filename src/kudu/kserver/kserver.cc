@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -28,7 +29,6 @@
 #include <glog/logging.h>
 
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -94,7 +94,7 @@ namespace kserver {
 
 namespace {
 
-int GetThreadPoolThreadLimit(Env* env) {
+int32_t GetThreadPoolThreadLimit(Env* env) {
   // Maximize this process' running thread limit first, if possible.
   static std::once_flag once;
   std::call_once(once, [&]() {
@@ -117,7 +117,7 @@ int GetThreadPoolThreadLimit(Env* env) {
 
     // Callers of this function expect a signed 32-bit integer, so we need to
     // further cap the limit just in case it's too large.
-    rlimit = std::min(rlimit, static_cast<uint64_t>(kint32max));
+    rlimit = std::min<uint64_t>(rlimit, std::numeric_limits<int32_t>::max());
 
     // Take only 10% of the calculated limit; we don't want to hog the system.
     return static_cast<int32_t>(rlimit) / 10;
@@ -159,7 +159,9 @@ Status KuduServer::Init() {
 
   // These pools are shared by all replicas hosted by this server, and thus
   // are capped at a portion of the overall per-euid thread resource limit.
-  int server_wide_pool_limit = GetThreadPoolThreadLimit(fs_manager_->env());
+  auto server_wide_pool_limit = GetThreadPoolThreadLimit(fs_manager_->env());
+  LOG(INFO) << Substitute("Server-wide thread pool size limit: $0",
+                          server_wide_pool_limit);
   RETURN_NOT_OK(ThreadPoolBuilder("prepare")
                 .set_max_threads(server_wide_pool_limit)
                 .Build(&tablet_prepare_pool_));
