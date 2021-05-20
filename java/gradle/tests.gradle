@@ -20,6 +20,10 @@
 // Support parallel unit test execution.
 test {
   maxParallelForks = propertyWithDefault("maxParallelForks", "1").toInteger()
+  if (propertyExists("showTestOutput")) {
+    // Show stdout and stderr from tests on the console.
+    testLogging.showStandardStreams = true
+  }
 }
 
 tasks.withType(Test) {
