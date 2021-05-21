@@ -30,6 +30,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/master/master.h"
 #include "kudu/master/txn_manager.pb.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/transactions/txn_system_client.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
@@ -246,7 +247,9 @@ Status TxnManager::Init() {
   }
   vector<HostPort> hostports;
   RETURN_NOT_OK(server_->GetMasterHostPorts(&hostports));
-  RETURN_NOT_OK(TxnSystemClient::Create(hostports, &txn_sys_client_));
+  RETURN_NOT_OK(TxnSystemClient::Create(hostports,
+                                        server_->messenger()->sasl_proto_name(),
+                                        &txn_sys_client_));
   DCHECK(txn_sys_client_);
   auto s = txn_sys_client_->CreateTxnStatusTable(
       FLAGS_txn_manager_status_table_range_partition_span,

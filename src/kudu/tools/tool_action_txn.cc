@@ -69,6 +69,7 @@ DEFINE_string(included_states, "open,abort_in_progress,commit_in_progress,finali
               "currently active transactions.");
 
 DECLARE_int64(timeout_ms);
+DECLARE_string(sasl_protocol_name);
 
 using kudu::client::sp::shared_ptr;
 using kudu::client::KuduClient;
@@ -339,7 +340,9 @@ Status ShowTxn(const RunnerContext& context) {
     hp.ParseString(m, master::Master::kDefaultPort);
     master_hps.emplace_back(hp);
   }
-  RETURN_NOT_OK(TxnSystemClient::Create(master_hps, &txn_client));
+  RETURN_NOT_OK(TxnSystemClient::Create(master_hps,
+                                        FLAGS_sasl_protocol_name,
+                                        &txn_client));
   RETURN_NOT_OK(txn_client->OpenTxnStatusTable());
   shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));

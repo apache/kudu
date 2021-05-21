@@ -746,7 +746,9 @@ TEST_P(MasterAuthzITest, TestCreateTransactionStatusTable) {
   // NotAuthorized error.
   {
     unique_ptr<TxnSystemClient> non_admin_client;
-    ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &non_admin_client));
+    ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                      cluster_->service_principal(),
+                                      &non_admin_client));
     Status s = non_admin_client->CreateTxnStatusTable(100);
     ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
     s = non_admin_client->AddTxnStatusTableRange(100, 200);
@@ -755,7 +757,9 @@ TEST_P(MasterAuthzITest, TestCreateTransactionStatusTable) {
   // But as service user, we should have no trouble making the calls.
   ASSERT_OK(this->cluster_->kdc()->Kinit(kAdminUser));
   unique_ptr<TxnSystemClient> txn_sys_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_sys_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->service_principal(),
+                                    &txn_sys_client));
   ASSERT_OK(txn_sys_client->CreateTxnStatusTable(100));
   ASSERT_OK(txn_sys_client->AddTxnStatusTableRange(100, 200));
 }

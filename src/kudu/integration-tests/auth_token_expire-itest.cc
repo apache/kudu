@@ -450,7 +450,9 @@ TEST_F(TokenBasedConnectionITest, ReacquireAuthnToken) {
 TEST_F(TokenBasedConnectionITest, TxnSystemClientReacquireAuthnToken) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->service_principal(),
+                                    &txn_client));
   ASSERT_OK(txn_client->CreateTxnStatusTable(10));
   ASSERT_OK(txn_client->OpenTxnStatusTable());
 

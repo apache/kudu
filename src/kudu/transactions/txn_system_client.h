@@ -71,6 +71,7 @@ class TxnStatusEntryPB;
 class TxnSystemClient {
  public:
   static Status Create(const std::vector<HostPort>& master_addrs,
+                       const std::string& sasl_protocol_name,
                        std::unique_ptr<TxnSystemClient>* sys_client);
 
   // Creates the transaction status table with a single range partition of the

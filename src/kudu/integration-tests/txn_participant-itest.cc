@@ -47,6 +47,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/mvcc.h"
@@ -833,7 +834,9 @@ TEST_F(TxnParticipantITest, TestProxyTabletNotFound) {
 
 TEST_F(TxnParticipantITest, TestTxnSystemClientGetMetadata) {
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
   constexpr const auto kTxnId = 0;
   constexpr const int kLeaderIdx = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
@@ -902,7 +905,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientBeginTxnDoesntLock) {
   // Start a transaction and make sure it results in the expected state
   // server-side.
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kFirstTxn, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kFirstTxn, kOpen, -1 } }));
@@ -926,7 +931,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientCommitSequence) {
   // Start a transaction and make sure it results in the expected state
   // server-side.
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnId, kOpen, -1 } }));
@@ -995,7 +1002,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientAbortSequence) {
   const auto tablet_id = leader_replica->tablet_id();
   ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnOne, ParticipantOpPB::BEGIN_TXN),
       kDefaultTimeout));
@@ -1049,7 +1058,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientErrorWhenNotBegun) {
   const auto tablet_id = leader_replica->tablet_id();
   ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
 
   for (auto type : { ParticipantOpPB::BEGIN_COMMIT,
                      ParticipantOpPB::FINALIZE_COMMIT }) {
@@ -1073,7 +1084,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientRepeatCalls) {
   const auto tablet_id = leader_replica->tablet_id();
   ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
   // Repeat each op twice. There should be no issues here since each op is
   // idempotent. There should also be no issues with the partition lock.
   for (const auto& type : kCommitSequence) {
@@ -1109,7 +1122,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientTimeoutWhenNoMajority) {
     cluster_->mini_tablet_server(i)->Shutdown();
   }
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
   Status s = txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN),
       MonoDelta::FromSeconds(1));
@@ -1165,7 +1180,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientSucceedsOnBootstrap) {
   // Start a thread that sends participant ops to the tablet.
   int next_txn_id = 0;
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
   CountDownLatch stop(1);
   Status client_error;
   thread t([&] {
@@ -1217,7 +1234,9 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientRetriesWhenReplicaNotFound) {
   // Start a thread that sends participant ops to the tablet.
   int next_txn_id = 0;
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
   CountDownLatch stop(1);
   Status client_error;
   thread t([&] {
@@ -1432,7 +1451,9 @@ TEST_F(TxnParticipantElectionStormITest, TestTxnSystemClientRetriesThroughStorm)
   }
   const auto kTimeout = MonoDelta::FromSeconds(10);
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->messenger()->sasl_proto_name(),
+                                    &txn_client));
 
   // Start injecting latency to Raft-related traffic to spur elections.
   FLAGS_raft_enable_pre_election = false;
