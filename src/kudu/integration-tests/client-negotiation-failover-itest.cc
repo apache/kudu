@@ -204,7 +204,9 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, TestTxnSystemClientRetryOnPause)
   ASSERT_OK(CreateAndStartCluster());
 
   unique_ptr<TxnSystemClient> txn_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->service_principal(),
+                                    &txn_client));
   ASSERT_OK(txn_client->CreateTxnStatusTable(100, kNumTabletServers));
   ASSERT_OK(txn_client->OpenTxnStatusTable());
 

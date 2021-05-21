@@ -369,6 +369,13 @@ class ExternalMiniCluster : public MiniCluster {
     return opts_.cluster_root;
   }
 
+  // Kerberos principal prefix name whose credentials are used to run Kudu
+  // servers in the cluster. Matches the SASL protocol name used for connection
+  // negotiation.
+  const std::string& service_principal() const {
+    return opts_.principal;
+  }
+
   int num_tablet_servers() const override {
     return tablet_servers_.size();
   }

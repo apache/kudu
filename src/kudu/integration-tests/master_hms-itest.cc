@@ -709,7 +709,9 @@ TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {
 TEST_F(MasterHmsTest, TestTransactionStatusTableDoesntSync) {
   // Create a transaction status table.
   unique_ptr<TxnSystemClient> txn_sys_client;
-  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(), &txn_sys_client));
+  ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
+                                    cluster_->service_principal(),
+                                    &txn_sys_client));
   ASSERT_OK(txn_sys_client->CreateTxnStatusTable(100));
 
   // We shouldn't see the table in the HMS catalog.

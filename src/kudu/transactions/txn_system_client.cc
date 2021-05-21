@@ -41,6 +41,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/transactions/coordinator_rpc.h"
 #include "kudu/transactions/participant_rpc.h"
@@ -95,6 +96,7 @@ namespace kudu {
 namespace transactions {
 
 Status TxnSystemClient::Create(const vector<HostPort>& master_addrs,
+                               const string& sasl_protocol_name,
                                unique_ptr<TxnSystemClient>* sys_client) {
   vector<string> master_strings;
   for (const auto& hp : master_addrs) {
@@ -103,6 +105,7 @@ Status TxnSystemClient::Create(const vector<HostPort>& master_addrs,
   DCHECK(!master_addrs.empty());
   KuduClientBuilder builder;
   builder.master_server_addrs(master_strings);
+  builder.sasl_protocol_name(sasl_protocol_name);
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(builder.Build(&client));
   sys_client->reset(new TxnSystemClient(std::move(client)));
@@ -467,7 +470,9 @@ Status TxnSystemClientInitializer::Init(const shared_ptr<Messenger>& messenger,
         // Only if we can reach at least one of the masters should we try
         // connecting.
         if (PREDICT_TRUE(s.ok())) {
-          s = TxnSystemClient::Create(master_addrs, &txn_client);
+          s = TxnSystemClient::Create(master_addrs,
+                                      messenger->sasl_proto_name(),
+                                      &txn_client);
         }
         if (PREDICT_TRUE(s.ok())) {
           txn_client_ = std::move(txn_client);
