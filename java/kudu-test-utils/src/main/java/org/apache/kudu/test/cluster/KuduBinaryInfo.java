@@ -17,6 +17,16 @@
 
 package org.apache.kudu.test.cluster;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.google.common.base.Joiner;
+import com.google.common.collect.Lists;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -51,5 +61,75 @@ public class KuduBinaryInfo {
    */
   public String getSaslDir() {
     return saslDir;
+  }
+
+  /**
+   * The C++ sanitizer type enabled for the kudu CLI binary.
+   */
+  public enum SanitizerType {
+    NONE,
+    ASAN,
+    TSAN,
+  }
+
+  /**
+   * @return sanitizer type for the kudu CLI binary.
+   */
+  public static SanitizerType getSanitizerType() {
+    List<String> vs = getBinaryVersionStrings();
+    if (vs.size() < 1 || !vs.get(0).startsWith("kudu ")) {
+      throw new RuntimeException(String.format(
+          "unexpected version output from kudu binary: %s",
+          Joiner.on("\n").join(vs)));
+    }
+    for (String s : vs) {
+      if (s.equals("ASAN enabled")) {
+        return SanitizerType.ASAN;
+      } else if (s.equals("TSAN enabled")) {
+        return SanitizerType.TSAN;
+      }
+    }
+    return SanitizerType.NONE;
+  }
+
+  /**
+   * @return sequence of strings output by 'kudu --version'
+   */
+  private static List<String> getBinaryVersionStrings() {
+    try {
+      KuduBinaryLocator.ExecutableInfo exeInfo =
+          KuduBinaryLocator.findBinary("kudu");
+      ProcessBuilder pb = new ProcessBuilder(
+          Lists.newArrayList(exeInfo.exePath(), "--version"));
+      pb.environment().putAll(exeInfo.environment());
+      pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+      final Process p = pb.start();
+      List<String> result = new ArrayList<>();
+      try (InputStreamReader isr = new InputStreamReader(p.getInputStream(), UTF_8);
+           BufferedReader br = new BufferedReader(isr)) {
+        while (true) {
+          String line = br.readLine();
+          if (line == null) {
+            break;
+          }
+          result.add(line);
+        }
+      }
+      final int exitCode = p.waitFor();
+      if (exitCode != 0) {
+        // Don't bother reporting the contents of stderr: it should be in the
+        // log of the parent process due to the stderr redirection.
+        throw new RuntimeException(String.format(
+            "unexpected exit code from kudu binary: %d", exitCode));
+      }
+      return result;
+    } catch (IOException e) {
+      throw new RuntimeException(
+          "unexpected exception while trying to run kudu binary", e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException(
+          "unexpected exception while trying to run kudu binary", e);
+    }
   }
 }
