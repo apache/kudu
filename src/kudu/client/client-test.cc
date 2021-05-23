@@ -6881,9 +6881,20 @@ TEST_F(ClientTest, TestAuthenticationCredentialsRealUser) {
   cluster_->ShutdownNodes(cluster::ClusterNodes::ALL);
   ASSERT_OK(cluster_->StartSync());
 
-  // Try to connect without setting the user, which should fail
-  // TODO(KUDU-2344): This should fail with NotAuthorized.
-  ASSERT_TRUE(cluster_->CreateClient(nullptr, &client_).IsRemoteError());
+  // Try to delete a table without setting the user, which should fail: the
+  // coarse, RPC-level authz uses "AuthorizeClient" method for the
+  // MasterService::DeleteTable() RPC.
+  {
+    shared_ptr<KuduClient> c;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &c));
+    ASSERT_NE(nullptr, c.get());
+    // TODO(KUDU-2344): ideally, this should have failed with NotAuthorized
+    const auto s = c->DeleteTable(client_table_->name());
+    const auto errmsg = s.ToString();
+    ASSERT_TRUE(s.IsRemoteError()) << errmsg;
+    ASSERT_STR_CONTAINS(
+        errmsg, "Not authorized: unauthorized access to method: DeleteTable");
+  }
 
   // Create a new client with the imported user name and smoke test it.
   KuduClientBuilder client_builder;

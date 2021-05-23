@@ -1077,11 +1077,11 @@ service MasterService {
 
   // Used only by Kudu 1.3 and later.
   rpc ConnectToMaster(ConnectToMasterRequestPB) returns (ConnectToMasterResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 
   rpc GetTabletLocations(GetTabletLocationsRequestPB) returns (GetTabletLocationsResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 
   rpc CreateTable(CreateTableRequestPB) returns (CreateTableResponsePB) {
@@ -1102,18 +1102,18 @@ service MasterService {
   }
 
   rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 
   rpc GetTableStatistics(GetTableStatisticsRequestPB) returns (GetTableStatisticsResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 
   rpc GetTableLocations(GetTableLocationsRequestPB) returns (GetTableLocationsResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
   rpc GetTableSchema(GetTableSchemaRequestPB) returns (GetTableSchemaResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 
   // Administrative/monitoring RPCs

@@ -81,6 +81,8 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduTransaction;
+using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::rpc::Messenger;
@@ -134,7 +136,8 @@ class SecurityITest : public KuduTest {
   }
 
   // Create a table, insert a row, scan it back, and delete the table.
-  void SmokeTestCluster(const client::sp::shared_ptr<KuduClient>& client);
+  void SmokeTestCluster(const client::sp::shared_ptr<KuduClient>& client,
+                        bool transactional = false);
   void SmokeTestCluster();
 
   Status TryRegisterAsTS() {
@@ -199,20 +202,31 @@ class SecurityITest : public KuduTest {
   unique_ptr<ExternalMiniCluster> cluster_;
 };
 
-void SecurityITest::SmokeTestCluster(const client::sp::shared_ptr<KuduClient>& client) {
+void SecurityITest::SmokeTestCluster(const client::sp::shared_ptr<KuduClient>& client,
+                                     const bool transactional) {
   // Create a table.
   ASSERT_OK(CreateTestTable(client));
 
   // Insert a row.
   client::sp::shared_ptr<KuduTable> table;
   ASSERT_OK(client->OpenTable(kTableName, &table));
-  client::sp::shared_ptr<KuduSession> session = client->NewSession();
+  shared_ptr<KuduTransaction> txn;
+  client::sp::shared_ptr<KuduSession> session;
+  if (transactional) {
+    ASSERT_OK(client->NewTransaction(&txn));
+    ASSERT_OK(txn->CreateSession(&session));
+  } else {
+    session = client->NewSession();
+  }
   session->SetTimeoutMillis(60000);
   unique_ptr<KuduInsert> ins(table->NewInsert());
   ASSERT_OK(ins->mutable_row()->SetInt32(0, 12345));
   ASSERT_OK(ins->mutable_row()->SetInt32(1, 54321));
   ASSERT_OK(session->Apply(ins.release()));
   FlushSessionOrDie(session);
+  if (transactional) {
+    ASSERT_OK(txn->Commit());
+  }
 
   // Read it back.
   ASSERT_EQ(1, CountTableRows(table.get()));
@@ -269,10 +283,14 @@ TEST_F(SecurityITest, TestAuthorizationOnChecksum) {
 // Test creating a table, writing some data, reading data, and dropping
 // the table.
 TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
+  cluster_opts_.extra_master_flags.emplace_back("--txn_manager_enabled=true");
   ASSERT_OK(StartCluster());
 
   ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
-  NO_FATALS(SmokeTestCluster());
+  client::sp::shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  NO_FATALS(SmokeTestCluster(client));
+  NO_FATALS(SmokeTestCluster(client, /* transactional */ true));
 
   // Non-superuser clients should not be able to set flags.
   Status s = TrySetFlagOnTS();
