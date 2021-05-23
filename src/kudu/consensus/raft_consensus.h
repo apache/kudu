@@ -838,7 +838,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // A variant of LogPrefix which does not take the lock. This is a slightly
   // less thorough prefix which only includes immutable (and thus thread-safe)
   // information, but does not require the lock.
-  std::string LogPrefixThreadSafe() const;
+  const std::string& LogPrefixThreadSafe() const {
+    return log_prefix_;
+  }
 
   std::string ToString() const;
   std::string ToStringUnlocked() const;
@@ -849,6 +851,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Information about the local peer, including the local UUID.
   const RaftPeerPB local_peer_pb_;
+
+  // Log prefix for this peer.
+  const std::string log_prefix_;
 
   // Consensus metadata service.
   const scoped_refptr<ConsensusMetadataManager> cmeta_manager_;

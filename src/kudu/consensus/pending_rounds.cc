@@ -47,13 +47,11 @@ namespace consensus {
 // PendingRounds
 //------------------------------------------------------------
 
-PendingRounds::PendingRounds(string log_prefix, TimeManager* time_manager)
-    : log_prefix_(std::move(log_prefix)),
+PendingRounds::PendingRounds(const string& log_prefix,
+                             TimeManager* time_manager)
+    : log_prefix_(log_prefix),
       last_committed_op_id_(MinimumOpId()),
       time_manager_(time_manager) {}
-
-PendingRounds::~PendingRounds() {
-}
 
 Status PendingRounds::CancelPendingOps() {
   ThreadRestrictions::AssertWaitAllowed();
