@@ -547,18 +547,17 @@ TEST_P(TsRecoveryITest, TestChangeMaxCellSize) {
                             work.rows_inserted()));
 }
 
-class TsRecoveryITestDeathTest : public TsRecoveryITest {};
+#if !defined(THREAD_SANITIZER)
+// TSAN cannot handle spawning threads after fork(), so this class and its
+// test scenario isn't present for TSAN builds.
+class TsRecoveryITestDeathTest : public TsRecoveryITest {
+};
 
 // Test that tablet bootstrap can automatically repair itself if it finds an
 // overflowed OpId index written to the log caused by KUDU-1933.
 // Also serves as a regression itest for KUDU-1933 by writing ops with a high
 // term and index.
 TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
-#if defined(THREAD_SANITIZER)
-  // TSAN cannot handle spawning threads after fork().
-  return;
-#endif
-
   // Create the initial tablet files on disk, then shut down the cluster so we
   // can meddle with the WAL.
   NO_FATALS(StartClusterOneTs());
@@ -696,6 +695,7 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
   });
   NO_FATALS(cluster_->AssertNoCrashes());
 }
+#endif // #if !defined(THREAD_SANITIZER) ...
 
 // A set of threads which pick rows which are known to exist in the table
 // and issue random updates against them.
