@@ -313,10 +313,10 @@ TEST_F(TxnStatusTableITest, TestProtectAccess) {
     Status _s = (s); \
     results.emplace_back(_s.CloneAndPrepend(msg)); \
   } while (0)
-  const auto attempt_accesses_and_delete = [&] (KuduClient* client) {
-    // Go through various table access methods on the transaction status table.
-    // Collect the results so we can verify whether we were authorized
-    // properly.
+  const auto attempt_accesses = [&] (KuduClient* client) {
+    // Go through various table access methods on the transaction status table,
+    // except for dropping/deleting it. Collect the results so we can verify
+    // whether we were authorized properly.
     vector<Status> results;
     bool unused;
     STORE_AND_PREPEND(client->TableExists(kTableName, &unused), "failed to check existence");
@@ -325,6 +325,13 @@ TEST_F(TxnStatusTableITest, TestProtectAccess) {
     client::KuduTableStatistics* unused_stats = nullptr;
     STORE_AND_PREPEND(client->GetTableStatistics(kTableName, &unused_stats), "failed to get stats");
     unique_ptr<client::KuduTableStatistics> unused_unique_stats(unused_stats);
+    return results;
+  };
+  const auto attempt_accesses_and_delete = [&] (KuduClient* client) {
+    // Go through various table access methods on the transaction status table,
+    // including dropping the table. Collect the results so we can verify
+    // whether we were authorized properly.
+    vector<Status> results = attempt_accesses(client);
     STORE_AND_PREPEND(client->DeleteTable(kTableName), "failed to delete table");
     return results;
   };
@@ -339,13 +346,21 @@ TEST_F(TxnStatusTableITest, TestProtectAccess) {
   // Even though we're the service user, we shouldn't be able to access
   // anything because most RPCs require us to be a super-user or user.
   NO_FATALS(SetSuperuserAndUser("nobody", "nobody"));
-  results = attempt_accesses_and_delete(client_sp.get());
+  results = attempt_accesses(client_sp.get());
   for (const auto& r : results) {
     // NOTE: we don't check the type because authorization errors may surface
     // as RemoteErrors or NotAuthorized errors.
-    ASSERT_FALSE(r.ok());
-    ASSERT_STR_CONTAINS(r.ToString(), "Not authorized");
+    ASSERT_TRUE(r.ok()) << r.ToString();
   }
+
+  {
+    const auto s = client_sp->DeleteTable(kTableName);
+    const auto errmsg = s.ToString();
+    ASSERT_TRUE(s.IsRemoteError()) << errmsg;
+    ASSERT_STR_CONTAINS(
+        errmsg, "Not authorized: unauthorized access to method: DeleteTable");
+  }
+
   // As a sanity check, our last delete have failed, and we should be unable to
   // create another transaction status table.
   Status s = txn_sys_client_->CreateTxnStatusTable(100);
