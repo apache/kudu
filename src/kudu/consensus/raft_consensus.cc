@@ -183,6 +183,7 @@ RaftConsensus::RaftConsensus(
     ServerContext server_ctx)
     : options_(std::move(options)),
       local_peer_pb_(std::move(local_peer_pb)),
+      log_prefix_(Substitute("T $0 P $1: ", options_.tablet_id, peer_uuid())),
       cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
       server_ctx_(std::move(server_ctx)),
       state_(kNew),
@@ -289,7 +290,6 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                                                        queue.get(),
                                                        raft_pool_token_.get(),
                                                        log_));
-
   unique_ptr<PendingRounds> pending(new PendingRounds(
       LogPrefixThreadSafe(), time_manager_.get()));
 
@@ -2662,7 +2662,7 @@ void RaftConsensus::ElectionCallback(ElectionReason reason, const ElectionResult
   auto self = shared_from_this();
   Status s = raft_pool_token_->Submit([=]() { self->DoElectionCallback(reason, result); });
   if (!s.ok()) {
-    static const char* msg = "unable to run election callback";
+    static const char* const msg = "unable to run election callback";
     CHECK(s.IsServiceUnavailable()) << LogPrefixThreadSafe() << msg;
     WARN_NOT_OK(s, LogPrefixThreadSafe() + msg);
   }
@@ -3224,12 +3224,6 @@ string RaftConsensus::LogPrefixUnlocked() const {
                             RaftPeerPB::Role_Name(cmeta_->active_role()));
   }
   return Substitute("T $0 P $1$2: ", options_.tablet_id, peer_uuid(), cmeta_info);
-}
-
-string RaftConsensus::LogPrefixThreadSafe() const {
-  return Substitute("T $0 P $1: ",
-                    options_.tablet_id,
-                    peer_uuid());
 }
 
 string RaftConsensus::ToString() const {

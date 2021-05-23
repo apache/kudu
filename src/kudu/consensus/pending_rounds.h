@@ -42,8 +42,8 @@ class TimeManager;
 // operations.
 class PendingRounds {
  public:
-  PendingRounds(std::string log_prefix, TimeManager* time_manager);
-  ~PendingRounds();
+  PendingRounds(const std::string& log_prefix, TimeManager* time_manager);
+  ~PendingRounds() = default;
 
   // Set the committed op during startup. This should be done after appending
   // any of the pending ops, and will take care of triggering any that are now
@@ -99,7 +99,9 @@ class PendingRounds {
  private:
   const std::string& LogPrefix() const { return log_prefix_; }
 
-  const std::string log_prefix_;
+  // Storing just a reference here: the RaftConsensus class which instantiates
+  // a PendingRound object keeps the ownership of the referenced string.
+  const std::string& log_prefix_;
 
   // Index=>Round map that manages pending ops, i.e. operations for which we've
   // received a replicate message from the leader but have yet to be committed.
