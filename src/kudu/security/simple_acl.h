@@ -44,7 +44,7 @@ class SimpleAcl {
   // Return true if the given user is allowed by the ACL.
   //
   // Thread-safe after initialization.
-  bool UserAllowed(const std::string& username);
+  bool UserAllowed(const std::string& username) const;
 
   // Reset the ACL to the specific set of usernames.
   void Reset(std::set<std::string> users);

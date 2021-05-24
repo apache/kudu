@@ -128,16 +128,16 @@ class ServerBase {
   };
 
   // Returns whether or not the rpc is from a super-user.
-  bool IsFromSuperUser(const rpc::RpcContext* rpc);
+  bool IsFromSuperUser(const rpc::RpcContext* rpc) const;
 
   // Returns true if the given user is a service- or super-user.
-  bool IsServiceUserOrSuperUser(const std::string& user);
+  bool IsServiceUserOrSuperUser(const std::string& user) const;
 
   // Authorize an RPC. 'allowed_roles' is a bitset of which roles from the above
   // enum should be allowed to make hthe RPC.
   //
   // If authorization fails, return false and respond to the RPC.
-  bool Authorize(rpc::RpcContext* rpc, uint32_t allowed_roles);
+  bool Authorize(rpc::RpcContext* rpc, uint32_t allowed_roles) const;
 
  protected:
   ServerBase(std::string name, const ServerBaseOptions& options,

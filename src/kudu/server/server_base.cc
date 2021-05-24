@@ -696,15 +696,15 @@ void ServerBase::LogUnauthorizedAccess(rpc::RpcContext* rpc) const {
                << " from " << rpc->requestor_string();
 }
 
-bool ServerBase::IsFromSuperUser(const rpc::RpcContext* rpc) {
+bool ServerBase::IsFromSuperUser(const rpc::RpcContext* rpc) const {
   return superuser_acl_.UserAllowed(rpc->remote_user().username());
 }
 
-bool ServerBase::IsServiceUserOrSuperUser(const string& user) {
+bool ServerBase::IsServiceUserOrSuperUser(const string& user) const {
   return service_acl_.UserAllowed(user) || superuser_acl_.UserAllowed(user);
 }
 
-bool ServerBase::Authorize(rpc::RpcContext* rpc, uint32_t allowed_roles) {
+bool ServerBase::Authorize(rpc::RpcContext* rpc, uint32_t allowed_roles) const {
   if ((allowed_roles & SUPER_USER) && IsFromSuperUser(rpc)) {
     return true;
   }
