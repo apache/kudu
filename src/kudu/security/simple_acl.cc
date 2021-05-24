@@ -51,7 +51,6 @@ Status SimpleAcl::ParseFlag(const string& flag) {
       return Status::OK();
     }
 
-
     // Leave open the use of various special characters at the start of each
     // username. We reserve some special characters that might be useful in
     // ACLs:
@@ -64,7 +63,7 @@ Status SimpleAcl::ParseFlag(const string& flag) {
     // '-', '+', '=': useful for allow/deny style ACLs
     // <quote characters>: in case we want to add quoted strings
     // whitespace: down right confusing
-    static const char* kReservedStartingCharacters = "!@#$%*-=+'\"";
+    static const char* const kReservedStartingCharacters = "!@#$%*-=+'\"";
     if (strchr(kReservedStartingCharacters, field[0]) ||
         isspace(field[0])) {
       return Status::NotSupported("invalid username", field.ToString());
@@ -81,7 +80,7 @@ void SimpleAcl::Reset(set<string> users) {
   users_ = std::move(users);
 }
 
-bool SimpleAcl::UserAllowed(const string& username) {
+bool SimpleAcl::UserAllowed(const string& username) const {
   return ContainsKey(users_, "*") || ContainsKey(users_, username);
 }
 
