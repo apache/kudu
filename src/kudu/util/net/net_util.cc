@@ -34,7 +34,7 @@
 #include <utility>
 #include <vector>
 
-#include <boost/functional/hash/hash.hpp>
+#include <boost/container_hash/extensions.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -226,14 +226,18 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
 Status HostPort::ParseStrings(const string& comma_sep_addrs,
                               uint16_t default_port,
                               vector<HostPort>* res) {
-  res->clear();
+  return ParseAddresses(strings::Split(comma_sep_addrs, ",", strings::SkipEmpty()),
+                        default_port, res);
+}
 
-  vector<string> addr_strings = strings::Split(comma_sep_addrs, ",", strings::SkipEmpty());
-  res->reserve(addr_strings.size());
-  for (const string& addr_string : addr_strings) {
+Status HostPort::ParseAddresses(const vector<string>& addrs, uint16_t default_port,
+                                vector<HostPort>* res) {
+  res->clear();
+  res->reserve(addrs.size());
+  for (const string& addr : addrs) {
     HostPort host_port;
-    RETURN_NOT_OK(host_port.ParseString(addr_string, default_port));
-    res->emplace_back(host_port);
+    RETURN_NOT_OK(host_port.ParseString(addr, default_port));
+    res->emplace_back(std::move(host_port));
   }
   return Status::OK();
 }

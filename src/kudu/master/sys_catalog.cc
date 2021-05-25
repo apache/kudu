@@ -88,11 +88,10 @@ DEFINE_double(sys_catalog_fail_during_write, 0.0,
               "Fraction of the time when system table writes will fail");
 TAG_FLAG(sys_catalog_fail_during_write, hidden);
 
-// Following flags related to dynamic multi-master are hidden till the feature is ready to
-// be advertised.
+// This flag is meant to be used by the tool orchestrating addition of a Kudu master and not
+// for external documentation and hence it's hidden.
 DEFINE_string(master_address_add_new_master, "",
               "Address of master to add as a NON_VOTER on creating a distributed master config.");
-TAG_FLAG(master_address_add_new_master, unsafe);
 TAG_FLAG(master_address_add_new_master, hidden);
 
 DECLARE_bool(master_support_change_config);
