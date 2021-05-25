@@ -168,7 +168,7 @@ bool TxnManagerServiceImpl::AuthorizeClient(
     const google::protobuf::Message* /* req */,
     google::protobuf::Message* /* resp */,
     RpcContext* ctx) {
-  return server_->Authorize(ctx, ServerBase::USER);
+  return server_->Authorize(ctx, ServerBase::SUPER_USER | ServerBase::USER);
 }
 
 } // namespace transactions
