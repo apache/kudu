@@ -82,6 +82,10 @@ class HostPort {
   static Status ParseStrings(
       const std::string& comma_sep_addrs, uint16_t default_port, std::vector<HostPort>* res);
 
+  // Similar to above but uses a vector of strings 'addrs' as input parameter.
+  static Status ParseAddresses(const std::vector<std::string>& addrs, uint16_t default_port,
+                               std::vector<HostPort>* res);
+
   // Similar to above but allow the addresses to have scheme and path,
   // which are ignored.
   static Status ParseStringsWithScheme(

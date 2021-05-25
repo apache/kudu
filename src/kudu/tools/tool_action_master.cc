@@ -357,6 +357,12 @@ Status AddMaster(const RunnerContext& context) {
   // Parse input arguments.
   vector<string> master_addresses;
   RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  // "master_addresses" after being successfully parsed above don't contain duplicates.
+  // So "master_hps" won't contain any duplicates as well.
+  vector<HostPort> master_hps;
+  RETURN_NOT_OK(HostPort::ParseAddresses(master_addresses, Master::kDefaultPort, &master_hps));
+  DCHECK_EQ(master_addresses.size(), master_hps.size());
+
   const string& new_master_address = FindOrDie(context.required_args, kMasterAddressArg);
   HostPort hp;
   RETURN_NOT_OK(hp.ParseString(new_master_address, Master::kDefaultPort));
@@ -394,9 +400,11 @@ Status AddMaster(const RunnerContext& context) {
   // Bring up the new master that includes master addresses of the cluster and itself.
   // It's possible this is a retry in which case the new master is already part of
   // master_addresses.
-  if (std::find(master_addresses.begin(), master_addresses.end(), hp.ToString()) ==
-      master_addresses.end()) {
+  // Using HostPort for comparing instead of strings as in case of latter, the default port
+  // may not be specified.
+  if (std::find(master_hps.begin(), master_hps.end(), hp) == master_hps.end()) {
     master_addresses.emplace_back(hp.ToString());
+    master_hps.push_back(hp);
   }
 
   unique_ptr<Subprocess> new_master;
