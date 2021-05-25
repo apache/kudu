@@ -178,6 +178,7 @@ DEFINE_bool(tserver_txn_write_op_handling_enabled, true,
             "in the context of multi-row transactions");
 TAG_FLAG(tserver_txn_write_op_handling_enabled, hidden);
 
+DECLARE_bool(enable_txn_system_client_init);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 DECLARE_int32(tablet_history_max_age_sec);
@@ -1668,6 +1669,13 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     // Submit the write operation. The RPC will be responded asynchronously.
     s = replica->SubmitWrite(std::move(op_state));
   } else {
+    if (!FLAGS_enable_txn_system_client_init) {
+      return SetupErrorAndRespond(
+          resp->mutable_error(),
+          Status::NotSupported(Substitute("txns not supported on server $0",
+                                          replica->permanent_uuid())),
+          TabletServerErrorPB::UNKNOWN_ERROR, context);
+    }
     auto abort_func = [this, txn_id = req->txn_id(), &username] {
       return server_->tablet_manager()->ScheduleAbortTxn(txn_id, username);
     };

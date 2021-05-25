@@ -158,7 +158,7 @@ class TsLocationAssignmentITest :
     const auto& param = GetParam();
     opts_.num_masters = std::get<0>(param);
     opts_.num_tablet_servers = std::get<1>(param);
-    opts_.extra_tserver_flags.emplace_back("--disable_txn_system_client_init");
+    opts_.extra_tserver_flags.emplace_back("--enable_txn_system_client_init=false");
   }
 
   virtual ~TsLocationAssignmentITest() = default;

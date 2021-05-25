@@ -49,7 +49,8 @@ class KuduTxnsCliTest : public ExternalMiniClusterITestBase {
     NO_FATALS(ExternalMiniClusterITestBase::SetUp());
     // Some tests will depend on flushing MRSs quickly, so ensure flushes
     // happen quickly.
-    NO_FATALS(StartCluster({ "--flush_threshold_mb=1", "--flush_threshold_secs=1" },
+    NO_FATALS(StartCluster({ "--flush_threshold_mb=1", "--flush_threshold_secs=1",
+                             "--enable_txn_system_client_init" },
                             {"--txn_manager_enabled=true"}));
   }
 };

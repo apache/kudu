@@ -68,6 +68,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_txn_partition_lock);
+DECLARE_bool(enable_txn_system_client_init);
 DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
 DECLARE_bool(txn_schedule_background_tasks);
@@ -121,6 +122,7 @@ class TxnCommitITest : public KuduTest {
   // Sets up a cluster with the given number of tservers, creating a
   // single-replica transaction status table and user-defined table.
   void SetUpClusterAndTable(int num_tservers, int num_replicas = 1) {
+    FLAGS_enable_txn_system_client_init = true;
     FLAGS_txn_manager_enabled = true;
     FLAGS_txn_manager_lazily_initialized = false;
     FLAGS_txn_manager_status_table_num_replicas = num_replicas;

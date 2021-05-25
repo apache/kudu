@@ -136,6 +136,7 @@ DEFINE_uint32(max_pending_txn_write_ops, 10,
               "setting for tserver's --tablet_max_pending_txn_write_ops flag");
 DEFINE_bool(txn_enabled, true, "whether to use transactional sessions");
 
+DECLARE_bool(enable_txn_system_client_init);
 DECLARE_bool(tserver_txn_write_op_handling_enabled);
 DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
@@ -320,7 +321,8 @@ TEST_F(TxnWriteOpsITest, CommitTimestampPropagation) {
     // is created at start, not on first transaction-related operation.
     "--txn_manager_lazily_initialized=false",
   };
-  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+  NO_FATALS(StartCluster({ "--enable_txn_system_client_init=true" },
+                         master_flags, kNumTabletServers));
   NO_FATALS(Prepare());
 
   // Start a transaction, write a bunch or rows into the test table, and then
@@ -420,7 +422,8 @@ TEST_F(TxnWriteOpsITest, DeadlockPrevention) {
     // is created at start, not on first transaction-related operation.
     "--txn_manager_lazily_initialized=false",
   };
-  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+  NO_FATALS(StartCluster({ "--enable_txn_system_client_init=true" },
+                         master_flags, kNumTabletServers));
   NO_FATALS(Prepare());
   vector<thread> threads;
   threads.reserve(kNumTxns);
@@ -496,7 +499,8 @@ TEST_F(TxnWriteOpsITest, TestWriteToNewRangeOfTxnIds) {
     // Set a small range so we can write to a new range of transactions IDs.
     Substitute("--txn_manager_status_table_range_partition_span=$0", kNumTxns / 3),
   };
-  NO_FATALS(StartCluster({}, kMasterFlags, kNumTabletServers));
+  NO_FATALS(StartCluster({ "--enable_txn_system_client_init=true" },
+                         kMasterFlags, kNumTabletServers));
   NO_FATALS(Prepare());
   for (int i = 0; i < kNumTxns; i++) {
     shared_ptr<KuduTransaction> txn;
@@ -529,7 +533,8 @@ TEST_F(TxnWriteOpsITest, TxnMultipleSingleRowWritesCommit) {
     // is created at start, not on first transaction-related operation.
     "--txn_manager_lazily_initialized=false",
   };
-  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+  NO_FATALS(StartCluster({ "--enable_txn_system_client_init=true" },
+                         master_flags, kNumTabletServers));
 
   NO_FATALS(Prepare());
   shared_ptr<KuduTransaction> txn;
@@ -565,7 +570,8 @@ TEST_F(TxnWriteOpsITest, FrequentElections) {
 
     // Disable the partition lock as there are concurrent transactions.
     // TODO(awong): update this when implementing finer grained locking.
-    "--enable_txn_partition_lock=false"
+    "--enable_txn_partition_lock=false",
+    "--enable_txn_system_client_init=true",
   };
   const vector<string> master_flags = {
     // Enable TxnManager in Kudu masters.
@@ -684,7 +690,8 @@ TEST_F(TxnWriteOpsITest, WriteOpPerf) {
 
     // Disable the partition lock as there are concurrent transactions.
     // TODO(awong): update this when implementing finer grained locking.
-    "--enable_txn_partition_lock=false"
+    "--enable_txn_partition_lock=false",
+    "--enable_txn_system_client_init=true",
   };
   const vector<string> master_flags = {
     // Enable TxnManager in Kudu masters.
@@ -842,7 +849,8 @@ TEST_F(TxnWriteOpsITest, WriteOpForNonExistentTxn) {
     // TODO(aserbin): remove this customization once the flag is 'on' by default
     "--txn_manager_enabled=true",
   };
-  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+  NO_FATALS(StartCluster({ "--enable_txn_system_client_init=true" },
+                         master_flags, kNumTabletServers));
   NO_FATALS(Prepare());
 
   shared_ptr<KuduTransaction> txn;
@@ -892,7 +900,8 @@ TEST_F(TxnWriteOpsITest, TxnWriteAfterCommit) {
     // TODO(aserbin): remove this customization once the flag is 'on' by default
     "--txn_manager_enabled=true",
   };
-  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+  NO_FATALS(StartCluster({ "--enable_txn_system_client_init=true" },
+                         master_flags, kNumTabletServers));
   NO_FATALS(Prepare());
   int idx = 0;
   {
@@ -973,6 +982,7 @@ class TxnOpDispatcherITest : public KuduTest {
     FLAGS_txn_manager_enabled = true;
     FLAGS_txn_manager_lazily_initialized = false;
     FLAGS_txn_manager_status_table_num_replicas = num_replicas;
+    FLAGS_enable_txn_system_client_init = true;
 
     InternalMiniClusterOptions opts;
     opts.num_tablet_servers = num_tservers;

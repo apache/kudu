@@ -94,6 +94,7 @@ DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(catalog_manager_evict_excess_replicas);
 DECLARE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader);
 DECLARE_bool(enable_leader_failure_detection);
+DECLARE_bool(enable_txn_system_client_init);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(heartbeat_interval_ms);
@@ -1032,6 +1033,11 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
   const char* kParticipant = "participant";
   const char* kTxnStatusTabletId = "11111111111111111111111111111111";
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+
+  void SetUp() override {
+    NO_FATALS(TsTabletManagerITest::SetUp());
+    FLAGS_enable_txn_system_client_init = true;
+  }
 
   // Creates a request to create a transaction status tablet with the given IDs
   // and Raft config.

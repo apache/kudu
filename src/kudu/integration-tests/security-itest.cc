@@ -284,6 +284,7 @@ TEST_F(SecurityITest, TestAuthorizationOnChecksum) {
 // the table.
 TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
   cluster_opts_.extra_master_flags.emplace_back("--txn_manager_enabled=true");
+  cluster_opts_.extra_tserver_flags.emplace_back("--enable_txn_system_client_init=true");
   ASSERT_OK(StartCluster());
 
   ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
