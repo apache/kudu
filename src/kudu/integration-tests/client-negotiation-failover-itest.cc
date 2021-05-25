@@ -81,6 +81,7 @@ class ClientFailoverOnNegotiationTimeoutITest : public KuduTest {
         "--leader_failure_exp_backoff_max_delta_ms=1000",
         // Decreasing TS->master heartbeat interval speeds up the test.
         "--heartbeat_interval_ms=25",
+        "--enable_txn_system_client_init=true",
     };
     cluster_opts_.extra_master_flags = {
         // Speed up Raft elections.

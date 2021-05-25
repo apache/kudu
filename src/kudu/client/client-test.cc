@@ -136,7 +136,7 @@ DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(catalog_manager_support_live_row_count);
 DECLARE_bool(catalog_manager_support_on_disk_size);
 DECLARE_bool(client_use_unix_domain_sockets);
-DECLARE_bool(disable_txn_system_client_init);
+DECLARE_bool(enable_txn_system_client_init);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(location_mapping_by_uuid);
 DECLARE_bool(log_inject_latency);
@@ -247,6 +247,7 @@ class ClientTest : public KuduTest {
 
     // Enable TxnManager in Kudu master.
     FLAGS_txn_manager_enabled = true;
+    FLAGS_enable_txn_system_client_init = true;
     // Basic txn-related scenarios in this test assume there is only one
     // replica of the transaction status table.
     FLAGS_txn_manager_status_table_num_replicas = 1;
@@ -8303,7 +8304,7 @@ class ClientWithLocationTest : public ClientTest {
 
     // Some of these tests assume no client activity, so disable the
     // transaction system client.
-    FLAGS_disable_txn_system_client_init = true;
+    FLAGS_enable_txn_system_client_init = false;
 
     // By default, master doesn't assing locations to connecting clients.
     FLAGS_master_client_location_assignment_enabled = true;

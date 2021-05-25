@@ -111,6 +111,8 @@ class TxnStatusManagerITest : public ExternalMiniClusterITestBase {
         "--raft_heartbeat_interval_ms=$0", kRaftHbIntervalMs));
     cluster_opts_.extra_tserver_flags.emplace_back(
         "--leader_failure_max_missed_heartbeat_periods=1.25");
+    cluster_opts_.extra_tserver_flags.emplace_back(
+        "--enable_txn_system_client_init=true");
 
     // Some of these tests rely on checking state assuming no background tasks.
     // For simplicity, disable the background commits.

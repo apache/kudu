@@ -69,6 +69,7 @@ using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 
+DECLARE_bool(enable_txn_system_client_init);
 DECLARE_bool(txn_schedule_background_tasks);
 DECLARE_uint32(txn_keepalive_interval_ms);
 DECLARE_uint32(txn_staleness_tracker_interval_ms);
@@ -93,6 +94,7 @@ class TxnStatusManagerTest : public TabletReplicaTestBase {
   void SetUp() override {
     // Using shorter intervals for transaction staleness tracking to speed up
     // test scenarios verifying related functionality.
+    FLAGS_enable_txn_system_client_init = true;
     FLAGS_txn_keepalive_interval_ms = 200;
     FLAGS_txn_staleness_tracker_interval_ms = 50;
     FLAGS_txn_schedule_background_tasks = false;

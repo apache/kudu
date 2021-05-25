@@ -90,6 +90,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testNewTransaction() throws Exception {
     KuduTransaction txn = client.newTransaction();
     assertNotNull(txn);
@@ -113,6 +116,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testStartManyTransactions() throws Exception {
     List<KuduTransaction> transactions = new ArrayList<>();
     for (int i = 0; i < 1000; ++i) {
@@ -131,6 +137,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testRollbackAnEmptyTransaction() throws Exception {
     KuduTransaction txn = client.newTransaction();
@@ -162,7 +171,8 @@ public class TestKuduTransaction {
       "--txn_manager_enabled",
   })
   @TabletServerConfig(flags = {
-      "--txn_schedule_background_tasks=false"
+      "--txn_schedule_background_tasks=false",
+      "--enable_txn_system_client_init=true",
   })
   public void testCommitAnEmptyTransaction() throws Exception {
     KuduTransaction txn = client.newTransaction();
@@ -192,6 +202,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testCommitNonExistentTransaction() throws Exception {
     KuduTransaction txn = client.newTransaction();
@@ -232,6 +245,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testTxnSessionClose() throws Exception {
     final String TABLE_NAME = "txn_session_close";
@@ -289,6 +305,7 @@ public class TestKuduTransaction {
   @TabletServerConfig(flags = {
       "--txn_schedule_background_tasks=false",
       "--txn_status_manager_inject_latency_finalize_commit_ms=1000",
+      "--enable_txn_system_client_init=true",
   })
   public void testIsCommitComplete() throws Exception {
     KuduTransaction txn = client.newTransaction();
@@ -305,7 +322,8 @@ public class TestKuduTransaction {
       "--txn_manager_enabled",
   })
   @TabletServerConfig(flags = {
-      "--txn_schedule_background_tasks=false"
+      "--txn_schedule_background_tasks=false",
+      "--enable_txn_system_client_init=true",
   })
   public void testIsCommitCompleteSpecialCases() throws Exception {
     KuduTransaction txn = client.newTransaction();
@@ -364,6 +382,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testCommitAnEmptyTransactionWait() throws Exception {
     KuduTransaction txn = client.newTransaction();
     txn.commit();
@@ -376,6 +397,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testRollbackNonExistentTransaction() throws Exception {
     KuduTransaction txn = client.newTransaction();
@@ -403,6 +427,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testNewTransactionAsyncClient() throws Exception {
     KuduTransaction txn = client.newTransaction();
     assertNotNull(txn);
@@ -424,6 +451,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testNewTransactionalSession() throws Exception {
     final String TABLE_NAME = "new_transactional_session";
@@ -465,6 +495,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testNewAsyncTransactionalSession() throws Exception {
     KuduTransaction txn = client.newTransaction();
     assertNotNull(txn);
@@ -486,6 +519,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled=false",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testTxnOpsWithoutTxnManager() throws Exception {
     try (KuduTransaction txn = client.newTransaction()) {
@@ -510,7 +546,8 @@ public class TestKuduTransaction {
       "--txn_manager_enabled",
   })
   @TabletServerConfig(flags = {
-      "--txn_schedule_background_tasks=false"
+      "--txn_schedule_background_tasks=false",
+      "--enable_txn_system_client_init=true",
   })
   public void testAutoclosableUsage() throws Exception {
     byte[] buf = null;
@@ -559,6 +596,9 @@ public class TestKuduTransaction {
   @Test(timeout = 100000)
   @MasterServerConfig(flags = {
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testSerializationOptions() throws Exception {
     final KuduTransaction txn = client.newTransaction();
@@ -626,6 +666,7 @@ public class TestKuduTransaction {
   @TabletServerConfig(flags = {
       "--txn_keepalive_interval_ms=200",
       "--txn_staleness_tracker_interval_ms=50",
+      "--enable_txn_system_client_init=true",
   })
   public void testKeepaliveBasic() throws Exception {
     try (KuduTransaction txn = client.newTransaction()) {
@@ -694,7 +735,8 @@ public class TestKuduTransaction {
   @TabletServerConfig(flags = {
       "--txn_keepalive_interval_ms=200",
       "--txn_schedule_background_tasks=false",
-      "--txn_staleness_tracker_interval_ms=50"
+      "--txn_staleness_tracker_interval_ms=50",
+      "--enable_txn_system_client_init=true",
   })
   public void testKeepaliveForDeserializedHandle() throws Exception {
     // Check the keepalive behavior when serializing/deserializing with default
@@ -792,6 +834,7 @@ public class TestKuduTransaction {
       // FINALIZE_IN_PROGRESS state and make KuduTransaction.isCommitComplete()
       // to return 'false' at least once before returning 'true'.
       "--txn_status_manager_inject_latency_finalize_commit_ms=250",
+      "--enable_txn_system_client_init=true",
   })
   public void testPropagateTxnCommitTimestamp() throws Exception {
     final String TABLE_NAME = "propagate_txn_commit_timestamp";
@@ -896,6 +939,9 @@ public class TestKuduTransaction {
       // leader failure detection and new leader election.
       "--raft_heartbeat_interval_ms=100",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testSwitchToOtherTxnManager() throws Exception {
     final String TABLE_NAME = "txn_manager_ops_fallback";
     client.createTable(
@@ -992,6 +1038,9 @@ public class TestKuduTransaction {
       // leader failure detection and new leader election.
       "--raft_heartbeat_interval_ms=100",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testSwitchToOtherTxnManagerInFlightCalls() throws Exception {
     final String TABLE_NAME = "txn_manager_ops_fallback_inflight";
     client.createTable(
@@ -1065,7 +1114,8 @@ public class TestKuduTransaction {
       // The txn keepalive interval should be long enough to accommodate Raft
       // leader failure detection and election.
       "--txn_keepalive_interval_ms=1000",
-      "--txn_staleness_tracker_interval_ms=250"
+      "--txn_staleness_tracker_interval_ms=250",
+      "--enable_txn_system_client_init=true",
   })
   public void testTxnKeepaliveSwitchesToOtherTxnManager() throws Exception {
     final String TABLE_NAME = "txn_manager_fallback";
@@ -1129,7 +1179,8 @@ public class TestKuduTransaction {
       // The txn keepalive interval should be long enough to accommodate Raft
       // leader failure detection and election.
       "--txn_keepalive_interval_ms=1000",
-      "--txn_staleness_tracker_interval_ms=250"
+      "--txn_staleness_tracker_interval_ms=250",
+      "--enable_txn_system_client_init=true",
   })
   public void testTxnKeepaliveRollingSwitchToOtherTxnManager() throws Exception {
     final String TABLE_NAME = "txn_manager_fallback_rolling";
@@ -1217,6 +1268,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       // TxnManager functionality is necessary for this scenario.
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testFlushSessionsOnCommit() throws Exception {
     final String TABLE_NAME = "flush_sessions_on_commit";
@@ -1329,6 +1383,9 @@ public class TestKuduTransaction {
       // TxnManager functionality is necessary for this scenario.
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testRetryCommitAfterSessionFlushError() throws Exception {
     final String TABLE_NAME = "retry_commit_after_session_flush_error";
     client.createTable(
@@ -1389,6 +1446,9 @@ public class TestKuduTransaction {
       // TxnManager functionality is necessary for this scenario.
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testStartCommitWithFlushedSessions() throws Exception {
     final String TABLE_NAME = "start_commit_with_flushed_sessions";
     client.createTable(
@@ -1428,6 +1488,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       // TxnManager functionality is necessary for this scenario.
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testStartCommitWithNonFlushedSessions() throws Exception {
     final String TABLE_NAME = "non_flushed_sessions_on_start_commit";
@@ -1483,6 +1546,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       // TxnManager functionality is necessary for this scenario.
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testNewSessionAfterCommit() throws Exception {
     final String TABLE_NAME = "new_session_after_commit";
@@ -1551,6 +1617,9 @@ public class TestKuduTransaction {
       // TxnManager functionality is necessary for this scenario.
       "--txn_manager_enabled",
   })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
+  })
   public void testCreateSessionAfterStartCommit() throws Exception {
     KuduTransaction txn = client.newTransaction();
     txn.startCommit();
@@ -1573,6 +1642,9 @@ public class TestKuduTransaction {
   @MasterServerConfig(flags = {
       // TxnManager functionality is necessary for this scenario.
       "--txn_manager_enabled",
+  })
+  @TabletServerConfig(flags = {
+      "--enable_txn_system_client_init=true",
   })
   public void testSubmitWriteOpAfterCommit() throws Exception {
     final String TABLE_NAME = "submit_write_op_after_commit";

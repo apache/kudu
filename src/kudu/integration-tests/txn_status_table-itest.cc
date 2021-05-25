@@ -66,6 +66,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(enable_txn_system_client_init);
 DECLARE_bool(raft_enable_pre_election);
 DECLARE_bool(txn_schedule_background_tasks);
 DECLARE_bool(txn_status_tablet_failover_inject_timeout_error);
@@ -119,6 +120,7 @@ class TxnStatusTableITest : public KuduTest {
     // Several of these tests rely on checking transaction state, which is
     // easier to work with without committing in the background.
     FLAGS_txn_schedule_background_tasks = false;
+    FLAGS_enable_txn_system_client_init = true;
     cluster_.reset(new InternalMiniCluster(env_, {}));
     ASSERT_OK(cluster_->Start());
 
@@ -858,6 +860,7 @@ class MultiServerTxnStatusTableITest : public TxnStatusTableITest {
  public:
   void SetUp() override {
     KuduTest::SetUp();
+    FLAGS_enable_txn_system_client_init = true;
     InternalMiniClusterOptions opts;
     opts.num_tablet_servers = 4;
     cluster_.reset(new InternalMiniCluster(env_, std::move(opts)));
@@ -1026,6 +1029,7 @@ class TxnStatusTableElectionStormITest : public TxnStatusTableITest {
  public:
   void SetUp() override {
     KuduTest::SetUp();
+    FLAGS_enable_txn_system_client_init = true;
 
     // Make leader elections more frequent to get through this test a bit more
     // quickly.
