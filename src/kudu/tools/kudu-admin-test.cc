@@ -849,14 +849,12 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   }
 
   // Get a baseline config reported to the master.
-  LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
-  LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   TServerDetails* leader_ts;
@@ -865,7 +863,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   });
-  ASSERT_EQ(followers.size(), 2);
+  ASSERT_EQ(2, followers.size());
   // Wait for initial NO_OP to be committed by the leader.
   ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id_, COMMITTED_OPID, kTimeout));
 
@@ -874,14 +872,12 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   cluster_->tablet_server_by_uuid(followers[0]->uuid())->Shutdown();
   cluster_->tablet_server_by_uuid(followers[1]->uuid())->Shutdown();
 
-  // Now try to replicate a ChangeConfig operation. This should get stuck and time out
-  // because the server can't replicate any operations.
-  Status s = RemoveServer(leader_ts, tablet_id_, followers[1],
-                          MonoDelta::FromSeconds(2), -1);
-  ASSERT_TRUE(s.IsTimedOut());
+  // Now try to replicate a ChangeConfig operation. This should get stuck and
+  // time out because the server can't replicate any operations.
+  const auto s = RemoveServer(
+      leader_ts, tablet_id_, followers[1], MonoDelta::FromSeconds(2), -1);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
-  LOG(INFO) << "Change Config Op timed out, Sending a Replace config "
-            << "command when change config op is pending on the leader.";
   const string& leader_addr = Substitute("$0:$1",
                                          leader_ts->registration.rpc_addresses(0).host(),
                                          leader_ts->registration.rpc_addresses(0).port());
@@ -894,19 +890,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   ASSERT_OK(cluster_->master()->Restart());
 
   const TServerDetails* new_node = FindNodeForReReplication(active_tablet_servers);
-  ASSERT_TRUE(new_node != nullptr);
+  ASSERT_NE(nullptr, new_node);
 
   // Master may try to add the servers which are down until tserver_unresponsive_timeout_ms,
   // so it is safer to wait until consensus metadata has 3 voters on new_node.
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(3, new_node, tablet_id_, kTimeout));
 
   // Wait for the master to be notified of the config change.
-  LOG(INFO) << "Waiting for Master to see new config...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
-  LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
     const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
     ASSERT_NE(uuid, followers[0]->uuid());
