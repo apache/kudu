@@ -303,6 +303,99 @@ TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
             s.ToString());
 }
 
+// Make sure that it's possible to call TxnManagerService's txn-related RPCs
+// using credentials of a regular and a super user.
+TEST_F(SecurityITest, TxnSmokeWithDifferentUserTypes) {
+  constexpr const auto kTxnKeepaliveIntervalMs = 500;
+  const auto usernames = {
+    "test-admin",
+    "test-user",
+  };
+
+  cluster_opts_.extra_master_flags.emplace_back(
+      "--txn_manager_enabled=true");
+  cluster_opts_.extra_tserver_flags.emplace_back(
+      "--enable_txn_system_client_init=true");
+  cluster_opts_.extra_tserver_flags.emplace_back(
+      Substitute("--txn_keepalive_interval_ms=$0", kTxnKeepaliveIntervalMs));
+  ASSERT_OK(StartCluster());
+
+  for (const auto& username : usernames) {
+    SCOPED_TRACE(Substitute("Running with credentials of user $0", username));
+    ASSERT_OK(cluster_->kdc()->Kinit(username));
+
+    shared_ptr<KuduClient> client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+    NO_FATALS(SmokeTestCluster(client, /* transactional */ true));
+
+    // Now, check for the rest of TxnManagerService RPCs.
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+              .set_range_partition_columns({ "key" })
+              .schema(&kTestKuduSchema)
+              .num_replicas(3)
+              .Create());
+
+    auto smoke_starter = [&](shared_ptr<KuduTable>* table,
+                             shared_ptr<KuduTransaction>* txn) {
+      RETURN_NOT_OK(client->OpenTable(kTableName, table));
+      RETURN_NOT_OK(client->NewTransaction(txn));
+      shared_ptr<KuduSession> session;
+      RETURN_NOT_OK((*txn)->CreateSession(&session));
+      RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+      {
+        unique_ptr<KuduInsert> ins((*table)->NewInsert());
+        RETURN_NOT_OK(ins->mutable_row()->SetInt32(0, 0));
+        RETURN_NOT_OK(ins->mutable_row()->SetInt32(1, 1));
+        RETURN_NOT_OK(session->Apply(ins.release()));
+      }
+      return session->Flush();
+    };
+
+    // Check TxnManagerService::AbortTransaction() RPC as well.
+    {
+      shared_ptr<KuduTable> table;
+      shared_ptr<KuduTransaction> txn;
+      ASSERT_OK(smoke_starter(&table, &txn));
+      ASSERT_OK(txn->Rollback());
+
+      // Read the inserted row back.
+      ASSERT_EQ(0, CountTableRows(table.get()));
+    }
+
+    // Check TxnManagerService::KeepTransactionAlive() -- wait for for over than
+    // keepalive interval for a transaction and make sure it's still possible to
+    // commit a transaction using its handle. Calling StartCommit() and then
+    // calling IsCommitComplete() checks calling of the
+    // TxnManagerService::GetTransactionState() RPC.
+    {
+      shared_ptr<KuduTable> table;
+      shared_ptr<KuduTransaction> txn;
+      ASSERT_OK(smoke_starter(&table, &txn));
+
+      // Wait for a few keepalive intervals: the transaction would be aborted if
+      // calls to TxnManagerService::KeepTransactionAlive() RPC do not come
+      // through, and then KuduTransaction::StartCommit() below would fail.
+      SleepFor(MonoDelta::FromMilliseconds(3 * kTxnKeepaliveIntervalMs));
+
+      ASSERT_OK(txn->StartCommit());
+      ASSERT_EVENTUALLY([&]{
+        bool is_complete = false;
+        Status completion_status;
+        ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+        ASSERT_TRUE(is_complete);
+        ASSERT_OK(completion_status);
+      });
+
+      // Read the inserted row back.
+      ASSERT_EQ(1, CountTableRows(table.get()));
+    }
+
+    // Finally, drop the table.
+    ASSERT_OK(client->DeleteTable(kTableName));
+  }
+}
+
 // Test trying to access the cluster with no Kerberos credentials at all.
 TEST_F(SecurityITest, TestNoKerberosCredentials) {
   ASSERT_OK(StartCluster());
@@ -478,9 +571,9 @@ TEST_F(SecurityITest, TestNonDefaultPrincipal) {
   ASSERT_OK(StartCluster());
 
   // A client with the default SASL proto shouldn't be able to connect to
-  // a cluster using custom Kerberos principal for Kudu service user.
+  // a cluster using custom Kerberos principal for Kudu service user. Verify
+  // that for both the regular and the super-user.
   for (const auto& username : {"test-user", "test-admin"}) {
-    // Verify that for both the regular and the super-user.
     ASSERT_OK(cluster_->kdc()->Kinit(username));
 
     // Instantiate a KuduClientBuilder outside of this cluster's context, so
@@ -494,21 +587,17 @@ TEST_F(SecurityITest, TestNonDefaultPrincipal) {
     const auto s = builder.Build(&client);
     ASSERT_TRUE(s.IsNotAuthorized());
     ASSERT_STR_CONTAINS(s.ToString(), "not found in Kerberos database");
-  }
 
-  // Create a client with the matching SASL proto name and verify it's able to
-  // connect to the cluster and perform basic actions.
-  {
-    // StartCluster() does 'kinit' as test-admin super-user. Anyways, let's
-    // switch to a regular user credentials to perform user-specific tasks.
-    ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
-
-    // Here we don't use out-of-this-cluster KuduClientBuilder instance,
-    // so the client is created with matching SASL proto name.
-    shared_ptr<KuduClient> client;
-    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
-    SmokeTestCluster(client);
-    SmokeTestCluster(client, /*transactional*/ true);
+    // Create a client with the matching SASL proto name and verify it's able to
+    // connect to the cluster and perform basic actions.
+    {
+      // Here we don't use out-of-this-cluster KuduClientBuilder instance,
+      // so the client is created with matching SASL proto name.
+      shared_ptr<KuduClient> client;
+      ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+      SmokeTestCluster(client);
+      SmokeTestCluster(client, /*transactional*/ true);
+    }
   }
 }
 
