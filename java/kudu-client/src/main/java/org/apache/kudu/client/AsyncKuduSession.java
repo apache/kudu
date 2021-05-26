@@ -370,7 +370,8 @@ public class AsyncKuduSession implements SessionConfiguration {
           if (failure instanceof NonCoveredRangeException) {
             // TODO: this should be something different than NotFound so that
             // applications can distinguish from updates on missing rows.
-            error = new RowError(Status.NotFound(failure.getMessage()), operation);
+            error = new RowError(Status.NotFound(String.format(
+                    "%s: %s", failure.getMessage(), operation.getTable().getName())), operation);
           } else {
             LOG.warn("unexpected tablet lookup failure for operation {}", operation, failure);
             error = new RowError(Status.RuntimeError(failure.getMessage()), operation);
@@ -808,9 +809,14 @@ public class AsyncKuduSession implements SessionConfiguration {
     @Override
     public Object call(Exception e) throws Exception {
       if (e instanceof KuduException) {
-        Status status = ((KuduException) e).getStatus();
-        RowError rowError = new RowError(status, operation);
-        return new OperationResponse(0, null, 0, operation, rowError);
+        Status status;
+        if (e instanceof NonCoveredRangeException) {
+          status = Status.NotFound(String.format(
+                  "%s: %s", e.getMessage(), operation.getTable().getName()));
+        } else {
+          status = ((KuduException) e).getStatus();
+        }
+        return new OperationResponse(0, null, 0, operation, new RowError(status, operation));
       }
       return e;
     }

@@ -28,9 +28,20 @@ public class NonCoveredRangeException extends NonRecoverableException {
   private final byte[] nonCoveredRangeEnd;
 
   public NonCoveredRangeException(byte[] nonCoveredRangeStart, byte[] nonCoveredRangeEnd) {
-    super(Status.NotFound("non-covered range"));
+    super(Status.NotFound(getMessage(nonCoveredRangeStart, nonCoveredRangeEnd)));
     this.nonCoveredRangeStart = nonCoveredRangeStart;
     this.nonCoveredRangeEnd = nonCoveredRangeEnd;
+  }
+
+  private static String getMessage(byte[] rangeStart, byte[] rangeEnd) {
+    return String.format("accessed range partition ([%s, %s)) does not exist in table",
+            rangeStart.length == 0 ? "<start>" : Bytes.hex(rangeStart),
+            rangeEnd.length == 0 ? "<end>" : Bytes.hex(rangeEnd));
+  }
+
+  @Override
+  public String getMessage() {
+    return getMessage(nonCoveredRangeStart, nonCoveredRangeEnd);
   }
 
   byte[] getNonCoveredRangeStart() {
@@ -39,12 +50,5 @@ public class NonCoveredRangeException extends NonRecoverableException {
 
   byte[] getNonCoveredRangeEnd() {
     return nonCoveredRangeEnd;
-  }
-
-  @Override
-  public String getMessage() {
-    return String.format("([%s, %s))",
-        nonCoveredRangeStart.length == 0 ? "<start>" : Bytes.hex(nonCoveredRangeStart),
-        nonCoveredRangeEnd.length == 0 ? "<end>" : Bytes.hex(nonCoveredRangeEnd));
   }
 }
