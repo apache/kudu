@@ -158,7 +158,7 @@ public class TestKuduPartitioner {
       part.partitionRow(over);
       fail("partitionRow did not throw a NonCoveredRangeException");
     } catch (NonCoveredRangeException ex) {
-      // Expected
+      assertTrue(ex.getMessage().contains("does not exist in table"));
     }
   }
 

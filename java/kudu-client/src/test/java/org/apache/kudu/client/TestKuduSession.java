@@ -540,6 +540,42 @@ public class TestKuduSession {
   }
 
   @Test(timeout = 10000)
+  public void testNonCoveredRangeException() throws Exception {
+    CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
+    createOptions.setNumReplicas(1);
+    client.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = client.openTable(tableName);
+    Insert insert = createInsert(table, 150);
+
+    //AUTO_FLUSH_SYNC case
+    KuduSession session = client.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
+    OperationResponse apply = session.apply(insert);
+    assertTrue(apply.hasRowError());
+    System.err.println(apply.getRowError().getErrorStatus().getMessage());
+    assertTrue(apply.getRowError().getErrorStatus().getMessage().contains(
+            "does not exist in table: TestKuduSession"));
+    //AUTO_FLUSH_BACKGROUND case
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+    assertEquals(null, session.apply(insert));
+    List<OperationResponse> autoFlushResult = session.flush();
+    assertEquals(1, autoFlushResult.size());
+    OperationResponse responseAuto = autoFlushResult.get(0);
+    assertTrue(responseAuto.hasRowError());
+    assertTrue(responseAuto.getRowError().getErrorStatus().getMessage().contains(
+            "does not exist in table: TestKuduSession"));
+    //MANUAL_FLUSH case
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+    assertEquals(null, session.apply(insert));
+    List<OperationResponse> manualFlushResult = session.flush();
+    assertEquals(1, manualFlushResult.size());
+    OperationResponse responseManual = manualFlushResult.get(0);
+    assertTrue(responseManual.hasRowError());
+    assertTrue(responseManual.getRowError().getErrorStatus().getMessage().contains(
+            "does not exist in table: TestKuduSession"));
+  }
+
+  @Test(timeout = 10000)
   public void testInsertAutoFlushSyncNonCoveredRange() throws Exception {
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
