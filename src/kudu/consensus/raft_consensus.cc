@@ -101,6 +101,7 @@ DEFINE_bool(evict_failed_followers, true,
             "unreachable by the leader for longer than "
             "follower_unavailable_considered_failed_sec");
 TAG_FLAG(evict_failed_followers, advanced);
+TAG_FLAG(evict_failed_followers, runtime);
 
 DEFINE_bool(follower_reject_update_consensus_requests, false,
             "Whether a follower will return an error for all UpdateConsensus() requests. "
