@@ -2607,6 +2607,166 @@ TEST_F(ToolTest, TestLoadgenAutoGenTablePartitioning) {
   ASSERT_OK(WaitForNumTabletsOnTS(ts, expected_tablets, kTimeout));
 }
 
+// Run the loadgen with txn-related options.
+TEST_F(ToolTest, LoadgenTxnBasics) {
+  {
+    ExternalMiniClusterOptions opts;
+    // Prefer lighter cluster to speed up testing.
+    opts.num_tablet_servers = 1;
+    // Since txn-related functionality is not enabled by default for a while,
+    // a couple of flags should be overriden to allow running tests scenarios
+    // in txn-enabled environment. Also, set the txn keepalive interval to a
+    // higher value: in the end of this scenario it's expected to have a couple
+    // of open transactions, but everything might run slower than expected with
+    // TSAN-enabled binaries run on inferior hardware or VMs.
+    opts.extra_master_flags.emplace_back("--txn_manager_enabled");
+    opts.extra_master_flags.emplace_back("--txn_manager_status_table_num_replicas=1");
+    opts.extra_tserver_flags.emplace_back("--enable_txn_system_client_init");
+    opts.extra_tserver_flags.emplace_back("--txn_keepalive_interval_ms=120000");
+    NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  }
+  const vector<string> base_args = {
+    "perf", "loadgen",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    // Let's have a control over the number of rows inserted.
+    "--num_threads=2",
+    "--num_rows_per_thread=111",
+  };
+
+  // '--txn_start' works as expected when running against txn-enabled cluster.
+  {
+    vector<string> args(base_args);
+    args.emplace_back("--txn_start");
+    ASSERT_OK(RunKuduTool(args));
+
+    // An extra run to check for the number of visible rows: there should be
+    // none since the transaction isn't committed.
+    args.emplace_back("--run_scan");
+    string out;
+    ASSERT_OK(RunKuduTool(args, &out));
+    ASSERT_STR_MATCHES(out, "expected rows: 0");
+    ASSERT_STR_MATCHES(out, "actual rows  : 0");
+  }
+
+  // '--txn_start' and '--txn_commit' combination works as expected.
+  {
+    vector<string> args(base_args);
+    args.emplace_back("--txn_start");
+    args.emplace_back("--txn_commit");
+    ASSERT_OK(RunKuduTool(args));
+
+    // An extra run to check for the number of visible rows: all inserted rows
+    // should be visible now since the transaction is to be committed.
+    args.emplace_back("--run_scan");
+    string out;
+    ASSERT_OK(RunKuduTool(args, &out));
+    ASSERT_STR_MATCHES(out, "expected rows: 222");
+    ASSERT_STR_MATCHES(out, "actual rows  : 222");
+  }
+
+  // '--txn_start' and '--txn_rollback' combination works as expected.
+  {
+    vector<string> args(base_args);
+    args.emplace_back("--txn_start");
+    args.emplace_back("--txn_rollback");
+    ASSERT_OK(RunKuduTool(args));
+
+    // An extra run to check for the number of visible rows: there should be
+    // none since the transaction is to be rolled back.
+    args.emplace_back("--run_scan");
+    string out;
+    ASSERT_OK(RunKuduTool(args, &out));
+    ASSERT_STR_MATCHES(out, "expected rows: 0");
+    ASSERT_STR_MATCHES(out, "actual rows  : 0");
+  }
+
+  // Supplying '--txn_rollback' implies '--txn_start'.
+  {
+    vector<string> args(base_args);
+    args.emplace_back("--txn_rollback");
+    ASSERT_OK(RunKuduTool(args));
+
+    // An extra run to check for the number of visible rows: there should be
+    // none since the transaction is to be rolled back.
+    args.emplace_back("--run_scan");
+    string out;
+    ASSERT_OK(RunKuduTool(args, &out));
+    ASSERT_STR_MATCHES(out, "expected rows: 0");
+    ASSERT_STR_MATCHES(out, "actual rows  : 0");
+  }
+
+  // Supplying '--txn_commit' implies '--txn_start'.
+  {
+    vector<string> args(base_args);
+    args.emplace_back("--txn_commit");
+    ASSERT_OK(RunKuduTool(args));
+
+    // An extra run to check for the number of visible rows: all inserted rows
+    // should be visible now since the transaction is to be committed.
+    args.emplace_back("--run_scan");
+    string out;
+    ASSERT_OK(RunKuduTool(args, &out));
+    ASSERT_STR_MATCHES(out, "expected rows: 222");
+    ASSERT_STR_MATCHES(out, "actual rows  : 222");
+  }
+
+  // Mixing '--txn_start' and '--use_upsert' isn't possible since only
+  // INSERT/INSERT_IGNORE supported as transactional operations for now.
+  {
+    vector<string> args(base_args);
+    args.emplace_back("--use_upsert");
+    for (const auto& f : { "--txn_start", "--txn_commit", "--txn_rollback" }) {
+      SCOPED_TRACE(Substitute("running with flag: {}", f));
+      args.emplace_back(f);
+      string err;
+      const auto s = RunKuduTool(args, nullptr, &err);
+      ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+      ASSERT_STR_CONTAINS(
+          err, "only inserts are supported as transactional operations");
+      ASSERT_STR_CONTAINS(err, "remove/unset the --use_upsert flag");
+    }
+  }
+
+  // Mixing '--txn_commit' and '--txn_rollback' doesn't make sense.
+  {
+    vector<string> args(base_args);
+    args.emplace_back("--txn_commit");
+    args.emplace_back("--txn_rollback");
+    string err;
+    const auto s = RunKuduTool(args, nullptr, &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(err, "both --txn_commit and --txn_rollback are set");
+    ASSERT_STR_CONTAINS(err, "unset one of those to resolve the conflict");
+  }
+
+  // Run 'kudu txn list' to see whether the transactions are in expected
+  // state after running the sub-scenarios above.
+  {
+    const vector<string> args = {
+      "txn", "list",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      "--included_states=*",
+      "--columns=state",
+    };
+    string out;
+    ASSERT_OK(RunKuduTool(args, &out));
+    ASSERT_STR_MATCHES(out,
+R"(state
+-----------
+ OPEN
+ OPEN
+ COMMITTED
+ COMMITTED
+ ABORTED
+ ABORTED
+ ABORTED
+ ABORTED
+ COMMITTED
+ COMMITTED
+)");
+  }
+}
+
 // Test that a non-random workload results in the behavior we would expect when
 // running against an auto-generated range partitioned table.
 TEST_F(ToolTest, TestNonRandomWorkloadLoadgen) {

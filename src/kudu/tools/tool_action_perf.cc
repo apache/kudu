@@ -237,7 +237,9 @@ using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduTransaction;
 using kudu::client::KuduWriteOperation;
+using kudu::client::sp::shared_ptr;
 using kudu::clock::LogicalClock;
 using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::consensus::ConsensusMetadata;
@@ -254,7 +256,6 @@ using std::lock_guard;
 using std::mutex;
 using std::numeric_limits;
 using std::ostringstream;
-using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -366,11 +367,24 @@ DEFINE_bool(use_random_non_pk, false,
 DEFINE_bool(use_upsert, false,
             "Whether to use UPSERT instead of INSERT to store the generated "
             "data into the table");
+DEFINE_bool(txn_start, false,
+            "Whether the generated rows are inserted in the context of a "
+            "multi-row transaction. For now, only supported if configured "
+            "to insert rows (i.e. UPDATE and DELETE are not yet supported). "
+            "Unless --txn_commit or --txn_rollback is specified, the started "
+            "transaction is left 'as is' (i.e. neither commit, nor rollback "
+            "is performed) once the tool completes its operations.");
+DEFINE_bool(txn_commit, false,
+            "Whether to commit the multi-row transaction which contains all "
+            "the inserted rows. Setting --txn_commit=true implies setting "
+            "--txn_start=true as well.");
+DEFINE_bool(txn_rollback, false,
+            "Whether to rollback the multi-row transaction which contains all "
+            "the inserted rows. Setting --txn_rollback=true implies setting "
+            "--txn_start=true as well.");
 
 namespace kudu {
 namespace tools {
-
-using ClientFactory = std::function<client::sp::shared_ptr<KuduClient>()>;
 
 namespace {
 
@@ -386,6 +400,24 @@ bool ValidatePartitionFlags() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(partition_flags, &ValidatePartitionFlags);
+
+bool ValidateTxnFlags() {
+  if ((FLAGS_txn_commit || FLAGS_txn_rollback || FLAGS_txn_start) &&
+      FLAGS_use_upsert) {
+    LOG(ERROR) << Substitute("only inserts are supported as transactional "
+                             "operations for now: either remove/unset the "
+                             "--use_upsert flag or remove/unset txn-related "
+                             "flags");
+    return false;
+  }
+  if (FLAGS_txn_commit && FLAGS_txn_rollback) {
+    LOG(ERROR) << Substitute("both --txn_commit and --txn_rollback are set: "
+                             "unset one of those to resolve the conflict");
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(txn_flags, &ValidateTxnFlags);
 
 const char* OpTypeToString(KuduWriteOperation::Type op_type) {
   switch (op_type) {
@@ -568,7 +600,7 @@ struct WriteResults {
   uint64_t latest_observed_timestamp = 0;
 };
 
-WriteResults GeneratorThread(const client::sp::shared_ptr<KuduClient>& client,
+WriteResults GeneratorThread(const shared_ptr<KuduSession>& session,
                              const string& table_name,
                              size_t gen_idx,
                              KuduWriteOperation::Type op_type) {
@@ -589,7 +621,8 @@ WriteResults GeneratorThread(const client::sp::shared_ptr<KuduClient>& client,
 
   const size_t flush_per_n_rows = FLAGS_flush_per_n_rows;
   const uint64_t gen_seq_start = FLAGS_seq_start;
-  client::sp::shared_ptr<KuduSession> session(client->NewSession());
+  auto* client = session->client();
+  DCHECK(client);
   int64_t idx = 0;
 
   auto generator = [&]() {
@@ -607,7 +640,7 @@ WriteResults GeneratorThread(const client::sp::shared_ptr<KuduClient>& client,
         flush_per_n_rows == 0 ? KuduSession::AUTO_FLUSH_BACKGROUND
                               : KuduSession::MANUAL_FLUSH));
 
-    client::sp::shared_ptr<KuduTable> table;
+    shared_ptr<KuduTable> table;
     RETURN_NOT_OK(client->OpenTable(table_name, &table));
 
     // Planning for non-intersecting ranges for different generator threads
@@ -671,22 +704,24 @@ WriteResults GeneratorThread(const client::sp::shared_ptr<KuduClient>& client,
   return results;
 }
 
-WriteResults GenerateWriteRows(const ClientFactory& client_factory,
+WriteResults GenerateWriteRows(const vector<shared_ptr<KuduSession>>& sessions,
                                const string& table_name,
                                KuduWriteOperation::Type op_type) {
   DCHECK(op_type == KuduWriteOperation::INSERT ||
          op_type == KuduWriteOperation::DELETE ||
          op_type == KuduWriteOperation::UPSERT);
 
-  const size_t gen_num = FLAGS_num_threads;
+  const size_t gen_num = sessions.size();
   vector<WriteResults> results(gen_num);
   vector<thread> threads;
+  threads.reserve(gen_num);
   Stopwatch sw(Stopwatch::ALL_THREADS);
   sw.start();
   for (size_t i = 0; i < gen_num; ++i) {
-    auto client = client_factory();
     threads.emplace_back(
-        [=, &results]() { results[i] = GeneratorThread(client, table_name, i, op_type); });
+      [=, &results]() {
+        results[i] = GeneratorThread(sessions[i], table_name, i, op_type);
+      });
   }
   for (auto& t : threads) {
     t.join();
@@ -731,7 +766,7 @@ WriteResults GenerateWriteRows(const ClientFactory& client_factory,
 
 // Fetch all rows from the table with the specified name; iterate over them
 // and output their total count.
-Status CountTableRows(const client::sp::shared_ptr<KuduClient>& client,
+Status CountTableRows(const shared_ptr<KuduClient>& client,
                       const string& table_name, uint64_t* count) {
   TableScanner scanner(client, table_name);
   scanner.SetReadMode(KuduScanner::ReadMode::READ_YOUR_WRITES);
@@ -744,15 +779,16 @@ Status CountTableRows(const client::sp::shared_ptr<KuduClient>& client,
 }
 
 Status TestLoadGenerator(const RunnerContext& context) {
-  client::sp::shared_ptr<KuduClient> client;
+  shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
 
+  const size_t gen_num = FLAGS_num_threads;
   string table_name;
   bool is_auto_table = false;
   if (!FLAGS_table_name.empty()) {
     table_name = FLAGS_table_name;
   } else {
-    static const string kKeyColumnName = "key";
+    constexpr const char* const kKeyColumnName = "key";
 
     // The auto-created table case.
     is_auto_table = true;
@@ -777,7 +813,7 @@ Status TestLoadGenerator(const RunnerContext& context) {
       // tablets. In case we're inserting in random mode, use unbounded range
       // partitioning, so the table has key coverage of the entire keyspace.
       const int64_t total_inserted_span =
-          SpanPerThread(KuduSchema::ToSchema(schema).num_key_columns()) * FLAGS_num_threads;
+          SpanPerThread(KuduSchema::ToSchema(schema).num_key_columns()) * gen_num;
       const int64_t span_per_range =
           total_inserted_span / FLAGS_table_num_range_partitions;
       table_creator->set_range_partition_columns({ kKeyColumnName });
@@ -797,30 +833,65 @@ Status TestLoadGenerator(const RunnerContext& context) {
   cout << "Using " << (is_auto_table ? "auto-created " : "")
        << "table '" << table_name << "'" << endl;
 
-  ClientFactory client_factory = [&]() {
-    if (!FLAGS_use_client_per_thread) {
-      return client;
+  const bool is_transactional =
+      FLAGS_txn_start || FLAGS_txn_rollback || FLAGS_txn_commit;
+  shared_ptr<KuduTransaction> txn;
+  if (is_transactional) {
+    RETURN_NOT_OK(client->NewTransaction(&txn));
+  }
+
+  // Create a session per generator thread. A KuduSession object keeps a
+  // reference to its client handle, so there is no need to keep references
+  // to the newly created client objects themselves.
+  vector<shared_ptr<KuduSession>> sessions;
+  sessions.reserve(gen_num);
+  for (size_t i = 0; i < gen_num; ++i) {
+    shared_ptr<KuduClient> c;
+    if (FLAGS_use_client_per_thread) {
+      RETURN_NOT_OK(CreateKuduClient(context, &c));
+    } else {
+      c = client;
     }
-    client::sp::shared_ptr<KuduClient> client;
-    CHECK_OK(CreateKuduClient(context, &client));
-    return client;
-  };
+    if (is_transactional) {
+      shared_ptr<KuduSession> session;
+      RETURN_NOT_OK(txn->CreateSession(&session));
+      sessions.emplace_back(std::move(session));
+    } else {
+      sessions.emplace_back(c->NewSession());
+    }
+  }
+
   WriteResults write_results = GenerateWriteRows(
-      client_factory,
+      sessions,
       table_name,
       FLAGS_use_upsert ? KuduWriteOperation::UPSERT : KuduWriteOperation::INSERT);
   RETURN_NOT_OK(write_results.status);
   client->SetLatestObservedTimestamp(write_results.latest_observed_timestamp);
+  if (txn) {
+    if (FLAGS_txn_commit) {
+      RETURN_NOT_OK(txn->Commit());
+    } else if (FLAGS_txn_rollback) {
+      RETURN_NOT_OK(txn->Rollback());
+    }
+  }
   if (FLAGS_run_scan) {
     // In case if no write errors encountered, run a table scan to make sure
-    // the number of inserted rows matches the results of the scan.
+    // the number of inserted rows matches the results of the scan. In case
+    // of a transactional session, no rows are visible unless the transaction
+    // has been committed. It's non-conventional, but 'dirty' reads are not
+    // implemented for transactional sessions as of now: txn-related
+    // functionality is targeting "batch insert" use cases only.
     uint64_t count = 0;
     RETURN_NOT_OK(CountTableRows(client, table_name, &count));
+    const bool none_rows_visible =
+        (FLAGS_txn_start && !FLAGS_txn_commit) || FLAGS_txn_rollback;
+    const uint64_t expected_row_count =
+        none_rows_visible ? 0 : write_results.row_count;
     cout << endl
          << "Scanner report" << endl
-         << "  expected rows: " << write_results.row_count << endl
+         << "  expected rows: " << expected_row_count << endl
          << "  actual rows  : " << count << endl;
-    if (count != write_results.row_count) {
+    if (count != expected_row_count) {
       return Status::RuntimeError(Substitute(
           "Row count mismatch: expected $0, actual $1", write_results.row_count, count));
     }
@@ -828,7 +899,7 @@ Status TestLoadGenerator(const RunnerContext& context) {
 
   if (FLAGS_run_cleanup) {
     RETURN_NOT_OK(GenerateWriteRows(
-        client_factory, table_name, KuduWriteOperation::DELETE).status);
+        sessions, table_name, KuduWriteOperation::DELETE).status);
   }
 
   if (is_auto_table && !FLAGS_keep_auto_table) {
@@ -841,7 +912,7 @@ Status TestLoadGenerator(const RunnerContext& context) {
 }
 
 Status TableScan(const RunnerContext& context) {
-  client::sp::shared_ptr<KuduClient> client;
+  shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
 
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
@@ -877,7 +948,7 @@ Status TabletScan(const RunnerContext& context) {
   scoped_refptr<LogAnchorRegistry> registry(new LogAnchorRegistry());
 
   // Bootstrap the tablet.
-  shared_ptr<Tablet> tablet;
+  std::shared_ptr<Tablet> tablet;
   scoped_refptr<Log> log;
   ConsensusBootstrapInfo cbi;
   RETURN_NOT_OK(tablet::BootstrapTablet(std::move(tmeta),
@@ -962,6 +1033,9 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("table_num_hash_partitions")
       .AddOptionalParameter("table_num_range_partitions")
       .AddOptionalParameter("table_num_replicas")
+      .AddOptionalParameter("txn_start")
+      .AddOptionalParameter("txn_commit")
+      .AddOptionalParameter("txn_rollback")
       .AddOptionalParameter("use_client_per_thread")
       .AddOptionalParameter("use_random")
       .AddOptionalParameter("use_random_pk")
