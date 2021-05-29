@@ -5531,7 +5531,9 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
       return Status::NotFound(Substitute("Unknown tablet $0", tablet_id));
     }
   }
-  if (user) {
+  // Allow service and super users to read metadata on any table, bypassing
+  // fine-grained authz restrictions, if any are in effect.
+  if (user && !master_->IsServiceUserOrSuperUser(*user)) {
     // Acquire the table lock and then check that the user is authorized to operate on
     // the table that the tablet belongs to.
     TableMetadataLock table_lock(tablet_info->table().get(), LockMode::READ);
