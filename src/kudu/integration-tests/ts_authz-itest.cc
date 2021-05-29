@@ -15,7 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -74,6 +76,7 @@ using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduTransaction;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::master::RefreshAuthzCacheRequestPB;
@@ -158,12 +161,18 @@ RWPrivileges ComplementaryPrivileges(const unordered_set<string>& all_cols,
 // privileges in 'write_privileges', using 'prng' to determine the operation.
 Status PerformWrite(const WritePrivileges& write_privileges,
                     ThreadSafeRandom* prng,
-                    KuduTable* table) {
+                    KuduTable* table,
+                    KuduSession* session = nullptr) {
   WritePrivilegeType op_type =
       SelectRandomElement<WritePrivileges, WritePrivilegeType, ThreadSafeRandom>(
       write_privileges, prng);
-  shared_ptr<KuduSession> session = table->client()->NewSession();
-  const auto unwrap_session_error = [&session] (Status s) {
+  shared_ptr<KuduSession> new_session;
+  if (!session) {
+    new_session = table->client()->NewSession();
+    session = new_session.get();
+  }
+  CHECK(session);
+  const auto unwrap_session_error = [session] (Status s) {
     if (s.IsIOError()) {
       vector<KuduError*> errors;
       session->GetPendingErrors(&errors, nullptr);
@@ -205,10 +214,10 @@ Status PerformWrite(const WritePrivileges& write_privileges,
 Status PerformScan(const unordered_set<string>& columns,
                    ThreadSafeRandom* prng,
                    KuduTable* table) {
-  vector<string> cols_to_scan = prng ?
-      SelectRandomSubset<unordered_set<string>, string, ThreadSafeRandom>(
-          columns, /*min_to_return*/1, prng) :
-      vector<string>(columns.begin(), columns.end());
+  vector<string> cols_to_scan = prng
+      ? SelectRandomSubset<unordered_set<string>, string, ThreadSafeRandom>(
+            columns, /*min_to_return*/1, prng)
+      : vector<string>(columns.begin(), columns.end());
   KuduScanner scanner(table);
   RETURN_NOT_OK(scanner.SetTimeoutMillis(30000));
   RETURN_NOT_OK(scanner.SetProjectedColumnNames(cols_to_scan));
@@ -260,7 +269,7 @@ class TSAuthzITestHarness {
  public:
   virtual ~TSAuthzITestHarness() {}
 
-  ExternalMiniClusterOptions GetClusterOpts() {
+  ExternalMiniClusterOptions GetClusterOpts() const {
     ExternalMiniClusterOptions opts;
     opts.enable_kerberos = true;
     // Set a low token timeout so we can ensure retries are working properly.
@@ -442,7 +451,7 @@ class TSAuthzITest : public ExternalMiniClusterITestBase,
     }
     ExternalMiniClusterITestBase::SetUp();
     harness_->AddUsers();
-    ExternalMiniClusterOptions opts = harness_->GetClusterOpts();
+    ExternalMiniClusterOptions opts = GetClusterOpts();
     harness_->SetUpExternalMiniServiceOpts(&opts);
     NO_FATALS(StartClusterWithOpts(std::move(opts)));
 
@@ -471,6 +480,10 @@ class TSAuthzITest : public ExternalMiniClusterITestBase,
   }
 
  protected:
+  virtual ExternalMiniClusterOptions GetClusterOpts() const {
+    return harness_->GetClusterOpts();
+  }
+
   unique_ptr<TSAuthzITestHarness> harness_;
 };
 
@@ -655,6 +668,254 @@ TEST_P(TSAuthzITest, TestAlters) {
 }
 
 INSTANTIATE_TEST_SUITE_P(AuthzProviders, TSAuthzITest,
+    ::testing::Values(kRanger),
+    [] (const testing::TestParamInfo<TSAuthzITest::ParamType>& info) {
+      return HarnessEnumToString(info.param);
+    });
+
+
+class TSAuthzTxnOpsITest : public TSAuthzITest {
+ protected:
+  static Status CountRows(KuduTable* table, int64_t* count) {
+    KuduScanner scanner(table);
+    RETURN_NOT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
+    RETURN_NOT_OK(scanner.SetProjectedColumnNames({}));
+    RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_YOUR_WRITES));
+    RETURN_NOT_OK(scanner.Open());
+
+    int64_t num_rows = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      RETURN_NOT_OK(scanner.NextBatch(&batch));
+      num_rows += batch.NumRows();
+    }
+    *count = num_rows;
+    return Status::OK();
+  }
+
+  ExternalMiniClusterOptions GetClusterOpts() const override {
+    auto opts = TSAuthzITest::GetClusterOpts();
+    // Since txn-related functionality is disabled for a while, a couple of
+    // flags should be overriden to allow running tests scenarios in txn-enabled
+    // environment. Also, since the replication factor of the txn status table
+    // isn't crucial for this test, set its RF=1 to work with a single tablet
+    // server in the test cluster.
+    opts.extra_master_flags.emplace_back("--txn_manager_enabled");
+    opts.extra_master_flags.emplace_back("--txn_manager_status_table_num_replicas=1");
+    opts.extra_tserver_flags.emplace_back("--enable_txn_system_client_init");
+    opts.num_tablet_servers = 3;
+
+    return opts;
+  }
+};
+
+// Make sure users can perform basic txn-related operations on 'empty' multi-row
+// transactions.
+TEST_P(TSAuthzTxnOpsITest, BasicOpsOnEmptyTransactions) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const string user = "user0";
+  ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(user));
+  ASSERT_OK(cluster_->kdc()->Kinit(user));
+  ASSERT_OK(CreateTable(Substitute("$0.table", kDb), user));
+
+  shared_ptr<KuduClient> user_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &user_client));
+
+  // It should be possible to start and commit an empty transaction.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(user_client->NewTransaction(&txn));
+    ASSERT_OK(txn->Commit());
+    Status txn_status;
+    bool is_complete = false;
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &txn_status));
+    ASSERT_TRUE(is_complete);
+    ASSERT_OK(txn_status);
+  }
+
+  // It should be possible to start and commit an empty transaction in an
+  // asynchronous way.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(user_client->NewTransaction(&txn));
+    ASSERT_OK(txn->StartCommit());
+    ASSERT_EVENTUALLY([&] {
+      Status txn_status;
+      bool is_complete = false;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &txn_status));
+      ASSERT_TRUE(is_complete);
+      ASSERT_OK(txn_status);
+    });
+  }
+
+  // It should be possible to start and rollback an empty transaction.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(user_client->NewTransaction(&txn));
+    ASSERT_OK(txn->Rollback());
+    ASSERT_EVENTUALLY([&] {
+      Status txn_status;
+      bool is_complete = true;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &txn_status));
+      ASSERT_TRUE(is_complete);
+      ASSERT_TRUE(txn_status.IsAborted()) << txn_status.ToString();
+    });
+  }
+}
+
+// Make sure authorized users can successfully perform txn-related operations
+// while inserting rows into tables. In this scenario, the user is automatically
+// granted the 'METADATA' privilege on a test table by granting the 'INSERT'
+// privilege, so KuduTable::Open() succeeds.
+TEST_P(TSAuthzTxnOpsITest, BasicOperationsForAuthorizedUsers) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const string user = "user0";
+  ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(user));
+  ASSERT_OK(cluster_->kdc()->Kinit(user));
+
+  shared_ptr<KuduClient> user_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &user_client));
+  ThreadSafeRandom prng(SeedRandom());
+
+  // Start and then commit a transaction with a single row inserted.
+  {
+    static const string kTableName = "table_commit";
+    const string table_name = Substitute("$0.$1", kDb, kTableName);
+    ASSERT_OK(CreateTable(table_name, user));
+
+    // Grant 'INSERT' privilege, so it's possible to insert a few rows.
+    ASSERT_OK(harness_->GrantTablePrivilege(
+        kDb, kTableName, user, "INSERT", /*admin=*/false, cluster_));
+    // Grant 'SELECT' to allow for counting rows in the table.
+    ASSERT_OK(harness_->GrantTablePrivilege(
+        kDb, kTableName, user, "SELECT", /*admin=*/false, cluster_));
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(user_client->OpenTable(table_name, &table));
+
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(user_client->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_OK(session->SetFlushMode(KuduSession::FlushMode::MANUAL_FLUSH));
+    ASSERT_OK(PerformWrite(
+        { WritePrivilegeType::INSERT }, &prng, table.get(), session.get()));
+    ASSERT_OK(txn->Commit());
+    Status txn_status;
+    bool is_complete = false;
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &txn_status));
+    ASSERT_TRUE(is_complete);
+    ASSERT_OK(txn_status);
+
+    int64_t row_count = 0;
+    ASSERT_OK(CountRows(table.get(), &row_count));
+    ASSERT_EQ(1, row_count);
+  }
+
+  // Start and then rollback a transaction with a row inserted.
+  {
+    static const string kTableName = "table_rollback";
+    const string table_name = Substitute("$0.$1", kDb, kTableName);
+    ASSERT_OK(CreateTable(table_name, user));
+
+    // Grant 'INSERT' privilege, so it's possible to insert a few rows.
+    ASSERT_OK(harness_->GrantTablePrivilege(
+        kDb, kTableName, user, "INSERT", /*admin=*/false, cluster_));
+    // Grant 'SELECT' to allow for counting rows in the table.
+    ASSERT_OK(harness_->GrantTablePrivilege(
+        kDb, kTableName, user, "SELECT", /*admin=*/false, cluster_));
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(user_client->OpenTable(table_name, &table));
+
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(user_client->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_OK(session->SetFlushMode(KuduSession::FlushMode::MANUAL_FLUSH));
+    ASSERT_OK(PerformWrite(
+        { WritePrivilegeType::INSERT }, &prng, table.get(), session.get()));
+    ASSERT_OK(txn->Rollback());
+    ASSERT_EVENTUALLY([&] {
+      Status txn_status;
+      bool is_complete = false;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &txn_status));
+      ASSERT_TRUE(is_complete);
+      ASSERT_TRUE(txn_status.IsAborted()) << txn_status.ToString();
+    });
+
+    int64_t row_count = 0;
+    ASSERT_OK(CountRows(table.get(), &row_count));
+    ASSERT_EQ(0, row_count);
+  }
+}
+
+// A negative test case: make sure the user API presents proper error code and
+// message upon an attempt to commit a transaction with non-authorized
+// operations (for now, only INSERT) even in MANUAL_FLUSH mode. That's to make
+// sure that the automatic flush of buffered operation upon call of
+// KuduTransaction::Commit() is performed under the proper user credentials.
+TEST_P(TSAuthzTxnOpsITest, CommitForNonauthorizedUsers) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const string user = "user0";
+  ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(user));
+  ASSERT_OK(cluster_->kdc()->Kinit(user));
+
+  shared_ptr<KuduClient> user_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &user_client));
+  ThreadSafeRandom prng(SeedRandom());
+
+  // Start and then commit a transaction with a single row inserted.
+  {
+    static const string kTableName = "table_commit_non_authorized";
+    const string table_name = Substitute("$0.$1", kDb, kTableName);
+    ASSERT_OK(CreateTable(table_name, user));
+
+    // Grant only 'SELECT' privilege, so it's not possible to insert into
+    // the test table.
+    ASSERT_OK(harness_->GrantTablePrivilege(
+        kDb, kTableName, user, "SELECT", /*admin=*/false, cluster_));
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(user_client->OpenTable(table_name, &table));
+
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(user_client->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_OK(session->SetFlushMode(KuduSession::FlushMode::MANUAL_FLUSH));
+    ASSERT_OK(PerformWrite(
+        { WritePrivilegeType::INSERT }, &prng, table.get(), session.get()));
+    const auto s = txn->Commit();
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    vector<KuduError*> errors;
+    session->GetPendingErrors(&errors, nullptr);
+    ElementDeleter deleter(&errors);
+    ASSERT_EQ(1, errors.size());
+    const auto& err_status = errors[0]->status();
+    ASSERT_TRUE(err_status.IsRemoteError()) << err_status.ToString();
+    ASSERT_STR_CONTAINS(err_status.ToString(),
+                        "Not authorized: not authorized to write");
+
+    // However, it should be possible to rollback the transaction: that's
+    // a no-op in this case.
+    ASSERT_OK(txn->Rollback());
+
+    ASSERT_EVENTUALLY([&] {
+      Status txn_status;
+      bool is_complete = false;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &txn_status));
+      ASSERT_TRUE(is_complete);
+      ASSERT_TRUE(txn_status.IsAborted()) << txn_status.ToString();
+    });
+
+    int64_t row_count = 0;
+    ASSERT_OK(CountRows(table.get(), &row_count));
+    ASSERT_EQ(0, row_count);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(AuthzProviders, TSAuthzTxnOpsITest,
     ::testing::Values(kRanger),
     [] (const testing::TestParamInfo<TSAuthzITest::ParamType>& info) {
       return HarnessEnumToString(info.param);
