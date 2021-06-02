@@ -19,6 +19,7 @@ package org.apache.kudu.hive.metastore;
 
 import java.io.IOException;
 import java.security.PrivilegedExceptionAction;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +29,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.MetaStoreEventListener;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.api.EnvironmentContext;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
@@ -80,13 +82,15 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   @VisibleForTesting
   static final String LEGACY_KUDU_STORAGE_HANDLER = "com.cloudera.kudu.hive.KuduStorageHandler";
   @VisibleForTesting
+  static final String KUDU_CLUSTER_ID_KEY = "kudu.cluster_id";
+  @VisibleForTesting
   static final String KUDU_TABLE_ID_KEY = "kudu.table_id";
   @VisibleForTesting
-  static final String KUDU_TABLE_NAME = "kudu.table_name";
+  static final String KUDU_TABLE_NAME_KEY = "kudu.table_name";
   @VisibleForTesting
   static final String KUDU_MASTER_ADDRS_KEY = "kudu.master_addresses";
   @VisibleForTesting
-  static final String KUDU_MASTER_EVENT = "kudu.master_event";
+  static final String KUDU_MASTER_EVENT_KEY = "kudu.master_event";
   @VisibleForTesting
   static final String KUDU_CHECK_ID_KEY = "kudu.check_id";
   // The key should keep in sync with the one used in
@@ -95,6 +99,8 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   static final String EXTERNAL_TABLE_KEY = "EXTERNAL";
 
   static final String EXTERNAL_PURGE_KEY = "external.table.purge";
+
+  static final String COMMENT_KEY = "comment";
 
   // System env to track if the HMS plugin validation should be skipped.
   static final String SKIP_VALIDATION_ENV = "KUDU_SKIP_HMS_PLUGIN_VALIDATION";
@@ -223,6 +229,14 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       // Allow non-Kudu tables to be altered without introducing Kudu-specific
       // properties.
       checkNoKuduProperties(newTable);
+      return;
+    }
+
+    // Check if the alter changes any of the Kudu metadata.
+    // If not, we can skip checking for synchronization given Kudu doesn't care about the changes.
+    // We primarily expect this case to occur when a table is migrated from a managed table
+    // to an external table with the purge property. This change is effectively a no-op to Kudu.
+    if (kuduMetadataUnchanged(oldTable, newTable)) {
       return;
     }
 
@@ -398,6 +412,77 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
           "non-Kudu table entry must not contain a table ID property (%s)",
           KUDU_TABLE_ID_KEY));
     }
+    if (table.getParameters().containsKey(KUDU_CLUSTER_ID_KEY)) {
+      throw new MetaException(String.format(
+          "non-Kudu table entry must not contain a cluster ID property (%s)",
+          KUDU_CLUSTER_ID_KEY));
+    }
+  }
+
+  /**
+   * Checks that the metadata relevant to Kudu is unchanged between the before and after table.
+   * See HmsCatalog::PopulateTable in hms_catalog.cc for a reference to the relevant metadata.
+   *
+   * @param before the table to be altered
+   * @param after the new altered table
+   * @return true if no Kudu relevant metadata has changed
+   */
+  @VisibleForTesting
+  static boolean kuduMetadataUnchanged(Table before, Table after) {
+    // If any of the Kudu table properties have changed, return false.
+    Map<String, String> beforeParams = before.getParameters();
+    Map<String, String> afterParams = after.getParameters();
+    if (!Objects.equals(beforeParams.get(hive_metastoreConstants.META_TABLE_STORAGE),
+            afterParams.get(hive_metastoreConstants.META_TABLE_STORAGE)) ||
+        !Objects.equals(beforeParams.get(KUDU_MASTER_ADDRS_KEY),
+            afterParams.get(KUDU_MASTER_ADDRS_KEY)) ||
+        !Objects.equals(beforeParams.get(KUDU_TABLE_ID_KEY),
+            afterParams.get(KUDU_TABLE_ID_KEY)) ||
+        !Objects.equals(beforeParams.get(KUDU_TABLE_NAME_KEY),
+            afterParams.get(KUDU_TABLE_NAME_KEY)) ||
+        !Objects.equals(beforeParams.get(KUDU_CLUSTER_ID_KEY),
+            afterParams.get(KUDU_CLUSTER_ID_KEY))) {
+      return false;
+    }
+
+    // If the table synchronization has changed, return false.
+    // Kudu doesn't care if the table is managed vs external with the purge property set
+    // to true, it just cares that he table is synchronized.
+    if (isSynchronizedTable(before) != isSynchronizedTable(after)) {
+      return false;
+    }
+
+    // If the table database, name, owner, or comment have changed, return false.
+    if (!Objects.equals(before.getDbName(), after.getDbName()) ||
+        !Objects.equals(before.getTableName(), after.getTableName()) ||
+        !Objects.equals(before.getOwner(), after.getOwner()) ||
+        !Objects.equals(beforeParams.get(COMMENT_KEY),
+            afterParams.get(COMMENT_KEY))) {
+      return false;
+    }
+
+    // If the column count has changed, return false.
+    List<FieldSchema> beforeCols = before.getSd().getCols();
+    List<FieldSchema> afterCols = after.getSd().getCols();
+    if (beforeCols.size() != afterCols.size()) {
+      return false;
+    }
+
+    // If any of the columns have changed (name, type, or comment), return false.
+    // We don't have the Kudu internal column ID, so we assume the column index
+    // in both tables aligns if there are no changes.
+    for (int i = 0; i < beforeCols.size(); i++) {
+      FieldSchema beforeCol = beforeCols.get(i);
+      FieldSchema afterCol = afterCols.get(i);
+      if (!Objects.equals(beforeCol.getName(), afterCol.getName()) ||
+          !Objects.equals(beforeCol.getType(), afterCol.getType()) ||
+          !Objects.equals(beforeCol.getComment(), afterCol.getComment())) {
+        return false;
+      }
+    }
+
+    // Kudu doesn't have metadata related to all other changes.
+    return true;
   }
 
   /**
@@ -428,11 +513,11 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return false;
     }
 
-    if (!properties.containsKey(KUDU_MASTER_EVENT)) {
+    if (!properties.containsKey(KUDU_MASTER_EVENT_KEY)) {
       return false;
     }
 
-    return Boolean.parseBoolean(properties.get(KUDU_MASTER_EVENT));
+    return Boolean.parseBoolean(properties.get(KUDU_MASTER_EVENT_KEY));
   }
 
   /**
