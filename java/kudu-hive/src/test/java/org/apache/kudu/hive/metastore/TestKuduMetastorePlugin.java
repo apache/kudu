@@ -17,6 +17,7 @@
 
 package org.apache.kudu.hive.metastore;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -55,7 +56,8 @@ public class TestKuduMetastorePlugin {
   private MiniKuduCluster miniCluster;
 
   private EnvironmentContext masterContext() {
-    return new EnvironmentContext(ImmutableMap.of(KuduMetastorePlugin.KUDU_MASTER_EVENT, "true"));
+    return new EnvironmentContext(
+        ImmutableMap.of(KuduMetastorePlugin.KUDU_MASTER_EVENT_KEY, "true"));
   }
 
   public void startCluster(boolean syncEnabled) throws Exception {
@@ -408,8 +410,15 @@ public class TestKuduMetastorePlugin {
 
       // Check that adding a column succeeds with the master event property set.
       client.alter_table_with_environmentContext(
-          table.getDbName(), table.getTableName(), table,
-          new EnvironmentContext(ImmutableMap.of(KuduMetastorePlugin.KUDU_MASTER_EVENT, "true")));
+          table.getDbName(), table.getTableName(), table, new EnvironmentContext(
+              ImmutableMap.of(KuduMetastorePlugin.KUDU_MASTER_EVENT_KEY, "true")));
+
+      // Check that altering a table property unrelated to Kudu succeeds.
+      {
+        Table alteredTable = table.deepCopy();
+        alteredTable.putToParameters("some.random.property", "foo");
+        client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
+      }
 
       // Check that altering table with Kudu storage handler to legacy format
       // succeeds.
@@ -421,7 +430,7 @@ public class TestKuduMetastorePlugin {
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
         alteredTable.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
             KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER);
-        alteredTable.putToParameters(KuduMetastorePlugin.KUDU_TABLE_NAME,
+        alteredTable.putToParameters(KuduMetastorePlugin.KUDU_TABLE_NAME_KEY,
             "legacy_table");
         alteredTable.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
             miniCluster.getMasterAddressesAsString());
@@ -632,5 +641,87 @@ public class TestKuduMetastorePlugin {
 
     // A Kudu table should should be allowed to be dropped via Hive.
     client.dropTable(table.getDbName(), table.getTableName());
+  }
+
+  @Test
+  public void testKuduMetadataUnchanged() throws Exception {
+    startCluster(/* syncEnabled */ true);
+
+    Table before = newTable("table");
+
+    // Changing from external purge to managed is true (and vice versa).
+    {
+      Table after = before.deepCopy();
+      after.setTableType(TableType.MANAGED_TABLE.name());
+      after.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "FALSE");
+      after.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
+      assertTrue(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+      assertTrue(KuduMetastorePlugin.kuduMetadataUnchanged(after, before));
+    }
+
+    // Changing from external purge to just external is false (and vice versa).
+    {
+      Table after = before.deepCopy();
+      after.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(after, before));
+    }
+
+    // Changing an unrelated property is true.
+    {
+      Table after = before.deepCopy();
+      after.putToParameters("some.random.property", "foo");
+      assertTrue(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+    }
+
+    // Changing location is true.
+    {
+      Table after = before.deepCopy();
+      after.getSd().setLocation("path/to/foo");
+      assertTrue(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+    }
+
+    // Changing the master addresses is false.
+    {
+      Table after = before.deepCopy();
+      after.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY, "somehost");
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+    }
+
+    // Changing the table name is false.
+    {
+      Table after = before.deepCopy();
+      after.setTableName("different");
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+    }
+
+    // Changing the table owner is false.
+    {
+      Table after = before.deepCopy();
+      after.setOwner("different");
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+    }
+
+    // Changing the table comment is false.
+    {
+      Table after = before.deepCopy();
+      after.putToParameters(KuduMetastorePlugin.COMMENT_KEY, "new comment");
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+    }
+
+    // Adding a column or removing a column is false.
+    {
+      Table after = before.deepCopy();
+      after.getSd().addToCols(new FieldSchema("b", "int", ""));
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(after, before));
+    }
+
+    // Changing a column comment is false.
+    {
+      Table after = before.deepCopy();
+      after.getSd().getCols().get(0).setComment("new comment");
+      assertFalse(KuduMetastorePlugin.kuduMetadataUnchanged(before, after));
+    }
   }
 }
