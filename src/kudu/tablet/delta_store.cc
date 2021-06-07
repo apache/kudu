@@ -269,14 +269,9 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
       // The logical ordering of UNDOs is the opposite of their counting order.
       int64_t disambiguator = Traits::kType == REDO ?
                               deltas_selected_ : -deltas_selected_;
-
-      // We use the address of the DeltaPreparer itself as a "delta store" ID.
-      // That's safe because it is globally unique and remains so for the
-      // duration of the scan, which outlives this delta.
       SelectedDeltas::Delta new_delta = { key.timestamp(),
                                           Traits::kType,
                                           disambiguator,
-                                          reinterpret_cast<int64_t>(this),
                                           decoder.get_type() };
 
       selected_.ProcessDelta(key.row_idx() - cur_prepared_idx_, new_delta);

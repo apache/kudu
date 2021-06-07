@@ -17,8 +17,10 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -38,6 +40,9 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_macros.h"
 
 using std::string;
@@ -201,6 +206,63 @@ TEST_F(OrderedDiffScanWithDeletesTest, TestKudu3108) {
   vector<string> rows;
   ASSERT_OK(tablet::IterateToStringList(row_iterator.get(), &rows));
   ASSERT_EQ(3, rows.size());
+}
+
+// Regression test for KUDU-3291, where doing a diff scan after a delta flush
+// raced with a batch update to a single row could result in a crash.
+TEST_F(OrderedDiffScanWithDeletesTest, TestDiffScanAfterDeltaFlushRacesWithBatchUpdate) {
+  auto tablet = this->tablet();
+  auto tablet_id = tablet->tablet_id();
+  LocalTabletWriter writer(tablet.get(), &client_schema_);
+  constexpr int64_t kRowKey = 1;
+  ASSERT_OK(InsertTestRow(&writer, kRowKey, 1));
+  MvccSnapshot snap1(*tablet->mvcc_manager());
+
+  // Start off with a DRS that we can add deltas to.
+  ASSERT_OK(tablet->Flush());
+  Status s;
+
+  // Update the same row several times, and concurrently delta flush. Inject a
+  // short, random sleep to encourage different sizes of delta stores. If
+  // implemented incorrectly, the DeltaIteratorMerger could crash, unable to
+  // disambiguate between rows of the delta stores being merged.
+  const auto& sleep_ms = rand() % 3000;
+  std::thread t([&] {
+      SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
+      s = tablet->FlushAllDMSForTests();
+  });
+  auto thread_joiner = MakeScopedCleanup([&] {
+      t.join();
+  });
+  ASSERT_OK(UpdateTestRow(&writer, kRowKey, 0, 10000));
+  t.join();
+  thread_joiner.cancel();
+  ASSERT_OK(s);
+  ASSERT_OK(tablet->mvcc_manager()->WaitForApplyingOpsToApply());
+
+  // Now perform a diff scan, which is an ordered scan with a start and end
+  // timestamp.
+  MvccSnapshot snap2(*tablet->mvcc_manager());
+  RowIteratorOptions opts;
+  opts.snap_to_exclude = snap1;
+  opts.snap_to_include = snap2;
+  opts.order = ORDERED;;
+  SchemaBuilder builder(tablet->metadata()->schema());
+  Schema projection = builder.BuildWithoutIds();
+  opts.projection = &projection;
+
+  unique_ptr<RowwiseIterator> row_iterator;
+  ASSERT_OK(tablet->NewRowIterator(std::move(opts), &row_iterator));
+  ASSERT_TRUE(row_iterator);
+
+  // Regression test for KUDU-3291, iterating through the rows shouldn't result
+  // in a crash.
+  ScanSpec spec;
+  ASSERT_OK(row_iterator->Init(&spec));
+  vector<string> rows;
+  ASSERT_OK(tablet::IterateToStringList(row_iterator.get(), &rows));
+  ASSERT_EQ(1, rows.size());
+  ASSERT_STR_CONTAINS(rows[0], "val=9999");
 }
 
 } // namespace tablet

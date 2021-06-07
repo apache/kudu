@@ -245,6 +245,14 @@ class DMSIterator : public DeltaIterator {
 
   bool MayHaveDeltas() const override;
 
+  int64_t deltas_selected() const override {
+    return preparer_.deltas_selected();
+  }
+
+  void set_deltas_selected(int64_t deltas_selected) override {
+    preparer_.set_deltas_selected(deltas_selected);
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DMSIterator);
   friend class DeltaMemStore;
