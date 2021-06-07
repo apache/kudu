@@ -1078,6 +1078,18 @@ include_directories(SYSTEM ${MUSTACHE_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(mustache
   STATIC_LIB "${MUSTACHE_STATIC_LIB}")
 
+## Oatpp
+find_package(Oatpp REQUIRED)
+include_directories(SYSTEM ${OATPP_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(oatpp
+  STATIC_LIB "${OATPP_STATIC_LIB}")
+
+## Oatpp-swagger
+find_package(OatppSwagger REQUIRED)
+include_directories(SYSTEM ${OATPP_SWAGGER_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(oatpp-swagger
+  STATIC_LIB "${OATPP_SWAGGER_STATIC_LIB}")
+
 ## OpenSSL
 ##
 ## Version 1.0.0 or higher is required because we are using the following
