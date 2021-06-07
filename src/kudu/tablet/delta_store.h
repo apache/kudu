@@ -32,6 +32,7 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/slice.h"
@@ -105,11 +106,6 @@ class SelectedDeltas {
 
     // Non-key fields.
 
-    // Identifier of the delta store that provided this delta. It must:
-    // 1. Be unique for the owning rowset, but needn't be more unique than that.
-    // 2. Remain unique for the lifetime of this delta scan.
-    int64_t delta_store_id;
-
     // Whether this delta was an UPDATE, DELETE, or REINSERT.
     RowChangeList::ChangeType ctype;
   };
@@ -146,11 +142,11 @@ class SelectedDeltas {
       // The timestamps and delta types match. It should only be possible to get
       // here if we're comparing deltas from within the same store, in which
       // case the disambiguators must not match.
-      CHECK_EQ(a.delta_store_id, b.delta_store_id);
-      if (a.disambiguator != b.disambiguator) {
+      if (PREDICT_TRUE(a.disambiguator != b.disambiguator)) {
         return a.disambiguator < b.disambiguator;
       }
-      LOG(FATAL) << "Could not differentiate between two deltas";
+      LOG(FATAL) << strings::Substitute("Could not differentiate between two deltas "
+          "ts=$0, type=$1, disambiguator=$2", a.ts.ToString(), a.dtype, a.disambiguator);
     }
   };
 
@@ -371,6 +367,23 @@ class DeltaIterator : public PreparedDeltas {
   // Return a string representation suitable for debug printouts.
   virtual std::string ToString() const = 0;
 
+  // Returns the number of deltas that have been selected so far. For iterators
+  // that iterate across multiple DeltaIterators, this value is useful in
+  // defining a total ordering for deltas across all sub-iterators, e.g. by
+  // defining the starting point of each sub-iterator's DeltaPreparer's
+  // disambiguator.
+  //
+  // See SelectedDeltas::Delta for more details.
+  virtual int64_t deltas_selected() const = 0;
+
+  // Sets the number of deltas selected by the preparer so far, used to define
+  // a starting point of a disambiguator between deltas in iterators that
+  // iterate across multiple DeltaIterators. Callers should only call this with
+  // a monotonically increasing value.
+  //
+  // See SelectedDeltas::Delta for more details.
+  virtual void set_deltas_selected(int64_t deltas_selected) = 0;
+
   virtual ~DeltaIterator() {}
 };
 
@@ -454,6 +467,18 @@ class DeltaPreparer : public PreparedDeltas {
   boost::optional<rowid_t> last_added_idx() const { return last_added_idx_; }
   const RowIteratorOptions& opts() const { return opts_; }
 
+  int64_t deltas_selected() const {
+    return deltas_selected_;
+  }
+
+  void set_deltas_selected(int64_t deltas_selected) {
+    // NOTE: it's possible that the iterator's number of 'deltas_selected'
+    // hasn't changed if no deltas were selected since last being called, hence
+    // the DCHECK_GE check instead of DCHECK_GT.
+    DCHECK_GE(deltas_selected, deltas_selected_);
+    deltas_selected_ = deltas_selected;
+  }
+
  private:
   // If 'decoder' is not yet initialized, initializes it in accordance with the
   // preparer's traits.
@@ -528,7 +553,7 @@ class DeltaPreparer : public PreparedDeltas {
   SelectedDeltas selected_;
 
   // The number of deltas selected so far by this DeltaPreparer. Used to build
-  // disambiguators (see SelectedDeltas::Delta). Never reset.
+  // disambiguators (see SelectedDeltas::Delta).
   int64_t deltas_selected_;
 
   // Used for PREPARED_FOR_APPLY mode.

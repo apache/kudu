@@ -41,7 +41,8 @@ using strings::Substitute;
 
 DeltaIteratorMerger::DeltaIteratorMerger(
     vector<unique_ptr<DeltaIterator> > iters)
-    : iters_(std::move(iters)) {}
+    : total_deltas_selected_in_prepare_(0),
+      iters_(std::move(iters)) {}
 
 Status DeltaIteratorMerger::Init(ScanSpec* spec) {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
@@ -59,7 +60,9 @@ Status DeltaIteratorMerger::SeekToOrdinal(rowid_t idx) {
 
 Status DeltaIteratorMerger::PrepareBatch(size_t nrows, int prepare_flags) {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
+    iter->set_deltas_selected(total_deltas_selected_in_prepare_);
     RETURN_NOT_OK(iter->PrepareBatch(nrows, prepare_flags));
+    total_deltas_selected_in_prepare_ = iter->deltas_selected();
   }
   return Status::OK();
 }

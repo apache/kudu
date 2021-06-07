@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_TABLET_TEST_BASE_H
-#define KUDU_TABLET_TABLET_TEST_BASE_H
+#pragma once
 
 #include <algorithm>
 #include <limits>
@@ -389,15 +388,25 @@ class TabletTestBase : public KuduTabletTest {
 
   Status UpdateTestRow(LocalTabletWriter* writer,
                        int64_t key_idx,
-                       int32_t new_val) {
-    KuduPartialRow row(&client_schema_);
-    setup_.BuildRowKey(&row, key_idx);
+                       int32_t new_val,
+                       int num_updates = 1) {
+    std::vector<KuduPartialRow> rows;
+    for (int i = 0; i < num_updates; i++) {
+      KuduPartialRow row(&client_schema_);
+      setup_.BuildRowKey(&row, key_idx);
 
-    // select the col to update (the third if there is only one key
-    // or the fourth if there are two col keys).
-    int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
-    CHECK_OK(row.SetInt32(col_idx, new_val));
-    return writer->Update(row);
+      // Select the col to update (the third if there is only one key
+      // or the fourth if there are two col keys).
+      int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
+      CHECK_OK(row.SetInt32(col_idx, new_val++));
+      rows.emplace_back(std::move(row));
+    }
+    std::vector<LocalTabletWriter::RowOp> ops;
+    ops.reserve(rows.size());
+    for (const auto& row : rows) {
+      ops.emplace_back(RowOperationsPB::UPDATE, &row);
+    }
+    return writer->WriteBatch(ops);
   }
 
   Status UpdateTestRowToNull(LocalTabletWriter* writer,
@@ -542,5 +551,3 @@ class TabletTestBase : public KuduTabletTest {
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

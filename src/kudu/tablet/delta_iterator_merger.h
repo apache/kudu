@@ -14,13 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_DELTA_ITERATOR_MERGER_H
-#define KUDU_TABLET_DELTA_ITERATOR_MERGER_H
+#pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/common/rowid.h"
 #include "kudu/tablet/delta_store.h"
@@ -44,7 +47,10 @@ struct RowIteratorOptions;
 class DeltaIteratorMerger : public DeltaIterator {
  public:
   // Create a new DeltaIterator which combines the deltas from
-  // all of the input delta stores.
+  // all of the input delta stores. It is expected that the caller has sorted
+  // the input stores according to the desired application order:
+  // - REDO stores are ordered in increasing timestamp order.
+  // - UNDO stores are ordered in decreasing timestamp order.
   //
   // If only one store is input, this will automatically return an unwrapped
   // iterator for greater efficiency.
@@ -81,13 +87,24 @@ class DeltaIteratorMerger : public DeltaIterator {
 
   std::string ToString() const override;
 
+  int64_t deltas_selected() const override {
+    return total_deltas_selected_in_prepare_;
+  }
+
+  void set_deltas_selected(int64_t /*deltas_selected*/) override {
+    LOG(DFATAL) << "Not implemented";
+  }
+
  private:
   explicit DeltaIteratorMerger(std::vector<std::unique_ptr<DeltaIterator> > iters);
+
+  // The number of deltas selected in PrepareBatch() across all iterators so
+  // far. This is useful to ensure that as we iterate through each
+  // DeltaIterator, we are able to define a total ordering of our deltas.
+  int64_t total_deltas_selected_in_prepare_;
 
   std::vector<std::unique_ptr<DeltaIterator> > iters_;
 };
 
 } // namespace tablet
 } // namespace kudu
-
-#endif // KUDU_TABLET_DELTA_ITERATOR_MERGER_H

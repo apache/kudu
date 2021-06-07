@@ -271,6 +271,14 @@ class DeltaFileIterator : public DeltaIterator {
 
   bool MayHaveDeltas() const override;
 
+  int64_t deltas_selected() const override {
+    return preparer_.deltas_selected();
+  }
+
+  void set_deltas_selected(int64_t deltas_selected) override {
+    preparer_.set_deltas_selected(deltas_selected);
+  }
+
  private:
   friend class DeltaFileReader;
 
