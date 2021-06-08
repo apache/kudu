@@ -26,12 +26,16 @@
 # Note: This file uses the shared label namespace for common labels. See:
 #   http://label-schema.org/rc1/
 
+# Base OS Image Arguments.
+# ARGs defined before the first FROM, thus outside of any build-stage, are global.
+ARG RUNTIME_BASE_OS
+ARG DEV_BASE_OS
+
 #
 # ---- Runtime ----
 # Builds a base image that has all the runtime libraries for Kudu pre-installed.
 #
-ARG BASE_OS
-FROM $BASE_OS as runtime
+FROM $RUNTIME_BASE_OS as runtime
 
 COPY ./docker/bootstrap-runtime-env.sh /
 RUN ./bootstrap-runtime-env.sh && rm bootstrap-runtime-env.sh
@@ -62,8 +66,7 @@ CMD ["/bin/bash"]
 # ---- Dev ----
 # Builds a base image that has all the development libraries for Kudu pre-installed.
 #
-ARG BASE_OS
-FROM $BASE_OS as dev
+FROM $DEV_BASE_OS as dev
 
 COPY ./docker/bootstrap-dev-env.sh /
 COPY ./docker/bootstrap-java-env.sh /
