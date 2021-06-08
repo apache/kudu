@@ -84,11 +84,19 @@ Slice Partition::range_key(const string& partition_key) const {
   }
 }
 
-bool Partition::Equals(const Partition& other) const {
-  if (this == &other) return true;
-  if (partition_key_start() != other.partition_key_start()) return false;
-  if (partition_key_end() != other.partition_key_end()) return false;
-  if (hash_buckets_ != other.hash_buckets_) return false;
+bool Partition::operator==(const Partition& rhs) const {
+  if (this == &rhs) {
+    return true;
+  }
+  if (partition_key_start() != rhs.partition_key_start()) {
+    return false;
+  }
+  if (partition_key_end() != rhs.partition_key_end()) {
+    return false;
+  }
+  if (hash_buckets_ != rhs.hash_buckets_) {
+    return false;
+  }
   return true;
 }
 
@@ -1098,20 +1106,32 @@ string PartitionSchema::PartitionTableEntry(const Schema& schema,
   return entry;
 }
 
-bool PartitionSchema::Equals(const PartitionSchema& other) const {
-  if (this == &other) return true;
+bool PartitionSchema::operator==(const PartitionSchema& rhs) const {
+  if (this == &rhs) {
+    return true;
+  }
 
   // Compare range component.
-  if (range_schema_.column_ids != other.range_schema_.column_ids) return false;
+  if (range_schema_.column_ids != rhs.range_schema_.column_ids) {
+    return false;
+  }
 
   // Compare hash bucket components.
-  if (hash_bucket_schemas_.size() != other.hash_bucket_schemas_.size()) return false;
-  for (int i = 0; i < hash_bucket_schemas_.size(); i++) {
-    if (hash_bucket_schemas_[i].seed != other.hash_bucket_schemas_[i].seed) return false;
-    if (hash_bucket_schemas_[i].num_buckets
-        != other.hash_bucket_schemas_[i].num_buckets) return false;
-    if (hash_bucket_schemas_[i].column_ids
-        != other.hash_bucket_schemas_[i].column_ids) return false;
+  const auto& hb_schemas = hash_bucket_schemas_;
+  const auto& rhs_hb_schemas = rhs.hash_bucket_schemas_;
+  if (hb_schemas.size() != rhs_hb_schemas.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < hb_schemas.size(); ++i) {
+    if (hb_schemas[i].seed != rhs_hb_schemas[i].seed) {
+      return false;
+    }
+    if (hb_schemas[i].num_buckets != rhs_hb_schemas[i].num_buckets) {
+      return false;
+    }
+    if (hb_schemas[i].column_ids != rhs_hb_schemas[i].column_ids) {
+      return false;
+    }
   }
 
   return true;

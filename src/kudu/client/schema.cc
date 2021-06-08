@@ -778,9 +778,16 @@ void KuduColumnSchema::CopyFrom(const KuduColumnSchema& other) {
 }
 
 bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
-  return this == &other ||
-    col_ == other.col_ ||
-    (col_ != nullptr && col_->Equals(*other.col_, ColumnSchema::COMPARE_ALL));
+  return *this == other;
+}
+
+bool KuduColumnSchema::operator==(const KuduColumnSchema& rhs) const {
+  return this == &rhs || col_ == rhs.col_ ||
+    (col_ != nullptr && col_->Equals(*rhs.col_, ColumnSchema::COMPARE_ALL));
+}
+
+bool KuduColumnSchema::operator!=(const KuduColumnSchema& rhs) const {
+  return !(*this == rhs);
 }
 
 const string& KuduColumnSchema::name() const {
@@ -856,9 +863,17 @@ Status KuduSchema::Reset(const vector<KuduColumnSchema>& columns, int key_column
   return Status::OK();
 }
 
+bool KuduSchema::operator==(const KuduSchema& rhs) const {
+  return this == &rhs ||
+      (schema_ && rhs.schema_ && schema_->Equals(*rhs.schema_));
+}
+
+bool KuduSchema::operator!=(const KuduSchema& rhs) const {
+  return !(this == &rhs);
+}
+
 bool KuduSchema::Equals(const KuduSchema& other) const {
-  return this == &other ||
-      (schema_ && other.schema_ && schema_->Equals(*other.schema_));
+  return *this == other;
 }
 
 KuduColumnSchema KuduSchema::Column(size_t idx) const {

@@ -337,7 +337,7 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
                               const string& dst_table_name) {
   client::sp::shared_ptr<KuduTable> dst_table;
   Status s = dst_client->OpenTable(dst_table_name, &dst_table);
-  if (!s.IsNotFound() && !s.ok()) {
+  if (!s.IsNotFound()) {
     return s;
   }
 
@@ -349,9 +349,10 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
     }
 
     const KuduSchema& dst_table_schema = dst_table->schema();
-    if (!src_table_schema.Equals(dst_table_schema)) {
-      return Status::NotSupported(
-          "Not support different schema of source table and destination table.");
+    if (src_table_schema != dst_table_schema) {
+      return Status::NotSupported(Substitute(
+          "destination table's schema differs from the source one ($0 vs $1)",
+          dst_table_schema.ToString(), src_table_schema.ToString()));
     }
 
     return Status::OK();

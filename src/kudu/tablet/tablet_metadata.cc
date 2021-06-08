@@ -415,11 +415,11 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
       PartitionSchema partition_schema;
       RETURN_NOT_OK(PartitionSchema::FromPB(superblock.partition_schema(),
                                             *schema_, &partition_schema));
-      CHECK(partition_schema_.Equals(partition_schema));
+      CHECK(partition_schema_ == partition_schema);
 
       Partition partition;
       Partition::FromPB(superblock.partition(), &partition);
-      CHECK(partition_.Equals(partition));
+      CHECK(partition_ == partition);
     }
 
     tablet_data_state_ = superblock.tablet_data_state();

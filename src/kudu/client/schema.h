@@ -265,10 +265,29 @@ class KUDU_EXPORT KuduColumnSchema {
 
   /// Check whether the object is identical to the other one.
   ///
+  /// @deprecated use operator==(const KuduColumnSchema&) instead
+  ///
   /// @param [in] other
   ///   The reference object to compare with.
   /// @return @c true iff the object is identical to the specified one.
-  bool Equals(const KuduColumnSchema& other) const;
+  bool Equals(const KuduColumnSchema& other) const
+      ATTRIBUTE_DEPRECATED("use operator==(const KuduColumnSchema&) instead");
+
+  /// Check whether the schema is identical to the other one.
+  ///
+  /// @param [in] rhs
+  ///   KuduColumnSchema object to compare this one with.
+  /// @return @c true iff this KuduColumnSchema object is identical
+  ///   to the specified one.
+  bool operator==(const KuduColumnSchema& rhs) const;
+
+  /// Check whether the schema is not identical to the other one.
+  ///
+  /// @param [in] rhs
+  ///   KuduColumnSchema object to compare this one with.
+  /// @return @c true iff this KuduColumnSchema object is not identical
+  ///   to the specified one.
+  bool operator!=(const KuduColumnSchema& rhs) const;
 
   /// @name Getters to expose column schema information.
   ///
@@ -633,11 +652,30 @@ class KUDU_EXPORT KuduSchema {
 
   /// Check whether the schema is identical to the other one.
   ///
+  /// @deprecated use operator==(const KuduSchema&) instead
+  ///
   /// @param [in] other
   ///   The other KuduSchema object to compare with.
   /// @return @c true iff this KuduSchema object is identical
   ///   to the specified one.
-  bool Equals(const KuduSchema& other) const;
+  bool Equals(const KuduSchema& other) const
+      ATTRIBUTE_DEPRECATED("use operator==(const KuduSchema&) instead");
+
+  /// Check whether the schema is identical to the other one.
+  ///
+  /// @param [in] rhs
+  ///   KuduSchema object to compare this one with.
+  /// @return @c true iff this KuduSchema object is identical
+  ///   to the specified one.
+  bool operator==(const KuduSchema& rhs) const;
+
+  /// Check whether the schema is not identical to the other one.
+  ///
+  /// @param [in] rhs
+  ///   KuduSchema object to compare this one with.
+  /// @return @c true iff this KuduSchema object is not identical
+  ///   to the specified one.
+  bool operator!=(const KuduSchema& rhs) const;
 
   /// @param [in] idx
   ///   Column index.
