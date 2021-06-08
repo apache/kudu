@@ -79,14 +79,14 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
                           "Could not obtain a remote proxy to the peer.");
 
     shared_ptr<Peer> remote_peer;
-    RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
-                                      tablet_id_,
-                                      local_uuid_,
-                                      queue_,
-                                      raft_pool_token_,
-                                      std::move(peer_proxy),
-                                      peer_proxy_factory_->messenger(),
-                                      &remote_peer));
+    Peer::NewRemotePeer(peer_pb,
+                        tablet_id_,
+                        local_uuid_,
+                        queue_,
+                        raft_pool_token_,
+                        std::move(peer_proxy),
+                        peer_proxy_factory_->messenger(),
+                        &remote_peer);
     peers_.emplace(peer_pb.permanent_uuid(), std::move(remote_peer));
   }
 

@@ -72,7 +72,7 @@ class Peer :
     public enable_make_shared<Peer> {
  public:
   // Initializes a peer and start sending periodic heartbeats.
-  Status Init();
+  void Init();
 
   // Signals that this peer has a new request to replicate/store.
   // 'even_if_queue_empty' indicates whether the peer should force
@@ -110,14 +110,14 @@ class Peer :
   // log entries) are assembled on 'raft_pool_token'.
   // Response handling may also involve IO related to log-entry lookups and is
   // also done on 'raft_pool_token'.
-  static Status NewRemotePeer(RaftPeerPB peer_pb,
-                              std::string tablet_id,
-                              std::string leader_uuid,
-                              PeerMessageQueue* queue,
-                              ThreadPoolToken* raft_pool_token,
-                              std::unique_ptr<PeerProxy> proxy,
-                              std::shared_ptr<rpc::Messenger> messenger,
-                              std::shared_ptr<Peer>* peer);
+  static void NewRemotePeer(RaftPeerPB peer_pb,
+                            std::string tablet_id,
+                            std::string leader_uuid,
+                            PeerMessageQueue* queue,
+                            ThreadPoolToken* raft_pool_token,
+                            std::unique_ptr<PeerProxy> proxy,
+                            std::shared_ptr<rpc::Messenger> messenger,
+                            std::shared_ptr<Peer>* peer);
 
  protected:
   Peer(RaftPeerPB peer_pb,

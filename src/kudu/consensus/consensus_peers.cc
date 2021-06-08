@@ -103,15 +103,14 @@ namespace consensus {
 // The number of retries between failed requests whose failure is logged.
 constexpr auto kNumRetriesBetweenLoggingFailedRequest = 5;
 
-Status Peer::NewRemotePeer(RaftPeerPB peer_pb,
-                           string tablet_id,
-                           string leader_uuid,
-                           PeerMessageQueue* queue,
-                           ThreadPoolToken* raft_pool_token,
-                           unique_ptr<PeerProxy> proxy,
-                           shared_ptr<Messenger> messenger,
-                           shared_ptr<Peer>* peer) {
-
+void Peer::NewRemotePeer(RaftPeerPB peer_pb,
+                         string tablet_id,
+                         string leader_uuid,
+                         PeerMessageQueue* queue,
+                         ThreadPoolToken* raft_pool_token,
+                         unique_ptr<PeerProxy> proxy,
+                         shared_ptr<Messenger> messenger,
+                         shared_ptr<Peer>* peer) {
   auto new_peer(Peer::make_shared(
       std::move(peer_pb),
       std::move(tablet_id),
@@ -120,9 +119,8 @@ Status Peer::NewRemotePeer(RaftPeerPB peer_pb,
       raft_pool_token,
       std::move(proxy),
       std::move(messenger)));
-  RETURN_NOT_OK(new_peer->Init());
+  new_peer->Init();
   *peer = std::move(new_peer);
-  return Status::OK();
 }
 
 Peer::Peer(RaftPeerPB peer_pb,
@@ -148,7 +146,7 @@ Peer::Peer(RaftPeerPB peer_pb,
       has_sent_first_request_(false) {
 }
 
-Status Peer::Init() {
+void Peer::Init() {
   {
     std::lock_guard<simple_spinlock> l(peer_lock_);
     queue_->TrackPeer(peer_pb_);
@@ -166,7 +164,6 @@ Status Peer::Init() {
       },
       MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms));
   heartbeater_->Start();
-  return Status::OK();
 }
 
 Status Peer::SignalRequest(bool even_if_queue_empty) {
