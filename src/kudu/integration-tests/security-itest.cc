@@ -359,6 +359,20 @@ TEST_F(SecurityITest, TxnSmokeWithDifferentUserTypes) {
       ASSERT_OK(smoke_starter(&table, &txn));
       ASSERT_OK(txn->Rollback());
 
+      // Wait for the transaction to complete the rollback phase. This is useful
+      // because the next sub-scenario below starts a new transaction as well,
+      // and in case of a race it may happen that the transaction below starts
+      // before this one finalizes its abort phase. Both transactions attempt
+      // to lock the same partition(s), so the latter is automatically aborted
+      // by the deadlock prevention logic.
+      ASSERT_EVENTUALLY([&]{
+        bool is_complete = false;
+        Status completion_status;
+        ASSERT_OK(txn->IsCommitComplete(&is_complete, &completion_status));
+        ASSERT_TRUE(is_complete);
+        ASSERT_TRUE(completion_status.IsAborted()) << completion_status.ToString();
+      });
+
       // Read the inserted row back.
       ASSERT_EQ(0, CountTableRows(table.get()));
     }
