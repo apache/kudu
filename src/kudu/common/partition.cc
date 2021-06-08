@@ -21,6 +21,7 @@
 #include <cstring>
 #include <iterator>
 #include <memory>
+#include <ostream>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -306,6 +307,9 @@ Status PartitionSchema::ToPB(const Schema& schema, PartitionSchemaPB* pb) const 
 
 template<typename Row>
 Status PartitionSchema::EncodeKeyImpl(const Row& row, string* buf) const {
+  // TODO(aserbin): update the implementation and remove the DCHECK() below
+  DCHECK(ranges_with_hash_schemas_.empty())
+      << "ranges with custom hash schemas are not yet supported";
   const KeyEncoder<string>& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
 
   for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
@@ -892,6 +896,10 @@ string PartitionSchema::PartitionKeyDebugString(const KuduPartialRow& row) const
 }
 
 string PartitionSchema::PartitionKeyDebugString(Slice key, const Schema& schema) const {
+  // TODO(aserbin): update the implementation and remove the DCHECK() below
+  DCHECK(ranges_with_hash_schemas_.empty())
+      << "ranges with custom hash schemas are not yet supported";
+
   vector<string> components;
 
   size_t hash_components_size = kEncodedBucketSize * hash_bucket_schemas_.size();

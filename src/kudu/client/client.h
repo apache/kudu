@@ -1145,7 +1145,8 @@ class KUDU_EXPORT KuduTableCreator {
   ///   Hash: seed for mapping rows to hash buckets.
   /// @return Reference to the modified table creator.
   KuduTableCreator& add_hash_partitions(const std::vector<std::string>& columns,
-                                        int32_t num_buckets, int32_t seed);
+                                        int32_t num_buckets,
+                                        int32_t seed);
 
   /// Set the columns on which the table will be range-partitioned.
   ///
@@ -1165,6 +1166,63 @@ class KUDU_EXPORT KuduTableCreator {
   enum RangePartitionBound {
     EXCLUSIVE_BOUND, ///< An exclusive bound.
     INCLUSIVE_BOUND, ///< An inclusive bound.
+  };
+
+  /// A helper class to represent a Kudu range partition with a custom hash
+  /// bucket schema. The hash sub-partitioning for a range partition might be
+  /// different from the default table-wide hash bucket schema specified during
+  /// a table's creation (see KuduTableCreator::add_hash_partitions()).
+  /// Correspondingly, this class provides a means to specify a custom hash
+  /// bucket structure for the data in a range partition.
+  class KuduRangePartition {
+   public:
+    /// Create an object representing the range defined by the given parameters.
+    ///
+    /// @param [in] lower_bound
+    ///   The lower bound for the range.
+    ///   The KuduRangePartition object takes ownership of the parameter.
+    /// @param [in] upper_bound
+    ///   The upper bound for the range.
+    ///   The KuduRangePartition object takes ownership of the parameter.
+    /// @param [in] lower_bound_type
+    ///   The type of the lower_bound: inclusive or exclusive; inclusive if the
+    ///   parameter is omitted.
+    /// @param [in] upper_bound_type
+    ///   The type of the upper_bound: inclusive or exclusive; exclusive if the
+    ///   parameter is omitted.
+    KuduRangePartition(KuduPartialRow* lower_bound,
+                       KuduPartialRow* upper_bound,
+                       RangePartitionBound lower_bound_type = INCLUSIVE_BOUND,
+                       RangePartitionBound upper_bound_type = EXCLUSIVE_BOUND);
+
+    ~KuduRangePartition();
+
+    /// Add an extra level of hash partitioning for this range partition.
+    ///
+    /// The newly added hash partitioning level is defined by its hash bucket
+    /// schema. The hash bucket schema is specified by the parameters of this
+    /// method. A range partition can have multiple levels of hash partitioning,
+    /// i.e. this method can be called multiple times to establish a
+    /// multi-dimensional hash bucket structure for the range partition.
+    ///
+    /// @param [in] columns
+    ///   Names of columns to use for partitioning.
+    /// @param [in] num_buckets
+    ///   Number of buckets for the hashing.
+    /// @param [in] seed
+    ///   Hash seed for mapping rows to hash buckets.
+    /// @return Operation result status.
+    Status add_hash_partitions(const std::vector<std::string>& columns,
+                               int32_t num_buckets,
+                               int32_t seed = 0);
+   private:
+    class KUDU_NO_EXPORT Data;
+    friend class KuduTableCreator;
+
+    // Owned.
+    Data* data_;
+
+    DISALLOW_COPY_AND_ASSIGN(KuduRangePartition);
   };
 
   /// Add a range partition to the table.
@@ -1199,6 +1257,20 @@ class KUDU_EXPORT KuduTableCreator {
                                         KuduPartialRow* upper_bound,
                                         RangePartitionBound lower_bound_type = INCLUSIVE_BOUND,
                                         RangePartitionBound upper_bound_type = EXCLUSIVE_BOUND);
+
+  /// Add a range partition with a custom hash bucket schema.
+  ///
+  /// This method allows adding a range partition which has hash partitioning
+  /// schema different from the schema used for a range partition.
+  ///
+  /// @warning This functionality isn't fully implemented yet.
+  ///
+  /// @param [in] partition
+  ///   Range partition with custom hash bucket schema.
+  ///   The KuduTableCreator object takes ownership of the parameter.
+  /// @return Reference to the modified table creator.
+  KuduTableCreator& add_custom_range_partition(
+      KuduRangePartition* partition);
 
   /// Add a range partition split at the provided row.
   ///

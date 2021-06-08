@@ -811,9 +811,10 @@ KuduTableCreator& KuduTableCreator::add_hash_partitions(const vector<string>& co
 }
 
 KuduTableCreator& KuduTableCreator::add_hash_partitions(const vector<string>& columns,
-                                                        int32_t num_buckets, int32_t seed) {
+                                                        int32_t num_buckets,
+                                                        int32_t seed) {
   PartitionSchemaPB::HashBucketSchemaPB* bucket_schema =
-    data_->partition_schema_.add_hash_bucket_schemas();
+      data_->partition_schema_.add_hash_bucket_schemas();
   for (const string& col_name : columns) {
     bucket_schema->add_columns()->set_name(col_name);
   }
@@ -855,16 +856,20 @@ KuduTableCreator& KuduTableCreator::split_rows(const vector<const KuduPartialRow
   return *this;
 }
 
-KuduTableCreator& KuduTableCreator::add_range_partition(KuduPartialRow* lower_bound,
-                                                        KuduPartialRow* upper_bound,
-                                                        RangePartitionBound lower_bound_type,
-                                                        RangePartitionBound upper_bound_type) {
-  data_->range_partition_bounds_.push_back({
-      unique_ptr<KuduPartialRow>(lower_bound),
-      unique_ptr<KuduPartialRow>(upper_bound),
-      lower_bound_type,
-      upper_bound_type,
-  });
+KuduTableCreator& KuduTableCreator::add_range_partition(
+    KuduPartialRow* lower_bound,
+    KuduPartialRow* upper_bound,
+    RangePartitionBound lower_bound_type,
+    RangePartitionBound upper_bound_type) {
+  data_->range_partitions_.emplace_back(new KuduRangePartition(
+      lower_bound, upper_bound, lower_bound_type, upper_bound_type));
+  return *this;
+}
+
+KuduTableCreator& KuduTableCreator::add_custom_range_partition(
+    KuduRangePartition* partition) {
+  CHECK(partition);
+  data_->range_partitions_.emplace_back(partition);
   return *this;
 }
 
@@ -909,7 +914,6 @@ Status KuduTableCreator::Create() {
 
   // Build request.
   CreateTableRequestPB req;
-  CreateTableResponsePB resp;
   req.set_name(data_->table_name_);
   if (data_->num_replicas_ != boost::none) {
     req.set_num_replicas(data_->num_replicas_.get());
@@ -932,31 +936,66 @@ Status KuduTableCreator::Create() {
                         "Invalid schema");
 
   RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
-
+  bool has_range_splits = false;
   for (const auto& row : data_->range_partition_splits_) {
     if (!row) {
       return Status::InvalidArgument("range split row must not be null");
     }
     encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
+    has_range_splits = true;
   }
 
-  for (const auto& bound : data_->range_partition_bounds_) {
-    if (!bound.lower_bound || !bound.upper_bound) {
+  // A preliminary pass over the ranges is here to check if any custom hash
+  // partitioning schemas are present.
+  bool has_range_with_custom_hash_schema = false;
+  for (const auto& p : data_->range_partitions_) {
+    if (!p->data_->hash_bucket_schemas_.empty()) {
+      has_range_with_custom_hash_schema = true;
+      break;
+    }
+  }
+
+  if (has_range_splits && has_range_with_custom_hash_schema) {
+    // For simplicity, don't allow having both range splits (deprecated) and
+    // custom hash bucket schemas per range partition.
+    return Status::InvalidArgument(
+        "split rows and custom hash bucket schemas for ranges are incompatible: "
+        "choose one or the other");
+  }
+
+  for (const auto& p : data_->range_partitions_) {
+    const auto* range = p->data_;
+    if (!range->lower_bound_ || !range->upper_bound_) {
       return Status::InvalidArgument("range bounds must not be null");
     }
 
     RowOperationsPB_Type lower_bound_type =
-      bound.lower_bound_type == KuduTableCreator::INCLUSIVE_BOUND ?
-      RowOperationsPB::RANGE_LOWER_BOUND :
-      RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
+        range->lower_bound_type_ == KuduTableCreator::INCLUSIVE_BOUND
+        ? RowOperationsPB::RANGE_LOWER_BOUND
+        : RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
 
     RowOperationsPB_Type upper_bound_type =
-      bound.upper_bound_type == KuduTableCreator::EXCLUSIVE_BOUND ?
-      RowOperationsPB::RANGE_UPPER_BOUND :
-      RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
+        range->upper_bound_type_ == KuduTableCreator::EXCLUSIVE_BOUND
+        ? RowOperationsPB::RANGE_UPPER_BOUND
+        : RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
 
-    encoder.Add(lower_bound_type, *bound.lower_bound);
-    encoder.Add(upper_bound_type, *bound.upper_bound);
+    encoder.Add(lower_bound_type, *range->lower_bound_);
+    encoder.Add(upper_bound_type, *range->upper_bound_);
+
+    if (has_range_with_custom_hash_schema) {
+      // Populate corresponding element in 'range_hash_schemas' if there is at
+      // least one range with custom hash partitioning schema.
+      auto* schemas_pb = req.add_range_hash_schemas();
+      for (const auto& schema : range->hash_bucket_schemas_) {
+        auto* pb = schemas_pb->add_hash_schemas();
+        pb->set_seed(schema.seed);
+        pb->set_num_buckets(schema.num_buckets);
+        for (const auto& column_name : schema.column_names) {
+          auto* column_id = pb->add_columns();
+          column_id->set_name(column_name);
+        }
+      }
+    }
   }
 
   req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);
@@ -971,24 +1010,40 @@ Status KuduTableCreator::Create() {
   } else {
     deadline += data_->client_->default_admin_operation_timeout();
   }
-  RETURN_NOT_OK_PREPEND(data_->client_->data_->CreateTable(data_->client_,
-                                                           req,
-                                                           &resp,
-                                                           deadline,
-                                                           !data_->range_partition_bounds_.empty()),
+
+  CreateTableResponsePB resp;
+  RETURN_NOT_OK_PREPEND(data_->client_->data_->CreateTable(
+      data_->client_, req, &resp, deadline, !data_->range_partitions_.empty()),
                         Substitute("Error creating table $0 on the master",
                                    data_->table_name_));
-
   // Spin until the table is fully created, if requested.
   if (data_->wait_) {
     TableIdentifierPB table;
     table.set_table_id(resp.table_id());
-    RETURN_NOT_OK(data_->client_->data_->WaitForCreateTableToFinish(data_->client_,
-                                                                    table,
-                                                                    deadline));
+    RETURN_NOT_OK(data_->client_->data_->WaitForCreateTableToFinish(
+        data_->client_, table, deadline));
   }
 
   return Status::OK();
+}
+
+KuduTableCreator::KuduRangePartition::KuduRangePartition(
+    KuduPartialRow* lower_bound,
+    KuduPartialRow* upper_bound,
+    RangePartitionBound lower_bound_type,
+    RangePartitionBound upper_bound_type)
+    : data_(new Data(lower_bound, upper_bound, lower_bound_type, upper_bound_type)) {
+}
+
+KuduTableCreator::KuduRangePartition::~KuduRangePartition() {
+  delete data_;
+}
+
+Status KuduTableCreator::KuduRangePartition::add_hash_partitions(
+    const vector<string>& columns,
+    int32_t num_buckets,
+    int32_t seed) {
+  return data_->add_hash_partitions(columns, num_buckets, seed);
 }
 
 ////////////////////////////////////////////////////////////

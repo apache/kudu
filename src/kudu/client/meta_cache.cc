@@ -950,18 +950,16 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
   VLOG(2) << "Processing master response for " << rpc.ToString()
           << ". Response: " << pb_util::SecureShortDebugString(rpc.resp());
 
-  if (rpc.resp().tablet_locations().empty()) {
-    // If there are no tablets in the response, then the table is empty. If
-    // there were any tablets in the table they would have been returned, since
-    // the master guarantees that if the partition key falls in a non-covered
-    // range, the previous tablet will be returned, and we did not set an upper
-    // bound partition key on the request.
-    DCHECK(!rpc.req().has_partition_key_end());
-  }
+  // If there are no tablets in the response, then the table is empty. If
+  // there were any tablets in the table they would have been returned, since
+  // the master guarantees that if the partition key falls in a non-covered
+  // range, the previous tablet will be returned, and we did not set an upper
+  // bound partition key on the request.
+  DCHECK(!rpc.resp().tablet_locations().empty() ||
+         !rpc.req().has_partition_key_end());
 
   return ProcessGetTableLocationsResponse(rpc.table(), rpc.partition_key(), rpc.is_exact_lookup(),
       rpc.resp(), cache_entry, max_returned_locations);
-
 }
 
 Status MetaCache::ProcessGetTabletLocationsResponse(const string& tablet_id,

@@ -275,5 +275,6 @@ SET_KUDU_TEST_LINK_LIBS(
 ADD_KUDU_TEST(client-test NUM_SHARDS 8 PROCESSORS 2
                           DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(client-unittest)
+ADD_KUDU_TEST(flex_partitioning_client-test)
 ADD_KUDU_TEST(predicate-test NUM_SHARDS 4)
 ADD_KUDU_TEST(scan_token-test PROCESSORS 2)

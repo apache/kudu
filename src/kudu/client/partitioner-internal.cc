@@ -39,7 +39,7 @@ namespace client {
 Status KuduPartitionerBuilder::Data::Build(KuduPartitioner** partitioner) {
   // If any of the builder calls had generated a bad status, then return it here.
   RETURN_NOT_OK(status_);
-  unique_ptr<KuduPartitioner::Data> ret_data(new KuduPartitioner::Data());
+  unique_ptr<KuduPartitioner::Data> ret_data(new KuduPartitioner::Data);
 
   auto deadline = MonoTime::Now() + timeout_;
   auto mc = table_->client()->data_->meta_cache_;
