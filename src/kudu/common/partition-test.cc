@@ -982,7 +982,6 @@ void CheckPartitions(const vector<Partition>& partitions) {
 void CheckSerializationFunctions(const PartitionSchemaPB& pb,
                                  const PartitionSchema& partition_schema,
                                  const Schema& schema) {
-
   PartitionSchemaPB pb1;
   ASSERT_OK(partition_schema.ToPB(schema, &pb1));
 
@@ -991,8 +990,7 @@ void CheckSerializationFunctions(const PartitionSchemaPB& pb,
 
   PartitionSchema partition_schema1;
   ASSERT_OK(PartitionSchema::FromPB(pb1, schema, &partition_schema1));
-
-  ASSERT_TRUE(partition_schema.Equals(partition_schema1));
+  ASSERT_EQ(partition_schema, partition_schema1);
 }
 
 } // namespace

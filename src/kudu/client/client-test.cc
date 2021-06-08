@@ -4895,11 +4895,11 @@ TEST_F(ClientTest, TestGetTableSchema) {
 
   // Verify the schema for the current table
   ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
-  ASSERT_TRUE(schema_.Equals(schema));
+  ASSERT_EQ(schema_, schema);
 
   // Verify that a get schema request for a missing table throws not found
   Status s = client_->GetTableSchema("MissingTableName", &schema);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "the table does not exist");
 }
 

@@ -318,21 +318,22 @@ TEST(ClientUnitTest, TestKuduSchemaToStringWithColumnIds) {
 
 TEST(KuduColumnSchemaTest, TestEquals) {
   KuduColumnSchema a32("a", KuduColumnSchema::INT32);
-  ASSERT_TRUE(a32.Equals(a32));
+  ASSERT_TRUE(a32 == a32);
 
   KuduColumnSchema a32_2(a32);
-  ASSERT_TRUE(a32.Equals(a32_2));
+  ASSERT_EQ(a32, a32_2);
 
   KuduColumnSchema b32("b", KuduColumnSchema::INT32);
-  ASSERT_FALSE(a32.Equals(b32));
+  ASSERT_FALSE(a32 == b32);
+  ASSERT_TRUE(a32 != b32);
 
   KuduColumnSchema a16("a", KuduColumnSchema::INT16);
-  ASSERT_FALSE(a32.Equals(a16));
+  ASSERT_NE(a32, a16);
 
   const int kDefaultOf7 = 7;
   KuduColumnSchema a32_dflt("a", KuduColumnSchema::INT32, /*is_nullable=*/false,
                               /*default_value=*/&kDefaultOf7);
-  ASSERT_FALSE(a32.Equals(a32_dflt));
+  ASSERT_NE(a32, a32_dflt);
 }
 
 } // namespace client

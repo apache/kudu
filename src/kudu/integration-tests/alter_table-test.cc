@@ -556,7 +556,7 @@ TEST_F(AlterTableTest, TestAlterOnTSRestart) {
   KuduSchema schema;
   bool alter_in_progress = false;
   ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
-  ASSERT_TRUE(schema_.Equals(schema));
+  ASSERT_EQ(schema_, schema);
   ASSERT_OK(client_->IsAlterTableInProgress(kTableName, &alter_in_progress));
   ASSERT_TRUE(alter_in_progress);
 

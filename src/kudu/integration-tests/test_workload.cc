@@ -392,7 +392,7 @@ void TestWorkload::Setup() {
   } else {
     KuduSchema existing_schema;
     CHECK_OK(client_->GetTableSchema(table_name_, &existing_schema));
-    CHECK(schema_.Equals(existing_schema))
+    CHECK(schema_ == existing_schema)
         << "Existing table's schema doesn't match ours";
     LOG(INFO) << "TestWorkload: Skipping table creation because table "
               << table_name_ << " already exists";

@@ -73,8 +73,8 @@ class Partition {
     return partition_key_end_;
   }
 
-  // Returns true if the other partition is equivalent to this one.
-  bool Equals(const Partition& other) const;
+  // Returns true iff the given partition 'rhs' is equivalent to this one.
+  bool operator==(const Partition& rhs) const;
 
   // Serializes a partition into a protobuf message.
   void ToPB(PartitionPB* pb) const;
@@ -281,8 +281,8 @@ class PartitionSchema {
   std::string PartitionTableHeader(const Schema& schema) const;
   std::string PartitionTableEntry(const Schema& schema, const Partition& partition) const;
 
-  // Returns true if the other partition schema is equivalent to this one.
-  bool Equals(const PartitionSchema& other) const;
+  // Returns 'true' iff the partition schema 'rhs' is equivalent to this one.
+  bool operator==(const PartitionSchema& rhs) const;
 
   // Transforms an exclusive lower bound range partition key into an inclusive
   // lower bound range partition key.
