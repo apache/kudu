@@ -69,6 +69,18 @@ DEFAULT_TARGETS = ['kudu','kudu-python']
 DEFAULT_REPOSITORY = 'apache/kudu'
 DEFAULT_ACTION = 'load'
 
+# A map of supported base images to their UBI counterpart.
+# If no mapping exists then --use-ubi-runtime will fail for that base image.
+UBI_MAP = {
+  "centos:7" : "registry.access.redhat.com/ubi7/ubi",
+  "centos:8" : "registry.access.redhat.com/ubi8/ubi"
+}
+
+# Targets that use the dev base image.
+DEV_TARGETS = [ 'dev', 'thirdparty', 'build', 'impala-build' ]
+# Targets that use the runtime base image.
+RUNTIME_TARGETS = [ 'runtime', 'kudu', 'kudu-python', 'impala' ]
+
 REQUIRED_CPUS = 4
 REQUIRED_MEMORY_GIB = 4
 
@@ -85,12 +97,14 @@ def parse_args():
                       'ubuntu:bionic', 'ubuntu:focal',
                       'opensuse/leap:15'],
                       help='The base operating systems to build with')
+  parser.add_argument('--use-ubi-runtime', action='store_true',
+                      help='If passed, uses the equivalent RedHat UBI base image for Kudu runtime images'
+                           ' of CentOS builds.')
   # These targets are defined in the Dockerfile. Dependent targets of a passed image will be built,
   # but not tagged. Note that if a target is not tagged it is subject removal by Dockers system
   # and image pruning.
-  parser.add_argument('--targets', nargs='+', default=DEFAULT_TARGETS, choices=[
-                      'runtime', 'dev', 'thirdparty', 'build',
-                      'kudu', 'kudu-python', 'impala-build', 'impala'],
+  parser.add_argument('--targets', nargs='+', default=DEFAULT_TARGETS,
+                      choices=DEV_TARGETS + RUNTIME_TARGETS,
                       help='The targets to build and tag')
   parser.add_argument('--repository', default=DEFAULT_REPOSITORY,
                       help='The repository string to use when tagging the image')
@@ -163,11 +177,12 @@ def get_os_tag(base):
   """
   # If the base contains a "/" remove the prefix. ex: `opensuse/leap:15`
   if "/" in base:
-    short_base = base.split('/')[1]
+    short_base = base[base.find('/') + 1:]
   else:
     short_base = base
-  os_name = short_base.split(':')[0]
-  os_version = short_base.split(':')[1]
+  # The OS name and version is delimited by ':' or '/'.
+  os_name =  re.split(':|/', short_base)[0]
+  os_version = re.split(':|/', short_base)[1]
   os_tag = os_name
   if os_version.isdigit():
     os_tag += os_version
@@ -210,10 +225,12 @@ def unique_targets(opts):
   else:
     return [opts.targets]
 
-def build_args(base, version, vcs_ref, cache_from):
+def build_args(runtime_base, dev_base, version, vcs_ref, cache_from):
   """ Constructs the build the arguments to pass to the Docker build. """
   args = ''
-  args += ' --build-arg BASE_OS="%s"' % base
+  args += ' --build-arg RUNTIME_BASE_OS="%s"' % runtime_base
+  args += ' --build-arg DEV_BASE_OS="%s"' % dev_base
+  args += ' --build-arg BASE_OS="%s"' % dev_base
   args += ' --build-arg DOCKERFILE="docker/Dockerfile"'
   args += ' --build-arg MAINTAINER="Apache Kudu <dev@kudu.apache.org>"'
   args += ' --build-arg URL="https://kudu.apache.org"'
@@ -225,7 +242,15 @@ def build_args(base, version, vcs_ref, cache_from):
     args += ' --cache-from %s' % cache_from
   return args
 
-def build_tags(opts, base, version, vcs_ref, target):
+def build_tags(opts, runtime_base, dev_base, version, vcs_ref, target):
+  if target in RUNTIME_TARGETS:
+    base = runtime_base
+  elif target in DEV_TARGETS:
+    base = dev_base
+  else:
+    print('ERROR: invalid target in build_tags: %s' % target)
+    sys.exit(1)
+
   os_tag = get_os_tag(base)
   version_tag = get_version_tag(version, vcs_ref)
 
@@ -314,11 +339,23 @@ def main():
           % (version, vcs_ref))
     sys.exit(1)
 
+  # Validate the bases have a correlated UBI.
+  if opts.use_ubi_runtime:
+    for base in bases:
+      if base not in UBI_MAP:
+        print('ERROR: --use-ubi-runtime is only valid for the following bases: %s' % ", ".join(UBI_MAP.keys()))
+        sys.exit(1)
+
   for base in bases:
     print('Building targets for %s...' % base)
+    dev_base = base
+    runtime_base = base
+    if opts.use_ubi_runtime:
+      runtime_base = UBI_MAP[base]
+      print('Runtime images will use UBI image %s...' % runtime_base)
 
     for target in targets:
-      target_tags = build_tags(opts, base, version, vcs_ref, target)
+      target_tags = build_tags(opts, runtime_base, dev_base, version, vcs_ref, target)
       # Build the target.
       print('Building %s target...' % target)
       # Note: It isn't currently possible to load multi-arch images into docker,
@@ -329,7 +366,7 @@ def main():
       docker_build_cmd = 'docker buildx build --%s' % opts.action
       if opts.platforms:
         docker_build_cmd += ' --platform %s' % platforms_csv(opts)
-      docker_build_cmd += build_args(base, version, vcs_ref, opts.cache_from)
+      docker_build_cmd += build_args(runtime_base, dev_base, version, vcs_ref, opts.cache_from)
       docker_build_cmd += ' --file %s' % os.path.join(ROOT, 'docker', 'Dockerfile')
       docker_build_cmd += ' --target %s' % target
       docker_build_cmd += ''.join(' --tag %s' % tag for tag in target_tags)

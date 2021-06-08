@@ -36,7 +36,6 @@ if [[ -f "/usr/bin/yum" ]]; then
   yum install -y \
     cyrus-sasl-gssapi \
     cyrus-sasl-plain \
-    krb5-server \
     krb5-workstation \
     openssl
 
@@ -44,7 +43,7 @@ if [[ -f "/usr/bin/yum" ]]; then
   # --no-install-recommends keeps the install smaller
   yum install -y \
     cyrus-sasl-devel \
-    lzo-devel \
+    lzo \
     tzdata \
     which
 
