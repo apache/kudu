@@ -506,7 +506,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Update the peers and queue to be consistent with a new active configuration.
   // Should only be called by the leader.
-  Status RefreshConsensusQueueAndPeersUnlocked();
+  void RefreshConsensusQueueAndPeersUnlocked();
 
   // Makes the peer become leader.
   // Returns OK once the change config op that has this peer as leader

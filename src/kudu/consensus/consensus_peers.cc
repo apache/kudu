@@ -108,8 +108,7 @@ void Peer::NewRemotePeer(RaftPeerPB peer_pb,
                          string leader_uuid,
                          PeerMessageQueue* queue,
                          ThreadPoolToken* raft_pool_token,
-                         unique_ptr<PeerProxy> proxy,
-                         shared_ptr<Messenger> messenger,
+                         PeerProxyFactory* peer_proxy_factory,
                          shared_ptr<Peer>* peer) {
   auto new_peer(Peer::make_shared(
       std::move(peer_pb),
@@ -117,8 +116,7 @@ void Peer::NewRemotePeer(RaftPeerPB peer_pb,
       std::move(leader_uuid),
       queue,
       raft_pool_token,
-      std::move(proxy),
-      std::move(messenger)));
+      peer_proxy_factory));
   new_peer->Init();
   *peer = std::move(new_peer);
 }
@@ -128,22 +126,22 @@ Peer::Peer(RaftPeerPB peer_pb,
            string leader_uuid,
            PeerMessageQueue* queue,
            ThreadPoolToken* raft_pool_token,
-           unique_ptr<PeerProxy> proxy,
-           shared_ptr<Messenger> messenger)
+           PeerProxyFactory* peer_proxy_factory)
     : tablet_id_(std::move(tablet_id)),
       leader_uuid_(std::move(leader_uuid)),
       peer_pb_(std::move(peer_pb)),
       log_prefix_(Substitute("T $0 P $1 -> Peer $2 ($3:$4): ",
                   tablet_id_, leader_uuid_, peer_pb_.permanent_uuid(),
                   peer_pb_.last_known_addr().host(), peer_pb_.last_known_addr().port())),
-      proxy_(std::move(proxy)),
+      peer_proxy_factory_(peer_proxy_factory),
       queue_(queue),
       failed_attempts_(0),
-      messenger_(std::move(messenger)),
+      messenger_(peer_proxy_factory_->messenger()),
       raft_pool_token_(raft_pool_token),
       request_pending_(false),
       closed_(false),
       has_sent_first_request_(false) {
+  CreateProxyIfNeeded();
 }
 
 void Peer::Init() {
@@ -238,6 +236,14 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
     return;
   }
 
+  // NOTE: we only perform this check after creating the RequestForPeer() call
+  // to ensure any peer health updates that happen therein associated with this
+  // peer actually happen. E.g. if we haven't been able to create a proxy in a
+  // long enough time, the peer should be considered failed.
+  if (PREDICT_FALSE(!CreateProxyIfNeeded())) {
+    return;
+  }
+
   if (PREDICT_FALSE(needs_tablet_copy)) {
     Status s = PrepareTabletCopyRequest();
     if (s.ok()) {
@@ -297,6 +303,9 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 }
 
 void Peer::StartElection() {
+  if (PREDICT_FALSE(!CreateProxyIfNeeded())) {
+    return;
+  }
   // The async proxy contract is such that the response and RPC controller must
   // stay in scope until the callback is invoked. Unlike other Peer methods, we
   // can't guarantee that there's only one outstanding StartElection call at a
@@ -484,6 +493,23 @@ void Peer::ProcessResponseErrorUnlocked(const Status& status) {
                  kNumRetriesBetweenLoggingFailedRequest);
   }
   request_pending_ = false;
+}
+
+bool Peer::CreateProxyIfNeeded() {
+  std::lock_guard<simple_spinlock> l(proxy_lock_);
+  if (!proxy_) {
+    unique_ptr<PeerProxy> peer_proxy;
+    Status s = DCHECK_NOTNULL(peer_proxy_factory_)->NewProxy(peer_pb_, &peer_proxy);
+    if (!s.ok()) {
+      HostPort hostport = HostPortFromPB(peer_pb_.last_known_addr());
+      KLOG_EVERY_N_SECS(WARNING, 1)
+          << Substitute("Unable to create proxy for $0 ($1)",
+                        peer_pb_.permanent_uuid(), hostport.ToString());
+      return false;
+    }
+    proxy_ = std::move(peer_proxy);
+  }
+  return true;
 }
 
 const string& Peer::LogPrefixUnlocked() const {

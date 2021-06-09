@@ -70,6 +70,9 @@ const char* kTabletId = "test-peers-tablet";
 const char* kLeaderUuid = "peer-0";
 const char* kFollowerUuid = "peer-1";
 
+template class OneTimeUsePeerProxyFactory<DelayablePeerProxy<NoOpTestPeerProxy>>;
+template class OneTimeUsePeerProxyFactory<MockedPeerProxy>;
+
 class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
@@ -135,16 +138,18 @@ class ConsensusPeersTest : public KuduTest {
     RaftPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     peer_pb.set_member_type(RaftPeerPB::VOTER);
-    auto proxy_ptr = new DelayablePeerProxy<NoOpTestPeerProxy>(
-        raft_pool_.get(), new NoOpTestPeerProxy(raft_pool_.get(), peer_pb));
-    unique_ptr<PeerProxy> proxy(proxy_ptr);
+    std::unique_ptr<DelayablePeerProxy<NoOpTestPeerProxy>> proxy(
+        new DelayablePeerProxy<NoOpTestPeerProxy>(
+            raft_pool_.get(), new NoOpTestPeerProxy(raft_pool_.get(), peer_pb)));
+    auto* proxy_ptr = proxy.get();
+    OneTimeUsePeerProxyFactory<DelayablePeerProxy<NoOpTestPeerProxy>> factory(
+        messenger_, proxy.release());
     Peer::NewRemotePeer(std::move(peer_pb),
                         kTabletId,
                         kLeaderUuid,
                         message_queue_.get(),
                         raft_pool_token_.get(),
-                        std::move(proxy),
-                        messenger_,
+                        &factory,
                         peer);
     return proxy_ptr;
   }
@@ -179,6 +184,7 @@ class ConsensusPeersTest : public KuduTest {
   unique_ptr<ThreadPoolToken> raft_pool_token_;
   unique_ptr<clock::Clock> clock_;
   shared_ptr<Messenger> messenger_;
+
 };
 
 
@@ -276,14 +282,14 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
                                 BuildRaftConfigPBForTests(3));
 
   auto mock_proxy = new MockedPeerProxy(raft_pool_.get());
+  OneTimeUsePeerProxyFactory<MockedPeerProxy> factory(messenger_, mock_proxy);
   shared_ptr<Peer> peer;
   Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
                       kTabletId,
                       kLeaderUuid,
                       message_queue_.get(),
                       raft_pool_token_.get(),
-                      unique_ptr<PeerProxy>(mock_proxy),
-                      messenger_,
+                      &factory,
                       &peer);
 
   // Make the peer respond without making any progress -- it always returns
@@ -313,15 +319,15 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
                                 kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
 
-  auto mock_proxy = new MockedPeerProxy(raft_pool_.get());
+  auto* mock_proxy = new MockedPeerProxy(raft_pool_.get());
+  OneTimeUsePeerProxyFactory<MockedPeerProxy> factory(messenger_, mock_proxy);
   shared_ptr<Peer> peer;
   Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
                       kTabletId,
                       kLeaderUuid,
                       message_queue_.get(),
                       raft_pool_token_.get(),
-                      unique_ptr<PeerProxy>(mock_proxy),
-                      messenger_,
+                      &factory,
                       &peer);
 
   // Initial response has to be successful -- otherwise we'll consider the peer

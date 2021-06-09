@@ -48,6 +48,7 @@ class PeriodicTimer;
 namespace consensus {
 class PeerMessageQueue;
 class PeerProxy;
+class PeerProxyFactory;
 
 // A remote peer in consensus.
 //
@@ -110,13 +111,15 @@ class Peer :
   // log entries) are assembled on 'raft_pool_token'.
   // Response handling may also involve IO related to log-entry lookups and is
   // also done on 'raft_pool_token'.
+  //
+  // If 'proxy' is nullptr, uses 'peer_proxy_factory' to create and cache a
+  // proxy once needed.
   static void NewRemotePeer(RaftPeerPB peer_pb,
                             std::string tablet_id,
                             std::string leader_uuid,
                             PeerMessageQueue* queue,
                             ThreadPoolToken* raft_pool_token,
-                            std::unique_ptr<PeerProxy> proxy,
-                            std::shared_ptr<rpc::Messenger> messenger,
+                            PeerProxyFactory* peer_proxy_factory,
                             std::shared_ptr<Peer>* peer);
 
  protected:
@@ -125,8 +128,7 @@ class Peer :
        std::string leader_uuid,
        PeerMessageQueue* queue,
        ThreadPoolToken* raft_pool_token,
-       std::unique_ptr<PeerProxy> proxy,
-       std::shared_ptr<rpc::Messenger> messenger);
+       PeerProxyFactory* peer_proxy_factory);
 
  private:
   void SendNextRequest(bool even_if_queue_empty);
@@ -154,6 +156,10 @@ class Peer :
   // Signals there was an error sending the request to the peer.
   void ProcessResponseErrorUnlocked(const Status& status);
 
+  // Sets 'proxy_' if needed. Returns 'false' if 'proxy_' is not set and a new
+  // proxy could not be created. Otherwise returns 'true'.
+  bool CreateProxyIfNeeded();
+
   const std::string& LogPrefixUnlocked() const;
 
   const std::string& tablet_id() const { return tablet_id_; }
@@ -163,6 +169,15 @@ class Peer :
   const RaftPeerPB peer_pb_;
   const std::string log_prefix_;
 
+  // A factory with which to create peer proxies, in case 'proxy_' is null.
+  PeerProxyFactory* peer_proxy_factory_;
+
+  // Taken when setting 'proxy_'.
+  simple_spinlock proxy_lock_;
+
+  // May be null if proxy creation failed, in which case further attempts to
+  // use this should be preceeded with an attempt to create a new proxy. Once
+  // set, should not be unset.
   std::unique_ptr<PeerProxy> proxy_;
 
   PeerMessageQueue* queue_;

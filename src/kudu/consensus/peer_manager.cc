@@ -60,7 +60,7 @@ PeerManager::~PeerManager() {
   Close();
 }
 
-Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
+void PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
   VLOG(1) << "Updating peers from new config: " << SecureShortDebugString(config);
 
   std::lock_guard<simple_spinlock> lock(lock_);
@@ -74,23 +74,16 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
     }
 
     VLOG(1) << GetLogPrefix() << "Adding remote peer. Peer: " << SecureShortDebugString(peer_pb);
-    unique_ptr<PeerProxy> peer_proxy;
-    RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
-                          "Could not obtain a remote proxy to the peer.");
-
     shared_ptr<Peer> remote_peer;
     Peer::NewRemotePeer(peer_pb,
                         tablet_id_,
                         local_uuid_,
                         queue_,
                         raft_pool_token_,
-                        std::move(peer_proxy),
-                        peer_proxy_factory_->messenger(),
+                        peer_proxy_factory_,
                         &remote_peer);
     peers_.emplace(peer_pb.permanent_uuid(), std::move(remote_peer));
   }
-
-  return Status::OK();
 }
 
 void PeerManager::SignalRequest(bool force_if_queue_empty) {

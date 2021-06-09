@@ -784,10 +784,15 @@ Status RequestVote(const TServerDetails* replica,
 Status LeaderStepDown(const TServerDetails* replica,
                       const string& tablet_id,
                       const MonoDelta& timeout,
-                      TabletServerErrorPB* error) {
+                      TabletServerErrorPB* error,
+                      const std::string& new_leader_uuid) {
   LeaderStepDownRequestPB req;
   req.set_dest_uuid(replica->uuid());
   req.set_tablet_id(tablet_id);
+  if (!new_leader_uuid.empty()) {
+    req.set_new_leader_uuid(new_leader_uuid);
+    req.set_mode(consensus::GRACEFUL);
+  }
   LeaderStepDownResponsePB resp;
   RpcController rpc;
   rpc.set_timeout(timeout);

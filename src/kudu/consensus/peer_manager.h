@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CONSENSUS_PEER_MANAGER_H
-#define KUDU_CONSENSUS_PEER_MANAGER_H
+#pragma once
 
 #include <memory>
 #include <string>
@@ -56,8 +55,10 @@ class PeerManager {
 
   ~PeerManager();
 
-  // Updates 'peers_' according to the new configuration config.
-  Status UpdateRaftConfig(const RaftConfigPB& config);
+  // Updates 'peers_' according to the new configuration config. Generates
+  // peers even if they cannot be resolved -- further attempts to use such
+  // proxies also re-attempt to re-resolve their addresses.
+  void UpdateRaftConfig(const RaftConfigPB& config);
 
   // Signals all peers of the current configuration that there is a new request pending.
   void SignalRequest(bool force_if_queue_empty = false);
@@ -88,4 +89,3 @@ class PeerManager {
 
 } // namespace consensus
 } // namespace kudu
-#endif /* KUDU_CONSENSUS_PEER_MANAGER_H */

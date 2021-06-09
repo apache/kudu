@@ -694,7 +694,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 
   queue_->RegisterObserver(this);
   bool was_leader = queue_->IsInLeaderMode();
-  RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
+  RefreshConsensusQueueAndPeersUnlocked();
   if (!was_leader && server_ctx_.num_leaders) {
     server_ctx_.num_leaders->Increment();
   }
@@ -864,7 +864,7 @@ Status RaftConsensus::AddPendingOperationUnlocked(const scoped_refptr<ConsensusR
     if (round->replicate_msg()->id().index() > committed_config_opid_index) {
       RETURN_NOT_OK(SetPendingConfigUnlocked(new_config));
       if (cmeta_->active_role() == RaftPeerPB::LEADER) {
-        RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
+        RefreshConsensusQueueAndPeersUnlocked();
       }
     } else {
       LOG_WITH_PREFIX_UNLOCKED(INFO)
@@ -2566,7 +2566,7 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(
   return AppendNewRoundToQueueUnlocked(round);
 }
 
-Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
+void RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
   DCHECK(lock_.is_locked());
   DCHECK_EQ(RaftPeerPB::LEADER, cmeta_->active_role());
   const RaftConfigPB& active_config = cmeta_->ActiveConfig();
@@ -2581,7 +2581,7 @@ Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
   queue_->SetLeaderMode(pending_->GetCommittedIndex(),
                         CurrentTermUnlocked(),
                         active_config);
-  return peer_manager_->UpdateRaftConfig(active_config);
+  peer_manager_->UpdateRaftConfig(active_config);
 }
 
 const string& RaftConsensus::peer_uuid() const {

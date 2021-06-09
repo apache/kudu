@@ -254,6 +254,28 @@ class DelayablePeerProxy : public TestPeerProxy {
   CountDownLatch latch_;
 };
 
+// Factory that takes ownership of an input pointer to an already constructed
+// proxy that is expected to only be used once. It is up to users to make sure
+// this is safe.
+template <class ProxyT>
+class OneTimeUsePeerProxyFactory : public PeerProxyFactory {
+ public:
+  OneTimeUsePeerProxyFactory(std::shared_ptr<rpc::Messenger> messenger,
+                             ProxyT* proxy)
+      : messenger_(std::move(messenger)),
+        proxy_(proxy) {}
+  Status NewProxy(const RaftPeerPB& /*peer_pb*/, std::unique_ptr<PeerProxy>* proxy) override {
+    *proxy = std::unique_ptr<ProxyT>(proxy_);
+    return Status::OK();
+  }
+  const std::shared_ptr<rpc::Messenger>& messenger() const override {
+    return messenger_;
+  }
+ protected:
+  std::shared_ptr<rpc::Messenger> messenger_;
+  ProxyT* proxy_;
+};
+
 // Allows complete mocking of a peer's responses.
 // You set the response, it will respond with that.
 class MockedPeerProxy : public TestPeerProxy {

@@ -30,12 +30,15 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/row_operations.pb.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
@@ -48,6 +51,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -157,6 +161,121 @@ void RaftConsensusElectionITest::DoTestChurnyElections(TestWorkload* workload) {
                             ClusterVerifier::EXACTLY,
                             workload->rows_inserted()));
   NO_FATALS(AssertNoTabletServersCrashed());
+}
+
+// Regression test for KUDU-2302, wherein the failure to resolve DNS of peers
+// while becoming leader could lead to a crash.
+TEST_F(RaftConsensusElectionITest, TestNewLeaderCantResolvePeers) {
+  NO_FATALS(CreateCluster("raft_consensus_election-itest-cluster", {
+      // Disable the DNS cache to exercise the case where DNS resolution fails.
+      "--dns_resolver_cache_capacity_mb=0",
+
+      // We'll manually trigger leader elections.
+      "--enable_leader_failure_detection=false",
+
+      // Speed up heartbeats and failures to make the test run faster.
+      "--raft_heartbeat_interval_ms=100",
+      "--follower_unavailable_considered_failed_sec=3",
+  }, {
+      // We'll manually trigger leader elections.
+      "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+  }));
+
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  const int kNumTablets = 1;
+  const auto kTimeout = MonoDelta::FromSeconds(10);
+  vector<string> tablet_ids;
+  ASSERT_EVENTUALLY([&] {
+    vector<string> tablets;
+    for (const auto& ts_iter : tablet_servers_) {
+      ASSERT_OK(ListRunningTabletIds(ts_iter.second, kTimeout, &tablets));
+      ASSERT_EQ(kNumTablets, tablets.size());
+    }
+    tablet_ids = std::move(tablets);
+  });
+  ASSERT_FALSE(tablet_ids.empty());
+
+  // Select the first tablet server to make unavailable via DNS.
+  auto ts_iter = tablet_servers_.begin();
+  const auto& hp_pb = ts_iter->second->registration.rpc_addresses(0);
+  const auto hp_str = HostPortFromPB(hp_pb).ToString();
+  for (const auto& ts : tablet_servers_) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(ts.first),
+              "fail_dns_resolution_hostports", hp_str));
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(ts.first),
+              "fail_dns_resolution", "true"));
+  }
+  const auto& tablet_id = tablet_ids[0];
+  const auto bad_ts_uuid = ts_iter->second->uuid();
+  const auto* second_ts = (++ts_iter)->second;
+  const auto* third_ts = (++ts_iter)->second;
+
+  // Waits for the existence or non-existence of failed peers.
+  const auto wait_for_failed_peer = [&] (bool expect_failed) {
+    ASSERT_EVENTUALLY([&] {
+      bool has_failed_peer = false;
+      for (auto& ts : tablet_servers_) {
+        ConsensusStatePB cstate;
+        ASSERT_OK(GetConsensusState(ts.second, tablet_id, kTimeout,
+                                    consensus::INCLUDE_HEALTH_REPORT, &cstate));
+        for (const auto& peer : cstate.committed_config().peers()) {
+          if (peer.health_report().overall_health() == consensus::HealthReportPB::FAILED) {
+            has_failed_peer = true;
+            break;
+          }
+        }
+      }
+      ASSERT_EQ(expect_failed, has_failed_peer);
+    });
+  };
+  ASSERT_OK(StartElection(second_ts, tablet_id, kTimeout));
+  NO_FATALS(cluster_->AssertNoCrashes());
+
+  // Eventually the bad DNS resolution should result in the peer being evicted.
+  NO_FATALS(wait_for_failed_peer(/*expect_failed*/true));
+
+  // Once we stop failing DNS resolution, the peer should become healthy.
+  for (const auto& ts : tablet_servers_) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(ts.first),
+              "fail_dns_resolution", "false"));
+  }
+  NO_FATALS(wait_for_failed_peer(/*expect_failed*/false));
+
+  // Add a tablet server so the master can evict and place a new replica.
+  ASSERT_OK(cluster_->AddTabletServer());
+  const auto& new_ts = cluster_->tablet_server(FLAGS_num_tablet_servers);
+  for (const auto& ts : tablet_servers_) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(ts.first),
+              "fail_dns_resolution", "true"));
+  }
+  // Cause an election again to trigger a new report to the master. This time
+  // the master should place the replica since it has a new tserver available.
+  ASSERT_OK(LeaderStepDown(
+      second_ts, tablet_id, kTimeout, /*error=*/nullptr, third_ts->uuid()));
+
+  // Eventually the new server should gain a replica and the bad server will
+  // have its replica removed.
+  ASSERT_EVENTUALLY([&] {
+    STLDeleteValues(&tablet_servers_);
+    ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(),
+                                           client_messenger_,
+                                           &tablet_servers_));
+    ASSERT_EQ(4, tablet_servers_.size());
+  });
+  ASSERT_EVENTUALLY([&] {
+      vector<string> tablets;
+      auto* ts = FindOrDie(tablet_servers_, new_ts->uuid());
+      ASSERT_OK(ListRunningTabletIds(ts, kTimeout, &tablets));
+      ASSERT_FALSE(tablets.empty());
+  });
+  ASSERT_EVENTUALLY([&] {
+      vector<string> tablets;
+      auto* ts = FindOrDie(tablet_servers_, bad_ts_uuid);
+      ASSERT_OK(ListRunningTabletIds(ts, kTimeout, &tablets));
+      ASSERT_TRUE(tablets.empty());
+  });
+  NO_FATALS(cluster_->AssertNoCrashes());
 }
 
 TEST_F(RaftConsensusElectionITest, RunLeaderElection) {

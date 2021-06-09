@@ -33,6 +33,7 @@
 
 #include <boost/optional/optional.hpp>
 
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
@@ -272,10 +273,13 @@ Status RequestVote(const TServerDetails* replica,
 // 'timeout' refers to the RPC timeout waiting synchronously for stepdown to
 // complete on the leader side. Since that does not require communication with
 // other nodes at this time, this call is rather quick.
+//
+// If 'new_leader_uuid' is specified, performs a graceful stepdown.
 Status LeaderStepDown(const TServerDetails* replica,
                       const std::string& tablet_id,
                       const MonoDelta& timeout,
-                      tserver::TabletServerErrorPB* error = nullptr);
+                      tserver::TabletServerErrorPB* error = nullptr,
+                      const std::string& new_leader_uuid = "");
 
 // Write a "simple test schema" row to the specified tablet on the given
 // replica. This schema is commonly used by tests and is defined in
