@@ -64,14 +64,19 @@
 #define HOST_NAME_MAX 64
 #endif
 
-DEFINE_bool(fail_dns_resolution, false, "Whether to fail all dns resolution, for tests.");
+DEFINE_bool(fail_dns_resolution, false, "Whether to fail dns resolution, for tests.");
 TAG_FLAG(fail_dns_resolution, hidden);
+DEFINE_string(fail_dns_resolution_hostports, "",
+              "Comma-separated list of hostports that fail dns resolution. If empty, fails all "
+              "dns resolution attempts. Only takes effect if --fail_dns_resolution is 'true'.");
+TAG_FLAG(fail_dns_resolution_hostports, hidden);
 
 using std::function;
 using std::string;
 using std::unordered_set;
 using std::unique_ptr;
 using std::vector;
+using strings::Split;
 using strings::Substitute;
 
 namespace kudu {
@@ -215,7 +220,22 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
     }
   }
   if (PREDICT_FALSE(FLAGS_fail_dns_resolution)) {
-    return Status::NetworkError("injected DNS resolution failure");
+    if (FLAGS_fail_dns_resolution_hostports.empty()) {
+      return Status::NetworkError("injected DNS resolution failure");
+    }
+    unordered_set<string> failed_hostports =
+        Split(FLAGS_fail_dns_resolution_hostports, ",");
+    for (const auto& hp_str : failed_hostports) {
+      HostPort hp;
+      Status s = hp.ParseString(hp_str, /*default_port=*/0);
+      if (!s.ok()) {
+        LOG(WARNING) << "Could not parse: " << hp_str;
+        continue;
+      }
+      if (hp == *this) {
+        return Status::NetworkError("injected DNS resolution failure", hp_str);
+      }
+    }
   }
   if (addresses) {
     *addresses = std::move(result_addresses);
