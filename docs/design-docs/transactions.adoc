@@ -63,7 +63,7 @@ the `TxnManager` to start, commit, abort, and heartbeat to the `TxnStatusManager
 Before delving into the details of each component, below is a depiction of the transactional write
 path. It is assumed that the transaction status table has the default replication factor (RF=3).
 
-image::design-docs_transactions.svg[Commit path]
+image::../images/design-docs_transactions.png[Commit path]
 
 . A Kudu client sends a request to the `TxnManager` to begin a transaction.
 . The `TxnManager` has cached the highest transaction ID seen by a transaction so far (though this
