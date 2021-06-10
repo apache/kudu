@@ -114,9 +114,12 @@ def parse_args():
                            'images to docker so they can be used locally. "push" will push the '
                            'images to the registry.')
 
+  parser.add_argument('--force-latest', action='store_true',
+                      help='If passed, forces adding the simple `latest` tag even though the base '
+                           'image is not the default OS')
   parser.add_argument('--skip-latest', action='store_true',
                       help='If passed, skips adding a tag using `-latest` along with the '
-                      'versioned tag')
+                      'versioned tag. Note: This overrides the --force-latest tag above.')
   parser.add_argument('--tag-hash', action='store_true',
                       help='If passed, keeps the tags using the short git hash as the version '
                       'for non-release builds. Leaving this as false ensures the tags '
@@ -281,7 +284,7 @@ def build_tags(opts, runtime_base, dev_base, version, vcs_ref, target):
     latest_tag = get_full_tag(opts.repository, target, 'latest', os_tag)
     tags.append(latest_tag)
     # Add the default OS tag.
-    if base == DEFAULT_OS:
+    if base == DEFAULT_OS or opts.force_latest:
       latest_default_os_tag = get_full_tag(opts.repository, target, 'latest', '')
       tags.append(latest_default_os_tag)
 
