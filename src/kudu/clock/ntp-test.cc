@@ -721,7 +721,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, CloudInstanceNtpServer) {
     if (!s.ok()) {
       ASSERT_TRUE(s.IsNotFound()) << s.ToString();
       LOG(WARNING) << "test is skipped: non-supported or non-cloud environment";
-      return;
+      GTEST_SKIP();
     }
   }
   {
@@ -733,7 +733,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, CloudInstanceNtpServer) {
       LOG(WARNING) << strings::Substitute(
           "test is skipped: $0 cloud instance doesn't provide NTP server",
           cloud::TypeToString(md->type()));
-      return;
+      GTEST_SKIP();
     }
   }
 
