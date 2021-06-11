@@ -506,7 +506,9 @@ TEST_F(BuiltinNtpWithMiniChronydTest, Basic) {
 
   // chronyd supports very short polling intervals (down to 1/64 second).
   FLAGS_builtin_ntp_poll_interval_ms = 50;
-  BuiltInNtp c(servers_endpoints, metric_entity_);
+  FLAGS_builtin_ntp_servers = HostPort::ToCommaSeparatedString(servers_endpoints);
+
+  BuiltInNtp c(metric_entity_);
   ASSERT_OK(c.Init());
   ASSERT_EVENTUALLY([&] {
     uint64_t now_us;
@@ -555,8 +557,9 @@ TEST_F(BuiltinNtpWithMiniChronydTest, NoIntersectionIntervalAtStartup) {
   FLAGS_ntp_initial_sync_wait_secs = 2;
   // chronyd supports very short polling intervals (down to 1/64 second).
   FLAGS_builtin_ntp_poll_interval_ms = 50;
+  FLAGS_builtin_ntp_servers = HostPort::ToCommaSeparatedString(servers_endpoints);
 
-  BuiltInNtp c(servers_endpoints, metric_entity_);
+  BuiltInNtp c(metric_entity_);
   NO_FATALS(CheckInitUnsync(&c));
   NO_FATALS(CheckWallTimeUnavailable(&c));
 }
@@ -646,10 +649,11 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
   //   * Make sure the built-in NTP client doesn't "latch" with the specified
   //     not-so-good NTP source.
   auto check_not_a_good_clock_source = [&](const vector<HostPort>& refs) {
+    FLAGS_builtin_ntp_servers = HostPort::ToCommaSeparatedString(refs);
     // Verify chronyd's client itself does not accept the set of of NTP sources.
     NO_FATALS(CheckNoNtpSource(refs));
 
-    BuiltInNtp c(refs, metric_entity_);
+    BuiltInNtp c(metric_entity_);
     NO_FATALS(CheckInitUnsync(&c));
     NO_FATALS(CheckWallTimeUnavailable(&c));
   };
@@ -691,7 +695,8 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
     // Verify chronyd's client itself accepts the set of of NTP sources.
     ASSERT_OK(MiniChronyd::CheckNtpSource(refs));
 
-    BuiltInNtp c(refs, metric_entity_);
+    FLAGS_builtin_ntp_servers = HostPort::ToCommaSeparatedString(refs);
+    BuiltInNtp c(metric_entity_);
     ASSERT_OK(c.Init());
     ASSERT_EVENTUALLY([&] {
       uint64_t now_us;
@@ -713,6 +718,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, CloudInstanceNtpServer) {
   // than the regular version.
   FLAGS_cloud_metadata_server_request_timeout_ms = 10000;
 #endif
+
   InstanceDetector detector;
   unique_ptr<cloud::InstanceMetadata> md;
   string ntp_server;
@@ -744,7 +750,8 @@ TEST_F(BuiltinNtpWithMiniChronydTest, CloudInstanceNtpServer) {
   ASSERT_OK(MiniChronyd::CheckNtpSource(servers_endpoints));
 
   FLAGS_builtin_ntp_poll_interval_ms = 500;
-  BuiltInNtp c(servers_endpoints, metric_entity_);
+  FLAGS_builtin_ntp_servers = HostPort::ToCommaSeparatedString(servers_endpoints);
+  BuiltInNtp c(metric_entity_);
   ASSERT_OK(c.Init());
   ASSERT_EVENTUALLY([&] {
     uint64_t now_us;

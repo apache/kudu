@@ -72,12 +72,6 @@ class BuiltInNtp : public TimeService {
   // the built-in NTP client.
   explicit BuiltInNtp(const scoped_refptr<MetricEntity>& metric_entity);
 
-  // Create an instance using the specified servers as NTP sources. The set
-  // of source NTP servers must not be empty. The 'metric_entity' is used
-  // to register metrics specific to the built-in NTP client.
-  BuiltInNtp(std::vector<HostPort> servers,
-             const scoped_refptr<MetricEntity>& metric_entity);
-
   ~BuiltInNtp() override;
 
   Status Init() override;

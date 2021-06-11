@@ -46,6 +46,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
@@ -68,9 +69,13 @@ DEFINE_string(builtin_ntp_servers,
               "1.pool.ntp.org,"
               "2.pool.ntp.org,"
               "3.pool.ntp.org",
-              "The NTP servers used by the built-in NTP client, in format "
-              "<FQDN|IP>[:PORT]. These will only be used if the built-in NTP "
-              "client is enabled (i.e. if setting --time_source=builtin).");
+              "Comma-separated list of NTP servers for the built-in NTP "
+              "client, each in format <FQDN|IP>[:PORT]. This list will be used "
+              "in one of the following cases: (A) the built-in NTP client is "
+              "explicitly set as the time source (i.e. --time_source=builtin) "
+              "(B) the 'auto' pseudo-source for time is used and the cloud "
+              "instance detector isn't aware about any preferred NTP servers "
+              "provided by the environment.");
 TAG_FLAG(builtin_ntp_servers, stable);
 
 // In the 'Best practices' section, RFC 4330 states that 15 seconds is the
@@ -107,6 +112,8 @@ DEFINE_uint32(builtin_ntp_true_time_refresh_max_interval_s, 3600,
               "true time estimation (in seconds)");
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, experimental);
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, runtime);
+
+DECLARE_string(time_source);
 
 METRIC_DEFINE_gauge_int64(server, builtin_ntp_local_clock_delta,
                           "Local Clock vs Built-In NTP True Time Delta",
@@ -163,6 +170,26 @@ constexpr uint8_t kInvalidStratum = 0;
 constexpr uint8_t kMaxStratum = 16;
 // Maximum allowed dispersion (in microseconds) per RFC 5905.
 constexpr uint64_t kMaxDispersionUs = 16000000; // 16 seconds
+
+static bool ValidateBuiltinNtpServers()  {
+  if (FLAGS_time_source == "builtin") {
+    vector<HostPort> hps;
+    Status s = HostPort::ParseStrings(
+        FLAGS_builtin_ntp_servers, kStandardNtpPort, &hps);
+    if (!s.ok()) {
+      LOG(ERROR) << Substitute("could not parse --builtin_ntp_servers flag: $0",
+                               s.message().ToString());
+      return false;
+    }
+  }
+  // In case of --time_source=auto, setting --bultin_ntp_servers to an empty
+  // string makes the time source auto-selection skip the 'builtin' and start
+  // using 'system' on supported platforms. See HybridClock::SelectTimeSource()
+  // for details.
+  return true;
+}
+GROUP_FLAG_VALIDATOR(timesource_and_builtin_ntp_client,
+                     ValidateBuiltinNtpServers);
 
 DEFINE_validator(builtin_ntp_servers,
                  [](const char* name, const string& val) {
@@ -513,13 +540,6 @@ BuiltInNtp::BuiltInNtp(const scoped_refptr<MetricEntity>& metric_entity)
   RegisterMetrics(metric_entity);
 }
 
-BuiltInNtp::BuiltInNtp(vector<HostPort> servers,
-                       const scoped_refptr<MetricEntity>& metric_entity)
-    : rng_(GetRandomSeed32()) {
-  CHECK_OK(PopulateServers(std::move(servers)));
-  RegisterMetrics(metric_entity);
-}
-
 BuiltInNtp::~BuiltInNtp() {
   Shutdown();
 }
@@ -796,7 +816,7 @@ bool BuiltInNtp::TryReceivePacket() {
     return true;
   }
 
-  // TODO(KUDU-2938): handle "kiss-of-death" (RFC 5905 section 7.4)
+  // TODO(KUDU-2938): handle "kiss-of-death" packets (RFC 5905 section 7.4)
   // TODO(aserbin): add more validators regarding consistency of measurements
   //                (reported precision and measured intervals, delays, etc.)
 

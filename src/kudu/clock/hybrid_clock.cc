@@ -48,6 +48,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 
+using google::GetCommandLineOption;
 using google::SetCommandLineOptionWithMode;
 using google::FlagSettingMode;
 using kudu::clock::BuiltInNtp;
@@ -238,12 +239,10 @@ HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity)
 
 Status HybridClock::Init() {
   TimeSource time_source = TimeSource::UNKNOWN;
-  vector<HostPort> builtin_ntp_servers;
-  RETURN_NOT_OK(SelectTimeSource(
-      FLAGS_time_source, &time_source, &builtin_ntp_servers));
+  RETURN_NOT_OK(SelectTimeSource(FLAGS_time_source, &time_source));
   LOG(INFO) << Substitute("auto-selected time source: $0",
                           TimeSourceToString(time_source));
-  return InitWithTimeSource(time_source, std::move(builtin_ntp_servers));
+  return InitWithTimeSource(time_source);
 }
 
 Timestamp HybridClock::Now() {
@@ -449,10 +448,10 @@ void HybridClock::NowWithErrorOrDie(Timestamp* timestamp,
 }
 
 Status HybridClock::SelectTimeSource(const string& time_source_str,
-                                     TimeSource* time_source,
-                                     vector<HostPort>* builtin_ntp_servers) {
+                                     TimeSource* time_source) {
+  constexpr const char* const BUILTIN_NTP_SERVERS = "builtin_ntp_servers";
+
   TimeSource result_time_source = TimeSource::UNKNOWN;
-  vector<HostPort> result_builtin_ntp_servers;
   if (iequals(time_source_str, TIME_SOURCE_AUTO)) {
     InstanceDetector detector;
     unique_ptr<InstanceMetadata> md;
@@ -463,8 +462,6 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
       // built-in NTP client enabled, use the dedicated NTP server provided
       // by the hosting environment.
       DCHECK(!ntp_server.empty());
-      result_builtin_ntp_servers.emplace_back(
-          ntp_server, clock::kStandardNtpPort);
       result_time_source = TimeSource::NTP_SYNC_BUILTIN;
 
       // NOTE: setting the default value for the --builtin_ntp_servers flag
@@ -472,16 +469,28 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
       // built-in NTP client if time source auto-selection has run. This
       // convention is used by the embedded Web server to show the corresponding
       // information at the '/config' page.
-      SetCommandLineOptionWithMode("builtin_ntp_servers",
+      SetCommandLineOptionWithMode(BUILTIN_NTP_SERVERS,
                                    ntp_server.c_str(),
                                    FlagSettingMode::SET_FLAGS_DEFAULT);
-#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
     } else {
-      // For the 'auto' time source, in case of environment that's known not
-      // to provide a dedicated NTP server, select TimeSource::NTP_SYNC_SYSTEM,
-      // if supported.
-      result_time_source = TimeSource::NTP_SYNC_SYSTEM;
+      // Switch to the built-in NTP client unless the set of reference servers
+      // for the built-in client is empty/invalid.
+      string ntp_servers;
+      vector<HostPort> hps;
+      if (GetCommandLineOption(BUILTIN_NTP_SERVERS, &ntp_servers) &&
+          HostPort::ParseStrings(ntp_servers, kStandardNtpPort, &hps).ok() &&
+          !hps.empty()) {
+        result_time_source = TimeSource::NTP_SYNC_BUILTIN;
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+      } else {
+        // For the 'auto' time source, in case of environment that's known not
+        // to provide a dedicated NTP server and the set of reference servers
+        // for the built-in NTP client is empty, select
+        // TimeSource::NTP_SYNC_SYSTEM (if supported by the platform this code
+        // has been compiled for).
+        result_time_source = TimeSource::NTP_SYNC_SYSTEM;
 #endif
+      }
     }
 
     // Finally, fallback to TimeSource::SYSTEM_UNSYNC. This is an option only
@@ -515,20 +524,15 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
   }
 
   *time_source = result_time_source;
-  *builtin_ntp_servers = std::move(result_builtin_ntp_servers);
   return Status::OK();
 }
 
-Status HybridClock::InitWithTimeSource(TimeSource time_source,
-                                       vector<HostPort> builtin_ntp_servers) {
+Status HybridClock::InitWithTimeSource(TimeSource time_source) {
   DCHECK_EQ(kNotInitialized, state_);
 
   switch (time_source) {
     case TimeSource::NTP_SYNC_BUILTIN:
-      time_service_.reset(builtin_ntp_servers.empty()
-                          ? new clock::BuiltInNtp(metric_entity_)
-                          : new clock::BuiltInNtp(std::move(builtin_ntp_servers),
-                                                  metric_entity_));
+      time_service_.reset(new clock::BuiltInNtp(metric_entity_));
       break;
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
     case TimeSource::NTP_SYNC_SYSTEM:

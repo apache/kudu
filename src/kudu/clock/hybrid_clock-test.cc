@@ -19,6 +19,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -39,6 +41,8 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/webui_checker.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/cloud/instance_detector.h"
+#include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/metrics.h"
@@ -52,9 +56,12 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(inject_unsync_time_errors);
+DECLARE_string(builtin_ntp_servers);
 DECLARE_string(time_source);
+DECLARE_uint32(cloud_metadata_server_request_timeout_ms);
 METRIC_DECLARE_entity(server);
 
+using kudu::cloud::InstanceDetector;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using std::string;
@@ -486,7 +493,7 @@ TEST_F(HybridClockTest, TimeSourceAutoSelection) {
   }
   if (!preconditions_satisfied) {
     LOG(WARNING) << "preconditions are not satisfied, skipping the test";
-    return;
+    GTEST_SKIP();
   }
 
   ASSERT_OK(s);
@@ -495,6 +502,53 @@ TEST_F(HybridClockTest, TimeSourceAutoSelection) {
   ASSERT_OK(clock.NowWithError(&timestamp[0], &max_error_usec[0]));
   ASSERT_OK(clock.NowWithError(&timestamp[1], &max_error_usec[1]));
   ASSERT_LE(timestamp[0].value(), timestamp[1].value());
+}
+
+// This test scenario verifies that if the environment doesn't provide a
+// dedicated NTP server when Kudu is running with --time_source=auto, the
+// auto-selected time source is 'builtin' with the set of reference servers for
+// the built-in NTP client as configured per --builtin_ntp_servers, or
+// 'system' ('system_unsync' for platforms not supporting get_ntptime() API)
+// when --builtin_ntp_servers is empty or unparsable.
+TEST_F(HybridClockTest, AutoTimeSourceNoDedicatedNtpServer) {
+  // Set very short interval for the instance detection timeout.
+  FLAGS_cloud_metadata_server_request_timeout_ms = 1;
+
+  {
+    // Check for the pre-condition: the auto-detection fails as expected due
+    // to the super-short timeout setting for the cloud metadata requests and
+    // phony DNS server to be used by libcurl.
+    InstanceDetector detector;
+    std::unique_ptr<cloud::InstanceMetadata> md;
+    const auto s = detector.Detect(&md);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+
+  // With --builtin_ntp_servers set to a valid sequence of NTP server addresses,
+  // the auto-selected time source should result in 'builtin'.
+  {
+    FLAGS_builtin_ntp_servers = "127.0.0.1";
+    HybridClock::TimeSource time_source;
+    ASSERT_OK(HybridClock::SelectTimeSource("auto", &time_source));
+    ASSERT_EQ(HybridClock::TimeSource::NTP_SYNC_BUILTIN, time_source)
+        << HybridClock::TimeSourceToString(time_source);
+  }
+
+  // With an empty or invalid value for --builtin_ntp_servers the auto-selected
+  // time source should be 'system' for the platforms which support it and
+  // 'system_unsync' otherwise.
+  for (const auto ntp_servers : { "", "," }) {
+    FLAGS_builtin_ntp_servers = ntp_servers;
+    HybridClock::TimeSource time_source;
+    ASSERT_OK(HybridClock::SelectTimeSource("auto", &time_source));
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+    ASSERT_EQ(HybridClock::TimeSource::NTP_SYNC_SYSTEM, time_source)
+        << HybridClock::TimeSourceToString(time_source);
+#else
+    ASSERT_EQ(HybridClock::TimeSource::UNSYNC_SYSTEM, time_source)
+        << HybridClock::TimeSourceToString(time_source);
+#endif // #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE) ... #else ...
+  }
 }
 
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)

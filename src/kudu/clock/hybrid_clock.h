@@ -19,7 +19,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <vector>
+
+#include <gtest/gtest_prod.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/time_service.h"
@@ -33,9 +34,6 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class HostPort;
-
 namespace clock {
 
 // The HybridTime clock.
@@ -168,6 +166,8 @@ class HybridClock : public Clock {
   }
 
  private:
+  FRIEND_TEST(HybridClockTest, AutoTimeSourceNoDedicatedNtpServer);
+
   enum class TimeSource {
     // Internal Kudu clock synchronized by built-in NTP client.
     NTP_SYNC_BUILTIN,
@@ -200,17 +200,16 @@ class HybridClock : public Clock {
   // Select particular time source for the hybrid clock given the
   // 'time_source_str' parameter which can be a pseudo-source such as 'auto'.
   // On success, the 'time_source' output parameter contains time source that
-  // determines particular time service to use, and the 'builtin_ntp_servers'
-  // contains NTP servers for the built-in NTP client if the 'builtin' time
-  // source is selected.
+  // determines particular time service to use. If the 'builtin' time source is
+  // selected, the --builtin_ntp_servers flag's value is used to build the set
+  // of reference servers for the built-in NTP client.
   static Status SelectTimeSource(const std::string& time_source_str,
-                                 TimeSource* time_source,
-                                 std::vector<HostPort>* builtin_ntp_servers);
+                                 TimeSource* time_source);
 
   // Initialize hybrid clock with the specified time source.
-  // The 'builtin_ntp_servers' is used in case of TimeSource::BUILTIN_NTP_SYNC.
-  Status InitWithTimeSource(TimeSource time_source,
-                            std::vector<HostPort> builtin_ntp_servers);
+  // If 'time_source' is TimeSource::BUILTIN_NTP_SYNC, the set of reference
+  // servers for the built-in NTP client is sourced from --builtin_ntp_servers.
+  Status InitWithTimeSource(TimeSource time_source);
 
   // Variant of NowWithError() that requires 'lock_' to be held already.
   Status NowWithErrorUnlocked(Timestamp* timestamp, uint64_t* max_error_usec);

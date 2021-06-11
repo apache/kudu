@@ -387,9 +387,17 @@ static void FillTimeSourceConfigs(EasyJson* output) {
         "Effective list of NTP servers used by the built-in NTP client. "
         "Configurable via --builtin_ntp_servers. If Kudu is configured with "
         "--time_source=auto and the Effective Time Source is auto-selected "
-        "to be 'builtin', Kudu uses dedicated NTP servers provided by the "
-        "hosting environment, overriding the list of NTP servers configured "
-        "via --builtin_ntp_servers.";
+        "to be 'builtin', Kudu tries to use dedicated NTP servers provided by "
+        "the hosting environment known to Kudu, overriding the list of servers "
+        "configured via --builtin_ntp_servers. If Kudu cannot recognize the "
+        "hosting environment it runs with --time_source=auto, the Effective "
+        "Time Source is auto-selected to be 'builtin' with the set of "
+        "reference servers configured per --builtin_ntp_servers flag's value, "
+        "unless it's empty or otherwise unparsable. The last resort for a "
+        "cluster-wide synchronized clock is to auto-select the 'system' Time "
+        "Source if the platform supports get_ntptime() API. The catch-all case "
+        "is 'system_unsync' Time Source which is for development-only "
+        "platforms or single-node-runs-it-all proof-of-concept Kudu clusters.";
   }
 }
 
