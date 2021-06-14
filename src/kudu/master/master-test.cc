@@ -1383,6 +1383,20 @@ TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
       total / kRunInterval.ToSeconds(), supports_authz_ ? "enabled" : "disabled");
 }
 
+// Validate the hostname and the UUID of the server from the metrics webpage
+TEST_F(MasterTest, ServerAttributes) {
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics?ids=kudu.master",
+                                mini_master_->bound_http_addr().ToString()),
+                                &buf));
+  string raw = buf.ToString();
+  string server_hostname;
+  ASSERT_STR_CONTAINS(raw, "\"uuid\": \"" + mini_master_->permanent_uuid() + "\"");
+  ASSERT_OK(GetFQDN(&server_hostname));
+  ASSERT_STR_CONTAINS(raw, "\"hostname\": \"" + server_hostname + "\"");
+}
+
 // Run multiple threads calling GetTableSchema() directly to system catalog.
 TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
   SKIP_IF_SLOW_NOT_ALLOWED();

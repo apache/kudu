@@ -3815,6 +3815,20 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
   ASSERT_EQ(1, num_success);
 }
 
+// Validate the hostname and the UUID of the server from the metrics webpage
+TEST_F(TabletServerTest, ServerAttributes) {
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics?ids=kudu.tabletserver",
+                                mini_server_->bound_http_addr().ToString()),
+                                &buf));
+  string raw = buf.ToString();
+  string server_hostname;
+  ASSERT_STR_CONTAINS(raw, "\"uuid\": \"" + mini_server_->uuid() + "\"");
+  ASSERT_OK(GetFQDN(&server_hostname));
+  ASSERT_STR_CONTAINS(raw, "\"hostname\": \"" + server_hostname + "\"");
+}
+
 TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
   METRIC_DEFINE_entity(test);
   METRIC_DEFINE_histogram(test, insert_latency,

@@ -848,6 +848,13 @@ std::string ServerBase::FooterHtml() const {
 Status ServerBase::Start() {
   GenerateInstanceID();
 
+  metric_entity_->SetAttribute("uuid", fs_manager_->uuid());
+  // Get the FQDN. If that fails server_hostname will have either the local hostname
+  // (if GetHostname() succeeds) or still be empty (if GetHostname() fails)
+  string server_hostname = "";
+  WARN_NOT_OK(GetFQDN(&server_hostname), "could not determine host FQDN");
+  metric_entity_->SetAttribute("hostname", server_hostname);
+
   RETURN_NOT_OK(RegisterService(
       unique_ptr<rpc::ServiceIf>(new GenericServiceImpl(this))));
 
