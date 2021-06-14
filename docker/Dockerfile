@@ -37,6 +37,11 @@ ARG DEV_BASE_OS
 #
 FROM $RUNTIME_BASE_OS as runtime
 
+# Copy the license and notice files into the image
+# so that it is propagated to all derived runtime images.
+COPY ./LICENSE.txt /NOTICES/LICENSE.txt
+COPY ./NOTICE.txt /NOTICES/NOTICE.txt
+
 COPY ./docker/bootstrap-runtime-env.sh /
 RUN ./bootstrap-runtime-env.sh && rm bootstrap-runtime-env.sh
 
@@ -67,6 +72,11 @@ CMD ["/bin/bash"]
 # Builds a base image that has all the development libraries for Kudu pre-installed.
 #
 FROM $DEV_BASE_OS as dev
+
+# Copy the license and notice files into the image
+# so that it is propagated to all derived dev images.
+COPY ./LICENSE.txt /NOTICES/LICENSE.txt
+COPY ./NOTICE.txt /NOTICES/NOTICE.txt
 
 COPY ./docker/bootstrap-dev-env.sh /
 COPY ./docker/bootstrap-java-env.sh /
