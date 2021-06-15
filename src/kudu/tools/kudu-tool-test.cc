@@ -15,12 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <stdlib.h>
 #include <sys/stat.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <initializer_list>
@@ -612,7 +612,7 @@ class ToolTest : public KuduTest {
                  kDstTableName, args.columns), &dst_lines));
 
     if (args.mode == TableCopyMode::COPY_SCHEMA_ONLY) {
-      ASSERT_GT(dst_lines.size(), 1);
+      ASSERT_GE(dst_lines.size(), 1);
       ASSERT_STR_CONTAINS(*dst_lines.rbegin(), "Total count 0 ");
     } else {
       // Rows scanned from source table can be found in destination table.
@@ -2827,6 +2827,49 @@ TEST_F(ToolTest, TestPerfTableScan) {
   NO_FATALS(RunScanTableCheck(kTableName, "", 1, 2000, {}, "perf table_scan"));
 }
 
+TEST_F(ToolTest, PerfTableScanCountOnly) {
+  constexpr const char* const kTableName = "perf.table_scan.row_count_only";
+  // Be specific about the number of threads even if it matches the default
+  // value for the --num_threads flag. This is to be explicit about the expected
+  // number of rows written into the table.
+  NO_FATALS(RunLoadgen(1,
+                       {
+                         "--num_threads=2",
+                         "--num_rows_per_thread=1234",
+                       },
+                       kTableName));
+
+  // Run table_scan with --row_count_only option
+  {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("perf table_scan $0 $1 --row_count_only",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_EQ(1, out_lines.size()) << out;
+    ASSERT_STR_CONTAINS(out, "Total count 2468 ");
+  }
+
+  // Add the --report_scanner_stats flag as well.
+  {
+    string out;
+    string err;
+    const auto s = RunTool(Substitute(
+        "perf table_scan $0 $1 --row_count_only --report_scanner_stats",
+        cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_STR_CONTAINS(out, "bytes_read               0");
+    ASSERT_STR_CONTAINS(out, "cfile_cache_hit_bytes               0");
+    ASSERT_STR_CONTAINS(out, "cfile_cache_miss_bytes               0");
+    ASSERT_STR_CONTAINS(out, "total_duration_nanos ");
+    ASSERT_STR_CONTAINS(out, "Total count 2468 ");
+  }
+}
+
 TEST_F(ToolTest, TestPerfTabletScan) {
   // Create a table.
   constexpr const char* const kTableName = "perf.tablet_scan";
@@ -3856,6 +3899,49 @@ TEST_F(ToolTest, TestScanTableMultiPredicates) {
     }
   }
   ASSERT_LE(lines.size(), mid);
+}
+
+TEST_F(ToolTest, TableScanRowCountOnly) {
+  constexpr const char* const kTableName = "kudu.table.scan.row_count_only";
+  // Be specific about the number of threads even if it matches the default
+  // value for the --num_threads flag. This is to be explicit about the expected
+  // number of rows written into the table.
+  NO_FATALS(RunLoadgen(1,
+                       {
+                         "--num_threads=2",
+                         "--num_rows_per_thread=1234",
+                       },
+                       kTableName));
+
+  // Run table_scan with --row_count_only option
+  {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("table scan $0 $1 --row_count_only",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_EQ(1, out_lines.size()) << out;
+    ASSERT_STR_CONTAINS(out, "Total count 2468 ");
+  }
+
+  // Add the --report_scanner_stats flag as well.
+  {
+    string out;
+    string err;
+    const auto s = RunTool(
+        Substitute("table scan $0 $1 --row_count_only --report_scanner_stats",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+                   &out, &err);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_STR_CONTAINS(out, "bytes_read               0");
+    ASSERT_STR_CONTAINS(out, "cfile_cache_hit_bytes               0");
+    ASSERT_STR_CONTAINS(out, "cfile_cache_miss_bytes               0");
+    ASSERT_STR_CONTAINS(out, "total_duration_nanos ");
+    ASSERT_STR_CONTAINS(out, "Total count 2468 ");
+  }
 }
 
 TEST_P(ToolTestCopyTableParameterized, TestCopyTable) {

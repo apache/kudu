@@ -151,6 +151,12 @@ DEFINE_string(sasl_protocol_name,
               "servers' service principal name base (e.g. if it's \"kudu/_HOST\", then "
               "sasl_protocol_name must be \"kudu\" to be able to connect.");
 
+DEFINE_bool(row_count_only, false,
+            "Whether to only count rows instead of reading row cells: yields "
+            "an empty projection for the table");
+
+DECLARE_bool(show_values);
+
 bool ValidateTimeoutSettings() {
   if (FLAGS_timeout_ms < FLAGS_negotiation_timeout_ms) {
     LOG(ERROR) << strings::Substitute(
@@ -163,6 +169,23 @@ bool ValidateTimeoutSettings() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(timeout_flags, ValidateTimeoutSettings);
+
+bool ValidateSchemaProjectionFlags() {
+  if (FLAGS_row_count_only && !FLAGS_columns.empty()) {
+    LOG(ERROR) <<
+        "--row_count_only and --columns flags are conflicting: "
+        "either remove/unset --columns or remove/unset --row_count_only";
+    return false;
+  }
+  if (FLAGS_row_count_only && FLAGS_show_values) {
+    LOG(ERROR) <<
+        "--row_count_only and --show_values flags are conflicting: either "
+        "remove/unset --show_values or remove/unset --row_count_only";
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(schema_projection_flags, ValidateSchemaProjectionFlags);
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;

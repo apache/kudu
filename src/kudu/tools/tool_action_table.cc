@@ -115,6 +115,8 @@ DEFINE_string(upper_bound_type, "EXCLUSIVE_BOUND",
               "The type of the upper bound, either inclusive or exclusive. "
               "Defaults to exclusive. This flag is case-insensitive.");
 
+DECLARE_bool(row_count_only);
+DECLARE_bool(show_scanner_stats);
 DECLARE_bool(show_values);
 DECLARE_string(tables);
 
@@ -482,7 +484,9 @@ Status ScanTable(const RunnerContext &context) {
 
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
 
-  FLAGS_show_values = true;
+  if (!FLAGS_row_count_only) {
+    FLAGS_show_values = true;
+  }
   TableScanner scanner(client, table_name);
   scanner.SetOutput(&cout);
   return scanner.StartScan();
@@ -1292,6 +1296,8 @@ unique_ptr<Mode> BuildTableMode() {
                         "for the --predicates flag on how predicates can be specified.")
       .AddRequiredParameter({ kTableNameArg, "Name of the table to scan"})
       .AddOptionalParameter("columns")
+      .AddOptionalParameter("row_count_only")
+      .AddOptionalParameter("report_scanner_stats")
       .AddOptionalParameter("fill_cache")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")

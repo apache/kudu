@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -34,6 +35,7 @@
 #include <rapidjson/document.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/resource_metrics.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
@@ -77,7 +79,9 @@ using std::endl;
 using std::map;
 using std::ostream;
 using std::ostringstream;
+using std::right;
 using std::set;
+using std::setw;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -106,6 +110,8 @@ DEFINE_string(predicates, "",
               "For example,\n"
               R"*(   ["AND", [">=", "col1", "value"], ["NOTNULL", "col2"]])*""\n"
               "The only supported predicate operator is `AND`.");
+DEFINE_bool(report_scanner_stats, false,
+            "Whether to report scanner statistics");
 DEFINE_bool(show_values, false,
             "Whether to show values of scanned rows.");
 DEFINE_string(write_type, "insert",
@@ -479,27 +485,34 @@ Status TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& t
     RETURN_NOT_OK(scanner->Open());
 
     uint64_t count = 0;
+    size_t next_batch_calls = 0;
     while (scanner->HasMoreRows()) {
       KuduScanBatch batch;
       RETURN_NOT_OK(scanner->NextBatch(&batch));
       count += batch.NumRows();
       total_count_ += batch.NumRows();
+      ++next_batch_calls;
       cb(batch);
     }
-
     sw.stop();
-    if (out_) {
+
+    if (FLAGS_report_scanner_stats && out_) {
+      auto& out = *out_;
       MutexLock l(output_lock_);
-      *out_ << "T " << token->tablet().id() << " scanned count " << count
-           << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
+      out << Substitute("T $0 scanned $1 rows in $2 seconds\n",
+                        token->tablet().id(), count, sw.elapsed().wall_seconds());
+      const auto& metrics = scanner->GetResourceMetrics();
+      out << setw(32) << right << "NextBatch() calls"
+          << setw(16) << right << next_batch_calls << endl;
+      for (const auto& [k, v] : metrics.Get()) {
+        out << setw(32) << right << k << setw(16) << right << v << endl;
+      }
     }
   }
-
   return Status::OK();
-
 }
 
-void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens, Status* thread_status) {
+void TableScanner::ScanTask(const vector<KuduScanToken*>& tokens, Status* thread_status) {
   *thread_status = ScanData(tokens, [&](const KuduScanBatch& batch) {
     if (out_ && FLAGS_show_values) {
       MutexLock l(output_lock_);
@@ -564,10 +577,12 @@ Status TableScanner::StartWork(WorkType type) {
 
   // Set projection if needed.
   if (type == WorkType::kScan) {
-    bool project_all = FLAGS_columns == "*" ||
-                       (FLAGS_show_values && FLAGS_columns.empty());
-    if (!project_all) {
-      vector<string> projected_column_names = Split(FLAGS_columns, ",", strings::SkipEmpty());
+    const auto project_all = FLAGS_columns == "*" || FLAGS_columns.empty();
+    if (!project_all || FLAGS_row_count_only) {
+      vector<string> projected_column_names;
+      if (!FLAGS_row_count_only && !FLAGS_columns.empty()) {
+        projected_column_names = Split(FLAGS_columns, ",", strings::SkipEmpty());
+      }
       RETURN_NOT_OK(builder.SetProjectedColumnNames(projected_column_names));
     }
   }

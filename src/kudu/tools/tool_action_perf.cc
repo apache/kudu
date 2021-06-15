@@ -1052,6 +1052,8 @@ unique_ptr<Mode> BuildPerfMode() {
           "or whether there is a long latency tail when scanning different tables.")
       .AddRequiredParameter({ kTableNameArg, "Name of the table to scan"})
       .AddOptionalParameter("columns")
+      .AddOptionalParameter("row_count_only")
+      .AddOptionalParameter("report_scanner_stats")
       .AddOptionalParameter("fill_cache")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")
