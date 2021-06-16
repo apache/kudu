@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -84,10 +85,8 @@ using strings::Substitute;
 
 DEFINE_bool(create_table, true,
             "Whether to create the destination table if it doesn't exist.");
-DECLARE_string(columns);
 DEFINE_bool(fill_cache, true,
             "Whether to fill block cache when scanning.");
-DECLARE_int32(num_threads);
 DEFINE_string(predicates, "",
               "Query predicates on columns. Unlike traditional SQL syntax, "
               "the scan tool's simple query predicates are represented in a "
@@ -109,26 +108,31 @@ DEFINE_string(predicates, "",
               "The only supported predicate operator is `AND`.");
 DEFINE_bool(show_values, false,
             "Whether to show values of scanned rows.");
-DECLARE_string(tablets);
 DEFINE_string(write_type, "insert",
               "How data should be copied to the destination table. Valid values are 'insert', "
               "'upsert' or the empty string. If the empty string, data will not be copied "
               "(useful when create_table is 'true').");
 
+DECLARE_bool(row_count_only);
+DECLARE_int32(num_threads);
+DECLARE_int64(timeout_ms);
+DECLARE_string(tablets);
+DECLARE_string(columns);
+
 static bool ValidateWriteType(const char* flag_name,
                               const string& flag_value) {
-  const vector<string> allowed_values = { "insert", "upsert", "" };
-  if (std::find_if(allowed_values.begin(), allowed_values.end(),
+  static const auto kWriteTypes = { "insert", "upsert", "" };
+  if (std::find_if(kWriteTypes.begin(), kWriteTypes.end(),
                    [&](const string& allowed_value) {
                      return iequals(allowed_value, flag_value);
-                   }) != allowed_values.end()) {
+                   }) != kWriteTypes.end()) {
     return true;
   }
 
   std::ostringstream ss;
   ss << "'" << flag_value << "': unsupported value for --" << flag_name
      << " flag; should be one of ";
-  copy(allowed_values.begin(), allowed_values.end(),
+  copy(kWriteTypes.begin(), kWriteTypes.end(),
        std::ostream_iterator<string>(ss, " "));
   LOG(ERROR) << ss.str();
 
@@ -464,7 +468,6 @@ Status TableScanner::AddRow(const client::sp::shared_ptr<KuduTable>& table,
 
 Status TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& tokens,
                               const std::function<void(const KuduScanBatch& batch)>& cb) {
-
   for (auto token : tokens) {
     Stopwatch sw(Stopwatch::THIS_THREAD);
     sw.start();
@@ -480,7 +483,7 @@ Status TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& t
       KuduScanBatch batch;
       RETURN_NOT_OK(scanner->NextBatch(&batch));
       count += batch.NumRows();
-      total_count_.IncrementBy(batch.NumRows());
+      total_count_ += batch.NumRows();
       cb(batch);
     }
 
@@ -517,7 +520,7 @@ void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens, Status* thread
   client::sp::shared_ptr<KuduSession> session(dst_client_.get()->NewSession());
   CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
   CHECK_OK(session->SetErrorBufferSpace(1024));
-  session->SetTimeoutMillis(30000);
+  session->SetTimeoutMillis(FLAGS_timeout_ms);
 
   *thread_status = ScanData(tokens, [&](const KuduScanBatch& batch) {
     for (const auto& row : batch) {
@@ -557,7 +560,7 @@ Status TableScanner::StartWork(WorkType type) {
   if (mode_) {
     RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
   }
-  RETURN_NOT_OK(builder.SetTimeoutMillis(30000));
+  RETURN_NOT_OK(builder.SetTimeoutMillis(FLAGS_timeout_ms));
 
   // Set projection if needed.
   if (type == WorkType::kScan) {
@@ -610,13 +613,13 @@ Status TableScanner::StartWork(WorkType type) {
     }
   }
   while (!thread_pool_->WaitFor(MonoDelta::FromSeconds(5))) {
-    LOG(INFO) << "Scanned count: " << total_count_.Load();
+    LOG(INFO) << "Scanned count: " << total_count_;
   }
   thread_pool_->Shutdown();
 
   sw.stop();
   if (out_) {
-    *out_ << "Total count " << total_count_.Load()
+    *out_ << "Total count " << total_count_
         << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
   }
 

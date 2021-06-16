@@ -1837,9 +1837,9 @@ TEST_F(ToolTest, TestWalDump) {
 }
 
 TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
-  const string kTestTablet = "ffffffffffffffffffffffffffffffff";
-  const string kTestTableId = "test-table";
-  const string kTestTableName = "test-fs-data-dirs-dump-table";
+  constexpr const char* const kTestTablet = "ffffffffffffffffffffffffffffffff";
+  constexpr const char* const kTestTableId = "test-table";
+  constexpr const char* const kTestTableName = "test-fs-data-dirs-dump-table";
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
@@ -1882,10 +1882,10 @@ TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
 }
 
 TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
+  constexpr const char* const kTestTablet = "ffffffffffffffffffffffffffffffff";
+  constexpr const char* const kTestTableId = "test-table";
+  constexpr const char* const kTestTableName = "test-fs-meta-dump-table";
   const string kTestDir = GetTestPath("test");
-  const string kTestTablet = "ffffffffffffffffffffffffffffffff";
-  const string kTestTableId = "test-table";
-  const string kTestTableName = "test-fs-meta-dump-table";
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
@@ -2261,7 +2261,7 @@ void ToolTest::RunLoadgen(int num_tservers,
   opts.num_tablet_servers = num_tservers;
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
   if (!table_name.empty()) {
-    static const string kKeyColumnName = "key";
+    constexpr const char* const kKeyColumnName = "key";
     static const Schema kSchema = Schema(
       {
         ColumnSchema(kKeyColumnName, INT64),
@@ -2822,14 +2822,14 @@ TEST_F(ToolTest, TestNonRandomWorkloadLoadgen) {
 }
 
 TEST_F(ToolTest, TestPerfTableScan) {
-  const string& kTableName = "perf.table_scan";
+  constexpr const char* const kTableName = "perf.table_scan";
   NO_FATALS(RunLoadgen(1, { "--run_scan" }, kTableName));
   NO_FATALS(RunScanTableCheck(kTableName, "", 1, 2000, {}, "perf table_scan"));
 }
 
 TEST_F(ToolTest, TestPerfTabletScan) {
   // Create a table.
-  const string& kTableName = "perf.tablet_scan";
+  constexpr const char* const kTableName = "perf.tablet_scan";
   NO_FATALS(RunLoadgen(1, {}, kTableName));
 
   // Get the list of tablets.
@@ -3541,7 +3541,7 @@ TEST_F(ToolTest, TestDeleteTable) {
   ASSERT_OK(cluster_->CreateClient(nullptr, &client));
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
 
-  const string& kTableName = "kudu.table";
+  constexpr const char* const kTableName = "kudu.table";
 
   // Create a table.
   TestWorkload workload(cluster_.get());
@@ -3569,8 +3569,8 @@ TEST_F(ToolTest, TestRenameTable) {
   ASSERT_OK(cluster_->CreateClient(nullptr, &client));
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
 
-  const string& kTableName = "kudu.table";
-  const string& kNewTableName = "kudu_table";
+  constexpr const char* const kTableName = "kudu.table";
+  constexpr const char* const kNewTableName = "kudu_table";
 
   // Create the table.
   TestWorkload workload(cluster_.get());
@@ -3593,9 +3593,9 @@ TEST_F(ToolTest, TestRenameTable) {
 
 TEST_F(ToolTest, TestRenameColumn) {
   NO_FATALS(StartExternalMiniCluster());
-  const string& kTableName = "table";
-  const string& kColumnName = "col.0";
-  const string& kNewColumnName = "col_0";
+  constexpr const char* const kTableName = "table";
+  constexpr const char* const kColumnName = "col.0";
+  constexpr const char* const kNewColumnName = "col_0";
 
   KuduSchemaBuilder schema_builder;
   schema_builder.AddColumn("key")
@@ -3813,10 +3813,10 @@ TEST_F(ToolTest, TestScanTableProjection) {
 }
 
 TEST_F(ToolTest, TestScanTableMultiPredicates) {
+  constexpr const char* const kTableName = "kudu.table.scan.multipredicates";
+
   NO_FATALS(StartExternalMiniCluster());
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
-
-  const string kTableName = "kudu.table.scan.multipredicates";
 
   // Create the src table and write some data to it.
   TestWorkload ww(cluster_.get());
@@ -3866,8 +3866,8 @@ TEST_P(ToolTestCopyTableParameterized, TestCopyTable) {
 
 TEST_F(ToolTest, TestAlterColumn) {
   NO_FATALS(StartExternalMiniCluster());
-  const string& kTableName = "kudu.table.alter.column";
-  const string& kColumnName = "col.0";
+  constexpr const char* const kTableName = "kudu.table.alter.column";
+  constexpr const char* const kColumnName = "col.0";
 
   KuduSchemaBuilder schema_builder;
   schema_builder.AddColumn("key")
@@ -3978,15 +3978,15 @@ TEST_F(ToolTest, TestAlterColumn) {
 
 TEST_F(ToolTest, TestColumnSetDefault) {
   NO_FATALS(StartExternalMiniCluster());
-  const string& kTableName = "kudu.table.set.default";
-  const string& kIntColumn = "col.int";
-  const string& kStringColumn = "col.string";
-  const string& kBoolColumn = "col.bool";
-  const string& kFloatColumn = "col.float";
-  const string& kDoubleColumn = "col.double";
-  const string& kBinaryColumn = "col.binary";
-  const string& kUnixtimeMicrosColumn = "col.unixtime_micros";
-  const string& kDecimalColumn = "col.decimal";
+  constexpr const char* const kTableName = "kudu.table.set.default";
+  constexpr const char* const kIntColumn = "col.int";
+  constexpr const char* const kStringColumn = "col.string";
+  constexpr const char* const kBoolColumn = "col.bool";
+  constexpr const char* const kFloatColumn = "col.float";
+  constexpr const char* const kDoubleColumn = "col.double";
+  constexpr const char* const kBinaryColumn = "col.binary";
+  constexpr const char* const kUnixtimeMicrosColumn = "col.unixtime_micros";
+  constexpr const char* const kDecimalColumn = "col.decimal";
 
   KuduSchemaBuilder schema_builder;
   schema_builder.AddColumn("key")
@@ -4093,8 +4093,8 @@ TEST_F(ToolTest, TestColumnSetDefault) {
 
 TEST_F(ToolTest, TestDeleteColumn) {
   NO_FATALS(StartExternalMiniCluster());
-  const string& kTableName = "kudu.table.delete.column";
-  const string& kColumnName = "col.0";
+  constexpr const char* const kTableName = "kudu.table.delete.column";
+  constexpr const char* const kColumnName = "col.0";
 
   KuduSchemaBuilder schema_builder;
   schema_builder.AddColumn("key")
@@ -4129,7 +4129,7 @@ TEST_F(ToolTest, TestDeleteColumn) {
 }
 
 TEST_F(ToolTest, TestChangeTableLimitNotSupported) {
-  const string kTableName = "kudu.table.failtochangelimit";
+  constexpr const char* const kTableName = "kudu.table.failtochangelimit";
   // Disable table write limit by default, then set limit will not take effect.
   NO_FATALS(StartExternalMiniCluster());
   // Create the table.
@@ -4179,7 +4179,7 @@ TEST_F(ToolTest, TestChangeTableLimitNotSupported) {
 }
 
 TEST_F(ToolTest, TestChangeTableLimitSupported) {
-  const string kTableName = "kudu.table.changelimit";
+  constexpr const char* const kTableName = "kudu.table.changelimit";
   const int64_t kDiskSizeLimit = 999999;
   const int64_t kRowCountLimit = 100000;
 
@@ -5837,7 +5837,7 @@ TEST_F(ToolTest, TestFsSwappingDirectoriesFailsGracefully) {
 TEST_F(ToolTest, TestStartEndMaintenanceMode) {
   NO_FATALS(StartMiniCluster());
   // Perform the steps on a tserver that exists and one that doesn't.
-  const string& kDummyUuid = "foobaruuid";
+  constexpr const char* const kDummyUuid = "foobaruuid";
   MiniMaster* mini_master = mini_cluster_->mini_master();
   const string& ts_uuid = mini_cluster_->mini_tablet_server(0)->uuid();
   TSManager* ts_manager = mini_master->master()->ts_manager();

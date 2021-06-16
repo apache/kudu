@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <iosfwd>
@@ -30,7 +31,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
-#include "kudu/util/atomic.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
@@ -70,7 +70,7 @@ class TableScanner {
   Status StartCopy();
 
   uint64_t TotalScannedCount() const {
-    return total_count_.Load();
+    return total_count_;
   }
 
  private:
@@ -90,7 +90,7 @@ class TableScanner {
                 const kudu::client::KuduScanBatch::RowPtr& src_row,
                 const client::sp::shared_ptr<kudu::client::KuduSession>& session);
 
-  AtomicInt<uint64_t> total_count_;
+  std::atomic<uint64_t> total_count_;
   boost::optional<kudu::client::KuduScanner::ReadMode> mode_;
   client::sp::shared_ptr<kudu::client::KuduClient> client_;
   std::string table_name_;
