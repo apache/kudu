@@ -1177,6 +1177,7 @@ TEST_F(ToolTest, TestModeHelp) {
     const string kCmd = "table";
     const vector<string> kTableModeRegexes = {
         "add_range_partition.*Add a range partition for table",
+        "clear_comment.*Clear the comment for a table",
         "column_remove_default.*Remove write_default value for a column",
         "column_set_block_size.*Set block size for a column",
         "column_set_compression.*Set compression type for a column",
@@ -1195,6 +1196,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "rename_column.*Rename a column",
         "rename_table.*Rename a table",
         "scan.*Scan rows from a table",
+        "set_comment.*Set the comment for a table",
         "set_extra_config.*Change a extra configuration value on a table",
         "set_limit.*Set the write limit for a table",
         "statistics.*Get table statistics",
@@ -1202,6 +1204,7 @@ TEST_F(ToolTest, TestModeHelp) {
     NO_FATALS(RunTestHelp(kCmd, kTableModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kCmd,
         { "add_range_partition",
+          "clear_comment",
           "column_remove_default",
           "column_set_block_size",
           "column_set_compression",
@@ -1220,6 +1223,7 @@ TEST_F(ToolTest, TestModeHelp) {
           "rename_column",
           "rename_table",
           "scan",
+          "set_comment",
           "set_extra_config",
           "statistics",
         }));
@@ -4060,6 +4064,50 @@ TEST_F(ToolTest, TestAlterColumn) {
   for (int i = 0; i < table->schema().num_columns(); ++i) {
     NO_FATALS(alter_comment(i));
   }
+}
+
+TEST_F(ToolTest, TestTableComment) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string& kTableName = "kudu.test_alter_comment";
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  // Check the table comment starts out empty.
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_TRUE(table->comment().empty()) << table->comment();
+
+  ObjectIdGenerator generator;
+  const auto table_comment = generator.Next();
+  NO_FATALS(RunActionStdoutNone(Substitute("table set_comment $0 $1 $2",
+                                           master_addr,
+                                           kTableName,
+                                           table_comment)));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_EQ(table_comment, table->comment());
+
+  // Make attempt to "remove" the comment by replacing it with quotes. This
+  // doesn't actually clear the comment.
+  NO_FATALS(RunActionStdoutNone(Substitute("table set_comment $0 $1 \"\"",
+                                           master_addr,
+                                           kTableName)));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_EQ("\"\"", table->comment());
+
+  // Using the 'clear_comment' command, we can remove it.
+  NO_FATALS(RunActionStdoutNone(Substitute("table clear_comment $0 $1",
+                                           master_addr,
+                                           kTableName)));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_TRUE(table->comment().empty()) << table->comment();
 }
 
 TEST_F(ToolTest, TestColumnSetDefault) {
