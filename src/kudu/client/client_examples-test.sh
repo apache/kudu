@@ -108,10 +108,17 @@ popd
 # Test that all of the installed headers can be compiled on their own.
 # This catches bugs where we've made a mistake in 'include-what-you-use'
 # within the library.
+#
+# The API of the Kudu C++ client is supposed to be compatible with legacy C++
+# compilers talking C++98 standard at most, but Kudu uses C++17 internally
+# (as of June 2021). An extra flag -std=c++98 is added to catch changes
+# incompatible with C++98 in the exported files representing the API of
+# the Kudu C++ client.
 for include_file in $(find "$LIBRARY_DIR" -name \*.h) ; do
   echo Checking standalone compilation of "$include_file"...
   if ! ${CXX:-g++} \
        -o /dev/null \
+       -std=c++98 \
        -I"$LIBRARY_DIR/usr/local/include" \
        "$include_file" ; then
     set +x
