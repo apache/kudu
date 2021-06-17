@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <ostream>
-#include <stdint.h>
 #include <string>
 
 #include <gflags/gflags.h>

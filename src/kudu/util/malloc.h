@@ -17,7 +17,7 @@
 #ifndef KUDU_UTIL_MALLOC_H
 #define KUDU_UTIL_MALLOC_H
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace kudu {
 

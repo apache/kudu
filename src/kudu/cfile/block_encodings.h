@@ -19,8 +19,9 @@
 #define KUDU_CFILE_BLOCK_ENCODINGS_H
 
 #include <algorithm>
+#include <cstdint>
 #include <vector>
-#include <stdint.h>
+
 #include <glog/logging.h>
 
 #include "kudu/common/column_materialization_context.h"

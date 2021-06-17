@@ -16,9 +16,8 @@
 // under the License.
 #include "kudu/tserver/tablet_copy_client.h"
 
-#include <stdlib.h>
-
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <ostream>

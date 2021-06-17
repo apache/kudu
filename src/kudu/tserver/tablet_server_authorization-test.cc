@@ -15,10 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <stdint.h>
-#include <stdlib.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <ostream>
@@ -38,11 +38,11 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"

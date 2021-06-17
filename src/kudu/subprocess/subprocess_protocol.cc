@@ -17,11 +17,11 @@
 
 #include "kudu/subprocess/subprocess_protocol.h"
 
-#include <errno.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <ostream>
 #include <string>
 

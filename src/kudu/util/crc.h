@@ -17,8 +17,8 @@
 #ifndef KUDU_UTIL_CRC_H_
 #define KUDU_UTIL_CRC_H_
 
-#include <stdint.h>
-#include <stdlib.h>
+#include <cstdint>
+#include <cstdlib>
 
 #include <crcutil/interface.h>
 

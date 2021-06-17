@@ -17,12 +17,12 @@
 
 #include "kudu/tserver/tablet_server.h"
 
-#include <stdlib.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <initializer_list>
 #include <map>

@@ -17,7 +17,8 @@
 #ifndef IMPALA_BIT_UTIL_H
 #define IMPALA_BIT_UTIL_H
 
-#include <stdint.h>
+#include <cstdint>
+
 #include "kudu/gutil/port.h"
 
 namespace kudu {
@@ -48,8 +49,6 @@ class BitUtil {
     if (PREDICT_FALSE(num_bits >= 64)) return 0;
     return v >> num_bits;
   }
-
-
 };
 
 } // namespace kudu

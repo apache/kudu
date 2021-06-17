@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <stdint.h>
+#include <cstdint>
 
 // Must come before gtest.h.
 #include "kudu/gutil/mathlimits.h"

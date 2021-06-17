@@ -17,10 +17,10 @@
 #ifndef KUDU_CLIENT_RESOURCE_METRICS_INTERNAL_H
 #define KUDU_CLIENT_RESOURCE_METRICS_INTERNAL_H
 
+#include <cstdint>
 #include <list>
 #include <map>
 #include <mutex>
-#include <stdint.h>
 #include <set>
 #include <string>
 

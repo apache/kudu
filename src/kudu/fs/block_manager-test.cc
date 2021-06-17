@@ -17,11 +17,10 @@
 
 #include "kudu/fs/block_manager.h"
 
-#include <stdlib.h>
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <initializer_list>
 #include <memory>
 #include <ostream>

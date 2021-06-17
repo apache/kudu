@@ -17,8 +17,7 @@
 #ifndef KUDU_CLIENT_STUBS_H
 #define KUDU_CLIENT_STUBS_H
 
-#include <stdlib.h> // for exit()
-
+#include <cstdlib> // for exit()
 #include <iostream>
 
 //

@@ -17,6 +17,8 @@
 #ifndef KUDU_CLIENT_WRITE_OP_H
 #define KUDU_CLIENT_WRITE_OP_H
 
+// NOTE: using stdint.h instead of cstdint because this file is supposed
+//       to be processed by a compiler lacking C++11 support.
 #include <stdint.h>
 
 // IWYU pragma: no_include <memory>

@@ -17,7 +17,7 @@
 #ifndef KUDU_COMMON_ITERATOR_STATS_H
 #define KUDU_COMMON_ITERATOR_STATS_H
 
-#include <stdint.h>
+#include <cstdint>
 #include <string>
 
 namespace kudu {

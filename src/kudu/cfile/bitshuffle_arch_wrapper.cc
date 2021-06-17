@@ -17,7 +17,7 @@
 
 #include "kudu/cfile/bitshuffle_arch_wrapper.h"
 
-#include <stdint.h>
+#include <cstdint>
 
 // Include the bitshuffle header once to get the default (non-AVX2)
 // symbols.

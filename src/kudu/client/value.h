@@ -17,6 +17,8 @@
 #ifndef KUDU_CLIENT_VALUE_H
 #define KUDU_CLIENT_VALUE_H
 
+// NOTE: using stdint.h instead of cstdint because this file is supposed
+//       to be processed by a compiler lacking C++11 support.
 #include <stdint.h>
 
 #ifdef KUDU_HEADERS_NO_STUBS

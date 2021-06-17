@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 #include <string>
 
 #include "kudu/util/int128.h"
