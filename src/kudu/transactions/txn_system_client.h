@@ -179,7 +179,7 @@ class TxnSystemClient {
                                                  client::KuduClient* client);
 
   Status CoordinateTransactionAsync(tserver::CoordinatorOpPB coordinate_txn_op,
-                                    const MonoDelta& timeout,
+                                    MonoDelta timeout,
                                     const StatusCallback& cb,
                                     tserver::CoordinatorOpResultPB* result = nullptr);
 

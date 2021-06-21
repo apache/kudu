@@ -324,7 +324,7 @@ Status TxnSystemClient::KeepTransactionAlive(int64_t txn_id,
 }
 
 Status TxnSystemClient::CoordinateTransactionAsync(CoordinatorOpPB coordinate_txn_op,
-                                                   const MonoDelta& timeout,
+                                                   MonoDelta timeout,
                                                    const StatusCallback& cb,
                                                    CoordinatorOpResultPB* result) {
   DCHECK(txn_status_table_);

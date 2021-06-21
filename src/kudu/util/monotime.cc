@@ -215,6 +215,7 @@ MonoDelta MonoTime::GetDeltaSince(const MonoTime &rhs) const {
 
 void MonoTime::AddDelta(const MonoDelta &delta) {
   DCHECK(Initialized());
+  DCHECK(delta.Initialized());
   nanos_ += delta.nano_delta_;
 }
 
