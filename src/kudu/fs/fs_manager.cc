@@ -310,7 +310,7 @@ void FsManager::InitBlockManager() {
 
 Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
   RETURN_NOT_OK(Init());
-
+  string reference_instance_path;
   for (auto& root : canonicalized_all_fs_roots_) {
     if (!root.status.ok()) {
       continue;
@@ -334,11 +334,13 @@ Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
 
     if (!metadata_) {
       metadata_.reset(pb.release());
+      reference_instance_path = root.path;
     } else if (pb->uuid() != metadata_->uuid()) {
       return Status::Corruption(Substitute(
-          "Mismatched UUIDs across filesystem roots: $0 vs. $1; configuring "
-          "multiple Kudu processes with the same directory is not supported",
-          metadata_->uuid(), pb->uuid()));
+          "Mismatched UUIDs across filesystem roots: The path $0 contains UUID $1 vs. "
+          "the path $2 contains UUID $3; configuring multiple Kudu processes with the same "
+          "directory is not supported",
+          reference_instance_path, metadata_->uuid() , root.path, pb->uuid()));
     }
   }
 
