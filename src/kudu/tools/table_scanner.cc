@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <initializer_list>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
@@ -118,33 +117,60 @@ DEFINE_string(write_type, "insert",
               "How data should be copied to the destination table. Valid values are 'insert', "
               "'upsert' or the empty string. If the empty string, data will not be copied "
               "(useful when create_table is 'true').");
+DEFINE_string(replica_selection, "CLOSEST",
+              "Replica selection for scan operations. Acceptable values are: "
+              "CLOSEST, LEADER (maps into KuduClient::CLOSEST_REPLICA and "
+              "KuduClient::LEADER_ONLY correspondingly).");
 
 DECLARE_bool(row_count_only);
 DECLARE_int32(num_threads);
 DECLARE_int64(timeout_ms);
-DECLARE_string(tablets);
 DECLARE_string(columns);
+DECLARE_string(tablets);
 
-static bool ValidateWriteType(const char* flag_name,
-                              const string& flag_value) {
-  static const auto kWriteTypes = { "insert", "upsert", "" };
-  if (std::find_if(kWriteTypes.begin(), kWriteTypes.end(),
-                   [&](const string& allowed_value) {
-                     return iequals(allowed_value, flag_value);
-                   }) != kWriteTypes.end()) {
+namespace {
+
+bool IsFlagValueAcceptable(const char* flag_name,
+                           const string& flag_value,
+                           const vector<string>& acceptable_values) {
+  if (std::find_if(acceptable_values.begin(), acceptable_values.end(),
+                   [&](const string& value) {
+                     return iequals(value, flag_value);
+                   }) != acceptable_values.end()) {
     return true;
   }
 
-  std::ostringstream ss;
+  ostringstream ss;
   ss << "'" << flag_value << "': unsupported value for --" << flag_name
      << " flag; should be one of ";
-  copy(kWriteTypes.begin(), kWriteTypes.end(),
+  copy(acceptable_values.begin(), acceptable_values.end(),
        std::ostream_iterator<string>(ss, " "));
   LOG(ERROR) << ss.str();
 
   return false;
 }
+
+bool ValidateWriteType(const char* flag_name,
+                       const string& flag_value) {
+  static const vector<string> kWriteTypes = { "insert", "upsert", "" };
+  return IsFlagValueAcceptable(flag_name, flag_value, kWriteTypes);
+}
+
+constexpr const char* const kReplicaSelectionClosest = "closest";
+constexpr const char* const kReplicaSelectionLeader = "leader";
+bool ValidateReplicaSelection(const char* flag_name,
+                              const string& flag_value) {
+  static const vector<string> kReplicaSelections = {
+    kReplicaSelectionClosest,
+    kReplicaSelectionLeader,
+  };
+  return IsFlagValueAcceptable(flag_name, flag_value, kReplicaSelections);
+}
+
+} // anonymous namespace
+
 DEFINE_validator(write_type, &ValidateWriteType);
+DEFINE_validator(replica_selection, &ValidateReplicaSelection);
 
 namespace kudu {
 namespace tools {
@@ -451,25 +477,18 @@ void CheckPendingErrors(const client::sp::shared_ptr<KuduSession>& session) {
   }
 }
 
-Status TableScanner::AddRow(const client::sp::shared_ptr<KuduTable>& table,
-                            const KuduSchema& table_schema,
-                            const KuduScanBatch::RowPtr& src_row,
-                            const client::sp::shared_ptr<KuduSession>& session) {
-  unique_ptr<KuduWriteOperation> write_op;
-  if (FLAGS_write_type == "insert") {
-    write_op.reset(table->NewInsert());
-  } else if (FLAGS_write_type == "upsert") {
-    write_op.reset(table->NewUpsert());
-  } else {
-    LOG(FATAL) << Substitute("invalid write_type: $0", FLAGS_write_type);
-  }
-
-  KuduPartialRow* dst_row = write_op->mutable_row();
-  size_t row_size = ContiguousRowHelper::row_size(*src_row.schema_);
-  memcpy(dst_row->row_data_, src_row.row_data_, row_size);
-  BitmapChangeBits(dst_row->isset_bitmap_, 0, table_schema.num_columns(), true);
-
-  return session->Apply(write_op.release());
+TableScanner::TableScanner(
+    client::sp::shared_ptr<client::KuduClient> client,
+    std::string table_name,
+    boost::optional<client::sp::shared_ptr<client::KuduClient>> dst_client,
+    boost::optional<std::string> dst_table_name)
+    : total_count_(0),
+      client_(std::move(client)),
+      table_name_(std::move(table_name)),
+      dst_client_(std::move(dst_client)),
+      dst_table_name_(std::move(dst_table_name)),
+      out_(nullptr) {
+  CHECK_OK(SetReplicaSelection(FLAGS_replica_selection));
 }
 
 Status TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& tokens,
@@ -546,13 +565,19 @@ void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens, Status* thread
   });
 }
 
-
 void TableScanner::SetOutput(ostream* out) {
   out_ = out;
 }
 
 void TableScanner::SetReadMode(KuduScanner::ReadMode mode) {
   mode_ = mode;
+}
+
+Status TableScanner::SetReplicaSelection(const string& selection_str) {
+  KuduClient::ReplicaSelection selection;
+  RETURN_NOT_OK(ParseReplicaSelection(selection_str, &selection));
+  replica_selection_ = selection;
+  return Status::OK();
 }
 
 Status TableScanner::StartWork(WorkType type) {
@@ -573,6 +598,7 @@ Status TableScanner::StartWork(WorkType type) {
   if (mode_) {
     RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
   }
+  RETURN_NOT_OK(builder.SetSelection(replica_selection_));
   RETURN_NOT_OK(builder.SetTimeoutMillis(FLAGS_timeout_ms));
 
   // Set projection if needed.
@@ -640,8 +666,12 @@ Status TableScanner::StartWork(WorkType type) {
 
   for (i = 0; i < FLAGS_num_threads; ++i) {
     if (!thread_statuses[i].ok()) {
-      if (out_) *out_ << "Scanning failed " << thread_statuses[i].ToString() << endl;
-      if (end_status.ok()) end_status = thread_statuses[i];
+      if (out_) {
+        *out_ << "Scanning failed " << thread_statuses[i].ToString() << endl;
+      }
+      if (end_status.ok()) {
+        end_status = thread_statuses[i];
+      }
     }
   }
 
@@ -657,6 +687,41 @@ Status TableScanner::StartCopy() {
   CHECK(dst_table_name_);
 
   return StartWork(WorkType::kCopy);
+}
+
+Status TableScanner::AddRow(const client::sp::shared_ptr<KuduTable>& table,
+                            const KuduSchema& table_schema,
+                            const KuduScanBatch::RowPtr& src_row,
+                            const client::sp::shared_ptr<KuduSession>& session) {
+  unique_ptr<KuduWriteOperation> write_op;
+  if (FLAGS_write_type == "insert") {
+    write_op.reset(table->NewInsert());
+  } else if (FLAGS_write_type == "upsert") {
+    write_op.reset(table->NewUpsert());
+  } else {
+    LOG(FATAL) << Substitute("invalid write_type: $0", FLAGS_write_type);
+  }
+
+  KuduPartialRow* dst_row = write_op->mutable_row();
+  size_t row_size = ContiguousRowHelper::row_size(*src_row.schema_);
+  memcpy(dst_row->row_data_, src_row.row_data_, row_size);
+  BitmapChangeBits(dst_row->isset_bitmap_, 0, table_schema.num_columns(), true);
+
+  return session->Apply(write_op.release());
+}
+
+Status TableScanner::ParseReplicaSelection(
+    const string& selection_str,
+    KuduClient::ReplicaSelection* selection) {
+  DCHECK(selection);
+  if (iequals(kReplicaSelectionClosest, selection_str)) {
+    *selection = KuduClient::ReplicaSelection::CLOSEST_REPLICA;
+  } else if (iequals(kReplicaSelectionLeader, selection_str)) {
+    *selection = KuduClient::ReplicaSelection::LEADER_ONLY;
+  } else {
+    return Status::InvalidArgument("invalid replica selection", selection_str);
+  }
+  return Status::OK();
 }
 
 } // namespace tools

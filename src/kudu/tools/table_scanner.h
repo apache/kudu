@@ -23,7 +23,6 @@
 #include <iosfwd>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -36,35 +35,31 @@
 #include "kudu/util/threadpool.h"
 
 namespace kudu {
+
 namespace client {
 class KuduSchema;
-}  // namespace client
-}  // namespace kudu
+} // namespace client
 
-namespace kudu {
 namespace tools {
+
 // This class is not thread-safe.
 class TableScanner {
  public:
-  TableScanner(client::sp::shared_ptr<kudu::client::KuduClient> client,
+  TableScanner(client::sp::shared_ptr<client::KuduClient> client,
                std::string table_name,
-               boost::optional<client::sp::shared_ptr<kudu::client::KuduClient>> dst_client
-                 = boost::none,
-               boost::optional<std::string> dst_table_name = boost::none):
-    total_count_(0),
-    client_(std::move(client)),
-    table_name_(std::move(table_name)),
-    dst_client_(std::move(dst_client)),
-    dst_table_name_(std::move(dst_table_name)),
-    out_(nullptr) {
-  }
+               boost::optional<client::sp::shared_ptr<client::KuduClient>> dst_client
+                   = boost::none,
+               boost::optional<std::string> dst_table_name = boost::none);
 
   // Set output stream of this tool, or disable output if not set.
   // 'out' must remain valid for the lifetime of this class.
   void SetOutput(std::ostream* out);
 
   // Set read mode, see KuduScanner::SetReadMode().
-  void SetReadMode(kudu::client::KuduScanner::ReadMode mode);
+  void SetReadMode(client::KuduScanner::ReadMode mode);
+
+  // Set replica selection for scan operations.
+  Status SetReplicaSelection(const std::string& selection);
 
   Status StartScan();
   Status StartCopy();
@@ -79,22 +74,32 @@ class TableScanner {
     kCopy
   };
 
-  Status StartWork(WorkType type);
-  Status ScanData(const std::vector<kudu::client::KuduScanToken*>& tokens,
-                  const std::function<void(const kudu::client::KuduScanBatch& batch)>& cb);
-  void ScanTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
-  void CopyTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
+  static Status AddRow(
+      const client::sp::shared_ptr<client::KuduTable>& table,
+      const client::KuduSchema& table_schema,
+      const client::KuduScanBatch::RowPtr& src_row,
+      const client::sp::shared_ptr<client::KuduSession>& session);
 
-  Status AddRow(const client::sp::shared_ptr<kudu::client::KuduTable>& table,
-                const kudu::client::KuduSchema& table_schema,
-                const kudu::client::KuduScanBatch::RowPtr& src_row,
-                const client::sp::shared_ptr<kudu::client::KuduSession>& session);
+  // Convert replica selection from string into the KuduClient::ReplicaSelection
+  // enumerator.
+  static Status ParseReplicaSelection(
+      const std::string& selection_str,
+      client::KuduClient::ReplicaSelection* selection);
+
+  Status StartWork(WorkType type);
+  Status ScanData(const std::vector<client::KuduScanToken*>& tokens,
+                  const std::function<void(const client::KuduScanBatch& batch)>& cb);
+  void ScanTask(const std::vector<client::KuduScanToken*>& tokens,
+                Status* thread_status);
+  void CopyTask(const std::vector<client::KuduScanToken*>& tokens,
+                Status* thread_status);
 
   std::atomic<uint64_t> total_count_;
-  boost::optional<kudu::client::KuduScanner::ReadMode> mode_;
-  client::sp::shared_ptr<kudu::client::KuduClient> client_;
+  boost::optional<client::KuduScanner::ReadMode> mode_;
+  client::sp::shared_ptr<client::KuduClient> client_;
   std::string table_name_;
-  boost::optional<client::sp::shared_ptr<kudu::client::KuduClient>> dst_client_;
+  client::KuduClient::ReplicaSelection replica_selection_;
+  boost::optional<client::sp::shared_ptr<client::KuduClient>> dst_client_;
   boost::optional<std::string> dst_table_name_;
   std::unique_ptr<ThreadPool> thread_pool_;
 
@@ -102,5 +107,6 @@ class TableScanner {
   Mutex output_lock_;
   std::ostream* out_;
 };
+
 } // namespace tools
 } // namespace kudu

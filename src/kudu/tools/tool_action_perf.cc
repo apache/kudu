@@ -382,6 +382,7 @@ DEFINE_bool(txn_rollback, false,
 
 DECLARE_bool(show_values);
 DECLARE_int32(num_threads);
+DECLARE_string(replica_selection);
 DECLARE_string(table_name);
 
 namespace kudu {
@@ -771,6 +772,10 @@ Status CountTableRows(const shared_ptr<KuduClient>& client,
                       const string& table_name, uint64_t* count) {
   TableScanner scanner(client, table_name);
   scanner.SetReadMode(KuduScanner::ReadMode::READ_YOUR_WRITES);
+  const auto& replica_selection_str = FLAGS_replica_selection;
+  if (!replica_selection_str.empty()) {
+    RETURN_NOT_OK(scanner.SetReplicaSelection(replica_selection_str));
+  }
   RETURN_NOT_OK(scanner.StartScan());
   if (count != nullptr) {
     *count = scanner.TotalScannedCount();
@@ -921,6 +926,10 @@ Status TableScan(const RunnerContext& context) {
   FLAGS_show_values = false;
   TableScanner scanner(client, table_name);
   scanner.SetOutput(&cout);
+  const auto& replica_selection_str = FLAGS_replica_selection;
+  if (!replica_selection_str.empty()) {
+    RETURN_NOT_OK(scanner.SetReplicaSelection(replica_selection_str));
+  }
   return scanner.StartScan();
 }
 
@@ -1058,6 +1067,7 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")
       .AddOptionalParameter("tablets")
+      .AddOptionalParameter("replica_selection")
       .Build();
 
   // TODO(aserbin): move this to tool_local_replica.cc

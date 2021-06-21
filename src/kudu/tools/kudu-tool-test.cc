@@ -2874,6 +2874,38 @@ TEST_F(ToolTest, PerfTableScanCountOnly) {
   }
 }
 
+TEST_F(ToolTest, PerfTableScanReplicaSelection) {
+  constexpr const char* const kTableName = "perf.table_scan.replica_selection";
+  NO_FATALS(RunLoadgen(1,
+                       {
+                         "--num_threads=8",
+                         "--num_rows_per_thread=1",
+                       },
+                       kTableName));
+  {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("perf table_scan $0 $1 --replica_selection=leader",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_EQ(1, out_lines.size()) << out;
+    ASSERT_STR_CONTAINS(out, "Total count 8 ");
+  }
+  {
+    string out;
+    string err;
+    const auto s = RunTool(Substitute(
+        "perf table_scan $0 $1 --replica_selection=CLOSEST",
+        cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_STR_CONTAINS(out, "Total count 8 ");
+  }
+}
+
 TEST_F(ToolTest, TestPerfTabletScan) {
   // Create a table.
   constexpr const char* const kTableName = "perf.tablet_scan";
@@ -3945,6 +3977,37 @@ TEST_F(ToolTest, TableScanRowCountOnly) {
     ASSERT_STR_CONTAINS(out, "cfile_cache_miss_bytes               0");
     ASSERT_STR_CONTAINS(out, "total_duration_nanos ");
     ASSERT_STR_CONTAINS(out, "Total count 2468 ");
+  }
+}
+
+TEST_F(ToolTest, TableScanReplicaSelection) {
+  constexpr const char* const kTableName = "kudu.table.scan.replica_selection";
+  NO_FATALS(RunLoadgen(1,
+                       {
+                         "--num_threads=2",
+                         "--num_rows_per_thread=1",
+                       },
+                       kTableName));
+  {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("table scan $0 $1 --replica_selection=LEADER",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_STR_CONTAINS(out, "Total count 2 ");
+  }
+  {
+    string out;
+    string err;
+    const auto s = RunTool(
+        Substitute("table scan $0 $1 --replica_selection=closest",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+                   &out, &err);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_STR_CONTAINS(out, "Total count 2 ");
   }
 }
 

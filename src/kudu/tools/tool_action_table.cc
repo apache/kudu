@@ -118,6 +118,7 @@ DEFINE_string(upper_bound_type, "EXCLUSIVE_BOUND",
 DECLARE_bool(row_count_only);
 DECLARE_bool(show_scanner_stats);
 DECLARE_bool(show_values);
+DECLARE_string(replica_selection);
 DECLARE_string(tables);
 
 namespace kudu {
@@ -489,6 +490,10 @@ Status ScanTable(const RunnerContext &context) {
   }
   TableScanner scanner(client, table_name);
   scanner.SetOutput(&cout);
+  const auto& replica_selection_str = FLAGS_replica_selection;
+  if (!replica_selection_str.empty()) {
+    RETURN_NOT_OK(scanner.SetReplicaSelection(replica_selection_str));
+  }
   return scanner.StartScan();
 }
 
@@ -1322,6 +1327,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")
       .AddOptionalParameter("tablets")
+      .AddOptionalParameter("replica_selection")
       .Build();
 
   unique_ptr<Action> copy_table =
