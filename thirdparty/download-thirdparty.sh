@@ -328,13 +328,14 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=4
+LLVM_PATCHLEVEL=5
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
  $LLVM_PATCHLEVEL \
   "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch" \
   "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch" \
+  "patch -p1 < $TP_DIR/patches/llvm-MicrosoftDemangleNodes-e0402b5c9813a2458b8dd3f640883110db280395.patch" \
   "patch -p0 < $TP_DIR/patches/llvm-iwyu-sized-deallocation.patch" \
   "patch -d projects -p1 < $TP_DIR/patches/llvm-947f9692440836dcb8d88b74b69dd379d85974ce.patch"
 

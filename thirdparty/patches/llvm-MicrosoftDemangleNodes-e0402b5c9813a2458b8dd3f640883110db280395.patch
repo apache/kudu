@@ -1,0 +1,32 @@
+commit e0402b5c9813a2458b8dd3f640883110db280395
+Author: Than McIntosh <thanm@google.com>
+Date:   Fri Jul 19 13:13:54 2019 +0000
+
+    [NFC] include cstdint/string prior to using uint8_t/string
+    
+    Summary: include proper header prior to use of uint8_t typedef
+    and std::string.
+    
+    Subscribers: llvm-commits
+    
+    Reviewers: cherry
+    
+    Tags: #llvm
+    
+    Differential Revision: https://reviews.llvm.org/D64937
+    
+    git-svn-id: https://llvm.org/svn/llvm-project/llvm/trunk@366572 91177308-0d34-0410-b5e6-96231b3b80d8
+
+diff --git a/include/llvm/Demangle/MicrosoftDemangleNodes.h b/include/llvm/Demangle/MicrosoftDemangleNodes.h
+index da9d9d5bfdc..3d47471f0ef 100644
+--- a/include/llvm/Demangle/MicrosoftDemangleNodes.h
++++ b/include/llvm/Demangle/MicrosoftDemangleNodes.h
+@@ -16,6 +16,8 @@
+ #include "llvm/Demangle/DemangleConfig.h"
+ #include "llvm/Demangle/StringView.h"
+ #include <array>
++#include <cstdint>
++#include <string>
+ 
+ namespace llvm {
+ namespace itanium_demangle {
