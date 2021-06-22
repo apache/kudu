@@ -24,7 +24,7 @@ following:
   by calling the `supportsIgnoreOperations()` method on the KuduClient.
 
 - Spark 3 compatible JARs compiled for Scala 2.12 are now published for the Kudu Spark integration.
-  See link:https://issues.apache.org/jira/browse/KUDU-3202[KUDU-3202] for more details.
+  See [KUDU-3202](https://issues.apache.org/jira/browse/KUDU-3202) for more details.
 
 - Every Kudu cluster now has an automatically generated cluster Id that can be used to uniquely
   identify a cluster. The cluster Id is shown in the masters web-UI, the `kudu master list` tool,
