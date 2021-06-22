@@ -422,7 +422,8 @@ build_libunwind() {
   pushd $LIBUNWIND_BDIR
   # Disable minidebuginfo, which depends on liblzma, until/unless we decide to
   # add liblzma to thirdparty.
-  $LIBUNWIND_SOURCE/configure \
+  CFLAGS="$EXTRA_CFLAGS" \
+    $LIBUNWIND_SOURCE/configure \
     --disable-minidebuginfo \
     --with-pic \
     --prefix=$PREFIX

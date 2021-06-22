@@ -461,12 +461,12 @@ EXTRA_CFLAGS="-fsanitize=thread $EXTRA_CFLAGS"
 EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
-if [ -n "$OS_LINUX" ] && [ -n "$F_TSAN" -o -n "$F_LIBUNWIND" ]; then
-  build_libunwind
-fi
-
 if [ -n "$F_TSAN" -o -n "$F_ZLIB" ]; then
   build_zlib
+fi
+
+if [ -n "$OS_LINUX" ] && [ -n "$F_TSAN" -o -n "$F_LIBUNWIND" ]; then
+  build_libunwind
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_LZ4" ]; then
