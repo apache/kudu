@@ -133,7 +133,7 @@ CURL_SOURCE=$TP_SOURCE_DIR/$CURL_NAME
 #  export NAME=crcutil-$(git rev-parse HEAD)
 #  git archive HEAD --prefix=$NAME/ -o /tmp/$NAME.tar.gz
 #  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
-CRCUTIL_VERSION=81f8a60f67190ff1e0c9f2f6e5a07f650671a646
+CRCUTIL_VERSION=2903870057d2f1f109b245650be29e856dc8b646
 CRCUTIL_NAME=crcutil-$CRCUTIL_VERSION
 CRCUTIL_SOURCE=$TP_SOURCE_DIR/$CRCUTIL_NAME
 
