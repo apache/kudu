@@ -31,6 +31,12 @@ To edit or update this document, edit `RELEASING.adoc` in `master`.
 
 == Stating Intent to Release
 
+NOTE: All email messages must be sent from your apache.org email address, otherwise with
+company or personal email addresses sometimes emails are not delivered.
+If using gmail.com service for email correspondence, follow
+link:https://support.google.com/mail/answer/22370?hl=en[this guide] to add your apache.org address
+to be used as `From` address when sending email messages.
+
 . *A week before branching*: send an email to dev@kudu.apache.org to
   announce that the branch will be happening, including a deadline for when new
   commits will need gatekeeper approval.
@@ -173,7 +179,7 @@ To edit or update this document, edit `RELEASING.adoc` in `master`.
   `kudu-version` in `examples/java/java-example/pom.xml`, `version` in
   `examples/java/insert-loadgen/pom.xml`, etc.).
   The idea is making all examples use the artifacts of the newly released
-  `1.x.y` version of Kudu.
+  `1.x.y` version of Kudu. Commit and send out the changes for review on Gerrit.
 
 . When ready, create a new lightweight tag and push it to the Apache Git repository.
 +
@@ -329,8 +335,6 @@ in its summary tab
 Note: You can upload to the test PyPi by adding
 `--repository-url https://test.pypi.org/legacy/` to the twine command.
 
-. Add the previous release notes to the `prior_release_notes.adoc` and submit the changes.
-
 . Generate the version-specific documentation from that branch following these
   <<README.adoc#updating-the-site,instructions>>.
 +
@@ -372,11 +376,12 @@ WARNING: The site *MUST NOT* be built on Mac. See the
 
 . Submit these changes to the `gh-pages` Gerrit branch and get them reviewed.
 
-. Once the review is finished and the commit is pushed, update the website following
-  these <<README.adoc#deploying-changes-to-the-apache-kudu-web-site,instructions>>.
-
-. Add a release blog post about the new release, similar to
+. Add a release blog post about the new release and send it out for review, similar to
   link:https://kudu.apache.org/2019/07/09/apache-kudu-1-10-0-release.html[this].
+
+. Once the reviews are finished and the commits are pushed to `gh-pages` branch,
+  update the website following these
+  <<README.adoc#deploying-changes-to-the-apache-kudu-web-site,instructions>>.
 
 . About 24 hours after all artifacts have been published, send an email to
   user@kudu.apache.org, dev@kudu.apache.org, and announce@apache.org to
@@ -397,6 +402,9 @@ WARNING: The site *MUST NOT* be built on Mac. See the
   fresh artifacts of latest released version.  This should be done only after
   publishing the officially released artifacts, so they are available while
   building the examples.
+
+. In the `master` branch of the project git repo, add the previous release notes to the
+  `prior_release_notes.adoc` and send out the change for review on Gerrit.
 
 . About another 24 hours later, clean up the SVN. If releasing a new minor
   version, delete the oldest minor version branch in the release repo (e.g. if
