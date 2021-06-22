@@ -574,6 +574,13 @@ Status ClientNegotiation::SendSaslInitiate() {
   unsigned init_msg_len = 0;
   const char* negotiated_mech = nullptr;
 
+  // If the negotiated mechanism is GSSAPI (Kerberos), configure SASL to use
+  // integrity protection so that the channel bindings and nonce can be
+  // verified.
+  if (negotiated_mech_ == SaslMechanism::GSSAPI) {
+    RETURN_NOT_OK(EnableProtection(sasl_conn_.get(), SaslProtection::kIntegrity));
+  }
+
   /* select a mechanism for a connection
    *  mechlist      -- mechanisms server has available (punctuation ignored)
    * output:
@@ -606,13 +613,6 @@ Status ClientNegotiation::SendSaslInitiate() {
 
   // Check that the SASL library is using the mechanism that we picked.
   DCHECK_EQ(SaslMechanism::value_of(negotiated_mech), negotiated_mech_);
-
-  // If the negotiated mechanism is GSSAPI (Kerberos), configure SASL to use
-  // integrity protection so that the channel bindings and nonce can be
-  // verified.
-  if (negotiated_mech_ == SaslMechanism::GSSAPI) {
-    RETURN_NOT_OK(EnableProtection(sasl_conn_.get(), SaslProtection::kIntegrity));
-  }
 
   NegotiatePB msg;
   msg.set_step(NegotiatePB::SASL_INITIATE);
