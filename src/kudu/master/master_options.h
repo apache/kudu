@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "kudu/kserver/kserver_options.h"
+#include "kudu/util/cache.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
@@ -55,8 +56,17 @@ struct MasterOptions : public kserver::KuduServerOptions {
     master_addresses_ = std::move(addresses);
   }
 
+  void set_block_cache_metrics_policy(Cache::ExistingMetricsPolicy b) {
+    block_cache_metrics_policy_ = b;
+  }
+
+  Cache::ExistingMetricsPolicy block_cache_metrics_policy() const {
+    return block_cache_metrics_policy_;
+  }
+
  private:
   std::vector<HostPort> master_addresses_;
+  Cache::ExistingMetricsPolicy block_cache_metrics_policy_;
 };
 
 } // namespace master

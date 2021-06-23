@@ -162,9 +162,10 @@ void BlockCache::Insert(BlockCache::PendingEntry* entry, BlockCacheHandle* inser
   inserted->SetHandle(std::move(h));
 }
 
-void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {
+void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity,
+                                      Cache::ExistingMetricsPolicy metrics_policy) {
   std::unique_ptr<BlockCacheMetrics> metrics(new BlockCacheMetrics(metric_entity));
-  cache_->SetMetrics(std::move(metrics));
+  cache_->SetMetrics(std::move(metrics), metrics_policy);
 }
 
 } // namespace cfile

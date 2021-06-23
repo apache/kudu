@@ -163,7 +163,7 @@ class CacheBaseTest : public KuduTest,
       scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
           &metric_registry_, "test");
       unique_ptr<BlockCacheMetrics> metrics(new BlockCacheMetrics(entity));
-      cache_->SetMetrics(std::move(metrics));
+      cache_->SetMetrics(std::move(metrics), Cache::ExistingMetricsPolicy::kKeep);
     }
   }
 

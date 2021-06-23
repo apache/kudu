@@ -39,7 +39,8 @@ TAG_FLAG(master_addresses, stable);
 namespace kudu {
 namespace master {
 
-MasterOptions::MasterOptions() {
+MasterOptions::MasterOptions()
+    : block_cache_metrics_policy_(Cache::ExistingMetricsPolicy::kKeep) {
   rpc_opts.default_port = Master::kDefaultPort;
 
   if (!FLAGS_master_addresses.empty()) {

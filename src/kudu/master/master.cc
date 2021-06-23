@@ -190,7 +190,8 @@ Master::~Master() {
 Status Master::Init() {
   CHECK_EQ(kStopped, state_);
 
-  cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_entity());
+  cfile::BlockCache::GetSingleton()->StartInstrumentation(
+      metric_entity(), opts_.block_cache_metrics_policy());
 
   RETURN_NOT_OK(ThreadPoolBuilder("init").set_max_threads(1).Build(&init_pool_));
 

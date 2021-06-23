@@ -472,7 +472,7 @@ FileCache::FileCache(const string& cache_name,
       running_(1) {
   if (entity) {
     unique_ptr<FileCacheMetrics> metrics(new FileCacheMetrics(entity));
-    cache_->SetMetrics(std::move(metrics));
+    cache_->SetMetrics(std::move(metrics), Cache::ExistingMetricsPolicy::kKeep);
   }
   LOG(INFO) << Substitute("Constructed file cache $0 with capacity $1",
                           cache_name, max_open_files);

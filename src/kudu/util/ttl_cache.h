@@ -209,7 +209,7 @@ class TTLCache {
   void SetMetrics(std::unique_ptr<TTLCacheMetrics> metrics) {
     // Keep a copy of the pointer to the metrics: the FIFO cache is the owner.
     metrics_ = metrics.get();
-    cache_->SetMetrics(std::move(metrics));
+    cache_->SetMetrics(std::move(metrics), Cache::ExistingMetricsPolicy::kKeep);
   }
 
  private:

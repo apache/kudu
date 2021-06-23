@@ -65,8 +65,24 @@ class Cache {
   // function that was passed to the constructor.
   virtual ~Cache();
 
+  // The behavior when calling SetMetrics() when 'metrics_' is already set.
+  enum class ExistingMetricsPolicy {
+    // Calling SetMetrics() again will be a no-op. This is appropriate in tests
+    // that use a singleton cache that is shared across multiple daemons in the
+    // same process, at the cost of not having accurate cache metrics. This is
+    // useful for avoiding races between the destruction of existing metrics
+    // and the setting of new metrics in new daemons. It is expected that this
+    // is only used in tests.
+    kKeep,
+
+    // SetMetrics() will overwrite the existing metrics. It is up to callers to
+    // ensure this is safe, e.g. by destructing the entity that owned the
+    // original metrics.
+    kReset,
+  };
   // Set the cache metrics to update corresponding counters accordingly.
-  virtual void SetMetrics(std::unique_ptr<CacheMetrics> metrics) = 0;
+  virtual void SetMetrics(std::unique_ptr<CacheMetrics> metrics,
+                          ExistingMetricsPolicy metrics_policy) = 0;
 
   // Opaque handle to an entry stored in the cache.
   struct Handle { };

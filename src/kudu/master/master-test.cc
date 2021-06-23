@@ -77,6 +77,7 @@
 #include "kudu/server/rpc_server.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/cache.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
@@ -125,6 +126,9 @@ DECLARE_bool(mock_table_metrics_for_testing);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
 DECLARE_int32(diagnostics_log_stack_traces_interval_ms);
+DECLARE_int32(flush_threshold_mb);
+DECLARE_int32(flush_threshold_secs);
+DECLARE_int32(flush_upper_bound_ms);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int32(max_table_comment_length);
 DECLARE_int32(rpc_service_queue_length);
@@ -210,6 +214,46 @@ static void MakeHostPortPB(const string& host, uint32_t port, HostPortPB* pb) {
 TEST_F(MasterTest, TestShutdownWithoutStart) {
   MiniMaster m("/xxxx", HostPort("127.0.0.1", 0));
   m.Shutdown();
+}
+
+// Test that ensures that, when specified, restarting a master from within the
+// same process can correctly instantiate proper block cache metrics.
+TEST_F(MasterTest, TestResetBlockCacheMetricsInSameProcess) {
+  mini_master_->Shutdown();
+  // Make sure we flush quickly so we start using the block cache ASAP.
+  FLAGS_flush_threshold_mb = 1;
+  FLAGS_flush_threshold_secs = 1;
+  FLAGS_flush_upper_bound_ms = 0;
+
+  // If implemented incorrectly, since the BlockCache is a singleton, we could
+  // end up with incorrect block cache metrics upon resetting the master
+  // because we register metrics twice. Ensure that's not the case when we
+  // supply the option to reset metrics.
+  mini_master_->mutable_options()->set_block_cache_metrics_policy(
+      Cache::ExistingMetricsPolicy::kReset);
+  ASSERT_OK(mini_master_->Restart());
+
+  // Keep on creating tables until we flush, at which point we'll use the block
+  // cache and increment metrics.
+  // NOTE: we could examine the master's metric_entity() directly, but that
+  // could itself interfere with the reported metrics, e.g. by calling
+  // FindOrCreateCount(). Going through the web UI is more organic anyway.
+  const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("v", STRING) }, 1);
+  constexpr const char* kTablePrefix = "testtb";
+  EasyCurl c;
+  int i = 0;
+  ASSERT_EVENTUALLY([&] {
+      ASSERT_OK(CreateTable(Substitute("$0-$1", kTablePrefix, i++), kTableSchema));
+      faststring buf;
+      ASSERT_OK(c.FetchURL(
+          Substitute("http://$0/metrics?ids=kudu.master&metrics=block_cache_inserts",
+                     mini_master_->bound_http_addr().ToString()),
+          &buf));
+      string raw = buf.ToString();
+      // If instrumented correctly, the new master should eventually display
+      // non-zero metrics for the block cache.
+      ASSERT_STR_MATCHES(raw, ".*\"value\": [1-9].*");
+  });
 }
 
 TEST_F(MasterTest, TestRegisterAndHeartbeat) {

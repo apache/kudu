@@ -567,14 +567,16 @@ class ShardedCache : public Cache {
     STLDeleteElements(&shards_);
   }
 
-  void SetMetrics(std::unique_ptr<CacheMetrics> metrics) override {
-    // TODO(KUDU-2165): reuse of the Cache singleton across multiple MiniCluster servers
-    // causes TSAN errors. So, we'll ensure that metrics only get attached once, from
-    // whichever server starts first. This has the downside that, in test builds, we won't
-    // get accurate cache metrics, but that's probably better than spurious failures.
+  void SetMetrics(std::unique_ptr<CacheMetrics> metrics,
+                  ExistingMetricsPolicy metrics_policy) override {
     std::lock_guard<decltype(metrics_lock_)> l(metrics_lock_);
-    if (metrics_) {
-      CHECK(IsGTest()) << "Metrics should only be set once per Cache singleton";
+    if (metrics_ && metrics_policy == ExistingMetricsPolicy::kKeep) {
+      // KUDU-2165: reuse of the Cache singleton across multiple InternalMiniCluster
+      // servers causes TSAN errors. So, we'll ensure that metrics only get
+      // attached once, from whichever server starts first. This has the downside
+      // that, in test builds, we won't get accurate cache metrics, but that's
+      // probably better than spurious failures.
+      CHECK(IsGTest()) << "Metrics should only be set once per Cache";
       return;
     }
     metrics_ = std::move(metrics);

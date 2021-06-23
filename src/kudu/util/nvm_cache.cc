@@ -51,6 +51,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_util_prod.h"
 
 #ifndef MEMKIND_PMEM_MIN_SIZE
 #define MEMKIND_PMEM_MIN_SIZE (1024 * 1024 * 16) // Taken from memkind 1.9.0.
@@ -656,7 +657,12 @@ class ShardedLRUCache : public Cache {
     return reinterpret_cast<LRUHandle*>(handle->get())->val_ptr();
   }
 
-  virtual void SetMetrics(unique_ptr<CacheMetrics> metrics) OVERRIDE {
+  virtual void SetMetrics(unique_ptr<CacheMetrics> metrics,
+                          Cache::ExistingMetricsPolicy metrics_policy) OVERRIDE {
+    if (metrics_ && metrics_policy == Cache::ExistingMetricsPolicy::kKeep) {
+      CHECK(IsGTest()) << "Metrics should only be set once per Cache";
+      return;
+    }
     metrics_ = std::move(metrics);
     for (const auto& shard : shards_) {
       shard->SetMetrics(metrics_.get());

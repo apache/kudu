@@ -115,7 +115,7 @@ void TableLocationsCache::Remove(const std::string& table_id) {
 
 // Set metrics for the cache.
 void TableLocationsCache::SetMetrics(std::unique_ptr<CacheMetrics> metrics) {
-  cache_->SetMetrics(std::move(metrics));
+  cache_->SetMetrics(std::move(metrics), Cache::ExistingMetricsPolicy::kKeep);
 }
 
 TableLocationsCache::EntryHandle::EntryHandle()

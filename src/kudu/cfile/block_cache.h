@@ -133,7 +133,9 @@ class BlockCache {
   // This should be called before the block cache starts serving blocks.
   // Not calling StartInstrumentation will simply result in no block cache-related metrics.
   // Calling StartInstrumentation multiple times will reset the metrics each time.
-  void StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
+  void StartInstrumentation(
+      const scoped_refptr<MetricEntity>& metric_entity,
+      Cache::ExistingMetricsPolicy metrics_policy = Cache::ExistingMetricsPolicy::kKeep);
 
   // Insertion path
   // --------------------
