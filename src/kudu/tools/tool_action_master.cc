@@ -396,6 +396,7 @@ Status AddMaster(const RunnerContext& context) {
     const auto& flag = name_flag_pair.second;
     new_master_flags.emplace_back(Substitute("--$0=$1", flag.name, flag.current_value));
   }
+  new_master_flags.emplace_back("--master_auto_join_cluster=false");
 
   // Bring up the new master that includes master addresses of the cluster and itself.
   // It's possible this is a retry in which case the new master is already part of

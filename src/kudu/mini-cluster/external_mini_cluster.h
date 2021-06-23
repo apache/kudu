@@ -279,6 +279,9 @@ class ExternalMiniCluster : public MiniCluster {
   // Requires that the master is already running.
   Status AddTabletServer();
 
+  // Add a new master to the cluster. The new master is started.
+  Status AddMaster(const std::vector<std::string>& extra_flags = {});
+
 #if !defined(NO_CHRONY)
   // Add a new NTP server to the cluster. The new NTP server is started upon
   // adding, bind to the address and port specified by 'addr'.
@@ -411,9 +414,12 @@ class ExternalMiniCluster : public MiniCluster {
   }
 
   // Wait until the number of registered tablet servers reaches the given count
-  // on all of the running masters. Returns Status::TimedOut if the desired
-  // count is not achieved with the given timeout.
-  Status WaitForTabletServerCount(int count, const MonoDelta& timeout);
+  // on running masters. Returns Status::TimedOut if the desired count is not
+  // achieved with the given timeout.
+  // If 'master_idx' is specified, only examines the given master if it's
+  // running. Otherwise, checks all running masters.
+  Status WaitForTabletServerCount(int count, const MonoDelta& timeout,
+                                  int master_idx = -1);
 
   // Runs gtest assertions that no servers have crashed.
   void AssertNoCrashes();
@@ -494,6 +500,16 @@ class ExternalMiniCluster : public MiniCluster {
 
  private:
   Status StartMasters();
+
+  // Constructs an ExternalMaster based on 'opts_' but with the given set of
+  // master addresses, giving the new master the address in the list
+  // corresponding to 'idx'. Callers are expected to call Start() with the
+  // output 'master'.
+  //
+  // It's expected that the port for the master at 'idx' is reserved, and that
+  // the master can be run with the --rpc_reuseport flag.
+  Status CreateMaster(const std::vector<HostPort>& master_rpc_addrs, int idx,
+                      scoped_refptr<ExternalMaster>* master);
 
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();

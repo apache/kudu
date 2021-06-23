@@ -1140,7 +1140,10 @@ service MasterService {
 
   // Add a new master to the existing cluster.
   rpc AddMaster(AddMasterRequestPB) returns (AddMasterResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
+    // NOTE: the master service may send this RPC as a part of its automated
+    // addition of masters to existing clusters, hence the inclusion of the
+    // service user.
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 
   // Remove a master from the existing cluster.

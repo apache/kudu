@@ -154,8 +154,6 @@ void SmokeExternalMiniCluster(const ExternalMiniClusterOptions& opts,
   CHECK(master_rpc_addresses);
   master_rpc_addresses->clear();
 
-  ASSERT_OK(cluster->Start());
-
   // Verify each of the masters.
   for (int i = 0; i < opts.num_masters; i++) {
     SCOPED_TRACE(i);
@@ -281,6 +279,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   opts.num_tablet_servers = 3;
 
   unique_ptr<ExternalMiniCluster> cluster(new ExternalMiniCluster(opts));
+  ASSERT_OK(cluster->Start());
   vector<HostPort> master_rpc_addresses;
   NO_FATALS(SmokeExternalMiniCluster(opts, cluster.get(), &master_rpc_addresses));
 
@@ -296,6 +295,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   // the prior run.
   opts.master_rpc_addresses = master_rpc_addresses;
   cluster.reset(new ExternalMiniCluster(opts));
+  ASSERT_OK(cluster->Start());
   NO_FATALS(SmokeExternalMiniCluster(opts, cluster.get(), &master_rpc_addresses));
   ASSERT_EQ(opts.master_rpc_addresses, master_rpc_addresses);
 
@@ -304,6 +304,42 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   // destructor, but this is done in the context of testing. This is to verify
   // that ExternalMiniCluster object destructor works as expected in the case
   // if the cluster has already been shutdown.
+  cluster->Shutdown();
+}
+
+TEST_P(ExternalMiniClusterTest, TestAddMaster) {
+  ExternalMiniClusterOptions opts;
+  const auto& param = GetParam();
+  opts.enable_kerberos = std::get<0>(param) == Kerberos::ENABLED;
+  if (std::get<1>(param) == HiveMetastore::ENABLED) {
+    opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  }
+#if !defined(NO_CHRONY)
+  opts.num_ntp_servers = std::get<2>(param);
+#endif
+
+  opts.num_masters = 3;
+  opts.num_tablet_servers = 1;
+
+  unique_ptr<ExternalMiniCluster> cluster(new ExternalMiniCluster(opts));
+  ASSERT_OK(cluster->Start());
+
+  // Add a master and wait for it to start up and get reported to.
+  cluster->AddMaster();
+  ASSERT_OK(cluster->master(opts.num_masters)->WaitForCatalogManager());
+  cluster->tablet_server(0)->Shutdown();
+  ASSERT_OK(cluster->tablet_server(0)->Restart());
+  ASSERT_OK(cluster->WaitForTabletServerCount(
+      opts.num_tablet_servers, MonoDelta::FromSeconds(30), /*master_idx*/opts.num_masters));
+
+  // Smoke the cluster using an updated 'opts' that expects the new number of
+  // masters.
+  opts.num_masters++;
+  vector<HostPort> master_rpc_addresses;
+  NO_FATALS(SmokeExternalMiniCluster(opts, cluster.get(), &master_rpc_addresses));
+
+  // Shutdown the cluster explicitly on top of the one in the cluster's
+  // destructor to test repeated calls to Shutdown().
   cluster->Shutdown();
 }
 

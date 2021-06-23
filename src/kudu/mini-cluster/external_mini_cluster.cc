@@ -34,6 +34,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #if !defined(NO_CHRONY)
 #include "kudu/clock/test/mini_chronyd.h"
 #endif
@@ -502,94 +503,13 @@ Status ExternalMiniCluster::StartMasters() {
       reserved_sockets.emplace_back(std::move(reserved_socket));
     }
   }
-
-  vector<string> flags;
-  flags.emplace_back("--rpc_reuseport=true");
-  // Setting --master_addresses flag for a single master configuration is now supported but not
-  // mandatory. Not setting the flag helps test existing kudu deployments that don't specify
-  // the --master_addresses flag for single master configuration.
-  if (num_masters > 1 || opts_.supply_single_master_addr) {
-    flags.emplace_back(Substitute("--master_addresses=$0",
-                                  HostPort::ToCommaSeparatedString(master_rpc_addrs)));
-  }
-  if (!opts_.location_info.empty()) {
-    string bin_path;
-    RETURN_NOT_OK(DeduceBinRoot(&bin_path));
-    const auto mapping_script_path =
-        JoinPathSegments(bin_path, "testdata/assign-location.py");
-    const auto state_store_fpath =
-        JoinPathSegments(opts_.cluster_root, "location-assignment.state");
-    auto location_cmd = Substitute("$0 --state_store=$1",
-                                   mapping_script_path, state_store_fpath);
-    for (const auto& elem : opts_.location_info) {
-      // Per-location mapping rule specified as a pair 'location:num_servers',
-      // where 'location' is the location string and 'num_servers' is the number
-      // of tablet servers to be assigned the location.
-      location_cmd += Substitute(" --map $0:$1", elem.first, elem.second);
-    }
-    flags.emplace_back(Substitute("--location_mapping_cmd=$0", location_cmd));
-#   if defined(__APPLE__)
-    // On macOS, it's not possible to have unique loopback interfaces. To make
-    // location mapping working, a tablet server is identified by its UUID
-    // instead of IP address of its RPC end-point.
-    flags.emplace_back("--location_mapping_by_uuid");
-#   endif
-  }
-
-  // Add custom master flags.
-  copy(opts_.extra_master_flags.begin(), opts_.extra_master_flags.end(),
-       std::back_inserter(flags));
-
   // Start the masters.
-  const string& exe = GetBinaryPath(kKuduBinaryName);
   for (int i = 0; i < num_masters; i++) {
-    string daemon_id = Substitute("master-$0", i);
-
-    ExternalDaemonOptions opts;
-    opts.messenger = messenger_;
-    opts.block_manager_type = opts_.block_manager_type;
-    opts.exe = exe;
-    opts.wal_dir = GetWalPath(daemon_id);
-    opts.data_dirs = GetDataPaths(daemon_id);
-    opts.log_dir = GetLogPath(daemon_id);
-    if (FLAGS_perf_record) {
-      opts.perf_record_filename =
-          Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
-    }
-
-    vector<string> time_source_flags;
-    RETURN_NOT_OK(AddTimeSourceFlags(i, &time_source_flags));
-    // Custom flags come last because they can contain overrides.
-    flags.insert(flags.begin(),
-                 time_source_flags.begin(), time_source_flags.end());
-
-    opts.extra_flags = SubstituteInFlags(flags, i);
-    opts.start_process_timeout = opts_.start_process_timeout;
-    opts.rpc_bind_address = master_rpc_addrs[i];
-    if (opts_.hms_mode == HmsMode::ENABLE_METASTORE_INTEGRATION) {
-      opts.extra_flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_->uris()));
-      if (opts_.enable_kerberos) {
-        opts.extra_flags.emplace_back("--hive_metastore_sasl_enabled=true");
-      }
-    }
-    if (opts_.enable_ranger) {
-      opts.extra_flags.emplace_back(Substitute("--ranger_config_path=$0",
-                                               JoinPathSegments(cluster_root(),
-                                                                "ranger-client")));
-    }
-    opts.logtostderr = opts_.logtostderr;
-
-    scoped_refptr<ExternalMaster> peer = new ExternalMaster(opts);
-    if (opts_.enable_kerberos) {
-      RETURN_NOT_OK_PREPEND(
-          peer->EnableKerberos(kdc_.get(), opts_.principal, master_rpc_addrs[i].host()),
-          "could not enable Kerberos");
-    }
-    RETURN_NOT_OK_PREPEND(peer->Start(),
-                          Substitute("Unable to start Master at index $0", i));
+    scoped_refptr<ExternalMaster> peer;
+    RETURN_NOT_OK(CreateMaster(master_rpc_addrs, i, &peer));
+    RETURN_NOT_OK_PREPEND(peer->Start(), Substitute("Unable to start Master at index $0", i));
     masters_.emplace_back(std::move(peer));
   }
-
   return Status::OK();
 }
 
@@ -648,6 +568,129 @@ Status ExternalMiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
+Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addrs, int idx,
+                                         scoped_refptr<ExternalMaster>* master) {
+  DCHECK_LT(idx, master_rpc_addrs.size());
+  vector<string> flags;
+  // We expect that callers have reserved a socket for the master we're
+  // creating, and we'll thus have to have the daemon reuse the bound port.
+  flags.emplace_back("--rpc_reuseport=true");
+  // Setting --master_addresses flag for a single master configuration is now
+  // supported but not mandatory. Not setting the flag helps test existing kudu
+  // deployments that don't specify the --master_addresses flag for single
+  // master configuration.
+  if (master_rpc_addrs.size() > 1 || opts_.supply_single_master_addr) {
+    flags.emplace_back(Substitute("--master_addresses=$0",
+                                  HostPort::ToCommaSeparatedString(master_rpc_addrs)));
+  }
+  if (!opts_.location_info.empty()) {
+    string bin_path;
+    RETURN_NOT_OK(DeduceBinRoot(&bin_path));
+    const auto mapping_script_path =
+        JoinPathSegments(bin_path, "testdata/assign-location.py");
+    const auto state_store_fpath =
+        JoinPathSegments(opts_.cluster_root, "location-assignment.state");
+    auto location_cmd = Substitute("$0 --state_store=$1",
+                                   mapping_script_path, state_store_fpath);
+    for (const auto& elem : opts_.location_info) {
+      // Per-location mapping rule specified as a pair 'location:num_servers',
+      // where 'location' is the location string and 'num_servers' is the number
+      // of tablet servers to be assigned the location.
+      location_cmd += Substitute(" --map $0:$1", elem.first, elem.second);
+    }
+    flags.emplace_back(Substitute("--location_mapping_cmd=$0", location_cmd));
+#   if defined(__APPLE__)
+    // On macOS, it's not possible to have unique loopback interfaces. To make
+    // location mapping working, a tablet server is identified by its UUID
+    // instead of IP address of its RPC end-point.
+    flags.emplace_back("--location_mapping_by_uuid");
+#   endif
+  }
+  if (opts_.hms_mode == HmsMode::ENABLE_METASTORE_INTEGRATION) {
+    flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_->uris()));
+    if (opts_.enable_kerberos) {
+      flags.emplace_back("--hive_metastore_sasl_enabled=true");
+    }
+  }
+  if (opts_.enable_ranger) {
+    flags.emplace_back(Substitute("--ranger_config_path=$0",
+                                  JoinPathSegments(cluster_root(),
+                                                   "ranger-client")));
+  }
+  // Add custom master flags.
+  copy(opts_.extra_master_flags.begin(), opts_.extra_master_flags.end(),
+       std::back_inserter(flags));
+
+  string daemon_id = Substitute("master-$0", idx);
+
+  ExternalDaemonOptions opts;
+  opts.messenger = messenger_;
+  opts.block_manager_type = opts_.block_manager_type;
+  opts.exe = GetBinaryPath(kKuduBinaryName);
+  opts.wal_dir = GetWalPath(daemon_id);
+  opts.data_dirs = GetDataPaths(daemon_id);
+  opts.log_dir = GetLogPath(daemon_id);
+  if (FLAGS_perf_record) {
+    opts.perf_record_filename =
+        Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
+  }
+
+  vector<string> time_source_flags;
+  RETURN_NOT_OK(AddTimeSourceFlags(idx, &time_source_flags));
+  // Custom flags set above come last because they can contain overrides.
+  flags.insert(flags.begin(), time_source_flags.begin(), time_source_flags.end());
+
+  opts.extra_flags = SubstituteInFlags(flags, idx);
+  opts.start_process_timeout = opts_.start_process_timeout;
+  opts.rpc_bind_address = master_rpc_addrs[idx];
+  opts.logtostderr = opts_.logtostderr;
+
+  scoped_refptr<ExternalMaster> peer(new ExternalMaster(opts));
+  if (opts_.enable_kerberos) {
+    RETURN_NOT_OK_PREPEND(
+        peer->EnableKerberos(kdc_.get(), opts_.principal, master_rpc_addrs[idx].host()),
+        "could not enable Kerberos");
+  }
+  *master = std::move(peer);
+  return Status::OK();
+}
+
+Status ExternalMiniCluster::AddMaster(const vector<string>& extra_flags) {
+  const int idx = masters_.size();
+  const string daemon_id = Substitute("master-$0", idx);
+
+  unique_ptr<Socket> reserved_socket;
+  RETURN_NOT_OK_PREPEND(ReserveDaemonSocket(DaemonType::MASTER, idx, opts_.bind_mode,
+                                            &reserved_socket),
+                        "failed to reserve master socket address");
+  Sockaddr addr;
+  RETURN_NOT_OK(reserved_socket->GetSocketAddress(&addr));
+  vector<HostPort> master_rpc_addrs = this->master_rpc_addrs();
+  master_rpc_addrs.emplace_back(addr.host(), addr.port());
+  scoped_refptr<ExternalMaster> peer;
+  RETURN_NOT_OK(CreateMaster(master_rpc_addrs, idx, &peer));
+  peer->mutable_flags()->insert(peer->mutable_flags()->end(),
+                                extra_flags.begin(), extra_flags.end());
+  RETURN_NOT_OK_PREPEND(peer->Start(),
+                        Substitute("unable to start master at index $0", idx));
+  // Update the existing servers' gflags so the new master is accounted for the
+  // next time they restart.
+  // NOTE: the new master already has the correct list set for this flag, from
+  // the call to CreateMaster().
+  const auto& new_master_addrs_list = HostPort::ToCommaSeparatedString(master_rpc_addrs);
+  for (auto& master : masters_) {
+    master->mutable_flags()->emplace_back(
+        Substitute("--master_addresses=$0", new_master_addrs_list));
+  }
+  for (auto& ts : tablet_servers_) {
+    ts->mutable_flags()->emplace_back(
+        Substitute("--tserver_master_addrs=$0", new_master_addrs_list));
+  }
+  masters_.emplace_back(std::move(peer));
+  ++opts_.num_masters;
+  return Status::OK();
+}
+
 #if !defined(NO_CHRONY)
 Status ExternalMiniCluster::AddNtpServer(const Sockaddr& addr) {
   clock::MiniChronydOptions options;
@@ -663,13 +706,21 @@ Status ExternalMiniCluster::AddNtpServer(const Sockaddr& addr) {
 }
 #endif // #if !defined(NO_CHRONY) ...
 
-Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta& timeout) {
+Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta& timeout,
+                                                     int master_idx) {
+  CHECK_LT(master_idx, opts_.num_masters);
   MonoTime deadline = MonoTime::Now() + timeout;
 
   unordered_set<int> masters_to_search;
-  for (int i = 0; i < masters_.size(); i++) {
-    if (!masters_[i]->IsShutdown()) {
-      masters_to_search.insert(i);
+  if (master_idx == -1) {
+    for (int i = 0; i < masters_.size(); i++) {
+      if (!masters_[i]->IsShutdown()) {
+        masters_to_search.insert(i);
+      }
+    }
+  } else {
+    if (!masters_[master_idx]->IsShutdown()) {
+      masters_to_search.insert(master_idx);
     }
   }
 
@@ -1454,6 +1505,19 @@ Status ExternalMaster::WaitForCatalogManager(WaitMode wait_mode) {
     ListTablesResponsePB resp;
     RpcController rpc;
     Status s = proxy->ListTables(req, &resp, &rpc);
+    if (s.IsRemoteError()) {
+      auto* err = rpc.error_response();
+      if (err && err->has_code()) {
+        switch (err->code()) {
+          case rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY:
+          case rpc::ErrorStatusPB::ERROR_UNAVAILABLE:
+            continue;
+          default:
+            return s;
+        }
+      }
+      return s;
+    }
     if (s.ok()) {
       if (!resp.has_error()) {
         // This master is the leader and is up and running.

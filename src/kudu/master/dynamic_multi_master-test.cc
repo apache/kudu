@@ -16,13 +16,16 @@
 // under the License.
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
@@ -49,6 +52,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -60,12 +64,15 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -93,9 +100,12 @@ using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
+using std::atomic;
 using std::map;
 using std::string;
+using std::thread;
 using std::tuple;
 using std::unique_ptr;
 using std::unordered_set;
@@ -105,14 +115,12 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
-static Status CreateTable(ExternalMiniCluster* cluster,
-                          const std::string& table_name) {
-  shared_ptr<KuduClient> client;
-      RETURN_NOT_OK(cluster->CreateClient(nullptr, &client));
+namespace {
+Status CreateTableWithClient(KuduClient* client, const std::string& table_name) {
   KuduSchema schema;
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-      RETURN_NOT_OK(b.Build(&schema));
+  RETURN_NOT_OK(b.Build(&schema));
   unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
   return table_creator->table_name(table_name)
       .schema(&schema)
@@ -120,6 +128,153 @@ static Status CreateTable(ExternalMiniCluster* cluster,
       .num_replicas(1)
       .Create();
 }
+Status CreateTable(ExternalMiniCluster* cluster,
+                   const std::string& table_name) {
+  shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(cluster->CreateClient(nullptr, &client));
+  return CreateTableWithClient(client.get(), table_name);
+}
+
+Status ReserveSocketForMaster(int master_idx, unique_ptr<Socket>* socket,
+                              Sockaddr* addr, HostPort* hp) {
+  unique_ptr<Socket> s;
+  Sockaddr a;
+  RETURN_NOT_OK(MiniCluster::ReserveDaemonSocket(MiniCluster::MASTER, master_idx,
+                                                 kDefaultBindMode, &s));
+  RETURN_NOT_OK(s->GetSocketAddress(&a));
+  *socket = std::move(s);
+  *addr = a;
+  *hp = HostPort(a);
+  return Status::OK();
+}
+
+// Functor that takes a leader_master_idx and runs the desired master RPC against
+// the leader master returning the RPC status and the optional MasterErrorPB::Code.
+typedef std::function<
+    std::pair<Status, boost::optional<MasterErrorPB::Code>>(int leader_master_idx)> MasterRPC;
+
+// Helper function that runs the master RPC against the leader master and retries the RPC
+// if the expected leader master returns NOT_THE_LEADER error due to leadership change.
+// Returns a single combined Status:
+//   - RPC return status if not OK.
+//   - IllegalState for a master response error other than NOT_THE_LEADER error.
+//   - TimedOut if all attempts to run the RPC against leader master are exhausted.
+//   - OK if the master RPC is successful.
+Status RunLeaderMasterRPC(const MasterRPC& master_rpc, ExternalMiniCluster* cluster) {
+  int64_t time_left_to_sleep_msecs = 2000;
+  while (time_left_to_sleep_msecs > 0) {
+    int leader_master_idx;
+    RETURN_NOT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
+    const auto& rpc_result = master_rpc(leader_master_idx);
+    RETURN_NOT_OK(rpc_result.first);
+    const auto& master_error = rpc_result.second;
+    if (!master_error) {
+      return Status::OK();
+    }
+    if (master_error != MasterErrorPB::NOT_THE_LEADER) {
+      // Some other master error.
+      return Status::IllegalState(Substitute("Master error: $0"),
+                                  MasterErrorPB_Code_Name(*master_error));
+    }
+    // NOT_THE_LEADER error, so retry after some duration.
+    static const MonoDelta kSleepDuration = MonoDelta::FromMilliseconds(100);
+    SleepFor(kSleepDuration);
+    time_left_to_sleep_msecs -= kSleepDuration.ToMilliseconds();
+  }
+  return Status::TimedOut("Failed contacting the right leader master after multiple attempts");
+}
+
+// Run ListMasters RPC, retrying on leadership change, returning the response
+// in 'resp'.
+Status RunListMasters(ListMastersResponsePB* resp, ExternalMiniCluster* cluster) {
+  auto list_masters = [&] (int leader_master_idx) {
+    ListMastersRequestPB req;
+    RpcController rpc;
+    Status s = cluster->master_proxy(leader_master_idx)->ListMasters(req, resp, &rpc);
+    boost::optional<MasterErrorPB::Code> err_code(resp->has_error(), resp->error().code());
+    return std::make_pair(s, err_code);
+  };
+  return RunLeaderMasterRPC(list_masters, cluster);
+}
+
+// Verify the ExternalMiniCluster 'cluster' contains 'num_masters' overall and
+// are all VOTERS. Populates the new master addresses in 'master_hps', if not
+// nullptr. Returns an error if the expected state is not present.
+Status VerifyVoterMastersForCluster(int num_masters, vector<HostPort>* master_hps,
+                                    ExternalMiniCluster* cluster) {
+  ListMastersResponsePB resp;
+  RETURN_NOT_OK(RunListMasters(&resp, cluster));
+  if (num_masters != resp.masters_size()) {
+    return Status::IllegalState(Substitute("expected $0 masters but got $1",
+                                           num_masters, resp.masters_size()));
+  }
+  vector<HostPort> hps;
+  for (const auto& master : resp.masters()) {
+    if ((master.role() != RaftPeerPB::LEADER && master.role() != RaftPeerPB::FOLLOWER) ||
+        master.member_type() != RaftPeerPB::VOTER ||
+        master.registration().rpc_addresses_size() != 1) {
+      return Status::IllegalState(Substitute("bad master: $0", SecureShortDebugString(master)));
+    }
+    hps.emplace_back(HostPortFromPB(master.registration().rpc_addresses(0)));
+  }
+  if (master_hps) {
+    *master_hps = std::move(hps);
+  }
+  return Status::OK();
+}
+
+// Initiates leadership transfer to the specified master returning status of
+// the request. The request is performed synchronously, though the transfer of
+// leadership is asynchronous -- callers need to wait to ensure leadership is
+// actually transferred.
+Status TransferMasterLeadershipAsync(ExternalMiniCluster* cluster, const string& master_uuid) {
+  int leader_master_idx;
+  RETURN_NOT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
+  auto leader_master_addr = cluster->master(leader_master_idx)->bound_rpc_addr();
+  ConsensusServiceProxy consensus_proxy(cluster->messenger(), leader_master_addr,
+                                        leader_master_addr.host());
+  LeaderStepDownRequestPB req;
+  req.set_dest_uuid(cluster->master(leader_master_idx)->uuid());
+  req.set_tablet_id(master::SysCatalogTable::kSysCatalogTabletId);
+  req.set_new_leader_uuid(master_uuid);
+  req.set_mode(consensus::GRACEFUL);
+  LeaderStepDownResponsePB resp;
+  RpcController rpc;
+  RETURN_NOT_OK(consensus_proxy.LeaderStepDown(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+// Transfers leadership among masters in the 'cluster' to the specified 'new_master_uuid'
+// verifies the transfer is successful.
+void TransferMasterLeadership(ExternalMiniCluster* cluster, const string& new_master_uuid) {
+  ASSERT_OK(TransferMasterLeadershipAsync(cluster, new_master_uuid));
+  // It takes some time for the leadership transfer to complete, hence the
+  // ASSERT_EVENTUALLY.
+  ASSERT_EVENTUALLY([&] {
+    int leader_master_idx = -1;
+    ASSERT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
+    ASSERT_EQ(new_master_uuid, cluster->master(leader_master_idx)->uuid());
+  });
+}
+
+// Fetch uuid of the specified 'fs_wal_dir' and 'fs_data_dirs'.
+Status GetFsUuid(const string& fs_wal_dir, const vector<string>& fs_data_dirs, string* uuid) {
+  google::FlagSaver saver;
+  FLAGS_fs_wal_dir = fs_wal_dir;
+  FLAGS_fs_data_dirs = JoinStrings(fs_data_dirs, ",");
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = true;
+  fs_opts.update_instances = fs::UpdateInstanceBehavior::DONT_UPDATE;
+  FsManager fs_manager(Env::Default(), std::move(fs_opts));
+  RETURN_NOT_OK(fs_manager.PartialOpen());
+  *uuid = fs_manager.uuid();
+  return Status::OK();
+}
+
+} // anonymous namespace
 
 // Test class for testing addition/removal of masters to a Kudu cluster.
 class DynamicMultiMasterTest : public KuduTest {
@@ -131,11 +286,8 @@ class DynamicMultiMasterTest : public KuduTest {
     orig_num_masters_ = num_masters;
 
     // Reserving a port upfront for the new master that'll be added to the cluster.
-    ASSERT_OK(MiniCluster::ReserveDaemonSocket(MiniCluster::MASTER, orig_num_masters_ /* index */,
-                                               kDefaultBindMode, &reserved_socket_));
-
-    ASSERT_OK(reserved_socket_->GetSocketAddress(&reserved_addr_));
-    reserved_hp_ = HostPort(reserved_addr_);
+    ASSERT_OK(ReserveSocketForMaster(/*index*/orig_num_masters_, &reserved_socket_,
+                                     &reserved_addr_, &reserved_hp_));
   }
 
   void StartCluster(const vector<string>& extra_master_flags = {},
@@ -143,6 +295,7 @@ class DynamicMultiMasterTest : public KuduTest {
     opts_.num_masters = orig_num_masters_;
     opts_.supply_single_master_addr = supply_single_master_addr;
     opts_.extra_master_flags = extra_master_flags;
+    opts_.extra_master_flags.emplace_back("--master_auto_join_cluster=false");
 
     cluster_.reset(new ExternalMiniCluster(opts_));
     ASSERT_OK(cluster_->Start());
@@ -225,80 +378,6 @@ class DynamicMultiMasterTest : public KuduTest {
     ASSERT_TRUE(wal_gc_counts_updated) << "Timed out waiting for system catalog WAL to be GC'ed";
   }
 
-  // Functor that takes a leader_master_idx and runs the desired master RPC against
-  // the leader master returning the RPC status and the optional MasterErrorPB::Code.
-  typedef std::function<
-      std::pair<Status, boost::optional<MasterErrorPB::Code>>(int leader_master_idx)> MasterRPC;
-
-  // Helper function that runs the master RPC against the leader master and retries the RPC
-  // if the expected leader master returns NOT_THE_LEADER error due to leadership change.
-  // Returns a single combined Status:
-  //   - RPC return status if not OK.
-  //   - IllegalState for a master response error other than NOT_THE_LEADER error.
-  //   - TimedOut if all attempts to run the RPC against leader master are exhausted.
-  //   - OK if the master RPC is successful.
-  Status RunLeaderMasterRPC(const MasterRPC& master_rpc, ExternalMiniCluster* cluster = nullptr) {
-    if (cluster == nullptr) {
-      cluster = cluster_.get();
-    }
-
-    int64_t time_left_to_sleep_msecs = 2000;
-    while (time_left_to_sleep_msecs > 0) {
-      int leader_master_idx;
-      RETURN_NOT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
-      const auto& rpc_result = master_rpc(leader_master_idx);
-      RETURN_NOT_OK(rpc_result.first);
-      const auto& master_error = rpc_result.second;
-      if (!master_error) {
-        return Status::OK();
-      }
-      if (master_error != MasterErrorPB::NOT_THE_LEADER) {
-        // Some other master error.
-        return Status::IllegalState(Substitute("Master error: $0"),
-                                    MasterErrorPB_Code_Name(*master_error));
-      }
-      // NOT_THE_LEADER error, so retry after some duration.
-      static const MonoDelta kSleepDuration = MonoDelta::FromMilliseconds(100);
-      SleepFor(kSleepDuration);
-      time_left_to_sleep_msecs -= kSleepDuration.ToMilliseconds();
-    }
-    return Status::TimedOut("Failed contacting the right leader master after multiple attempts");
-  }
-
-  // Run ListMasters RPC, retrying on leadership change, returning the response in 'resp'.
-  void RunListMasters(ListMastersResponsePB* resp, ExternalMiniCluster* cluster = nullptr) {
-    if (cluster == nullptr) {
-      cluster = cluster_.get();
-    }
-    auto list_masters = [&] (int leader_master_idx) {
-      ListMastersRequestPB req;
-      RpcController rpc;
-      Status s = cluster->master_proxy(leader_master_idx)->ListMasters(req, resp, &rpc);
-      boost::optional<MasterErrorPB::Code> err_code(resp->has_error(), resp->error().code());
-      return std::make_pair(s, err_code);
-    };
-    ASSERT_OK(RunLeaderMasterRPC(list_masters, cluster));
-  }
-
-  // Verify the ExternalMiniCluster 'cluster' contains 'num_masters' overall
-  // and are all VOTERS.
-  // Return master addresses in 'master_hps', if not nullptr.
-  void VerifyVoterMasters(int num_masters, vector<HostPort>* master_hps = nullptr,
-                          ExternalMiniCluster* cluster = nullptr) {
-    ListMastersResponsePB resp;
-    NO_FATALS(RunListMasters(&resp, cluster));
-    ASSERT_EQ(num_masters, resp.masters_size());
-    if (master_hps) master_hps->clear();
-    for (const auto& master : resp.masters()) {
-      ASSERT_TRUE(master.role() == RaftPeerPB::LEADER || master.role() == RaftPeerPB::FOLLOWER);
-      ASSERT_EQ(RaftPeerPB::VOTER, master.member_type());
-      ASSERT_EQ(1, master.registration().rpc_addresses_size());
-      if (master_hps) {
-        master_hps->emplace_back(HostPortFromPB(master.registration().rpc_addresses(0)));
-      }
-    }
-  }
-
   // Brings up a new master 'new_master_hp' where 'master_hps' contains master addresses including
   // the new master to be added at the index 'new_master_idx' in the ExternalMiniCluster.
   void StartNewMaster(const vector<HostPort>& master_hps,
@@ -314,9 +393,11 @@ class DynamicMultiMasterTest : public KuduTest {
     ExternalDaemonOptions new_master_opts;
     ASSERT_OK(BuildMasterOpts(new_master_idx, new_master_hp, &new_master_opts));
     auto& flags = new_master_opts.extra_flags;
-    flags.insert(flags.end(),
-                 {"--master_addresses=" + JoinStrings(master_addresses, ","),
-                  "--master_address_add_new_master=" + new_master_hp.ToString()});
+    flags.insert(flags.end(), {
+        "--master_addresses=" + JoinStrings(master_addresses, ","),
+        "--master_address_add_new_master=" + new_master_hp.ToString(),
+        "--master_auto_join_cluster=false",
+    });
 
     LOG(INFO) << "Bringing up the new master at: " << new_master_hp.ToString();
     scoped_refptr<ExternalMaster> master = new ExternalMaster(new_master_opts);
@@ -336,6 +417,14 @@ class DynamicMultiMasterTest : public KuduTest {
     ASSERT_EQ(RaftPeerPB::NON_VOTER, resp.member_type());
     ASSERT_EQ(RaftPeerPB::LEARNER, resp.role());
     *new_master_out = std::move(master);
+  }
+
+  void VerifyVoterMasters(int num_masters, vector<HostPort>* master_hps = nullptr,
+                          ExternalMiniCluster* cluster = nullptr) {
+    if (cluster == nullptr) {
+      cluster = cluster_.get();
+    }
+    NO_FATALS(VerifyVoterMastersForCluster(num_masters, master_hps, cluster));
   }
 
   // Fetch a follower (non-leader) master index from the cluster.
@@ -492,59 +581,6 @@ class DynamicMultiMasterTest : public KuduTest {
     ASSERT_TRUE(dead_master_found);
   }
 
-  // Initiates leadership transfer to the specified master returning status of the asynchronous
-  // request.
-  static Status TransferMasterLeadershipAsync(ExternalMiniCluster* cluster,
-                                              const string& master_uuid) {
-    LOG(INFO) << "Transferring leadership to master: " << master_uuid;
-
-    int leader_master_idx;
-    RETURN_NOT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
-    auto leader_master_addr = cluster->master(leader_master_idx)->bound_rpc_addr();
-    ConsensusServiceProxy consensus_proxy(cluster->messenger(), leader_master_addr,
-                                          leader_master_addr.host());
-    LeaderStepDownRequestPB req;
-    req.set_dest_uuid(cluster->master(leader_master_idx)->uuid());
-    req.set_tablet_id(master::SysCatalogTable::kSysCatalogTabletId);
-    req.set_new_leader_uuid(master_uuid);
-    req.set_mode(consensus::GRACEFUL);
-    LeaderStepDownResponsePB resp;
-    RpcController rpc;
-    RETURN_NOT_OK(consensus_proxy.LeaderStepDown(req, &resp, &rpc));
-    if (resp.has_error()) {
-      return StatusFromPB(resp.error().status());
-    }
-    return Status::OK();
-  }
-
-  // Transfers leadership among masters in the 'cluster' to the specified 'new_master_uuid'
-  // verifies the transfer is successful.
-  static void TransferMasterLeadership(ExternalMiniCluster* cluster,
-                                       const string& new_master_uuid) {
-    ASSERT_OK(TransferMasterLeadershipAsync(cluster, new_master_uuid));
-    // LeaderStepDown request is asynchronous, hence using ASSERT_EVENTUALLY.
-    ASSERT_EVENTUALLY([&] {
-      int leader_master_idx = -1;
-      ASSERT_OK(cluster->GetLeaderMasterIndex(&leader_master_idx));
-      ASSERT_EQ(new_master_uuid, cluster->master(leader_master_idx)->uuid());
-    });
-  }
-
-  // Fetch uuid of the specified 'fs_wal_dir' and 'fs_data_dirs'.
-  static Status GetFsUuid(const string& fs_wal_dir, const vector<string>& fs_data_dirs,
-                          string* uuid) {
-    google::FlagSaver saver;
-    FLAGS_fs_wal_dir = fs_wal_dir;
-    FLAGS_fs_data_dirs = JoinStrings(fs_data_dirs, ",");
-    FsManagerOpts fs_opts;
-    fs_opts.read_only = true;
-    fs_opts.update_instances = fs::UpdateInstanceBehavior::DONT_UPDATE;
-    FsManager fs_manager(Env::Default(), std::move(fs_opts));
-    RETURN_NOT_OK(fs_manager.PartialOpen());
-    *uuid = fs_manager.uuid();
-    return Status::OK();
-  }
-
   // Verification steps after the new master has been added successfully and it's promoted
   // as VOTER. The supplied 'master_hps' includes the new_master as well.
   void VerifyClusterAfterMasterAddition(const vector<HostPort>& master_hps,
@@ -580,7 +616,7 @@ class DynamicMultiMasterTest : public KuduTest {
     // Verify the cluster still has the same masters.
     {
       ListMastersResponsePB resp;
-      NO_FATALS(RunListMasters(&resp, &migrated_cluster));
+      ASSERT_OK(RunListMasters(&resp, &migrated_cluster));
       ASSERT_EQ(expected_num_masters, resp.masters_size());
 
       UnorderedHostPortSet hps_found;
@@ -600,6 +636,7 @@ class DynamicMultiMasterTest : public KuduTest {
     }
 
     // Transfer leadership to the new master.
+    LOG(INFO) << "Transferring leadership to master: " << new_master_uuid;
     NO_FATALS(TransferMasterLeadership(&migrated_cluster, new_master_uuid));
 
     shared_ptr<KuduClient> client;
@@ -891,6 +928,7 @@ TEST_P(ParameterizedRemoveMasterTest, TestRemoveMaster) {
   if (leader_master_idx == non_leader_master_idx) {
     // Move the leader to the first master index
     auto first_master_uuid = cluster_->master(0)->uuid();
+    LOG(INFO) << "Transferring leadership to master: " << first_master_uuid;
     NO_FATALS(TransferMasterLeadership(cluster_.get(), first_master_uuid));
   }
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
@@ -939,6 +977,7 @@ TEST_P(ParameterizedRemoveMasterTest, TestRemoveMaster) {
   ASSERT_STR_CONTAINS(err, Substitute("Master $0 not found", master_to_remove.ToString()));
 
   // Attempt transferring leadership to the removed master
+  LOG(INFO) << "Transferring leadership to master: " << master_to_remove_uuid;
   s = TransferMasterLeadershipAsync(cluster_.get(), master_to_remove_uuid);
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(),
@@ -1367,6 +1406,316 @@ TEST_P(ParameterizedRemoveLeaderMasterTest, TestRemoveLeaderMaster) {
   // Verify no change in number of masters.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_, &master_hps));
 }
+
+struct MultiMasterClusterArgs {
+  int orig_num_masters;
+  bool is_secure;
+};
+
+class AutoAddMasterTest : public KuduTest {
+ public:
+  Status SetUpWithTestArgs(const MultiMasterClusterArgs& args) {
+    opts_.num_masters = args.orig_num_masters;
+    opts_.enable_kerberos = args.is_secure;
+    args_ = args;
+    cluster_.reset(new ExternalMiniCluster(opts_));
+    RETURN_NOT_OK(cluster_->Start());
+    return cluster_->WaitForTabletServerCount(cluster_->num_tablet_servers(),
+                                              MonoDelta::FromSeconds(10));
+  }
+  void SetUp() override {
+    ASSERT_OK(SetUpWithTestArgs({ /*orig_num_masters*/2, /*is_secure*/false }));
+    TestWorkload w(cluster_.get());
+    w.set_num_replicas(1);
+    w.Setup();
+  }
+ protected:
+  MultiMasterClusterArgs args_;
+  ExternalMiniClusterOptions opts_;
+  unique_ptr<ExternalMiniCluster> cluster_;
+};
+
+// Test that nothing goes wrong when starting up masters but the entire cluster
+// isn't fully healthy. The auto-add checks should still run, but should be
+// inconsequential if they fail because the entire cluster isn't healthy.
+TEST_F(AutoAddMasterTest, TestRestartMastersWhileSomeDown) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  // We'll start with three masters, and then restart two, leaving one down.
+  ASSERT_OK(cluster_->AddMaster());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(VerifyVoterMastersForCluster(cluster_->num_masters(), nullptr, cluster_.get()));
+  });
+
+  // Emulate one of the masters going down by only restarting two.
+  cluster_->Shutdown();
+  for (int i = 1; i < cluster_->num_masters(); i++) {
+    ASSERT_OK(cluster_->master(i)->Restart());
+  }
+  int table_idx = 0;
+  constexpr const char* kTablePrefix = "default.table";
+  const auto& deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
+  while (MonoTime::Now() > deadline) {
+    SleepFor(MonoDelta::FromSeconds(1));
+    // Nothing sinister should happen despite one master being down. The
+    // remaining masters should be operable and alive.
+    ASSERT_OK(CreateTable(cluster_.get(), Substitute("$0-$1", kTablePrefix, ++table_idx)));
+    for (int i = 1; i < cluster_->num_masters(); i++) {
+      ASSERT_TRUE(cluster_->master(i)->IsProcessAlive());
+    }
+  }
+  ASSERT_OK(cluster_->master(0)->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(VerifyVoterMastersForCluster(cluster_->num_masters(), nullptr, cluster_.get()));
+  });
+}
+
+// Test the procedure when some masters aren't reachable.
+TEST_F(AutoAddMasterTest, TestSomeMastersUnreachable) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  auto* stopped_master = cluster_->master(0);
+  ASSERT_OK(stopped_master->Pause());
+  // Adding a master to a cluster wherein a master is already down will fail.
+  // This is similar behavior to starting a new master while some are down
+  // since the new master can't resolve all peers' UUIDs. Shorten the time
+  // masters will wait to communicate to all peers to speed up this test.
+  ASSERT_OK(cluster_->AddMaster({ "--raft_get_node_instance_timeout_ms=3000" }));
+  auto* new_master = cluster_->master(args_.orig_num_masters);
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_FALSE(new_master->IsProcessAlive());
+  });
+  ASSERT_OK(stopped_master->Resume());
+
+  // Even after restarting, we still won't be quite able to start healthily
+  // because our previous crashes will have left an unusable set of metadata
+  // (i.e. no consensus metadata).
+  new_master->Shutdown();
+  ASSERT_OK(new_master->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_FALSE(new_master->IsProcessAlive());
+  });
+  // If we blow away our new master and start anew, we should be able to
+  // proceed.
+  new_master->Shutdown();
+  ASSERT_OK(new_master->DeleteFromDisk());
+  ASSERT_OK(new_master->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(VerifyVoterMastersForCluster(cluster_->num_masters(), nullptr, cluster_.get()));
+  });
+  // Ensure that even after waiting a bit, our cluster is stable.
+  SleepFor(MonoDelta::FromSeconds(3));
+  ASSERT_OK(VerifyVoterMastersForCluster(cluster_->num_masters(), nullptr, cluster_.get()));
+}
+
+// Test if we fail to replicate the AddMaster request.
+TEST_F(AutoAddMasterTest, TestFailWithoutReplicatingAddMaster) {
+  // Make master followers unable to accept updates, including config changes.
+  // We'll set this for all masters including leaders for simplicity.
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->master(i),
+                                "follower_reject_update_consensus_requests", "true"));
+  }
+  // Upon starting, the master will attempt to add itself, but fail to do so
+  // and exit early.
+  ASSERT_OK(cluster_->AddMaster());
+  auto* new_master = cluster_->master(args_.orig_num_masters);
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_FALSE(new_master->IsProcessAlive());
+  });
+  // Since nothing was successfully replicated, it shouldn't be a problem to
+  // start up again and re-add.
+  new_master->Shutdown();
+  for (int i = 0; i < cluster_->num_masters() - 1; i++) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->master(i),
+                                "follower_reject_update_consensus_requests", "false"));
+  }
+  ASSERT_OK(new_master->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(VerifyVoterMastersForCluster(cluster_->num_masters(), nullptr, cluster_.get()));
+  });
+}
+
+// Test when the new master fails to copy.
+TEST_F(AutoAddMasterTest, TestFailTabletCopy) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  ASSERT_OK(cluster_->AddMaster({ "--tablet_copy_fault_crash_during_download_wal=1" }));
+  auto* new_master = cluster_->master(args_.orig_num_masters);
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_FALSE(new_master->IsProcessAlive());
+  });
+  // We should have been able to add the master to the Raft quorum, but been
+  // able to copy. Upon doing so, the new master should fail to come up.
+  new_master->Shutdown();
+  new_master->mutable_flags()->emplace_back("--tablet_copy_fault_crash_during_download_wal=0");
+  ASSERT_OK(new_master->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_FALSE(new_master->IsProcessAlive());
+  });
+
+  // Even blowing the new master away entirely will result in a new master
+  // being unable to join. The cluster already believes there to be a new
+  // master, but no live majority, so we're unable to add _another_ master.
+  ASSERT_OK(new_master->DeleteFromDisk());
+  new_master->Shutdown();
+  ASSERT_OK(new_master->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_FALSE(new_master->IsProcessAlive());
+  });
+  new_master->Shutdown();
+
+  // So, we first need to remove the master from the quorum, and then restart,
+  // at which point the new master should be able to join the cluster.
+  vector<string> addresses;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    addresses.emplace_back(hp.ToString());
+  }
+  // TODO(awong): we should really consider automating this step from the
+  // leader master.
+  ASSERT_OK(tools::RunKuduTool({ "master", "remove", JoinStrings(addresses, ","),
+                                 new_master->bound_rpc_hostport().ToString() }));
+  ASSERT_OK(new_master->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(VerifyVoterMastersForCluster(cluster_->num_masters(), nullptr, cluster_.get()));
+  });
+  SleepFor(MonoDelta::FromSeconds(3));
+  ASSERT_OK(VerifyVoterMastersForCluster(cluster_->num_masters(), nullptr, cluster_.get()));
+}
+
+TEST_F(AutoAddMasterTest, TestAddWithOnGoingDdl) {
+  simple_spinlock master_addrs_lock;
+  vector<string> master_addrs_unlocked;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs_unlocked.emplace_back(hp.ToString());
+  }
+
+  // Start a thread that creates a client and tries to create tables.
+  const auto generate_client = [&] (shared_ptr<KuduClient>* c) {
+    vector<string> master_addrs;
+    {
+      std::lock_guard<simple_spinlock> l(master_addrs_lock);
+      master_addrs = master_addrs_unlocked;
+    }
+    shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(client::KuduClientBuilder()
+        .master_server_addrs(master_addrs)
+        .Build(&client));
+    *c = std::move(client);
+    return Status::OK();
+  };
+
+  atomic<bool> proceed = true;
+  constexpr const int kNumThreads = 2;
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  vector<Status> errors(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&, i] {
+      int idx = 0;
+      while (proceed) {
+        client::sp::shared_ptr<KuduClient> c;
+        Status s = generate_client(&c).AndThen([&] {
+          return CreateTableWithClient(c.get(), Substitute("default.$0_$1", i, ++idx));
+        });
+        if (!s.ok()) {
+          errors[i] = s;
+        }
+        SleepFor(MonoDelta::FromSeconds(1));
+      }
+    });
+  }
+  auto thread_joiner = MakeScopedCleanup([&] {
+    proceed = false;
+    for (auto& t : threads) {
+      t.join();
+    }
+  });
+
+  int num_masters = args_.orig_num_masters;
+  for (int i = 0; i < 3; i++) {
+    ASSERT_OK(cluster_->AddMaster());
+    auto* new_master = cluster_->master(args_.orig_num_masters);
+    ASSERT_OK(new_master->WaitForCatalogManager());
+    num_masters++;
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_OK(VerifyVoterMastersForCluster(num_masters, nullptr, cluster_.get()));
+    });
+    {
+      std::lock_guard<simple_spinlock> l(master_addrs_lock);
+      master_addrs_unlocked.emplace_back(new_master->bound_rpc_hostport().ToString());
+    }
+    cluster_->Shutdown();
+    ASSERT_OK(cluster_->Restart());
+    ASSERT_OK(cluster_->WaitForTabletServerCount(cluster_->num_tablet_servers(),
+                                                 MonoDelta::FromSeconds(5)));
+  }
+  proceed = false;
+  thread_joiner.cancel();
+  for (auto& t : threads) {
+    t.join();
+  }
+  for (const auto& e : errors) {
+    if (e.ok() || e.IsTimedOut()) {
+      continue;
+    }
+    // TODO(awong): we should relax the need for clients to have the precise
+    // list of masters.
+    if (e.IsConfigurationError()) {
+      ASSERT_STR_CONTAINS(e.ToString(), "cluster indicates it expects");
+      continue;
+    }
+    // TODO(KUDU-1358): we should probably allow clients to retry if the RF is
+    // within some normal-looking range.
+    ASSERT_TRUE(e.IsInvalidArgument()) << e.ToString();
+    ASSERT_STR_CONTAINS(e.ToString(), "not enough live tablet servers");
+  }
+}
+
+class ParameterizedAutoAddMasterTest : public AutoAddMasterTest,
+                                       public ::testing::WithParamInterface<tuple<int, bool>> {
+ public:
+  void SetUp() override {
+    ASSERT_OK(SetUpWithTestArgs({ /*orig_num_masters*/std::get<0>(GetParam()),
+                                  /*is_secure*/std::get<1>(GetParam()) }));
+  }
+};
+
+TEST_P(ParameterizedAutoAddMasterTest, TestBasicAddition) {
+  TestWorkload w(cluster_.get());
+  w.set_num_replicas(1);
+  w.Setup();
+  w.Start();
+  int num_masters = args_.orig_num_masters;
+  for (int i = 0; i < 3; i++) {
+    ASSERT_OK(cluster_->AddMaster());
+    auto* new_master = cluster_->master(args_.orig_num_masters);
+    ASSERT_OK(new_master->WaitForCatalogManager());
+    num_masters++;
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_OK(VerifyVoterMastersForCluster(num_masters, nullptr, cluster_.get()));
+    });
+  }
+  w.StopAndJoin();
+  ClusterVerifier cv(cluster_.get());
+  NO_FATALS(cv.CheckCluster());
+  NO_FATALS(cv.CheckRowCount(w.kDefaultTableName, ClusterVerifier::EXACTLY, w.rows_inserted()));
+
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->Restart());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(VerifyVoterMastersForCluster(num_masters, nullptr, cluster_.get()));
+  });
+
+  NO_FATALS(cv.CheckCluster());
+  NO_FATALS(cv.CheckRowCount(w.kDefaultTableName, ClusterVerifier::EXACTLY, w.rows_inserted()));
+}
+
+INSTANTIATE_TEST_SUITE_P(,
+    ParameterizedAutoAddMasterTest, ::testing::Combine(
+                                        ::testing::Values(1, 2),
+                                        ::testing::Bool()),
+    [] (const ::testing::TestParamInfo<ParameterizedAutoAddMasterTest::ParamType>& info) {
+      return Substitute("$0_orig_masters_$1secure", std::get<0>(info.param),
+                        std::get<1>(info.param) ? "" : "not_");
+    });
 
 } // namespace master
 } // namespace kudu

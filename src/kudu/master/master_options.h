@@ -34,9 +34,9 @@ namespace master {
 struct MasterOptions : public kserver::KuduServerOptions {
   MasterOptions();
 
-  // Fetch master addresses from the user supplied gflags which may be empty for single
-  // master configuration.
-  // Note: Only to be used during master init time as masters can be added/removed dynamically.
+  // Fetch master addresses from the user supplied gflags which may be empty
+  // for single master configuration.
+  // NOTE: Only to be used during master init time as masters can be added/removed dynamically.
   // Use Master::GetMasterHostPorts() instead after initializing the master at runtime.
   const std::vector<HostPort>& master_addresses() const {
     return master_addresses_;
@@ -65,6 +65,7 @@ struct MasterOptions : public kserver::KuduServerOptions {
   }
 
  private:
+  // The list of deduplicated masters, as specified by --master_addresses.
   std::vector<HostPort> master_addresses_;
   Cache::ExistingMetricsPolicy block_cache_metrics_policy_;
 };

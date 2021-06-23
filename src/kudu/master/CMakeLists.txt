@@ -108,7 +108,7 @@ SET_KUDU_TEST_LINK_LIBS(
 
 ADD_KUDU_TEST(auto_rebalancer-test)
 ADD_KUDU_TEST(catalog_manager-test)
-ADD_KUDU_TEST(dynamic_multi_master-test NUM_SHARDS 4)
+ADD_KUDU_TEST(dynamic_multi_master-test NUM_SHARDS 6)
 ADD_KUDU_TEST(hms_notification_log_listener-test)
 ADD_KUDU_TEST(location_cache-test DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(master_options-test)
