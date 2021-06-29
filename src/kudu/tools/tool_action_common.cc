@@ -963,6 +963,7 @@ Status LeaderMasterProxy::Init(const vector<string>& master_addrs,
       .default_rpc_timeout(timeout)
       .default_admin_operation_timeout(timeout)
       .connection_negotiation_timeout(connection_negotiation_timeout)
+      .sasl_protocol_name(FLAGS_sasl_protocol_name)
       .Build(&client_);
 }
 

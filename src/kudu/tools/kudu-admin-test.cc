@@ -2897,5 +2897,17 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartitionForMultipleRangeColumnsTable) {
   });
 }
 
+TEST_F(AdminCliTest, TestNonDefaultPrincipal) {
+  ExternalMiniClusterOptions opts;
+  opts.enable_kerberos = true;
+  opts.principal = "oryx";
+  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
+  ASSERT_OK(cluster_->Start());
+  ASSERT_OK(RunKuduTool({"master",
+                         "list",
+                         "--sasl_protocol_name=oryx",
+                         HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())}));
+}
+
 } // namespace tools
 } // namespace kudu
