@@ -103,9 +103,7 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
-#include "kudu/tablet/txn_coordinator.h"
 #include "kudu/transactions/transactions.pb.h"
-#include "kudu/transactions/txn_status_manager.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
@@ -206,7 +204,6 @@ using kudu::rpc::MessengerBuilder;
 using kudu::security::SignedTokenPB;
 using kudu::client::sp::shared_ptr;
 using kudu::tablet::TabletReplica;
-using kudu::transactions::TxnStatusManager;
 using kudu::transactions::TxnTokenPB;
 using kudu::tserver::MiniTabletServer;
 using std::function;
@@ -386,45 +383,6 @@ class ClientTest : public KuduTest {
                   RpcsQueueOverflowMetric()->value());
       }
     }
-  }
-
-  // TODO(aserbin): consider removing this method and update the scenarios it
-  //                was used once the transaction orchestration is implemented
-  Status FinalizeCommitTransaction(int64_t txn_id) {
-    for (auto i = 0; i < cluster_->num_tablet_servers(); ++i) {
-      auto* tm = cluster_->mini_tablet_server(i)->server()->tablet_manager();
-      vector<scoped_refptr<TabletReplica>> replicas;
-      tm->GetTabletReplicas(&replicas);
-      for (auto& r : replicas) {
-        auto* c = r->txn_coordinator();
-        if (!c) {
-          continue;
-        }
-        TxnStatusManager::ScopedLeaderSharedLock l(c);
-        auto highest_txn_id = c->highest_txn_id();
-        if (txn_id > highest_txn_id) {
-          continue;
-        }
-        tserver::TabletServerErrorPB ts_error;
-        auto s = c->FinalizeCommitTransaction(txn_id, Timestamp::kInitialTimestamp, &ts_error);
-        if (s.IsNotFound()) {
-          continue;
-        }
-        return s;
-      }
-    }
-    return Status::NotFound(Substitute("transaction $0 not found", txn_id));
-  }
-
-  // TODO(aserbin): remove this method and update the scenarios it's used
-  //                once the transaction orchestration is implemented
-  Status FinalizeCommitTransaction(const shared_ptr<KuduTransaction>& txn) {
-    string txn_token;
-    RETURN_NOT_OK(txn->Serialize(&txn_token));
-    TxnTokenPB token;
-    CHECK(token.ParseFromString(txn_token));
-    CHECK(token.has_txn_id());
-    return FinalizeCommitTransaction(token.txn_id());
   }
 
   // Return the number of lookup-related RPCs which have been serviced by the master.
