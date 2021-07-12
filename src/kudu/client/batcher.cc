@@ -45,7 +45,6 @@
 #include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/atomic_refcount.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -91,10 +90,10 @@ using strings::Substitute;
 
 namespace kudu {
 
+class RowOperationsPB;
 class Schema;
 
 namespace client {
-
 namespace internal {
 
 // About lock ordering in this file:
@@ -610,12 +609,12 @@ Batcher::Batcher(KuduClient* client,
     consistency_mode_(consistency_mode),
     txn_id_(txn_id),
     error_collector_(std::move(error_collector)),
-    had_errors_(false),
     flush_callback_(nullptr),
     next_op_sequence_number_(0),
     timeout_(client->default_rpc_timeout()),
     outstanding_lookups_(0),
     buffer_bytes_used_(0),
+    had_errors_(false),
     arena_(1024) {
   ops_.set_empty_key(nullptr);
   ops_.set_deleted_key(reinterpret_cast<InFlightOp*>(-1));
@@ -694,12 +693,14 @@ void Batcher::CheckForFinishedFlush() {
     // a lock inversion deadlock -- the session lock should always
     // come before the batcher lock.
     session->data_->FlushFinished(this);
-
   }
   if (flush_callback_) {
-    // User is responsible for fetching errors from the error collector.
-    Status s = had_errors_ ? Status::IOError("Some errors occurred")
-                           : Status::OK();
+    // In case of a failure flushing the data to the server, a user can get
+    // per-row error details by calling KuduSession::GetPendingErrors().
+    auto s = had_errors_
+        ? Status::IOError("failed to flush last batch of rows: error details "
+                          "are available via KuduSession::GetPendingErrors()")
+        : Status::OK();
     flush_callback_->Run(s);
   }
 }
@@ -747,7 +748,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
   // deadline_ is set in FlushAsync(), after all Add() calls are done, so
   // here we're forced to create a new deadline.
   MonoTime deadline = ComputeDeadlineUnlocked();
-  base::RefCountInc(&outstanding_lookups_);
+  ++outstanding_lookups_;
   scoped_refptr<Batcher> self(this);
   client_->data_->meta_cache_->LookupTabletByKey(
       op->write_op->table(),
@@ -756,8 +757,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
       MetaCache::LookupType::kPoint,
       &op->tablet,
       [self, op](const Status& s) { self->TabletLookupFinished(op, s); });
-
-  buffer_bytes_used_.IncrementBy(write_op->SizeInBuffer());
+  buffer_bytes_used_ += write_op->SizeInBuffer();
 
   return Status::OK();
 }
@@ -780,17 +780,13 @@ bool Batcher::IsAbortedUnlocked() const {
   return state_ == kAborted;
 }
 
-void Batcher::MarkHadErrors() {
-  std::lock_guard<simple_spinlock> l(lock_);
-  had_errors_ = true;
-}
-
 void Batcher::MarkInFlightOpFailed(InFlightOp* op, const Status& s) {
   std::lock_guard<simple_spinlock> l(lock_);
   MarkInFlightOpFailedUnlocked(op, s);
 }
 
 void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
+  DCHECK(lock_.is_locked());
   CHECK_EQ(1, ops_.erase(op))
     << "Could not remove op " << op->ToString() << " from in-flight list";
   error_collector_->AddError(unique_ptr<KuduError>(new KuduError(op->write_op.release(), s)));
@@ -799,7 +795,7 @@ void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
 }
 
 void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
-  base::RefCountDec(&outstanding_lookups_);
+  --outstanding_lookups_;
 
   // Acquire the batcher lock early to atomically:
   // 1. Test if the batcher was aborted, and
@@ -880,10 +876,10 @@ void Batcher::FlushBuffersIfReady() {
       VLOG(3) << "FlushBuffersIfReady: batcher not yet in flushing state";
       return;
     }
-    if (!base::RefCountIsZero(&outstanding_lookups_)) {
-      VLOG(3) << "FlushBuffersIfReady: "
-              << base::subtle::NoBarrier_Load(&outstanding_lookups_)
-              << " ops still in lookup";
+    const int32_t pending_lookups_num = outstanding_lookups_;
+    if (pending_lookups_num != 0) {
+      VLOG(3) << Substitute("FlushBuffersIfReady: $0 ops still in lookup",
+                            pending_lookups_num);
       return;
     }
     // Take ownership of the ops while we're under the lock.
@@ -944,9 +940,8 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
     for (InFlightOp* op : rpc.ops()) {
       unique_ptr<KuduError> error(new KuduError(op->write_op.release(), s));
       error_collector_->AddError(std::move(error));
+      had_errors_ = true;
     }
-
-    MarkHadErrors();
   }
 
   // Check individual row errors.
@@ -968,7 +963,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
     Status op_status = StatusFromPB(err_pb.error());
     unique_ptr<KuduError> error(new KuduError(op.release(), op_status));
     error_collector_->AddError(std::move(error));
-    MarkHadErrors();
+    had_errors_ = true;
   }
 
   // Remove all the ops from the "in-flight" list. It's essential to do so

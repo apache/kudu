@@ -286,7 +286,7 @@ TEST_F(SecurityUnknownTskTest, ErrorUnavailableCommonOperations) {
     // The error returned is a generic IOError, and the details are provided
     // by the KuduSession::GetPendingErrors() method.
     ASSERT_TRUE(s_apply.IsIOError()) << s_apply.ToString();
-    ASSERT_STR_CONTAINS(s_apply.ToString(), "Some errors occurred");
+    ASSERT_STR_CONTAINS(s_apply.ToString(), "failed to flush data");
 
     std::vector<KuduError*> errors;
     ElementDeleter cleanup(&errors);

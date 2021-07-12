@@ -3342,9 +3342,10 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfDuplicateKeys) {
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "Attempted dup"));
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, "Should succeed"));
   Status s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "failed to flush data: error details are available "
+                      "via KuduSession::GetPendingErrors()");
   // Fetch and verify the reported error.
   unique_ptr<KuduError> error;
   NO_FATALS(error = GetSingleErrorFromSession(session.get()));
@@ -3379,9 +3380,10 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfMissingRequiredColumn) {
   // Insert a row missing a required column, which will fail.
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 2, "Missing required column"));
   Status s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "failed to flush data: error details are available "
+                      "via KuduSession::GetPendingErrors()");
   // Fetch and verify the reported error.
   unique_ptr<KuduError> error;
   NO_FATALS(error = GetSingleErrorFromSession(session.get()));
@@ -3418,9 +3420,10 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfNoFieldsUpdated) {
   // Update a row with some non-key fields updated, which will success.
   ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 2, 22));
   Status s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "failed to flush data: error details are available "
+                      "via KuduSession::GetPendingErrors()");
   // Fetch and verify the reported error.
   unique_ptr<KuduError> error;
   NO_FATALS(error = GetSingleErrorFromSession(session.get()));
@@ -3454,9 +3457,10 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfNonKeyColumnSpecifiedDelete) {
   // Delete a row with some non-key fields, which will fail.
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 2, 2));
   Status s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "failed to flush data: error details are available "
+                      "via KuduSession::GetPendingErrors()");
   // Fetch and verify the reported error.
   unique_ptr<KuduError> error;
   NO_FATALS(error = GetSingleErrorFromSession(session.get()));
@@ -3488,9 +3492,10 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfAllRowsFailed) {
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1, 1));
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 2, 2));
   Status s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
-
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "failed to flush data: error details are available "
+                      "via KuduSession::GetPendingErrors()");
   // Fetch and verify the reported error.
   vector<KuduError*> errors;
   ElementDeleter d(&errors);
@@ -4331,8 +4336,8 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   // Attempt update deleted row
   ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   Status s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
   // Verify error
   unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
@@ -4343,8 +4348,8 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   // Attempt delete deleted row
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
   // Verify error
   error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
@@ -4361,8 +4366,8 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   // Attempt update nonexistent row
   ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   Status s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
   // Verify error
   unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
@@ -4373,8 +4378,8 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   // Attempt delete nonexistent row
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   s = session->Flush();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
   // Verify error
   error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
@@ -7122,8 +7127,7 @@ TEST_F(ClientTest, WritingRowsWithUnsetNonNullableColumns) {
     // Flush() should return an error.
     const auto flush_status = session->Flush();
     ASSERT_TRUE(flush_status.IsIOError()) << flush_status.ToString();
-    ASSERT_STR_CONTAINS(flush_status.ToString(),
-                        "IO error: Some errors occurred");
+    ASSERT_STR_CONTAINS(flush_status.ToString(), "failed to flush data");
   }
 
   // Make sure if a non-nullable column (without defaults) is not set for an
@@ -7143,8 +7147,7 @@ TEST_F(ClientTest, WritingRowsWithUnsetNonNullableColumns) {
     // Of course, Flush() should fail as well.
     const auto flush_status = session->Flush();
     ASSERT_TRUE(flush_status.IsIOError()) << flush_status.ToString();
-    ASSERT_STR_CONTAINS(flush_status.ToString(),
-                        "IO error: Some errors occurred");
+    ASSERT_STR_CONTAINS(flush_status.ToString(), "failed to flush data");
   }
 
   // Do delete a row, only the key is necessary.
@@ -7443,7 +7446,7 @@ TEST_F(ClientTest, TxnRetryCommitAfterSessionFlushErrors) {
   const auto s = txn->Commit();
   const auto errmsg = s.ToString();
   ASSERT_TRUE(s.IsIOError()) << errmsg;
-  ASSERT_STR_MATCHES(errmsg, "Some errors occurred");
+  ASSERT_STR_MATCHES(errmsg, "failed to flush data");
 
   ASSERT_FALSE(session->HasPendingOperations());
   ASSERT_EQ(1, session->CountPendingErrors());

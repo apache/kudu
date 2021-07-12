@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -28,11 +29,9 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/txn_id.h"
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
@@ -124,7 +123,7 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // Return the total size (number of bytes) of all pending write operations
   // accumulated by the batcher.
   int64_t buffer_bytes_used() const {
-    return buffer_bytes_used_.Load();
+    return buffer_bytes_used_;
   }
 
   // Return the identifier of a multi-row transaction (if any) that all the
@@ -152,10 +151,6 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // Return true if the batch has been aborted, and any in-flight ops should stop
   // processing wherever they are.
   bool IsAbortedUnlocked() const;
-
-  // Mark the fact that errors have occurred with this batch. This ensures that
-  // the flush callback will get a bad Status.
-  void MarkHadErrors();
 
   // Remove an op from the in-flight op list, and delete the op itself.
   // The operation is reported to the ErrorReporter as having failed with the
@@ -208,10 +203,6 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // The time when the very first operation was added into the batcher.
   MonoTime first_op_time_;
 
-  // Set to true if there was at least one error from this Batcher.
-  // Protected by lock_
-  bool had_errors_;
-
   // If state is kFlushing, this member will be set to the user-provided
   // callback. Once there are no more in-flight operations, the callback
   // will be called exactly once (and the state changed to kFlushed).
@@ -239,12 +230,13 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   MonoTime deadline_;
 
   // Number of outstanding lookups across all in-flight ops.
-  //
-  // Note: _not_ protected by lock_!
-  Atomic32 outstanding_lookups_;
+  std::atomic<int32_t> outstanding_lookups_;
 
   // The number of bytes used in the buffer for pending operations.
-  AtomicInt<int64_t> buffer_bytes_used_;
+  std::atomic<int64_t> buffer_bytes_used_;
+
+  // Set to true if there was at least one error from this Batcher.
+  std::atomic<bool> had_errors_;
 
   Arena arena_;
 

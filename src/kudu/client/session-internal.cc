@@ -249,7 +249,9 @@ Status KuduSession::Data::Flush() {
     }
   }
   return error_collector_->CountErrors()
-      ? Status::IOError("Some errors occurred") : Status::OK();
+      ? Status::IOError("failed to flush data: error details are available "
+                        "via KuduSession::GetPendingErrors()")
+      : Status::OK();
 }
 
 bool KuduSession::Data::HasPendingOperations() const {

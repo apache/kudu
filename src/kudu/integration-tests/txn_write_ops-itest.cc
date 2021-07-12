@@ -882,7 +882,7 @@ TEST_F(TxnWriteOpsITest, WriteOpForNonExistentTxn) {
 
     const auto s = session->Apply(insert.release());
     ASSERT_TRUE(s.IsIOError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+    ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
     const auto err_status = GetSingleRowError(session.get());
     ASSERT_TRUE(err_status.IsInvalidArgument()) << err_status.ToString();
     ASSERT_STR_CONTAINS(err_status.ToString(),
@@ -921,7 +921,7 @@ TEST_F(TxnWriteOpsITest, TxnWriteAfterCommit) {
       unique_ptr<KuduInsert> insert(BuildInsert(table_.get(), idx++));
       auto s = session->Apply(insert.release());
       ASSERT_TRUE(s.IsIOError()) << s.ToString();
-      ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+      ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
       const auto err_status = GetSingleRowError(session.get());
       ASSERT_TRUE(err_status.IsIllegalState()) << err_status.ToString();
       ASSERT_STR_CONTAINS(err_status.ToString(),
@@ -958,7 +958,7 @@ TEST_F(TxnWriteOpsITest, TxnWriteAfterCommit) {
       unique_ptr<KuduInsert> insert(BuildInsert(table_.get(), idx++));
       auto s = session->Apply(insert.release());
       ASSERT_TRUE(s.IsIOError()) << s.ToString();
-      ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+      ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
       const auto err_status = GetSingleRowError(session.get());
       ASSERT_TRUE(err_status.IsIllegalState()) << err_status.ToString();
       ASSERT_STR_CONTAINS(err_status.ToString(),
