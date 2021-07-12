@@ -737,6 +737,7 @@ message AlterTableRequestPB {
   optional int64 row_count_limit = 9;
 
   optional string new_table_comment = 10;
+  optional int32 num_replicas = 11;
 }
 
 message AlterTableResponsePB {

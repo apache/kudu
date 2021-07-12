@@ -257,6 +257,12 @@ DEFINE_bool(catalog_manager_check_ts_count_for_create_table, true,
             "a table to be created.");
 TAG_FLAG(catalog_manager_check_ts_count_for_create_table, hidden);
 
+DEFINE_bool(catalog_manager_check_ts_count_for_alter_table, true,
+            "Whether the master should ensure that there are enough live tablet "
+            "servers to satisfy the provided replication factor before allowing "
+            "a table to be altered.");
+TAG_FLAG(catalog_manager_check_ts_count_for_alter_table, hidden);
+
 DEFINE_int32(table_locations_ttl_ms, 5 * 60 * 1000, // 5 minutes
              "Maximum time in milliseconds which clients may cache table locations. "
              "New range partitions may not be visible to existing client instances "
@@ -1887,79 +1893,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
 
   const auto num_replicas = req.num_replicas();
-  if (num_replicas > FLAGS_max_num_replicas) {
-    return SetupError(Status::InvalidArgument(
-        Substitute("illegal replication factor $0: maximum allowed replication "
-                   "factor is $1 (controlled by --max_num_replicas)",
-                   num_replicas, FLAGS_max_num_replicas)),
-        resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
-  }
-  if (num_replicas < FLAGS_min_num_replicas) {
-    return SetupError(Status::InvalidArgument(
-        Substitute("illegal replication factor $0: minimum allowed replication "
-                   "factor is $1 (controlled by --min_num_replicas)",
-            num_replicas, FLAGS_min_num_replicas)),
-        resp, MasterErrorPB::ILLEGAL_REPLICATION_FACTOR);
-  }
-  // Reject create table with even replication factors, unless master flag
-  // allow_unsafe_replication_factor is on.
-  if (num_replicas % 2 == 0 && !FLAGS_allow_unsafe_replication_factor) {
-    return SetupError(Status::InvalidArgument(
-        Substitute("illegal replication factor $0: replication factor must be odd",
-                   num_replicas)),
-        resp, MasterErrorPB::EVEN_REPLICATION_FACTOR);
-  }
-
-  // Verify that the number of replicas isn't larger than the number of live tablet
-  // servers.
-  TSDescriptorVector ts_descs;
-  master_->ts_manager()->GetDescriptorsAvailableForPlacement(&ts_descs);
-  const auto num_live_tservers = ts_descs.size();
-  if (FLAGS_catalog_manager_check_ts_count_for_create_table && num_replicas > num_live_tservers) {
-    // Note: this error message is matched against in master-stress-test.
-    return SetupError(Status::InvalidArgument(Substitute(
-            "not enough live tablet servers to create a table with the requested replication "
-            "factor $0; $1 tablet servers are alive", req.num_replicas(), num_live_tservers)),
-        resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
-  }
-
-  // Verify that the total number of replicas is reasonable.
-  //
-  // Table creation can generate a fair amount of load, both in the form of RPC
-  // traffic (due to Raft leader elections) and disk I/O (due to durably writing
-  // several files during both replica creation and leader elections).
-  //
-  // Ideally we would have more effective ways of mitigating this load (such
-  // as more efficient on-disk metadata management), but in lieu of that, we
-  // employ this coarse-grained check that prohibits up-front creation of too
-  // many replicas.
-  //
-  // Note: non-replicated tables are exempt because, by not using replication,
-  // they do not generate much of the load described above.
-  const auto max_replicas_total = FLAGS_max_create_tablets_per_ts * num_live_tservers;
-  if (num_replicas > 1 &&
-      max_replicas_total > 0 &&
-      partitions.size() * num_replicas > max_replicas_total) {
-    return SetupError(Status::InvalidArgument(Substitute(
-        "the requested number of tablet replicas is over the maximum permitted "
-        "at creation time ($0), additional tablets may be added by adding "
-        "range partitions to the table post-creation", max_replicas_total)),
-                      resp, MasterErrorPB::TOO_MANY_TABLETS);
-  }
-
-  // Warn if the number of live tablet servers is not enough to re-replicate
-  // a failed replica of the tablet.
-  const auto num_ts_needed_for_rereplication =
-      num_replicas + (FLAGS_raft_prepare_replacement_before_eviction ? 1 : 0);
-  if (num_replicas > 1 && num_ts_needed_for_rereplication > num_live_tservers) {
-    LOG(WARNING) << Substitute(
-        "The number of live tablet servers is not enough to re-replicate a "
-        "tablet replica of the newly created table $0 in case of a server "
-        "failure: $1 tablet servers would be needed, $2 are available. "
-        "Consider bringing up more tablet servers.",
-        normalized_table_name, num_ts_needed_for_rereplication,
-        num_live_tservers);
-  }
+  RETURN_NOT_OK(ValidateNumberReplicas(normalized_table_name,
+                                       resp, ValidateType::kCreateTable,
+                                       partitions.size(), num_replicas));
 
   // Verify the table's extra configuration properties.
   TableExtraConfigPB extra_config_pb;
@@ -3169,7 +3105,20 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
           resp, MasterErrorPB::UNKNOWN_ERROR));
   }
 
-  // 8. Alter table's extra configuration properties.
+  // 8. Alter table's replication factor.
+  bool num_replicas_changed = false;
+  if (req.has_num_replicas()) {
+    int num_replicas = req.num_replicas();
+    RETURN_NOT_OK(ValidateNumberReplicas(normalized_table_name,
+                                         resp, ValidateType::kAlterTable,
+                                         boost::none, num_replicas));
+    if (num_replicas != l.data().pb.num_replicas()) {
+      num_replicas_changed = true;
+      l.mutable_data()->pb.set_num_replicas(num_replicas);
+    }
+  }
+
+  // 9. Alter table's extra configuration properties.
   if (!req.new_extra_configs().empty()) {
     TRACE("Apply alter extra-config");
     Map<string, string> new_extra_configs;
@@ -3190,19 +3139,21 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   bool has_metadata_changes = has_schema_changes ||
       req.has_new_table_name() || req.has_new_table_owner() ||
       !req.new_extra_configs().empty() || req.has_disk_size_limit() ||
-      req.has_row_count_limit() || req.has_new_table_comment();
+      req.has_row_count_limit() || req.has_new_table_comment() ||
+      num_replicas_changed;
   // Set to true if there are partitioning changes.
   bool has_partitioning_changes = !alter_partitioning_steps.empty();
   // Set to true if metadata changes need to be applied to existing tablets.
   bool has_metadata_changes_for_existing_tablets =
-    has_metadata_changes && table->num_tablets() > tablets_to_drop.size();
+    has_metadata_changes &&
+    (table->num_tablets() > tablets_to_drop.size() || num_replicas_changed);
 
   // Skip empty requests...
   if (!has_metadata_changes && !has_partitioning_changes) {
     return Status::OK();
   }
 
-  // 9. Serialize the schema and increment the version number.
+  // 10. Serialize the schema and increment the version number.
   if (has_metadata_changes_for_existing_tablets && !l.data().pb.has_fully_applied_schema()) {
     l.mutable_data()->pb.mutable_fully_applied_schema()->CopyFrom(l.data().pb.schema());
   }
@@ -3227,7 +3178,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   TabletMetadataGroupLock tablets_to_add_lock(LockMode::WRITE);
   TabletMetadataGroupLock tablets_to_drop_lock(LockMode::RELEASED);
 
-  // 10. Update sys-catalog with the new table schema and tablets to add/drop.
+  // 11. Update sys-catalog with the new table schema and tablets to add/drop.
   TRACE("Updating metadata on disk");
   {
     SysCatalogTable::Actions actions;
@@ -3257,7 +3208,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     }
   }
 
-  // 11. Commit the in-memory state.
+  // 12. Commit the in-memory state.
   TRACE("Committing alterations to in-memory state");
   {
     // Commit new tablet in-memory state. This doesn't require taking the global
@@ -3349,7 +3300,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     SendDeleteTabletRequest(tablet, l, deletion_msg);
   }
 
-  // 12. Invalidate/purge corresponding entries in the table locations cache.
+  // 13. Invalidate/purge corresponding entries in the table locations cache.
   if (table_locations_cache_ &&
       (!tablets_to_add.empty() || !tablets_to_drop.empty())) {
     table_locations_cache_->Remove(table->id());
@@ -4989,6 +4940,7 @@ Status CatalogManager::ProcessTabletReport(
     const string& tablet_id = e.first;
     const scoped_refptr<TabletInfo>& tablet = e.second;
     const ReportedTabletPB& report = *FindOrDie(reports, tablet_id);
+
     if (report.has_schema_version()) {
       HandleTabletSchemaVersionReport(tablet, report.schema_version());
     }
@@ -5907,6 +5859,95 @@ Status CatalogManager::WaitForNotificationLogListenerCatchUp(RespClass* resp,
   return Status::OK();
 }
 
+template<typename RespClass>
+Status CatalogManager::ValidateNumberReplicas(const std::string& normalized_table_name,
+                                              RespClass* resp, ValidateType type,
+                                              const boost::optional<int>& partitions_count,
+                                              int num_replicas) {
+  if (num_replicas > FLAGS_max_num_replicas) {
+    return SetupError(Status::InvalidArgument(
+        Substitute("illegal replication factor $0: maximum allowed replication "
+                   "factor is $1 (controlled by --max_num_replicas)",
+                   num_replicas, FLAGS_max_num_replicas)),
+        resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
+  }
+  if (num_replicas < FLAGS_min_num_replicas) {
+    return SetupError(Status::InvalidArgument(
+        Substitute("illegal replication factor $0: minimum allowed replication "
+                   "factor is $1 (controlled by --min_num_replicas)",
+            num_replicas, FLAGS_min_num_replicas)),
+        resp, MasterErrorPB::ILLEGAL_REPLICATION_FACTOR);
+  }
+  // Reject create/alter table with even replication factors, unless master flag
+  // allow_unsafe_replication_factor is on.
+  if (num_replicas % 2 == 0 && !FLAGS_allow_unsafe_replication_factor) {
+    return SetupError(Status::InvalidArgument(
+        Substitute("illegal replication factor $0: replication factor must be odd",
+                   num_replicas)),
+        resp, MasterErrorPB::EVEN_REPLICATION_FACTOR);
+  }
+
+  // Verify that the number of replicas isn't larger than the number of live tablet
+  // servers.
+  TSDescriptorVector ts_descs;
+  master_->ts_manager()->GetDescriptorsAvailableForPlacement(&ts_descs);
+  const auto num_live_tservers = ts_descs.size();
+  if ((type == ValidateType::kCreateTable ? FLAGS_catalog_manager_check_ts_count_for_create_table :
+                                            FLAGS_catalog_manager_check_ts_count_for_alter_table) &&
+      num_replicas > num_live_tservers) {
+    // Note: this error message is matched against in master-stress-test.
+    return SetupError(Status::InvalidArgument(Substitute(
+        "not enough live tablet servers to $0 a table with the requested replication "
+        "factor $1; $2 tablet servers are alive",
+        type == ValidateType::kCreateTable ? "create" : "alter",
+        num_replicas, num_live_tservers)),
+                      resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
+  }
+
+  if (type == ValidateType::kCreateTable) {
+    // Verify that the total number of replicas is reasonable.
+    //
+    // Table creation can generate a fair amount of load, both in the form of RPC
+    // traffic (due to Raft leader elections) and disk I/O (due to durably writing
+    // several files during both replica creation and leader elections).
+    //
+    // Ideally we would have more effective ways of mitigating this load (such
+    // as more efficient on-disk metadata management), but in lieu of that, we
+    // employ this coarse-grained check that prohibits up-front creation of too
+    // many replicas.
+    //
+    // Note: non-replicated tables are exempt because, by not using replication,
+    // they do not generate much of the load described above.
+    const auto max_replicas_total = FLAGS_max_create_tablets_per_ts * num_live_tservers;
+    if (num_replicas > 1 && max_replicas_total > 0 &&
+        *partitions_count * num_replicas > max_replicas_total) {
+      return SetupError(Status::InvalidArgument(Substitute(
+                            "the requested number of tablet replicas is over the maximum permitted "
+                            "at creation time ($0), additional tablets may be added by adding "
+                            "range partitions to the table post-creation",
+                            max_replicas_total)),
+                        resp,
+                        MasterErrorPB::TOO_MANY_TABLETS);
+    }
+  }
+
+  // Warn if the number of live tablet servers is not enough to re-replicate
+  // a failed replica of the tablet.
+  const auto num_ts_needed_for_rereplication =
+      num_replicas + (FLAGS_raft_prepare_replacement_before_eviction ? 1 : 0);
+  if (num_replicas > 1 && num_ts_needed_for_rereplication > num_live_tservers) {
+    LOG(WARNING) << Substitute(
+        "The number of live tablet servers is not enough to re-replicate a "
+        "tablet replica of the $0 table $1 in case of a server "
+        "failure: $2 tablet servers would be needed, $3 are available. "
+        "Consider bringing up more tablet servers.",
+        type == ValidateType::kCreateTable ? "newly created" : "altering", normalized_table_name,
+        num_ts_needed_for_rereplication, num_live_tservers);
+  }
+
+  return Status::OK();
+}
+
 string CatalogManager::NormalizeTableName(const string& table_name) {
   // Force a deep copy on platforms with reference counted strings.
   string normalized_table_name(table_name.data(), table_name.size());
@@ -6236,7 +6277,6 @@ string TabletInfo::ToString() const {
   return Substitute("$0 (table $1)", tablet_id_,
                     (table_ != nullptr ? table_->ToString() : "MISSING"));
 }
-
 
 void TabletInfo::UpdateStats(ReportedTabletStatsPB stats) {
   std::lock_guard<simple_spinlock> l(lock_);

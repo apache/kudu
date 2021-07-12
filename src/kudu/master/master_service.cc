@@ -334,7 +334,7 @@ void MasterServiceImpl::RemoveMaster(const RemoveMasterRequestPB* req,
 void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
                                     TSHeartbeatResponsePB* resp,
                                     rpc::RpcContext* rpc) {
-  // If CatalogManager is not initialized don't even know whether
+  // 1. If CatalogManager is not initialized don't even know whether
   // or not we will be a leader (so we can't tell whether or not we can
   // accept tablet reports).
   CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());

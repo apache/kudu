@@ -438,7 +438,7 @@ Status BeginTabletCopySession(const TServerDetails* ts,
 // histogram, it might be 'total_count' or 'mean'.
 //
 // 'entity_id' may be NULL, in which case the first entity of the same type
-// as 'entity_proto' will be matched.
+// as 'entity_proto' will be matched, and also it can be a pattern.
 Status GetInt64Metric(const HostPort& http_hp,
                       const MetricEntityPrototype* entity_proto,
                       const char* entity_id,

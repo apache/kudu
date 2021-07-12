@@ -53,6 +53,7 @@
 
 namespace kudu {
 
+class AlterTableTest;
 class AuthzTokenTest;
 class ClientStressTest_TestUniqueClientIds_Test;
 class DisableWriteWhenExceedingQuotaTest;
@@ -81,6 +82,7 @@ class TxnSystemClient;
 namespace tools {
 class LeaderMasterProxy;
 class RemoteKsckCluster;
+class TableAlter;
 } // namespace tools
 
 namespace client {
@@ -1013,6 +1015,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   FRIEND_TEST(ClientTest, TestScanTimeout);
   FRIEND_TEST(ClientTest, TestWriteWithDeadMaster);
   FRIEND_TEST(MasterFailoverTest, TestPauseAfterCreateTableIssued);
+  FRIEND_TEST(MultiTServerClientTest, TestSetReplicationFactor);
 
   KuduClient();
 
@@ -2030,6 +2033,10 @@ class KUDU_EXPORT KuduTableAlterer {
   class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
+  friend class tools::TableAlter;
+  friend class kudu::AlterTableTest;
+
+  FRIEND_TEST(MultiTServerClientTest, TestSetReplicationFactor);
 
   KuduTableAlterer(KuduClient* client,
                    const std::string& name);

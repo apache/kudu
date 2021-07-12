@@ -77,6 +77,7 @@ class KuduTableAlterer::Data {
   boost::optional<std::string> rename_to_;
   boost::optional<std::string> set_owner_to_;
   boost::optional<std::string> set_comment_to_;
+  boost::optional<int> set_replication_factor_to_;
 
   boost::optional<std::map<std::string, std::string>> new_extra_configs_;
 

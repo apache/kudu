@@ -1199,6 +1199,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "set_comment.*Set the comment for a table",
         "set_extra_config.*Change a extra configuration value on a table",
         "set_limit.*Set the write limit for a table",
+        "set_replication_factor.*Change a table's replication factor",
         "statistics.*Get table statistics",
     };
     NO_FATALS(RunTestHelp(kCmd, kTableModeRegexes));
@@ -1225,6 +1226,7 @@ TEST_F(ToolTest, TestModeHelp) {
           "scan",
           "set_comment",
           "set_extra_config",
+          "set_replication_factor",
           "statistics",
         }));
   }
@@ -4541,6 +4543,86 @@ TEST_F(ToolTest, TestChangeTableLimitSupported) {
   statistics.reset(table_statistics);
   ASSERT_EQ(-1, statistics->live_row_count_limit());
   ASSERT_EQ(-1, statistics->on_disk_size_limit());
+}
+
+TEST_F(ToolTest, TestSetReplicationFactor) {
+  constexpr int kNumTservers = 4;
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTservers;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  constexpr const char* const kTableName = "kudu.table.set.replication_factor";
+
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  schema_builder.AddColumn("value")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull();
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_schema(schema);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+
+  ASSERT_EQ(1, table->num_replicas());
+
+  NO_FATALS(RunActionStdoutNone(Substitute("table set_replication_factor $0 $1 3",
+                                           master_addr, kTableName)));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_EQ(3, table->num_replicas());
+
+  NO_FATALS(RunActionStdoutNone(Substitute("table set_replication_factor $0 $1 1",
+                                           master_addr, kTableName)));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_EQ(1, table->num_replicas());
+
+  string stderr;
+  Status s = RunActionStderrString(
+      Substitute("table set_replication_factor $0 $1 3a",
+                 master_addr, kTableName), &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr, "Unable to parse replication factor value: 3a.");
+
+  s = RunActionStderrString(
+      Substitute("table set_replication_factor $0 $1 0",
+                 master_addr, kTableName), &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr, "illegal replication factor 0: minimum allowed replication "
+                      "factor is 1 (controlled by --min_num_replicas)");
+
+  s = RunActionStderrString(
+      Substitute("table set_replication_factor $0 $1 2",
+                 master_addr, kTableName), &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr, "illegal replication factor 2: replication factor must be odd");
+
+  s = RunActionStderrString(
+      Substitute("table set_replication_factor $0 $1 5",
+                 master_addr, kTableName), &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr, "not enough live tablet servers to alter a table with the"
+                              " requested replication factor 5; 4 tablet servers are alive");
+
+  s = RunActionStderrString(
+      Substitute("table set_replication_factor $0 $1 9",
+                 master_addr, kTableName), &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr, "illegal replication factor 9: maximum allowed replication "
+                              "factor is 7 (controlled by --max_num_replicas)");
 }
 
 Status CreateLegacyHmsTable(HmsClient* client,

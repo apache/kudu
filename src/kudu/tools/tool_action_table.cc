@@ -38,6 +38,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
+#include "kudu/client/table_alterer-internal.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
@@ -172,6 +173,20 @@ class TableLister {
   }
 };
 
+// This class only exists so that it can easily be friended by KuduTableAlterer.
+class TableAlter {
+ public:
+  static Status SetReplicationFactor(const vector<string>& master_addresses,
+                                     const string& table_name,
+                                     int32_t replication_factor) {
+    client::sp::shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
+    unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+    alterer->data_->set_replication_factor_to_ = replication_factor;
+    return alterer->Alter();
+  }
+};
+
 namespace {
 
 const char* const kNewTableNameArg = "new_table_name";
@@ -189,6 +204,7 @@ const char* const kEncodingTypeArg = "encoding_type";
 const char* const kBlockSizeArg = "block_size";
 const char* const kColumnCommentArg = "column_comment";
 const char* const kCreateTableJSONArg = "create_table_json";
+const char* const kReplicationFactorArg = "replication_factor";
 
 enum PartitionAction {
   ADD,
@@ -958,6 +974,21 @@ Status DeleteColumn(const RunnerContext& context) {
   return alterer->Alter();
 }
 
+Status SetReplicationFactor(const RunnerContext& context) {
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& str_replication_factor = FindOrDie(context.required_args, kReplicationFactorArg);
+
+  int32_t replication_factor;
+  if (!safe_strto32(str_replication_factor, &replication_factor)) {
+    return Status::InvalidArgument(Substitute(
+        "Unable to parse replication factor value: $0.", str_replication_factor));
+  }
+
+  return TableAlter::SetReplicationFactor(master_addresses, table_name, replication_factor);
+}
+
 Status GetTableStatistics(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   client::sp::shared_ptr<KuduClient> client;
@@ -1472,6 +1503,13 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .Build();
 
+  unique_ptr<Action> set_replication_factor =
+      ClusterActionBuilder("set_replication_factor", &SetReplicationFactor)
+      .Description("Change a table's replication factor")
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kReplicationFactorArg, "New replication factor of the table" })
+      .Build();
+
   unique_ptr<Action> statistics =
       ClusterActionBuilder("statistics", &GetTableStatistics)
       .Description("Get table statistics")
@@ -1523,6 +1561,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(scan_table))
       .AddAction(std::move(set_comment))
       .AddAction(std::move(set_extra_config))
+      .AddAction(std::move(set_replication_factor))
       .AddAction(std::move(statistics))
       .Build();
 }

@@ -44,6 +44,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -1229,6 +1230,8 @@ Status GetInt64Metric(const HostPort& http_hp,
                       const MetricPrototype* metric_proto,
                       const char* value_field,
                       int64_t* value) {
+  *value = 0;
+  bool found = false;
   // Fetch metrics whose name matches the given prototype.
   string url = Substitute(
       "http://$0/jsonmetricz?metrics=$1",
@@ -1252,7 +1255,7 @@ Status GetInt64Metric(const HostPort& http_hp,
     if (entity_id) {
       string id;
       RETURN_NOT_OK(r.ExtractString(entity, "id", &id));
-      if (id != entity_id) {
+      if (!MatchPattern(id, entity_id)) {
         continue;
       }
     }
@@ -1266,9 +1269,18 @@ Status GetInt64Metric(const HostPort& http_hp,
       if (name != metric_proto->name()) {
         continue;
       }
-      RETURN_NOT_OK(r.ExtractInt64(metric, value_field, value));
-      return Status::OK();
+
+      int64_t v = 0;
+      RETURN_NOT_OK(r.ExtractInt64(metric, value_field, &v));
+      found = true;
+      *value += v;
+      if (!entity_id) {
+        return Status::OK();
+      }
     }
+  }
+  if (found) {
+    return Status::OK();
   }
   string msg;
   if (entity_id) {

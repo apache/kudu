@@ -244,6 +244,7 @@ Status Heartbeater::Start() {
 
   return Status::OK();
 }
+
 Status Heartbeater::Stop() {
   // Stop all threads and return the first failure (if there was one).
   Status first_failure;

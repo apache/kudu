@@ -63,6 +63,7 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
       !set_comment_to_.is_initialized() &&
       !disk_size_limit_ &&
       !row_count_limit_ &&
+      !set_replication_factor_to_.is_initialized() &&
       steps_.empty()) {
     return Status::InvalidArgument("No alter steps provided");
   }
@@ -82,6 +83,9 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
   }
   if (set_comment_to_.is_initialized()) {
     req->set_new_table_comment(set_comment_to_.get());
+  }
+  if (set_replication_factor_to_.is_initialized()) {
+    req->set_num_replicas(set_replication_factor_to_.get());
   }
 
   if (schema_ != nullptr) {
