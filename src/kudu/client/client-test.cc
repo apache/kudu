@@ -156,7 +156,9 @@ DECLARE_int32(log_inject_latency_ms_stddev);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int32(max_column_comment_length);
 DECLARE_int32(max_create_tablets_per_ts);
+DECLARE_int32(max_num_replicas);
 DECLARE_int32(max_table_comment_length);
+DECLARE_int32(min_num_replicas);
 DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(scanner_gc_check_interval_us);
@@ -5349,29 +5351,6 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
                       "maximum permitted at creation time (3)");
 }
 
-// Tests for too many replicas, too few replicas, even replica count, etc.
-TEST_F(ClientTest, TestCreateTableWithBadNumReplicas) {
-  const vector<pair<int, string>> cases = {
-    {3, "not enough live tablet servers to create a table with the requested "
-     "replication factor 3; 1 tablet servers are alive"},
-    {2, "illegal replication factor 2 (replication factor must be odd)"},
-    {-1, "illegal replication factor -1 (replication factor must be positive)"},
-    {11, "illegal replication factor 11 (max replication factor is 7)"}
-  };
-
-  for (const auto& c : cases) {
-    SCOPED_TRACE(Substitute("num_replicas=$0", c.first));
-    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-    Status s = table_creator->table_name("foobar")
-        .schema(&schema_)
-        .set_range_partition_columns({ "key" })
-        .num_replicas(c.first)
-        .Create();
-    EXPECT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), c.second);
-  }
-}
-
 TEST_F(ClientTest, TestCreateTableWithInvalidEncodings) {
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   KuduSchema schema;
@@ -8524,6 +8503,121 @@ TEST_F(ClientTest, WriteWhileRestartingMultipleTabletServers) {
                                          KuduClient::LEADER_ONLY,
                                          mode);
     ASSERT_EQ(kNumRows, row_count);
+  }
+}
+
+class ReplicationFactorLimitsTest : public ClientTest {
+ public:
+  static constexpr const char* const kTableName = "replication_limits";
+
+  void SetUp() override {
+    // Reduce the TS<->Master heartbeat interval to speed up testing.
+    FLAGS_heartbeat_interval_ms = 10;
+
+    // Set RF-related flags.
+    FLAGS_min_num_replicas = 3;
+    FLAGS_max_num_replicas = 5;
+
+    KuduTest::SetUp();
+
+    // Start minicluster and wait for tablet servers to connect to master.
+    InternalMiniClusterOptions options;
+    options.num_tablet_servers = 7;
+    cluster_.reset(new InternalMiniCluster(env_, std::move(options)));
+    ASSERT_OK(cluster_->StartSync());
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+  }
+};
+
+TEST_F(ReplicationFactorLimitsTest, MinReplicationFactor) {
+  // Creating table with number of replicas equal to --min_num_replicas should
+  // succeed.
+  {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+        .schema(&schema_)
+        .add_hash_partitions({ "key" }, 2)
+        .num_replicas(3)
+        .Create());
+  }
+
+  // An attempt to create a table with replication factor less than
+  // the specified by --min_num_replicas should fail.
+  for (auto rf : { -1, 0, 1, 2 }) {
+    SCOPED_TRACE(Substitute("replication factor $0", rf));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    const auto s = table_creator->table_name(kTableName)
+        .schema(&schema_)
+        .add_hash_partitions({ "key" }, 2)
+        .num_replicas(rf)
+        .Create();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "illegal replication factor");
+    ASSERT_STR_CONTAINS(s.ToString(), "minimum allowed replication factor is 3");
+  }
+
+  // Test a couple of other cases: even number of replicas when in [min, max]
+  // range and an attempt to create a table with number of replicas more than
+  // the number of tablet servers currently alive in the cluster.
+  {
+    FLAGS_min_num_replicas = 1;
+    const vector<pair<int, string>> cases = {
+      {2, "illegal replication factor 2: replication factor must be odd"},
+      {3, "not enough live tablet servers to create a table with the requested "
+          "replication factor 3; 1 tablet servers are alive"},
+    };
+
+    for (auto i = 1; i < cluster_->num_tablet_servers(); ++i) {
+      cluster_->mini_tablet_server(i)->Shutdown();
+    }
+    // Restart masters so only the alive tablet servers: that's a faster way
+    // to update tablet servers' liveliness status in the master's registry.
+    for (auto i = 0; i < cluster_->num_masters(); ++i) {
+      cluster_->mini_master(i)->Shutdown();
+      ASSERT_OK(cluster_->mini_master(i)->Restart());
+    }
+
+    SleepFor(MonoDelta::FromMilliseconds(3 * FLAGS_heartbeat_interval_ms));
+
+    for (const auto& c : cases) {
+      SCOPED_TRACE(Substitute("num_replicas=$0", c.first));
+      unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+      Status s = table_creator->table_name("foobar")
+          .schema(&schema_)
+          .set_range_partition_columns({ "key" })
+          .num_replicas(c.first)
+          .Create();
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), c.second);
+    }
+  }
+}
+
+TEST_F(ReplicationFactorLimitsTest, MaxReplicationFactor) {
+  // Creating table with number of replicas equal to --max_num_replicas should
+  // succeed.
+  {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+        .schema(&schema_)
+        .add_hash_partitions({ "key" }, 2)
+        .num_replicas(5)
+        .Create());
+  }
+
+  // An attempt to create a table with replication factor greater than
+  // the specified by --max_num_replicas should fail.
+  for (auto rf : { 6, 7 }) {
+    SCOPED_TRACE(Substitute("replication factor $0", rf));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    const auto s = table_creator->table_name(kTableName)
+        .schema(&schema_)
+        .add_hash_partitions({ "key" }, 2)
+        .num_replicas(rf)
+        .Create();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "illegal replication factor");
+    ASSERT_STR_CONTAINS(s.ToString(), "maximum allowed replication factor is 5");
   }
 }
 

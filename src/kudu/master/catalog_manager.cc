@@ -173,11 +173,23 @@ TAG_FLAG(unresponsive_ts_rpc_timeout_ms, advanced);
 DEFINE_int32(default_num_replicas, 3,
              "Default number of replicas for tables that do not have the num_replicas set.");
 TAG_FLAG(default_num_replicas, advanced);
+TAG_FLAG(default_num_replicas, runtime);
 
 DEFINE_int32(max_num_replicas, 7,
              "Maximum number of replicas that may be specified for a table.");
 // Tag as unsafe since we have done very limited testing of higher than 5 replicas.
 TAG_FLAG(max_num_replicas, unsafe);
+TAG_FLAG(max_num_replicas, runtime);
+
+DEFINE_int32(min_num_replicas, 1,
+             "Minimum number of replicas that may be specified when creating "
+             "a table: this is to enforce the minimum replication factor for "
+             "tables created in a Kudu cluster. For example, setting this flag "
+             "to 3 enforces every new table to have at least 3 replicas for "
+             "each of its tablets, so there cannot be a data loss when a "
+             "single tablet server fails irrecoverably.");
+TAG_FLAG(min_num_replicas, advanced);
+TAG_FLAG(min_num_replicas, runtime);
 
 DEFINE_int32(max_num_columns, 300,
              "Maximum number of columns that may be in a table.");
@@ -210,6 +222,7 @@ TAG_FLAG(max_identifier_length, unsafe);
 DEFINE_bool(allow_unsafe_replication_factor, false,
             "Allow creating tables with even replication factor.");
 TAG_FLAG(allow_unsafe_replication_factor, unsafe);
+TAG_FLAG(allow_unsafe_replication_factor, runtime);
 
 DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,
              "Amount of time the catalog manager background task thread waits "
@@ -360,24 +373,9 @@ TAG_FLAG(table_write_limit_ratio, experimental);
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int64(tsk_rotation_seconds);
-
-METRIC_DEFINE_entity(table);
-
 DECLARE_string(ranger_config_path);
 
-// Validates that if auto-rebalancing is enabled, the cluster uses 3-4-3 replication
-// (the --raft_prepare_replacement_before_eviction flag must be set to true).
-static bool Validate343SchemeEnabledForAutoRebalancing()  {
-  if (FLAGS_auto_rebalancing_enabled &&
-      !FLAGS_raft_prepare_replacement_before_eviction) {
-    LOG(ERROR) << "If enabling auto-rebalancing, Kudu must be configured"
-                  " with --raft_prepare_replacement_before_eviction.";
-    return false;
-  }
-  return true;
-}
-GROUP_FLAG_VALIDATOR(auto_rebalancing_flags,
-                     Validate343SchemeEnabledForAutoRebalancing);
+METRIC_DEFINE_entity(table);
 
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
@@ -422,10 +420,9 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
-namespace kudu {
-namespace master {
+namespace {
 
-static bool ValidateTableWriteLimitRatio(const char* flagname, double value) {
+bool ValidateTableWriteLimitRatio(const char* flagname, double value) {
   if (value > 1.0) {
     LOG(ERROR) << Substitute("$0 must be less than or equal to 1.0, value $1 is invalid.",
                              flagname, value);
@@ -439,7 +436,7 @@ static bool ValidateTableWriteLimitRatio(const char* flagname, double value) {
 }
 DEFINE_validator(table_write_limit_ratio, &ValidateTableWriteLimitRatio);
 
-static bool ValidateTableLimit(const char* flag, int64_t limit) {
+bool ValidateTableLimit(const char* flag, int64_t limit) {
   if (limit != -1 && limit < 0) {
      LOG(ERROR) << Substitute("$0 must be greater than or equal to -1, "
                               "$1 is invalid", flag, limit);
@@ -449,9 +446,84 @@ static bool ValidateTableLimit(const char* flag, int64_t limit) {
 }
 DEFINE_validator(table_disk_size_limit, &ValidateTableLimit);
 DEFINE_validator(table_row_count_limit, &ValidateTableLimit);
+
+bool ValidateMinNumReplicas(const char* flagname, int value) {
+  if (value < 1) {
+    LOG(ERROR) << Substitute(
+        "$0: invalid value for flag $1; must be at least 1", value, flagname);
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(min_num_replicas, &ValidateMinNumReplicas);
+
+// Validate that if the auto-rebalancing is enabled, the cluster uses the 3-4-3
+// replication scheme: the --raft_prepare_replacement_before_eviction flag
+// must be set to 'true'.
+bool Validate343SchemeEnabledForAutoRebalancing()  {
+  if (FLAGS_auto_rebalancing_enabled &&
+      !FLAGS_raft_prepare_replacement_before_eviction) {
+    LOG(ERROR) << "if enabling auto-rebalancing, Kudu must be configured "
+                  "with --raft_prepare_replacement_before_eviction";
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(auto_rebalancing_flags,
+                     Validate343SchemeEnabledForAutoRebalancing);
+
+// Check for the replication factor flags' sanity.
+bool ValidateReplicationFactorFlags()  {
+  if (FLAGS_min_num_replicas > FLAGS_max_num_replicas) {
+    LOG(ERROR) << Substitute(
+        "--min_num_replicas ($0) must not be greater than "
+        "--max_num_replicas ($1)",
+        FLAGS_min_num_replicas, FLAGS_max_num_replicas);
+    return false;
+  }
+  if (FLAGS_default_num_replicas > FLAGS_max_num_replicas) {
+    LOG(ERROR) << Substitute(
+        "--default_num_replicas ($0) must not be greater than "
+        "--max_num_replicas ($1)",
+        FLAGS_default_num_replicas, FLAGS_max_num_replicas);
+    return false;
+  }
+  if (FLAGS_default_num_replicas % 2 == 0 &&
+      !FLAGS_allow_unsafe_replication_factor) {
+    LOG(ERROR) << Substitute(
+        "--default_num_replicas ($0) must not be an even number since "
+        "--allow_unsafe_replication_factor is not set",
+        FLAGS_max_num_replicas);
+    return false;
+  }
+  if (FLAGS_min_num_replicas % 2 == 0 &&
+      !FLAGS_allow_unsafe_replication_factor) {
+    LOG(ERROR) << Substitute(
+        "--min_num_replicas ($0) must not be an even number since "
+        "--allow_unsafe_replication_factor is not set",
+        FLAGS_min_num_replicas);
+    return false;
+  }
+  if (FLAGS_max_num_replicas % 2 == 0 &&
+      !FLAGS_allow_unsafe_replication_factor) {
+    LOG(ERROR) << Substitute(
+        "--max_num_replicas ($0) must not be an even number since "
+        "--allow_unsafe_replication_factor is not set",
+        FLAGS_max_num_replicas);
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(replication_factor_flags,
+                     ValidateReplicationFactorFlags);
+} // anonymous namespace
+
 ////////////////////////////////////////////////////////////
 // Table Loader
 ////////////////////////////////////////////////////////////
+
+namespace kudu {
+namespace master {
 
 class TableLoader : public TableVisitor {
  public:
@@ -1808,25 +1880,27 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
 
   const auto num_replicas = req.num_replicas();
+  if (num_replicas > FLAGS_max_num_replicas) {
+    return SetupError(Status::InvalidArgument(
+        Substitute("illegal replication factor $0: maximum allowed replication "
+                   "factor is $1 (controlled by --max_num_replicas)",
+                   num_replicas, FLAGS_max_num_replicas)),
+        resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
+  }
+  if (num_replicas < FLAGS_min_num_replicas) {
+    return SetupError(Status::InvalidArgument(
+        Substitute("illegal replication factor $0: minimum allowed replication "
+                   "factor is $1 (controlled by --min_num_replicas)",
+            num_replicas, FLAGS_min_num_replicas)),
+        resp, MasterErrorPB::ILLEGAL_REPLICATION_FACTOR);
+  }
   // Reject create table with even replication factors, unless master flag
   // allow_unsafe_replication_factor is on.
   if (num_replicas % 2 == 0 && !FLAGS_allow_unsafe_replication_factor) {
     return SetupError(Status::InvalidArgument(
-        Substitute("illegal replication factor $0 (replication factor must be odd)", num_replicas)),
-      resp, MasterErrorPB::EVEN_REPLICATION_FACTOR);
-  }
-
-  if (num_replicas > FLAGS_max_num_replicas) {
-    return SetupError(Status::InvalidArgument(
-          Substitute("illegal replication factor $0 (max replication factor is $1)",
-            num_replicas, FLAGS_max_num_replicas)),
-        resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
-  }
-  if (num_replicas <= 0) {
-    return SetupError(Status::InvalidArgument(
-          Substitute("illegal replication factor $0 (replication factor must be positive)",
-            num_replicas, FLAGS_max_num_replicas)),
-        resp, MasterErrorPB::ILLEGAL_REPLICATION_FACTOR);
+        Substitute("illegal replication factor $0: replication factor must be odd",
+                   num_replicas)),
+        resp, MasterErrorPB::EVEN_REPLICATION_FACTOR);
   }
 
   // Verify that the number of replicas isn't larger than the number of live tablet

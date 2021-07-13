@@ -73,7 +73,8 @@ message MasterErrorPB {
     // The number of replicas requested is even.
     EVEN_REPLICATION_FACTOR = 10;
 
-    // The number of replicas requested is illegal (eg non-positive).
+    // The number of replicas requested is illegal, i.e. either non-positive
+    // or not allowed per system policies.
     ILLEGAL_REPLICATION_FACTOR = 11;
 
     // The callee detected that its replica management scheme is incompatible
