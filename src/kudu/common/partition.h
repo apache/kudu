@@ -357,6 +357,15 @@ class PartitionSchema {
   static int32_t BucketForEncodedColumns(const std::string& encoded_hash_columns,
                                          const HashBucketSchema& hash_bucket_schema);
 
+  // Helper function that validates the hash bucket schemas.
+  static Status ValidateHashBucketSchemas(const Schema& schema,
+                                          const HashBucketSchemas& hash_schemas);
+
+  // Generates hash partitions for each combination of hash buckets in hash_schemas.
+  static std::vector<Partition> GenerateHashPartitions(
+      const HashBucketSchemas& hash_schemas,
+      const KeyEncoder<std::string>& hash_encoder);
+
   // Assigns the row to a hash bucket according to the hash schema.
   template<typename Row>
   static Status BucketForRow(const Row& row,
@@ -426,17 +435,9 @@ class PartitionSchema {
   // Clears the state of this partition schema.
   void Clear();
 
-  // Helper function that validates the hash bucket schemas.
-  static Status ValidateHashBucketSchemas(const Schema& schema,
-                                          const HashBucketSchemas& hash_schemas);
-
   // Validates that this partition schema is valid. Returns OK, or an
   // appropriate error code for an invalid partition schema.
   Status Validate(const Schema& schema) const;
-
-  // Generates hash partitions for each combination of hash buckets in hash_schemas.
-  static std::vector<Partition> GenerateHashPartitions(const HashBucketSchemas& hash_schemas,
-                                                       const KeyEncoder<std::string>& hash_encoder);
 
   // Validates the split rows, converts them to partition key form, and inserts
   // them into splits in sorted order.

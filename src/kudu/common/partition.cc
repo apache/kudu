@@ -477,30 +477,6 @@ Status PartitionSchema::SplitRangeBounds(const Schema& schema,
   return Status::OK();
 }
 
-vector<Partition> PartitionSchema::GenerateHashPartitions(const HashBucketSchemas& hash_schemas,
-                                                          const KeyEncoder<string>& hash_encoder) {
-  vector<Partition> hash_partitions(1);
-  // Create a partition for each hash bucket combination.
-  for (const HashBucketSchema& bucket_schema : hash_schemas) {
-    auto expected_partitions = hash_partitions.size() * bucket_schema.num_buckets;
-    vector<Partition> new_partitions;
-    new_partitions.reserve(expected_partitions);
-    // For each of the partitions created so far, replicate it
-    // by the number of buckets in the next hash bucketing component.
-    for (const Partition& base_partition : hash_partitions) {
-      for (int32_t bucket = 0; bucket < bucket_schema.num_buckets; bucket++) {
-        Partition partition = base_partition;
-        partition.hash_buckets_.push_back(bucket);
-        hash_encoder.Encode(&bucket, &partition.partition_key_start_);
-        hash_encoder.Encode(&bucket, &partition.partition_key_end_);
-        new_partitions.push_back(partition);
-      }
-    }
-    hash_partitions = std::move(new_partitions);
-  }
-  return hash_partitions;
-}
-
 Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_rows,
                                          const vector<pair<KuduPartialRow,
                                                            KuduPartialRow>>& range_bounds,
@@ -520,8 +496,8 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
     }
   }
 
-  vector<Partition> base_hash_partitions = GenerateHashPartitions(hash_bucket_schemas_,
-                                                                  hash_encoder);
+  vector<Partition> base_hash_partitions = GenerateHashPartitions(
+      hash_bucket_schemas_, hash_encoder);
 
   std::unordered_set<int> range_column_idxs;
   for (const ColumnId& column_id : range_schema_.column_ids) {
@@ -548,7 +524,27 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
   // empty if no per range hash schemas are used.
   vector<int> partition_idx_to_hash_schemas_idx;
 
-  if (!range_hash_schemas.empty()) {
+  // Even if no hash partitioning for a table is specified, there must be at
+  // least one element in 'base_hash_partitions': it's used to build the result
+  // set of range partitions.
+  DCHECK_GE(base_hash_partitions.size(), 1);
+  // The case of a single element in base_hash_partitions is a special case.
+  DCHECK(base_hash_partitions.size() > 1 ||
+         base_hash_partitions.front().hash_buckets().empty());
+
+  if (range_hash_schemas.empty()) {
+    // Create a partition per range bound and hash bucket combination.
+    vector<Partition> new_partitions;
+    for (const Partition& base_partition : base_hash_partitions) {
+      for (const auto& bound : bounds_with_hash_schemas) {
+        Partition partition = base_partition;
+        partition.partition_key_start_.append(bound.lower);
+        partition.partition_key_end_.append(bound.upper);
+        new_partitions.emplace_back(std::move(partition));
+      }
+    }
+    *partitions = std::move(new_partitions);
+  } else {
     // The number of ranges should match the size of range_hash_schemas.
     DCHECK_EQ(range_hash_schemas.size(), bounds_with_hash_schemas.size());
     // No split rows should be defined if range_hash_schemas is populated.
@@ -558,15 +554,14 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
     for (int i = 0; i < bounds_with_hash_schemas.size(); i++) {
       const auto& bound = bounds_with_hash_schemas[i];
       const auto& current_range_hash_schemas = bound.hash_schemas;
-      vector<Partition> current_bound_hash_partitions;
-      // If current bound's HashBucketSchema is empty, implies use of default table-wide schema.
-      // If not empty, generate hash partitions for all the provided hash schemas in this range.
-      if (current_range_hash_schemas.empty()) {
-        current_bound_hash_partitions = base_hash_partitions;
-      } else {
-        current_bound_hash_partitions = GenerateHashPartitions(current_range_hash_schemas,
-                                                               hash_encoder);
-      }
+      // If current bound's HashBucketSchema is empty, implies use of default
+      // table-wide schema. If not empty, generate hash partitions for all the
+      // provided hash schemas in this range.
+      vector<Partition> current_bound_hash_partitions =
+          current_range_hash_schemas.empty() ? base_hash_partitions
+                                             : GenerateHashPartitions(
+                                                   current_range_hash_schemas,
+                                                   hash_encoder);
       // Add range part to partition key.
       for (Partition& partition : current_bound_hash_partitions) {
         partition.partition_key_start_.append(bound.lower);
@@ -580,18 +575,6 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
     }
     DCHECK_EQ(partition_idx_to_hash_schemas_idx.size(), result_partitions.size());
     *partitions = std::move(result_partitions);
-  } else {
-    // Create a partition per range bound and hash bucket combination.
-    vector<Partition> new_partitions;
-    for (const Partition& base_partition : base_hash_partitions) {
-      for (const auto& bound : bounds_with_hash_schemas) {
-        Partition partition = base_partition;
-        partition.partition_key_start_.append(bound.lower);
-        partition.partition_key_end_.append(bound.upper);
-        new_partitions.push_back(partition);
-      }
-    }
-    *partitions = std::move(new_partitions);
   }
   // Note: the following discussion and logic only takes effect when the table's
   // partition schema includes at least one hash bucket component, and the
@@ -1013,7 +996,7 @@ string PartitionSchema::RangeKeyDebugString(const ConstContiguousRow& key) const
       break;
     }
     key.schema()->column(column_idx).DebugCellAppend(key.cell(column_idx), &column);
-    components.push_back(column);
+    components.emplace_back(std::move(column));
   }
 
   if (components.size() == 1) {
@@ -1180,6 +1163,61 @@ int32_t PartitionSchema::BucketForEncodedColumns(const string& encoded_hash_colu
   return hash % static_cast<uint64_t>(hash_bucket_schema.num_buckets);
 }
 
+vector<Partition> PartitionSchema::GenerateHashPartitions(
+    const HashBucketSchemas& hash_schemas,
+    const KeyEncoder<string>& hash_encoder) {
+  vector<Partition> hash_partitions(1);
+  // Create a partition for each hash bucket combination.
+  for (const HashBucketSchema& bucket_schema : hash_schemas) {
+    vector<Partition> new_partitions;
+    new_partitions.reserve(hash_partitions.size() * bucket_schema.num_buckets);
+    // For each of the partitions created so far, replicate it
+    // by the number of buckets in the next hash bucketing component.
+    for (const Partition& base_partition : hash_partitions) {
+      for (auto bucket = 0; bucket < bucket_schema.num_buckets; ++bucket) {
+        Partition partition = base_partition;
+        partition.hash_buckets_.push_back(bucket);
+        hash_encoder.Encode(&bucket, &partition.partition_key_start_);
+        hash_encoder.Encode(&bucket, &partition.partition_key_end_);
+        new_partitions.emplace_back(std::move(partition));
+      }
+    }
+    hash_partitions = std::move(new_partitions);
+  }
+  return hash_partitions;
+}
+
+Status PartitionSchema::ValidateHashBucketSchemas(const Schema& schema,
+                                                  const HashBucketSchemas& hash_schemas) {
+  set<ColumnId> hash_columns;
+  for (const PartitionSchema::HashBucketSchema& hash_schema : hash_schemas) {
+    if (hash_schema.num_buckets < 2) {
+      return Status::InvalidArgument("must have at least two hash buckets");
+    }
+
+    if (hash_schema.column_ids.empty()) {
+      return Status::InvalidArgument("must have at least one hash column");
+    }
+
+    for (const ColumnId& hash_column : hash_schema.column_ids) {
+      if (!hash_columns.insert(hash_column).second) {
+        return Status::InvalidArgument("hash bucket schema components must not "
+                                       "contain columns in common");
+      }
+      int32_t column_idx = schema.find_column_by_id(hash_column);
+      if (column_idx == Schema::kColumnNotFound) {
+        return Status::InvalidArgument("must specify existing columns for hash "
+                                       "bucket partition components");
+      }
+      if (column_idx >= schema.num_key_columns()) {
+        return Status::InvalidArgument("must specify only primary key columns for "
+                                       "hash bucket partition components");
+      }
+    }
+  }
+  return Status::OK();
+}
+
 template<typename Row>
 Status PartitionSchema::BucketForRow(const Row& row,
                                      const HashBucketSchema& hash_bucket_schema,
@@ -1211,36 +1249,6 @@ void PartitionSchema::Clear() {
   range_schema_.column_ids.clear();
   ranges_with_hash_schemas_.clear();
 
-}
-
-Status PartitionSchema::ValidateHashBucketSchemas(const Schema& schema,
-                                                  const HashBucketSchemas& hash_schemas) {
-  set<ColumnId> hash_columns;
-  for (const PartitionSchema::HashBucketSchema& hash_schema : hash_schemas) {
-    if (hash_schema.num_buckets < 2) {
-      return Status::InvalidArgument("must have at least two hash buckets");
-    }
-
-    if (hash_schema.column_ids.size() < 1) {
-      return Status::InvalidArgument("must have at least one hash column");
-    }
-
-    for (const ColumnId& hash_column : hash_schema.column_ids) {
-      if (!hash_columns.insert(hash_column).second) {
-        return Status::InvalidArgument("hash bucket schema components must not "
-                                       "contain columns in common");
-      }
-      int32_t column_idx = schema.find_column_by_id(hash_column);
-      if (column_idx == Schema::kColumnNotFound) {
-        return Status::InvalidArgument("must specify existing columns for hash "
-                                       "bucket partition components");
-      } else if (column_idx >= schema.num_key_columns()) {
-        return Status::InvalidArgument("must specify only primary key columns for "
-                                       "hash bucket partition components");
-      }
-    }
-  }
-  return Status::OK();
 }
 
 Status PartitionSchema::Validate(const Schema& schema) const {
