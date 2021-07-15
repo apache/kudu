@@ -8468,7 +8468,7 @@ class WriteRestartTest : public ClientTest {
 // no errors: client should retry any operations failed due to tablet server
 // restarting. The result row count should match the number of total rows
 // written by the client.
-TEST_F(ClientTest, WriteWhileRestartingMultipleTabletServers) {
+TEST_F(WriteRestartTest, WriteWhileRestartingMultipleTabletServers) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   constexpr const auto read_mode_to_string =
