@@ -1435,6 +1435,8 @@ class AutoAddMasterTest : public KuduTest {
   unique_ptr<ExternalMiniCluster> cluster_;
 };
 
+constexpr const int64_t kShortRetryIntervalSecs = 1;
+
 // Test that nothing goes wrong when starting up masters but the entire cluster
 // isn't fully healthy. The auto-add checks should still run, but should be
 // inconsequential if they fail because the entire cluster isn't healthy.
@@ -1514,13 +1516,20 @@ TEST_F(AutoAddMasterTest, TestFailWithoutReplicatingAddMaster) {
     ASSERT_OK(cluster_->SetFlag(cluster_->master(i),
                                 "follower_reject_update_consensus_requests", "true"));
   }
-  // Upon starting, the master will attempt to add itself, but fail to do so
-  // and exit early.
-  ASSERT_OK(cluster_->AddMaster());
+  // Upon starting, the master will attempt to add itself, but fail to do so.
+  // Even after several attempts.
+  ASSERT_OK(cluster_->AddMaster({ Substitute("--master_auto_join_retry_interval_secs=$0",
+                                             kShortRetryIntervalSecs) }));
   auto* new_master = cluster_->master(args_.orig_num_masters);
-  ASSERT_EVENTUALLY([&] {
-    ASSERT_FALSE(new_master->IsProcessAlive());
-  });
+  SleepFor(MonoDelta::FromSeconds(5 * kShortRetryIntervalSecs));
+
+  // The new master should still be around, but not be added as a part of the
+  // Raft group.
+  ASSERT_TRUE(new_master->IsProcessAlive());
+  Status s = VerifyVoterMastersForCluster(cluster_->num_masters(), nullptr, cluster_.get());
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "expected 3 masters but got 2");
+
   // Since nothing was successfully replicated, it shouldn't be a problem to
   // start up again and re-add.
   new_master->Shutdown();

@@ -167,14 +167,20 @@ Status VerifyMastersGetHostPorts(const vector<HostPort>& master_addrs,
   int64_t committed_config_index = -1;
   for (const auto& hp : master_addrs) {
     Sockaddr master_addr;
-    RETURN_NOT_OK(SockaddrFromHostPort(hp, &master_addr));
+    Status s = SockaddrFromHostPort(hp, &master_addr);
+    if (!s.ok()) {
+      LOG(INFO) << Substitute("Error resolving master address for $0: $1",
+                              hp.ToString(), s.ToString());
+      *needs_retry = true;
+      return Status::OK();
+    }
 
     // First, get the UUID of the remote master.
     GetMasterRegistrationRequestPB reg_req;
     GetMasterRegistrationResponsePB reg_resp;
     RpcController reg_rpc;
     MasterServiceProxy proxy(messenger, master_addr, master_addr.host());
-    Status s = proxy.GetMasterRegistration(reg_req, &reg_resp, &reg_rpc);
+    s = proxy.GetMasterRegistration(reg_req, &reg_resp, &reg_rpc);
     if (!s.ok() || reg_resp.has_error()) {
       LOG(INFO) << Substitute("Error getting master registration for $0: $1, $2",
                               master_addr.ToString(), s.ToString(),

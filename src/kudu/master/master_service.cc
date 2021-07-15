@@ -275,6 +275,17 @@ void MasterServiceImpl::AddMaster(const AddMasterRequestPB* req,
       rpc->RespondSuccess();
       return;
     }
+    // Several errors may show up in the Raft layer, usually indicating a lack
+    // of or change in leadership, or an otherwise transient issue. Catch these
+    // and return a retriable error.
+    if (s.IsIllegalState() || s.IsServiceUnavailable() || s.IsAborted()) {
+      LOG(WARNING) << Substitute("AddMaster $0 failed with retriable error: $1",
+                                 hp.ToString(), s.ToString());
+      StatusToPB(s, resp->mutable_error()->mutable_status());
+      resp->mutable_error()->set_code(MasterErrorPB::NOT_THE_LEADER);
+      rpc->RespondSuccess();
+      return;
+    }
     LOG(ERROR) << Substitute("Failed adding master $0. $1", hp.ToString(), s.ToString());
     rpc->RespondFailure(s);
     return;

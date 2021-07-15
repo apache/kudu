@@ -524,10 +524,10 @@ Status Master::AddMaster(const HostPort& hp, rpc::RpcContext* rpc) {
     const auto& config = consensus->CommittedConfig();
     DCHECK_EQ(1, config.peers_size());
     if (!config.peers(0).has_last_known_addr()) {
-      return Status::IllegalState("'last_known_addr' field in single master Raft configuration not "
-                                  "set. Please restart master with --master_addresses flag set "
-                                  "to the single master which will populate the 'last_known_addr' "
-                                  "field.");
+      return Status::InvalidArgument("'last_known_addr' field in single master Raft configuration "
+                                     "not set. Please restart master with --master_addresses flag "
+                                     "set to the single master which will populate the "
+                                     "'last_known_addr' field.");
     }
   }
 
