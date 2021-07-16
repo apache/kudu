@@ -841,7 +841,7 @@ build_boost() {
   # binary jar, when getrandom(2) is not available.
   # https://www.boost.org/doc/libs/1_68_0/libs/uuid/doc/uuid.html#Random%20Generator
   BOOST_CFLAGS="$BOOST_CFLAGS -DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX"
-  BOOST_CXXFLAGS="$BOOST_CFLAGS -DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX"
+  BOOST_CXXFLAGS="$BOOST_CXXFLAGS -DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX"
 
   BOOST_LDFLAGS="$EXTRA_LDFLAGS"
 

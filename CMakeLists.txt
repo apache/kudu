@@ -205,8 +205,15 @@ set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -pthread")
 #     fundamental limitations in escape analysis, which can result in subtle bad code generation.
 #     This has a small perf hit but worth it to avoid hard to debug crashes.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -fno-strict-aliasing")
-#  -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG: enable nanosecond precision for boost
+#  -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG
+#     Enable nanosecond precision for boost's date_time library.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG")
+#  -DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX
+#     For higher portability of the built binaries, switch to /dev/[u]random
+#     even if getrandom(2) is available. This is to allow for running binaries
+#     built at OS where getrandom(2) is available at OSes where getrandom(2)
+#     isn't supported (e.g., that might happen in containerized deployments).
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX")
 
 # We want access to the PRI* print format macros.
 add_definitions(-D__STDC_FORMAT_MACROS)
