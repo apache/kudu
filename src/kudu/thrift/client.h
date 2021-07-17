@@ -340,6 +340,8 @@ Status HaClient<Service>::Reconnect() {
     reconnect_idx_ = (reconnect_idx_ + 1) % addresses_.size();
 
     service_client_ = Service(address, options_);
+    VLOG(1) << strings::Substitute(
+            "Attempting to connect to $0", address.ToString());
     s = service_client_.Start();
     if (s.ok()) {
       VLOG(1) << strings::Substitute(

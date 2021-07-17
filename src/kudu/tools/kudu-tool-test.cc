@@ -5468,6 +5468,36 @@ TEST_F(ToolTest, TestHmsList) {
   ASSERT_STR_CONTAINS(out, "table2,,,");
 }
 
+TEST_F(ToolTest, TestHMSAddressLog) {
+  ExternalMiniClusterOptions opts;
+  opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  opts.enable_kerberos = EnableKerberos();
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  // Enable the HMS integration.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+  cluster_->EnableMetastoreIntegration();
+  ASSERT_OK(cluster_->Restart());
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  thrift::ClientOptions hms_opts;
+  hms_opts.enable_kerberos = EnableKerberos();
+  hms_opts.service_principal = "hive";
+  HmsClient hms_client(cluster_->hms()->address(), hms_opts);
+  ASSERT_OK(hms_client.Start());
+  ASSERT_TRUE(hms_client.IsConnected());
+
+  FLAGS_hive_metastore_uris = cluster_->hms()->uris();
+  FLAGS_hive_metastore_sasl_enabled = EnableKerberos();
+  HmsCatalog hms_catalog(master_addr);
+  ASSERT_OK(hms_catalog.Start());
+
+  string err;
+  RunActionStderrString(Substitute("hms list $0 -v 1", master_addr), &err);
+  ASSERT_STR_CONTAINS(err,
+      Substitute("Attempting to connect to $0", cluster_->hms()->address().ToString()));
+}
+
 // This test is parameterized on the serialization mode and Kerberos.
 class ControlShellToolTest :
     public ToolTest,
