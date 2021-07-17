@@ -1861,10 +1861,17 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   PartitionSchema::RangeHashSchema range_hash_schemas;
   if (FLAGS_enable_per_range_hash_schemas) {
-    for (int i = 0; i < req.range_hash_schemas_size(); i++) {
+    // TODO(aserbin): the signature of CreatePartitions() require the
+    //                'range_hash_schemas' parameters: update its signature
+    //                to remove the extra parameter and rely on its
+    //                'ranges_with_hash_schemas_' member field; the path in
+    //                CatalogManager::ApplyAlterPartitioningSteps() involving
+    //                CreatePartitions() should be updated correspondingly.
+    const auto& ps = req.partition_schema();
+    for (int i = 0; i < ps.range_hash_schemas_size(); i++) {
       PartitionSchema::HashBucketSchemas hash_bucket_schemas;
       RETURN_NOT_OK(PartitionSchema::ExtractHashBucketSchemasFromPB(
-          schema, req.range_hash_schemas(i).hash_schemas(), &hash_bucket_schemas));
+          schema, ps.range_hash_schemas(i).hash_schemas(), &hash_bucket_schemas));
       range_hash_schemas.emplace_back(std::move(hash_bucket_schemas));
     }
   }

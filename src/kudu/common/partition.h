@@ -197,12 +197,12 @@ class PartitionSchema {
   // its order corresponds to the bounds in 'range_bounds'.
   // If 'range_hash_schemas' is empty, the table wide hash schema is used per range.
   // Size of 'range_hash_schemas' and 'range_bounds' are equal if 'range_hash_schema' isn't empty.
-  Status CreatePartitions(const std::vector<KuduPartialRow>& split_rows,
-                          const std::vector<std::pair<KuduPartialRow,
-                                                      KuduPartialRow>>& range_bounds,
-                          const RangeHashSchema& range_hash_schemas,
-                          const Schema& schema,
-                          std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
+  Status CreatePartitions(
+      const std::vector<KuduPartialRow>& split_rows,
+      const std::vector<std::pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
+      const RangeHashSchema& range_hash_schemas,
+      const Schema& schema,
+      std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 
   // Tests if the partition contains the row.
   Status PartitionContainsRow(const Partition& partition,
@@ -442,11 +442,11 @@ class PartitionSchema {
   // inserts them into 'bounds_with_hash_schemas' in sorted order. The hash schemas
   // per range are stored within 'range_hash_schemas'. If 'range_hash_schemas' is empty,
   // it indicates that the table wide hash schema will be used per range.
-  Status EncodeRangeBounds(const std::vector<std::pair<KuduPartialRow,
-                                                       KuduPartialRow>>& range_bounds,
-                           const RangeHashSchema& range_hash_schemas,
-                           const Schema& schema,
-                           std::vector<RangeWithHashSchemas>* bounds_with_hash_schemas) const;
+  Status EncodeRangeBounds(
+      const std::vector<std::pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
+      const RangeHashSchema& range_hash_schemas,
+      const Schema& schema,
+      std::vector<RangeWithHashSchemas>* bounds_with_hash_schemas) const;
 
   // Splits the encoded range bounds by the split points. The splits and bounds within
   // 'bounds_with_hash_schemas' must be sorted. If `bounds_with_hash_schemas` is empty,

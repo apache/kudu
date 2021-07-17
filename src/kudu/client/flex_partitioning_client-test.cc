@@ -199,66 +199,6 @@ TEST_F(FlexPartitioningCreateTableTest, CustomHashBuckets) {
     ASSERT_OK(CreateTable(kTableName, std::move(partitions)));
     NO_FATALS(CheckTabletCount(kTableName, 3));
   }
-
-  // One-level hash bucket structure with hashing on non-key column only:
-  // { 3, "int_val" }.
-  {
-    constexpr const char* const kTableName = "3@int_val";
-    RangePartitions partitions;
-    partitions.emplace_back(CreateRangePartition());
-    auto& p = partitions.back();
-    ASSERT_OK(p->add_hash_partitions({ kIntValColumn }, 2, 0));
-    ASSERT_OK(CreateTable(kTableName, std::move(partitions)));
-    NO_FATALS(CheckTabletCount(kTableName, 2));
-  }
-
-  // One-level hash bucket structure with hashing on non-key nullable column:
-  // { 5, "string_val" }.
-  {
-    constexpr const char* const kTableName = "3@string_val";
-    RangePartitions partitions;
-    partitions.emplace_back(CreateRangePartition());
-    auto& p = partitions.back();
-    ASSERT_OK(p->add_hash_partitions({ kStringValColumn }, 5, 0));
-    ASSERT_OK(CreateTable(kTableName, std::move(partitions)));
-    NO_FATALS(CheckTabletCount(kTableName, 5));
-  }
-
-  // Two-level hash bucket structure: { 3, "key" } x { 3, "key" }.
-  {
-    constexpr const char* const kTableName = "3@key_x_3@key";
-    RangePartitions partitions;
-    partitions.emplace_back(CreateRangePartition());
-    auto& p = partitions.back();
-    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 0));
-    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 1));
-    ASSERT_OK(CreateTable(kTableName, std::move(partitions)));
-    NO_FATALS(CheckTabletCount(kTableName, 9));
-  }
-
-  // Two-level hash bucket structure: { 2, "key" } x { 3, "int_val" }.
-  {
-    constexpr const char* const kTableName = "2@key_x_3@int_val";
-    RangePartitions partitions;
-    partitions.emplace_back(CreateRangePartition());
-    auto& p = partitions.back();
-    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 2, 0));
-    ASSERT_OK(p->add_hash_partitions({ kIntValColumn }, 3, 1));
-    ASSERT_OK(CreateTable(kTableName, std::move(partitions)));
-    NO_FATALS(CheckTabletCount(kTableName, 6));
-  }
-
-  // Two-level hash bucket structure: { 3, "key" } x { 2, "key", "int_val" }.
-  {
-    constexpr const char* const kTableName = "3@key_x_2@key:int_val";
-    RangePartitions partitions;
-    partitions.emplace_back(CreateRangePartition());
-    auto& p = partitions.back();
-    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 0));
-    ASSERT_OK(p->add_hash_partitions({ kKeyColumn, kIntValColumn }, 2, 1));
-    ASSERT_OK(CreateTable(kTableName, std::move(partitions)));
-    NO_FATALS(CheckTabletCount(kTableName, 6));
-  }
 }
 
 // Create a table with mixed set of range partitions, using both table-wide and
@@ -272,12 +212,12 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashBuckets) {
   // Create a table with the following partitions:
   //
   //            hash bucket
-  //   key    0               1               2               3
-  //         --------------------------------------------------------------
-  //  <111    x:{key}         x:{key}         -               -
-  // 111-222  x:{key}         x:{key}         x:{key}         -
-  // 222-333  x:{int_val}     x:{int_val}     x:{int_val}     x:{int_val}
-  // 333-444  x:{key,int_val} x:{key,int_val} -               -
+  //   key    0           1           2               3
+  //         -----------------------------------------------------------
+  //  <111    x:{key}     x:{key}     -               -
+  // 111-222  x:{key}     x:{key}     x:{key}         -
+  // 222-333  x:{key}     x:{key}     x:{key}     x:{key}
+  // 333-444  x:{key}     x:{key}     -               -
   constexpr const char* const kTableName = "DefaultAndCustomHashBuckets";
 
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
@@ -305,24 +245,23 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashBuckets) {
   }
 
   // Add a range partition with custom hash sub-partitioning rules:
-  // 4 buckets with hash based on the "int_val" column with hash seed 2.
+  // 4 buckets with hash based on the "key" column with hash seed 2.
   {
     auto p = CreateRangePartition(222, 333);
-    ASSERT_OK(p->add_hash_partitions({ kIntValColumn }, 4, 2));
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 4, 2));
     table_creator->add_custom_range_partition(p.release());
   }
 
   // Add a range partition with custom hash sub-partitioning rules:
-  // 3 buckets hashing on the { "key", "int_val" } columns with hash seed 3.
+  // 2 buckets hashing on the "key" column with hash seed 3.
   {
     auto p = CreateRangePartition(333, 444);
-    ASSERT_OK(p->add_hash_partitions({ kKeyColumn, kIntValColumn }, 2, 3));
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 2, 3));
     table_creator->add_custom_range_partition(p.release());
   }
 
   ASSERT_OK(table_creator->Create());
   NO_FATALS(CheckTabletCount(kTableName, 11));
-
   // Make sure it's possible to insert rows into the table.
   //ASSERT_OK(InsertTestRows(kTableName, 111, 444));
 }
@@ -413,6 +352,74 @@ TEST_F(FlexPartitioningCreateTableTest, Negatives) {
         s.ToString(),
         "split rows and custom hash bucket schemas for ranges are incompatible: "
         "choose one or the other");
+  }
+
+  {
+    constexpr const char* const kTableName = "3@key_x_3@key";
+    RangePartitions partitions;
+    partitions.emplace_back(CreateRangePartition());
+    auto& p = partitions.back();
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 0));
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 1));
+    const auto s = CreateTable(kTableName, std::move(partitions));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "hash bucket schema components must not contain "
+                        "columns in common");
+  }
+
+  {
+    constexpr const char* const kTableName = "3@key_x_3@key:int_val";
+    RangePartitions partitions;
+    partitions.emplace_back(CreateRangePartition());
+    auto& p = partitions.back();
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 2, 0));
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn, kIntValColumn }, 3, 1));
+    const auto s = CreateTable(kTableName, std::move(partitions));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "hash bucket schema components must not contain "
+                        "columns in common");
+  }
+
+  {
+    constexpr const char* const kTableName = "3@int_val";
+    RangePartitions partitions;
+    partitions.emplace_back(CreateRangePartition());
+    auto& p = partitions.back();
+    ASSERT_OK(p->add_hash_partitions({ kIntValColumn }, 2, 0));
+    const auto s = CreateTable(kTableName, std::move(partitions));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "must specify only primary key columns for hash "
+                        "bucket partition components");
+  }
+
+  {
+    constexpr const char* const kTableName = "3@string_val";
+    RangePartitions partitions;
+    partitions.emplace_back(CreateRangePartition());
+    auto& p = partitions.back();
+    ASSERT_OK(p->add_hash_partitions({ kStringValColumn }, 5, 0));
+    const auto s = CreateTable(kTableName, std::move(partitions));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "must specify only primary key columns for hash "
+                        "bucket partition components");
+  }
+
+  {
+    constexpr const char* const kTableName = "2@key_x_3@int_val";
+    RangePartitions partitions;
+    partitions.emplace_back(CreateRangePartition());
+    auto& p = partitions.back();
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 2, 0));
+    ASSERT_OK(p->add_hash_partitions({ kIntValColumn }, 3, 1));
+    const auto s = CreateTable(kTableName, std::move(partitions));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "must specify only primary key columns for hash "
+                        "bucket partition components");
   }
 }
 

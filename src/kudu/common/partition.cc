@@ -198,6 +198,7 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
     RETURN_NOT_OK(ExtractHashBucketSchemasFromPB(schema, pb.range_hash_schemas(i).hash_schemas(),
                                                  &range_hash_schema[i]));
   }
+
   vector<pair<KuduPartialRow, KuduPartialRow>> range_bounds;
   for (int i = 0; i < pb.range_bounds_size(); i++) {
     RowOperationsPBDecoder decoder(&pb.range_bounds(i), &schema, &schema, nullptr);
@@ -250,9 +251,15 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
     }
   }
 
+  auto* ranges_with_schemas_ptr = &partition_schema->ranges_with_hash_schemas_;
   if (!range_bounds.empty()) {
     RETURN_NOT_OK(partition_schema->EncodeRangeBounds(
-        range_bounds, range_hash_schema, schema, &partition_schema->ranges_with_hash_schemas_));
+        range_bounds, range_hash_schema, schema, ranges_with_schemas_ptr));
+  }
+  if (range_bounds.size() != ranges_with_schemas_ptr->size()) {
+    return Status::InvalidArgument(Substitute("the number of range bounds "
+        "($0) differs from the number ranges with hash schemas ($1)",
+        range_bounds.size(), ranges_with_schemas_ptr->size()));
   }
 
   return partition_schema->Validate(schema);
@@ -372,19 +379,26 @@ Status PartitionSchema::EncodeRangeSplits(const vector<KuduPartialRow>& split_ro
   return Status::OK();
 }
 
-Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
-                                                            KuduPartialRow>>& range_bounds,
-                                          const RangeHashSchema& range_hash_schemas,
-                                          const Schema& schema,
-                                          vector<RangeWithHashSchemas>*
-                                              bounds_with_hash_schemas) const {
+Status PartitionSchema::EncodeRangeBounds(
+    const vector<pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
+    const RangeHashSchema& range_hash_schemas,
+    const Schema& schema,
+    vector<RangeWithHashSchemas>* bounds_with_hash_schemas) const {
   DCHECK(bounds_with_hash_schemas->empty());
   if (range_bounds.empty()) {
     bounds_with_hash_schemas->emplace_back(RangeWithHashSchemas{"", "", {}});
     return Status::OK();
   }
 
-  int j = 0;
+  if (!range_hash_schemas.empty() &&
+      range_hash_schemas.size() != range_bounds.size()) {
+    return Status::InvalidArgument(Substitute(
+        "$0 vs $1: per range hash schemas and range bounds "
+        "must have the same size",
+        range_hash_schemas.size(), range_bounds.size()));
+  }
+
+  size_t j = 0;
   for (const auto& bound : range_bounds) {
     string lower;
     string upper;
@@ -407,21 +421,27 @@ Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
             [](const RangeWithHashSchemas& s1, const RangeWithHashSchemas& s2) {
     return s1.lower < s2.lower;
   });
+
   // Check that the range bounds are non-overlapping
+  if (bounds_with_hash_schemas->empty()) {
+    return Status::OK();
+  }
   for (int i = 0; i < bounds_with_hash_schemas->size() - 1; i++) {
     const string& first_upper = bounds_with_hash_schemas->at(i).upper;
     const string& second_lower = bounds_with_hash_schemas->at(i + 1).lower;
 
-    if (first_upper.empty() || second_lower.empty() || first_upper > second_lower) {
+    if (first_upper.empty() || second_lower.empty() ||
+        first_upper > second_lower) {
       return Status::InvalidArgument(
           "overlapping range partitions",
-          strings::Substitute("first range partition: $0, second range partition: $1",
-                              RangePartitionDebugString(bounds_with_hash_schemas->at(i).lower,
-                                                        bounds_with_hash_schemas->at(i).upper,
-                                                        schema),
-                              RangePartitionDebugString(bounds_with_hash_schemas->at(i + 1).lower,
-                                                        bounds_with_hash_schemas->at(i + 1).upper,
-                                                        schema)));
+          Substitute(
+              "first range partition: $0, second range partition: $1",
+              RangePartitionDebugString(bounds_with_hash_schemas->at(i).lower,
+                                        bounds_with_hash_schemas->at(i).upper,
+                                        schema),
+              RangePartitionDebugString(bounds_with_hash_schemas->at(i + 1).lower,
+                                        bounds_with_hash_schemas->at(i + 1).upper,
+                                        schema)));
     }
   }
 
@@ -474,22 +494,24 @@ Status PartitionSchema::SplitRangeBounds(const Schema& schema,
   return Status::OK();
 }
 
-Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_rows,
-                                         const vector<pair<KuduPartialRow,
-                                                           KuduPartialRow>>& range_bounds,
-                                         const RangeHashSchema& range_hash_schemas,
-                                         const Schema& schema,
-                                         vector<Partition>* partitions) const {
+Status PartitionSchema::CreatePartitions(
+    const vector<KuduPartialRow>& split_rows,
+    const vector<pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
+    const RangeHashSchema& range_hash_schemas,
+    const Schema& schema,
+    vector<Partition>* partitions) const {
   const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
 
   if (!range_hash_schemas.empty()) {
     if (!split_rows.empty()) {
       return Status::InvalidArgument("Both 'split_rows' and 'range_hash_schemas' cannot be "
                                      "populated at the same time.");
-      }
+    }
     if (range_bounds.size() != range_hash_schemas.size()) {
-      return Status::InvalidArgument("The number of range bounds does not match the number of per "
-                                     "range hash schemas.");
+      return Status::InvalidArgument(
+          Substitute("$0 vs $1: per range hash schemas and range bounds "
+                     "must have the same size",
+                     range_hash_schemas.size(), range_bounds.size()));
     }
   }
 

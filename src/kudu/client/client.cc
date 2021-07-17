@@ -935,13 +935,13 @@ Status KuduTableCreator::Create() {
                                    SCHEMA_PB_WITHOUT_WRITE_DEFAULT),
                         "Invalid schema");
 
-  RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
   bool has_range_splits = false;
+  RowOperationsPBEncoder splits_encoder(req.mutable_split_rows_range_bounds());
   for (const auto& row : data_->range_partition_splits_) {
     if (!row) {
       return Status::InvalidArgument("range split row must not be null");
     }
-    encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
+    splits_encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
     has_range_splits = true;
   }
 
@@ -963,6 +963,9 @@ Status KuduTableCreator::Create() {
         "choose one or the other");
   }
 
+  auto* partition_schema = req.mutable_partition_schema();
+  partition_schema->CopyFrom(data_->partition_schema_);
+
   for (const auto& p : data_->range_partitions_) {
     const auto* range = p->data_;
     if (!range->lower_bound_ || !range->upper_bound_) {
@@ -979,26 +982,28 @@ Status KuduTableCreator::Create() {
         ? RowOperationsPB::RANGE_UPPER_BOUND
         : RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
 
-    encoder.Add(lower_bound_type, *range->lower_bound_);
-    encoder.Add(upper_bound_type, *range->upper_bound_);
+    splits_encoder.Add(lower_bound_type, *range->lower_bound_);
+    splits_encoder.Add(upper_bound_type, *range->upper_bound_);
 
     if (has_range_with_custom_hash_schema) {
+      // In case of per-range custom hash bucket schemas, add range bounds
+      // into PartitionSchemaPB::range_bounds as well.
+      RowOperationsPBEncoder encoder(partition_schema->add_range_bounds());
+      encoder.Add(lower_bound_type, *range->lower_bound_);
+      encoder.Add(upper_bound_type, *range->upper_bound_);
       // Populate corresponding element in 'range_hash_schemas' if there is at
       // least one range with custom hash partitioning schema.
-      auto* schemas_pb = req.add_range_hash_schemas();
+      auto* schemas_pb = partition_schema->add_range_hash_schemas();
       for (const auto& schema : range->hash_bucket_schemas_) {
         auto* pb = schemas_pb->add_hash_schemas();
         pb->set_seed(schema.seed);
         pb->set_num_buckets(schema.num_buckets);
         for (const auto& column_name : schema.column_names) {
-          auto* column_id = pb->add_columns();
-          column_id->set_name(column_name);
+          pb->add_columns()->set_name(column_name);
         }
       }
     }
   }
-
-  req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);
 
   if (data_->table_type_) {
     req.set_table_type(*data_->table_type_);

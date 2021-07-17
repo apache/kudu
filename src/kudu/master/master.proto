@@ -513,17 +513,13 @@ message CreateTableRequestPB {
   // Holds either the split rows or the range bounds (or both) of the table.
   optional RowOperationsPB split_rows_range_bounds = 6;
 
-  // Holds the table's partition schema, the partition schema's hash bucket schemas
-  // are the default for any range where 'range_hash_schemas' is empty.
+  // Holds the table's partition schema, table-wide hash bucket schema, and,
+  // optionally, custom hash bucket schemas for each range. The latter is
+  // populated only when the 'split_rows_range_bounds' field above specifies
+  // range bounds, and must not be present if any split rows are specified.
   optional PartitionSchemaPB partition_schema = 7;
 
-  // Holds the hash bucket schemas for each range during table creation. Only
-  // populated when 'split_rows_range_bounds' specifies range bounds, must not
-  // be present if any split rows are specified. If this field is present, its
-  // size must match the number of ranges specified by range bounds and they
-  // must be in the same order. If this field is absent, 'partition_schema' is
-  // assumed for every range bound.
-  repeated PartitionSchemaPB.PerRangeHashBucketSchemasPB range_hash_schemas = 12;
+  // repeated PartitionSchemaPB.PerRangeHashBucketSchemasPB range_hash_schemas = 12;
 
   // Number of replicas for a partition/tablet, a.k.a. table's replication
   // factor. All tablets of the same table has same replication factor.

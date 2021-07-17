@@ -1125,8 +1125,8 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
   range_hash_schemas.clear();
   partitions.clear();
 
-  // Using std::random_shuffle to insert bounds and their hash schemas out of sorted order,
-  // yet resulting partitions will still be the same.
+  // Using std::random_shuffle to insert bounds and their hash schemas out of
+  // sorted order, yet resulting partitions will still be the same.
   std::mt19937 gen(SeedRandom());
   std::shuffle(bounds_with_hash_schemas.begin(), bounds_with_hash_schemas.end(), gen);
 
@@ -1139,7 +1139,8 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
       {}, bounds, range_hash_schemas, schema, &partitions));
   NO_FATALS(check_partitions(partitions));
 
-  // not clearing bounds or range_hash_schemas, adding a split row to test incompatibility
+  // Not clearing bounds or range_hash_schemas, adding a split row to test
+  // incompatibility.
   vector<KuduPartialRow> splits;
   { // split: (a1, _, c12)
     KuduPartialRow split(&schema);
@@ -1148,20 +1149,29 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
     splits.emplace_back(std::move(split));
   }
 
-  // expecting Status:InvalidArgument due to 'splits' and schemas within 'range_hash_schemas'
-  // being defined at the same time.
-  Status s = partition_schema.CreatePartitions(splits, bounds, range_hash_schemas,
-                                               schema, &partitions);
-  ASSERT_EQ("Invalid argument: Both 'split_rows' and 'range_hash_schemas' "
-            "cannot be populated at the same time.", s.ToString());
+  // Expecting Status::InvalidArgument() due to 'splits' and schemas within
+  // 'range_hash_schemas' being defined at the same time.
+  {
+    const auto s = partition_schema.CreatePartitions(
+        splits, bounds, range_hash_schemas, schema, &partitions);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "Both 'split_rows' and 'range_hash_schemas' "
+                        "cannot be populated at the same time");
+  }
 
-  // adding another schema to range_hash_schemas to trigger Status::InvalidArgument due to
-  // 'bounds and 'range_hash_schema' not being the same size.
-  range_hash_schemas.emplace_back(PartitionSchema::HashBucketSchemas());
-  Status s1 = partition_schema.CreatePartitions({}, bounds, range_hash_schemas,
-                                               schema, &partitions);
-  ASSERT_EQ("Invalid argument: The number of range bounds does not match the number of per "
-            "range hash schemas.", s1.ToString());
+  // Adding another schema to range_hash_schemas to trigger
+  // Status::InvalidArgument() due to 'bounds and 'range_hash_schema' not being
+  // the same size.
+  {
+    range_hash_schemas.push_back({});
+    const auto s = partition_schema.CreatePartitions(
+        {}, bounds, range_hash_schemas, schema, &partitions);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "4 vs 3: per range hash schemas and range bounds "
+                        "must have the same size");
+  }
 }
 
 TEST_F(PartitionTest, CustomHashSchemasPerRangeOnly) {

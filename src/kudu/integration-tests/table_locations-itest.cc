@@ -188,22 +188,25 @@ Status TableLocationsTest::CreateTable(const string& table_name,
                                        const vector<HashBucketSchema>& table_hash_schema = {}) {
 
   CreateTableRequestPB req;
-  CreateTableResponsePB resp;
-  RpcController controller;
-
   req.set_name(table_name);
   RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
-  RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
+  RowOperationsPBEncoder splits_encoder(req.mutable_split_rows_range_bounds());
   for (const KuduPartialRow& row : split_rows) {
-    encoder.Add(RowOperationsPB::SPLIT_ROW, row);
+    splits_encoder.Add(RowOperationsPB::SPLIT_ROW, row);
   }
+  auto* partition_schema_pb = req.mutable_partition_schema();
   for (const auto& bound : bounds) {
-    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
-    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+    splits_encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
+    splits_encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+    if (!range_hash_schema.empty()) {
+      RowOperationsPBEncoder encoder(partition_schema_pb->add_range_bounds());
+      encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
+      encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+    }
   }
 
   for (const auto& hash_schemas : range_hash_schema) {
-    auto* range_hash_schemas_pb = req.add_range_hash_schemas();
+    auto* range_hash_schemas_pb = partition_schema_pb->add_range_hash_schemas();
     for (const auto& hash_schema : hash_schemas) {
       auto* hash_schema_pb = range_hash_schemas_pb->add_hash_schemas();
       for (const string& col_name : hash_schema.columns) {
@@ -215,7 +218,6 @@ Status TableLocationsTest::CreateTable(const string& table_name,
   }
 
   if (!table_hash_schema.empty()) {
-    auto* partition_schema_pb = req.mutable_partition_schema();
     for (const auto& hash_schema : table_hash_schema) {
       auto* hash_schema_pb = partition_schema_pb->add_hash_bucket_schemas();
       for (const string& col_name : hash_schema.columns) {
@@ -226,6 +228,11 @@ Status TableLocationsTest::CreateTable(const string& table_name,
     }
   }
 
+  CreateTableResponsePB resp;
+  RpcController controller;
+  if (resp.has_error()) {
+    RETURN_NOT_OK(StatusFromPB(resp.error().status()));
+  }
   return proxy_->CreateTable(req, &resp, &controller);
 }
 

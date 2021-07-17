@@ -34,7 +34,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
@@ -125,6 +125,7 @@ DECLARE_bool(master_support_authz_tokens);
 DECLARE_bool(mock_table_metrics_for_testing);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
+DECLARE_int32(default_num_replicas);
 DECLARE_int32(diagnostics_log_stack_traces_interval_ms);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
@@ -606,25 +607,28 @@ Status MasterTest::CreateTable(const string& table_name,
                                const optional<TableTypePB>& table_type,
                                const vector<vector<HashBucketSchema>>& range_hash_schema) {
   CreateTableRequestPB req;
-  CreateTableResponsePB resp;
-  RpcController controller;
-
   req.set_name(table_name);
   if (table_type) {
     req.set_table_type(*table_type);
   }
   RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
-  RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
+  RowOperationsPBEncoder splits_encoder(req.mutable_split_rows_range_bounds());
   for (const KuduPartialRow& row : split_rows) {
-    encoder.Add(RowOperationsPB::SPLIT_ROW, row);
+    splits_encoder.Add(RowOperationsPB::SPLIT_ROW, row);
   }
+  auto* partition_schema_pb = req.mutable_partition_schema();
   for (const pair<KuduPartialRow, KuduPartialRow>& bound : bounds) {
-    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
-    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+    splits_encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
+    splits_encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+    if (!range_hash_schema.empty()) {
+      RowOperationsPBEncoder encoder(partition_schema_pb->add_range_bounds());
+      encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
+      encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+    }
   }
 
   for (const auto& hash_schemas : range_hash_schema) {
-    auto* hash_schemas_pb = req.add_range_hash_schemas();
+    auto* hash_schemas_pb = partition_schema_pb->add_range_hash_schemas();
     for (const auto& hash_schema : hash_schemas) {
       auto* hash_bucket_schema_pb = hash_schemas_pb->add_hash_schemas();
       for (const string& col_name : hash_schema.columns) {
@@ -641,10 +645,12 @@ Status MasterTest::CreateTable(const string& table_name,
   if (comment) {
     req.set_comment(*comment);
   }
+  RpcController controller;
   if (!bounds.empty()) {
     controller.RequireServerFeature(MasterFeatures::RANGE_PARTITION_BOUNDS);
   }
 
+  CreateTableResponsePB resp;
   RETURN_NOT_OK(proxy_->CreateTable(req, &resp, &controller));
   if (resp.has_error()) {
     RETURN_NOT_OK(StatusFromPB(resp.error().status()));
@@ -880,6 +886,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
 
   // No split rows and range specific hashing concurrently.
   {
+    google::FlagSaver flag_saver;
     FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
     KuduPartialRow split1(&kTableSchema);
     ASSERT_OK(split1.SetInt32("key", 1));
@@ -898,21 +905,26 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
 
   // The number of range bounds must match the size of user defined hash schemas.
   {
+    google::FlagSaver flag_saver;
     FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
     KuduPartialRow a_lower(&kTableSchema);
     KuduPartialRow a_upper(&kTableSchema);
     ASSERT_OK(a_lower.SetInt32("key", 0));
     ASSERT_OK(a_upper.SetInt32("key", 100));
+    KuduPartialRow b_lower(&kTableSchema);
+    KuduPartialRow b_upper(&kTableSchema);
+    ASSERT_OK(b_lower.SetInt32("key", 100));
+    ASSERT_OK(b_upper.SetInt32("key", 200));
     vector<HashBucketSchema> hash_schemas_4 = { { {"key"}, 4, 0 } };
-    vector<HashBucketSchema> hash_schemas_2 = { { {"val"}, 2, 0 } };
-    vector<vector<HashBucketSchema>> range_hash_schema = {std::move(hash_schemas_2),
-                                                          std::move(hash_schemas_4)};
-    Status s = CreateTable(kTableName, kTableSchema, { }, { { a_lower, a_upper } },
+    vector<vector<HashBucketSchema>> range_hash_schema =
+        { std::move(hash_schemas_4) };
+    Status s = CreateTable(kTableName, kTableSchema, {},
+                           { { a_lower, a_upper }, { b_lower, b_upper }, },
                            none, none, none, range_hash_schema);
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "The number of range bounds does not match the number of per "
-                        "range hash schemas.");
+                        "1 vs 2: per range hash schemas and range bounds "
+                        "must have the same size");
   }
 
   // No non-range columns.
@@ -1130,6 +1142,32 @@ TEST_F(MasterTest, TestCreateTableMismatchedDefaults) {
   ASSERT_EQ("code: INVALID_ARGUMENT message: \"column \\'col\\' has "
             "mismatched read/write defaults\"",
             SecureShortDebugString(resp.error().status()));
+}
+
+// Non-PK columns cannot be used for per-range custom hash bucket schemas.
+TEST_F(MasterTest, NonPrimaryKeyColumnsForPerRangeCustomHashSchema) {
+  constexpr const char* const kTableName = "nicetry";
+  const Schema kTableSchema(
+      { ColumnSchema("key", INT32), ColumnSchema("int32_val", INT32) }, 1);
+
+  // Explicitly enable support for per-range custom hash bucket schemas.
+  FLAGS_enable_per_range_hash_schemas = true;
+
+  // For simplicity, a single tablet replica is enough.
+  FLAGS_default_num_replicas = 1;
+
+  KuduPartialRow lower(&kTableSchema);
+  KuduPartialRow upper(&kTableSchema);
+  ASSERT_OK(lower.SetInt32("key", 0));
+  ASSERT_OK(upper.SetInt32("key", 100));
+  vector<vector<HashBucketSchema>> range_hash_schema{{{{"int32_val"}, 2, 0}}};
+  const auto s = CreateTable(
+      kTableName, kTableSchema, {}, { { lower, upper } },
+      none, none, none, range_hash_schema);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "must specify only primary key columns for "
+                      "hash bucket partition components");
 }
 
 // Regression test for KUDU-253/KUDU-592: crash if the GetTableLocations RPC call is
