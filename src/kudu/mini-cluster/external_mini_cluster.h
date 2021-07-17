@@ -415,9 +415,9 @@ class ExternalMiniCluster : public MiniCluster {
 
   // Wait until the number of registered tablet servers reaches the given count
   // on running masters. Returns Status::TimedOut if the desired count is not
-  // achieved with the given timeout.
-  // If 'master_idx' is specified, only examines the given master if it's
-  // running. Otherwise, checks all running masters.
+  // achieved or if the masters cannot be reached within the given timeout. If
+  // 'master_idx' is specified, only examines the given master if it's running.
+  // Otherwise, checks all running masters.
   Status WaitForTabletServerCount(int count, const MonoDelta& timeout,
                                   int master_idx = -1);
 

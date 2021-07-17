@@ -730,6 +730,22 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
       return Status::TimedOut(Substitute(
           "Timed out waiting for $0 TS(s) to register with all masters", count));
     }
+    bool all_masters_reachable = true;
+    for (const auto& master_idx : masters_to_search) {
+      master::PingRequestPB req;
+      master::PingResponsePB resp;
+      rpc::RpcController rpc;
+      rpc.set_timeout(remaining);
+      Status s = master_proxy(master_idx)->Ping(req, &resp, &rpc);
+      if (!s.ok()) {
+        all_masters_reachable = false;
+        break;
+      }
+    }
+    if (!all_masters_reachable) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+      continue;
+    }
 
     for (auto iter = masters_to_search.begin(); iter != masters_to_search.end();) {
       master::ListTabletServersRequestPB req;
@@ -764,7 +780,7 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
       LOG(INFO) << count << " TS(s) registered with all masters";
       return Status::OK();
     }
-    SleepFor(MonoDelta::FromMilliseconds(1));
+    SleepFor(MonoDelta::FromMilliseconds(10));
   }
 }
 

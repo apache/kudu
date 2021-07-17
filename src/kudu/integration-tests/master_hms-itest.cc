@@ -746,7 +746,7 @@ TEST_F(MasterHmsUpgradeTest, TestConflictingNormalizedNames) {
   // this situation a fallback to a leader-only API will deterministically fail.
   Status s = cluster_->Restart();
   if (!s.ok()) {
-    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+    ASSERT_TRUE(s.IsTimedOut() || s.IsNetworkError()) << s.ToString();
   } else {
     vector<string> tables;
     s = client_->ListTables(&tables);
