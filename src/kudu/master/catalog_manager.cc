@@ -1806,14 +1806,14 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     return SetupError(Status::InvalidArgument("user requests should not have Column IDs"),
                       resp, MasterErrorPB::INVALID_SCHEMA);
   }
-  Schema schema = client_schema.CopyWithColumnIds();
+  const Schema schema = client_schema.CopyWithColumnIds();
 
   // If the client did not set a partition schema in the create table request,
   // the default partition schema (no hash bucket components and a range
   // partitioned on the primary key columns) will be used.
   PartitionSchema partition_schema;
   RETURN_NOT_OK(SetupError(
-      PartitionSchema::FromPB(req.partition_schema(), schema, client_schema, &partition_schema),
+      PartitionSchema::FromPB(req.partition_schema(), schema, &partition_schema),
       resp, MasterErrorPB::INVALID_SCHEMA));
 
   // Decode split rows.
@@ -2592,11 +2592,13 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     vector<scoped_refptr<TabletInfo>>* tablets_to_add,
     vector<scoped_refptr<TabletInfo>>* tablets_to_drop) {
 
+  // Get the table's schema as it's known to the catalog manager.
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(l.data().pb.schema(), &schema));
+  // Build current PartitionSchema for the table.
   PartitionSchema partition_schema;
-  RETURN_NOT_OK(PartitionSchema::FromPB(l.data().pb.partition_schema(), schema,
-                                        client_schema, &partition_schema));
+  RETURN_NOT_OK(PartitionSchema::FromPB(
+      l.data().pb.partition_schema(), schema, &partition_schema));
 
   TableInfo::TabletInfoMap existing_tablets = table->tablet_map();
   TableInfo::TabletInfoMap new_tablets;

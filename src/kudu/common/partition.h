@@ -175,13 +175,6 @@ class PartitionSchema {
                        const Schema& schema,
                        PartitionSchema* partition_schema) WARN_UNUSED_RESULT;
 
-  // Overloaded function similar to function above, used when an
-  // explicit client schema is available to decode the range bounds.
-  static Status FromPB(const PartitionSchemaPB& pb,
-                       const Schema& schema,
-                       const Schema& client_schema,
-                       PartitionSchema* partition_schema) WARN_UNUSED_RESULT;
-
   // Serializes a partition schema into a protobuf message.
   // Requires a schema to encode the range bounds.
   Status ToPB(const Schema& schema, PartitionSchemaPB* pb) const;

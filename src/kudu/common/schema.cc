@@ -374,6 +374,7 @@ Status Schema::CreateProjectionByIdsIgnoreMissing(const std::vector<ColumnId>& c
 Schema Schema::CopyWithColumnIds() const {
   CHECK(!has_column_ids());
   vector<ColumnId> ids;
+  ids.reserve(num_columns());
   for (int32_t i = 0; i < num_columns(); i++) {
     ids.emplace_back(kFirstColumnId + i);
   }

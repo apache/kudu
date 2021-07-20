@@ -189,13 +189,6 @@ Status PartitionSchema::ExtractHashBucketSchemasFromPB(
 Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
                                const Schema& schema,
                                PartitionSchema* partition_schema) {
-  return FromPB(pb, schema, schema, partition_schema);
-}
-
-Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
-                               const Schema& schema,
-                               const Schema& client_schema,
-                               PartitionSchema* partition_schema) {
   partition_schema->Clear();
   RETURN_NOT_OK(ExtractHashBucketSchemasFromPB(schema, pb.hash_bucket_schemas(),
                                                &partition_schema->hash_bucket_schemas_));
@@ -207,7 +200,7 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
   }
   vector<pair<KuduPartialRow, KuduPartialRow>> range_bounds;
   for (int i = 0; i < pb.range_bounds_size(); i++) {
-    RowOperationsPBDecoder decoder(&pb.range_bounds(i), &client_schema, &schema, nullptr);
+    RowOperationsPBDecoder decoder(&pb.range_bounds(i), &schema, &schema, nullptr);
     vector<DecodedRowOperation> ops;
     RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
     if (ops.size() != 2) {
