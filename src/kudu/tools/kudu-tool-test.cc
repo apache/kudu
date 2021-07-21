@@ -2906,6 +2906,55 @@ TEST_F(ToolTest, PerfTableScanReplicaSelection) {
   }
 }
 
+TEST_F(ToolTest, PerfTableScanBatchSize) {
+  constexpr const char* const kTableName = "perf.table_scan.batch_size";
+  NO_FATALS(RunLoadgen(1,
+                       {
+                         "--num_threads=8",
+                         "--num_rows_per_thread=111",
+                       },
+                       kTableName));
+  // Check that the special case of batch size of 0 works as well.
+  {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("perf table_scan $0 $1 --scan_batch_size=0",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_EQ(1, out_lines.size()) << out;
+    ASSERT_STR_CONTAINS(out, "Total count 888 ");
+  }
+  // Use default server-side scan batch size.
+  {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("perf table_scan $0 $1 --scan_batch_size=-1",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_EQ(1, out_lines.size()) << out;
+    ASSERT_STR_CONTAINS(out, "Total count 888 ");
+  }
+  // Use 2 MiByte scan batch size.
+  {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("perf table_scan $0 $1 --scan_batch_size=2097152",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_EQ(1, out_lines.size()) << out;
+    ASSERT_STR_CONTAINS(out, "Total count 888 ");
+  }
+}
+
 TEST_F(ToolTest, TestPerfTabletScan) {
   // Create a table.
   constexpr const char* const kTableName = "perf.tablet_scan";
@@ -4008,6 +4057,28 @@ TEST_F(ToolTest, TableScanReplicaSelection) {
                    &out, &err);
     ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
     ASSERT_STR_CONTAINS(out, "Total count 2 ");
+  }
+}
+
+TEST_F(ToolTest, TableScanCustomBatchSize) {
+  constexpr const char* const kTableName = "kudu.table.scan.batch_size";
+  NO_FATALS(RunLoadgen(1,
+                       {
+                         "--num_threads=5",
+                         "--num_rows_per_thread=20000",
+                       },
+                       kTableName));
+  // Use 256 KiByte scan batch.
+  {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("table scan $0 $1 --scan_batch_size=262144",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_STR_CONTAINS(out, "Total count 100000 ");
   }
 }
 

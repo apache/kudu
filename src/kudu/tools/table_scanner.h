@@ -61,6 +61,11 @@ class TableScanner {
   // Set replica selection for scan operations.
   Status SetReplicaSelection(const std::string& selection);
 
+  // Set the size for scan result batch size, in bytes. A negative value has
+  // the semantics of relying on the server-side default: see the
+  // --scanner_default_batch_size_bytes flag.
+  void SetScanBatchSize(int32_t scan_batch_size);
+
   Status StartScan();
   Status StartCopy();
 
@@ -101,6 +106,7 @@ class TableScanner {
   client::KuduClient::ReplicaSelection replica_selection_;
   boost::optional<client::sp::shared_ptr<client::KuduClient>> dst_client_;
   boost::optional<std::string> dst_table_name_;
+  int32_t scan_batch_size_;
   std::unique_ptr<ThreadPool> thread_pool_;
 
   // Protects output to 'out_' so that rows don't get interleaved.

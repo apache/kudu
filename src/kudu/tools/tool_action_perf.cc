@@ -382,6 +382,7 @@ DEFINE_bool(txn_rollback, false,
 
 DECLARE_bool(show_values);
 DECLARE_int32(num_threads);
+DECLARE_int32(scan_batch_size);
 DECLARE_string(replica_selection);
 DECLARE_string(table_name);
 
@@ -926,6 +927,7 @@ Status TableScan(const RunnerContext& context) {
   FLAGS_show_values = false;
   TableScanner scanner(client, table_name);
   scanner.SetOutput(&cout);
+  scanner.SetScanBatchSize(FLAGS_scan_batch_size);
   const auto& replica_selection_str = FLAGS_replica_selection;
   if (!replica_selection_str.empty()) {
     RETURN_NOT_OK(scanner.SetReplicaSelection(replica_selection_str));
@@ -1063,6 +1065,7 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("columns")
       .AddOptionalParameter("row_count_only")
       .AddOptionalParameter("report_scanner_stats")
+      .AddOptionalParameter("scan_batch_size")
       .AddOptionalParameter("fill_cache")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")

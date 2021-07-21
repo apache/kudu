@@ -114,6 +114,11 @@ DEFINE_string(lower_bound_type, "INCLUSIVE_BOUND",
 DEFINE_string(upper_bound_type, "EXCLUSIVE_BOUND",
               "The type of the upper bound, either inclusive or exclusive. "
               "Defaults to exclusive. This flag is case-insensitive.");
+DEFINE_int32(scan_batch_size, -1,
+             "The size for scan results batches, in bytes. A negative value "
+             "means the server-side default is used, where the server-side "
+             "default is controlled by the tablet server's "
+             "--scanner_default_batch_size_bytes flag.");
 
 DECLARE_bool(row_count_only);
 DECLARE_bool(show_scanner_stats);
@@ -490,6 +495,7 @@ Status ScanTable(const RunnerContext &context) {
   }
   TableScanner scanner(client, table_name);
   scanner.SetOutput(&cout);
+  scanner.SetScanBatchSize(FLAGS_scan_batch_size);
   const auto& replica_selection_str = FLAGS_replica_selection;
   if (!replica_selection_str.empty()) {
     RETURN_NOT_OK(scanner.SetReplicaSelection(replica_selection_str));
@@ -1323,6 +1329,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("columns")
       .AddOptionalParameter("row_count_only")
       .AddOptionalParameter("report_scanner_stats")
+      .AddOptionalParameter("scan_batch_size")
       .AddOptionalParameter("fill_cache")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")

@@ -487,6 +487,7 @@ TableScanner::TableScanner(
       table_name_(std::move(table_name)),
       dst_client_(std::move(dst_client)),
       dst_table_name_(std::move(dst_table_name)),
+      scan_batch_size_(-1),
       out_(nullptr) {
   CHECK_OK(SetReplicaSelection(FLAGS_replica_selection));
 }
@@ -580,6 +581,10 @@ Status TableScanner::SetReplicaSelection(const string& selection_str) {
   return Status::OK();
 }
 
+void TableScanner::SetScanBatchSize(int32_t scan_batch_size) {
+  scan_batch_size_ = scan_batch_size;
+}
+
 Status TableScanner::StartWork(WorkType type) {
   client::sp::shared_ptr<KuduTable> src_table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &src_table));
@@ -597,6 +602,12 @@ Status TableScanner::StartWork(WorkType type) {
   RETURN_NOT_OK(builder.SetCacheBlocks(FLAGS_fill_cache));
   if (mode_) {
     RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
+  }
+  if (scan_batch_size_ >= 0) {
+    // Batch size of 0 is valid and has special semantics: the server sends
+    // zero rows (i.e. no data) in the very first scan batch sent back to the
+    // client. See {KuduScanner,KuduScanTokenBuilder}::SetBatchSizeBytes().
+    RETURN_NOT_OK(builder.SetBatchSizeBytes(scan_batch_size_));
   }
   RETURN_NOT_OK(builder.SetSelection(replica_selection_));
   RETURN_NOT_OK(builder.SetTimeoutMillis(FLAGS_timeout_ms));
