@@ -45,6 +45,7 @@ class ArrayView;
 struct SpaceInfo {
   int64_t capacity_bytes; // Capacity of a filesystem, in bytes.
   int64_t free_bytes;     // Bytes available to non-privileged processes.
+  uint64_t filesystem_id; // FilesystemID returned by statvfs()
 };
 
 class Env {

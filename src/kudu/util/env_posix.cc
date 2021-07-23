@@ -1443,6 +1443,7 @@ class PosixEnv : public Env {
     RETURN_NOT_OK(StatVfs(path, &buf));
     space_info->capacity_bytes = buf.f_frsize * buf.f_blocks;
     space_info->free_bytes = buf.f_frsize * buf.f_bavail;
+    space_info->filesystem_id = buf.f_fsid;
     return Status::OK();
   }
 

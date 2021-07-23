@@ -28,6 +28,7 @@
 #include "kudu/security/simple_acl.h"
 #include "kudu/server/server_base_options.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -246,6 +247,20 @@ class ServerBase {
   void TcmallocMemoryGcThread();
 #endif
 
+  // The free space on the WAL disk is updated if expired and stored in 'wal_dir_available_space_'
+  // and returned. In case of errors during disk reading, it is set to -1. The
+  // cache period is specified by the flag --fs_wal_dir_available_space_cache_second (Defaults
+  // to 10 seconds).
+  int64_t RefreshWalDirAvailableSpaceIfExpired(const ServerBaseOptions& options,
+                                               const FsManager& fs_manager);
+
+  // The total free space on all the data directories is updated if expired and stored in
+  // 'data_dirs_available_space_' and returned. It accounts for multiple directories on a single
+  // disk. In case of errors during disk reading, it is set ot -1. The cache period is specified
+  // by the flag --fs_data_dirs_available_space_cache_seconds (Defaults to 10 seconds).
+  int64_t RefreshDataDirAvailableSpaceIfExpired(const ServerBaseOptions& options,
+                                                const FsManager& fs_manager);
+
   // Utility object for DNS name resolutions.
   std::unique_ptr<DnsResolver> dns_resolver_;
 
@@ -260,11 +275,20 @@ class ServerBase {
 
   std::unique_ptr<ScopedGLogMetrics> glog_metrics_;
 
+  simple_spinlock lock_;
+
+
+  int64_t wal_dir_available_space_;
+  int64_t data_dirs_available_space_;
+  MonoTime wal_dir_space_last_check_;
+  MonoTime data_dirs_space_last_check_;
+
   // NOTE: it's important that this is the first member to be destructed. This
   // ensures we do not attempt to collect metrics while calling the destructor.
   FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerBase);
+
 };
 
 } // namespace server

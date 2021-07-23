@@ -151,15 +151,7 @@ TAG_FLAG(log_segment_size_bytes_for_tests, unsafe);
 
 // Other flags.
 // -----------------------------
-DEFINE_int64(fs_wal_dir_reserved_bytes, -1,
-             "Number of bytes to reserve on the log directory filesystem for "
-             "non-Kudu usage. The default, which is represented by -1, is that "
-             "1% of the disk space on each disk will be reserved. Any other "
-             "value specified represents the number of bytes reserved and must "
-             "be greater than or equal to 0. Explicit percentages to reserve "
-             "are not currently supported");
-DEFINE_validator(fs_wal_dir_reserved_bytes, [](const char* /*n*/, int64_t v) { return v >= -1; });
-TAG_FLAG(fs_wal_dir_reserved_bytes, runtime);
+DECLARE_int64(fs_wal_dir_reserved_bytes);
 
 DEFINE_bool(fs_wal_use_file_cache, true,
             "Whether to use the server-wide file cache for WAL segments and "

@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -40,6 +41,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
@@ -240,6 +242,10 @@ DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
 DECLARE_uint32(dns_resolver_cache_ttl_sec);
+DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
+DECLARE_int32(fs_wal_dir_available_space_cache_seconds);
+DECLARE_int64(fs_wal_dir_reserved_bytes);
+DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_string(log_filename);
 DECLARE_string(keytab_file);
 DECLARE_string(principal);
@@ -249,6 +255,18 @@ METRIC_DEFINE_gauge_int64(server, uptime,
                           "Server Uptime",
                           kudu::MetricUnit::kMicroseconds,
                           "Time interval since the server has started",
+                          kudu::MetricLevel::kInfo);
+METRIC_DEFINE_gauge_int64(server, wal_dir_space_available_bytes,
+                          "WAL Directory Space Free",
+                          kudu::MetricUnit::kBytes,
+                          "Total WAL directory space available. Set to "
+                          "-1 if reading the disk fails",
+                          kudu::MetricLevel::kInfo);
+METRIC_DEFINE_gauge_int64(server, data_dirs_space_available_bytes,
+                          "Data Directories Space Free",
+                          kudu::MetricUnit::kBytes,
+                          "Total space available in all the data directories. Set to "
+                          "-1 if reading any of the disks fails",
                           kudu::MetricLevel::kInfo);
 
 using kudu::security::RpcAuthentication;
@@ -411,6 +429,19 @@ shared_ptr<MemTracker> CreateMemTrackerForServer() {
     StrAppend(&id_str, " ", id);
   }
   return shared_ptr<MemTracker>(MemTracker::CreateTracker(-1, id_str));
+}
+
+// Calculates the free space on the given WAL/data directory's disk. Returns -1 in case of disk
+// failure.
+inline int64_t CalculateAvailableSpace(const ServerBaseOptions& options, const string& dir,
+                                       int64_t flag_reserved_bytes, SpaceInfo* space_info) {
+  if (!options.env->GetSpaceInfo(dir, space_info).ok()) {
+    return -1;
+  }
+  bool should_reserve_one_percent = flag_reserved_bytes == -1;
+  int reserved_bytes = should_reserve_one_percent ?
+      space_info->capacity_bytes / 100 : flag_reserved_bytes;
+  return std::max(static_cast<int64_t>(0), space_info->free_bytes - reserved_bytes);
 }
 
 int64_t GetFileCacheCapacity(Env* env) {
@@ -864,11 +895,29 @@ Status ServerBase::Start() {
   // information ready at this point.
   start_time_ = MonoTime::Now();
   start_walltime_ = static_cast<int64_t>(WallTime_Now());
+  wal_dir_space_last_check_ = MonoTime::Min();
+  wal_dir_available_space_ = -1;
+  data_dirs_space_last_check_ = MonoTime::Min();
+  data_dirs_available_space_ = -1;
 
   METRIC_uptime.InstantiateFunctionGauge(
       metric_entity_,
       [this]() {return (MonoTime::Now() - this->start_time()).ToMicroseconds();})->
           AutoDetachToLastValue(&metric_detacher_);
+  METRIC_data_dirs_space_available_bytes.InstantiateFunctionGauge(
+      metric_entity_,
+      [this]() {
+        return RefreshDataDirAvailableSpaceIfExpired(options_, *fs_manager_);
+      })
+      ->AutoDetachToLastValue(&metric_detacher_);
+
+  METRIC_wal_dir_space_available_bytes.InstantiateFunctionGauge(
+      metric_entity_,
+      [this]() {
+        return RefreshWalDirAvailableSpaceIfExpired(options_, *fs_manager_);
+      })
+      ->AutoDetachToLastValue(&metric_detacher_);
+
 
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
 
@@ -895,6 +944,53 @@ Status ServerBase::Start() {
   }
 
   return Status::OK();
+}
+
+int64_t ServerBase::RefreshWalDirAvailableSpaceIfExpired(const ServerBaseOptions& options,
+                                                         const FsManager& fs_manager) {
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    if (MonoTime::Now() < wal_dir_space_last_check_ + MonoDelta::FromSeconds(
+            FLAGS_fs_wal_dir_available_space_cache_seconds))
+      return wal_dir_available_space_;
+  }
+  SpaceInfo space_info_waldir;
+  int64_t wal_dir_space = CalculateAvailableSpace(options, fs_manager.GetWalsRootDir(),
+                                                  FLAGS_fs_wal_dir_reserved_bytes,
+                                                  &space_info_waldir);
+  std::lock_guard<simple_spinlock> l(lock_);
+  wal_dir_space_last_check_ = MonoTime::Now();
+  wal_dir_available_space_ = wal_dir_space;
+  return wal_dir_available_space_;
+}
+
+int64_t ServerBase::RefreshDataDirAvailableSpaceIfExpired(const ServerBaseOptions& options,
+                                                          const FsManager& fs_manager) {
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    if (MonoTime::Now() < data_dirs_space_last_check_ + MonoDelta::FromSeconds(
+            FLAGS_fs_data_dirs_available_space_cache_seconds))
+      return data_dirs_available_space_;
+  }
+  SpaceInfo space_info_datadir;
+  std::set<int64_t> fs_id;
+  int64_t data_dirs_available_space = 0;
+  for (const string& data_dir : fs_manager.GetDataRootDirs()) {
+    int64_t available_space = CalculateAvailableSpace(options, data_dir,
+                                                      FLAGS_fs_data_dirs_reserved_bytes,
+                                                      &space_info_datadir);
+    if (available_space == -1) {
+      data_dirs_available_space = -1;
+      break;
+    }
+    if (InsertIfNotPresent(&fs_id, space_info_datadir.filesystem_id)) {
+      data_dirs_available_space += available_space;
+    }
+  }
+  std::lock_guard<simple_spinlock> l(lock_);
+  data_dirs_space_last_check_ = MonoTime::Now();
+  data_dirs_available_space_ = data_dirs_available_space;
+  return data_dirs_available_space_;
 }
 
 void ServerBase::UnregisterAllServices() {

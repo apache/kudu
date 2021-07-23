@@ -54,6 +54,8 @@ METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_gauge_size(num_rowsets_on_disk);
 METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 METRIC_DECLARE_gauge_uint32(tablets_num_failed);
+METRIC_DECLARE_gauge_uint64(wal_dir_space_available_bytes);
+METRIC_DECLARE_gauge_uint64(data_dirs_space_available_bytes);
 
 using kudu::client::sp::shared_ptr;
 using kudu::client::KuduClient;
@@ -316,6 +318,52 @@ TEST_P(TabletServerDiskErrorITest, TestFailOnBootstrap) {
   // Wait for the cluster to return to a healthy state.
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
+};
+
+TEST_P(TabletServerDiskErrorITest, TestSpaceAvailableMetrics) {
+  // Get the wal_dir_space_available_bytes, data_dirs_space_available_bytes and make sure
+  // they are not -1. We could do ASSERT_EQ of the metrics and the current available
+  // space but there will most likely be some data written between the two calls causing
+  // a failure. Hence checking if the values are more than the 0. We fetch the metric
+  // twice and ensure it is being cached for 10 seconds by default specified by the
+  // flags --fs_wal_dir_available_space_cache_seconds and
+  // --fs_data_dirs_available_space_cache_seconds.
+  const auto get_metrics = [&] (int64_t* wal_dir_space, int64_t* data_dir_space) {
+    RETURN_NOT_OK(itest::GetInt64Metric(cluster_->tablet_server(0)->bound_http_hostport(),
+                                        &METRIC_ENTITY_server, nullptr,
+                                        &METRIC_wal_dir_space_available_bytes, "value",
+                                        wal_dir_space));
+    return itest::GetInt64Metric(cluster_->tablet_server(0)->bound_http_hostport(),
+                                 &METRIC_ENTITY_server, nullptr,
+                                 &METRIC_data_dirs_space_available_bytes, "value",
+                                 data_dir_space);
+    };
+  int64_t wal_dir_space;
+  int64_t data_dir_space;
+  int64_t wal_dir_space_refetch;
+  int64_t data_dir_space_refetch;
+  ASSERT_OK(get_metrics(&wal_dir_space, &data_dir_space));
+  ASSERT_GT(wal_dir_space, 0);
+  ASSERT_GT(data_dir_space, 0);
+  ASSERT_OK(get_metrics(&wal_dir_space_refetch, &data_dir_space_refetch));
+  ASSERT_EQ(wal_dir_space, wal_dir_space_refetch);
+  ASSERT_EQ(data_dir_space, data_dir_space_refetch);
+
+  ExternalTabletServer* error_ts = cluster_->tablet_server(0);
+
+  // Inject EIO into one of the data directories and check if data_dirs_space_available_bytes
+  // now equals to -1
+  error_ts->mutable_flags()->emplace_back(
+            Substitute("--env_inject_eio_globs=$0", JoinPathSegments(error_ts->data_dirs()[1],
+                                                                               "**")));
+  error_ts->mutable_flags()->emplace_back("--env_inject_eio=1.0");
+
+  error_ts->Shutdown();
+  ASSERT_OK(error_ts->Restart());
+
+  ASSERT_OK(get_metrics(&wal_dir_space, &data_dir_space));
+  ASSERT_NE(wal_dir_space, -1);
+  ASSERT_EQ(data_dir_space, -1);
 };
 
 TEST_P(TabletServerDiskErrorITest, TestFailDuringScanWorkload) {
