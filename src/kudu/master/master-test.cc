@@ -176,6 +176,8 @@ class MasterTest : public KuduTest {
     int32_t num_buckets;
     uint32_t seed;
   };
+  typedef vector<HashBucketSchema> HashBucketSchemas;
+  typedef vector<HashBucketSchemas> PerRangeHashBucketSchemas;
 
   void DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp);
   void DoListAllTables(ListTablesResponsePB* resp);
@@ -189,7 +191,7 @@ class MasterTest : public KuduTest {
                      const optional<string>& owner,
                      const optional<string>& comment = boost::none,
                      const optional<TableTypePB>& table_type = boost::none,
-                     const vector<vector<HashBucketSchema>>& range_hash_schema = {});
+                     const PerRangeHashBucketSchemas& range_hash_schema = {});
 
   shared_ptr<Messenger> client_messenger_;
   unique_ptr<MiniMaster> mini_master_;
@@ -605,7 +607,7 @@ Status MasterTest::CreateTable(const string& table_name,
                                const optional<string>& owner,
                                const optional<string>& comment,
                                const optional<TableTypePB>& table_type,
-                               const vector<vector<HashBucketSchema>>& range_hash_schema) {
+                               const PerRangeHashBucketSchemas& range_hash_schema) {
   CreateTableRequestPB req;
   req.set_name(table_name);
   if (table_type) {
@@ -858,7 +860,7 @@ TEST_F(MasterTest, ListTablesWithTableFilter) {
 }
 
 TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
-  const char *kTableName = "testtb";
+  constexpr const char* const kTableName = "testtb";
   const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
 
   // No duplicate split rows.
@@ -878,9 +880,9 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(split1.SetInt32("key", 1));
     KuduPartialRow split2(&kTableSchema);
     Status s = CreateTable(kTableName, kTableSchema, { split1, split2 }, {}, none);
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Invalid argument: split rows must contain a value for at "
+                        "split rows must contain a value for at "
                         "least one range partition column");
   }
 
@@ -894,10 +896,10 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     KuduPartialRow a_upper(&kTableSchema);
     ASSERT_OK(a_lower.SetInt32("key", 0));
     ASSERT_OK(a_upper.SetInt32("key", 100));
-    vector<vector<HashBucketSchema>> range_hash_schema = { vector<HashBucketSchema>() };
+    PerRangeHashBucketSchemas range_hash_schemas = {{}};
     Status s = CreateTable(kTableName, kTableSchema, { split1 }, { { a_lower, a_upper } },
-                           none, none, none, range_hash_schema);
-    ASSERT_TRUE(s.IsInvalidArgument());
+                           none, none, none, range_hash_schemas);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Both 'split_rows' and 'range_hash_schemas' cannot be "
                         "populated at the same time.");
@@ -915,9 +917,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     KuduPartialRow b_upper(&kTableSchema);
     ASSERT_OK(b_lower.SetInt32("key", 100));
     ASSERT_OK(b_upper.SetInt32("key", 200));
-    vector<HashBucketSchema> hash_schemas_4 = { { {"key"}, 4, 0 } };
-    vector<vector<HashBucketSchema>> range_hash_schema =
-        { std::move(hash_schemas_4) };
+    HashBucketSchemas hash_schemas_4 = { { {"key"}, 4, 0 } };
+    PerRangeHashBucketSchemas range_hash_schema = { std::move(hash_schemas_4) };
     Status s = CreateTable(kTableName, kTableSchema, {},
                            { { a_lower, a_upper }, { b_lower, b_upper }, },
                            none, none, none, range_hash_schema);
@@ -933,9 +934,9 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(split.SetInt32("key", 1));
     ASSERT_OK(split.SetInt32("val", 1));
     Status s = CreateTable(kTableName, kTableSchema, { split }, {}, none);
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Invalid argument: split rows may only contain values "
+                        "split rows may only contain values "
                         "for range partitioned columns: val");
   }
 
@@ -950,8 +951,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(b_upper.SetInt32("key", 150));
     Status s = CreateTable(kTableName, kTableSchema, { }, { { a_lower, a_upper },
                                                             { b_lower, b_upper } }, none);
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: overlapping range partition");
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "overlapping range partition");
   }
   { // Split row out of bounds (above).
     KuduPartialRow bound_lower(&kTableSchema);
@@ -964,8 +965,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
 
     Status s = CreateTable(kTableName, kTableSchema, { split },
                            { { bound_lower, bound_upper } }, none);
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split out of bounds");
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "split out of bounds");
   }
   { // Split row out of bounds (below).
     KuduPartialRow bound_lower(&kTableSchema);
@@ -978,8 +979,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
 
     Status s = CreateTable(kTableName, kTableSchema, { split },
                            { { bound_lower, bound_upper } }, none);
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split out of bounds");
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "split out of bounds");
   }
   { // Lower bound greater than upper bound.
     KuduPartialRow bound_lower(&kTableSchema);
@@ -988,10 +989,10 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(bound_upper.SetInt32("key", 0));
 
     Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } }, none);
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(),
-                        "Invalid argument: range partition lower bound must be "
-                        "less than the upper bound");
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(
+        s.ToString(),
+        "range partition lower bound must be less than the upper bound");
   }
   { // Lower bound equals upper bound.
     KuduPartialRow bound_lower(&kTableSchema);
@@ -1000,10 +1001,10 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(bound_upper.SetInt32("key", 0));
 
     Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } }, none);
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(),
-                        "Invalid argument: range partition lower bound must be "
-                        "less than the upper bound");
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(
+        s.ToString(),
+        "range partition lower bound must be less than the upper bound");
   }
   { // Split equals lower bound
     KuduPartialRow bound_lower(&kTableSchema);
@@ -1016,8 +1017,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
 
     Status s = CreateTable(kTableName, kTableSchema, { split }, { { bound_lower, bound_upper } },
                            none);
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split matches lower or upper bound");
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "split matches lower or upper bound");
   }
   { // Split equals upper bound
     KuduPartialRow bound_lower(&kTableSchema);
@@ -1030,8 +1031,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
 
     Status s = CreateTable(kTableName, kTableSchema, { split }, { { bound_lower, bound_upper } },
                            none);
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split matches lower or upper bound");
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "split matches lower or upper bound");
   }
 }
 
@@ -1160,7 +1161,7 @@ TEST_F(MasterTest, NonPrimaryKeyColumnsForPerRangeCustomHashSchema) {
   KuduPartialRow upper(&kTableSchema);
   ASSERT_OK(lower.SetInt32("key", 0));
   ASSERT_OK(upper.SetInt32("key", 100));
-  vector<vector<HashBucketSchema>> range_hash_schema{{{{"int32_val"}, 2, 0}}};
+  PerRangeHashBucketSchemas range_hash_schema{{{{"int32_val"}, 2, 0}}};
   const auto s = CreateTable(
       kTableName, kTableSchema, {}, { { lower, upper } },
       none, none, none, range_hash_schema);

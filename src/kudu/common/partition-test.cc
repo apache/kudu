@@ -904,7 +904,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
             partition_schema.DebugString(schema));
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  PartitionSchema::RangeHashSchema range_hash_schemas;
+  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
   vector<pair<pair<KuduPartialRow, KuduPartialRow>,
       PartitionSchema::HashBucketSchemas>> bounds_with_hash_schemas;
 
@@ -1189,7 +1189,7 @@ TEST_F(PartitionTest, CustomHashSchemasPerRangeOnly) {
 
   typedef pair<KuduPartialRow, KuduPartialRow> RangeBound;
   vector<RangeBound> bounds;
-  PartitionSchema::RangeHashSchema range_hash_schemas;
+  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
   vector<pair<RangeBound, PartitionSchema::HashBucketSchemas>>
       bounds_with_hash_schemas;
 
@@ -1252,7 +1252,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
             partition_schema.DebugString(schema));
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  PartitionSchema::RangeHashSchema range_hash_schemas;
+  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
 
   { // [(_, _, _), (a1, _, c1))
     KuduPartialRow lower(&schema);

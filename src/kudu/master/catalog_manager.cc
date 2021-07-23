@@ -1859,7 +1859,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     }
   }
 
-  PartitionSchema::RangeHashSchema range_hash_schemas;
+  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
   if (FLAGS_enable_per_range_hash_schemas) {
     // TODO(aserbin): the signature of CreatePartitions() require the
     //                'range_hash_schemas' parameters: update its signature

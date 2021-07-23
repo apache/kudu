@@ -159,13 +159,15 @@ class TableLocationsTest : public KuduTest {
     int32_t num_buckets;
     uint32_t seed;
   };
+  typedef vector<HashBucketSchema> HashBucketSchemas;
+  typedef vector<HashBucketSchemas> PerRangeHashBucketSchemas;
 
   Status CreateTable(const string& table_name,
                      const Schema& schema,
                      const vector<KuduPartialRow>& split_rows,
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
-                     const vector<vector<HashBucketSchema>>& range_hash_schema,
-                     const vector<HashBucketSchema>& table_hash_schema);
+                     const PerRangeHashBucketSchemas& range_hash_schema,
+                     const HashBucketSchemas& table_hash_schema);
 
 
   void CreateTable(const string& table_name, int num_splits);
@@ -178,14 +180,13 @@ class TableLocationsTest : public KuduTest {
   unique_ptr<MasterServiceProxy> proxy_;
 };
 
-Status TableLocationsTest::CreateTable(const string& table_name,
-                                       const Schema& schema,
-                                       const vector<KuduPartialRow>& split_rows = {},
-                                       const vector<pair<KuduPartialRow,
-                                                         KuduPartialRow>>& bounds = {},
-                                       const vector<vector<HashBucketSchema>>&
-                                           range_hash_schema = {},
-                                       const vector<HashBucketSchema>& table_hash_schema = {}) {
+Status TableLocationsTest::CreateTable(
+    const string& table_name,
+    const Schema& schema,
+    const vector<KuduPartialRow>& split_rows = {},
+    const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds = {},
+    const PerRangeHashBucketSchemas& range_hash_schema = {},
+    const HashBucketSchemas& table_hash_schema = {}) {
 
   CreateTableRequestPB req;
   req.set_name(table_name);
@@ -476,15 +477,15 @@ TEST_F(TableLocationsTest, TestRangeSpecificHashing) {
   ASSERT_OK(bounds[2].first.SetStringNoCopy(0, "e"));
   ASSERT_OK(bounds[2].second.SetStringNoCopy(0, "f"));
 
-  vector<vector<HashBucketSchema>> range_hash_schema;
-  vector<HashBucketSchema> hash_schema_4_by_2 = { { { "key" }, 4, 0 }, { { "val" }, 2, 0} };
+  PerRangeHashBucketSchemas range_hash_schema;
+  HashBucketSchemas hash_schema_4_by_2 = { { { "key" }, 4, 0 }, { { "val" }, 2, 0} };
   range_hash_schema.emplace_back(hash_schema_4_by_2);
-  vector<HashBucketSchema> hash_schema_6 = { { { "key" }, 6, 2 } };
+  HashBucketSchemas hash_schema_6 = { { { "key" }, 6, 2 } };
   range_hash_schema.emplace_back(hash_schema_6);
 
   // Table-wide hash schema, applied to range by default if no per-range schema is specified.
-  vector<HashBucketSchema> table_hash_schema_5 = { { { "val" }, 5, 4 } };
-  range_hash_schema.emplace_back(vector<HashBucketSchema>());
+  HashBucketSchemas table_hash_schema_5 = { { { "val" }, 5, 4 } };
+  range_hash_schema.push_back({});
 
   ASSERT_OK(CreateTable(table_name, schema, {}, bounds, range_hash_schema, table_hash_schema_5));
   NO_FATALS(CheckMasterTableCreation(table_name, 19));

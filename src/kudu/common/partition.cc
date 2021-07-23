@@ -192,7 +192,7 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
   partition_schema->Clear();
   RETURN_NOT_OK(ExtractHashBucketSchemasFromPB(schema, pb.hash_bucket_schemas(),
                                                &partition_schema->hash_bucket_schemas_));
-  RangeHashSchema range_hash_schema;
+  PerRangeHashBucketSchemas range_hash_schema;
   range_hash_schema.resize(pb.range_hash_schemas_size());
   for (int i = 0; i < pb.range_hash_schemas_size(); i++) {
     RETURN_NOT_OK(ExtractHashBucketSchemasFromPB(schema, pb.range_hash_schemas(i).hash_schemas(),
@@ -381,9 +381,9 @@ Status PartitionSchema::EncodeRangeSplits(const vector<KuduPartialRow>& split_ro
 
 Status PartitionSchema::EncodeRangeBounds(
     const vector<pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
-    const RangeHashSchema& range_hash_schemas,
+    const PerRangeHashBucketSchemas& range_hash_schemas,
     const Schema& schema,
-    vector<RangeWithHashSchemas>* bounds_with_hash_schemas) const {
+    RangesWithHashSchemas* bounds_with_hash_schemas) const {
   DCHECK(bounds_with_hash_schemas->empty());
   if (range_bounds.empty()) {
     bounds_with_hash_schemas->emplace_back(RangeWithHashSchemas{"", "", {}});
@@ -448,16 +448,16 @@ Status PartitionSchema::EncodeRangeBounds(
   return Status::OK();
 }
 
-Status PartitionSchema::SplitRangeBounds(const Schema& schema,
-                                         vector<string> splits,
-                                         vector<RangeWithHashSchemas>*
-                                             bounds_with_hash_schemas) const {
+Status PartitionSchema::SplitRangeBounds(
+    const Schema& schema,
+    const vector<string>& splits,
+    RangesWithHashSchemas* bounds_with_hash_schemas) const {
   if (splits.empty()) {
     return Status::OK();
   }
 
   auto expected_bounds = std::max(1UL, bounds_with_hash_schemas->size()) + splits.size();
-  vector<RangeWithHashSchemas> new_bounds_with_hash_schemas;
+  RangesWithHashSchemas new_bounds_with_hash_schemas;
   new_bounds_with_hash_schemas.reserve(expected_bounds);
 
   // Iterate through the sorted bounds and sorted splits, splitting the bounds
@@ -497,7 +497,7 @@ Status PartitionSchema::SplitRangeBounds(const Schema& schema,
 Status PartitionSchema::CreatePartitions(
     const vector<KuduPartialRow>& split_rows,
     const vector<pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
-    const RangeHashSchema& range_hash_schemas,
+    const PerRangeHashBucketSchemas& range_hash_schemas,
     const Schema& schema,
     vector<Partition>* partitions) const {
   const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
@@ -531,12 +531,12 @@ Status PartitionSchema::CreatePartitions(
     }
   }
 
-  vector<RangeWithHashSchemas> bounds_with_hash_schemas;
+  RangesWithHashSchemas bounds_with_hash_schemas;
   vector<string> splits;
   RETURN_NOT_OK(EncodeRangeBounds(range_bounds, range_hash_schemas, schema,
                                   &bounds_with_hash_schemas));
   RETURN_NOT_OK(EncodeRangeSplits(split_rows, schema, &splits));
-  RETURN_NOT_OK(SplitRangeBounds(schema, std::move(splits), &bounds_with_hash_schemas));
+  RETURN_NOT_OK(SplitRangeBounds(schema, splits, &bounds_with_hash_schemas));
 
   // Maps each partition to its respective hash schemas within 'bounds_with_hash_schemas',
   // needed for logic later in function for filling in holes in partition key space. Will be
