@@ -360,7 +360,9 @@ Status ParseAddressList(const std::string& addr_list,
                         std::vector<Sockaddr>* addresses) {
   vector<HostPort> host_ports;
   RETURN_NOT_OK(HostPort::ParseStrings(addr_list, default_port, &host_ports));
-  if (host_ports.empty()) return Status::InvalidArgument("No address specified");
+  if (host_ports.empty()) {
+    return Status::InvalidArgument("No address specified");
+  }
   unordered_set<Sockaddr> uniqued;
   for (const HostPort& host_port : host_ports) {
     vector<Sockaddr> this_addresses;
@@ -383,39 +385,48 @@ Status ParseAddressList(const std::string& addr_list,
 Status GetHostname(string* hostname) {
   TRACE_EVENT0("net", "GetHostname");
   char name[HOST_NAME_MAX];
-  int ret = gethostname(name, HOST_NAME_MAX);
-  if (ret != 0) {
-    return Status::NetworkError("Unable to determine local hostname",
-                                ErrnoToString(errno),
-                                errno);
+  if (gethostname(name, HOST_NAME_MAX) != 0) {
+    const int err = errno;
+    return Status::NetworkError(
+        "Unable to determine local hostname", ErrnoToString(err), err);
   }
   *hostname = name;
   return Status::OK();
 }
 
 Status GetLocalNetworks(std::vector<Network>* net) {
-  struct ifaddrs *ifap = nullptr;
-
-  int ret = getifaddrs(&ifap);
+  struct ifaddrs* ifap = nullptr;
   SCOPED_CLEANUP({
-    if (ifap) freeifaddrs(ifap);
+    if (ifap) {
+      freeifaddrs(ifap);
+    }
   });
 
-  if (ret != 0) {
-    return Status::NetworkError("Unable to determine local network addresses",
-                                ErrnoToString(errno),
-                                errno);
+  if (getifaddrs(&ifap) != 0) {
+    const int err = errno;
+    return Status::NetworkError(
+        "Unable to determine local network addresses", ErrnoToString(err), err);
   }
 
   net->clear();
   for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
-    if (ifa->ifa_addr == nullptr || ifa->ifa_netmask == nullptr) continue;
-
+    if (ifa->ifa_addr == nullptr || ifa->ifa_netmask == nullptr) {
+      continue;
+    }
     if (ifa->ifa_addr->sa_family == AF_INET) {
-      Sockaddr addr(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr));
-      Sockaddr netmask(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_netmask));
-      Network network(addr.ipv4_addr().sin_addr.s_addr, netmask.ipv4_addr().sin_addr.s_addr);
-      net->push_back(network);
+      auto* ifa_address = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
+      auto* ifa_netmask = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_netmask);
+      if (ifa_netmask->sin_family == AF_UNSPEC) {
+        // Tunnel interfaces created by some VPN implementations do not have
+        // their network mask's address family (sin_family) properly set. If
+        // the address family for the network mask is left as AF_UNSPEC, this
+        // code sets the address family of the network mask to be the same as
+        // the family of the network address itself. This is to satisfy the
+        // constraints in the Sockaddr class.
+        ifa_netmask->sin_family = ifa_address->sin_family;
+      }
+      net->emplace_back(Sockaddr(*ifa_address).ipv4_addr().sin_addr.s_addr,
+                        Sockaddr(*ifa_netmask).ipv4_addr().sin_addr.s_addr);
     }
   }
 
@@ -485,7 +496,7 @@ Status GetRandomPort(const string& address, uint16_t* port) {
 
 void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
 #if defined(__APPLE__)
-  string cmd = strings::Substitute(
+  string cmd = Substitute(
       "lsof -n -i 'TCP:$0' -sTCP:LISTEN ; "
       "for pid in $$(lsof -F p -n -i 'TCP:$0' -sTCP:LISTEN | cut -f 2 -dp) ; do"
       "  pstree $$pid || ps h -p $$pid;"
@@ -495,7 +506,7 @@ void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
   // Little inline bash script prints the full ancestry of any pid listening
   // on the same port as 'addr'. We could use 'pstree -s', but that option
   // doesn't exist on el6.
-  string cmd = strings::Substitute(
+  string cmd = Substitute(
       "export PATH=$$PATH:/usr/sbin ; "
       "lsof -n -i 'TCP:$0' -sTCP:LISTEN ; "
       "for pid in $$(lsof -F p -n -i 'TCP:$0' -sTCP:LISTEN | grep p | cut -f 2 -dp) ; do"
