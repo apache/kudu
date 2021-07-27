@@ -166,6 +166,7 @@ static Status DisableSocketTimeouts(Socket* socket) {
 static Status DoClientNegotiation(Connection* conn,
                                   RpcAuthentication authentication,
                                   RpcEncryption encryption,
+                                  bool encrypt_loopback,
                                   MonoTime deadline,
                                   unique_ptr<ErrorStatusPB>* rpc_error) {
   const auto* messenger = conn->reactor_thread()->reactor()->messenger();
@@ -176,6 +177,7 @@ static Status DoClientNegotiation(Connection* conn,
                                        &messenger->tls_context(),
                                        authn_token,
                                        encryption,
+                                       encrypt_loopback,
                                        messenger->sasl_proto_name());
 
   client_negotiation.set_server_fqdn(conn->outbound_connection_id().hostname());
@@ -236,6 +238,7 @@ static Status DoClientNegotiation(Connection* conn,
 static Status DoServerNegotiation(Connection* conn,
                                   RpcAuthentication authentication,
                                   RpcEncryption encryption,
+                                  bool encrypt_loopback,
                                   const MonoTime& deadline) {
   const auto* messenger = conn->reactor_thread()->reactor()->messenger();
   if (authentication == RpcAuthentication::REQUIRED &&
@@ -257,6 +260,7 @@ static Status DoServerNegotiation(Connection* conn,
                                        &messenger->tls_context(),
                                        &messenger->token_verifier(),
                                        encryption,
+                                       encrypt_loopback,
                                        messenger->sasl_proto_name());
 
   if (authentication != RpcAuthentication::DISABLED && !messenger->keytab_file().empty()) {
@@ -286,13 +290,15 @@ static Status DoServerNegotiation(Connection* conn,
 void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
                                  RpcAuthentication authentication,
                                  RpcEncryption encryption,
+                                 bool loopback_encryption,
                                  MonoTime deadline) {
   Status s;
   unique_ptr<ErrorStatusPB> rpc_error;
+  bool encrypt_loopback = FLAGS_rpc_encrypt_loopback_connections || loopback_encryption;
   if (conn->direction() == Connection::SERVER) {
-    s = DoServerNegotiation(conn.get(), authentication, encryption, deadline);
+    s = DoServerNegotiation(conn.get(), authentication, encryption, encrypt_loopback, deadline);
   } else {
-    s = DoClientNegotiation(conn.get(), authentication, encryption, deadline,
+    s = DoClientNegotiation(conn.get(), authentication, encryption, encrypt_loopback, deadline,
                             &rpc_error);
   }
 

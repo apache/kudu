@@ -156,6 +156,7 @@ ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
                                      const security::TokenVerifier* token_verifier,
                                      RpcEncryption encryption,
+                                     bool encrypt_loopback,
                                      std::string sasl_proto_name)
     : socket_(std::move(socket)),
       helper_(SaslHelper::SERVER),
@@ -163,6 +164,7 @@ ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
       tls_handshake_(security::TlsHandshakeType::SERVER),
       encryption_(encryption),
       tls_negotiated_(false),
+      encrypt_loopback_(encrypt_loopback),
       token_verifier_(token_verifier),
       negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),
@@ -304,7 +306,7 @@ Status ServerNegotiation::PreflightCheckGSSAPI(const std::string& sasl_proto_nam
   // We aren't going to actually send/receive any messages, but
   // this makes it easier to reuse the initialization code.
   ServerNegotiation server(
-      nullptr, nullptr, nullptr, RpcEncryption::OPTIONAL, sasl_proto_name);
+      nullptr, nullptr, nullptr, RpcEncryption::OPTIONAL, false, sasl_proto_name);
   Status s = server.EnableGSSAPI();
   if (!s.ok()) {
     return Status::RuntimeError(s.message());
@@ -542,7 +544,7 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
     server_features_.insert(TLS);
     // If the remote peer is local, then we allow using TLS for authentication
     // without encryption or integrity.
-    if (socket_->IsLoopbackConnection() && !FLAGS_rpc_encrypt_loopback_connections) {
+    if (socket_->IsLoopbackConnection() && !encrypt_loopback_) {
       server_features_.insert(TLS_AUTHENTICATION_ONLY);
     }
   }

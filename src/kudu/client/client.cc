@@ -325,6 +325,16 @@ KuduClientBuilder& KuduClientBuilder::sasl_protocol_name(const string& sasl_prot
   return *this;
 }
 
+KuduClientBuilder& KuduClientBuilder::encryption_policy(EncryptionPolicy encryption_policy) {
+  data_->encryption_policy_ = encryption_policy;
+  return *this;
+}
+
+KuduClientBuilder& KuduClientBuilder::require_authentication(bool require_authentication) {
+  data_->require_authentication_ = require_authentication;
+  return *this;
+}
+
 namespace {
 Status ImportAuthnCreds(const string& authn_creds,
                         Messenger* messenger,
@@ -370,6 +380,15 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   }
   if (!data_->sasl_protocol_name_.empty()) {
     builder.set_sasl_proto_name(data_->sasl_protocol_name_);
+  }
+  if (data_->require_authentication_) {
+    builder.set_rpc_authentication("required");
+  }
+  if (data_->encryption_policy_ != OPTIONAL) {
+    builder.set_rpc_encryption("required");
+    if (data_->encryption_policy_ == REQUIRED) {
+      builder.set_rpc_loopback_encryption(true);
+    }
   }
   std::shared_ptr<Messenger> messenger;
   RETURN_NOT_OK(builder.Build(&messenger));

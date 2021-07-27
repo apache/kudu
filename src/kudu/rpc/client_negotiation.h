@@ -66,6 +66,7 @@ class ClientNegotiation {
                     const security::TlsContext* tls_context,
                     boost::optional<security::SignedTokenPB> authn_token,
                     security::RpcEncryption encryption,
+                    bool encrypt_loopback,
                     std::string sasl_proto_name);
 
   // Enable PLAIN authentication.
@@ -229,6 +230,7 @@ class ClientNegotiation {
   security::TlsHandshake tls_handshake_;
   const security::RpcEncryption encryption_;
   bool tls_negotiated_;
+  bool encrypt_loopback_;
 
   // TSK state.
   boost::optional<security::SignedTokenPB> authn_token_;

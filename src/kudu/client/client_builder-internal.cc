@@ -25,11 +25,12 @@ namespace client {
 KuduClientBuilder::Data::Data()
     : default_admin_operation_timeout_(MonoDelta::FromSeconds(30)),
       default_rpc_timeout_(MonoDelta::FromSeconds(10)),
-      replica_visibility_(internal::ReplicaController::Visibility::VOTERS) {
-}
+      replica_visibility_(internal::ReplicaController::Visibility::VOTERS),
+      require_authentication_(false),
+      encryption_policy_(EncryptionPolicy::OPTIONAL) {
+  }
 
-KuduClientBuilder::Data::~Data() {
-}
+  KuduClientBuilder::Data::~Data() {}
 
-} // namespace client
+}  // namespace client
 } // namespace kudu

@@ -609,10 +609,13 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
   TRACE("Submitting negotiation task for $0", conn->ToString());
   auto authentication = reactor()->messenger()->authentication();
   auto encryption = reactor()->messenger()->encryption();
+  auto loopback_encryption = reactor()->messenger()->loopback_encryption();
   ThreadPool* negotiation_pool =
       reactor()->messenger()->negotiation_pool(conn->direction());
-  RETURN_NOT_OK(negotiation_pool->Submit([conn, authentication, encryption, deadline]() {
-        Negotiation::RunNegotiation(conn, authentication, encryption, deadline);
+  RETURN_NOT_OK(negotiation_pool->Submit([conn, authentication, encryption, loopback_encryption,
+                                          deadline]() {
+        Negotiation::RunNegotiation(conn, authentication, encryption, loopback_encryption,
+                                    deadline);
       }));
   return Status::OK();
 }

@@ -119,6 +119,7 @@ ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
                                      boost::optional<security::SignedTokenPB> authn_token,
                                      RpcEncryption encryption,
+                                     bool encrypt_loopback,
                                      std::string sasl_proto_name)
     : socket_(std::move(socket)),
       helper_(SaslHelper::CLIENT),
@@ -126,6 +127,7 @@ ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
       tls_handshake_(security::TlsHandshakeType::CLIENT),
       encryption_(encryption),
       tls_negotiated_(false),
+      encrypt_loopback_(encrypt_loopback),
       authn_token_(std::move(authn_token)),
       psecret_(nullptr, std::free),
       negotiated_authn_(AuthenticationType::INVALID),
@@ -324,7 +326,7 @@ Status ClientNegotiation::SendNegotiate() {
     client_features_.insert(TLS);
     // If the remote peer is local, then we allow using TLS for authentication
     // without encryption or integrity.
-    if (socket_->IsLoopbackConnection() && !FLAGS_rpc_encrypt_loopback_connections) {
+    if (socket_->IsLoopbackConnection() && !encrypt_loopback_) {
       client_features_.insert(TLS_AUTHENTICATION_ONLY);
     }
   }

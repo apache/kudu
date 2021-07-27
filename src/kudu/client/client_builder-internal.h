@@ -43,6 +43,8 @@ class KuduClientBuilder::Data {
   internal::ReplicaController::Visibility replica_visibility_;
   boost::optional<int> num_reactors_;
   std::string sasl_protocol_name_;
+  bool require_authentication_;
+  EncryptionPolicy encryption_policy_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

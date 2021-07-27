@@ -252,11 +252,13 @@ TEST_P(TestNegotiation, TestNegotiation) {
                                        &client_tls_context,
                                        authn_token,
                                        desc.client.encryption,
+                                       desc.rpc_encrypt_loopback,
                                        "kudu");
   ServerNegotiation server_negotiation(std::move(server_socket),
                                        &server_tls_context,
                                        &token_verifier,
                                        desc.server.encryption,
+                                       desc.rpc_encrypt_loopback,
                                        "kudu");
 
   // Set client and server SASL mechanisms.
@@ -1034,7 +1036,8 @@ static void RunGSSAPINegotiationServer(unique_ptr<Socket> socket,
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
   ServerNegotiation server_negotiation(std::move(socket), &tls_context,
-                                       &token_verifier, RpcEncryption::OPTIONAL, "kudu");
+                                       &token_verifier, RpcEncryption::OPTIONAL,
+                                       /* encrypt_loopback */ false, "kudu");
   server_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(server_negotiation.EnableGSSAPI());
   post_check(server_negotiation.Negotiate());
@@ -1047,7 +1050,8 @@ static void RunGSSAPINegotiationClient(unique_ptr<Socket> conn,
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(conn), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL, "kudu");
+                                       boost::none, RpcEncryption::OPTIONAL,
+                                       /* encrypt_loopback */ false, "kudu");
   client_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(client_negotiation.EnableGSSAPI());
   post_check(client_negotiation.Negotiate());
@@ -1210,7 +1214,8 @@ static void RunTimeoutExpectingServer(unique_ptr<Socket> socket) {
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
   ServerNegotiation server_negotiation(std::move(socket), &tls_context,
-                                       &token_verifier, RpcEncryption::OPTIONAL, "kudu");
+                                       &token_verifier, RpcEncryption::OPTIONAL,
+                                       /* encrypt_loopback */ false, "kudu");
   CHECK_OK(server_negotiation.EnablePlain());
   Status s = server_negotiation.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected client to time out and close the connection. Got: "
@@ -1221,7 +1226,8 @@ static void RunTimeoutNegotiationClient(unique_ptr<Socket> sock) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(sock), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL, "kudu");
+                                       boost::none, RpcEncryption::OPTIONAL,
+                                       /* encrypt_loopback */ false, "kudu");
   CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   client_negotiation.set_deadline(deadline);
@@ -1242,7 +1248,8 @@ static void RunTimeoutNegotiationServer(unique_ptr<Socket> socket) {
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
   ServerNegotiation server_negotiation(std::move(socket), &tls_context,
-                                       &token_verifier, RpcEncryption::OPTIONAL, "kudu");
+                                       &token_verifier, RpcEncryption::OPTIONAL,
+                                       /* encrypt_loopback */ false, "kudu");
   CHECK_OK(server_negotiation.EnablePlain());
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   server_negotiation.set_deadline(deadline);
@@ -1255,7 +1262,8 @@ static void RunTimeoutExpectingClient(unique_ptr<Socket> socket) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(socket), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL, "kudu");
+                                       boost::none, RpcEncryption::OPTIONAL,
+                                       /* encrypt_loopback */ false, "kudu");
   CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   Status s = client_negotiation.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected server to time out and close the connection. Got: "

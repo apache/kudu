@@ -160,6 +160,11 @@ class MessengerBuilder {
     return *this;
   }
 
+  MessengerBuilder& set_rpc_loopback_encryption(bool rpc_loopback_encryption) {
+    rpc_loopback_encryption_ = rpc_loopback_encryption;
+    return *this;
+  }
+
   // Set TLSv1.2 and earlier cipher suite preferences to use for TLS-secured RPC
   // connections. Uses the OpenSSL cipher preference list format. Under the
   // hood, SSL_CTX_set_cipher_list() is eventually being called with
@@ -261,6 +266,7 @@ class MessengerBuilder {
   std::string sasl_proto_name_;
   std::string rpc_authentication_;
   std::string rpc_encryption_;
+  bool rpc_loopback_encryption_;
   std::string rpc_tls_ciphers_;       // pre-TLSv1.3 cipher suites
   std::string rpc_tls_ciphersuites_;  // TLSv1.3-related cipher suites
   std::string rpc_tls_min_protocol_;
@@ -381,6 +387,7 @@ class Messenger {
 
   security::RpcAuthentication authentication() const { return authentication_; }
   security::RpcEncryption encryption() const { return encryption_; }
+  bool loopback_encryption() const { return loopback_encryption_; }
 
   ThreadPool* negotiation_pool(Connection::Direction dir);
 
@@ -473,6 +480,7 @@ class Messenger {
   // reused by different clients.
   security::RpcAuthentication authentication_;
   security::RpcEncryption encryption_;
+  bool loopback_encryption_;
 
   // Pools which are listening on behalf of this messenger.
   // Note that the user may have called Shutdown() on one of these

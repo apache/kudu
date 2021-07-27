@@ -230,6 +230,18 @@ class KUDU_EXPORT KuduClientBuilder {
   KuduClientBuilder();
   ~KuduClientBuilder();
 
+  /// Policy for on-the-wire encryption
+  enum EncryptionPolicy {
+    OPTIONAL,        ///< Optional, it uses encrypted connection if the server supports
+                     ///< it, but it can connect to insecure servers too.
+
+    REQUIRED_REMOTE, ///< Only connects to remote servers that support encryption, fails
+                     ///< otherwise. It can connect to insecure servers only locally.
+
+    REQUIRED         ///< Only connects to any server, including on the loopback interface,
+                     ///< that support encryption, fails otherwise.
+  };
+
   /// Clear the set of master addresses.
   ///
   /// @return Reference to the updated object.
@@ -318,6 +330,36 @@ class KUDU_EXPORT KuduClientBuilder {
   ///   SASL protocol name.
   /// @return Reference to the updated object.
   KuduClientBuilder& sasl_protocol_name(const std::string& sasl_protocol_name);
+
+  /// Require authentication for the connection to a remote server.
+  ///
+  /// If it's set to true, the client will require mutual authentication between
+  /// the server and the client. If the server doesn't support authentication,
+  /// or it's disabled, the client will fail to connect.
+  ///
+  /// @param [in] require_authentication
+  ///   Whether to require authentication.
+  /// @return Reference to the updated object.
+  KuduClientBuilder& require_authentication(bool require_authentication);
+
+  /// Require encryption for the connection to a remote server.
+  ///
+  /// If it's set to REQUIRED_REMOTE or REQUIRED, the client will
+  /// require encrypting the traffic between the server and the client.
+  /// If the server doesn't support encryption, or if it's disabled, the
+  /// client will fail to connect.
+  ///
+  /// Loopback connections are encrypted only if 'encryption_policy' is
+  /// set to REQUIRED, or if it's required by the server.
+  ///
+  /// The default value is OPTIONAL, which allows connecting to servers without
+  /// encryption as well, but it will still attempt to use it if the server
+  /// supports it.
+  ///
+  /// @param [in] encryption_policy
+  ///   Which encryption policy to use.
+  /// @return Reference to the updated object.
+  KuduClientBuilder& encryption_policy(EncryptionPolicy encryption_policy);
 
   /// Create a client object.
   ///

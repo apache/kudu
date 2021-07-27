@@ -66,6 +66,7 @@ class ServerNegotiation {
                     const security::TlsContext* tls_context,
                     const security::TokenVerifier* token_verifier,
                     security::RpcEncryption encryption,
+                    bool encrypt_loopback,
                     std::string sasl_proto_name);
 
   // Enable PLAIN authentication.
@@ -229,6 +230,7 @@ class ServerNegotiation {
   security::TlsHandshake tls_handshake_;
   const security::RpcEncryption encryption_;
   bool tls_negotiated_;
+  bool encrypt_loopback_;
 
   // TSK state.
   const security::TokenVerifier* token_verifier_;

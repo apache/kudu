@@ -47,6 +47,7 @@ class Negotiation {
   static void RunNegotiation(const scoped_refptr<Connection>& conn,
                              security::RpcAuthentication authentication,
                              security::RpcEncryption encryption,
+                             bool loopback_encryption,
                              MonoTime deadline);
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(Negotiation);
