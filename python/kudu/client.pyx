@@ -75,6 +75,16 @@ cdef dict _read_modes = {
     'read_your_writes': ReadMode_ReadYourWrites
 }
 
+ENCRYPTION_OPTIONAL = EncryptionPolicy_Optional
+ENCRYPTION_REQUIRED_REMOTE = EncryptionPolicy_RequiredRemote
+ENCRYPTION_REQUIRED = EncryptionPolicy_Required
+
+cdef dict _encryption_policies = {
+    'optional': EncryptionPolicy_Optional,
+    'required_remote': EncryptionPolicy_RequiredRemote,
+    'required': EncryptionPolicy_Required
+}
+
 cdef dict _type_names = {
     KUDU_INT8 : "KUDU_INT8",
     KUDU_INT16 : "KUDU_INT16",
@@ -281,7 +291,9 @@ cdef class Client:
     """
 
     def __cinit__(self, addr_or_addrs, admin_timeout_ms=None,
-                  rpc_timeout_ms=None, sasl_protocol_name=None):
+                  rpc_timeout_ms=None, sasl_protocol_name=None,
+                  require_authentication=False,
+                  encryption_policy=ENCRYPTION_OPTIONAL):
         cdef:
             string c_addr
             vector[string] c_addrs
@@ -325,6 +337,12 @@ cdef class Client:
 
         if sasl_protocol_name is not None:
             builder.sasl_protocol_name(sasl_protocol_name)
+
+        if require_authentication:
+            builder.require_authentication(require_authentication)
+
+        builder.encryption_policy(encryption_policy)
+
 
         check_status(builder.Build(&self.client))
 

@@ -18,7 +18,8 @@
 
 from kudu.compat import unittest, long
 from kudu.tests.common import KuduTestBase
-from kudu.client import Partitioning
+from kudu.client import (Partitioning, ENCRYPTION_OPTIONAL, ENCRYPTION_REQUIRED,
+                         ENCRYPTION_REQUIRED_REMOTE)
 import kudu
 import datetime
 from pytz import utc
@@ -338,9 +339,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
 
     def test_connect_timeouts(self):
         # it works! any other way to check
-        kudu.connect(self.master_hosts, self.master_ports,
-                     admin_timeout_ms=1000,
-                     rpc_timeout_ms=1000)
+        kudu.connect(self.master_hosts, self.master_ports, admin_timeout_ms=1000, rpc_timeout_ms=1000)
 
     def test_capture_kudu_error(self):
         pass
@@ -501,6 +500,16 @@ class TestClient(KuduTestBase, unittest.TestCase):
         alterer.add_range_partition()
         table = alterer.alter()
 
+    def test_require_encryption(self):
+        client = kudu.connect(self.master_hosts, self.master_ports,
+                              encryption_policy=ENCRYPTION_REQUIRED)
+
+    def test_require_authn(self):
+        # Kerberos is not enabled on the cluster, so requiring
+        # authentication is expected to fail.
+        with self.assertRaises(kudu.KuduBadStatus):
+            client = kudu.connect(self.master_hosts, self.master_ports,
+                     require_authentication=True)
 
 class TestMonoDelta(unittest.TestCase):
 

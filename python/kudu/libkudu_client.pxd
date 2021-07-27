@@ -538,6 +538,11 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         PartitionType_Exclusive " kudu::client::KuduTableCreator::EXCLUSIVE_BOUND"
         PartitionType_Inclusive " kudu::client::KuduTableCreator::INCLUSIVE_BOUND"
 
+    enum EncryptionPolicy" kudu::client::KuduClientBuilder::EncryptionPolicy":
+        EncryptionPolicy_Optional " kudu::client::KuduClientBuilder::EncryptionPolicy::OPTIONAL"
+        EncryptionPolicy_RequiredRemote " kudu::client::KuduClientBuilder::EncryptionPolicy::REQUIRED_REMOTE"
+        EncryptionPolicy_Required " kudu::client::KuduClientBuilder::EncryptionPolicy::REQUIRED"
+
     Status DisableOpenSSLInitialization()
 
     cdef cppclass KuduClient:
@@ -578,6 +583,10 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout)
 
         KuduClientBuilder& sasl_protocol_name(const string& sasl_protocol_name)
+
+        KuduClientBuilder& require_authentication(c_bool require_authentication)
+
+        KuduClientBuilder& encryption_policy(EncryptionPolicy encryption_policy)
 
         Status Build(shared_ptr[KuduClient]* client)
 

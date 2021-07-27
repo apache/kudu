@@ -32,7 +32,10 @@ from kudu.client import (Client, Table, Scanner, Session,  # noqa
                          EXCLUSIVE_BOUND,
                          INCLUSIVE_BOUND,
                          CLIENT_SUPPORTS_DECIMAL,
-                         CLIENT_SUPPORTS_PANDAS)
+                         CLIENT_SUPPORTS_PANDAS,
+                         ENCRYPTION_REQUIRED_REMOTE,
+                         ENCRYPTION_REQUIRED,
+                         ENCRYPTION_OPTIONAL)
 
 from kudu.errors import (KuduException, KuduBadStatus, KuduNotFound,  # noqa
                          KuduNotSupported,
@@ -57,7 +60,8 @@ from kudu.schema import (int8, int16, int32, int64, string_ as string,  # noqa
                          ENCODING_DICT)
 
 
-def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None):
+def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None,
+            require_authentication=False, encryption_policy=ENCRYPTION_OPTIONAL):
     """
     Connect to a Kudu master server
 
@@ -72,6 +76,10 @@ def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None):
       Admin timeout in milliseconds
     rpc_timeout_ms : int, optional
       RPC timeout in milliseconds
+    require_authentication : bool, optional
+      Whether to require authentication
+    encryption_policy : enum, optional
+      Whether to require encryption
 
     Returns
     -------
@@ -95,7 +103,9 @@ def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None):
             addresses.append('{0}:{1}'.format(host, port))
 
     return Client(addresses, admin_timeout_ms=admin_timeout_ms,
-                  rpc_timeout_ms=rpc_timeout_ms)
+                  rpc_timeout_ms=rpc_timeout_ms,
+                  encryption_policy=encryption_policy,
+                  require_authentication=require_authentication)
 
 
 def timedelta(seconds=0, millis=0, micros=0, nanos=0):
