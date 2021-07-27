@@ -219,7 +219,12 @@ class BlockManager {
   //
   // Returns an error if an on-disk representation does not exist or cannot be
   // opened.
-  virtual Status Open(FsReport* report) = 0;
+  //
+  // If 'containers_processed' and 'containers_total' are not nullptr, they will
+  // be populated with total containers attempted to be opened/processed and
+  // total containers present respectively.
+  virtual Status Open(FsReport* report, std::atomic<int>* containers_processed = nullptr,
+                      std::atomic<int>* containers_total = nullptr) = 0;
 
   // Creates a new block using the provided options and opens it for
   // writing. The block's ID will be generated.

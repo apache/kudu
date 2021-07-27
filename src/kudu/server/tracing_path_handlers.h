@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_SERVER_TRACING_PATH_HANDLERS_H
-#define KUDU_SERVER_TRACING_PATH_HANDLERS_H
+#pragma once
 
 #include "kudu/gutil/macros.h"
 
@@ -37,4 +36,3 @@ class TracingPathHandlers {
 
 } // namespace server
 } // namespace kudu
-#endif /* KUDU_SERVER_TRACING_PATH_HANDLERS_H */

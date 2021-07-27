@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -58,6 +59,7 @@ class Partition;
 class PartitionSchema;
 class Schema;
 class ThreadPool;
+class Timer;
 
 namespace transactions {
 class TxnSystemClient;
@@ -102,9 +104,13 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   virtual ~TSTabletManager();
 
   // Load all tablet metadata blocks from disk, and open their respective tablets.
+  // Starts the timer, 'start_tablets' and populates the 'tablets_total'. The subsequent
+  // function call to OpenTablet() updates 'tablets_processed' and stops the timer.
   // Upon return of this method all existing tablets are registered, but
   // the bootstrap is performed asynchronously.
-  Status Init();
+  Status Init(Timer* start_tablets,
+              std::atomic<int>* tablets_processed,
+              std::atomic<int>* tablets_total);
 
   // Waits for all the bootstraps to complete.
   // Returns Status::OK if all tablets bootstrapped successfully. If
@@ -322,8 +328,14 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // method. A TransitionInProgressDeleter must be passed as 'deleter' into
   // this method in order to remove that transition-in-progress entry when
   // opening the tablet is complete (in either a success or a failure case).
-  void OpenTablet(const scoped_refptr<tablet::TabletReplica>& replica,
-                  const scoped_refptr<TransitionInProgressDeleter>& deleter);
+  //
+  // In the subsequent call made to UpdateStartupProgress, 'tablets_processed'
+  // will be updated and the timer is stopped once all the tablets are processed.
+  void OpenTablet(const scoped_refptr<tablet::TabletReplica> &replica,
+                  const scoped_refptr<TransitionInProgressDeleter> &deleter,
+                  std::atomic<int>* tablets_processed = nullptr,
+                  std::atomic<int>* tablets_total = nullptr,
+                  Timer* bootstrap_tablets = nullptr);
 
   // Open a tablet whose metadata has already been loaded.
   void BootstrapAndInitTablet(const scoped_refptr<tablet::TabletMetadata>& meta,
@@ -379,6 +391,12 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Just for tests.
   void SetNextUpdateTimeForTests();
+
+  // If 'tablets_processed' is not nullptr, 'tablets_processed' will be incremented
+  // after every tablet is attempted to be opened and the timer is stopped once all
+  // the tablets are processed.
+  void IncrementTabletsProcessed(int tablets_total, std::atomic<int>* tablets_processed,
+                             Timer* start_tablets);
 
   FsManager* const fs_manager_;
 

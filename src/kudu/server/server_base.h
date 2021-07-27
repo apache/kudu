@@ -66,6 +66,7 @@ class TokenVerifier;
 namespace server {
 class DiagnosticsLog;
 class ServerStatusPB;
+class StartupPathHandler;
 
 // Base class for tablet server and master.
 // Handles starting and stopping the RPC server and web server,
@@ -201,6 +202,7 @@ class ServerBase {
   std::unique_ptr<FsManager> fs_manager_;
   std::unique_ptr<RpcServer> rpc_server_;
   std::unique_ptr<Webserver> web_server_;
+  std::unique_ptr<StartupPathHandler> startup_path_handler_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;

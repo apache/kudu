@@ -57,6 +57,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/timer.h"
 
 DEFINE_bool(enable_data_block_fsync, true,
             "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
@@ -359,7 +360,13 @@ Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
   return Status::OK();
 }
 
-Status FsManager::Open(FsReport* report) {
+Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
+                       Timer* read_data_directories,
+                       std::atomic<int>* containers_processed,
+                       std::atomic<int>* containers_total) {
+  if (read_instance_metadata_files) {
+    read_instance_metadata_files->Start();
+  }
   // Load and verify the instance metadata files.
   //
   // Done first to minimize side effects in the case that the configured roots
@@ -410,6 +417,9 @@ Status FsManager::Open(FsReport* report) {
       RETURN_NOT_OK_PREPEND(s, kUnableToCreateMsg);
     }
   }
+  if (read_instance_metadata_files) {
+    read_instance_metadata_files->Stop();
+  }
 
   // Open the directory manager if it has not been opened already.
   if (!dd_manager_) {
@@ -440,12 +450,21 @@ Status FsManager::Open(FsReport* report) {
 
   // Finally, initialize and open the block manager if needed.
   if (!opts_.skip_block_manager) {
+    if (read_data_directories) {
+      read_data_directories->Start();
+    }
     InitBlockManager();
     LOG_TIMING(INFO, "opening block manager") {
-      RETURN_NOT_OK(block_manager_->Open(report));
+      if (opts_.block_manager_type == "file") {
+        RETURN_NOT_OK(block_manager_->Open(report));
+      } else {
+        RETURN_NOT_OK(block_manager_->Open(report, containers_processed, containers_total));
+      }
+    }
+    if (read_data_directories) {
+      read_data_directories->Stop();
     }
   }
-
   // Report wal and metadata directories.
   if (report) {
     report->wal_dir = canonicalized_wal_fs_root_.path;

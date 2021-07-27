@@ -1,0 +1,79 @@
+{{!
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+}}
+{{#error}}
+  <div class="text-error">{{.}}</div>
+{{/error}}
+{{^error}}
+  <h2>Server Startup Progress</h2>
+    <table class='table table-striped'>
+      <tr style="background-color: #eee">
+        <th>Step</th>
+        <th>Progress (%)</th>
+        <th>Elapsed Time</th>
+      </tr>
+      <tr>
+        <th>Initializing</th>
+        <th>{{init_status}}%</th>
+        <th>{{init_time}}</th>
+      </tr>
+      <tr>
+        <th>Reading Filesystem</th>
+        <th>{{read_filesystem_status}}%</th>
+        <th>{{read_filesystem_time}}</th>
+      </tr>
+      <tr>
+        <td style="padding-left:50px">Reading instance metadata files</td>
+        <td>{{read_instance_metadatafiles_status}}%</td>
+        <td>{{read_instance_metadatafiles_time}}</td>
+      </tr>
+      {{#is_log_block_manager}}
+        <tr>
+          <td style="padding-left:50px">Opening container files&emsp; &emsp;({{containers_processed}}/{{containers_total}})</td>
+          <td>{{read_data_directories_status}}%</td>
+          <td>{{read_data_directories_time}}</td>
+        </tr>
+      {{/is_log_block_manager}}
+      {{^is_log_block_manager}}
+        <tr>
+          <td style="padding-left:50px">Reporting filesystem</td>
+          <td>{{read_data_directories_status}}%</td>
+          <td>{{read_data_directories_time}}</td>
+        </tr>
+      {{/is_log_block_manager}}
+      {{#is_tablet_server}}
+        <tr>
+          <th>Bootstrapping and opening the tablets &emsp; &emsp;({{tablets_processed}}/{{tablets_total}})</th>
+          <th>{{start_tablets_status}}%</th>
+          <th>{{start_tablets_time}}</th>
+        </tr>
+      {{/is_tablet_server}}
+      {{#is_master_server}}
+        <tr>
+          <th>Initializing master catalog</th>
+          <th>{{initialize_master_catalog_status}}%</th>
+          <th>{{initialize_master_catalog_time}}</th>
+        </tr>
+      {{/is_master_server}}
+        <tr>
+          <th>Starting RPC server</th>
+          <th>{{start_rpc_server_status}}%</th>
+          <th>{{start_rpc_server_time}}</th>
+        </tr>
+    </table>
+{{/error}}

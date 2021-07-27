@@ -31,6 +31,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/server/startup_path_handler.h"
 #include "kudu/transactions/txn_system_client.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/scanners.h"
@@ -42,6 +43,10 @@
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
+
+namespace kudu {
+class Timer;
+} // namespace kudu
 
 using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
@@ -70,7 +75,7 @@ TabletServer::~TabletServer() {
 
 Status TabletServer::Init() {
   CHECK_EQ(kStopped, state_);
-
+  startup_path_handler_->set_is_tablet_server(true);
   cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_entity());
 
   UnorderedHostPortSet master_addrs;
@@ -97,9 +102,6 @@ Status TabletServer::Init() {
   }
 
   RETURN_NOT_OK(KuduServer::Init());
-  if (web_server_) {
-    RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
-  }
 
   maintenance_manager_ = std::make_shared<MaintenanceManager>(
       MaintenanceManager::kDefaultOptions, fs_manager_->uuid(), metric_entity());
@@ -109,9 +111,12 @@ Status TabletServer::Init() {
 
   heartbeater_.reset(new Heartbeater(std::move(master_addrs), this));
 
-  RETURN_NOT_OK_PREPEND(tablet_manager_->Init(),
+  Timer* start_tablets = startup_path_handler_->start_tablets_progress();
+  std::atomic<int>* tablets_processed = startup_path_handler_->tablets_processed();
+  std::atomic<int>* total_tablets = startup_path_handler_->tablets_total();
+  RETURN_NOT_OK_PREPEND(tablet_manager_->Init(start_tablets, tablets_processed,
+                                              total_tablets),
                         "Could not init Tablet Manager");
-
   RETURN_NOT_OK_PREPEND(scanner_manager_->StartRemovalThread(),
                         "Could not start expired Scanner removal thread");
 
@@ -138,7 +143,6 @@ Status TabletServer::Start() {
       ErrorHandlerType::KUDU_2233_CORRUPTION, [this](const string& uuid) {
         this->tablet_manager_->FailTabletAndScheduleShutdown(uuid);
       });
-
   unique_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
   unique_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));
   unique_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(this, tablet_manager_.get()));
@@ -150,6 +154,10 @@ Status TabletServer::Start() {
   RETURN_NOT_OK(RegisterService(std::move(consensus_service)));
   RETURN_NOT_OK(RegisterService(std::move(tablet_copy_service)));
   RETURN_NOT_OK(KuduServer::Start());
+
+  if (web_server_) {
+    RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
+  }
 
   RETURN_NOT_OK(heartbeater_->Start());
   RETURN_NOT_OK(maintenance_manager_->Start());

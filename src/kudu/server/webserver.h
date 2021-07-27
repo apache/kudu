@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <iosfwd>
 #include <map>
 #include <string>
@@ -84,6 +85,15 @@ class Webserver : public WebCallbackRegistry {
 
   // True if serving all traffic over SSL, false otherwise
   bool IsSecure() const;
+
+  // Change the status to true once the webserver's startup is completed. The startup
+  // of a kudu server is split into two parts initialization and starting phase. In the
+  // initialization phase we start the webserver, register only the path handlers which are ready
+  // and in the startup phase the rest of them. Even though we start the webserver in the
+  // initialization phase, once all the path handlers are registered, we consider the web server
+  // to be started.
+  // Note: This only reflects the webserver's startup state and not the entire kudu server.
+  void SetStartupComplete(bool state);
 
  private:
   // Container class for a list of path handler callbacks for a single URL.
@@ -207,6 +217,10 @@ class Webserver : public WebCallbackRegistry {
 
   // Handle to Mongoose context; owned and freed by Mongoose internally
   struct sq_context* context_;
+
+  // Hold the status of the webserver's startup status.
+  std::atomic<bool> is_started_;
+
 };
 
 } // namespace kudu

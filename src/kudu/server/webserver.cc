@@ -103,6 +103,8 @@ string HttpStatusCodeToString(kudu::HttpStatusCode code) {
   switch (code) {
     case kudu::HttpStatusCode::Ok:
       return "200 OK";
+    case kudu::HttpStatusCode::TemporaryRedirect:
+      return "307 Temporary Redirect";
     case kudu::HttpStatusCode::BadRequest:
       return "400 Bad Request";
     case kudu::HttpStatusCode::AuthenticationRequired:
@@ -175,7 +177,8 @@ Status RunSpnegoStep(const char* authz_header,
 
 Webserver::Webserver(const WebserverOptions& opts)
   : opts_(opts),
-    context_(nullptr) {
+  context_(nullptr),
+  is_started_(false) {
   string host = opts.bind_interface.empty() ? "0.0.0.0" : opts.bind_interface;
   http_address_ = host + ":" + std::to_string(opts.port);
 }
@@ -185,17 +188,22 @@ Webserver::~Webserver() {
   STLDeleteValues(&path_handlers_);
 }
 
-void Webserver::RootHandler(const WebRequest& /* args */,
+void Webserver::RootHandler(const WebRequest& req,
                             WebResponse* resp) {
-  EasyJson path_handlers = resp->output.Set("path_handlers", EasyJson::kArray);
-  for (const PathHandlerMap::value_type& handler : path_handlers_) {
-    if (handler.second->is_on_nav_bar()) {
-      EasyJson path_handler = path_handlers.PushBack(EasyJson::kObject);
-      path_handler["path"] = handler.first;
-      path_handler["alias"] = handler.second->alias();
+  if (is_started_) {
+    EasyJson path_handlers = resp->output.Set("path_handlers", EasyJson::kArray);
+    for (const PathHandlerMap::value_type& handler : path_handlers_) {
+      if (handler.second->is_on_nav_bar()) {
+        EasyJson path_handler = path_handlers.PushBack(EasyJson::kObject);
+        path_handler["path"] = handler.first;
+        path_handler["alias"] = handler.second->alias();
+      }
     }
+    resp->output["version_info"] = EscapeForHtmlToString(VersionInfo::GetAllVersionInfo());
+  } else {
+    resp->status_code = HttpStatusCode::TemporaryRedirect;
+    resp->response_headers.insert({"Location", "/startup"});
   }
-  resp->output["version_info"] = EscapeForHtmlToString(VersionInfo::GetAllVersionInfo());
 }
 
 void Webserver::BuildArgumentMap(const string& args, ArgumentMap* output) {
@@ -711,12 +719,16 @@ void Webserver::RegisterPathHandler(const string& path, const string& alias,
   auto wrapped_cb = [=](const WebRequest& req, PrerenderedWebResponse* rendered_resp) {
     WebResponse resp;
     callback(req, &resp);
-    stringstream out;
     AddKnoxVariables(req, &resp.output);
-    Render(render_path, resp.output, is_styled, &out);
     rendered_resp->status_code = resp.status_code;
     rendered_resp->response_headers = std::move(resp.response_headers);
-    rendered_resp->output << out.rdbuf();
+    // As the home page is redirected to startup until the server's initialization is complete,
+    // do not render the page
+    if (render_path != "/home" || is_started_) {
+      stringstream out;
+      Render(render_path, resp.output, is_styled, &out);
+      rendered_resp->output << out.rdbuf();
+    }
   };
   RegisterPrerenderedPathHandler(path, alias, wrapped_cb, is_styled, is_on_nav_bar);
 }
@@ -828,6 +840,10 @@ bool Webserver::static_pages_available() const {
 void Webserver::set_footer_html(const std::string& html) {
   std::lock_guard<RWMutex> l(lock_);
   footer_html_ = html;
+}
+
+void Webserver::SetStartupComplete(bool state) {
+  is_started_ = state;
 }
 
 } // namespace kudu

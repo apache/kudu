@@ -64,6 +64,7 @@
 #include "kudu/server/rpcz-path-handler.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base_options.h"
+#include "kudu/server/startup_path_handler.h"
 #include "kudu/server/tcmalloc_metrics.h"
 #include "kudu/server/tracing_path_handlers.h"
 #include "kudu/server/webserver.h"
@@ -84,6 +85,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/timer.h"
 #ifdef TCMALLOC_ENABLED
 #include "kudu/util/process_memory.h"
 #endif
@@ -493,6 +495,7 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
       file_cache_(new FileCache("file cache", options.env,
                                 GetFileCacheCapacity(options.env), metric_entity_)),
       rpc_server_(new RpcServer(options.rpc_opts)),
+      startup_path_handler_(new StartupPathHandler),
       result_tracker_(new rpc::ResultTracker(shared_ptr<MemTracker>(
           MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
       is_first_run_(false),
@@ -564,6 +567,9 @@ void ServerBase::GenerateInstanceID() {
 }
 
 Status ServerBase::Init() {
+  Timer* init = startup_path_handler_->init_progress();
+  Timer* read_filesystem = startup_path_handler_->read_filesystem_progress();
+  init->Start();
   glog_metrics_.reset(new ScopedGLogMetrics(metric_entity_));
   tcmalloc::RegisterMetrics(metric_entity_);
   RegisterSpinLockContentionMetrics(metric_entity_);
@@ -577,8 +583,30 @@ Status ServerBase::Init() {
   RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal, FLAGS_keytab_file));
   RETURN_NOT_OK(file_cache_->Init());
 
+  // Register the startup web handler and start the web server to make the web UI
+  // available while the server is initializing, loading the file system, etc.
+  //
+  // NOTE: unlike the other path handlers, we register this path handler
+  // separately, as the startup handler is meant to be displayed before all of
+  // Kudu's subsystems have finished initializing.
+  if (options_.fs_opts.block_manager_type == "file") {
+    startup_path_handler_->set_is_using_lbm(false);
+  }
+  if (web_server_) {
+    startup_path_handler_->RegisterStartupPathHandler(web_server_.get());
+    AddPreInitializedDefaultPathHandlers(web_server_.get());
+    web_server_->set_footer_html(FooterHtml());
+    RETURN_NOT_OK(web_server_->Start());
+  }
+
   fs::FsReport report;
-  Status s = fs_manager_->Open(&report);
+  init->Stop();
+  read_filesystem->Start();
+  Status s = fs_manager_->Open(&report,
+                               startup_path_handler_->read_instance_metadata_files_progress(),
+                               startup_path_handler_->read_data_directories_progress(),
+                               startup_path_handler_->containers_processed(),
+                               startup_path_handler_->containers_total());
   // No instance files existed. Try creating a new FS layout.
   if (s.IsNotFound()) {
     LOG(INFO) << "This appears to be a new deployment of Kudu; creating new FS layout";
@@ -588,11 +616,12 @@ Status ServerBase::Init() {
       return s.CloneAndPrepend("FS layout already exists; not overwriting existing layout");
     }
     RETURN_NOT_OK_PREPEND(s, "Could not create new FS layout");
-    s = fs_manager_->Open(&report);
+    s = fs_manager_->Open(&report, startup_path_handler_->read_instance_metadata_files_progress(),
+                          startup_path_handler_->read_data_directories_progress());
   }
   RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
   RETURN_NOT_OK(report.LogAndCheckForFatalErrors());
-
+  read_filesystem->Stop();
   RETURN_NOT_OK(InitAcls());
 
   vector<string> rpc_tls_excluded_protocols = strings::Split(
@@ -664,7 +693,7 @@ Status ServerBase::InitAcls() {
     // If we aren't logged in from a keytab, then just assume that the services
     // will be running as the same Unix user as we are.
     RETURN_NOT_OK_PREPEND(GetLoggedInUser(&service_user),
-                          "could not deterine local username");
+                          "could not determine local username");
   }
 
   // If the user has specified a superuser acl, use that. Otherwise, assume
@@ -863,9 +892,14 @@ void ServerBase::TcmallocMemoryGcThread() {
 #endif
 
 std::string ServerBase::FooterHtml() const {
-  return Substitute("<pre>$0\nserver uuid $1</pre>",
-                    VersionInfo::GetVersionInfo(),
-                    instance_pb_->permanent_uuid());
+  if (instance_pb_) {
+      return Substitute("<pre>$0\nserver uuid $1</pre>",
+                        VersionInfo::GetVersionInfo(),
+                        instance_pb_->permanent_uuid());
+  }
+  // Load the footer with UUID only if the UUID is available
+  return Substitute("<pre>$0\n</pre>",
+                    VersionInfo::GetVersionInfo());
 }
 
 Status ServerBase::Start() {
@@ -918,16 +952,17 @@ Status ServerBase::Start() {
 #ifdef TCMALLOC_ENABLED
   RETURN_NOT_OK(StartTcmallocMemoryGcThread());
 #endif
-
+  Timer* start_rpc_server = startup_path_handler_->start_rpc_server_progress();
+  start_rpc_server->Start();
   RETURN_NOT_OK(rpc_server_->Start());
-
+  start_rpc_server->Stop();
   if (web_server_) {
-    AddDefaultPathHandlers(web_server_.get());
+    AddPostInitializedDefaultPathHandlers(web_server_.get());
     AddRpczPathHandlers(messenger_, web_server_.get());
     RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
     TracingPathHandlers::RegisterHandlers(web_server_.get());
     web_server_->set_footer_html(FooterHtml());
-    RETURN_NOT_OK(web_server_->Start());
+    web_server_->SetStartupComplete(true);
   }
 
   if (!options_.dump_info_path.empty()) {

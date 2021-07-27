@@ -2029,7 +2029,8 @@ LogBlockManager::~LogBlockManager() {
     }                                                           \
   } while (false)
 
-Status LogBlockManager::Open(FsReport* report) {
+Status LogBlockManager::Open(FsReport* report, std::atomic<int>* containers_processed,
+                             std::atomic<int>* containers_total) {
   // Establish (and log) block limits for each data directory using kernel,
   // filesystem, and gflags information.
   for (const auto& dd : dd_manager_->dirs()) {
@@ -2089,8 +2090,8 @@ Status LogBlockManager::Open(FsReport* report) {
     auto* dd_raw = dd.get();
     auto* results = &container_results[i];
     auto* s = &statuses[i];
-    dd->ExecClosure([this, dd_raw, results, s]() {
-      this->OpenDataDir(dd_raw, results, s);
+    dd->ExecClosure([this, dd_raw, results, s, containers_processed, containers_total]() {
+      this->OpenDataDir(dd_raw, results, s, containers_processed, containers_total);
       WARN_NOT_OK(*s, Substitute("failed to open dir $0", dd_raw->dir()));
     });
   }
@@ -2515,7 +2516,9 @@ Status LogBlockManager::RemoveLogBlock(const BlockId& block_id,
 void LogBlockManager::OpenDataDir(
     Dir* dir,
     vector<unique_ptr<internal::LogBlockContainerLoadResult>>* results,
-    Status* result_status) {
+    Status* result_status,
+    std::atomic<int>* containers_processed,
+    std::atomic<int>* containers_total) {
   vector<string> children;
   Status s = env_->GetChildren(dir->dir(), &children);
   if (!s.ok()) {
@@ -2537,15 +2540,21 @@ void LogBlockManager::OpenDataDir(
             child, LogBlockManager::kContainerMetadataFileSuffix, &container_name)) {
       continue;
     }
-    if (!InsertIfNotPresent(&containers_seen, container_name)) {
-      continue;
-    }
+    InsertIfNotPresent(&containers_seen, container_name);
+  }
+  if (containers_total) {
+    *containers_total += containers_seen.size();
+  }
 
+  for (const string& container_name : containers_seen) {
     // Add a new result for the container.
     results->emplace_back(new internal::LogBlockContainerLoadResult());
     LogBlockContainerRefPtr container;
     s = LogBlockContainer::Open(
         this, dir, &results->back()->report, container_name, &container);
+    if (containers_processed) {
+      ++*containers_processed;
+    }
     if (!s.ok()) {
       if (s.IsAborted()) {
         // Skip the container. Open() added a record of it to 'results->back()->report' for us.

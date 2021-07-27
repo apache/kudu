@@ -53,6 +53,7 @@
 #include "kudu/rpc/service_if.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/server/startup_path_handler.h"
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
@@ -64,6 +65,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
+#include "kudu/util/timer.h"
 #include "kudu/util/version_info.h"
 
 DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
@@ -195,7 +197,7 @@ Status Master::Init() {
       metric_entity(), opts_.block_cache_metrics_policy());
 
   RETURN_NOT_OK(ThreadPoolBuilder("init").set_max_threads(1).Build(&init_pool_));
-
+  startup_path_handler_->set_is_tablet_server(false);
   RETURN_NOT_OK(KuduServer::Init());
 
   if (web_server_) {
@@ -223,9 +225,13 @@ Status Master::Init() {
 }
 
 Status Master::Start() {
+  Timer* init_master_catalog =
+      startup_path_handler_->initialize_master_catalog_progress();
+  init_master_catalog->Start();
   RETURN_NOT_OK(StartAsync());
   RETURN_NOT_OK(WaitForCatalogManagerInit());
   google::FlushLogFiles(google::INFO); // Flush the startup messages.
+  init_master_catalog->Stop();
   return Status::OK();
 }
 

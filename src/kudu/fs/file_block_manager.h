@@ -18,6 +18,7 @@
 #ifndef KUDU_FS_FILE_BLOCK_MANAGER_H
 #define KUDU_FS_FILE_BLOCK_MANAGER_H
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -79,7 +80,8 @@ class FileBlockManager : public BlockManager {
 
   virtual ~FileBlockManager();
 
-  Status Open(FsReport* report) override;
+  Status Open(FsReport* report, std::atomic<int>* containers_processed = nullptr,
+              std::atomic<int>* containers_total = nullptr) override;
 
   Status CreateBlock(const CreateBlockOptions& opts,
                      std::unique_ptr<WritableBlock>* block) override;

@@ -425,18 +425,20 @@ static void ConfigurationHandler(const Webserver::WebRequest& /* req */,
   FillSecurityConfigs(output);
   FillTimeSourceConfigs(output);
 }
-
-void AddDefaultPathHandlers(Webserver* webserver) {
+void AddPreInitializedDefaultPathHandlers(Webserver* webserver) {
   bool styled = true;
   bool on_nav_bar = true;
   webserver->RegisterPathHandler("/logs", "Logs", LogsHandler, styled, on_nav_bar);
   webserver->RegisterPrerenderedPathHandler("/varz", "Flags", FlagsHandler, styled, on_nav_bar);
+  webserver->RegisterPathHandler("/config", "Configuration", ConfigurationHandler,
+                                 styled, on_nav_bar);
   webserver->RegisterPrerenderedPathHandler("/memz", "Memory (total)", MemUsageHandler,
                                             styled, on_nav_bar);
   webserver->RegisterPrerenderedPathHandler("/mem-trackers", "Memory (detail)", MemTrackersHandler,
                                             styled, on_nav_bar);
-  webserver->RegisterPathHandler("/config", "Configuration", ConfigurationHandler,
-                                  styled, on_nav_bar);
+}
+
+void AddPostInitializedDefaultPathHandlers(Webserver* webserver) {
   webserver->RegisterPrerenderedPathHandler("/stacks", "Stacks", StacksHandler,
                                             /*is_styled=*/false,
                                             /*is_on_nav_bar=*/true);

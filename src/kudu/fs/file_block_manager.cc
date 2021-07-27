@@ -715,7 +715,8 @@ FileBlockManager::FileBlockManager(Env* env,
 FileBlockManager::~FileBlockManager() {
 }
 
-Status FileBlockManager::Open(FsReport* report) {
+Status FileBlockManager::Open(FsReport* report, std::atomic<int>* containers_processed,
+                              std::atomic<int>* containers_total) {
   // Prepare the filesystem report and either return or log it.
   FsReport local_report;
   set<int> failed_dirs = dd_manager_->GetFailedDirs();

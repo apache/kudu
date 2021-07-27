@@ -72,6 +72,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
+#include "kudu/util/timer.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(num_tablets_to_copy_simultaneously, 10,
@@ -385,7 +386,9 @@ protected:
 TSTabletManager::~TSTabletManager() {
 }
 
-Status TSTabletManager::Init() {
+Status TSTabletManager::Init(Timer* start_tablets,
+                             std::atomic<int>* tablets_processed,
+                             std::atomic<int>* tablets_total) {
   CHECK_EQ(state(), MANAGER_INITIALIZING);
 
   // Start the tablet copy thread pool. We set a max queue size of 0 so that if
@@ -447,6 +450,8 @@ Status TSTabletManager::Init() {
     this->TxnStalenessTrackerTask();
   }));
 
+  start_tablets->Start();
+
   // Search for tablets in the metadata dir.
   vector<string> tablet_ids;
   RETURN_NOT_OK(fs_manager_->ListTabletIds(&tablet_ids));
@@ -476,6 +481,8 @@ Status TSTabletManager::Init() {
                           loaded_count, metas.size());
 
   // Now submit the "Open" task for each.
+  *tablets_total = metas.size();
+  *tablets_processed = 0;
   int registered_count = 0;
   for (const auto& meta : metas) {
     KLOG_EVERY_N_SECS(INFO, 1) << Substitute("Registering tablets ($0/$1 complete)",
@@ -488,12 +495,17 @@ Status TSTabletManager::Init() {
 
     scoped_refptr<TabletReplica> replica;
     RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &replica));
-    RETURN_NOT_OK(open_tablet_pool_->Submit([this, replica, deleter]() {
-          this->OpenTablet(replica, deleter);
-        }));
+    RETURN_NOT_OK(open_tablet_pool_->Submit([this, replica, deleter, tablets_processed,
+                                             tablets_total, start_tablets]() {
+      this->OpenTablet(replica, deleter, tablets_processed, tablets_total, start_tablets);
+    }));
     registered_count++;
   }
   LOG(INFO) << Substitute("Registered $0 tablets", registered_count);
+
+  if (registered_count == 0) {
+    start_tablets->Stop();
+  }
 
   {
     std::lock_guard<RWMutex> lock(lock_);
@@ -581,8 +593,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->Submit([this, new_replica, deleter]() {
-        this->OpenTablet(new_replica, deleter);
-      }));
+    this->OpenTablet(new_replica, deleter);
+  }));
 
   if (replica) {
     *replica = new_replica;
@@ -1228,8 +1240,11 @@ Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
   return Status::OK();
 }
 
-void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
-                                 const scoped_refptr<TransitionInProgressDeleter>& deleter) {
+void TSTabletManager::OpenTablet(const scoped_refptr<tablet::TabletReplica>& replica,
+                                 const scoped_refptr<TransitionInProgressDeleter>& deleter,
+                                 std::atomic<int>* tablets_processed,
+                                 std::atomic<int>* tablets_total,
+                                 Timer* start_tablets) {
   const string& tablet_id = replica->tablet_id();
   TRACE_EVENT1("tserver", "TSTabletManager::OpenTablet",
                "tablet_id", tablet_id);
@@ -1256,6 +1271,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
   });
   if (PREDICT_FALSE(!s.ok())) {
     LOG(ERROR) << LogPrefix(tablet_id) << "Failed to load consensus metadata: " << s.ToString();
+    IncrementTabletsProcessed((tablets_total != nullptr) ? tablets_total->load() : 0,
+                          tablets_processed, start_tablets);
     return;
   }
 
@@ -1284,6 +1301,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to bootstrap: "
                  << s.ToString();
+      IncrementTabletsProcessed((tablets_total != nullptr) ? tablets_total->load() : 0,
+                            tablets_processed, start_tablets);
       return;
     }
   }
@@ -1302,6 +1321,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to start: "
                  << s.ToString();
+      IncrementTabletsProcessed((tablets_total != nullptr) ? tablets_total->load() : 0,
+                            tablets_processed, start_tablets);
       return;
     }
 
@@ -1325,9 +1346,21 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
                    << Trace::CurrentTrace()->DumpToString();
     }
   }
-
+  IncrementTabletsProcessed((tablets_total != nullptr) ? tablets_total->load() : 0,
+                        tablets_processed, start_tablets);
   deleter->Destroy();
   MarkTabletDirty(tablet_id, "Open tablet completed");
+}
+
+void TSTabletManager::IncrementTabletsProcessed(int tablets_total,
+                                            std::atomic<int>* tablets_processed,
+                                            Timer* start_tablets) {
+  if (tablets_processed) {
+    ++*tablets_processed;
+    if (*tablets_processed == tablets_total) {
+      start_tablets->Stop();
+    }
+  }
 }
 
 void TSTabletManager::Shutdown() {

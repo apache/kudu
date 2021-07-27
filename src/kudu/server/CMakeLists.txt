@@ -48,12 +48,12 @@ set(SERVER_PROCESS_SRCS
   rpc_server.cc
   server_base.cc
   server_base_options.cc
+  startup_path_handler.cc
   tcmalloc_metrics.cc
   tracing_path_handlers.cc
   webserver.cc
   webserver_options.cc
-  webui_util.cc
-)
+  webui_util.cc)
 
 add_library(server_process ${SERVER_PROCESS_SRCS})
 target_link_libraries(server_process

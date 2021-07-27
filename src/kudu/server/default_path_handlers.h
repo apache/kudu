@@ -24,8 +24,12 @@ class MetricRegistry;
 class Webserver;
 
 // Adds a set of default path handlers to the webserver to display
-// logs and configuration flags.
-void AddDefaultPathHandlers(Webserver* webserver);
+// logs and configuration flags before the server is initialized.
+void AddPreInitializedDefaultPathHandlers(Webserver* webserver);
+
+// Adds a set of default path handlers to the webserver to display
+// stacks and support pprof profiling after the server is initialized.
+void AddPostInitializedDefaultPathHandlers(Webserver* webserver);
 
 // Adds an endpoint to get metrics in JSON format.
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics);

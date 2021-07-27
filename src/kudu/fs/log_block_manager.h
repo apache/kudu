@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -194,7 +195,8 @@ class LogBlockManager : public BlockManager {
 
   ~LogBlockManager();
 
-  Status Open(FsReport* report) override;
+  Status Open(FsReport* report, std::atomic<int>* containers_processed = nullptr,
+              std::atomic<int>* containers_total = nullptr) override;
 
   Status CreateBlock(const CreateBlockOptions& opts,
                      std::unique_ptr<WritableBlock>* block) override;
@@ -365,9 +367,18 @@ class LogBlockManager : public BlockManager {
   // results of consistency checking are written to 'results'.
   //
   // Success or failure is set in 'result_status'.
+  //
+  // If 'containers_processed' and 'containers_total' are not nullptr, they will
+  // be populated with total containers attempted to be opened/processed and
+  // total containers present respectively in the subsequent calls made to
+  // the block manager.
+  // TODO(achennaka): Implement a cleaner way to pass the atomic values to startup page
+  // probably by using metrics.
   void OpenDataDir(Dir* dir,
                    std::vector<std::unique_ptr<internal::LogBlockContainerLoadResult>>* results,
-                   Status* result_status);
+                   Status* result_status,
+                   std::atomic<int>* containers_processed = nullptr,
+                   std::atomic<int>* containers_total = nullptr);
 
   // Reads records from one log block container in the data directory.
   // The result details will be collected into 'result'.

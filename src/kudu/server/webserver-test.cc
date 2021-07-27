@@ -101,7 +101,8 @@ class WebserverTest : public KuduTest {
     MaybeSetupSpnego(&opts);
     server_.reset(new Webserver(opts));
 
-    AddDefaultPathHandlers(server_.get());
+    AddPreInitializedDefaultPathHandlers(server_.get());
+    AddPostInitializedDefaultPathHandlers(server_.get());
     if (!use_htpasswd() || !FIPS_mode()) {
       ASSERT_OK(server_->Start());
 
@@ -111,6 +112,9 @@ class WebserverTest : public KuduTest {
       ASSERT_TRUE(addrs[0].IsWildcard());
       ASSERT_OK(addr_.ParseString("127.0.0.1", addrs[0].port()));
       url_ = Substitute("http://$0", addr_.ToString());
+      // For testing purposes, we assume the server has been initialized. Typically this
+      // is set to true after the rpc server is started in the server startup process.
+      server_->SetStartupComplete(true);
     }
   }
 

@@ -27,6 +27,7 @@ namespace kudu {
 
 enum class HttpStatusCode {
   Ok, // 200
+  TemporaryRedirect, //307
   BadRequest, // 400
   AuthenticationRequired, // 401
   NotFound, // 404

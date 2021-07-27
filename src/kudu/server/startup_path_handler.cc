@@ -1,0 +1,120 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+#include "kudu/server/startup_path_handler.h"
+
+#include <functional>
+#include <iosfwd>
+#include <string>
+
+#include "kudu/gutil/strings/human_readable.h"
+#include "kudu/server/webserver.h"
+#include "kudu/util/easy_json.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/timer.h"
+#include "kudu/util/web_callback_registry.h"
+
+using std::ifstream;
+using std::ostringstream;
+using std::string;
+
+namespace kudu {
+
+namespace server {
+
+void SetWebResponse(EasyJson* output, const string& step,
+                    const Timer& startup_step, const int percent = -1) {
+  output->Set(step + "_status", percent == -1 ? (startup_step.IsStopped() ? 100 : 0) : percent);
+  output->Set(step + "_time", HumanReadableElapsedTime::ToShortString(
+                  (startup_step.TimeElapsed()).ToSeconds()));
+}
+
+StartupPathHandler::StartupPathHandler():
+  tablets_processed_(0),
+  tablets_total_(0),
+  containers_processed_(0),
+  containers_total_(0),
+  is_tablet_server_(false),
+  is_using_lbm_(true) {
+}
+
+void StartupPathHandler::Startup(const Webserver::WebRequest& /*req*/,
+                                 Webserver::WebResponse* resp) {
+
+  auto* output = &resp->output;
+
+  output->Set("is_tablet_server", is_tablet_server_);
+  output->Set("is_master_server", !is_tablet_server_);
+  output->Set("is_log_block_manager", is_using_lbm_);
+
+  // Populate the different startup steps with their progress
+  SetWebResponse(output, "init", init_progress_);
+  SetWebResponse(output, "read_filesystem", read_filesystem_progress_);
+  SetWebResponse(output, "read_instance_metadatafiles", read_instance_metadata_files_progress_);
+
+  // Populate the progress percentage of opening of container files in case of lbm and non-lbm
+  if (is_using_lbm_) {
+    if (containers_total_ == 0) {
+      SetWebResponse(output, "read_data_directories", read_data_directories_progress_);
+    } else {
+      SetWebResponse(output, "read_data_directories", read_data_directories_progress_,
+                      containers_processed_ * 100 / containers_total_);
+    }
+    output->Set("containers_processed", containers_processed_.load());
+    output->Set("containers_total", containers_total_.load());
+  } else {
+    SetWebResponse(output, "read_data_directories", read_data_directories_progress_);
+  }
+
+  // Set the bootstrapping and opening tablets step and handle the case of zero tablets
+  // present in the server
+  if (tablets_total_ == 0) {
+    SetWebResponse(output, "start_tablets", start_tablets_progress_);
+  } else {
+    SetWebResponse(output, "start_tablets", start_tablets_progress_,
+                    tablets_processed_ * 100 / tablets_total_);
+  }
+
+  if (is_tablet_server_) {
+    output->Set("tablets_processed", tablets_processed_.load());
+    output->Set("tablets_total", tablets_total_.load());
+  }
+
+  SetWebResponse(output, "initialize_master_catalog", initialize_master_catalog_progress_);
+  SetWebResponse(output, "start_rpc_server", start_rpc_server_progress_);
+}
+
+void StartupPathHandler::RegisterStartupPathHandler(Webserver *webserver) {
+  bool styled = true;
+  bool on_nav_bar = true;
+  webserver->RegisterPathHandler("/startup", "Startup",
+                                 [this](const Webserver::WebRequest& req,
+                                        Webserver::WebResponse* resp) {
+                                          this->Startup(req, resp);
+                                        },
+                                 styled, on_nav_bar);
+}
+
+void StartupPathHandler::set_is_tablet_server(bool is_tablet_server) {
+  is_tablet_server_ = is_tablet_server;
+}
+
+void StartupPathHandler::set_is_using_lbm(bool is_using_lbm) {
+  is_using_lbm_ = is_using_lbm;
+}
+} // namespace server
+} // namespace kudu
