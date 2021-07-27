@@ -58,6 +58,12 @@ class ConnectionCache {
 
   private final String saslProtocolName;
 
+  private boolean requireAuthentication;
+
+  private boolean requireEncryption;
+
+  private boolean encryptLoopback;
+
   /**
    * Container mapping server IP/port into the established connection from the client to the
    * server. It may be up to two connections per server: one established with secondary
@@ -70,10 +76,16 @@ class ConnectionCache {
   /** Create a new empty ConnectionCache given the specified parameters. */
   ConnectionCache(SecurityContext securityContext,
                   Bootstrap bootstrap,
-                  String saslProtocolName) {
+                  String saslProtocolName,
+                  boolean requireAuthentication,
+                  boolean requireEncryption,
+                  boolean encryptLoopback) {
     this.securityContext = securityContext;
     this.bootstrap = bootstrap;
     this.saslProtocolName = saslProtocolName;
+    this.requireAuthentication = requireAuthentication;
+    this.requireEncryption = requireEncryption;
+    this.encryptLoopback = encryptLoopback;
   }
 
   /**
@@ -127,7 +139,10 @@ class ConnectionCache {
                                 securityContext,
                                 bootstrap,
                                 credentialsPolicy,
-                                saslProtocolName);
+                                saslProtocolName,
+                                requireAuthentication,
+                                requireEncryption,
+                                encryptLoopback);
         connections.add(result);
         // There can be at most 2 connections to the same destination: one with primary and another
         // with secondary credentials.

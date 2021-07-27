@@ -117,7 +117,8 @@ public class TestNegotiator {
   }
 
   private void startNegotiation(boolean fakeLoopback) {
-    Negotiator negotiator = new Negotiator("127.0.0.1", secContext, false, "kudu");
+    Negotiator negotiator = new Negotiator("127.0.0.1", secContext, false, "kudu",
+        false, false, false);
     negotiator.overrideLoopbackForTests = fakeLoopback;
     embedder = new EmbeddedChannel(negotiator);
     negotiator.sendHello(embedder.pipeline().firstContext());

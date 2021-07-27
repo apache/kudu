@@ -623,6 +623,38 @@ public class KuduClient implements AutoCloseable {
     }
 
     /**
+     * Require authentication for the connection to a remote server.
+     *
+     * If it's set to true, the client will require mutual authentication between
+     * the server and the client. If the server doesn't support authentication,
+     * or it's disabled, the client will fail to connect.
+     */
+    public KuduClientBuilder requireAuthentication(boolean requireAuthentication) {
+      clientBuilder.requireAuthentication(requireAuthentication);
+      return this;
+    }
+
+    /**
+     * Require encryption for the connection to a remote server.
+     *
+     * If it's set to REQUIRED or REQUIRED_LOOPBACK, the client will
+     * require encrypting the traffic between the server and the client.
+     * If the server doesn't support encryption, or if it's disabled, the
+     * client will fail to connect.
+     *
+     * Loopback connections are encrypted only if 'encryption_policy' is
+     * set to REQUIRE_LOOPBACK, or if it's required by the server.
+     *
+     * The default value is OPTIONAL, which allows connecting to servers without
+     * encryption as well, but it will still attempt to use it if the server
+     * supports it.
+     */
+    public KuduClientBuilder encryptionPolicy(AsyncKuduClient.EncryptionPolicy encryptionPolicy) {
+      clientBuilder.encryptionPolicy(encryptionPolicy);
+      return this;
+    }
+
+    /**
      * Creates a new client that connects to the masters.
      * Doesn't block and won't throw an exception if the masters don't exist.
      * @return a new asynchronous Kudu client

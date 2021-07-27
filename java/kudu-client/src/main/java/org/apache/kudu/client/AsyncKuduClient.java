@@ -425,7 +425,9 @@ public class AsyncKuduClient implements AutoCloseable {
     this.requestTracker = new RequestTracker(clientId);
 
     this.securityContext = new SecurityContext();
-    this.connectionCache = new ConnectionCache(securityContext, bootstrap, b.saslProtocolName);
+    this.connectionCache = new ConnectionCache(securityContext, bootstrap, b.saslProtocolName,
+        b.requireAuthentication, !b.encryptionPolicy.equals(EncryptionPolicy.OPTIONAL),
+        b.encryptionPolicy.equals(EncryptionPolicy.REQUIRED));
     this.tokenReacquirer = new AuthnTokenReacquirer(this);
     this.authzTokenCache = new AuthzTokenCache(this);
   }
@@ -2726,6 +2728,18 @@ public class AsyncKuduClient implements AutoCloseable {
     }
   }
 
+  enum EncryptionPolicy {
+    // Optional, it uses encrypted connection if the server supports it,
+    // but it can connect to insecure servers too.
+    OPTIONAL,
+    // Only connects to remote servers that support encryption, fails
+    // otherwise. It can connect to insecure servers only locally.
+    REQUIRED_REMOTE,
+    // Only connects to any server, including on the loopback interface,
+    // that support encryption, fails otherwise.
+    REQUIRED,
+  }
+
   /**
    * Builder class to use in order to connect to Kudu.
    * All the parameters beyond those in the constructors are optional.
@@ -2746,6 +2760,8 @@ public class AsyncKuduClient implements AutoCloseable {
     private int workerCount = DEFAULT_WORKER_COUNT;
     private boolean statisticsDisabled = false;
     private String saslProtocolName = "kudu";
+    private boolean requireAuthentication = false;
+    private EncryptionPolicy encryptionPolicy = EncryptionPolicy.OPTIONAL;
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
@@ -2866,6 +2882,38 @@ public class AsyncKuduClient implements AutoCloseable {
     public AsyncKuduClientBuilder workerCount(int workerCount) {
       Preconditions.checkArgument(workerCount > 0, "workerCount should be greater than 0");
       this.workerCount = workerCount;
+      return this;
+    }
+
+    /**
+     * Require authentication for the connection to a remote server.
+     *
+     * If it's set to true, the client will require mutual authentication between
+     * the server and the client. If the server doesn't support authentication,
+     * or it's disabled, the client will fail to connect.
+     */
+    public AsyncKuduClientBuilder requireAuthentication(boolean requireAuthentication) {
+      this.requireAuthentication = requireAuthentication;
+      return this;
+    }
+
+    /**
+     * Require encryption for the connection to a remote server.
+     *
+     * If it's set to REQUIRED_REMOTE or REQUIRED, the client will
+     * require encrypting the traffic between the server and the client.
+     * If the server doesn't support encryption, or if it's disabled, the
+     * client will fail to connect.
+     *
+     * Loopback connections are encrypted only if 'encryption_policy' is
+     * set to REQUIRED, or if it's required by the server.
+     *
+     * The default value is OPTIONAL, which allows connecting to servers without
+     * encryption as well, but it will still attempt to use it if the server
+     * supports it.
+     */
+    public AsyncKuduClientBuilder encryptionPolicy(EncryptionPolicy encryptionPolicy) {
+      this.encryptionPolicy = encryptionPolicy;
       return this;
     }
 

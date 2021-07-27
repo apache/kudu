@@ -222,7 +222,13 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
 
   private Certificate peerCert;
 
-  private String saslProtocolName;
+  private final String saslProtocolName;
+
+  private final boolean requireAuthentication;
+
+  private final boolean requireEncryption;
+
+  private final boolean encryptLoopback;
 
   @InterfaceAudience.LimitedPrivate("Test")
   boolean overrideLoopbackForTests;
@@ -230,10 +236,16 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
   public Negotiator(String remoteHostname,
                     SecurityContext securityContext,
                     boolean ignoreAuthnToken,
-                    String saslProtocolName) {
+                    String saslProtocolName,
+                    boolean requireAuthentication,
+                    boolean requireEncryption,
+                    boolean encryptLoopback) {
     this.remoteHostname = remoteHostname;
     this.securityContext = securityContext;
     this.saslProtocolName = saslProtocolName;
+    this.requireAuthentication = requireAuthentication;
+    this.requireEncryption = requireEncryption;
+    this.encryptLoopback = encryptLoopback;
     SignedTokenPB token = securityContext.getAuthenticationToken();
     if (token != null) {
       if (ignoreAuthnToken) {
@@ -264,7 +276,7 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
     for (RpcHeader.RpcFeatureFlag flag : SUPPORTED_RPC_FEATURES) {
       builder.addSupportedFeatures(flag);
     }
-    if (isLoopbackConnection(ctx.channel())) {
+    if (isLoopbackConnection(ctx.channel()) && !encryptLoopback) {
       builder.addSupportedFeatures(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY);
     }
 
@@ -371,6 +383,10 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
     serverFeatures = getFeatureFlags(response);
     // If the server supports TLS, we will always speak TLS to it.
     final boolean negotiatedTls = serverFeatures.contains(RpcFeatureFlag.TLS);
+    if (!negotiatedTls && requireEncryption) {
+      throw new NonRecoverableException(Status.NotAuthorized(
+          "server does not support required TLS encryption"));
+    }
 
     // Check the negotiated authentication type sent by the server.
     chosenAuthnType = chooseAuthenticationType(response);
@@ -473,6 +489,11 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
 
     if (chosenMech != null) {
       LOG.debug("SASL mechanism {} chosen for peer {}", chosenMech.name(), remoteHostname);
+      if (chosenMech.equals(SaslMechanism.PLAIN) && requireAuthentication) {
+        String message = "client requires authentication, " +
+            "but server does not have Kerberos enabled";
+        throw new NonRecoverableException(Status.NotAuthorized(message));
+      }
       return;
     }
 
@@ -658,7 +679,7 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
 
     // Don't wrap the TLS socket if we are using TLS for authentication only.
     boolean isAuthOnly = serverFeatures.contains(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY) &&
-        isLoopbackConnection(ctx.channel());
+        isLoopbackConnection(ctx.channel()) && !encryptLoopback;
     if (!isAuthOnly) {
       ctx.pipeline().addFirst("tls", handler);
     }

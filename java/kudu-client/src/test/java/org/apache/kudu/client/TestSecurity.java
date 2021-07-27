@@ -524,4 +524,65 @@ public class TestSecurity {
         getBasicCreateTableOptions()));
   }
 
+  @Test(timeout = 60000)
+  public void testKuduRequireAuthenticationInsecureCluster() throws Exception {
+    try {
+      KuduClient client = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
+          .requireAuthentication(true)
+          .build();
+      client.createTable("TestSecurity-authentication-required-1",
+          getBasicSchema(), getBasicCreateTableOptions());
+      Assert.fail("client shouldn't be able to connect to the cluster.");
+    } catch (NonRecoverableException e) {
+      Assert.assertThat(e.getMessage(), CoreMatchers.containsString(
+          "client requires authentication, but server does not have Kerberos enabled"
+      ));
+    }
+  }
+
+  @Test(timeout = 60000)
+  @KuduTestHarness.MasterServerConfig(flags = {"--rpc_encryption=disabled",
+      "--rpc_authentication=disabled"})
+  @KuduTestHarness.TabletServerConfig(flags = {"--rpc_encryption=disabled",
+      "--rpc_authentication=disabled"})
+  public void testKuduRequireEncryptionInsecureCluster() throws Exception {
+    try {
+      KuduClient client = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
+          .encryptionPolicy(AsyncKuduClient.EncryptionPolicy.REQUIRED_REMOTE)
+          .build();
+      client.createTable("TestSecurity-encryption-required-1",
+          getBasicSchema(), getBasicCreateTableOptions());
+      Assert.fail("client shouldn't be able to connect to the cluster.");
+    } catch (NonRecoverableException e) {
+      Assert.assertThat(e.getMessage(), CoreMatchers.containsString(
+          "server does not support required TLS encryption"
+      ));
+    }
+  }
+
+  @Test
+  @KuduTestHarness.EnableKerberos
+  public void testKuduRequireAuthenticationAndEncryptionSecureCluster() throws KuduException {
+    KuduClient client = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
+        .requireAuthentication(true)
+        .encryptionPolicy(AsyncKuduClient.EncryptionPolicy.REQUIRED)
+        .build();
+    KuduTable table = client.createTable("TestSecurity-authentication-required-1",
+        getBasicSchema(), getBasicCreateTableOptions());
+    Assert.assertNotNull(table);
+  }
+
+  @Test
+  @KuduTestHarness.MasterServerConfig(flags = {"--rpc_encryption=disabled",
+      "--rpc_authentication=disabled"})
+  @KuduTestHarness.TabletServerConfig(flags = {"--rpc_encryption=disabled",
+      "--rpc_authentication=disabled"})
+  public void testKuduOptionalEncryption() throws KuduException {
+    KuduClient client = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
+        .encryptionPolicy(AsyncKuduClient.EncryptionPolicy.OPTIONAL)
+        .build();
+    KuduTable table = client.createTable("testSecurity-encryption-optional-1",
+        getBasicSchema(), getBasicCreateTableOptions());
+    Assert.assertNotNull(table);
+  }
 }

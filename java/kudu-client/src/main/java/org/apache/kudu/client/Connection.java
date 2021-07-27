@@ -110,6 +110,12 @@ class Connection extends SimpleChannelInboundHandler<Object> {
 
   private final String saslProtocolName;
 
+  private final boolean requireAuthentication;
+
+  private final boolean requireEncryption;
+
+  private final boolean encryptLoopback;
+
   /** The underlying Netty's socket channel. */
   private SocketChannel channel;
 
@@ -187,7 +193,10 @@ class Connection extends SimpleChannelInboundHandler<Object> {
              SecurityContext securityContext,
              Bootstrap bootstrap,
              CredentialsPolicy credentialsPolicy,
-             String saslProtocolName) {
+             String saslProtocolName,
+             boolean requireAuthentication,
+             boolean requireEncryption,
+             boolean encryptLoopback) {
     this.serverInfo = serverInfo;
     this.securityContext = securityContext;
     this.saslProtocolName = saslProtocolName;
@@ -195,6 +204,9 @@ class Connection extends SimpleChannelInboundHandler<Object> {
     this.credentialsPolicy = credentialsPolicy;
     this.bootstrap = bootstrap.clone();
     this.bootstrap.handler(new ConnectionChannelInitializer());
+    this.requireAuthentication = requireAuthentication;
+    this.requireEncryption = requireEncryption;
+    this.encryptLoopback = encryptLoopback;
   }
 
   /** {@inheritDoc} */
@@ -213,7 +225,8 @@ class Connection extends SimpleChannelInboundHandler<Object> {
     }
     ctx.writeAndFlush(Unpooled.wrappedBuffer(CONNECTION_HEADER), ctx.voidPromise());
     Negotiator negotiator = new Negotiator(serverInfo.getAndCanonicalizeHostname(), securityContext,
-        (credentialsPolicy == CredentialsPolicy.PRIMARY_CREDENTIALS), saslProtocolName);
+        (credentialsPolicy == CredentialsPolicy.PRIMARY_CREDENTIALS), saslProtocolName,
+        requireAuthentication, requireEncryption, encryptLoopback);
     ctx.pipeline().addBefore(ctx.name(), "negotiation", negotiator);
     negotiator.sendHello(ctx);
   }
