@@ -125,7 +125,7 @@ struct SliceKeysTestSetup {
     int expected_row_key_num = (split_idx * increment_) + row_idx;
     string expected_row_key = StringPrintf("%08x", expected_row_key_num);
     Slice expected_row_key_slice(expected_row_key);
-    if (expected_row_key_slice.compare(row_key_slice) != 0) {
+    if (expected_row_key_slice != row_key_slice) {
       return Status::Corruption(strings::Substitute("Keys didn't match. Expected: $0 Got: $1",
                                                     expected_row_key_slice.ToDebugString(),
                                                     row_key_slice.ToDebugString()));

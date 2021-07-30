@@ -44,11 +44,11 @@
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_manager.h"
@@ -1050,7 +1050,7 @@ Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteOpState* op_s
   std::stable_sort(keys_and_indexes.begin(), keys_and_indexes.end(),
                    [](const pair<Slice, int>& a,
                       const pair<Slice, int>& b) {
-                     return a.first.compare(b.first) < 0;
+                     return a.first < b.first;
                    });
   // If the batch has more than one operation for the same row, then we can't
   // use the up-front presence optimization on those operations, since the
@@ -1110,14 +1110,10 @@ Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteOpState* op_s
     DCHECK(std::is_sorted(pending_group.begin(), pending_group.end(),
                           [&](const pair<RowSet*, int>& a,
                               const pair<RowSet*, int>& b) {
-                            auto s_a = keys[a.second];
-                            auto s_b = keys[b.second];
-                            return s_a.compare(s_b) < 0;
+                            return keys[a.second] < keys[b.second];
                           }));
     RowSet* rs = pending_group[0].first;
-    for (auto it = pending_group.begin();
-         it != pending_group.end();
-         ++it) {
+    for (auto it = pending_group.begin(); it != pending_group.end(); ++it) {
       DCHECK_EQ(it->first, rs) << "All results within a group should be for the same RowSet";
       int op_idx = keys_and_indexes[it->second].second;
       RowOp* op = row_ops_base[op_idx];

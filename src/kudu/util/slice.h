@@ -278,6 +278,50 @@ inline bool operator!=(const Slice& x, const Slice& y) {
   return !(x == y);
 }
 
+/// Check whether x < y.
+///
+/// @param [in] x
+///   One slice.
+/// @param [in] y
+///   Another slice.
+/// @return @c true iff x less than y
+inline bool operator<(const Slice& x, const Slice& y) {
+  return x.compare(y) < 0;
+}
+
+/// Check whether x > y.
+///
+/// @param [in] x
+///   One slice.
+/// @param [in] y
+///   Another slice.
+/// @return @c true iff x greater than y
+inline bool operator>(const Slice& x, const Slice& y) {
+  return x.compare(y) > 0;
+}
+
+/// Check whether x >= y.
+///
+/// @param [in] x
+///   One slice.
+/// @param [in] y
+///   Another slice.
+/// @return @c true iff x is greater than or equal to y
+inline bool operator>=(const Slice& x, const Slice& y) {
+  return x.compare(y) >= 0;
+}
+
+/// Check whether x <= y.
+///
+/// @param [in] x
+///   One slice.
+/// @param [in] y
+///   Another slice.
+/// @return @c true iff x is less than or equal to y
+inline bool operator<=(const Slice& x, const Slice& y) {
+  return x.compare(y) <= 0;
+}
+
 /// Output printable representation of the slice into the given output stream.
 ///
 /// @param [out] o
@@ -290,13 +334,18 @@ inline std::ostream& operator<<(std::ostream& o, const Slice& s) {
 }
 
 inline int Slice::compare(const Slice& b) const {
-  const int min_len = (size_ < b.size_) ? size_ : b.size_;
-  int r = MemCompare(data_, b.data_, min_len);
-  if (r == 0) {
-    if (size_ < b.size_) r = -1;
-    else if (size_ > b.size_) r = +1;
+  const size_t min_len = (size_ < b.size_) ? size_ : b.size_;
+  const int r = MemCompare(data_, b.data_, min_len);
+  if (r != 0) {
+    return r;
   }
-  return r;
+  if (size_ < b.size_) {
+    return -1;
+  }
+  if (size_ > b.size_) {
+    return 1;
+  }
+  return 0;
 }
 
 // We don't run TSAN on this function because it makes it really slow and causes some

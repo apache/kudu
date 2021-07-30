@@ -2361,7 +2361,7 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
   }
   if (req->has_start_primary_key() && req->has_stop_primary_key()) {
     // Validate the start key is less than the stop key, if they are both set
-    if (start->encoded_key().compare(stop->encoded_key()) > 0) {
+    if (start->encoded_key() > stop->encoded_key()) {
       SetupErrorAndRespond(resp->mutable_error(),
                            Status::InvalidArgument("Invalid primary key range"),
                            TabletServerErrorPB::UNKNOWN_ERROR,

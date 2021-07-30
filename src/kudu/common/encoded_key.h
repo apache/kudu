@@ -72,8 +72,7 @@ class EncodedKey {
   // The empty bound has special significance: it's both the lowest value
   // (if in 'start') and the highest (if in 'end').
   bool InRange(const Slice& start, const Slice& end) const {
-    return (start.compare(encoded_key_) <= 0 &&
-            (end.empty() || encoded_key_.compare(end) < 0));
+    return (start <= encoded_key_ && (end.empty() || encoded_key_ < end));
   }
 
   static std::string RangeToString(const EncodedKey* lower,

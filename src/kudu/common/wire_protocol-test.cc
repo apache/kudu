@@ -430,9 +430,8 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
 
     // 'col1' comes at 0 bytes offset in the projection schema.
     const Slice* col1 = reinterpret_cast<const Slice*>(base_data);
-    ASSERT_EQ(col1->compare(Slice("hello world col1")), 0) << "Unexpected val for the "
-                                                           << i << "th row:"
-                                                           << col1->ToDebugString();
+    ASSERT_EQ(Slice("hello world col1"), *col1)
+        << "Unexpected val for the " << i << "th row:" << col1->ToDebugString();
     // 'key' comes at 16 bytes offset.
     const int64_t key = *reinterpret_cast<const int64_t*>(base_data + 16);
     EXPECT_EQ(key, i);

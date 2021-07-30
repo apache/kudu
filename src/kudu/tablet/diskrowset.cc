@@ -226,7 +226,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block, int live_row_count) 
     }
 
 #ifndef NDEBUG
-    CHECK(prev_key.size() == 0 || Slice(prev_key).compare(enc_key) < 0)
+    CHECK(prev_key.size() == 0 || Slice(prev_key) < enc_key)
       << KUDU_REDACT(enc_key.ToDebugString()) << " appended to file not > previous key "
       << KUDU_REDACT(Slice(prev_key).ToDebugString());
 #endif
@@ -260,8 +260,9 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(BlockCreationTransaction* transa
       key_index_writer()->GetMetaValueOrDie(DiskRowSet::kMinKeyMetaEntryName);
   Slice first_enc_slice(first_encoded_key);
 
-  CHECK_LE(first_enc_slice.compare(last_enc_slice), 0)
-      << "First Key not <= Last key: first_key=" << KUDU_REDACT(first_enc_slice.ToDebugString())
+  CHECK(first_enc_slice <= last_enc_slice)
+      << "First Key not <= Last key: first_key="
+      << KUDU_REDACT(first_enc_slice.ToDebugString())
       << "   last_key=" << KUDU_REDACT(last_enc_slice.ToDebugString());
   key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName, last_enc_slice);
   if (FLAGS_rowset_metadata_store_keys) {

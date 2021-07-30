@@ -141,7 +141,7 @@ size_t CommonPrefixLength(const Slice& slice_a, const Slice& slice_b) {
 }
 
 void GetSeparatingKey(const Slice& left, Slice* right) {
-  DCHECK_LE(left.compare(*right), 0);
+  DCHECK_LE(left, *right);
   size_t cpl = CommonPrefixLength(left, *right);
   right->truncate(cpl == right->size() ? cpl : cpl + 1);
 }

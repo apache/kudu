@@ -510,7 +510,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
     ASSERT_EQ(i * 10, read_back[i]) << "failed at iteration " << i;
     snprintf(buf2, sizeof(buf2), "hello %d", i);
     Slice s(buf2);
-    ASSERT_EQ(0, s.compare(read_back_slices[i]));
+    ASSERT_EQ(s, read_back_slices[i]);
   }
 
 

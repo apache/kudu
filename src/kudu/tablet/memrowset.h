@@ -535,8 +535,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   bool out_of_bounds(const Slice &key) const {
     DCHECK(has_upper_bound()) << "No upper bound set!";
-
-    return key.compare(*exclusive_upper_bound_) >= 0;
+    return key >= *exclusive_upper_bound_;
   }
 
   size_t remaining_in_leaf() const {

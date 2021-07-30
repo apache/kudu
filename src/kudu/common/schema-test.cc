@@ -555,7 +555,7 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
       encoder.Encode(&in[col], col == in.size() - 1, &fs);
     }
 
-    ASSERT_EQ(0, expected.compare(Slice(fs)))
+    ASSERT_EQ(expected, Slice(fs))
       << "Failed encoding example " << i << ".\n"
       << "Expected: " << HexDump(expected) << "\n"
       << "Got:      " << HexDump(Slice(fs));

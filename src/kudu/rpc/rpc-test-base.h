@@ -503,11 +503,11 @@ class RpcTestBase : public KuduTest {
 
     expected.resize(size1);
     RandomString(expected.data(), size1, &rng);
-    CHECK_EQ(0, first.compare(Slice(expected)));
+    CHECK_EQ(Slice(expected), first);
 
     expected.resize(size2);
     RandomString(expected.data(), size2, &rng);
-    CHECK_EQ(0, second.compare(Slice(expected)));
+    CHECK_EQ(Slice(expected), second);
   }
 
   static Status DoTestOutgoingSidecar(const Proxy &p, int size1, int size2) {

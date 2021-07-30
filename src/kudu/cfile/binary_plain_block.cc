@@ -271,8 +271,8 @@ Status BinaryPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool 
 
   // Binary search in restart array to find the first restart point
   // with a key >= target
-  int32_t left = 0;
-  int32_t right = num_elems_;
+  uint32_t left = 0;
+  uint32_t right = num_elems_;
   while (left != right) {
     uint32_t mid = (left + right) / 2;
     Slice mid_key(string_at_index(mid));

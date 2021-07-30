@@ -698,9 +698,9 @@ Status PartitionSchema::RangePartitionContainsRowImpl(const Partition& partition
   // If all of the hash buckets match, then the row is contained in the
   // partition if the row is gte the lower bound; and if there is no upper
   // bound, or the row is lt the upper bound.
-  *contains = (Slice(range_partition_key).compare(partition.range_key_start()) >= 0)
-           && (partition.range_key_end().empty()
-                || Slice(range_partition_key).compare(partition.range_key_end()) < 0);
+  const auto key = Slice(range_partition_key);
+  *contains = (partition.range_key_start() <= key) &&
+      (partition.range_key_end().empty() || key < partition.range_key_end());
   return Status::OK();
 }
 

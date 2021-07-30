@@ -458,9 +458,9 @@ struct DataTypeTraits<BINARY> {
     // Strings are consecutive if the larger is equal to the lesser with an
     // additional null byte.
 
-    return a_size + 1 == b_size
-        && (*b_slice)[a_size] == 0
-        && a_slice->compare(Slice(b_slice->data(), a_size)) == 0;
+    return a_size + 1 == b_size &&
+        (*b_slice)[a_size] == 0 &&
+        *a_slice == Slice(b_slice->data(), a_size);
   }
   static const cpp_type* min_value() {
     static Slice s("");

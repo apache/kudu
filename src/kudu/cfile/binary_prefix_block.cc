@@ -356,8 +356,8 @@ Status BinaryPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
         HexDump(Slice(entry, 16));
       return Status::Corruption(err);
     }
-    Slice mid_key(key_ptr, non_shared);
-    if (mid_key.compare(target) < 0) {
+    const Slice mid_key(key_ptr, non_shared);
+    if (mid_key < target) {
       // Key at "mid" is smaller than "target".  Therefore all
       // blocks before "mid" are uninteresting.
       left = mid;

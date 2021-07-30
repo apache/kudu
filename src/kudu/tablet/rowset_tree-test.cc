@@ -385,7 +385,7 @@ TEST_F(TestRowSetTree, TestEndpointsConsistency) {
     ASSERT_TRUE(!slice.empty()) << "RowSetTree has an endpoint with no key";
 
     if (!prev.empty()) {
-      ASSERT_LE(prev.compare(slice), 0);
+      ASSERT_LE(prev, slice);
     }
 
     string min, max;

@@ -113,10 +113,10 @@ bool LessCDFAndRSMax(const RowSetInfo& a, const RowSetInfo& b) {
 // Debug-checks that min <= imin <= imax <= max
 void DCheckInside(const Slice& min, const Slice& max,
                   const Slice& imin, const Slice& imax) {
-  DCHECK_LE(min.compare(max), 0);
-  DCHECK_LE(imin.compare(imax), 0);
-  DCHECK_LE(min.compare(imin), 0);
-  DCHECK_LE(imax.compare(max), 0);
+  DCHECK_LE(min, max);
+  DCHECK_LE(imin, imax);
+  DCHECK_LE(min, imin);
+  DCHECK_LE(imax, max);
 }
 
 // Return the number of bytes of common prefix shared by 'min' and 'max'
@@ -370,7 +370,7 @@ void RowSetInfo::SplitKeyRange(const RowSetTree& tree,
                                uint64_t target_chunk_size,
                                vector<KeyRange>* ranges) {
   // check start_key greater than stop_key
-  CHECK(stop_key.empty() || start_key.compare(stop_key) <= 0);
+  CHECK(stop_key.empty() || start_key <= stop_key);
 
   // The split process works as follows:
   // For each sorted endpoint, first we identify whether it is a
@@ -398,9 +398,9 @@ void RowSetInfo::SplitKeyRange(const RowSetTree& tree,
     RowSet* rs = rse.rowset_;
     next = rse.slice_;
 
-    if (prev.compare(next) < 0) {
+    if (prev < next) {
       // reset next when next greater than stop_key
-      if (!stop_key.empty() && next.compare(stop_key) > 0) {
+      if (!stop_key.empty() && next > stop_key) {
         next = stop_key;
       }
 
@@ -422,7 +422,7 @@ void RowSetInfo::SplitKeyRange(const RowSetTree& tree,
       prev = next;
     }
 
-    if (!stop_key.empty() && prev.compare(stop_key) >= 0) {
+    if (!stop_key.empty() && prev >= stop_key) {
       break;
     }
 
@@ -443,7 +443,7 @@ void RowSetInfo::SplitKeyRange(const RowSetTree& tree,
                  << "\t\tEndpointType=" << rse.endpoint_;
     }
   }
-  if (last_bound.compare(stop_key) < 0 || stop_key.empty()) {
+  if (stop_key.empty() || last_bound < stop_key) {
     ranges->emplace_back(last_bound.ToString(), stop_key.ToString(), chunk_size);
   }
 }

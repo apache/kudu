@@ -128,7 +128,7 @@ class FsManagerTestBase : public KuduTest,
     unique_ptr<ReadableBlock> reader;
     ASSERT_OK(fs_manager()->OpenBlock(writer->id(), &reader));
     ASSERT_OK(reader->Read(0, result));
-    ASSERT_EQ(0, result.compare(data));
+    ASSERT_EQ(data, result);
   }
 
   FsManager *fs_manager() const { return fs_manager_.get(); }

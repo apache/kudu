@@ -234,7 +234,7 @@ void VerifyGet(const CBTree<T> &tree,
     << "Failed on key " << HexDump(key);
 
   Slice got_val(vbuf, len);
-  ASSERT_EQ(0, expected_val.compare(got_val))
+  ASSERT_EQ(expected_val, got_val)
     << "Failure!\n"
     << "Expected: " << HexDump(expected_val)
     << "Got:      " << HexDump(got_val);
@@ -676,7 +676,7 @@ static void ScanThread(Barrier *go_barrier,
         Slice k, v;
         iter->GetCurrentEntry(&k, &v);
 
-        if (k.compare(Slice(prev_key)) <= 0) {
+        if (k <= Slice(prev_key)) {
           FAIL() << "prev key " << Slice(prev_key).ToString() <<
             " wasn't less than cur key " << k.ToString();
         }
