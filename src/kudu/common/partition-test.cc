@@ -1402,8 +1402,8 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-    auto range_hash_component = pb.add_range_hash_schemas();
-    auto hash_component = range_hash_component->add_hash_schemas();
+    auto* range_hash_component = pb.add_range_hash_schemas();
+    auto* hash_component = range_hash_component->add_hash_schemas();
     hash_component->add_columns()->set_name("a");
     hash_component->set_num_buckets(4);
   }
@@ -1420,11 +1420,11 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-    auto range_hash_component = pb.add_range_hash_schemas();
-    auto hash_component_1 = range_hash_component->add_hash_schemas();
+    auto* range_hash_component = pb.add_range_hash_schemas();
+    auto* hash_component_1 = range_hash_component->add_hash_schemas();
     hash_component_1->add_columns()->set_name("a");
     hash_component_1->set_num_buckets(2);
-    auto hash_component_2 = range_hash_component->add_hash_schemas();
+    auto* hash_component_2 = range_hash_component->add_hash_schemas();
     hash_component_2->add_columns()->set_name("b");
     hash_component_2->set_num_buckets(3);
   }
@@ -1544,5 +1544,112 @@ TEST_F(PartitionTest, TestMalformedPartitionSchemaPB) {
   Status s2 = PartitionSchema::FromPB(pb, schema, &partition_schema);
   ASSERT_EQ("Invalid argument: missing upper range bound in request",
             s2.ToString());
+}
+
+TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
+  // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
+  // PARTITION BY [RANGE (a, b, c)];
+  Schema schema({ ColumnSchema("a", STRING),
+                  ColumnSchema("b", STRING),
+                  ColumnSchema("c", STRING) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  PartitionSchemaPB schema_builder;
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+
+  PartitionSchemaPB schema_builder_1;
+  PartitionSchema partition_schema_1;
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder_1, schema, &partition_schema_1));
+
+  // Same object.
+  ASSERT_EQ(partition_schema, partition_schema);
+  ASSERT_EQ(partition_schema_1, partition_schema_1);
+
+  // Both schemas should be identical.
+  ASSERT_EQ(partition_schema, partition_schema_1);
+
+  // Clears the range schema of 'schema_builder_1'.
+  SetRangePartitionComponent(&schema_builder_1, {});
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder_1, schema, &partition_schema_1));
+  ASSERT_NE(partition_schema, partition_schema_1);
+
+  // Resets range schema so both will be equal again.
+  SetRangePartitionComponent(&schema_builder_1, {"a", "b", "c"});
+
+  // Table wide hash schemas are different.
+  AddHashBucketComponent(&schema_builder, { "a" }, 2, 0);
+  AddHashBucketComponent(&schema_builder_1, { "b" }, 2, 0);
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder_1, schema, &partition_schema_1));
+  ASSERT_NE(partition_schema, partition_schema_1);
+
+  // Resets table wide hash schemas so both will be equal again.
+  schema_builder_1.clear_hash_bucket_schemas();
+  AddHashBucketComponent(&schema_builder_1, { "a" }, 2, 0);
+
+  // Different sizes of field 'ranges_with_hash_schemas_'
+  // [(a, _, _), (b, _, _))
+  {
+    RowOperationsPBEncoder encoder(schema_builder_1.add_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a"));
+    ASSERT_OK(upper.SetStringCopy("a", "b"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* range_hash_component = schema_builder_1.add_range_hash_schemas();
+    auto* hash_component = range_hash_component->add_hash_schemas();
+    hash_component->add_columns()->set_name("a");
+    hash_component->set_num_buckets(4);
+  }
+
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder_1, schema, &partition_schema_1));
+  ASSERT_NE(partition_schema, partition_schema_1);
+
+  // Different custom hash bucket schema but same range bounds.
+  // [(a, _, _), (b, _, _))
+  {
+    RowOperationsPBEncoder encoder(schema_builder.add_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a"));
+    ASSERT_OK(upper.SetStringCopy("a", "b"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* range_hash_component = schema_builder.add_range_hash_schemas();
+    auto* hash_component = range_hash_component->add_hash_schemas();
+    hash_component->add_columns()->set_name("a");
+    hash_component->set_num_buckets(2);
+  }
+
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+  ASSERT_NE(partition_schema, partition_schema_1);
+
+  // Clears custom hash schemas and range bounds field.
+  schema_builder.clear_range_hash_schemas();
+  schema_builder.clear_range_bounds();
+
+  // Different range bounds but same custom hash bucket schema.
+  // [(a, _, _), (c, _, _))
+  {
+    RowOperationsPBEncoder encoder(schema_builder.add_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a"));
+    ASSERT_OK(upper.SetStringCopy("a", "c"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* range_hash_component = schema_builder.add_range_hash_schemas();
+    auto* hash_component = range_hash_component->add_hash_schemas();
+    hash_component->add_columns()->set_name("a");
+    hash_component->set_num_buckets(4);
+  }
+
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+  ASSERT_NE(partition_schema, partition_schema_1);
 }
 } // namespace kudu

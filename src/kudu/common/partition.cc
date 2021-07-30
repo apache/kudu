@@ -1106,25 +1106,41 @@ bool PartitionSchema::operator==(const PartitionSchema& rhs) const {
     return false;
   }
 
-  // Compare hash bucket components.
-  const auto& hb_schemas = hash_bucket_schemas_;
-  const auto& rhs_hb_schemas = rhs.hash_bucket_schemas_;
-  if (hb_schemas.size() != rhs_hb_schemas.size()) {
+  if (hash_bucket_schemas_.size() != rhs.hash_bucket_schemas_.size() ||
+      ranges_with_hash_schemas_.size() != rhs.ranges_with_hash_schemas_.size()) {
     return false;
   }
-  for (size_t i = 0; i < hb_schemas.size(); ++i) {
-    if (hb_schemas[i].seed != rhs_hb_schemas[i].seed) {
-      return false;
-    }
-    if (hb_schemas[i].num_buckets != rhs_hb_schemas[i].num_buckets) {
-      return false;
-    }
-    if (hb_schemas[i].column_ids != rhs_hb_schemas[i].column_ids) {
+
+  // Compare table wide hash bucket schemas.
+  for (size_t i = 0; i < hash_bucket_schemas_.size(); ++i) {
+    if (hash_bucket_schemas_[i] != rhs.hash_bucket_schemas_[i]) {
       return false;
     }
   }
 
+  // Compare range bounds and per range hash bucket schemas.
+  for (size_t i = 0; i < ranges_with_hash_schemas_.size(); ++i) {
+    if (ranges_with_hash_schemas_[i].lower != rhs.ranges_with_hash_schemas_[i].lower ||
+        ranges_with_hash_schemas_[i].upper != rhs.ranges_with_hash_schemas_[i].upper) {
+      return false;
+    }
+    const auto& lhs_hash_schemas = ranges_with_hash_schemas_[i].hash_schemas;
+    const auto& rhs_hash_schemas = rhs.ranges_with_hash_schemas_[i].hash_schemas;
+    if (lhs_hash_schemas.size() != rhs_hash_schemas.size()) {
+      return false;
+    }
+    for (size_t j = 0; j < lhs_hash_schemas.size(); ++j) {
+      if (lhs_hash_schemas[j] != rhs_hash_schemas[j]) {
+        return false;
+      }
+    }
+  }
+
   return true;
+}
+
+bool PartitionSchema::operator!=(const PartitionSchema& rhs) const {
+  return !(*this == rhs);
 }
 
 // Encodes the specified primary key columns of the supplied row into the buffer.
@@ -1560,8 +1576,8 @@ Status PartitionSchema::GetRangeSchemaColumnIndexes(const Schema& schema,
 int32_t PartitionSchema::TryGetSingleColumnHashPartitionIndex(const Schema& schema,
                                                               int32_t col_idx) const {
   const ColumnId column_id = schema.column_id(col_idx);
-  for (size_t i = 0; i < hash_partition_schemas().size(); ++i) {
-    auto hash_partition = hash_partition_schemas()[i];
+  for (int i = 0; i < hash_bucket_schemas_.size(); ++i) {
+    const auto& hash_partition = hash_bucket_schemas_[i];
     if (hash_partition.column_ids.size() == 1 && hash_partition.column_ids[0] == column_id) {
       return i;
     }
@@ -1571,8 +1587,8 @@ int32_t PartitionSchema::TryGetSingleColumnHashPartitionIndex(const Schema& sche
 
 bool PartitionSchema::IsColumnSingleRangeSchema(const Schema& schema, int32_t col_idx) const {
   const ColumnId column_id = schema.column_id(col_idx);
-  return range_partition_schema().column_ids.size() == 1 &&
-         range_partition_schema().column_ids[0] == column_id;
+  return range_schema_.column_ids.size() == 1 &&
+         range_schema_.column_ids[0] == column_id;
 }
 
 } // namespace kudu

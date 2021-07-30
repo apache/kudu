@@ -151,6 +151,26 @@ class PartitionSchema {
     std::vector<ColumnId> column_ids;
     int32_t num_buckets;
     uint32_t seed;
+
+    bool operator==(const HashBucketSchema& rhs) const {
+      if (this == &rhs) {
+        return true;
+      }
+      if (seed != rhs.seed) {
+        return false;
+      }
+      if (num_buckets != rhs.num_buckets) {
+        return false;
+      }
+      if (column_ids != rhs.column_ids) {
+        return false;
+      }
+      return true;
+    }
+
+    bool operator!=(const HashBucketSchema& rhs) const {
+      return !(*this == rhs);
+    }
   };
 
   typedef std::vector<HashBucketSchema> HashBucketSchemas;
@@ -271,6 +291,9 @@ class PartitionSchema {
 
   // Returns 'true' iff the partition schema 'rhs' is equivalent to this one.
   bool operator==(const PartitionSchema& rhs) const;
+
+  // Returns 'true' iff the partition schema 'rhs' is not equivalent to this one.
+  bool operator!=(const PartitionSchema& rhs) const;
 
   // Transforms an exclusive lower bound range partition key into an inclusive
   // lower bound range partition key.

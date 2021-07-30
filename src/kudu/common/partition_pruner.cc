@@ -405,7 +405,7 @@ void PartitionPruner::Init(const Schema& schema,
   // the lower and upper bounds specified by the scan.
   string scan_range_lower_bound;
   string scan_range_upper_bound;
-  const vector<ColumnId> &range_columns = partition_schema.range_schema_.column_ids;
+  const vector<ColumnId>& range_columns = partition_schema.range_schema_.column_ids;
   if (!range_columns.empty()) {
     if (AreRangeColumnsPrefixOfPrimaryKey(schema, range_columns)) {
       EncodeRangeKeysFromPrimaryKeyBounds(schema,
