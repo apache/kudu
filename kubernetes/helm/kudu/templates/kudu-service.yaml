@@ -164,6 +164,14 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: FS_WAL_DIR
+          value: /mnt/disk0
+        - name: FS_DATA_DIRS
+        {{ if eq .name "kudu-masters" }}
+          value: "{{ include "kudu.gen_kudu_master_data_dirs" $head | trim }}"
+        {{ else }}
+          value: "{{ include "kudu.gen_kudu_tserver_data_dirs" $head | trim }}"
+        {{ end }}
         - name: KUDU_MASTERS
           value: "{{ include "kudu.gen_kudu_masters" $head | trim }}"
         resources:

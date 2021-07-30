@@ -21,9 +21,12 @@ NOTE: All of this work is experimental and subject to change or removal.
 
 == Getting Started
 
-Helm — The package manager for Kubernetes. Helps to define, install, and upgrade Kubernetes applications
+Helm — The package manager for Kubernetes. Helps to define, install, and
+upgrade Kubernetes applications.
 
 NOTE: Read more about Helm here https://helm.sh/docs/using_helm/#quickstart
+
+The below instructions rely on having Kudu Docker images built.
 
 ==== System Requirements
 
@@ -32,31 +35,86 @@ NOTE: Read more about Helm here https://helm.sh/docs/using_helm/#quickstart
     docker
     helm
 
-==== Build Kudu Docker Image
+=== Using Helm v3
 
-    ../../docker/docker-build.py
+. Deploy a Kubernetes cluster with a cluster manager choice. For the sake of
+  local development, `minikube` is a fine choice:
++
+----
+$ minikube start
+----
+
+. If you have made changes to your Docker images, or would otherwise like to
+  use local images rather than those found on DockerHub, ensure your Kubernetes
+  cluster can access your desired Docker images.
++
+----
+$ minikube cache add apache/kudu:latest
+----
+
+. Install the `apache-kudu` Helm Chart. Optionally supply an edited
+  `values.yaml` file. This deploys a Kudu cluster using the `minikube`
+  container.
++
+----
+$ helm install -f kudu/values.yaml apache-kudu ./kudu
+----
+
+. Verify the cluster is running and view its logs.
++
+----
+$ kubectl get pods
+NAME             READY   STATUS    RESTARTS   AGE
+kudu-master-0    1/1     Running   0          108s
+kudu-master-1    1/1     Running   0          108s
+kudu-master-2    1/1     Running   0          108s
+kudu-tserver-0   1/1     Running   0          108s
+kudu-tserver-1   1/1     Running   0          108s
+kudu-tserver-2   1/1     Running   0          108s
+
+$ kubectl logs kudu-tserver-1
+I0730 00:36:07.404302     1 tablet_server_runner.cc:78] Tablet server non-default flags:
+--use_hybrid_clock=false
+--fs_data_dirs=/mnt/disk1,/mnt/disk2,/mnt/disk3,/mnt/disk4
+--fs_wal_dir=/mnt/disk0
+--webserver_doc_root=/opt/kudu/www
+--tserver_master_addrs=kudu-master-0.kudu-masters.default.svc.cluster.local,kudu-master-1.kudu-masters.default.svc.cluster.local,kudu-master-2.kudu-masters.default.svc.cluster.local
+--heap_profile_path=/tmp/kudu.1
+--stderrthreshold=0
+
+Tablet server version:
+...
+----
+
+. To stop Kudu, uninstall the Helm Chart.
++
+----
+$ helm uninstall apache-kudu
+----
+
+=== Using Helm v2
 
 ==== Creating Namespace
 
-    kubectl create -f ../namespace.yaml
+    $ kubectl create -f ../namespace.yaml
 
 ==== Creating ServiceAccount And Role Binding (RBAC)
 
-    kubectl create -f kudu-rbac.yaml
+    $ kubectl create -f kudu-rbac.yaml
 
 ==== Initializing Helm Tiller
 
-    helm init --service-account kudu-helm --tiller-namespace apache-kudu --upgrade --wait
+    $ helm init --service-account kudu-helm --tiller-namespace apache-kudu --upgrade --wait
 
 Check if tiller is initialized and you should not see any authorization errors.
 
-    helm ls --namespace apache-kudu --tiller-namespace apache-kudu
+    $ helm ls --namespace apache-kudu --tiller-namespace apache-kudu
 
 ==== Helm Launch Kudu cluster
 
-    helm install kudu --namespace apache-kudu --name apache-kudu --tiller-namespace apache-kudu --wait
+    $ helm install kudu --namespace apache-kudu --name apache-kudu --tiller-namespace apache-kudu --wait
 
-    helm install kudu -f kudu-expose-all.yaml --namespace apache-kudu --name apache-kudu --tiller-namespace apache-kudu --wait
+    $ helm install kudu -f kudu-expose-all.yaml --namespace apache-kudu --name apache-kudu --tiller-namespace apache-kudu --wait
 
 You should see below output on stdout
 
@@ -94,29 +152,29 @@ kudu-tserver-pdb  N/A            1                1                    12s
 
 ==== Port Forward The Kudu Master UI
 
-    kubectl port-forward kudu-master-0 8051 -n apache-kudu
+    $ kubectl port-forward kudu-master-0 8051 -n apache-kudu
     OR
-    minikube service kudu-master-service --url -n apache-kudu
+    $ minikube service kudu-master-service --url -n apache-kudu
 
 ==== Destroy The Kudu Cluster
 
-    helm del --purge apache-kudu --tiller-namespace apache-kudu
+    $ helm del --purge apache-kudu --tiller-namespace apache-kudu
 
 ==== Display Kudu Master Logs:
 
-    kubectl logs kudu-master-0 --namespace apache-kudu
+    $ kubectl logs kudu-master-0 --namespace apache-kudu
 
 === Testing Helm Charts
 
     # helm-template : it will render chart templates locally and display the output.
-    helm template kudu
+    $ helm template kudu
 
     # To render just one template in a chart
-    helm template kudu -x templates/kudu-service.yaml
+    $ helm template kudu -x templates/kudu-service.yaml
 
     # helm lint: examines a chart for possible issues, useful to validate chart dependencies.
-    helm lint kudu --namespace apache-kudu --tiller-namespace apache-kudu
+    $ helm lint kudu --namespace apache-kudu --tiller-namespace apache-kudu
 
     # The argument this command takes is the name of a deployed release.
     # The tests to be run are defined in the chart that was installed.
-    helm test apache-kudu --tiller-namespace apache-kudu
+    $ helm test apache-kudu --tiller-namespace apache-kudu

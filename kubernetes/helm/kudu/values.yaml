@@ -25,6 +25,12 @@ Image:
   tag: latest
   pullPolicy: IfNotPresent
 
+# NOTE: WALs and data directories will be placed in separate volumes if more
+# than one is available. If only one is available, they will be placed in the
+# same volume. Thus, users should avoid switching between a single-volume
+# deployment and multi-volume deployments, as that would move the data
+# directory location from /mnt/disk0 to /mnt/disk1,/mnt/disk2,..., and servers
+# would be unable to find their existing data directory in /mnt/disk0!
 storage:
   master:
     count: 3
