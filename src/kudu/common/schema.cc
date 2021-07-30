@@ -132,8 +132,8 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
 
   if (col_delta.default_value) {
     const void* value = type_info()->physical_type() == BINARY ?
-                        reinterpret_cast<const void *>(&col_delta.default_value.get()) :
-                        reinterpret_cast<const void *>(col_delta.default_value->data());
+                        reinterpret_cast<const void*>(&col_delta.default_value.get()) :
+                        reinterpret_cast<const void*>(col_delta.default_value->data());
     write_default_ = std::make_shared<Variant>(type_info()->type(), value);
   }
 
@@ -188,11 +188,9 @@ size_t ColumnSchema::memory_footprint_including_this() const {
   return kudu_malloc_usable_size(this) + memory_footprint_excluding_this();
 }
 
-const int Schema::kColumnNotFound = -1;
-
 Schema::Schema(const Schema& other)
-  : name_to_index_(other.num_columns()) {
-  name_to_index_.set_empty_key(StringPiece());
+    : name_to_index_(other.num_columns()) {
+      name_to_index_.set_empty_key(StringPiece());
   CopyFrom(other);
 }
 
@@ -204,6 +202,7 @@ Schema& Schema::operator=(const Schema& other) {
 }
 
 void Schema::CopyFrom(const Schema& other) {
+  DCHECK_NE(this, &other);
   num_key_columns_ = other.num_key_columns_;
   cols_ = other.cols_;
   col_ids_ = other.col_ids_;
@@ -214,8 +213,8 @@ void Schema::CopyFrom(const Schema& other) {
   // We can't simply copy name_to_index_ since the StringPiece keys
   // reference the other Schema's ColumnSchema objects.
   name_to_index_.clear_no_resize();
-  int i = 0;
-  for (const ColumnSchema &col : cols_) {
+  size_t i = 0;
+  for (const auto& col : cols_) {
     // The map uses the 'name' string from within the ColumnSchema object.
     name_to_index_[col.name()] = i++;
   }
@@ -286,7 +285,7 @@ Status Schema::Reset(vector<ColumnSchema> cols,
   size_t off = 0;
   size_t i = 0;
   name_to_index_.clear_no_resize();
-  for (const ColumnSchema &col : cols_) {
+  for (const ColumnSchema& col : cols_) {
     if (col.name().empty()) {
       return Status::InvalidArgument("column names must be non-empty");
     }
@@ -307,7 +306,7 @@ Status Schema::Reset(vector<ColumnSchema> cols,
   col_ids_ = std::move(ids);
   id_to_index_.clear();
   max_col_id_ = 0;
-  for (int i = 0; i < col_ids_.size(); ++i) {
+  for (size_t i = 0; i < col_ids_.size(); ++i) {
     if (col_ids_[i] > max_col_id_) {
       max_col_id_ = col_ids_[i];
     }
@@ -339,13 +338,13 @@ Status Schema::FindColumn(Slice col_name, int* idx) const {
   return Status::OK();
 }
 
-Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names,
+Status Schema::CreateProjectionByNames(const vector<StringPiece>& col_names,
                                        Schema* out) const {
   vector<ColumnId> ids;
   vector<ColumnSchema> cols;
   for (const StringPiece& name : col_names) {
-    int idx = find_column(name);
-    if (idx == -1) {
+    const int idx = find_column(name);
+    if (idx == kColumnNotFound) {
       return Status::NotFound("column not found", name);
     }
     if (has_column_ids()) {
@@ -356,13 +355,13 @@ Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names
   return out->Reset(std::move(cols), std::move(ids), 0);
 }
 
-Status Schema::CreateProjectionByIdsIgnoreMissing(const std::vector<ColumnId>& col_ids,
+Status Schema::CreateProjectionByIdsIgnoreMissing(const vector<ColumnId>& col_ids,
                                                   Schema* out) const {
   vector<ColumnSchema> cols;
   vector<ColumnId> filtered_col_ids;
   for (ColumnId id : col_ids) {
-    int idx = find_column_by_id(id);
-    if (idx == -1) {
+    const auto idx = find_column_by_id(id);
+    if (idx == kColumnNotFound) {
       continue;
     }
     cols.push_back(column(idx));
@@ -418,7 +417,7 @@ Status Schema::VerifyProjectionCompatibility(const Schema& projection) const {
 
 
 Status Schema::GetMappedReadProjection(const Schema& projection,
-                                       Schema *mapped_projection) const {
+                                       Schema* mapped_projection) const {
   // - The user projection may have different columns from the ones on the tablet
   // - User columns non present in the tablet are considered errors
   // - The user projection is not supposed to have the defaults or the nullable
@@ -460,7 +459,7 @@ string Schema::ToString(ToStringMode mode) const {
 
   vector<string> pk_strs;
   pk_strs.reserve(num_key_columns_);
-  for (int i = 0; i < num_key_columns_; i++) {
+  for (size_t i = 0; i < num_key_columns_; ++i) {
     pk_strs.push_back(cols_[i].name());
   }
 
@@ -470,11 +469,11 @@ string Schema::ToString(ToStringMode mode) const {
   }
   vector<string> col_strs;
   if (has_column_ids() && (mode & ToStringMode::WITH_COLUMN_IDS)) {
-    for (int i = 0; i < cols_.size(); ++i) {
+    for (size_t i = 0; i < cols_.size(); ++i) {
       col_strs.push_back(Substitute("$0:$1", col_ids_[i], cols_[i].ToString(col_mode)));
     }
   } else {
-    for (const ColumnSchema &col : cols_) {
+    for (const ColumnSchema& col : cols_) {
       col_strs.push_back(col.ToString(col_mode));
     }
   }
@@ -591,8 +590,8 @@ Status SchemaBuilder::AddKeyColumn(const string& name, DataType type) {
 Status SchemaBuilder::AddColumn(const string& name,
                                 DataType type,
                                 bool is_nullable,
-                                const void *read_default,
-                                const void *write_default) {
+                                const void* read_default,
+                                const void* write_default) {
   if (name.empty()) {
     return Status::InvalidArgument("column name must be non-empty");
   }
@@ -659,7 +658,7 @@ Status SchemaBuilder::AddColumn(const ColumnSchema& column, bool is_key) {
   if (is_key) {
     cols_.insert(cols_.begin() + num_key_columns_, column);
     col_ids_.insert(col_ids_.begin() + num_key_columns_, next_id_);
-    num_key_columns_++;
+    ++num_key_columns_;
   } else {
     cols_.push_back(column);
     col_ids_.push_back(next_id_);

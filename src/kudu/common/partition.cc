@@ -246,7 +246,7 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
     // Fill in the default range partition (PK columns).
     // like the sorting above, this should only happen during table creation
     // while deserializing the user-provided partition schema.
-    for (int32_t column_idx = 0; column_idx < schema.num_key_columns(); column_idx++) {
+    for (size_t column_idx = 0; column_idx < schema.num_key_columns(); ++column_idx) {
       partition_schema->range_schema_.column_ids.push_back(schema.column_id(column_idx));
     }
   }
@@ -334,7 +334,7 @@ Status PartitionSchema::EncodeRangeKey(const KuduPartialRow& row,
                                        string* key) const {
   DCHECK(key->empty());
   bool contains_no_columns = true;
-  for (int column_idx = 0; column_idx < schema.num_columns(); column_idx++) {
+  for (size_t column_idx = 0; column_idx < schema.num_columns(); ++column_idx) {
     const ColumnSchema& column = schema.column(column_idx);
     if (row.IsColumnSet(column_idx)) {
       if (std::find(range_schema_.column_ids.begin(),
@@ -384,9 +384,11 @@ Status PartitionSchema::EncodeRangeBounds(
     const PerRangeHashBucketSchemas& range_hash_schemas,
     const Schema& schema,
     RangesWithHashSchemas* bounds_with_hash_schemas) const {
-  DCHECK(bounds_with_hash_schemas->empty());
+  DCHECK(bounds_with_hash_schemas);
+  auto& bounds_whs = *bounds_with_hash_schemas;
+  DCHECK(bounds_whs.empty());
   if (range_bounds.empty()) {
-    bounds_with_hash_schemas->emplace_back(RangeWithHashSchemas{"", "", {}});
+    bounds_whs.emplace_back(RangeWithHashSchemas{"", "", {}});
     return Status::OK();
   }
 
@@ -414,21 +416,18 @@ Status PartitionSchema::EncodeRangeBounds(
     if (!range_hash_schemas.empty()) {
       temp.hash_schemas = range_hash_schemas[j++];
     }
-    bounds_with_hash_schemas->emplace_back(std::move(temp));
+    bounds_whs.emplace_back(std::move(temp));
   }
 
-  std::sort(bounds_with_hash_schemas->begin(), bounds_with_hash_schemas->end(),
+  std::sort(bounds_whs.begin(), bounds_whs.end(),
             [](const RangeWithHashSchemas& s1, const RangeWithHashSchemas& s2) {
     return s1.lower < s2.lower;
   });
 
-  // Check that the range bounds are non-overlapping
-  if (bounds_with_hash_schemas->empty()) {
-    return Status::OK();
-  }
-  for (int i = 0; i < bounds_with_hash_schemas->size() - 1; i++) {
-    const string& first_upper = bounds_with_hash_schemas->at(i).upper;
-    const string& second_lower = bounds_with_hash_schemas->at(i + 1).lower;
+  // Check that the range bounds are non-overlapping.
+  for (size_t i = 0; i + 1 < bounds_whs.size(); ++i) {
+    const string& first_upper = bounds_whs[i].upper;
+    const string& second_lower = bounds_whs[i + 1].lower;
 
     if (first_upper.empty() || second_lower.empty() ||
         first_upper > second_lower) {
@@ -436,11 +435,11 @@ Status PartitionSchema::EncodeRangeBounds(
           "overlapping range partitions",
           Substitute(
               "first range partition: $0, second range partition: $1",
-              RangePartitionDebugString(bounds_with_hash_schemas->at(i).lower,
-                                        bounds_with_hash_schemas->at(i).upper,
+              RangePartitionDebugString(bounds_whs[i].lower,
+                                        bounds_whs[i].upper,
                                         schema),
-              RangePartitionDebugString(bounds_with_hash_schemas->at(i + 1).lower,
-                                        bounds_with_hash_schemas->at(i + 1).upper,
+              RangePartitionDebugString(bounds_whs[i + 1].lower,
+                                        bounds_whs[i + 1].upper,
                                         schema)));
     }
   }
@@ -468,7 +467,7 @@ Status PartitionSchema::SplitRangeBounds(
     string& lower = bound.lower;
     const string& upper = bound.upper;
 
-    for (; split != splits.end() && (upper.empty() || *split <= upper); split++) {
+    for (; split != splits.end() && (upper.empty() || *split <= upper); ++split) {
       if (!lower.empty() && *split < lower) {
         return Status::InvalidArgument("split out of bounds", RangeKeyDebugString(*split, schema));
       }
@@ -570,7 +569,7 @@ Status PartitionSchema::CreatePartitions(
     DCHECK(split_rows.empty());
     vector<Partition> result_partitions;
     // Iterate through each bound and its hash schemas to generate hash partitions.
-    for (int i = 0; i < bounds_with_hash_schemas.size(); i++) {
+    for (size_t i = 0; i < bounds_with_hash_schemas.size(); ++i) {
       const auto& bound = bounds_with_hash_schemas[i];
       const auto& current_range_hash_schemas = bound.hash_schemas;
       // If current bound's HashBucketSchema is empty, implies use of default
@@ -1147,11 +1146,13 @@ bool PartitionSchema::operator==(const PartitionSchema& rhs) const {
 Status PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
                                       const vector<ColumnId>& column_ids,
                                       string* buf) {
-  for (int i = 0; i < column_ids.size(); i++) {
+  for (size_t i = 0; i < column_ids.size(); ++i) {
     ColumnId column_id = column_ids[i];
-    int32_t column_idx = row.schema()->find_column_by_id(column_id);
+    auto column_idx = row.schema()->find_column_by_id(column_id);
+    CHECK(column_idx != Schema::kColumnNotFound);
     const TypeInfo* type = row.schema()->column(column_idx).type_info();
-    GetKeyEncoder<string>(type).Encode(row.cell_ptr(column_idx), i + 1 == column_ids.size(), buf);
+    GetKeyEncoder<string>(type).Encode(
+        row.cell_ptr(column_idx), i + 1 == column_ids.size(), buf);
   }
   return Status::OK();
 }
@@ -1160,8 +1161,8 @@ Status PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
 Status PartitionSchema::EncodeColumns(const KuduPartialRow& row,
                                       const vector<ColumnId>& column_ids,
                                       string* buf) {
-  for (int i = 0; i < column_ids.size(); i++) {
-    int32_t column_idx = row.schema()->find_column_by_id(column_ids[i]);
+  for (size_t i = 0; i < column_ids.size(); ++i) {
+    auto column_idx = row.schema()->find_column_by_id(column_ids[i]);
     CHECK(column_idx != Schema::kColumnNotFound);
     const TypeInfo* type_info = row.schema()->column(column_idx).type_info();
     const KeyEncoder<string>& encoder = GetKeyEncoder<string>(type_info);
@@ -1172,7 +1173,8 @@ Status PartitionSchema::EncodeColumns(const KuduPartialRow& row,
       encoder.Encode(min_value, i + 1 == column_ids.size(), buf);
     } else {
       ContiguousRow cont_row(row.schema(), row.row_data_);
-      encoder.Encode(cont_row.cell_ptr(column_idx), i + 1 == column_ids.size(), buf);
+      encoder.Encode(
+          cont_row.cell_ptr(column_idx), i + 1 == column_ids.size(), buf);
     }
   }
   return Status::OK();
@@ -1578,7 +1580,7 @@ Status PartitionSchema::GetRangeSchemaColumnIndexes(const Schema& schema,
 int32_t PartitionSchema::TryGetSingleColumnHashPartitionIndex(const Schema& schema,
                                                               int32_t col_idx) const {
   const ColumnId column_id = schema.column_id(col_idx);
-  for (int i = 0; i < hash_partition_schemas().size(); ++i) {
+  for (size_t i = 0; i < hash_partition_schemas().size(); ++i) {
     auto hash_partition = hash_partition_schemas()[i];
     if (hash_partition.column_ids.size() == 1 && hash_partition.column_ids[0] == column_id) {
       return i;
