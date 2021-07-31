@@ -427,6 +427,10 @@ TEST_F(WebserverTest, TestDefaultPaths) {
   // Test varz -- check for one of the built-in gflags flags.
   ASSERT_OK(curl_.FetchURL(Substitute("$0/varz?raw=1", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), "--v=");
+
+  // Test version -- check for version information
+  ASSERT_OK(curl_.FetchURL(Substitute("$0/version", url_), &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "version_info");
 }
 
 TEST_F(WebserverTest, TestRedactFlagsDump) {

@@ -30,6 +30,8 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include "kudu/util/version_info.h"
+#include "kudu/util/version_info.pb.h"
 
 #ifdef TCMALLOC_ENABLED
 #include <boost/algorithm/string/replace.hpp>
@@ -208,6 +210,22 @@ static void StacksHandler(const Webserver::WebRequest& /*req*/,
       }
       *output << threads[0].stack.Symbolize() << "\n\n";
     });
+}
+
+// Registered to handle "/version"
+//
+// Prints out the current version info
+static void VersionInfoHandler(const Webserver::WebRequest& /*req*/,
+                               Webserver::PrerenderedWebResponse* resp) {
+  JsonWriter writer(&resp->output, JsonWriter::PRETTY);
+  writer.StartObject();
+  writer.String("version_info");
+
+  kudu::VersionInfoPB version_info;
+  VersionInfo::GetVersionInfoPB(&version_info);
+
+  writer.Protobuf(version_info);
+  writer.EndObject();
 }
 
 // Registered to handle "/memz", and prints out memory allocation statistics.
@@ -422,6 +440,9 @@ void AddDefaultPathHandlers(Webserver* webserver) {
   webserver->RegisterPrerenderedPathHandler("/stacks", "Stacks", StacksHandler,
                                             /*is_styled=*/false,
                                             /*is_on_nav_bar=*/true);
+  webserver->RegisterPrerenderedPathHandler("/version", "VersionInfo", VersionInfoHandler,
+                                            /*is_styled=*/false,
+                                            /*is_on_nav_bar*/false);
   AddPprofPathHandlers(webserver);
 }
 
