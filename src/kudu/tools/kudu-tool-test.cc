@@ -4065,7 +4065,7 @@ TEST_F(ToolTest, TableScanCustomBatchSize) {
   NO_FATALS(RunLoadgen(1,
                        {
                          "--num_threads=5",
-                         "--num_rows_per_thread=20000",
+                         "--num_rows_per_thread=2000",
                        },
                        kTableName));
   // Use 256 KiByte scan batch.
@@ -4074,11 +4074,11 @@ TEST_F(ToolTest, TableScanCustomBatchSize) {
     string err;
     vector<string> out_lines;
     const auto s = RunTool(
-        Substitute("table scan $0 $1 --scan_batch_size=262144",
+        Substitute("table scan $0 $1 --scan_batch_size=26214",
                    cluster_->master()->bound_rpc_addr().ToString(), kTableName),
         &out, &err, &out_lines);
     ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
-    ASSERT_STR_CONTAINS(out, "Total count 100000 ");
+    ASSERT_STR_CONTAINS(out, "Total count 10000 ");
   }
 }
 
