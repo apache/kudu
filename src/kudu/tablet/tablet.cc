@@ -602,13 +602,12 @@ Status Tablet::AcquireTxnLock(int64_t txn_id, WriteOpState* op_state) {
 }
 
 Status Tablet::CheckRowInTablet(const ConstContiguousRow& row) const {
-  if (PREDICT_FALSE(!metadata_->partition_schema().PartitionContainsRow(
-      metadata_->partition(), row))) {
+  const auto& ps = metadata_->partition_schema();
+  if (PREDICT_FALSE(!ps.PartitionContainsRow(metadata_->partition(), row))) {
     return Status::NotFound(
-        Substitute("Row not in tablet partition. Partition: '$0', row: '$1'.",
-                   metadata_->partition_schema().PartitionDebugString(metadata_->partition(),
-                                                                      *schema()),
-                   metadata_->partition_schema().PartitionKeyDebugString(row)));
+        Substitute("Row not in tablet partition. Partition: '$0' row: '$1'",
+                   ps.PartitionDebugString(metadata_->partition(), *schema()),
+                   ps.PartitionKeyDebugString(row)));
   }
   return Status::OK();
 }

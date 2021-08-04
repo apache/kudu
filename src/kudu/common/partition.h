@@ -16,7 +16,9 @@
 // under the License.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -56,7 +58,6 @@ template <typename Buffer> class KeyEncoder;
 // start and end primary keys, and predicates.
 class Partition {
  public:
-
   const std::vector<int32_t>& hash_buckets() const {
     return hash_buckets_;
   }
@@ -108,7 +109,8 @@ class Partition {
 // determine the tablet containing the key.
 //
 // The partition schema is made up of zero or more hash bucket components,
-// followed by a single range component.
+// followed by a single range component. In addition, the partition schema can
+// contain multiple ranges and their per-range custom bucket schemas.
 //
 // Each hash bucket component includes one or more columns from the primary key
 // column set, with the restriction that an individual primary key column may
@@ -409,9 +411,11 @@ class PartitionSchema {
 
   // Private templated helper for HashPartitionContainsRow.
   template<typename Row>
-  bool HashPartitionContainsRowImpl(const Partition& partition,
-                                    const Row& row,
-                                    int hash_idx) const;
+  bool HashPartitionContainsRowImpl(
+      const Partition& partition,
+      const Row& row,
+      const HashBucketSchemas& hash_bucket_schemas,
+      int hash_idx) const;
 
   // Private templated helper for RangePartitionContainsRow.
   template<typename Row>
@@ -491,9 +495,23 @@ class PartitionSchema {
   // maximum value. Unset columns will be incremented to increment(min_value).
   Status IncrementRangePartitionKey(KuduPartialRow* row, bool* increment) const;
 
+  // Find hash bucket schemas for the given encoded range key. Depending
+  // on the partitioning schema and the key, it might be either table-wide
+  // or a custom hash bucket schema for a particular range.
+  const HashBucketSchemas& GetHashBucketSchemasForRange(
+      const std::string& range_key) const;
+
   HashBucketSchemas hash_bucket_schemas_;
   RangeSchema range_schema_;
   RangesWithHashSchemas ranges_with_hash_schemas_;
+
+  // Encoded start of the range --> index of the hash bucket schemas for the
+  // range in the 'ranges_with_hash_schemas_' array container.
+  // NOTE: the contents of this map and 'ranges_with_hash_schemas_' are tightly
+  //       coupled -- it's necessary to clear/set this map along with
+  //       'ranges_with_hash_schemas_'.
+  typedef std::map<std::string, size_t> HashSchemasByEncodedLowerRange;
+  HashSchemasByEncodedLowerRange hash_schema_idx_by_encoded_range_start_;
 };
 
 } // namespace kudu

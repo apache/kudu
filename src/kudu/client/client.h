@@ -1267,7 +1267,7 @@ class KUDU_EXPORT KuduTableCreator {
     DISALLOW_COPY_AND_ASSIGN(KuduRangePartition);
   };
 
-  /// Add a range partition to the table.
+  /// Add a range partition with table-wide hash bucket schema.
   ///
   /// Multiple range partitions may be added, but they must not overlap. All
   /// range splits specified by @c add_range_partition_split must fall in a

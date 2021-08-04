@@ -300,7 +300,7 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
     // Check that row values are redacted from error messages when
     // --redact is set with 'log'.
 
-    EXPECT_EQ("<hash-decode-error>",
+    EXPECT_EQ("<range-decode-error>",
               partition_schema.PartitionKeyDebugString(string("\0\1\0\1", 4), schema));
     EXPECT_EQ("HASH (a, b): 0, HASH (c): 0, RANGE (a, b, c): "
               "<range-key-decode-error: Invalid argument: "

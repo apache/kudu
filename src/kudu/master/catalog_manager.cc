@@ -6308,9 +6308,8 @@ void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablet
 void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
                                   vector<scoped_refptr<TabletInfo>>* ret) const {
   shared_lock<rw_spinlock> l(lock_);
-  int max_returned_locations = req->max_returned_locations();
 
-  RawTabletInfoMap::const_iterator it, it_end;
+  RawTabletInfoMap::const_iterator it;
   if (req->has_partition_key_start()) {
     it = tablet_map_.upper_bound(req->partition_key_start());
     if (it != tablet_map_.begin()) {
@@ -6320,16 +6319,15 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
     it = tablet_map_.begin();
   }
 
-  if (req->has_partition_key_end()) {
-    it_end = tablet_map_.upper_bound(req->partition_key_end());
-  } else {
-    it_end = tablet_map_.end();
-  }
+  const RawTabletInfoMap::const_iterator it_end = req->has_partition_key_end()
+      ? tablet_map_.upper_bound(req->partition_key_end())
+      : tablet_map_.end();
 
-  int count = 0;
+  const size_t max_returned_locations = req->max_returned_locations();
+  size_t count = 0;
   for (; it != it_end && count < max_returned_locations; ++it) {
     ret->emplace_back(make_scoped_refptr(it->second));
-    count++;
+    ++count;
   }
 }
 

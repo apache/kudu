@@ -61,7 +61,7 @@ class KuduTable;
 ///   KuduInsert* t = table->NewInsert();
 ///   KUDU_CHECK_OK(t->mutable_row()->SetInt32("key", 1234));
 ///   KUDU_CHECK_OK(t->mutable_row()->SetStringCopy("foo", "bar"));
-///   session->Apply(t);
+///   KUDU_CHECK_OK(session->Apply(t));
 /// @endcode
 class KUDU_EXPORT KuduWriteOperation {
  public:

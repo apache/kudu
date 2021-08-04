@@ -96,7 +96,8 @@ struct KeyEncoderTraits<Type,
     dst->append(reinterpret_cast<const char*>(&key_unsigned), sizeof(key_unsigned));
   }
 
-  static void EncodeWithSeparators(const void* key, bool is_last, Buffer* dst) {
+  static void EncodeWithSeparators(
+      const void* key, bool /*is_last*/, Buffer* dst) {
     Encode(key, dst);
   }
 
@@ -105,7 +106,8 @@ struct KeyEncoderTraits<Type,
                                  Arena* /*arena*/,
                                  uint8_t* cell_ptr) {
     if (PREDICT_FALSE(encoded_key->size() < sizeof(cpp_type))) {
-      return Status::InvalidArgument("key too short", KUDU_REDACT(encoded_key->ToDebugString()));
+      return Status::InvalidArgument(
+          "key too short", KUDU_REDACT(encoded_key->ToDebugString()));
     }
 
     unsigned_cpp_type val;
@@ -343,10 +345,10 @@ class KeyEncoder {
  private:
   friend class EncoderResolver<Buffer>;
   template<typename EncoderTraitsClass>
-  explicit KeyEncoder(EncoderTraitsClass t)
-    : encode_func_(EncoderTraitsClass::Encode),
-      encode_with_separators_func_(EncoderTraitsClass::EncodeWithSeparators),
-      decode_key_portion_func_(EncoderTraitsClass::DecodeKeyPortion) {
+  explicit KeyEncoder(EncoderTraitsClass /*t*/)
+      : encode_func_(EncoderTraitsClass::Encode),
+        encode_with_separators_func_(EncoderTraitsClass::EncodeWithSeparators),
+        decode_key_portion_func_(EncoderTraitsClass::DecodeKeyPortion) {
   }
 
   typedef void (*EncodeFunc)(const void* key, Buffer* dst);
@@ -355,7 +357,7 @@ class KeyEncoder {
   const EncodeWithSeparatorsFunc encode_with_separators_func_;
 
   typedef Status (*DecodeKeyPortionFunc)(Slice* enc_key, bool is_last,
-                                       Arena* arena, uint8_t* cell_ptr);
+                                         Arena* arena, uint8_t* cell_ptr);
   const DecodeKeyPortionFunc decode_key_portion_func_;
 
  private:
@@ -365,7 +367,7 @@ class KeyEncoder {
 template <typename Buffer>
 extern const KeyEncoder<Buffer>& GetKeyEncoder(const TypeInfo* typeinfo);
 
-extern const bool IsTypeAllowableInKey(const TypeInfo* typeinfo);
+extern bool IsTypeAllowableInKey(const TypeInfo* typeinfo);
 
 } // namespace kudu
 

@@ -38,7 +38,7 @@ class EncoderResolver {
     return *encoders_[t];
   }
 
-  const bool HasKeyEncoderForType(DataType t) {
+  bool HasKeyEncoderForType(DataType t) {
     return t < encoders_.size() && encoders_[t];
   }
 
@@ -78,7 +78,7 @@ const KeyEncoder<Buffer>& GetKeyEncoder(const TypeInfo* typeinfo) {
 }
 
 // Returns true if the type is allowed in keys.
-const bool IsTypeAllowableInKey(const TypeInfo* typeinfo) {
+bool IsTypeAllowableInKey(const TypeInfo* typeinfo) {
   return Singleton<EncoderResolver<faststring>>::get()->HasKeyEncoderForType(
       typeinfo->physical_type());
 }

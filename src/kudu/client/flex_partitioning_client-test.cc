@@ -27,15 +27,22 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/tablet/tablet_replica.h"
+#include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -44,10 +51,12 @@
 DECLARE_bool(enable_per_range_hash_schemas);
 DECLARE_int32(heartbeat_interval_ms);
 
+using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using kudu::master::CatalogManager;
-using kudu::client::sp::shared_ptr;
+using kudu::master::TabletInfo;
+using kudu::tablet::TabletReplica;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -114,11 +123,24 @@ class FlexPartitioningTest : public KuduTest {
     return session->Apply(insert.release());
   }
 
+  static Status FetchSessionErrors(KuduSession* session,
+                                   vector<KuduError*>* errors = nullptr) {
+    if (errors) {
+      bool overflowed;
+      session->GetPendingErrors(errors, &overflowed);
+      if (PREDICT_FALSE(overflowed)) {
+        return Status::RuntimeError("session error buffer overflowed");
+      }
+    }
+    return Status::OK();
+  }
+
   Status InsertTestRows(
       const char* table_name,
       int32_t key_beg,
       int32_t key_end,
-      KuduSession::FlushMode flush_mode = KuduSession::AUTO_FLUSH_SYNC) {
+      KuduSession::FlushMode flush_mode = KuduSession::AUTO_FLUSH_SYNC,
+      vector<KuduError*>* errors = nullptr) {
     CHECK_LE(key_beg, key_end);
     shared_ptr<KuduTable> table;
     RETURN_NOT_OK(client_->OpenTable(table_name, &table));
@@ -126,10 +148,23 @@ class FlexPartitioningTest : public KuduTest {
     RETURN_NOT_OK(session->SetFlushMode(flush_mode));
     session->SetTimeoutMillis(60000);
     for (int32_t key_val = key_beg; key_val < key_end; ++key_val) {
-      RETURN_NOT_OK(ApplyInsert(
-          session.get(), table, key_val, rand(), std::to_string(rand())));
+      if (const auto s = ApplyInsert(session.get(),
+                                     table,
+                                     key_val,
+                                     rand(),
+                                     std::to_string(rand()));
+          !s.ok()) {
+        RETURN_NOT_OK(FetchSessionErrors(session.get(), errors));
+        return s;
+      }
     }
-    return session->Flush();
+
+    const auto s = session->Flush();
+    if (!s.ok()) {
+      RETURN_NOT_OK(FetchSessionErrors(session.get(), errors));
+    }
+
+    return s;
   }
 
   Status CreateTable(const char* table_name, RangePartitions partitions) {
@@ -170,6 +205,54 @@ class FlexPartitioningTest : public KuduTest {
     ASSERT_EQ(expected_count, table_info->num_tablets());
   }
 
+  void CheckTableRowsNum(const char* table_name,
+                         int64_t expected_count) {
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
+    ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_YOUR_WRITES));
+    ASSERT_OK(scanner.Open());
+
+    int64_t count = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      ASSERT_OK(scanner.NextBatch(&batch));
+      count += batch.NumRows();
+    }
+    ASSERT_EQ(expected_count, count);
+  }
+
+  void CheckLiveRowCount(const char* table_name,
+                         int64_t expected_count) {
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+
+    vector<scoped_refptr<TabletInfo>> all_tablets_info;
+    {
+      auto* cm = cluster_->mini_master(0)->master()->catalog_manager();
+      CatalogManager::ScopedLeaderSharedLock l(cm);
+      scoped_refptr<master::TableInfo> table_info;
+      ASSERT_OK(cm->GetTableInfo(table->id(), &table_info));
+      table_info->GetAllTablets(&all_tablets_info);
+    }
+    vector<scoped_refptr<TabletReplica>> replicas;
+    for (const auto& tablet_info : all_tablets_info) {
+      for (auto i = 0; i < cluster_->num_tablet_servers(); ++i) {
+        scoped_refptr<TabletReplica> r;
+        ASSERT_TRUE(cluster_->mini_tablet_server(i)->server()->
+                        tablet_manager()->LookupTablet(tablet_info->id(), &r));
+        replicas.emplace_back(std::move(r));
+      }
+    }
+
+    int64_t count = 0;
+    for (const auto& r : replicas) {
+      count += r->CountLiveRowsNoFail();
+    }
+    ASSERT_EQ(expected_count, count);
+  }
+
   KuduSchema schema_;
   unique_ptr<InternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
@@ -187,18 +270,50 @@ class FlexPartitioningCreateTableTest : public FlexPartitioningTest {};
 // TODO(aserbin): add verification based on PartitionSchema provided by
 //                KuduTable::partition_schema() once PartitionPruner
 //                recognized custom hash bucket schema for ranges
-// TODO(aserbin): add InsertTestRows() when proper key encoding is implemented
 TEST_F(FlexPartitioningCreateTableTest, CustomHashBuckets) {
   // One-level hash bucket structure: { 3, "key" }.
   {
     constexpr const char* const kTableName = "3@key";
     RangePartitions partitions;
-    partitions.emplace_back(CreateRangePartition());
+    partitions.emplace_back(CreateRangePartition(0, 100));
     auto& p = partitions.back();
     ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 0));
     ASSERT_OK(CreateTable(kTableName, std::move(partitions)));
     NO_FATALS(CheckTabletCount(kTableName, 3));
+    ASSERT_OK(InsertTestRows(kTableName, 0, 100));
+    NO_FATALS(CheckTableRowsNum(kTableName, 100));
   }
+}
+
+TEST_F(FlexPartitioningCreateTableTest, TableWideHashBuckets) {
+  // Create a table with the following partitions:
+  //
+  //            hash bucket
+  //   key    0           1
+  //         -------------------------
+  //  <111    x:{key}     x:{key}
+  constexpr const char* const kTableName = "TableWideHashBuckets";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(1)
+      .add_hash_partitions({ kKeyColumn }, 2)
+      .set_range_partition_columns({ kKeyColumn });
+
+  // Add a range partition with the table-wide hash partitioning rules.
+  {
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    ASSERT_OK(lower->SetInt32(kKeyColumn, INT32_MIN));
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, 111));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+
+  ASSERT_OK(table_creator->Create());
+  NO_FATALS(CheckTabletCount(kTableName, 2));
+  ASSERT_OK(InsertTestRows(kTableName, -111, 111, KuduSession::MANUAL_FLUSH));
+  NO_FATALS(CheckTableRowsNum(kTableName, 222));
 }
 
 // Create a table with mixed set of range partitions, using both table-wide and
@@ -262,8 +377,51 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashBuckets) {
 
   ASSERT_OK(table_creator->Create());
   NO_FATALS(CheckTabletCount(kTableName, 11));
-  // Make sure it's possible to insert rows into the table.
-  //ASSERT_OK(InsertTestRows(kTableName, 111, 444));
+
+  // Make sure it's possible to insert rows into the table for all the existing
+  // the paritions: first check the range of table-wide schema, then check
+  // the ranges with custom hash schemas.
+  // TODO(aserbin): uncomment CheckTableRowsNum() once partition pruning works
+  ASSERT_OK(InsertTestRows(kTableName, -111, 111));
+  NO_FATALS(CheckLiveRowCount(kTableName, 222));
+  //NO_FATALS(CheckTableRowsNum(kTableName, 222));
+  ASSERT_OK(InsertTestRows(kTableName, 111, 444));
+  NO_FATALS(CheckLiveRowCount(kTableName, 555));
+  //NO_FATALS(CheckTableRowsNum(kTableName, 555));
+
+  // Meanwhile, inserting into non-covered ranges should result in a proper
+  // error status return to the client attempting such an operation.
+  {
+    vector<KuduError*> errors;
+    ElementDeleter drop(&errors);
+    auto s = InsertTestRows(
+        kTableName, 444, 445, KuduSession::AUTO_FLUSH_SYNC, &errors);
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
+    ASSERT_EQ(1, errors.size());
+    const auto& err = errors[0]->status();
+    EXPECT_TRUE(err.IsNotFound()) << err.ToString();
+    ASSERT_STR_CONTAINS(err.ToString(),
+                        "No tablet covering the requested range partition");
+  }
+  // Try same as in the scope above, but do so for multiple rows to make sure
+  // custom hash bucketing isn't inducing any unexpected side-effects.
+  {
+    constexpr int kNumRows = 10;
+    vector<KuduError*> errors;
+    ElementDeleter drop(&errors);
+    auto s = InsertTestRows(
+        kTableName, 445, 445 + kNumRows, KuduSession::MANUAL_FLUSH, &errors);
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
+    ASSERT_EQ(kNumRows, errors.size());
+    for (const auto& e : errors) {
+      const auto& err = e->status();
+      EXPECT_TRUE(err.IsNotFound()) << err.ToString();
+      ASSERT_STR_CONTAINS(err.ToString(),
+                          "No tablet covering the requested range partition");
+    }
+  }
 }
 
 // Negative tests scenarios to cover non-OK status codes for various operations

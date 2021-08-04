@@ -1013,12 +1013,17 @@ Status KuduTableCreator::Create() {
       // Populate corresponding element in 'range_hash_schemas' if there is at
       // least one range with custom hash partitioning schema.
       auto* schemas_pb = partition_schema->add_range_hash_schemas();
-      for (const auto& schema : range->hash_bucket_schemas_) {
-        auto* pb = schemas_pb->add_hash_schemas();
-        pb->set_seed(schema.seed);
-        pb->set_num_buckets(schema.num_buckets);
-        for (const auto& column_name : schema.column_names) {
-          pb->add_columns()->set_name(column_name);
+      if (range->hash_bucket_schemas_.empty()) {
+        schemas_pb->mutable_hash_schemas()->CopyFrom(
+            data_->partition_schema_.hash_bucket_schemas());
+      } else {
+        for (const auto& schema : range->hash_bucket_schemas_) {
+          auto* pb = schemas_pb->add_hash_schemas();
+          pb->set_seed(schema.seed);
+          pb->set_num_buckets(schema.num_buckets);
+          for (const auto& column_name : schema.column_names) {
+            pb->add_columns()->set_name(column_name);
+          }
         }
       }
     }
