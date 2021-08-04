@@ -336,16 +336,15 @@ Status TxnSystemClient::CoordinateTransactionAsync(CoordinatorOpPB coordinate_tx
           /*tablet=*/nullptr
       }));
 
-  string partition_key;
   KuduPartialRow row(&TxnStatusTablet::GetSchema());
   DCHECK(ctx->coordinate_txn_op.has_txn_id());
-  RETURN_NOT_OK(row.SetInt64(TxnStatusTablet::kTxnIdColName, ctx->coordinate_txn_op.txn_id()));
-  RETURN_NOT_OK(ctx->table->partition_schema().EncodeKey(row, &partition_key));
-
+  RETURN_NOT_OK(row.SetInt64(TxnStatusTablet::kTxnIdColName,
+                             ctx->coordinate_txn_op.txn_id()));
   TxnStatusTabletContext* ctx_raw = ctx.release();
+  const auto* table = ctx_raw->table.get();
   client_->data_->meta_cache_->LookupTabletByKey(
-      ctx_raw->table.get(),
-      std::move(partition_key),
+      table,
+      table->partition_schema().EncodeKey(row),
       deadline,
       MetaCache::LookupType::kPoint,
       &ctx_raw->tablet,

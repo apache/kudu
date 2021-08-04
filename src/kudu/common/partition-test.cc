@@ -215,10 +215,9 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
             partition_schema.DebugString(schema));
 
   {
-    string key;
     KuduPartialRow row(&schema);
     ASSERT_OK(row.SetInt32("a", 0));
-    ASSERT_OK(partition_schema.EncodeKey(row, &key));
+    string key = partition_schema.EncodeKey(row);
 
     EXPECT_EQ(string("\0\0\0\0"   // hash(0, "")
                      "\0\0\0\x14" // hash("")
@@ -231,10 +230,9 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   }
 
   {
-    string key;
     KuduPartialRow row(&schema);
     ASSERT_OK(row.SetInt32("a", 1));
-    ASSERT_OK(partition_schema.EncodeKey(row, &key));
+    string key = partition_schema.EncodeKey(row);
 
     EXPECT_EQ(string("\0\0\0\x5"    // hash(1, "")
                      "\0\0\0\x14"   // hash("")
@@ -248,12 +246,11 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   }
 
   {
-    string key;
     KuduPartialRow row(&schema);
     ASSERT_OK(row.SetInt32("a", 0));
     ASSERT_OK(row.SetStringCopy("b", "b"));
     ASSERT_OK(row.SetStringCopy("c", "c"));
-    ASSERT_OK(partition_schema.EncodeKey(row, &key));
+    string key = partition_schema.EncodeKey(row);
 
     EXPECT_EQ(string("\0\0\0\x1A" // hash(0, "b")
                      "\0\0\0\x1D" // hash("c")
@@ -268,12 +265,11 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   }
 
   {
-    string key;
     KuduPartialRow row(&schema);
     ASSERT_OK(row.SetInt32("a", 1));
     ASSERT_OK(row.SetStringCopy("b", "b"));
     ASSERT_OK(row.SetStringCopy("c", "c"));
-    ASSERT_OK(partition_schema.EncodeKey(row, &key));
+    string key = partition_schema.EncodeKey(row);
 
     EXPECT_EQ(string("\0\0\0\x0"   // hash(1, "b")
                      "\0\0\0\x1D"  // hash("c")
@@ -290,12 +286,11 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   {
     // Check that row values are redacted when the log redact flag is set.
     ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
-    string key;
     KuduPartialRow row(&schema);
     ASSERT_OK(row.SetInt32("a", 1));
     ASSERT_OK(row.SetStringCopy("b", "b"));
     ASSERT_OK(row.SetStringCopy("c", "c"));
-    ASSERT_OK(partition_schema.EncodeKey(row, &key));
+    string key = partition_schema.EncodeKey(row);
 
     string expected =
       R"(HASH (a, b): 0, HASH (c): 29, RANGE (a, b, c): (<redacted>, <redacted>, <redacted>))";
@@ -525,14 +520,12 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   ASSERT_OK(split_a.SetStringCopy("a", "a1"));
   ASSERT_OK(split_a.SetStringCopy("b", "b1"));
   ASSERT_OK(split_a.SetStringCopy("c", "c1"));
-  string partition_key_a;
-  ASSERT_OK(partition_schema.EncodeKey(split_a, &partition_key_a));
+  string partition_key_a = partition_schema.EncodeKey(split_a);
 
   KuduPartialRow split_b(&schema);
   ASSERT_OK(split_b.SetStringCopy("a", "a2"));
   ASSERT_OK(split_b.SetStringCopy("b", "b2"));
-  string partition_key_b;
-  ASSERT_OK(partition_schema.EncodeKey(split_b, &partition_key_b));
+  string partition_key_b = partition_schema.EncodeKey(split_b);
 
   // Split keys need not be passed in sorted order.
   vector<KuduPartialRow> split_rows = { split_b, split_a };

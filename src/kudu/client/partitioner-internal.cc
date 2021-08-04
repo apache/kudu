@@ -76,8 +76,7 @@ Status KuduPartitionerBuilder::Data::Build(KuduPartitioner** partitioner) {
 
 Status KuduPartitioner::Data::PartitionRow(
     const KuduPartialRow& row, int* partition) {
-  tmp_buf_.clear();
-  RETURN_NOT_OK(table_->data_->partition_schema_.EncodeKey(row, &tmp_buf_));
+  tmp_buf_ = table_->data_->partition_schema_.EncodeKey(row);
   *partition = FindFloorOrDie(partitions_by_start_key_, tmp_buf_);
   return Status::OK();
 }

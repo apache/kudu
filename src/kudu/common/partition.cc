@@ -306,27 +306,30 @@ Status PartitionSchema::ToPB(const Schema& schema, PartitionSchemaPB* pb) const 
 }
 
 template<typename Row>
-Status PartitionSchema::EncodeKeyImpl(const Row& row, string* buf) const {
+void PartitionSchema::EncodeKeyImpl(const Row& row, string* buf) const {
   // TODO(aserbin): update the implementation and remove the DCHECK() below
   DCHECK(ranges_with_hash_schemas_.empty())
       << "ranges with custom hash schemas are not yet supported";
   const KeyEncoder<string>& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
 
   for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
-    int32_t bucket;
-    RETURN_NOT_OK(BucketForRow(row, hash_bucket_schema, &bucket));
+    const int32_t bucket = BucketForRow(row, hash_bucket_schema);
     hash_encoder.Encode(&bucket, buf);
   }
 
   return EncodeColumns(row, range_schema_.column_ids, buf);
 }
 
-Status PartitionSchema::EncodeKey(const KuduPartialRow& row, string* buf) const {
-  return EncodeKeyImpl(row, buf);
+string PartitionSchema::EncodeKey(const KuduPartialRow& row) const {
+  string encoded_key;
+  EncodeKeyImpl(row, &encoded_key);
+  return encoded_key;
 }
 
-Status PartitionSchema::EncodeKey(const ConstContiguousRow& row, string* buf) const {
-  return EncodeKeyImpl(row, buf);
+string PartitionSchema::EncodeKey(const ConstContiguousRow& row) const {
+  string encoded_key;
+  EncodeKeyImpl(row, &encoded_key);
+  return encoded_key;
 }
 
 Status PartitionSchema::EncodeRangeKey(const KuduPartialRow& row,
@@ -351,7 +354,8 @@ Status PartitionSchema::EncodeRangeKey(const KuduPartialRow& row,
   if (contains_no_columns) {
     return Status::OK();
   }
-  return EncodeColumns(row, range_schema_.column_ids, key);
+  EncodeColumns(row, range_schema_.column_ids, key);
+  return Status::OK();
 }
 
 Status PartitionSchema::EncodeRangeSplits(const vector<KuduPartialRow>& split_rows,
@@ -656,89 +660,75 @@ Status PartitionSchema::CreatePartitions(
 }
 
 template<typename Row>
-Status PartitionSchema::PartitionContainsRowImpl(const Partition& partition,
-                                                 const Row& row,
-                                                 bool* contains) const {
+bool PartitionSchema::PartitionContainsRowImpl(const Partition& partition,
+                                               const Row& row) const {
   CHECK_EQ(partition.hash_buckets().size(), hash_bucket_schemas_.size());
   for (int i = 0; i < hash_bucket_schemas_.size(); i++) {
-    RETURN_NOT_OK(HashPartitionContainsRowImpl(partition, row, i, contains));
-    if (!*contains) {
-      return Status::OK();
+    if (!HashPartitionContainsRowImpl(partition, row, i)) {
+      return false;
     }
   }
 
-  RETURN_NOT_OK(RangePartitionContainsRowImpl(partition, row, contains));
-
-  return Status::OK();
+  return RangePartitionContainsRowImpl(partition, row);
 }
 
 template<typename Row>
-Status PartitionSchema::HashPartitionContainsRowImpl(const Partition& partition,
-                                                     const Row& row,
-                                                     int hash_idx,
-                                                     bool* contains) const {
+bool PartitionSchema::HashPartitionContainsRowImpl(const Partition& partition,
+                                                   const Row& row,
+                                                   int hash_idx) const {
   DCHECK_EQ(partition.hash_buckets().size(), hash_bucket_schemas_.size());
   const HashBucketSchema& hash_bucket_schema = hash_bucket_schemas_[hash_idx];
-  int32_t bucket = -1;
-  RETURN_NOT_OK(BucketForRow(row, hash_bucket_schema, &bucket));
-  *contains = (partition.hash_buckets()[hash_idx] == bucket);
-  return Status::OK();
+  const int32_t bucket = BucketForRow(row, hash_bucket_schema);
+  return partition.hash_buckets()[hash_idx] == bucket;
 }
 
 template<typename Row>
-Status PartitionSchema::RangePartitionContainsRowImpl(const Partition& partition,
-                                                      const Row& row,
-                                                      bool* contains) const {
-  string range_partition_key;
+bool PartitionSchema::RangePartitionContainsRowImpl(
+    const Partition& partition, const Row& row) const {
   // If range partition is not used, column_ids would be empty and
   // EncodedColumn() would return immediately.
-  RETURN_NOT_OK(EncodeColumns(row, range_schema_.column_ids, &range_partition_key));
+  string range_partition_key;
+  EncodeColumns(row, range_schema_.column_ids, &range_partition_key);
 
   // If all of the hash buckets match, then the row is contained in the
   // partition if the row is gte the lower bound; and if there is no upper
   // bound, or the row is lt the upper bound.
   const auto key = Slice(range_partition_key);
-  *contains = (partition.range_key_start() <= key) &&
+  return
+      (partition.range_key_start() <= key) &&
       (partition.range_key_end().empty() || key < partition.range_key_end());
-  return Status::OK();
 }
 
-Status PartitionSchema::PartitionContainsRow(const Partition& partition,
-                                             const KuduPartialRow& row,
-                                             bool* contains) const {
-  return PartitionContainsRowImpl(partition, row, contains);
+bool PartitionSchema::PartitionContainsRow(const Partition& partition,
+                                           const KuduPartialRow& row) const {
+  return PartitionContainsRowImpl(partition, row);
 }
 
-Status PartitionSchema::PartitionContainsRow(const Partition& partition,
-                                             const ConstContiguousRow& row,
-                                             bool* contains) const {
-  return PartitionContainsRowImpl(partition, row, contains);
+bool PartitionSchema::PartitionContainsRow(const Partition& partition,
+                                           const ConstContiguousRow& row) const {
+  return PartitionContainsRowImpl(partition, row);
 }
 
-Status PartitionSchema::HashPartitionContainsRow(const Partition& partition,
-                                                 const KuduPartialRow& row,
-                                                 int hash_idx,
-                                                 bool* contains) const {
-  return HashPartitionContainsRowImpl(partition, row, hash_idx, contains);
+bool PartitionSchema::HashPartitionContainsRow(const Partition& partition,
+                                               const KuduPartialRow& row,
+                                               int hash_idx) const {
+  return HashPartitionContainsRowImpl(partition, row, hash_idx);
 }
 
-Status PartitionSchema::HashPartitionContainsRow(const Partition& partition,
-                                                 const ConstContiguousRow& row,
-                                                 int hash_idx,
-                                                 bool* contains) const {
-  return HashPartitionContainsRowImpl(partition, row, hash_idx, contains);
+bool PartitionSchema::HashPartitionContainsRow(const Partition& partition,
+                                               const ConstContiguousRow& row,
+                                               int hash_idx) const {
+  return HashPartitionContainsRowImpl(partition, row, hash_idx);
 }
 
-Status PartitionSchema::RangePartitionContainsRow(const Partition& partition,
-                                                  const KuduPartialRow& row,
-                                                  bool* contains) const {
-  return RangePartitionContainsRowImpl(partition, row, contains);
+bool PartitionSchema::RangePartitionContainsRow(
+    const Partition& partition, const KuduPartialRow& row) const {
+  return RangePartitionContainsRowImpl(partition, row);
 }
 
-Status PartitionSchema::RangePartitionContainsRow(const Partition& partition,
-                                                  const ConstContiguousRow& row,
-                                                  bool* contains) const {
-  return RangePartitionContainsRowImpl(partition, row, contains);
+bool PartitionSchema::RangePartitionContainsRow(
+    const Partition& partition, const ConstContiguousRow& row) const {
+  return RangePartitionContainsRowImpl(partition, row);
 }
 
 Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
@@ -873,18 +863,13 @@ string PartitionSchema::PartitionDebugString(const Partition& partition,
 template<typename Row>
 string PartitionSchema::PartitionKeyDebugStringImpl(const Row& row) const {
   vector<string> components;
-
+  components.reserve(hash_bucket_schemas_.size() +
+                     range_schema_.column_ids.size());
   for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
-    int32_t bucket;
-    Status s = BucketForRow(row, hash_bucket_schema, &bucket);
-    if (s.ok()) {
-      components.emplace_back(
-          Substitute("HASH ($0): $1",
-                     ColumnIdsToColumnNames(*row.schema(), hash_bucket_schema.column_ids),
-                     bucket));
-    } else {
-      components.emplace_back(Substitute("<hash-error: $0>", s.ToString()));
-    }
+    components.emplace_back(Substitute(
+        "HASH ($0): $1",
+        ColumnIdsToColumnNames(*row.schema(), hash_bucket_schema.column_ids),
+        BucketForRow(row, hash_bucket_schema)));
   }
 
   if (!range_schema_.column_ids.empty()) {
@@ -1143,9 +1128,9 @@ bool PartitionSchema::operator==(const PartitionSchema& rhs) const {
 }
 
 // Encodes the specified primary key columns of the supplied row into the buffer.
-Status PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
-                                      const vector<ColumnId>& column_ids,
-                                      string* buf) {
+void PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
+                                    const vector<ColumnId>& column_ids,
+                                    string* buf) {
   for (size_t i = 0; i < column_ids.size(); ++i) {
     ColumnId column_id = column_ids[i];
     auto column_idx = row.schema()->find_column_by_id(column_id);
@@ -1154,13 +1139,12 @@ Status PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
     GetKeyEncoder<string>(type).Encode(
         row.cell_ptr(column_idx), i + 1 == column_ids.size(), buf);
   }
-  return Status::OK();
 }
 
 // Encodes the specified primary key columns of the supplied row into the buffer.
-Status PartitionSchema::EncodeColumns(const KuduPartialRow& row,
-                                      const vector<ColumnId>& column_ids,
-                                      string* buf) {
+void PartitionSchema::EncodeColumns(const KuduPartialRow& row,
+                                    const vector<ColumnId>& column_ids,
+                                    string* buf) {
   for (size_t i = 0; i < column_ids.size(); ++i) {
     auto column_idx = row.schema()->find_column_by_id(column_ids[i]);
     CHECK(column_idx != Schema::kColumnNotFound);
@@ -1177,7 +1161,6 @@ Status PartitionSchema::EncodeColumns(const KuduPartialRow& row,
           cont_row.cell_ptr(column_idx), i + 1 == column_ids.size(), buf);
     }
   }
-  return Status::OK();
 }
 
 int32_t PartitionSchema::BucketForEncodedColumns(const string& encoded_hash_columns,
@@ -1244,14 +1227,13 @@ Status PartitionSchema::ValidateHashBucketSchemas(const Schema& schema,
 }
 
 template<typename Row>
-Status PartitionSchema::BucketForRow(const Row& row,
-                                     const HashBucketSchema& hash_bucket_schema,
-                                     int32_t* bucket) {
+int32_t PartitionSchema::BucketForRow(
+    const Row& row, const HashBucketSchema& hash_bucket_schema) {
   string buf;
-  RETURN_NOT_OK(EncodeColumns(row, hash_bucket_schema.column_ids, &buf));
-  uint64_t hash = HashUtil::MurmurHash2_64(buf.data(), buf.length(), hash_bucket_schema.seed);
-  *bucket = hash % static_cast<uint64_t>(hash_bucket_schema.num_buckets);
-  return Status::OK();
+  EncodeColumns(row, hash_bucket_schema.column_ids, &buf);
+  uint64_t hash = HashUtil::MurmurHash2_64(
+      buf.data(), buf.length(), hash_bucket_schema.seed);
+  return hash % static_cast<uint64_t>(hash_bucket_schema.num_buckets);
 }
 
 //------------------------------------------------------------
@@ -1260,14 +1242,12 @@ Status PartitionSchema::BucketForRow(const Row& row,
 //------------------------------------------------------------
 
 template
-Status PartitionSchema::BucketForRow(const KuduPartialRow& row,
-                                     const HashBucketSchema& hash_bucket_schema,
-                                     int32_t* bucket);
+int32_t PartitionSchema::BucketForRow(const KuduPartialRow& row,
+                                      const HashBucketSchema& hash_bucket_schema);
 
 template
-Status PartitionSchema::BucketForRow(const ConstContiguousRow& row,
-                                     const HashBucketSchema& hash_bucket_schema,
-                                     int32_t* bucket);
+int32_t PartitionSchema::BucketForRow(const ConstContiguousRow& row,
+                                      const HashBucketSchema& hash_bucket_schema);
 
 void PartitionSchema::Clear() {
   hash_bucket_schemas_.clear();

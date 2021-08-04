@@ -182,8 +182,8 @@ class PartitionSchema {
 
   // Appends the row's encoded partition key into the provided buffer.
   // On failure, the buffer may have data partially appended.
-  Status EncodeKey(const KuduPartialRow& row, std::string* buf) const WARN_UNUSED_RESULT;
-  Status EncodeKey(const ConstContiguousRow& row, std::string* buf) const WARN_UNUSED_RESULT;
+  std::string EncodeKey(const KuduPartialRow& row) const;
+  std::string EncodeKey(const ConstContiguousRow& row) const;
 
   // Creates the set of table partitions for a partition schema and collection
   // of split rows and split bounds.
@@ -206,30 +206,24 @@ class PartitionSchema {
       std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 
   // Tests if the partition contains the row.
-  Status PartitionContainsRow(const Partition& partition,
-                              const KuduPartialRow& row,
-                              bool* contains) const WARN_UNUSED_RESULT;
-  Status PartitionContainsRow(const Partition& partition,
-                              const ConstContiguousRow& row,
-                              bool* contains) const WARN_UNUSED_RESULT;
+  bool PartitionContainsRow(const Partition& partition,
+                            const KuduPartialRow& row) const;
+  bool PartitionContainsRow(const Partition& partition,
+                            const ConstContiguousRow& row) const;
 
   // Tests if the hash partition contains the row with given hash_idx.
-  Status HashPartitionContainsRow(const Partition& partition,
-                                  const KuduPartialRow& row,
-                                  int hash_idx,
-                                  bool* contains) const WARN_UNUSED_RESULT;
-  Status HashPartitionContainsRow(const Partition& partition,
-                                  const ConstContiguousRow& row,
-                                  int hash_idx,
-                                  bool* contains) const WARN_UNUSED_RESULT;
+  bool HashPartitionContainsRow(const Partition& partition,
+                                const KuduPartialRow& row,
+                                int hash_idx) const;
+  bool HashPartitionContainsRow(const Partition& partition,
+                                const ConstContiguousRow& row,
+                                int hash_idx) const;
 
   // Tests if the range partition contains the row.
-  Status RangePartitionContainsRow(const Partition& partition,
-                                   const KuduPartialRow& row,
-                                   bool* contains) const WARN_UNUSED_RESULT;
-  Status RangePartitionContainsRow(const Partition& partition,
-                                   const ConstContiguousRow& row,
-                                   bool* contains) const WARN_UNUSED_RESULT;
+  bool RangePartitionContainsRow(const Partition& partition,
+                                 const KuduPartialRow& row) const;
+  bool RangePartitionContainsRow(const Partition& partition,
+                                 const ConstContiguousRow& row) const;
 
   // Returns a text description of the partition suitable for debug printing.
   //
@@ -336,15 +330,15 @@ class PartitionSchema {
 
   // Encodes the specified columns of a row into lexicographic sort-order
   // preserving format.
-  static Status EncodeColumns(const KuduPartialRow& row,
-                              const std::vector<ColumnId>& column_ids,
-                              std::string* buf);
+  static void EncodeColumns(const KuduPartialRow& row,
+                            const std::vector<ColumnId>& column_ids,
+                            std::string* buf);
 
   // Encodes the specified columns of a row into lexicographic sort-order
   // preserving format.
-  static Status EncodeColumns(const ConstContiguousRow& row,
-                              const std::vector<ColumnId>& column_ids,
-                              std::string* buf);
+  static void EncodeColumns(const ConstContiguousRow& row,
+                            const std::vector<ColumnId>& column_ids,
+                            std::string* buf);
 
   // Returns the hash bucket of the encoded hash column. The encoded columns must match the
   // columns of the hash bucket schema.
@@ -362,9 +356,8 @@ class PartitionSchema {
 
   // Assigns the row to a hash bucket according to the hash schema.
   template<typename Row>
-  static Status BucketForRow(const Row& row,
-                             const HashBucketSchema& hash_bucket_schema,
-                             int32_t* bucket);
+  static int32_t BucketForRow(const Row& row,
+                              const HashBucketSchema& hash_bucket_schema);
 
   // PartitionKeyDebugString implementation for row types.
   template<typename Row>
@@ -372,26 +365,23 @@ class PartitionSchema {
 
   // Private templated helper for PartitionContainsRow.
   template<typename Row>
-  Status PartitionContainsRowImpl(const Partition& partition,
-                                  const Row& row,
-                                  bool* contains) const;
+  bool PartitionContainsRowImpl(const Partition& partition,
+                                const Row& row) const;
 
   // Private templated helper for HashPartitionContainsRow.
   template<typename Row>
-  Status HashPartitionContainsRowImpl(const Partition& partition,
-                                      const Row& row,
-                                      int hash_idx,
-                                      bool* contains) const;
+  bool HashPartitionContainsRowImpl(const Partition& partition,
+                                    const Row& row,
+                                    int hash_idx) const;
 
   // Private templated helper for RangePartitionContainsRow.
   template<typename Row>
-  Status RangePartitionContainsRowImpl(const Partition& partition,
-                                       const Row& row,
-                                       bool* contains) const;
+  bool RangePartitionContainsRowImpl(const Partition& partition,
+                                     const Row& row) const;
 
   // Private templated helper for EncodeKey.
   template<typename Row>
-  Status EncodeKeyImpl(const Row& row, std::string* buf) const;
+  void EncodeKeyImpl(const Row& row, std::string* buf) const;
 
   // Returns true if all of the columns in the range partition key are unset in
   // the row.

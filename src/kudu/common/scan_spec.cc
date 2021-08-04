@@ -198,20 +198,15 @@ void ScanSpec::PruneInlistValuesIfPossible(const Schema& schema,
         if (!s.ok()) return false;
 
          // If value is not in given hash partition, remove this value from predicate values.
-        if (hash_idx != -1) {
-          bool is_value_in;
-          s = partition_schema.HashPartitionContainsRow(partition, partial_row,
-                                                        hash_idx, &is_value_in);
-          if (!s.ok()) return false;
-          if (!is_value_in) return true;
+        if (hash_idx != -1 && !partition_schema.HashPartitionContainsRow(
+              partition, partial_row, hash_idx)) {
+          return true;
         }
 
         // If value is not in given range partition, remove this value from predicate values.
-        if (is_col_single_range_schema) {
-          bool is_value_in;
-          s = partition_schema.RangePartitionContainsRow(partition, partial_row, &is_value_in);
-          if (!s.ok()) return false;
-          if (!is_value_in) return true;
+        if (is_col_single_range_schema &&
+            !partition_schema.RangePartitionContainsRow(partition, partial_row)) {
+          return true;
         }
         return false;
       }), predicate_values->end());

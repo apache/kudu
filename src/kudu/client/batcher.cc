@@ -319,9 +319,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     const Partition& partition = op->tablet->partition();
     const PartitionSchema& partition_schema = table()->partition_schema();
     const KuduPartialRow& row = op->write_op->row();
-    bool partition_contains_row;
-    CHECK(partition_schema.PartitionContainsRow(partition, row, &partition_contains_row).ok());
-    CHECK(partition_contains_row)
+    CHECK(partition_schema.PartitionContainsRow(partition, row))
         << "Row " << partition_schema.PartitionKeyDebugString(row)
         << " not in partition " << partition_schema.PartitionDebugString(partition, *schema);
 #endif
@@ -736,8 +734,6 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.
   InFlightOp* op = arena_.NewObject<InFlightOp>();
-  string partition_key;
-  RETURN_NOT_OK(write_op->table_->partition_schema().EncodeKey(write_op->row(), &partition_key));
   op->write_op.reset(write_op);
   op->state = InFlightOp::kLookingUpTablet;
 
@@ -750,9 +746,11 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
   MonoTime deadline = ComputeDeadlineUnlocked();
   ++outstanding_lookups_;
   scoped_refptr<Batcher> self(this);
+  const auto* table = write_op->table();
+  DCHECK(table);
   client_->data_->meta_cache_->LookupTabletByKey(
-      op->write_op->table(),
-      std::move(partition_key),
+      table,
+      table->partition_schema().EncodeKey(write_op->row()),
       deadline,
       MetaCache::LookupType::kPoint,
       &op->tablet,
