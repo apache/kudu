@@ -16,7 +16,6 @@
 // under the License.
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -97,10 +96,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   void GetOnlyLiveFollowerReplicas(const std::string& tablet_id,
                                    std::vector<itest::TServerDetails*>* followers);
-
-  // Return the index within 'replicas' for the replica which is farthest ahead.
-  int64_t GetFurthestAheadReplicaIdx(const std::string& tablet_id,
-                                     const std::vector<itest::TServerDetails*>& replicas);
 
   Status ShutdownServerWithUUID(const std::string& uuid);
 

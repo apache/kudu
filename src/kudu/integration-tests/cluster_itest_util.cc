@@ -140,7 +140,7 @@ client::KuduSchema SimpleIntKeyKuduSchema() {
 }
 
 Status GetLastOpIdForEachReplica(const string& tablet_id,
-                                 const vector<TServerDetails*>& replicas,
+                                 const vector<const TServerDetails*>& replicas,
                                  OpIdType opid_type,
                                  const MonoDelta& timeout,
                                  vector<OpId>* op_ids) {
@@ -150,7 +150,7 @@ Status GetLastOpIdForEachReplica(const string& tablet_id,
   RpcController controller;
 
   op_ids->clear();
-  for (TServerDetails* ts : replicas) {
+  for (const auto* ts : replicas) {
     controller.Reset();
     controller.set_timeout(timeout);
     opid_resp.Clear();
@@ -168,7 +168,7 @@ Status GetLastOpIdForEachReplica(const string& tablet_id,
 }
 
 Status GetLastOpIdForReplica(const std::string& tablet_id,
-                             TServerDetails* replica,
+                             const TServerDetails* replica,
                              OpIdType opid_type,
                              const MonoDelta& timeout,
                              consensus::OpId* op_id) {
@@ -222,7 +222,7 @@ Status WaitForServersToAgree(const MonoDelta& timeout,
                              consensus::OpIdType op_id_type) {
   const MonoTime deadline = MonoTime::Now() + timeout;
 
-  vector<TServerDetails*> servers;
+  vector<const TServerDetails*> servers;
   AppendValuesFromMap(tablet_servers, &servers);
   for (int i = 1; MonoTime::Now() < deadline; i++) {
     vector<OpId> ids;
@@ -258,45 +258,6 @@ Status WaitForServersToAgree(const MonoDelta& timeout,
   return Status::TimedOut(
       Substitute("index $0 not available on all replicas after $1",
                  minimum_index, timeout.ToString()));
-}
-
-// Wait until all specified replicas have logged the given index.
-Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
-                                  const string& tablet_id,
-                                  const vector<TServerDetails*>& replicas,
-                                  const MonoDelta& timeout) {
-  MonoTime start = MonoTime::Now();
-  MonoDelta passed = MonoDelta::FromMilliseconds(0);
-  while (true) {
-    vector<OpId> op_ids;
-    Status s = GetLastOpIdForEachReplica(tablet_id, replicas, consensus::RECEIVED_OPID, timeout,
-                                         &op_ids);
-    if (s.ok()) {
-      bool any_behind = false;
-      for (const OpId& op_id : op_ids) {
-        if (op_id.index() < log_index) {
-          any_behind = true;
-          break;
-        }
-      }
-      if (!any_behind) return Status::OK();
-    } else {
-      LOG(WARNING) << "Got error getting last opid for each replica: " << s.ToString();
-    }
-    passed = MonoTime::Now() - start;
-    if (passed > timeout) {
-      break;
-    }
-    SleepFor(MonoDelta::FromMilliseconds(50));
-  }
-  string replicas_str;
-  for (const TServerDetails* replica : replicas) {
-    if (!replicas_str.empty()) replicas_str += ", ";
-    replicas_str += "{ " + replica->ToString() + " }";
-  }
-  return Status::TimedOut(Substitute("Index $0 not available on all replicas after $1. "
-                                     "Replicas: [ $2 ]",
-                                     log_index, passed.ToString(), replicas_str));
 }
 
 Status CreateTabletServerMap(const shared_ptr<MasterServiceProxy>& master_proxy,

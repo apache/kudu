@@ -37,7 +37,6 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -443,26 +442,6 @@ void TabletServerIntegrationTestBase::GetOnlyLiveFollowerReplicas(
       followers->push_back(replica);
     }
   }
-}
-
-// Return the index within 'replicas' for the replica which is farthest ahead.
-int64_t TabletServerIntegrationTestBase::GetFurthestAheadReplicaIdx(
-    const string& tablet_id, const vector<TServerDetails*>& replicas) {
-  vector<consensus::OpId> op_ids;
-  CHECK_OK(GetLastOpIdForEachReplica(tablet_id, replicas, consensus::RECEIVED_OPID,
-                                     MonoDelta::FromSeconds(10), &op_ids));
-  int64_t max_index = 0;
-  int max_replica_index = -1;
-  for (int i = 0; i < op_ids.size(); i++) {
-    if (op_ids[i].index() > max_index) {
-      max_index = op_ids[i].index();
-      max_replica_index = i;
-    }
-  }
-
-  CHECK_NE(max_replica_index, -1);
-
-  return max_replica_index;
 }
 
 Status TabletServerIntegrationTestBase::ShutdownServerWithUUID(const string& uuid) {
