@@ -547,7 +547,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
   return Status::OK();
 }
 
-Status RaftConsensus::WaitUntilLeaderForTests(const MonoDelta& timeout) {
+Status RaftConsensus::WaitUntilLeader(const MonoDelta& timeout) {
   MonoTime deadline = MonoTime::Now() + timeout;
   while (role() != consensus::RaftPeerPB::LEADER) {
     if (MonoTime::Now() >= deadline) {

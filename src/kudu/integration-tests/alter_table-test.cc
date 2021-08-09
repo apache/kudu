@@ -157,7 +157,7 @@ class AlterTableTest : public KuduTest {
 
     if (num_replicas() == 1) {
       tablet_replica_ = LookupTabletReplica();
-      ASSERT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+      ASSERT_OK(tablet_replica_->consensus()->WaitUntilLeader(MonoDelta::FromSeconds(10)));
     }
     LOG(INFO) << "Tablet successfully located";
   }

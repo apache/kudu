@@ -182,7 +182,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Wait until the node has LEADER role.
   // Returns Status::TimedOut if the role is not LEADER within 'timeout'.
-  Status WaitUntilLeaderForTests(const MonoDelta& timeout);
+  // NOTE: the implementation is a busy loop; as such, this method should be
+  // used sparingly, e.g. only in tests, or in applications that don't require
+  // high concurrency.
+  Status WaitUntilLeader(const MonoDelta& timeout) WARN_UNUSED_RESULT;
 
   // Return a copy of the failure detector instance. Only for use in tests.
   std::shared_ptr<rpc::PeriodicTimer> GetFailureDetectorForTests() const {

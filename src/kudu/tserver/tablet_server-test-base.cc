@@ -138,7 +138,7 @@ Status TabletServerTestBase::WaitForTabletRunning(const char *tablet_id) {
   RETURN_NOT_OK(tablet_manager->GetTabletReplica(tablet_id, &tablet_replica));
   RETURN_NOT_OK(tablet_replica->WaitUntilConsensusRunning(kTimeout));
   RETURN_NOT_OK(
-      tablet_replica->consensus()->WaitUntilLeaderForTests(kTimeout));
+      tablet_replica->consensus()->WaitUntilLeader(kTimeout));
 
   // KUDU-2463: Even though the tablet thinks its leader, for correctness, it
   // must wait to finish replicating its no-op (even as a single replica)

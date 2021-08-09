@@ -128,7 +128,7 @@ class TsTabletManagerTest : public KuduTest {
     }
 
     RETURN_NOT_OK(tablet_replica->WaitUntilConsensusRunning(MonoDelta::FromMilliseconds(2000)));
-    return tablet_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10));
+    return tablet_replica->consensus()->WaitUntilLeader(MonoDelta::FromSeconds(10));
   }
 
   void GenerateFullTabletReport(TabletReportPB* report) {

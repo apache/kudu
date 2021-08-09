@@ -298,7 +298,7 @@ TEST_F(TxnParticipantITest, TestReplicateParticipantOps) {
   // tserver so we can ensure a specific leader.
   const int kLeaderIdx = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
-  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeader(kDefaultTimeout));
   // Try submitting the ops on all replicas. They should succeed on the leaders
   // and fail on followers.
   const int64_t kTxnId = 1;
@@ -369,7 +369,7 @@ TEST_P(ParticipantCopyITest, TestCopyParticipantOps) {
   constexpr const int kDeadServerIdx = kLeaderIdx + 1;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
 
   // Apply some operations.
   vector<TxnParticipant::TxnEntry> expected_txns;
@@ -442,7 +442,7 @@ TEST_F(TxnParticipantITest, TestWaitOnFinalizeCommit) {
   auto* follower_replica = replicas[kLeaderIdx + 1];
   auto* clock = leader_replica->clock();
   const int64_t kTxnId = 1;
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_TXN));
   const MonoDelta kAgreeTimeout = kDefaultTimeout;
   const auto& tablet_id = leader_replica->tablet()->tablet_id();
@@ -503,7 +503,7 @@ TEST_F(TxnParticipantITest, TestWaitOnAbortCommit) {
   auto* follower_replica = replicas[kLeaderIdx + 1];
   auto* clock = leader_replica->clock();
   const int64_t kTxnId = 1;
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_TXN));
   const MonoDelta kAgreeTimeout = kDefaultTimeout;
   const auto& tablet_id = leader_replica->tablet()->tablet_id();
@@ -541,7 +541,7 @@ TEST_F(TxnParticipantITest, TestProxyBasicCalls) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
-  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeader(kDefaultTimeout));
   auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
   for (const auto& op : kCommitSequence) {
     const auto req = ParticipantRequest(replicas[kLeaderIdx]->tablet_id(), kTxnId, op);
@@ -555,7 +555,7 @@ TEST_F(TxnParticipantITest, TestBeginCommitAfterFinalize) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
-  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeader(kDefaultTimeout));
   auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
   const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
   {
@@ -598,7 +598,7 @@ TEST_F(TxnParticipantITest, TestProxyErrorWhenNotBegun) {
   constexpr const int kLeaderIdx = 0;
   auto txn_id = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
-  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeader(kDefaultTimeout));
   auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
   const auto tablet_id = replicas[kLeaderIdx]->tablet_id();
   for (auto type : { ParticipantOpPB::BEGIN_COMMIT,
@@ -619,7 +619,7 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInCommitSequence) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
-  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeader(kDefaultTimeout));
   auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
 
   // Begin after already beginning.
@@ -703,7 +703,7 @@ TEST_F(TxnParticipantITest, TestProxyIllegalStatesInAbortSequence) {
   constexpr const int kLeaderIdx = 0;
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
-  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeader(kDefaultTimeout));
   auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
 
   // Try our illegal ops when our transaction is open.
@@ -755,7 +755,7 @@ TEST_F(TxnParticipantITest, TestProxyNonLeader) {
   constexpr const int kNonLeaderIdx = kLeaderIdx + 1;
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
-  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeader(kDefaultTimeout));
   auto admin_proxy = cluster_->tserver_admin_proxy(kNonLeaderIdx);
   for (const auto& op : kCommitSequence) {
     const auto req = ParticipantRequest(replicas[kLeaderIdx]->tablet_id(), kTxnId, op);
@@ -774,7 +774,7 @@ TEST_F(TxnParticipantITest, TestProxyTabletBootstrapping) {
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
 
   FLAGS_tablet_bootstrap_inject_latency_ms = 1000;
   cluster_->mini_tablet_server(kLeaderIdx)->Shutdown();
@@ -799,7 +799,7 @@ TEST_F(TxnParticipantITest, TestProxyTabletNotRunning) {
   constexpr const int kTxnId = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   auto* tablet_manager = cluster_->mini_tablet_server(kLeaderIdx)->server()->tablet_manager();
   ASSERT_OK(tablet_manager->DeleteTablet(leader_replica->tablet_id(),
       tablet::TABLET_DATA_TOMBSTONED, boost::none));
@@ -842,7 +842,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientGetMetadata) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
 
   // Get commit-related metadata.
   TxnMetadataPB meta_pb;
@@ -900,7 +900,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientBeginTxnDoesntLock) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
 
   // Start a transaction and make sure it results in the expected state
   // server-side.
@@ -926,7 +926,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientCommitSequence) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
 
   // Start a transaction and make sure it results in the expected state
   // server-side.
@@ -1000,7 +1000,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientAbortSequence) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   unique_ptr<TxnSystemClient> txn_client;
   ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
                                     cluster_->messenger()->sasl_proto_name(),
@@ -1056,7 +1056,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientErrorWhenNotBegun) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   unique_ptr<TxnSystemClient> txn_client;
   ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
                                     cluster_->messenger()->sasl_proto_name(),
@@ -1082,7 +1082,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientRepeatCalls) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   unique_ptr<TxnSystemClient> txn_client;
   ASSERT_OK(TxnSystemClient::Create(cluster_->master_rpc_addrs(),
                                     cluster_->messenger()->sasl_proto_name(),
@@ -1115,7 +1115,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientTimeoutWhenNoMajority) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   // Bring down the other servers so we can't get a majority.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     if (i == kLeaderIdx) continue;
@@ -1176,7 +1176,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientSucceedsOnBootstrap) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   // Start a thread that sends participant ops to the tablet.
   int next_txn_id = 0;
   unique_ptr<TxnSystemClient> txn_client;
@@ -1230,7 +1230,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientRetriesWhenReplicaNotFound) {
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   auto* leader_replica = replicas[kLeaderIdx];
   const auto tablet_id = leader_replica->tablet_id();
-  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kDefaultTimeout));
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   // Start a thread that sends participant ops to the tablet.
   int next_txn_id = 0;
   unique_ptr<TxnSystemClient> txn_client;

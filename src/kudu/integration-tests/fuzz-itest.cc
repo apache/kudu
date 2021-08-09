@@ -382,7 +382,7 @@ class FuzzTest : public KuduTest {
 
   Status CallParticipantOpCheckResp(int64_t txn_id, ParticipantOpPB::ParticipantOpType op_type,
                                     int64_t ts_val) {
-    RETURN_NOT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(
+    RETURN_NOT_OK(tablet_replica_->consensus()->WaitUntilLeader(
         MonoDelta::FromSeconds(10)));
     ParticipantResponsePB resp;
     RETURN_NOT_OK(CallParticipantOp(tablet_replica_.get(), txn_id, op_type, ts_val, &resp));

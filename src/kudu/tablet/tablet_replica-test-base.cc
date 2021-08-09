@@ -184,7 +184,7 @@ Status TabletReplicaTestBase::StartReplica(const ConsensusBootstrapInfo& info) {
 
 Status TabletReplicaTestBase::StartReplicaAndWaitUntilLeader(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(StartReplica(info));
-  return tablet_replica_->consensus()->WaitUntilLeaderForTests(kLeadershipTimeout);
+  return tablet_replica_->consensus()->WaitUntilLeader(kLeadershipTimeout);
 }
 
 Status TabletReplicaTestBase::RestartReplica(bool reset_tablet) {
@@ -226,7 +226,7 @@ Status TabletReplicaTestBase::RestartReplica(bool reset_tablet) {
                                        prepare_pool_.get(),
                                        dns_resolver_.get()));
   // Wait for the replica to be usable.
-  return tablet_replica_->consensus()->WaitUntilLeaderForTests(kLeadershipTimeout);
+  return tablet_replica_->consensus()->WaitUntilLeader(kLeadershipTimeout);
 }
 
 } // namespace tablet

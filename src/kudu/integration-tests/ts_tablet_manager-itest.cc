@@ -1082,7 +1082,7 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
 
     // Wait for the tablet to be in RUNNING state and its consensus running too.
     RETURN_NOT_OK(r->WaitUntilConsensusRunning(kTimeout));
-    auto s = r->consensus()->WaitUntilLeaderForTests(kTimeout);
+    auto s = r->consensus()->WaitUntilLeader(kTimeout);
     if (replica) {
       *replica = std::move(r);
     }
