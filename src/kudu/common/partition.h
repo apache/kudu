@@ -225,25 +225,32 @@ class PartitionSchema {
       const Schema& schema,
       std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 
-  // Tests if the partition contains the row.
+  // Check if the given partition contains the specified row. The row must have
+  // all the columns participating in the table's partitioning schema
+  // set to particular values.
   bool PartitionContainsRow(const Partition& partition,
                             const KuduPartialRow& row) const;
   bool PartitionContainsRow(const Partition& partition,
                             const ConstContiguousRow& row) const;
 
-  // Tests if the hash partition contains the row with given hash_idx.
-  bool HashPartitionContainsRow(const Partition& partition,
-                                const KuduPartialRow& row,
-                                int hash_idx) const;
-  bool HashPartitionContainsRow(const Partition& partition,
-                                const ConstContiguousRow& row,
-                                int hash_idx) const;
-
-  // Tests if the range partition contains the row.
-  bool RangePartitionContainsRow(const Partition& partition,
-                                 const KuduPartialRow& row) const;
-  bool RangePartitionContainsRow(const Partition& partition,
-                                 const ConstContiguousRow& row) const;
+  // Check if the specified row is probably in the given partition.
+  // The collection of columns set to particular values in the row can be a
+  // subset of all the columns participating in the table's partitioning schema.
+  // This method can be used to optimize the collection of values for IN list
+  // predicates. As of now, this method is effectively implemented only for
+  // single-column hash and single-column range partitioning schemas, meaning
+  // that it can return false positives in case of other than single-row range
+  // and hash partitioning schemas.
+  //
+  // NOTE: this method returns false positives in some cases (see above)
+  //
+  // TODO(aserbin): implement this for multi-row range schemas as well,
+  //                substituting non-specified columns in the row with values
+  //                from the partition's start key and return logically inverted
+  //                result of calling PartitionContainsRow() with the
+  //                artificially constructed row
+  bool PartitionMayContainRow(const Partition& partition,
+                              const KuduPartialRow& row) const;
 
   // Returns a text description of the partition suitable for debug printing.
   //
@@ -327,24 +334,28 @@ class PartitionSchema {
     return ranges_with_hash_schemas_;
   }
 
-  // Gets the vector containing the column indexes of the range partition keys.
+  // Given the specified table schema, populate the 'range_column_indexes'
+  // container with column indexes of the range partition keys.
   // If any of the columns is not in the key range columns then an
   // InvalidArgument status is returned.
-  Status GetRangeSchemaColumnIndexes(const Schema& schema,
-                                     std::vector<int>* range_column_idxs) const;
-
-  // Returns index of given column idx, if it is one of hash key and this hash schema
-  // contains only one column, otherwise returns -1.
-  int32_t TryGetSingleColumnHashPartitionIndex(const Schema& schema, int32_t col_idx) const;
-
-  // Given a column idx, verify that it is the only column of the range partition.
-  bool IsColumnSingleRangeSchema(const Schema& schema, int32_t col_idx) const;
+  Status GetRangeSchemaColumnIndexes(
+      const Schema& schema,
+      std::vector<int>* range_column_indexes) const;
 
  private:
   friend class PartitionPruner;
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionBounds);
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionStringBounds);
   FRIEND_TEST(PartitionTest, TestVarcharRangePartitions);
+
+  // Tests if the hash partition contains the row with given hash_idx.
+  bool HashPartitionContainsRow(const Partition& partition,
+                                const KuduPartialRow& row,
+                                int hash_idx) const;
+
+  // Tests if the range partition contains the row.
+  bool RangePartitionContainsRow(const Partition& partition,
+                                 const KuduPartialRow& row) const;
 
   // Returns a text description of the encoded range key suitable for debug printing.
   std::string RangeKeyDebugString(Slice range_key, const Schema& schema) const;

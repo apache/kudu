@@ -709,25 +709,60 @@ bool PartitionSchema::PartitionContainsRow(const Partition& partition,
   return PartitionContainsRowImpl(partition, row);
 }
 
+bool PartitionSchema::PartitionMayContainRow(const Partition& partition,
+                                             const KuduPartialRow& row) const {
+  // It's the fast and 100% sure path when the row has the primary key set.
+  if (row.IsKeySet()) {
+    return PartitionContainsRow(partition, row);
+  }
+
+  const Schema* schema = row.schema();
+  vector<ColumnId> set_column_ids;
+  set_column_ids.reserve(schema->num_key_columns());
+  for (size_t idx = 0; idx < schema->num_key_columns(); ++idx) {
+    DCHECK(schema->is_key_column(idx));
+    if (row.IsColumnSet(idx) && !row.IsNull(idx)) {
+      set_column_ids.emplace_back(schema->column_id(idx));
+      if (set_column_ids.size() > 1) {
+        // No futher optimizations in this case for a while.
+        // NOTE: This might be a false positive.
+        return true;
+      }
+    }
+  }
+  if (set_column_ids.empty()) {
+    return false;
+  }
+
+  DCHECK_EQ(1, set_column_ids.size());
+  const auto& single_column_id = set_column_ids[0];
+
+  if (range_schema_.column_ids.size() == 1 &&
+      range_schema_.column_ids[0] == single_column_id &&
+      !RangePartitionContainsRow(partition, row)) {
+    return false;
+  }
+  for (size_t i = 0; i < hash_bucket_schemas_.size(); ++i) {
+    const auto& hash_partition = hash_bucket_schemas_[i];
+    if (hash_partition.column_ids.size() == 1 &&
+        hash_partition.column_ids[0] == single_column_id &&
+        !HashPartitionContainsRow(partition, row, i)) {
+      return false;
+    }
+  }
+
+  // NOTE: This might be a false positive.
+  return true;
+}
+
 bool PartitionSchema::HashPartitionContainsRow(const Partition& partition,
                                                const KuduPartialRow& row,
                                                int hash_idx) const {
   return HashPartitionContainsRowImpl(partition, row, hash_idx);
 }
 
-bool PartitionSchema::HashPartitionContainsRow(const Partition& partition,
-                                               const ConstContiguousRow& row,
-                                               int hash_idx) const {
-  return HashPartitionContainsRowImpl(partition, row, hash_idx);
-}
-
 bool PartitionSchema::RangePartitionContainsRow(
     const Partition& partition, const KuduPartialRow& row) const {
-  return RangePartitionContainsRowImpl(partition, row);
-}
-
-bool PartitionSchema::RangePartitionContainsRow(
-    const Partition& partition, const ConstContiguousRow& row) const {
   return RangePartitionContainsRowImpl(partition, row);
 }
 
@@ -1559,36 +1594,19 @@ Status PartitionSchema::MakeUpperBoundRangePartitionKeyExclusive(KuduPartialRow*
   return Status::OK();
 }
 
-Status PartitionSchema::GetRangeSchemaColumnIndexes(const Schema& schema,
-                                                    vector<int32_t>* range_column_idxs) const {
+Status PartitionSchema::GetRangeSchemaColumnIndexes(
+    const Schema& schema,
+    vector<int32_t>* range_column_indexes) const {
+  DCHECK(range_column_indexes);
   for (const ColumnId& column_id : range_schema_.column_ids) {
     int32_t idx = schema.find_column_by_id(column_id);
     if (idx == Schema::kColumnNotFound) {
-      return Status::InvalidArgument(Substitute("range partition column ID $0 "
-                                                "not found in range partition key schema.",
-                                                column_id));
+      return Status::InvalidArgument(Substitute(
+          "range partition column ID $0 not found in table schema", column_id));
     }
-    range_column_idxs->push_back(idx);
+    range_column_indexes->push_back(idx);
   }
   return Status::OK();
-}
-
-int32_t PartitionSchema::TryGetSingleColumnHashPartitionIndex(const Schema& schema,
-                                                              int32_t col_idx) const {
-  const ColumnId column_id = schema.column_id(col_idx);
-  for (int i = 0; i < hash_bucket_schemas_.size(); ++i) {
-    const auto& hash_partition = hash_bucket_schemas_[i];
-    if (hash_partition.column_ids.size() == 1 && hash_partition.column_ids[0] == column_id) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-bool PartitionSchema::IsColumnSingleRangeSchema(const Schema& schema, int32_t col_idx) const {
-  const ColumnId column_id = schema.column_id(col_idx);
-  return range_schema_.column_ids.size() == 1 &&
-         range_schema_.column_ids[0] == column_id;
 }
 
 } // namespace kudu

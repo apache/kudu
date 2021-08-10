@@ -73,22 +73,21 @@ class ScanSpec {
                     Arena* arena,
                     bool remove_pushed_predicates);
 
-  // Filter in-list predicate values with given hash partition schema.
-  // If range partition is introduced when creating table, in-list predicate
-  // can also benefit from this pruning.
+  // Filter in-list predicate values with given a partition schema.
   //
-  // Only supports pruning for single-column hash schemas or single-column range schema.
-  // Now support hash prune on:
-  //     hash(onekey), # support.
-  //     range(onekey), # support.
-  //     hash(onekey), hash(anotherkey) # support either.
-  //     hash(onekey), range(anotherkey) # support either.
-  //     hash(key_one, key_two), hash(anotherkey) # only support prune on anotherkey.
-  //     range(key_one, key_two) # not support.
+  // Supports pruning only for single-column hash and range schemas. The pruning
+  // of IN list predicate's values is enabled for the following partitioning
+  // patterns:
   //
-  // TODO(ningw) For IN list predicate on hash/range(key_one, key_two) or more columns,
-  // if one predicate is IN list, and the rest predicate(s) are EQUAL, could
-  // have IN list predicate values prune as well.
+  //   hash(onekey),                            # pruning on 'onekey'
+  //   range(onekey),                           # pruning on 'onekey'
+  //   hash(onekey), hash(anotherkey)           # pruning on either key
+  //   hash(onekey), range(anotherkey)          # pruning on either key
+  //   hash(key_one, key_two), hash(anotherkey) # pruning on 'anotherkey'
+  //
+  // TODO(ningw) For IN list predicate on hash/range(key_one, key_two) or more
+  //             columns, if one predicate is IN list, and the rest predicate(s)
+  //             are EQUAL, could have IN list predicate values prune as well.
   void PruneInlistValuesIfPossible(const Schema& schema,
                                    const Partition& partition,
                                    const PartitionSchema& partition_schema);
