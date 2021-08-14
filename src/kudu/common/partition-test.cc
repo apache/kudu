@@ -52,11 +52,11 @@ using std::make_pair;
 namespace kudu {
 
 namespace {
-void AddHashBucketComponent(PartitionSchemaPB* partition_schema_pb,
-                            const vector<string>& columns,
-                            uint32_t num_buckets, int32_t seed) {
-  PartitionSchemaPB::HashBucketSchemaPB* hash_bucket_schema =
-      partition_schema_pb->add_hash_bucket_schemas();
+void AddHashDimension(PartitionSchemaPB* partition_schema_pb,
+                      const vector<string>& columns,
+                      int32_t num_buckets,
+                      uint32_t seed) {
+  auto* hash_bucket_schema = partition_schema_pb->add_hash_bucket_schemas();
   for (const string& column : columns) {
     hash_bucket_schema->add_columns()->set_name(column);
   }
@@ -206,8 +206,8 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
 
   PartitionSchemaPB schema_builder;
-  AddHashBucketComponent(&schema_builder, { "a", "b" }, 32, 0);
-  AddHashBucketComponent(&schema_builder, { "c" }, 32, 42);
+  AddHashDimension(&schema_builder, { "a", "b" }, 32, 0);
+  AddHashDimension(&schema_builder, { "c" }, 32, 42);
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
@@ -418,14 +418,14 @@ TEST_F(PartitionTest, TestCreateRangePartitions) {
   }
 }
 
-TEST_F(PartitionTest, TestCreateHashBucketPartitions) {
+TEST_F(PartitionTest, TestCreateHashPartitions) {
   // CREATE TABLE t (a VARCHAR PRIMARY KEY),
   // PARTITION BY [HASH BUCKET (a)];
   Schema schema({ ColumnSchema("a", STRING) }, { ColumnId(0) }, 1);
 
   PartitionSchemaPB schema_builder;
   SetRangePartitionComponent(&schema_builder, vector<string>());
-  AddHashBucketComponent(&schema_builder, { "a" }, 3, 42);
+  AddHashDimension(&schema_builder, { "a" }, 3, 42);
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
@@ -481,8 +481,8 @@ TEST_F(PartitionTest, TestCreatePartitions) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
 
   PartitionSchemaPB schema_builder;
-  AddHashBucketComponent(&schema_builder, { "a" }, 2, 0);
-  AddHashBucketComponent(&schema_builder, { "b" }, 2, 0);
+  AddHashDimension(&schema_builder, { "a" }, 2, 0);
+  AddHashDimension(&schema_builder, { "b" }, 2, 0);
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
@@ -887,8 +887,8 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
 
   PartitionSchemaPB schema_builder;
   // Table-wide hash schema defined below, 3 by 2 buckets so 6 total.
-  AddHashBucketComponent(&schema_builder, { "a", "c" }, 3, 0);
-  AddHashBucketComponent(&schema_builder, { "b" }, 2, 0);
+  AddHashDimension(&schema_builder, { "a", "c" }, 3, 0);
+  AddHashDimension(&schema_builder, { "b" }, 2, 0);
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
   CheckSerializationFunctions(schema_builder, partition_schema, schema);
@@ -897,9 +897,9 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
             partition_schema.DebugString(schema));
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
   vector<pair<pair<KuduPartialRow, KuduPartialRow>,
-      PartitionSchema::HashBucketSchemas>> bounds_with_hash_schemas;
+              PartitionSchema::HashSchema>> bounds_with_hash_schemas;
 
   { // [(a1, _, c1), (a2, _, c2))
     KuduPartialRow lower(&schema);
@@ -908,7 +908,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
     ASSERT_OK(lower.SetStringCopy("c", "c1"));
     ASSERT_OK(upper.SetStringCopy("a", "a2"));
     ASSERT_OK(upper.SetStringCopy("c", "c2"));
-    PartitionSchema::HashBucketSchemas hash_schema_4_buckets = {{{ColumnId(0)}, 4, 0}};
+    PartitionSchema::HashSchema hash_schema_4_buckets = {{{ColumnId(0)}, 4, 0}};
     bounds.emplace_back(lower, upper);
     range_hash_schemas.emplace_back(hash_schema_4_buckets);
     bounds_with_hash_schemas.emplace_back(make_pair(std::move(lower), std::move(upper)),
@@ -923,9 +923,9 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
     ASSERT_OK(upper.SetStringCopy("a", "a4"));
     ASSERT_OK(upper.SetStringCopy("b", "b4"));
     bounds.emplace_back(lower, upper);
-    range_hash_schemas.emplace_back(PartitionSchema::HashBucketSchemas());
+    range_hash_schemas.emplace_back(PartitionSchema::HashSchema());
     bounds_with_hash_schemas.emplace_back(make_pair(std::move(lower), std::move(upper)),
-                                          PartitionSchema::HashBucketSchemas());
+                                          PartitionSchema::HashSchema());
   }
 
   { // [(a5, b5, _), (a6, _, c6))
@@ -935,7 +935,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
     ASSERT_OK(lower.SetStringCopy("b", "b5"));
     ASSERT_OK(upper.SetStringCopy("a", "a6"));
     ASSERT_OK(upper.SetStringCopy("c", "c6"));
-    PartitionSchema::HashBucketSchemas hash_schema_2_buckets_by_3 = {
+    PartitionSchema::HashSchema hash_schema_2_buckets_by_3 = {
         {{ColumnId(0)}, 2, 0},
         {{ColumnId(1)}, 3, 0}
     };
@@ -1182,8 +1182,8 @@ TEST_F(PartitionTest, CustomHashSchemasPerRangeOnly) {
 
   typedef pair<KuduPartialRow, KuduPartialRow> RangeBound;
   vector<RangeBound> bounds;
-  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
-  vector<pair<RangeBound, PartitionSchema::HashBucketSchemas>>
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
+  vector<pair<RangeBound, PartitionSchema::HashSchema>>
       bounds_with_hash_schemas;
 
   // [(a1, b1), (a2, b2))
@@ -1194,7 +1194,7 @@ TEST_F(PartitionTest, CustomHashSchemasPerRangeOnly) {
     ASSERT_OK(lower.SetStringNoCopy("b", "b1"));
     ASSERT_OK(upper.SetStringNoCopy("a", "a2"));
     ASSERT_OK(upper.SetStringNoCopy("b", "b2"));
-    PartitionSchema::HashBucketSchemas hash_schema_2_buckets =
+    PartitionSchema::HashSchema hash_schema_2_buckets =
         { { { ColumnId(0) }, 2, 0 } };
     bounds.emplace_back(lower, upper);
     range_hash_schemas.emplace_back(hash_schema_2_buckets);
@@ -1236,7 +1236,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
 
   PartitionSchemaPB schema_builder;
   // Table-wide hash schema defined below.
-  AddHashBucketComponent(&schema_builder, { "b" }, 2, 0);
+  AddHashDimension(&schema_builder, { "b" }, 2, 0);
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
   CheckSerializationFunctions(schema_builder, partition_schema, schema);
@@ -1245,14 +1245,14 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
             partition_schema.DebugString(schema));
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
 
   { // [(_, _, _), (a1, _, c1))
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(upper.SetStringCopy("a", "a1"));
     ASSERT_OK(upper.SetStringCopy("c", "c1"));
-    PartitionSchema::HashBucketSchemas hash_schema_4_buckets = {{{ColumnId(0)}, 4, 0}};
+    PartitionSchema::HashSchema hash_schema_4_buckets = {{{ColumnId(0)}, 4, 0}};
     bounds.emplace_back(lower, upper);
     range_hash_schemas.emplace_back(hash_schema_4_buckets);
   }
@@ -1265,7 +1265,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
     ASSERT_OK(upper.SetStringCopy("a", "a3"));
     ASSERT_OK(upper.SetStringCopy("b", "b3"));
     bounds.emplace_back(lower, upper);
-    range_hash_schemas.emplace_back(PartitionSchema::HashBucketSchemas());
+    range_hash_schemas.emplace_back(PartitionSchema::HashSchema());
   }
 
   { // [(a4, b4, _), (_, _, _))
@@ -1273,7 +1273,7 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a4"));
     ASSERT_OK(lower.SetStringCopy("b", "b4"));
-    PartitionSchema::HashBucketSchemas hash_schema_2_buckets_by_3 = {
+    PartitionSchema::HashSchema hash_schema_2_buckets_by_3 = {
         {{ColumnId(0)}, 2, 0},
         {{ColumnId(2)}, 3, 0}
     };
@@ -1388,7 +1388,7 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
 
   PartitionSchemaPB pb;
   // Table-wide hash schema defined below.
-  AddHashBucketComponent(&pb, { "b" }, 2, 0);
+  AddHashDimension(&pb, { "b" }, 2, 0);
 
   // [(a0, _, c0), (a0, _, c1))
   {
@@ -1449,36 +1449,36 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   // Check fields of 'partition_schema' to verify decoder function.
-  ASSERT_EQ(1, partition_schema.hash_partition_schemas().size());
+  ASSERT_EQ(1, partition_schema.hash_schema().size());
   const auto& ranges_with_hash_schemas = partition_schema.ranges_with_hash_schemas();
   ASSERT_EQ(3, ranges_with_hash_schemas.size());
 
   EXPECT_EQ(string("a0\0\0\0\0c0", 8), ranges_with_hash_schemas[0].lower);
   EXPECT_EQ(string("a0\0\0\0\0c1", 8), ranges_with_hash_schemas[0].upper);
-  EXPECT_EQ(1, ranges_with_hash_schemas[0].hash_schemas.size());
+  EXPECT_EQ(1, ranges_with_hash_schemas[0].hash_schema.size());
 
-  const auto& range1_hash_schema = ranges_with_hash_schemas[0].hash_schemas[0];
+  const auto& range1_hash_schema = ranges_with_hash_schemas[0].hash_schema[0];
   EXPECT_EQ(1, range1_hash_schema.column_ids.size());
   EXPECT_EQ(0, range1_hash_schema.column_ids[0]);
   EXPECT_EQ(4, range1_hash_schema.num_buckets);
 
   EXPECT_EQ(string("a1\0\0\0\0c2", 8), ranges_with_hash_schemas[1].lower);
   EXPECT_EQ(string("a1\0\0\0\0c3", 8), ranges_with_hash_schemas[1].upper);
-  EXPECT_EQ(2, ranges_with_hash_schemas[1].hash_schemas.size());
+  EXPECT_EQ(2, ranges_with_hash_schemas[1].hash_schema.size());
 
-  const auto& range2_hash_schema_1 = ranges_with_hash_schemas[1].hash_schemas[0];
+  const auto& range2_hash_schema_1 = ranges_with_hash_schemas[1].hash_schema[0];
   EXPECT_EQ(1, range2_hash_schema_1.column_ids.size());
   EXPECT_EQ(0, range2_hash_schema_1.column_ids[0]);
   EXPECT_EQ(2, range2_hash_schema_1.num_buckets);
 
-  const auto& range2_hash_schema_2 = ranges_with_hash_schemas[1].hash_schemas[1];
+  const auto& range2_hash_schema_2 = ranges_with_hash_schemas[1].hash_schema[1];
   EXPECT_EQ(1, range2_hash_schema_2.column_ids.size());
   EXPECT_EQ(1, range2_hash_schema_2.column_ids[0]);
   EXPECT_EQ(3, range2_hash_schema_2.num_buckets);
 
   EXPECT_EQ(string("a2\0\0\0\0c4", 8), ranges_with_hash_schemas[2].lower);
   EXPECT_EQ(string("a2\0\0\0\0c5", 8), ranges_with_hash_schemas[2].upper);
-  EXPECT_EQ(0, ranges_with_hash_schemas[2].hash_schemas.size());
+  EXPECT_EQ(0, ranges_with_hash_schemas[2].hash_schema.size());
 
   CheckSerializationFunctions(pb, partition_schema, schema);
 }
@@ -1510,7 +1510,7 @@ TEST_F(PartitionTest, TestMalformedPartitionSchemaPB) {
   PartitionSchema partition_schema;
   Status s = PartitionSchema::FromPB(pb, schema, &partition_schema);
   ASSERT_EQ("Invalid argument: 3 ops were provided; "
-            "Only two ops are expected for this pair of range bounds.",
+            "only two ops are expected for this pair of range bounds",
             s.ToString());
 
   pb.Clear();
@@ -1578,15 +1578,15 @@ TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
   SetRangePartitionComponent(&schema_builder_1, {"a", "b", "c"});
 
   // Table wide hash schemas are different.
-  AddHashBucketComponent(&schema_builder, { "a" }, 2, 0);
-  AddHashBucketComponent(&schema_builder_1, { "b" }, 2, 0);
+  AddHashDimension(&schema_builder, { "a" }, 2, 0);
+  AddHashDimension(&schema_builder_1, { "b" }, 2, 0);
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
   ASSERT_OK(PartitionSchema::FromPB(schema_builder_1, schema, &partition_schema_1));
   ASSERT_NE(partition_schema, partition_schema_1);
 
   // Resets table wide hash schemas so both will be equal again.
   schema_builder_1.clear_hash_bucket_schemas();
-  AddHashBucketComponent(&schema_builder_1, { "a" }, 2, 0);
+  AddHashDimension(&schema_builder_1, { "a" }, 2, 0);
 
   // Different sizes of field 'ranges_with_hash_schemas_'
   // [(a, _, _), (b, _, _))

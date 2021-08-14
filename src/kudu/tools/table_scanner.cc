@@ -420,18 +420,18 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
       .schema(&dst_table_schema)
       .num_replicas(src_table->num_replicas());
 
-  // Add hash partition schemas.
-  for (const auto& hash_partition_schema : partition_schema.hash_partition_schemas()) {
-    auto hash_columns = convert_column_ids_to_names(hash_partition_schema.column_ids);
+  // Add hash partition schema.
+  for (const auto& hash_dimension : partition_schema.hash_schema()) {
+    auto hash_columns = convert_column_ids_to_names(hash_dimension.column_ids);
     table_creator->add_hash_partitions(hash_columns,
-                                       hash_partition_schema.num_buckets,
-                                       hash_partition_schema.seed);
+                                       hash_dimension.num_buckets,
+                                       hash_dimension.seed);
   }
 
   // Add range partition schema.
-  if (!partition_schema.range_partition_schema().column_ids.empty()) {
+  if (!partition_schema.range_schema().column_ids.empty()) {
     auto range_columns
-      = convert_column_ids_to_names(partition_schema.range_partition_schema().column_ids);
+      = convert_column_ids_to_names(partition_schema.range_schema().column_ids);
     table_creator->set_range_partition_columns(range_columns);
   }
 

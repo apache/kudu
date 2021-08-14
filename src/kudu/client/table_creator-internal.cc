@@ -46,7 +46,7 @@ KuduTableCreator::KuduRangePartition::Data::Data(
 Status KuduTableCreator::KuduRangePartition::Data::add_hash_partitions(
     const vector<string>& column_names,
     int32_t num_buckets,
-    int32_t seed) {
+    uint32_t seed) {
   if (column_names.empty()) {
     return Status::InvalidArgument(
         "set of columns for hash partitioning must not be empty");
@@ -56,10 +56,10 @@ Status KuduTableCreator::KuduRangePartition::Data::add_hash_partitions(
         "at least two buckets are required to establish hash partitioning");
   }
 
-  // It's totally fine to have multiple hash levels with same parameters,
-  // so there is no need to check for logical duplicates in the
-  // 'hash_bucket_schemas_' vector.
-  hash_bucket_schemas_.emplace_back(column_names, num_buckets, seed);
+  // If many hash dimensions use same columns, the server side will check
+  // for such a condition and report an error appropriately. So, to simplify the
+  // client-side code, there is no check for such a condition.
+  hash_schema_.emplace_back(column_names, num_buckets, seed);
 
   return Status::OK();
 }

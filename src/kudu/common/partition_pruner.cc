@@ -158,8 +158,8 @@ void EncodeRangeKeysFromPredicates(const Schema& schema,
   col_idxs.reserve(range_columns.size());
   for (const auto& column : range_columns) {
     int32_t col_idx = schema.find_column_by_id(column);
-    CHECK(col_idx != Schema::kColumnNotFound);
-    CHECK(col_idx < schema.num_key_columns());
+    CHECK_NE(Schema::kColumnNotFound, col_idx);
+    CHECK_LT(col_idx, schema.num_key_columns());
     col_idxs.push_back(col_idx);
   }
 
@@ -180,14 +180,14 @@ void EncodeRangeKeysFromPredicates(const Schema& schema,
 } // anonymous namespace
 
 vector<bool> PartitionPruner::PruneHashComponent(
-    const PartitionSchema::HashBucketSchema& hash_bucket_schema,
+    const PartitionSchema::HashDimension& hash_dimension,
     const Schema& schema,
     const ScanSpec& scan_spec) {
-  vector<bool> hash_bucket_bitset(hash_bucket_schema.num_buckets, false);
+  vector<bool> hash_bucket_bitset(hash_dimension.num_buckets, false);
   vector<string> encoded_strings(1, "");
-  for (size_t col_offset = 0; col_offset < hash_bucket_schema.column_ids.size(); ++col_offset) {
+  for (size_t col_offset = 0; col_offset < hash_dimension.column_ids.size(); ++col_offset) {
     vector<string> new_encoded_strings;
-    const ColumnSchema& column = schema.column_by_id(hash_bucket_schema.column_ids[col_offset]);
+    const ColumnSchema& column = schema.column_by_id(hash_dimension.column_ids[col_offset]);
     const ColumnPredicate& predicate = FindOrDie(scan_spec.predicates(), column.name());
     const KeyEncoder<string>& encoder = GetKeyEncoder<string>(column.type_info());
 
@@ -206,7 +206,7 @@ vector<bool> PartitionPruner::PruneHashComponent(
       for (const void* predicate_value : predicate_values) {
         string new_encoded_string = encoded_string;
         encoder.Encode(predicate_value,
-                       col_offset + 1 == hash_bucket_schema.column_ids.size(),
+                       col_offset + 1 == hash_dimension.column_ids.size(),
                        &new_encoded_string);
         new_encoded_strings.emplace_back(new_encoded_string);
       }
@@ -214,8 +214,9 @@ vector<bool> PartitionPruner::PruneHashComponent(
     encoded_strings.swap(new_encoded_strings);
   }
   for (const string& encoded_string : encoded_strings) {
-    uint32_t hash = PartitionSchema::BucketForEncodedColumns(encoded_string, hash_bucket_schema);
-    hash_bucket_bitset[hash] = true;
+    uint32_t hash_value = PartitionSchema::HashValueForEncodedColumns(
+        encoded_string, hash_dimension);
+    hash_bucket_bitset[hash_value] = true;
   }
   return hash_bucket_bitset;
 }
@@ -223,17 +224,17 @@ vector<bool> PartitionPruner::PruneHashComponent(
 void PartitionPruner::ConstructPartitionKeyRanges(
     const Schema& schema,
     const ScanSpec& scan_spec,
-    const PartitionSchema::HashBucketSchemas& hash_bucket_schemas,
+    const PartitionSchema::HashSchema& hash_schema,
     const RangeBounds& range_bounds,
     vector<PartitionKeyRange>* partition_key_ranges) {
   // Create the hash bucket portion of the partition key.
 
   // The list of hash buckets bitset per hash component
   vector<vector<bool>> hash_bucket_bitsets;
-  hash_bucket_bitsets.reserve(hash_bucket_schemas.size());
-  for (const auto& hash_bucket_schema : hash_bucket_schemas) {
+  hash_bucket_bitsets.reserve(hash_schema.size());
+  for (const auto& hash_dimension : hash_schema) {
     bool can_prune = true;
-    for (const auto& column_id : hash_bucket_schema.column_ids) {
+    for (const auto& column_id : hash_dimension.column_ids) {
       const ColumnSchema& column = schema.column_by_id(column_id);
       const ColumnPredicate* predicate = FindOrNull(scan_spec.predicates(), column.name());
       if (predicate == nullptr ||
@@ -244,12 +245,11 @@ void PartitionPruner::ConstructPartitionKeyRanges(
       }
     }
     if (can_prune) {
-      auto hash_bucket_bitset = PruneHashComponent(hash_bucket_schema,
-                                                   schema,
-                                                   scan_spec);
+      auto hash_bucket_bitset = PruneHashComponent(
+          hash_dimension, schema, scan_spec);
       hash_bucket_bitsets.emplace_back(std::move(hash_bucket_bitset));
     } else {
-      hash_bucket_bitsets.emplace_back(hash_bucket_schema.num_buckets, true);
+      hash_bucket_bitsets.emplace_back(hash_dimension.num_buckets, true);
     }
   }
 
@@ -257,11 +257,11 @@ void PartitionPruner::ConstructPartitionKeyRanges(
   size_t constrained_index;
   if (!range_bounds.lower.empty() || !range_bounds.upper.empty()) {
     // The range component is constrained.
-    constrained_index = hash_bucket_schemas.size();
+    constrained_index = hash_schema.size();
   } else {
     // Search the hash bucket constraints from right to left, looking for the
     // first constrained component.
-    constrained_index = hash_bucket_schemas.size() -
+    constrained_index = hash_schema.size() -
         distance(hash_bucket_bitsets.rbegin(),
                  find_if(hash_bucket_bitsets.rbegin(),
                          hash_bucket_bitsets.rend(),
@@ -426,7 +426,7 @@ void PartitionPruner::Init(const Schema& schema,
   // the range bounds specified by the scan.
   if (partition_schema.ranges_with_hash_schemas_.empty()) {
     vector<PartitionKeyRange> partition_key_ranges(1);
-    ConstructPartitionKeyRanges(schema, scan_spec, partition_schema.hash_bucket_schemas_,
+    ConstructPartitionKeyRanges(schema, scan_spec, partition_schema.hash_schema_,
                                 {scan_range_lower_bound, scan_range_upper_bound},
                                 &partition_key_ranges);
     // Reverse the order of the partition key ranges, so that it is
@@ -438,35 +438,35 @@ void PartitionPruner::Init(const Schema& schema,
          first_range.partition_key_ranges.begin());
   } else {
     vector<RangeBounds> range_bounds;
-    vector<PartitionSchema::HashBucketSchemas> hash_schemas_per_range;
+    vector<PartitionSchema::HashSchema> hash_schemas_per_range;
     for (const auto& range : partition_schema.ranges_with_hash_schemas_) {
-      const auto& hash_schemas = range.hash_schemas.empty() ?
-          partition_schema.hash_bucket_schemas_ : range.hash_schemas;
+      const auto& hash_schema = range.hash_schema.empty() ?
+          partition_schema.hash_schema_ : range.hash_schema;
       // Both lower and upper bounds are unbounded.
       if (scan_range_lower_bound.empty() && scan_range_upper_bound.empty()) {
         range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
-        hash_schemas_per_range.emplace_back(hash_schemas);
+        hash_schemas_per_range.emplace_back(hash_schema);
         continue;
       }
       // Only one of the lower/upper bounds is unbounded.
       if (scan_range_lower_bound.empty()) {
         if (scan_range_upper_bound > range.lower) {
           range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
-          hash_schemas_per_range.emplace_back(hash_schemas);
+          hash_schemas_per_range.emplace_back(hash_schema);
         }
         continue;
       }
       if (scan_range_upper_bound.empty()) {
         if (scan_range_lower_bound < range.upper) {
           range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
-          hash_schemas_per_range.emplace_back(hash_schemas);
+          hash_schemas_per_range.emplace_back(hash_schema);
         }
         continue;
       }
       // Both lower and upper ranges are bounded.
       if (scan_range_lower_bound < range.upper && scan_range_upper_bound > range.lower) {
         range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
-        hash_schemas_per_range.emplace_back(hash_schemas);
+        hash_schemas_per_range.emplace_back(hash_schema);
       }
     }
     DCHECK_EQ(range_bounds.size(), hash_schemas_per_range.size());

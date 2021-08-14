@@ -340,7 +340,7 @@ DEFINE_int32(table_num_hash_partitions, 8,
              "greater than 1.");
 DEFINE_int32(table_num_range_partitions, 1,
              "The number of range partitions to create when this tool creates "
-             "a new table. A range partitioning schema will be determined to "
+             "a new table. A range partition schema will be determined to "
              "evenly split a sequential workload across ranges, leaving "
              "the outermost ranges unbounded to ensure coverage of the entire "
              "keyspace. Note: The total number of partitions must be greater "

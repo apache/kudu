@@ -97,15 +97,16 @@ class PartitionPruner {
   // Search all combinations of in-list and equality predicates.
   // Return hash values bitset of these combinations.
   static std::vector<bool> PruneHashComponent(
-      const PartitionSchema::HashBucketSchema& hash_bucket_schema,
+      const PartitionSchema::HashDimension& hash_dimension,
       const Schema& schema,
       const ScanSpec& scan_spec);
 
-  // Given the range bounds and the hash bucket schemas, constructs a set of partition key ranges.
+  // Given the range bounds and the hash schema, constructs a set of partition
+  // key ranges.
   static void ConstructPartitionKeyRanges(
       const Schema& schema,
       const ScanSpec& scan_spec,
-      const PartitionSchema::HashBucketSchemas& hash_bucket_schemas,
+      const PartitionSchema::HashSchema& hash_schema,
       const RangeBounds& range_bounds,
       std::vector<PartitionKeyRange>* partition_key_ranges);
 

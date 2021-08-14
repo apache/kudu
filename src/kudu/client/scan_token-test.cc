@@ -1049,7 +1049,7 @@ TEST_P(StaleScanTokensParamTest, DroppingFirstRange) {
 
   // Start another tablet scan using the other identical set of scan tokens.
   // The client metacache should not produce any errors: it should re-fetch
-  // the information about the current partitioning scheme and scan the table
+  // the information about the current partition schema and scan the table
   // within the range of the new partitions which correspond to the originally
   // supplied range.
   int64_t row_count_b = -1;

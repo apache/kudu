@@ -2543,7 +2543,7 @@ TEST_F(ToolTest, TestLoadgenHmsEnabled) {
       HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())), &out));
 }
 
-// Run the loadgen, generating a few different partitioning schemas.
+// Run the loadgen, generating a few different partition schemas.
 TEST_F(ToolTest, TestLoadgenAutoGenTablePartitioning) {
   {
     ExternalMiniClusterOptions opts;

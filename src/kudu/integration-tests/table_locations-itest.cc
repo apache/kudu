@@ -154,20 +154,19 @@ class TableLocationsTest : public KuduTest {
 
   virtual void SetUpConfig() {}
 
-  struct HashBucketSchema {
+  struct HashDimension {
     vector<string> columns;
     int32_t num_buckets;
     uint32_t seed;
   };
-  typedef vector<HashBucketSchema> HashBucketSchemas;
-  typedef vector<HashBucketSchemas> PerRangeHashBucketSchemas;
+  typedef vector<HashDimension> HashSchema;
 
   Status CreateTable(const string& table_name,
                      const Schema& schema,
                      const vector<KuduPartialRow>& split_rows,
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
-                     const PerRangeHashBucketSchemas& range_hash_schema,
-                     const HashBucketSchemas& table_hash_schema);
+                     const vector<HashSchema>& ranges_hash_schemas,
+                     const HashSchema& table_hash_schema);
 
 
   void CreateTable(const string& table_name, int num_splits);
@@ -185,8 +184,8 @@ Status TableLocationsTest::CreateTable(
     const Schema& schema,
     const vector<KuduPartialRow>& split_rows = {},
     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds = {},
-    const PerRangeHashBucketSchemas& range_hash_schema = {},
-    const HashBucketSchemas& table_hash_schema = {}) {
+    const vector<HashSchema>& ranges_hash_schemas = {},
+    const HashSchema& table_hash_schema = {}) {
 
   CreateTableRequestPB req;
   req.set_name(table_name);
@@ -199,33 +198,33 @@ Status TableLocationsTest::CreateTable(
   for (const auto& bound : bounds) {
     splits_encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
     splits_encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
-    if (!range_hash_schema.empty()) {
+    if (!ranges_hash_schemas.empty()) {
       RowOperationsPBEncoder encoder(partition_schema_pb->add_range_bounds());
       encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
       encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
     }
   }
 
-  for (const auto& hash_schemas : range_hash_schema) {
+  for (const auto& hash_schema : ranges_hash_schemas) {
     auto* range_hash_schemas_pb = partition_schema_pb->add_range_hash_schemas();
-    for (const auto& hash_schema : hash_schemas) {
+    for (const auto& hash_dimension : hash_schema) {
       auto* hash_schema_pb = range_hash_schemas_pb->add_hash_schemas();
-      for (const string& col_name : hash_schema.columns) {
+      for (const string& col_name : hash_dimension.columns) {
         hash_schema_pb->add_columns()->set_name(col_name);
       }
-      hash_schema_pb->set_num_buckets(hash_schema.num_buckets);
-      hash_schema_pb->set_seed(hash_schema.seed);
+      hash_schema_pb->set_num_buckets(hash_dimension.num_buckets);
+      hash_schema_pb->set_seed(hash_dimension.seed);
     }
   }
 
   if (!table_hash_schema.empty()) {
-    for (const auto& hash_schema : table_hash_schema) {
+    for (const auto& hash_dimension : table_hash_schema) {
       auto* hash_schema_pb = partition_schema_pb->add_hash_bucket_schemas();
-      for (const string& col_name : hash_schema.columns) {
+      for (const string& col_name : hash_dimension.columns) {
         hash_schema_pb->add_columns()->set_name(col_name);
       }
-      hash_schema_pb->set_num_buckets(hash_schema.num_buckets);
-      hash_schema_pb->set_seed(hash_schema.seed);
+      hash_schema_pb->set_num_buckets(hash_dimension.num_buckets);
+      hash_schema_pb->set_seed(hash_dimension.seed);
     }
   }
 
@@ -477,17 +476,18 @@ TEST_F(TableLocationsTest, TestRangeSpecificHashing) {
   ASSERT_OK(bounds[2].first.SetStringNoCopy(0, "e"));
   ASSERT_OK(bounds[2].second.SetStringNoCopy(0, "f"));
 
-  PerRangeHashBucketSchemas range_hash_schema;
-  HashBucketSchemas hash_schema_4_by_2 = { { { "key" }, 4, 0 }, { { "val" }, 2, 0} };
-  range_hash_schema.emplace_back(hash_schema_4_by_2);
-  HashBucketSchemas hash_schema_6 = { { { "key" }, 6, 2 } };
-  range_hash_schema.emplace_back(hash_schema_6);
+  vector<HashSchema> range_hash_schemas;
+  HashSchema hash_schema_4_by_2 = { { { "key" }, 4, 0 }, { { "val" }, 2, 0} };
+  range_hash_schemas.emplace_back(hash_schema_4_by_2);
+  HashSchema hash_schema_6 = { { { "key" }, 6, 2 } };
+  range_hash_schemas.emplace_back(hash_schema_6);
 
   // Table-wide hash schema, applied to range by default if no per-range schema is specified.
-  HashBucketSchemas table_hash_schema_5 = { { { "val" }, 5, 4 } };
-  range_hash_schema.push_back({});
+  HashSchema table_hash_schema_5 = { { { "val" }, 5, 4 } };
+  range_hash_schemas.emplace_back();
 
-  ASSERT_OK(CreateTable(table_name, schema, {}, bounds, range_hash_schema, table_hash_schema_5));
+  ASSERT_OK(CreateTable(
+      table_name, schema, {}, bounds, range_hash_schemas, table_hash_schema_5));
   NO_FATALS(CheckMasterTableCreation(table_name, 19));
 
   GetTableLocationsRequestPB req;

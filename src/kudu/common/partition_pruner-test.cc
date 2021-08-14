@@ -74,7 +74,7 @@ class PartitionPrunerTest : public KuduTest {
       const vector<ColumnNameAndIntValue>& upper_int_cols,
       const vector<ColumnNamesNumBucketsAndSeed>& hash_schemas,
       vector<pair<KuduPartialRow, KuduPartialRow>>* bounds,
-      PartitionSchema::PerRangeHashBucketSchemas* range_hash_schemas,
+      vector<PartitionSchema::HashSchema>* range_hash_schemas,
       PartitionSchemaPB* pb);
 };
 
@@ -121,13 +121,13 @@ void PartitionPrunerTest::CreatePartitionSchemaPB(
   for (const auto& range_column : range_columns) {
     range_schema->add_columns()->set_name(range_column);
   }
-  for (const auto& hash_schema : table_hash_schema) {
+  for (const auto& hash_dimension : table_hash_schema) {
     auto* hash_schema_component = partition_schema_pb->add_hash_bucket_schemas();
-    for (const auto& hash_schema_columns : get<0>(hash_schema)) {
+    for (const auto& hash_schema_columns : get<0>(hash_dimension)) {
       hash_schema_component->add_columns()->set_name(hash_schema_columns);
     }
-    hash_schema_component->set_num_buckets(get<1>(hash_schema));
-    hash_schema_component->set_seed(get<2>(hash_schema));
+    hash_schema_component->set_num_buckets(get<1>(hash_dimension));
+    hash_schema_component->set_seed(get<2>(hash_dimension));
   }
 }
 
@@ -137,9 +137,9 @@ void PartitionPrunerTest::AddRangePartitionWithSchema(
     const vector<ColumnNameAndStringValue>& upper_string_cols,
     const vector<ColumnNameAndIntValue>& lower_int_cols,
     const vector<ColumnNameAndIntValue>& upper_int_cols,
-    const vector<ColumnNamesNumBucketsAndSeed>& hash_schemas,
+    const vector<ColumnNamesNumBucketsAndSeed>& hash_buckets_info,
     vector<pair<KuduPartialRow, KuduPartialRow>>* bounds,
-    PartitionSchema::PerRangeHashBucketSchemas* range_hash_schemas,
+    vector<PartitionSchema::HashSchema>* range_hash_schemas,
     PartitionSchemaPB* pb) {
   RowOperationsPBEncoder encoder(pb->add_range_bounds());
   KuduPartialRow lower(&schema);
@@ -159,21 +159,21 @@ void PartitionPrunerTest::AddRangePartitionWithSchema(
   encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
   encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
   auto* range_hash_component = pb->add_range_hash_schemas();
-  PartitionSchema::HashBucketSchemas hash_bucket_schemas;
-  for (const auto& hash_schema : hash_schemas) {
+  PartitionSchema::HashSchema hash_schema;
+  for (const auto& hash_bucket_info : hash_buckets_info) {
     auto* hash_component_pb = range_hash_component->add_hash_schemas();
-    PartitionSchema::HashBucketSchema hash_bucket_schema;
-    for (const auto& hash_schema_columns : get<0>(hash_schema)) {
+    PartitionSchema::HashDimension hash_dimension;
+    for (const auto& hash_schema_columns : get<0>(hash_bucket_info)) {
       hash_component_pb->add_columns()->set_name(hash_schema_columns);
-      hash_bucket_schema.column_ids.emplace_back(schema.find_column(hash_schema_columns));
+      hash_dimension.column_ids.emplace_back(schema.find_column(hash_schema_columns));
     }
-    hash_component_pb->set_num_buckets(get<1>(hash_schema));
-    hash_bucket_schema.num_buckets = get<1>(hash_schema);
-    hash_component_pb->set_seed(get<2>(hash_schema));
-    hash_bucket_schema.seed = get<2>(hash_schema);
-    hash_bucket_schemas.emplace_back(hash_bucket_schema);
+    hash_component_pb->set_num_buckets(get<1>(hash_bucket_info));
+    hash_dimension.num_buckets = get<1>(hash_bucket_info);
+    hash_component_pb->set_seed(get<2>(hash_bucket_info));
+    hash_dimension.seed = get<2>(hash_bucket_info);
+    hash_schema.emplace_back(hash_dimension);
   }
-  range_hash_schemas->emplace_back(hash_bucket_schemas);
+  range_hash_schemas->emplace_back(hash_schema);
   bounds->emplace_back(lower, upper);
 }
 
@@ -1116,7 +1116,7 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangePruning) {
   CreatePartitionSchemaPB({"C"}, { {{"A"}, 2, 0}, {{"B"}, 2, 0} }, &pb);
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
 
   // Need to add per range hash schema components to the field 'range_with_hash_schemas_'
   // of PartitionSchema because PartitionPruner will use them to construct partition key ranges.
@@ -1298,7 +1298,7 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
 
   // [(0, 0, _), (2, 2, _))
   {
@@ -1412,7 +1412,7 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
   CreatePartitionSchemaPB({"A"}, { {{"B", "C"}, 3, 0} }, &pb);
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
 
   // [(a, _, _), (c, _, _))
   {
@@ -1514,7 +1514,7 @@ TEST_F(PartitionPrunerTest, TestSingleRangeElementAndBoundaryCase) {
   CreatePartitionSchemaPB({"A"}, { {{"B"}, 2, 0} }, &pb);
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
 
   // [(0, _), (1, _))
   {

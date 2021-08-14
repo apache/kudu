@@ -170,7 +170,7 @@ class TxnCommitITest : public KuduTest {
     table_name_ = w.table_name();
     initial_row_count_ = w.rows_inserted();
 
-    // Since the test table uses the hash partitioning scheme, every tablet gets
+    // Since the test table uses hash partitioning, every tablet gets
     // at least one write operation when inserting several rows into the test
     // table. So, for every transaction inserting several rows into the test
     // table, it's easy to build the list of transaction participants.

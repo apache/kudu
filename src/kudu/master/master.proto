@@ -180,7 +180,7 @@ message SysTablesEntryPB {
   // This is the schema provided to the user on client->GetSchema(tableName).
   optional SchemaPB fully_applied_schema = 4;
 
-  // The table's partitioning schema.
+  // The table's partition schema.
   optional PartitionSchemaPB partition_schema = 9;
 
   // The next column ID to assign to newly added columns in this table.

@@ -1859,7 +1859,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     }
   }
 
-  PartitionSchema::PerRangeHashBucketSchemas range_hash_schemas;
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
   if (FLAGS_enable_per_range_hash_schemas) {
     // TODO(aserbin): the signature of CreatePartitions() require the
     //                'range_hash_schemas' parameters: update its signature
@@ -1869,10 +1869,10 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     //                CreatePartitions() should be updated correspondingly.
     const auto& ps = req.partition_schema();
     for (int i = 0; i < ps.range_hash_schemas_size(); i++) {
-      PartitionSchema::HashBucketSchemas hash_bucket_schemas;
-      RETURN_NOT_OK(PartitionSchema::ExtractHashBucketSchemasFromPB(
-          schema, ps.range_hash_schemas(i).hash_schemas(), &hash_bucket_schemas));
-      range_hash_schemas.emplace_back(std::move(hash_bucket_schemas));
+      PartitionSchema::HashSchema hash_schema;
+      RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
+          schema, ps.range_hash_schemas(i).hash_schemas(), &hash_schema));
+      range_hash_schemas.emplace_back(std::move(hash_schema));
     }
   }
 

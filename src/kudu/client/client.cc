@@ -832,8 +832,7 @@ KuduTableCreator& KuduTableCreator::add_hash_partitions(const vector<string>& co
 KuduTableCreator& KuduTableCreator::add_hash_partitions(const vector<string>& columns,
                                                         int32_t num_buckets,
                                                         int32_t seed) {
-  PartitionSchemaPB::HashBucketSchemaPB* bucket_schema =
-      data_->partition_schema_.add_hash_bucket_schemas();
+  auto* bucket_schema = data_->partition_schema_.add_hash_bucket_schemas();
   for (const string& col_name : columns) {
     bucket_schema->add_columns()->set_name(col_name);
   }
@@ -964,11 +963,9 @@ Status KuduTableCreator::Create() {
     has_range_splits = true;
   }
 
-  // A preliminary pass over the ranges is here to check if any custom hash
-  // partitioning schemas are present.
   bool has_range_with_custom_hash_schema = false;
   for (const auto& p : data_->range_partitions_) {
-    if (!p->data_->hash_bucket_schemas_.empty()) {
+    if (!p->data_->hash_schema_.empty()) {
       has_range_with_custom_hash_schema = true;
       break;
     }
@@ -1011,17 +1008,17 @@ Status KuduTableCreator::Create() {
       encoder.Add(lower_bound_type, *range->lower_bound_);
       encoder.Add(upper_bound_type, *range->upper_bound_);
       // Populate corresponding element in 'range_hash_schemas' if there is at
-      // least one range with custom hash partitioning schema.
+      // least one range with custom hash schema.
       auto* schemas_pb = partition_schema->add_range_hash_schemas();
-      if (range->hash_bucket_schemas_.empty()) {
+      if (range->hash_schema_.empty()) {
         schemas_pb->mutable_hash_schemas()->CopyFrom(
             data_->partition_schema_.hash_bucket_schemas());
       } else {
-        for (const auto& schema : range->hash_bucket_schemas_) {
+        for (const auto& hash_dimension : range->hash_schema_) {
           auto* pb = schemas_pb->add_hash_schemas();
-          pb->set_seed(schema.seed);
-          pb->set_num_buckets(schema.num_buckets);
-          for (const auto& column_name : schema.column_names) {
+          pb->set_seed(hash_dimension.seed);
+          pb->set_num_buckets(hash_dimension.num_buckets);
+          for (const auto& column_name : hash_dimension.column_names) {
             pb->add_columns()->set_name(column_name);
           }
         }
@@ -1072,6 +1069,13 @@ Status KuduTableCreator::KuduRangePartition::add_hash_partitions(
     const vector<string>& columns,
     int32_t num_buckets,
     int32_t seed) {
+  if (seed < 0) {
+    // TODO(aserbin): change the signature of
+    //                KuduRangePartition::add_hash_partitions() to use uint32_t
+    //                for the 'seed' parameter while it's still possible since
+    //                the client API hasn't been released yet
+    return Status::InvalidArgument("hash seed must non-negative");
+  }
   return data_->add_hash_partitions(columns, num_buckets, seed);
 }
 

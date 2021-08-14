@@ -37,19 +37,20 @@ namespace client {
 
 class KuduSchema;
 
-struct HashBucketSchema {
-  HashBucketSchema(std::vector<std::string> column_names,
-                   uint32_t num_buckets,
-                   int32_t seed)
+struct HashDimension {
+  HashDimension(std::vector<std::string> column_names,
+                uint32_t num_buckets,
+                uint32_t seed)
       : column_names(std::move(column_names)),
         num_buckets(num_buckets),
         seed(seed) {
   }
 
   const std::vector<std::string> column_names;
-  const uint32_t num_buckets;
-  const int32_t seed;
+  const int32_t num_buckets;
+  const uint32_t seed;
 };
+typedef std::vector<HashDimension> HashSchema;
 
 class KuduTableCreator::Data {
  public:
@@ -98,7 +99,7 @@ class KuduTableCreator::KuduRangePartition::Data {
 
   Status add_hash_partitions(const std::vector<std::string>& column_names,
                              int32_t num_buckets,
-                             int32_t seed);
+                             uint32_t seed);
 
   const RangePartitionBound lower_bound_type_;
   const RangePartitionBound upper_bound_type_;
@@ -106,7 +107,7 @@ class KuduTableCreator::KuduRangePartition::Data {
   std::unique_ptr<KuduPartialRow> lower_bound_;
   std::unique_ptr<KuduPartialRow> upper_bound_;
 
-  std::vector<HashBucketSchema> hash_bucket_schemas_;
+  HashSchema hash_schema_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);

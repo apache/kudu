@@ -171,13 +171,12 @@ class MasterTest : public KuduTest {
     KuduTest::TearDown();
   }
 
-  struct HashBucketSchema {
+  struct HashDimension {
     vector<string> columns;
     int32_t num_buckets;
     uint32_t seed;
   };
-  typedef vector<HashBucketSchema> HashBucketSchemas;
-  typedef vector<HashBucketSchemas> PerRangeHashBucketSchemas;
+  typedef vector<HashDimension> HashSchema;
 
   void DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp);
   void DoListAllTables(ListTablesResponsePB* resp);
@@ -192,7 +191,7 @@ class MasterTest : public KuduTest {
                      const Schema& schema,
                      const vector<KuduPartialRow>& split_rows,
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds = {},
-                     const PerRangeHashBucketSchemas& range_hash_schema = {});
+                     const vector<HashSchema>& range_hash_schemas = {});
 
   Status CreateTable(const string& name,
                      const Schema& schema,
@@ -201,7 +200,7 @@ class MasterTest : public KuduTest {
                      const optional<string>& comment,
                      const vector<KuduPartialRow>& split_rows,
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
-                     const PerRangeHashBucketSchemas& range_hash_schema);
+                     const vector<HashSchema>& range_hash_schemas);
 
   shared_ptr<Messenger> client_messenger_;
   unique_ptr<MiniMaster> mini_master_;
@@ -229,9 +228,9 @@ Status MasterTest::CreateTable(
     const Schema& schema,
     const vector<KuduPartialRow>& split_rows,
     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
-    const PerRangeHashBucketSchemas& range_hash_schema) {
+    const vector<HashSchema>& range_hash_schemas) {
   return CreateTable(
-        name, schema, none, none, none, split_rows, bounds, range_hash_schema);
+        name, schema, none, none, none, split_rows, bounds, range_hash_schemas);
 }
 
 Status MasterTest::CreateTable(
@@ -242,7 +241,7 @@ Status MasterTest::CreateTable(
     const optional<string>& comment,
     const vector<KuduPartialRow>& split_rows,
     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
-    const PerRangeHashBucketSchemas& range_hash_schema) {
+    const vector<HashSchema>& range_hash_schemas) {
   CreateTableRequestPB req;
   req.set_name(name);
   if (type) {
@@ -257,22 +256,22 @@ Status MasterTest::CreateTable(
   for (const pair<KuduPartialRow, KuduPartialRow>& bound : bounds) {
     splits_encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
     splits_encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
-    if (!range_hash_schema.empty()) {
+    if (!range_hash_schemas.empty()) {
       RowOperationsPBEncoder encoder(partition_schema_pb->add_range_bounds());
       encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
       encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
     }
   }
 
-  for (const auto& hash_schemas : range_hash_schema) {
+  for (const auto& range_hash_schema : range_hash_schemas) {
     auto* hash_schemas_pb = partition_schema_pb->add_range_hash_schemas();
-    for (const auto& hash_schema : hash_schemas) {
+    for (const auto& hash_dimension : range_hash_schema) {
       auto* hash_bucket_schema_pb = hash_schemas_pb->add_hash_schemas();
-      for (const string& col_name : hash_schema.columns) {
+      for (const string& col_name : hash_dimension.columns) {
         hash_bucket_schema_pb->add_columns()->set_name(col_name);
       }
-      hash_bucket_schema_pb->set_num_buckets(hash_schema.num_buckets);
-      hash_bucket_schema_pb->set_seed(hash_schema.seed);
+      hash_bucket_schema_pb->set_num_buckets(hash_dimension.num_buckets);
+      hash_bucket_schema_pb->set_seed(hash_dimension.seed);
     }
   }
 
@@ -919,7 +918,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     KuduPartialRow a_upper(&kTableSchema);
     ASSERT_OK(a_lower.SetInt32("key", 0));
     ASSERT_OK(a_upper.SetInt32("key", 100));
-    PerRangeHashBucketSchemas range_hash_schemas = {{}};
+    vector<HashSchema> range_hash_schemas = {{}};
     Status s = CreateTable(kTableName,
                            kTableSchema,
                            { split1 },
@@ -943,13 +942,12 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     KuduPartialRow b_upper(&kTableSchema);
     ASSERT_OK(b_lower.SetInt32("key", 100));
     ASSERT_OK(b_upper.SetInt32("key", 200));
-    HashBucketSchemas hash_schemas_4 = { { {"key"}, 4, 0 } };
-    PerRangeHashBucketSchemas range_hash_schema = { std::move(hash_schemas_4) };
+    vector<HashSchema> range_hash_schemas = { { { {"key"}, 4, 0 } } };
     Status s = CreateTable(kTableName,
                            kTableSchema,
                            {},
                            { { a_lower, a_upper }, { b_lower, b_upper }, },
-                           range_hash_schema);
+                           range_hash_schemas);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
                         "1 vs 2: per range hash schemas and range bounds "
@@ -964,8 +962,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     Status s = CreateTable(kTableName, kTableSchema, { split });
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "split rows may only contain values "
-                        "for range partitioned columns: val");
+                        "split rows may only contain values for "
+                        "range partition columns: val");
   }
 
   { // Overlapping bounds.
@@ -1198,9 +1196,9 @@ TEST_F(MasterTest, NonPrimaryKeyColumnsForPerRangeCustomHashSchema) {
   KuduPartialRow upper(&kTableSchema);
   ASSERT_OK(lower.SetInt32("key", 0));
   ASSERT_OK(upper.SetInt32("key", 100));
-  PerRangeHashBucketSchemas range_hash_schema{{{{"int32_val"}, 2, 0}}};
+  vector<HashSchema> range_hash_schemas{{{{"int32_val"}, 2, 0}}};
   const auto s = CreateTable(
-      kTableName, kTableSchema, {}, { { lower, upper } }, range_hash_schema);
+      kTableName, kTableSchema, {}, { { lower, upper } }, range_hash_schemas);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "must specify only primary key columns for "
