@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Message;
@@ -251,7 +252,7 @@ public final class AsyncKuduScanner {
 
   private boolean closed = false;
 
-  private boolean hasMore = true;
+  private boolean canRequestMore = true;
 
   private long numRowsReturned = 0;
 
@@ -281,9 +282,28 @@ public final class AsyncKuduScanner {
    */
   private int sequenceId;
 
-  private Deferred<RowResultIterator> prefetcherDeferred;
-
   final long scanRequestTimeout;
+
+  /**
+   * The prefetching result is cached in memory. This atomic reference is used to avoid
+   * two concurrent prefetchings occur and the latest one overrides the previous one.
+   */
+  private AtomicReference<Deferred<RowResultIterator>> cachedPrefetcherDeferred =
+      new AtomicReference<>();
+
+  /**
+   * When scanner's prefetching is enabled, there are at most two concurrent ScanRequests
+   * sent to the tserver. But if the scan data reached the end, only one hasMore=false is returned.
+   * As a result, one of the ScanRequests got "scanner not found (it may have expired)" exception.
+   * The same issue occurs for KeepAliveRequest.
+   *
+   * @param errorCode error code returned from tserver
+   * @return true if this can be ignored
+   */
+  boolean canBeIgnored(TabletServerErrorPB.Code errorCode) {
+    return errorCode == TabletServerErrorPB.Code.SCANNER_EXPIRED &&
+            prefetching && closed;
+  }
 
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedNames,
                    List<Integer> projectedIndexes, ReadMode readMode, boolean isFaultTolerant,
@@ -362,7 +382,7 @@ public final class AsyncKuduScanner {
     // short circuited without contacting any tablet servers.
     if (!pruner.hasMorePartitionKeyRanges()) {
       LOG.debug("Short circuiting scan");
-      this.hasMore = false;
+      this.canRequestMore = false;
       this.closed = true;
     }
 
@@ -421,11 +441,11 @@ public final class AsyncKuduScanner {
   }
 
   /**
-   * Tells if the last rpc returned that there might be more rows to scan.
+   * Tells if there is data to scan, including both rpc or cached rpc result.
    * @return true if there might be more data to scan, else false
    */
   public boolean hasMoreRows() {
-    return this.hasMore;
+    return this.canRequestMore || cachedPrefetcherDeferred.get() != null;
   }
 
   /**
@@ -529,6 +549,10 @@ public final class AsyncKuduScanner {
    */
   public Deferred<RowResultIterator> nextRows() {
     if (closed) {  // We're already done scanning.
+      if (prefetching && cachedPrefetcherDeferred.get() != null) {
+        // return the cached result and reset the cache.
+        return cachedPrefetcherDeferred.getAndUpdate((v) -> null);
+      }
       return Deferred.fromResult(null);
     } else if (tablet == null) {
       Callback<Deferred<RowResultIterator>, AsyncKuduScanner.Response> cb =
@@ -578,7 +602,7 @@ public final class AsyncKuduScanner {
           }
           scannerId = resp.scannerId;
           sequenceId++;
-          hasMore = resp.more;
+          canRequestMore = resp.more;
           if (LOG.isDebugEnabled()) {
             LOG.debug("Scanner {} opened on {}", Bytes.pretty(scannerId), tablet);
           }
@@ -602,7 +626,7 @@ public final class AsyncKuduScanner {
 
             // Stop scanning if the non-covered range is past the end partition key.
             if (!pruner.hasMorePartitionKeyRanges()) {
-              hasMore = false;
+              canRequestMore = false;
               closed = true; // the scanner is closed on the other side at this point
               return Deferred.fromResult(RowResultIterator.empty());
             }
@@ -624,8 +648,9 @@ public final class AsyncKuduScanner {
 
       // We need to open the scanner first.
       return client.sendRpcToTablet(getOpenRequest()).addCallbackDeferring(cb).addErrback(eb);
-    } else if (prefetching && prefetcherDeferred != null) {
-      // TODO KUDU-1260 - Check if this works and add a test
+    } else if (prefetching && cachedPrefetcherDeferred.get() != null) {
+      Deferred<RowResultIterator> prefetcherDeferred =
+          cachedPrefetcherDeferred.getAndUpdate((v) -> null);
       prefetcherDeferred.chain(new Deferred<RowResultIterator>().addCallback(prefetch));
       return prefetcherDeferred;
     }
@@ -641,9 +666,15 @@ public final class AsyncKuduScanner {
       new Callback<RowResultIterator, RowResultIterator>() {
     @Override
     public RowResultIterator call(RowResultIterator arg) throws Exception {
-      if (hasMoreRows()) {
-        prefetcherDeferred = client.scanNextRows(AsyncKuduScanner.this)
-            .addCallbacks(gotNextRow, nextRowErrback());
+      if (canRequestMore) {
+        if (cachedPrefetcherDeferred.get() == null) {
+          Deferred<RowResultIterator> prefetcherDeferred =
+              client.scanNextRows(AsyncKuduScanner.this)
+                  .addCallbacks(gotNextRow, nextRowErrback());
+          if (!cachedPrefetcherDeferred.compareAndSet(null, prefetcherDeferred)) {
+            LOG.info("Skip one prefetching because two concurrent prefetching scan occurs");
+          }
+        }
       }
       return null;
     }
@@ -664,7 +695,7 @@ public final class AsyncKuduScanner {
             return resp.data;
           }
           sequenceId++;
-          hasMore = resp.more;
+          canRequestMore = resp.more;
           return resp.data;
         }
 
@@ -710,7 +741,7 @@ public final class AsyncKuduScanner {
     // Stop scanning if we have scanned until or past the end partition key, or
     // if we have fulfilled the limit.
     if (!pruner.hasMorePartitionKeyRanges() || numRowsReturned >= limit) {
-      hasMore = false;
+      canRequestMore = false;
       closed = true; // the scanner is closed on the other side at this point
       return;
     }
@@ -853,6 +884,10 @@ public final class AsyncKuduScanner {
    */
   public Deferred<Void> keepAlive() {
     if (closed) {
+      if (prefetching && cachedPrefetcherDeferred.get() != null) {
+        // skip sending keep alive if all of the data has been fetched in prefetching mode
+        return Deferred.fromResult(null);
+      }
       throw new IllegalStateException("Scanner has already been closed");
     }
     return client.keepAlive(this);
@@ -1007,7 +1042,14 @@ public final class AsyncKuduScanner {
       ScannerKeepAliveResponsePB.Builder builder = ScannerKeepAliveResponsePB.newBuilder();
       readProtobuf(callResponse.getPBMessage(), builder);
       ScannerKeepAliveResponsePB resp = builder.build();
-      TabletServerErrorPB error = resp.hasError() ? resp.getError() : null;
+      TabletServerErrorPB error = null;
+      if (resp.hasError()) {
+        if (canBeIgnored(resp.getError().getCode())) {
+          LOG.info("Ignore false alert of scanner not found for keep alive request");
+        } else {
+          error = resp.getError();
+        }
+      }
       return new Pair<>(null, error);
     }
   }
@@ -1156,25 +1198,30 @@ public final class AsyncKuduScanner {
 
       // Error handling.
       if (error != null) {
-        switch (error.getCode()) {
-          case TABLET_NOT_FOUND:
-          case TABLET_NOT_RUNNING:
-            if (state == State.OPENING || (state == State.NEXT && isFaultTolerant)) {
-              // Doing this will trigger finding the new location.
-              return new Pair<>(null, error);
-            } else {
-              Status statusIncomplete = Status.Incomplete("Cannot continue scanning, " +
-                  "the tablet has moved and this isn't a fault tolerant scan");
-              throw new NonRecoverableException(statusIncomplete);
-            }
-          case SCANNER_EXPIRED:
-            if (isFaultTolerant) {
-              Status status = Status.fromTabletServerErrorPB(error);
-              throw new FaultTolerantScannerExpiredException(status);
-            }
-            // fall through
-          default:
-            break;
+        if (canBeIgnored(resp.getError().getCode())) {
+          LOG.info("Ignore false alert of scanner not found for scan request");
+          error = null;
+        } else {
+          switch (error.getCode()) {
+            case TABLET_NOT_FOUND:
+            case TABLET_NOT_RUNNING:
+              if (state == State.OPENING || (state == State.NEXT && isFaultTolerant)) {
+                // Doing this will trigger finding the new location.
+                return new Pair<>(null, error);
+              } else {
+                Status statusIncomplete = Status.Incomplete("Cannot continue scanning, " +
+                        "the tablet has moved and this isn't a fault tolerant scan");
+                throw new NonRecoverableException(statusIncomplete);
+              }
+            case SCANNER_EXPIRED:
+              if (isFaultTolerant) {
+                Status status = Status.fromTabletServerErrorPB(error);
+                throw new FaultTolerantScannerExpiredException(status);
+              }
+              // fall through
+            default:
+              break;
+          }
         }
       }
       // TODO: Find a clean way to plumb in reuseRowResult.
