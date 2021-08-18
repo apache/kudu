@@ -17,9 +17,10 @@
 
 package org.apache.kudu.spark.kudu
 
+import org.apache.kudu.client.AsyncKuduClient.EncryptionPolicy
+
 import java.net.InetAddress
 import java.util.Locale
-
 import scala.collection.JavaConverters._
 import scala.util.Try
 import org.apache.spark.rdd.RDD
@@ -73,6 +74,8 @@ class DefaultSource
   val USE_DRIVER_METADATA = "kudu.useDriverMetadata"
   val SNAPSHOT_TIMESTAMP_MS = "kudu.snapshotTimestampMs"
   val SASL_PROTOCOL_NAME = "kudu.saslProtocolName"
+  val REQUIRE_AUTHENTICATION = "kudu.requireAuthentication"
+  val ENCRYPTION_POLICY = "kudu.encryptionPolicy"
 
   /**
    * A nice alias for the data source so that when specifying the format
@@ -111,6 +114,8 @@ class DefaultSource
     val kuduMaster = getMasterAddrs(parameters)
     val operationType = getOperationType(parameters)
     val saslProtocolName = getSaslProtocolName(parameters)
+    val requireAuthentication = getRequireAuthentication(parameters)
+    val encryptionPolicy = getEncryptionPolicy(parameters)
     val schemaOption = Option(schema)
     val readOptions = getReadOptions(parameters)
     val writeOptions = getWriteOptions(parameters)
@@ -119,6 +124,8 @@ class DefaultSource
       tableName,
       kuduMaster,
       saslProtocolName,
+      requireAuthentication,
+      encryptionPolicy,
       operationType,
       schemaOption,
       readOptions,
@@ -161,6 +168,8 @@ class DefaultSource
     val masterAddrs = getMasterAddrs(parameters)
     val operationType = getOperationType(parameters)
     val saslProtocolName = getSaslProtocolName(parameters)
+    val requireAuthentication = getRequireAuthentication(parameters)
+    val encryptionPolicy = getEncryptionPolicy(parameters)
     val readOptions = getReadOptions(parameters)
     val writeOptions = getWriteOptions(parameters)
 
@@ -168,6 +177,8 @@ class DefaultSource
       tableName,
       masterAddrs,
       saslProtocolName,
+      requireAuthentication,
+      encryptionPolicy,
       operationType,
       readOptions,
       writeOptions
@@ -236,6 +247,18 @@ class DefaultSource
     parameters.getOrElse(SASL_PROTOCOL_NAME, "kudu")
   }
 
+  private def getRequireAuthentication(parameters: Map[String, String]): Boolean = {
+    parameters.get(REQUIRE_AUTHENTICATION).exists(_.toBoolean)
+  }
+
+  private def getEncryptionPolicy(parameters: Map[String, String]): EncryptionPolicy = {
+    parameters.getOrElse(ENCRYPTION_POLICY, "optional").toLowerCase(Locale.ENGLISH) match {
+      case "optional" => EncryptionPolicy.OPTIONAL
+      case "required" => EncryptionPolicy.REQUIRED
+      case "required_remote" => EncryptionPolicy.REQUIRED_REMOTE
+    }
+  }
+
   private def getScanLocalityType(opParam: String): ReplicaSelection = {
     opParam.toLowerCase(Locale.ENGLISH) match {
       case "leader_only" => ReplicaSelection.LEADER_ONLY
@@ -284,6 +307,8 @@ class KuduRelation(
     val tableName: String,
     val masterAddrs: String,
     val saslProtocolName: String,
+    val requireAuthentication: Boolean = false,
+    val encryptionPolicy: EncryptionPolicy = EncryptionPolicy.OPTIONAL,
     val operationType: OperationType,
     val userSchema: Option[StructType],
     val readOptions: KuduReadOptions = new KuduReadOptions,
@@ -292,7 +317,13 @@ class KuduRelation(
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   private val context: KuduContext =
-    new KuduContext(masterAddrs, sqlContext.sparkContext, None, Some(saslProtocolName))
+    new KuduContext(
+      masterAddrs,
+      sqlContext.sparkContext,
+      None,
+      Some(saslProtocolName),
+      requireAuthentication,
+      encryptionPolicy)
 
   private val table: KuduTable = context.syncClient.openTable(tableName)
 
@@ -509,6 +540,8 @@ class KuduSink(
     val tableName: String,
     val masterAddrs: String,
     val saslProtocolName: String,
+    val requireAuthentication: Boolean = false,
+    val encryptionPolicy: EncryptionPolicy = EncryptionPolicy.OPTIONAL,
     val operationType: OperationType,
     val readOptions: KuduReadOptions = new KuduReadOptions,
     val writeOptions: KuduWriteOptions)(val sqlContext: SQLContext)

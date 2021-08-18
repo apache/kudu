@@ -36,6 +36,7 @@ import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
 import org.apache.kudu.test.KuduTestHarness.EnableKerberos
 import org.apache.kudu.test.KuduTestHarness.MasterServerConfig
+import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
 import org.junit.Before
 import org.junit.Test
 import org.scalatest.matchers.should.Matchers
@@ -896,5 +897,65 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     val df = sqlContext.read.options(kuduOptions).format("kudu").load
     assertEquals(rowCount, df.count())
+  }
+
+  @Test
+  def testKuduRequireAuthenticationInsecureCluster(): Unit = {
+    KuduClientCache.clearCacheForTests()
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.requireAuthentication" -> "true"
+    )
+    val exception = intercept[Exception] {
+      val df = sqlContext.read.options(kuduOptions).format("kudu").load
+      df.count
+    }
+    assertTrue(
+      exception.getCause.getMessage
+        .contains("client requires authentication, but server does not have Kerberos enabled"))
+  }
+
+  @Test
+  @MasterServerConfig(flags = Array("--rpc_encryption=disabled", "--rpc_authentication=disabled"))
+  @TabletServerConfig(flags = Array("--rpc_encryption=disabled", "--rpc_authentication=disabled"))
+  def testKuduRequireEncryptionInsecureCluster(): Unit = {
+    KuduClientCache.clearCacheForTests()
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.encryptionPolicy" -> "required_remote"
+    )
+    val exception = intercept[Exception] {
+      val df = sqlContext.read.options(kuduOptions).format("kudu").load
+      df.count
+    }
+    assertTrue(
+      exception.getCause.getMessage.contains("server does not support required TLS encryption"))
+  }
+
+  @Test
+  @EnableKerberos
+  def testKuduRequireAuthenticationAndEncryptionSecureCluster(): Unit = {
+    KuduClientCache.clearCacheForTests()
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.encryptionPolicy" -> "required",
+      "kudu.requireAuthentication" -> "true"
+    )
+
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+    assertEquals(rowCount, df.count)
+  }
+
+  @Test
+  @MasterServerConfig(flags = Array("--rpc_encryption=disabled", "--rpc_authentication=disabled"))
+  @TabletServerConfig(flags = Array("--rpc_encryption=disabled", "--rpc_authentication=disabled"))
+  def testKuduInsecureCluster(): Unit = {
+    KuduClientCache.clearCacheForTests()
+
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+    assertEquals(rowCount, df.count)
   }
 }

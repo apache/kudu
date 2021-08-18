@@ -2728,7 +2728,7 @@ public class AsyncKuduClient implements AutoCloseable {
     }
   }
 
-  enum EncryptionPolicy {
+  public enum EncryptionPolicy {
     // Optional, it uses encrypted connection if the server supports it,
     // but it can connect to insecure servers too.
     OPTIONAL,
