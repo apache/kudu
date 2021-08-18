@@ -78,6 +78,7 @@
 
 DEFINE_int32(keyspace_size, 5,  "number of distinct primary keys to test with");
 DEFINE_int32(max_open_txns, 5,  "maximum number of open transactions to test with");
+DECLARE_int32(log_segment_size_bytes_for_tests);
 DECLARE_bool(enable_txn_partition_lock);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(scanner_allow_snapshot_scans_with_logical_timestamps);
@@ -142,6 +143,7 @@ enum TestOpType {
   TEST_BEGIN_TXN,
   TEST_COMMIT_TXN,
   TEST_ABORT_TXN,
+  TEST_GC_LOG,
   TEST_NUM_OP_TYPES // max value for enum
 };
 
@@ -169,11 +171,19 @@ const char* TestOpType_names[] = {
   "TEST_BEGIN_TXN",
   "TEST_COMMIT_TXN",
   "TEST_ABORT_TXN",
+  "TEST_GC_LOG",
 };
 constexpr const int kNoTxnId = -1;
 // Identical to kNoTxnId but more generic-sounding for ops that don't use
 // transaction IDs.
 constexpr const int kNoVal = -1;
+
+// To facilitate WAL GC, we'll make our segment size very small.
+//
+// TODO(awong): implement a rollover op. It's a bit tricky today, given how we
+// allocate and append to segments in background threads, which may both race
+// with a naive rollover implementation.
+constexpr const int kLowSegmentSizeBytes = 1024;
 
 // An operation in a fuzz-test sequence.
 struct TestOp {
@@ -207,6 +217,7 @@ struct TestOp {
       case TEST_MAJOR_COMPACT_DELTAS:
       case TEST_MINOR_COMPACT_DELTAS:
       case TEST_RESTART_TS:
+      case TEST_GC_LOG:
         return strings::Substitute("{$0}", TestOpType_names[type]);
       case TEST_FLUSH_OPS:
       case TEST_UPSERT:
@@ -282,7 +293,8 @@ const vector<TestOpType> kAllOps {TEST_INSERT,
                                   TEST_DIFF_SCAN,
                                   TEST_BEGIN_TXN,
                                   TEST_COMMIT_TXN,
-                                  TEST_ABORT_TXN};
+                                  TEST_ABORT_TXN,
+                                  TEST_GC_LOG};
 
 // Ops that focus on hammering workloads in which rows come in and out of
 // existence.
@@ -316,6 +328,7 @@ class FuzzTest : public KuduTest {
     FLAGS_enable_maintenance_manager = false;
     FLAGS_use_hybrid_clock = false;
     FLAGS_scanner_allow_snapshot_scans_with_logical_timestamps = true;
+    FLAGS_log_segment_size_bytes_for_tests = kLowSegmentSizeBytes;
     // The scenarios of this test do not assume using the standard control path
     // for txn-enabled write operations.
     FLAGS_tserver_txn_write_op_handling_enabled = false;
@@ -1185,6 +1198,9 @@ void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
         op_timestamps++;
         break;
       }
+      case TEST_GC_LOG:
+        ops->emplace_back(TEST_GC_LOG);
+        break;
       default:
         LOG(FATAL) << "Invalid op type: " << r;
     }
@@ -1486,6 +1502,9 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         txn_sessions_.erase(txn_id);
         break;
       }
+      case TEST_GC_LOG:
+        ASSERT_OK(tablet_replica_->RunLogGC());
+        break;
       default:
         LOG(FATAL) << test_op.type;
     }

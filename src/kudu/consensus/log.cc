@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <type_traits>
 #include <utility>
 
 #include <boost/range/adaptor/reversed.hpp>
@@ -141,6 +142,12 @@ DEFINE_double(log_inject_io_error_on_preallocate_fraction, 0.0,
               "(For testing only!)");
 TAG_FLAG(log_inject_io_error_on_preallocate_fraction, unsafe);
 TAG_FLAG(log_inject_io_error_on_preallocate_fraction, runtime);
+
+DEFINE_int32(log_segment_size_bytes_for_tests, 0,
+             "The size for log segments, in bytes. This takes precedence over "
+             "--log_segment_size_mb in cases where significantly smaller segments are desired. "
+             "If non-positive, --log_segment_size_mb is honored.");
+TAG_FLAG(log_segment_size_bytes_for_tests, unsafe);
 
 // Other flags.
 // -----------------------------
@@ -435,7 +442,10 @@ SegmentAllocator::SegmentAllocator(const LogOptions* opts,
                                    uint32_t schema_version)
     : opts_(opts),
       ctx_(ctx),
-      max_segment_size_(opts_->segment_size_mb * 1024 * 1024),
+      max_segment_size_(
+          FLAGS_log_segment_size_bytes_for_tests > 0
+              ? FLAGS_log_segment_size_bytes_for_tests
+              : opts_->segment_size_mb * 1024 * 1024),
       schema_(std::move(schema)),
       schema_version_(schema_version),
       sync_disabled_(false) {}

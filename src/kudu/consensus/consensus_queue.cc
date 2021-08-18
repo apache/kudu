@@ -366,6 +366,11 @@ void PeerMessageQueue::CheckPeersInActiveConfigIfLeaderUnlocked() const {
 void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
                                                const StatusCallback& callback,
                                                const Status& status) {
+  // If the server is being destructed, the log may be unavailable.
+  if (PREDICT_FALSE(status.IsServiceUnavailable())) {
+    callback(Status::OK());
+    return;
+  }
   CHECK_OK(status);
 
   // Fake an RPC response from the local peer.
