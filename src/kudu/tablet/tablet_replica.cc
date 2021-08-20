@@ -302,7 +302,7 @@ Status TabletReplica::Start(
   return Status::OK();
 }
 
-string TabletReplica::StateName() const {
+const string& TabletReplica::StateName() const {
   return TabletStatePB_Name(state());
 }
 
@@ -444,10 +444,6 @@ void TabletReplica::TxnStatusReplicaStateChanged(const string& tablet_id, const 
       DecreaseTxnCoordinatorTaskCounter();
     }));
   }
-}
-
-string TabletReplica::LogPrefix() const {
-  return meta_->LogPrefix();
 }
 
 void TabletReplica::set_state(TabletStatePB new_state) {
@@ -666,9 +662,9 @@ void TabletReplica::SetBootstrapping() {
   set_state(BOOTSTRAPPING);
 }
 
-void TabletReplica::SetStatusMessage(const std::string& status) {
+void TabletReplica::SetStatusMessage(string status) {
   std::lock_guard<simple_spinlock> lock(lock_);
-  last_status_ = status;
+  last_status_ = std::move(status);
 }
 
 string TabletReplica::last_status() const {

@@ -38,6 +38,7 @@
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
@@ -141,6 +142,7 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -393,12 +395,15 @@ class TabletBootstrap {
   Status UpdateClock(uint64_t timestamp);
 
   // Return a log prefix string in the standard "T xxx P yyy" format.
-  string LogPrefix() const;
+  const string& LogPrefix() const {
+    return log_prefix_;
+  }
 
   // Log a status message and set the TabletReplica's status as well.
-  void SetStatusMessage(const string& status);
+  void SetStatusMessage(string status);
 
   const scoped_refptr<TabletMetadata> tablet_meta_;
+  const string log_prefix_;
   const RaftConfigPB committed_raft_config_;
   Clock* clock_;
   shared_ptr<MemTracker> mem_tracker_;
@@ -409,7 +414,7 @@ class TabletBootstrap {
   unique_ptr<tablet::Tablet> tablet_;
   const scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   scoped_refptr<log::Log> log_;
-  std::shared_ptr<log::LogReader> log_reader_;
+  shared_ptr<log::LogReader> log_reader_;
 
   // Statistics on the replay of entries in the log.
   struct Stats {
@@ -463,18 +468,20 @@ class TabletBootstrap {
 
   // Transactions that were persisted as being in-flight (neither finalized or
   // aborted) and completed prior to restart.
-  std::unordered_set<int64_t> in_flight_txn_ids_;
-  std::unordered_set<int64_t> terminal_txn_ids_;
+  unordered_set<int64_t> in_flight_txn_ids_;
+  unordered_set<int64_t> terminal_txn_ids_;
 
   // Transactions (committed or not) that have active MemRowSets.
-  std::unordered_set<int64_t> mrs_txn_ids_;
+  unordered_set<int64_t> mrs_txn_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
-void TabletBootstrap::SetStatusMessage(const string& status) {
+void TabletBootstrap::SetStatusMessage(string status) {
   LOG_WITH_PREFIX(INFO) << status;
-  if (tablet_replica_) tablet_replica_->SetStatusMessage(status);
+  if (tablet_replica_) {
+    tablet_replica_->SetStatusMessage(std::move(status));
+  }
 }
 
 Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
@@ -538,6 +545,9 @@ TabletBootstrap::TabletBootstrap(
     scoped_refptr<TabletReplica> tablet_replica,
     scoped_refptr<LogAnchorRegistry> log_anchor_registry)
     : tablet_meta_(std::move(tablet_meta)),
+      log_prefix_(Substitute("T $0 P $1: ",
+                             tablet_meta_->tablet_id(),
+                             tablet_meta_->fs_manager()->uuid())),
       committed_raft_config_(std::move(committed_raft_config)),
       clock_(clock),
       mem_tracker_(std::move(mem_tracker)),
@@ -1784,10 +1794,6 @@ Status TabletBootstrap::FilterOperation(const OperationResultPB& op_result,
 
 Status TabletBootstrap::UpdateClock(uint64_t timestamp) {
   return clock_->Update(Timestamp(timestamp));
-}
-
-string TabletBootstrap::LogPrefix() const {
-  return Substitute("T $0 P $1: ", tablet_meta_->tablet_id(), tablet_meta_->fs_manager()->uuid());
 }
 
 Status FlushedStoresSnapshot::InitFrom(const TabletMetadata& tablet_meta) {

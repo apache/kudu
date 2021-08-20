@@ -44,7 +44,6 @@
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/join.h"
@@ -69,11 +68,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using std::shared_ptr;
-using std::string;
-using std::thread;
-using std::vector;
-
 DECLARE_double(env_inject_eio);
 DECLARE_double(tablet_copy_fault_crash_during_download_block);
 DECLARE_double(tablet_copy_fault_crash_during_download_wal);
@@ -83,22 +77,30 @@ DECLARE_string(env_inject_eio_globs);
 
 METRIC_DECLARE_counter(block_manager_total_disk_sync);
 
+using kudu::consensus::ConsensusMetadataManager;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::GetRaftConfigLeader;
+using kudu::consensus::RaftPeerPB;
+using kudu::fs::DataDirManager;
+using kudu::tablet::TabletMetadata;
+using std::shared_ptr;
+using std::string;
+using std::thread;
+using std::tuple;
+using std::unique_ptr;
+using std::vector;
+using strings::Substitute;
+
 namespace kudu {
 namespace tserver {
 
-using consensus::ConsensusMetadataManager;
-using consensus::ConsensusStatePB;
-using consensus::GetRaftConfigLeader;
-using consensus::RaftPeerPB;
-using fs::DataDirManager;
-using std::tuple;
-using std::unique_ptr;
-using strings::Substitute;
-using tablet::TabletMetadata;
-
 class TabletCopyClientTest : public TabletCopyTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  TabletCopyClientTest()
+      : rand_(SeedRandom()) {
+  }
+
+  void SetUp() override {
     NO_FATALS(TabletCopyTest::SetUp());
 
     // To be a bit more flexible in testing, create a FS layout with multiple disks.
@@ -147,14 +149,14 @@ class TabletCopyClientTest : public TabletCopyTest {
  protected:
   Status CompareFileContents(const string& path1, const string& path2);
 
-  // Injection of 'supports_live_row_count' modifiers through polymorphic characteristic.
+  // Injection of 'supports_live_row_count' modifiers.
   void GenerateTestData() override {
-    Random rand(SeedRandom());
-    NO_FATALS(tablet_replica_->tablet_metadata()->
-        set_supports_live_row_count_for_tests(rand.Next() % 2));
+    tablet_replica_->tablet_metadata()->set_supports_live_row_count_for_tests(
+        rand_.Next() % 2);
     NO_FATALS(TabletCopyTest::GenerateTestData());
   }
 
+  Random rand_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   unique_ptr<FsManager> fs_manager_;
@@ -464,7 +466,7 @@ class TabletCopyClientAbortTest : public TabletCopyClientTest,
                                   public ::testing::WithParamInterface<
                                       tuple<DownloadBlocks, DeleteTrigger>> {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     TabletCopyClientTest::SetUp();
     ASSERT_OK(StartCopy());
   }

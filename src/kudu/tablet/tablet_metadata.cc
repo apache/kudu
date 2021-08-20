@@ -45,7 +45,6 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/txn_metadata.h"
@@ -69,24 +68,22 @@ TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);
 using base::subtle::Barrier_AtomicIncrement;
 using kudu::consensus::MinimumOpId;
 using kudu::consensus::OpId;
-using kudu::fs::BlockManager;
 using kudu::fs::BlockDeletionTransaction;
+using kudu::fs::BlockManager;
 using kudu::log::MinLogIndexAnchorer;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::memory_order_relaxed;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
-using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
-
-const int64_t kNoDurableMemStore = -1;
 
 // ============================================================================
 //  Tablet Metadata
@@ -305,9 +302,11 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       table_id_(std::move(table_id)),
       partition_(std::move(partition)),
       fs_manager_(fs_manager),
+      log_prefix_(Substitute("T $0 P $1: ", tablet_id_, fs_manager_->uuid())),
       next_rowset_idx_(0),
       last_durable_mrs_id_(kNoDurableMemStore),
       schema_(new Schema(schema)),
+      schema_ptr_(schema_.get()),
       schema_version_(0),
       table_name_(std::move(table_name)),
       partition_schema_(std::move(partition_schema)),
@@ -326,8 +325,6 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
 }
 
 TabletMetadata::~TabletMetadata() {
-  STLDeleteElements(&old_schemas_);
-  delete schema_;
 }
 
 TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id)
@@ -335,7 +332,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id)
       tablet_id_(std::move(tablet_id)),
       fs_manager_(fs_manager),
       next_rowset_idx_(0),
-      schema_(nullptr),
+      schema_ptr_(nullptr),
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
@@ -414,7 +411,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
       CHECK_EQ(table_id_, superblock.table_id());
       PartitionSchema partition_schema;
       RETURN_NOT_OK(PartitionSchema::FromPB(superblock.partition_schema(),
-                                            *schema_, &partition_schema));
+                                            *schema_ptr_, &partition_schema));
       CHECK(partition_schema_ == partition_schema);
 
       Partition partition;
@@ -738,7 +735,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   partition_.ToPB(pb.mutable_partition());
   pb.set_last_durable_mrs_id(last_durable_mrs_id_);
   pb.set_schema_version(schema_version_);
-  RETURN_NOT_OK(partition_schema_.ToPB(*schema_, pb.mutable_partition_schema()));
+  RETURN_NOT_OK(partition_schema_.ToPB(*schema_ptr_, pb.mutable_partition_schema()));
   pb.set_table_name(table_name_);
 
   for (const shared_ptr<RowSetMetadata>& meta : rowsets) {
@@ -751,8 +748,8 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     InsertOrDie(pb.mutable_txn_metadata(), txn_id_and_metadata.first, meta_pb);
   }
 
-  DCHECK(schema_->has_column_ids());
-  RETURN_NOT_OK_PREPEND(SchemaToPB(*schema_, pb.mutable_schema()),
+  DCHECK(schema_ptr_->has_column_ids());
+  RETURN_NOT_OK_PREPEND(SchemaToPB(*schema_ptr_, pb.mutable_schema()),
                         "Couldn't serialize schema into superblock");
 
   pb.set_tablet_data_state(tablet_data_state_);
@@ -938,17 +935,16 @@ void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   SetSchemaUnlocked(std::move(new_schema), version);
 }
 
-void TabletMetadata::SetSchemaUnlocked(unique_ptr<Schema> new_schema, uint32_t version) {
+void TabletMetadata::SetSchemaUnlocked(
+    unique_ptr<Schema> new_schema, uint32_t version) {
   DCHECK(new_schema->has_column_ids());
 
-  Schema* old_schema = schema_;
   // "Release" barrier ensures that, when we publish the new Schema object,
   // all of its initialization is also visible.
-  base::subtle::Release_Store(reinterpret_cast<AtomicWord*>(&schema_),
-                              reinterpret_cast<AtomicWord>(new_schema.release()));
-  if (PREDICT_TRUE(old_schema)) {
-    old_schemas_.push_back(old_schema);
-  }
+  base::subtle::Release_Store(reinterpret_cast<AtomicWord*>(&schema_ptr_),
+                              reinterpret_cast<AtomicWord>(new_schema.get()));
+  std::swap(schema_, new_schema);
+  old_schemas_.emplace_back(std::move(new_schema));
   schema_version_ = version;
 }
 
@@ -975,10 +971,6 @@ void TabletMetadata::set_tablet_data_state(TabletDataState state) {
     tombstone_last_logged_opid_ = boost::none;
   }
   tablet_data_state_ = state;
-}
-
-string TabletMetadata::LogPrefix() const {
-  return Substitute("T $0 P $1: ", tablet_id_, fs_manager_->uuid());
 }
 
 TabletDataState TabletMetadata::tablet_data_state() const {
