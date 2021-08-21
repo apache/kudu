@@ -62,6 +62,7 @@ using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::SkipWhitespace;
 using strings::Split;
 using strings::Substitute;
 
@@ -400,8 +401,10 @@ TEST_P(MasterFailoverTest, TestMasterPermanentFailure) {
       string output;
       ASSERT_OK(Subprocess::Call(args, "", &output));
       StripWhiteSpace(&output);
-      LOG(INFO) << "UUIDS: " << output;
-      set<string> uuids = Split(output, " ");
+      LOG(INFO) << output;
+      vector<string> sections = Split(output, "peers: ", SkipWhitespace());
+      ASSERT_EQ(2, sections.size());
+      set<string> uuids = Split(sections[1], " ");
 
       // Isolate the failed master's UUID by eliminating the UUIDs of the
       // healthy masters from the set.

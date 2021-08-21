@@ -23,7 +23,6 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -253,19 +252,27 @@ Status ParsePeerString(const string& peer_str,
 }
 
 Status PrintReplicaUuids(const RunnerContext& context) {
+  const string& tablet_ids_str = FindOrDie(context.required_args, kTabletIdsCsvArg);
+  vector<string> tablet_ids = strings::Split(tablet_ids_str, ",", strings::SkipEmpty());
+  if (tablet_ids.empty()) {
+    return Status::InvalidArgument("no tablet identifiers provided");
+  }
+
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(/*skip_block_manager*/true, &fs_manager));
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(
       new ConsensusMetadataManager(fs_manager.get()));
 
-  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
-
-  // Load the cmeta file and print all peer uuids.
-  scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
-  cout << JoinMapped(cmeta->CommittedConfig().peers(),
-                     [](const RaftPeerPB& p){ return p.permanent_uuid(); },
-                     " ") << endl;
+  for (const auto& tablet_id : tablet_ids) {
+    // Load the cmeta file and print all peer uuids.
+    scoped_refptr<ConsensusMetadata> cmeta;
+    RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
+    cout << "tablet: " << tablet_id << ", peers: "
+         << JoinMapped(cmeta->CommittedConfig().peers(),
+                       [](const RaftPeerPB& p) { return p.permanent_uuid(); },
+                       " ")
+         << endl;
+  }
   return Status::OK();
 }
 
@@ -283,9 +290,17 @@ Status BackupConsensusMetadata(FsManager* fs_manager,
 }
 
 Status RewriteRaftConfig(const RunnerContext& context) {
-  // Parse tablet ID argument.
-  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
-  if (tablet_id != master::SysCatalogTable::kSysCatalogTabletId) {
+  const string& tablet_ids_str = FindOrDie(context.required_args, kTabletIdsCsvArg);
+  vector<string> tablet_ids = strings::Split(tablet_ids_str, ",", strings::SkipEmpty());
+  if (tablet_ids.empty()) {
+    return Status::InvalidArgument("no tablet identifiers provided");
+  }
+
+  const auto& found = find_if_not(tablet_ids.begin(), tablet_ids.end(),
+                                  [&] (const string& value) {
+                                    return value == master::SysCatalogTable::kSysCatalogTabletId;
+                                  });
+  if (found != tablet_ids.end()) {
     LOG(WARNING) << "Master will not notice rewritten Raft config of regular "
                  << "tablets. A regular Raft config change must occur.";
   }
@@ -294,37 +309,42 @@ Status RewriteRaftConfig(const RunnerContext& context) {
   vector<pair<string, HostPort>> peers;
   for (const auto& arg : context.variadic_args) {
     pair<string, HostPort> parsed_peer;
-    RETURN_NOT_OK(ParsePeerString(arg,
-                                  &parsed_peer.first, &parsed_peer.second));
+    RETURN_NOT_OK(ParsePeerString(arg, &parsed_peer.first, &parsed_peer.second));
     peers.push_back(parsed_peer);
   }
   DCHECK(!peers.empty());
 
-  // Make a copy of the old file before rewriting it.
   Env* env = Env::Default();
   FsManagerOpts fs_opts = FsManagerOpts();
   fs_opts.skip_block_manager = true;
   FsManager fs_manager(env, std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
-  RETURN_NOT_OK(BackupConsensusMetadata(&fs_manager, tablet_id));
+  for (const auto& tablet_id : tablet_ids) {
+    LOG(INFO) << Substitute("Rewriting Raft config of tablet: $0", tablet_id);
 
-  // Load the cmeta file and rewrite the raft config.
-  scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
-  scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
-  RaftConfigPB current_config = cmeta->CommittedConfig();
-  RaftConfigPB new_config = current_config;
-  new_config.clear_peers();
-  for (const auto& p : peers) {
-    RaftPeerPB new_peer;
-    new_peer.set_member_type(RaftPeerPB::VOTER);
-    new_peer.set_permanent_uuid(p.first);
-    HostPortPB new_peer_host_port_pb = HostPortToPB(p.second);
-    new_peer.mutable_last_known_addr()->CopyFrom(new_peer_host_port_pb);
-    new_config.add_peers()->CopyFrom(new_peer);
+    // Make a copy of the old file before rewriting it.
+    RETURN_NOT_OK(BackupConsensusMetadata(&fs_manager, tablet_id));
+
+    // Load the cmeta file and rewrite the raft config.
+    scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+        new ConsensusMetadataManager(&fs_manager));
+    scoped_refptr<ConsensusMetadata> cmeta;
+    RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
+    RaftConfigPB current_config = cmeta->CommittedConfig();
+    RaftConfigPB new_config = current_config;
+    new_config.clear_peers();
+    for (const auto& p : peers) {
+      RaftPeerPB new_peer;
+      new_peer.set_member_type(RaftPeerPB::VOTER);
+      new_peer.set_permanent_uuid(p.first);
+      HostPortPB new_peer_host_port_pb = HostPortToPB(p.second);
+      new_peer.mutable_last_known_addr()->CopyFrom(new_peer_host_port_pb);
+      new_config.add_peers()->CopyFrom(new_peer);
+    }
+    cmeta->set_committed_config(new_config);
+    RETURN_NOT_OK(cmeta->Flush());
   }
-  cmeta->set_committed_config(new_config);
-  return cmeta->Flush();
+  return Status::OK();
 }
 
 Status SetRaftTerm(const RunnerContext& context) {
@@ -884,7 +904,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       ActionBuilder("print_replica_uuids", &PrintReplicaUuids)
       .Description("Print all tablet replica peer UUIDs found in a "
                    "tablet's Raft configuration")
-      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddRequiredParameter({ kTabletIdsCsvArg, kTabletIdsCsvArgDesc })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
@@ -893,7 +913,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
   unique_ptr<Action> rewrite_raft_config =
       ActionBuilder("rewrite_raft_config", &RewriteRaftConfig)
       .Description("Rewrite a tablet replica's Raft configuration")
-      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddRequiredParameter({ kTabletIdsCsvArg, kTabletIdsCsvArgDesc })
       .AddRequiredVariadicParameter({ kRaftPeersArg, kRaftPeersArgDesc })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")

@@ -3417,49 +3417,71 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
 
 // Test for 'local_replica cmeta' functionality.
 TEST_F(ToolTest, TestLocalReplicaCMetaOps) {
-  NO_FATALS(StartMiniCluster());
+  const int kNumTablets = 4;
+  const int kNumTabletServers = 3;
+
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTabletServers;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
 
   // TestWorkLoad.Setup() internally generates a table.
   TestWorkload workload(mini_cluster_.get());
-  workload.set_num_replicas(1);
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_replicas(3);
   workload.Setup();
-  MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
-  const string ts_uuid = ts->uuid();
-  const string& flags = Substitute("-fs-wal-dir $0", ts->options()->fs_opts.wal_root);
-  string tablet_id;
-  {
-    vector<string> tablets;
-    NO_FATALS(RunActionStdoutLines(Substitute("local_replica list $0", flags), &tablets));
-    ASSERT_EQ(1, tablets.size());
-    tablet_id = tablets[0];
-  }
-  const auto& cmeta_path = ts->server()->fs_manager()->GetConsensusMetadataPath(tablet_id);
 
-  ts->Shutdown();
+  vector<string> ts_uuids;
+  for (int i = 0; i < kNumTabletServers; ++i) {
+    ts_uuids.emplace_back(mini_cluster_->mini_tablet_server(i)->uuid());
+  }
+  const string& flags =
+      Substitute("-fs-wal-dir $0",
+                 mini_cluster_->mini_tablet_server(0)->options()->fs_opts.wal_root);
+  vector<string> tablet_ids;
+  {
+    NO_FATALS(RunActionStdoutLines(Substitute("local_replica list $0", flags), &tablet_ids));
+    ASSERT_EQ(kNumTablets, tablet_ids.size());
+  }
+  vector<string> cmeta_paths;
+  for (const auto& tablet_id : tablet_ids) {
+    cmeta_paths.emplace_back(mini_cluster_->mini_tablet_server(0)->server()->
+        fs_manager()->GetConsensusMetadataPath(tablet_id));
+  }
+  const string& ts_host_port = mini_cluster_->mini_tablet_server(0)->bound_rpc_addr().ToString();
+  for (int i = 0; i < kNumTabletServers; ++i) {
+    mini_cluster_->mini_tablet_server(i)->Shutdown();
+  }
 
   // Test print_replica_uuids.
-  // We only have a single replica, so we expect one line, with our server's UUID.
+  // We have kNumTablets replicas, so we expect kNumTablets lines, with our 3 servers' UUIDs.
   {
-    vector<string> uuids;
+    vector<string> lines;
     NO_FATALS(RunActionStdoutLines(Substitute("local_replica cmeta print_replica_uuids $0 $1",
-                                               flags, tablet_id), &uuids));
-    ASSERT_EQ(1, uuids.size());
-    EXPECT_EQ(ts_uuid, uuids[0]);
+                                              flags, JoinStrings(tablet_ids, ",")), &lines));
+    ASSERT_EQ(kNumTablets, lines.size());
+    for (int i = 0; i < lines.size(); ++i) {
+      ASSERT_STR_MATCHES(lines[i],
+                         Substitute("tablet: $0, peers:( $1| $2| $3){3}",
+                                    tablet_ids[i], ts_uuids[0], ts_uuids[1], ts_uuids[2]));
+      ASSERT_STR_CONTAINS(lines[i], ts_uuids[0]);
+      ASSERT_STR_CONTAINS(lines[i], ts_uuids[1]);
+      ASSERT_STR_CONTAINS(lines[i], ts_uuids[2]);
+    }
   }
 
   // Test using set-term to bump the term to 123.
-  {
+  for (int i = 0; i < tablet_ids.size(); ++i) {
     NO_FATALS(RunActionStdoutNone(Substitute("local_replica cmeta set-term $0 $1 123",
-                                             flags, tablet_id)));
+                                             flags, tablet_ids[i])));
 
     string stdout;
-    NO_FATALS(RunActionStdoutString(Substitute("pbc dump $0", cmeta_path),
+    NO_FATALS(RunActionStdoutString(Substitute("pbc dump $0", cmeta_paths[i]),
                                     &stdout));
     ASSERT_STR_CONTAINS(stdout, "current_term: 123");
   }
 
   // Test that set-term refuses to decrease the term.
-  {
+  for (const auto& tablet_id : tablet_ids) {
     string stdout, stderr;
     Status s = RunTool(Substitute("local_replica cmeta set-term $0 $1 10",
                                   flags, tablet_id),
@@ -3470,6 +3492,29 @@ TEST_F(ToolTest, TestLocalReplicaCMetaOps) {
     EXPECT_EQ("", stdout);
     EXPECT_THAT(stderr, testing::HasSubstr(
         "specified term 10 must be higher than current term 123"));
+  }
+
+  // Test using rewrite_raft_config to set all tablets' raft config with only 1 member.
+  {
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("local_replica cmeta rewrite_raft_config $0 $1 $2:$3",
+                   flags,
+                   JoinStrings(tablet_ids, ","),
+                   ts_uuids[0],
+                   ts_host_port)));
+  }
+
+  // We have kNumTablets replicas, so we expect kNumTablets lines, with our the
+  // first tservers' UUIDs.
+  {
+    vector<string> lines;
+    NO_FATALS(RunActionStdoutLines(Substitute("local_replica cmeta print_replica_uuids $0 $1",
+                                              flags, JoinStrings(tablet_ids, ",")), &lines));
+    ASSERT_EQ(kNumTablets, lines.size());
+    for (int i = 0; i < lines.size(); ++i) {
+      ASSERT_STR_MATCHES(lines[i], Substitute("tablet: $0, peers: $1",
+                                              tablet_ids[i], ts_uuids[0]));
+    }
   }
 }
 
