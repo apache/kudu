@@ -70,6 +70,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
+#include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -178,6 +179,7 @@ using kudu::consensus::ReplicateMsg;
 using kudu::consensus::ReplicateRefPtr;
 using kudu::fs::BlockDeletionTransaction;
 using kudu::fs::FsReport;
+using kudu::fs::LogBlockManager;
 using kudu::fs::WritableBlock;
 using kudu::hms::HmsCatalog;
 using kudu::hms::HmsClient;
@@ -1543,7 +1545,7 @@ TEST_F(ToolTest, TestPbcTools) {
   {
     string stdout;
     NO_FATALS(RunActionStdoutString(Substitute(
-        "pbc dump $0/instance --oneline", kTestDir), &stdout));
+        "pbc dump $0 --oneline", instance_path), &stdout));
     SCOPED_TRACE(stdout);
     ASSERT_STR_MATCHES(stdout, Substitute(
         "^0\tuuid: \"$0\" format_stamp: \"Formatted at .*\"$$", uuid));
@@ -1557,10 +1559,27 @@ TEST_F(ToolTest, TestPbcTools) {
 
     string stdout;
     NO_FATALS(RunActionStdoutString(Substitute(
-        "pbc dump $0/instance --json", kTestDir), &stdout));
+        "pbc dump $0 --json", instance_path), &stdout));
     SCOPED_TRACE(stdout);
     ASSERT_STR_MATCHES(stdout, Substitute(
-        "^\\{\"uuid\":\"$0\",\"formatStamp\":\"Formatted at .*\"\\}$$", uuid_b64));
+        R"(^\{"uuid":"$0","formatStamp":"Formatted at .*"\}$$)", uuid_b64));
+  }
+  // Test dump --json_pretty
+  {
+    // Since the UUID is listed as 'bytes' rather than 'string' in the PB, it dumps
+    // base64-encoded.
+    string uuid_b64;
+    Base64Encode(uuid, &uuid_b64);
+
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --json_pretty", instance_path), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_EQ(4, stdout.size());
+    ASSERT_EQ("{", stdout[0]);
+    ASSERT_EQ(Substitute(R"( "uuid": "$0",)", uuid_b64), stdout[1]);
+    ASSERT_STR_MATCHES(stdout[2], R"( "formatStamp": "Formatted at .*")");
+    ASSERT_EQ("}", stdout[3]);
   }
 
   // Utility to set the editor up based on the given shell command.
@@ -1572,7 +1591,7 @@ TEST_F(ToolTest, TestPbcTools) {
                                editor_path));
     chmod(editor_path.c_str(), 0755);
     setenv("EDITOR", editor_path.c_str(), /* overwrite */1);
-    return RunTool(Substitute("pbc edit $0 $1/instance", extra_flags, kTestDir),
+    return RunTool(Substitute("pbc edit $0 $1", extra_flags, instance_path),
                    stdout, stderr, nullptr, nullptr);
   };
 
@@ -1585,9 +1604,28 @@ TEST_F(ToolTest, TestPbcTools) {
 
     // Dump to make sure the edit took place.
     NO_FATALS(RunActionStdoutString(Substitute(
-        "pbc dump $0/instance --oneline", kTestDir), &stdout));
+        "pbc dump $0 --oneline", instance_path), &stdout));
     ASSERT_STR_MATCHES(stdout, Substitute(
         "^0\tuuid: \"$0\" format_stamp: \"Edited at .*\"$$", uuid));
+
+    // Make sure no backup file was written.
+    bool found_backup;
+    ASSERT_OK(HasAtLeastOneBackupFile(kTestDir, &found_backup));
+    ASSERT_FALSE(found_backup);
+  }
+
+  // Test 'edit' by setting --json_pretty flag.
+  {
+    string stdout;
+    ASSERT_OK(DoEdit("exec sed -i -e s/Edited/Formatted/ \"$@\"\n", &stdout, nullptr,
+                     "--nobackup --json_pretty"));
+    ASSERT_EQ("", stdout);
+
+    // Dump to make sure the edit took place.
+    NO_FATALS(RunActionStdoutString(Substitute(
+        "pbc dump $0 --oneline", instance_path), &stdout));
+    ASSERT_STR_MATCHES(stdout, Substitute(
+        "^0\tuuid: \"$0\" format_stamp: \"Formatted at .*\"$$", uuid));
 
     // Make sure no backup file was written.
     bool found_backup;
@@ -1624,7 +1662,7 @@ TEST_F(ToolTest, TestPbcTools) {
     Status s = DoEdit("echo {} > $@\n", &stdout, &stderr);
     ASSERT_EQ("", stdout);
     ASSERT_STR_MATCHES(stderr,
-                       "Invalid argument: Unable to parse JSON line: \\{\\}: "
+                       "Invalid argument: Unable to parse JSON text: \\{\\}: "
                        ": missing field .*");
     // NOTE: the above extra ':' is due to an apparent bug in protobuf.
   }
@@ -1634,20 +1672,255 @@ TEST_F(ToolTest, TestPbcTools) {
     string stdout, stderr;
     Status s = DoEdit("echo not-a-json-string > $@\n", &stdout, &stderr);
     ASSERT_EQ("", stdout);
-    ASSERT_STR_CONTAINS(
-        stderr,
-        "Invalid argument: Unable to parse JSON line: not-a-json-string: Unexpected token.\n"
-        "not-a-json-string\n"
-        "^");
+    ASSERT_STR_CONTAINS(stderr, "Corruption: JSON text is corrupt: Invalid value.");
   }
 
   // The file should be unchanged by the unsuccessful edits above.
   {
     string stdout;
     NO_FATALS(RunActionStdoutString(Substitute(
-        "pbc dump $0/instance --oneline", kTestDir), &stdout));
+        "pbc dump $0 --oneline", instance_path), &stdout));
     ASSERT_STR_MATCHES(stdout, Substitute(
         "^0\tuuid: \"$0\" format_stamp: \"Edited at .*\"$$", uuid));
+  }
+}
+
+TEST_F(ToolTest, TestPbcToolsOnMultipleBlocks) {
+  const int kNumCFileBlocks = 1024;
+  const int kNumEntries = 1;
+  const string kTestDir = GetTestPath("test");
+  const string kDataDir = JoinPathSegments(kTestDir, "data");
+
+  // Generate a block container metadata file.
+  string metadata_path;
+  {
+    // Open FsManager to write file later.
+    FsManager fs(env_, FsManagerOpts(kTestDir));
+    ASSERT_OK(fs.CreateInitialFileSystemLayout());
+    ASSERT_OK(fs.Open());
+
+    // Write multiple CFile blocks to file.
+    for (int i = 0; i < kNumCFileBlocks; ++i) {
+      unique_ptr<WritableBlock> block;
+      ASSERT_OK(fs.CreateNewBlock({}, &block));
+      StringDataGenerator<false> generator("hello %04d");
+      WriterOptions opts;
+      opts.write_posidx = true;
+      CFileWriter writer(
+          opts, GetTypeInfo(generator.kDataType), generator.has_nulls(), std::move(block));
+      ASSERT_OK(writer.Start());
+      generator.Build(kNumEntries);
+      ASSERT_OK_FAST(writer.AppendEntries(generator.values(), kNumEntries));
+      ASSERT_OK(writer.Finish());
+    }
+
+    // Find the CFile metadata file.
+    vector<string> children;
+    ASSERT_OK(env_->GetChildren(kDataDir, &children));
+    vector<string> metadata_files;
+    for (const string& child : children) {
+      if (HasSuffixString(child, LogBlockManager::kContainerMetadataFileSuffix)) {
+        metadata_files.push_back(JoinPathSegments(kDataDir, child));
+      }
+    }
+    ASSERT_EQ(1, metadata_files.size());
+    metadata_path = metadata_files[0];
+  }
+
+  // Test default dump
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0", metadata_path), &stdout));
+    ASSERT_EQ(kNumCFileBlocks * 10 - 1, stdout.size());
+    ASSERT_EQ("Message 0", stdout[0]);
+    ASSERT_EQ("-------", stdout[1]);
+    ASSERT_EQ("block_id {", stdout[2]);
+    ASSERT_STR_MATCHES(stdout[3], "^  id: [0-9]+$");
+    ASSERT_EQ("}", stdout[4]);
+    ASSERT_EQ("op_type: CREATE", stdout[5]);
+    ASSERT_STR_MATCHES(stdout[6], "^timestamp_us: [0-9]+$");
+    ASSERT_EQ("offset: 0", stdout[7]);
+    ASSERT_EQ("length: 153", stdout[8]);
+    ASSERT_EQ("", stdout[9]);
+  }
+
+  // Test dump --debug
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --debug", metadata_path), &stdout));
+    ASSERT_EQ(kNumCFileBlocks * 12 + 5, stdout.size());
+    // Header
+    ASSERT_EQ("File header", stdout[0]);
+    ASSERT_EQ("-------", stdout[1]);
+    ASSERT_STR_MATCHES(stdout[2], "^Protobuf container version: [0-9]+$");
+    ASSERT_STR_MATCHES(stdout[3], "^Total container file size: [0-9]+$");
+    ASSERT_EQ("Entry PB type: kudu.BlockRecordPB", stdout[4]);
+    ASSERT_EQ("", stdout[5]);
+    // The first block
+    ASSERT_EQ("Message 0", stdout[6]);
+    ASSERT_STR_MATCHES(stdout[7], "^offset: [0-9]+$");
+    ASSERT_STR_MATCHES(stdout[8], "^length: [0-9]+$");
+    ASSERT_EQ("-------", stdout[9]);
+    ASSERT_EQ("block_id {", stdout[10]);
+    ASSERT_STR_MATCHES(stdout[11], "^  id: [0-9]+$");
+    ASSERT_EQ("}", stdout[12]);
+    ASSERT_EQ("op_type: CREATE", stdout[13]);
+    ASSERT_STR_MATCHES(stdout[14], "^timestamp_us: [0-9]+$");
+    ASSERT_EQ("offset: 0", stdout[15]);
+    ASSERT_EQ("length: 153", stdout[16]);
+    ASSERT_EQ("", stdout[17]);
+  }
+
+  // Test dump --oneline
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --oneline", metadata_path), &stdout));
+    ASSERT_EQ(kNumCFileBlocks, stdout.size());
+    ASSERT_STR_MATCHES(stdout[0],
+        "^0\tblock_id \\{ id: [0-9]+ \\} op_type: CREATE "
+        "timestamp_us: [0-9]+ offset: 0 length: 153$");
+  }
+
+  // Test dump --json
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --json", metadata_path), &stdout));
+    ASSERT_EQ(kNumCFileBlocks, stdout.size());
+    ASSERT_STR_MATCHES(stdout[0],
+        R"(^\{"blockId":\{"id":"[0-9]+"\},"opType":"CREATE",)"
+        R"("timestampUs":"[0-9]+","offset":"0","length":"153"\}$$)");
+  }
+
+  // Test dump --json_pretty
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --json_pretty", metadata_path), &stdout));
+    ASSERT_EQ(kNumCFileBlocks * 10 - 1, stdout.size());
+    ASSERT_EQ("{", stdout[0]);
+    ASSERT_EQ(R"( "blockId": {)", stdout[1]);
+    ASSERT_STR_MATCHES(stdout[2], R"(  "id": "[0-9]+")");
+    ASSERT_EQ(" },", stdout[3]);
+    ASSERT_EQ(R"( "opType": "CREATE",)", stdout[4]);
+    ASSERT_STR_MATCHES(stdout[5], R"( "timestampUs": "[0-9]+",)");
+    ASSERT_EQ(R"( "offset": "0",)", stdout[6]);
+    ASSERT_EQ(R"( "length": "153")", stdout[7]);
+    ASSERT_EQ(R"(})", stdout[8]);
+    ASSERT_EQ("", stdout[9]);
+  }
+
+  // Utility to set the editor up based on the given shell command.
+  auto DoEdit = [&](const string& editor_shell, string* stdout, string* stderr = nullptr,
+      const string& extra_flags = "") {
+    const string editor_path = GetTestPath("editor");
+    CHECK_OK(WriteStringToFile(Env::Default(),
+                               StrCat("#!/usr/bin/env bash\n", editor_shell),
+                               editor_path));
+    chmod(editor_path.c_str(), 0755);
+    setenv("EDITOR", editor_path.c_str(), /* overwrite */1);
+    return RunTool(Substitute("pbc edit $0 $1", extra_flags, metadata_path),
+                   stdout, stderr, nullptr, nullptr);
+  };
+
+  // Test 'edit' by setting up EDITOR to be a sed script which performs a substitution.
+  {
+    string stdout;
+    ASSERT_OK(DoEdit("exec sed -i -e s/CREATE/DELETE/ \"$@\"\n", &stdout, nullptr,
+                     "--nobackup"));
+    ASSERT_EQ("", stdout);
+
+    // Dump to make sure the edit took place.
+    vector<string> stdout_lines;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --oneline", metadata_path), &stdout_lines));
+    ASSERT_EQ(kNumCFileBlocks, stdout_lines.size());
+    ASSERT_STR_MATCHES(stdout_lines[0],
+                       "^0\tblock_id \\{ id: [0-9]+ \\} op_type: DELETE "
+                       "timestamp_us: [0-9]+ offset: 0 length: 153$");
+
+    // Make sure no backup file was written.
+    bool found_backup;
+    ASSERT_OK(HasAtLeastOneBackupFile(kDataDir, &found_backup));
+    ASSERT_FALSE(found_backup);
+  }
+
+  // Test 'edit' by setting --json_pretty flag.
+  {
+    string stdout;
+    ASSERT_OK(DoEdit("exec sed -i -e s/DELETE/CREATE/ \"$@\"\n", &stdout, nullptr,
+                     "--nobackup --json_pretty"));
+    ASSERT_EQ("", stdout);
+
+    // Dump to make sure the edit took place.
+    vector<string> stdout_lines;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --oneline", metadata_path), &stdout_lines));
+    ASSERT_EQ(kNumCFileBlocks, stdout_lines.size());
+    ASSERT_STR_MATCHES(stdout_lines[0],
+                       "^0\tblock_id \\{ id: [0-9]+ \\} op_type: CREATE "
+                       "timestamp_us: [0-9]+ offset: 0 length: 153$");
+
+    // Make sure no backup file was written.
+    bool found_backup;
+    ASSERT_OK(HasAtLeastOneBackupFile(kDataDir, &found_backup));
+    ASSERT_FALSE(found_backup);
+  }
+
+  // Test 'edit' with a backup.
+  {
+    string stdout;
+    ASSERT_OK(DoEdit("exec sed -i -e s/CREATE/DELETE/ \"$@\"\n", &stdout));
+    ASSERT_EQ("", stdout);
+
+    // Make sure a backup file was written.
+    bool found_backup;
+    ASSERT_OK(HasAtLeastOneBackupFile(kDataDir, &found_backup));
+    ASSERT_TRUE(found_backup);
+  }
+
+  // Test 'edit' with an unsuccessful edit.
+  {
+    string stdout, stderr;
+    string path;
+    ASSERT_OK(FindExecutable("false", {}, &path));
+    Status s = DoEdit(path, &stdout, &stderr);
+    ASSERT_FALSE(s.ok());
+    ASSERT_EQ("", stdout);
+    ASSERT_STR_CONTAINS(stderr, "Aborted: editor returned non-zero exit code");
+  }
+
+  // Test 'edit' with an edit which tries to write some invalid JSON (missing required fields).
+  {
+    string stdout, stderr;
+    Status s = DoEdit("echo {} > $@\n", &stdout, &stderr);
+    ASSERT_EQ("", stdout);
+    ASSERT_STR_MATCHES(stderr,
+                       "Invalid argument: Unable to parse JSON text: \\{\\}: "
+                       ": missing field .*");
+    // NOTE: the above extra ':' is due to an apparent bug in protobuf.
+  }
+
+  // Test 'edit' with an edit that writes some invalid JSON (bad syntax)
+  {
+    string stdout, stderr;
+    Status s = DoEdit("echo not-a-json-string > $@\n", &stdout, &stderr);
+    ASSERT_EQ("", stdout);
+    ASSERT_STR_CONTAINS(stderr, "Corruption: JSON text is corrupt: Invalid value.");
+  }
+
+  // The file should be unchanged by the unsuccessful edits above.
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --oneline", metadata_path), &stdout));
+    ASSERT_EQ(kNumCFileBlocks, stdout.size());
+    ASSERT_STR_MATCHES(stdout[0],
+                       "^0\tblock_id \\{ id: [0-9]+ \\} op_type: DELETE "
+                       "timestamp_us: [0-9]+ offset: 0 length: 153$");
   }
 }
 

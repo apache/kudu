@@ -994,9 +994,13 @@ Status ReadablePBContainerFile::Dump(ostream* os, ReadablePBContainerFile::Forma
         *os << SecureDebugString(*msg) << endl;
         break;
       case Format::JSON:
+      case Format::JSON_PRETTY:
         buf.clear();
-        const auto& google_status = google::protobuf::util::MessageToJsonString(
-            *msg, &buf, google::protobuf::util::JsonPrintOptions());
+        auto opt = google::protobuf::util::JsonPrintOptions();
+        if (format == Format::JSON_PRETTY) {
+            opt.add_whitespace = true;
+        }
+        const auto& google_status = google::protobuf::util::MessageToJsonString(*msg, &buf, opt);
         if (!google_status.ok()) {
           return Status::RuntimeError("could not convert PB to JSON", google_status.ToString());
         }

@@ -406,8 +406,10 @@ class ReadablePBContainerFile {
     DEBUG,
     // Print each message on its own line.
     ONELINE,
-    // Dump in JSON.
-    JSON
+    // Dump in JSON compact format.
+    JSON,
+    // Dump in JSON pretty format.
+    JSON_PRETTY
   };
   Status Dump(std::ostream* os, Format format);
 
