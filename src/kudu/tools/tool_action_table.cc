@@ -127,6 +127,16 @@ DEFINE_int32(scan_batch_size, -1,
 
 DECLARE_bool(row_count_only);
 DECLARE_bool(show_scanner_stats);
+
+DEFINE_string(encoding_type, "AUTO_ENCODING",
+              "Type of encoding for the column including AUTO_ENCODING, PLAIN_ENCODING, "
+              "PREFIX_ENCODING, RLE, DICT_ENCODING, BIT_SHUFFLE, GROUP_VARINT");
+DEFINE_string(compression_type, "DEFAULT_COMPRESSION",
+              "Type of compression for the column including DEFAULT_COMPRESSION, "
+              "NO_COMPRESSION, SNAPPY, LZ4, ZLIB");
+DEFINE_string(default_value, "", "Default value for this column.");
+DEFINE_string(comment, "", "Comment for this column.");
+
 DECLARE_bool(show_values);
 DECLARE_string(replica_selection);
 DECLARE_string(tables);
@@ -217,6 +227,7 @@ const char* const kBlockSizeArg = "block_size";
 const char* const kColumnCommentArg = "column_comment";
 const char* const kCreateTableJSONArg = "create_table_json";
 const char* const kReplicationFactorArg = "replication_factor";
+const char* const kDataTypeArg = "data_type";
 
 enum PartitionAction {
   ADD,
@@ -975,6 +986,47 @@ Status ColumnSetComment(const RunnerContext& context) {
   return alterer->Alter();
 }
 
+Status AddColumn(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+  const string& data_type_name = FindOrDie(context.required_args, kDataTypeArg);
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  KuduColumnSpec* column_spec = alterer->AddColumn(column_name);
+
+  KuduColumnSchema::DataType data_type;
+  RETURN_NOT_OK(KuduColumnSchema::StringToDataType(data_type_name, &data_type));
+  column_spec->Type(data_type);
+
+  if (!FLAGS_default_value.empty()) {
+    KuduValue* value = nullptr;
+    RETURN_NOT_OK(ParseValueOfType(FLAGS_default_value, data_type, &value));
+    column_spec->Default(value);
+  }
+
+  if (!FLAGS_encoding_type.empty()) {
+    KuduColumnStorageAttributes::EncodingType encoding_type;
+    RETURN_NOT_OK(KuduColumnStorageAttributes::StringToEncodingType(FLAGS_encoding_type,
+                                                                    &encoding_type));
+    column_spec->Encoding(encoding_type);
+  }
+
+  if (!FLAGS_compression_type.empty()) {
+    KuduColumnStorageAttributes::CompressionType compress_type;
+    RETURN_NOT_OK(KuduColumnStorageAttributes::StringToCompressionType(FLAGS_compression_type,
+                                                                       &compress_type));
+    column_spec->Compression(compress_type);
+  }
+
+  if (!FLAGS_comment.empty()) {
+    column_spec->Comment(FLAGS_comment);
+  }
+
+  return alterer->Alter();
+}
+
 Status DeleteColumn(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
@@ -1496,6 +1548,22 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kColumnCommentArg, "Comment of the column" })
       .Build();
 
+  unique_ptr<Action> add_column =
+      ActionBuilder("add_column", &AddColumn)
+      .Description("Add a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to add" })
+      .AddRequiredParameter({ kDataTypeArg, "Data Type, eg: INT8, INT16, INT32, INT64, STRING,"
+                            " BOOL, FLOAT, DOUBLE, BINARY, UNIXTIME_MICROS, DECIMAL, VARCHAR,"
+                            " TIMESTAMP, DATE"})
+      .AddOptionalParameter(kEncodingTypeArg)
+      .AddOptionalParameter(kCompressionTypeArg)
+      .AddOptionalParameter(kDefaultValueArg)
+      .AddOptionalParameter("comment")
+      .Build();
+
+
   unique_ptr<Action> delete_column =
       ClusterActionBuilder("delete_column", &DeleteColumn)
       .Description("Delete a column")
@@ -1552,6 +1620,7 @@ unique_ptr<Mode> BuildTableMode() {
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddMode(BuildSetTableLimitMode())
+      .AddAction(std::move(add_column))
       .AddAction(std::move(add_range_partition))
       .AddAction(std::move(clear_comment))
       .AddAction(std::move(column_remove_default))

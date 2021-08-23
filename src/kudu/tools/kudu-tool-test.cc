@@ -1188,6 +1188,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "column_set_comment.*Set comment for a column",
         "copy.*Copy table data to another table",
         "create.*Create a new table",
+        "add_column.*Add a column",
         "delete_column.*Delete a column",
         "delete.*Delete a table",
         "describe.*Describe a table",
@@ -4717,6 +4718,73 @@ TEST_F(ToolTest, TestColumnSetDefault) {
     "DECIMAL columns are not supported for setting default value by this tool"));
 }
 
+TEST_F(ToolTest, TestAddColumn) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string& kTableName = "kudu.table.add.column";
+  const string& kColumnName0 = "col.0";
+  const string& kColumnName1 = "col.1";
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  schema_builder.AddColumn(kColumnName0)
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull();
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  // Create the table
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_schema(schema);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+            .add_master_server_addr(master_addr)
+            .Build(&client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_CONTAINS(table->schema().ToString(), kColumnName0);
+  ASSERT_STR_NOT_CONTAINS(table->schema().ToString(), kColumnName1);
+  NO_FATALS(RunActionStdoutNone(Substitute("table add_column $0 $1 $2 STRING "
+                                           "-encoding_type=DICT_ENCODING "
+                                           "-compression_type=LZ4 "
+                                           "-default_value=[\"abcd\"] "
+                                           "-comment=helloworld",
+                                           master_addr, kTableName, kColumnName1)));
+
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_CONTAINS(table->schema().ToString(), kColumnName1);
+
+  KuduSchemaBuilder expected_schema_builder;
+  expected_schema_builder.AddColumn("key")
+      ->Type(kudu::client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  expected_schema_builder.AddColumn(kColumnName1)
+      ->Type(client::KuduColumnSchema::STRING)
+      ->Compression(client::KuduColumnStorageAttributes::CompressionType::LZ4)
+      ->Encoding(client::KuduColumnStorageAttributes::EncodingType::DICT_ENCODING)
+      ->Default(client::KuduValue::CopyString(Slice("abcd")))
+      ->Comment("helloworld");
+  KuduSchema expected_schema;
+  ASSERT_OK(expected_schema_builder.Build(&expected_schema));
+
+  ASSERT_EQ(table->schema().Column(2).name(), expected_schema.Column(1).name());
+  ASSERT_EQ(table->schema().Column(2).is_nullable(), expected_schema.Column(1).is_nullable());
+  ASSERT_EQ(table->schema().Column(2).type(), expected_schema.Column(1).type());
+  ASSERT_EQ(table->schema().Column(2).storage_attributes().encoding(),
+            expected_schema.Column(1).storage_attributes().encoding());
+  ASSERT_EQ(table->schema().Column(2).storage_attributes().compression(),
+            expected_schema.Column(1).storage_attributes().compression());
+  ASSERT_EQ(table->schema().Column(2).comment(), expected_schema.Column(1).comment());
+  ASSERT_EQ(table->schema().Column(2), expected_schema.Column(1));
+}
+
 TEST_F(ToolTest, TestDeleteColumn) {
   NO_FATALS(StartExternalMiniCluster());
   constexpr const char* const kTableName = "kudu.table.delete.column";
@@ -4916,6 +4984,7 @@ TEST_F(ToolTest, TestSetReplicationFactor) {
   schema_builder.AddColumn("value")
       ->Type(client::KuduColumnSchema::INT32)
       ->NotNull();
+
   KuduSchema schema;
   ASSERT_OK(schema_builder.Build(&schema));
 

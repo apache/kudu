@@ -307,6 +307,9 @@ class KUDU_EXPORT KuduColumnSchema {
   /// @return Type attributes of the column schema.
   KuduColumnTypeAttributes type_attributes() const;
 
+  /// @return Storage attributes of the column schema.
+  KuduColumnStorageAttributes storage_attributes() const;
+
   /// @return comment of the column schema.
   ///
   /// @note An empty string will be returned if there is no comment.
