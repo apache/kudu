@@ -27,33 +27,48 @@
 :sectlinks:
 :experimental:
 
-Kudu is a columnar storage manager developed for the Apache Hadoop platform.  Kudu shares
-the common technical properties of Hadoop ecosystem applications: it runs on commodity
-hardware, is horizontally scalable, and supports highly available operation.
+Kudu is a distributed columnar storage engine optimized for OLAP workloads.
+Kudu runs on commodity hardware, is horizontally scalable, and supports highly
+available operation.
 
 Kudu's design sets it apart. Some of Kudu's benefits include:
 
 - Fast processing of OLAP workloads.
-- Integration with MapReduce, Spark and other Hadoop ecosystem components.
+- Strong but flexible consistency model, allowing you to choose consistency
+  requirements on a per-request basis, including the option for
+  strict-serializable consistency.
+- Structured data model.
+- Strong performance for running sequential and random workloads simultaneously.
 - Tight integration with Apache Impala, making it a good, mutable alternative to
   using HDFS with Apache Parquet.
-- Strong but flexible consistency model, allowing you to choose consistency
-  requirements on a per-request basis, including the option for strict-serializable consistency.
-- Strong performance for running sequential and random workloads simultaneously.
+- Integration with Apache NiFi and Apache Spark.
+- Integration with Hive Metastore (HMS) and Apache Ranger to provide
+  fine-grain authorization and access control.
+- Authenticated and encrypted RPC communication.
+- High availability: Tablet Servers and Masters use the <<raft>>, which ensures
+  that as long as more than half the total number of tablet replicas is
+  available, the tablet is available for reads and writes. For instance,
+  if 2 out of 3 replicas (or 3 out of 5 replicas, etc.) are available,
+  the tablet is available. Reads can be serviced by read-only follower tablet
+  replicas, even in the event of a leader replica's failure.
+- Automatic fault detection and self-healing: to keep data highly available,
+  the system detects failed tablet replicas and re-replicates data from
+  available ones, so failed replicas are automatically replaced when enough
+  Tablet Servers are available in the cluster.
+- Location awareness (a.k.a. rack awareness) to keep the system available
+  in case of correlated failures and allowing Kudu clusters to span over
+  multiple availability zones.
+- Logical backup (full and incremental) and restore.
+- Multi-row transactions (only for INSERT/INSERT_IGNORE operations as of
+  Kudu 1.15 release).
 - Easy to administer and manage.
-- High availability. Tablet Servers and Masters use the <<raft>>, which ensures that
-  as long as more than half the total number of replicas is available, the tablet is available for
-  reads and writes. For instance, if 2 out of 3 replicas or 3 out of 5 replicas are available, the tablet
-  is available.
-+
-Reads can be serviced by read-only follower tablets, even in the event of a
-leader tablet failure.
-- Structured data model.
 
 By combining all of these properties, Kudu targets support for families of
-applications that are difficult or impossible to implement on current generation
-Hadoop storage technologies. A few examples of applications for which Kudu is a great
-solution are:
+applications that are difficult or impossible to implement using Hadoop storage
+technologies, while it is compatible with most of the data processing
+frameworks in the Hadoop ecosystem.
+
+A few examples of applications for which Kudu is a great solution are:
 
 * Reporting applications where newly-arrived data needs to be immediately available for end users
 * Time-series applications that must simultaneously support:
