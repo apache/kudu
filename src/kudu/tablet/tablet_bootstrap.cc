@@ -211,9 +211,20 @@ class FlushedStoresSnapshot {
 // is handled by the 'TabletCopy' classes, which copy blocks and metadata locally
 // before invoking this local bootstrap functionality to start the tablet.
 //
-// TODO Because the table that is being rebuilt is never flushed/compacted, consensus
-// is only set on the tablet after bootstrap, when we get to flushes/compactions though
-// we need to set it before replay or we won't be able to re-rebuild.
+// When rebuilding an existing WAL, we first move the WAL segments into a
+// separate "recovery" directory to serve as the original copy. New WAL entries
+// with new commit messages are added to a new WAL in the original WAL
+// directory. Entire segments may be skipped (e.g. if the mem-stores were
+// flushed prior to shutting down), so the resulting WAL may be shorter than
+// the original. Once the bootstrap is complete, the recovery directory is
+// deleted, leaving only the new WAL. Since recovery directories contain the
+// original WALs, following a crash during bootstrapping, subsequent bootstraps
+// should attempt to replay segments out of the recovery directory.
+//
+// TODO(dralves): Because the table that is being rebuilt is never
+// flushed/compacted, consensus is only set on the tablet after bootstrap, when
+// we get to flushes/compactions though we need to set it before replay or we
+// won't be able to re-rebuild.
 class TabletBootstrap {
  public:
   TabletBootstrap(scoped_refptr<TabletMetadata> tablet_meta,
