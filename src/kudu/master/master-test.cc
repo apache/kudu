@@ -242,6 +242,12 @@ Status MasterTest::CreateTable(
     const vector<KuduPartialRow>& split_rows,
     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
     const vector<HashSchema>& range_hash_schemas) {
+
+  if (!range_hash_schemas.empty() && range_hash_schemas.size() != bounds.size()) {
+    return Status::InvalidArgument(
+        "'bounds' and 'range_hash_schemas' must be of the same size");
+  }
+
   CreateTableRequestPB req;
   req.set_name(name);
   if (type) {
@@ -252,26 +258,26 @@ Status MasterTest::CreateTable(
   for (const KuduPartialRow& row : split_rows) {
     splits_encoder.Add(RowOperationsPB::SPLIT_ROW, row);
   }
-  auto* partition_schema_pb = req.mutable_partition_schema();
   for (const pair<KuduPartialRow, KuduPartialRow>& bound : bounds) {
     splits_encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
     splits_encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
-    if (!range_hash_schemas.empty()) {
-      RowOperationsPBEncoder encoder(partition_schema_pb->add_range_bounds());
-      encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
-      encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
-    }
   }
 
-  for (const auto& range_hash_schema : range_hash_schemas) {
-    auto* hash_schemas_pb = partition_schema_pb->add_range_hash_schemas();
+  auto* ps_pb = req.mutable_partition_schema();
+  for (size_t i = 0; i < range_hash_schemas.size(); ++i) {
+    auto* range = ps_pb->add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+    const auto& bound = bounds[i];
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
+    const auto& range_hash_schema = range_hash_schemas[i];
     for (const auto& hash_dimension : range_hash_schema) {
-      auto* hash_bucket_schema_pb = hash_schemas_pb->add_hash_schemas();
+      auto* hash_dimension_pb = range->add_hash_schema();
       for (const string& col_name : hash_dimension.columns) {
-        hash_bucket_schema_pb->add_columns()->set_name(col_name);
+        hash_dimension_pb->add_columns()->set_name(col_name);
       }
-      hash_bucket_schema_pb->set_num_buckets(hash_dimension.num_buckets);
-      hash_bucket_schema_pb->set_seed(hash_dimension.seed);
+      hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
+      hash_dimension_pb->set_seed(hash_dimension.seed);
     }
   }
 
@@ -928,30 +934,6 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Both 'split_rows' and 'range_hash_schemas' cannot be "
                         "populated at the same time.");
-  }
-
-  // The number of range bounds must match the size of user defined hash schemas.
-  {
-    google::FlagSaver flag_saver;
-    FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
-    KuduPartialRow a_lower(&kTableSchema);
-    KuduPartialRow a_upper(&kTableSchema);
-    ASSERT_OK(a_lower.SetInt32("key", 0));
-    ASSERT_OK(a_upper.SetInt32("key", 100));
-    KuduPartialRow b_lower(&kTableSchema);
-    KuduPartialRow b_upper(&kTableSchema);
-    ASSERT_OK(b_lower.SetInt32("key", 100));
-    ASSERT_OK(b_upper.SetInt32("key", 200));
-    vector<HashSchema> range_hash_schemas = { { { {"key"}, 4, 0 } } };
-    Status s = CreateTable(kTableName,
-                           kTableSchema,
-                           {},
-                           { { a_lower, a_upper }, { b_lower, b_upper }, },
-                           range_hash_schemas);
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(),
-                        "1 vs 2: per range hash schemas and range bounds "
-                        "must have the same size");
   }
 
   // No non-range columns.

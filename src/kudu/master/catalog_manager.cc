@@ -1865,6 +1865,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     }
   }
 
+  // TODO(aserbin): make sure range boundaries in
+  //                req.partition_schema().custom_hash_schema_ranges()
+  //                correspond to range_bounds?
   vector<PartitionSchema::HashSchema> range_hash_schemas;
   if (FLAGS_enable_per_range_hash_schemas) {
     // TODO(aserbin): the signature of CreatePartitions() require the
@@ -1874,10 +1877,10 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     //                CatalogManager::ApplyAlterPartitioningSteps() involving
     //                CreatePartitions() should be updated correspondingly.
     const auto& ps = req.partition_schema();
-    for (int i = 0; i < ps.range_hash_schemas_size(); i++) {
+    for (int i = 0; i < ps.custom_hash_schema_ranges_size(); i++) {
       PartitionSchema::HashSchema hash_schema;
       RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
-          schema, ps.range_hash_schemas(i).hash_schemas(), &hash_schema));
+          schema, ps.custom_hash_schema_ranges(i).hash_schema(), &hash_schema));
       range_hash_schemas.emplace_back(std::move(hash_schema));
     }
   }

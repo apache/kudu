@@ -633,7 +633,7 @@ public class AsyncKuduClient implements AutoCloseable {
       throw new IllegalArgumentException("CreateTableOptions may not be null");
     }
     if (!builder.getBuilder().getPartitionSchema().hasRangeSchema() &&
-        builder.getBuilder().getPartitionSchema().getHashBucketSchemasCount() == 0) {
+        builder.getBuilder().getPartitionSchema().getHashSchemaCount() == 0) {
       throw new IllegalArgumentException("Table partitioning must be specified using " +
                                          "setRangePartitionColumns or addHashPartitions");
 

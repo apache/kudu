@@ -211,7 +211,7 @@ public class ProtobufHelper {
     ImmutableList.Builder<PartitionSchema.HashBucketSchema> hashSchemas = ImmutableList.builder();
 
     for (Common.PartitionSchemaPB.HashBucketSchemaPB hashBucketSchemaPB
-        : pb.getHashBucketSchemasList()) {
+        : pb.getHashSchemaList()) {
       List<Integer> hashColumnIds = pbToIds(hashBucketSchemaPB.getColumnsList());
 
       PartitionSchema.HashBucketSchema hashSchema =
@@ -235,7 +235,7 @@ public class ProtobufHelper {
                 .addAllColumns(idsToPb(hashBucketSchema.getColumnIds()))
                 .setNumBuckets(hashBucketSchema.getNumBuckets())
                 .setSeed(hashBucketSchema.getSeed());
-      builder.addHashBucketSchemas(hbsBuilder.build());
+      builder.addHashSchema(hbsBuilder.build());
     }
 
     Common.PartitionSchemaPB.RangeSchemaPB rangeSchemaPB =

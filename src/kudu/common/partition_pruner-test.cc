@@ -122,12 +122,12 @@ void PartitionPrunerTest::CreatePartitionSchemaPB(
     range_schema->add_columns()->set_name(range_column);
   }
   for (const auto& hash_dimension : table_hash_schema) {
-    auto* hash_schema_component = partition_schema_pb->add_hash_bucket_schemas();
-    for (const auto& hash_schema_columns : get<0>(hash_dimension)) {
-      hash_schema_component->add_columns()->set_name(hash_schema_columns);
+    auto* hash_dimension_pb = partition_schema_pb->add_hash_schema();
+    for (const auto& hash_schema_column : get<0>(hash_dimension)) {
+      hash_dimension_pb->add_columns()->set_name(hash_schema_column);
     }
-    hash_schema_component->set_num_buckets(get<1>(hash_dimension));
-    hash_schema_component->set_seed(get<2>(hash_dimension));
+    hash_dimension_pb->set_num_buckets(get<1>(hash_dimension));
+    hash_dimension_pb->set_seed(get<2>(hash_dimension));
   }
 }
 
@@ -141,7 +141,8 @@ void PartitionPrunerTest::AddRangePartitionWithSchema(
     vector<pair<KuduPartialRow, KuduPartialRow>>* bounds,
     vector<PartitionSchema::HashSchema>* range_hash_schemas,
     PartitionSchemaPB* pb) {
-  RowOperationsPBEncoder encoder(pb->add_range_bounds());
+  auto* range = pb->add_custom_hash_schema_ranges();
+  RowOperationsPBEncoder encoder(range->mutable_range_bounds());
   KuduPartialRow lower(&schema);
   KuduPartialRow upper(&schema);
   for (const auto& bound : lower_string_cols) {
@@ -158,22 +159,21 @@ void PartitionPrunerTest::AddRangePartitionWithSchema(
   }
   encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
   encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
-  auto* range_hash_component = pb->add_range_hash_schemas();
   PartitionSchema::HashSchema hash_schema;
   for (const auto& hash_bucket_info : hash_buckets_info) {
-    auto* hash_component_pb = range_hash_component->add_hash_schemas();
+    auto* hash_dimension_pb = range->add_hash_schema();
     PartitionSchema::HashDimension hash_dimension;
     for (const auto& hash_schema_columns : get<0>(hash_bucket_info)) {
-      hash_component_pb->add_columns()->set_name(hash_schema_columns);
+      hash_dimension_pb->add_columns()->set_name(hash_schema_columns);
       hash_dimension.column_ids.emplace_back(schema.find_column(hash_schema_columns));
     }
-    hash_component_pb->set_num_buckets(get<1>(hash_bucket_info));
+    hash_dimension_pb->set_num_buckets(get<1>(hash_bucket_info));
     hash_dimension.num_buckets = get<1>(hash_bucket_info);
-    hash_component_pb->set_seed(get<2>(hash_bucket_info));
+    hash_dimension_pb->set_seed(get<2>(hash_bucket_info));
     hash_dimension.seed = get<2>(hash_bucket_info);
     hash_schema.emplace_back(hash_dimension);
   }
-  range_hash_schemas->emplace_back(hash_schema);
+  range_hash_schemas->emplace_back(std::move(hash_schema));
   bounds->emplace_back(lower, upper);
 }
 

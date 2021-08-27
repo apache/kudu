@@ -832,12 +832,12 @@ KuduTableCreator& KuduTableCreator::add_hash_partitions(const vector<string>& co
 KuduTableCreator& KuduTableCreator::add_hash_partitions(const vector<string>& columns,
                                                         int32_t num_buckets,
                                                         int32_t seed) {
-  auto* bucket_schema = data_->partition_schema_.add_hash_bucket_schemas();
+  auto* hash_dimension = data_->partition_schema_.add_hash_schema();
   for (const string& col_name : columns) {
-    bucket_schema->add_columns()->set_name(col_name);
+    hash_dimension->add_columns()->set_name(col_name);
   }
-  bucket_schema->set_num_buckets(num_buckets);
-  bucket_schema->set_seed(seed);
+  hash_dimension->set_num_buckets(num_buckets);
+  hash_dimension->set_seed(seed);
   return *this;
 }
 
@@ -924,7 +924,7 @@ Status KuduTableCreator::Create() {
     return Status::InvalidArgument("Missing schema");
   }
   if (!data_->partition_schema_.has_range_schema() &&
-      data_->partition_schema_.hash_bucket_schemas().empty()) {
+      data_->partition_schema_.hash_schema().empty()) {
     return Status::InvalidArgument(
         "Table partitioning must be specified using "
         "add_hash_partitions or set_range_partition_columns");
@@ -1002,24 +1002,26 @@ Status KuduTableCreator::Create() {
     splits_encoder.Add(upper_bound_type, *range->upper_bound_);
 
     if (has_range_with_custom_hash_schema) {
-      // In case of per-range custom hash bucket schemas, add range bounds
-      // into PartitionSchemaPB::range_bounds as well.
-      RowOperationsPBEncoder encoder(partition_schema->add_range_bounds());
+      auto* range_pb = partition_schema->add_custom_hash_schema_ranges();
+      RowOperationsPBEncoder encoder(range_pb->mutable_range_bounds());
       encoder.Add(lower_bound_type, *range->lower_bound_);
       encoder.Add(upper_bound_type, *range->upper_bound_);
-      // Populate corresponding element in 'range_hash_schemas' if there is at
-      // least one range with custom hash schema.
-      auto* schemas_pb = partition_schema->add_range_hash_schemas();
       if (range->hash_schema_.empty()) {
-        schemas_pb->mutable_hash_schemas()->CopyFrom(
-            data_->partition_schema_.hash_bucket_schemas());
+        // With the presence of a range with custom hash schema when the
+        // table-wide hash schema is used for this particular range, also add an
+        // element into PartitionSchemaPB::custom_hash_schema_ranges to satisfy
+        // the convention used by the backend.
+        range_pb->mutable_hash_schema()->CopyFrom(
+            data_->partition_schema_.hash_schema());
       } else {
+        // In case of per-range custom hash bucket schema, add corresponding
+        // element into PartitionSchemaPB::custom_hash_schema_ranges.
         for (const auto& hash_dimension : range->hash_schema_) {
-          auto* pb = schemas_pb->add_hash_schemas();
-          pb->set_seed(hash_dimension.seed);
-          pb->set_num_buckets(hash_dimension.num_buckets);
+          auto* hash_dimension_pb = range_pb->add_hash_schema();
+          hash_dimension_pb->set_seed(hash_dimension.seed);
+          hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
           for (const auto& column_name : hash_dimension.column_names) {
-            pb->add_columns()->set_name(column_name);
+            hash_dimension_pb->add_columns()->set_name(column_name);
           }
         }
       }

@@ -60,11 +60,11 @@ void GeneratePartitionSchema(const Schema& schema,
                              PartitionSchema* partition_schema) {
   PartitionSchemaPB partition_schema_pb;
   for (const auto& col_names_and_num_buckets : hash_partitions) {
-    auto* hash_pb = partition_schema_pb.add_hash_bucket_schemas();
-    hash_pb->set_num_buckets(col_names_and_num_buckets.second);
-    hash_pb->set_seed(0);
+    auto* hash_dimension_pb = partition_schema_pb.add_hash_schema();
+    hash_dimension_pb->set_num_buckets(col_names_and_num_buckets.second);
+    hash_dimension_pb->set_seed(0);
     for (const auto& col_name : col_names_and_num_buckets.first) {
-      auto* column_pb = hash_pb->add_columns();
+      auto* column_pb = hash_dimension_pb->add_columns();
       int col_idx = schema.find_column(col_name);
       column_pb->set_id(col_idx);
       column_pb->set_name(col_name);

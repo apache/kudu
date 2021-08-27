@@ -346,24 +346,34 @@ message PartitionSchemaPB {
     optional uint32 seed = 3;
 
     // The hash algorithm to use for calculating the hash bucket.
+    // NOTE: this is not used yet -- don't expect setting it to have any effect
     optional HashAlgorithm hash_algorithm = 4;
   }
 
-  message PerRangeHashBucketSchemasPB {
-    repeated HashBucketSchemaPB hash_schemas = 1;
+  // This data structure represents a range partition with a custom hash schema.
+  message RangeWithHashSchemaPB {
+    // Row operations containing the lower and upper range bound for the range.
+    optional RowOperationsPB range_bounds = 1;
+    // Hash schema for the range.
+    repeated HashBucketSchemaPB hash_schema = 2;
   }
 
-  repeated HashBucketSchemaPB hash_bucket_schemas = 1;
+  // Table-wide hash schema. Hash schema for a particular range may be
+  // overriden by corresponding element in 'custom_hash_schema_ranges'.
+  repeated HashBucketSchemaPB hash_schema = 1;
+
+  // Range schema to partition the key space into ranges.
   optional RangeSchemaPB range_schema = 2;
 
-  // Each index of 'range_bounds' represents the upper and lower bounds of
-  // ranges whose hash bucket schemas were specified. Its corresponding index
-  // of 'range_hash_schemas' represents that range's hash schema. An empty
-  // field of 'range_hash_schemas' indicates that the table wide hash schema
-  // specified in 'hash_bucket_schemas' is used. Both of these fields must have
-  // the same size.
-  repeated PerRangeHashBucketSchemasPB range_hash_schemas = 3;
-  repeated RowOperationsPB range_bounds = 4;
+  // Two fields were deprecated in favor of using 'custom_hash_schema_ranges'.
+  reserved 3;
+  reserved 4;
+
+  // If the 'custom_hash_schema_ranges' field is empty, the table-wide hash
+  // schema specified by the 'hash_schema' field is used for all the ranges
+  // of the table. Otherwise, particular ranges have their hash schema
+  // as specified by corresponding elements in 'custom_hash_schema_ranges'.
+  repeated RangeWithHashSchemaPB custom_hash_schema_ranges = 5;
 }
 
 // The serialized format of a Kudu table partition.

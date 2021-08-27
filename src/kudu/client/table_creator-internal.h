@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/client/client.h"
 #include "kudu/common/common.pb.h"
@@ -39,11 +40,12 @@ class KuduSchema;
 
 struct HashDimension {
   HashDimension(std::vector<std::string> column_names,
-                uint32_t num_buckets,
+                int32_t num_buckets,
                 uint32_t seed)
       : column_names(std::move(column_names)),
         num_buckets(num_buckets),
         seed(seed) {
+    DCHECK_GE(num_buckets, 2);
   }
 
   const std::vector<std::string> column_names;

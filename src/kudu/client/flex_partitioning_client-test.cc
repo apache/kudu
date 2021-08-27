@@ -333,6 +333,7 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashBuckets) {
   // 111-222  x:{key}     x:{key}     x:{key}         -
   // 222-333  x:{key}     x:{key}     x:{key}     x:{key}
   // 333-444  x:{key}     x:{key}     -               -
+  // 444-555  x:{key}     x:{key}     -               -
   constexpr const char* const kTableName = "DefaultAndCustomHashBuckets";
 
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
@@ -375,17 +376,27 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashBuckets) {
     table_creator->add_custom_range_partition(p.release());
   }
 
+  // Add a range partition with table-wide hash schema: not calling
+  // KuduRangePartition::add_hash_partition() means the range is using the
+  // table-wide schema.
+  //
+  // TODO(aserbin): update this once empty range schema means no hash bucketing
+  {
+    auto p = CreateRangePartition(444, 555);
+    table_creator->add_custom_range_partition(p.release());
+  }
+
   ASSERT_OK(table_creator->Create());
-  NO_FATALS(CheckTabletCount(kTableName, 11));
+  NO_FATALS(CheckTabletCount(kTableName, 13));
 
   // Make sure it's possible to insert rows into the table for all the existing
   // the paritions: first check the range of table-wide schema, then check
   // the ranges with custom hash schemas.
   // TODO(aserbin): uncomment CheckTableRowsNum() once partition pruning works
-  ASSERT_OK(InsertTestRows(kTableName, -111, 111));
-  NO_FATALS(CheckLiveRowCount(kTableName, 222));
+  ASSERT_OK(InsertTestRows(kTableName, -111, 0));
+  NO_FATALS(CheckLiveRowCount(kTableName, 111));
   //NO_FATALS(CheckTableRowsNum(kTableName, 222));
-  ASSERT_OK(InsertTestRows(kTableName, 111, 444));
+  ASSERT_OK(InsertTestRows(kTableName, 111, 555));
   NO_FATALS(CheckLiveRowCount(kTableName, 555));
   //NO_FATALS(CheckTableRowsNum(kTableName, 555));
 
@@ -395,7 +406,7 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashBuckets) {
     vector<KuduError*> errors;
     ElementDeleter drop(&errors);
     auto s = InsertTestRows(
-        kTableName, 444, 445, KuduSession::AUTO_FLUSH_SYNC, &errors);
+        kTableName, 555, 556, KuduSession::AUTO_FLUSH_SYNC, &errors);
     ASSERT_TRUE(s.IsIOError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
     ASSERT_EQ(1, errors.size());
@@ -411,7 +422,7 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashBuckets) {
     vector<KuduError*> errors;
     ElementDeleter drop(&errors);
     auto s = InsertTestRows(
-        kTableName, 445, 445 + kNumRows, KuduSession::MANUAL_FLUSH, &errors);
+        kTableName, 556, 556 + kNumRows, KuduSession::MANUAL_FLUSH, &errors);
     ASSERT_TRUE(s.IsIOError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "failed to flush data");
     ASSERT_EQ(kNumRows, errors.size());

@@ -77,7 +77,7 @@ public class CreateTableOptions {
    */
   public CreateTableOptions addHashPartitions(List<String> columns, int buckets, int seed) {
     Common.PartitionSchemaPB.HashBucketSchemaPB.Builder hashBucket =
-        pb.getPartitionSchemaBuilder().addHashBucketSchemasBuilder();
+        pb.getPartitionSchemaBuilder().addHashSchemaBuilder();
     for (String column : columns) {
       hashBucket.addColumnsBuilder().setName(column);
     }

@@ -213,7 +213,7 @@ class PartitionSchema {
   static Status ExtractHashSchemaFromPB(
       const Schema& schema,
       const google::protobuf::RepeatedPtrField<PartitionSchemaPB_HashBucketSchemaPB>&
-          hash_buckets_pb,
+          hash_schema_pb,
       HashSchema* hash_schema);
 
   // Deserializes a protobuf message into a partition schema.
@@ -246,7 +246,7 @@ class PartitionSchema {
   Status CreatePartitions(
       const std::vector<KuduPartialRow>& split_rows,
       const std::vector<std::pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
-      const std::vector<HashSchema>& ranges_hash_schemas,
+      const std::vector<HashSchema>& range_hash_schemas,
       const Schema& schema,
       std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 

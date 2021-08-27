@@ -56,12 +56,12 @@ void AddHashDimension(PartitionSchemaPB* partition_schema_pb,
                       const vector<string>& columns,
                       int32_t num_buckets,
                       uint32_t seed) {
-  auto* hash_bucket_schema = partition_schema_pb->add_hash_bucket_schemas();
+  auto* hash_dimension = partition_schema_pb->add_hash_schema();
   for (const string& column : columns) {
-    hash_bucket_schema->add_columns()->set_name(column);
+    hash_dimension->add_columns()->set_name(column);
   }
-  hash_bucket_schema->set_num_buckets(num_buckets);
-  hash_bucket_schema->set_seed(seed);
+  hash_dimension->set_num_buckets(num_buckets);
+  hash_dimension->set_seed(seed);
 }
 
 void SetRangePartitionComponent(PartitionSchemaPB* partition_schema_pb,
@@ -1392,7 +1392,8 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
 
   // [(a0, _, c0), (a0, _, c1))
   {
-    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    auto* range = pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a0"));
@@ -1402,15 +1403,15 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-    auto* range_hash_component = pb.add_range_hash_schemas();
-    auto* hash_component = range_hash_component->add_hash_schemas();
-    hash_component->add_columns()->set_name("a");
-    hash_component->set_num_buckets(4);
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("a");
+    hash_dimension->set_num_buckets(4);
   }
 
   // [(a1, _, c2), (a1, _, c3))
   {
-    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    auto* range = pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a1"));
@@ -1420,18 +1421,22 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-    auto* range_hash_component = pb.add_range_hash_schemas();
-    auto* hash_component_1 = range_hash_component->add_hash_schemas();
-    hash_component_1->add_columns()->set_name("a");
-    hash_component_1->set_num_buckets(2);
-    auto* hash_component_2 = range_hash_component->add_hash_schemas();
-    hash_component_2->add_columns()->set_name("b");
-    hash_component_2->set_num_buckets(3);
+    {
+      auto* hash_dimension = range->add_hash_schema();
+      hash_dimension->add_columns()->set_name("a");
+      hash_dimension->set_num_buckets(2);
+    }
+    {
+      auto* hash_dimension = range->add_hash_schema();
+      hash_dimension->add_columns()->set_name("b");
+      hash_dimension->set_num_buckets(3);
+    }
   }
 
   // [(a2, _, c4), (a2, _, c5))
   {
-    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    auto* range = pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a2"));
@@ -1441,8 +1446,8 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-    // empty field implies use of table wide hash schema
-    pb.add_range_hash_schemas();
+    // Empty 'hash_schema' field overrides the table-wide hash schema,
+    // meaning 'no hash bucketing for the range'.
   }
 
   PartitionSchema partition_schema;
@@ -1491,11 +1496,11 @@ TEST_F(PartitionTest, TestMalformedPartitionSchemaPB) {
                   ColumnSchema("c", STRING) },
                 { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
 
-  PartitionSchemaPB pb;
-
   // Testing that only a pair of range bounds is allowed.
   {
-    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    PartitionSchemaPB pb;
+    auto* range = pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     KuduPartialRow extra(&schema);
@@ -1505,45 +1510,50 @@ TEST_F(PartitionTest, TestMalformedPartitionSchemaPB) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, extra);
+
+    PartitionSchema partition_schema;
+    auto s = PartitionSchema::FromPB(pb, schema, &partition_schema);
+    ASSERT_EQ("Invalid argument: 3 ops were provided; "
+              "only two ops are expected for this pair of range bounds",
+              s.ToString());
   }
 
-  PartitionSchema partition_schema;
-  Status s = PartitionSchema::FromPB(pb, schema, &partition_schema);
-  ASSERT_EQ("Invalid argument: 3 ops were provided; "
-            "only two ops are expected for this pair of range bounds",
-            s.ToString());
-
-  pb.Clear();
-  // Testing that no split rows are allowed.
+  // Testing that no split rows are allowed along with ranges with custom
+  // hash schema.
   {
-    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    PartitionSchemaPB pb;
+    auto* range = pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow split(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(split.SetStringCopy("a", "a0"));
     ASSERT_OK(upper.SetStringCopy("a", "a1"));
     encoder.Add(RowOperationsPB::SPLIT_ROW, split);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    PartitionSchema partition_schema;
+    auto s = PartitionSchema::FromPB(pb, schema, &partition_schema);
+    ASSERT_EQ("Invalid argument: Illegal row operation type in request: 4",
+              s.ToString());
   }
 
-  Status s1 = PartitionSchema::FromPB(pb, schema, &partition_schema);
-  ASSERT_EQ("Invalid argument: Illegal row operation type in request: 4",
-            s1.ToString());
-
-  pb.Clear();
   // Testing that 2nd bound is either RANGE_UPPER_BOUND or INCLUSIVE_RANGE_UPPER_BOUND.
   {
-    RowOperationsPBEncoder encoder(pb.add_range_bounds());
+    PartitionSchemaPB pb;
+    auto* range = pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a0"));
     ASSERT_OK(upper.SetStringCopy("a", "a1"));
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::SPLIT_ROW, upper);
-  }
 
-  Status s2 = PartitionSchema::FromPB(pb, schema, &partition_schema);
-  ASSERT_EQ("Invalid argument: missing upper range bound in request",
-            s2.ToString());
+    PartitionSchema partition_schema;
+    auto s = PartitionSchema::FromPB(pb, schema, &partition_schema);
+    ASSERT_EQ("Invalid argument: missing upper range bound in request",
+              s.ToString());
+  }
 }
 
 TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
@@ -1585,13 +1595,14 @@ TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
   ASSERT_NE(partition_schema, partition_schema_1);
 
   // Resets table wide hash schemas so both will be equal again.
-  schema_builder_1.clear_hash_bucket_schemas();
+  schema_builder_1.clear_hash_schema();
   AddHashDimension(&schema_builder_1, { "a" }, 2, 0);
 
   // Different sizes of field 'ranges_with_hash_schemas_'
   // [(a, _, _), (b, _, _))
   {
-    RowOperationsPBEncoder encoder(schema_builder_1.add_range_bounds());
+    auto* range = schema_builder_1.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a"));
@@ -1599,10 +1610,9 @@ TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-    auto* range_hash_component = schema_builder_1.add_range_hash_schemas();
-    auto* hash_component = range_hash_component->add_hash_schemas();
-    hash_component->add_columns()->set_name("a");
-    hash_component->set_num_buckets(4);
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("a");
+    hash_dimension->set_num_buckets(4);
   }
 
   ASSERT_OK(PartitionSchema::FromPB(schema_builder_1, schema, &partition_schema_1));
@@ -1611,7 +1621,8 @@ TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
   // Different custom hash bucket schema but same range bounds.
   // [(a, _, _), (b, _, _))
   {
-    RowOperationsPBEncoder encoder(schema_builder.add_range_bounds());
+    auto* range = schema_builder.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a"));
@@ -1619,23 +1630,21 @@ TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-    auto* range_hash_component = schema_builder.add_range_hash_schemas();
-    auto* hash_component = range_hash_component->add_hash_schemas();
-    hash_component->add_columns()->set_name("a");
-    hash_component->set_num_buckets(2);
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("a");
+    hash_dimension->set_num_buckets(2);
   }
 
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
   ASSERT_NE(partition_schema, partition_schema_1);
 
-  // Clears custom hash schemas and range bounds field.
-  schema_builder.clear_range_hash_schemas();
-  schema_builder.clear_range_bounds();
+  schema_builder.clear_custom_hash_schema_ranges();
 
   // Different range bounds but same custom hash bucket schema.
   // [(a, _, _), (c, _, _))
   {
-    RowOperationsPBEncoder encoder(schema_builder.add_range_bounds());
+    auto* range = schema_builder.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
     KuduPartialRow lower(&schema);
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a"));
@@ -1643,10 +1652,9 @@ TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
     encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-    auto* range_hash_component = schema_builder.add_range_hash_schemas();
-    auto* hash_component = range_hash_component->add_hash_schemas();
-    hash_component->add_columns()->set_name("a");
-    hash_component->set_num_buckets(4);
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("a");
+    hash_dimension->set_num_buckets(4);
   }
 
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));

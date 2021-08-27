@@ -165,12 +165,12 @@ void SetColumnIdentifiers(const vector<ColumnId>& column_ids,
 
 Status PartitionSchema::ExtractHashSchemaFromPB(
     const Schema& schema,
-    const RepeatedPtrField<PartitionSchemaPB_HashBucketSchemaPB>& hash_buckets_pb,
+    const RepeatedPtrField<PartitionSchemaPB_HashBucketSchemaPB>& hash_schema_pb,
     HashSchema* hash_schema) {
-  for (const auto& hash_bucket_pb : hash_buckets_pb) {
+  for (const auto& hash_dimension_pb : hash_schema_pb) {
     HashDimension hash_dimension;
     RETURN_NOT_OK(ExtractColumnIds(
-        hash_bucket_pb.columns(), schema, &hash_dimension.column_ids));
+        hash_dimension_pb.columns(), schema, &hash_dimension.column_ids));
 
     // Hashing is column-order dependent, so sort the column_ids to ensure that
     // hash components with the same columns hash consistently. This is
@@ -178,8 +178,8 @@ Status PartitionSchema::ExtractHashSchemaFromPB(
     // table creation; after that the columns should remain in sorted order.
     std::sort(hash_dimension.column_ids.begin(), hash_dimension.column_ids.end());
 
-    hash_dimension.seed = hash_bucket_pb.seed();
-    hash_dimension.num_buckets = hash_bucket_pb.num_buckets();
+    hash_dimension.seed = hash_dimension_pb.seed();
+    hash_dimension.num_buckets = hash_dimension_pb.num_buckets();
     hash_schema->push_back(std::move(hash_dimension));
   }
   return Status::OK();
@@ -190,18 +190,18 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
                                PartitionSchema* partition_schema) {
   partition_schema->Clear();
   RETURN_NOT_OK(ExtractHashSchemaFromPB(
-      schema, pb.hash_bucket_schemas(), &partition_schema->hash_schema_));
-  vector<HashSchema> range_hash_schemas;
-  range_hash_schemas.resize(pb.range_hash_schemas_size());
-  for (int i = 0; i < pb.range_hash_schemas_size(); i++) {
-    RETURN_NOT_OK(ExtractHashSchemaFromPB(schema,
-                                          pb.range_hash_schemas(i).hash_schemas(),
-                                          &range_hash_schemas[i]));
-  }
+      schema, pb.hash_schema(), &partition_schema->hash_schema_));
 
+  const auto custom_ranges_num = pb.custom_hash_schema_ranges_size();
+  vector<HashSchema> range_hash_schemas;
+  range_hash_schemas.resize(custom_ranges_num);
   vector<pair<KuduPartialRow, KuduPartialRow>> range_bounds;
-  for (int i = 0; i < pb.range_bounds_size(); i++) {
-    RowOperationsPBDecoder decoder(&pb.range_bounds(i), &schema, &schema, nullptr);
+  for (int i = 0; i < custom_ranges_num; i++) {
+    const auto& range = pb.custom_hash_schema_ranges(i);
+    RETURN_NOT_OK(ExtractHashSchemaFromPB(
+        schema, range.hash_schema(), &range_hash_schemas[i]));
+
+    RowOperationsPBDecoder decoder(&range.range_bounds(), &schema, &schema, nullptr);
     vector<DecodedRowOperation> ops;
     RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
     if (ops.size() != 2) {
@@ -274,22 +274,24 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
 
 Status PartitionSchema::ToPB(const Schema& schema, PartitionSchemaPB* pb) const {
   pb->Clear();
-  pb->mutable_hash_bucket_schemas()->Reserve(hash_schema_.size());
+  pb->mutable_hash_schema()->Reserve(hash_schema_.size());
   for (const auto& hash_dimension : hash_schema_) {
-    auto* hash_schema_pb = pb->add_hash_bucket_schemas();
+    auto* hash_dimension_pb = pb->add_hash_schema();
     SetColumnIdentifiers(hash_dimension.column_ids,
-                         hash_schema_pb->mutable_columns());
-    hash_schema_pb->set_num_buckets(hash_dimension.num_buckets);
-    hash_schema_pb->set_seed(hash_dimension.seed);
+                         hash_dimension_pb->mutable_columns());
+    hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
+    hash_dimension_pb->set_seed(hash_dimension.seed);
   }
 
   if (!ranges_with_hash_schemas_.empty()) {
-    pb->mutable_range_hash_schemas()->Reserve(ranges_with_hash_schemas_.size());
-    pb->mutable_range_bounds()->Reserve(ranges_with_hash_schemas_.size());
+    pb->mutable_custom_hash_schema_ranges()->Reserve(
+        ranges_with_hash_schemas_.size());
     Arena arena(256);
     for (const auto& range_hash_schema : ranges_with_hash_schemas_) {
-      RowOperationsPBEncoder encoder(pb->add_range_bounds());
+      auto* range_pb = pb->add_custom_hash_schema_ranges();
+
       arena.Reset();
+      RowOperationsPBEncoder encoder(range_pb->mutable_range_bounds());
       KuduPartialRow lower(&schema);
       KuduPartialRow upper(&schema);
       Slice s_lower = Slice(range_hash_schema.lower);
@@ -299,13 +301,14 @@ Status PartitionSchema::ToPB(const Schema& schema, PartitionSchemaPB* pb) const 
       encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
       encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
 
-      auto* range_hash_schema_pb = pb->add_range_hash_schemas();
+      range_pb->mutable_hash_schema()->Reserve(
+          range_hash_schema.hash_schema.size());
       for (const auto& hash_dimension : range_hash_schema.hash_schema) {
-        auto* hash_schema_pb = range_hash_schema_pb->add_hash_schemas();
+        auto* hash_dimension_pb = range_pb->add_hash_schema();
         SetColumnIdentifiers(hash_dimension.column_ids,
-                             hash_schema_pb->mutable_columns());
-        hash_schema_pb->set_num_buckets(hash_dimension.num_buckets);
-        hash_schema_pb->set_seed(hash_dimension.seed);
+                             hash_dimension_pb->mutable_columns());
+        hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
+        hash_dimension_pb->set_seed(hash_dimension.seed);
       }
     }
   }
@@ -512,21 +515,21 @@ Status PartitionSchema::SplitRangeBounds(
 Status PartitionSchema::CreatePartitions(
     const vector<KuduPartialRow>& split_rows,
     const vector<pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
-    const vector<HashSchema>& ranges_hash_schemas,
+    const vector<HashSchema>& range_hash_schemas,
     const Schema& schema,
     vector<Partition>* partitions) const {
   const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
 
-  if (!ranges_hash_schemas.empty()) {
+  if (!range_hash_schemas.empty()) {
     if (!split_rows.empty()) {
       return Status::InvalidArgument("Both 'split_rows' and 'range_hash_schemas' cannot be "
                                      "populated at the same time.");
     }
-    if (range_bounds.size() != ranges_hash_schemas.size()) {
+    if (range_bounds.size() != range_hash_schemas.size()) {
       return Status::InvalidArgument(
           Substitute("$0 vs $1: per range hash schemas and range bounds "
                      "must have the same size",
-                     ranges_hash_schemas.size(), range_bounds.size()));
+                     range_hash_schemas.size(), range_bounds.size()));
     }
   }
 
@@ -547,7 +550,7 @@ Status PartitionSchema::CreatePartitions(
 
   RangesWithHashSchemas bounds_with_hash_schemas;
   vector<string> splits;
-  RETURN_NOT_OK(EncodeRangeBounds(range_bounds, ranges_hash_schemas, schema,
+  RETURN_NOT_OK(EncodeRangeBounds(range_bounds, range_hash_schemas, schema,
                                   &bounds_with_hash_schemas));
   RETURN_NOT_OK(EncodeRangeSplits(split_rows, schema, &splits));
   RETURN_NOT_OK(SplitRangeBounds(schema, splits, &bounds_with_hash_schemas));
@@ -565,7 +568,7 @@ Status PartitionSchema::CreatePartitions(
   DCHECK(base_hash_partitions.size() > 1 ||
          base_hash_partitions.front().hash_buckets().empty());
 
-  if (ranges_hash_schemas.empty()) {
+  if (range_hash_schemas.empty()) {
     // Create a partition per range bound and hash bucket combination.
     vector<Partition> new_partitions;
     for (const Partition& base_partition : base_hash_partitions) {
@@ -579,7 +582,7 @@ Status PartitionSchema::CreatePartitions(
     *partitions = std::move(new_partitions);
   } else {
     // The number of ranges should match the size of range_hash_schemas.
-    DCHECK_EQ(ranges_hash_schemas.size(), bounds_with_hash_schemas.size());
+    DCHECK_EQ(range_hash_schemas.size(), bounds_with_hash_schemas.size());
     // No split rows should be defined if range_hash_schemas is populated.
     DCHECK(split_rows.empty());
     vector<Partition> result_partitions;
@@ -653,7 +656,7 @@ Status PartitionSchema::CreatePartitions(
       for (int i = static_cast<int>(partition.hash_buckets().size()) - 1; i >= 0; i--) {
         partition.partition_key_end_.erase(kEncodedBucketSize * i);
         int32_t hash_bucket = partition.hash_buckets()[i] + 1;
-        if (ranges_hash_schemas.empty() || partition_idx_to_hash_schema_idx[j] == -1) {
+        if (range_hash_schemas.empty() || partition_idx_to_hash_schema_idx[j] == -1) {
           hash_dimension = &hash_schema_[i];
         } else {
           const auto& hash_schemas_idx = partition_idx_to_hash_schema_idx[j];
