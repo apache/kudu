@@ -68,6 +68,19 @@ Exchange post] for details.
 Without hole punching support, the log block manager is unsafe to use. It won't
 ever delete blocks, and will consume ever more space on disk.
 
+You can run the following sequence of commands on a mounted file system to
+check whether it supports hole punching (the originally allocated 10MiB
+turns into 5MiB after punching a 5MiB hole in the file at 1MiB offset):
+
+----
+$ dd if=/dev/zero of=hole_punch bs=1M count=10 2>/dev/null
+$ du -h hole_punch
+10M     hole_punch
+$ fallocate -p -o 1M -l 5M hole_punch
+$ du -h hole_punch
+5.0M    hole_punch
+----
+
 If you can't use hole punching in your environment, you can still
 try Kudu. Enable the file block manager instead of the log block manager by
 adding the `--block_manager=file` flag to the commands you use to start the master
