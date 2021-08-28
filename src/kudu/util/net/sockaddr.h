@@ -23,7 +23,7 @@
 
 #include <cstdint>
 #include <string>
-#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

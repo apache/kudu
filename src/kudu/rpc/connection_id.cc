@@ -20,7 +20,7 @@
 #include <cstddef>
 #include <utility>
 
-#include <boost/functional/hash/hash.hpp>
+#include <boost/container_hash/extensions.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -52,7 +52,7 @@ void ConnectionId::set_network_plane(string network_plane) {
 
 string ConnectionId::ToString() const {
   string remote;
-  if (remote_.is_ip() && hostname_ != remote_.host()) {
+  if (remote_.is_initialized() && remote_.is_ip() && hostname_ != remote_.host()) {
     remote = strings::Substitute("$0 ($1)", remote_.ToString(), hostname_);
   } else {
     remote = remote_.ToString();

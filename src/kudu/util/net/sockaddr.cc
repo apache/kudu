@@ -227,6 +227,9 @@ const struct sockaddr_in& Sockaddr::ipv4_addr() const {
 }
 
 std::string Sockaddr::ToString() const {
+  if (!is_initialized()) {
+    return "<uninitialized>";
+  }
   switch (family()) {
     case AF_INET:
       return Substitute("$0:$1", host(), port());

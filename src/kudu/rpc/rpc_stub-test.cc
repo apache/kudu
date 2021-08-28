@@ -357,7 +357,7 @@ TEST_F(RpcStubTest, TestCallMissingMethod) {
   Proxy p(client_messenger_, server_addr_, server_addr_.host(),
           CalculatorService::static_service_name());
 
-  Status s = DoTestSyncCall(p, "DoesNotExist");
+  Status s = DoTestSyncCall(&p, "DoesNotExist");
   ASSERT_TRUE(s.IsRemoteError()) << "Bad status: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "with an invalid method name: DoesNotExist");
 }

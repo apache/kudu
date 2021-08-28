@@ -467,8 +467,8 @@ class RpcTestBase : public KuduTest {
     return bld.Build(messenger);
   }
 
-  Status DoTestSyncCall(const Proxy &p, const char *method,
-                        CredentialsPolicy policy = CredentialsPolicy::ANY_CREDENTIALS) {
+  static Status DoTestSyncCall(Proxy* p, const char *method,
+                               CredentialsPolicy policy = CredentialsPolicy::ANY_CREDENTIALS) {
     AddRequestPB req;
     req.set_x(rand());
     req.set_y(rand());
@@ -476,13 +476,13 @@ class RpcTestBase : public KuduTest {
     RpcController controller;
     controller.set_timeout(MonoDelta::FromMilliseconds(10000));
     controller.set_credentials_policy(policy);
-    RETURN_NOT_OK(p.SyncRequest(method, req, &resp, &controller));
+    RETURN_NOT_OK(p->SyncRequest(method, req, &resp, &controller));
 
     CHECK_EQ(req.x() + req.y(), resp.result());
     return Status::OK();
   }
 
-  void DoTestSidecar(const Proxy &p, int size1, int size2) {
+static void DoTestSidecar(Proxy* p, int size1, int size2) {
     const uint32_t kSeed = 12345;
 
     SendTwoStringsRequestPB req;
@@ -493,8 +493,8 @@ class RpcTestBase : public KuduTest {
     SendTwoStringsResponsePB resp;
     RpcController controller;
     controller.set_timeout(MonoDelta::FromMilliseconds(10000));
-    CHECK_OK(p.SyncRequest(GenericCalculatorService::kSendTwoStringsMethodName,
-                           req, &resp, &controller));
+    CHECK_OK(p->SyncRequest(GenericCalculatorService::kSendTwoStringsMethodName,
+                            req, &resp, &controller));
 
     Slice first = GetSidecarPointer(controller, resp.sidecar1(), size1);
     Slice second = GetSidecarPointer(controller, resp.sidecar2(), size2);
@@ -510,11 +510,11 @@ class RpcTestBase : public KuduTest {
     CHECK_EQ(Slice(expected), second);
   }
 
-  static Status DoTestOutgoingSidecar(const Proxy &p, int size1, int size2) {
+  static Status DoTestOutgoingSidecar(Proxy* p, int size1, int size2) {
     return DoTestOutgoingSidecar(p, {std::string(size1, 'a'), std::string(size2, 'b')});
   }
 
-  static Status DoTestOutgoingSidecar(const Proxy& p, const std::vector<std::string>& strings) {
+  static Status DoTestOutgoingSidecar(Proxy* p, const std::vector<std::string>& strings) {
     PushStringsRequestPB request;
     RpcController controller;
 
@@ -525,8 +525,8 @@ class RpcTestBase : public KuduTest {
     }
 
     PushStringsResponsePB resp;
-    KUDU_RETURN_NOT_OK(p.SyncRequest(GenericCalculatorService::kPushStringsMethodName,
-                                     request, &resp, &controller));
+    KUDU_RETURN_NOT_OK(p->SyncRequest(GenericCalculatorService::kPushStringsMethodName,
+                                      request, &resp, &controller));
     for (int i = 0; i < strings.size(); i++) {
       CHECK_EQ(strings[i].size(), resp.sizes(i));
       CHECK_EQ(crc::Crc32c(strings[i].data(), strings[i].size()),
@@ -536,11 +536,11 @@ class RpcTestBase : public KuduTest {
     return Status::OK();
   }
 
-  void DoTestOutgoingSidecarExpectOK(const Proxy &p, int size1, int size2) {
+  static void DoTestOutgoingSidecarExpectOK(Proxy* p, int size1, int size2) {
     CHECK_OK(DoTestOutgoingSidecar(p, size1, size2));
   }
 
-  static void DoTestExpectTimeout(const Proxy& p,
+  static void DoTestExpectTimeout(Proxy* p,
                                   const MonoDelta& timeout,
                                   bool will_be_cancelled = false,
                                   bool* is_negotiaton_error = nullptr) {
@@ -554,7 +554,7 @@ class RpcTestBase : public KuduTest {
     c.set_timeout(timeout);
     Stopwatch sw;
     sw.start();
-    Status s = p.SyncRequest(GenericCalculatorService::kSleepMethodName, req, &resp, &c);
+    Status s = p->SyncRequest(GenericCalculatorService::kSleepMethodName, req, &resp, &c);
     sw.stop();
     ASSERT_FALSE(s.ok());
     if (is_negotiaton_error != nullptr) {

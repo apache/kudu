@@ -71,7 +71,7 @@ class MultiThreadedRpcTest : public RpcTestBase {
     CHECK_OK(CreateMessenger("ClientSC", &client_messenger));
     Proxy p(client_messenger, server_addr, server_addr.host(),
             GenericCalculatorService::static_service_name());
-    *result = DoTestSyncCall(p, method_name);
+    *result = DoTestSyncCall(&p, method_name);
     latch->CountDown();
   }
 
@@ -93,7 +93,7 @@ class MultiThreadedRpcTest : public RpcTestBase {
     int i = 0;
     while (true) {
       i++;
-      Status s = DoTestSyncCall(p, method_name);
+      Status s = DoTestSyncCall(&p, method_name);
       if (!s.ok()) {
         // Return on first failure.
         LOG(INFO) << "Call failed. Shutting down client thread. Ran " << i << " calls: "

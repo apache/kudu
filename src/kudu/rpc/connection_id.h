@@ -45,6 +45,10 @@ class ConnectionId {
 
   const std::string& hostname() const { return hostname_; }
 
+  void set_remote(const Sockaddr& remote) {
+    remote_ = remote;
+  }
+
   // The credentials of the user associated with this connection, if any.
   void set_user_credentials(UserCredentials user_credentials);
 

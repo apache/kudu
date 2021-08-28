@@ -17,12 +17,16 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/response_callback.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
 namespace google {
@@ -33,6 +37,7 @@ class Message;
 
 namespace kudu {
 
+class DnsResolver;
 class Sockaddr;
 
 namespace rpc {
@@ -65,7 +70,26 @@ class Proxy {
         std::string hostname,
         std::string service_name);
 
+  // TODO(awong): consider a separate auto-resolving proxy class?
+  Proxy(std::shared_ptr<Messenger> messenger,
+        HostPort hp,
+        DnsResolver* dns_resolver,
+        std::string service_name);
+
   ~Proxy();
+
+  // If the proxy is configured for address re-resolution (by supplying a
+  // DnsResolver and HostPort in the constructor), performs an initial
+  // resolution of the address using the HostPort. If 'addr' is supplied, it is
+  // used instead of performing resolution (this is useful to initialize
+  // several proxies with a single external DNS resolution).
+  //
+  // Otherwise, this is a no-op.
+  //
+  // NOTE: it is always OK to skip calling this method -- if this proxy is
+  // configured for address re-resolution and this is skipped, the resolution
+  // will happen upon sending the first request.
+  void Init(Sockaddr addr = {});
 
   // Call a remote method asynchronously.
   //
@@ -97,14 +121,14 @@ class Proxy {
                     const google::protobuf::Message& req,
                     google::protobuf::Message* resp,
                     RpcController* controller,
-                    const ResponseCallback& callback) const;
+                    const ResponseCallback& callback);
 
   // The same as AsyncRequest(), except that the call blocks until the call
   // finishes. If the call fails, returns a non-OK result.
   Status SyncRequest(const std::string& method,
                      const google::protobuf::Message& req,
                      google::protobuf::Message* resp,
-                     RpcController* controller) const;
+                     RpcController* controller);
 
   // Set the user credentials which should be used to log in.
   void set_user_credentials(UserCredentials user_credentials);
@@ -121,9 +145,48 @@ class Proxy {
   std::string ToString() const;
 
  private:
+  // Asynchronously refreshes the DNS, enqueueing the given request upon
+  // success, or failing the call and calling the callback upon failure.
+  void RefreshDnsAndEnqueueRequest(const std::string& method,
+                                   const google::protobuf::Message& req,
+                                   google::protobuf::Message* response,
+                                   RpcController* controller,
+                                   const ResponseCallback& callback);
+
+  // Queues the given request as an outbound call using the given messenger,
+  // controller, and response.
+  void EnqueueRequest(const std::string& method,
+                      const google::protobuf::Message& req,
+                      google::protobuf::Message* response,
+                      RpcController* controller,
+                      const ResponseCallback& callback) const;
+
+  // Returns a single Sockaddr from the 'addrs', logging a warning if there is
+  // more than one to choose from.
+  Sockaddr* GetSingleSockaddr(std::vector<Sockaddr>* addrs) const;
+
+  ConnectionId conn_id() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return conn_id_;
+  }
+
   const std::string service_name_;
+  HostPort hp_;
+  DnsResolver* dns_resolver_;
   std::shared_ptr<Messenger> messenger_;
+
+  // TODO(awong): consider implementing some lock-free list of ConnectionIds
+  // instead of taking a lock every time we want to get the "current"
+  // ConnectionId.
+  //
+  // Connection ID used by this proxy. Once the proxy has started sending
+  // requests, the connection ID may be updated in response to calls (e.g. if
+  // we re-resolved the physical address in response to an invalid DNS entry).
+  // As such, 'conn_id_' is protected by 'lock_', and should be copied and
+  // passed around, rather than used directly
+  mutable simple_spinlock lock_;
   ConnectionId conn_id_;
+
   mutable Atomic32 is_started_;
 
   DISALLOW_COPY_AND_ASSIGN(Proxy);
