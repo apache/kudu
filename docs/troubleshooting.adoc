@@ -65,8 +65,6 @@ are several different ways to determine whether an ext4 mountpoint is backed by 
 ext3, or ext4 formatted device; see link:https://unix.stackexchange.com/q/60723[this Stack
 Exchange post] for details.
 
-link:administration.html#change_dir_config[Changing Directory Configurations] documentation.
-
 Without hole punching support, the log block manager is unsafe to use. It won't
 ever delete blocks, and will consume ever more space on disk.
 
