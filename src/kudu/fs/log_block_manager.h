@@ -192,7 +192,7 @@ class LogBlockManager : public BlockManager {
                   FileCache* file_cache,
                   BlockManagerOptions opts);
 
-  virtual ~LogBlockManager();
+  ~LogBlockManager();
 
   Status Open(FsReport* report) override;
 
@@ -374,9 +374,6 @@ class LogBlockManager : public BlockManager {
   void LoadContainer(Dir* dir,
                      LogBlockContainerRefPtr container,
                      internal::LogBlockContainerLoadResult* result);
-
-  // Perform basic initialization.
-  Status Init();
 
   ObjectIdGenerator* oid_generator() { return &oid_generator_; }
 

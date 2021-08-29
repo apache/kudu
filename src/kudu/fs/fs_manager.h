@@ -219,8 +219,6 @@ class FsManager {
   Status OpenBlock(const BlockId& block_id,
                    std::unique_ptr<fs::ReadableBlock>* block);
 
-  Status DeleteBlock(const BlockId& block_id);
-
   bool BlockExists(const BlockId& block_id) const;
 
   // ==========================================================================
@@ -366,8 +364,6 @@ class FsManager {
   static const char *kTabletMetadataDirName;
   static const char *kWalDirName;
   static const char *kInstanceMetadataFileName;
-  static const char *kInstanceMetadataMagicNumber;
-  static const char *kTabletSuperBlockMagicNumber;
   static const char *kConsensusMetadataDirName;
 
   // The environment to be used for all filesystem operations.

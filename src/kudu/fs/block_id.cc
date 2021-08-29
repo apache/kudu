@@ -17,9 +17,11 @@
 
 #include "kudu/fs/block_id.h"
 
-#include <glog/logging.h>
+#include <ostream>
 #include <string>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/strings/join.h"
@@ -30,6 +32,10 @@ using std::vector;
 namespace kudu {
 
 const uint64_t BlockId::kInvalidId = 0;
+
+std::ostream& operator<<(std::ostream& o, const BlockId& block_id) {
+  return o << block_id.ToString();
+}
 
 string BlockId::JoinStrings(const vector<BlockId>& blocks) {
   vector<string> strings;

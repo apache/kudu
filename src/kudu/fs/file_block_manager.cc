@@ -949,9 +949,7 @@ Status FileBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
       GetAllBlockIdsForDir(this->env_, dd, bid_vec, s);
     });
   }
-  for (const auto& dd : dd_manager_->dirs()) {
-    dd->WaitOnClosures();
-  }
+  dd_manager_->WaitOnClosures();
 
   // A failure on any data directory is fatal.
   for (const auto& s : statuses) {

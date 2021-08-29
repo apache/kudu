@@ -166,7 +166,7 @@ class Dir {
 
   bool is_shutdown_;
 
-  // Protects 'last_space_check_', 'is_full_' and available_bytes_.
+  // Protects 'last_space_check_', 'is_full_' and 'available_bytes_'.
   mutable simple_spinlock lock_;
   MonoTime last_space_check_;
   bool is_full_;
@@ -249,6 +249,11 @@ class DirManager {
   std::set<int> GetFailedDirs() const {
     shared_lock<rw_spinlock> group_lock(dir_group_lock_.get_lock());
     return failed_dirs_;
+  }
+
+  bool AreAllDirsFailed() const {
+    shared_lock<rw_spinlock> group_lock(dir_group_lock_.get_lock());
+    return failed_dirs_.size() == dirs_.size();
   }
 
   // Return a list of the canonicalized root directory names.
@@ -341,14 +346,14 @@ class DirManager {
   // On success, 'instance_files' contains instance objects, including those
   // that failed to load because they were missing or because of a disk
   // error; they are still considered "loaded" and are labeled unhealthy
-  // internally. 'has_existing_instances' is set to true if any of the instance
+  // internally. 'has_healthy_instances' is set to true if any of the instance
   // files are healthy.
   //
   // Returns an error if an instance file fails in an irreconcileable way (e.g.
   // the file is locked).
   Status LoadInstances(
       std::vector<std::unique_ptr<DirInstanceMetadataFile>>* instance_files,
-      bool* has_existing_instances);
+      bool* has_healthy_instances);
 
   // Takes the set of instance files, does some basic verification on them,
   // creates any that don't exist on disk, and updates any that have a

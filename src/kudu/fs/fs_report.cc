@@ -39,12 +39,15 @@ using std::vector;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 
+#define MERGE_ENTRIES_FROM(other) \
+  entries.insert(entries.end(), (other).entries.begin(), (other).entries.end())
+
 ///////////////////////////////////////////////////////////////////////////////
 // MissingBlockCheck
 ///////////////////////////////////////////////////////////////////////////////
 
 void MissingBlockCheck::MergeFrom(const MissingBlockCheck& other) {
-  entries.insert(entries.end(), other.entries.begin(), other.entries.end());
+  MERGE_ENTRIES_FROM(other);
 }
 
 string MissingBlockCheck::ToString() const {
@@ -85,15 +88,13 @@ void OrphanedBlockCheck::MergeFrom(const OrphanedBlockCheck& other) {
 
 string OrphanedBlockCheck::ToString() const {
   // Aggregate interesting stats from all of the entries.
-  int64_t orphaned_block_count_repaired = 0;
   int64_t orphaned_block_bytes = 0;
+  int64_t orphaned_block_count_repaired = 0;
   int64_t orphaned_block_bytes_repaired = 0;
   for (const auto& ob : entries) {
-    if (ob.repaired) {
-      orphaned_block_count_repaired++;
-    }
     orphaned_block_bytes += ob.length;
     if (ob.repaired) {
+      orphaned_block_count_repaired++;
       orphaned_block_bytes_repaired += ob.length;
     }
   }
@@ -117,20 +118,18 @@ OrphanedBlockCheck::Entry::Entry(BlockId b, int64_t l)
 
 void LBMFullContainerSpaceCheck::MergeFrom(
     const LBMFullContainerSpaceCheck& other) {
-  entries.insert(entries.end(), other.entries.begin(), other.entries.end());
+  MERGE_ENTRIES_FROM(other);
 }
 
 string LBMFullContainerSpaceCheck::ToString() const {
   // Aggregate interesting stats from all of the entries.
-  int64_t full_container_space_count_repaired = 0;
   int64_t full_container_space_bytes = 0;
+  int64_t full_container_space_count_repaired = 0;
   int64_t full_container_space_bytes_repaired = 0;
   for (const auto& fcp : entries) {
-    if (fcp.repaired) {
-      full_container_space_count_repaired++;
-    }
     full_container_space_bytes += fcp.excess_bytes;
     if (fcp.repaired) {
+      full_container_space_count_repaired++;
       full_container_space_bytes_repaired += fcp.excess_bytes;
     }
   }
@@ -154,7 +153,7 @@ LBMFullContainerSpaceCheck::Entry::Entry(string c, int64_t e)
 
 void LBMIncompleteContainerCheck::MergeFrom(
     const LBMIncompleteContainerCheck& other) {
-  entries.insert(entries.end(), other.entries.begin(), other.entries.end());
+  MERGE_ENTRIES_FROM(other);
 }
 
 string LBMIncompleteContainerCheck::ToString() const {
@@ -180,7 +179,7 @@ LBMIncompleteContainerCheck::Entry::Entry(string c)
 ///////////////////////////////////////////////////////////////////////////////
 
 void LBMMalformedRecordCheck::MergeFrom(const LBMMalformedRecordCheck& other) {
-  entries.insert(entries.end(), other.entries.begin(), other.entries.end());
+  MERGE_ENTRIES_FROM(other);
 }
 
 string LBMMalformedRecordCheck::ToString() const {
@@ -205,7 +204,7 @@ LBMMalformedRecordCheck::Entry::Entry(string c, BlockRecordPB* r)
 ///////////////////////////////////////////////////////////////////////////////
 
 void LBMMisalignedBlockCheck::MergeFrom(const LBMMisalignedBlockCheck& other) {
-  entries.insert(entries.end(), other.entries.begin(), other.entries.end());
+  MERGE_ENTRIES_FROM(other);
 }
 
 string LBMMisalignedBlockCheck::ToString() const {
@@ -230,7 +229,7 @@ LBMMisalignedBlockCheck::Entry::Entry(string c, BlockId b)
 
 void LBMPartialRecordCheck::MergeFrom(
     const LBMPartialRecordCheck& other) {
-  entries.insert(entries.end(), other.entries.begin(), other.entries.end());
+  MERGE_ENTRIES_FROM(other);
 }
 
 string LBMPartialRecordCheck::ToString() const {

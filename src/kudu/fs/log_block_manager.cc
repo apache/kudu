@@ -285,25 +285,25 @@ class LogWritableBlock : public WritableBlock {
   LogWritableBlock(LogBlockContainerRefPtr container, BlockId block_id,
                    int64_t block_offset);
 
-  virtual ~LogWritableBlock();
+  ~LogWritableBlock();
 
-  virtual Status Close() OVERRIDE;
+  Status Close() override;
 
-  virtual Status Abort() OVERRIDE;
+  Status Abort() override;
 
-  virtual const BlockId& id() const OVERRIDE;
+  const BlockId& id() const override;
 
-  virtual BlockManager* block_manager() const OVERRIDE;
+  BlockManager* block_manager() const override;
 
-  virtual Status Append(const Slice& data) OVERRIDE;
+  Status Append(const Slice& data) override;
 
-  virtual Status AppendV(ArrayView<const Slice> data) OVERRIDE;
+  Status AppendV(ArrayView<const Slice> data) override;
 
-  virtual Status Finalize() OVERRIDE;
+  Status Finalize() override;
 
-  virtual size_t BytesAppended() const OVERRIDE;
+  size_t BytesAppended() const override;
 
-  virtual State state() const OVERRIDE;
+  State state() const override;
 
   // Actually close the block, finalizing it if it has not yet been
   // finalized. Also updates various metrics.
@@ -364,8 +364,6 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
     SYNC,
     NO_SYNC
   };
-
-  static const char* kMagic;
 
   // Creates a new block container in 'dir'.
   static Status Create(LogBlockManager* block_manager,
@@ -1385,11 +1383,11 @@ class LogBlockCreationTransaction : public BlockCreationTransaction {
  public:
   LogBlockCreationTransaction() = default;
 
-  virtual ~LogBlockCreationTransaction() = default;
+  ~LogBlockCreationTransaction() = default;
 
-  virtual void AddCreatedBlock(unique_ptr<WritableBlock> block) override;
+  void AddCreatedBlock(unique_ptr<WritableBlock> block) override;
 
-  virtual Status CommitCreatedBlocks() override;
+  Status CommitCreatedBlocks() override;
 
  private:
   vector<unique_ptr<LogWritableBlock>> created_blocks_;
@@ -1445,11 +1443,11 @@ class LogBlockDeletionTransaction : public BlockDeletionTransaction,
   // blocks. This includes:
   // 1. Punching holes in deleted blocks, and
   // 2. Deleting dead containers outright.
-  virtual ~LogBlockDeletionTransaction();
+  ~LogBlockDeletionTransaction();
 
-  virtual void AddDeletedBlock(BlockId block) override;
+  void AddDeletedBlock(BlockId block) override;
 
-  virtual Status CommitDeletedBlocks(vector<BlockId>* deleted) override;
+  Status CommitDeletedBlocks(vector<BlockId>* deleted) override;
 
   // Add the given block that needs to be deleted to 'deleted_interval_map_',
   // which keeps track of container and the range to be hole punched.
@@ -1825,21 +1823,21 @@ class LogReadableBlock : public ReadableBlock {
  public:
   explicit LogReadableBlock(LogBlockRefPtr log_block);
 
-  virtual ~LogReadableBlock();
+  ~LogReadableBlock();
 
-  virtual Status Close() OVERRIDE;
+  Status Close() override;
 
-  virtual const BlockId& id() const OVERRIDE;
+  const BlockId& id() const override;
 
-  virtual BlockManager* block_manager() const OVERRIDE;
+  BlockManager* block_manager() const override;
 
-  virtual Status Size(uint64_t* sz) const OVERRIDE;
+  Status Size(uint64_t* sz) const override;
 
-  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE;
+  Status Read(uint64_t offset, Slice result) const override;
 
-  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE;
+  Status ReadV(uint64_t offset, ArrayView<Slice> results) const override;
 
-  virtual size_t memory_footprint() const OVERRIDE;
+  size_t memory_footprint() const override;
 
  private:
   // A reference to this block's metadata.
@@ -2093,13 +2091,12 @@ Status LogBlockManager::Open(FsReport* report) {
     auto* s = &statuses[i];
     dd->ExecClosure([this, dd_raw, results, s]() {
       this->OpenDataDir(dd_raw, results, s);
+      WARN_NOT_OK(*s, Substitute("failed to open dir $0", dd_raw->dir()));
     });
   }
 
   // Wait for the opens to complete.
-  for (const auto& dd : dd_manager_->dirs()) {
-    dd->WaitOnClosures();
-  }
+  dd_manager_->WaitOnClosures();
 
   // Check load errors and merge each data dir's container load results, then do repair tasks.
   vector<unique_ptr<internal::LogBlockContainerLoadResult>> dir_results(
@@ -2150,9 +2147,7 @@ Status LogBlockManager::Open(FsReport* report) {
   }
 
   // Wait for the repair tasks to complete.
-  for (const auto& dd : dd_manager_->dirs()) {
-    dd->WaitOnClosures();
-  }
+  dd_manager_->WaitOnClosures();
 
   FsReport merged_report;
   for (int i = 0; i < dd_manager_->dirs().size(); ++i) {
@@ -2166,7 +2161,7 @@ Status LogBlockManager::Open(FsReport* report) {
     RETURN_ON_NON_DISK_FAILURE(dd_manager_->dirs()[i], dir_results[i]->status);
   }
 
-  if (dd_manager_->GetFailedDirs().size() == dd_manager_->dirs().size()) {
+  if (dd_manager_->AreAllDirsFailed()) {
     return Status::IOError("All data dirs failed to open", "", EIO);
   }
 
@@ -2227,8 +2222,7 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
 
 unique_ptr<BlockCreationTransaction> LogBlockManager::NewCreationTransaction() {
   CHECK(!opts_.read_only);
-  return unique_ptr<internal::LogBlockCreationTransaction>(
-      new internal::LogBlockCreationTransaction());
+  return std::make_unique<internal::LogBlockCreationTransaction>();
 }
 
 shared_ptr<BlockDeletionTransaction> LogBlockManager::NewDeletionTransaction() {
@@ -2430,7 +2424,6 @@ Status LogBlockManager::RemoveLogBlocks(vector<BlockId> block_ids,
   for (const auto& block_id : block_ids) {
     LogBlockRefPtr lb;
     Status s = RemoveLogBlock(block_id, &lb);
-    // If we get NotFound, then the block was already deleted.
     if (!s.ok() && !s.IsNotFound()) {
       if (first_failure.ok()) first_failure = s;
     } else if (s.ok()) {
@@ -2438,6 +2431,8 @@ Status LogBlockManager::RemoveLogBlocks(vector<BlockId> block_ids,
       blocks_length += lb->length();
       lbs.emplace_back(std::move(lb));
     } else {
+      // If we get NotFound, then the block was already deleted.
+      DCHECK(s.IsNotFound());
       deleted->emplace_back(block_id);
     }
   }
@@ -2521,8 +2516,6 @@ void LogBlockManager::OpenDataDir(
     Dir* dir,
     vector<unique_ptr<internal::LogBlockContainerLoadResult>>* results,
     Status* result_status) {
-  // Find all containers and open them.
-  unordered_set<string> containers_seen;
   vector<string> children;
   Status s = env_->GetChildren(dir->dir(), &children);
   if (!s.ok()) {
@@ -2533,6 +2526,9 @@ void LogBlockManager::OpenDataDir(
     return;
   }
 
+  // Find all containers and open them.
+  unordered_set<string> containers_seen;
+  results->reserve(children.size() / 2);
   for (const string& child : children) {
     string container_name;
     if (!TryStripSuffixString(
@@ -2848,15 +2844,16 @@ Status LogBlockManager::Repair(
   // This is a fatal inconsistency; if the repair fails, we cannot proceed.
   if (report->partial_record_check) {
     for (auto& pr : report->partial_record_check->entries) {
-      unique_ptr<RWFile> file;
-      RWFileOptions opts;
-      opts.mode = Env::MUST_EXIST;
       LogBlockContainerRefPtr container = FindPtrOrNull(containers_by_name, pr.container);
       if (!container) {
         // The container was deleted outright.
         pr.repaired = true;
         continue;
       }
+
+      unique_ptr<RWFile> file;
+      RWFileOptions opts;
+      opts.mode = Env::MUST_EXIST;
       RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(
           env_->NewRWFile(opts,
                           StrCat(pr.container, kContainerMetadataFileSuffix),
@@ -2926,8 +2923,7 @@ Status LogBlockManager::Repair(
   //
   // Register deletions to a single BlockDeletionTransaction. So, the repunched
   // holes belonging to the same container can be coalesced.
-  shared_ptr<LogBlockDeletionTransaction> transaction =
-      std::make_shared<LogBlockDeletionTransaction>(this);
+  auto transaction = std::make_shared<LogBlockDeletionTransaction>(this);
   for (const auto& b : need_repunching) {
     b->RegisterDeletion(transaction);
     transaction->AddBlock(b);
@@ -2991,11 +2987,11 @@ Status LogBlockManager::Repair(
 Status LogBlockManager::RewriteMetadataFile(const LogBlockContainer& container,
                                             const vector<BlockRecordPB>& records,
                                             int64_t* file_bytes_delta) {
-  uint64_t old_metadata_size;
   const string metadata_file_name = StrCat(container.ToString(), kContainerMetadataFileSuffix);
-
   // Get the container's data directory's UUID for error handling.
   const string dir = container.data_dir()->dir();
+
+  uint64_t old_metadata_size;
   RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(env_->GetFileSize(metadata_file_name, &old_metadata_size),
                                          "could not get size of old metadata file");
 

@@ -30,7 +30,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/error_manager.h"
@@ -792,10 +791,6 @@ bool FsManager::BlockExists(const BlockId& block_id) const {
   DCHECK(block_manager_);
   unique_ptr<ReadableBlock> block;
   return block_manager_->OpenBlock(block_id, &block).ok();
-}
-
-std::ostream& operator<<(std::ostream& o, const BlockId& block_id) {
-  return o << block_id.ToString();
 }
 
 } // namespace kudu
