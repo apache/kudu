@@ -31,7 +31,7 @@ namespace kudu {
 // This type should be used instead of uint32_t when referring to row indexes
 // for better clarity.
 //
-// TODO: Currently we only support up to 4B rows per RowSet - some work
+// TODO: currently we only support up to 4B rows per RowSet - some work
 // is necessary to support larger RowSets without overflow.
 typedef uint32_t rowid_t;
 
