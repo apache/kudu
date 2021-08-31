@@ -440,8 +440,7 @@ void PartitionPruner::Init(const Schema& schema,
     vector<RangeBounds> range_bounds;
     vector<PartitionSchema::HashSchema> hash_schemas_per_range;
     for (const auto& range : partition_schema.ranges_with_hash_schemas_) {
-      const auto& hash_schema = range.hash_schema.empty() ?
-          partition_schema.hash_schema_ : range.hash_schema;
+      const auto& hash_schema = range.hash_schema;
       // Both lower and upper bounds are unbounded.
       if (scan_range_lower_bound.empty() && scan_range_upper_bound.empty()) {
         range_bounds.emplace_back(RangeBounds{range.lower, range.upper});

@@ -879,8 +879,12 @@ KuduTableCreator& KuduTableCreator::add_range_partition(
     KuduPartialRow* upper_bound,
     RangePartitionBound lower_bound_type,
     RangePartitionBound upper_bound_type) {
-  data_->range_partitions_.emplace_back(new KuduRangePartition(
+  unique_ptr<KuduRangePartition> range_partition(new KuduRangePartition(
       lower_bound, upper_bound, lower_bound_type, upper_bound_type));
+  // Using KuduTableCreator::add_range_partition() assumes the range partition
+  // uses the table-wide schema.
+  range_partition->data_->is_table_wide_hash_schema_ = true;
+  data_->range_partitions_.emplace_back(std::move(range_partition));
   return *this;
 }
 
@@ -1006,7 +1010,7 @@ Status KuduTableCreator::Create() {
       RowOperationsPBEncoder encoder(range_pb->mutable_range_bounds());
       encoder.Add(lower_bound_type, *range->lower_bound_);
       encoder.Add(upper_bound_type, *range->upper_bound_);
-      if (range->hash_schema_.empty()) {
+      if (range->is_table_wide_hash_schema_) {
         // With the presence of a range with custom hash schema when the
         // table-wide hash schema is used for this particular range, also add an
         // element into PartitionSchemaPB::custom_hash_schema_ranges to satisfy

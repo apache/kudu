@@ -487,9 +487,10 @@ TEST_F(TableLocationsTest, TestRangeSpecificHashing) {
   HashSchema hash_schema_6 = { { { "key" }, 6, 2 } };
   range_hash_schemas.emplace_back(hash_schema_6);
 
-  // Table-wide hash schema, applied to range by default if no per-range schema is specified.
+  // Use 5 bucket hash schema as the table-wide one.
   HashSchema table_hash_schema_5 = { { { "val" }, 5, 4 } };
-  range_hash_schemas.emplace_back();
+  // Apply table-wide hash schema applied to this range.
+  range_hash_schemas.emplace_back(table_hash_schema_5);
 
   ASSERT_OK(CreateTable(
       table_name, schema, {}, bounds, range_hash_schemas, table_hash_schema_5));

@@ -1111,172 +1111,161 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangePruning) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"C"}, { {{"A"}, 2, 0}, {{"B"}, 2, 0} }, &pb);
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
   vector<PartitionSchema::HashSchema> range_hash_schemas;
 
-  // Need to add per range hash schema components to the field 'range_with_hash_schemas_'
-  // of PartitionSchema because PartitionPruner will use them to construct partition key ranges.
-  // Currently, PartitionSchema::CreatePartitions() does not leverage this field
-  // so these components will have to be passed separately to the function as well.
+  // Need to add per range hash schema components to the field
+  // 'ranges_with_hash_schemas_' of PartitionSchema because PartitionPruner will
+  // use them to construct partition key ranges. Currently,
+  // PartitionSchema::CreatePartitions() does not leverage this field, so these
+  // components will have to be passed separately to the function as well.
+
+  // None of the ranges below uses the table-wide hash schema.
 
   // [(_, _, a), (_, _, c))
-  {
-    AddRangePartitionWithSchema(schema, {{"C", "a"}}, {{"C", "c"}}, {}, {},
-                                { {{"A"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
-  }
-
+  AddRangePartitionWithSchema(schema, {{"C", "a"}}, {{"C", "c"}}, {}, {},
+                              { {{"A"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
   // [(_, _, d), (_, _, f))
-  {
-    AddRangePartitionWithSchema(schema, {{"C", "d"}}, {{"C", "f"}}, {}, {},
-                                { {{"A"}, 2, 0}, {{"B"}, 3, 0} },
-                                &bounds, &range_hash_schemas, &pb);
-  }
-
+  AddRangePartitionWithSchema(schema, {{"C", "d"}}, {{"C", "f"}}, {}, {},
+                              { {{"A"}, 2, 0}, {{"B"}, 3, 0} },
+                              &bounds, &range_hash_schemas, &pb);
   // [(_, _, h), (_, _, j))
-  {
-    AddRangePartitionWithSchema(schema, {{"C", "h"}}, {{"C", "j"}}, {}, {},
-                                {}, &bounds, &range_hash_schemas, &pb);
-  }
-
+  AddRangePartitionWithSchema(schema, {{"C", "h"}}, {{"C", "j"}}, {}, {},
+                              {}, &bounds, &range_hash_schemas, &pb);
   // [(_, _, k), (_, _, m))
-  {
-    AddRangePartitionWithSchema(schema, {{"C", "k"}}, {{"C", "m"}}, {}, {},
-                                { {{"B"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
+  AddRangePartitionWithSchema(schema, {{"C", "k"}}, {{"C", "m"}}, {}, {},
+                              { {{"B"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
 
-  }
-
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
-
-  ASSERT_EQ(15, partitions.size());
+  ASSERT_EQ(12, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
   const auto check = [&] (const vector<ColumnPredicate>& predicates,
-                    const string& lower_bound_partition_key,
-                    const string& upper_bound_partition_key,
-                    size_t remaining_tablets,
-                    size_t pruner_ranges) {
+                          const string& lower_bound_partition_key,
+                          const string& upper_bound_partition_key,
+                          size_t remaining_tablets,
+                          size_t pruner_ranges) {
     ScanSpec spec;
-
     spec.SetLowerBoundPartitionKey(lower_bound_partition_key);
     spec.SetExclusiveUpperBoundPartitionKey(upper_bound_partition_key);
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
-
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   constexpr int8_t zero = 0;
   constexpr int8_t one = 1;
 
-  Slice a = "a";
-  Slice b = "b";
-  Slice e = "e";
-  Slice f = "f";
-  Slice i = "i";
-  Slice l = "l";
-  Slice m = "m";
+  const Slice a = "a";
+  const Slice b = "b";
+  const Slice e = "e";
+  const Slice f = "f";
+  const Slice i = "i";
+  const Slice l = "l";
+  const Slice m = "m";
 
   // No Bounds
-  check({}, "", "", 15, 15);
+  NO_FATALS(check({}, "", "", 12, 12));
 
   // A = 1
-  check({ ColumnPredicate::Equality(schema.column(0), &one)}, "", "", 8, 8);
-
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &one) },
+                  "", "", 7, 7));
   // B = 1
-  check({ ColumnPredicate::Equality(schema.column(1), &one)}, "", "", 8, 8);
-
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one) },
+                  "", "", 7, 7));
   // A = 0
   // B = 1
   // C >= "e"
-  check({ ColumnPredicate::Equality(schema.column(0), &zero),
-          ColumnPredicate::Equality(schema.column(1), &one),
-          ColumnPredicate::Range(schema.column(2), &e, nullptr)}, "", "", 3, 3);
-
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &zero),
+                    ColumnPredicate::Equality(schema.column(1), &one),
+                    ColumnPredicate::Range(schema.column(2), &e, nullptr) },
+                  "", "", 3, 3));
   // A = 0
   // B = 1
   // C = "e"
-  check({ ColumnPredicate::Equality(schema.column(0), &zero),
-          ColumnPredicate::Equality(schema.column(1), &one),
-          ColumnPredicate::Equality(schema.column(2), &e)}, "", "", 1, 1);
-
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &zero),
+                    ColumnPredicate::Equality(schema.column(1), &one),
+                    ColumnPredicate::Equality(schema.column(2), &e) },
+                  "", "", 1, 1));
   // B = 1
   // C >= "b"
   // C < "j"
-  check({ ColumnPredicate::Equality(schema.column(1), &one),
-          ColumnPredicate::Range(schema.column(2), &b, nullptr),
-          ColumnPredicate::Range(schema.column(2), nullptr, &i)}, "", "", 7, 7);
-
-
-  // A = 0
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one),
+                    ColumnPredicate::Range(schema.column(2), &b, nullptr),
+                    ColumnPredicate::Range(schema.column(2), nullptr, &i) },
+                  "", "", 6, 6));
+  // B = 0
   // C >= "e"
   // C < "l"
-  check({ ColumnPredicate::Equality(schema.column(1), &zero),
-          ColumnPredicate::Range(schema.column(2), &e, nullptr),
-          ColumnPredicate::Range(schema.column(2), nullptr, &l)}, "", "", 5, 5);
-
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &zero),
+                    ColumnPredicate::Range(schema.column(2), &e, nullptr),
+                    ColumnPredicate::Range(schema.column(2), nullptr, &l) },
+                  "", "", 4, 4));
   // C >= "a"
   // C < "b"
-  check({ ColumnPredicate::Range(schema.column(2), &a, &b)}, "", "", 3, 3);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &a, &b) },
+                  "", "", 3, 3));
   // C >= "a"
   // C < "e"
-  check({ ColumnPredicate::Range(schema.column(2), &a, &e)}, "", "", 9, 9);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &a, &e) },
+                  "", "", 9, 9));
   // C >= "e"
   // C < "i"
-  check({ ColumnPredicate::Range(schema.column(2), &e, &i)}, "", "", 10, 10);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &e, &i) },
+                  "", "", 7, 7));
   // C >= "a"
   // C < "l"
-  check({ ColumnPredicate::Range(schema.column(2), &a, &l)}, "", "", 15, 15);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &a, &l) },
+                  "", "", 12, 12));
   // C >= "i"
   // C < "l"
-  check({ ColumnPredicate::Range(schema.column(2), &i, &l)}, "", "", 6, 6);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &i, &l) },
+                  "", "", 3, 3));
   // C >= "e"
-  check({ ColumnPredicate::Range(schema.column(2), &e, nullptr)}, "", "", 12, 12);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &e, nullptr) },
+                  "", "", 9, 9));
   // C < "f"
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &f)}, "", "", 9, 9);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &f) },
+                  "", "", 9, 9));
   // C >= "f"
-  check({ ColumnPredicate::Range(schema.column(2), &f, nullptr)}, "", "", 6, 6);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &f, nullptr) },
+                  "", "", 3, 3));
   // C < "a"
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &a)}, "", "", 0, 0);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &a) },
+                  "", "", 0, 0));
   // C >= "m"
-  check({ ColumnPredicate::Range(schema.column(2), &m, nullptr)}, "", "", 0, 0);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &m, nullptr) },
+                  "", "", 0, 0));
 
   // Uses None predicate to short circuit scan
-  check({ ColumnPredicate::None(schema.column(2))}, "", "", 0, 0);
+  NO_FATALS(check({ ColumnPredicate::None(schema.column(2))}, "", "", 0, 0));
 
   // partition key >= (hash=1, hash=0)
-  check({}, string("\0\0\0\1\0\0\0\0", 8), "", 8, 8);
+  NO_FATALS(check({}, string("\0\0\0\1\0\0\0\0", 8), "", 7, 7));
 
   // partition key < (hash=1, hash=0)
-  check({}, "", string("\0\0\0\1\0\0\0\0", 8), 7, 7);
+  NO_FATALS(check({}, "", string("\0\0\0\1\0\0\0\0", 8), 5, 5));
 
   // C >= "e"
   // C < "m"
   // partition key >= (hash=1)
-  check({ColumnPredicate::Range(schema.column(2), &e, &m)}, string("\0\0\0\1", 4), "", 6, 6);
-
+  NO_FATALS(check({ColumnPredicate::Range(schema.column(2), &e, &m)},
+                  string("\0\0\0\1", 4), "", 5, 5));
   // C >= "e"
   // C < "m"
   // partition key < (hash=1)
-  check({ColumnPredicate::Range(schema.column(2), &e, &m)}, "", string("\0\0\0\1", 4), 6, 6);
+  NO_FATALS(check({ColumnPredicate::Range(schema.column(2), &e, &m)}, "",
+                  string("\0\0\0\1", 4), 4, 4));
 }
 
 TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePruning) {
@@ -1407,37 +1396,32 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"A"}, { {{"B", "C"}, 3, 0} }, &pb);
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
   vector<PartitionSchema::HashSchema> range_hash_schemas;
 
+  // None of the ranges below uses the table-wide hash schema.
+
   // [(a, _, _), (c, _, _))
-  {
-    AddRangePartitionWithSchema(schema, {{"A", "a"}}, {{"A", "c"}}, {}, {},
-                                { {{"B"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
-  }
-
+  AddRangePartitionWithSchema(schema, {{"A", "a"}}, {{"A", "c"}}, {}, {},
+                              { {{"B"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
   // [(c, _, _), (e, _, _))
-  {
-    AddRangePartitionWithSchema(schema, {{"A", "c"}}, {{"A", "e"}}, {}, {},
-                                {}, &bounds, &range_hash_schemas, &pb);
-  }
-
+  AddRangePartitionWithSchema(schema, {{"A", "c"}}, {{"A", "e"}}, {}, {},
+                              {}, &bounds, &range_hash_schemas, &pb);
   // [(e, _, _), (g, _, _))
-  {
-    AddRangePartitionWithSchema(schema, {{"A", "e"}}, {{"A", "g"}}, {}, {},
-                                { {{"C"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
-  }
+  AddRangePartitionWithSchema(schema, {{"A", "e"}}, {{"A", "g"}}, {}, {},
+                              { {{"C"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
 
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(
+      {}, bounds, range_hash_schemas, schema, &partitions));
 
-  ASSERT_EQ(9, partitions.size());
+  ASSERT_EQ(7, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
@@ -1445,13 +1429,11 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
                     size_t remaining_tablets,
                     size_t pruner_ranges) {
     ScanSpec spec;
-
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
-
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // zero, one, eight are in different buckets when bucket number is 3 and seed is 0.
@@ -1464,15 +1446,18 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
 
   // B in [0, 1, 8];
   B_values = { &zero, &one, &eight };
-  check({ ColumnPredicate::InList(schema.column(1), &B_values) }, 9, 9);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(1), &B_values) },
+                  7, 7));
 
   // B in [0, 1];
   B_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(1), &B_values) }, 8, 8);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(1), &B_values) },
+                  6, 6));
 
   // C in [0, 1];
   C_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(2), &C_values) }, 8, 8);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(2), &C_values) },
+                  6, 6));
 
   // B in [0, 1], C in [0, 1]
   // (0, 0) in bucket 2
@@ -1481,65 +1466,56 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
   // (1, 1) in bucket 0
   B_values = { &zero, &one };
   C_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(1), &B_values),
-          ColumnPredicate::InList(schema.column(2), &C_values) },
-        7,  7);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(1), &B_values),
+                    ColumnPredicate::InList(schema.column(2), &C_values) },
+                  5,  5));
 
   // B = 0, C in [0, 1]
   C_values = { &zero, &one };
-  check({ ColumnPredicate::Equality(schema.column(1), &zero),
-          ColumnPredicate::InList(schema.column(2), &C_values) },
-        4, 4);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &zero),
+                    ColumnPredicate::InList(schema.column(2), &C_values) },
+                  4, 4));
 
   // B = 1, C in [0, 1]
   C_values = { &zero, &one };
-  check({ ColumnPredicate::Equality(schema.column(1), &one),
-          ColumnPredicate::InList(schema.column(2), &C_values) },
-        5, 5);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one),
+                    ColumnPredicate::InList(schema.column(2), &C_values) },
+                  4, 4));
 }
 
 TEST_F(PartitionPrunerTest, TestSingleRangeElementAndBoundaryCase) {
   // CREATE TABLE t
   // (A INT8, B STRING)
   // PRIMARY KEY (A, B)
-  // PARTITION BY RANGE (A)
-  // DISTRIBUTE BY HASH(B) INTO 2 BUCKETS;
+  // PARTITION BY RANGE (A);
   Schema schema({ ColumnSchema("A", INT8),
                   ColumnSchema("B", STRING) },
                 { ColumnId(0), ColumnId(1) },
                 2);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
-  CreatePartitionSchemaPB({"A"}, { {{"B"}, 2, 0} }, &pb);
+  PartitionSchemaPB pb;
+  CreatePartitionSchemaPB({"A"}, {}, &pb);
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
   vector<PartitionSchema::HashSchema> range_hash_schemas;
 
   // [(0, _), (1, _))
-  {
-    AddRangePartitionWithSchema(schema, {}, {}, {{"A", 0}}, {{"A", 1}},
-                                {{{"B"}, 4, 0}}, &bounds, &range_hash_schemas, &pb);
-  }
-
+  AddRangePartitionWithSchema(schema, {}, {}, {{"A", 0}}, {{"A", 1}},
+                              {{{"B"}, 4, 0}}, &bounds, &range_hash_schemas, &pb);
   // [(1, _), (2, _))
-  {
-    AddRangePartitionWithSchema(schema, {}, {}, {{"A", 1}}, {{"A", 2}},
-                                {}, &bounds, &range_hash_schemas, &pb);
-  }
-
+  AddRangePartitionWithSchema(schema, {}, {}, {{"A", 1}}, {{"A", 2}},
+                              {}, &bounds, &range_hash_schemas, &pb);
   // [(2, _), (3, _))
-  {
-    AddRangePartitionWithSchema(schema, {}, {}, {{"A", 2}}, {{"A", 3}},
-                                { {{"B"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
-  }
+  AddRangePartitionWithSchema(schema, {}, {}, {{"A", 2}}, {{"A", 3}},
+                              { {{"B"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
 
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
 
-  ASSERT_EQ(9, partitions.size());
+  ASSERT_EQ(8, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
@@ -1547,13 +1523,11 @@ TEST_F(PartitionPrunerTest, TestSingleRangeElementAndBoundaryCase) {
       size_t remaining_tablets,
       size_t pruner_ranges) {
     ScanSpec spec;
-
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
-
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   constexpr int8_t zero = 0;
@@ -1562,39 +1536,41 @@ TEST_F(PartitionPrunerTest, TestSingleRangeElementAndBoundaryCase) {
   constexpr int8_t three = 3;
 
   // No Bounds
-  check({}, 9, 9);
+  NO_FATALS(check({}, 8, 8));
 
   // A >= 0
-  check({ ColumnPredicate::Range(schema.column(0), &zero, nullptr)}, 9, 9);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, nullptr) },
+                  8, 8));
   // A >= 1
-  check({ ColumnPredicate::Range(schema.column(0), &one, nullptr)}, 5, 5);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, nullptr) },
+                  4, 4));
   // A < 1
-  check({ ColumnPredicate::Range(schema.column(0), nullptr, &one)}, 4, 4);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &one) },
+                  4, 4));
   // A >= 2
-  check({ ColumnPredicate::Range(schema.column(0), &two, nullptr)}, 3, 3);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &two, nullptr) },
+                  3, 3));
   // A < 2
-  check({ ColumnPredicate::Range(schema.column(0), nullptr, &two)}, 6, 6);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &two) },
+                  5, 5));
   // A < 3
-  check({ ColumnPredicate::Range(schema.column(0), nullptr, &three)}, 9, 9);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &three) },
+                  8, 8));
   // A >= 0
   // A < 2
-  check({ ColumnPredicate::Range(schema.column(0), &zero, &two)}, 6, 6);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, &two) },
+                  5, 5));
   // A >= 1
   // A < 2
-  check({ ColumnPredicate::Range(schema.column(0), &one, &two)}, 2, 2);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, &two) },
+                  1, 1));
   // A >= 1
   // A < 3
-  check({ ColumnPredicate::Range(schema.column(0), &one, &three)}, 5, 5);
-
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, &three) },
+                  4, 4));
   // A >= 3
-  check({ ColumnPredicate::Range(schema.column(0), &three, nullptr)}, 0, 0);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &three, nullptr) },
+                  0, 0));
 }
+
 } // namespace kudu

@@ -1216,7 +1216,7 @@ class KUDU_EXPORT KuduTableCreator {
   /// A helper class to represent a Kudu range partition with a custom hash
   /// bucket schema. The hash sub-partitioning for a range partition might be
   /// different from the default table-wide hash bucket schema specified during
-  /// a table's creation (see KuduTableCreator::add_hash_partitions()).
+  /// the creation of a table (see KuduTableCreator::add_hash_partitions()).
   /// Correspondingly, this class provides a means to specify a custom hash
   /// bucket structure for the data in a range partition.
   class KuduRangePartition {
@@ -1242,13 +1242,16 @@ class KUDU_EXPORT KuduTableCreator {
 
     ~KuduRangePartition();
 
-    /// Add an extra level of hash partitioning for this range partition.
+    /// Add a level of hash sub-partitioning for this range partition.
     ///
-    /// The newly added hash partitioning level is defined by its hash bucket
-    /// schema. The hash bucket schema is specified by the parameters of this
-    /// method. A range partition can have multiple levels of hash partitioning,
-    /// i.e. this method can be called multiple times to establish a
-    /// multi-dimensional hash bucket structure for the range partition.
+    /// The hash schema for the range partition is defined by the whole set of
+    /// its hash sub-partitioning levels. A range partition can have multiple
+    /// levels of hash sub-partitioning: this method can be called multiple
+    /// times to define a multi-dimensional hash bucketing structure for the
+    /// range. Alternatively, a range partition can have zero levels of hash
+    /// sub-partitioning: simply don't call this method on a newly created
+    /// @c KuduRangePartition object to have no hash sub-partitioning for the
+    /// range represented by the object.
     ///
     /// @param [in] columns
     ///   Names of columns to use for partitioning.
@@ -1306,7 +1309,13 @@ class KUDU_EXPORT KuduTableCreator {
   /// Add a range partition with a custom hash bucket schema.
   ///
   /// This method allows adding a range partition which has hash partitioning
-  /// schema different from the schema used for a range partition.
+  /// schema different from the table-wide one.
+  ///
+  /// @li When called with a @c KuduRangePartition for which
+  ///   @c KuduRangePartition::add_hash_partitions() hasn't been called,
+  ///   a range with no hash sub-partitioning is created.
+  /// @li To create a range with the table-wide hash schema, use
+  ///   @c KuduTableCreator::add_range_partition() instead.
   ///
   /// @warning This functionality isn't fully implemented yet.
   ///

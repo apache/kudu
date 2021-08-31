@@ -555,11 +555,6 @@ Status PartitionSchema::CreatePartitions(
   RETURN_NOT_OK(EncodeRangeSplits(split_rows, schema, &splits));
   RETURN_NOT_OK(SplitRangeBounds(schema, splits, &bounds_with_hash_schemas));
 
-  // Maps each partition to its respective hash schemas within 'bounds_with_hash_schemas',
-  // needed for logic later in function for filling in holes in partition key space. Will be
-  // empty if no per range hash schemas are used.
-  vector<int> partition_idx_to_hash_schema_idx;
-
   // Even if no hash partitioning for a table is specified, there must be at
   // least one element in 'base_hash_partitions': it's used to build the result
   // set of range partitions.
@@ -567,6 +562,12 @@ Status PartitionSchema::CreatePartitions(
   // The case of a single element in base_hash_partitions is a special case.
   DCHECK(base_hash_partitions.size() > 1 ||
          base_hash_partitions.front().hash_buckets().empty());
+
+  // Maps each partition to its respective hash schema within
+  // 'bounds_with_hash_schemas', needed for the logic later in this method
+  // for filling in holes in partition key space. The container is empty if no
+  // per-range hash schemas are present.
+  vector<size_t> partition_idx_to_hash_schema_idx;
 
   if (range_hash_schemas.empty()) {
     // Create a partition per range bound and hash bucket combination.
@@ -587,23 +588,15 @@ Status PartitionSchema::CreatePartitions(
     DCHECK(split_rows.empty());
     vector<Partition> result_partitions;
     // Iterate through each bound and its hash schemas to generate hash partitions.
-    for (int i = 0; i < bounds_with_hash_schemas.size(); ++i) {
+    for (size_t i = 0; i < bounds_with_hash_schemas.size(); ++i) {
       const auto& bound = bounds_with_hash_schemas[i];
-      const auto& current_range_hash_schema = bound.hash_schema;
-      // If current bound's HashSchema is empty, implies use of default
-      // table-wide schema. If not empty, generate hash partitions for all the
-      // provided hash schemas in this range.
-      vector<Partition> current_bound_hash_partitions =
-          current_range_hash_schema.empty() ? base_hash_partitions
-                                            : GenerateHashPartitions(
-                                                   current_range_hash_schema,
-                                                   hash_encoder);
+      vector<Partition> current_bound_hash_partitions = GenerateHashPartitions(
+          bound.hash_schema, hash_encoder);
       // Add range information to the partition key.
       for (Partition& partition : current_bound_hash_partitions) {
         partition.partition_key_start_.append(bound.lower);
         partition.partition_key_end_.append(bound.upper);
-        int index = current_range_hash_schema.empty() ? -1 : i;
-        partition_idx_to_hash_schema_idx.emplace_back(index);
+        partition_idx_to_hash_schema_idx.emplace_back(i);
       }
       result_partitions.insert(result_partitions.end(),
                                std::make_move_iterator(current_bound_hash_partitions.begin()),
@@ -630,13 +623,13 @@ Status PartitionSchema::CreatePartitions(
   // the absolute start and end case, these holes are filled by clearing the
   // partition key beginning at the hash component. For a concrete example,
   // see PartitionTest::TestCreatePartitions.
-  const HashDimension* hash_dimension;
-  for (int j = 0; j < partitions->size(); j++) {
-    Partition& partition = (*partitions)[j];
+  for (size_t partition_idx = 0; partition_idx < partitions->size(); ++partition_idx) {
+    Partition& partition = (*partitions)[partition_idx];
+    const int hash_buckets_num = static_cast<int>(partition.hash_buckets().size());
     // Find the first zero-valued bucket from the end and truncate the partition key
     // starting from that bucket onwards for zero-valued buckets.
     if (partition.range_key_start().empty()) {
-      for (int i = static_cast<int>(partition.hash_buckets().size()) - 1; i >= 0; i--) {
+      for (int i = hash_buckets_num - 1; i >= 0; --i) {
         if (partition.hash_buckets()[i] != 0) {
           break;
         }
@@ -653,16 +646,13 @@ Status PartitionSchema::CreatePartitions(
     // [ (1, 0, "a2b2") -> (1, 1, "a2b2") ]
     // [ (1, 1, "a2b2") -> (_, _, "a2b2") ]
     if (partition.range_key_end().empty()) {
-      for (int i = static_cast<int>(partition.hash_buckets().size()) - 1; i >= 0; i--) {
+      const auto& hash_schema = range_hash_schemas.empty()
+          ? hash_schema_
+          : bounds_with_hash_schemas[partition_idx_to_hash_schema_idx[partition_idx]].hash_schema;
+      for (int i = hash_buckets_num - 1; i >= 0; --i) {
         partition.partition_key_end_.erase(kEncodedBucketSize * i);
-        int32_t hash_bucket = partition.hash_buckets()[i] + 1;
-        if (range_hash_schemas.empty() || partition_idx_to_hash_schema_idx[j] == -1) {
-          hash_dimension = &hash_schema_[i];
-        } else {
-          const auto& hash_schemas_idx = partition_idx_to_hash_schema_idx[j];
-          hash_dimension = &bounds_with_hash_schemas[hash_schemas_idx].hash_schema[i];
-        }
-        if (hash_bucket != hash_dimension->num_buckets) {
+        const int32_t hash_bucket = partition.hash_buckets()[i] + 1;
+        if (hash_bucket != hash_schema[i].num_buckets) {
           hash_encoder.Encode(&hash_bucket, &partition.partition_key_end_);
           break;
         }

@@ -110,6 +110,7 @@ class KuduTableCreator::KuduRangePartition::Data {
   std::unique_ptr<KuduPartialRow> upper_bound_;
 
   HashSchema hash_schema_;
+  bool is_table_wide_hash_schema_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);

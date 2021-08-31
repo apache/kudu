@@ -40,7 +40,8 @@ KuduTableCreator::KuduRangePartition::Data::Data(
     : lower_bound_type_(lower_bound_type),
       upper_bound_type_(upper_bound_type),
       lower_bound_(lower_bound),
-      upper_bound_(upper_bound) {
+      upper_bound_(upper_bound),
+      is_table_wide_hash_schema_(false) {
 }
 
 Status KuduTableCreator::KuduRangePartition::Data::add_hash_partitions(
