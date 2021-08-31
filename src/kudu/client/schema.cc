@@ -869,7 +869,7 @@ bool KuduSchema::operator==(const KuduSchema& rhs) const {
 }
 
 bool KuduSchema::operator!=(const KuduSchema& rhs) const {
-  return !(this == &rhs);
+  return !(*this == rhs);
 }
 
 bool KuduSchema::Equals(const KuduSchema& other) const {
