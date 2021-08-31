@@ -239,7 +239,7 @@ TEST(ClientUnitTest, TestErrorCollector) {
   }
 }
 
-TEST(ClientUnitTest, TestKuduSchemaToString) {
+TEST(KuduSchemaTest, TestToString) {
   // Test on unique PK.
   KuduSchema s1;
   KuduSchemaBuilder b1;
@@ -290,6 +290,46 @@ TEST(ClientUnitTest, TestKuduSchemaToString) {
                         "    PRIMARY KEY (k1, k2, k3)\n"
                         ")";
   EXPECT_EQ(schema_str_2, s2.ToString());
+}
+
+TEST(KuduSchemaTest, TestEquals) {
+  KuduSchemaBuilder b1;
+  b1.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b1.AddColumn("int_val")->Type(KuduColumnSchema::INT32);
+
+  KuduSchema s1;
+  ASSERT_OK(b1.Build(&s1));
+
+  ASSERT_FALSE(s1 != s1);
+  ASSERT_TRUE(s1 == s1);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  ASSERT_TRUE(s1.Equals(s1));
+#pragma GCC diagnostic pop
+
+  KuduSchema s2;
+  ASSERT_OK(b1.Build(&s2));
+
+  ASSERT_FALSE(s1 != s2);
+  ASSERT_TRUE(s1 == s2);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  ASSERT_TRUE(s1.Equals(s2));
+#pragma GCC diagnostic pop
+
+  KuduSchemaBuilder b2;
+  b2.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b2.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
+
+  KuduSchema s3;
+  ASSERT_OK(b2.Build(&s3));
+
+  ASSERT_TRUE(s1 != s3);
+  ASSERT_FALSE(s1 == s3);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  ASSERT_FALSE(s1.Equals(s3));
+#pragma GCC diagnostic pop
 }
 
 TEST(ClientUnitTest, TestKuduSchemaToStringWithColumnIds) {
