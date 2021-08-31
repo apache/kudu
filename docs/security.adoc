@@ -578,9 +578,6 @@ Kudu has a few known security limitations:
 
 // TODO(danburkert): add JIRA links for each of these.
 
-Custom Kerberos Principal:: Kudu does not support setting a custom service
-principal for Kudu processes. The principal must be 'kudu'.
-
 External PKI:: Kudu does not support externally-issued certificates for internal
 wire encryption (server to server and client to server).
 
