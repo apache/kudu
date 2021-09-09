@@ -315,6 +315,9 @@ class WritablePBContainerFile {
   // only needed in the former case.
   Status Sync();
 
+  // Get current offset of underlying file.
+  uint64_t Offset() const;
+
   // Closes the container.
   //
   // Not thread-safe.
@@ -350,7 +353,7 @@ class WritablePBContainerFile {
   FileState state_;
 
   // Protects offset_.
-  Mutex offset_lock_;
+  mutable Mutex offset_lock_;
 
   // Current write offset into the file.
   uint64_t offset_;

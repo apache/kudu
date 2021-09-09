@@ -87,6 +87,7 @@ DECLARE_string(block_manager_preflush_control);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
+DECLARE_uint64(log_container_metadata_max_size);
 DEFINE_int32(startup_benchmark_block_count_for_testing, 1000000,
              "Block count to do startup benchmark.");
 DEFINE_int32(startup_benchmark_data_dir_count_for_testing, 8,
@@ -1128,7 +1129,7 @@ TEST_F(LogBlockManagerTest, TestLookupBlockLimit) {
   }
 }
 
-TEST_F(LogBlockManagerTest, TestContainerBlockLimiting) {
+TEST_F(LogBlockManagerTest, TestContainerBlockLimitingByBlockNum) {
   const int kNumBlocks = 1000;
 
   // Creates 'kNumBlocks' blocks with minimal data.
@@ -1156,6 +1157,42 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimiting) {
   // Now remove the limit and create more blocks. They should go into existing
   // containers, which are now no longer full.
   FLAGS_log_container_max_blocks = -1;
+  ASSERT_OK(ReopenBlockManager());
+
+  ASSERT_OK(create_some_blocks());
+  NO_FATALS(AssertNumContainers(4));
+}
+
+TEST_F(LogBlockManagerTest, TestContainerBlockLimitingByMetadataSize) {
+  const int kNumBlocks = 1000;
+
+  // Creates 'kNumBlocks' blocks with minimal data.
+  auto create_some_blocks = [&]() {
+    for (int i = 0; i < kNumBlocks; i++) {
+      unique_ptr<WritableBlock> block;
+      RETURN_NOT_OK(bm_->CreateBlock(test_block_opts_, &block));
+      RETURN_NOT_OK(block->Append("aaaa"));
+      RETURN_NOT_OK(block->Close());
+    }
+    return Status::OK();
+  };
+
+  // All of these blocks should fit into one container.
+  ASSERT_OK(create_some_blocks());
+  NO_FATALS(AssertNumContainers(1));
+
+  // With a limit imposed, the existing container is immediately full, and we
+  // need a few more to satisfy another metadata file size.
+  // Each CREATE type entry in metadata protobuf file is 39 bytes, so 400 of
+  // such entries added by 'create_some_blocks' will make the container full.
+  FLAGS_log_container_metadata_max_size = 400 * 39;
+  ASSERT_OK(ReopenBlockManager());
+  ASSERT_OK(create_some_blocks());
+  NO_FATALS(AssertNumContainers(4));
+
+  // Now remove the limit and create more blocks. They should go into existing
+  // containers, which are now no longer full.
+  FLAGS_log_container_metadata_max_size = 0;
   ASSERT_OK(ReopenBlockManager());
 
   ASSERT_OK(create_some_blocks());

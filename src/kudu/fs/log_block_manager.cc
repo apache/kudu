@@ -80,6 +80,13 @@ DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
               "Maximum size (soft) of a log container");
 TAG_FLAG(log_container_max_size, advanced);
 
+DEFINE_uint64(log_container_metadata_max_size, 0,
+              "Maximum size (soft) of a log container's metadata. Use 0 for "
+              "no limit.");
+TAG_FLAG(log_container_metadata_max_size, advanced);
+TAG_FLAG(log_container_metadata_max_size, experimental);
+TAG_FLAG(log_container_metadata_max_size, runtime);
+
 DEFINE_int64(log_container_max_blocks, -1,
              "Maximum number of blocks (soft) of a log container. Use 0 for "
              "no limit. Use -1 for no limit except in the case of a kernel "
@@ -534,7 +541,9 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   int32_t blocks_being_written() const { return blocks_being_written_.Load(); }
   bool full() const {
     return next_block_offset() >= FLAGS_log_container_max_size ||
-        (max_num_blocks_ && (total_blocks() >= max_num_blocks_));
+        (max_num_blocks_ && (total_blocks() >= max_num_blocks_)) ||
+        (FLAGS_log_container_metadata_max_size > 0 &&
+         (metadata_file_->Offset() >= FLAGS_log_container_metadata_max_size));
   }
   bool dead() const { return dead_.Load(); }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }

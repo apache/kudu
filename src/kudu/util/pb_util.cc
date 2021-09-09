@@ -772,6 +772,11 @@ Status WritablePBContainerFile::Sync() {
   return Status::OK();
 }
 
+uint64_t WritablePBContainerFile::Offset() const {
+  std::lock_guard<Mutex> l(offset_lock_);
+  return offset_;
+}
+
 Status WritablePBContainerFile::Close() {
   if (state_ != FileState::CLOSED) {
     state_ = FileState::CLOSED;
