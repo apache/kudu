@@ -30,9 +30,9 @@
 
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/security/crypto.h"
-#include "kudu/security/openssl_util.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/util/barrier.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"

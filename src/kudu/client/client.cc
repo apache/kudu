@@ -87,7 +87,6 @@
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/security/cert.h"
-#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -100,6 +99,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/version_info.h"
 

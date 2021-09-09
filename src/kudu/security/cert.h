@@ -25,7 +25,7 @@
 #include <vector>
 
 #include "kudu/gutil/port.h"
-#include "kudu/security/openssl_util.h"
+#include "kudu/util/openssl_util.h"
 
 typedef struct X509_name_st X509_NAME;
 

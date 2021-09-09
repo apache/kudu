@@ -23,7 +23,7 @@
 #include <string>
 
 #include "kudu/gutil/port.h"
-#include "kudu/security/openssl_util.h"
+#include "kudu/util/openssl_util.h"
 
 // Forward declarations for the OpenSSL typedefs.
 typedef struct bio_st BIO;

@@ -70,7 +70,6 @@ set(SECURITY_SRCS
   kerberos_util.cc
   gssapi.cc
   init.cc
-  openssl_util.cc
   ${PORTED_X509_CHECK_HOST_CC}
   security_flags.cc
   simple_acl.cc

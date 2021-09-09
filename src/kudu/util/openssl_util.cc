@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/security/openssl_util.h"
+#include "kudu/util/openssl_util.h"
 
 #include <openssl/crypto.h>
 #include <openssl/err.h>

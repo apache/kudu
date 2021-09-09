@@ -215,6 +215,7 @@ set(UTIL_SRCS
   nvm_cache.cc
   oid_generator.cc
   once.cc
+  openssl_util.cc
   os-util.cc
   path_util.cc
   pb_util.cc
@@ -292,6 +293,8 @@ set(UTIL_LIBS
   mem_tracker_proto
   pb_util_proto
   protobuf
+  openssl_crypto
+  openssl_ssl
   version_info_proto
   yaml
   zlib)

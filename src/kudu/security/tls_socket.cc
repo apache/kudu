@@ -31,10 +31,10 @@
 
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/security/openssl_util.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/openssl_util.h"
 
 using std::string;
 using strings::Substitute;

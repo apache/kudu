@@ -24,9 +24,9 @@
 #include <string>
 
 #include "kudu/gutil/port.h"
-#include "kudu/security/openssl_util.h" // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/openssl_util.h" // IWYU pragma: keep
 #include "kudu/util/status.h"
 
 struct iovec;

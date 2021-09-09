@@ -27,8 +27,8 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/security/cert.h" // IWYU pragma: keep
-#include "kudu/security/openssl_util.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 

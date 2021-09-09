@@ -26,7 +26,7 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/security/cert.h"
-#include "kudu/security/openssl_util.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

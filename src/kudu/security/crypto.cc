@@ -33,8 +33,8 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/security/openssl_util.h"
-#include "kudu/security/openssl_util_bio.h"
+#include "kudu/util/openssl_util.h"
+#include "kudu/util/openssl_util_bio.h"
 #include "kudu/util/status.h"
 
 using std::string;

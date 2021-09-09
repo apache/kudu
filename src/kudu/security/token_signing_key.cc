@@ -24,8 +24,8 @@
 #include <glog/logging.h>
 
 #include "kudu/security/crypto.h"
-#include "kudu/security/openssl_util.h"
 #include "kudu/security/token.pb.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
 
 using std::unique_ptr;

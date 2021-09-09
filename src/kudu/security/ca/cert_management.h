@@ -32,8 +32,8 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
-#include "kudu/security/openssl_util.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 

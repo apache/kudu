@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "kudu/security/openssl_util.h"
+#include "kudu/util/openssl_util.h"
 
 #include <string>
 

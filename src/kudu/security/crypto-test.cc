@@ -26,9 +26,9 @@
 
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/security/openssl_util.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/util/env.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"

@@ -28,8 +28,8 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/security/openssl_util.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/scoped_cleanup.h"
 
 using std::string;

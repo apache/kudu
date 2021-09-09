@@ -36,8 +36,8 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/security/crypto.h"
-#include "kudu/security/openssl_util.h"
-#include "kudu/security/openssl_util_bio.h"
+#include "kudu/util/openssl_util.h"
+#include "kudu/util/openssl_util_bio.h"
 #include "kudu/util/status.h"
 
 using std::string;
