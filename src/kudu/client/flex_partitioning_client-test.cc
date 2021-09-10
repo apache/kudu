@@ -433,7 +433,7 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashSchemas) {
   NO_FATALS(CheckTabletCount(kTableName, 12));
 
   // Make sure it's possible to insert rows into the table for all the existing
-  // the paritions: first check the range of table-wide schema, then check
+  // the partitions: first check the range of table-wide schema, then check
   // the ranges with custom hash schemas.
   ASSERT_OK(InsertTestRows(kTableName, -111, 0));
   NO_FATALS(CheckLiveRowCount(kTableName, 111));

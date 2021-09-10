@@ -268,7 +268,7 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
   // Step 2: If the upper bound is inclusive, increment it to become exclusive.
   if (is_inclusive_bound) {
     if (!IncrementKey(first, std::next(first, pushed_predicates), row, arena)) {
-      // If the increment fails then this bound is is not constraining the keyspace.
+      // If the increment fails then this bound is not constraining the keyspace.
       return 0;
     }
   }

@@ -94,8 +94,7 @@ void CheckPrunedPartitions(const Schema& schema,
 
   SCOPED_TRACE(strings::Substitute("schema: $0", schema.ToString()));
   SCOPED_TRACE(strings::Substitute("partition schema: $0", partition_schema.DebugString(schema)));
-  // TODO(mreddy): once PartitionSchema::PartitionKeyDebugString() is compatible with per range
-  // hash schemas, remove this if check
+  // TODO(mreddy): Remove if check once PartitionSchema::PartitionKeyDebugString is modified.
   if (partition_schema.ranges_with_hash_schemas().empty()) {
     SCOPED_TRACE(strings::Substitute("partition pruner: $0",
                                      pruner.ToString(schema, partition_schema)));
@@ -238,61 +237,61 @@ TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
   };
 
   // No bounds
-  check(boost::none, boost::none, 3);
+  NO_FATALS(check(boost::none, boost::none, 3));
 
   // PK < (-1, min, min)
-  check(boost::none,
-        make_tuple<int8_t, int8_t, int8_t>(-1, INT8_MIN, INT8_MIN),
-        1);
+  NO_FATALS(check(boost::none,
+                  make_tuple<int8_t, int8_t, int8_t>(-1, INT8_MIN, INT8_MIN),
+                  1));
 
   // PK < (10, 10, 10)
-  check(boost::none,
-        make_tuple<int8_t, int8_t, int8_t>(10, 10, 10),
-        2);
+  NO_FATALS(check(boost::none,
+                  make_tuple<int8_t, int8_t, int8_t>(10, 10, 10),
+                  2));
 
   // PK < (100, min, min)
-  check(boost::none,
-        make_tuple<int8_t, int8_t, int8_t>(100, INT8_MIN, INT8_MIN),
-        3);
+  NO_FATALS(check(boost::none,
+                  make_tuple<int8_t, int8_t, int8_t>(100, INT8_MIN, INT8_MIN),
+                  3));
 
   // PK >= (-10, -10, -10)
-  check(make_tuple<int8_t, int8_t, int8_t>(-10, -10, -10),
-        boost::none,
-        3);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(-10, -10, -10),
+                  boost::none,
+                  3));
 
   // PK >= (0, 0, 0)
-  check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
-        boost::none,
-        2);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
+                  boost::none,
+                  2));
 
   // PK >= (100, 0, 0)
-  check(make_tuple<int8_t, int8_t, int8_t>(100, 0, 0),
-        boost::none,
-        1);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(100, 0, 0),
+                  boost::none,
+                  1));
 
   // PK >= (-10, 0, 0)
   // PK  < (100, 0, 0)
-  check(make_tuple<int8_t, int8_t, int8_t>(-10, 0, 0),
-        make_tuple<int8_t, int8_t, int8_t>(100, 0, 0),
-        3);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(-10, 0, 0),
+                  make_tuple<int8_t, int8_t, int8_t>(100, 0, 0),
+                  3));
 
   // PK >= (0, 0, 0)
   // PK  < (10, 10, 10)
-  check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
-        make_tuple<int8_t, int8_t, int8_t>(10, 10, 10),
-        1);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
+                  make_tuple<int8_t, int8_t, int8_t>(10, 10, 10),
+                  1));
 
   // PK >= (0, 0, 0)
   // PK  < (10, 10, 11)
-  check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
-        make_tuple<int8_t, int8_t, int8_t>(10, 10, 11),
-        2);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
+                  make_tuple<int8_t, int8_t, int8_t>(10, 10, 11),
+                  2));
 
   // PK  < (0, 0, 0)
   // PK >= (10, 10, 11)
-  check(make_tuple<int8_t, int8_t, int8_t>(10, 10, 11),
-        make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
-        0);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(10, 10, 11),
+                  make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
+                  0));
 }
 
 TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
@@ -300,8 +299,6 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
   // (a INT8, b STRING, c STRING, PRIMARY KEY (a, b, c))
   // DISTRIBUTE BY RANGE(a, b)
   // SPLIT ROWS [(0, "m"), (10, "r"];
-
-  // Setup the Schema
   Schema schema({ ColumnSchema("a", INT8),
       ColumnSchema("b", STRING),
       ColumnSchema("c", STRING) },
@@ -309,9 +306,9 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
       3);
   Arena arena(1024);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"a", "b"}, {}, &pb);
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   KuduPartialRow split1(&schema);
@@ -358,56 +355,56 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
   };
 
   // No bounds
-  check(boost::none, boost::none, 3);
+  NO_FATALS(check(boost::none, boost::none, 3));
 
   // PK < (-1, "", "")
-  check(boost::none, make_tuple<int8_t, string, string>(-1, "", ""), 1);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, string, string>(-1, "", ""), 1));
 
   // PK < (10, "r", "")
-  check(boost::none, make_tuple<int8_t, string, string>(10, "r", ""), 2);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, string, string>(10, "r", ""), 2));
 
   // PK < (10, "r", "z")
-  check(boost::none, make_tuple<int8_t, string, string>(10, "r", "z"), 3);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, string, string>(10, "r", "z"), 3));
 
   // PK < (100, "", "")
-  check(boost::none, make_tuple<int8_t, string, string>(100, "", ""), 3);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, string, string>(100, "", ""), 3));
 
   // PK >= (-10, "m", "")
-  check(make_tuple<int8_t, string, string>(-10, "m", ""), boost::none, 3);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(-10, "m", ""), boost::none, 3));
 
   // PK >= (0, "", "")
-  check(make_tuple<int8_t, string, string>(0, "", ""), boost::none, 3);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "", ""), boost::none, 3));
 
   // PK >= (0, "m", "")
-  check(make_tuple<int8_t, string, string>(0, "m", ""), boost::none, 2);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "m", ""), boost::none, 2));
 
   // PK >= (100, "", "")
-  check(make_tuple<int8_t, string, string>(100, "", ""), boost::none, 1);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(100, "", ""), boost::none, 1));
 
   // PK >= (-10, "", "")
   // PK  < (100, "", "")
-  check(make_tuple<int8_t, string, string>(-10, "", ""),
-        make_tuple<int8_t, string, string>(100, "", ""), 3);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(-10, "", ""),
+                  make_tuple<int8_t, string, string>(100, "", ""), 3));
 
   // PK >= (0, "m", "")
   // PK  < (10, "r", "")
-  check(make_tuple<int8_t, string, string>(0, "m", ""),
-        make_tuple<int8_t, string, string>(10, "r", ""), 1);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "m", ""),
+                  make_tuple<int8_t, string, string>(10, "r", ""), 1));
 
   // PK >= (0, "m", "")
   // PK  < (10, "r", "z")
-  check(make_tuple<int8_t, string, string>(0, "m", ""),
-        make_tuple<int8_t, string, string>(10, "r", "z"), 2);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "m", ""),
+                  make_tuple<int8_t, string, string>(10, "r", "z"), 2));
 
   // PK >= (0, "", "")
   // PK  < (10, "m", "z")
-  check(make_tuple<int8_t, string, string>(0, "", ""),
-        make_tuple<int8_t, string, string>(10, "m", "z"), 2);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "", ""),
+                  make_tuple<int8_t, string, string>(10, "m", "z"), 2));
 
   // PK >= (10, "m", "")
   // PK  < (10, "m", "z")
-  check(make_tuple<int8_t, string, string>(10, "m", ""),
-        make_tuple<int8_t, string, string>(10, "m", "z"), 1);
+  NO_FATALS(check(make_tuple<int8_t, string, string>(10, "m", ""),
+                  make_tuple<int8_t, string, string>(10, "m", "z"), 1));
 }
 
 TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
@@ -415,8 +412,6 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
   // (a INT8, b INT8, c INT8, PRIMARY KEY (a, b, c))
   // DISTRIBUTE BY RANGE(a, b)
   // SPLIT ROWS [(0, 0)];
-
-  // Setup the Schema
   Schema schema({ ColumnSchema("a", INT8),
                   ColumnSchema("b", INT8),
                   ColumnSchema("c", INT8) },
@@ -424,9 +419,9 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
                 3);
   Arena arena(1024);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"a", "b"}, {}, &pb);
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   KuduPartialRow split(&schema);
@@ -469,31 +464,32 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
   };
 
   // No bounds
-  check(boost::none, boost::none, 2);
+  NO_FATALS(check(boost::none, boost::none, 2));
 
   // PK < (0, 0, min)
-  check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), 1);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), 1));
 
   // PK < (0, 0, 0);
-  check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), 2);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), 2));
 
   // PK < (0, max, 0);
-  check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, INT8_MAX, 0), 2);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, INT8_MAX, 0), 2));
 
   // PK < (max, max, min);
-  check(boost::none, make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, INT8_MIN), 2);
+  NO_FATALS(check(boost::none,
+                  make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, INT8_MIN), 2));
 
   // PK < (max, max, 0);
-  check(boost::none, make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, 0), 2);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, 0), 2));
 
   // PK >= (0, 0, 0);
-  check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), boost::none, 1);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), boost::none, 1));
 
   // PK >= (0, 0, -1);
-  check(make_tuple<int8_t, int8_t, int8_t>(0, 0, -1), boost::none, 1);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, -1), boost::none, 1));
 
   // PK >= (0, 0, min);
-  check(make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), boost::none, 1);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), boost::none, 1));
 }
 
 TEST_F(PartitionPrunerTest, TestRangePruning) {
@@ -508,9 +504,9 @@ TEST_F(PartitionPrunerTest, TestRangePruning) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"c", "b"}, {}, &pb);
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   KuduPartialRow split1(&schema);
@@ -554,124 +550,124 @@ TEST_F(PartitionPrunerTest, TestRangePruning) {
   Slice z = "z";
 
   // No Bounds
-  check({}, 3);
+  NO_FATALS(check({}, 3));
 
   // c < -10
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &neg_ten) }, 1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &neg_ten) }, 1));
 
   // c = -10
-  check({ ColumnPredicate::Equality(schema.column(2), &neg_ten) }, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &neg_ten) }, 1));
 
   // c < 10
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &ten) }, 2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &ten) }, 2));
 
   // c < 100
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &hundred) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &hundred) }, 3));
 
   // c < MIN
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &min) }, 0);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &min) }, 0));
 
   // c < MAX
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &max) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &max) }, 3));
 
   // c >= -10
-  check({ ColumnPredicate::Range(schema.column(0), &neg_ten, nullptr) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &neg_ten, nullptr) }, 3));
 
   // c >= 0
-  check({ ColumnPredicate::Range(schema.column(2), &zero, nullptr) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &zero, nullptr) }, 3));
 
   // c >= 5
-  check({ ColumnPredicate::Range(schema.column(2), &five, nullptr) }, 2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &five, nullptr) }, 2));
 
   // c >= 10
-  check({ ColumnPredicate::Range(schema.column(2), &ten, nullptr) }, 2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &ten, nullptr) }, 2));
 
   // c >= 100
-  check({ ColumnPredicate::Range(schema.column(2), &hundred, nullptr) }, 1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &hundred, nullptr) }, 1));
 
   // c >= MIN
-  check({ ColumnPredicate::Range(schema.column(2), &min, nullptr) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &min, nullptr) }, 3));
 
   // c >= MAX
-  check({ ColumnPredicate::Range(schema.column(2), &max, nullptr) }, 1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &max, nullptr) }, 1));
 
   // c = MIN
-  check({ ColumnPredicate::Equality(schema.column(2), &min) }, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &min) }, 1));
 
   // c = MAX
-  check({ ColumnPredicate::Equality(schema.column(2), &max) }, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &max) }, 1));
 
   // c >= -10
   // c < 0
-  check({ ColumnPredicate::Range(schema.column(2), &neg_ten, &zero) }, 1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &neg_ten, &zero) }, 1));
 
   // c >= 5
   // c < 100
-  check({ ColumnPredicate::Range(schema.column(2), &five, &hundred) }, 2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &five, &hundred) }, 2));
 
   // b = ""
-  check({ ColumnPredicate::Equality(schema.column(1), &empty) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &empty) }, 3));
 
   // b >= "z"
-  check({ ColumnPredicate::Range(schema.column(1), &z, nullptr) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(1), &z, nullptr) }, 3));
 
   // b < "a"
-  check({ ColumnPredicate::Range(schema.column(1), nullptr, &a) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(1), nullptr, &a) }, 3));
 
   // b >= "m"
   // b < "z"
-  check({ ColumnPredicate::Range(schema.column(1), &m, &z) }, 3);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(1), &m, &z) }, 3));
 
   // c >= 10
   // b >= "r"
-  check({ ColumnPredicate::Range(schema.column(2), &ten, nullptr),
-          ColumnPredicate::Range(schema.column(1), &r, nullptr) },
-        1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &ten, nullptr),
+                    ColumnPredicate::Range(schema.column(1), &r, nullptr) },
+                  1));
 
   // c >= 10
   // b < "r"
-  check({ ColumnPredicate::Range(schema.column(2), &ten, nullptr),
-          ColumnPredicate::Range(schema.column(1), nullptr, &r) },
-        2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &ten, nullptr),
+                    ColumnPredicate::Range(schema.column(1), nullptr, &r) },
+                  2));
 
   // c = 10
   // b < "r"
-  check({ ColumnPredicate::Equality(schema.column(2), &ten),
-          ColumnPredicate::Range(schema.column(1), nullptr, &r) },
-        1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &ten),
+                    ColumnPredicate::Range(schema.column(1), nullptr, &r) },
+                  1));
 
   // c < 0
   // b < "m"
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &zero),
-          ColumnPredicate::Range(schema.column(1), nullptr, &m) },
-        1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &zero),
+                    ColumnPredicate::Range(schema.column(1), nullptr, &m) },
+                  1));
 
   // c < 0
   // b < "z"
-  check({ ColumnPredicate::Range(schema.column(2), nullptr, &zero),
-          ColumnPredicate::Range(schema.column(1), nullptr, &z) },
-        1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &zero),
+                    ColumnPredicate::Range(schema.column(1), nullptr, &z) },
+                  1));
 
   // c = 0
   // b = "m\0"
-  check({ ColumnPredicate::Equality(schema.column(2), &zero),
-          ColumnPredicate::Equality(schema.column(1), &m0) },
-        1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &zero),
+                    ColumnPredicate::Equality(schema.column(1), &m0) },
+                  1));
 
   // c = 0
   // b < "m"
-  check({ ColumnPredicate::Equality(schema.column(2), &zero),
-          ColumnPredicate::Range(schema.column(1), nullptr, &m) },
-        1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &zero),
+                    ColumnPredicate::Range(schema.column(1), nullptr, &m) },
+                  1));
 
   // c = 0
   // b < "m\0"
-  check({ ColumnPredicate::Equality(schema.column(2), &zero),
-          ColumnPredicate::Range(schema.column(1), nullptr, &m0) },
-        2);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &zero),
+                    ColumnPredicate::Range(schema.column(1), nullptr, &m0) },
+                  2));
 
   // c IS NOT NULL
-  check({ ColumnPredicate::IsNotNull(schema.column(2)) }, 3);
+  NO_FATALS(check({ ColumnPredicate::IsNotNull(schema.column(2)) }, 3));
 }
 
 TEST_F(PartitionPrunerTest, TestHashPruning) {
@@ -686,10 +682,10 @@ TEST_F(PartitionPrunerTest, TestHashPruning) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
 
-    PartitionSchema partition_schema;
-    auto pb = PartitionSchemaPB();
+    PartitionSchemaPB pb;
     CreatePartitionSchemaPB({}, { {{"a"}, 2, 0}, {{"b", "c"}, 2, 0} }, &pb);
     pb.mutable_range_schema()->Clear();
+    PartitionSchema partition_schema;
     ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
     vector<Partition> partitions;
@@ -717,38 +713,38 @@ TEST_F(PartitionPrunerTest, TestHashPruning) {
   constexpr int8_t two = 2;
 
   // No Bounds
-  check({}, 4, 1);
+  NO_FATALS(check({}, 4, 1));
 
   // a = 0;
-  check({ ColumnPredicate::Equality(schema.column(0), &zero) }, 2, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &zero) }, 2, 1));
 
   // a >= 0;
-  check({ ColumnPredicate::Range(schema.column(0), &zero, nullptr) }, 4, 1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, nullptr) }, 4, 1));
 
   // a >= 0;
   // a < 1;
-  check({ ColumnPredicate::Range(schema.column(0), &zero, &one) }, 2, 1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, &one) }, 2, 1));
 
   // a >= 0;
   // a < 2;
-  check({ ColumnPredicate::Range(schema.column(0), &zero, &two) }, 4, 1);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, &two) }, 4, 1));
 
   // b = 1;
-  check({ ColumnPredicate::Equality(schema.column(1), &one) }, 4, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one) }, 4, 1));
 
   // b = 1;
   // c = 2;
-  check({ ColumnPredicate::Equality(schema.column(1), &one),
-          ColumnPredicate::Equality(schema.column(2), &two) },
-        2, 2);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one),
+                    ColumnPredicate::Equality(schema.column(2), &two) },
+                  2, 2));
 
   // a = 0;
   // b = 1;
   // c = 2;
-  check({ ColumnPredicate::Equality(schema.column(0), &zero),
-          ColumnPredicate::Equality(schema.column(1), &one),
-          ColumnPredicate::Equality(schema.column(2), &two) },
-        1, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &zero),
+                    ColumnPredicate::Equality(schema.column(1), &one),
+                    ColumnPredicate::Equality(schema.column(2), &two) },
+                  1, 1));
 }
 
 TEST_F(PartitionPrunerTest, TestInListHashPruning) {
@@ -764,10 +760,10 @@ TEST_F(PartitionPrunerTest, TestInListHashPruning) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({}, { {{"a"}, 3, 0}, {{"b"}, 3, 0}, {{"c"}, 3, 0} }, &pb);
   pb.mutable_range_schema()->clear_columns();
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
@@ -801,35 +797,35 @@ TEST_F(PartitionPrunerTest, TestInListHashPruning) {
 
   // a in [0, 1];
   a_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 18, 2);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 18, 2));
 
   // a in [0, 1, 8];
   a_values = { &zero, &one, &eight };
-  check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 27, 1);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 27, 1));
 
   // b in [0, 1]
   b_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 18, 6);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 18, 6));
 
   // c in [0, 1]
   c_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 18, 18);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 18, 18));
 
   // b in [0, 1], c in [0, 1]
   b_values = { &zero, &one };
   c_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(1), &b_values),
-          ColumnPredicate::InList(schema.column(2), &c_values) },
-        12, 12);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(1), &b_values),
+                    ColumnPredicate::InList(schema.column(2), &c_values) },
+                  12, 12));
 
   // a in [0, 1], b in [0, 1], c in [0, 1]
   a_values = { &zero, &one };
   b_values = { &zero, &one };
   c_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(0), &a_values),
-          ColumnPredicate::InList(schema.column(1), &b_values),
-          ColumnPredicate::InList(schema.column(2), &c_values) },
-        8, 8);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(0), &a_values),
+                    ColumnPredicate::InList(schema.column(1), &b_values),
+                    ColumnPredicate::InList(schema.column(2), &c_values) },
+                  8, 8));
 }
 
 TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
@@ -844,10 +840,10 @@ TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({}, { {{"a"}, 3, 0}, {{"b", "c"}, 3, 0} }, &pb);
   pb.mutable_range_schema()->clear_columns();
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
@@ -881,19 +877,19 @@ TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
 
   // a in [0, 1];
   a_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 6, 2);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 6, 2));
 
   // a in [0, 1, 8];
   a_values = { &zero, &one, &eight };
-  check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 9, 1);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 9, 1));
 
   // b in [0, 1]
   b_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 9, 1);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 9, 1));
 
   // c in [0, 1]
   c_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 9, 1);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 9, 1));
 
   // b in [0, 1], c in [0, 1]
   // (0, 0) in bucket 2
@@ -902,30 +898,30 @@ TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
   // (1, 1) in bucket 0
   b_values = { &zero, &one };
   c_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(1), &b_values),
-          ColumnPredicate::InList(schema.column(2), &c_values) },
-        9, 1);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(1), &b_values),
+                    ColumnPredicate::InList(schema.column(2), &c_values) },
+                  9, 1));
 
   // b = 0, c in [0, 1]
   c_values = { &zero, &one };
-  check({ ColumnPredicate::Equality(schema.column(1), &zero),
-          ColumnPredicate::InList(schema.column(2), &c_values) },
-        3, 3);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &zero),
+                    ColumnPredicate::InList(schema.column(2), &c_values) },
+                  3, 3));
 
   // b = 1, c in [0, 1]
   c_values = { &zero, &one };
-  check({ ColumnPredicate::Equality(schema.column(1), &one),
-          ColumnPredicate::InList(schema.column(2), &c_values) },
-        6, 6);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one),
+                    ColumnPredicate::InList(schema.column(2), &c_values) },
+                  6, 6));
 
   //a in [0, 1], b in [0, 1], c in [0, 1]
   a_values = { &zero, &one };
   b_values = { &zero, &one };
   c_values = { &zero, &one };
-  check({ ColumnPredicate::InList(schema.column(0), &a_values),
-          ColumnPredicate::InList(schema.column(1), &b_values),
-          ColumnPredicate::InList(schema.column(2), &c_values) },
-        6, 2);
+  NO_FATALS(check({ ColumnPredicate::InList(schema.column(0), &a_values),
+                    ColumnPredicate::InList(schema.column(1), &b_values),
+                    ColumnPredicate::InList(schema.column(2), &c_values) },
+                  6, 2));
 }
 
 TEST_F(PartitionPrunerTest, TestPruning) {
@@ -942,9 +938,9 @@ TEST_F(PartitionPrunerTest, TestPruning) {
                 { ColumnId(0), ColumnId(1), ColumnId(2), ColumnId(3) },
                 3);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"time"}, { {{"host", "metric"}, 2, 0} }, &pb);
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   KuduPartialRow split(&schema);
@@ -983,64 +979,64 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   // host = "a"
   // metric = "a"
   // timestamp >= 9;
-  check({ ColumnPredicate::Equality(schema.column(0), &a),
-          ColumnPredicate::Equality(schema.column(1), &a),
-          ColumnPredicate::Range(schema.column(2), &nine, nullptr) },
-        "", "",
-        2, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
+                    ColumnPredicate::Equality(schema.column(1), &a),
+                    ColumnPredicate::Range(schema.column(2), &nine, nullptr) },
+                  "", "",
+                  2, 1));
 
   // host = "a"
   // metric = "a"
   // timestamp >= 10;
   // timestamp < 20;
-  check({ ColumnPredicate::Equality(schema.column(0), &a),
-          ColumnPredicate::Equality(schema.column(1), &a),
-          ColumnPredicate::Range(schema.column(2), &ten, &twenty) },
-        "", "",
-        1, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
+                    ColumnPredicate::Equality(schema.column(1), &a),
+                    ColumnPredicate::Range(schema.column(2), &ten, &twenty) },
+                  "", "",
+                  1, 1));
 
   // host = "a"
   // metric = "a"
   // timestamp < 10;
-  check({ ColumnPredicate::Equality(schema.column(0), &a),
-          ColumnPredicate::Equality(schema.column(1), &a),
-          ColumnPredicate::Range(schema.column(2), nullptr, &ten) },
-        "", "",
-        1, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
+                    ColumnPredicate::Equality(schema.column(1), &a),
+                    ColumnPredicate::Range(schema.column(2), nullptr, &ten) },
+                  "", "",
+                  1, 1));
 
   // host = "a"
   // metric = "a"
   // timestamp >= 10;
-  check({ ColumnPredicate::Equality(schema.column(0), &a),
-          ColumnPredicate::Equality(schema.column(1), &a),
-          ColumnPredicate::Range(schema.column(2), &ten, nullptr) },
-        "", "",
-        1, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
+                    ColumnPredicate::Equality(schema.column(1), &a),
+                    ColumnPredicate::Range(schema.column(2), &ten, nullptr) },
+                  "", "",
+                  1, 1));
 
   // host = "a"
   // metric = "a"
   // timestamp = 10;
-  check({ ColumnPredicate::Equality(schema.column(0), &a),
-          ColumnPredicate::Equality(schema.column(1), &a),
-          ColumnPredicate::Equality(schema.column(2), &ten) },
-        "", "",
-        1, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
+                    ColumnPredicate::Equality(schema.column(1), &a),
+                    ColumnPredicate::Equality(schema.column(2), &ten) },
+                  "", "",
+                  1, 1));
 
   // partition key < (hash=1)
-  check({}, "", string("\0\0\0\1", 4), 2, 1);
+  NO_FATALS(check({}, "", string("\0\0\0\1", 4), 2, 1));
 
   // partition key >= (hash=1)
-  check({}, string("\0\0\0\1", 4), "", 2, 1);
+  NO_FATALS(check({}, string("\0\0\0\1", 4), "", 2, 1));
 
   // timestamp = 10
   // partition key < (hash=1)
-  check({ ColumnPredicate::Equality(schema.column(2), &ten) },
-        "", string("\0\0\0\1", 4), 1, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &ten) },
+                  "", string("\0\0\0\1", 4), 1, 1));
 
   // timestamp = 10
   // partition key >= (hash=1)
-  check({ ColumnPredicate::Equality(schema.column(2), &ten) },
-        string("\0\0\0\1", 4), "", 1, 1);
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &ten) },
+                  string("\0\0\0\1", 4), "", 1, 1));
 }
 
 TEST_F(PartitionPrunerTest, TestKudu2173) {
@@ -1048,16 +1044,14 @@ TEST_F(PartitionPrunerTest, TestKudu2173) {
   // (a INT8, b INT8, PRIMARY KEY (a, b))
   // DISTRIBUTE BY RANGE(a)
   // SPLIT ROWS [(10)]
-
-  // Setup the Schema
   Schema schema({ ColumnSchema("a", INT8),
           ColumnSchema("b", INT8)},
     { ColumnId(0), ColumnId(1) },
     2);
 
+  PartitionSchemaPB pb;
+  CreatePartitionSchemaPB({"a"}, {}, &pb);
   PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
-  CreatePartitionSchemaPB({"a"}, { }, &pb);
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   KuduPartialRow split1(&schema);
@@ -1082,20 +1076,20 @@ TEST_F(PartitionPrunerTest, TestKudu2173) {
   constexpr int8_t max = INT8_MAX;
 
   // a < 11
-  check({ ColumnPredicate::Range(schema.column(0), nullptr, &eleven) }, 2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &eleven) }, 2));
 
   // a < 11 AND b < 11
-  check({ ColumnPredicate::Range(schema.column(0), nullptr, &eleven),
-          ColumnPredicate::Range(schema.column(1), nullptr, &eleven) },
-        2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &eleven),
+                    ColumnPredicate::Range(schema.column(1), nullptr, &eleven) },
+                  2));
 
   // a < max
-  check({ ColumnPredicate::Range(schema.column(0), nullptr, &max) }, 2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &max) }, 2));
 
   // a < max AND b < 11
-  check({ ColumnPredicate::Range(schema.column(0), nullptr, &max),
-          ColumnPredicate::Range(schema.column(1), nullptr, &eleven) },
-        2);
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &max),
+                    ColumnPredicate::Range(schema.column(1), nullptr, &eleven) },
+                  2));
 }
 
 TEST_F(PartitionPrunerTest, TestHashSchemasPerRangePruning) {
@@ -1128,13 +1122,16 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangePruning) {
   // [(_, _, a), (_, _, c))
   AddRangePartitionWithSchema(schema, {{"C", "a"}}, {{"C", "c"}}, {}, {},
                               { {{"A"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
+
   // [(_, _, d), (_, _, f))
   AddRangePartitionWithSchema(schema, {{"C", "d"}}, {{"C", "f"}}, {}, {},
                               { {{"A"}, 2, 0}, {{"B"}, 3, 0} },
                               &bounds, &range_hash_schemas, &pb);
+
   // [(_, _, h), (_, _, j))
   AddRangePartitionWithSchema(schema, {{"C", "h"}}, {{"C", "j"}}, {}, {},
                               {}, &bounds, &range_hash_schemas, &pb);
+
   // [(_, _, k), (_, _, m))
   AddRangePartitionWithSchema(schema, {{"C", "k"}}, {{"C", "m"}}, {}, {},
                               { {{"B"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
@@ -1273,45 +1270,35 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
   // (a INT8, b INT8, c INT8)
   // PRIMARY KEY (a, b, c)
   // PARTITION BY RANGE(a, b)
-
-  // Setup the Schema
   Schema schema({ ColumnSchema("a", INT8),
                   ColumnSchema("b", INT8),
                   ColumnSchema("c", INT8) },
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
 
-  PartitionSchema partition_schema;
-  auto pb = PartitionSchemaPB();
+  PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"a", "b"}, {}, &pb);
-  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
   vector<PartitionSchema::HashSchema> range_hash_schemas;
 
   // [(0, 0, _), (2, 2, _))
-  {
-    AddRangePartitionWithSchema(schema, {}, {}, {{"a", 0}, {"b", 0}}, {{"a", 2}, {"b", 2}},
-                                { {{"c"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
-  }
+  AddRangePartitionWithSchema(schema, {}, {}, {{"a", 0}, {"b", 0}}, {{"a", 2}, {"b", 2}},
+                              { {{"c"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
 
   // [(2, 2, _), (4, 4, _))
-  {
-    AddRangePartitionWithSchema(schema, {}, {}, {{"a", 2}, {"b", 2}}, {{"a", 4}, {"b", 4}},
-                                { {{"c"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
-  }
+  AddRangePartitionWithSchema(schema, {}, {}, {{"a", 2}, {"b", 2}}, {{"a", 4}, {"b", 4}},
+                              { {{"c"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
 
   // [(4, 4, _), (6, 6, _))
-  {
-    AddRangePartitionWithSchema(schema, {}, {}, {{"a", 4}, {"b", 4}}, {{"a", 6}, {"b", 6}},
-                                { {{"c"}, 4, 0} }, &bounds, &range_hash_schemas, &pb);
-  }
+  AddRangePartitionWithSchema(schema, {}, {}, {{"a", 4}, {"b", 4}}, {{"a", 6}, {"b", 6}},
+                              { {{"c"}, 4, 0} }, &bounds, &range_hash_schemas, &pb);
 
+  PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
-
   ASSERT_EQ(9, partitions.size());
 
   Arena arena(1024);
@@ -1348,40 +1335,40 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
   };
 
   // No bounds
-  check(boost::none, boost::none, 9, 9);
+  NO_FATALS(check(boost::none, boost::none, 9, 9));
 
   // PK < (2, 2, min)
-  check(boost::none, make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN), 2, 2);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN), 2, 2));
 
   // PK < (2, 2, 0)
-  check(boost::none, make_tuple<int8_t, int8_t, int8_t>(2, 2, 0), 5, 5);
+  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(2, 2, 0), 5, 5));
 
   // PK >= (2, 2, 0)
-  check(make_tuple<int8_t, int8_t, int8_t>(2, 2, 0), boost::none, 7, 7);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(2, 2, 0), boost::none, 7, 7));
 
   // PK >= (2, 2, min)
   // PK < (4, 4, min)
-  check(make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN),
-        make_tuple<int8_t, int8_t, int8_t>(4, 4, INT8_MIN), 3, 3);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN),
+                  make_tuple<int8_t, int8_t, int8_t>(4, 4, INT8_MIN), 3, 3));
 
   // PK >= (2, 2, min)
   // PK < (4, 4, 0)
-  check(make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN),
-        make_tuple<int8_t, int8_t, int8_t>(4, 4, 0), 7, 7);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN),
+                  make_tuple<int8_t, int8_t, int8_t>(4, 4, 0), 7, 7));
 
   // PK >= (2, 0, min)
   // PK < (4, 2, min)
-  check(make_tuple<int8_t, int8_t, int8_t>(2, 0, INT8_MIN),
-        make_tuple<int8_t, int8_t, int8_t>(4, 2, INT8_MIN), 5, 5);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(2, 0, INT8_MIN),
+                  make_tuple<int8_t, int8_t, int8_t>(4, 2, INT8_MIN), 5, 5));
 
   // PK >= (6, 6, min)
-  check(make_tuple<int8_t, int8_t, int8_t>(6, 6, INT8_MIN), boost::none, 0, 0);
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(6, 6, INT8_MIN), boost::none, 0, 0));
 
-  // PK >= (2, 2, min)
-  // PK < (4, 4, min)
-  // Lower bound PK > Upper bound PK so scan is short circuited
-  check(make_tuple<int8_t, int8_t, int8_t>(4, 4, INT8_MIN),
-        make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN), 0, 0);
+  // PK >= (4, 4, min)
+  // PK < (2, 2, min)
+  // Lower bound PK > Upper bound PK so scan is short-circuited.
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(4, 4, INT8_MIN),
+                  make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN), 0, 0));
 }
 
 TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
@@ -1407,9 +1394,11 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
   // [(a, _, _), (c, _, _))
   AddRangePartitionWithSchema(schema, {{"A", "a"}}, {{"A", "c"}}, {}, {},
                               { {{"B"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
+
   // [(c, _, _), (e, _, _))
   AddRangePartitionWithSchema(schema, {{"A", "c"}}, {{"A", "e"}}, {}, {},
                               {}, &bounds, &range_hash_schemas, &pb);
+
   // [(e, _, _), (g, _, _))
   AddRangePartitionWithSchema(schema, {{"A", "e"}}, {{"A", "g"}}, {}, {},
                               { {{"C"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
@@ -1418,9 +1407,7 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(
-      {}, bounds, range_hash_schemas, schema, &partitions));
-
+  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
   ASSERT_EQ(7, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -1485,11 +1472,11 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
 
 TEST_F(PartitionPrunerTest, TestSingleRangeElementAndBoundaryCase) {
   // CREATE TABLE t
-  // (A INT8, B STRING)
+  // (A INT8, B INT8)
   // PRIMARY KEY (A, B)
   // PARTITION BY RANGE (A);
   Schema schema({ ColumnSchema("A", INT8),
-                  ColumnSchema("B", STRING) },
+                  ColumnSchema("B", INT8) },
                 { ColumnId(0), ColumnId(1) },
                 2);
 
@@ -1499,23 +1486,28 @@ TEST_F(PartitionPrunerTest, TestSingleRangeElementAndBoundaryCase) {
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
   vector<PartitionSchema::HashSchema> range_hash_schemas;
 
-  // [(0, _), (1, _))
-  AddRangePartitionWithSchema(schema, {}, {}, {{"A", 0}}, {{"A", 1}},
+  // [(_, _), (1, _))
+  AddRangePartitionWithSchema(schema, {}, {}, {}, {{"A", 1}},
                               {{{"B"}, 4, 0}}, &bounds, &range_hash_schemas, &pb);
+
   // [(1, _), (2, _))
   AddRangePartitionWithSchema(schema, {}, {}, {{"A", 1}}, {{"A", 2}},
-                              {}, &bounds, &range_hash_schemas, &pb);
+                              { {{"B"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
+
   // [(2, _), (3, _))
   AddRangePartitionWithSchema(schema, {}, {}, {{"A", 2}}, {{"A", 3}},
                               { {{"B"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
+
+  // [(3, _), (_, _))
+  AddRangePartitionWithSchema(schema, {}, {}, {{"A", 3}}, {},
+                              {}, &bounds, &range_hash_schemas, &pb);
 
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
-
-  ASSERT_EQ(8, partitions.size());
+  ASSERT_EQ(10, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
@@ -1530,47 +1522,76 @@ TEST_F(PartitionPrunerTest, TestSingleRangeElementAndBoundaryCase) {
                           remaining_tablets, pruner_ranges);
   };
 
+  constexpr int8_t neg_one = -1;
   constexpr int8_t zero = 0;
   constexpr int8_t one = 1;
   constexpr int8_t two = 2;
   constexpr int8_t three = 3;
+  constexpr int8_t four = 4;
+  constexpr int8_t five = 5;
 
   // No Bounds
-  NO_FATALS(check({}, 8, 8));
+  NO_FATALS(check({}, 10, 10));
 
   // A >= 0
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, nullptr) },
-                  8, 8));
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, nullptr)}, 10, 10));
+
   // A >= 1
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, nullptr) },
-                  4, 4));
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, nullptr)}, 6, 6));
+
   // A < 1
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &one) },
-                  4, 4));
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &one)}, 4, 4));
+
   // A >= 2
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &two, nullptr) },
-                  3, 3));
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &two, nullptr)}, 4, 4));
+
   // A < 2
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &two) },
-                  5, 5));
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &two)}, 6, 6));
+
   // A < 3
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &three) },
-                  8, 8));
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &three)}, 9, 9));
+
   // A >= 0
   // A < 2
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, &two) },
-                  5, 5));
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, &two)}, 6, 6));
+
   // A >= 1
   // A < 2
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, &two) },
-                  1, 1));
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, &two)}, 2, 2));
+
   // A >= 1
   // A < 3
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, &three) },
-                  4, 4));
-  // A >= 3
-  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &three, nullptr) },
-                  0, 0));
-}
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &one, &three)}, 5, 5));
 
+  // A >= 3
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &three, nullptr)}, 1, 1));
+
+  // A >= 4
+  // A < 5
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &four, &five)}, 1, 1));
+
+  // A >= -1
+  // A < 0
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &neg_one, &zero)}, 4, 4));
+
+  // A >= 5
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &five, nullptr)}, 1, 1));
+
+  // A < -1
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &neg_one)}, 4, 4));
+
+  // B = 1
+  NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one)}, 4, 4));
+
+  // A >= 0
+  // A < 2
+  // B = 1
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), &zero, &two),
+                    ColumnPredicate::Equality(schema.column(1), &one)}, 2, 2));
+
+  // A < 0
+  // B = 1
+  NO_FATALS(check({ ColumnPredicate::Range(schema.column(0), nullptr, &zero),
+                    ColumnPredicate::Equality(schema.column(1), &one)}, 1, 1));
+}
 } // namespace kudu

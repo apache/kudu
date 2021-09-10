@@ -429,8 +429,8 @@ void PartitionPruner::Init(const Schema& schema,
     ConstructPartitionKeyRanges(schema, scan_spec, partition_schema.hash_schema_,
                                 {scan_range_lower_bound, scan_range_upper_bound},
                                 &partition_key_ranges);
-    // Reverse the order of the partition key ranges, so that it is
-    // efficient to remove the partition key ranges from the vector in ascending order.
+    // Reverse the order of the partition key ranges, so that it is efficient
+    // to remove the partition key ranges from the vector in ascending order.
     range_bounds_to_partition_key_ranges_.resize(1);
     auto& first_range = range_bounds_to_partition_key_ranges_[0];
     first_range.partition_key_ranges.resize(partition_key_ranges.size());
@@ -441,13 +441,13 @@ void PartitionPruner::Init(const Schema& schema,
     vector<PartitionSchema::HashSchema> hash_schemas_per_range;
     for (const auto& range : partition_schema.ranges_with_hash_schemas_) {
       const auto& hash_schema = range.hash_schema;
-      // Both lower and upper bounds are unbounded.
+      // Both lower and upper bounds of the scan are unbounded.
       if (scan_range_lower_bound.empty() && scan_range_upper_bound.empty()) {
         range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
         hash_schemas_per_range.emplace_back(hash_schema);
         continue;
       }
-      // Only one of the lower/upper bounds is unbounded.
+      // Only one of the lower/upper bounds of the scan is unbounded.
       if (scan_range_lower_bound.empty()) {
         if (scan_range_upper_bound > range.lower) {
           range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
@@ -456,14 +456,15 @@ void PartitionPruner::Init(const Schema& schema,
         continue;
       }
       if (scan_range_upper_bound.empty()) {
-        if (scan_range_lower_bound < range.upper) {
+        if (range.upper.empty() || scan_range_lower_bound < range.upper) {
           range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
           hash_schemas_per_range.emplace_back(hash_schema);
         }
         continue;
       }
-      // Both lower and upper ranges are bounded.
-      if (scan_range_lower_bound < range.upper && scan_range_upper_bound > range.lower) {
+      // Both lower and upper ranges of the scan are bounded.
+      if ((range.upper.empty() || scan_range_lower_bound < range.upper) &&
+          scan_range_upper_bound > range.lower) {
         range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
         hash_schemas_per_range.emplace_back(hash_schema);
       }
