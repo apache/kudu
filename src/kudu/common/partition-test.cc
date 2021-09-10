@@ -1317,6 +1317,10 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
   EXPECT_EQ(string("\0\0\0\3" "a1\0\0\0\0c1", 12), partitions[3].partition_key_end());
 
   ASSERT_EQ(0, partitions[4].hash_buckets().size());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].range_key_start());
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[4].range_key_end());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].partition_key_start());
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[4].partition_key_end());
 
   ASSERT_EQ(2, partitions[5].hash_buckets().size());
   EXPECT_EQ(0, partitions[5].hash_buckets()[0]);
