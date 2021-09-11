@@ -105,7 +105,11 @@ Status DnsResolver::DoResolution(const HostPort& hostport,
         cached_addresses->capacity() > 0
         ? kudu_malloc_usable_size(cached_addresses->data()) : 0;
 #ifndef NDEBUG
-    // Clear the port number.
+    // The port numbers are not relevant when caching the results of DNS
+    // resolution. If it's a debug build, clear the port numbers: this is done
+    // to be able to spot regressions in the code which is responsible for
+    // setting appropriate port numbers when retrieving the cached addresses
+    // (see DnsResolver::GetCachedAddresses()).
     for (auto& addr : *cached_addresses) {
       addr.set_port(0);
     }
@@ -131,6 +135,10 @@ bool DnsResolver::GetCachedAddresses(const HostPort& hostport,
     auto handle = cache_->Get(hostport.host());
     if (handle) {
       if (addresses) {
+        // Copy the cached records and set the result port number as necessary:
+        // a cached port number is not relevant and stored in the cache as a
+        // by-product: HostRecordCache stores not just IPs address, but Sockaddr
+        // structures.
         vector<Sockaddr> result_addresses(handle.value());
         for (auto& addr : result_addresses) {
           addr.set_port(hostport.port());
