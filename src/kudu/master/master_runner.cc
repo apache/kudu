@@ -249,6 +249,7 @@ Status VerifyMastersGetHostPorts(const vector<HostPort>& master_addrs,
       LOG(INFO) << Substitute("Existing masters have differing Raft config indexes: $0 vs $1",
                               committed_config_index, cstate.committed_config().opid_index());
       *needs_retry = true;
+      return Status::OK();
     }
     const auto& config = cstate.committed_config();
     set<string> uuids;
@@ -256,7 +257,6 @@ Status VerifyMastersGetHostPorts(const vector<HostPort>& master_addrs,
       EmplaceIfNotPresent(&uuids, p.permanent_uuid());
     }
     each_remote_masters_master_uuids.emplace_back(std::move(uuids));
-
   }
   if (!leader_hp->Initialized()) {
     LOG(INFO) << Substitute("No leader master found from master $0", local_uuid);
