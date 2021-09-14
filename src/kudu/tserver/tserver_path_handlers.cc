@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -87,6 +88,8 @@ using std::shared_ptr;
 using std::string;
 using std::vector;
 using strings::Substitute;
+
+DECLARE_int32(scan_history_count);
 
 namespace kudu {
 
@@ -588,8 +591,10 @@ const char* kLongTimingTitle = "wall time, user cpu time, and system cpu time "
 
 void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& /*req*/,
                                                Webserver::WebResponse* resp) {
-  resp->output.Set("timing_title", kLongTimingTitle);
-  EasyJson scans = resp->output.Set("scans", EasyJson::kArray);
+  EasyJson* output = &resp->output;
+  (*output)["scan_history_count"] = FLAGS_scan_history_count;
+  output->Set("timing_title", kLongTimingTitle);
+  EasyJson scans = output->Set("scans", EasyJson::kArray);
   vector<ScanDescriptor> descriptors = tserver_->scanner_manager()->ListScans();
 
   for (const auto& descriptor : descriptors) {
