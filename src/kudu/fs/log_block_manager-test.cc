@@ -65,6 +65,7 @@
 #include "kudu/util/stopwatch.h" // IWYU pragma: keep
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/threadpool.h"
 
 using kudu::pb_util::ReadablePBContainerFile;
 using std::set;
@@ -88,6 +89,8 @@ DECLARE_string(env_inject_eio_globs);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_metadata_max_size);
+DECLARE_bool(log_container_metadata_runtime_compact);
+DECLARE_double(log_container_metadata_size_before_compact_ratio);
 DEFINE_int32(startup_benchmark_block_count_for_testing, 1000000,
              "Block count to do startup benchmark.");
 DEFINE_int32(startup_benchmark_data_dir_count_for_testing, 8,
@@ -200,6 +203,10 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
     DoGetContainers(METADATA_FILES, &metadata_files);
     ASSERT_EQ(1, metadata_files.size());
     *metadata_file = metadata_files[0];
+  }
+
+  void GetContainerMetadataFiles(vector<string>* metadata_files) {
+    DoGetContainers(METADATA_FILES, metadata_files);
   }
 
   // Like GetOnlyContainerDataFile(), but returns a container name (i.e. data
@@ -449,10 +456,7 @@ TEST_P(LogBlockManagerTest, MetricsTest) {
           {1, &METRIC_block_manager_total_blocks_deleted},
           {0, &METRIC_log_block_manager_dead_containers_deleted} }));
   }
-  // Wait for the actual hole punching to take place.
-  for (const auto& data_dir : dd_manager_->dirs()) {
-    data_dir->WaitOnClosures();
-  }
+  dd_manager_->WaitOnClosures();
   NO_FATALS(CheckLogMetrics(new_entity,
       { {9 * 1024, &METRIC_log_block_manager_bytes_under_management},
         {10, &METRIC_log_block_manager_blocks_under_management},
@@ -1270,8 +1274,99 @@ TEST_P(LogBlockManagerTest, TestContainerBlockLimitingByMetadataSize) {
   NO_FATALS(AssertNumContainers(4));
 }
 
+TEST_F(LogBlockManagerTest, TestContainerBlockLimitingByMetadataSizeWithCompaction) {
+  const int kNumBlocks = 2000;
+  const int kNumThreads = 10;
+  const double kLiveBlockRatio = 0.1;
+
+  // Creates and deletes some blocks.
+  auto create_and_delete_blocks = [&]() {
+    vector<BlockId> ids;
+    // Creates 'kNumBlocks' blocks.
+    for (int i = 0; i < kNumBlocks; i++) {
+      unique_ptr<WritableBlock> block;
+      RETURN_NOT_OK(bm_->CreateBlock(test_block_opts_, &block));
+      RETURN_NOT_OK(block->Append("aaaa"));
+      RETURN_NOT_OK(block->Close());
+      ids.push_back(block->id());
+    }
+
+    // Deletes 'kNumBlocks * (1 - kLiveBlockRatio)' blocks.
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        bm_->NewDeletionTransaction();
+    for (const auto& id : ids) {
+      if (rand() % 100 < 100 * kLiveBlockRatio) {
+        continue;
+      }
+      deletion_transaction->AddDeletedBlock(id);
+    }
+    vector<BlockId> deleted;
+    RETURN_NOT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+
+    return Status::OK();
+  };
+
+  // Create a thread pool to create and delete blocks.
+  unique_ptr<ThreadPool> pool;
+  ASSERT_OK(ThreadPoolBuilder("test-metadata-compact-pool")
+                .set_max_threads(kNumThreads)
+                .Build(&pool));
+  auto mt_create_and_delete_blocks = [&]() {
+    for (int i = 0; i < kNumThreads; ++i) {
+      ASSERT_OK(pool->Submit(create_and_delete_blocks));
+    }
+    pool->Wait();
+    dd_manager_->WaitOnClosures();
+  };
+
+  FLAGS_log_container_metadata_runtime_compact = true;
+  // Define a small value to make metadata easy to be full.
+  FLAGS_log_container_metadata_max_size = 32 * 1024;
+  NO_FATALS(mt_create_and_delete_blocks());
+  vector<string> metadata_files;
+  NO_FATALS(GetContainerMetadataFiles(&metadata_files));
+  for (const auto& metadata_file : metadata_files) {
+    uint64_t file_size;
+    NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
+    ASSERT_GE(FLAGS_log_container_metadata_max_size *
+                  FLAGS_log_container_metadata_size_before_compact_ratio,
+              file_size);
+  }
+
+  // Reopen and test again.
+  ASSERT_OK(ReopenBlockManager());
+  NO_FATALS(mt_create_and_delete_blocks());
+  NO_FATALS(GetContainerMetadataFiles(&metadata_files));
+  for (const auto& metadata_file : metadata_files) {
+    uint64_t file_size;
+    NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
+    ASSERT_GE(FLAGS_log_container_metadata_max_size *
+                  FLAGS_log_container_metadata_size_before_compact_ratio,
+              file_size);
+  }
+
+  // Now remove the limit and create more blocks. They should go into existing
+  // containers, which are now no longer full.
+  FLAGS_log_container_metadata_runtime_compact = false;
+  ASSERT_OK(ReopenBlockManager());
+  NO_FATALS(mt_create_and_delete_blocks());
+  NO_FATALS(GetContainerMetadataFiles(&metadata_files));
+  bool exist_larger_one = false;
+  for (const auto& metadata_file : metadata_files) {
+    uint64_t file_size;
+    NO_FATALS(env_->GetFileSize(metadata_file, &file_size));
+    if (file_size > FLAGS_log_container_metadata_max_size *
+                         FLAGS_log_container_metadata_size_before_compact_ratio) {
+      exist_larger_one = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(exist_larger_one);
+}
+
 TEST_P(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
   EnableEncryption(GetParam());
+
   FLAGS_log_container_preallocate_bytes = 0;
   const int kNumBlocks = 100;
 
