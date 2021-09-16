@@ -167,6 +167,10 @@ class TestWorkload {
     write_timeout_millis_ = t;
   }
 
+  void set_wait_for_create(bool wait) {
+    wait_for_create_ = wait;
+  }
+
   // Set whether to fail if we see a TimedOut() error inserting a row.
   // By default, this triggers a CHECK failure.
   void set_timeout_allowed(bool allowed) {
@@ -350,6 +354,7 @@ class TestWorkload {
   bool begin_txn_;
   bool commit_txn_;
   bool rollback_txn_;
+  bool wait_for_create_;
   bool fault_tolerant_;
   bool verify_num_rows_;
   bool read_errors_allowed_;

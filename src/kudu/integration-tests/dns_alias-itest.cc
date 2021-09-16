@@ -35,11 +35,15 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -56,6 +60,7 @@ using kudu::client::KuduTabletServer;
 using kudu::cluster::ExternalDaemon;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::pb_util::SecureShortDebugString;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -76,8 +81,10 @@ class DnsAliasITest : public KuduTest {
     SetUpCluster();
   }
 
-  void SetUpCluster(vector<string> extra_master_flags = {},
-                    vector<string> extra_tserver_flags = {}) {
+  // TODO(awong): more plumbing is needed to allow the server to be restarted
+  // bound to a different address with the webserver, so just disable it.
+  void SetUpCluster(vector<string> extra_master_flags = { "--webserver_enabled=false" },
+                    vector<string> extra_tserver_flags = { "--webserver_enabled=false" }) {
     ExternalMiniClusterOptions opts;
     opts.num_masters = 3;
     opts.num_tablet_servers = 3;
@@ -133,9 +140,6 @@ class DnsAliasITest : public KuduTest {
     HostPort new_ip_hp(new_addr.host(), new_addr.port());
     daemon->SetRpcBindAddress(new_ip_hp);
     daemon->mutable_flags()->emplace_back("--rpc_reuseport=true");
-    // TODO(awong): more plumbing is needed to allow the server to startup with
-    // the webserver, so just disable it.
-    daemon->mutable_flags()->emplace_back("--webserver_enabled=false");
     daemon->mutable_flags()->emplace_back(
         Substitute("--dns_addr_resolution_override=$0", new_overrides_str));
   }
@@ -354,6 +358,74 @@ TEST_F(DnsAliasITest, TestMasterReresolveOnStartup) {
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(v.RunKsck());
   });
+}
+
+// Regression test for KUDU-1885, wherein tserver proxies on the masters don't
+// eventually succeed when the tserver's address changes.
+TEST_F(DnsAliasITest, Kudu1885) {
+  // First, wait for all tablet servers to report to the masters.
+  ASSERT_EVENTUALLY([&] {
+    vector<KuduTabletServer*> tservers;
+    ElementDeleter deleter(&tservers);
+    ASSERT_OK(client_->ListTabletServers(&tservers));
+    ASSERT_EQ(cluster_->num_tablet_servers(), tservers.size());
+  });
+  auto* tserver = cluster_->tablet_server(cluster_->num_tablet_servers() - 1);
+  // Shut down a tablet server so we can start it up with a different address.
+  tserver->Shutdown();
+  unique_ptr<Socket> reserved_socket;
+  ASSERT_OK(cluster_->ReserveDaemonSocket(cluster::ExternalMiniCluster::DaemonType::TSERVER, 3,
+                                          kDefaultBindMode, &reserved_socket,
+                                          tserver->bound_rpc_hostport().port()));
+  Sockaddr new_addr;
+  ASSERT_OK(reserved_socket->GetSocketAddress(&new_addr));
+  auto new_overrides_str = GetNewOverridesFlag(ExternalMiniCluster::DaemonType::TSERVER, new_addr);
+  SetUpDaemonForNewAddr(new_addr, new_overrides_str, tserver);
+
+  // Create several tables. Based on Kudu's tablet placement algorithm, some
+  // should be assigned to the tserver with a new address. This will start some
+  // tasks on the master to send requests to tablet servers (some of which will
+  // fail because of the down server).
+  // NOTE: master's will wait up to --tserver_unresponsive_timeout_ms before
+  // stopping replica placement on the down server. By default, this is 60
+  // seconds, so we can proceed expecting placement on the down tserver.
+  for (int i = 0; i < 10; i++) {
+    TestWorkload w(cluster_.get());
+    w.set_table_name(Substitute("default.table_$0", i));
+    w.set_num_replicas(1);
+    // Some tablet creations will initially fail until we restart the down
+    // server, so have our client not wait for creation to finish.
+    w.set_wait_for_create(false);
+    w.Setup();
+  }
+  ASSERT_OK(tserver->Restart());
+
+  // Allow the rest of the cluster to start seeing the re-addressed server.
+  SetFlagsOnRemainingCluster(ExternalMiniCluster::DaemonType::TSERVER, new_overrides_str);
+  FLAGS_dns_addr_resolution_override = new_overrides_str;
+  ClusterVerifier v(cluster_.get());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(v.RunKsck());
+  });
+
+  // Ensure there's no funny business with the tserver coming up at a new
+  // address -- we should have the same number of tablet servers.
+  vector<KuduTabletServer*> tservers;
+  ElementDeleter deleter(&tservers);
+  ASSERT_OK(client_->ListTabletServers(&tservers));
+  ASSERT_EQ(cluster_->num_tablet_servers(), tservers.size());
+
+  // Some tablets should be assigned to the tablet we re-addressed, and the
+  // create tablet requests from the masters should have been routed as
+  // appropriate.
+  auto tserver_proxy = cluster_->tserver_proxy(cluster_->num_tablet_servers() - 1);
+  tserver::ListTabletsRequestPB req;
+  req.set_need_schema_info(false);
+  tserver::ListTabletsResponsePB resp;
+  rpc::RpcController controller;
+  ASSERT_OK(tserver_proxy->ListTablets(req, &resp, &controller));
+  ASSERT_FALSE(resp.has_error()) << SecureShortDebugString(resp.error());
+  ASSERT_GT(resp.status_and_schema_size(), 0);
 }
 
 #endif

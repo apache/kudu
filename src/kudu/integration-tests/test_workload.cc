@@ -81,6 +81,7 @@ TestWorkload::TestWorkload(MiniCluster* cluster,
     begin_txn_(false),
     commit_txn_(false),
     rollback_txn_(false),
+    wait_for_create_(true),
     fault_tolerant_(true),
     verify_num_rows_(true),
     read_errors_allowed_(false),
@@ -340,6 +341,7 @@ void TestWorkload::Setup() {
     table_creator
         .table_name(table_name_)
         .schema(&schema_)
+        .wait(wait_for_create_)
         .num_replicas(num_replicas_);
 
     switch (partitioning_) {

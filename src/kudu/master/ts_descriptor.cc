@@ -278,15 +278,17 @@ Status TSDescriptor::GetTSAdminProxy(const shared_ptr<rpc::Messenger>& messenger
       return Status::OK();
     }
   }
-
   Sockaddr addr;
   string host;
   RETURN_NOT_OK(ResolveSockaddr(&addr, &host));
 
   std::lock_guard<rw_spinlock> l(lock_);
   if (!ts_admin_proxy_) {
+    HostPort hp;
+    RETURN_NOT_OK(hp.ParseString(host, addr.port()));
     ts_admin_proxy_.reset(new tserver::TabletServerAdminServiceProxy(
-        messenger, addr, std::move(host)));
+        messenger, hp, dns_resolver_));
+    ts_admin_proxy_->Init(addr);
   }
   *proxy = ts_admin_proxy_;
   return Status::OK();
@@ -301,15 +303,17 @@ Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messeng
       return Status::OK();
     }
   }
-
   Sockaddr addr;
   string host;
   RETURN_NOT_OK(ResolveSockaddr(&addr, &host));
 
   std::lock_guard<rw_spinlock> l(lock_);
   if (!consensus_proxy_) {
+    HostPort hp;
+    RETURN_NOT_OK(hp.ParseString(host, addr.port()));
     consensus_proxy_.reset(new consensus::ConsensusServiceProxy(
-        messenger, addr, std::move(host)));
+        messenger, hp, dns_resolver_));
+    consensus_proxy_->Init(addr);
   }
   *proxy = consensus_proxy_;
   return Status::OK();
