@@ -102,6 +102,7 @@ using strings::Substitute;
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
 DECLARE_string(block_manager);
+DECLARE_string(dns_addr_resolution_override);
 
 DEFINE_bool(perf_record, false,
             "Whether to run \"perf record --call-graph fp\" on each daemon in the cluster");
@@ -171,6 +172,27 @@ Status ExternalMiniCluster::HandleOptions() {
     opts_.block_manager_type = FLAGS_block_manager;
   }
 
+  vector<string> host_mappings;
+  if (!opts_.tserver_alias_prefix.empty()) {
+    for (int i = 0; i < opts_.num_tablet_servers; i++) {
+      host_mappings.emplace_back(Substitute("$0.$1=$2", opts_.tserver_alias_prefix, i,
+                                            GetBindIpForTabletServer(i)));
+    }
+  }
+  if (!opts_.master_alias_prefix.empty()) {
+    for (int i = 0; i < opts_.num_masters; i++) {
+      host_mappings.emplace_back(Substitute("$0.$1=$2", opts_.master_alias_prefix, i,
+                                            GetBindIpForMaster(i)));
+    }
+  }
+  if (!host_mappings.empty()) {
+    dns_overrides_ = JoinStrings(host_mappings, ",");
+    opts_.extra_master_flags.emplace_back(
+        Substitute("--dns_addr_resolution_override=$0", dns_overrides_));
+    opts_.extra_tserver_flags.emplace_back(
+        Substitute("--dns_addr_resolution_override=$0", dns_overrides_));
+  }
+
   return Status::OK();
 }
 
@@ -222,6 +244,8 @@ Status ExternalMiniCluster::Start() {
   CHECK(tablet_servers_.empty()) << "Tablet servers are not empty (size: "
       << tablet_servers_.size() << "). Maybe you meant Restart()?";
   RETURN_NOT_OK(HandleOptions());
+  gflags::FlagSaver saver;
+  FLAGS_dns_addr_resolution_override = dns_overrides_;
 
   RETURN_NOT_OK_PREPEND(
       rpc::MessengerBuilder("minicluster-messenger")
@@ -499,7 +523,10 @@ Status ExternalMiniCluster::StartMasters() {
                             "failed to reserve master socket address");
       Sockaddr addr;
       RETURN_NOT_OK(reserved_socket->GetSocketAddress(&addr));
-      master_rpc_addrs.emplace_back(addr.host(), addr.port());
+      master_rpc_addrs.emplace_back(
+          opts_.master_alias_prefix.empty() ?
+              addr.host() : Substitute("$0.$1", opts_.master_alias_prefix, i),
+          addr.port());
       reserved_sockets.emplace_back(std::move(reserved_socket));
     }
   }
@@ -552,6 +579,11 @@ Status ExternalMiniCluster::AddTabletServer() {
   auto flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
   copy(flags.begin(), flags.end(), std::back_inserter(extra_flags));
   opts.extra_flags = extra_flags;
+  if (!opts_.tserver_alias_prefix.empty()) {
+    opts.extra_flags.emplace_back(
+        Substitute("--host_for_tests=$0.$1",
+                   opts_.tserver_alias_prefix, tablet_servers_.size()));
+  }
   opts.start_process_timeout = opts_.start_process_timeout;
   opts.rpc_bind_address = HostPort(bind_host, 0);
   opts.logtostderr = opts_.logtostderr;
@@ -616,6 +648,10 @@ Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addr
     flags.emplace_back(Substitute("--ranger_config_path=$0",
                                   JoinPathSegments(cluster_root(),
                                                    "ranger-client")));
+  }
+  if (!opts_.master_alias_prefix.empty()) {
+    flags.emplace_back(Substitute("--host_for_tests=$0.$1",
+                                  opts_.master_alias_prefix, idx));
   }
   // Add custom master flags.
   copy(opts_.extra_master_flags.begin(), opts_.extra_master_flags.end(),

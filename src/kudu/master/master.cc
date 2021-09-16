@@ -28,6 +28,7 @@
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_cache.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -380,10 +381,11 @@ Status Master::InitMasterRegistration() {
   CHECK(!registration_initialized_.load());
 
   ServerRegistrationPB reg;
-  vector<Sockaddr> rpc_addrs;
-  RETURN_NOT_OK_PREPEND(rpc_server()->GetAdvertisedAddresses(&rpc_addrs),
-                        "Couldn't get RPC addresses");
-  RETURN_NOT_OK(AddHostPortPBs(rpc_addrs, reg.mutable_rpc_addresses()));
+  vector<HostPort> hps;
+  RETURN_NOT_OK(rpc_server()->GetAdvertisedHostPorts(&hps));
+  for (const auto& hp : hps) {
+    *reg.add_rpc_addresses() = HostPortToPB(hp);
+  }
 
   if (web_server()) {
     vector<Sockaddr> http_addrs;

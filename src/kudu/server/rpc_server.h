@@ -34,6 +34,7 @@
 template <class T> class scoped_refptr;
 
 namespace kudu {
+class HostPort;
 
 namespace rpc {
 class AcceptorPool;
@@ -86,10 +87,12 @@ class RpcServer {
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.
   Status GetBoundAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
+  Status GetBoundHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
 
   // Return the addresses that this server is advertising externally
   // to the world. Requires that the server has been Start()ed.
   Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
+  Status GetAdvertisedHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
 
   const rpc::ServicePool* service_pool(const std::string& service_name) const;
 

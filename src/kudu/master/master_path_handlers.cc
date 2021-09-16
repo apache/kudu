@@ -42,6 +42,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
@@ -58,6 +59,7 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/server/monitored_task.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/server/webui_util.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/cow_object.h"
@@ -66,7 +68,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/string_case.h"
 #include "kudu/util/url-coding.h"
@@ -846,14 +847,13 @@ string MasterPathHandlers::MasterAddrsToCsv() const {
     }
     return JoinElements(all_addresses, ",");
   }
-  Sockaddr addr = master_->first_rpc_address();
-  HostPort hp;
-  s = HostPortFromSockaddrReplaceWildcard(addr, &hp);
-  if (s.ok()) {
-    return hp.ToString();
+  vector<HostPort> hps;
+  s = master_->rpc_server()->GetBoundHostPorts(&hps);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(WARNING) << "Unable to determine proper local hostname: " << s.ToString();
+    return string();
   }
-  LOG(WARNING) << "Unable to determine proper local hostname: " << s.ToString();
-  return addr.ToString();
+  return hps[0].ToString();
 }
 
 Status MasterPathHandlers::GetLeaderMasterHttpAddr(string* leader_http_addr) const {

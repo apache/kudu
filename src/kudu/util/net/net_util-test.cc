@@ -212,18 +212,19 @@ TEST_F(NetUtilTest, TestWithinNetwork) {
 TEST_F(NetUtilTest, TestReverseLookup) {
   string host;
   Sockaddr addr;
-  HostPort hp;
+  vector<HostPort> hps;
   ASSERT_OK(addr.ParseString("0.0.0.0:12345", 0));
   EXPECT_EQ(12345, addr.port());
-  ASSERT_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
-  EXPECT_NE("0.0.0.0", hp.host());
-  EXPECT_NE("", hp.host());
-  EXPECT_EQ(12345, hp.port());
+  ASSERT_OK(HostPortsFromAddrs({ addr }, &hps));
+  EXPECT_NE("0.0.0.0", hps[0].host());
+  EXPECT_NE("", hps[0].host());
+  EXPECT_EQ(12345, hps[0].port());
 
+  hps.clear();
   ASSERT_OK(addr.ParseString("127.0.0.1:12345", 0));
-  ASSERT_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
-  EXPECT_EQ("127.0.0.1", hp.host());
-  EXPECT_EQ(12345, hp.port());
+  ASSERT_OK(HostPortsFromAddrs({ addr }, &hps));
+  EXPECT_EQ("127.0.0.1", hps[0].host());
+  EXPECT_EQ(12345, hps[0].port());
 }
 
 TEST_F(NetUtilTest, TestLsof) {

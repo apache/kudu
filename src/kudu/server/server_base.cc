@@ -693,26 +693,18 @@ Status ServerBase::GetStatusPB(ServerStatusPB* status) const {
 
   // RPC ports
   {
-    vector<Sockaddr> addrs;
-    RETURN_NOT_OK_PREPEND(rpc_server_->GetBoundAddresses(&addrs),
-                          "could not get bound RPC addresses");
-    for (const Sockaddr& addr : addrs) {
-      HostPort hp;
-      RETURN_NOT_OK_PREPEND(HostPortFromSockaddrReplaceWildcard(addr, &hp),
-                            "could not get RPC hostport");
+    vector<HostPort> hps;
+    RETURN_NOT_OK(rpc_server_->GetBoundHostPorts(&hps));
+    for (const auto& hp : hps) {
       *status->add_bound_rpc_addresses() = HostPortToPB(hp);
     }
   }
 
   // HTTP ports
   if (web_server_) {
-    vector<Sockaddr> addrs;
-    RETURN_NOT_OK_PREPEND(web_server_->GetBoundAddresses(&addrs),
-                          "could not get bound web addresses");
-    for (const Sockaddr& addr : addrs) {
-      HostPort hp;
-      RETURN_NOT_OK_PREPEND(HostPortFromSockaddrReplaceWildcard(addr, &hp),
-                            "could not get web hostport");
+    vector<HostPort> hps;
+    RETURN_NOT_OK(web_server_->GetBoundHostPorts(&hps));
+    for (const auto& hp : hps) {
       *status->add_bound_http_addresses() = HostPortToPB(hp);
     }
   }

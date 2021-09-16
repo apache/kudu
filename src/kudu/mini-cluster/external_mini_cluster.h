@@ -250,6 +250,9 @@ struct ExternalMiniClusterOptions {
   // Default: BuiltinNtpConfigMode::ALL_SERVERS
   BuiltinNtpConfigMode ntp_config_mode;
 #endif // #if !defined(NO_CHRONY) ...
+
+  std::string master_alias_prefix;
+  std::string tserver_alias_prefix;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
@@ -498,6 +501,10 @@ class ExternalMiniCluster : public MiniCluster {
   // This helps keep the state of the actual cluster in sync with the state in ExternalMiniCluster.
   Status RemoveMaster(const HostPort& hp);
 
+  const std::string& dns_overrides() const {
+    return dns_overrides_;
+  }
+
  private:
   Status StartMasters();
 
@@ -530,6 +537,8 @@ class ExternalMiniCluster : public MiniCluster {
   std::unique_ptr<ranger::MiniRanger> ranger_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
+
+  std::string dns_overrides_;
 
   DISALLOW_COPY_AND_ASSIGN(ExternalMiniCluster);
 };

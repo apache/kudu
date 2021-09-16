@@ -78,6 +78,9 @@ DEFINE_string(dns_addr_resolution_override, "",
               "is expected to be a socket address with no port.");
 TAG_FLAG(dns_addr_resolution_override, hidden);
 
+DEFINE_string(host_for_tests, "", "Host to use when resolving a given server's locally bound or "
+              "advertised addresses.");
+
 using std::function;
 using std::string;
 using std::unordered_set;
@@ -122,6 +125,23 @@ Status GetAddrInfo(const string& hostname,
     return Status::NetworkError(err_msg, ErrnoToString(err), err);
   }
   return Status::NetworkError(err_msg, gai_strerror(rc));
+}
+
+// Converts the given Sockaddr into a HostPort, substituting the FQDN
+// in the case that the provided address is the wildcard.
+//
+// In the case of other addresses, the returned HostPort will contain just the
+// stringified form of the IP.
+Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp) {
+  string host;
+  if (!FLAGS_host_for_tests.empty() || addr.IsWildcard()) {
+    RETURN_NOT_OK(GetFQDN(&host));
+  } else {
+    host = addr.host();
+  }
+  hp->set_host(host);
+  hp->set_port(addr.port());
+  return Status::OK();
 }
 
 } // anonymous namespace
@@ -407,6 +427,10 @@ Status ParseAddressList(const std::string& addr_list,
 
 Status GetHostname(string* hostname) {
   TRACE_EVENT0("net", "GetHostname");
+  if (!FLAGS_host_for_tests.empty()) {
+    *hostname = FLAGS_host_for_tests;
+    return Status::OK();
+  }
   char name[HOST_NAME_MAX];
   if (gethostname(name, HOST_NAME_MAX) != 0) {
     const int err = errno;
@@ -460,6 +484,9 @@ Status GetFQDN(string* hostname) {
   TRACE_EVENT0("net", "GetFQDN");
   // Start with the non-qualified hostname
   RETURN_NOT_OK(GetHostname(hostname));
+  if (!FLAGS_host_for_tests.empty()) {
+    return Status::OK();
+  }
 
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
@@ -493,15 +520,15 @@ Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr) {
   return Status::OK();
 }
 
-Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp) {
-  string host;
-  if (addr.IsWildcard()) {
-    RETURN_NOT_OK(GetFQDN(&host));
-  } else {
-    host = addr.host();
+Status HostPortsFromAddrs(const vector<Sockaddr>& addrs, vector<HostPort>* hps) {
+  DCHECK(!addrs.empty());
+  for (const auto& addr : addrs) {
+    if (!addr.is_ip()) continue;
+    HostPort hp;
+    RETURN_NOT_OK_PREPEND(HostPortFromSockaddrReplaceWildcard(addr, &hp),
+                          "could not get RPC hostport");
+    hps->emplace_back(std::move(hp));
   }
-  hp->set_host(host);
-  hp->set_port(addr.port());
   return Status::OK();
 }
 

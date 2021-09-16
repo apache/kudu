@@ -51,6 +51,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/result_tracker.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -68,7 +69,6 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
@@ -1498,10 +1498,10 @@ TabletNumByDimensionMap TSTabletManager::GetNumLiveTabletsByDimension() const {
 void TSTabletManager::InitLocalRaftPeerPB() {
   DCHECK_EQ(state(), MANAGER_INITIALIZING);
   local_peer_pb_.set_permanent_uuid(fs_manager_->uuid());
-  Sockaddr addr = server_->first_rpc_address();
-  HostPort hp;
-  CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
-  *local_peer_pb_.mutable_last_known_addr() = HostPortToPB(hp);
+  vector<HostPort> hps;
+  CHECK_OK(server_->rpc_server()->GetBoundHostPorts(&hps));
+  DCHECK(!hps.empty());
+  *local_peer_pb_.mutable_last_known_addr() = HostPortToPB(hps[0]);
 }
 
 void TSTabletManager::TxnStalenessTrackerTask() {

@@ -247,6 +247,12 @@ Status RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
   return Status::OK();
 }
 
+Status RpcServer::GetBoundHostPorts(vector<HostPort>* hostports) const {
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK_PREPEND(GetBoundAddresses(&addrs), "could not get bound RPC addresses");
+  return HostPortsFromAddrs(addrs, hostports);
+}
+
 Status RpcServer::GetAdvertisedAddresses(vector<Sockaddr>* addresses) const {
   if (server_state_ != BOUND &&
       server_state_ != STARTED) {
@@ -257,6 +263,12 @@ Status RpcServer::GetAdvertisedAddresses(vector<Sockaddr>* addresses) const {
   }
   *addresses = rpc_advertised_addresses_;
   return Status::OK();
+}
+
+Status RpcServer::GetAdvertisedHostPorts(vector<HostPort>* hostports) const {
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK_PREPEND(GetAdvertisedAddresses(&addrs), "could not get bound RPC addresses");
+  return HostPortsFromAddrs(addrs, hostports);
 }
 
 const rpc::ServicePool* RpcServer::service_pool(const string& service_name) const {

@@ -190,12 +190,15 @@ Status GetFQDN(std::string* hostname);
 // list and logs a message in verbose mode.
 Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr);
 
-// Converts the given Sockaddr into a HostPort, substituting the FQDN
-// in the case that the provided address is the wildcard.
+// Converts the given list of Sockaddrs into a list of HostPorts that can be
+// accessed from other machines, i.e. wildcards are replaced with the FQDN, the
+// --host_for_tests gflag is honored with the expectation that 'addrs' is the
+// list of locally bound or advertised addresses.
 //
 // In the case of other addresses, the returned HostPort will contain just the
 // stringified form of the IP.
-Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp);
+Status HostPortsFromAddrs(const std::vector<Sockaddr>& addrs,
+                          std::vector<HostPort>* hps);
 
 // Try to run 'lsof' to determine which process is preventing binding to
 // the given 'addr'. If pids can be determined, outputs full 'ps' and 'pstree'

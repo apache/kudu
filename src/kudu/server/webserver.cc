@@ -421,6 +421,12 @@ Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
   return Status::OK();
 }
 
+Status Webserver::GetBoundHostPorts(std::vector<HostPort>* hostports) const {
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK_PREPEND(GetBoundAddresses(&addrs), "could not get bound webserver addresses");
+  return HostPortsFromAddrs(addrs, hostports);
+}
+
 Status Webserver::GetAdvertisedAddresses(vector<Sockaddr>* addresses) const {
   if (!context_) {
     return Status::ServiceUnavailable("Not started");
@@ -430,6 +436,12 @@ Status Webserver::GetAdvertisedAddresses(vector<Sockaddr>* addresses) const {
   }
   *addresses = webserver_advertised_addresses_;
   return Status::OK();
+}
+
+Status Webserver::GetAdvertisedHostPorts(vector<HostPort>* hostports) const {
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK_PREPEND(GetAdvertisedAddresses(&addrs), "could not get bound webserver addresses");
+  return HostPortsFromAddrs(addrs, hostports);
 }
 
 int Webserver::LogMessageCallbackStatic(const struct sq_connection* /*connection*/,

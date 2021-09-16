@@ -63,6 +63,7 @@
 #include "kudu/master/master_options.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/security/token.pb.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/ops/write_op.h"
@@ -80,7 +81,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 
@@ -1123,10 +1123,10 @@ Status SysCatalogTable::VisitTablets(TabletVisitor* visitor) {
 
 void SysCatalogTable::InitLocalRaftPeerPB() {
   local_peer_pb_.set_permanent_uuid(master_->fs_manager()->uuid());
-  Sockaddr addr = master_->first_rpc_address();
-  HostPort hp;
-  CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
-  *local_peer_pb_.mutable_last_known_addr() = HostPortToPB(hp);
+  vector<HostPort> hps;
+  CHECK_OK(master_->rpc_server()->GetBoundHostPorts(&hps));
+  CHECK(!hps.empty());
+  *local_peer_pb_.mutable_last_known_addr() = HostPortToPB(hps[0]);
 }
 
 } // namespace master

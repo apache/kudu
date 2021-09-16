@@ -35,6 +35,7 @@
 namespace kudu {
 
 class EasyJson;
+class HostPort;
 
 // Wrapper class for the Mongoose web server library. Clients may register callback
 // methods which produce output for a given URL path
@@ -56,10 +57,12 @@ class Webserver : public WebCallbackRegistry {
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.
   Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const WARN_UNUSED_RESULT;
+  Status GetBoundHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
 
   // Return the addresses that this server is advertising externally
   // to the world. Requires that the server has been Start()ed.
   Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
+  Status GetAdvertisedHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
 
   // Register a route 'path' to be rendered via template.
   // The appropriate template to use is determined by 'path'.
