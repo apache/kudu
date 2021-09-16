@@ -38,29 +38,7 @@ class Schema;
 // Partition keys are in the same encoded format as used by the Partition class.
 class PartitionPruner {
  public:
-
   PartitionPruner() = default;
-
-  struct RangeBounds {
-    RangeBounds() = default;
-
-    std::string lower;
-    std::string upper;
-  };
-
-  struct PartitionKeyRange {
-    PartitionKeyRange() = default;
-
-    std::string start;
-    std::string end;
-  };
-
-  struct RangeBoundsAndPartitionKeyRanges {
-    RangeBoundsAndPartitionKeyRanges() = default;
-
-    RangeBounds range_bounds;
-    std::vector<PartitionKeyRange> partition_key_ranges;
-  };
 
   // Initializes the partition pruner for a new scan. The scan spec should
   // already be optimized by the ScanSpec::Optimize method.
@@ -94,6 +72,21 @@ class PartitionPruner {
   std::string ToString(const Schema& schema, const PartitionSchema& partition_schema) const;
 
  private:
+  struct RangeBounds {
+    std::string lower;
+    std::string upper;
+  };
+
+  struct PartitionKeyRange {
+    std::string start;
+    std::string end;
+  };
+
+  struct RangeBoundsAndPartitionKeyRanges {
+    RangeBounds range_bounds;
+    std::vector<PartitionKeyRange> partition_key_ranges;
+  };
+
   // Search all combinations of in-list and equality predicates.
   // Return hash values bitset of these combinations.
   static std::vector<bool> PruneHashComponent(
@@ -103,12 +96,11 @@ class PartitionPruner {
 
   // Given the range bounds and the hash schema, constructs a set of partition
   // key ranges.
-  static void ConstructPartitionKeyRanges(
+  static std::vector<PartitionKeyRange> ConstructPartitionKeyRanges(
       const Schema& schema,
       const ScanSpec& scan_spec,
       const PartitionSchema::HashSchema& hash_schema,
-      const RangeBounds& range_bounds,
-      std::vector<PartitionKeyRange>* partition_key_ranges);
+      const RangeBounds& range_bounds);
 
   // A vector of a pair of lower and upper range bounds mapped to a
   // reverse sorted set of partition key ranges. Each partition key range within the set

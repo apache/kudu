@@ -221,12 +221,11 @@ vector<bool> PartitionPruner::PruneHashComponent(
   return hash_bucket_bitset;
 }
 
-void PartitionPruner::ConstructPartitionKeyRanges(
+vector<PartitionPruner::PartitionKeyRange> PartitionPruner::ConstructPartitionKeyRanges(
     const Schema& schema,
     const ScanSpec& scan_spec,
     const PartitionSchema::HashSchema& hash_schema,
-    const RangeBounds& range_bounds,
-    vector<PartitionKeyRange>* partition_key_ranges) {
+    const RangeBounds& range_bounds) {
   // Create the hash bucket portion of the partition key.
 
   // The list of hash buckets bitset per hash component
@@ -275,6 +274,7 @@ void PartitionPruner::ConstructPartitionKeyRanges(
   // Each hash component simply appends its bucket number to the
   // partition key ranges (possibly incrementing the upper bound by one bucket
   // number if this is the final constraint, see note 2 in the example above).
+  vector<PartitionKeyRange> partition_key_ranges(1);
   const KeyEncoder<string>& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
   for (size_t hash_idx = 0; hash_idx < constrained_index; ++hash_idx) {
     // This is the final partition key component if this is the final constrained
@@ -284,7 +284,7 @@ void PartitionPruner::ConstructPartitionKeyRanges(
     bool is_last = hash_idx + 1 == constrained_index && range_bounds.upper.empty();
 
     vector<PartitionKeyRange> new_partition_key_ranges;
-    for (const auto& partition_key_range : *partition_key_ranges) {
+    for (const auto& partition_key_range : partition_key_ranges) {
       const vector<bool>& buckets_bitset = hash_bucket_bitsets[hash_idx];
       for (uint32_t bucket = 0; bucket < buckets_bitset.size(); ++bucket) {
         if (!buckets_bitset[bucket]) {
@@ -298,31 +298,33 @@ void PartitionPruner::ConstructPartitionKeyRanges(
         new_partition_key_ranges.emplace_back(PartitionKeyRange{move(lower), move(upper)});
       }
     }
-    partition_key_ranges->swap(new_partition_key_ranges);
+    partition_key_ranges.swap(new_partition_key_ranges);
   }
 
   // Append the (possibly empty) range bounds to the partition key ranges.
-  for (auto& range : *partition_key_ranges) {
+  for (auto& range : partition_key_ranges) {
     range.start.append(range_bounds.lower);
     range.end.append(range_bounds.upper);
   }
 
   // Remove all partition key ranges past the scan spec's upper bound partition key.
   if (!scan_spec.exclusive_upper_bound_partition_key().empty()) {
-    for (auto range = partition_key_ranges->rbegin();
-         range != partition_key_ranges->rend();
+    for (auto range = partition_key_ranges.rbegin();
+         range != partition_key_ranges.rend();
          ++range) {
       if (!(*range).end.empty() &&
           scan_spec.exclusive_upper_bound_partition_key() >= (*range).end) {
         break;
       }
       if (scan_spec.exclusive_upper_bound_partition_key() <= (*range).start) {
-        partition_key_ranges->pop_back();
+        partition_key_ranges.pop_back();
       } else {
         (*range).end = scan_spec.exclusive_upper_bound_partition_key();
       }
     }
   }
+
+  return partition_key_ranges;
 }
 
 void PartitionPruner::Init(const Schema& schema,
@@ -425,10 +427,9 @@ void PartitionPruner::Init(const Schema& schema,
   // Store ranges and their corresponding hash schemas if they fall within
   // the range bounds specified by the scan.
   if (partition_schema.ranges_with_hash_schemas_.empty()) {
-    vector<PartitionKeyRange> partition_key_ranges(1);
-    ConstructPartitionKeyRanges(schema, scan_spec, partition_schema.hash_schema_,
-                                {scan_range_lower_bound, scan_range_upper_bound},
-                                &partition_key_ranges);
+    auto partition_key_ranges = ConstructPartitionKeyRanges(
+        schema, scan_spec, partition_schema.hash_schema_,
+        {scan_range_lower_bound, scan_range_upper_bound});
     // Reverse the order of the partition key ranges, so that it is efficient
     // to remove the partition key ranges from the vector in ascending order.
     range_bounds_to_partition_key_ranges_.resize(1);
@@ -475,16 +476,12 @@ void PartitionPruner::Init(const Schema& schema,
     // that falls within the scan's bounds.
     for (size_t i = 0; i < hash_schemas_per_range.size(); ++i) {
       const auto& hash_schema = hash_schemas_per_range[i];
-      vector<PartitionKeyRange> partition_key_ranges(1);
-      if (scan_range_lower_bound.empty() && scan_range_upper_bound.empty()) {
-        ConstructPartitionKeyRanges(schema, scan_spec, hash_schema,
-                                    {range_bounds[i].lower, range_bounds[i].upper},
-                                    &partition_key_ranges);
-      } else {
-        ConstructPartitionKeyRanges(schema, scan_spec, hash_schema,
-                                    {scan_range_lower_bound, scan_range_upper_bound},
-                                    &partition_key_ranges);
-      }
+      const auto bounds =
+          scan_range_lower_bound.empty() && scan_range_upper_bound.empty()
+          ? RangeBounds{range_bounds[i].lower, range_bounds[i].upper}
+          : RangeBounds{scan_range_lower_bound, scan_range_upper_bound};
+      auto partition_key_ranges = ConstructPartitionKeyRanges(
+          schema, scan_spec, hash_schema, bounds);
       auto& current_range = range_bounds_to_partition_key_ranges_[i];
       current_range.range_bounds = range_bounds[i];
       current_range.partition_key_ranges.resize(partition_key_ranges.size());
