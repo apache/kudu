@@ -584,7 +584,7 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source) {
       need_log = false;
     }
     SleepFor(MonoDelta::FromMilliseconds(poll_backoff_ms));
-    poll_backoff_ms = std::min(2 * poll_backoff_ms, 1000);
+    poll_backoff_ms = std::min(poll_backoff_ms << 1, 1000);
   } while (MonoTime::Now() < deadline);
 
   if (!s.ok()) {

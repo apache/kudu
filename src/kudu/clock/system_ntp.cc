@@ -126,7 +126,7 @@ Status SystemNtp::Init() {
   // The unit of the reported tolerance is ppm with 16-bit fractional part:
   // 65536 is 1 ppm (see http://man7.org/linux/man-pages/man3/ntp_adjtime.3.html
   // for details).
-  skew_ppm_ = t.tolerance / 65536;
+  skew_ppm_ = t.tolerance >> 16;
   VLOG(1) << "ntp_adjtime(): tolerance is " << t.tolerance;
 
   return Status::OK();
