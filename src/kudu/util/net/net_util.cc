@@ -55,6 +55,7 @@
 #include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/trace.h"
@@ -70,6 +71,12 @@ DEFINE_string(fail_dns_resolution_hostports, "",
               "Comma-separated list of hostports that fail dns resolution. If empty, fails all "
               "dns resolution attempts. Only takes effect if --fail_dns_resolution is 'true'.");
 TAG_FLAG(fail_dns_resolution_hostports, hidden);
+
+DEFINE_string(dns_addr_resolution_override, "",
+              "Comma-separated list of '='-separated pairs of hosts to addresses. The left-hand "
+              "side of the '=' is taken as a host, and will resolve to the right-hand side which "
+              "is expected to be a socket address with no port.");
+TAG_FLAG(dns_addr_resolution_override, hidden);
 
 using std::function;
 using std::string;
@@ -193,6 +200,22 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   TRACE_EVENT1("net", "HostPort::ResolveAddresses",
                "host", host_);
   TRACE_COUNTER_SCOPE_LATENCY_US("dns_us");
+  if (PREDICT_FALSE(!FLAGS_dns_addr_resolution_override.empty())) {
+    vector<string> hosts_and_addrs = Split(FLAGS_dns_addr_resolution_override, ",");
+    for (const auto& ha : hosts_and_addrs) {
+      vector<string> host_and_addr = Split(ha, "=");
+      if (host_and_addr.size() != 2) {
+        return Status::InvalidArgument("failed to parse injected address override");
+      }
+      if (iequals(host_and_addr[0], host_)) {
+        Sockaddr addr;
+        RETURN_NOT_OK_PREPEND(addr.ParseString(host_and_addr[1], port_),
+            "failed to parse injected address override");
+        *addresses = { addr };
+        return Status::OK();
+      }
+    }
+  }
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;

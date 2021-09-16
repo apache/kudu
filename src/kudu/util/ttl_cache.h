@@ -180,6 +180,10 @@ class TTLCache {
     return EntryHandle(DCHECK_NOTNULL(entry_ptr->val_ptr), std::move(h));
   }
 
+  void Erase(const K& key) {
+    cache_->Erase(key);
+  }
+
   // For the specified key, add an entry into the cache or replace already
   // existing one. The 'charge' parameter specifies the charge to associate
   // with the entry with regard to the cache's capacity. This method returns

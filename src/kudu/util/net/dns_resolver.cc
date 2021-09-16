@@ -92,6 +92,26 @@ void DnsResolver::ResolveAddressesAsync(const HostPort& hostport,
   }
 }
 
+void DnsResolver::RefreshAddressesAsync(const HostPort& hostport,
+                                        vector<Sockaddr>* addresses,
+                                        const StatusCallback& cb) {
+  if (PREDICT_TRUE(cache_)) {
+    cache_->Erase(hostport.host());
+  }
+  const auto s = pool_->Submit([=]() {
+    // Before performing the resolution, check if another task has already
+    // resolved it and cached a new entry.
+    if (this->GetCachedAddresses(hostport, addresses)) {
+      cb(Status::OK());
+      return;
+    }
+    this->DoResolutionCb(hostport, addresses, cb);
+  });
+  if (!s.ok()) {
+    cb(s);
+  }
+}
+
 Status DnsResolver::DoResolution(const HostPort& hostport,
                                  vector<Sockaddr>* addresses) {
   vector<Sockaddr> resolved_addresses;

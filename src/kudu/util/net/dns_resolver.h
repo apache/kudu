@@ -77,6 +77,12 @@ class DnsResolver {
                              std::vector<Sockaddr>* addresses,
                              const StatusCallback& cb);
 
+  // Like ResolveAddressesAsync(), but initially removes any existing cached
+  // entry, in favor of resolving the address explicitly.
+  void RefreshAddressesAsync(const HostPort& hostport,
+                             std::vector<Sockaddr>* addresses,
+                             const StatusCallback& cb);
+
  private:
   // The cache is keyed by the host part of the HostPort structure, and the
   // entry stores a vector of all Sockaddr structures produced by DNS resolution
