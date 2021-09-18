@@ -220,8 +220,12 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   TRACE_EVENT1("net", "HostPort::ResolveAddresses",
                "host", host_);
   TRACE_COUNTER_SCOPE_LATENCY_US("dns_us");
-  if (PREDICT_FALSE(!FLAGS_dns_addr_resolution_override.empty())) {
-    vector<string> hosts_and_addrs = Split(FLAGS_dns_addr_resolution_override, ",");
+  // NOTE: we use this instead of the FLAGS_... variant because this flag may be
+  // changed at runtime in tests and thus needs to be thread-safe.
+  const auto dns_addr_resolution_override_flag =
+      google::GetCommandLineFlagInfoOrDie("dns_addr_resolution_override");
+  if (PREDICT_FALSE(!dns_addr_resolution_override_flag.current_value.empty())) {
+    vector<string> hosts_and_addrs = Split(dns_addr_resolution_override_flag.current_value, ",");
     for (const auto& ha : hosts_and_addrs) {
       vector<string> host_and_addr = Split(ha, "=");
       if (host_and_addr.size() != 2) {

@@ -669,6 +669,12 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Return the options used to create the daemon.
   ExternalDaemonOptions opts() const { return opts_; }
 
+  void SetRpcBindAddress(HostPort rpc_hostport) {
+    DCHECK(!IsProcessAlive());
+    bound_rpc_ = std::move(rpc_hostport);
+    opts_.rpc_bind_address = bound_rpc_;
+  }
+
  protected:
   friend class RefCountedThreadSafe<ExternalDaemon>;
   virtual ~ExternalDaemon();

@@ -60,10 +60,11 @@ string MiniCluster::GetBindIpForDaemonWithType(DaemonType type,
 Status MiniCluster::ReserveDaemonSocket(DaemonType type,
                                         int index,
                                         BindMode bind_mode,
-                                        unique_ptr<Socket>* socket) {
+                                        unique_ptr<Socket>* socket,
+                                        uint16_t port) {
   string ip = GetBindIpForDaemonWithType(type, index, bind_mode);
   Sockaddr sock_addr;
-  RETURN_NOT_OK(sock_addr.ParseString(ip, 0));
+  RETURN_NOT_OK(sock_addr.ParseString(ip, port));
 
   unique_ptr<Socket> sock(new Socket());
   RETURN_NOT_OK(sock->Init(sock_addr.family(), 0));

@@ -48,9 +48,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
@@ -321,7 +319,8 @@ void Peer::StartElection() {
   // TODO(adar): lack of C++14 move capture makes for ugly code.
   RunLeaderElectionResponsePB* resp = resp_uniq.release();
   RpcController* controller = controller_uniq.release();
-  proxy_->StartElectionAsync(req, resp, controller, [resp, controller, peer_uuid]() {
+  auto s_this = shared_from_this();
+  proxy_->StartElectionAsync(req, resp, controller, [resp, controller, peer_uuid, s_this]() {
       unique_ptr<RunLeaderElectionResponsePB> r(resp);
       unique_ptr<RpcController> c(controller);
       string error_msg = Substitute("unable to start election on peer $0", peer_uuid);
@@ -588,14 +587,8 @@ Status CreateConsensusServiceProxyForHost(
     const shared_ptr<Messenger>& messenger,
     DnsResolver* dns_resolver,
     unique_ptr<ConsensusServiceProxy>* new_proxy) {
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(dns_resolver->ResolveAddresses(hostport, &addrs));
-  if (addrs.size() > 1) {
-    LOG(WARNING) << Substitute(
-        "Peer address '$0' resolves to $1 different addresses. "
-        "Using $2", hostport.ToString(), addrs.size(), addrs[0].ToString());
-  }
-  new_proxy->reset(new ConsensusServiceProxy(messenger, addrs[0], hostport.host()));
+  new_proxy->reset(new ConsensusServiceProxy(messenger, hostport, dns_resolver));
+  (*new_proxy)->Init();
   return Status::OK();
 }
 

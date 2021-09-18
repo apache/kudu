@@ -34,6 +34,7 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/util/kernel_stack_watchdog.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -227,6 +228,9 @@ void Proxy::AsyncRequest(const string& method,
     // TODO(awong): we should be more specific here -- consider having the RPC
     // layer set a flag in the controller that warrants a retry.
     if (PREDICT_FALSE(!controller->status().ok())) {
+      KLOG_EVERY_N_SECS(WARNING, 5)
+          << Substitute("Call had error, refreshing address and retrying: $0",
+                        controller->status().ToString());
       auto req_payload = controller->ReleaseRequestPayload();
       controller->Reset();
       RefreshDnsAndEnqueueRequest(method, std::move(req_payload), response, controller, callback);

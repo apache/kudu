@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -140,7 +141,8 @@ class MiniCluster {
   static Status ReserveDaemonSocket(DaemonType type,
                                     int index,
                                     BindMode bind_mode,
-                                    std::unique_ptr<Socket>* socket);
+                                    std::unique_ptr<Socket>* socket,
+                                    uint16_t port = 0);
 
  protected:
   // Return the IP address that the daemon with the given type and index will

@@ -30,10 +30,10 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -237,8 +237,10 @@ void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(
     consensus::ConsensusStatePB cstate;
     ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
     SCOPED_TRACE(cstate.DebugString());
-    ASSERT_FALSE(cstate.has_pending_config())
-        << "Leader should not have issued any config change";
+    // It's possible the leader only registered one replica as failed when
+    // sending its report to the master, so the master may have requested a
+    // change config request to add non-voter. Regardless, there should be no
+    // new committed config since a majority is down.
     ASSERT_EQ(cstate_initial.committed_config().opid_index(),
               cstate.committed_config().opid_index())
         << "Leader should not have issued any config change";
