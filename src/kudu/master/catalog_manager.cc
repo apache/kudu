@@ -6485,8 +6485,9 @@ void TableInfo::UnregisterMetrics() {
 void TableInfo::UpdateMetrics(const string& tablet_id,
                               const tablet::ReportedTabletStatsPB& old_stats,
                               const tablet::ReportedTabletStatsPB& new_stats) {
-  if (!metrics_) return;
-
+  if (!metrics_) {
+    return;
+  }
   if (PREDICT_TRUE(!metrics_->on_disk_size->IsInvisible())) {
     metrics_->on_disk_size->IncrementBy(
         static_cast<int64_t>(new_stats.on_disk_size()) -
@@ -6505,7 +6506,7 @@ void TableInfo::UpdateMetrics(const string& tablet_id,
         {
           std::lock_guard<rw_spinlock> l(lock_);
           for (const auto& e : tablet_map_) {
-            if (e.first != tablet_id) {
+            if (e.second->id() != tablet_id) {
               on_disk_size += e.second->GetStats().on_disk_size();
             }
           }
@@ -6539,7 +6540,7 @@ void TableInfo::UpdateMetrics(const string& tablet_id,
         {
           std::lock_guard<rw_spinlock> l(lock_);
           for (const auto& e : tablet_map_) {
-            if (e.first != tablet_id) {
+            if (e.second->id() != tablet_id) {
               live_row_count += e.second->GetStats().live_row_count();
             }
           }
