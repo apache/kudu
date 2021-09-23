@@ -16,8 +16,10 @@
 // under the License.
 #pragma once
 
-#include <memory>
 #include <stddef.h>
+#include <stdint.h>
+
+#include <memory>
 #include <string>
 
 #include <glog/logging.h>
@@ -225,6 +227,9 @@ class RpcContext {
 
   // Returns this call's request id, if it is set.
   const rpc::RequestIdPB* request_id() const;
+
+  // Returns this call's call_id.
+  int32_t call_id() const;
 
   // Returns the size of the transfer buffer that backs 'call_'. If the
   // transfer buffer no longer exists (e.g. GetTransferSize() is called after

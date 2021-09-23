@@ -1580,6 +1580,32 @@ TEST_P(TestRpc, TestPerformanceBySocketType) {
   }
 }
 
+// Test that call_id is returned in call response and accessible through RpcController.
+TEST_P(TestRpc, TestCallId) {
+  // Set up server.
+  Sockaddr server_addr = bind_addr();
+  ASSERT_OK(StartTestServer(&server_addr, enable_ssl()));
+
+  // Set up client.
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("Client", &client_messenger, 1, enable_ssl()));
+  Proxy p(client_messenger, server_addr, kRemoteHostName,
+          GenericCalculatorService::static_service_name());
+
+  for (int i = 0; i < 10; i++) {
+    AddRequestPB req;
+    req.set_x(rand());
+    req.set_y(rand());
+    RpcController controller;
+    controller.set_timeout(MonoDelta::FromMilliseconds(10000));
+
+    AddResponsePB resp;
+    ASSERT_OK(p.SyncRequest(GenericCalculatorService::kAddMethodName,
+      req, &resp, &controller));
+    ASSERT_EQ(req.x() + req.y(), resp.result());
+    ASSERT_EQ(i, controller.call_id());
+  }
+}
 
 } // namespace rpc
 } // namespace kudu

@@ -209,6 +209,12 @@ class RpcController {
     credentials_policy_ = policy;
   }
 
+  // Returns the call_id of this RPC call.
+  // Should only be called after the call's Response has been received (that is, when
+  // Connection::HandleCallResponse() has been executed over 'call_'), but the
+  // controller has not been Reset().
+  int32_t call_id() const;
+
   // Fills the 'sidecar' parameter with the slice pointing to the i-th
   // sidecar upon success.
   //

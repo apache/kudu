@@ -103,6 +103,10 @@ const ErrorStatusPB* RpcController::error_response() const {
   return nullptr;
 }
 
+int32_t RpcController::call_id() const {
+  return call_->call_response_->call_id();
+}
+
 Status RpcController::GetInboundSidecar(int idx, Slice* sidecar) const {
   return call_->call_response_->GetSidecar(idx, sidecar);
 }

@@ -143,6 +143,10 @@ const rpc::RequestIdPB* RpcContext::request_id() const {
   return call_->header().has_request_id() ? &call_->header().request_id() : nullptr;
 }
 
+int32_t RpcContext::call_id() const {
+  return call_->call_id();
+}
+
 size_t RpcContext::GetTransferSize() const {
   return call_->GetTransferSize();
 }
