@@ -64,7 +64,7 @@ namespace rpc {
 class MultiThreadedRpcTest : public RpcTestBase {
  public:
   // Make a single RPC call.
-  void SingleCall(Sockaddr server_addr, const char* method_name,
+  void SingleCall(Sockaddr server_addr, const string& method_name,
                   Status* result, CountDownLatch* latch) {
     LOG(INFO) << "Connecting to " << server_addr.ToString();
     shared_ptr<Messenger> client_messenger;
@@ -76,7 +76,7 @@ class MultiThreadedRpcTest : public RpcTestBase {
   }
 
   // Make RPC calls until we see a failure.
-  void HammerServer(Sockaddr server_addr, const char* method_name,
+  void HammerServer(Sockaddr server_addr, const string& method_name,
                     Status* last_result) {
     shared_ptr<Messenger> client_messenger;
     CHECK_OK(CreateMessenger("ClientHS", &client_messenger));
@@ -84,7 +84,7 @@ class MultiThreadedRpcTest : public RpcTestBase {
   }
 
   void HammerServerWithMessenger(
-      Sockaddr server_addr, const char* method_name, Status* last_result,
+      Sockaddr server_addr, const string& method_name, Status* last_result,
       const shared_ptr<Messenger>& messenger) {
     LOG(INFO) << "Connecting to " << server_addr.ToString();
     Proxy p(messenger, server_addr, server_addr.host(),

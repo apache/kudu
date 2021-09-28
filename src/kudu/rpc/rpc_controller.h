@@ -42,6 +42,7 @@ class ErrorStatusPB;
 class Messenger;
 class OutboundCall;
 class RequestIdPB;
+class RequestPayload;
 class RpcSidecar;
 
 // Authentication credentials policy for outbound RPCs. Some RPC methods
@@ -140,6 +141,21 @@ class RpcController {
   // A request id allows the server to identify each request sent by the client uniquely,
   // in some cases even when sent to multiple servers, enabling exactly once semantics.
   void SetRequestIdPB(std::unique_ptr<RequestIdPB> request_id);
+
+  // Releases the outbound sidecars added to this controller. This is useful if
+  // callers want to create a request payload for a request.
+  std::vector<std::unique_ptr<RpcSidecar>> ReleaseOutboundSidecars();
+
+  // Frees the outbound sidecars added to this controller. OutboundCalls may
+  // call this before running the user-provided callback to ensure the state is
+  // freed before the callback is run. However, certain usages of OutboundCall
+  // warrants delaying the freeing until during the callback.
+  void FreeOutboundSidecars();
+
+  // Releases the request payload owned by this controller. This is useful if
+  // callers want to reuse a request payload in another attempt of a call, as
+  // it allows callers to transfer ownership to a new outbound call.
+  std::unique_ptr<RequestPayload> ReleaseRequestPayload();
 
   // Returns whether a request id has been set on RPC header.
   bool has_request_id() const;
@@ -273,6 +289,7 @@ class RpcController {
   // Once the call is sent, it is tracked here.
   std::shared_ptr<OutboundCall> call_;
 
+  // Owned by the controller until released and taken by a call.
   std::vector<std::unique_ptr<RpcSidecar>> outbound_sidecars_;
 
   // Total size of sidecars in outbound_sidecars_. This is limited to a maximum

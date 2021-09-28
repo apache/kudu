@@ -168,6 +168,20 @@ void RpcController::SetRequestParam(const google::protobuf::Message& req) {
   call_->SetRequestPayload(req, std::move(outbound_sidecars_));
 }
 
+void RpcController::FreeOutboundSidecars() {
+  outbound_sidecars_total_bytes_ = 0;
+  call_->FreeSidecars();
+}
+
+std::vector<unique_ptr<RpcSidecar>> RpcController::ReleaseOutboundSidecars() {
+  outbound_sidecars_total_bytes_ = 0;
+  return std::move(outbound_sidecars_);
+}
+
+unique_ptr<RequestPayload> RpcController::ReleaseRequestPayload() {
+  return DCHECK_NOTNULL(call_)->ReleaseRequestPayload();
+}
+
 void RpcController::Cancel() {
   DCHECK(call_);
   DCHECK(messenger_);

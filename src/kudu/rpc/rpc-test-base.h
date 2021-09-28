@@ -91,12 +91,12 @@ namespace rpc {
 class GenericCalculatorService : public ServiceIf {
  public:
   static const std::string kFullServiceName;
-  static const char *kAddMethodName;
-  static const char *kSleepMethodName;
-  static const char *kSleepWithSidecarMethodName;
-  static const char *kPushStringsMethodName;
-  static const char *kSendTwoStringsMethodName;
-  static const char *kAddExactlyOnce;
+  static const std::string kAddMethodName;
+  static const std::string kSleepMethodName;
+  static const std::string kSleepWithSidecarMethodName;
+  static const std::string kPushStringsMethodName;
+  static const std::string kSendTwoStringsMethodName;
+  static const std::string kAddExactlyOnce;
 
   static const char* kFirstString;
   static const char* kSecondString;
@@ -400,13 +400,14 @@ class CalculatorService : public CalculatorServiceIf {
 
 };
 
-const std::string GenericCalculatorService::kFullServiceName = "kudu.rpc.GenericCalculatorService";
-const char *GenericCalculatorService::kAddMethodName = "Add";
-const char *GenericCalculatorService::kSleepMethodName = "Sleep";
-const char *GenericCalculatorService::kSleepWithSidecarMethodName = "SleepWithSidecar";
-const char *GenericCalculatorService::kPushStringsMethodName = "PushStrings";
-const char *GenericCalculatorService::kSendTwoStringsMethodName = "SendTwoStrings";
-const char *GenericCalculatorService::kAddExactlyOnce = "AddExactlyOnce";
+const std::string GenericCalculatorService::kFullServiceName =
+    "kudu.rpc.GenericCalculatorService";
+const std::string GenericCalculatorService::kAddMethodName = "Add";
+const std::string GenericCalculatorService::kSleepMethodName = "Sleep";
+const std::string GenericCalculatorService::kSleepWithSidecarMethodName = "SleepWithSidecar";
+const std::string GenericCalculatorService::kPushStringsMethodName = "PushStrings";
+const std::string GenericCalculatorService::kSendTwoStringsMethodName = "SendTwoStrings";
+const std::string GenericCalculatorService::kAddExactlyOnce = "AddExactlyOnce";
 
 const char *GenericCalculatorService::kFirstString =
     "1111111111111111111111111111111111111111111111111111111111";
@@ -468,7 +469,7 @@ class RpcTestBase : public KuduTest {
     return bld.Build(messenger);
   }
 
-  static Status DoTestSyncCall(Proxy* p, const char *method,
+  static Status DoTestSyncCall(Proxy* p, const std::string& method,
                                CredentialsPolicy policy = CredentialsPolicy::ANY_CREDENTIALS) {
     AddRequestPB req;
     req.set_x(rand());

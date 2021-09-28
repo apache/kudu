@@ -57,6 +57,43 @@ class DumpConnectionsRequestPB;
 class RpcCallInProgressPB;
 class RpcController;
 
+// Encapsulates the request payload being sent by a call.
+class RequestPayload {
+ public:
+  // Creates a payload for the given remote method, serializing the given
+  // request, taking ownership of the sidecars, and populating the header as
+  // necessary.
+  static std::unique_ptr<RequestPayload> CreateRequestPayload(
+      const RemoteMethod& remote_method,
+      const google::protobuf::Message& req,
+      std::vector<std::unique_ptr<RpcSidecar>>&& sidecars);
+
+  // Creates an "empty" payload for the given remote method. Callers should
+  // also call PopulateRequestPayload() to form a usable payload.
+  explicit RequestPayload(const RemoteMethod& remote_method);
+
+  // Serializes the given 'req' and takes ownership of 'sidecars', populating
+  // the header as necessary.
+  void PopulateRequestPayload(const google::protobuf::Message& req,
+      std::vector<std::unique_ptr<RpcSidecar>>&& sidecars);
+ private:
+  friend class OutboundCall;
+
+  // The RPC header.
+  // Parts of this (eg the call ID) are only assigned once this request has
+  // been passed to the reactor thread and assigned a connection. Calls should
+  // re-assign the call ID if this payload is used in multiple calls (e.g.
+  // retries after re-resolving the address).
+  RequestHeader header_;
+  faststring header_buf_;
+  faststring request_buf_;
+  std::vector<std::unique_ptr<RpcSidecar>> sidecars_;
+
+  // Total size in bytes of all sidecars in 'sidecars_'. Set in SetRequestPayload().
+  // This cannot exceed TransferLimits::kMaxTotalSidecarBytes.
+  int32_t sidecar_byte_size_ = -1;
+};
+
 // Tracks the status of a call on the client side.
 //
 // This is an internal-facing class -- clients interact with the
@@ -80,6 +117,20 @@ class OutboundCall {
     REMOTE_CALL,
   };
 
+  // Behavior when running the callback with regards to freeing resources. Some
+  // callers may expect the call itself free sidecars upon completion, while
+  // others may attempt to reuse the sidecars in another call attempt upon
+  // failure.
+  enum class CallbackBehavior {
+    kFreeSidecars,
+    kDontFreeSidecars,
+  };
+
+  OutboundCall(const ConnectionId& conn_id, const RemoteMethod& remote_method,
+               std::unique_ptr<RequestPayload> req_payload, CallbackBehavior cb_behavior,
+               google::protobuf::Message* response_storage,
+               RpcController* controller, ResponseCallback callback);
+
   OutboundCall(const ConnectionId& conn_id, const RemoteMethod& remote_method,
                google::protobuf::Message* response_storage,
                RpcController* controller, ResponseCallback callback);
@@ -97,8 +148,8 @@ class OutboundCall {
   // Assign the call ID for this call. This is called from the reactor
   // thread once a connection has been assigned. Must only be called once.
   void set_call_id(int32_t call_id) {
-    DCHECK_EQ(header_.call_id(), kInvalidCallId) << "Already has a call ID";
-    header_.set_call_id(call_id);
+    DCHECK_EQ(payload_->header_.call_id(), kInvalidCallId) << "Already has a call ID";
+    payload_->header_.set_call_id(call_id);
   }
 
   // Serialize the call for the wire. Requires that SetRequestPayload()
@@ -148,6 +199,12 @@ class OutboundCall {
     return required_rpc_features_;
   }
 
+  std::unique_ptr<RequestPayload> ReleaseRequestPayload();
+
+  void FreeSidecars() {
+    DCHECK_NOTNULL(payload_)->sidecars_.clear();
+  }
+
   std::string ToString() const;
 
   void DumpPB(const DumpConnectionsRequestPB& req, RpcCallInProgressPB* resp);
@@ -164,12 +221,12 @@ class OutboundCall {
 
   // Return true if a call ID has been assigned to this call.
   bool call_id_assigned() const {
-    return header_.call_id() != kInvalidCallId;
+    return payload_->header_.call_id() != kInvalidCallId;
   }
 
   int32_t call_id() const {
     DCHECK(call_id_assigned());
-    return header_.call_id();
+    return payload_->header_.call_id();
   }
 
   // Returns true if cancellation has been requested. Must be called from
@@ -227,6 +284,16 @@ class OutboundCall {
   // This will only be non-NULL if status().IsRemoteError().
   const ErrorStatusPB* error_pb() const;
 
+  // Call the user-provided callback. Note that entries in 'sidecars_' are cleared
+  // prior to invoking the callback so the client can assume that the call doesn't
+  // hold references to outbound sidecars.
+  void CallCallback();
+
+  // The behavior defining whether to free sidecars upon calling the callback.
+  // Certain callbacks may perfer freeing the sidecars manually from within the
+  // callback.
+  const CallbackBehavior cb_behavior_;
+
   // Lock for state_ status_, error_pb_ fields, since they
   // may be mutated by the reactor thread while the client thread
   // reads them.
@@ -234,16 +301,6 @@ class OutboundCall {
   State state_;
   Status status_;
   std::unique_ptr<ErrorStatusPB> error_pb_;
-
-  // Call the user-provided callback. Note that entries in 'sidecars_' are cleared
-  // prior to invoking the callback so the client can assume that the call doesn't
-  // hold references to outbound sidecars.
-  void CallCallback();
-
-  // The RPC header.
-  // Parts of this (eg the call ID) are only assigned once this call has been
-  // passed to the reactor thread and assigned a connection.
-  RequestHeader header_;
 
   // The remote method being called.
   RemoteMethod remote_method_;
@@ -259,19 +316,11 @@ class OutboundCall {
   google::protobuf::Message* response_;
 
   // Buffers for storing segments of the wire-format request.
-  faststring header_buf_;
-  faststring request_buf_;
+  std::unique_ptr<RequestPayload> payload_;
 
   // Once a response has been received for this call, contains that response.
   // Otherwise NULL.
   std::unique_ptr<CallResponse> call_response_;
-
-  // All sidecars to be sent with this call.
-  std::vector<std::unique_ptr<RpcSidecar>> sidecars_;
-
-  // Total size in bytes of all sidecars in 'sidecars_'. Set in SetRequestPayload().
-  // This cannot exceed TransferLimits::kMaxTotalSidecarBytes.
-  int32_t sidecar_byte_size_ = -1;
 
   // True if cancellation was requested on this call.
   bool cancellation_requested_;

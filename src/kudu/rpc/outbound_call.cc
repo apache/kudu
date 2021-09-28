@@ -81,21 +81,24 @@ static const double kMicrosPerSecond = 1000000.0;
 
 OutboundCall::OutboundCall(const ConnectionId& conn_id,
                            const RemoteMethod& remote_method,
+                           unique_ptr<RequestPayload> payload,
+                           CallbackBehavior cb_behavior,
                            google::protobuf::Message* response_storage,
                            RpcController* controller,
                            ResponseCallback callback)
-    : state_(READY),
+    : cb_behavior_(cb_behavior),
+      state_(READY),
       remote_method_(remote_method),
       conn_id_(conn_id),
       callback_(std::move(callback)),
       controller_(DCHECK_NOTNULL(controller)),
       response_(DCHECK_NOTNULL(response_storage)),
+      payload_(std::move(payload)),
       cancellation_requested_(false) {
-  DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_)
-           << " and RPC timeout: "
-           << (controller->timeout().Initialized() ? controller->timeout().ToString() : "none");
-  header_.set_call_id(kInvalidCallId);
-  remote_method.ToPB(header_.mutable_remote_method());
+  DVLOG(4) << Substitute("OutboundCall $0 constructed with the state_: $1 and RPC timeout: $2",
+      this, StateName(state_),
+      (controller->timeout().Initialized() ? controller->timeout().ToString() : "none"));
+  payload_->header_.set_call_id(kInvalidCallId);
   start_time_ = MonoTime::Now();
 
   if (!controller_->required_server_features().empty()) {
@@ -103,8 +106,19 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
   }
 
   if (controller_->request_id_) {
-    header_.set_allocated_request_id(controller_->request_id_.release());
+    payload_->header_.set_allocated_request_id(controller_->request_id_.release());
   }
+}
+
+
+OutboundCall::OutboundCall(const ConnectionId& conn_id,
+                           const RemoteMethod& remote_method,
+                           google::protobuf::Message* response_storage,
+                           RpcController* controller,
+                           ResponseCallback callback)
+  : OutboundCall(conn_id, remote_method, std::make_unique<RequestPayload>(remote_method),
+                 CallbackBehavior::kFreeSidecars, response_storage, controller,
+                 std::move(callback)) {
 }
 
 OutboundCall::~OutboundCall() {
@@ -113,31 +127,45 @@ OutboundCall::~OutboundCall() {
 }
 
 void OutboundCall::SerializeTo(TransferPayload* slices) {
-  DCHECK_LT(0, request_buf_.size())
+  DCHECK_LT(0, payload_->request_buf_.size())
       << "Must call SetRequestPayload() before SerializeTo()";
 
-  const MonoDelta &timeout = controller_->timeout();
-  if (timeout.Initialized()) {
-    header_.set_timeout_millis(timeout.ToMilliseconds());
+  if (controller_->timeout().Initialized()) {
+    payload_->header_.set_timeout_millis(controller_->timeout().ToMilliseconds());
   }
 
   for (uint32_t feature : controller_->required_server_features()) {
-    header_.add_required_feature_flags(feature);
+    payload_->header_.add_required_feature_flags(feature);
   }
 
-  DCHECK_LE(0, sidecar_byte_size_);
+  DCHECK_LE(0, payload_->sidecar_byte_size_);
   serialization::SerializeHeader(
-      header_, sidecar_byte_size_ + request_buf_.size(), &header_buf_);
+      payload_->header_, payload_->sidecar_byte_size_ + payload_->request_buf_.size(),
+      &payload_->header_buf_);
 
   slices->clear();
-  slices->push_back(header_buf_);
-  slices->push_back(request_buf_);
-  for (auto& sidecar : sidecars_) {
+  slices->push_back(payload_->header_buf_);
+  slices->push_back(payload_->request_buf_);
+  for (auto& sidecar : payload_->sidecars_) {
     sidecar->AppendSlices(slices);
   }
 }
 
-void OutboundCall::SetRequestPayload(const Message& req,
+RequestPayload::RequestPayload(const RemoteMethod& remote_method) {
+  header_.set_call_id(kInvalidCallId);
+  remote_method.ToPB(header_.mutable_remote_method());
+}
+
+unique_ptr<RequestPayload> RequestPayload::CreateRequestPayload(
+    const RemoteMethod& remote_method,
+    const Message& req,
+    vector<unique_ptr<RpcSidecar>>&& sidecars) {
+  auto payload = std::make_unique<RequestPayload>(remote_method);
+  payload->PopulateRequestPayload(req, std::move(sidecars));
+  return payload;
+}
+
+void RequestPayload::PopulateRequestPayload(const Message& req,
     vector<unique_ptr<RpcSidecar>>&& sidecars) {
   DCHECK_EQ(-1, sidecar_byte_size_);
 
@@ -157,6 +185,11 @@ void OutboundCall::SetRequestPayload(const Message& req,
   }
 
   serialization::SerializeMessage(req, &request_buf_, sidecar_byte_size_, true);
+}
+
+void OutboundCall::SetRequestPayload(const Message& req,
+                                     vector<unique_ptr<RpcSidecar>>&& sidecars) {
+  DCHECK_NOTNULL(payload_)->PopulateRequestPayload(req, std::move(sidecars));
 }
 
 Status OutboundCall::status() const {
@@ -266,7 +299,9 @@ void OutboundCall::Cancel() {
 
 void OutboundCall::CallCallback() {
   // Clear references to outbound sidecars before invoking callback.
-  sidecars_.clear();
+  if (cb_behavior_ == CallbackBehavior::kFreeSidecars) {
+    FreeSidecars();
+  }
 
   int64_t start_cycles = CycleClock::Now();
   {
@@ -317,6 +352,10 @@ void OutboundCall::SetResponse(unique_ptr<CallResponse> resp) {
   }
 }
 
+unique_ptr<RequestPayload> OutboundCall::ReleaseRequestPayload() {
+  return std::move(payload_);
+}
+
 void OutboundCall::SetQueued() {
   set_state(ON_OUTBOUND_QUEUE);
 }
@@ -333,9 +372,9 @@ void OutboundCall::SetSent() {
   // behavior is a lot more efficient if memory is freed from the same thread
   // which allocated it -- this lets it keep to thread-local operations instead
   // of taking a mutex to put memory back on the global freelist.
-  delete [] header_buf_.release();
+  delete [] payload_->header_buf_.release();
 
-  // request_buf_ is also done being used here, but since it was allocated by
+  // payload_ is also done being used here, but since it was allocated by
   // the caller thread, we would rather let that thread free it whenever it
   // deletes the RpcController.
 
@@ -452,7 +491,7 @@ string OutboundCall::ToString() const {
 void OutboundCall::DumpPB(const DumpConnectionsRequestPB& req,
                           RpcCallInProgressPB* resp) {
   std::lock_guard<simple_spinlock> l(lock_);
-  resp->mutable_header()->CopyFrom(header_);
+  resp->mutable_header()->CopyFrom(payload_->header_);
   resp->set_micros_elapsed((MonoTime::Now() - start_time_).ToMicroseconds());
 
   switch (state_) {

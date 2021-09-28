@@ -18,6 +18,7 @@
 #include "kudu/rpc/proxy.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -29,6 +30,7 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rtest.pb.h"
@@ -37,6 +39,7 @@
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/notification.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -60,6 +63,13 @@ constexpr uint16_t kPort = 1111;
 constexpr const char* kFakeHost = "fakehost";
 const HostPort kFakeHostPort(kFakeHost, kPort);
 
+void SendRequestAsync(const ResponseCallback& cb,
+                      Proxy* p, RpcController* controller, SleepResponsePB* resp) {
+  SleepRequestPB req;
+  req.set_sleep_micros(100 * 1000); // 100ms
+  p->AsyncRequest(GenericCalculatorService::kSleepMethodName, req, resp, controller, cb);
+}
+
 Status SendRequest(Proxy* p) {
   SleepRequestPB req;
   req.set_sleep_micros(100 * 1000); // 100ms
@@ -73,6 +83,44 @@ Status SendRequest(Proxy* p) {
 
 class RpcProxyTest : public RpcTestBase {
 };
+
+TEST_F(RpcProxyTest, TestProxyRetriesWhenRequestLeavesScope) {
+  DnsResolver dns_resolver(1, 1024 * 1024);
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("client_messenger", &client_messenger));
+
+  // We're providing a fake hostport to encourage retries of DNS resolution,
+  // which will attempt to send the request payload after the request protobuf
+  // has already left scope.
+  Proxy p(client_messenger, kFakeHostPort, &dns_resolver,
+          CalculatorService::static_service_name());
+  p.Init();
+
+  SleepResponsePB resp;
+  {
+    Notification note;
+    RpcController controller;
+    controller.set_timeout(MonoDelta::FromMilliseconds(10000));
+    SendRequestAsync([&note] () { note.Notify(); }, &p, &controller, &resp);
+    note.WaitForNotification();
+    Status s = controller.status();
+    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  }
+
+  // Now try a successful call.
+  string ip = GetBindIpForDaemon(/*index*/2, kDefaultBindMode);
+  Sockaddr addr;
+  ASSERT_OK(addr.ParseString(ip, kPort));
+  ASSERT_OK(StartTestServerWithGeneratedCode(&addr));
+  FLAGS_dns_addr_resolution_override = Substitute("$0=$1", kFakeHost, addr.ToString());
+
+  Notification note;
+  RpcController controller;
+  controller.set_timeout(MonoDelta::FromMilliseconds(10000));
+  SendRequestAsync([&note] () { note.Notify(); }, &p, &controller, &resp);
+  note.WaitForNotification();
+  ASSERT_OK(controller.status());
+}
 
 // Test that proxies initialized with a DnsResolver return errors when
 // receiving a non-transient error.

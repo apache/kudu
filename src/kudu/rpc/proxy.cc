@@ -33,6 +33,7 @@
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/user_credentials.h"
+#include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -132,16 +133,16 @@ Proxy::~Proxy() {
 }
 
 void Proxy::EnqueueRequest(const string& method,
-                           const google::protobuf::Message& req,
+                           unique_ptr<RequestPayload> req_payload,
                            google::protobuf::Message* response,
                            RpcController* controller,
-                           const ResponseCallback& callback) const {
+                           const ResponseCallback& callback,
+                           OutboundCall::CallbackBehavior cb_behavior) const {
   ConnectionId connection = conn_id();
   DCHECK(connection.remote().is_initialized());
-  RemoteMethod remote_method(service_name_, method);
   controller->call_.reset(
-      new OutboundCall(connection, remote_method, response, controller, callback));
-  controller->SetRequestParam(req);
+      new OutboundCall(connection, {service_name_, method}, std::move(req_payload),
+                       cb_behavior, response, controller, callback));
   controller->SetMessenger(messenger_.get());
 
   // If this fails to queue, the callback will get called immediately
@@ -150,14 +151,16 @@ void Proxy::EnqueueRequest(const string& method,
 }
 
 void Proxy::RefreshDnsAndEnqueueRequest(const std::string& method,
-                                        const google::protobuf::Message& req,
+                                        unique_ptr<RequestPayload> req_payload,
                                         google::protobuf::Message* response,
                                         RpcController* controller,
                                         const ResponseCallback& callback) {
   DCHECK(!controller->call_);
   vector<Sockaddr>* addrs = new vector<Sockaddr>();
   DCHECK_NOTNULL(dns_resolver_)->RefreshAddressesAsync(hp_, addrs,
-      [this, &req, &method, callback, response, controller, addrs] (const Status& s) {
+      [this, req_raw = req_payload.release(),
+       &method, callback, response, controller, addrs] (const Status& s) mutable {
+    unique_ptr<RequestPayload> req_payload(req_raw);
     unique_ptr<vector<Sockaddr>> unique_addrs(addrs);
     // If we fail to resolve the address, treat the call as failed.
     if (!s.ok() || addrs->empty()) {
@@ -178,7 +181,10 @@ void Proxy::RefreshDnsAndEnqueueRequest(const std::string& method,
       std::lock_guard<simple_spinlock> l(lock_);
       conn_id_.set_remote(*addr);
     }
-    EnqueueRequest(method, req, response, controller, callback);
+    // NOTE: we don't expect the user-provided callback to free sidecars, so
+    // make sure the outbound call frees it for us.
+    EnqueueRequest(method, std::move(req_payload), response, controller, callback,
+                   OutboundCall::CallbackBehavior::kFreeSidecars);
   });
 }
 
@@ -189,8 +195,16 @@ void Proxy::AsyncRequest(const string& method,
                          const ResponseCallback& callback) {
   CHECK(!controller->call_) << "Controller should be reset";
   base::subtle::NoBarrier_Store(&is_started_, true);
+  // TODO(awong): it would be great if we didn't have to heap allocate the
+  // payload.
+  auto req_payload = RequestPayload::CreateRequestPayload(
+      RemoteMethod{service_name_, method},
+      req, controller->ReleaseOutboundSidecars());
   if (!dns_resolver_) {
-    EnqueueRequest(method, req, response, controller, callback);
+    // NOTE: we don't expect the user-provided callback to free sidecars, so
+    // make sure the outbound call frees it for us.
+    EnqueueRequest(method, std::move(req_payload), response, controller, callback,
+                   OutboundCall::CallbackBehavior::kFreeSidecars);
     return;
   }
 
@@ -202,26 +216,32 @@ void Proxy::AsyncRequest(const string& method,
     remote_initialized = conn_id_.remote().is_initialized();
   }
   if (!remote_initialized) {
-    RefreshDnsAndEnqueueRequest(method, req, response, controller, callback);
+    RefreshDnsAndEnqueueRequest(method, std::move(req_payload), response, controller, callback);
     return;
   }
 
-  // Otherwise, just enqueue the request, but retry if there's a network error,
-  // since it's possible the physical address of the host was changed. We only
-  // retry once more before calling the callback.
-  auto refresh_dns_and_cb = [this, &req, &method,
-                             callback, response, controller] () {
+  // Otherwise, just enqueue the request, but retry if there's an error, since
+  // it's possible the physical address of the host was changed. We only retry
+  // once more before calling the callback.
+  auto refresh_dns_and_cb = [this, &method, callback, response, controller] () {
     // TODO(awong): we should be more specific here -- consider having the RPC
     // layer set a flag in the controller that warrants a retry.
     if (PREDICT_FALSE(!controller->status().ok())) {
+      auto req_payload = controller->ReleaseRequestPayload();
       controller->Reset();
-      RefreshDnsAndEnqueueRequest(method, req, response, controller, callback);
+      RefreshDnsAndEnqueueRequest(method, std::move(req_payload), response, controller, callback);
       return;
     }
     // For any other status, OK or otherwise, just run the callback.
+    controller->FreeOutboundSidecars();
+    SCOPED_WATCH_STACK(100);
     callback();
   };
-  EnqueueRequest(method, req, response, controller, refresh_dns_and_cb);
+  // Since we may end up using the request payload in the event of a retry,
+  // ensure the outbound call doesn't free the sidecars, and instead free
+  // manually from within our callback.
+  EnqueueRequest(method, std::move(req_payload), response, controller, refresh_dns_and_cb,
+                 OutboundCall::CallbackBehavior::kDontFreeSidecars);
 }
 
 

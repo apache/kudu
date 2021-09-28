@@ -24,6 +24,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/rpc/connection_id.h"
+#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/net/net_util.h"
@@ -148,7 +149,7 @@ class Proxy {
   // Asynchronously refreshes the DNS, enqueueing the given request upon
   // success, or failing the call and calling the callback upon failure.
   void RefreshDnsAndEnqueueRequest(const std::string& method,
-                                   const google::protobuf::Message& req,
+                                   std::unique_ptr<RequestPayload> req_payload,
                                    google::protobuf::Message* response,
                                    RpcController* controller,
                                    const ResponseCallback& callback);
@@ -156,10 +157,11 @@ class Proxy {
   // Queues the given request as an outbound call using the given messenger,
   // controller, and response.
   void EnqueueRequest(const std::string& method,
-                      const google::protobuf::Message& req,
+                      std::unique_ptr<RequestPayload> req_payload,
                       google::protobuf::Message* response,
                       RpcController* controller,
-                      const ResponseCallback& callback) const;
+                      const ResponseCallback& callback,
+                      OutboundCall::CallbackBehavior cb_behavior) const;
 
   // Returns a single Sockaddr from the 'addrs', logging a warning if there is
   // more than one to choose from.
