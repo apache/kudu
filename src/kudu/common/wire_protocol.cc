@@ -24,6 +24,7 @@
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -41,6 +42,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/fixedarray.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -67,6 +69,7 @@ using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::map;
 using std::string;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -647,8 +650,6 @@ Status ColumnPredicateFromPB(const Schema& schema,
   return Status::OK();
 }
 
-const char kTableHistoryMaxAgeSec[] = "kudu.table.history_max_age_sec";
-const char kTableMaintenancePriority[] = "kudu.table.maintenance_priority";
 Status ExtraConfigPBToMap(const TableExtraConfigPB& pb, map<string, string>* configs) {
   Map<string, string> tmp;
   RETURN_NOT_OK(ExtraConfigPBToPBMap(pb, &tmp));
@@ -665,11 +666,21 @@ Status ParseInt32Config(const string& name, const string& value, int32_t* result
   return Status::OK();
 }
 
+static const std::string kTableHistoryMaxAgeSec = "kudu.table.history_max_age_sec";
+static const std::string kTableMaintenancePriority = "kudu.table.maintenance_priority";
+
 Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConfigPB* pb) {
+  static const unordered_set<string> kSupportedConfigs({kTableHistoryMaxAgeSec,
+                                                        kTableMaintenancePriority});
   TableExtraConfigPB result;
   for (const auto& config : configs) {
     const string& name = config.first;
     const string& value = config.second;
+    if (!ContainsKey(kSupportedConfigs, name)) {
+      return Status::InvalidArgument(
+          Substitute("invalid extra configuration property: $0", name));
+    }
+
     if (name == kTableHistoryMaxAgeSec) {
       if (!value.empty()) {
         int32_t history_max_age_sec;
@@ -683,7 +694,7 @@ Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConf
         result.set_maintenance_priority(maintenance_priority);
       }
     } else {
-      LOG(WARNING) << "Unknown extra configuration property: " << name;
+      LOG(FATAL) << "Unknown extra configuration property: " << name;
     }
   }
   *pb = std::move(result);

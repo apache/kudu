@@ -4780,7 +4780,26 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_TRUE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
     ASSERT_EQ(7200, tablet_replica->tablet()->metadata()->extra_config()->history_max_age_sec());
   }
-  // 3. Reset history max age second to default.
+  // 3. Set an unexpected extra config.
+  {
+    map<string, string> extra_configs;
+    extra_configs["kudu.table.history_max_age_sec"] = "3600";
+    extra_configs["kudu.table.maintenance_priority_BAD_NAME"] = "2";
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterExtraConfig(extra_configs);
+    auto s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "invalid extra configuration property: "
+                        "kudu.table.maintenance_priority_BAD_NAME");
+    // Schema version and old properties are not changed.
+    ASSERT_EQ(10, tablet_replica->tablet()->metadata()->schema_version());
+    ASSERT_NE(boost::none, tablet_replica->tablet()->metadata()->extra_config());
+    ASSERT_TRUE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
+    ASSERT_EQ(7200, tablet_replica->tablet()->metadata()->extra_config()->history_max_age_sec());
+    ASSERT_FALSE(tablet_replica->tablet()->metadata()->extra_config()->has_maintenance_priority());
+  }
+  // 4. Reset history max age second to default.
   {
     map<string, string> extra_configs;
     extra_configs["kudu.table.history_max_age_sec"] = "";
