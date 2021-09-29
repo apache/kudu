@@ -39,6 +39,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
@@ -507,32 +508,32 @@ TEST_F(TableLocationsTest, TestRangeSpecificHashing) {
   ASSERT_FALSE(resp.has_error());
   ASSERT_EQ(19, resp.tablet_locations().size());
 
-  vector<string> partition_key_starts =  {
-      string("\0\0\0\0" "\0\0\0\0" "a" "\0\0", 11),
-      string("\0\0\0\0" "\0\0\0\1" "a" "\0\0", 11),
-      string("\0\0\0\1" "\0\0\0\0" "a" "\0\0", 11),
-      string("\0\0\0\1" "\0\0\0\1" "a" "\0\0", 11),
-      string("\0\0\0\2" "\0\0\0\0" "a" "\0\0", 11),
-      string("\0\0\0\2" "\0\0\0\1" "a" "\0\0", 11),
-      string("\0\0\0\3" "\0\0\0\0" "a" "\0\0", 11),
-      string("\0\0\0\3" "\0\0\0\1" "a" "\0\0", 11),
-      string("\0\0\0\0" "c" "\0\0", 7),
-      string("\0\0\0\1" "c" "\0\0", 7),
-      string("\0\0\0\2" "c" "\0\0", 7),
-      string("\0\0\0\3" "c" "\0\0", 7),
-      string("\0\0\0\4" "c" "\0\0", 7),
-      string("\0\0\0\5" "c" "\0\0", 7),
-      string("\0\0\0\0" "e" "\0\0", 7),
-      string("\0\0\0\1" "e" "\0\0", 7),
-      string("\0\0\0\2" "e" "\0\0", 7),
-      string("\0\0\0\3" "e" "\0\0", 7),
-      string("\0\0\0\4" "e" "\0\0", 7)
+  vector<PartitionKey> partition_key_starts =  {
+      { string("\0\0\0\0" "\0\0\0\0", 8), string("a" "\0\0", 3) },
+      { string("\0\0\0\0" "\0\0\0\1", 8), string("a" "\0\0", 3) },
+      { string("\0\0\0\1" "\0\0\0\0", 8), string("a" "\0\0", 3) },
+      { string("\0\0\0\1" "\0\0\0\1", 8), string("a" "\0\0", 3) },
+      { string("\0\0\0\2" "\0\0\0\0", 8), string("a" "\0\0", 3) },
+      { string("\0\0\0\2" "\0\0\0\1", 8), string("a" "\0\0", 3) },
+      { string("\0\0\0\3" "\0\0\0\0", 8), string("a" "\0\0", 3) },
+      { string("\0\0\0\3" "\0\0\0\1", 8), string("a" "\0\0", 3) },
+      { string("\0\0\0\0", 4), string("c" "\0\0", 3) },
+      { string("\0\0\0\1", 4), string("c" "\0\0", 3) },
+      { string("\0\0\0\2", 4), string("c" "\0\0", 3) },
+      { string("\0\0\0\3", 4), string("c" "\0\0", 3) },
+      { string("\0\0\0\4", 4), string("c" "\0\0", 3) },
+      { string("\0\0\0\5", 4), string("c" "\0\0", 3) },
+      { string("\0\0\0\0", 4), string("e" "\0\0", 3) },
+      { string("\0\0\0\1", 4), string("e" "\0\0", 3) },
+      { string("\0\0\0\2", 4), string("e" "\0\0", 3) },
+      { string("\0\0\0\3", 4), string("e" "\0\0", 3) },
+      { string("\0\0\0\4", 4), string("e" "\0\0", 3) },
   };
   // Sorting partition keys to match the tablets that are returned in sorted order.
   sort(partition_key_starts.begin(), partition_key_starts.end());
   ASSERT_EQ(partition_key_starts.size(), resp.tablet_locations_size());
   for (int i = 0; i < resp.tablet_locations_size(); i++) {
-    EXPECT_EQ(partition_key_starts[i],
+    EXPECT_EQ(partition_key_starts[i].ToString(),
               resp.tablet_locations(i).partition().partition_key_start());
   }
 }

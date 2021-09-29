@@ -382,11 +382,19 @@ string RemoteTablet::ReplicasAsStringUnlocked() const {
   return replicas_str;
 }
 
-bool MetaCacheEntry::Contains(const string& partition_key) const {
+bool MetaCacheEntry::Contains(const PartitionKey& partition_key) const {
   DCHECK(Initialized());
-  return lower_bound_partition_key() <= partition_key &&
-         (upper_bound_partition_key().empty() ||
-          upper_bound_partition_key() > partition_key);
+  const auto& entry_hash_key = !lower_bound_partition_key().empty()
+      ? lower_bound_partition_key().hash_key()
+      : upper_bound_partition_key().hash_key();
+  // The hash part of the key has 'the exact' semantics: they should match
+  // for the partition key in question and the meta-cache entry.
+  if (partition_key.hash_key() != entry_hash_key) {
+    return false;
+  }
+  return lower_bound_partition_key().range_key() <= partition_key.range_key() &&
+          (upper_bound_partition_key().empty() ||
+           partition_key.range_key() < upper_bound_partition_key().range_key());
 }
 
 bool MetaCacheEntry::stale() const {
@@ -397,13 +405,16 @@ bool MetaCacheEntry::stale() const {
 
 string MetaCacheEntry::DebugString(const KuduTable* table) const {
   DCHECK(Initialized());
-  const string& lower_bound = lower_bound_partition_key();
-  const string& upper_bound = upper_bound_partition_key();
+  const auto& lower_bound = lower_bound_partition_key();
+  const auto& upper_bound = upper_bound_partition_key();
 
   string lower_bound_string = MetaCache::DebugLowerBoundPartitionKey(table, lower_bound);
 
-  string upper_bound_string = upper_bound.empty() ? "<end>" :
-    table->partition_schema().PartitionKeyDebugString(upper_bound, *table->schema().schema_);
+  // The upper bound is exclusive, so it's necessary to get proper hash schema
+  // for the key.
+  string upper_bound_string = upper_bound.empty()
+      ? "<end>"
+      : table->partition_schema().PartitionKeyDebugString(upper_bound, *table->schema().schema_);
 
   MonoDelta ttl = expiration_time_ - MonoTime::Now();
 
@@ -511,7 +522,7 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
     if (table_) {
       meta_cache_->LookupTabletByKey(
           table_,
-          tablet_->partition().partition_key_start(),
+          tablet_->partition().begin(),
           deadline,
           MetaCache::LookupType::kPoint,
           /*remote_tablet*/nullptr,
@@ -743,7 +754,7 @@ class LookupRpc
   LookupRpc(scoped_refptr<MetaCache> meta_cache,
             StatusCallback user_cb,
             const KuduTable* table,
-            string partition_key,
+            PartitionKey partition_key,
             scoped_refptr<RemoteTablet>* remote_tablet,
             const MonoTime& deadline,
             MetaCache::LookupType lookup_type,
@@ -771,7 +782,7 @@ class LookupRpc
   const GetTableLocationsResponsePB& resp() const { return resp_; }
   const string& table_name() const { return table_->name(); }
   const string& table_id() const { return table_->id(); }
-  const string& partition_key() const { return partition_key_; }
+  const PartitionKey& partition_key() const { return partition_key_; }
   bool is_exact_lookup() const {
     return lookup_type_ == MetaCache::LookupType::kPoint;
   }
@@ -815,7 +826,7 @@ class LookupRpc
   const KuduTable* table_;
 
   // Encoded partition key to lookup.
-  string partition_key_;
+  PartitionKey partition_key_;
 
   // When lookup finishes successfully, the selected tablet is written here
   // prior to invoking the user-provided callback.
@@ -835,7 +846,7 @@ class LookupRpc
 
 LookupRpc::LookupRpc(scoped_refptr<MetaCache> meta_cache,
                      StatusCallback user_cb, const KuduTable* table,
-                     string partition_key,
+                     PartitionKey partition_key,
                      scoped_refptr<RemoteTablet>* remote_tablet,
                      const MonoTime& deadline,
                      MetaCache::LookupType lookup_type,
@@ -885,10 +896,22 @@ void LookupRpc::SendRpcSlowPath() {
     return;
   }
 
-  // The end partition key is left unset intentionally so that we'll prefetch
-  // some additional tablets.
+  // The end partition key is left unset intentionally to prefetch information
+  // on additional tablets.
   req_.mutable_table()->set_table_id(table_->id());
-  req_.set_partition_key_start(partition_key_);
+
+  // The range information is set using both the legacy and the contemporary
+  // notation, i.e. using 'partition_key_start' and 'partition_key_range' fields
+  // correspondingly. That's to allow a client of newer versions to work with
+  // servers of prior versions when sending request for a table without custom
+  // hash schemas per range, while also being able to query about table
+  // locations if a table has custom hash schemas per range when it served
+  // by a tablet server of newer versions.
+  auto* key_start = req_.mutable_key_start();
+  key_start->set_hash_key(partition_key_.hash_key());
+  key_start->set_range_key(partition_key_.range_key());
+  req_.set_partition_key_start(partition_key_.ToString());
+
   req_.set_max_returned_locations(locations_to_fetch());
   req_.set_intern_ts_infos_in_response(true);
   if (replica_visibility_ == ReplicaController::Visibility::ALL) {
@@ -987,8 +1010,8 @@ Status MetaCache::ProcessGetTabletLocationsResponse(const string& tablet_id,
   scoped_refptr<RemoteTablet> remote = FindPtrOrNull(tablets_by_id_, tablet_id);
   if (remote) {
     // Partition should not have changed.
-    DCHECK_EQ(tablet_lower_bound, remote->partition().partition_key_start());
-    DCHECK_EQ(tablet_upper_bound, remote->partition().partition_key_end());
+    DCHECK_EQ(tablet_lower_bound, remote->partition().begin().ToString());
+    DCHECK_EQ(tablet_upper_bound, remote->partition().end().ToString());
 
     VLOG(3) << "Refreshing tablet " << tablet_id << ": " << SecureShortDebugString(tablet);
     RETURN_NOT_OK_PREPEND(remote->Refresh(ts_cache_, tablet, ts_infos),
@@ -1017,7 +1040,7 @@ Status MetaCache::ProcessGetTabletLocationsResponse(const string& tablet_id,
 }
 
 Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
-                                                   const string& partition_key,
+                                                   const PartitionKey& partition_key,
                                                    bool is_exact_lookup,
                                                    const GetTableLocationsResponsePB& resp,
                                                    MetaCacheEntry* cache_entry,
@@ -1034,9 +1057,9 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
 
   if (tablet_locations.empty()) {
     tablets_by_key.clear();
-    MetaCacheEntry entry(expiration_time, "", "");
+    MetaCacheEntry entry(expiration_time, {}, {});
     VLOG(3) << "Caching '" << table->name() << "' entry " << entry.DebugString(table);
-    InsertOrDie(&tablets_by_key, "", entry);
+    InsertOrDie(&tablets_by_key, {}, entry);
   } else {
     // First, update the tserver cache, needed for the Refresh calls below.
     // It's used for backward compatibility.
@@ -1067,24 +1090,30 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
     // non-covered range can only be inferred if the lookup partition key falls
     // in A.
 
-    const auto& first_lower_bound = tablet_locations.Get(0).partition().partition_key_start();
+    const auto& partition_pb = tablet_locations.Get(0).partition();
+    const PartitionKey first_lower_bound(
+        Partition::StringToPartitionKey(partition_pb.partition_key_start(),
+                                        partition_pb.hash_buckets_size()));
     if (partition_key < first_lower_bound) {
       // If the first tablet is past the requested partition key, then the
       // partition key falls in an initial non-covered range, such as A.
 
       // Clear any existing entries which overlap with the discovered non-covered range.
       tablets_by_key.erase(tablets_by_key.begin(), tablets_by_key.lower_bound(first_lower_bound));
-      MetaCacheEntry entry(expiration_time, "", first_lower_bound);
+      MetaCacheEntry entry(expiration_time, {}, first_lower_bound);
       VLOG(3) << "Caching '" << table->name() << "' entry " << entry.DebugString(table);
-      InsertOrDie(&tablets_by_key, "", entry);
+      InsertOrDie(&tablets_by_key, {}, entry);
     }
 
     // last_upper_bound tracks the upper bound of the previously processed
     // entry, so that we can determine when we have found a non-covered range.
-    string last_upper_bound = first_lower_bound;
+    auto last_upper_bound = first_lower_bound;
     for (const TabletLocationsPB& tablet : tablet_locations) {
-      const auto& tablet_lower_bound = tablet.partition().partition_key_start();
-      const auto& tablet_upper_bound = tablet.partition().partition_key_end();
+      const auto& p = tablet.partition();
+      const PartitionKey tablet_lower_bound(Partition::StringToPartitionKey(
+          p.partition_key_start(), p.hash_buckets_size()));
+      const PartitionKey tablet_upper_bound(Partition::StringToPartitionKey(
+          p.partition_key_end(), p.hash_buckets_size()));
 
       if (last_upper_bound < tablet_lower_bound) {
         // There is a non-covered range between the previous tablet and this tablet.
@@ -1108,8 +1137,8 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
       scoped_refptr<RemoteTablet> remote = FindPtrOrNull(tablets_by_id_, tablet_id);
       if (remote) {
         // Partition should not have changed.
-        DCHECK_EQ(tablet_lower_bound, remote->partition().partition_key_start());
-        DCHECK_EQ(tablet_upper_bound, remote->partition().partition_key_end());
+        DCHECK_EQ(tablet_lower_bound, remote->partition().begin());
+        DCHECK_EQ(tablet_upper_bound, remote->partition().end());
 
         VLOG(3) << Substitute("Refreshing tablet $0: $1",
                               tablet_id, SecureShortDebugString(tablet));
@@ -1161,7 +1190,7 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
       tablets_by_key.erase(tablets_by_key.lower_bound(last_upper_bound),
                            tablets_by_key.end());
 
-      MetaCacheEntry entry(expiration_time, last_upper_bound, "");
+      MetaCacheEntry entry(expiration_time, last_upper_bound, {});
       VLOG(3) << "Caching '" << table->name() << "' entry " << entry.DebugString(table);
       InsertOrDie(&tablets_by_key, last_upper_bound, entry);
     }
@@ -1178,7 +1207,7 @@ Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
 }
 
 bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
-                                         const string& partition_key,
+                                         const PartitionKey& partition_key,
                                          MetaCacheEntry* entry) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 50, "looking up entry by key");
   shared_lock<rw_spinlock> l(lock_.get_lock());
@@ -1208,7 +1237,7 @@ bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
 }
 
 Status MetaCache::DoFastPathLookup(const KuduTable* table,
-                                   string* partition_key,
+                                   PartitionKey* partition_key,
                                    MetaCache::LookupType lookup_type,
                                    scoped_refptr<RemoteTablet>* remote_tablet) {
   MetaCacheEntry entry;
@@ -1291,7 +1320,7 @@ void MetaCache::ClearCache() {
 }
 
 void MetaCache::LookupTabletByKey(const KuduTable* table,
-                                  string partition_key,
+                                  PartitionKey partition_key,
                                   const MonoTime& deadline,
                                   MetaCache::LookupType lookup_type,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
@@ -1354,7 +1383,8 @@ void MetaCache::ReleaseMasterLookupPermit() {
   master_lookup_sem_.Release();
 }
 
-string MetaCache::DebugLowerBoundPartitionKey(const KuduTable* table, const string& partition_key) {
+string MetaCache::DebugLowerBoundPartitionKey(const KuduTable* table,
+                                              const PartitionKey& partition_key) {
   return partition_key.empty() ? "<start>" :
       table->partition_schema().PartitionKeyDebugString(partition_key, *table->schema().schema_);
 }

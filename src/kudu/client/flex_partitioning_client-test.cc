@@ -486,7 +486,7 @@ TEST_F(FlexPartitioningCreateTableTest, NoUpperBoundRangeCustomHashSchema) {
   //         --------------------------------
   //   0-111  x:{key}     x:{key}     x:{key}
   // 111-222  x:{key}     x:{key}     -
-  //  >222    -           -           -
+  //  >=222   -           -           -
   constexpr const char* const kTableName = "NoUpperBoundRangeCustomHashSchema";
 
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());

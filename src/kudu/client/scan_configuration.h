@@ -40,6 +40,7 @@ namespace kudu {
 
 class ColumnPredicate;
 class KuduPartialRow;
+class PartitionKey;
 
 namespace client {
 
@@ -68,9 +69,9 @@ class ScanConfiguration {
 
   Status AddUpperBoundRaw(const Slice& key);
 
-  Status AddLowerBoundPartitionKeyRaw(const Slice& partition_key);
+  Status AddLowerBoundPartitionKeyRaw(const PartitionKey& pkey);
 
-  Status AddUpperBoundPartitionKeyRaw(const Slice& partition_key);
+  Status AddUpperBoundPartitionKeyRaw(const PartitionKey& pkey);
 
   Status SetCacheBlocks(bool cache_blocks);
 

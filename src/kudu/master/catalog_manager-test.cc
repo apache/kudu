@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/master/catalog_manager.h"
+
 #include <ostream>
 #include <string>
 #include <vector>
@@ -23,13 +25,14 @@
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -85,13 +88,76 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     req.mutable_table()->mutable_table_name()->assign(table_id);
     req.mutable_partition_key_start()->assign(start_key);
     vector<scoped_refptr<TabletInfo>> tablets_in_range;
-    table->GetTabletsInRange(&req, &tablets_in_range);
+    ASSERT_OK(table->GetTabletsInRange(&req, &tablets_in_range));
 
     // Only one tablet should own this key.
     ASSERT_EQ(1, tablets_in_range.size());
     // The tablet with range start key matching 'start_key' should be the owner.
     ASSERT_EQ(tablet_id, (*tablets_in_range.begin())->id());
     LOG(INFO) << "Key " << start_key << " found in tablet " << tablet_id;
+  }
+}
+
+TEST(TableInfoTest, GetTableLocationsLegacyCustomHashSchemas) {
+  const string table_id = CURRENT_TEST_NAME();
+  scoped_refptr<TableInfo> table(new TableInfo(table_id));
+
+  {
+    TableMetadataLock meta_lock(table.get(), LockMode::WRITE);
+    auto* ps = meta_lock.mutable_data()->pb.mutable_partition_schema();
+    // It's not really necessary to fill everything in the scope of this test.
+    auto* range = ps->add_custom_hash_schema_ranges();
+    range->mutable_range_bounds()->set_rows("a");
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("b");
+    hash_dimension->set_num_buckets(2);
+    meta_lock.Commit();
+  }
+
+  const string start_key = "a";
+  const string end_key = "";
+  string tablet_id = Substitute("tablet-$0-$1", start_key, end_key);
+
+  scoped_refptr<TabletInfo> tablet = new TabletInfo(table, tablet_id);
+  {
+    TabletMetadataLock meta_lock(tablet.get(), LockMode::WRITE);
+    PartitionPB* partition = meta_lock.mutable_data()->pb.mutable_partition();
+    partition->set_partition_key_start(start_key);
+    partition->set_partition_key_end(end_key);
+    meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
+    meta_lock.Commit();
+  }
+
+  TabletMetadataLock meta_lock(tablet.get(), LockMode::READ);
+  table->AddRemoveTablets({ tablet }, {});
+
+  // Query by specifying the start of the partition via the partition_key_start
+  // field: it should fail since the table has a range with custom hash schema.
+  {
+    GetTableLocationsRequestPB req;
+    req.set_max_returned_locations(1);
+    req.mutable_table()->mutable_table_name()->assign(table_id);
+    req.mutable_partition_key_start()->assign("a");
+    vector<scoped_refptr<TabletInfo>> tablets_in_range;
+    auto s = table->GetTabletsInRange(&req, &tablets_in_range);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "for a table with custom per-range hash schemas "
+                        "the range must be specified using partition_key_range "
+                        "field, not partition_key_{start,end} fields");
+  }
+
+  // Query by specifying the start of the partition via the partition_key_range
+  // field: it should succeed.
+  {
+    GetTableLocationsRequestPB req;
+    req.set_max_returned_locations(1);
+    req.mutable_table()->mutable_table_name()->assign(table_id);
+    req.mutable_key_start()->set_hash_key(string("\0\0\0\0", 4));
+    req.mutable_key_start()->set_range_key("a");
+    vector<scoped_refptr<TabletInfo>> tablets_in_range;
+    ASSERT_OK(table->GetTabletsInRange(&req, &tablets_in_range));
+    ASSERT_EQ(1, tablets_in_range.size());
   }
 }
 

@@ -616,10 +616,24 @@ message GetTableStatisticsResponsePB {
   optional int64 row_count_limit = 5;
 }
 
+// This data structure is used to specify a table's partition key.
+// That's used to find partitions (i.e. tablets) that cover the key range span
+// between two partition keys.
+message PartitionKeyPB {
+  // The range part of the encoded key.
+  optional bytes range_key = 1 [(kudu.REDACT) = true];
+
+  // The hash part of the encoded key.
+  optional bytes hash_key = 2;
+}
+
 message GetTableLocationsRequestPB {
   required TableIdentifierPB table = 1;
 
-  // Partition-key range.
+  // These two fields are used to specify key range span if the table
+  // has a table-wide hash schema. Otherwise, neither of these two fields
+  // should not be present: use 'key_start' and 'key_end' fields below
+  // to specify key range information instead.
   optional bytes partition_key_start = 3 [(kudu.REDACT) = true];
   optional bytes partition_key_end = 4 [(kudu.REDACT) = true];
 
@@ -631,6 +645,17 @@ message GetTableLocationsRequestPB {
 
   // Whether the response should use the 'interned_replicas' field.
   optional bool intern_ts_infos_in_response = 7 [ default = false ];
+
+  // Partition key range, start and end: these fields make the
+  // 'partition_key_start' and 'partition_key_end' fields above obsolete.
+  // It's crucial to specify these (or at least one of these if the range is
+  // unbounded) when the table has custom hash schemas per range, otherwise
+  // the catalog manager responds back with an error. Even in case of
+  // table-wide hash schema the clients compiled with this proto specification
+  // are encouraged to use these fields instead of legacy 'partition_key_start'
+  // and 'partition_key_end'.
+  optional PartitionKeyPB key_start = 8;
+  optional PartitionKeyPB key_end = 9;
 }
 
 // The response to a GetTableLocations RPC. The master guarantees that:

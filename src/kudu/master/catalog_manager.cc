@@ -2597,8 +2597,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     switch (step.type()) {
       case AlterTableRequestPB::ADD_RANGE_PARTITION: {
         for (const Partition& partition : partitions) {
-          const string& lower_bound = partition.partition_key_start();
-          const string& upper_bound = partition.partition_key_end();
+          const auto& lower_bound = partition.begin();
+          const auto& upper_bound = partition.end();
 
           // Check that the new tablet does not overlap with any of the existing
           // tablets. Since the elements of 'existing_tablets' are ordered by
@@ -2610,8 +2610,10 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
             TabletMetadataLock metadata(existing_iter->second.get(),
                                         LockMode::READ);
             const auto& p = metadata.data().pb.partition();
+            const auto p_begin = Partition::StringToPartitionKey(
+                p.partition_key_start(), p.hash_buckets_size());
             // Check for the overlapping ranges.
-            if (upper_bound.empty() || p.partition_key_start() < upper_bound) {
+            if (upper_bound.empty() || p_begin < upper_bound) {
               return Status::InvalidArgument(
                   "new range partition conflicts with existing one",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row,
@@ -2628,17 +2630,19 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
             TabletMetadataLock metadata(std::prev(existing_iter)->second.get(),
                                         LockMode::READ);
             const auto& p = metadata.data().pb.partition();
+            const auto p_begin = Partition::StringToPartitionKey(
+                p.partition_key_start(), p.hash_buckets_size());
+            const auto p_end = Partition::StringToPartitionKey(
+                p.partition_key_end(), p.hash_buckets_size());
             // Check for the exact match of ranges.
-            if (lower_bound == p.partition_key_start() &&
-                upper_bound == p.partition_key_end()) {
+            if (lower_bound == p_begin && upper_bound == p_end) {
               return Status::AlreadyPresent(
                   "range partition already exists",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row,
                                                              *ops[1].split_row));
             }
             // Check for the overlapping ranges.
-            if (p.partition_key_end().empty() ||
-                p.partition_key_end() > lower_bound) {
+            if (p_end.empty() || p_end > lower_bound) {
               return Status::InvalidArgument(
                   "new range partition conflicts with existing one",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row,
@@ -2651,7 +2655,9 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           if (new_iter != new_tablets.end()) {
             // Check for the overlapping ranges.
             const auto& p = new_iter->second->mutable_metadata()->dirty().pb.partition();
-            if (upper_bound.empty() || p.partition_key_start() < upper_bound) {
+            const auto p_begin = Partition::StringToPartitionKey(
+                p.partition_key_start(), p.hash_buckets_size());
+            if (upper_bound.empty() || p_begin < upper_bound) {
               return Status::InvalidArgument(
                   "new range partition conflicts with another newly added one",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row,
@@ -2660,16 +2666,19 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           }
           if (new_iter != new_tablets.begin()) {
             const auto& p = std::prev(new_iter)->second->mutable_metadata()->dirty().pb.partition();
+            const auto p_begin = Partition::StringToPartitionKey(
+                p.partition_key_start(), p.hash_buckets_size());
+            const auto p_end = Partition::StringToPartitionKey(
+                p.partition_key_end(), p.hash_buckets_size());
             // Check for the exact match of ranges.
-            if (lower_bound == p.partition_key_start() &&
-                upper_bound == p.partition_key_end()) {
+            if (lower_bound == p_begin && upper_bound == p_end) {
               return Status::AlreadyPresent(
                   "new range partition duplicates another newly added one",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row,
                                                              *ops[1].split_row));
             }
             // Check for the overlapping ranges.
-            if (p.partition_key_end().empty() || p.partition_key_end() > lower_bound) {
+            if (p_end.empty() || p_end > lower_bound) {
               return Status::InvalidArgument(
                   "new range partition conflicts with another newly added one",
                   partition_schema.RangePartitionDebugString(*ops[0].split_row,
@@ -2691,8 +2700,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
       case AlterTableRequestPB::DROP_RANGE_PARTITION: {
         for (const Partition& partition : partitions) {
-          const string& lower_bound = partition.partition_key_start();
-          const string& upper_bound = partition.partition_key_end();
+          const auto& lower_bound = partition.begin();
+          const auto& upper_bound = partition.end();
 
           // Iter points to the tablet if it exists, or the next tablet, or the end.
           auto existing_iter = existing_tablets.lower_bound(lower_bound);
@@ -2703,14 +2712,20 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
           if (existing_iter != existing_tablets.end()) {
             TabletMetadataLock metadata(existing_iter->second.get(), LockMode::READ);
-            const auto& partition = metadata.data().pb.partition();
-            found_existing = partition.partition_key_start() == lower_bound &&
-                             partition.partition_key_end() == upper_bound;
+            const auto& p = metadata.data().pb.partition();
+            const auto p_begin = Partition::StringToPartitionKey(
+                p.partition_key_start(), p.hash_buckets_size());
+            const auto p_end = Partition::StringToPartitionKey(
+                p.partition_key_end(), p.hash_buckets_size());
+            found_existing = p_begin == lower_bound && p_end == upper_bound;
           }
           if (new_iter != new_tablets.end()) {
-            const auto& partition = new_iter->second->mutable_metadata()->dirty().pb.partition();
-            found_new = partition.partition_key_start() == lower_bound &&
-                        partition.partition_key_end() == upper_bound;
+            const auto& p = new_iter->second->mutable_metadata()->dirty().pb.partition();
+            const auto p_begin = Partition::StringToPartitionKey(
+                p.partition_key_start(), p.hash_buckets_size());
+            const auto p_end = Partition::StringToPartitionKey(
+                p.partition_key_end(), p.hash_buckets_size());
+            found_new = p_begin == lower_bound && p_end == upper_bound;
           }
 
           DCHECK(!found_existing || !found_new);
@@ -5679,6 +5694,13 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
       && req->partition_key_start() > req->partition_key_end())) {
     return Status::InvalidArgument("start partition key is greater than the end partition key");
   }
+  if (PREDICT_FALSE(req->has_key_start() && req->has_key_end() &&
+                    req->key_start().has_range_key() &&
+                    req->key_end().has_range_key() &&
+                    req->key_start().range_key() > req->key_end().range_key())) {
+    return Status::InvalidArgument("start partition range key must not be "
+                                   "greater than the end partition range key");
+  }
   if (PREDICT_FALSE(req->max_returned_locations() <= 0)) {
     return Status::InvalidArgument("max_returned_locations must be greater than 0");
   }
@@ -5699,7 +5721,7 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   vector<scoped_refptr<TabletInfo>> tablets_in_range;
-  table->GetTabletsInRange(req, &tablets_in_range);
+  RETURN_NOT_OK(table->GetTabletsInRange(req, &tablets_in_range));
 
   // Check for items in the cache.
   if (table_locations_cache_) {
@@ -6239,10 +6261,12 @@ void TabletInfo::set_reported_schema_version(int64_t version) {
   // We also need to hold the tablet metadata lock in order to read the partition
   // key, but it's OK to make a local copy of it (and release the lock) because
   // the key is immutable.
-  string key_start;
+  PartitionKey key_start;
   {
     TabletMetadataLock l(this, LockMode::READ);
-    key_start = l.data().pb.partition().partition_key_start();
+    const auto& p = l.data().pb.partition();
+    key_start = Partition::StringToPartitionKey(
+        p.partition_key_start(), p.hash_buckets_size());
   }
   std::lock_guard<rw_spinlock> table_l(table_->lock_);
   std::lock_guard<simple_spinlock> tablet_l(lock_);
@@ -6319,17 +6343,20 @@ void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablet
                                  const vector<scoped_refptr<TabletInfo>>& tablets_to_drop) {
   std::lock_guard<rw_spinlock> l(lock_);
   for (const auto& tablet : tablets_to_drop) {
-    const auto& lower_bound = tablet->metadata().state().pb.partition().partition_key_start();
+    const auto& p = tablet->metadata().state().pb.partition();
+    const auto& lower_bound = Partition::StringToPartitionKey(
+        p.partition_key_start(), p.hash_buckets_size());
     CHECK(EraseKeyReturnValuePtr(&tablet_map_, lower_bound) != nullptr);
     DecrementSchemaVersionCountUnlocked(tablet->reported_schema_version());
     // Remove the table metrics for the deleted tablets.
     RemoveMetrics(tablet->id(), tablet->GetStats());
   }
   for (const auto& tablet : tablets_to_add) {
+    const auto& p = tablet->metadata().state().pb.partition();
+    const auto& key_start = Partition::StringToPartitionKey(
+        p.partition_key_start(), p.hash_buckets_size());
     TabletInfo* old = nullptr;
-    if (UpdateReturnCopy(&tablet_map_,
-                         tablet->metadata().state().pb.partition().partition_key_start(),
-                         tablet.get(), &old)) {
+    if (UpdateReturnCopy(&tablet_map_, key_start, tablet.get(), &old)) {
       VLOG(1) << Substitute("Replaced tablet $0 with $1",
                             old->id(), tablet->id());
       DecrementSchemaVersionCountUnlocked(old->reported_schema_version());
@@ -6348,13 +6375,67 @@ void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablet
 #endif
 }
 
-void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
-                                  vector<scoped_refptr<TabletInfo>>* ret) const {
-  shared_lock<rw_spinlock> l(lock_);
+Status TableInfo::GetTabletsInRange(
+    const GetTableLocationsRequestPB* req,
+    vector<scoped_refptr<TabletInfo>>* ret) const {
 
+  size_t hash_dimensions_num = 0;
+  bool has_custom_hash_schemas = false;
+  {
+    TableMetadataLock l(this, LockMode::READ);
+    const auto& ps = l.data().pb.partition_schema();
+    hash_dimensions_num = ps.hash_schema_size();
+    has_custom_hash_schemas = ps.custom_hash_schema_ranges_size() > 0;
+  }
+
+  // Find partition keys for the start and the end of the range in question.
+  // That's done with extra guardrails to ensure the table doesn't have custom
+  // hash schemas per range when using legacy fields
+  // GetTableLocationsRequestPB::{partition_key_start,partition_key_end}.
+  PartitionKey partition_key_start;
+  bool has_key_start = false;
+  if (req->has_key_start()) {
+    const auto& start = req->key_start();
+    if (start.has_hash_key() || start.has_range_key()) {
+      partition_key_start = PartitionKey(start.hash_key(), start.range_key());
+      has_key_start = true;
+    }
+  } else if (req->has_partition_key_start()) {
+    if (has_custom_hash_schemas) {
+      return Status::InvalidArgument(Substitute(
+          "$0: for a table with custom per-range hash schemas the range must "
+          "be specified using partition_key_range field, not "
+          "partition_key_{start,end} fields", ToString()));
+    }
+    partition_key_start = Partition::StringToPartitionKey(
+        req->partition_key_start(), hash_dimensions_num);
+    has_key_start = true;
+  }
+
+  PartitionKey partition_key_end;
+  bool has_key_end = false;
+  if (req->has_key_end()) {
+    const auto& end = req->key_end();
+    if (end.has_hash_key() || end.has_range_key()) {
+      partition_key_end = PartitionKey(end.hash_key(), end.range_key());
+      has_key_end = true;
+    }
+  } else if (req->has_partition_key_end()) {
+    if (has_custom_hash_schemas) {
+      return Status::InvalidArgument(Substitute(
+          "$0: for a table with custom per-range hash schemas the range must "
+          "be specified using partition_key_range field, not "
+          "partition_key_{start,end} fields", ToString()));
+    }
+    partition_key_end = Partition::StringToPartitionKey(
+        req->partition_key_end(), hash_dimensions_num);
+    has_key_end = true;
+  }
+
+  shared_lock<rw_spinlock> l(lock_);
   RawTabletInfoMap::const_iterator it;
-  if (req->has_partition_key_start()) {
-    it = tablet_map_.upper_bound(req->partition_key_start());
+  if (has_key_start) {
+    it = tablet_map_.upper_bound(partition_key_start);
     if (it != tablet_map_.begin()) {
       --it;
     }
@@ -6362,8 +6443,8 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
     it = tablet_map_.begin();
   }
 
-  const RawTabletInfoMap::const_iterator it_end = req->has_partition_key_end()
-      ? tablet_map_.upper_bound(req->partition_key_end())
+  const RawTabletInfoMap::const_iterator it_end = has_key_end
+      ? tablet_map_.upper_bound(partition_key_end)
       : tablet_map_.end();
 
   const size_t max_returned_locations = req->max_returned_locations();
@@ -6372,6 +6453,8 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
     ret->emplace_back(make_scoped_refptr(it->second));
     ++count;
   }
+
+  return Status::OK();
 }
 
 bool TableInfo::IsAlterInProgress(uint32_t version) const {

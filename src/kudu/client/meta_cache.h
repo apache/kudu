@@ -291,7 +291,6 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
 // instance, or a non-covered partition range.
 class MetaCacheEntry {
  public:
-
   MetaCacheEntry() { }
 
   // Construct a MetaCacheEntry representing a tablet.
@@ -303,8 +302,8 @@ class MetaCacheEntry {
   // Construct a MetaCacheEntry representing a non-covered range with the
   // provided range partition bounds.
   MetaCacheEntry(MonoTime expiration_time,
-                 std::string lower_bound_partition_key,
-                 std::string upper_bound_partition_key)
+                 PartitionKey lower_bound_partition_key,
+                 PartitionKey upper_bound_partition_key)
       : expiration_time_(expiration_time),
         lower_bound_partition_key_(std::move(lower_bound_partition_key)),
         upper_bound_partition_key_(std::move(upper_bound_partition_key)) {
@@ -325,23 +324,21 @@ class MetaCacheEntry {
   }
 
   // Returns the inclusive lower bound partition key for the entry.
-  const std::string& lower_bound_partition_key() const {
+  const PartitionKey& lower_bound_partition_key() const {
     DCHECK(Initialized());
     if (is_non_covered_range()) {
       return lower_bound_partition_key_;
-    } else {
-      return tablet_->partition().partition_key_start();
     }
+    return tablet_->partition().begin();
   }
 
   // Returns the exclusive upper bound partition key for the entry.
-  const std::string& upper_bound_partition_key() const {
+  const PartitionKey& upper_bound_partition_key() const {
     DCHECK(Initialized());
     if (is_non_covered_range()) {
       return upper_bound_partition_key_;
-    } else {
-      return tablet_->partition().partition_key_end();
     }
+    return tablet_->partition().end();
   }
 
   const MonoTime& expiration_time() const {
@@ -357,7 +354,7 @@ class MetaCacheEntry {
   }
 
   // Returns true if the partition key is contained in this meta cache entry.
-  bool Contains(const std::string& partition_key) const;
+  bool Contains(const PartitionKey& partition_key) const;
 
   // Returns true if this meta cache entry is stale.
   bool stale() const;
@@ -382,10 +379,10 @@ class MetaCacheEntry {
   scoped_refptr<RemoteTablet> tablet_;
 
   // The lower bound partition key, if this is a non-covered range.
-  std::string lower_bound_partition_key_;
+  PartitionKey lower_bound_partition_key_;
 
   // The upper bound partition key, if this is a non-covered range.
-  std::string upper_bound_partition_key_;
+  PartitionKey upper_bound_partition_key_;
 };
 
 // Manager of RemoteTablets and RemoteTabletServers. The client consults
@@ -419,7 +416,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // NOTE: the memory referenced by 'table' must remain valid until 'callback'
   // is invoked.
   void LookupTabletByKey(const KuduTable* table,
-                         std::string partition_key,
+                         PartitionKey partition_key,
                          const MonoTime& deadline,
                          LookupType lookup_type,
                          scoped_refptr<RemoteTablet>* remote_tablet,
@@ -440,7 +437,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *entry if successful.
   bool LookupEntryByKeyFastPath(const KuduTable* table,
-                                const std::string& partition_key,
+                                const PartitionKey& partition_key,
                                 MetaCacheEntry* entry);
   // Lookup the given tablet by tablet ID, only consulting local information.
   // Returns true and sets *entry if successful.
@@ -450,7 +447,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Process the response for the given key-based lookup parameters, indexing
   // the location information as appropriate.
   Status ProcessGetTableLocationsResponse(const KuduTable* table,
-                                          const std::string& partition_key,
+                                          const PartitionKey& partition_key,
                                           bool is_exact_lookup,
                                           const master::GetTableLocationsResponsePB& resp,
                                           MetaCacheEntry* cache_entry,
@@ -459,7 +456,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Clears the non-covered range entries from a table's meta cache.
   void ClearNonCoveredRangeEntries(const std::string& table_id);
 
-  // Clears the meta cache.
+  // Clear meta-cache for the specified table identifier.
   void ClearCache();
 
   // Mark any replicas of any tablets hosted by 'ts' as failed. They will
@@ -475,7 +472,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
   // Return stringified representation of the given partition key, using "<start>" if empty.
   static std::string DebugLowerBoundPartitionKey(const KuduTable* table,
-                                                 const std::string& partition_key);
+                                                 const PartitionKey& partition_key);
 
  private:
   friend class LookupRpc;
@@ -504,7 +501,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // If 'lookup_type' is kLowerBound, then 'partition_key' will be updated to indicate the
   // start of the range for the matched tablet.
   Status DoFastPathLookup(const KuduTable* table,
-                          std::string* partition_key, // in-out parameter
+                          PartitionKey* partition_key, // in-out parameter
                           LookupType lookup_type,
                           scoped_refptr<RemoteTablet>* remote_tablet);
 
@@ -553,7 +550,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // for key-based lookups.
   //
   // Protected by lock_.
-  typedef std::map<std::string, MetaCacheEntry> TabletMap;
+  typedef std::map<PartitionKey, MetaCacheEntry> TabletMap;
   std::unordered_map<std::string, TabletMap> tablets_by_table_and_key_;
 
   // Cache entries for tablets, keyed by tablet ID, used for ID-based lookups.

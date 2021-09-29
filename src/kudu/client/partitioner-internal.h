@@ -18,11 +18,11 @@
 
 #include <map>
 #include <memory>
-#include <string>
 #include <utility>
 
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/common/partition.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
@@ -69,9 +69,8 @@ class KuduPartitioner::Data {
   Status PartitionRow(const KuduPartialRow& row, int* partition);
 
   sp::shared_ptr<KuduTable> table_;
-  std::map<std::string, int> partitions_by_start_key_;
+  std::map<PartitionKey, int> partitions_by_start_key_;
   int num_partitions_ = 0;
-  std::string tmp_buf_;
 };
 
 

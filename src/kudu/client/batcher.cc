@@ -316,6 +316,8 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   RowOperationsPBEncoder enc(requested);
   for (InFlightOp* op : ops_) {
 #ifndef NDEBUG
+    // Run the same verification that is about to be run by the tablet server
+    // the data is sent to.
     const Partition& partition = op->tablet->partition();
     const PartitionSchema& partition_schema = table()->partition_schema();
     const KuduPartialRow& row = op->write_op->row();

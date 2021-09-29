@@ -332,7 +332,7 @@ Status KuduScanner::Data::OpenNextTablet(const MonoTime& deadline,
 
 Status KuduScanner::Data::ReopenCurrentTablet(const MonoTime& deadline,
                                               std::set<std::string>* blacklist) {
-  return OpenTablet(remote_->partition().partition_key_start(),
+  return OpenTablet(remote_->partition().begin(),
                     deadline,
                     blacklist);
 }
@@ -400,7 +400,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   return scan_status;
 }
 
-Status KuduScanner::Data::OpenTablet(const string& partition_key,
+Status KuduScanner::Data::OpenTablet(const PartitionKey& partition_key,
                                      const MonoTime& deadline,
                                      set<string>* blacklist) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 500, "opening tablet");
@@ -510,7 +510,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     Status s = sync.Wait();
     if (s.IsNotFound()) {
       // No more tablets in the table.
-      partition_pruner_.RemovePartitionKeyRange("");
+      partition_pruner_.RemovePartitionKeyRange({});
       return Status::OK();
     }
     RETURN_NOT_OK(s);
@@ -518,9 +518,9 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     // Check if the meta cache returned a tablet covering a partition key range past
     // what we asked for. This can happen if the requested partition key falls
     // in a non-covered range. In this case we can potentially prune the tablet.
-    if (partition_key < remote_->partition().partition_key_start() &&
+    if (partition_key < remote_->partition().begin() &&
         partition_pruner_.ShouldPrune(remote_->partition())) {
-      partition_pruner_.RemovePartitionKeyRange(remote_->partition().partition_key_end());
+      partition_pruner_.RemovePartitionKeyRange(remote_->partition().end());
       return Status::OK();
     }
 
@@ -568,7 +568,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     RETURN_NOT_OK(HandleError(scan_status, deadline, blacklist, /* needs_reopen=*/ nullptr));
   }
 
-  partition_pruner_.RemovePartitionKeyRange(remote_->partition().partition_key_end());
+  partition_pruner_.RemovePartitionKeyRange(remote_->partition().end());
 
   next_req_.clear_new_scan_request();
   data_in_open_ = (last_response_.has_data() && last_response_.data().num_rows() > 0) ||

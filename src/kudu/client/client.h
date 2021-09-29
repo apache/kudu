@@ -1761,6 +1761,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   friend class KuduClient;
   friend class KuduPartitioner;
   friend class KuduScanToken;
+  friend class KuduScanner;
 
   KuduTable(const sp::shared_ptr<KuduClient>& client,
             const std::string& name,

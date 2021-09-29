@@ -33,6 +33,10 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h"
 
+namespace kudu {
+class PartitionKey;
+}  // namespace kudu
+
 using std::unique_ptr;
 using std::string;
 using std::vector;
@@ -131,13 +135,13 @@ Status ScanConfiguration::AddUpperBoundRaw(const Slice& key) {
   return Status::OK();
 }
 
-Status ScanConfiguration::AddLowerBoundPartitionKeyRaw(const Slice& partition_key) {
-  spec_.SetLowerBoundPartitionKey(partition_key);
+Status ScanConfiguration::AddLowerBoundPartitionKeyRaw(const PartitionKey& pkey) {
+  spec_.SetLowerBoundPartitionKey(pkey);
   return Status::OK();
 }
 
-Status ScanConfiguration::AddUpperBoundPartitionKeyRaw(const Slice& partition_key) {
-  spec_.SetExclusiveUpperBoundPartitionKey(partition_key);
+Status ScanConfiguration::AddUpperBoundPartitionKeyRaw(const PartitionKey& pkey) {
+  spec_.SetExclusiveUpperBoundPartitionKey(pkey);
   return Status::OK();
 }
 

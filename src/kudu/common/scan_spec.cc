@@ -18,6 +18,7 @@
 #include "kudu/common/scan_spec.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <iterator>
 #include <ostream>
 #include <string>
@@ -41,6 +42,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 using std::any_of;
@@ -111,17 +113,17 @@ void ScanSpec::SetExclusiveUpperBoundKey(const EncodedKey* key) {
   }
 }
 
-void ScanSpec::SetLowerBoundPartitionKey(const Slice& partition_key) {
+void ScanSpec::SetLowerBoundPartitionKey(const PartitionKey& partition_key) {
   if (lower_bound_partition_key_ < partition_key) {
-    lower_bound_partition_key_ = partition_key.ToString();
+    lower_bound_partition_key_ = partition_key;
   }
 }
 
-void ScanSpec::SetExclusiveUpperBoundPartitionKey(const Slice& partition_key) {
+void ScanSpec::SetExclusiveUpperBoundPartitionKey(const PartitionKey& partition_key) {
   if (exclusive_upper_bound_partition_key_.empty() ||
       (!partition_key.empty() &&
        partition_key < exclusive_upper_bound_partition_key_)) {
-    exclusive_upper_bound_partition_key_ = partition_key.ToString();
+    exclusive_upper_bound_partition_key_ = partition_key;
   }
 }
 
@@ -135,7 +137,7 @@ string ScanSpec::ToString(const Schema& schema) const {
   }
 
   // List predicates in stable order.
-  for (int idx = 0; idx < schema.num_columns(); idx++) {
+  for (size_t idx = 0; idx < schema.num_columns(); ++idx) {
     const ColumnPredicate* predicate = FindOrNull(predicates_, schema.column(idx).name());
     if (predicate != nullptr) {
       preds.push_back(predicate->ToString());

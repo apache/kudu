@@ -46,6 +46,7 @@
 namespace kudu {
 
 class MonoTime;
+class PartitionKey;
 class Schema;
 
 namespace tserver {
@@ -162,7 +163,7 @@ class KuduScanner::Data {
   Status ReopenCurrentTablet(const MonoTime& deadline, std::set<std::string>* blacklist);
 
   // Open the tablet to scan.
-  Status OpenTablet(const std::string& partition_key,
+  Status OpenTablet(const PartitionKey& partition_key,
                     const MonoTime& deadline,
                     std::set<std::string>* blacklist);
 

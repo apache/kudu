@@ -19,6 +19,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iomanip>
+#include <iostream>
 #include <iterator>
 #include <memory>
 #include <set>
@@ -65,32 +67,14 @@ class faststring;
 // The encoded size of a hash bucket in a partition key.
 static const size_t kEncodedBucketSize = sizeof(uint32_t);
 
-Slice Partition::range_key_start() const {
-  return range_key(partition_key_start_);
-}
-
-Slice Partition::range_key_end() const {
-  return range_key(partition_key_end_);
-}
-
-Slice Partition::range_key(const string& partition_key) const {
-  const size_t hash_size = kEncodedBucketSize * hash_buckets_.size();
-  if (partition_key.size() <= hash_size) {
-    return Slice();
-  }
-  auto s = Slice(partition_key);
-  s.remove_prefix(hash_size);
-  return s;
-}
-
 bool Partition::operator==(const Partition& rhs) const {
   if (this == &rhs) {
     return true;
   }
-  if (partition_key_start() != rhs.partition_key_start()) {
+  if (begin_ != rhs.begin_) {
     return false;
   }
-  if (partition_key_end() != rhs.partition_key_end()) {
+  if (end_ != rhs.end_) {
     return false;
   }
   if (hash_buckets_ != rhs.hash_buckets_) {
@@ -105,8 +89,8 @@ void Partition::ToPB(PartitionPB* pb) const {
   for (int32_t bucket : hash_buckets_) {
     pb->add_hash_buckets(bucket);
   }
-  pb->set_partition_key_start(partition_key_start());
-  pb->set_partition_key_end(partition_key_end());
+  pb->set_partition_key_start(begin().ToString());
+  pb->set_partition_key_end(end().ToString());
 }
 
 void Partition::FromPB(const PartitionPB& pb, Partition* partition) {
@@ -116,8 +100,48 @@ void Partition::FromPB(const PartitionPB& pb, Partition* partition) {
     partition->hash_buckets_.push_back(hash_bucket);
   }
 
-  partition->partition_key_start_ = pb.partition_key_start();
-  partition->partition_key_end_ = pb.partition_key_end();
+  const size_t hash_buckets_num = partition->hash_buckets_.size();
+  partition->begin_ = StringToPartitionKey(
+      pb.partition_key_start(), hash_buckets_num);
+  partition->end_ = StringToPartitionKey(
+      pb.partition_key_end(), hash_buckets_num);
+  // Check the invariant: valid partition cannot span over multiple sets
+  // of hash buckets.
+  //DCHECK(partition->begin_.empty() || partition->end_.empty() ||
+  //       partition->begin_.hash_key() == partition->end_.hash_key());
+}
+
+PartitionKey Partition::StringToPartitionKey(const std::string& key_str,
+                                             size_t hash_dimensions_num) {
+  if (hash_dimensions_num == 0) {
+    return PartitionKey("", key_str);
+  }
+  const size_t hash_part_size = kEncodedBucketSize * hash_dimensions_num;
+  if (key_str.size() <= hash_part_size) {
+    return PartitionKey(key_str, "");
+  }
+  return PartitionKey(key_str.substr(0, hash_part_size),
+                      key_str.substr(hash_part_size));
+}
+
+string PartitionKey::DebugString() const {
+  std::ostringstream ss;
+  ss << "h:";
+  for (size_t i = 0; i < hash_key_.size(); ++i) {
+    ss << std::hex << std::setw(2) << std::setfill('0')
+       << static_cast<uint16_t>(hash_key_[i]);
+  }
+  ss << " r:";
+  for (size_t i = 0; i < range_key_.size(); ++i) {
+    ss << std::hex << std::setw(2) << std::setfill('0')
+       << static_cast<uint16_t>(range_key_[i]);
+  }
+  return ss.str();
+}
+
+std::ostream& operator<<(std::ostream& out, const PartitionKey& key) {
+  out << key.DebugString();
+  return out;
 }
 
 namespace {
@@ -319,30 +343,37 @@ Status PartitionSchema::ToPB(const Schema& schema, PartitionSchemaPB* pb) const 
 }
 
 template<typename Row>
-void PartitionSchema::EncodeKeyImpl(const Row& row, string* buf) const {
+void PartitionSchema::EncodeKeyImpl(const Row& row,
+                                    string* range_buf,
+                                    string* hash_buf) const {
+  DCHECK(range_buf);
+  DCHECK(hash_buf);
   string range_key;
   EncodeColumns(row, range_schema_.column_ids, &range_key);
+
   const auto& hash_schema = GetHashSchemaForRange(range_key);
   const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
+  string hash_key;
   for (const auto& hash_dimension : hash_schema) {
     const auto bucket = HashValueForRow(row, hash_dimension);
-    hash_encoder.Encode(&bucket, buf);
+    hash_encoder.Encode(&bucket, &hash_key);
   }
-  // The range portion of the key has been already encoded -- append it to the
-  // result buffer.
-  buf->append(range_key);
+  *range_buf = std::move(range_key);
+  *hash_buf = std::move(hash_key);
 }
 
-string PartitionSchema::EncodeKey(const KuduPartialRow& row) const {
-  string encoded_key;
-  EncodeKeyImpl(row, &encoded_key);
-  return encoded_key;
+PartitionKey PartitionSchema::EncodeKey(const KuduPartialRow& row) const {
+  string encoded_range;
+  string encoded_hash;
+  EncodeKeyImpl(row, &encoded_range, &encoded_hash);
+  return PartitionKey(std::move(encoded_hash), std::move(encoded_range));
 }
 
-string PartitionSchema::EncodeKey(const ConstContiguousRow& row) const {
-  string encoded_key;
-  EncodeKeyImpl(row, &encoded_key);
-  return encoded_key;
+PartitionKey PartitionSchema::EncodeKey(const ConstContiguousRow& row) const {
+  string encoded_range;
+  string encoded_hash;
+  EncodeKeyImpl(row, &encoded_range, &encoded_hash);
+  return PartitionKey(std::move(encoded_hash), std::move(encoded_range));
 }
 
 Status PartitionSchema::EncodeRangeKey(const KuduPartialRow& row,
@@ -574,10 +605,10 @@ Status PartitionSchema::CreatePartitions(
     vector<Partition> new_partitions;
     for (const Partition& base_partition : base_hash_partitions) {
       for (const auto& bound : bounds_with_hash_schemas) {
-        Partition partition = base_partition;
-        partition.partition_key_start_.append(bound.lower);
-        partition.partition_key_end_.append(bound.upper);
-        new_partitions.emplace_back(std::move(partition));
+        Partition p = base_partition;
+        p.begin_.mutable_range_key()->append(bound.lower);
+        p.end_.mutable_range_key()->append(bound.upper);
+        new_partitions.emplace_back(std::move(p));
       }
     }
     *partitions = std::move(new_partitions);
@@ -593,9 +624,11 @@ Status PartitionSchema::CreatePartitions(
       vector<Partition> current_bound_hash_partitions = GenerateHashPartitions(
           bound.hash_schema, hash_encoder);
       // Add range information to the partition key.
-      for (Partition& partition : current_bound_hash_partitions) {
-        partition.partition_key_start_.append(bound.lower);
-        partition.partition_key_end_.append(bound.upper);
+      for (Partition& p : current_bound_hash_partitions) {
+        DCHECK(p.begin_.range_key().empty()) << p.begin_.DebugString();
+        p.begin_.mutable_range_key()->assign(bound.lower);
+        DCHECK(p.end().range_key().empty());
+        p.end_.mutable_range_key()->assign(bound.upper);
         partition_idx_to_hash_schema_idx.emplace_back(i);
       }
       result_partitions.insert(result_partitions.end(),
@@ -624,16 +657,20 @@ Status PartitionSchema::CreatePartitions(
   // partition key beginning at the hash component. For a concrete example,
   // see PartitionTest::TestCreatePartitions.
   for (size_t partition_idx = 0; partition_idx < partitions->size(); ++partition_idx) {
-    Partition& partition = (*partitions)[partition_idx];
-    const int hash_buckets_num = static_cast<int>(partition.hash_buckets().size());
-    // Find the first zero-valued bucket from the end and truncate the partition key
-    // starting from that bucket onwards for zero-valued buckets.
-    if (partition.range_key_start().empty()) {
+    auto& p = (*partitions)[partition_idx];
+    const auto hash_buckets_num = static_cast<int>(p.hash_buckets().size());
+    // Find the first nonzero-valued bucket from the end and truncate the
+    // partition key starting from that bucket onwards for zero-valued buckets.
+    //
+    // TODO(aserbin): is this really necessary -- zeros in hash key are the
+    //                minimum possible values, and the range part is already
+    //                empty?
+    if (p.begin().range_key().empty()) {
       for (int i = hash_buckets_num - 1; i >= 0; --i) {
-        if (partition.hash_buckets()[i] != 0) {
+        if (p.hash_buckets()[i] != 0) {
           break;
         }
-        partition.partition_key_start_.erase(kEncodedBucketSize * i);
+        p.begin_.mutable_hash_key()->erase(kEncodedBucketSize * i);
       }
     }
     // Starting from the last hash bucket, truncate the partition key until we hit the first
@@ -641,19 +678,19 @@ Status PartitionSchema::CreatePartitions(
     // bucket value. For example, the following range end partition keys should be transformed,
     // where the key is (hash_comp1, hash_comp2, range_comp):
     //
-    // [ (0, 0, "a2b2") -> (0, 1, "a2b2") ]
-    // [ (0, 1, "a2b2") -> (1, _, "a2b2") ]
-    // [ (1, 0, "a2b2") -> (1, 1, "a2b2") ]
-    // [ (1, 1, "a2b2") -> (_, _, "a2b2") ]
-    if (partition.range_key_end().empty()) {
+    // [ (0, 0, "") -> (0, 1, "") ]
+    // [ (0, 1, "") -> (1, _, "") ]
+    // [ (1, 0, "") -> (1, 1, "") ]
+    // [ (1, 1, "") -> (_, _, "") ]
+    if (p.end().range_key().empty()) {
       const auto& hash_schema = range_hash_schemas.empty()
           ? hash_schema_
           : bounds_with_hash_schemas[partition_idx_to_hash_schema_idx[partition_idx]].hash_schema;
       for (int i = hash_buckets_num - 1; i >= 0; --i) {
-        partition.partition_key_end_.erase(kEncodedBucketSize * i);
-        const int32_t hash_bucket = partition.hash_buckets()[i] + 1;
+        p.end_.mutable_hash_key()->erase(kEncodedBucketSize * i);
+        const int32_t hash_bucket = p.hash_buckets()[i] + 1;
         if (hash_bucket != hash_schema[i].num_buckets) {
-          hash_encoder.Encode(&hash_bucket, &partition.partition_key_end_);
+          hash_encoder.Encode(&hash_bucket, p.end_.mutable_hash_key());
           break;
         }
       }
@@ -697,16 +734,15 @@ bool PartitionSchema::RangePartitionContainsRowImpl(
     const Partition& partition, const Row& row) const {
   // If range partition is not used, column_ids would be empty and
   // EncodedColumn() would return immediately.
-  string range_partition_key;
-  EncodeColumns(row, range_schema_.column_ids, &range_partition_key);
+  string key;
+  EncodeColumns(row, range_schema_.column_ids, &key);
 
   // When all hash buckets match, then the row is contained in the partition
   // if the row's key is greater or equal to the lower bound, and if there is
   // either no upper bound or the row's key is less than the upper bound.
-  const auto key = Slice(range_partition_key);
   return
-      (partition.range_key_start() <= key) &&
-      (partition.range_key_end().empty() || key < partition.range_key_end());
+      (partition.begin().range_key() <= key) &&
+      (partition.end().range_key().empty() || key < partition.end().range_key());
 }
 
 bool PartitionSchema::PartitionContainsRow(const Partition& partition,
@@ -879,14 +915,16 @@ string PartitionSchema::PartitionDebugString(const Partition& partition,
   // Partitions are considered metadata, so don't redact them.
   ScopedDisableRedaction no_redaction;
 
-  vector<string> components;
-  if (partition.hash_buckets_.size() != hash_schema_.size()) {
-    return "<hash-partition-error>";
+  const auto& hash_schema = GetHashSchemaForRange(partition.begin().range_key());
+  if (partition.hash_buckets_.size() != hash_schema.size()) {
+    return Substitute("<hash-partition-error: $0 vs $1 expected buckets>",
+                      partition.hash_buckets_.size(), hash_schema.size());
   }
 
-  for (size_t i = 0; i < hash_schema_.size(); ++i) {
+  vector<string> components;
+  for (size_t i = 0; i < hash_schema.size(); ++i) {
     string s = Substitute("HASH ($0) PARTITION $1",
-                          ColumnIdsToColumnNames(schema, hash_schema_[i].column_ids),
+                          ColumnIdsToColumnNames(schema, hash_schema[i].column_ids),
                           partition.hash_buckets_[i]);
     components.emplace_back(std::move(s));
   }
@@ -894,8 +932,8 @@ string PartitionSchema::PartitionDebugString(const Partition& partition,
   if (!range_schema_.column_ids.empty()) {
     string s = Substitute("RANGE ($0) PARTITION $1",
                           ColumnIdsToColumnNames(schema, range_schema_.column_ids),
-                          RangePartitionDebugString(partition.range_key_start(),
-                                                    partition.range_key_end(),
+                          RangePartitionDebugString(partition.begin().range_key(),
+                                                    partition.end().range_key(),
                                                     schema));
     components.emplace_back(std::move(s));
   }
@@ -905,10 +943,12 @@ string PartitionSchema::PartitionDebugString(const Partition& partition,
 
 template<typename Row>
 string PartitionSchema::PartitionKeyDebugStringImpl(const Row& row) const {
-  // TODO(aserbin): update this to adapt to custom hash schemas per range
+  string range_key;
+  EncodeColumns(row, range_schema_.column_ids, &range_key);
+  const auto& hash_schema = GetHashSchemaForRange(range_key);
   vector<string> components;
-  components.reserve(hash_schema_.size() + range_schema_.column_ids.size());
-  for (const auto& hash_dimension : hash_schema_) {
+  components.reserve(hash_schema.size() + range_schema_.column_ids.size());
+  for (const auto& hash_dimension : hash_schema) {
     components.emplace_back(Substitute(
         "HASH ($0): $1",
         ColumnIdsToColumnNames(*row.schema(), hash_dimension.column_ids),
@@ -937,55 +977,34 @@ string PartitionSchema::PartitionKeyDebugString(const KuduPartialRow& row) const
   return PartitionKeyDebugStringImpl(row);
 }
 
-string PartitionSchema::PartitionKeyDebugString(Slice key, const Schema& schema) const {
-  // Since it's not known what's the right hash bucket schema for the key
-  // (there might be custom hash bucket schemas per range), let's first find
-  // what's the size of the range key and remove it as the trailing part
-  // of the key. The rest is the hash partition key.
-  //
-  // TODO(aserbin): is there a better way to do this?
-  const bool has_ranges = !range_schema_.column_ids.empty();
-  string range_key_size_meter;
-  if (has_ranges) {
-    KuduPartialRow row(&schema);
-    EncodeColumns(row, range_schema_.column_ids, &range_key_size_meter);
+string PartitionSchema::PartitionKeyDebugString(const PartitionKey& key,
+                                                const Schema& schema) const {
+  const auto& hash_schema = GetHashSchemaForRange(key.range_key());
+  Slice hash_key(key.hash_key());
+  if (hash_key.size() != kEncodedBucketSize * hash_schema.size()) {
+     return "<hash-decode-error>";
   }
 
-  if (has_ranges) {
-    if (key.size() < range_key_size_meter.size()) {
-      return "<range-decode-error>";
-    }
-  } else {
-    if (key.size() <  kEncodedBucketSize * hash_schema_.size()) {
-      return "<hash-decode-error>";
-    }
-  }
-
-  Slice range_key(key);
-  if (has_ranges) {
-    DCHECK_GE(key.size(), range_key_size_meter.size());
-    range_key.remove_prefix(key.size() - range_key_size_meter.size());
-  }
-
-  const auto& hash_schemas = has_ranges
-      ? GetHashSchemaForRange(range_key.ToString()) : hash_schema_;
   vector<string> components;
-  components.reserve(hash_schemas.size() + 1);
-  for (const auto& hash_schema : hash_schemas) {
+  components.reserve(hash_schema.size() + 1);
+  for (const auto& hash_dimension : hash_schema) {
     uint32_t big_endian;
-    memcpy(&big_endian, key.data(), sizeof(uint32_t));
-    key.remove_prefix(sizeof(uint32_t));
+    memcpy(&big_endian, hash_key.data(), kEncodedBucketSize);
+    hash_key.remove_prefix(kEncodedBucketSize);
     components.emplace_back(
         Substitute("HASH ($0): $1",
-                    ColumnIdsToColumnNames(schema, hash_schema.column_ids),
+                    ColumnIdsToColumnNames(schema, hash_dimension.column_ids),
                     BigEndian::ToHost32(big_endian)));
   }
+  DCHECK(hash_key.empty());
 
+  const bool has_ranges = !range_schema_.column_ids.empty();
   if (has_ranges) {
-      components.emplace_back(
-          Substitute("RANGE ($0): $1",
-                     ColumnIdsToColumnNames(schema, range_schema_.column_ids),
-                     RangeKeyDebugString(key, schema)));
+    Slice range_key(key.range_key());
+    components.emplace_back(
+        Substitute("RANGE ($0): $1",
+                   ColumnIdsToColumnNames(schema, range_schema_.column_ids),
+                   RangeKeyDebugString(range_key, schema)));
   }
 
   return JoinStrings(components, ", ");
@@ -1155,8 +1174,8 @@ string PartitionSchema::PartitionTableEntry(const Schema& schema,
   if (!range_schema_.column_ids.empty()) {
     SubstituteAndAppend(&entry, "<td>$0</td>",
                         EscapeForHtmlToString(
-                          RangePartitionDebugString(partition.range_key_start(),
-                                                    partition.range_key_end(),
+                          RangePartitionDebugString(partition.begin().range_key(),
+                                                    partition.end().range_key(),
                                                     schema)));
   }
   return entry;
@@ -1264,8 +1283,10 @@ vector<Partition> PartitionSchema::GenerateHashPartitions(
       for (uint32_t bucket = 0; bucket < hash_dimension.num_buckets; ++bucket) {
         Partition partition = base_partition;
         partition.hash_buckets_.push_back(bucket);
-        hash_encoder.Encode(&bucket, &partition.partition_key_start_);
-        hash_encoder.Encode(&bucket, &partition.partition_key_end_);
+
+        hash_encoder.Encode(&bucket, partition.begin_.mutable_hash_key());
+        hash_encoder.Encode(&bucket, partition.end_.mutable_hash_key());
+
         new_partitions.emplace_back(std::move(partition));
       }
     }

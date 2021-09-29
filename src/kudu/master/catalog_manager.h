@@ -36,6 +36,7 @@
 #include <gtest/gtest_prod.h>
 #include <sparsehash/dense_hash_map>
 
+#include "kudu/common/partition.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/macros.h"
@@ -71,7 +72,6 @@ class MetricRegistry;
 class MonitoredTask;
 class NodeInstancePB;
 class PartitionPB;
-class PartitionSchema;
 class Schema;
 class TableExtraConfigPB;
 class ThreadPool;
@@ -284,7 +284,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   };
 
   typedef PersistentTableInfo cow_state;
-  typedef std::map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
+  typedef std::map<PartitionKey, scoped_refptr<TabletInfo>> TabletInfoMap;
 
   explicit TableInfo(std::string table_id);
 
@@ -301,9 +301,13 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   void AddRemoveTablets(const std::vector<scoped_refptr<TabletInfo>>& tablets_to_add,
                         const std::vector<scoped_refptr<TabletInfo>>& tablets_to_drop);
 
-  // This only returns tablets which are in RUNNING state.
-  void GetTabletsInRange(const GetTableLocationsRequestPB* req,
-                         std::vector<scoped_refptr<TabletInfo>>* ret) const;
+  // This is only applicable to the tablets which are in RUNNING state. The
+  // method returns Status::InvalidArgument() status if the request happen to
+  // specify the range boundaries with legacy fields
+  // GetTableLocationsRequestPB::{partition_key_start,partition_key_end} when
+  // in fact the table has ranges with custom hash schemas.
+  Status GetTabletsInRange(const GetTableLocationsRequestPB* req,
+                           std::vector<scoped_refptr<TabletInfo>>* ret) const;
 
   // Fills the vector with all tablets in partition key sorted order.
   void GetAllTablets(std::vector<scoped_refptr<TabletInfo>>* ret) const;
@@ -391,7 +395,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   //
   // Every TabletInfo has a strong backpointer to its TableInfo, so these
   // pointers must be raw.
-  typedef std::map<std::string, TabletInfo*> RawTabletInfoMap;
+  typedef std::map<PartitionKey, TabletInfo*> RawTabletInfoMap;
   RawTabletInfoMap tablet_map_;
 
   // Protects tablet_map_, pending_tasks_, and schema_version_counts_.

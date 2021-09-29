@@ -1314,7 +1314,7 @@ Status KuduTable::ListPartitions(vector<Partition>* partitions) {
   while (pruner.HasMorePartitionKeyRanges()) {
     scoped_refptr<client::internal::RemoteTablet> tablet;
     Synchronizer sync;
-    const string& partition_key = pruner.NextPartitionKey();
+    const auto& partition_key = pruner.NextPartitionKey();
     client->data_->meta_cache_->LookupTabletByKey(
         this,
         partition_key,
@@ -1330,7 +1330,7 @@ Status KuduTable::ListPartitions(vector<Partition>* partitions) {
     RETURN_NOT_OK(s);
 
     partitions->emplace_back(tablet->partition());
-    pruner.RemovePartitionKeyRange(tablet->partition().partition_key_end());
+    pruner.RemovePartitionKeyRange(tablet->partition().end());
   }
   return Status::OK();
 }
@@ -1798,11 +1798,30 @@ Status KuduScanner::AddExclusiveUpperBoundRaw(const Slice& key) {
 }
 
 Status KuduScanner::AddLowerBoundPartitionKeyRaw(const Slice& partition_key) {
-  return data_->mutable_configuration()->AddLowerBoundPartitionKeyRaw(partition_key);
+  // TODO(aserbin): use move semantics to pass PartitionKey arguments
+  if (const auto& table = GetKuduTable();
+      table->data_->partition_schema_.HasCustomHashSchemas()) {
+    return Status::InvalidArgument(Substitute(
+        "$0: cannot use AddLowerBoundPartitionKeyRaw() because "
+        "the table has custom per-range hash schemas", table->name()));
+  }
+  const auto& hash_schema = GetKuduTable()->partition_schema().hash_schema();
+  auto pkey = Partition::StringToPartitionKey(partition_key.ToString(),
+                                              hash_schema.size());
+  return data_->mutable_configuration()->AddLowerBoundPartitionKeyRaw(pkey);
 }
 
 Status KuduScanner::AddExclusiveUpperBoundPartitionKeyRaw(const Slice& partition_key) {
-  return data_->mutable_configuration()->AddUpperBoundPartitionKeyRaw(partition_key);
+  if (const auto& table = GetKuduTable();
+      table->data_->partition_schema_.HasCustomHashSchemas()) {
+    return Status::InvalidArgument(Substitute(
+        "$0: cannot use AddExclusiveUpperBoundPartitionKeyRaw() because "
+        "the table has custom per-range hash schemas", table->name()));
+  }
+  const auto& hash_schema = GetKuduTable()->partition_schema().hash_schema();
+  auto pkey = Partition::StringToPartitionKey(partition_key.ToString(),
+                                              hash_schema.size());
+  return data_->mutable_configuration()->AddUpperBoundPartitionKeyRaw(pkey);
 }
 
 Status KuduScanner::SetCacheBlocks(bool cache_blocks) {

@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iosfwd>
 #include <map>
 #include <string>
 #include <utility>
@@ -46,6 +47,82 @@ class PartitionSchemaPB;
 class PartitionSchemaPB_HashBucketSchemaPB;
 template <typename Buffer> class KeyEncoder;
 
+// This class is a representation of a table's row (or a row limit) according
+// to the table's partition schema. A table's partition can be defined by a pair
+// of such PartitionKey objects: the beginning and the end of a partition. Rows
+// that belong to a given partition all fall within the same partition key
+// range, i.e. they are between the beginning and the end of the partition
+// defined by two PartitionKey objects. Essentially, there is a way to serialize
+// a subset of primary keys columns in a table's row given the table's partition
+// schema, and PartitionKey consists of the hash and the range parts of that
+// serialized representation.
+class PartitionKey {
+ public:
+  // Build a PartitionKey that represents infinity. For the beginning of a
+  // partition represents '-inf'; for the end of a partition represents '+inf'.
+  PartitionKey() = default;
+
+  // Build PartitionKey object given hash and range parts.
+  PartitionKey(std::string hash_key, std::string range_key)
+      : hash_key_(std::move(hash_key)),
+        range_key_(std::move(range_key)) {
+  }
+
+  PartitionKey& operator=(const PartitionKey& other) {
+    hash_key_ = other.hash_key_;
+    range_key_ = other.range_key_;
+    return *this;
+  }
+
+  bool operator==(const PartitionKey& other) const {
+    return hash_key_ == other.hash_key_ && range_key_ == other.range_key_;
+  }
+
+  bool operator!=(const PartitionKey& other) const {
+    return !(*this == other);
+  }
+
+  bool operator<(const PartitionKey& other) const {
+    return ToString() < other.ToString();
+  }
+
+  bool operator<=(const PartitionKey& other) const {
+    return !(*this > other);
+  }
+
+  bool operator>(const PartitionKey& other) const {
+    return other < *this;
+  }
+
+  bool operator>=(const PartitionKey& other) const {
+    return !(*this < other);
+  }
+
+  bool empty() const {
+    return hash_key_.empty() && range_key_.empty();
+  }
+
+  const std::string& hash_key() const { return hash_key_; }
+  const std::string& range_key() const { return range_key_; }
+
+  std::string* mutable_hash_key() { return &hash_key_; }
+  std::string* mutable_range_key() { return &range_key_; }
+
+  // The serialized representation of this partition key. In legacy Kudu
+  // versions, this string representation was used as a partition key.
+  std::string ToString() const {
+    return hash_key_ + range_key_;
+  }
+
+  // Return a string with hexadecimal representation of the data comprising
+  // the key: useful for representing the key in human-readable format.
+  std::string DebugString() const;
+
+ private:
+  std::string hash_key_;  // the hash part of the key, encoded
+  std::string range_key_; // the range part of the key, encoded
+};
+
 // A Partition describes the set of rows that a Tablet is responsible for
 // serving. Each tablet is assigned a single Partition.
 //
@@ -62,16 +139,12 @@ class Partition {
     return hash_buckets_;
   }
 
-  Slice range_key_start() const;
-
-  Slice range_key_end() const;
-
-  const std::string& partition_key_start() const {
-    return partition_key_start_;
+  const PartitionKey& begin() const {
+    return begin_;
   }
 
-  const std::string& partition_key_end() const {
-    return partition_key_end_;
+  const PartitionKey& end() const {
+    return end_;
   }
 
   // Returns true iff the given partition 'rhs' is equivalent to this one.
@@ -89,17 +162,22 @@ class Partition {
   // to be created by the master process.
   static void FromPB(const PartitionPB& pb, Partition* partition);
 
+  // Knowing the number of hash bucketing dimensions, it's possible to separate
+  // the encoded hash-related part from the range-related part, so it's possible
+  // to build corresponding PartitionKey object from a string where the hash-
+  // and the range-related parts are concatenated.
+  static PartitionKey StringToPartitionKey(const std::string& key_str,
+                                           size_t hash_dimensions_num);
  private:
   friend class PartitionSchema;
 
-  // Helper function for accessing the range key portion of a partition key.
-  Slice range_key(const std::string& partition_key) const;
-
   std::vector<int32_t> hash_buckets_;
 
-  std::string partition_key_start_;
-  std::string partition_key_end_;
+  PartitionKey begin_;
+  PartitionKey end_;
 };
+
+std::ostream& operator<<(std::ostream& out, const PartitionKey& key);
 
 // A partition schema describes how the rows of a table are distributed among
 // tablets.
@@ -225,10 +303,9 @@ class PartitionSchema {
   // Requires a schema to encode the range bounds.
   Status ToPB(const Schema& schema, PartitionSchemaPB* pb) const;
 
-  // Appends the row's encoded partition key into the provided buffer.
-  // On failure, the buffer may have data partially appended.
-  std::string EncodeKey(const KuduPartialRow& row) const;
-  std::string EncodeKey(const ConstContiguousRow& row) const;
+  // Returns partition key for the row.
+  PartitionKey EncodeKey(const KuduPartialRow& row) const;
+  PartitionKey EncodeKey(const ConstContiguousRow& row) const;
 
   // Creates the set of table partitions for a partition schema and collection
   // of split rows and split bounds.
@@ -284,7 +361,8 @@ class PartitionSchema {
   std::string PartitionDebugString(const Partition& partition, const Schema& schema) const;
 
   // Returns a text description of a partition key suitable for debug printing.
-  std::string PartitionKeyDebugString(Slice key, const Schema& schema) const;
+  std::string PartitionKeyDebugString(const PartitionKey& key,
+                                      const Schema& schema) const;
   std::string PartitionKeyDebugString(const KuduPartialRow& row) const;
   std::string PartitionKeyDebugString(const ConstContiguousRow& row) const;
 
@@ -451,7 +529,9 @@ class PartitionSchema {
 
   // Private templated helper for EncodeKey.
   template<typename Row>
-  void EncodeKeyImpl(const Row& row, std::string* buf) const;
+  void EncodeKeyImpl(const Row& row,
+                     std::string* range_buf,
+                     std::string* hash_buf) const;
 
   // Returns true if all of the columns in the range partition key are unset in
   // the row.

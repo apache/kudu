@@ -232,8 +232,8 @@ TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
       spec.SetExclusiveUpperBoundKey(enc_upper_bound);
     }
     size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // No bounds
@@ -350,8 +350,8 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
       spec.SetExclusiveUpperBoundKey(enc_upper_bound);
     }
     size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // No bounds
@@ -459,8 +459,8 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
       spec.SetExclusiveUpperBoundKey(enc_upper_bound);
     }
     size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // No bounds
@@ -524,14 +524,12 @@ TEST_F(PartitionPrunerTest, TestRangePruning) {
   // number of partitions are pruned.
   const auto check = [&] (const vector<ColumnPredicate>& predicates, size_t remaining_tablets) {
     ScanSpec spec;
-
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
-
     size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   constexpr int8_t neg_ten = -10;
@@ -699,13 +697,11 @@ TEST_F(PartitionPrunerTest, TestHashPruning) {
                     size_t remaining_tablets,
                     size_t pruner_ranges) {
     ScanSpec spec;
-
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
-
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   constexpr int8_t zero = 0;
@@ -777,13 +773,11 @@ TEST_F(PartitionPrunerTest, TestInListHashPruning) {
                     size_t remaining_tablets,
                     size_t pruner_ranges) {
     ScanSpec spec;
-
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
-
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // zero, one, eight are in different buckets when bucket number is 3 and seed is 0.
@@ -857,13 +851,11 @@ TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
                     size_t remaining_tablets,
                     size_t pruner_ranges) {
     ScanSpec spec;
-
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
-
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // zero, one, eight are in different buckets when bucket number is 3 and seed is 0.
@@ -947,27 +939,25 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   ASSERT_OK(split.SetUnixTimeMicros("time", 10));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>{ split }, {}, {},
-                                                     schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(
+      vector<KuduPartialRow>{ split }, {}, {}, schema, &partitions));
   ASSERT_EQ(4, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
   const auto check = [&] (const vector<ColumnPredicate>& predicates,
-                    const string& lower_bound_partition_key,
-                    const string& upper_bound_partition_key,
+                    const PartitionKey& lower_bound_partition_key,
+                    const PartitionKey& upper_bound_partition_key,
                     size_t remaining_tablets,
                     size_t pruner_ranges) {
     ScanSpec spec;
-
     spec.SetLowerBoundPartitionKey(lower_bound_partition_key);
     spec.SetExclusiveUpperBoundPartitionKey(upper_bound_partition_key);
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
-
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   Slice a = "a";
@@ -982,7 +972,7 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
                     ColumnPredicate::Equality(schema.column(1), &a),
                     ColumnPredicate::Range(schema.column(2), &nine, nullptr) },
-                  "", "",
+                  {}, {},
                   2, 1));
 
   // host = "a"
@@ -992,7 +982,7 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
                     ColumnPredicate::Equality(schema.column(1), &a),
                     ColumnPredicate::Range(schema.column(2), &ten, &twenty) },
-                  "", "",
+                  {}, {},
                   1, 1));
 
   // host = "a"
@@ -1001,7 +991,7 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
                     ColumnPredicate::Equality(schema.column(1), &a),
                     ColumnPredicate::Range(schema.column(2), nullptr, &ten) },
-                  "", "",
+                  {}, {},
                   1, 1));
 
   // host = "a"
@@ -1010,7 +1000,7 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
                     ColumnPredicate::Equality(schema.column(1), &a),
                     ColumnPredicate::Range(schema.column(2), &ten, nullptr) },
-                  "", "",
+                  {}, {},
                   1, 1));
 
   // host = "a"
@@ -1019,24 +1009,24 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &a),
                     ColumnPredicate::Equality(schema.column(1), &a),
                     ColumnPredicate::Equality(schema.column(2), &ten) },
-                  "", "",
+                  {}, {},
                   1, 1));
 
   // partition key < (hash=1)
-  NO_FATALS(check({}, "", string("\0\0\0\1", 4), 2, 1));
+  NO_FATALS(check({}, {}, { string("\0\0\0\1", 4), "" }, 2, 1));
 
   // partition key >= (hash=1)
-  NO_FATALS(check({}, string("\0\0\0\1", 4), "", 2, 1));
+  NO_FATALS(check({}, { string("\0\0\0\1", 4), "" }, {}, 2, 1));
 
   // timestamp = 10
   // partition key < (hash=1)
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &ten) },
-                  "", string("\0\0\0\1", 4), 1, 1));
+      {}, { string("\0\0\0\1", 4), "" }, 1, 1));
 
   // timestamp = 10
   // partition key >= (hash=1)
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(2), &ten) },
-                  string("\0\0\0\1", 4), "", 1, 1));
+      { string("\0\0\0\1", 4), "" }, {}, 1, 1));
 }
 
 TEST_F(PartitionPrunerTest, TestKudu2173) {
@@ -1063,13 +1053,12 @@ TEST_F(PartitionPrunerTest, TestKudu2173) {
   // number of partitions are pruned.
   const auto check = [&] (const vector<ColumnPredicate>& predicates, size_t remaining_tablets) {
     ScanSpec spec;
-
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
     size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   constexpr int8_t eleven = 11;
@@ -1146,8 +1135,8 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangePruning) {
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
   const auto check = [&] (const vector<ColumnPredicate>& predicates,
-                          const string& lower_bound_partition_key,
-                          const string& upper_bound_partition_key,
+                          const PartitionKey& lower_bound_partition_key,
+                          const PartitionKey& upper_bound_partition_key,
                           size_t remaining_tablets,
                           size_t pruner_ranges) {
     ScanSpec spec;
@@ -1172,97 +1161,118 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangePruning) {
   const Slice m = "m";
 
   // No Bounds
-  NO_FATALS(check({}, "", "", 12, 12));
+  NO_FATALS(check({}, {}, {}, 12, 12));
 
   // A = 1
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &one) },
-                  "", "", 7, 7));
+            {}, {}, 7, 7));
   // B = 1
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one) },
-                  "", "", 7, 7));
+            {}, {}, 7, 7));
   // A = 0
   // B = 1
   // C >= "e"
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &zero),
                     ColumnPredicate::Equality(schema.column(1), &one),
                     ColumnPredicate::Range(schema.column(2), &e, nullptr) },
-                  "", "", 3, 3));
+                  {}, {}, 3, 3));
   // A = 0
   // B = 1
   // C = "e"
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &zero),
                     ColumnPredicate::Equality(schema.column(1), &one),
                     ColumnPredicate::Equality(schema.column(2), &e) },
-                  "", "", 1, 1));
+                  {}, {}, 1, 1));
   // B = 1
   // C >= "b"
   // C < "j"
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &one),
                     ColumnPredicate::Range(schema.column(2), &b, nullptr),
                     ColumnPredicate::Range(schema.column(2), nullptr, &i) },
-                  "", "", 6, 6));
+                   {}, {}, 6, 6));
   // B = 0
   // C >= "e"
   // C < "l"
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(1), &zero),
                     ColumnPredicate::Range(schema.column(2), &e, nullptr),
                     ColumnPredicate::Range(schema.column(2), nullptr, &l) },
-                  "", "", 4, 4));
+                  {}, {}, 4, 4));
   // C >= "a"
   // C < "b"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &a, &b) },
-                  "", "", 3, 3));
+                  {}, {}, 3, 3));
   // C >= "a"
   // C < "e"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &a, &e) },
-                  "", "", 9, 9));
+                  {}, {}, 9, 9));
   // C >= "e"
   // C < "i"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &e, &i) },
-                  "", "", 7, 7));
+                  {}, {}, 7, 7));
   // C >= "a"
   // C < "l"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &a, &l) },
-                  "", "", 12, 12));
+                  {}, {}, 12, 12));
   // C >= "i"
   // C < "l"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &i, &l) },
-                  "", "", 3, 3));
+                  {}, {}, 3, 3));
   // C >= "e"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &e, nullptr) },
-                  "", "", 9, 9));
+                  {}, {}, 9, 9));
   // C < "f"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &f) },
-                  "", "", 9, 9));
+                  {}, {}, 9, 9));
   // C >= "f"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &f, nullptr) },
-                  "", "", 3, 3));
+                  {}, {}, 3, 3));
   // C < "a"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), nullptr, &a) },
-                  "", "", 0, 0));
+                  {}, {}, 0, 0));
   // C >= "m"
   NO_FATALS(check({ ColumnPredicate::Range(schema.column(2), &m, nullptr) },
-                  "", "", 0, 0));
+                  {}, {}, 0, 0));
 
   // Uses None predicate to short circuit scan
-  NO_FATALS(check({ ColumnPredicate::None(schema.column(2))}, "", "", 0, 0));
+  NO_FATALS(check({ ColumnPredicate::None(schema.column(2))}, {}, {}, 0, 0));
 
   // partition key >= (hash=1, hash=0)
-  NO_FATALS(check({}, string("\0\0\0\1\0\0\0\0", 8), "", 7, 7));
+  NO_FATALS(check({}, {string("\0\0\0\1\0\0\0\0", 8), ""}, {}, 7, 7));
 
   // partition key < (hash=1, hash=0)
-  NO_FATALS(check({}, "", string("\0\0\0\1\0\0\0\0", 8), 5, 5));
+  NO_FATALS(check({}, {}, {string("\0\0\0\1\0\0\0\0", 8), ""}, 5, 5));
 
   // C >= "e"
   // C < "m"
   // partition key >= (hash=1)
+  //
+  // The only non-pruned tablets are:
+  //   * range d-f:
+  //       hash keys:
+  //         ** "\0\0\0\1\0\0\0\0"
+  //         ** "\0\0\0\1\0\0\0\1"
+  //         ** "\0\0\0\1\0\0\0\2"
+  //   * range k-m:
+  //       hash keys:
+  //         ** "\0\0\0\1"
   NO_FATALS(check({ColumnPredicate::Range(schema.column(2), &e, &m)},
-                  string("\0\0\0\1", 4), "", 5, 5));
+            { string("\0\0\0\1", 4), "" }, {}, 5, 5));
+
   // C >= "e"
   // C < "m"
   // partition key < (hash=1)
-  NO_FATALS(check({ColumnPredicate::Range(schema.column(2), &e, &m)}, "",
-                  string("\0\0\0\1", 4), 4, 4));
+  //
+  // The only non-pruned tablets are:
+  //   * range d-f:
+  //       hash keys:
+  //         ** "\0\0\0\0\0\0\0\0"
+  //         ** "\0\0\0\0\0\0\0\1"
+  //         ** "\0\0\0\0\0\0\0\2"
+  //   * range k-m:
+  //       hash keys:
+  //         ** "\0\0\0\0"
+  NO_FATALS(check({ColumnPredicate::Range(schema.column(2), &e, &m)},
+            {}, { string("\0\0\0\1", 4), "" }, 4, 4));
 }
 
 TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePruning) {
@@ -1330,8 +1340,8 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
       enc_upper_bound = EncodedKey::FromContiguousRow(row, &arena);
       spec.SetExclusiveUpperBoundKey(enc_upper_bound);
     }
-    NO_FATALS(CheckPrunedPartitions(schema, partition_schema, partitions, spec,
-                                    remaining_tablets, pruner_ranges));
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // No bounds

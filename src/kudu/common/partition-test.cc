@@ -37,6 +37,7 @@
 #include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -48,6 +49,7 @@ using std::pair;
 using std::string;
 using std::vector;
 using std::make_pair;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -116,12 +118,16 @@ void CheckCreateRangePartitions(const vector<pair<optional<string>, optional<str
   for (int i = 0; i < partitions.size(); i++) {
     const string& lower = expected_partition_ranges[i].first;
     const string& upper = expected_partition_ranges[i].second;
+    SCOPED_TRACE(Substitute("partition $0", i));
 
-    EXPECT_TRUE(partitions[i].hash_buckets().empty());
-    EXPECT_EQ(lower, partitions[i].range_key_start());
-    EXPECT_EQ(upper, partitions[i].range_key_end());
-    EXPECT_EQ(lower, partitions[i].partition_key_start());
-    EXPECT_EQ(upper, partitions[i].partition_key_end());
+    const auto& p = partitions[i];
+    ASSERT_TRUE(p.hash_buckets().empty());
+    ASSERT_TRUE(p.end().hash_key().empty());
+    ASSERT_TRUE(p.begin().hash_key().empty());
+    ASSERT_EQ(lower, p.begin().range_key());
+    ASSERT_EQ(upper, p.end().range_key());
+    ASSERT_EQ(lower, p.begin().ToString());
+    ASSERT_EQ(upper, p.end().ToString());
   }
 }
 
@@ -197,7 +203,7 @@ TEST_F(PartitionTest, TestCompoundRangeKeyEncoding) {
             partition_schema.PartitionDebugString(partitions[3], schema));
 }
 
-TEST_F(PartitionTest, TestPartitionKeyEncoding) {
+TEST_F(PartitionTest, PartitionKeyEncoding) {
   // CREATE TABLE t (a INT32, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
   // PARTITION BY [HASH BUCKET (a, b), HASH BUCKET (c), RANGE (a, b, c)];
   Schema schema({ ColumnSchema("a", INT32),
@@ -217,14 +223,21 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   {
     KuduPartialRow row(&schema);
     ASSERT_OK(row.SetInt32("a", 0));
-    string key = partition_schema.EncodeKey(row);
+    const auto key = partition_schema.EncodeKey(row);
+    EXPECT_EQ(string("\0\0\0\0"     // hash(0, "")
+                     "\0\0\0\x14",  // hash("")
+                     8), key.hash_key());
+    EXPECT_EQ(string("\x80\0\0\0"   // a = 0
+                     "\0\0",        // b = ""; c is elided
+                     6), key.range_key());
+    EXPECT_EQ(string("\0\0\0\0"
+                     "\0\0\0\x14"
+                     "\x80\0\0\0"
+                     "\0\0",
+                     14), key.ToString());
 
-    EXPECT_EQ(string("\0\0\0\0"   // hash(0, "")
-                     "\0\0\0\x14" // hash("")
-                     "\x80\0\0\0" // a = 0
-                     "\0\0",      // b = ""; c is elided
-                     14), key);
-    string expected = R"(HASH (a, b): 0, HASH (c): 20, RANGE (a, b, c): (0, "", ""))";
+    const string expected =
+        R"(HASH (a, b): 0, HASH (c): 20, RANGE (a, b, c): (0, "", ""))";
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
@@ -232,15 +245,22 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   {
     KuduPartialRow row(&schema);
     ASSERT_OK(row.SetInt32("a", 1));
-    string key = partition_schema.EncodeKey(row);
+    const auto key = partition_schema.EncodeKey(row);
 
     EXPECT_EQ(string("\0\0\0\x5"    // hash(1, "")
-                     "\0\0\0\x14"   // hash("")
-                     "\x80\0\0\x01" // a = 1
+                     "\0\0\0\x14",  // hash("")
+                     8), key.hash_key());
+    EXPECT_EQ(string("\x80\0\0\x01" // a = 1
                      "\0\0",        // b = ""; c is elided
-                     14), key);
+                     6), key.range_key());
+    EXPECT_EQ(string("\0\0\0\x5"
+                     "\0\0\0\x14"
+                     "\x80\0\0\x01"
+                     "\0\0",
+                     14), key.ToString());
 
-    string expected = R"(HASH (a, b): 5, HASH (c): 20, RANGE (a, b, c): (1, "", ""))";
+    const string expected =
+        R"(HASH (a, b): 5, HASH (c): 20, RANGE (a, b, c): (1, "", ""))";
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
@@ -250,16 +270,24 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
     ASSERT_OK(row.SetInt32("a", 0));
     ASSERT_OK(row.SetStringCopy("b", "b"));
     ASSERT_OK(row.SetStringCopy("c", "c"));
-    string key = partition_schema.EncodeKey(row);
+    const auto key = partition_schema.EncodeKey(row);
 
     EXPECT_EQ(string("\0\0\0\x1A" // hash(0, "b")
-                     "\0\0\0\x1D" // hash("c")
-                     "\x80\0\0\0" // a = 0
+                     "\0\0\0\x1D",// hash("c")
+                     8), key.hash_key());
+    EXPECT_EQ(string("\x80\0\0\0" // a = 0
                      "b\0\0"      // b = "b"
                      "c",         // c = "c"
-                     16), key);
+                     8), key.range_key());
+    EXPECT_EQ(string("\0\0\0\x1A"
+                     "\0\0\0\x1D"
+                     "\x80\0\0\0"
+                     "b\0\0"
+                     "c",
+                     16), key.ToString());
 
-    string expected = R"(HASH (a, b): 26, HASH (c): 29, RANGE (a, b, c): (0, "b", "c"))";
+    const string expected =
+        R"(HASH (a, b): 26, HASH (c): 29, RANGE (a, b, c): (0, "b", "c"))";
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
@@ -269,16 +297,24 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
     ASSERT_OK(row.SetInt32("a", 1));
     ASSERT_OK(row.SetStringCopy("b", "b"));
     ASSERT_OK(row.SetStringCopy("c", "c"));
-    string key = partition_schema.EncodeKey(row);
+    const auto key = partition_schema.EncodeKey(row);
 
     EXPECT_EQ(string("\0\0\0\x0"   // hash(1, "b")
-                     "\0\0\0\x1D"  // hash("c")
-                     "\x80\0\0\x1" // a = 1
+                     "\0\0\0\x1D", // hash("c")
+                     8), key.hash_key());
+    EXPECT_EQ(string("\x80\0\0\x1" // a = 1
                      "b\0\0"       // b = "b"
                      "c",          // c = "c"
-                     16), key);
+                     8), key.range_key());
+    EXPECT_EQ(string("\0\0\0\x0"
+                     "\0\0\0\x1D"
+                     "\x80\0\0\x1"
+                     "b\0\0"
+                     "c",
+                     16), key.ToString());
 
-    string expected = R"(HASH (a, b): 0, HASH (c): 29, RANGE (a, b, c): (1, "b", "c"))";
+    const string expected =
+        R"(HASH (a, b): 0, HASH (c): 29, RANGE (a, b, c): (1, "b", "c"))";
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
   }
@@ -290,24 +326,24 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
     ASSERT_OK(row.SetInt32("a", 1));
     ASSERT_OK(row.SetStringCopy("b", "b"));
     ASSERT_OK(row.SetStringCopy("c", "c"));
-    string key = partition_schema.EncodeKey(row);
+    const auto key = partition_schema.EncodeKey(row);
 
-    string expected =
-      R"(HASH (a, b): 0, HASH (c): 29, RANGE (a, b, c): (<redacted>, <redacted>, <redacted>))";
+    const string expected =
+        R"(HASH (a, b): 0, HASH (c): 29, RANGE (a, b, c): (<redacted>, <redacted>, <redacted>))";
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
 
     // Check that row values are redacted from error messages when
     // --redact is set with 'log'.
 
-    EXPECT_EQ("<range-decode-error>",
-              partition_schema.PartitionKeyDebugString(string("\0\1\0\1", 4), schema));
+    EXPECT_EQ("<hash-decode-error>",
+              partition_schema.PartitionKeyDebugString(
+                  PartitionKey(string("\0\1\0\1", 4), ""), schema));
     EXPECT_EQ("HASH (a, b): 0, HASH (c): 0, RANGE (a, b, c): "
               "<range-key-decode-error: Invalid argument: "
               "Error decoding partition key range component 'a': key too short: <redacted>>",
-              partition_schema.PartitionKeyDebugString(string("\0\0\0\0"
-                                                              "\0\0\0\0"
-                                                              "a", 9), schema));
+              partition_schema.PartitionKeyDebugString(
+                  PartitionKey(string("\0\0\0\0\0\0\0\0", 8), "a"), schema));
   }
 }
 
@@ -331,7 +367,7 @@ TEST_F(PartitionTest, TestCreateRangePartitions) {
       { "2", string("2\0", 2) },
       { string("2\0", 2), "" },
     };
-    CheckCreateRangePartitions({}, splits, partitions);
+    NO_FATALS(CheckCreateRangePartitions({}, splits, partitions));
   }
   {
     // Bounds
@@ -352,7 +388,7 @@ TEST_F(PartitionTest, TestCreateRangePartitions) {
       { "a", "m" },
       { "x", "z" },
     };
-    CheckCreateRangePartitions(bounds, {}, partitions);
+    NO_FATALS(CheckCreateRangePartitions(bounds, {}, partitions));
   }
   {
     // Bounds:
@@ -393,7 +429,7 @@ TEST_F(PartitionTest, TestCreateRangePartitions) {
       { "h", string("h\0", 2) },
       { string("h\0", 2), "z" },
     };
-    CheckCreateRangePartitions(bounds, splits, partitions);
+    NO_FATALS(CheckCreateRangePartitions(bounds, splits, partitions));
   }
   {
     // Bounds:
@@ -414,7 +450,7 @@ TEST_F(PartitionTest, TestCreateRangePartitions) {
       { "", "m" },
       { "m", "" },
     };
-    CheckCreateRangePartitions(bounds, splits, partitions);
+    NO_FATALS(CheckCreateRangePartitions(bounds, splits, partitions));
   }
 }
 
@@ -443,26 +479,26 @@ TEST_F(PartitionTest, TestCreateHashPartitions) {
   ASSERT_EQ(3, partitions.size());
 
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
-  EXPECT_EQ("", partitions[0].range_key_start());
-  EXPECT_EQ("", partitions[0].range_key_end());
-  EXPECT_EQ("", partitions[0].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1", 4), partitions[0].partition_key_end());
+  EXPECT_TRUE(partitions[0].begin().range_key().empty());
+  EXPECT_TRUE(partitions[0].end().range_key().empty());
+  EXPECT_TRUE(partitions[0].begin().empty());
+  EXPECT_EQ(string("\0\0\0\1", 4), partitions[0].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0",
             partition_schema.PartitionDebugString(partitions[0], schema));
 
   EXPECT_EQ(1, partitions[1].hash_buckets()[0]);
-  EXPECT_EQ("", partitions[1].range_key_start());
-  EXPECT_EQ("", partitions[1].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1", 4), partitions[1].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\2", 4), partitions[1].partition_key_end());
+  EXPECT_TRUE(partitions[1].begin().range_key().empty());
+  EXPECT_TRUE(partitions[1].end().range_key().empty());
+  EXPECT_EQ(string("\0\0\0\1", 4), partitions[1].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\2", 4), partitions[1].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1",
             partition_schema.PartitionDebugString(partitions[1], schema));
 
   EXPECT_EQ(2, partitions[2].hash_buckets()[0]);
-  EXPECT_EQ("", partitions[2].range_key_start());
-  EXPECT_EQ("", partitions[2].range_key_end());
-  EXPECT_EQ(string("\0\0\0\2", 4), partitions[2].partition_key_start());
-  EXPECT_EQ("", partitions[2].partition_key_end());
+  EXPECT_TRUE(partitions[2].begin().range_key().empty());
+  EXPECT_TRUE(partitions[2].end().range_key().empty());
+  EXPECT_EQ(string("\0\0\0\2", 4), partitions[2].begin().ToString());
+  EXPECT_EQ("", partitions[2].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 2",
             partition_schema.PartitionDebugString(partitions[2], schema));
 }
@@ -520,12 +556,10 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   ASSERT_OK(split_a.SetStringCopy("a", "a1"));
   ASSERT_OK(split_a.SetStringCopy("b", "b1"));
   ASSERT_OK(split_a.SetStringCopy("c", "c1"));
-  string partition_key_a = partition_schema.EncodeKey(split_a);
 
   KuduPartialRow split_b(&schema);
   ASSERT_OK(split_b.SetStringCopy("a", "a2"));
   ASSERT_OK(split_b.SetStringCopy("b", "b2"));
-  string partition_key_b = partition_schema.EncodeKey(split_b);
 
   // Split keys need not be passed in sorted order.
   vector<KuduPartialRow> split_rows = { split_b, split_a };
@@ -535,124 +569,127 @@ TEST_F(PartitionTest, TestCreatePartitions) {
 
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[0].hash_buckets()[1]);
-  EXPECT_EQ("", partitions[0].range_key_start());
-  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[0].range_key_end());
-  EXPECT_EQ("", partitions[0].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a1\0\0b1\0\0c1", 18), partitions[0].partition_key_end());
+  EXPECT_EQ("", partitions[0].begin().range_key());
+  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[0].end().range_key());
+  EXPECT_EQ("", partitions[0].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a1\0\0b1\0\0c1", 18),
+            partitions[0].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[0], schema));
 
+
   EXPECT_EQ(0, partitions[1].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[1].hash_buckets()[1]);
-  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[1].range_key_start());
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[1].range_key_end());
+  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[1].begin().range_key());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[1].end().range_key());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a1\0\0b1\0\0c1", 18),
-            partitions[1].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[1].partition_key_end());
+            partitions[1].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0b2\0\0", 16),
+            partitions[1].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[1], schema));
 
   EXPECT_EQ(0, partitions[2].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[2].hash_buckets()[1]);
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[2].range_key_start());
-  EXPECT_EQ("", partitions[2].range_key_end());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[2].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[2].partition_key_end());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[2].begin().range_key());
+  EXPECT_EQ("", partitions[2].end().range_key());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[2].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[2].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION VALUES >= ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[2], schema));
 
   EXPECT_EQ(0, partitions[3].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[3].hash_buckets()[1]);
-  EXPECT_EQ("", partitions[3].range_key_start());
-  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[3].range_key_end());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[3].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a1\0\0b1\0\0c1", 18), partitions[3].partition_key_end());
+  EXPECT_EQ("", partitions[3].begin().range_key());
+  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[3].end().range_key());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[3].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a1\0\0b1\0\0c1", 18), partitions[3].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[3], schema));
 
   EXPECT_EQ(0, partitions[4].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[4].hash_buckets()[1]);
-  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[4].range_key_start());
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].range_key_end());
+  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[4].begin().range_key());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].end().range_key());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a1\0\0b1\0\0c1", 18),
-            partitions[4].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[4].partition_key_end());
+            partitions[4].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[4].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[4], schema));
 
   EXPECT_EQ(0, partitions[5].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[5].hash_buckets()[1]);
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[5].range_key_start());
-  EXPECT_EQ("", partitions[5].range_key_end());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[5].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1", 4), partitions[5].partition_key_end());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[5].begin().range_key());
+  EXPECT_EQ("", partitions[5].end().range_key());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[5].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1", 4), partitions[5].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION VALUES >= ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[5], schema));
 
   EXPECT_EQ(1, partitions[6].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[6].hash_buckets()[1]);
-  EXPECT_EQ("", partitions[6].range_key_start());
-  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[6].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1", 4), partitions[6].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a1\0\0b1\0\0c1", 18), partitions[6].partition_key_end());
+  EXPECT_EQ("", partitions[6].begin().range_key());
+  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[6].end().range_key());
+  EXPECT_EQ(string("\0\0\0\1", 4), partitions[6].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a1\0\0b1\0\0c1", 18), partitions[6].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[6], schema));
 
   EXPECT_EQ(1, partitions[7].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[7].hash_buckets()[1]);
-  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[7].range_key_start());
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[7].range_key_end());
+  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[7].begin().range_key());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[7].end().range_key());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a1\0\0b1\0\0c1", 18),
-            partitions[7].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[7].partition_key_end());
+            partitions[7].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[7].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[7], schema));
 
   EXPECT_EQ(1, partitions[8].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[8].hash_buckets()[1]);
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[8].range_key_start());
-  EXPECT_EQ("", partitions[8].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[8].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[8].partition_key_end());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[8].begin().range_key());
+  EXPECT_EQ("", partitions[8].end().range_key());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0b2\0\0", 16), partitions[8].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[8].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION VALUES >= ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[8], schema));
 
   EXPECT_EQ(1, partitions[9].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[9].hash_buckets()[1]);
-  EXPECT_EQ("", partitions[9].range_key_start());
-  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[9].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[9].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a1\0\0b1\0\0c1", 18), partitions[9].partition_key_end());
+  EXPECT_EQ("", partitions[9].begin().range_key());
+  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[9].end().range_key());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[9].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a1\0\0b1\0\0c1", 18), partitions[9].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[9], schema));
 
   EXPECT_EQ(1, partitions[10].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[10].hash_buckets()[1]);
-  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[10].range_key_start());
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[10].range_key_end());
+  EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[10].begin().range_key());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[10].end().range_key());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a1\0\0b1\0\0c1", 18),
-            partitions[10].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[10].partition_key_end());
+            partitions[10].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[10].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[10], schema));
 
   EXPECT_EQ(1, partitions[11].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[11].hash_buckets()[1]);
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[11].range_key_start());
-  EXPECT_EQ("", partitions[11].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[11].partition_key_start());
-  EXPECT_EQ("", partitions[11].partition_key_end());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[11].begin().range_key());
+  EXPECT_EQ("", partitions[11].end().range_key());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[11].begin().ToString());
+  EXPECT_EQ("", partitions[11].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION VALUES >= ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[11], schema));
@@ -951,163 +988,161 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
 
     ASSERT_EQ(1, partitions[0].hash_buckets().size());
     EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
-    EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[0].range_key_start());
-    EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[0].range_key_end());
+    EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[0].begin().range_key());
+    EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[0].end().range_key());
     EXPECT_EQ(string("\0\0\0\0" "a1\0\0\0\0c1", 12),
-              partitions[0].partition_key_start());
+              partitions[0].begin().ToString());
     EXPECT_EQ(string("\0\0\0\0" "a2\0\0\0\0c2", 12),
-              partitions[0].partition_key_end());
+              partitions[0].end().ToString());
 
     ASSERT_EQ(1, partitions[1].hash_buckets().size());
     EXPECT_EQ(1, partitions[1].hash_buckets()[0]);
-    EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[1].range_key_start());
-    EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[1].range_key_end());
+    EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[1].begin().range_key());
+    EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[1].end().range_key());
     EXPECT_EQ(string("\0\0\0\1" "a1\0\0\0\0c1", 12),
-              partitions[1].partition_key_start());
+              partitions[1].begin().ToString());
     EXPECT_EQ(string("\0\0\0\1" "a2\0\0\0\0c2", 12),
-              partitions[1].partition_key_end());
+              partitions[1].end().ToString());
 
     ASSERT_EQ(1, partitions[2].hash_buckets().size());
     EXPECT_EQ(2, partitions[2].hash_buckets()[0]);
-    EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[2].range_key_start());
-    EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[2].range_key_end());
+    EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[2].begin().range_key());
+    EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[2].end().range_key());
     EXPECT_EQ(string("\0\0\0\2" "a1\0\0\0\0c1", 12),
-              partitions[2].partition_key_start());
+              partitions[2].begin().ToString());
     EXPECT_EQ(string("\0\0\0\2" "a2\0\0\0\0c2", 12),
-              partitions[2].partition_key_end());
+              partitions[2].end().ToString());
 
     ASSERT_EQ(1, partitions[3].hash_buckets().size());
     EXPECT_EQ(3, partitions[3].hash_buckets()[0]);
-    EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[3].range_key_start());
-    EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[3].range_key_end());
+    EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[3].begin().range_key());
+    EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[3].end().range_key());
     EXPECT_EQ(string("\0\0\0\3" "a1\0\0\0\0c1", 12),
-              partitions[3].partition_key_start());
+              partitions[3].begin().ToString());
     EXPECT_EQ(string("\0\0\0\3" "a2\0\0\0\0c2", 12),
-              partitions[3].partition_key_end());
+              partitions[3].end().ToString());
 
     ASSERT_EQ(2, partitions[4].hash_buckets().size());
     EXPECT_EQ(0, partitions[4].hash_buckets()[0]);
     EXPECT_EQ(0, partitions[4].hash_buckets()[1]);
-    EXPECT_EQ(string("a3\0\0b3\0\0", 8),
-              partitions[4].range_key_start());
-    EXPECT_EQ(string("a4\0\0b4\0\0", 8),
-              partitions[4].range_key_end());
+    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[4].begin().range_key());
+    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[4].end().range_key());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a3\0\0b3\0\0", 16),
-              partitions[4].partition_key_start());
+              partitions[4].begin().ToString());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a4\0\0b4\0\0", 16),
-              partitions[4].partition_key_end());
+              partitions[4].end().ToString());
 
     ASSERT_EQ(2, partitions[5].hash_buckets().size());
     EXPECT_EQ(0, partitions[5].hash_buckets()[0]);
     EXPECT_EQ(1, partitions[5].hash_buckets()[1]);
-    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[5].range_key_start());
-    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[5].range_key_end());
+    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[5].begin().range_key());
+    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[5].end().range_key());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a3\0\0b3\0\0", 16),
-              partitions[5].partition_key_start());
+              partitions[5].begin().ToString());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a4\0\0b4\0\0", 16),
-              partitions[5].partition_key_end());
+              partitions[5].end().ToString());
 
     ASSERT_EQ(2, partitions[6].hash_buckets().size());
     EXPECT_EQ(1, partitions[6].hash_buckets()[0]);
     EXPECT_EQ(0, partitions[6].hash_buckets()[1]);
-    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[6].range_key_start());
-    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[6].range_key_end());
+    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[6].begin().range_key());
+    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[6].end().range_key());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a3\0\0b3\0\0", 16),
-              partitions[6].partition_key_start());
+              partitions[6].begin().ToString());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a4\0\0b4\0\0", 16),
-              partitions[6].partition_key_end());
+              partitions[6].end().ToString());
 
     ASSERT_EQ(2, partitions[7].hash_buckets().size());
     EXPECT_EQ(1, partitions[7].hash_buckets()[0]);
     EXPECT_EQ(1, partitions[7].hash_buckets()[1]);
-    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[7].range_key_start());
-    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[7].range_key_end());
+    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[7].begin().range_key());
+    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[7].end().range_key());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a3\0\0b3\0\0", 16),
-              partitions[7].partition_key_start());
+              partitions[7].begin().ToString());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a4\0\0b4\0\0", 16),
-              partitions[7].partition_key_end());
+              partitions[7].end().ToString());
 
     ASSERT_EQ(2, partitions[8].hash_buckets().size());
     EXPECT_EQ(2, partitions[8].hash_buckets()[0]);
     EXPECT_EQ(0, partitions[8].hash_buckets()[1]);
-    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[8].range_key_start());
-    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[8].range_key_end());
+    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[8].begin().range_key());
+    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[8].end().range_key());
     EXPECT_EQ(string("\0\0\0\2" "\0\0\0\0" "a3\0\0b3\0\0", 16),
-              partitions[8].partition_key_start());
+              partitions[8].begin().ToString());
     EXPECT_EQ(string("\0\0\0\2" "\0\0\0\0" "a4\0\0b4\0\0", 16),
-              partitions[8].partition_key_end());
+              partitions[8].end().ToString());
 
     ASSERT_EQ(2, partitions[9].hash_buckets().size());
     EXPECT_EQ(2, partitions[9].hash_buckets()[0]);
     EXPECT_EQ(1, partitions[9].hash_buckets()[1]);
-    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[9].range_key_start());
-    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[9].range_key_end());
+    EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[9].begin().range_key());
+    EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[9].end().range_key());
     EXPECT_EQ(string("\0\0\0\2" "\0\0\0\1" "a3\0\0b3\0\0", 16),
-              partitions[9].partition_key_start());
+              partitions[9].begin().ToString());
     EXPECT_EQ(string("\0\0\0\2" "\0\0\0\1" "a4\0\0b4\0\0", 16),
-              partitions[9].partition_key_end());
+              partitions[9].end().ToString());
 
     ASSERT_EQ(2, partitions[10].hash_buckets().size());
     EXPECT_EQ(0, partitions[10].hash_buckets()[0]);
     EXPECT_EQ(0, partitions[10].hash_buckets()[1]);
     EXPECT_EQ(string("a5\0\0b5\0\0", 8),
-              partitions[10].range_key_start());
+              partitions[10].begin().range_key());
     EXPECT_EQ(string("a6\0\0\0\0c6", 8),
-              partitions[10].range_key_end());
+              partitions[10].end().range_key());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a5\0\0b5\0\0", 16),
-              partitions[10].partition_key_start());
+              partitions[10].begin().ToString());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a6\0\0\0\0c6", 16),
-              partitions[10].partition_key_end());
+              partitions[10].end().ToString());
 
     ASSERT_EQ(2, partitions[11].hash_buckets().size());
     EXPECT_EQ(0, partitions[11].hash_buckets()[0]);
     EXPECT_EQ(1, partitions[11].hash_buckets()[1]);
-    EXPECT_EQ(string("a5\0\0b5\0\0", 8),partitions[11].range_key_start());
-    EXPECT_EQ(string("a6\0\0\0\0c6", 8),partitions[11].range_key_end());
+    EXPECT_EQ(string("a5\0\0b5\0\0", 8),partitions[11].begin().range_key());
+    EXPECT_EQ(string("a6\0\0\0\0c6", 8),partitions[11].end().range_key());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a5\0\0b5\0\0", 16),
-              partitions[11].partition_key_start());
+              partitions[11].begin().ToString());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a6\0\0\0\0c6", 16),
-              partitions[11].partition_key_end());
+              partitions[11].end().ToString());
 
     ASSERT_EQ(2, partitions[12].hash_buckets().size());
     EXPECT_EQ(0, partitions[12].hash_buckets()[0]);
     EXPECT_EQ(2, partitions[12].hash_buckets()[1]);
-    EXPECT_EQ(string("a5\0\0b5\0\0", 8), partitions[12].range_key_start());
-    EXPECT_EQ(string("a6\0\0\0\0c6", 8), partitions[12].range_key_end());
+    EXPECT_EQ(string("a5\0\0b5\0\0", 8), partitions[12].begin().range_key());
+    EXPECT_EQ(string("a6\0\0\0\0c6", 8), partitions[12].end().range_key());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2" "a5\0\0b5\0\0", 16),
-              partitions[12].partition_key_start());
+              partitions[12].begin().ToString());
     EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2" "a6\0\0\0\0c6", 16),
-              partitions[12].partition_key_end());
+              partitions[12].end().ToString());
 
     ASSERT_EQ(2, partitions[13].hash_buckets().size());
     EXPECT_EQ(1, partitions[13].hash_buckets()[0]);
     EXPECT_EQ(0, partitions[13].hash_buckets()[1]);
-    EXPECT_EQ(string("a5\0\0b5\0\0", 8), partitions[13].range_key_start());
-    EXPECT_EQ(string("a6\0\0\0\0c6", 8), partitions[13].range_key_end());
+    EXPECT_EQ(string("a5\0\0b5\0\0", 8), partitions[13].begin().range_key());
+    EXPECT_EQ(string("a6\0\0\0\0c6", 8), partitions[13].end().range_key());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a5\0\0b5\0\0", 16),
-              partitions[13].partition_key_start());
+              partitions[13].begin().ToString());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a6\0\0\0\0c6", 16),
-              partitions[13].partition_key_end());
+              partitions[13].end().ToString());
 
     ASSERT_EQ(2, partitions[14].hash_buckets().size());
     EXPECT_EQ(1, partitions[14].hash_buckets()[0]);
     EXPECT_EQ(1, partitions[14].hash_buckets()[1]);
-    EXPECT_EQ(string("a5\0\0b5\0\0", 8), partitions[14].range_key_start());
-    EXPECT_EQ(string("a6\0\0\0\0c6", 8), partitions[14].range_key_end());
+    EXPECT_EQ(string("a5\0\0b5\0\0", 8), partitions[14].begin().range_key());
+    EXPECT_EQ(string("a6\0\0\0\0c6", 8), partitions[14].end().range_key());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a5\0\0b5\0\0", 16),
-              partitions[14].partition_key_start());
+              partitions[14].begin().ToString());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a6\0\0\0\0c6", 16),
-              partitions[14].partition_key_end());
+              partitions[14].end().ToString());
 
     ASSERT_EQ(2, partitions[15].hash_buckets().size());
     EXPECT_EQ(1, partitions[15].hash_buckets()[0]);
     EXPECT_EQ(2, partitions[15].hash_buckets()[1]);
-    EXPECT_EQ(string("a5\0\0b5\0\0", 8), partitions[15].range_key_start());
-    EXPECT_EQ(string("a6\0\0\0\0c6", 8), partitions[15].range_key_end());
+    EXPECT_EQ(string("a5\0\0b5\0\0", 8), partitions[15].begin().range_key());
+    EXPECT_EQ(string("a6\0\0\0\0c6", 8), partitions[15].end().range_key());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a5\0\0b5\0\0", 16),
-              partitions[15].partition_key_start());
+              partitions[15].begin().ToString());
     EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a6\0\0\0\0c6", 16),
-              partitions[15].partition_key_end());
+              partitions[15].end().ToString());
   };
 
   vector<Partition> partitions;
@@ -1214,16 +1249,16 @@ TEST_F(PartitionTest, CustomHashSchemasPerRangeOnly) {
     const auto& p = partitions[0];
     ASSERT_EQ(1, p.hash_buckets().size());
     EXPECT_EQ(0, p.hash_buckets()[0]);
-    EXPECT_EQ(string("a1\0\0b1", 6), p.range_key_start());
-    EXPECT_EQ(string("a2\0\0b2", 6), p.range_key_end());
+    EXPECT_EQ(string("a1\0\0b1", 6), p.begin().range_key());
+    EXPECT_EQ(string("a2\0\0b2", 6), p.end().range_key());
   }
 
   {
     const auto& p = partitions[1];
     ASSERT_EQ(1, p.hash_buckets().size());
     EXPECT_EQ(1, p.hash_buckets()[0]);
-    EXPECT_EQ(string("a1\0\0b1", 6), p.range_key_start());
-    EXPECT_EQ(string("a2\0\0b2", 6), p.range_key_end());
+    EXPECT_EQ(string("a1\0\0b1", 6), p.begin().range_key());
+    EXPECT_EQ(string("a2\0\0b2", 6), p.end().range_key());
   }
 }
 
@@ -1290,85 +1325,85 @@ TEST_F(PartitionTest, TestVaryingHashSchemasPerUnboundedRanges) {
 
   ASSERT_EQ(1, partitions[0].hash_buckets().size());
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
-  EXPECT_EQ("", partitions[0].range_key_start());
-  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[0].range_key_end());
-  EXPECT_EQ("", partitions[0].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\0" "a1\0\0\0\0c1", 12), partitions[0].partition_key_end());
+  EXPECT_EQ("", partitions[0].begin().range_key());
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[0].end().range_key());
+  EXPECT_EQ("", partitions[0].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "a1\0\0\0\0c1", 12), partitions[0].end().ToString());
 
   ASSERT_EQ(1, partitions[1].hash_buckets().size());
   EXPECT_EQ(1, partitions[1].hash_buckets()[0]);
-  EXPECT_EQ("", partitions[1].range_key_start());
-  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[1].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1", 4),partitions[1].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1" "a1\0\0\0\0c1", 12), partitions[1].partition_key_end());
+  EXPECT_EQ("", partitions[1].begin().range_key());
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[1].end().range_key());
+  EXPECT_EQ(string("\0\0\0\1", 4),partitions[1].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "a1\0\0\0\0c1", 12), partitions[1].end().ToString());
 
   ASSERT_EQ(1, partitions[2].hash_buckets().size());
   EXPECT_EQ(2, partitions[2].hash_buckets()[0]);
-  EXPECT_EQ("", partitions[2].range_key_start());
-  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[2].range_key_end());
-  EXPECT_EQ(string("\0\0\0\2", 4), partitions[2].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\2" "a1\0\0\0\0c1", 12), partitions[2].partition_key_end());
+  EXPECT_EQ("", partitions[2].begin().range_key());
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[2].end().range_key());
+  EXPECT_EQ(string("\0\0\0\2", 4), partitions[2].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\2" "a1\0\0\0\0c1", 12), partitions[2].end().ToString());
 
   ASSERT_EQ(1, partitions[3].hash_buckets().size());
   EXPECT_EQ(3, partitions[3].hash_buckets()[0]);
-  EXPECT_EQ("", partitions[3].range_key_start());
-  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[3].range_key_end());
-  EXPECT_EQ(string("\0\0\0\3", 4), partitions[3].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\3" "a1\0\0\0\0c1", 12), partitions[3].partition_key_end());
+  EXPECT_EQ("", partitions[3].begin().range_key());
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[3].end().range_key());
+  EXPECT_EQ(string("\0\0\0\3", 4), partitions[3].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\3" "a1\0\0\0\0c1", 12), partitions[3].end().ToString());
 
   ASSERT_EQ(0, partitions[4].hash_buckets().size());
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].range_key_start());
-  EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[4].range_key_end());
-  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].partition_key_start());
-  EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[4].partition_key_end());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].begin().range_key());
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[4].end().range_key());
+  EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[4].begin().ToString());
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8), partitions[4].end().ToString());
 
   ASSERT_EQ(2, partitions[5].hash_buckets().size());
   EXPECT_EQ(0, partitions[5].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[5].hash_buckets()[1]);
-  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[5].range_key_start());
-  EXPECT_EQ("", partitions[5].range_key_end());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a4\0\0b4\0\0", 16), partitions[5].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[5].partition_key_end());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[5].begin().range_key());
+  EXPECT_EQ("", partitions[5].end().range_key());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a4\0\0b4\0\0", 16), partitions[5].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1", 8), partitions[5].end().ToString());
 
   ASSERT_EQ(2, partitions[6].hash_buckets().size());
   EXPECT_EQ(0, partitions[6].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[6].hash_buckets()[1]);
-  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[6].range_key_start());
-  EXPECT_EQ("", partitions[6].range_key_end());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[6].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2", 8), partitions[6].partition_key_end());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[6].begin().range_key());
+  EXPECT_EQ("", partitions[6].end().range_key());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[6].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2", 8), partitions[6].end().ToString());
 
   ASSERT_EQ(2, partitions[7].hash_buckets().size());
   EXPECT_EQ(0, partitions[7].hash_buckets()[0]);
   EXPECT_EQ(2, partitions[7].hash_buckets()[1]);
-  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[7].range_key_start());
-  EXPECT_EQ("", partitions[7].range_key_end());
-  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[7].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1", 4), partitions[7].partition_key_end());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[7].begin().range_key());
+  EXPECT_EQ("", partitions[7].end().range_key());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[7].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1", 4), partitions[7].end().ToString());
 
   ASSERT_EQ(2, partitions[8].hash_buckets().size());
   EXPECT_EQ(1, partitions[8].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[8].hash_buckets()[1]);
-  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[8].range_key_start());
-  EXPECT_EQ("", partitions[8].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a4\0\0b4\0\0", 16), partitions[8].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[8].partition_key_end());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[8].begin().range_key());
+  EXPECT_EQ("", partitions[8].end().range_key());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a4\0\0b4\0\0", 16), partitions[8].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1", 8), partitions[8].end().ToString());
 
   ASSERT_EQ(2, partitions[9].hash_buckets().size());
   EXPECT_EQ(1, partitions[9].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[9].hash_buckets()[1]);
-  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[9].range_key_start());
-  EXPECT_EQ("", partitions[9].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[9].partition_key_start());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2", 8), partitions[9].partition_key_end());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[9].begin().range_key());
+  EXPECT_EQ("", partitions[9].end().range_key());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[9].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2", 8), partitions[9].end().ToString());
 
   ASSERT_EQ(2, partitions[10].hash_buckets().size());
   EXPECT_EQ(1, partitions[10].hash_buckets()[0]);
   EXPECT_EQ(2, partitions[10].hash_buckets()[1]);
-  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[10].range_key_start());
-  EXPECT_EQ("", partitions[10].range_key_end());
-  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[10].partition_key_start());
-  EXPECT_EQ("", partitions[10].partition_key_end());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[10].begin().range_key());
+  EXPECT_EQ("", partitions[10].end().range_key());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[10].begin().ToString());
+  EXPECT_EQ("", partitions[10].end().ToString());
 }
 
 TEST_F(PartitionTest, NoHashSchemasForLastUnboundedRange) {
@@ -1433,97 +1468,96 @@ TEST_F(PartitionTest, NoHashSchemasForLastUnboundedRange) {
     const auto& p = partitions[0];
     ASSERT_EQ(1, p.hash_buckets().size());
     EXPECT_EQ(0, p.hash_buckets()[0]);
-    EXPECT_EQ("", p.range_key_start());
-    EXPECT_EQ(string("a1\0\0", 4), p.range_key_end());
-    EXPECT_EQ("", p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\0" "a1\0\0c1", 8), p.partition_key_end());
+    EXPECT_EQ("", p.begin().range_key());
+    EXPECT_EQ(string("a1\0\0", 4), p.end().range_key());
+    EXPECT_EQ("", p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\0" "a1\0\0c1", 8), p.end().ToString());
   }
   {
     const auto& p = partitions[1];
     ASSERT_EQ(1, p.hash_buckets().size());
-    ASSERT_EQ(1, p.hash_buckets().size());
     EXPECT_EQ(1, p.hash_buckets()[0]);
-    EXPECT_EQ("", p.range_key_start());
-    EXPECT_EQ(string("a1\0\0", 4), p.range_key_end());
-    EXPECT_EQ(string("\0\0\0\1", 4), p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\1" "a1\0\0", 8), p.partition_key_end());
+    EXPECT_EQ("", p.begin().range_key());
+    EXPECT_EQ(string("a1\0\0", 4), p.end().range_key());
+    EXPECT_EQ(string("\0\0\0\1", 4), p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\1" "a1\0\0", 8), p.end().ToString());
   }
   {
     const auto& p = partitions[2];
     ASSERT_EQ(1, p.hash_buckets().size());
     EXPECT_EQ(2, p.hash_buckets()[0]);
-    EXPECT_EQ("", p.range_key_start());
-    EXPECT_EQ(string("a1\0\0", 4), p.range_key_end());
-    EXPECT_EQ(string("\0\0\0\2", 4), p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\2" "a1\0\0", 8), p.partition_key_end());
+    EXPECT_EQ("", p.begin().range_key());
+    EXPECT_EQ(string("a1\0\0", 4), p.end().range_key());
+    EXPECT_EQ(string("\0\0\0\2", 4), p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\2" "a1\0\0", 8), p.end().ToString());
   }
   {
     const auto& p = partitions[3];
     ASSERT_EQ(2, p.hash_buckets().size());
     EXPECT_EQ(0, p.hash_buckets()[0]);
     EXPECT_EQ(0, p.hash_buckets()[1]);
-    EXPECT_EQ(string("a2\0\0", 4), p.range_key_start());
-    EXPECT_EQ(string("a3\0\0", 4), p.range_key_end());
-    EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0", 12), p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a3\0\0", 12), p.partition_key_end());
+    EXPECT_EQ(string("a2\0\0", 4), p.begin().range_key());
+    EXPECT_EQ(string("a3\0\0", 4), p.end().range_key());
+    EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a2\0\0", 12), p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a3\0\0", 12), p.end().ToString());
   }
   {
     const auto& p = partitions[4];
     ASSERT_EQ(2, p.hash_buckets().size());
     EXPECT_EQ(0, p.hash_buckets()[0]);
     EXPECT_EQ(1, p.hash_buckets()[1]);
-    EXPECT_EQ(string("a2\0\0", 4), p.range_key_start());
-    EXPECT_EQ(string("a3\0\0", 4), p.range_key_end());
-    EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0", 12), p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a3\0\0", 12), p.partition_key_end());
+    EXPECT_EQ(string("a2\0\0", 4), p.begin().range_key());
+    EXPECT_EQ(string("a3\0\0", 4), p.end().range_key());
+    EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0", 12), p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a3\0\0", 12), p.end().ToString());
   }
   {
     const auto& p = partitions[5];
     ASSERT_EQ(2, p.hash_buckets().size());
     EXPECT_EQ(1, p.hash_buckets()[0]);
     EXPECT_EQ(0, p.hash_buckets()[1]);
-    EXPECT_EQ(string("a2\0\0", 4), p.range_key_start());
-    EXPECT_EQ(string("a3\0\0", 4), p.range_key_end());
-    EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0", 12), p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a3\0\0", 12), p.partition_key_end());
+    EXPECT_EQ(string("a2\0\0", 4), p.begin().range_key());
+    EXPECT_EQ(string("a3\0\0", 4), p.end().range_key());
+    EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a2\0\0", 12), p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a3\0\0", 12), p.end().ToString());
   }
   {
     const auto& p = partitions[6];
     ASSERT_EQ(2, p.hash_buckets().size());
     EXPECT_EQ(1, p.hash_buckets()[0]);
     EXPECT_EQ(1, p.hash_buckets()[1]);
-    EXPECT_EQ(string("a2\0\0", 4), p.range_key_start());
-    EXPECT_EQ(string("a3\0\0", 4), p.range_key_end());
-    EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0", 12), p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a3\0\0", 12), p.partition_key_end());
+    EXPECT_EQ(string("a2\0\0", 4), p.begin().range_key());
+    EXPECT_EQ(string("a3\0\0", 4), p.end().range_key());
+    EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0", 12), p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a3\0\0", 12), p.end().ToString());
   }
   {
     const auto& p = partitions[7];
     ASSERT_EQ(2, p.hash_buckets().size());
     EXPECT_EQ(2, p.hash_buckets()[0]);
     EXPECT_EQ(0, p.hash_buckets()[1]);
-    EXPECT_EQ(string("a2\0\0", 4), p.range_key_start());
-    EXPECT_EQ(string("a3\0\0", 4), p.range_key_end());
-    EXPECT_EQ(string("\0\0\0\2" "\0\0\0\0" "a2\0\0", 12), p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\2" "\0\0\0\0" "a3\0\0", 12), p.partition_key_end());
+    EXPECT_EQ(string("a2\0\0", 4), p.begin().range_key());
+    EXPECT_EQ(string("a3\0\0", 4), p.end().range_key());
+    EXPECT_EQ(string("\0\0\0\2" "\0\0\0\0" "a2\0\0", 12), p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\2" "\0\0\0\0" "a3\0\0", 12), p.end().ToString());
   }
   {
     const auto& p = partitions[8];
     ASSERT_EQ(2, p.hash_buckets().size());
     EXPECT_EQ(2, p.hash_buckets()[0]);
     EXPECT_EQ(1, p.hash_buckets()[1]);
-    EXPECT_EQ(string("a2\0\0", 4), p.range_key_start());
-    EXPECT_EQ(string("a3\0\0", 4), p.range_key_end());
-    EXPECT_EQ(string("\0\0\0\2" "\0\0\0\1" "a2\0\0", 12), p.partition_key_start());
-    EXPECT_EQ(string("\0\0\0\2" "\0\0\0\1" "a3\0\0", 12), p.partition_key_end());
+    EXPECT_EQ(string("a2\0\0", 4), p.begin().range_key());
+    EXPECT_EQ(string("a3\0\0", 4), p.end().range_key());
+    EXPECT_EQ(string("\0\0\0\2" "\0\0\0\1" "a2\0\0", 12), p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\2" "\0\0\0\1" "a3\0\0", 12), p.end().ToString());
   }
   {
     const auto& p = partitions[9];
     ASSERT_EQ(0, p.hash_buckets().size());
-    EXPECT_EQ(string("a4\0\0", 4), p.range_key_start());
-    EXPECT_EQ("", p.range_key_end());
-    EXPECT_EQ(string("a4\0\0", 4), p.partition_key_start());
-    EXPECT_EQ("", p.partition_key_end());
+    EXPECT_EQ(string("a4\0\0", 4), p.begin().range_key());
+    EXPECT_EQ("", p.end().range_key());
+    EXPECT_EQ(string("a4\0\0", 4), p.begin().ToString());
+    EXPECT_EQ("", p.end().ToString());
   }
 }
 

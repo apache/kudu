@@ -472,8 +472,8 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
                     partition.hash_buckets().end(),
                     [] (const int32_t& bucket) { return bucket == 0; })) {
       range_partitions.emplace_back(
-          partition_schema.RangePartitionDebugString(partition.range_key_start(),
-                                                     partition.range_key_end(),
+          partition_schema.RangePartitionDebugString(partition.begin().range_key(),
+                                                     partition.end().range_key(),
                                                      schema));
     }
 

@@ -46,8 +46,8 @@ Status KuduPartitionerBuilder::Data::Build(KuduPartitioner** partitioner) {
 
   // Insert a sentinel for the beginning of the table, in case they
   // query for any row which falls before the first partition.
-  ret_data->partitions_by_start_key_[""] =  -1;
-  string next_part_key = "";
+  ret_data->partitions_by_start_key_[{}] = -1;
+  PartitionKey next_part_key;
   int i = 0;
   while (true) {
     scoped_refptr<internal::RemoteTablet> tablet;
@@ -61,10 +61,12 @@ Status KuduPartitionerBuilder::Data::Build(KuduPartitioner** partitioner) {
       break;
     }
     RETURN_NOT_OK(s);
-    const auto& start_key = tablet->partition().partition_key_start();
-    const auto& end_key = tablet->partition().partition_key_end();
+    const auto& start_key = tablet->partition().begin();
+    const auto& end_key = tablet->partition().end();
     ret_data->partitions_by_start_key_[start_key] = i++;
-    if (end_key.empty()) break;
+    if (end_key.empty()) {
+      break;
+    }
     ret_data->partitions_by_start_key_[end_key] = -1;
     next_part_key = end_key;
   }
@@ -76,8 +78,8 @@ Status KuduPartitionerBuilder::Data::Build(KuduPartitioner** partitioner) {
 
 Status KuduPartitioner::Data::PartitionRow(
     const KuduPartialRow& row, int* partition) {
-  tmp_buf_ = table_->data_->partition_schema_.EncodeKey(row);
-  *partition = FindFloorOrDie(partitions_by_start_key_, tmp_buf_);
+  auto partition_key = table_->data_->partition_schema_.EncodeKey(row);
+  *partition = FindFloorOrDie(partitions_by_start_key_, partition_key);
   return Status::OK();
 }
 

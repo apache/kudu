@@ -155,7 +155,7 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     Partition::FromPB(tablet_metadata.partition(), &partition);
     MetaCacheEntry entry;
     if (!client->data_->meta_cache_->LookupEntryByKeyFastPath(table.get(),
-        partition.partition_key_start(), &entry)) {
+        partition.begin(), &entry)) {
       // Generate a fake GetTableLocationsResponsePB to pass to the client
       // meta cache in order to "inject" the tablet metadata into the client.
       GetTableLocationsResponsePB mock_resp;
@@ -190,7 +190,7 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
       }
 
       client->data_->meta_cache_->ProcessGetTableLocationsResponse(
-          table.get(), partition.partition_key_start(), true, mock_resp, &entry, 1);
+          table.get(), partition.begin(), true, mock_resp, &entry, 1);
     }
   }
 
@@ -439,28 +439,27 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
   while (pruner.HasMorePartitionKeyRanges()) {
     scoped_refptr<internal::RemoteTablet> tablet;
     Synchronizer sync;
-    const string& partition_key = pruner.NextPartitionKey();
+    const auto& partition_key = pruner.NextPartitionKey();
     client->data_->meta_cache_->LookupTabletByKey(table,
                                                   partition_key,
                                                   deadline,
                                                   MetaCache::LookupType::kLowerBound,
                                                   &tablet,
                                                   sync.AsStatusCallback());
-    Status s = sync.Wait();
+    const auto s = sync.Wait();
     if (s.IsNotFound()) {
       // No more tablets in the table.
-      pruner.RemovePartitionKeyRange("");
+      pruner.RemovePartitionKeyRange({});
       continue;
-    } else {
-      RETURN_NOT_OK(s);
     }
+    RETURN_NOT_OK(s);
 
     // Check if the meta cache returned a tablet covering a partition key range past
     // what we asked for. This can happen if the requested partition key falls
     // in a non-covered range. In this case we can potentially prune the tablet.
-    if (partition_key < tablet->partition().partition_key_start() &&
+    if (partition_key < tablet->partition().begin() &&
         pruner.ShouldPrune(tablet->partition())) {
-      pruner.RemovePartitionKeyRange(tablet->partition().partition_key_end());
+      pruner.RemovePartitionKeyRange(tablet->partition().end());
       continue;
     }
 
@@ -499,17 +498,15 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
     // Create the scan token itself.
     ScanTokenPB message;
     message.CopyFrom(pb);
-    message.set_lower_bound_partition_key(
-        tablet->partition().partition_key_start());
-    message.set_upper_bound_partition_key(
-        tablet->partition().partition_key_end());
+    message.set_lower_bound_partition_key(tablet->partition().begin().ToString());
+    message.set_upper_bound_partition_key(tablet->partition().end().ToString());
 
     // Set the tablet metadata so that a call to the master is not needed to
     // locate the tablet to scan when opening the scanner.
     if (include_tablet_metadata_) {
       internal::MetaCacheEntry entry;
       if (client->data_->meta_cache_->LookupEntryByKeyFastPath(table,
-          tablet->partition().partition_key_start(), &entry)) {
+          tablet->partition().begin(), &entry)) {
         if (!entry.is_non_covered_range() && !entry.stale()) {
           TabletMetadataPB tablet_pb;
           tablet_pb.set_tablet_id(entry.tablet()->tablet_id());
@@ -561,7 +558,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
                                 std::move(message),
                                 std::move(client_tablet));
     tokens->push_back(client_scan_token.release());
-    pruner.RemovePartitionKeyRange(tablet->partition().partition_key_end());
+    pruner.RemovePartitionKeyRange(tablet->partition().end());
   }
   return Status::OK();
 }

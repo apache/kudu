@@ -50,10 +50,10 @@ class PartitionPruner {
   bool HasMorePartitionKeyRanges() const;
 
   // Returns the inclusive lower bound partition key of the next tablet to scan.
-  const std::string& NextPartitionKey() const;
+  const PartitionKey& NextPartitionKey() const;
 
   // Removes all partition key ranges through the provided exclusive upper bound.
-  void RemovePartitionKeyRange(const std::string& upper_bound);
+  void RemovePartitionKeyRange(const PartitionKey& upper_bound);
 
   // Returns true if the provided partition should be pruned.
   bool ShouldPrune(const Partition& partition) const;
@@ -78,8 +78,8 @@ class PartitionPruner {
   };
 
   struct PartitionKeyRange {
-    std::string start;
-    std::string end;
+    PartitionKey start;
+    PartitionKey end;
   };
 
   struct RangeBoundsAndPartitionKeyRanges {
@@ -102,8 +102,8 @@ class PartitionPruner {
       const PartitionSchema::HashSchema& hash_schema,
       const RangeBounds& range_bounds);
 
-  // A vector of a pair of lower and upper range bounds mapped to a
-  // reverse sorted set of partition key ranges. Each partition key range within the set
+  // A vector of a pair of lower and upper range bounds mapped to a reverse
+  // sorted set of partition key ranges. Each partition key range within the set
   // has an inclusive lower bound and an exclusive upper bound.
   std::vector<RangeBoundsAndPartitionKeyRanges> range_bounds_to_partition_key_ranges_;
 

@@ -453,8 +453,8 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
     Arena arena(256);
     std::unique_ptr<KuduPartialRow> lower(new KuduPartialRow(&schema_internal));
     std::unique_ptr<KuduPartialRow> upper(new KuduPartialRow(&schema_internal));
-    Slice range_key_start = partition.range_key_start();
-    Slice range_key_end = partition.range_key_end();
+    Slice range_key_start(partition.begin().range_key());
+    Slice range_key_end(partition.end().range_key());
     RETURN_NOT_OK(partition_schema.DecodeRangeKey(&range_key_start, lower.get(), &arena));
     RETURN_NOT_OK(partition_schema.DecodeRangeKey(&range_key_end, upper.get(), &arena));
 

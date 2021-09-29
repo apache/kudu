@@ -379,7 +379,7 @@ message PartitionSchemaPB {
 // The serialized format of a Kudu table partition.
 message PartitionPB {
   // The hash buckets of the partition. The number of hash buckets must match
-  // the number of hash bucket components in the partition's schema.
+  // the number of hash dimensions in the partition's schema.
   repeated int32 hash_buckets = 1 [packed = true];
   // The encoded start partition key (inclusive).
   optional bytes partition_key_start = 2;
