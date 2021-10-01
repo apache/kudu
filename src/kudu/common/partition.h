@@ -364,6 +364,10 @@ class PartitionSchema {
     return ranges_with_hash_schemas_;
   }
 
+  bool HasCustomHashSchemas() const {
+    return !ranges_with_hash_schemas_.empty();
+  }
+
   // Given the specified table schema, populate the 'range_column_indexes'
   // container with column indexes of the range partition keys.
   // If any of the columns is not in the key range columns then an

@@ -1809,4 +1809,79 @@ TEST_F(PartitionTest, TestOverloadedEqualsOperator) {
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
   ASSERT_NE(partition_schema, partition_schema_1);
 }
+
+// A test scenario to verify functionality of the
+// PartitionSchema::HasCustomHashSchemas() method.
+TEST_F(PartitionTest, HasCustomHashSchemasMethod) {
+  const Schema schema({ ColumnSchema("a", STRING),
+                        ColumnSchema("b", STRING),
+                        ColumnSchema("c", STRING) },
+                      { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  // No hash schema (even table-wide) case.
+  {
+    PartitionSchemaPB pb;
+    PartitionSchema partition_schema;
+    ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+    ASSERT_FALSE(partition_schema.HasCustomHashSchemas());
+  }
+
+  // Table-wide hash schema.
+  {
+    PartitionSchemaPB pb;
+    AddHashDimension(&pb, { "b" }, 2, 0);
+    PartitionSchema partition_schema;
+    ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+    ASSERT_FALSE(partition_schema.HasCustomHashSchemas());
+  }
+
+  // No table-wide schema, just a range with custom hash schema.
+  {
+    PartitionSchemaPB pb;
+    auto* range = pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0"));
+    ASSERT_OK(lower.SetStringCopy("c", "c0"));
+    ASSERT_OK(upper.SetStringCopy("a", "a0"));
+    ASSERT_OK(upper.SetStringCopy("c", "c1"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("a");
+    hash_dimension->set_num_buckets(2);
+
+    PartitionSchema partition_schema;
+    ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+    ASSERT_TRUE(partition_schema.HasCustomHashSchemas());
+  }
+
+  // Table-wide hash schema and one range with custom hash schema.
+  {
+    PartitionSchemaPB pb;
+    AddHashDimension(&pb, { "a" }, 2, 0);
+
+    auto* range = pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0"));
+    ASSERT_OK(lower.SetStringCopy("c", "c0"));
+    ASSERT_OK(upper.SetStringCopy("a", "a1"));
+    ASSERT_OK(upper.SetStringCopy("c", "c1"));
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("b");
+    hash_dimension->set_num_buckets(3);
+
+    PartitionSchema partition_schema;
+    ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+    ASSERT_TRUE(partition_schema.HasCustomHashSchemas());
+  }
+}
+
 } // namespace kudu
