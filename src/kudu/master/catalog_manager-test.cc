@@ -17,6 +17,7 @@
 
 #include "kudu/master/catalog_manager.h"
 
+#include <numeric>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -36,6 +37,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::iota;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -180,6 +182,52 @@ TEST(TestTSDescriptor, TestReplicaCreationsDecay) {
     // After 10 seconds, we should have dropped to 0.5^(10/60) = 0.891
     SleepFor(MonoDelta::FromSeconds(10));
     ASSERT_NEAR(0.891, ts.RecentReplicaCreations(), 0.05);
+  }
+}
+TEST(TableInfoTest, MaxReturnedLocationsNotSpecified) {
+  const string table_id = CURRENT_TEST_NAME();
+  scoped_refptr<TableInfo> table(new TableInfo(table_id));
+  vector<scoped_refptr<TabletInfo>> tablets;
+
+  vector<string> ranges(128);
+  std::iota(ranges.begin(), ranges.end(), '\0');
+  for (auto it = ranges.begin(); it != ranges.end(); ++it) {
+    auto next_it = it;
+    ++next_it;
+    const string& start_key = *it;
+    const string& end_key = (next_it == ranges.end()) ? "" : *next_it;
+
+    string tablet_id = Substitute("tablet-$0-$1", start_key, end_key);
+
+    scoped_refptr<TabletInfo> tablet = new TabletInfo(table, tablet_id);
+    {
+      TabletMetadataLock meta_lock(tablet.get(), LockMode::WRITE);
+      PartitionPB* partition = meta_lock.mutable_data()->pb.mutable_partition();
+      partition->set_partition_key_start(start_key);
+      if (next_it != ranges.end()) {
+        partition->set_partition_key_end(end_key);
+      }
+      meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
+      meta_lock.Commit();
+    }
+
+    TabletMetadataLock meta_lock(tablet.get(), LockMode::READ);
+    table->AddRemoveTablets({ tablet }, {});
+    tablets.push_back(tablet);
+  }
+
+  // Fetch all the available tablets.
+  {
+    GetTableLocationsRequestPB req;
+    req.clear_max_returned_locations(); // the default is 10 in protobuf
+    req.mutable_table()->mutable_table_name()->assign(table_id);
+    // Query using the start key of the first tablet's range.
+    req.mutable_partition_key_start()->assign("\0");
+    vector<scoped_refptr<TabletInfo>> tablets_in_range;
+    ASSERT_OK(table->GetTabletsInRange(&req, &tablets_in_range));
+
+    // The response should contain information on every tablet created.
+    ASSERT_EQ(ranges.size(), tablets_in_range.size());
   }
 }
 

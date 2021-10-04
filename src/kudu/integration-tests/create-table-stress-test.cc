@@ -258,7 +258,9 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(0);
     Status s = catalog->GetTableLocations(&req, &resp, /*user=*/none);
-    ASSERT_STR_CONTAINS(s.ToString(), "must be greater than 0");
+    ASSERT_STR_CONTAINS(
+        s.ToString(),
+        "max_returned_locations must be greater than 0 if specified");
   }
 
   // Ask for one, get one, verify

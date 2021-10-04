@@ -497,11 +497,13 @@ TEST_F(TableLocationsTest, TestRangeSpecificHashing) {
       table_name, schema, {}, bounds, range_hash_schemas, table_hash_schema_5));
   NO_FATALS(CheckMasterTableCreation(table_name, 19));
 
+  // The default setting for GetTableLocationsRequestPB::max_returned_locations
+  // is 10 , but here it's necessary to fetch all the existing tablets.
   GetTableLocationsRequestPB req;
+  req.mutable_table()->set_table_name(table_name);
+  req.clear_max_returned_locations();
   GetTableLocationsResponsePB resp;
   RpcController controller;
-  req.mutable_table()->set_table_name(table_name);
-  req.set_max_returned_locations(19);
   ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
   SCOPED_TRACE(SecureDebugString(resp));
 

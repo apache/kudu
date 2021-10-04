@@ -47,6 +47,7 @@
 #include <ctime>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -5701,8 +5702,10 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
     return Status::InvalidArgument("start partition range key must not be "
                                    "greater than the end partition range key");
   }
-  if (PREDICT_FALSE(req->max_returned_locations() <= 0)) {
-    return Status::InvalidArgument("max_returned_locations must be greater than 0");
+  if (PREDICT_FALSE(req->has_max_returned_locations() &&
+                    req->max_returned_locations() <= 0)) {
+    return Status::InvalidArgument(
+        "max_returned_locations must be greater than 0 if specified");
   }
 
   leader_lock_.AssertAcquiredForReading();
@@ -6447,7 +6450,9 @@ Status TableInfo::GetTabletsInRange(
       ? tablet_map_.upper_bound(partition_key_end)
       : tablet_map_.end();
 
-  const size_t max_returned_locations = req->max_returned_locations();
+  const size_t max_returned_locations =
+      req->has_max_returned_locations() ? req->max_returned_locations()
+                                        : std::numeric_limits<size_t>::max();
   size_t count = 0;
   for (; it != it_end && count < max_returned_locations; ++it) {
     ret->emplace_back(make_scoped_refptr(it->second));
