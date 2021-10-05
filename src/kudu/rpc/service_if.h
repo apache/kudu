@@ -114,6 +114,10 @@ class GeneratedServiceIf : public ServiceIf {
 
   RpcMethodInfo* LookupMethod(const RemoteMethod& method) override;
 
+  // Returns the mapping from method names to method infos.
+  typedef std::unordered_map<std::string, scoped_refptr<RpcMethodInfo>> MethodInfoMap;
+  const MethodInfoMap& methods_by_name() const { return methods_by_name_; }
+
  protected:
   explicit GeneratedServiceIf(const scoped_refptr<ResultTracker>& tracker);
 
@@ -124,7 +128,6 @@ class GeneratedServiceIf : public ServiceIf {
   // call. Methods are inserted by the constructor of the generated subclass.
   // After construction, this map is accessed by multiple threads and therefore
   // must not be modified.
-  typedef std::unordered_map<std::string, scoped_refptr<RpcMethodInfo>> MethodInfoMap;
   MethodInfoMap methods_by_name_;
 };
 

@@ -48,6 +48,7 @@
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/proxy.h"
 #include "kudu/rpc/reactor.h"
+#include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -1057,6 +1058,15 @@ static void AcceptAndReadForever(Socket* listen_sock) {
   uint8_t buf[1024];
   while (server_sock.BlockingRecv(buf, sizeof(buf), &nread, deadline).ok()) {
   }
+}
+
+// Basic test for methods_by_name(). At the time of writing, this isn't used by
+// Kudu, but is used in other projects like Apache Impala.
+TEST_F(TestRpc, TestMethodsByName) {
+  std::unique_ptr<CalculatorService> service(
+      new CalculatorService(metric_entity_, result_tracker_));
+  const auto& methods = service->methods_by_name();
+  ASSERT_EQ(8, methods.size());
 }
 
 // Starts a fake listening socket which never actually negotiates.
