@@ -422,6 +422,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "#include \"kudu/rpc/result_tracker.h\"\n"
         "#include \"kudu/rpc/service_if.h\"\n"
         "#include \"kudu/util/metrics.h\"\n"
+        "#include \"kudu/util/net/dns_resolver.h\"\n"
         "\n");
 
     // Define metric prototypes for each method in the service.
@@ -578,7 +579,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
           "  $service_name$Proxy(\n"
           "      std::shared_ptr<::kudu::rpc::Messenger> messenger,\n"
           "      const ::kudu::HostPort& hp,\n"
-          "      DnsResolver* dns_resolver);\n"
+          "      ::kudu::DnsResolver* dns_resolver);\n"
           "  ~$service_name$Proxy();\n");
 
       for (int method_idx = 0; method_idx < service->method_count();
@@ -620,6 +621,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "#include \"$path_no_extension$.proxy.h\"\n"
         "\n"
         "namespace kudu {\n"
+        "class DnsResolver;\n"
         "namespace rpc {\n"
         "class Messenger;\n"
         "class RpcController;\n"
@@ -646,7 +648,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
           "$service_name$Proxy::$service_name$Proxy(\n"
           "    std::shared_ptr<::kudu::rpc::Messenger> messenger,\n"
           "    const ::kudu::HostPort& hp,\n"
-          "    DnsResolver* dns_resolver)\n"
+          "    ::kudu::DnsResolver* dns_resolver)\n"
           "    : Proxy(std::move(messenger),\n"
           "            hp,\n"
           "            dns_resolver,\n"
