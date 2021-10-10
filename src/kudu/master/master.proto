@@ -594,6 +594,9 @@ message ListTablesResponsePB {
   message TableInfo {
     required bytes id = 1;
     required string name = 2;
+    optional uint64 live_row_count = 3;
+    optional int32 num_tablets = 4;
+    optional int32 num_replicas = 5;
   }
 
   repeated TableInfo tables = 2;

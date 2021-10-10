@@ -592,6 +592,36 @@ Status KuduClient::ListTables(vector<string>* tables,
   return Status::OK();
 }
 
+Status KuduClient::ListTables(std::vector<ListTableInfo>* list_table_infos,
+                              const std::string& filter) {
+  ListTablesRequestPB req;
+  ListTablesResponsePB resp;
+
+  if (!filter.empty()) {
+    req.set_name_filter(filter);
+  }
+  MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
+  Synchronizer sync;
+  AsyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB> rpc(
+    deadline, this, BackoffType::EXPONENTIAL, req, &resp,
+    &MasterServiceProxy::ListTablesAsync, "ListTables",
+    sync.AsStatusCallback(), {});
+  rpc.SendRpc();
+    RETURN_NOT_OK(sync.Wait());
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  for (const auto& table : resp.tables()) {
+    ListTableInfo list_table_info;
+    list_table_info.table_name = table.name();
+    list_table_info.live_row_count = table.has_live_row_count() ? table.live_row_count() : 0;
+    list_table_info.num_tablets = table.has_num_tablets() ? table.num_tablets() : 0;
+    list_table_info.num_replicas = table.has_num_replicas() ? table.num_replicas() : 0;
+    list_table_infos->emplace_back(std::move(list_table_info));
+  }
+  return Status::OK();
+}
+
 Status KuduClient::TableExists(const string& table_name, bool* exists) {
   auto s = GetTableSchema(table_name, nullptr);
   if (s.ok()) {

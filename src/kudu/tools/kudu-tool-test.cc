@@ -4090,13 +4090,14 @@ TEST_F(ToolTest, TestListTables) {
   // Create some tables.
   const int kNumTables = 10;
   vector<string> table_names;
+  const int kReplicaNum = 1;
   for (int i = 0; i < kNumTables; ++i) {
     string table_name = Substitute("kudu.table_$0", i);
     table_names.push_back(table_name);
 
     TestWorkload workload(cluster_.get());
     workload.set_table_name(table_name);
-    workload.set_num_replicas(1);
+    workload.set_num_replicas(kReplicaNum);
     workload.Setup();
   }
   std::sort(table_names.begin(), table_names.end());
@@ -4156,10 +4157,36 @@ TEST_F(ToolTest, TestListTables) {
     }
   };
 
+  const auto& ProcessTablesStatistics = [&] (const int num) {
+    ASSERT_GE(num, 1);
+    ASSERT_LE(num, kNumTables);
+
+    vector<string> expected;
+    expected.reserve(num);
+    for (int i = 0; i < num; i++) {
+      expected.push_back(Substitute("$0 Num_Tablets:1 Num_Replicas:$1 Live_Row_Count:0",
+                                    table_names[i], kReplicaNum));
+    }
+    vector<string> expected_table;
+    expected_table.insert(expected_table.end(), table_names.begin(), table_names.begin() + num);
+
+    string filter = "";
+    if (kNumTables != num) {
+      filter = Substitute("-tables=$0", JoinStrings(expected_table, ","));
+    }
+    vector<string> lines;
+    NO_FATALS(RunActionStdoutLines(
+      Substitute("table list $0 $1 -list_statistics", master_addr, filter), &lines));
+
+    std::sort(lines.begin(), lines.end());
+    ASSERT_EQ(expected, lines);
+  };
+
   // List the tables and tablets.
   for (int i = 1; i <= kNumTables; ++i) {
     ProcessTables(i);
     ProcessTablets(i);
+    ProcessTablesStatistics(i);
   }
 }
 

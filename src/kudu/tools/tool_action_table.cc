@@ -103,6 +103,9 @@ DEFINE_string(dst_table, "",
               "If the empty string, use the same name as the source table.");
 DEFINE_bool(list_tablets, false,
             "Include tablet and replica UUIDs in the output");
+DEFINE_bool(list_statistics, false,
+            "Include statistics such as number of tablets, replicas"
+            "and live row count in the output");
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
@@ -139,13 +142,20 @@ class TableLister {
     RETURN_NOT_OK(CreateKuduClient(master_addresses,
                                    &client,
                                    true /* can_see_all_replicas */));
-    vector<string> table_names;
-    RETURN_NOT_OK(client->ListTables(&table_names));
+    std::vector<kudu::client::KuduClient::ListTableInfo> list_table_infos;
+    RETURN_NOT_OK(client->ListTables(&list_table_infos));
 
     vector<string> table_filters = Split(FLAGS_tables, ",", strings::SkipEmpty());
-    for (const auto& tname : table_names) {
+    for (const auto& list_table_info : list_table_infos) {
+      const auto& tname = list_table_info.table_name;
       if (!MatchesAnyPattern(table_filters, tname)) continue;
-      cout << tname << endl;
+      if (FLAGS_list_statistics) {
+        cout << tname << " " << "Num_Tablets:" << list_table_info.num_tablets
+             << " Num_Replicas:" << list_table_info.num_replicas
+             << " Live_Row_Count:" << list_table_info.live_row_count << endl;
+      } else {
+        cout << tname << endl;
+      }
       if (!FLAGS_list_tablets) {
         continue;
       }
@@ -1317,6 +1327,7 @@ unique_ptr<Mode> BuildTableMode() {
       .Description("List tables")
       .AddOptionalParameter("tables")
       .AddOptionalParameter("list_tablets")
+      .AddOptionalParameter("list_statistics")
       .Build();
 
   unique_ptr<Action> locate_row =

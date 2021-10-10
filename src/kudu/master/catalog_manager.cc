@@ -3485,15 +3485,22 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
       ListTablesResponsePB::TableInfo* table = resp->add_tables();
       table->set_id(table_info->id());
       table->set_name(table_name);
+      table->set_live_row_count(table_info->GetMetrics()->live_row_count->value());
+      table->set_num_tablets(table_info->num_tablets());
+      table->set_num_replicas(ltm.data().pb.num_replicas());
     }
   } else {
     // Otherwise, pass all tables through.
     for (const auto& name_and_table_info : table_info_by_name) {
       const auto& table_name = name_and_table_info.first;
       const auto& table_info = name_and_table_info.second;
+      TableMetadataLock ltm(table_info.get(), LockMode::READ);
       ListTablesResponsePB::TableInfo* table = resp->add_tables();
       table->set_id(table_info->id());
       table->set_name(table_name);
+      table->set_live_row_count(table_info->GetMetrics()->live_row_count->value());
+      table->set_num_tablets(table_info->num_tablets());
+      table->set_num_replicas(ltm.data().pb.num_replicas());
     }
   }
   return Status::OK();

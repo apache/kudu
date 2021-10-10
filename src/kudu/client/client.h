@@ -564,6 +564,7 @@ class KUDU_EXPORT KuduTransaction :
    private:
     friend class KuduTransaction;
     class KUDU_NO_EXPORT Data;
+
     Data* data_; // Owned.
 
     DISALLOW_COPY_AND_ASSIGN(SerializationOptions);
@@ -744,6 +745,22 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   ///   Substring filter to use; empty sub-string filter matches all tables.
   /// @return Status object for the operation.
   Status ListTables(std::vector<std::string>* tables,
+                    const std::string& filter = "");
+
+  struct KUDU_EXPORT ListTableInfo {
+    std::string table_name;
+    uint64_t live_row_count;
+    int num_tablets;
+    int num_replicas;
+  };
+  /// List only those tables whose names pass a substring match on @c filter.
+  ///
+  /// @param [out] list_table_infos
+  ///   The placeholder for the result. Appended only on success.
+  /// @param [in] filter
+  ///   Substring filter to use; empty sub-string filter matches all tables.
+  /// @return Status object for the operation.
+  Status ListTables(std::vector<ListTableInfo>* list_table_infos,
                     const std::string& filter = "");
 
   /// Check if the table given by 'table_name' exists.
@@ -1265,6 +1282,7 @@ class KUDU_EXPORT KuduTableCreator {
                                int32_t seed = 0);
    private:
     class KUDU_NO_EXPORT Data;
+
     friend class KuduTableCreator;
 
     // Owned.
