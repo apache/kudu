@@ -18,7 +18,10 @@
 
 #include <atomic>
 
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/timer.h"
 
 namespace kudu {
@@ -28,7 +31,7 @@ namespace server {
 class StartupPathHandler {
 public:
 
-  StartupPathHandler();
+  explicit StartupPathHandler(const scoped_refptr<MetricEntity>& entity);
 
   // Populate the response output with the current information
   void Startup(const Webserver::WebRequest &req, Webserver::WebResponse *resp);
@@ -49,6 +52,10 @@ public:
   std::atomic<int>* containers_total() {return &containers_total_;}
   void set_is_tablet_server(bool is_tablet_server);
   void set_is_using_lbm(bool is_using_lbm);
+
+  // Call back functions for aggregate percentage and time elapsed
+  int StartupProgressStepsRemainingMetric();
+  MonoDelta StartupProgressTimeElapsedMetric();
 
 private:
   // Hold the initialization step progress information like the status, start and end time.
@@ -91,6 +98,8 @@ private:
   // We do not open containers if file block manager is being used and hence display different
   // webpage contents if file block manager is being used.
   bool is_using_lbm_;
+
+  FunctionGaugeDetacher metric_detacher_;
 };
 
 } // namespace server

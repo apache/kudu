@@ -495,7 +495,7 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
       file_cache_(new FileCache("file cache", options.env,
                                 GetFileCacheCapacity(options.env), metric_entity_)),
       rpc_server_(new RpcServer(options.rpc_opts)),
-      startup_path_handler_(new StartupPathHandler),
+      startup_path_handler_(new StartupPathHandler(metric_entity_)),
       result_tracker_(new rpc::ResultTracker(shared_ptr<MemTracker>(
           MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
       is_first_run_(false),

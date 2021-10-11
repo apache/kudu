@@ -24,9 +24,23 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/easy_json.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/timer.h"
 #include "kudu/util/web_callback_registry.h"
+
+METRIC_DEFINE_gauge_int32(server, startup_progress_steps_remaining,
+                          "Server Startup Steps Remaining",
+                          kudu::MetricUnit::kUnits,
+                          "Server startup progress steps remaining ",
+                          kudu::MetricLevel::kWarn);
+
+METRIC_DEFINE_gauge_int64(server, startup_progress_time_elapsed,
+                          "Server Startup Progress Time Elapsed",
+                          kudu::MetricUnit::kMilliseconds,
+                          "Time taken by the server to complete the startup or"
+                          "time elapsed so far for the server to startup",
+                          kudu::MetricLevel::kInfo);
 
 using std::ifstream;
 using std::ostringstream;
@@ -43,13 +57,19 @@ void SetWebResponse(EasyJson* output, const string& step,
                   (startup_step.TimeElapsed()).ToSeconds()));
 }
 
-StartupPathHandler::StartupPathHandler():
+StartupPathHandler::StartupPathHandler(const scoped_refptr<MetricEntity>& entity):
   tablets_processed_(0),
   tablets_total_(0),
   containers_processed_(0),
   containers_total_(0),
   is_tablet_server_(false),
   is_using_lbm_(true) {
+  METRIC_startup_progress_steps_remaining.InstantiateFunctionGauge(entity,
+      [this]() {return StartupProgressStepsRemainingMetric();})
+      ->AutoDetachToLastValue(&metric_detacher_);
+  METRIC_startup_progress_time_elapsed.InstantiateFunctionGauge(entity,
+      [this]() {return StartupProgressTimeElapsedMetric().ToMilliseconds();})
+      ->AutoDetachToLastValue(&metric_detacher_);
 }
 
 void StartupPathHandler::Startup(const Webserver::WebRequest& /*req*/,
@@ -116,5 +136,33 @@ void StartupPathHandler::set_is_tablet_server(bool is_tablet_server) {
 void StartupPathHandler::set_is_using_lbm(bool is_using_lbm) {
   is_using_lbm_ = is_using_lbm;
 }
+
+int StartupPathHandler::StartupProgressStepsRemainingMetric() {
+  int counter = 0;
+  counter += (init_progress_.IsStopped() ? 0 : 1);
+  counter += (read_filesystem_progress_.IsStopped() ? 0 : 1);
+  counter += (is_tablet_server_ ? (start_tablets_progress_.IsStopped() ? 0 : 1) : 0);
+  if (is_tablet_server_) {
+    counter += start_tablets_progress_.IsStopped() ? 0 : 1;
+  } else {
+    counter += initialize_master_catalog_progress_.IsStopped() ? 0 : 1;
+  }
+  counter += (start_rpc_server_progress_.IsStopped() ? 0 : 1);
+  return counter;
+}
+
+MonoDelta StartupPathHandler::StartupProgressTimeElapsedMetric() {
+  MonoDelta time_elapsed;
+  time_elapsed = init_progress_.TimeElapsed();
+  time_elapsed += read_filesystem_progress_.TimeElapsed();
+  if (is_tablet_server_) {
+    time_elapsed += start_tablets_progress_.TimeElapsed();
+  } else {
+    time_elapsed += initialize_master_catalog_progress_.TimeElapsed();
+  }
+  time_elapsed += start_rpc_server_progress_.TimeElapsed();
+  return time_elapsed;
+}
+
 } // namespace server
 } // namespace kudu
