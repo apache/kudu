@@ -141,6 +141,11 @@ bool ValidateShowHashPartitionInfo() {
 
 GROUP_FLAG_VALIDATOR(show_hash_partition_info, ValidateShowHashPartitionInfo);
 
+DEFINE_bool(soft_deleted_only, false,
+            "Show only soft-deleted tables if set true, otherwise show regular tables.");
+DEFINE_string(new_table_name, "",
+              "The new name for the recalled table. "
+              "Leave empty to recall the table under its original name.");
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
@@ -166,6 +171,8 @@ DEFINE_bool(show_avro_format_schema, false,
             "Display the table schema in avro format. When enabled it only outputs the "
             "table schema in Avro format without any other information like "
             "partition/owner/comments. It cannot be used in conjunction with other flags");
+DEFINE_uint32(reserve_seconds, 604800,
+              "Reserve seconds before purging a soft-deleted table.");
 
 DECLARE_bool(create_table);
 DECLARE_int32(create_table_replication_factor);
@@ -234,8 +241,8 @@ class TableLister {
                                           client.get(),
                                           &tables_info,
                                           "" /* filter */,
-                                          FLAGS_show_tablet_partition_info));
-
+                                          FLAGS_show_tablet_partition_info,
+                                          FLAGS_soft_deleted_only));
     vector<string> table_filters = Split(FLAGS_tables, ",", strings::SkipEmpty());
     for (const auto& tinfo : tables_info) {
       const auto& tname = tinfo.table_name;
@@ -474,7 +481,9 @@ Status DeleteTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
-  return client->DeleteTableInCatalogs(table_name, FLAGS_modify_external_catalogs);
+  return client->DeleteTableInCatalogs(table_name,
+                                       FLAGS_modify_external_catalogs,
+                                       FLAGS_reserve_seconds);
 }
 
 Status DescribeTable(const RunnerContext& context) {
@@ -731,6 +740,13 @@ Status SetRowCountLimit(const RunnerContext& context) {
   return alterer->Alter();
 }
 
+Status RecallTable(const RunnerContext& context) {
+  const string& table_id = FindOrDie(context.required_args, kTabletIdArg);
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  return client->RecallTable(table_id, FLAGS_new_table_name);
+}
+
 Status RenameTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   const string& new_table_name = FindOrDie(context.required_args, kNewTableNameArg);
@@ -808,8 +824,8 @@ Status SetExtraConfig(const RunnerContext& context) {
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
   unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
-  alterer->AlterExtraConfig({ { config_name, config_value} });
-  return alterer->Alter();
+  return alterer->AlterExtraConfig({ { config_name, config_value} })
+                ->Alter();
 }
 
 Status GetExtraConfigs(const RunnerContext& context) {
@@ -1696,6 +1712,7 @@ unique_ptr<Mode> BuildTableMode() {
       .Description("Delete a table")
       .AddRequiredParameter({ kTableNameArg, "Name of the table to delete" })
       .AddOptionalParameter("modify_external_catalogs")
+      .AddOptionalParameter("reserve_seconds")
       .Build();
 
   unique_ptr<Action> describe_table =
@@ -1709,6 +1726,7 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> list_tables =
       ClusterActionBuilder("list", &ListTables)
       .Description("List tables")
+      .AddOptionalParameter("soft_deleted_only")
       .AddOptionalParameter("tables")
       .AddOptionalParameter("list_tablets")
       .AddOptionalParameter("show_tablet_partition_info")
@@ -1738,6 +1756,14 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to rename" })
       .AddRequiredParameter({ kNewColumnNameArg, "New column name" })
+      .Build();
+
+  unique_ptr<Action> recall =
+      ActionBuilder("recall", &RecallTable)
+      .Description("Recall a deleted but still reserved table")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTabletIdArg, "ID of the table to recall" })
+      .AddOptionalParameter("new_table_name")
       .Build();
 
   unique_ptr<Action> rename_table =
@@ -1961,6 +1987,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(get_extra_configs))
       .AddAction(std::move(list_tables))
       .AddAction(std::move(locate_row))
+      .AddAction(std::move(recall))
       .AddAction(std::move(rename_column))
       .AddAction(std::move(rename_table))
       .AddAction(std::move(scan_table))

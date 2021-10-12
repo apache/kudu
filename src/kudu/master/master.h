@@ -25,6 +25,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/kserver/kserver.h"
 #include "kudu/master/master_options.h"
 #include "kudu/util/promise.h"
@@ -36,6 +37,7 @@ class HostPort;
 class MaintenanceManager;
 class MonoDelta;
 class MonoTime;
+class Thread;
 class ThreadPool;
 
 namespace rpc {
@@ -163,6 +165,11 @@ class Master : public kserver::KuduServer {
   // safe in a particular case.
   void ShutdownImpl();
 
+  // Start thread to purge soft-deleted tables with expired reservations.
+  Status StartExpiredReservedTablesDeleterThread();
+  void ExpiredReservedTablesDeleterThread();
+  Status DeleteExpiredReservedTables();
+
   enum MasterState {
     kStopped,
     kInitialized,
@@ -204,6 +211,8 @@ class Master : public kserver::KuduServer {
   std::unique_ptr<LocationCache> location_cache_;
 
   std::unique_ptr<TSManager> ts_manager_;
+
+  scoped_refptr<Thread> expired_reserved_tables_deleter_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(Master);
 };

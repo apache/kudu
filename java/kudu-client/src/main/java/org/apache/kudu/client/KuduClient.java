@@ -168,7 +168,47 @@ public class KuduClient implements AutoCloseable {
    * @throws KuduException if anything went wrong
    */
   public DeleteTableResponse deleteTable(String name) throws KuduException {
-    Deferred<DeleteTableResponse> d = asyncClient.deleteTable(name);
+    Deferred<DeleteTableResponse> d = asyncClient.deleteTable(name, 0);
+    return joinAndHandleException(d);
+  }
+
+  /**
+   * SoftDelete a table on the cluster with the specified name, the table will be
+   * reserved for reserveSeconds before being purged.
+   * @param name the table's name
+   * @param reserveSeconds the soft deleted table to be alive time
+   * @return an rpc response object
+   * @throws KuduException if anything went wrong
+   */
+  public DeleteTableResponse deleteTable(String name,
+                                         int reserveSeconds) throws KuduException {
+    Deferred<DeleteTableResponse> d = asyncClient.deleteTable(name, reserveSeconds);
+    return joinAndHandleException(d);
+  }
+
+  /**
+   * Recall a deleted table on the cluster with the specified table id
+   * @param id the table's id
+   * @return an rpc response object
+   * @throws KuduException if anything went wrong
+   */
+  public RecallDeletedTableResponse recallDeletedTable(String id) throws KuduException {
+    Deferred<RecallDeletedTableResponse> d = asyncClient.recallDeletedTable(id);
+    return joinAndHandleException(d);
+  }
+
+  /**
+   * Recall a deleted table on the cluster with the specified table id
+   * and give the recalled table the new table name
+   * @param id the table's id
+   * @param newTableName the recalled table's new name
+   * @return an rpc response object
+   * @throws KuduException if anything went wrong
+   */
+  public RecallDeletedTableResponse recallDeletedTable(String id,
+                                                       String newTableName) throws KuduException {
+    Deferred<RecallDeletedTableResponse> d = asyncClient.recallDeletedTable(id,
+                                                         newTableName);
     return joinAndHandleException(d);
   }
 
@@ -219,8 +259,8 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
-   * Get the list of all the tables.
-   * @return a list of all the tables
+   * Get the list of all the regular tables.
+   * @return a list of all the regular tables
    * @throws KuduException if anything went wrong
    */
   public ListTablesResponse getTablesList() throws KuduException {
@@ -228,14 +268,35 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
-   * Get a list of table names. Passing a null filter returns all the tables. When a filter is
-   * specified, it only returns tables that satisfy a substring match.
+   * Get a list of regular table names. Passing a null filter returns all the tables.
+   * When a filter is specified, it only returns tables that satisfy a substring match.
    * @param nameFilter an optional table name filter
    * @return a deferred that contains the list of table names
    * @throws KuduException if anything went wrong
    */
   public ListTablesResponse getTablesList(String nameFilter) throws KuduException {
-    Deferred<ListTablesResponse> d = asyncClient.getTablesList(nameFilter);
+    Deferred<ListTablesResponse> d = asyncClient.getTablesList(nameFilter, false);
+    return joinAndHandleException(d);
+  }
+
+  /**
+   * Get the list of all the soft deleted tables.
+   * @return a list of all the soft deleted tables
+   * @throws KuduException if anything went wrong
+   */
+  public ListTablesResponse getSoftDeletedTablesList() throws KuduException {
+    return getSoftDeletedTablesList(null);
+  }
+
+  /**
+   * Get list of soft deleted table names. Passing a null filter returns all the tables.
+   * When a filter is specified, it only returns tables that satisfy a substring match.
+   * @param nameFilter an optional table name filter
+   * @return a deferred that contains the list of table names
+   * @throws KuduException if anything went wrong
+   */
+  public ListTablesResponse getSoftDeletedTablesList(String nameFilter) throws KuduException {
+    Deferred<ListTablesResponse> d = asyncClient.getTablesList(nameFilter, true);
     return joinAndHandleException(d);
   }
 

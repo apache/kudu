@@ -173,6 +173,47 @@ public class TestKuduClient {
   }
 
   /**
+   * Test recalling a soft deleted table through a KuduClient.
+   */
+  @Test(timeout = 100000)
+  public void testRecallDeletedTable() throws Exception {
+    // Check that we can create a table.
+    assertTrue(client.getTablesList().getTablesList().isEmpty());
+    final KuduTable table = client.createTable(TABLE_NAME, basicSchema,
+        getBasicCreateTableOptions());
+    final String tableId = table.getTableId();
+    assertEquals(1, client.getTablesList().getTablesList().size());
+    assertEquals(TABLE_NAME, client.getTablesList().getTablesList().get(0));
+
+    // Check that we can delete it.
+    client.deleteTable(TABLE_NAME, 600);
+    List<String> tables = client.getTablesList().getTablesList();
+    assertEquals(0, tables.size());
+    tables = client.getSoftDeletedTablesList().getTablesList();
+    assertEquals(1, tables.size());
+    String softDeletedTable = tables.get(0);
+    assertEquals(TABLE_NAME, softDeletedTable);
+    // Check that we can recall the soft_deleted table.
+    client.recallDeletedTable(tableId);
+    assertEquals(1, client.getTablesList().getTablesList().size());
+    assertEquals(TABLE_NAME, client.getTablesList().getTablesList().get(0));
+
+    // Check that we can delete it.
+    client.deleteTable(TABLE_NAME, 600);
+    tables = client.getTablesList().getTablesList();
+    assertEquals(0, tables.size());
+    tables = client.getSoftDeletedTablesList().getTablesList();
+    assertEquals(1, tables.size());
+    softDeletedTable = tables.get(0);
+    assertEquals(TABLE_NAME, softDeletedTable);
+    // Check we can recall soft deleted table with new table name.
+    final String newTableName = "NewTable";
+    client.recallDeletedTable(tableId, newTableName);
+    assertEquals(1, client.getTablesList().getTablesList().size());
+    assertEquals(newTableName, client.getTablesList().getTablesList().get(0));
+  }
+
+  /**
    * Test creating a table with various invalid schema cases.
    */
   @Test(timeout = 100000)

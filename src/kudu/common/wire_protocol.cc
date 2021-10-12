@@ -684,10 +684,6 @@ Status ParseBoolConfig(const string& name, const string& value, bool* result) {
   return Status::OK();
 }
 
-static const std::string kTableHistoryMaxAgeSec = "kudu.table.history_max_age_sec";
-static const std::string kTableMaintenancePriority = "kudu.table.maintenance_priority";
-static const std::string kTableDisableCompaction = "kudu.table.disable_compaction";
-
 Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConfigPB* pb) {
   static const unordered_set<string> kSupportedConfigs({kTableHistoryMaxAgeSec,
                                                         kTableMaintenancePriority,

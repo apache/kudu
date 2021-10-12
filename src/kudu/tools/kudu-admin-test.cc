@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -1651,7 +1652,8 @@ TEST_F(AdminCliTest, TestDeleteTable) {
     "table",
     "delete",
     master_address,
-    kTableId
+    kTableId,
+    "-reserve_seconds=0"
   );
 
   vector<string> tables;
@@ -1665,16 +1667,51 @@ TEST_F(AdminCliTest, TestListTables) {
 
   NO_FATALS(BuildAndStart());
 
-  string stdout;
-  ASSERT_OK(RunKuduTool({
-    "table",
-    "list",
-    cluster_->master()->bound_rpc_addr().ToString()
-  }, &stdout));
+  {
+    string stdout;
+    ASSERT_OK(RunKuduTool({
+      "table",
+      "list",
+      cluster_->master()->bound_rpc_addr().ToString()
+    }, &stdout));
 
-  vector<string> stdout_lines = Split(stdout, ",", strings::SkipEmpty());
-  ASSERT_EQ(1, stdout_lines.size());
-  ASSERT_EQ(Substitute("$0\n", kTableId), stdout_lines[0]);
+    vector<string> stdout_lines = Split(stdout, ",", strings::SkipEmpty());
+    ASSERT_EQ(1, stdout_lines.size());
+    ASSERT_EQ(Substitute("$0\n", kTableId), stdout_lines[0]);
+  }
+
+  {
+    string stdout;
+    ASSERT_OK(RunKuduTool({
+      "table",
+      "list",
+      "-soft_deleted_only=true",
+      cluster_->master()->bound_rpc_addr().ToString()
+    }, &stdout));
+
+    vector<string> stdout_lines = Split(stdout, ",", strings::SkipEmpty());
+    ASSERT_EQ(0, stdout_lines.size());
+
+    ASSERT_OK(RunKuduTool({
+      "table",
+      "delete",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      kTableId
+    }, &stdout));
+
+    stdout.clear();
+    ASSERT_OK(RunKuduTool({
+      "table",
+      "list",
+      "-soft_deleted_only=true",
+      cluster_->master()->bound_rpc_addr().ToString()
+    }, &stdout));
+
+    stdout_lines.clear();
+    stdout_lines = Split(stdout, ",", strings::SkipEmpty());
+    ASSERT_EQ(1, stdout_lines.size());
+    ASSERT_EQ(Substitute("$0\n", kTableId), stdout_lines[0]);
+  }
 }
 
 TEST_F(AdminCliTest, TestListTablesDetail) {

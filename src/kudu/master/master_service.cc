@@ -572,7 +572,30 @@ void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
     return;
   }
 
-  Status s = server_->catalog_manager()->DeleteTableRpc(*req, resp, rpc);
+  Status s = server_->catalog_manager()->SoftDeleteTableRpc(*req, resp, rpc);
+  CheckRespErrorOrSetUnknown(s, resp);
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::RecallDeletedTable(const RecallDeletedTableRequestPB* req,
+                                           RecallDeletedTableResponsePB* resp,
+                                           rpc::RpcContext* rpc) {
+  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+    return;
+  }
+
+  // Soft-delete related functions is not supported when HMS is enabled.
+  if (hms::HmsCatalog::IsEnabled()) {
+    StatusToPB(Status::NotSupported("RecallDeletedTable is not supported when HMS is enabled."),
+               resp->mutable_error()->mutable_status());
+    resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
+    rpc->RespondSuccess();
+    return;
+  }
+
+  Status s = server_->catalog_manager()->RecallDeletedTableRpc(
+             *req, resp, rpc);
   CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }

@@ -1425,6 +1425,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "get_extra_configs.*Get the extra configuration properties for a table",
         "list.*List tables",
         "locate_row.*Locate which tablet a row belongs to",
+        "recall.*Recall a deleted but still reserved table",
         "rename_column.*Rename a column",
         "rename_table.*Rename a table",
         "scan.*Scan rows from a table",
@@ -4546,8 +4547,9 @@ TEST_F(ToolTest, TestDeleteTable) {
   ASSERT_EQ(exist, true);
 
   // Delete the table.
-  NO_FATALS(RunActionStdoutNone(Substitute("table delete $0 $1 --nomodify_external_catalogs",
-                                           master_addr, kTableName)));
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "table delete $0 $1 --nomodify_external_catalogs -reserve_seconds=0",
+      master_addr, kTableName)));
 
   // Check that the table does not exist.
   ASSERT_OK(client->TableExists(kTableName, &exist));
@@ -4580,6 +4582,57 @@ TEST_F(ToolTest, TestRenameTable) {
         Substitute("table rename_table $0 $1 $2 --nomodify_external_catalogs",
           master_addr, kNewTableName, kTableName)));
   ASSERT_OK(client->OpenTable(kTableName, &table));
+}
+
+TEST_F(ToolTest, TestRecallTable) {
+  NO_FATALS(StartExternalMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  constexpr const char* const kTableName = "kudu.table";
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  string table_id = table->id();
+
+  // Delete the table.
+  string out;
+  NO_FATALS(RunActionStdoutNone(Substitute("table delete $0 $1",
+                                           master_addr, kTableName)));
+
+  // List soft_deleted table.
+  vector<string> kudu_tables;
+  ASSERT_OK(client->ListSoftDeletedTables(&kudu_tables));
+  ASSERT_EQ(1, kudu_tables.size());
+  kudu_tables.clear();
+  ASSERT_OK(client->ListTables(&kudu_tables));
+  ASSERT_EQ(0, kudu_tables.size());
+
+  // Can't create a table with the same name whose state is in soft_deleted.
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  NO_FATALS(workload.Setup());
+  ASSERT_OK(client->ListTables(&kudu_tables));
+  ASSERT_EQ(0, kudu_tables.size());
+
+  const string kNewTableName = "kudu.table.new";
+  // Try to recall the soft_deleted table with new name.
+  NO_FATALS(RunActionStdoutNone(Substitute("table recall $0 $1 --new_table_name=$2",
+                                           master_addr, table_id, kNewTableName)));
+
+  ASSERT_OK(client->ListTables(&kudu_tables));
+  ASSERT_EQ(1, kudu_tables.size());
+  ASSERT_TRUE(kNewTableName == kudu_tables[0]);
+  kudu_tables.clear();
+  ASSERT_OK(client->ListSoftDeletedTables(&kudu_tables));
+  ASSERT_EQ(0, kudu_tables.size());
 }
 
 TEST_F(ToolTest, TestRenameColumn) {
@@ -6115,7 +6168,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   NO_FATALS(ValidateHmsEntries(&hms_client, kudu_client, "my_db", "table", master_addrs_str));
 
   vector<string> kudu_tables;
-  kudu_client->ListTables(&kudu_tables);
+  ASSERT_OK(kudu_client->ListTables(&kudu_tables));
   std::sort(kudu_tables.begin(), kudu_tables.end());
   ASSERT_EQ(vector<string>({
     "default.bad_id",
@@ -6277,7 +6330,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
 
   // Ensure the tables are available.
   vector<string> kudu_tables;
-  kudu_client->ListTables(&kudu_tables);
+  ASSERT_OK(kudu_client->ListTables(&kudu_tables));
   std::sort(kudu_tables.begin(), kudu_tables.end());
   ASSERT_EQ(vector<string>({
     "default.conflicting_legacy_table",

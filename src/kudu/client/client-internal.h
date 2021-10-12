@@ -83,6 +83,8 @@ class RemoteTabletServer;
 
 class KuduClient::Data {
  public:
+  static const uint32_t kSoftDeletedTableReservationSeconds = 60 * 60 * 24 * 7;
+
   Data();
   ~Data();
 
@@ -120,7 +122,13 @@ class KuduClient::Data {
   static Status DeleteTable(KuduClient* client,
                             const std::string& table_name,
                             const MonoTime& deadline,
-                            bool modify_external_catalogs = true);
+                            bool modify_external_catalogs = true,
+                            uint32_t reserve_seconds = kSoftDeletedTableReservationSeconds);
+
+  static Status RecallTable(KuduClient* client,
+                            const std::string& table_id,
+                            const MonoTime& deadline,
+                            const std::string& new_table_name = "");
 
   static Status AlterTable(KuduClient* client,
                            const master::AlterTableRequestPB& req,
@@ -154,7 +162,8 @@ class KuduClient::Data {
   static Status ListTablesWithInfo(KuduClient* client,
                                    std::vector<TableInfo>* tables_info,
                                    const std::string& filter,
-                                   bool list_tablet_with_partition = false);
+                                   bool list_tablet_with_partition = false,
+                                   bool show_soft_deleted = false);
 
   // Open the table identified by 'table_identifier'.
   Status OpenTable(KuduClient* client,

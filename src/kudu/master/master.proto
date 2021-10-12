@@ -89,6 +89,9 @@ message MasterErrorPB {
 
     // Master is already part of the Raft configuration.
     MASTER_ALREADY_PRESENT = 15;
+
+    // The requested table is in soft_deleted state.
+    TABLE_SOFT_DELETED = 16;
   }
 
   // The error code.
@@ -129,6 +132,7 @@ message SysTabletsEntryPB {
     RUNNING = 2;
     REPLACED = 3;
     DELETED = 4;
+    SOFT_DELETED = 5;
   }
 
   // DEPRECATED. Replaced by 'partition'.
@@ -165,6 +169,7 @@ message SysTablesEntryPB {
     RUNNING = 2;
     ALTERING = 3;
     REMOVED = 4;
+    SOFT_DELETED = 5;
   }
 
   // Table name
@@ -221,6 +226,9 @@ message SysTablesEntryPB {
 
   // The delete time of the table, in seconds since the epoch.
   optional int64 delete_timestamp = 18;
+
+  // The reservation time interval (in seconds) between soft delete and delete.
+  optional uint32 soft_deleted_reserved_seconds = 19;
 }
 
 // The on-disk entry in the sys.catalog table ("metadata" column) to represent
@@ -576,9 +584,25 @@ message DeleteTableRequestPB {
   // Whether to apply the deletion to external catalogs, such as the Hive Metastore,
   // which the Kudu master has been configured to integrate with.
   optional bool modify_external_catalogs = 2 [default = true];
+
+  // Reserve seconds after the table has been deleted.
+  optional uint32 reserve_seconds = 3;
 }
 
 message DeleteTableResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+}
+
+message RecallDeletedTableRequestPB {
+  required TableIdentifierPB table = 1;
+
+  // If this field is set, that's the name for the recalled table.
+  // Otherwise, the recalled table will use the original table name.
+  optional string new_table_name = 2;
+}
+
+message RecallDeletedTableResponsePB {
   // The error, if an error occurred with this request.
   optional MasterErrorPB error = 1;
 }
@@ -595,6 +619,11 @@ message ListTablesRequestPB {
   // Set this field 'true' to include information on the partition backed by
   // each tablet in the result list.
   optional bool list_tablet_with_partition = 3 [default = false];
+
+  // Use to select the tables type for display.
+  // Only show regular tables if false.
+  // Only show soft_deleted tables if true.
+  optional bool show_soft_deleted = 4;
 }
 
 message ListTablesResponsePB {
@@ -1173,6 +1202,10 @@ service MasterService {
     option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
   rpc DeleteTable(DeleteTableRequestPB) returns (DeleteTableResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+
+  rpc RecallDeletedTable(RecallDeletedTableRequestPB) returns (RecallDeletedTableResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClient";
   }
 

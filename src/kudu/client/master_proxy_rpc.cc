@@ -79,6 +79,8 @@ using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
 using master::MasterErrorPB;
 using master::MasterFeatures_Name;
+using master::RecallDeletedTableRequestPB;
+using master::RecallDeletedTableResponsePB;
 using master::RemoveMasterRequestPB;
 using master::RemoveMasterResponsePB;
 using master::ReplaceTabletRequestPB;
@@ -305,6 +307,7 @@ template class AsyncLeaderMasterRpc<ListMastersRequestPB, ListMastersResponsePB>
 template class AsyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB>;
 template class AsyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>;
 template class AsyncLeaderMasterRpc<RemoveMasterRequestPB, RemoveMasterResponsePB>;
+template class AsyncLeaderMasterRpc<RecallDeletedTableRequestPB, RecallDeletedTableResponsePB>;
 template class AsyncLeaderMasterRpc<ReplaceTabletRequestPB, ReplaceTabletResponsePB>;
 
 } // namespace internal

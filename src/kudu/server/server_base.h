@@ -19,12 +19,13 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/messenger.h" // IWYU pragma: keep
 #include "kudu/security/simple_acl.h"
 #include "kudu/server/server_base_options.h"
 #include "kudu/util/countdown_latch.h"
@@ -222,6 +223,8 @@ class ServerBase {
   // The ACL of users who may act as part of the Kudu service.
   security::SimpleAcl service_acl_;
 
+  CountDownLatch stop_background_threads_latch_;
+
  private:
   Status InitAcls();
   void GenerateInstanceID();
@@ -273,7 +276,6 @@ class ServerBase {
 #ifdef TCMALLOC_ENABLED
   scoped_refptr<Thread> tcmalloc_memory_gc_thread_;
 #endif
-  CountDownLatch stop_background_threads_latch_;
 
   std::unique_ptr<ScopedGLogMetrics> glog_metrics_;
 

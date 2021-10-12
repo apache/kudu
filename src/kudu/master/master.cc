@@ -20,8 +20,10 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -32,12 +34,12 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/hms/hms_catalog.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/location_cache.h"
 #include "kudu/master/master.pb.h"
@@ -48,7 +50,6 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/master/txn_manager.h"
 #include "kudu/master/txn_manager_service.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/security/token_signer.h"
@@ -57,6 +58,7 @@
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
@@ -64,9 +66,16 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/timer.h"
 #include "kudu/util/version_info.h"
+
+namespace kudu {
+namespace rpc {
+class Messenger;
+}  // namespace rpc
+}  // namespace kudu
 
 DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
              "Timeout for retrieving master registration over RPC.");
@@ -90,6 +99,11 @@ DEFINE_int64(authz_token_validity_seconds, 60 * 5,
              "validity period expires.");
 TAG_FLAG(authz_token_validity_seconds, experimental);
 
+DEFINE_int32(check_expired_table_interval_seconds, 60,
+             "Interval (in seconds) to check whether there is any soft_deleted table "
+             "with expired reservation period. Such tables will be purged and cannot "
+             "be recalled after that.");
+
 DEFINE_string(location_mapping_cmd, "",
               "A Unix command which takes a single argument, the IP address or "
               "hostname of a tablet server or client, and returns the location "
@@ -110,6 +124,7 @@ using kudu::transactions::TxnManagerServiceImpl;
 using kudu::tserver::ConsensusServiceImpl;
 using kudu::tserver::TabletCopyServiceImpl;
 using std::min;
+using std::nullopt;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -169,7 +184,7 @@ Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
   }
   return Status::OK();
 }
-} // anonymous namespace
+}  // anonymous namespace
 
 Master::Master(const MasterOptions& opts)
     : KuduServer("Master", opts, "kudu.master"),
@@ -271,6 +286,10 @@ Status Master::StartAsync() {
     RETURN_NOT_OK(ScheduleTxnManagerInit());
   }
 
+  // Soft-delete related functions are not supported when HMS is enabled.
+  if (!hms::HmsCatalog::IsEnabled()) {
+    RETURN_NOT_OK(StartExpiredReservedTablesDeleterThread());
+  }
   state_ = kRunning;
 
   return Status::OK();
@@ -427,6 +446,61 @@ void Master::ShutdownImpl() {
     LOG(INFO) << "Master@" << name << " shutdown complete.";
   }
   state_ = kStopped;
+}
+
+Status Master::StartExpiredReservedTablesDeleterThread() {
+  return Thread::Create("master",
+                        "expired-reserved-tables-deleter",
+                        [this]() { this->ExpiredReservedTablesDeleterThread(); },
+                        &expired_reserved_tables_deleter_thread_);
+}
+
+void Master::ExpiredReservedTablesDeleterThread() {
+  // How often to attempt to delete expired tables.
+  const MonoDelta kWait = MonoDelta::FromSeconds(FLAGS_check_expired_table_interval_seconds);
+  while (!stop_background_threads_latch_.WaitFor(kWait)) {
+    WARN_NOT_OK(DeleteExpiredReservedTables(), "Unable to delete expired reserved tables");
+  }
+}
+
+Status Master::DeleteExpiredReservedTables() {
+  CatalogManager::ScopedLeaderSharedLock l(catalog_manager());
+  if (!l.first_failed_status().ok()) {
+    // Skip checking if this master is not leader.
+    return Status::OK();
+  }
+
+  ListTablesRequestPB list_req;
+  ListTablesResponsePB list_resp;
+  // Set for soft_deleted table map.
+  list_req.set_show_soft_deleted(true);
+  RETURN_NOT_OK(catalog_manager_->ListTables(&list_req, &list_resp, nullopt));
+  for (const auto& table : list_resp.tables()) {
+    bool is_soft_deleted_table = false;
+    bool is_expired_table = false;
+    TableIdentifierPB table_identifier;
+    table_identifier.set_table_name(table.name());
+    Status s = catalog_manager_->GetTableStates(
+        table_identifier,
+        CatalogManager::TableInfoMapType::kSoftDeletedTableType,
+        &is_soft_deleted_table, &is_expired_table);
+    if (s.ok() && (!is_soft_deleted_table || !is_expired_table)) {
+      continue;
+    }
+
+    // Delete the table.
+    DeleteTableRequestPB del_req;
+    del_req.mutable_table()->set_table_id(table.id());
+    del_req.mutable_table()->set_table_name(table.name());
+    del_req.set_reserve_seconds(0);
+    DeleteTableResponsePB del_resp;
+    LOG(INFO) << "Start to delete soft_deleted table " << table.name();
+    WARN_NOT_OK(catalog_manager_->DeleteTableRpc(del_req, &del_resp, nullptr),
+                Substitute("Failed to delete soft_deleted table $0 (table_id=$1)",
+                           table.name(), table.id()));
+  }
+
+  return Status::OK();
 }
 
 Status Master::ListMasters(vector<ServerEntryPB>* masters) const {

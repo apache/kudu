@@ -22,9 +22,11 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
@@ -36,6 +38,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
+#include "kudu/hms/hms_catalog.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/hms_itest-base.h"
@@ -48,6 +51,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_string(hive_metastore_uris);
 
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
@@ -474,6 +479,28 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   // Create and drop a non-Kudu ('external') HMS table entry and ensure Kudu allows it.
   ASSERT_OK(CreateHmsTable("default", "externalTable", HmsClient::kExternalTable));
   ASSERT_OK(harness_.hms_client()->DropTable("default", "externalTable"));
+}
+
+TEST_F(MasterHmsTest, TestSoftDeleteTable) {
+  // TODO(kedeng) : change the test case when state sync to HMS
+  // Create a Kudu table, then soft delete it from Kudu.
+  ASSERT_OK(CreateKuduTable("default", "a"));
+  NO_FATALS(CheckTable("default", "a", /*user=*/ nullopt));
+  hive::Table hms_table;
+  // Soft-delete related functions is not supported when HMS is enabled.
+  // We set hive_metastore_uris for hack HMS enable.
+  FLAGS_hive_metastore_uris = "thrift://127.0.0.1:0";
+  ASSERT_TRUE(hms::HmsCatalog::IsEnabled());
+  Status s = client_->SoftDeleteTable("default.a", 6000);
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  // The RecallTable is not supported, so the table id is ineffective.
+  s = client_->RecallTable("default.a");
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "RecallDeletedTable is not supported");
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "a", &hms_table));
+  // The table is remain in the Kudu cluster.
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable("default.a", &table));
 }
 
 TEST_F(MasterHmsTest, TestNotificationLogListener) {

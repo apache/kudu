@@ -30,6 +30,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -54,6 +55,7 @@
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/generated/version_defines.h"
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
@@ -68,7 +70,6 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/table_metrics.h"
-#include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -97,6 +98,12 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
+
+namespace kudu {
+namespace master {
+class TSDescriptor;
+}  // namespace master
+}  // namespace kudu
 
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::itest::GetClusterId;
@@ -222,6 +229,10 @@ class MasterTest : public KuduTest {
   Status GetTablePartitionSchema(const string& table_name,
                                  PartitionSchemaPB* ps_pb);
 
+  Status SoftDelete(const string& table_name, uint32 reserve_seconds);
+
+  Status RecallTable(const string& table_id);
+
   shared_ptr<Messenger> client_messenger_;
   unique_ptr<MiniMaster> mini_master_;
   Master* master_;
@@ -341,6 +352,23 @@ Status MasterTest::GetTablePartitionSchema(const string& table_name,
   }
   *ps_pb = resp.partition_schema();
   return Status::OK();
+}
+
+Status MasterTest::SoftDelete(const string& table_name, uint32 reserve_seconds) {
+  DeleteTableRequestPB req;
+  DeleteTableResponsePB resp;
+  RpcController controller;
+  req.mutable_table()->set_table_name(table_name);
+  req.set_reserve_seconds(reserve_seconds);
+  return master_->catalog_manager()->SoftDeleteTableRpc(req, &resp, nullptr);
+}
+
+Status MasterTest::RecallTable(const string& table_id) {
+  RecallDeletedTableRequestPB req;
+  RecallDeletedTableResponsePB resp;
+  RpcController controller;
+  req.mutable_table()->set_table_id(table_id);
+  return master_->catalog_manager()->RecallDeletedTableRpc(req, &resp, nullptr);
 }
 
 void MasterTest::DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp) {
@@ -3598,6 +3626,110 @@ TEST_F(MasterStartupTest, StartupWebPage) {
   ASSERT_STR_CONTAINS(buf.ToString(), "\"read_data_directories_status\":100");
   ASSERT_STR_CONTAINS(buf.ToString(), "\"initialize_master_catalog_status\":100");
   ASSERT_STR_CONTAINS(buf.ToString(), "\"start_rpc_server_status\":100");
+}
+
+TEST_F(MasterTest, GetTableStatesWithName) {
+  const char* kTableName = "testtable";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  bool is_soft_deleted_table = false;
+  bool is_expired_table = false;
+  TableIdentifierPB table_identifier;
+  table_identifier.set_table_name(kTableName);
+
+  // Create a new table.
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+  ListTablesResponsePB tables;
+  NO_FATALS(DoListAllTables(&tables));
+  ASSERT_EQ(1, tables.tables_size());
+  ASSERT_EQ(kTableName, tables.tables(0).name());
+  string table_id = tables.tables(0).id();
+  ASSERT_FALSE(table_id.empty());
+
+  {
+    // Default table is not expired.
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(master_->catalog_manager()->GetTableStates(
+        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        &is_soft_deleted_table, &is_expired_table));
+    ASSERT_FALSE(is_soft_deleted_table);
+    ASSERT_FALSE(is_expired_table);
+  }
+
+  {
+    // In reserve time, table is not expired.
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(SoftDelete(kTableName, 100));
+    ASSERT_OK(master_->catalog_manager()->GetTableStates(
+        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        &is_soft_deleted_table, &is_expired_table));
+    ASSERT_TRUE(is_soft_deleted_table);
+    ASSERT_FALSE(is_expired_table);
+    ASSERT_OK(RecallTable(table_id));
+  }
+
+  {
+    // After reserve time, table is expired.
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(SoftDelete(kTableName, 1));
+    SleepFor(MonoDelta::FromSeconds(1));
+    ASSERT_OK(master_->catalog_manager()->GetTableStates(
+        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        &is_soft_deleted_table, &is_expired_table));
+    ASSERT_TRUE(is_soft_deleted_table);
+    ASSERT_TRUE(is_expired_table);
+  }
+}
+
+TEST_F(MasterTest, GetTableStatesWithId) {
+  const char* kTableName = "testtable";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  bool is_soft_deleted_table = false;
+  bool is_expired_table = false;
+
+  // Create a new table.
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+  ListTablesResponsePB tables;
+  NO_FATALS(DoListAllTables(&tables));
+  ASSERT_EQ(1, tables.tables_size());
+  ASSERT_EQ(kTableName, tables.tables(0).name());
+  string table_id = tables.tables(0).id();
+  ASSERT_FALSE(table_id.empty());
+  TableIdentifierPB table_identifier;
+  table_identifier.set_table_id(table_id);
+
+  {
+    // Default table is not expired.
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(master_->catalog_manager()->GetTableStates(
+        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        &is_soft_deleted_table, &is_expired_table));
+    ASSERT_FALSE(is_soft_deleted_table);
+    ASSERT_FALSE(is_expired_table);
+  }
+
+  {
+    // In reserve time, table is not expired.
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(SoftDelete(kTableName, 100));
+    ASSERT_OK(master_->catalog_manager()->GetTableStates(
+        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        &is_soft_deleted_table, &is_expired_table));
+    ASSERT_TRUE(is_soft_deleted_table);
+    ASSERT_FALSE(is_expired_table);
+    ASSERT_OK(RecallTable(table_id));
+  }
+
+  {
+    // After reserve time, table is expired.
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(SoftDelete(kTableName, 1));
+    SleepFor(MonoDelta::FromSeconds(1));
+    ASSERT_OK(master_->catalog_manager()->GetTableStates(
+        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        &is_soft_deleted_table, &is_expired_table));
+    ASSERT_TRUE(is_soft_deleted_table);
+    ASSERT_TRUE(is_expired_table);
+  }
 }
 
 } // namespace master

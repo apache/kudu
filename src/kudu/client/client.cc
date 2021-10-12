@@ -33,7 +33,6 @@
 
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
@@ -83,7 +82,6 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/sasl_common.h"
@@ -92,7 +90,7 @@
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/async_util.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/init.h"
@@ -511,13 +509,25 @@ Status KuduClient::IsCreateTableInProgress(const string& table_name,
 }
 
 Status KuduClient::DeleteTable(const string& table_name) {
-  return DeleteTableInCatalogs(table_name, true);
+  return SoftDeleteTable(table_name);
+}
+
+Status KuduClient::SoftDeleteTable(const string& table_name,
+                                   uint32_t reserve_seconds) {
+  return DeleteTableInCatalogs(table_name, true, reserve_seconds);
 }
 
 Status KuduClient::DeleteTableInCatalogs(const string& table_name,
-                                         bool modify_external_catalogs) {
+                                         bool modify_external_catalogs,
+                                         uint32_t reserve_seconds) {
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  return data_->DeleteTable(this, table_name, deadline, modify_external_catalogs);
+  return  KuduClient::Data::DeleteTable(this, table_name, deadline, modify_external_catalogs,
+                                        reserve_seconds);
+}
+
+Status KuduClient::RecallTable(const string& table_id, const string& new_table_name) {
+  MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
+  return KuduClient::Data::RecallTable(this, table_id, deadline, new_table_name);
 }
 
 KuduTableAlterer* KuduClient::NewTableAlterer(const string& table_name) {
@@ -567,9 +577,22 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
 }
 
 Status KuduClient::ListTables(vector<string>* tables, const string& filter) {
-  tables->clear();
   vector<Data::TableInfo> tables_info;
-  RETURN_NOT_OK(data_->ListTablesWithInfo(this, &tables_info, filter));
+  RETURN_NOT_OK(data_->ListTablesWithInfo(this, &tables_info, filter, false));
+  tables->clear();
+  tables->reserve(tables_info.size());
+  for (auto& info : tables_info) {
+    tables->emplace_back(std::move(info.table_name));
+  }
+  return Status::OK();
+}
+
+Status KuduClient::ListSoftDeletedTables(vector<string>* tables, const string& filter) {
+  vector<Data::TableInfo> tables_info;
+  RETURN_NOT_OK(data_->ListTablesWithInfo(this, &tables_info, filter,
+      /*list_tablet_with_partition=*/ true, /*show_soft_deleted=*/ true));
+  tables->clear();
+  tables->reserve(tables_info.size());
   for (auto& info : tables_info) {
     tables->emplace_back(std::move(info.table_name));
   }

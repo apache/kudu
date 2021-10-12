@@ -98,6 +98,8 @@ using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
 using kudu::master::MasterFeatures;
 using kudu::master::MasterServiceProxy;
+using kudu::master::RecallDeletedTableRequestPB;
+using kudu::master::RecallDeletedTableResponsePB;
 using kudu::master::TableIdentifierPB;
 using kudu::rpc::BackoffType;
 using kudu::rpc::CredentialsPolicy;
@@ -373,16 +375,38 @@ Status KuduClient::Data::WaitForCreateTableToFinish(
 Status KuduClient::Data::DeleteTable(KuduClient* client,
                                      const string& table_name,
                                      const MonoTime& deadline,
-                                     bool modify_external_catalogs) {
+                                     bool modify_external_catalogs,
+                                     uint32_t reserve_seconds) {
   DeleteTableRequestPB req;
   DeleteTableResponsePB resp;
 
   req.mutable_table()->set_table_name(table_name);
   req.set_modify_external_catalogs(modify_external_catalogs);
+  req.set_reserve_seconds(reserve_seconds);
   Synchronizer sync;
   AsyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB> rpc(
       deadline, client, BackoffType::EXPONENTIAL, req, &resp,
       &MasterServiceProxy::DeleteTableAsync, "DeleteTable", sync.AsStatusCallback(), {});
+  rpc.SendRpc();
+  return sync.Wait();
+}
+
+Status KuduClient::Data::RecallTable(KuduClient* client,
+                                     const std::string& table_id,
+                                     const MonoTime& deadline,
+                                     const std::string& new_table_name) {
+  RecallDeletedTableRequestPB req;
+  RecallDeletedTableResponsePB resp;
+
+  req.mutable_table()->set_table_id(table_id);
+  if (!new_table_name.empty()) {
+    req.set_new_table_name(new_table_name);
+  }
+  Synchronizer sync;
+  AsyncLeaderMasterRpc<RecallDeletedTableRequestPB, RecallDeletedTableResponsePB> rpc(
+      deadline, client, BackoffType::EXPONENTIAL, req, &resp,
+      &MasterServiceProxy::RecallDeletedTableAsync, "RecallDeletedTable", sync.AsStatusCallback(),
+      {});
   rpc.SendRpc();
   return sync.Wait();
 }
@@ -445,12 +469,13 @@ Status KuduClient::Data::WaitForAlterTableToFinish(
 Status KuduClient::Data::ListTablesWithInfo(KuduClient* client,
                                             vector<TableInfo>* tables_info,
                                             const string& filter,
-                                            bool list_tablet_with_partition) {
+                                            bool list_tablet_with_partition,
+                                            bool show_soft_deleted) {
   ListTablesRequestPB req;
   if (!filter.empty()) {
     req.set_name_filter(filter);
   }
-
+  req.set_show_soft_deleted(show_soft_deleted);
   req.set_list_tablet_with_partition(list_tablet_with_partition);
 
   auto deadline = MonoTime::Now() + client->default_admin_operation_timeout();

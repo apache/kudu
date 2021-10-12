@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/master/master.pb.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"

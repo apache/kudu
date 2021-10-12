@@ -33,12 +33,16 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
 
   private final String nameFilter;
 
+  private final boolean showSoftDeleted;
+
   ListTablesRequest(KuduTable masterTable,
                     String nameFilter,
+                    boolean showSoftDeleted,
                     Timer timer,
                     long timeoutMillis) {
     super(masterTable, timer, timeoutMillis);
     this.nameFilter = nameFilter;
+    this.showSoftDeleted = showSoftDeleted;
   }
 
   @Override
@@ -48,6 +52,7 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
     if (nameFilter != null) {
       builder.setNameFilter(nameFilter);
     }
+    builder.setShowSoftDeleted(showSoftDeleted);
     return builder.build();
   }
 

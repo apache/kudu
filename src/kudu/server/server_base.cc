@@ -499,12 +499,12 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
       result_tracker_(new rpc::ResultTracker(shared_ptr<MemTracker>(
           MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
       is_first_run_(false),
+      stop_background_threads_latch_(1),
       dns_resolver_(new DnsResolver(
           FLAGS_dns_resolver_max_threads_num,
           FLAGS_dns_resolver_cache_capacity_mb * 1024 * 1024,
           MonoDelta::FromSeconds(FLAGS_dns_resolver_cache_ttl_sec))),
-      options_(options),
-      stop_background_threads_latch_(1) {
+      options_(options) {
   metric_entity_->NeverRetire(
       METRIC_merged_entities_count_of_server.InstantiateHidden(metric_entity_, 1));
 

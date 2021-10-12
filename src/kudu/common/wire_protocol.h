@@ -57,6 +57,10 @@ class ServerEntryPB;
 class ServerRegistrationPB;
 class TableExtraConfigPB;
 
+static const std::string kTableHistoryMaxAgeSec = "kudu.table.history_max_age_sec";
+static const std::string kTableMaintenancePriority = "kudu.table.maintenance_priority";
+static const std::string kTableDisableCompaction = "kudu.table.disable_compaction";
+
 // Convert the given C++ Status object into the equivalent Protobuf.
 void StatusToPB(const Status& status, AppStatusPB* pb);
 
