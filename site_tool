@@ -104,7 +104,8 @@ def setup_bundle():
   os.environ['GEM_PATH'] = GEM_PATH
   if subprocess.call([BUNDLE_PATH, "check"]) != 0:
     logging.info("Installing gems locally...")
-    subprocess.check_call([BUNDLE_PATH, "install", "--path", GEM_PATH])
+    subprocess.check_call([BUNDLE_PATH, "config", "set", "--local", "path", GEM_PATH])
+    subprocess.check_call([BUNDLE_PATH, "install"])
 
 
 def run_jekyll(args):
