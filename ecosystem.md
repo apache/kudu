@@ -141,6 +141,12 @@ operator
 documentation](https://docs.tibco.com/pub/sfire-sfds/latest/doc/html/authoring/kuduoperator.html)
 for more details.
 
+#### [Informatica PowerExchange](https://docs.informatica.com/data-integration/powerexchange-for-cdc-and-mainframe/10-4-1/reference-manual/introduction-to-powerexchange.html)
+Informatica® PowerExchange® is a family of products that enables retrieval of a variety of data
+sources without having to develop custom data-access programs. See the
+[PowerExchange for Kudu documentation](https://docs.informatica.com/data-integration/powerexchange-adapters-for-informatica/10-5/powerexchange-for-kudu-user-guide/preface.html)
+for more details.
+
 ### Deployment and Orchestration
 
 #### [Apache Camel](https://camel.apache.org/)
