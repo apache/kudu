@@ -20,6 +20,7 @@
 #include <errno.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -57,6 +58,7 @@
 #include "kudu/util/alignment.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/env.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
@@ -69,7 +71,9 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/sorted_disjoint_interval_list.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util_prod.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
 DECLARE_bool(enable_data_block_fsync);
@@ -122,6 +126,11 @@ DEFINE_bool(log_block_manager_delete_dead_container, true,
             "startup time");
 TAG_FLAG(log_block_manager_delete_dead_container, advanced);
 TAG_FLAG(log_block_manager_delete_dead_container, experimental);
+
+DEFINE_int32(log_container_metadata_rewrite_inject_latency_ms, 0,
+             "Amount of latency in ms to inject when rewrite metadata file. "
+             "Only for testing.");
+TAG_FLAG(log_container_metadata_rewrite_inject_latency_ms, hidden);
 
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
@@ -2119,6 +2128,10 @@ Status LogBlockManager::Open(FsReport* report, std::atomic<int>* containers_proc
   dd_manager_->WaitOnClosures();
 
   // Check load errors and merge each data dir's container load results, then do repair tasks.
+  unique_ptr<ThreadPool> repair_pool;
+  RETURN_NOT_OK(ThreadPoolBuilder("repair_pool")
+                    .set_max_threads(dd_manager_->dirs().size())
+                    .Build(&repair_pool));
   vector<unique_ptr<internal::LogBlockContainerLoadResult>> dir_results(
       dd_manager_->dirs().size());
   for (int i = 0; i < dd_manager_->dirs().size(); ++i) {
@@ -2162,12 +2175,13 @@ Status LogBlockManager::Open(FsReport* report, std::atomic<int>* containers_proc
       dir_results[i] = std::move(dir_result);
       auto* dd_raw = dd.get();
       auto* dr = dir_results[i].get();
-      dd->ExecClosure([this, dd_raw, dr]() { this->RepairTask(dd_raw, dr); });
+      CHECK_OK(repair_pool->Submit([this, dd_raw, dr]() { this->RepairTask(dd_raw, dr); }));
     }
   }
 
   // Wait for the repair tasks to complete.
-  dd_manager_->WaitOnClosures();
+  repair_pool->Wait();
+  repair_pool->Shutdown();
 
   FsReport merged_report;
   for (int i = 0; i < dd_manager_->dirs().size(); ++i) {
@@ -2970,33 +2984,55 @@ Status LogBlockManager::Repair(
 
   // "Compact" metadata files with few live blocks by rewriting them with only
   // the live block records.
-  int64_t metadata_files_compacted = 0;
-  int64_t metadata_bytes_delta = 0;
+  std::atomic<int64_t> metadata_files_compacted = 0;
+  std::atomic<int64_t> metadata_bytes_delta = 0;
+  std::atomic<bool> seen_fatal_error = false;
+  Status first_fatal_error;
+  SCOPED_LOG_TIMING(INFO, "loading block containers with low live blocks");
   for (const auto& e : low_live_block_containers) {
+    if (seen_fatal_error.load()) {
+      break;
+    }
     LogBlockContainerRefPtr container = FindPtrOrNull(containers_by_name, e.first);
     if (!container) {
       // The container was deleted outright.
       continue;
     }
 
-    // Rewrite this metadata file. Failures are non-fatal.
-    int64_t file_bytes_delta;
-    const auto& meta_path = StrCat(e.first, kContainerMetadataFileSuffix);
-    Status s = RewriteMetadataFile(*(container.get()), e.second, &file_bytes_delta);
-    if (!s.ok()) {
-      WARN_NOT_OK(s, "could not rewrite metadata file");
-      continue;
-    }
+    dir->ExecClosure([this, &metadata_files_compacted, &metadata_bytes_delta,
+        &seen_fatal_error, &first_fatal_error, e, container]() {
+      // Rewrite this metadata file.
+      int64_t file_bytes_delta;
+      const auto& meta_path = StrCat(e.first, kContainerMetadataFileSuffix);
+      Status s = RewriteMetadataFile(*(container.get()), e.second, &file_bytes_delta);
+      if (!s.ok()) {
+        // Rewrite metadata file failure is non-fatal, just skip it.
+        WARN_NOT_OK(s, Substitute("could not rewrite metadata file $0", meta_path));
+        return;
+      }
 
-    // However, we're hosed if we can't open the new metadata file.
-    RETURN_NOT_OK_PREPEND(container->ReopenMetadataWriter(),
-                          "could not reopen new metadata file");
+      // Reopen the new metadata file.
+      s = container->ReopenMetadataWriter();
+      if (!s.ok()) {
+        // Open the new metadata file failure is fatal, stop processing other containers.
+        bool current_seen_error = false;
+        if (seen_fatal_error.compare_exchange_strong(current_seen_error, true)) {
+          first_fatal_error = s.CloneAndPrepend(
+              Substitute("could not reopen new metadata file", meta_path));
+        }
+        return;
+      }
 
-    metadata_files_compacted++;
-    metadata_bytes_delta += file_bytes_delta;
-    VLOG(1) << "Compacted metadata file " << meta_path
-            << " (saved " << file_bytes_delta << " bytes)";
+      metadata_files_compacted++;
+      metadata_bytes_delta += file_bytes_delta;
+      VLOG(1) << "Compacted metadata file " << meta_path << " (saved " << file_bytes_delta
+              << " bytes)";
+    });
+  }
 
+  dir->WaitOnClosures();
+  if (seen_fatal_error.load()) {
+    LOG_AND_RETURN(WARNING, first_fatal_error);
   }
 
   // The data directory can be synchronized once for all of the new metadata files.
@@ -3009,11 +3045,11 @@ Status LogBlockManager::Repair(
   // TODO(awong): The below will only be true with persistent disk states.
   // Disk failures do not suffer from this issue because, on the next startup,
   // the entire directory will not be used.
-  if (metadata_files_compacted > 0) {
+  if (metadata_files_compacted.load() > 0) {
     Status s = env_->SyncDir(dir->dir());
     RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(s, "Could not sync data directory");
     LOG(INFO) << Substitute("Compacted $0 metadata files ($1 metadata bytes)",
-                            metadata_files_compacted, metadata_bytes_delta);
+                            metadata_files_compacted.load(), metadata_bytes_delta.load());
   }
 
   return Status::OK();
@@ -3022,6 +3058,8 @@ Status LogBlockManager::Repair(
 Status LogBlockManager::RewriteMetadataFile(const LogBlockContainer& container,
                                             const vector<BlockRecordPB>& records,
                                             int64_t* file_bytes_delta) {
+  MAYBE_INJECT_FIXED_LATENCY(FLAGS_log_container_metadata_rewrite_inject_latency_ms);
+
   const string metadata_file_name = StrCat(container.ToString(), kContainerMetadataFileSuffix);
   // Get the container's data directory's UUID for error handling.
   const string dir = container.data_dir()->dir();

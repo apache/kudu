@@ -92,6 +92,12 @@ DEFINE_int32(startup_benchmark_block_count_for_testing, 1000000,
              "Block count to do startup benchmark.");
 DEFINE_int32(startup_benchmark_data_dir_count_for_testing, 8,
              "Data directories to do startup benchmark.");
+DEFINE_int32(startup_benchmark_reopen_times, 10,
+             "Block manager reopen times.");
+DEFINE_int32(startup_benchmark_deleted_block_percentage, 90,
+             "Percentage of deleted blocks in containers.");
+DEFINE_validator(startup_benchmark_deleted_block_percentage,
+                 [](const char* /*n*/, int32_t v) { return 0 <= v && v <= 100; });
 
 // Block manager metrics.
 METRIC_DECLARE_counter(block_manager_total_blocks_deleted);
@@ -1008,15 +1014,28 @@ TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
 // Simple micro-benchmark which creates a large number of blocks and then
 // times the startup of the LBM.
 //
-// This is simplistic in several ways compared to a typical workload:
-// - minimal number of containers, each of which is entirely full
+// This is simplistic in several ways compared to two typical workloads:
+// 1. minimal number of containers, each of which is entirely full
+//    without any deleted blocks.
 //   (typical workloads end up writing to several containers at once
 //    due to concurrent write operations such as multiple MM threads
 //    flushing)
-// - no deleted blocks to process
+// 2. minimal number of containers, each of which is entirely full
+//    with about --startup_benchmark_deleted_block_percentage percent
+//    deleted blocks.
+//   (typical workloads of write, alter operations, and background MM
+//    threads running a long time since last bootstrap)
 //
 // However it still can be used to micro-optimize the startup process.
-TEST_F(LogBlockManagerTest, StartupBenchmark) {
+class LogBlockManagerStartupBenchmarkTest:
+    public LogBlockManagerTest,
+    public ::testing::WithParamInterface<bool> {
+};
+INSTANTIATE_TEST_SUITE_P(StartupBenchmarkSuite, LogBlockManagerStartupBenchmarkTest,
+                         ::testing::Values(false, true));
+
+TEST_P(LogBlockManagerStartupBenchmarkTest, StartupBenchmark) {
+  bool delete_blocks = GetParam();
   std::vector<std::string> test_dirs;
   for (int i = 0; i < FLAGS_startup_benchmark_data_dir_count_for_testing; ++i) {
     test_dirs.emplace_back(test_dir_ + "/" + std::to_string(i));
@@ -1034,7 +1053,9 @@ TEST_F(LogBlockManagerTest, StartupBenchmark) {
   // for details.
   FLAGS_block_manager_preflush_control = "never";
   const int kNumBlocks = AllowSlowTests() ? FLAGS_startup_benchmark_block_count_for_testing : 1000;
+
   // Creates 'kNumBlocks' blocks with minimal data.
+  vector<BlockId> block_ids;
   {
     unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
     for (int i = 0; i < kNumBlocks; i++) {
@@ -1042,11 +1063,32 @@ TEST_F(LogBlockManagerTest, StartupBenchmark) {
       ASSERT_OK_FAST(bm_->CreateBlock(test_block_opts_, &block));
       ASSERT_OK_FAST(block->Append("x"));
       ASSERT_OK_FAST(block->Finalize());
+      block_ids.emplace_back(block->id());
       transaction->AddCreatedBlock(std::move(block));
     }
     ASSERT_OK(transaction->CommitCreatedBlocks());
   }
-  for (int i = 0; i < 10; i++) {
+
+  if (delete_blocks) {
+    std::mt19937 gen(SeedRandom());
+    std::shuffle(block_ids.begin(), block_ids.end(), gen);
+    {
+      int to_delete_count =
+          block_ids.size() * FLAGS_startup_benchmark_deleted_block_percentage / 100;
+      shared_ptr<BlockDeletionTransaction> deletion_transaction =
+          this->bm_->NewDeletionTransaction();
+      for (const BlockId& b : block_ids) {
+        deletion_transaction->AddDeletedBlock(b);
+        if (--to_delete_count <= 0) {
+          break;
+        }
+      }
+      vector<BlockId> deleted;
+      ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+    }
+  }
+
+  for (int i = 0; i < FLAGS_startup_benchmark_reopen_times; i++) {
     LOG_TIMING(INFO, "reopening block manager") {
       ASSERT_OK(ReopenBlockManager(nullptr, nullptr, test_dirs));
     }
