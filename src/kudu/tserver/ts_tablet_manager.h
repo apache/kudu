@@ -480,6 +480,10 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   mutable rw_spinlock lock_update_;
   MonoTime next_update_time_;
 
+  // Keep track of number of tablets opened/attempted to be opened
+  // during server startup
+  scoped_refptr<AtomicGauge<uint32_t>> tablets_num_opened_startup_;
+
   // NOTE: it's important that this is the first member to be destructed. This
   // ensures we do not attempt to collect metrics while calling the destructor.
   FunctionGaugeDetacher metric_detacher_;

@@ -50,6 +50,7 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
@@ -107,6 +108,13 @@ DEFINE_int64(fs_wal_dir_reserved_bytes, -1,
              "are not currently supported");
 DEFINE_validator(fs_wal_dir_reserved_bytes, [](const char* /*n*/, int64_t v) { return v >= -1; });
 TAG_FLAG(fs_wal_dir_reserved_bytes, runtime);
+
+METRIC_DEFINE_gauge_int64(server, log_block_manager_containers_processing_time_startup,
+                          "Time taken to open all log block containers during server startup",
+                          kudu::MetricUnit::kMilliseconds,
+                          "The total time taken by the server to open all the container"
+                          "files during the startup",
+                          kudu::MetricLevel::kDebug);
 
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
@@ -463,6 +471,10 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     }
     if (read_data_directories) {
       read_data_directories->Stop();
+      if (opts_.metric_entity && opts_.block_manager_type == "log") {
+        METRIC_log_block_manager_containers_processing_time_startup.Instantiate(opts_.metric_entity,
+            (read_data_directories->TimeElapsed()).ToMilliseconds());
+      }
     }
   }
   // Report wal and metadata directories.

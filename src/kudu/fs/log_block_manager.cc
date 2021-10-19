@@ -159,6 +159,20 @@ METRIC_DEFINE_counter(server, log_block_manager_dead_containers_deleted,
                       "Number of full (but dead) block containers that were deleted",
                       kudu::MetricLevel::kDebug);
 
+METRIC_DEFINE_gauge_uint64(server, log_block_manager_total_containers_startup,
+                           "Total number of Log Block Containers during startup",
+                           kudu::MetricUnit::kLogBlockContainers,
+                           "Number of log block containers which were present during the server "
+                           "startup",
+                           kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_gauge_uint64(server, log_block_manager_processed_containers_startup,
+                           "Number of Log Block Containers opened during startup",
+                           kudu::MetricUnit::kLogBlockContainers,
+                           "Number of log block containers which were opened/processed during "
+                           "the server startup",
+                           kudu::MetricLevel::kInfo);
+
 namespace kudu {
 
 namespace fs {
@@ -202,6 +216,9 @@ struct LogBlockManagerMetrics {
   scoped_refptr<AtomicGauge<uint64_t>> containers;
   scoped_refptr<AtomicGauge<uint64_t>> full_containers;
 
+  scoped_refptr<AtomicGauge<uint64_t>> total_containers_startup;
+  scoped_refptr<AtomicGauge<uint64_t>> processed_containers_startup;
+
   scoped_refptr<Counter> holes_punched;
   scoped_refptr<Counter> dead_containers_deleted;
 };
@@ -214,6 +231,8 @@ LogBlockManagerMetrics::LogBlockManagerMetrics(const scoped_refptr<MetricEntity>
     GINIT(blocks_under_management),
     GINIT(containers),
     GINIT(full_containers),
+    GINIT(total_containers_startup),
+    GINIT(processed_containers_startup),
     MINIT(holes_punched),
     MINIT(dead_containers_deleted) {
 }
@@ -2542,8 +2561,12 @@ void LogBlockManager::OpenDataDir(
     }
     InsertIfNotPresent(&containers_seen, container_name);
   }
+
   if (containers_total) {
     *containers_total += containers_seen.size();
+    if (metrics_) {
+      metrics()->total_containers_startup->IncrementBy(containers_seen.size());
+    }
   }
 
   for (const string& container_name : containers_seen) {
@@ -2554,6 +2577,9 @@ void LogBlockManager::OpenDataDir(
         this, dir, &results->back()->report, container_name, &container);
     if (containers_processed) {
       ++*containers_processed;
+      if (metrics_) {
+        metrics()->processed_containers_startup->Increment();
+      }
     }
     if (!s.ok()) {
       if (s.IsAborted()) {

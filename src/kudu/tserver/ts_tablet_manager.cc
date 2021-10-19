@@ -235,6 +235,24 @@ METRIC_DEFINE_gauge_int32(server, tablets_num_shutdown,
                           "Number of tablets currently shut down",
                           kudu::MetricLevel::kInfo);
 
+METRIC_DEFINE_gauge_uint32(server, tablets_num_total_startup,
+                           "Number of Tablets Present During Startup",
+                           kudu::MetricUnit::kTablets,
+                           "Number of tablets present during server startup",
+                           kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_gauge_uint32(server, tablets_num_opened_startup,
+                           "Number of Tablets Opened During Startup",
+                           kudu::MetricUnit::kTablets,
+                           "Number of tablets opened during server startup",
+                           kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_gauge_int64(server, tablets_opening_time_startup,
+                          "Time Taken to Start the Tablets During Startup",
+                          kudu::MetricUnit::kMilliseconds,
+                          "Time taken to start the tablets during server startup",
+                          kudu::MetricLevel::kDebug);
+
 DECLARE_int32(heartbeat_interval_ms);
 
 using kudu::consensus::ConsensusMetadata;
@@ -343,6 +361,9 @@ TSTabletManager::TSTabletManager(TabletServer* server)
         return this->RefreshTabletStateCacheAndReturnCount(tablet::SHUTDOWN);
       })
       ->AutoDetach(&metric_detacher_);
+
+  tablets_num_opened_startup_ = METRIC_tablets_num_opened_startup.Instantiate(
+      server->metric_entity(), 0);
 }
 
 // Base class for tasks submitted against TSTabletManager threadpools whose
@@ -482,6 +503,7 @@ Status TSTabletManager::Init(Timer* start_tablets,
 
   // Now submit the "Open" task for each.
   *tablets_total = metas.size();
+  METRIC_tablets_num_total_startup.Instantiate(server_->metric_entity(), *tablets_total);
   *tablets_processed = 0;
   int registered_count = 0;
   for (const auto& meta : metas) {
@@ -1357,8 +1379,11 @@ void TSTabletManager::IncrementTabletsProcessed(int tablets_total,
                                             Timer* start_tablets) {
   if (tablets_processed) {
     ++*tablets_processed;
+    tablets_num_opened_startup_->Increment();
     if (*tablets_processed == tablets_total) {
       start_tablets->Stop();
+      METRIC_tablets_opening_time_startup.Instantiate(server_->metric_entity(),
+          (start_tablets->TimeElapsed()).ToMilliseconds());
     }
   }
 }
