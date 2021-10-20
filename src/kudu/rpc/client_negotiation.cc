@@ -605,7 +605,7 @@ Status ClientNegotiation::SendSaslInitiate() {
           &negotiated_mech);                        // Filled in on success.
   });
 
-  if (PREDICT_FALSE(!s.IsIncomplete() && !s.ok())) {
+  if (PREDICT_FALSE(!s.ok() && !s.IsIncomplete())) {
     return s;
   }
 
