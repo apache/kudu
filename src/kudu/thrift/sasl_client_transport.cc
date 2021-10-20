@@ -341,11 +341,18 @@ NegotiationStatus SaslClientTransport::ReceiveSaslMessage(faststring* payload) {
 }
 
 void SaslClientTransport::SendSaslStart() {
+  auto s = rpc::EnableProtection(sasl_conn_.get(),
+                                 rpc::SaslProtection::kAuthentication,
+                                 max_recv_buf_size_);
+  if (PREDICT_FALSE(!s.ok())) {
+    throw SaslException(std::move(s));
+  }
+
   const char* init_msg = nullptr;
   unsigned init_msg_len = 0;
   const char* negotiated_mech = nullptr;
 
-  Status s = WrapSaslCall(sasl_conn_.get(), [&] {
+  s = WrapSaslCall(sasl_conn_.get(), [&] {
       return sasl_client_start(
           sasl_conn_.get(),            // The SASL connection context created by sasl_client_new()
           SaslMechanism::name_of(SaslMechanism::GSSAPI), // The mechanism to use.
@@ -355,18 +362,12 @@ void SaslClientTransport::SendSaslStart() {
           &negotiated_mech);                             // Filled in on success.
   }, "calling sasl_client_start()");
 
-  if (PREDICT_FALSE(!s.IsIncomplete() && !s.ok())) {
+  if (PREDICT_FALSE(!s.ok() && !s.IsIncomplete())) {
     throw SaslException(std::move(s));
   }
 
   // Check that the SASL library is using the mechanism that we picked.
   DCHECK_EQ(SaslMechanism::value_of(negotiated_mech), SaslMechanism::GSSAPI);
-  s = rpc::EnableProtection(sasl_conn_.get(),
-                            rpc::SaslProtection::kAuthentication,
-                            max_recv_buf_size_);
-  if (!s.ok()) {
-    throw SaslException(s);
-  }
 
   // These two calls comprise a single message in the thrift-sasl protocol.
   SendSaslMessage(TSASL_START, Slice(negotiated_mech));
@@ -374,8 +375,10 @@ void SaslClientTransport::SendSaslStart() {
   transport_->flush();
 }
 
-int SaslClientTransport::GetOptionCb(const char* plugin_name, const char* option,
-                                     const char** result, unsigned* len) {
+int SaslClientTransport::GetOptionCb(const char* plugin_name,
+                                     const char* option,
+                                     const char** result,
+                                     unsigned* len) {
   return sasl_helper_.GetOptionCb(plugin_name, option, result, len);
 }
 
