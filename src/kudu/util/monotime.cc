@@ -21,6 +21,7 @@
 
 #include <ctime>
 #include <limits>
+#include <ostream>
 
 #include <glog/logging.h>
 
@@ -347,6 +348,13 @@ MonoDelta operator-(const MonoTime& t_end, const MonoTime& t_beg) {
   int64_t delta(t_end.nanos_);
   delta -= t_beg.nanos_;
   return MonoDelta(delta);
+}
+
+std::ostream& operator<<(std::ostream& os, const kudu::MonoTime& time) {
+  struct timespec ts;
+  time.ToTimeSpec(&ts);
+  os << ts.tv_nsec << "ns";
+  return os;
 }
 
 } // namespace kudu

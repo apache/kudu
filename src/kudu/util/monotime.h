@@ -21,6 +21,7 @@
 //       to be processed by a compiler lacking C++11 support.
 #include <stdint.h>
 
+#include <iosfwd>
 #include <string>
 
 #ifdef KUDU_HEADERS_NO_STUBS
@@ -489,6 +490,21 @@ MonoTime KUDU_EXPORT operator-(const MonoTime& t, const MonoDelta& delta);
 ///   specified points in time.
 MonoDelta KUDU_EXPORT operator-(const MonoTime& t_end, const MonoTime& t_begin);
 ///@}
+
+/// @cond PRIVATE_API
+
+/// Allow the use of MonoTime with DCHECK_XX.
+///
+/// Private API.
+///
+/// @param [out] os
+///   An ostream output object.
+/// @param [in] time
+///   A MonoTime object to output.
+/// @return An ostream object containing the nanosecond point in time value
+///   of the Monotime object.
+std::ostream& operator<<(std::ostream& os, const kudu::MonoTime& time);
+/// @endcond
 
 } // namespace kudu
 
