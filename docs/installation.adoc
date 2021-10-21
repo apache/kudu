@@ -141,6 +141,12 @@ https://www.doxygen.nl/manual/install.html#install_src_unix[built from source ma
 this version of Doxygen on CentOS or RHEL older than 8.0 also requires
 https://www.softwarecollections.org/en/scls/rhscl/devtoolset-8/[devtoolset].
 
+. Optional: Install `lsof` if you plan to run tests:
++
+----
+$ sudo yum install lsof
+----
+
 . Clone the Git repository and change to the new `kudu` directory.
 +
 [source,bash]
@@ -290,6 +296,12 @@ $ sudo apt-get install gem graphviz ruby-dev xsltproc zlib1g-dev
 NOTE: Doxygen 1.8.19 or later is required to build the documentation, which has to be
 https://www.doxygen.nl/manual/install.html#install_src_unix[built from source manually].
 
+. Optional: Install `lsof` if you plan to run tests:
++
+----
+$ sudo apt-get install lsof
+----
+
 . Clone the Git repository and change to the new `kudu` directory.
 +
 [source,bash]
@@ -428,6 +440,12 @@ $ sudo make install
 $ sudo ldconfig
 ----
 
+. Optional: Install `lsof` if you plan to run tests:
++
+----
+$ sudo zypper install lsof
+----
+
 . Clone the Git repository and change to the new `kudu` directory.
 +
 [source,bash]
@@ -559,6 +577,12 @@ $ brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstre
 ----
 $ brew install doxygen graphviz ruby
 $ brew install gnu-sed --with-default-names #The macOS default sed handles the -i parameter differently
+----
+
+. Optional: Install `lsof` if you plan to run tests:
++
+----
+$ brew install lsof
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
