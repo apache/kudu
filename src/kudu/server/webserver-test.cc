@@ -435,6 +435,10 @@ TEST_F(WebserverTest, TestDefaultPaths) {
   // Test version -- check for version information
   ASSERT_OK(curl_.FetchURL(Substitute("$0/version", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), "version_info");
+
+  // Test healthz -- check for OK
+  ASSERT_OK(curl_.FetchURL(Substitute("$0/healthz", url_), &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "OK");
 }
 
 TEST_F(WebserverTest, TestRedactFlagsDump) {

@@ -309,6 +309,12 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
   *output << "</tbody></table>\n";
 }
 
+static void HealthHandler(const Webserver::WebRequest& /*req*/,
+                          Webserver::PrerenderedWebResponse* resp) {
+  resp->output << "OK";
+  resp->status_code = HttpStatusCode::Ok;
+}
+
 static const char* const kName = "name";
 static const char* const kValue = "value";
 static const char* const kId = "id";
@@ -445,6 +451,9 @@ void AddPostInitializedDefaultPathHandlers(Webserver* webserver) {
   webserver->RegisterPrerenderedPathHandler("/version", "VersionInfo", VersionInfoHandler,
                                             /*is_styled=*/false,
                                             /*is_on_nav_bar*/false);
+  webserver->RegisterPrerenderedPathHandler("/healthz", "Health", HealthHandler,
+                                            /*is_styled=*/false,
+                                            /*is_on_nav_bar=*/true);
   AddPprofPathHandlers(webserver);
 }
 
