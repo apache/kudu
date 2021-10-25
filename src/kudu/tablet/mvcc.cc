@@ -359,7 +359,7 @@ bool MvccManager::AreAllOpsAppliedUnlocked(Timestamp ts) const {
 bool MvccManager::AnyApplyingAtOrBeforeUnlocked(Timestamp ts) const {
   // TODO(todd) this is not actually checking on the applying ops, it's checking on
   // _all in-flight_. Is this a bug?
-  for (const InFlightOpsMap::value_type entry : ops_in_flight_) {
+  for (const auto& entry : ops_in_flight_) {
     if (entry.first <= ts.value()) {
       return true;
     }
