@@ -187,6 +187,49 @@ public class TestAsyncKuduClient {
   }
 
   @Test
+  public void testDiscoverTabletOnBadHostname() throws Exception {
+    int tserverIdx = 1; // select one tserver for testing
+    final CreateTableOptions options = getBasicCreateTableOptions();
+    final KuduTable table = client.createTable(
+            "testDiscoverTabletOnBadHostname-" + System.currentTimeMillis(),
+            basicSchema,
+            options);
+    // Get the tserver host_port to uuid mapping
+    List<HostAndPort> tservers = harness.getTabletServers();
+
+    // call discoverTablets
+    List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
+    List<Master.TSInfoPB> tsInfos = new ArrayList<>();
+
+    // Builder three bad locations.
+    Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
+    for (int i = 0; i < 3; i++) {
+      Common.PartitionPB.Builder partition = Common.PartitionPB.newBuilder();
+      partition.setPartitionKeyStart(ByteString.copyFrom("a" + i, UTF_8.name()));
+      partition.setPartitionKeyEnd(ByteString.copyFrom("b" + i, UTF_8.name()));
+      tabletPb.setPartition(partition);
+      tabletPb.setTabletId(ByteString.copyFromUtf8("some id " + i));
+      tabletPb.addInternedReplicas(ProtobufUtils.getFakeTabletInternedReplicaPB(
+              i, Metadata.RaftPeerPB.Role.FOLLOWER));
+      tabletLocations.add(tabletPb.build());
+      String[] hostPort = tservers.get(i).toString().split(":");
+      String tserverHost = hostPort[0];
+      if (i == tserverIdx) {
+        // simulate IP resolve failure by hacking the hostname
+        tserverHost = tserverHost + "xxx";
+      }
+      tsInfos.add(ProtobufUtils.getFakeTSInfoPB("tserver",
+              tserverHost, Integer.parseInt(hostPort[1])).build());
+    }
+    try {
+      asyncClient.discoverTablets(table, new byte[0], 100,
+              tabletLocations, tsInfos, 1000);
+    } catch (Exception ex) {
+      fail("discoverTablets should not complain: " + ex.getMessage());
+    }
+  }
+
+  @Test
   public void testNoLeader() throws Exception {
     final int requestBatchSize = 10;
     final CreateTableOptions options = getBasicCreateTableOptions();

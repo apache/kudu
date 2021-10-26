@@ -2360,7 +2360,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
       List<Exception> lookupExceptions = new ArrayList<>(tabletPb.getInternedReplicasCount());
       List<ServerInfo> servers = new ArrayList<>(tabletPb.getInternedReplicasCount());
-
+      List<String> dnsFailedServers = new ArrayList<>(tabletPb.getInternedReplicasCount());
       // Lambda that does the common handling of a ts info.
       Consumer<TSInfoPB> updateServersAndCollectExceptions = tsInfo -> {
         try {
@@ -2370,6 +2370,9 @@ public class AsyncKuduClient implements AutoCloseable {
           }
         } catch (UnknownHostException ex) {
           lookupExceptions.add(ex);
+          final List<Common.HostPortPB> addresses = tsInfo.getRpcAddressesList();
+          // Here only add the first address because resolveTS only resolves the first one.
+          dnsFailedServers.add(addresses.get(0).getHost());
         }
       };
 
@@ -2380,6 +2383,10 @@ public class AsyncKuduClient implements AutoCloseable {
         updateServersAndCollectExceptions.accept(tsInfo);
         String tsHost = tsInfo.getRpcAddressesList().isEmpty() ?
             null : tsInfo.getRpcAddressesList().get(0).getHost();
+        if (tsHost == null || dnsFailedServers.contains(tsHost)) {
+          // skip the DNS failed tserver
+          continue;
+        }
         Integer tsPort = tsInfo.getRpcAddressesList().isEmpty() ?
             null : tsInfo.getRpcAddressesList().get(0).getPort();
         String dimensionLabel = replica.hasDimensionLabel() ? replica.getDimensionLabel() : null;
@@ -2398,6 +2405,10 @@ public class AsyncKuduClient implements AutoCloseable {
         updateServersAndCollectExceptions.accept(tsInfo);
         String tsHost = tsInfo.getRpcAddressesList().isEmpty() ?
             null : tsInfo.getRpcAddressesList().get(0).getHost();
+        if (tsHost == null || dnsFailedServers.contains(tsHost)) {
+          // skip the DNS failed tserver
+          continue;
+        }
         Integer tsPort = tsInfo.getRpcAddressesList().isEmpty() ?
             null : tsInfo.getRpcAddressesList().get(0).getPort();
         String dimensionLabel = replica.hasDimensionLabel() ? replica.getDimensionLabel() : null;
