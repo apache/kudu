@@ -252,9 +252,10 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* table
       txn_->ReleasePartitionLock();
       break;
     }
-    case ParticipantOpPB::UNKNOWN: {
-      return Status::InvalidArgument("unknown op type");
-    }
+    default:
+      return Status::InvalidArgument(
+          Substitute("bad op type $0 ($1)",
+                     op_type, ParticipantOpPB::ParticipantOpType_Name(op_type)));
   }
   return Status::OK();
 }
