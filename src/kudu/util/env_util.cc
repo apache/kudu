@@ -117,6 +117,8 @@ namespace env_util {
 
 Status OpenFileForWrite(Env* env, const string& path,
                         shared_ptr<WritableFile>* file) {
+  WritableFileOptions opts;
+  opts.is_sensitive = true;
   return OpenFileForWrite(WritableFileOptions(), env, path, file);
 }
 
@@ -132,7 +134,9 @@ Status OpenFileForWrite(const WritableFileOptions& opts,
 Status OpenFileForRandom(Env *env, const string &path,
                          shared_ptr<RandomAccessFile> *file) {
   unique_ptr<RandomAccessFile> r;
-  RETURN_NOT_OK(env->NewRandomAccessFile(path, &r));
+  RandomAccessFileOptions opts;
+  opts.is_sensitive = true;
+  RETURN_NOT_OK(env->NewRandomAccessFile(opts, path, &r));
   file->reset(r.release());
   return Status::OK();
 }
@@ -140,7 +144,9 @@ Status OpenFileForRandom(Env *env, const string &path,
 Status OpenFileForSequential(Env *env, const string &path,
                              shared_ptr<SequentialFile> *file) {
   unique_ptr<SequentialFile> r;
-  RETURN_NOT_OK(env->NewSequentialFile(path, &r));
+  SequentialFileOptions opts;
+  opts.is_sensitive = true;
+  RETURN_NOT_OK(env->NewSequentialFile(opts, path, &r));
   file->reset(r.release());
   return Status::OK();
 }

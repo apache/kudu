@@ -70,6 +70,7 @@ Status CheckHolePunch(Env* env, const string& path) {
   string filename = JoinPathSegments(path, "hole_punch_test_file");
   unique_ptr<RWFile> file;
   RWFileOptions opts;
+  opts.is_sensitive = false;
   RETURN_NOT_OK(env->NewRWFile(opts, filename, &file));
 
   // The file has been created; delete it on exit no matter what happens.
@@ -174,8 +175,10 @@ Status DirInstanceMetadataFile::Create(const set<string>& all_uuids,
   string tmp_template = JoinPathSegments(
       dir_name, Substitute("getblocksize$0.XXXXXX", kTmpInfix));
   unique_ptr<WritableFile> tmp_file;
+  WritableFileOptions opts;
+  opts.is_sensitive = false;
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(
-      env_->NewTempWritableFile(WritableFileOptions(),
+      env_->NewTempWritableFile(opts,
                                 tmp_template,
                                 &created_filename, &tmp_file),
       "failed to create temp file while checking block size");
@@ -203,7 +206,8 @@ Status DirInstanceMetadataFile::Create(const set<string>& all_uuids,
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(pb_util::WritePBContainerToPath(
       env_, filename_, new_instance,
       pb_util::NO_OVERWRITE,
-      FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC),
+      FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC,
+      pb_util::NOT_SENSITIVE),
       "failed to write PB");
 
   // Now that we're returning success, we don't need to clean anything up, and
@@ -221,7 +225,8 @@ Status DirInstanceMetadataFile::LoadFromDisk() {
       "Opening a metadata file that's already locked would release the lock";
 
   unique_ptr<DirInstanceMetadataPB> pb(new DirInstanceMetadataPB());
-  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(pb_util::ReadPBContainerFromPath(env_, filename_, pb.get()),
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(
+      pb_util::ReadPBContainerFromPath(env_, filename_, pb.get(), pb_util::NOT_SENSITIVE),
       Substitute("Failed to read metadata file from $0", filename_));
 
   if (pb->dir_type() != dir_type_) {

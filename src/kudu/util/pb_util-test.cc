@@ -72,7 +72,8 @@ class TestPBUtil : public KuduTest {
   // Since this is a unit test class, and we want it to be fast, we do not
   // fsync by default.
   Status CreateKnownGoodContainerFile(CreateMode create = OVERWRITE,
-                                      SyncMode sync = NO_SYNC);
+                                      SyncMode sync = NO_SYNC,
+                                      SensitivityMode sensitivity = NOT_SENSITIVE);
 
   // Create a new Protobuf Container File Writer.
   // Set version to kUseDefaultVersion to use the default version.
@@ -83,7 +84,8 @@ class TestPBUtil : public KuduTest {
   // Set version to kUseDefaultVersion to use the default version.
   Status CreateKnownGoodContainerFileWithVersion(int version,
                                                  CreateMode create = OVERWRITE,
-                                                 SyncMode sync = NO_SYNC);
+                                                 SyncMode sync = NO_SYNC,
+                                                 SensitivityMode sensitivity = NOT_SENSITIVE);
 
   // XORs the data in the specified range of the file at the given path.
   Status BitFlipFileByteRange(const string& path, uint64_t offset, uint64_t length);
@@ -113,11 +115,13 @@ class TestPBContainerVersions : public TestPBUtil,
 INSTANTIATE_TEST_SUITE_P(SupportedVersions, TestPBContainerVersions,
                          ::testing::Values(1, 2, kUseDefaultVersion));
 
-Status TestPBUtil::CreateKnownGoodContainerFile(CreateMode create, SyncMode sync) {
+Status TestPBUtil::CreateKnownGoodContainerFile(CreateMode create,
+                                                SyncMode sync,
+                                                SensitivityMode sensitivity) {
   ProtoContainerTestPB test_pb;
   test_pb.set_name(kTestKeyvalName);
   test_pb.set_value(kTestKeyvalValue);
-  return WritePBContainerToPath(env_, path_, test_pb, create, sync);
+  return WritePBContainerToPath(env_, path_, test_pb, create, sync, sensitivity);
 }
 
 Status TestPBUtil::NewPBCWriter(int version, RWFileOptions opts,
@@ -133,13 +137,16 @@ Status TestPBUtil::NewPBCWriter(int version, RWFileOptions opts,
 
 Status TestPBUtil::CreateKnownGoodContainerFileWithVersion(int version,
                                                            CreateMode create,
-                                                           SyncMode sync) {
+                                                           SyncMode sync,
+                                                           SensitivityMode sensitivity) {
   ProtoContainerTestPB test_pb;
   test_pb.set_name(kTestKeyvalName);
   test_pb.set_value(kTestKeyvalValue);
 
   unique_ptr<WritablePBContainerFile> pb_writer;
-  RETURN_NOT_OK(NewPBCWriter(version, RWFileOptions(), &pb_writer));
+  RWFileOptions opts;
+  opts.is_sensitive = sensitivity == SENSITIVE;
+  RETURN_NOT_OK(NewPBCWriter(version, opts, &pb_writer));
   RETURN_NOT_OK(pb_writer->CreateNew(test_pb));
   RETURN_NOT_OK(pb_writer->Append(test_pb));
   RETURN_NOT_OK(pb_writer->Close());
@@ -232,22 +239,25 @@ TEST_F(TestPBUtil, TestWritableFileOutputStream) {
 
 // Basic read/write test.
 TEST_F(TestPBUtil, TestPBContainerSimple) {
-  // Exercise both the SYNC and NO_SYNC codepaths, despite the fact that we
-  // aren't able to observe a difference in the test.
-  vector<SyncMode> modes = { SYNC, NO_SYNC };
-  for (SyncMode mode : modes) {
+  // Exercise both the SYNC and NO_SYNC codepaths, along with SENSITIVE and
+  // NOT_SENSITIVE, despite the fact that we aren't able to observe a difference
+  // in the test.
+  vector<SyncMode> sync_modes = { SYNC, NO_SYNC };
+  vector<SensitivityMode> sensitivity_modes = { SENSITIVE, NOT_SENSITIVE };
+  for (SyncMode sync_mode : sync_modes) {
+    for (SensitivityMode sensitivity_mode : sensitivity_modes) {
+      // Write the file.
+      ASSERT_OK(CreateKnownGoodContainerFile(NO_OVERWRITE, sync_mode, sensitivity_mode));
 
-    // Write the file.
-    ASSERT_OK(CreateKnownGoodContainerFile(NO_OVERWRITE, mode));
+      // Read it back, should validate and contain the expected values.
+      ProtoContainerTestPB test_pb;
+      ASSERT_OK(ReadPBContainerFromPath(env_, path_, &test_pb, sensitivity_mode));
+      ASSERT_EQ(kTestKeyvalName, test_pb.name());
+      ASSERT_EQ(kTestKeyvalValue, test_pb.value());
 
-    // Read it back, should validate and contain the expected values.
-    ProtoContainerTestPB test_pb;
-    ASSERT_OK(ReadPBContainerFromPath(env_, path_, &test_pb));
-    ASSERT_EQ(kTestKeyvalName, test_pb.name());
-    ASSERT_EQ(kTestKeyvalValue, test_pb.value());
-
-    // Delete the file.
-    ASSERT_OK(env_->DeleteFile(path_));
+      // Delete the file.
+      ASSERT_OK(env_->DeleteFile(path_));
+    }
   }
 }
 
@@ -255,7 +265,7 @@ TEST_F(TestPBUtil, TestPBContainerSimple) {
 TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test that we indicate when the file does not exist.
   ProtoContainerTestPB test_pb;
-  Status s = ReadPBContainerFromPath(env_, path_, &test_pb);
+  Status s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
   ASSERT_TRUE(s.IsNotFound()) << "Should not be found: " << path_ << ": " << s.ToString();
 
   // Test that an empty file looks like corruption.
@@ -265,7 +275,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
     ASSERT_OK(env_->NewWritableFile(path_, &file));
     ASSERT_OK(file->Close());
   }
-  s = ReadPBContainerFromPath(env_, path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
   ASSERT_TRUE(s.IsIncomplete()) << "Should be zero length: " << path_ << ": " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
 
@@ -274,7 +284,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   uint64_t known_good_size = 0;
   ASSERT_OK(env_->GetFileSize(path_, &known_good_size));
   ASSERT_OK(TruncateFile(path_, known_good_size - 2));
-  s = ReadPBContainerFromPath(env_, path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
   if (version_ == 1) {
     ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect size: " << path_ << ": " << s.ToString();
   } else {
@@ -285,14 +295,14 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test corrupted magic.
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, 0, 2));
-  s = ReadPBContainerFromPath(env_, path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
   ASSERT_TRUE(s.IsCorruption()) << "Should have invalid magic: " << path_ << ": " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Invalid magic number");
 
   // Test corrupted version.
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, 8, 2));
-  s = ReadPBContainerFromPath(env_, path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
   ASSERT_TRUE(s.IsNotSupported()) << "Should have unsupported version number: " << path_ << ": "
                                   << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), " Protobuf container has unsupported version");
@@ -301,7 +311,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   if (version_ >= 2) {
     ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
     ASSERT_OK(BitFlipFileByteRange(path_, 12, 2));
-    s = ReadPBContainerFromPath(env_, path_, &test_pb);
+    s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
     ASSERT_TRUE(s.IsCorruption()) << "Should have corrupted file header checksum: " << path_ << ": "
                                     << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "File header checksum does not match");
@@ -313,7 +323,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test corrupted data length.
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, kFirstRecordOffset, 2));
-  s = ReadPBContainerFromPath(env_, path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
   if (version_ == 1) {
     ASSERT_TRUE(s.IsCorruption()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
@@ -326,7 +336,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test corrupted data (looks like bad checksum).
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, kFirstRecordOffset + 4, 2));
-  s = ReadPBContainerFromPath(env_, path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect checksum: " << path_ << ": "
                                 << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
@@ -334,7 +344,7 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   // Test corrupted checksum.
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ASSERT_OK(BitFlipFileByteRange(path_, known_good_size - 4, 2));
-  s = ReadPBContainerFromPath(env_, path_, &test_pb);
+  s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);
   ASSERT_TRUE(s.IsCorruption()) << "Should be incorrect checksum: " << path_ << ": "
                                 << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
@@ -348,7 +358,9 @@ TEST_P(TestPBContainerVersions, TestPartialRecord) {
   ASSERT_OK(TruncateFile(path_, known_good_size - 2));
 
   unique_ptr<RandomAccessFile> file;
-  ASSERT_OK(env_->NewRandomAccessFile(path_, &file));
+  RandomAccessFileOptions opts;
+  opts.is_sensitive = false;
+  ASSERT_OK(env_->NewRandomAccessFile(opts, path_, &file));
   ReadablePBContainerFile pb_file(std::move(file));
   ASSERT_OK(pb_file.Open());
   ProtoContainerTestPB test_pb;
@@ -377,7 +389,9 @@ TEST_P(TestPBContainerVersions, TestExtraNullBytes) {
     ASSERT_OK(TruncateFile(path_, known_good_size + extra_bytes));
 
     unique_ptr<RandomAccessFile> file;
-    ASSERT_OK(env_->NewRandomAccessFile(path_, &file));
+    RandomAccessFileOptions opts;
+    opts.is_sensitive = false;
+    ASSERT_OK(env_->NewRandomAccessFile(opts, path_, &file));
     ReadablePBContainerFile pb_file(std::move(file));
     ASSERT_OK(pb_file.Open());
     ProtoContainerTestPB test_pb;
@@ -409,13 +423,16 @@ TEST_P(TestPBContainerVersions, TestAppendAfterPartialWrite) {
   unique_ptr<WritablePBContainerFile> writer;
   RWFileOptions opts;
   opts.mode = Env::MUST_EXIST;
+  opts.is_sensitive = false;
   ASSERT_OK(NewPBCWriter(version_, opts, &writer));
   ASSERT_OK(writer->OpenExisting());
 
   ASSERT_OK(TruncateFile(path_, known_good_size - 2));
 
   unique_ptr<RandomAccessFile> file;
-  ASSERT_OK(env_->NewRandomAccessFile(path_, &file));
+  RandomAccessFileOptions random_opts;
+  random_opts.is_sensitive = false;
+  ASSERT_OK(env_->NewRandomAccessFile(random_opts, path_, &file));
   ReadablePBContainerFile reader(std::move(file));
   ASSERT_OK(reader.Open());
   ProtoContainerTestPB test_pb;
@@ -450,7 +467,7 @@ TEST_P(TestPBContainerVersions, TestAppendAfterPartialWrite) {
 TEST_P(TestPBContainerVersions, TestSingleMessage) {
   ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
   ProtoContainerTestPB test_pb;
-  ASSERT_OK(ReadPBContainerFromPath(env_, path_, &test_pb));
+  ASSERT_OK(ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE));
   ASSERT_EQ(kTestKeyvalName, test_pb.name());
   ASSERT_EQ(kTestKeyvalValue, test_pb.value());
 }

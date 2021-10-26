@@ -386,7 +386,8 @@ Status DirManager::UpdateHealthyInstances(
     CHECK_EQ(1, copies_to_delete.erase(copy_filename));
     Status s = pb_util::WritePBContainerToPath(
         env_, instance_filename, new_pb, pb_util::OVERWRITE,
-        sync_dirs() ? pb_util::SYNC : pb_util::NO_SYNC);
+        sync_dirs() ? pb_util::SYNC : pb_util::NO_SYNC,
+        pb_util::NOT_SENSITIVE);
     // We've failed to update for some reason, so restore our original file.
     // Since we're renaming our copy, we don't have to delete it.
     if (PREDICT_FALSE(!s.ok())) {

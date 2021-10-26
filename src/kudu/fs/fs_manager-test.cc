@@ -857,7 +857,7 @@ TEST_P(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
       // Collect the contents of the InstanceMetadataPB objects.
       const auto instance_path = JoinPathSegments(root, FsManager::kInstanceMetadataFileName);
       unique_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
-      Status s = ReadPBContainerFromPath(env_, instance_path, pb.get());
+      Status s = ReadPBContainerFromPath(env_, instance_path, pb.get(), pb_util::NOT_SENSITIVE);
       if (s.IsNotFound()) {
         InsertOrDie(&instances, instance_path, "");
       } else {
@@ -869,7 +869,8 @@ TEST_P(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
       unique_ptr<DirInstanceMetadataPB> bmi_pb(new DirInstanceMetadataPB);
       const auto block_manager_instance = JoinPathSegments(
           JoinPathSegments(root, kDataDirName), kInstanceMetadataFileName);
-      s = ReadPBContainerFromPath(env_, block_manager_instance, bmi_pb.get());
+      s = ReadPBContainerFromPath(env_, block_manager_instance,
+                                  bmi_pb.get(), pb_util::NOT_SENSITIVE);
       if (s.IsNotFound()) {
         InsertOrDie(&instances, block_manager_instance, "");
       } else {

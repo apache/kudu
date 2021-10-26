@@ -98,6 +98,7 @@ DEFINE_int32(startup_benchmark_deleted_block_percentage, 90,
              "Percentage of deleted blocks in containers.");
 DEFINE_validator(startup_benchmark_deleted_block_percentage,
                  [](const char* /*n*/, int32_t v) { return 0 <= v && v <= 100; });
+DECLARE_bool(encrypt_data_at_rest);
 
 // Block manager metrics.
 METRIC_DECLARE_counter(block_manager_total_blocks_deleted);
@@ -117,7 +118,7 @@ namespace internal {
 class LogBlockContainer;
 } // namespace internal
 
-class LogBlockManagerTest : public KuduTest {
+class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterface<bool> {
  public:
   LogBlockManagerTest() :
       test_tablet_name_("test_tablet"),
@@ -231,6 +232,10 @@ class LogBlockManagerTest : public KuduTest {
     ASSERT_TRUE(report.partial_record_check->entries.empty());
   }
 
+  void EnableEncryption(bool enable) {
+    FLAGS_encrypt_data_at_rest = enable;
+  }
+
   DataDirGroupPB test_group_pb_;
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
@@ -327,7 +332,10 @@ static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
   }
 }
 
-TEST_F(LogBlockManagerTest, MetricsTest) {
+INSTANTIATE_TEST_SUITE_P(EncryptionEnabled, LogBlockManagerTest, ::testing::Values(false, true));
+
+TEST_P(LogBlockManagerTest, MetricsTest) {
+  EnableEncryption(GetParam());
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
   ASSERT_OK(ReopenBlockManager(entity));
@@ -499,7 +507,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
         {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 }
 
-TEST_F(LogBlockManagerTest, ContainerPreallocationTest) {
+TEST_P(LogBlockManagerTest, ContainerPreallocationTest) {
+  EnableEncryption(GetParam());
   string kTestData = "test data";
 
   // For this test to work properly, the preallocation window has to be at
@@ -543,7 +552,8 @@ TEST_F(LogBlockManagerTest, ContainerPreallocationTest) {
 
 // Test for KUDU-2202 to ensure that once the block manager has been notified
 // of a block ID, it will not reuse it.
-TEST_F(LogBlockManagerTest, TestBumpBlockIds) {
+TEST_P(LogBlockManagerTest, TestBumpBlockIds) {
+  EnableEncryption(GetParam());
   const int kNumBlocks = 10;
   vector<BlockId> block_ids;
   unique_ptr<WritableBlock> writer;
@@ -575,7 +585,8 @@ TEST_F(LogBlockManagerTest, TestBumpBlockIds) {
 
 // Regression test for KUDU-1190, a crash at startup when a block ID has been
 // reused.
-TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
+TEST_P(LogBlockManagerTest, TestReuseBlockIds) {
+  EnableEncryption(GetParam());
   // Typically, the LBM starts with a random block ID when running as a
   // gtest. In this test, we want to control the block IDs.
   bm_->next_block_id_.Store(1);
@@ -649,7 +660,8 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
 //
 // Note that we rely on filesystem integrity to ensure that we do not lose
 // trailing, fsync()ed metadata.
-TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
+TEST_P(LogBlockManagerTest, TestMetadataTruncation) {
+  EnableEncryption(GetParam());
   // Create several blocks.
   vector<BlockId> created_blocks;
   BlockId last_block_id;
@@ -690,6 +702,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
     {
       RWFileOptions opts;
       opts.mode = Env::MUST_EXIST;
+      opts.is_sensitive = true;
       unique_ptr<RWFile> file;
       ASSERT_OK(env_->NewRWFile(opts, metadata_path, &file));
       ASSERT_OK(file->Truncate(good_meta_size + num_bytes));
@@ -748,6 +761,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   {
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
+    opts.is_sensitive = true;
     unique_ptr<RWFile> file;
     ASSERT_OK(env_->NewRWFile(opts, metadata_path, &file));
     ASSERT_OK(file->Truncate(good_meta_size - 1));
@@ -795,7 +809,9 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   // Find location of 2nd record in metadata file and corrupt it.
   // This is an unrecoverable error because it's in the middle of the file.
   unique_ptr<RandomAccessFile> meta_file;
-  ASSERT_OK(env_->NewRandomAccessFile(metadata_path, &meta_file));
+  RandomAccessFileOptions raf_opts;
+  raf_opts.is_sensitive = true;
+  ASSERT_OK(env_->NewRandomAccessFile(raf_opts, metadata_path, &meta_file));
   ReadablePBContainerFile pb_reader(std::move(meta_file));
   ASSERT_OK(pb_reader.Open());
   BlockRecordPB record;
@@ -804,7 +820,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   uint64_t latest_meta_size;
   ASSERT_OK(env_->GetFileSize(metadata_path, &latest_meta_size));
-  ASSERT_OK(env_->NewRandomAccessFile(metadata_path, &meta_file));
+  ASSERT_OK(env_->NewRandomAccessFile(raf_opts, metadata_path, &meta_file));
   unique_ptr<uint8_t[]> scratch(new uint8_t[latest_meta_size]);
   Slice result(scratch.get(), latest_meta_size);
   ASSERT_OK(meta_file->Read(0, result));
@@ -814,7 +830,9 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   // value and also cause the length checksum not to validate.
   data[offset + 3] ^= 1 << 7;
   unique_ptr<WritableFile> writable_file;
-  ASSERT_OK(env_->NewWritableFile(metadata_path, &writable_file));
+  WritableFileOptions wf_opts;
+  wf_opts.is_sensitive = true;
+  ASSERT_OK(env_->NewWritableFile(wf_opts, metadata_path, &writable_file));
   ASSERT_OK(writable_file->Append(data));
   ASSERT_OK(writable_file->Close());
 
@@ -826,9 +844,9 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   // Now truncate both the data and metadata files.
   // This should be recoverable. See KUDU-668.
-  ASSERT_OK(env_->NewWritableFile(metadata_path, &writable_file));
+  ASSERT_OK(env_->NewWritableFile(wf_opts, metadata_path, &writable_file));
   ASSERT_OK(writable_file->Close());
-  ASSERT_OK(env_->NewWritableFile(data_path, &writable_file));
+  ASSERT_OK(env_->NewWritableFile(wf_opts, data_path, &writable_file));
   ASSERT_OK(writable_file->Close());
 
   ASSERT_OK(ReopenBlockManager());
@@ -836,7 +854,8 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
 // Regression test for a crash when a container's append offset exceeded its
 // preallocation offset.
-TEST_F(LogBlockManagerTest, TestAppendExceedsPreallocation) {
+TEST_P(LogBlockManagerTest, TestAppendExceedsPreallocation) {
+  EnableEncryption(GetParam());
   FLAGS_log_container_preallocate_bytes = 1;
 
   // Create a container, preallocate it by one byte, and append more than one.
@@ -851,7 +870,8 @@ TEST_F(LogBlockManagerTest, TestAppendExceedsPreallocation) {
   ASSERT_OK(writer->Append("hello world"));
 }
 
-TEST_F(LogBlockManagerTest, TestPreallocationAndTruncation) {
+TEST_P(LogBlockManagerTest, TestPreallocationAndTruncation) {
+  EnableEncryption(GetParam());
   // Ensure preallocation window is greater than the container size itself.
   FLAGS_log_container_max_size = 1024 * 1024;
   FLAGS_log_container_preallocate_bytes = 32 * 1024 * 1024;
@@ -887,6 +907,7 @@ TEST_F(LogBlockManagerTest, TestPreallocationAndTruncation) {
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
     ASSERT_OK(env_->NewRWFile(opts, fname, &data_file));
+    opts.is_sensitive = true;
     ASSERT_OK(data_file->PreAllocate(size_after_close, size_after_close, mode));
     uint64_t size_after_preallocate;
     ASSERT_OK(env_->GetFileSizeOnDisk(fname, &size_after_preallocate));
@@ -912,7 +933,8 @@ TEST_F(LogBlockManagerTest, TestPreallocationAndTruncation) {
   }
 }
 
-TEST_F(LogBlockManagerTest, TestContainerWithManyHoles) {
+TEST_P(LogBlockManagerTest, TestContainerWithManyHoles) {
+  EnableEncryption(GetParam());
   // This is a regression test of sorts for KUDU-1508, though it doesn't
   // actually fail if the fix is missing; it just corrupts the filesystem.
 
@@ -970,7 +992,8 @@ TEST_F(LogBlockManagerTest, TestContainerWithManyHoles) {
   ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
 }
 
-TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
+TEST_P(LogBlockManagerTest, TestParseKernelRelease) {
+  EnableEncryption(GetParam());
   ASSERT_TRUE(LogBlockManager::IsBuggyEl6Kernel("1.7.0.0.el6.x86_64"));
 
   // no el6 infix
@@ -1027,10 +1050,7 @@ TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
 //    threads running a long time since last bootstrap)
 //
 // However it still can be used to micro-optimize the startup process.
-class LogBlockManagerStartupBenchmarkTest:
-    public LogBlockManagerTest,
-    public ::testing::WithParamInterface<bool> {
-};
+class LogBlockManagerStartupBenchmarkTest: public LogBlockManagerTest {};
 INSTANTIATE_TEST_SUITE_P(StartupBenchmarkSuite, LogBlockManagerStartupBenchmarkTest,
                          ::testing::Values(false, true));
 
@@ -1096,7 +1116,8 @@ TEST_P(LogBlockManagerStartupBenchmarkTest, StartupBenchmark) {
 }
 #endif
 
-TEST_F(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
+TEST_P(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
+  EnableEncryption(GetParam());
   // Create multiple transactions that will share a container.
   const int kNumTransactions = 3;
   vector<unique_ptr<BlockCreationTransaction>> block_transactions;
@@ -1154,7 +1175,8 @@ TEST_F(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
   }
 }
 
-TEST_F(LogBlockManagerTest, TestLookupBlockLimit) {
+TEST_P(LogBlockManagerTest, TestLookupBlockLimit) {
+  EnableEncryption(GetParam());
   int64_t limit_1024 = LogBlockManager::LookupBlockLimit(1024);
   int64_t limit_2048 = LogBlockManager::LookupBlockLimit(2048);
   int64_t limit_4096 = LogBlockManager::LookupBlockLimit(4096);
@@ -1171,7 +1193,8 @@ TEST_F(LogBlockManagerTest, TestLookupBlockLimit) {
   }
 }
 
-TEST_F(LogBlockManagerTest, TestContainerBlockLimitingByBlockNum) {
+TEST_P(LogBlockManagerTest, TestContainerBlockLimitingByBlockNum) {
+  EnableEncryption(GetParam());
   const int kNumBlocks = 1000;
 
   // Creates 'kNumBlocks' blocks with minimal data.
@@ -1205,7 +1228,8 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimitingByBlockNum) {
   NO_FATALS(AssertNumContainers(4));
 }
 
-TEST_F(LogBlockManagerTest, TestContainerBlockLimitingByMetadataSize) {
+TEST_P(LogBlockManagerTest, TestContainerBlockLimitingByMetadataSize) {
+  EnableEncryption(GetParam());
   const int kNumBlocks = 1000;
 
   // Creates 'kNumBlocks' blocks with minimal data.
@@ -1241,7 +1265,8 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimitingByMetadataSize) {
   NO_FATALS(AssertNumContainers(4));
 }
 
-TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
+TEST_P(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
+  EnableEncryption(GetParam());
   FLAGS_log_container_preallocate_bytes = 0;
   const int kNumBlocks = 100;
 
@@ -1343,7 +1368,8 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
   }
 }
 
-TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
+TEST_P(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
+  EnableEncryption(GetParam());
   // Enforce that the container's actual size is strictly upper-bounded by the
   // calculated size so we can more easily trigger repairs.
   FLAGS_log_container_excess_space_before_cleanup_fraction = 0.0;
@@ -1391,7 +1417,8 @@ TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
   NO_FATALS(AssertEmptyReport(report));
 }
 
-TEST_F(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
+TEST_P(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
+  EnableEncryption(GetParam());
   const int kNumBlocks = 100;
 
   // Enforce that the container's actual size is strictly upper-bounded by the
@@ -1451,7 +1478,8 @@ TEST_F(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
   ASSERT_EQ(0, file_size_on_disk);
 }
 
-TEST_F(LogBlockManagerTest, TestRepairIncompleteContainer) {
+TEST_P(LogBlockManagerTest, TestRepairIncompleteContainer) {
+  EnableEncryption(GetParam());
   const int kNumContainers = 20;
 
   // Create some incomplete containers. The corruptor will select between
@@ -1481,7 +1509,8 @@ TEST_F(LogBlockManagerTest, TestRepairIncompleteContainer) {
   NO_FATALS(AssertEmptyReport(report));
 }
 
-TEST_F(LogBlockManagerTest, TestDetectMalformedRecords) {
+TEST_P(LogBlockManagerTest, TestDetectMalformedRecords) {
+  EnableEncryption(GetParam());
   const int kNumRecords = 50;
 
   // Create one container.
@@ -1513,7 +1542,8 @@ TEST_F(LogBlockManagerTest, TestDetectMalformedRecords) {
   NO_FATALS(AssertEmptyReport(report));
 }
 
-TEST_F(LogBlockManagerTest, TestDetectMisalignedBlocks) {
+TEST_P(LogBlockManagerTest, TestDetectMisalignedBlocks) {
+  EnableEncryption(GetParam());
   const int kNumBlocks = 50;
 
   // Create one container.
@@ -1545,7 +1575,8 @@ TEST_F(LogBlockManagerTest, TestDetectMisalignedBlocks) {
   NO_FATALS(AssertEmptyReport(report));
 }
 
-TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
+TEST_P(LogBlockManagerTest, TestRepairPartialRecords) {
+  EnableEncryption(GetParam());
   const int kNumContainers = 50;
   const int kNumRecords = 10;
 
@@ -1586,7 +1617,8 @@ TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
   NO_FATALS(AssertEmptyReport(report));
 }
 
-TEST_F(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
+TEST_P(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
+  EnableEncryption(GetParam());
   // Force our single container to become full once created.
   FLAGS_log_container_max_size = 0;
 
@@ -1623,7 +1655,8 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
   ASSERT_FALSE(env_->FileExists(metadata_file_name));
 }
 
-TEST_F(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
+TEST_P(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
+  EnableEncryption(GetParam());
   // With this ratio, the metadata of a full container comprised of half dead
   // blocks will be compacted at startup.
   FLAGS_log_container_live_metadata_before_compact_ratio = 0.50;
@@ -1688,7 +1721,8 @@ TEST_F(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
 //
 // The bug was related to a stale file descriptor left in the file_cache, so
 // this test explicitly targets that scenario.
-TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
+TEST_P(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
+  EnableEncryption(GetParam());
   // Compact aggressively.
   FLAGS_log_container_live_metadata_before_compact_ratio = 0.99;
   // Use a single shard so that we have an accurate max cache capacity
@@ -1751,7 +1785,8 @@ TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
 // Test to ensure that if a directory cannot be read from, its startup process
 // will run smoothly. The directory manager will note the failed directories
 // and only healthy ones are reported.
-TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
+TEST_P(LogBlockManagerTest, TestOpenWithFailedDirectories) {
+  EnableEncryption(GetParam());
   // Initialize a new directory manager with multiple directories.
   bm_.reset();
   vector<string> test_dirs;
@@ -1800,7 +1835,8 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
 // 1) a container can be reused when the block is finalized.
 // 2) the block cannot be opened/found until close it.
 // 3) the same container is not marked as available twice.
-TEST_F(LogBlockManagerTest, TestFinalizeBlock) {
+TEST_P(LogBlockManagerTest, TestFinalizeBlock) {
+  EnableEncryption(GetParam());
   // Create 4 blocks.
   vector<unique_ptr<WritableBlock>> blocks;
   for (int i = 0; i < 4; i++) {
@@ -1824,7 +1860,8 @@ TEST_F(LogBlockManagerTest, TestFinalizeBlock) {
 }
 
 // Test available log container selection is LIFO.
-TEST_F(LogBlockManagerTest, TestLIFOContainerSelection) {
+TEST_P(LogBlockManagerTest, TestLIFOContainerSelection) {
+  EnableEncryption(GetParam());
   // Create 4 blocks and 4 opened containers that are not full.
   vector<unique_ptr<WritableBlock>> blocks;
   for (int i = 0; i < 4; i++) {
@@ -1860,7 +1897,7 @@ TEST_F(LogBlockManagerTest, TestLIFOContainerSelection) {
   ASSERT_EQ(4, bm_->all_containers_by_name_.size());
 }
 
-TEST_F(LogBlockManagerTest, TestAbortBlock) {
+TEST_P(LogBlockManagerTest, TestAbortBlock) {
   unique_ptr<WritableBlock> writer;
   ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
   ASSERT_OK(writer->Append("test data"));
@@ -1876,7 +1913,8 @@ TEST_F(LogBlockManagerTest, TestAbortBlock) {
   ASSERT_EQ(1, bm_->available_containers_by_data_dir_.begin()->second.size());
 }
 
-TEST_F(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
+TEST_P(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
+  EnableEncryption(GetParam());
   const auto TestProcess = [&] (int block_num) {
     ASSERT_GT(block_num, 0);
     MetricRegistry registry;
@@ -1995,7 +2033,8 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
 
 // Test for KUDU-2665 to ensure that once the container is full and has no live
 // blocks but with a reference by WritableBlock, it will not be deleted.
-TEST_F(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
+TEST_P(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
+  EnableEncryption(GetParam());
   // Lower the max container size.
   FLAGS_log_container_max_size = 64 * 1024;
 
@@ -2058,7 +2097,8 @@ TEST_F(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
   Process(false);
 }
 
-TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
+TEST_P(LogBlockManagerTest, TestHalfPresentContainer) {
+  EnableEncryption(GetParam());
   BlockId block_id;
   string data_file_name;
   string metadata_file_name;
@@ -2085,7 +2125,9 @@ TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
     file_cache_.Invalidate(metadata_file_name);
 
     unique_ptr<WritableFile> metadata_file_writer;
-    ASSERT_OK(env_->NewWritableFile(metadata_file_name, &metadata_file_writer));
+    WritableFileOptions opts;
+    opts.is_sensitive = true;
+    ASSERT_OK(env_->NewWritableFile(opts, metadata_file_name, &metadata_file_writer));
     ASSERT_OK(metadata_file_writer->Append(Slice("a")));
     metadata_file_writer->Close();
   };
@@ -2096,7 +2138,9 @@ TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
     file_cache_.Invalidate(data_file_name);
 
     unique_ptr<WritableFile> data_file_writer;
-    ASSERT_OK(env_->NewWritableFile(data_file_name, &data_file_writer));
+    WritableFileOptions opts;
+    opts.is_sensitive = true;
+    ASSERT_OK(env_->NewWritableFile(opts, data_file_name, &data_file_writer));
     data_file_writer->Close();
   };
 

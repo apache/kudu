@@ -252,6 +252,7 @@ class TabletCopyTest : public KuduTabletTest {
 
     // Write the file to a temporary location.
     WritableFileOptions opts;
+    opts.is_sensitive = true;
     string path_template = GetTestPath(Substitute("test_block_$0$1.XXXXXX",
                                                   block_id.ToString(),
                                                   kTmpInfix));
@@ -260,7 +261,9 @@ class TabletCopyTest : public KuduTabletTest {
     CHECK_OK(writable_file->Append(Slice(data.data(), data.size())));
     CHECK_OK(writable_file->Close());
 
-    CHECK_OK(Env::Default()->NewSequentialFile(*path, file));
+    SequentialFileOptions seq_opts;
+    seq_opts.is_sensitive = true;
+    CHECK_OK(Env::Default()->NewSequentialFile(seq_opts, *path, file));
   }
 
   MetricRegistry metric_registry_;

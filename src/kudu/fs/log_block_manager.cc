@@ -828,6 +828,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
       RWFileOptions rw_opts;
 
       rw_opts.mode = Env::MUST_CREATE;
+      rw_opts.is_sensitive = true;
       metadata_status = block_manager->env()->NewRWFile(
           rw_opts, metadata_path, &rwf);
       metadata_writer.reset(rwf.release());
@@ -879,6 +880,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   } else {
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
+    opts.is_sensitive = true;
     unique_ptr<RWFile> rwf;
     RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->env()->NewRWFile(opts,
         metadata_path, &rwf));
@@ -948,7 +950,9 @@ Status LogBlockContainer::CheckContainerFiles(LogBlockManager* block_manager,
     Status read_status;
     BlockIdSet live_blocks;
     unique_ptr<RandomAccessFile> reader;
-    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(env->NewRandomAccessFile(metadata_path, &reader));
+    RandomAccessFileOptions opts;
+    opts.is_sensitive = true;
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(env->NewRandomAccessFile(opts, metadata_path, &reader));
     ReadablePBContainerFile pb_reader(std::move(reader));
     RETURN_NOT_OK_CONTAINER_DISK_FAILURE(pb_reader.Open());
     while (true) {
@@ -1004,8 +1008,10 @@ Status LogBlockContainer::ProcessRecords(
     uint64_t* max_block_id) {
   string metadata_path = metadata_file_->filename();
   unique_ptr<RandomAccessFile> metadata_reader;
+  RandomAccessFileOptions opts;
+  opts.is_sensitive = true;
   RETURN_NOT_OK_HANDLE_ERROR(block_manager()->env()->NewRandomAccessFile(
-      metadata_path, &metadata_reader));
+      opts, metadata_path, &metadata_reader));
   ReadablePBContainerFile pb_reader(std::move(metadata_reader));
   RETURN_NOT_OK_HANDLE_ERROR(pb_reader.Open());
 
@@ -1268,6 +1274,7 @@ Status LogBlockContainer::ReopenMetadataWriter() {
     unique_ptr<RWFile> f_uniq;
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
+    opts.is_sensitive = true;
     RETURN_NOT_OK_HANDLE_ERROR(block_manager_->env_->NewRWFile(opts,
         metadata_file_->filename(), &f_uniq));
     f.reset(f_uniq.release());
@@ -2903,6 +2910,7 @@ Status LogBlockManager::Repair(
       unique_ptr<RWFile> file;
       RWFileOptions opts;
       opts.mode = Env::MUST_EXIST;
+      opts.is_sensitive = true;
       RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(
           env_->NewRWFile(opts,
                           StrCat(pr.container, kContainerMetadataFileSuffix),
@@ -3076,7 +3084,9 @@ Status LogBlockManager::RewriteMetadataFile(const LogBlockContainer& container,
   string tmpl = metadata_file_name + kTmpInfix + ".XXXXXX";
   unique_ptr<RWFile> tmp_file;
   string tmp_file_name;
-  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(env_->NewTempRWFile(RWFileOptions(), tmpl,
+  RWFileOptions opts;
+  opts.is_sensitive = true;
+  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(env_->NewTempRWFile(opts, tmpl,
                                                              &tmp_file_name, &tmp_file),
                                          "could not create temporary metadata file");
   auto tmp_deleter = MakeScopedCleanup([&]() {

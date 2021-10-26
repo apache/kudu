@@ -66,6 +66,11 @@ enum CreateMode {
   NO_OVERWRITE
 };
 
+enum SensitivityMode {
+  SENSITIVE,
+  NOT_SENSITIVE
+};
+
 enum class FileState {
   NOT_INITIALIZED,
   OPEN,
@@ -469,7 +474,8 @@ class ReadablePBContainerFile {
 // If the file does not exist, returns Status::NotFound(). Otherwise, may
 // return other Status error codes such as Status::IOError.
 Status ReadPBContainerFromPath(Env* env, const std::string& path,
-                               google::protobuf::Message* msg);
+                               google::protobuf::Message* msg,
+                               SensitivityMode sensitivity_mode);
 
 // Serialize a "containerized" protobuf to the given path.
 //
@@ -478,7 +484,8 @@ Status ReadPBContainerFromPath(Env* env, const std::string& path,
 Status WritePBContainerToPath(Env* env, const std::string& path,
                               const google::protobuf::Message& msg,
                               CreateMode create,
-                              SyncMode sync);
+                              SyncMode sync,
+                              SensitivityMode sensitivity_mode);
 
 // Wrapper for a protobuf message which lazily converts to JSON when
 // the trace buffer is dumped.

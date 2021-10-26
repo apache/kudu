@@ -200,6 +200,10 @@ DEFINE_string(env_inject_lock_failure_globs, "",
               "will fail.");
 TAG_FLAG(env_inject_lock_failure_globs, hidden);
 
+DEFINE_bool(encrypt_data_at_rest, false,
+            "Whether sensitive files should be encrypted on the file system.");
+TAG_FLAG(encrypt_data_at_rest, hidden);
+
 static __thread uint64_t thread_local_id;
 static Atomic64 cur_thread_local_id_;
 
@@ -1300,7 +1304,7 @@ class PosixEnv : public Env {
     if (f == nullptr) {
       return IOError(fname, errno);
     }
-    result->reset(new PosixSequentialFile(fname, opts.encrypted, f));
+    result->reset(new PosixSequentialFile(fname, opts.is_sensitive && IsEncryptionEnabled(), f));
     return Status::OK();
   }
 
@@ -1321,7 +1325,8 @@ class PosixEnv : public Env {
       return IOError(fname, errno);
     }
 
-    result->reset(new PosixRandomAccessFile(fname, fd, opts.encrypted));
+    result->reset(new PosixRandomAccessFile(fname, fd,
+                  opts.is_sensitive && IsEncryptionEnabled()));
     return Status::OK();
   }
 
@@ -1363,7 +1368,8 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "PosixEnv::NewRWFile", "path", fname);
     int fd;
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
-    result->reset(new PosixRWFile(fname, fd, opts.sync_on_close, opts.encrypted));
+    result->reset(new PosixRWFile(fname, fd, opts.sync_on_close,
+                                  opts.is_sensitive && IsEncryptionEnabled()));
     return Status::OK();
   }
 
@@ -1372,7 +1378,8 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "PosixEnv::NewTempRWFile", "template", name_template);
     int fd = 0;
     RETURN_NOT_OK(MkTmpFile(name_template, &fd, created_filename));
-    res->reset(new PosixRWFile(*created_filename, fd, opts.sync_on_close, opts.encrypted));
+    res->reset(new PosixRWFile(*created_filename, fd, opts.sync_on_close,
+                               opts.is_sensitive && IsEncryptionEnabled()));
     return Status::OK();
   }
 
@@ -1988,6 +1995,8 @@ class PosixEnv : public Env {
     return result;
   }
 
+  const bool IsEncryptionEnabled() override { return FLAGS_encrypt_data_at_rest; }
+
  private:
   // unique_ptr Deleter implementation for fts_close
   struct FtsCloser {
@@ -2032,7 +2041,8 @@ class PosixEnv : public Env {
     if (opts.mode == MUST_EXIST) {
       RETURN_NOT_OK(GetFileSize(fname, &file_size));
     }
-    result->reset(new PosixWritableFile(fname, fd, file_size, opts.sync_on_close, opts.encrypted));
+    result->reset(new PosixWritableFile(fname, fd, file_size, opts.sync_on_close,
+                                        opts.is_sensitive && IsEncryptionEnabled()));
     return Status::OK();
   }
 

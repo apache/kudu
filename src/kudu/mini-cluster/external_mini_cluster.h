@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -209,6 +210,11 @@ struct ExternalMiniClusterOptions {
   //
   // Default: false.
   bool enable_ranger;
+
+  // If true, enable data at rest encryption.
+  //
+  // Default: false.
+  bool enable_encryption;
 
   // If true, sends logging output to stderr instead of a log file.
   //
@@ -544,10 +550,12 @@ class ExternalMiniCluster : public MiniCluster {
 
 struct ExternalDaemonOptions {
   ExternalDaemonOptions()
-      : logtostderr(false) {
+      : logtostderr(false),
+        enable_encryption(false) {
   }
 
   bool logtostderr;
+  bool enable_encryption;
   std::shared_ptr<rpc::Messenger> messenger;
   std::string block_manager_type;
   std::string exe;

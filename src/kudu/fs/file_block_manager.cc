@@ -788,6 +788,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
         error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, dir));
     WritableFileOptions wr_opts;
     wr_opts.mode = Env::MUST_CREATE;
+    wr_opts.is_sensitive = true;
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
   } while (PREDICT_FALSE(s.IsAlreadyPresent()));
   if (s.ok()) {
@@ -834,7 +835,9 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
         path, &reader));
   } else {
     unique_ptr<RandomAccessFile> r;
-    RETURN_NOT_OK_FBM_DISK_FAILURE(env_->NewRandomAccessFile(path, &r));
+    RandomAccessFileOptions opts;
+    opts.is_sensitive = true;
+    RETURN_NOT_OK_FBM_DISK_FAILURE(env_->NewRandomAccessFile(opts, path, &r));
     reader.reset(r.release());
   }
   block->reset(new internal::FileReadableBlock(this, block_id, reader));

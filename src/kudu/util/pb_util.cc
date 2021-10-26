@@ -62,7 +62,6 @@
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/logging.h"
@@ -516,7 +515,9 @@ Status WritePBToPath(Env* env, const std::string& path,
   string tmp_path;
 
   unique_ptr<WritableFile> file;
-  RETURN_NOT_OK(env->NewTempWritableFile(WritableFileOptions(), tmp_template, &tmp_path, &file));
+  WritableFileOptions opts;
+  opts.is_sensitive = false;
+  RETURN_NOT_OK(env->NewTempWritableFile(opts, tmp_template, &tmp_path, &file));
   auto tmp_deleter = MakeScopedCleanup([&]() {
     WARN_NOT_OK(env->DeleteFile(tmp_path), "Could not delete file " + tmp_path);
   });
@@ -540,8 +541,10 @@ Status WritePBToPath(Env* env, const std::string& path,
 }
 
 Status ReadPBFromPath(Env* env, const std::string& path, MessageLite* msg) {
-  shared_ptr<SequentialFile> rfile;
-  RETURN_NOT_OK(env_util::OpenFileForSequential(env, path, &rfile));
+  unique_ptr<SequentialFile> rfile;
+  SequentialFileOptions opts;
+  opts.is_sensitive = false;
+  RETURN_NOT_OK(env->NewSequentialFile(opts, path, &rfile));
   RETURN_NOT_OK(ParseFromSequentialFile(msg, rfile.get()));
   return Status::OK();
 }
@@ -1042,9 +1045,12 @@ uint64_t ReadablePBContainerFile::offset() const {
   return offset_;
 }
 
-Status ReadPBContainerFromPath(Env* env, const std::string& path, Message* msg) {
+Status ReadPBContainerFromPath(Env* env, const std::string& path,
+                               Message* msg, SensitivityMode sensitivity_mode) {
   unique_ptr<RandomAccessFile> file;
-  RETURN_NOT_OK(env->NewRandomAccessFile(path, &file));
+  RandomAccessFileOptions opts;
+  opts.is_sensitive = sensitivity_mode == SENSITIVE;
+  RETURN_NOT_OK(env->NewRandomAccessFile(opts, path, &file));
 
   ReadablePBContainerFile pb_file(std::move(file));
   RETURN_NOT_OK(pb_file.Open());
@@ -1055,7 +1061,8 @@ Status ReadPBContainerFromPath(Env* env, const std::string& path, Message* msg) 
 Status WritePBContainerToPath(Env* env, const std::string& path,
                               const Message& msg,
                               CreateMode create,
-                              SyncMode sync) {
+                              SyncMode sync,
+                              SensitivityMode sensitivity_mode) {
   TRACE_EVENT2("io", "WritePBContainerToPath",
                "path", path,
                "msg_type", msg.GetTypeName());
@@ -1068,7 +1075,9 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
   string tmp_path;
 
   unique_ptr<RWFile> file;
-  RETURN_NOT_OK(env->NewTempRWFile(RWFileOptions(), tmp_template, &tmp_path, &file));
+  RWFileOptions opts;
+  opts.is_sensitive = sensitivity_mode == SENSITIVE;
+  RETURN_NOT_OK(env->NewTempRWFile(opts, tmp_template, &tmp_path, &file));
   auto tmp_deleter = MakeScopedCleanup([&]() {
     WARN_NOT_OK(env->DeleteFile(tmp_path), "Could not delete file " + tmp_path);
   });

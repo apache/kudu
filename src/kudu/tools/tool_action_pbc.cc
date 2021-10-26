@@ -103,6 +103,13 @@ namespace {
 
 const char* const kPathArg = "path";
 
+bool IsFileEncrypted(Env* env, const std::string& fname) {
+  // TODO(abukor): replace with real encryption check. As instance files are the
+  // only PBC files that are unencrypted right now, this check will suffice
+  // until we can tell if a file is encrypted based on an encryption header.
+  return fname.length() < 8 || fname.compare(fname.length() - 8, 8, "instance") != 0;
+}
+
 Status DumpPBContainerFile(const RunnerContext& context) {
   const string& path = FindOrDie(context.required_args, kPathArg);
   auto format = ReadablePBContainerFile::Format::DEFAULT;
@@ -118,7 +125,9 @@ Status DumpPBContainerFile(const RunnerContext& context) {
 
   Env* env = Env::Default();
   unique_ptr<RandomAccessFile> reader;
-  RETURN_NOT_OK(env->NewRandomAccessFile(path, &reader));
+  RandomAccessFileOptions opts;
+  opts.is_sensitive = IsFileEncrypted(env, path);
+  RETURN_NOT_OK(env->NewRandomAccessFile(opts, path, &reader));
   ReadablePBContainerFile pb_reader(std::move(reader));
   RETURN_NOT_OK(pb_reader.Open());
   RETURN_NOT_OK(pb_reader.Dump(&std::cout, format));
@@ -152,7 +161,9 @@ Status EditFile(const RunnerContext& context) {
 
   // Open the original file.
   unique_ptr<RandomAccessFile> reader;
-  RETURN_NOT_OK(env->NewRandomAccessFile(path, &reader));
+  RandomAccessFileOptions reader_opts;
+  reader_opts.is_sensitive = IsFileEncrypted(env, path);
+  RETURN_NOT_OK(env->NewRandomAccessFile(reader_opts, path, &reader));
   ReadablePBContainerFile pb_reader(std::move(reader));
   RETURN_NOT_OK(pb_reader.Open());
 
@@ -160,18 +171,23 @@ Status EditFile(const RunnerContext& context) {
   // Do this up front so that we fail early if the user doesn't have appropriate permissions.
   const string tmp_out_path = path + ".new";
   unique_ptr<RWFile> out_rwfile;
-  RETURN_NOT_OK_PREPEND(env->NewRWFile(tmp_out_path, &out_rwfile), "couldn't open output PBC file");
+  RWFileOptions out_rwfile_opts;
+  out_rwfile_opts.is_sensitive = IsFileEncrypted(env, path);
+  RETURN_NOT_OK_PREPEND(env->NewRWFile(out_rwfile_opts, tmp_out_path, &out_rwfile),
+                        "couldn't open output PBC file");
   auto delete_tmp_output = MakeScopedCleanup([&]() {
     WARN_NOT_OK(env->DeleteFile(tmp_out_path),
                 "Could not delete file " + tmp_out_path);
   });
 
   // Also make a tmp file where we'll write the PBC in JSON format for
-  // easy editing.
+  // easy editing. Encryption needs to be disabled for the tmp file.
   unique_ptr<WritableFile> tmp_json_file;
   string tmp_json_path;
+  WritableFileOptions tmp_json_opts;
+  tmp_json_opts.is_sensitive = false;
   const string tmp_template = Substitute("pbc-edit$0.XXXXXX", kTmpInfix);
-  RETURN_NOT_OK_PREPEND(env->NewTempWritableFile(WritableFileOptions(),
+  RETURN_NOT_OK_PREPEND(env->NewTempWritableFile(tmp_json_opts,
                                                  JoinPathSegments(dir, tmp_template),
                                                  &tmp_json_path, &tmp_json_file),
                         "couldn't create temporary file");

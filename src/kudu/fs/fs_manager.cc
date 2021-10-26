@@ -344,7 +344,7 @@ Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
     }
     unique_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
     Status s = pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root.path),
-                                                pb.get());
+                                                pb.get(), pb_util::NOT_SENSITIVE);
     if (PREDICT_FALSE(!s.ok())) {
       if (s.IsNotFound()) {
         if (missing_roots) {
@@ -677,7 +677,8 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
   RETURN_NOT_OK(pb_util::WritePBContainerToPath(env_, path,
                                                 metadata,
                                                 pb_util::NO_OVERWRITE,
-                                                pb_util::SYNC));
+                                                pb_util::SYNC,
+                                                pb_util::NOT_SENSITIVE));
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
             << SecureDebugString(metadata);
   return Status::OK();

@@ -639,8 +639,10 @@ Status SegmentAllocator::AllocateNewSegment() {
   VLOG_WITH_PREFIX(2) << "Creating temp. file for place holder segment, template: " << path_tmpl;
   unique_ptr<RWFile> segment_file;
   Env* env = ctx_->fs_manager->env();
+  RWFileOptions opts;
+  opts.is_sensitive = true;
   RETURN_NOT_OK_PREPEND(env->NewTempRWFile(
-      RWFileOptions(), path_tmpl, &next_segment_path_, &segment_file),
+      opts, path_tmpl, &next_segment_path_, &segment_file),
                         "could not create next WAL segment");
   next_segment_file_.reset(segment_file.release());
   VLOG_WITH_PREFIX(1) << "Created next WAL segment, placeholder path: " << next_segment_path_;

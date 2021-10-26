@@ -644,10 +644,7 @@ class ToolTest : public KuduTest {
   // Write YAML content to file ${KUDU_CONFIG}/kudurc.
   void PrepareConfigFile(const string& content) {
     string fname = GetTestPath("kudurc");
-    unique_ptr<WritableFile> writable_file;
-    ASSERT_OK(env_->NewWritableFile(fname, &writable_file));
-    ASSERT_OK(writable_file->Append(Slice(content)));
-    ASSERT_OK(writable_file->Close());
+    ASSERT_OK(WriteStringToFile(env_, content, fname));
   }
 
   void CheckCorruptClusterInfoConfigFile(const string& content,

@@ -26,9 +26,12 @@ FileLock::~FileLock() {
 
 static Status DoWriteStringToFile(Env* env, const Slice& data,
                                   const std::string& fname,
-                                  bool should_sync) {
+                                  bool should_sync,
+                                  bool is_sensitive) {
   unique_ptr<WritableFile> file;
-  Status s = env->NewWritableFile(fname, &file);
+  WritableFileOptions opts;
+  opts.is_sensitive = is_sensitive;
+  Status s = env->NewWritableFile(opts, fname, &file);
   if (!s.ok()) {
     return s;
   }
@@ -50,18 +53,20 @@ static Status DoWriteStringToFile(Env* env, const Slice& data,
 // TODO: move these utils into env_util
 Status WriteStringToFile(Env* env, const Slice& data,
                          const std::string& fname) {
-  return DoWriteStringToFile(env, data, fname, false);
+  return DoWriteStringToFile(env, data, fname, false, false);
 }
 
 Status WriteStringToFileSync(Env* env, const Slice& data,
                              const std::string& fname) {
-  return DoWriteStringToFile(env, data, fname, true);
+  return DoWriteStringToFile(env, data, fname, true, false);
 }
 
-Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
+Status DoReadFileToString(Env* env, const std::string& fname, faststring* data, bool is_sensitive) {
   data->clear();
   unique_ptr<SequentialFile> file;
-  Status s = env->NewSequentialFile(fname, &file);
+  SequentialFileOptions opts;
+  opts.is_sensitive = is_sensitive;
+  Status s = env->NewSequentialFile(opts, fname, &file);
   if (!s.ok()) {
     return s;
   }
@@ -79,6 +84,10 @@ Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
     }
   }
   return s;
+}
+
+Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
+  return DoReadFileToString(env, fname, data, false);
 }
 
 }  // namespace kudu

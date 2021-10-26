@@ -380,6 +380,8 @@ class Env {
   // Only useful for tests.
   static const char* const kInjectedFailureStatusMsg;
 
+  virtual const bool IsEncryptionEnabled() = 0;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(Env);
 };
@@ -414,9 +416,11 @@ class Fifo : public File {
 };
 
 struct SequentialFileOptions {
-  bool encrypted;
+  // Whether the file contains sensitive information. If true, the file is
+  // encrypted if encryption is enabled.
+  bool is_sensitive;
 
-  SequentialFileOptions() : encrypted(false) {}
+  SequentialFileOptions() : is_sensitive(false) {}
 };
 
 // A file abstraction for reading sequentially through a file
@@ -494,17 +498,21 @@ struct WritableFileOptions {
   // See CreateMode for details.
   Env::OpenMode mode;
 
-  bool encrypted;
+  // Whether the file contains sensitive information. If true, the file is
+  // encrypted if encryption is enabled.
+  bool is_sensitive;
 
   WritableFileOptions()
-      : sync_on_close(false), mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE), encrypted(false) {}
+      : sync_on_close(false), mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE), is_sensitive(false) {}
 };
 
 // Options specified when a file is opened for random access.
 struct RandomAccessFileOptions {
-  bool encrypted;
+  // Whether the file contains sensitive information. If true, the file is
+  // encrypted if encryption is enabled.
+  bool is_sensitive;
 
-  RandomAccessFileOptions() : encrypted(false) {}
+  RandomAccessFileOptions() : is_sensitive(false) {}
 };
 
 // A file abstraction for sequential writing.  The implementation
@@ -564,10 +572,12 @@ struct RWFileOptions {
   // See CreateMode for details.
   Env::OpenMode mode;
 
-  bool encrypted;
+  // Whether the file contains sensitive information. If true, the file is
+  // encrypted if encryption is enabled.
+  bool is_sensitive;
 
   RWFileOptions()
-      : sync_on_close(false), mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE), encrypted(false) {}
+      : sync_on_close(false), mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE), is_sensitive(false) {}
 };
 
 // A file abstraction for both reading and writing. No notion of a built-in

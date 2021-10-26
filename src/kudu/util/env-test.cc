@@ -1253,7 +1253,7 @@ TEST_F(TestEnv, TestEncryption) {
   const string kFile = JoinPathSegments(test_dir_, "encrypted_file");
   unique_ptr<RWFile> rw;
   RWFileOptions opts;
-  opts.encrypted = true;
+  opts.is_sensitive = true;
   ASSERT_OK(env_->NewRWFile(opts, kFile, &rw));
 
   string kTestData =
@@ -1286,7 +1286,7 @@ TEST_F(TestEnv, TestEncryption) {
 
   unique_ptr<RandomAccessFile> unencrpyted;
   RandomAccessFileOptions unencrpyted_opts;
-  unencrpyted_opts.encrypted = false;
+  unencrpyted_opts.is_sensitive = false;
   ASSERT_OK(env_->NewRandomAccessFile(unencrpyted_opts, kFile, &unencrpyted));
 
   // Treating it as an unencrypted file should yield garbage and not contain the
@@ -1298,7 +1298,7 @@ TEST_F(TestEnv, TestEncryption) {
   // Check if the file can be read into a SequentialFile.
   unique_ptr<SequentialFile> seq_file;
   SequentialFileOptions seq_opts;
-  seq_opts.encrypted = true;
+  seq_opts.is_sensitive = true;
   ASSERT_OK(env_->NewSequentialFile(seq_opts, kFile, &seq_file));
 
   ASSERT_OK(seq_file->Read(&result1));
@@ -1310,7 +1310,7 @@ TEST_F(TestEnv, TestEncryption) {
   // as an encrypted file.
   unique_ptr<RandomAccessFile> random;
   RandomAccessFileOptions random_opts;
-  random_opts.encrypted = true;
+  random_opts.is_sensitive = true;
   ASSERT_OK(env_->NewRandomAccessFile(random_opts, kFile, &random));
   size_t size = kTestData.length() + kTestData2.length();
   uint8_t scratch[size];
@@ -1330,7 +1330,7 @@ TEST_F(TestEnv, TestPreallocatedReadEncryptedFile) {
   const string kFile = JoinPathSegments(test_dir_, "encrypted_file");
   unique_ptr<RWFile> rw;
   RWFileOptions opts;
-  opts.encrypted = true;
+  opts.is_sensitive = true;
   ASSERT_OK(env_->NewRWFile(opts, kFile, &rw));
 
   ASSERT_OK(rw->PreAllocate(0, 1024, RWFile::CHANGE_FILE_SIZE));
@@ -1347,7 +1347,7 @@ TEST_F(TestEnv, TestEncryptionMultipleSlices) {
   const string kFile = JoinPathSegments(test_dir_, "encrypted_file");
   unique_ptr<RWFile> rw;
   RWFileOptions opts;
-  opts.encrypted = true;
+  opts.is_sensitive = true;
   ASSERT_OK(env_->NewRWFile(opts, kFile, &rw));
 
   vector<Slice> data = {"foo", "bar", "hello", "world"};

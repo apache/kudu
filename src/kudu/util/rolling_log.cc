@@ -160,6 +160,7 @@ Status RollingLog::Open() {
     // Logs aren't worth the performance cost of durability.
     opts.sync_on_close = false;
     opts.mode = Env::MUST_CREATE;
+    opts.is_sensitive = false;
 
     RETURN_NOT_OK(env_->NewWritableFile(opts, path, &file_));
 
@@ -248,7 +249,9 @@ class ScopedGzipCloser {
 // and is less likely to be problematic.
 Status RollingLog::CompressFile(const std::string& path) const {
   unique_ptr<SequentialFile> in_file;
-  RETURN_NOT_OK_PREPEND(env_->NewSequentialFile(path, &in_file),
+  SequentialFileOptions opts;
+  opts.is_sensitive = false;
+  RETURN_NOT_OK_PREPEND(env_->NewSequentialFile(opts, path, &in_file),
                         "Unable to open input file to compress");
 
   string gz_path = path + ".gz";

@@ -124,6 +124,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       principal("kudu"),
       hms_mode(HmsMode::NONE),
       enable_ranger(false),
+      enable_encryption(false),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3))
@@ -565,6 +566,7 @@ Status ExternalMiniCluster::AddTabletServer() {
 
   ExternalDaemonOptions opts;
   opts.messenger = messenger_;
+  opts.enable_encryption = opts_.enable_encryption;
   opts.block_manager_type = opts_.block_manager_type;
   opts.exe = GetBinaryPath(kKuduBinaryName);
   opts.wal_dir = GetWalPath(daemon_id);
@@ -1125,6 +1127,10 @@ std::vector<std::string> ExternalDaemon::GetDaemonFlags(const ExternalDaemonOpti
     // Ensure that logging goes to the test output and doesn't get buffered.
     flags.emplace_back("--logtostderr");
     flags.emplace_back("--logbuflevel=-1");
+  }
+
+  if (opts.enable_encryption) {
+    flags.emplace_back("--encrypt_data_at_rest=true");
   }
 
   // If large keys are not enabled.

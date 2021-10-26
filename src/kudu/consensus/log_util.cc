@@ -271,6 +271,7 @@ Status ReadableLogSegment::Open(Env* env,
     unique_ptr<RWFile> f;
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
+    opts.is_sensitive = true;
     RETURN_NOT_OK_PREPEND(env->NewRWFile(opts, path, &f),
                           "Unable to open file for reading");
     file.reset(f.release());

@@ -319,7 +319,8 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
       // fsync() due to periodic commit with default settings, whereas other
       // filesystems such as XFS will not commit as often and need the fsync to
       // avoid significant data loss when a crash happens.
-      FLAGS_log_force_fsync_all || cmeta_force_fsync ? pb_util::SYNC : pb_util::NO_SYNC),
+      FLAGS_log_force_fsync_all || cmeta_force_fsync ? pb_util::SYNC : pb_util::NO_SYNC,
+      pb_util::SENSITIVE),
           Substitute("Unable to write consensus meta file for tablet $0 to path $1",
                      tablet_id_, meta_file_path));
   return UpdateOnDiskSize();
@@ -376,7 +377,8 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
   scoped_refptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->env(),
                                                  fs_manager->GetConsensusMetadataPath(tablet_id),
-                                                 &cmeta->pb_));
+                                                 &cmeta->pb_,
+                                                 pb_util::SENSITIVE));
   cmeta->UpdateActiveRole(); // Needs to happen here as we sidestep the accessor APIs.
 
   RETURN_NOT_OK(cmeta->UpdateOnDiskSize());

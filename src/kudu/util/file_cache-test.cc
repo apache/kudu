@@ -44,12 +44,19 @@
 
 DECLARE_bool(cache_force_single_shard);
 DECLARE_int32(file_cache_expiry_period_ms);
+DECLARE_bool(encrypt_data_at_rest);
 
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+namespace {
+  void SetEncryptionFlags(bool encryption_enabled) {
+    FLAGS_encrypt_data_at_rest = encryption_enabled;
+  }
+} // namespace
 
 namespace kudu {
 
@@ -94,7 +101,9 @@ class FileCacheTest : public KuduTest {
 
   Status WriteTestFile(const string& name, const string& data) {
     unique_ptr<RWFile> f;
-    RETURN_NOT_OK(env_->NewRWFile(name, &f));
+    RWFileOptions opts;
+    opts.is_sensitive = true;
+    RETURN_NOT_OK(env_->NewRWFile(opts, name, &f));
     RETURN_NOT_OK(f->Write(0, data));
     return Status::OK();
   }
@@ -338,10 +347,15 @@ TYPED_TEST(FileCacheTest, TestNoRecursiveDeadlock) {
   }
 }
 
-class RandomAccessFileCacheTest : public FileCacheTest<RandomAccessFile> {
+class RandomAccessFileCacheTest :
+  public FileCacheTest<RandomAccessFile>,
+  public ::testing::WithParamInterface<bool> {
 };
 
-TEST_F(RandomAccessFileCacheTest, TestMemoryFootprintDoesNotCrash) {
+INSTANTIATE_TEST_SUITE_P(, RandomAccessFileCacheTest, ::testing::Values(false, true));
+
+TEST_P(RandomAccessFileCacheTest, TestMemoryFootprintDoesNotCrash) {
+  SetEncryptionFlags(GetParam());
   const string kFile = this->GetTestPath("foo");
   ASSERT_OK(this->WriteTestFile(kFile, "test data"));
 
@@ -353,10 +367,15 @@ TEST_F(RandomAccessFileCacheTest, TestMemoryFootprintDoesNotCrash) {
   LOG(INFO) << f->memory_footprint();
 }
 
-class RWFileCacheTest : public FileCacheTest<RWFile> {
+class RWFileCacheTest :
+  public FileCacheTest<RWFile>,
+  public ::testing::WithParamInterface<bool> {
 };
 
-TEST_F(RWFileCacheTest, TestOpenMustCreate) {
+INSTANTIATE_TEST_SUITE_P(, RWFileCacheTest, ::testing::Values(false, true));
+
+TEST_P(RWFileCacheTest, TestOpenMustCreate) {
+  SetEncryptionFlags(GetParam());
   const string kFile1 = this->GetTestPath("foo");
   const string kFile2 = this->GetTestPath("bar");
 
@@ -385,7 +404,8 @@ TEST_F(RWFileCacheTest, TestOpenMustCreate) {
   }
 }
 
-TEST_F(RWFileCacheTest, TestOpenCreateOrOpen) {
+TEST_P(RWFileCacheTest, TestOpenCreateOrOpen) {
+  SetEncryptionFlags(GetParam());
   const string kFile1 = this->GetTestPath("foo");
   const string kFile2 = this->GetTestPath("bar");
 
@@ -407,10 +427,15 @@ TEST_F(RWFileCacheTest, TestOpenCreateOrOpen) {
   ASSERT_TRUE(rwf1->Sync().IsNotFound());
 }
 
-class MixedFileCacheTest : public KuduTest {
+class MixedFileCacheTest :
+  public KuduTest,
+  public ::testing::WithParamInterface<bool> {
 };
 
-TEST_F(MixedFileCacheTest, TestBothFileTypes) {
+INSTANTIATE_TEST_SUITE_P(, MixedFileCacheTest, ::testing::Values(false, true));
+
+TEST_P(MixedFileCacheTest, TestBothFileTypes) {
+  SetEncryptionFlags(GetParam());
   const string kFile1 = GetTestPath("foo");
   const string kData1 = "test data 1";
   const string kFile2 = GetTestPath("foo2");
@@ -419,9 +444,11 @@ TEST_F(MixedFileCacheTest, TestBothFileTypes) {
   // Create the two test files.
   {
     unique_ptr<RWFile> f;
-    ASSERT_OK(env_->NewRWFile(kFile1, &f));
+    RWFileOptions opts;
+    opts.is_sensitive = true;
+    ASSERT_OK(env_->NewRWFile(opts, kFile1, &f));
     ASSERT_OK(f->Write(0, kData1));
-    ASSERT_OK(env_->NewRWFile(kFile2, &f));
+    ASSERT_OK(env_->NewRWFile(opts, kFile2, &f));
     ASSERT_OK(f->Write(0, kData2));
   }
 

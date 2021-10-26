@@ -81,8 +81,12 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
-class DenseNodeTest : public ExternalMiniClusterITestBase {
+class DenseNodeTest :
+  public ExternalMiniClusterITestBase,
+  public testing::WithParamInterface<bool> {
 };
+
+INSTANTIATE_TEST_SUITE_P(, DenseNodeTest, testing::Values(false, true));
 
 // Integration test that simulates "dense" Kudu nodes.
 //
@@ -92,7 +96,7 @@ class DenseNodeTest : public ExternalMiniClusterITestBase {
 // of metadata with a minimal amount of data. The scale of the metadata can
 // proxy for data in areas we care about (such as start up time, thread count,
 // memory usage, etc.).
-TEST_F(DenseNodeTest, RunTest) {
+TEST_P(DenseNodeTest, RunTest) {
   ExternalMiniClusterOptions opts;
 
   opts.extra_tserver_flags = {
@@ -146,6 +150,11 @@ TEST_F(DenseNodeTest, RunTest) {
   if (FLAGS_enable_fsync) {
     opts.extra_tserver_flags.emplace_back("--never_fsync=false");
     opts.extra_master_flags.emplace_back("--never_fsync=false");
+  }
+
+  if (GetParam()) {
+    opts.extra_master_flags.emplace_back("--encrypt_data_at_rest=true");
+    opts.extra_tserver_flags.emplace_back("--encrypt_data_at_rest=true");
   }
 
   // With the amount of data we're going to write, we need to make sure the

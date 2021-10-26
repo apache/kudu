@@ -105,6 +105,7 @@ class SecurityITest : public KuduTest {
  public:
   SecurityITest() {
     cluster_opts_.enable_kerberos = true;
+    cluster_opts_.enable_encryption = true;
     cluster_opts_.num_tablet_servers = 3;
     cluster_opts_.extra_master_flags.emplace_back("--rpc_trace_negotiation");
     cluster_opts_.extra_tserver_flags.emplace_back("--rpc_trace_negotiation");

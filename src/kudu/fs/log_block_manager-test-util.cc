@@ -124,6 +124,7 @@ Status LBMCorruptor::PreallocateFullContainer() {
   unique_ptr<RWFile> data_file;
   RWFileOptions opts;
   opts.mode = Env::MUST_EXIST;
+  opts.is_sensitive = true;
   RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
   int64_t initial_size;
   RETURN_NOT_OK(PreallocateForBlock(data_file.get(), mode,
@@ -154,6 +155,7 @@ Status LBMCorruptor::AddUnpunchedBlockToFullContainer() {
   unique_ptr<RWFile> data_file;
   RWFileOptions opts;
   opts.mode = Env::MUST_EXIST;
+  opts.is_sensitive = true;
   RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
   int64_t block_length = (rand_.Uniform(16) + 1) * fs_block_size;
   int64_t initial_data_size;
@@ -190,14 +192,16 @@ Status LBMCorruptor::CreateIncompleteContainer() {
   // 2. No data file but metadata file exists (and is up to a certain size).
   // 3. Empty data file and metadata file exists (and is up to a certain size).
   int r = rand_.Uniform(3);
+  RWFileOptions opts;
+  opts.is_sensitive = true;
   if (r == 0) {
-    RETURN_NOT_OK(env_->NewRWFile(data_fname, &data_file));
+    RETURN_NOT_OK(env_->NewRWFile(opts, data_fname, &data_file));
   } else if (r == 1) {
-    RETURN_NOT_OK(env_->NewRWFile(metadata_fname, &data_file));
+    RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &data_file));
   } else {
     CHECK_EQ(r, 2);
-    RETURN_NOT_OK(env_->NewRWFile(data_fname, &data_file));
-    RETURN_NOT_OK(env_->NewRWFile(metadata_fname, &data_file));
+    RETURN_NOT_OK(env_->NewRWFile(opts, data_fname, &data_file));
+    RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &data_file));
   }
 
   if (data_file) {
@@ -228,6 +232,7 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
     unique_ptr<RWFile> data_file;
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
+    opts.is_sensitive = true;
     RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
     RETURN_NOT_OK(PreallocateForBlock(data_file.get(), RWFile::CHANGE_FILE_SIZE,
                                       kBlockSize, &initial_data_size));
@@ -293,6 +298,7 @@ Status LBMCorruptor::AddMisalignedBlockToContainer() {
   unique_ptr<RWFile> data_file;
   RWFileOptions opts;
   opts.mode = Env::MUST_EXIST;
+  opts.is_sensitive = true;
   RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
   uint64_t initial_data_size;
   RETURN_NOT_OK(data_file->Size(&initial_data_size));
@@ -361,6 +367,7 @@ Status LBMCorruptor::AddPartialRecordToContainer() {
   {
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
+    opts.is_sensitive = true;
     unique_ptr<RWFile> metadata_file;
     RETURN_NOT_OK(env_->NewRWFile(opts, c->metadata_filename, &metadata_file));
     uint64_t initial_metadata_size;
@@ -423,6 +430,7 @@ Status LBMCorruptor::OpenMetadataWriter(
     unique_ptr<WritablePBContainerFile>* writer) {
   RWFileOptions opts;
   opts.mode = Env::MUST_EXIST;
+  opts.is_sensitive = true;
   unique_ptr<RWFile> metadata_file;
   RETURN_NOT_OK(env_->NewRWFile(opts,
                                 container.metadata_filename,

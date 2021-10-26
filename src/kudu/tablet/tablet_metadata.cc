@@ -700,7 +700,8 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
                             fs_manager_->env(), path, pb,
-                            pb_util::OVERWRITE, pb_util::SYNC),
+                            pb_util::OVERWRITE, pb_util::SYNC,
+                            pb_util::SENSITIVE),
                         Substitute("Failed to write tablet metadata $0", tablet_id_));
   flush_count_for_tests_++;
   RETURN_NOT_OK(UpdateOnDiskSize());
@@ -721,7 +722,7 @@ boost::optional<consensus::OpId> TabletMetadata::tombstone_last_logged_opid() co
 Status TabletMetadata::ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) const {
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(
-      pb_util::ReadPBContainerFromPath(fs_manager_->env(), path, superblock),
+      pb_util::ReadPBContainerFromPath(fs_manager_->env(), path, superblock, pb_util::SENSITIVE),
       Substitute("Could not load tablet metadata from $0", path));
   return Status::OK();
 }

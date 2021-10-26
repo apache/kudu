@@ -2289,7 +2289,7 @@ TEST_P(ScanCorruptedDeltasParamTest, Test) {
 
   // Flush the corruption and rebuild the server with the corrupt data.
   ASSERT_OK(pb_util::WritePBContainerToPath(env_,
-      meta_path, superblock_pb, pb_util::OVERWRITE, pb_util::SYNC));
+      meta_path, superblock_pb, pb_util::OVERWRITE, pb_util::SYNC, pb_util::SENSITIVE));
   ASSERT_OK(ShutdownAndRebuildTablet());
   LOG(INFO) << Substitute("Rebuilt tablet $0 with broken blocks", tablet_replica_->tablet_id());
 
@@ -4361,7 +4361,7 @@ TEST_F(TabletServerTest, TestDataDirGroupsCreated) {
   string tablet_meta_path = JoinPathSegments(GetTestPath("TabletServerTest-fsroot"), "tablet-meta");
   string pb_path = JoinPathSegments(tablet_meta_path, tablet_replica_->tablet_id());
   ASSERT_OK(pb_util::WritePBContainerToPath(Env::Default(),
-      pb_path, superblock, pb_util::OVERWRITE, pb_util::SYNC));
+      pb_path, superblock, pb_util::OVERWRITE, pb_util::SYNC, pb_util::SENSITIVE));
 
   // Verify that the on-disk copy has its DataDirGroup missing.
   ASSERT_OK(tablet_replica_->tablet()->metadata()->ReadSuperBlockFromDisk(&superblock));

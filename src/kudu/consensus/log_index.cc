@@ -109,6 +109,7 @@ Status LogIndex::IndexChunk::Open(FileCache* file_cache) {
     unique_ptr<RWFile> f;
     RWFileOptions opts;
     opts.mode = Env::CREATE_OR_OPEN;
+    opts.is_sensitive = true;
     RETURN_NOT_OK(env_->NewRWFile(opts, path_, &f));
     file_.reset(f.release());
   }

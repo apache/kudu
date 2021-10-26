@@ -138,7 +138,9 @@ Status MiniPostgres::CreateConfigs() {
   ReadFileToString(env, config_file, &config);
   config.append(Substitute("\nlisten_addresses = '$0'\nport = $1\n", host_, port_));
   unique_ptr<WritableFile> file;
-  RETURN_NOT_OK(env->NewWritableFile(config_file, &file));
+  WritableFileOptions opts;
+  opts.is_sensitive = false;
+  RETURN_NOT_OK(env->NewWritableFile(opts, config_file, &file));
   RETURN_NOT_OK(file->Append(config));
   return file->Close();
 }
