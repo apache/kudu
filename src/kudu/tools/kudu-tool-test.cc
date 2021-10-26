@@ -4088,9 +4088,9 @@ TEST_F(ToolTest, TestListTables) {
   string expect_replica = Substitute("    L $0 $1", ts_uuid, ts_addr);
 
   // Create some tables.
-  const int kNumTables = 10;
+  constexpr int kNumTables = 10;
+  constexpr int kReplicaNum = 1;
   vector<string> table_names;
-  const int kReplicaNum = 1;
   for (int i = 0; i < kNumTables; ++i) {
     string table_name = Substitute("kudu.table_$0", i);
     table_names.push_back(table_name);
@@ -4102,16 +4102,17 @@ TEST_F(ToolTest, TestListTables) {
   }
   std::sort(table_names.begin(), table_names.end());
 
-  const auto& ProcessTables = [&] (const int num) {
+  const auto ProcessTables = [&] (const int num) {
     ASSERT_GE(num, 1);
     ASSERT_LE(num, kNumTables);
 
     vector<string> expected;
-    expected.insert(expected.end(), table_names.begin(), table_names.begin() + num);
+    expected.insert(expected.end(),
+                    table_names.begin(), table_names.begin() + num);
 
     string filter = "";
     if (kNumTables != num) {
-      filter = Substitute("-tables=$0", JoinStrings(expected, ","));
+      filter = Substitute("--tables=$0", JoinStrings(expected, ","));
     }
     vector<string> lines;
     NO_FATALS(RunActionStdoutLines(
@@ -4121,22 +4122,24 @@ TEST_F(ToolTest, TestListTables) {
     ASSERT_EQ(expected, lines);
   };
 
-  const auto& ProcessTablets = [&] (const int num) {
+  const auto ProcessTablets = [&] (const int num) {
     ASSERT_GE(num, 1);
     ASSERT_LE(num, kNumTables);
 
     string filter = "";
     if (kNumTables != num) {
-      filter = Substitute("-tables=$0",
+      filter = Substitute("--tables=$0",
         JoinStringsIterator(table_names.begin(), table_names.begin() + num, ","));
     }
     vector<string> lines;
     NO_FATALS(RunActionStdoutLines(
-        Substitute("table list $0 $1 -list_tablets", master_addr, filter), &lines));
+        Substitute("table list $0 $1 --list_tablets", master_addr, filter), &lines));
 
     map<string, pair<string, string>> output;
     for (int i = 0; i < lines.size(); ++i) {
-      if (lines[i].empty()) continue;
+      if (lines[i].empty()) {
+        continue;
+      }
       ASSERT_LE(i + 2, lines.size());
       output[lines[i]] = pair<string, string>(lines[i + 1], lines[i + 2]);
       i += 2;
@@ -4157,26 +4160,28 @@ TEST_F(ToolTest, TestListTables) {
     }
   };
 
-  const auto& ProcessTablesStatistics = [&] (const int num) {
+  const auto ProcessTablesStatistics = [&] (const int num) {
     ASSERT_GE(num, 1);
     ASSERT_LE(num, kNumTables);
 
     vector<string> expected;
     expected.reserve(num);
     for (int i = 0; i < num; i++) {
-      expected.push_back(Substitute("$0 Num_Tablets:1 Num_Replicas:$1 Live_Row_Count:0",
-                                    table_names[i], kReplicaNum));
+      expected.emplace_back(
+          Substitute("$0 num_tablets:1 num_replicas:$1 live_row_count:0",
+                     table_names[i], kReplicaNum));
     }
     vector<string> expected_table;
-    expected_table.insert(expected_table.end(), table_names.begin(), table_names.begin() + num);
-
+    expected_table.reserve(num);
+    expected_table.insert(expected_table.end(),
+                          table_names.begin(), table_names.begin() + num);
     string filter = "";
     if (kNumTables != num) {
-      filter = Substitute("-tables=$0", JoinStrings(expected_table, ","));
+      filter = Substitute("--tables=$0", JoinStrings(expected_table, ","));
     }
     vector<string> lines;
     NO_FATALS(RunActionStdoutLines(
-      Substitute("table list $0 $1 -list_statistics", master_addr, filter), &lines));
+        Substitute("table list $0 $1 --show_table_info", master_addr, filter), &lines));
 
     std::sort(lines.begin(), lines.end());
     ASSERT_EQ(expected, lines);
@@ -4184,9 +4189,9 @@ TEST_F(ToolTest, TestListTables) {
 
   // List the tables and tablets.
   for (int i = 1; i <= kNumTables; ++i) {
-    ProcessTables(i);
-    ProcessTablets(i);
-    ProcessTablesStatistics(i);
+    NO_FATALS(ProcessTables(i));
+    NO_FATALS(ProcessTablets(i));
+    NO_FATALS(ProcessTablesStatistics(i));
   }
 }
 

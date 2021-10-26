@@ -111,16 +111,10 @@ using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
 using kudu::master::CreateTableResponsePB;
-using kudu::master::DeleteTableRequestPB;
-using kudu::master::DeleteTableResponsePB;
-using kudu::master::GetTableSchemaRequestPB;
-using kudu::master::GetTableSchemaResponsePB;
 using kudu::master::GetTableStatisticsRequestPB;
 using kudu::master::GetTableStatisticsResponsePB;
 using kudu::master::GetTabletLocationsRequestPB;
 using kudu::master::GetTabletLocationsResponsePB;
-using kudu::master::ListTablesRequestPB;
-using kudu::master::ListTablesResponsePB;
 using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
 using kudu::master::ListTabletServersResponsePB_Entry;
@@ -567,57 +561,11 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   return Status::OK();
 }
 
-Status KuduClient::ListTables(vector<string>* tables,
-                              const string& filter) {
-  ListTablesRequestPB req;
-  ListTablesResponsePB resp;
-
-  if (!filter.empty()) {
-    req.set_name_filter(filter);
-  }
-  MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  Synchronizer sync;
-  AsyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB> rpc(
-      deadline, this, BackoffType::EXPONENTIAL, req, &resp,
-      &MasterServiceProxy::ListTablesAsync, "ListTables",
-      sync.AsStatusCallback(), {});
-  rpc.SendRpc();
-  RETURN_NOT_OK(sync.Wait());
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  for (int i = 0; i < resp.tables_size(); i++) {
-    tables->push_back(resp.tables(i).name());
-  }
-  return Status::OK();
-}
-
-Status KuduClient::ListTables(std::vector<ListTableInfo>* list_table_infos,
-                              const std::string& filter) {
-  ListTablesRequestPB req;
-  ListTablesResponsePB resp;
-
-  if (!filter.empty()) {
-    req.set_name_filter(filter);
-  }
-  MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  Synchronizer sync;
-  AsyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB> rpc(
-    deadline, this, BackoffType::EXPONENTIAL, req, &resp,
-    &MasterServiceProxy::ListTablesAsync, "ListTables",
-    sync.AsStatusCallback(), {});
-  rpc.SendRpc();
-    RETURN_NOT_OK(sync.Wait());
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  for (const auto& table : resp.tables()) {
-    ListTableInfo list_table_info;
-    list_table_info.table_name = table.name();
-    list_table_info.live_row_count = table.has_live_row_count() ? table.live_row_count() : 0;
-    list_table_info.num_tablets = table.has_num_tablets() ? table.num_tablets() : 0;
-    list_table_info.num_replicas = table.has_num_replicas() ? table.num_replicas() : 0;
-    list_table_infos->emplace_back(std::move(list_table_info));
+Status KuduClient::ListTables(vector<string>* tables, const string& filter) {
+  vector<Data::TableInfo> tables_info;
+  RETURN_NOT_OK(data_->ListTablesWithInfo(this, &tables_info, filter));
+  for (auto& info : tables_info) {
+    tables->emplace_back(std::move(info.table_name));
   }
   return Status::OK();
 }

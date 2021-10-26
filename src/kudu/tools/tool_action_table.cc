@@ -36,6 +36,7 @@
 #include <google/protobuf/util/json_util.h>
 #include <rapidjson/document.h>
 
+#include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/table_alterer-internal.h"
@@ -103,9 +104,9 @@ DEFINE_string(dst_table, "",
               "If the empty string, use the same name as the source table.");
 DEFINE_bool(list_tablets, false,
             "Include tablet and replica UUIDs in the output");
-DEFINE_bool(list_statistics, false,
-            "Include statistics such as number of tablets, replicas"
-            "and live row count in the output");
+DEFINE_bool(show_table_info, false,
+            "Include extra information such as number of tablets, replicas, "
+            "and live row count for a table in the output");
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
@@ -142,17 +143,18 @@ class TableLister {
     RETURN_NOT_OK(CreateKuduClient(master_addresses,
                                    &client,
                                    true /* can_see_all_replicas */));
-    std::vector<kudu::client::KuduClient::ListTableInfo> list_table_infos;
-    RETURN_NOT_OK(client->ListTables(&list_table_infos));
+    vector<kudu::client::KuduClient::Data::TableInfo> tables_info;
+    RETURN_NOT_OK(client->data_->ListTablesWithInfo(
+        client.get(), &tables_info, "" /* filter */));
 
     vector<string> table_filters = Split(FLAGS_tables, ",", strings::SkipEmpty());
-    for (const auto& list_table_info : list_table_infos) {
-      const auto& tname = list_table_info.table_name;
+    for (const auto& tinfo : tables_info) {
+      const auto& tname = tinfo.table_name;
       if (!MatchesAnyPattern(table_filters, tname)) continue;
-      if (FLAGS_list_statistics) {
-        cout << tname << " " << "Num_Tablets:" << list_table_info.num_tablets
-             << " Num_Replicas:" << list_table_info.num_replicas
-             << " Live_Row_Count:" << list_table_info.live_row_count << endl;
+      if (FLAGS_show_table_info) {
+        cout << tname << " " << "num_tablets:" << tinfo.num_tablets
+             << " num_replicas:" << tinfo.num_replicas
+             << " live_row_count:" << tinfo.live_row_count << endl;
       } else {
         cout << tname << endl;
       }
@@ -1327,7 +1329,7 @@ unique_ptr<Mode> BuildTableMode() {
       .Description("List tables")
       .AddOptionalParameter("tables")
       .AddOptionalParameter("list_tablets")
-      .AddOptionalParameter("list_statistics")
+      .AddOptionalParameter("show_table_info")
       .Build();
 
   unique_ptr<Action> locate_row =

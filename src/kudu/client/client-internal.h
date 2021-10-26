@@ -136,6 +136,16 @@ class KuduClient::Data {
                                           master::TableIdentifierPB table,
                                           const MonoTime& deadline);
 
+  struct TableInfo {
+    std::string table_name;
+    uint64_t live_row_count;
+    int num_tablets;
+    int num_replicas;
+  };
+  static Status ListTablesWithInfo(KuduClient* client,
+                                   std::vector<TableInfo>* tables_info,
+                                   const std::string& filter);
+
   // Open the table identified by 'table_identifier'.
   Status OpenTable(KuduClient* client,
                    const master::TableIdentifierPB& table_identifier,
