@@ -225,13 +225,9 @@ Status Master::Init() {
 }
 
 Status Master::Start() {
-  Timer* init_master_catalog =
-      startup_path_handler_->initialize_master_catalog_progress();
-  init_master_catalog->Start();
   RETURN_NOT_OK(StartAsync());
   RETURN_NOT_OK(WaitForCatalogManagerInit());
   google::FlushLogFiles(google::INFO); // Flush the startup messages.
-  init_master_catalog->Stop();
   return Status::OK();
 }
 
@@ -281,11 +277,13 @@ Status Master::StartAsync() {
 }
 
 void Master::InitCatalogManagerTask() {
+  startup_path_handler_->initialize_master_catalog_progress()->Start();
   Status s = InitCatalogManager();
   if (!s.ok()) {
     LOG(ERROR) << "Unable to init master catalog manager: " << s.ToString();
   }
   catalog_manager_init_status_.Set(s);
+  startup_path_handler_->initialize_master_catalog_progress()->Stop();
 }
 
 Status Master::InitCatalogManager() {

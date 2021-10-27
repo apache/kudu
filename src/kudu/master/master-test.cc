@@ -18,6 +18,7 @@
 #include "kudu/master/master.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <ctime>
 #include <functional>
@@ -370,6 +371,50 @@ TEST_F(MasterTest, TestResetBlockCacheMetricsInSameProcess) {
       // non-zero metrics for the block cache.
       ASSERT_STR_MATCHES(raw, ".*\"value\": [1-9].*");
   });
+}
+
+TEST_F(MasterTest, TestStartupWebPage) {
+  EasyCurl c;
+  faststring buf;
+  string addr = mini_master_->bound_http_addr().ToString();
+  mini_master_->Shutdown();
+  std::atomic<bool> run_status_reader = false;
+  thread read_startup_page([&] {
+    EasyCurl thread_c;
+    faststring thread_buf;
+    while (!run_status_reader) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+      if (!(thread_c.FetchURL(strings::Substitute("http://$0/startup", addr), &thread_buf)).ok()) {
+        continue;
+      }
+      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"init_status\":(100|0)( |,)");
+      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"read_filesystem_status\":(100|0)( |,)");
+      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"read_instance_metadatafiles_status\""
+                                                    ":(100|0)( |,)");
+      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"read_data_directories_status\":"
+                                                    "([0-9]|[1-9][0-9]|100)( |,)");
+      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"initialize_master_catalog_status\":"
+                                                    "([0-9]|[1-9][0-9]|100)( |,)");
+      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"start_rpc_server_status\":(100|0)( |,)");
+    }
+  });
+  SCOPED_CLEANUP({
+    run_status_reader = true;
+    read_startup_page.join();
+  });
+
+  ASSERT_OK(mini_master_->Restart());
+  ASSERT_OK(mini_master_->WaitForCatalogManagerInit());
+  run_status_reader = true;
+
+  // After all the steps have been completed, ensure every startup step has 100 percent status
+  ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/startup", addr), &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"init_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_filesystem_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_instance_metadatafiles_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_data_directories_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"initialize_master_catalog_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"start_rpc_server_status\":100");
 }
 
 TEST_F(MasterTest, TestRegisterAndHeartbeat) {
