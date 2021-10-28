@@ -189,17 +189,68 @@ TEST_F(MasterOptionsTest, TestSingleMasterForRaftConfigUpgrade) {
   // result in master bring up error.
   cluster.mini_master()->Shutdown();
   cluster.mini_master()->SetMasterAddresses(
-      {master_addresses[0], HostPort("master-2", Master::kDefaultPort)});
+      {master_addresses[0],
+          HostPort("master-2", Master::kDefaultPort),
+          HostPort("master-3", Master::kDefaultPort),
+      });
   // For multi-master configuration, as derived from --master_addresses flag, Restart()
   // doesn't wait for catalog manager init.
   s = cluster.mini_master(0)->Restart();
   ASSERT_TRUE(s.ok() || s.IsInvalidArgument());
   s = cluster.mini_master(0)->master()->WaitForCatalogManagerInit();
-  ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_MATCHES(s.ToString(),
                      "Unable to initialize catalog manager: Failed to initialize sys tables async.*"
                      "Their symmetric difference is: master-2.*");
 }
+
+TEST_F(MasterOptionsTest, TestAddSingleMaster) {
+  InternalMiniClusterOptions opts;
+  opts.num_masters = 2;
+  opts.supply_single_master_addr = false;
+  InternalMiniCluster cluster(env_, opts);
+  ASSERT_OK(cluster.Start());
+
+  const vector<HostPort> master_addresses =
+      { HostPort(cluster.mini_master(0)->bound_rpc_addr()),
+        HostPort(cluster.mini_master(1)->bound_rpc_addr()),
+      };
+
+  cluster.mini_master(0)->Shutdown();
+  cluster.mini_master(0)->SetMasterAddresses({
+      master_addresses[0],
+      master_addresses[1],
+      HostPort("master-2", Master::kDefaultPort)
+  });
+
+  Status s = cluster.mini_master(0)->Restart();
+  ASSERT_TRUE(s.ok());
+  ASSERT_OK(cluster.mini_master(0)->master()->WaitForCatalogManagerInit());
+}
+
+TEST_F(MasterOptionsTest, TestRemoveMaster) {
+  InternalMiniClusterOptions opts;
+  opts.num_masters = 3;
+  opts.supply_single_master_addr = false;
+  InternalMiniCluster cluster(env_, opts);
+  ASSERT_OK(cluster.Start());
+
+  const vector<HostPort> master_addresses = cluster.master_rpc_addrs();
+
+  cluster.mini_master(0)->Shutdown();
+  cluster.mini_master(0)->SetMasterAddresses({
+      master_addresses[0],
+      master_addresses[1]
+  });
+
+  Status s = cluster.mini_master(0)->Restart();
+  ASSERT_TRUE(s.ok() || s.IsInvalidArgument());
+  s = cluster.mini_master(0)->master()->WaitForCatalogManagerInit();
+  ASSERT_STR_CONTAINS(s.ToString(), "Unable to initialize catalog manager");
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "If trying to remove one or more masters from the cluster,"
+                      " please follow the documented steps to do so.");
+}
+
 
 } // namespace master
 } // namespace kudu

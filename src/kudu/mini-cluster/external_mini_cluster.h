@@ -504,10 +504,6 @@ class ExternalMiniCluster : public MiniCluster {
   const std::string& dns_overrides() const {
     return dns_overrides_;
   }
-
- private:
-  Status StartMasters();
-
   // Constructs an ExternalMaster based on 'opts_' but with the given set of
   // master addresses, giving the new master the address in the list
   // corresponding to 'idx'. Callers are expected to call Start() with the
@@ -517,6 +513,9 @@ class ExternalMiniCluster : public MiniCluster {
   // the master can be run with the --rpc_reuseport flag.
   Status CreateMaster(const std::vector<HostPort>& master_rpc_addrs, int idx,
                       scoped_refptr<ExternalMaster>* master);
+
+ private:
+  Status StartMasters();
 
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();

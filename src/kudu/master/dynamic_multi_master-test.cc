@@ -35,6 +35,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <kudu/gutil/strings/util.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
@@ -1711,6 +1712,62 @@ TEST_F(AutoAddMasterTest, TestAddWithOnGoingDdl) {
     ASSERT_TRUE(e.IsInvalidArgument()) << e.ToString();
     ASSERT_STR_CONTAINS(e.ToString(), "not enough live tablet servers");
   }
+}
+
+TEST_F(AutoAddMasterTest, TestAddNewMaster) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // Let's get the current master addresses and add a new one to them
+  vector<HostPort> master_addrs = cluster_->master_rpc_addrs();
+  unique_ptr<Socket> reserved_socket;
+  ASSERT_OK(MiniCluster::ReserveDaemonSocket(
+      MiniCluster::DaemonType::MASTER,
+      master_addrs.size(),
+      opts_.bind_mode,
+      &reserved_socket));
+
+  Sockaddr addr;
+  ASSERT_OK(reserved_socket->GetSocketAddress(&addr));
+  master_addrs.emplace_back(addr.host(), addr.port());
+
+  const auto& new_master_addrs_list =
+      HostPort::ToCommaSeparatedString(master_addrs);
+
+  cluster_->Shutdown();
+
+  // We have to remove the previous '--master_addresses' flag to ensure there
+  // are no duplicates, then we set the new addresses on the existing masters.
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    auto* flags = cluster_->master(i)->mutable_flags();
+    flags->erase(
+        remove_if(flags->begin(),
+                  flags->end(),
+                  [](const string &s) {
+                    return HasPrefixString(s, "--master_addresses=");
+                  }), flags->end());
+  }
+
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    cluster_->master(i)->mutable_flags()->emplace_back(
+      Substitute("--master_addresses=$0", new_master_addrs_list));
+  }
+
+  // Starting up the two existing masters with three addresses should cause no
+  // issues.
+  ASSERT_OK(cluster_->Restart());
+  ASSERT_OK(cluster_->master(0)->WaitForCatalogManager());
+
+  // Let's create the new master and start it to ensure it starts up okay.
+  scoped_refptr<ExternalMaster> peer;
+  auto idx = cluster_->master_rpc_addrs().size();
+  ASSERT_OK(cluster_->CreateMaster(master_addrs, idx, &peer));
+  ASSERT_OK(peer->Start());
+  ASSERT_OK(peer->WaitForCatalogManager());
+  auto expected_num_masters = ++idx;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(VerifyVotersOnAllMasters(expected_num_masters, cluster_.get()));
+  });
+  NO_FATALS(cluster_->AssertNoCrashes());
 }
 
 class ParameterizedAutoAddMasterTest : public AutoAddMasterTest,

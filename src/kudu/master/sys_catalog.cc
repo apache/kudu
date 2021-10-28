@@ -291,14 +291,31 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
                                   peer_addrs_from_disk.begin(),
                                   peer_addrs_from_disk.end(),
                                   back_inserter(symm_diff));
-    if (!symm_diff.empty()) {
-      string msg = Substitute(
-          "on-disk master list ($0) and provided master list ($1) differ. "
-          "Their symmetric difference is: $2",
-          JoinStrings(peer_addrs_from_disk, ", "),
-          JoinStrings(peer_addrs_from_opts, ", "),
-          JoinStrings(symm_diff, ", "));
-      return Status::InvalidArgument(msg);
+
+
+    // We should prevent starting with fewer masters than previously. This way if the user wants to
+    // remove a master they would have to do it manually.
+    if (peer_addrs_from_opts.size() < peer_addrs_from_disk.size()) {
+      return Status::InvalidArgument(
+          Substitute("on-disk master list ($0) has more entries than provided master "
+                     "list ($1). Their symmetric difference is: $2. "
+                     "If trying to remove one or more masters from the cluster, please follow the "
+                     "documented steps to do so.",
+                     JoinStrings(peer_addrs_from_disk, ", "),
+                     JoinStrings(peer_addrs_from_opts, ", "),
+                     JoinStrings(symm_diff, ", ")));
+    }
+    if (symm_diff.size() > 1) {
+      return Status::InvalidArgument(
+          Substitute(
+              "on-disk master list ($0) and provided master list ($1) differ by more "
+              "than one address. Their symmetric difference is: $2",
+              JoinStrings(peer_addrs_from_disk, ", "),
+              JoinStrings(peer_addrs_from_opts, ", "),
+              JoinStrings(symm_diff, ", ")));
+    }
+    if (symm_diff.size() == 1) {
+      LOG(INFO) << Substitute("Detected one additional master provided: $0", symm_diff[0]);
     }
   }
 
