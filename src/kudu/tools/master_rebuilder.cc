@@ -19,7 +19,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -198,9 +197,13 @@ void MasterRebuilder::CreateTable(const ListTabletsResponsePB::StatusAndSchemaPB
   table_metadata->mutable_schema()->CopyFrom(replica.schema());
   table_metadata->mutable_partition_schema()->CopyFrom(replica.partition_schema());
 
-  // We can't tell what the next column id should be, so we guess something so
-  // large we're almost certainly OK.
-  table_metadata->set_next_column_id(std::numeric_limits<int32_t>::max() / 2);
+  int32_t max_column_id = 0;
+  for (const auto& column : replica.schema().columns()) {
+    if (column.has_id() && max_column_id < column.id()) {
+      max_column_id = column.id();
+    }
+  }
+  table_metadata->set_next_column_id(max_column_id + 1);
   table_metadata->set_state(SysTablesEntryPB::RUNNING);
   table_metadata->set_state_msg("reconstructed by MasterRebuilder");
   table->mutable_metadata()->CommitMutation();
@@ -213,14 +216,19 @@ Status MasterRebuilder::CheckTableConsistency(
   const string& table_name = replica.tablet_status().table_name();
   scoped_refptr<TableInfo> table = FindOrDie(tables_by_name_, table_name);
 
-  TableMetadataLock l_table(table.get(), LockMode::READ);
-  const SysTablesEntryPB& metadata = table->metadata().state().pb;
+  TableMetadataLock l_table(table.get(), LockMode::WRITE);
+  SysTablesEntryPB* metadata = &table->mutable_metadata()->mutable_dirty()->pb;
+
+  // Update next_column_id if needed.
+  Schema schema_from_replica;
+  RETURN_NOT_OK(SchemaFromPB(replica.schema(), &schema_from_replica));
+  if (schema_from_replica.max_col_id() + 1 > metadata->next_column_id()) {
+    metadata->set_next_column_id(schema_from_replica.max_col_id() + 1);
+  }
 
   // Check the schemas match.
   Schema schema_from_table;
-  Schema schema_from_replica;
-  RETURN_NOT_OK(SchemaFromPB(metadata.schema(), &schema_from_table));
-  RETURN_NOT_OK(SchemaFromPB(replica.schema(), &schema_from_replica));
+  RETURN_NOT_OK(SchemaFromPB(metadata->schema(), &schema_from_table));
   if (schema_from_table != schema_from_replica) {
     LOG(WARNING) << Substitute("Schema mismatch for tablet $0 of table $1", tablet_id, table_name);
     LOG(WARNING) << Substitute("Table schema: $0", schema_from_table.ToString());
@@ -231,7 +239,7 @@ Status MasterRebuilder::CheckTableConsistency(
   // Check the partition schemas match.
   PartitionSchema pschema_from_table;
   PartitionSchema pschema_from_replica;
-  RETURN_NOT_OK(PartitionSchema::FromPB(metadata.partition_schema(),
+  RETURN_NOT_OK(PartitionSchema::FromPB(metadata->partition_schema(),
                                         schema_from_table,
                                         &pschema_from_table));
   RETURN_NOT_OK(PartitionSchema::FromPB(replica.partition_schema(),

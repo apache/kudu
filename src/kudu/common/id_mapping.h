@@ -70,10 +70,8 @@ class IdMapping {
   // NOLINT on this function definition because it thinks we're calling
   // std::swap instead of defining it.
   void swap(IdMapping& other) { // NOLINT(*)
-    uint64_t tmp = other.mask_;
-    other.mask_ = mask_;
-    mask_ = tmp;
-    other.entries_.swap(entries_);
+    std::swap(mask_, other.mask_);
+    entries_.swap(other.entries_);
   }
 
   int operator[](int key) const {
@@ -128,9 +126,11 @@ class IdMapping {
 
   void DoubleCapacity() {
     int new_capacity = capacity() * 2;
+    DCHECK_GE(new_capacity, 0);
     std::vector<value_type> entries(new_capacity);
     ClearMap(&entries);
     mask_ = new_capacity - 1;
+    DCHECK_EQ(mask_ & new_capacity, 0);
     entries.swap(entries_);
 
     for (const auto& entry : entries) {

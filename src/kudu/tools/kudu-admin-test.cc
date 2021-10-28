@@ -94,6 +94,7 @@ using kudu::client::KuduInsert;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::KuduValue;
 using kudu::client::sp::shared_ptr;
@@ -2983,7 +2984,7 @@ TEST_F(AdminCliTest, TestRebuildMasterWithTombstones) {
   ValueDeleter deleter(&ts_map);
   // Find the single tablet replica and tombstone it.
   string tablet_id;
-  TServerDetails* ts_details;
+  TServerDetails* ts_details = nullptr;
   for (const auto& id_and_details : ts_map) {
     vector<string> tablet_ids;
     ts_details = id_and_details.second;
@@ -3082,7 +3083,7 @@ TEST_P(SecureClusterAdminCliParamTest, TestRebuildMaster) {
   FLAGS_num_replicas = 3;
 
   // Create a table and insert some rows
-  NO_FATALS(MakeTestTable(kPreRebuildTableName, kNumRows, 3, cluster_.get()));
+  NO_FATALS(MakeTestTable(kPreRebuildTableName, kNumRows, /*num_replicas*/3, cluster_.get()));
 
   // Scan the table to strings so we can check it isn't corrupted post-rebuild.
   vector<string> rows;
@@ -3134,7 +3135,61 @@ TEST_P(SecureClusterAdminCliParamTest, TestRebuildMaster) {
   ASSERT_OK(client_->DeleteTable(kPreRebuildTableName));
 
   // Make sure we can create a table and write to it.
-  NO_FATALS(MakeTestTable(kPostRebuildTableName, kNumRows, 3, cluster_.get()));
+  NO_FATALS(MakeTestTable(kPostRebuildTableName, kNumRows, /*num_replicas*/3, cluster_.get()));
+  NO_FATALS(cv.CheckCluster());
+}
+
+TEST_P(SecureClusterAdminCliParamTest, TestRebuildMasterAndAddColumns) {
+  bool is_secure = GetParam();
+  constexpr const char* kTableName = "rebuild_and_add_columns";
+  constexpr int kNumRows = 10000;
+
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+
+  // Create a table and insert some rows
+  NO_FATALS(MakeTestTable(kTableName, kNumRows, /*num_replicas*/3, cluster_.get()));
+
+  // Shut down the master and wipe out its data.
+  NO_FATALS(cluster_->master()->Shutdown());
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+
+  // Rebuild the master with the tool.
+  string stdout;
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, is_secure), &stdout));
+  ASSERT_STR_CONTAINS(stdout,
+                      "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 3 replicas, of which 0 had errors");
+
+  // Restart the master and the tablet servers.
+  // The tablet servers must be restarted so they accept the new master's certs.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  ASSERT_OK(cluster_->Restart());
+
+  // The client has to be rebuilt since there's a new master.
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+
+  // Make sure we can add columns to the table we rebuilt.
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  for (int i = 0; i < 10; i++) {
+    table_alterer->AddColumn(Substitute("c$0", i))->Type(KuduColumnSchema::INT32);
+  }
+  ASSERT_OK(table_alterer->Alter());
+
+  // Check the altered table is readable.
+  {
+    vector<string> rows;
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+    ScanTableToStrings(table.get(), &rows);
+  }
+
+  // The cluster should still be considered healthy.
+  FLAGS_sasl_protocol_name = kPrincipal;
+  ClusterVerifier cv(cluster_.get());
   NO_FATALS(cv.CheckCluster());
 }
 

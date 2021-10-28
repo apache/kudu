@@ -102,6 +102,8 @@ class MasterRebuilder {
   // metadata for its table or tablet, returning an error if the input
   // 'replica' is inconsistent with existing metadata collected for the same
   // tablet or table.
+  // Before checking inconsistent, table's next_column_id will be updated if
+  // found a larger one in 'replica'.
   Status CheckTableConsistency(const tserver::ListTabletsResponsePB::StatusAndSchemaPB& replica);
   Status CheckTabletConsistency(const tserver::ListTabletsResponsePB::StatusAndSchemaPB& replica);
 
