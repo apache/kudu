@@ -45,10 +45,10 @@ if (NOT NO_CHRONY)
   # Link the chrony binaries so that they can be found via
   # MiniChronyd::GetPath in MiniChronyd::Start.
   execute_process(COMMAND ln -nsf
-                  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/bin/chronyc"
+                  "${THIRDPARTY_DIR}/installed/common/bin/chronyc"
                   "${EXECUTABLE_OUTPUT_PATH}/chronyc")
   execute_process(COMMAND ln -nsf
-                  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/sbin/chronyd"
+                  "${THIRDPARTY_DIR}/installed/common/sbin/chronyd"
                   "${EXECUTABLE_OUTPUT_PATH}/chronyd")
 
   set(MINI_CHRONYD_SRCS test/mini_chronyd.cc)

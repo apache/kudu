@@ -149,12 +149,17 @@ if [ "$BUILD_TYPE" = "TSAN" ]; then
   export KUDU_USE_TSAN=1
 fi
 
+SOURCE_ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
+BUILD_ROOT=$SOURCE_ROOT/build/$BUILD_TYPE_LOWER
+
 export KUDU_FLAKY_TEST_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 export PARALLEL=${PARALLEL:-$(getconf _NPROCESSORS_ONLN)}
 export PARALLEL_TESTS=${PARALLEL_TESTS:-$PARALLEL}
+export THIRDPARTY_DIR=${THIRDPARTY_DIR:-$SOURCE_ROOT/thirdparty}
+
 BUILD_JAVA=${BUILD_JAVA:-1}
 BUILD_GRADLE=${BUILD_GRADLE:-1}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
@@ -167,9 +172,6 @@ if [ ! -w "$TEST_TMPDIR" ]; then
   echo "Error: Test output directory ($TEST_TMPDIR) is not writable on $(hostname) by user $(whoami)"
   exit 1
 fi
-
-SOURCE_ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
-BUILD_ROOT=$SOURCE_ROOT/build/$BUILD_TYPE_LOWER
 
 # Remove testing artifacts from the previous run before we do anything
 # else. Otherwise, if we fail during the "build" step, Jenkins will
@@ -312,16 +314,18 @@ if [ "$BUILD_TYPE" = "TSAN" ]; then
   THIRDPARTY_TYPE=tsan
 fi
 
-# The settings for PARALLEL (see above) also affects the thirdparty build.
-$SOURCE_ROOT/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh $THIRDPARTY_TYPE
+if [ ! -n "${NO_REBUILD_THIRDPARTY}" ]; then
+  # The settings for PARALLEL (see above) also affects the thirdparty build.
+  $SOURCE_ROOT/build-support/enable_devtoolset.sh $THIRDPARTY_DIR/build-if-necessary.sh $THIRDPARTY_TYPE
+fi
 
-THIRDPARTY_BIN=$(pwd)/thirdparty/installed/common/bin
+THIRDPARTY_BIN=$THIRDPARTY_DIR/installed/common/bin
 export PPROF_PATH=$THIRDPARTY_BIN/pprof
 
 if which ccache >/dev/null ; then
   CLANG=$(pwd)/build-support/ccache-clang/clang
 else
-  CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
+  CLANG=$THIRDPARTY_DIR/clang-toolchain/bin/clang
 fi
 
 # Make sure we use JDK8
@@ -517,7 +521,7 @@ if [ "$DO_COVERAGE" == "1" ]; then
   echo
   echo Generating coverage report...
   echo ------------------------------------------------------------
-  if ! $SOURCE_ROOT/thirdparty/installed/common/bin/gcovr \
+  if ! $THIRDPARTY_DIR/installed/common/bin/gcovr \
       -r $SOURCE_ROOT \
       --gcov-filter='.*src#kudu.*' \
       --gcov-executable=$SOURCE_ROOT/build-support/llvm-gcov-wrapper \

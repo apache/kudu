@@ -85,6 +85,8 @@ import re
 import subprocess
 import sys
 import unittest
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from kudu_util import get_thirdparty_dir
 
 
 def iwyu_formatter(output):
@@ -232,7 +234,7 @@ def workaround_add_libcpp(build_dir, command):
     #
     # Some sanitizer builds (like TSAN) already include libc++; if the command
     # already has a flag including libc++, we don't want to add it again.
-    path_to_libcpp_prefix = os.path.join(build_dir, "..", "..", "thirdparty", "installed")
+    path_to_libcpp_prefix = os.path.join(get_thirdparty_dir(), "installed")
     path_to_libcpp_suffix = os.path.join("include", "c++", "v1")
     tp_pattern = os.path.join(path_to_libcpp_prefix, "*", path_to_libcpp_suffix)
     found = False

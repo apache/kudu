@@ -33,16 +33,16 @@ import sys
 import unittest
 import tempfile
 
-from kudu_util import init_logging
+from kudu_util import init_logging, get_thirdparty_dir
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 BUILD_PATH = os.path.join(ROOT, "build", "latest")
 
 CLANG_TIDY_DIFF = os.path.join(
-    ROOT, "thirdparty/installed/uninstrumented/share/clang/clang-tidy-diff.py")
+    get_thirdparty_dir(), "installed/uninstrumented/share/clang/clang-tidy-diff.py")
 CLANG_TIDY = os.path.join(
-    ROOT, "thirdparty/clang-toolchain/bin/clang-tidy")
+    get_thirdparty_dir(), "clang-toolchain/bin/clang-tidy")
 
 GERRIT_USER = 'tidybot'
 GERRIT_PASSWORD = os.getenv('TIDYBOT_PASSWORD')

@@ -54,10 +54,10 @@ target_link_libraries(kudu_hms ${HMS_DEPS})
 # Link the home directories, so that they can be found via
 # test_util::FindHomeDir in MiniHms::Start.
 execute_process(COMMAND ln -nsf
-                "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hive"
+                "${THIRDPARTY_DIR}/installed/common/opt/hive"
                 "${EXECUTABLE_OUTPUT_PATH}/hive-home")
 execute_process(COMMAND ln -nsf
-                "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hadoop"
+                "${THIRDPARTY_DIR}/installed/common/opt/hadoop"
                 "${EXECUTABLE_OUTPUT_PATH}/hadoop-home")
 execute_process(COMMAND ln -nsf
                 "${JAVA_HOME}"

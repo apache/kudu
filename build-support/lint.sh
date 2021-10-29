@@ -50,7 +50,8 @@ fi
 cpplint_filter="+runtime/broken_libstdcpp_regex,-whitespace/comments,-readability/todo,-readability/inheritance,-build/header_guard,-build/include_order,-legal/copyright,-build/c++11,-readability/nolint"
 
 cd $ROOT
-$ROOT/thirdparty/installed/common/bin/cpplint.py \
+THIRDPARTY_DIR=${THIRDPARTY_DIR:-$ROOT/thirdparty}
+${THIRDPARTY_DIR}/installed/common/bin/cpplint.py \
   --verbose=4 \
   --filter=$cpplint_filter \
   $FILES 2>&1 | grep -v 'Done processing' | tee $TMP

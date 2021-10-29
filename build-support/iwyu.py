@@ -30,7 +30,8 @@ import re
 import subprocess
 import sys
 
-from kudu_util import get_upstream_commit, check_output, ROOT, Colors, init_logging
+from kudu_util import get_upstream_commit, check_output, ROOT, Colors, \
+  init_logging, get_thirdparty_dir
 import iwyu.fix_includes
 from iwyu.fix_includes import ParseAndMergeIWYUOutput
 
@@ -44,7 +45,7 @@ script in order to fix any reported issues.
 """
 
 _MAPPINGS_DIR = os.path.join(ROOT, "build-support/iwyu/mappings/")
-_TOOLCHAIN_DIR = os.path.join(ROOT, "thirdparty/clang-toolchain/bin")
+_TOOLCHAIN_DIR = os.path.join(get_thirdparty_dir(), "clang-toolchain/bin")
 _IWYU_TOOL = os.path.join(ROOT, "build-support/iwyu/iwyu_tool.py")
 
 # Matches source files that we should run on.
@@ -129,7 +130,7 @@ def _relativize_paths(paths):
 
 
 def _get_thirdparty_include_dirs():
-  return glob.glob(os.path.join(ROOT, "thirdparty", "installed", "*", "include"))
+  return glob.glob(os.path.join(get_thirdparty_dir(), "installed", "*", "include"))
 
 
 def _get_fixer_flags(flags):

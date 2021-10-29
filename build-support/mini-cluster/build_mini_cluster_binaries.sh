@@ -84,13 +84,14 @@ if [ -d "$BUILD_ROOT" ]; then
   fi
 fi
 
+THIRDPARTY_DIR=${THIRDPARTY_DIR:-$BASE_DIR/thirdparty}
 cd $SOURCE_ROOT
 if [ -n "$NO_REBUILD_THIRDPARTY" ]; then
   echo Skipping thirdparty because NO_REBUILD_THIRDPARTY is not empty
 else
   echo Building thirdparty... >&2
   $SOURCE_ROOT/build-support/enable_devtoolset.sh \
-    ./thirdparty/build-if-necessary.sh
+    $THIRDPARTY_DIR/build-if-necessary.sh
 fi
 
 mkdir -p $BUILD_ROOT
@@ -121,7 +122,7 @@ rm -rf CMakeCache.txt CMakeFiles
 # with the mini-cluster.
 echo Configuring Kudu... >&2
 $SOURCE_ROOT/build-support/enable_devtoolset.sh \
-  $SOURCE_ROOT/thirdparty/installed/common/bin/cmake ../.. \
+  $THIRDPARTY_DIR/installed/common/bin/cmake ../.. \
   -DNO_TESTS=1 -DNO_CHRONY=1 \
   -DCMAKE_BUILD_TYPE=RELEASE -DKUDU_LINK=dynamic $EXTRA_CMAKE_FLAGS
 
@@ -191,7 +192,7 @@ if [ $MACOS ]; then
   JAR_LICENSE=$MINI_CLUSTER_SRCDIR/LICENSE-BINARY-JAR-OSX.txt
 fi
 cat $SOURCE_ROOT/LICENSE.txt \
-    $SOURCE_ROOT/thirdparty/LICENSE.txt \
+    $THIRDPARTY_DIR/LICENSE.txt \
     $JAR_LICENSE \
     > $ARTIFACT_NAME/LICENSE.txt
 

@@ -17,5 +17,6 @@
 # under the License.
 
 ROOT=$(dirname $BASH_SOURCE)/../..
-CLANG=$ROOT/thirdparty/clang-toolchain/bin/clang++
+THIRDPARTY_DIR=${THIRDPARTY_DIR:-$ROOT/thirdparty}
+CLANG=${THIRDPARTY_DIR}/clang-toolchain/bin/clang++
 CCACHE_CPP2=yes exec ccache $CLANG -Qunused-arguments `test -t 2 && echo -fcolor-diagnostics` "$@"

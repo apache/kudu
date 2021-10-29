@@ -52,10 +52,10 @@ target_link_libraries(kudu_ranger ${RANGER_DEPS})
 #######################################
 
 execute_process(COMMAND ln -nsf
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/ranger"
+  "${THIRDPARTY_DIR}/installed/common/opt/ranger"
   "${EXECUTABLE_OUTPUT_PATH}/ranger-home")
 execute_process(COMMAND ln -nsf
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hadoop"
+  "${THIRDPARTY_DIR}/installed/common/opt/hadoop"
   "${EXECUTABLE_OUTPUT_PATH}/hadoop-home")
 execute_process(COMMAND ln -nsf
   "${JAVA_HOME}"

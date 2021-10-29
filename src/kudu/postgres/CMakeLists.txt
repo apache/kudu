@@ -20,16 +20,16 @@
 #######################################
 
 execute_process(COMMAND ln -nsf
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/bin"
+  "${THIRDPARTY_DIR}/installed/common/bin"
   "${EXECUTABLE_OUTPUT_PATH}/postgres")
 execute_process(COMMAND ln -nsf
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/lib"
+  "${THIRDPARTY_DIR}/installed/common/lib"
   "${EXECUTABLE_OUTPUT_PATH}/postgres-lib")
 execute_process(COMMAND ln -nsf
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/share/postgresql"
+  "${THIRDPARTY_DIR}/installed/common/share/postgresql"
   "${EXECUTABLE_OUTPUT_PATH}/postgres-share")
 execute_process(COMMAND ln -nsf
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/jdbc/postgresql.jar"
+  "${THIRDPARTY_DIR}/installed/common/opt/jdbc/postgresql.jar"
   "${EXECUTABLE_OUTPUT_PATH}/postgresql.jar")
 
 add_library(mini_postgres

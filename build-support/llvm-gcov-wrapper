@@ -20,4 +20,5 @@
 # gcovr can call it.
 
 SOURCE_ROOT=$(cd $(dirname "$BASH_SOURCE")/..; pwd)
-exec $SOURCE_ROOT/thirdparty/clang-toolchain/bin/llvm-cov gcov "$@"
+THIRDPARTY_DIR=${THIRDPARTY_DIR:-$SOURCE_ROOT/thirdparty}
+exec $THIRDPARTY_DIR/clang-toolchain/bin/llvm-cov gcov "$@"

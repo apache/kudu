@@ -114,3 +114,8 @@ def get_my_email():
   """ Return the email address in the user's git config. """
   return check_output(['git', 'config', '--get',
       'user.email']).strip().decode('utf-8')
+
+
+def get_thirdparty_dir():
+  env = os.environ.copy()
+  return env['THIRDPARTY_DIR'] if env.has_key('THIRDPARTY_DIR') else os.path.join(ROOT, "thirdparty")

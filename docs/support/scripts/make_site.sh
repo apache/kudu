@@ -73,8 +73,9 @@ if [ -z "$GIT_REMOTE" ]; then
   usage
 fi
 
+THIRDPARTY_DIR=${THIRDPARTY_DIR:-$SOURCE_ROOT/thirdparty}
 # Build Kudu thirdparty
-$SOURCE_ROOT/build-support/enable_devtoolset.sh $SOURCE_ROOT/thirdparty/build-if-necessary.sh
+$SOURCE_ROOT/build-support/enable_devtoolset.sh $THIRDPARTY_DIR/build-if-necessary.sh
 echo "Successfully built third-party dependencies."
 
 # Build the binaries so we can auto-generate the command-line references
