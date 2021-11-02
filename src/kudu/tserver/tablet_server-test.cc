@@ -199,6 +199,7 @@ DECLARE_int32(rpc_service_queue_length);
 DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_ttl_ms);
+DECLARE_int32(tablet_bootstrap_inject_latency_ms);
 DECLARE_int32(tablet_inject_latency_on_apply_write_op_ms);
 DECLARE_int32(workload_stats_rate_collection_min_interval_ms);
 DECLARE_int32(workload_stats_metric_collection_interval_ms);
@@ -216,6 +217,8 @@ METRIC_DECLARE_counter(rows_deleted);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
 METRIC_DECLARE_counter(rpcs_timed_out_in_queue);
 METRIC_DECLARE_counter(scanners_expired);
+METRIC_DECLARE_gauge_int32(startup_progress_steps_remaining);
+METRIC_DECLARE_gauge_int64(startup_progress_time_elapsed);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
 METRIC_DECLARE_gauge_size(active_scanners);
@@ -764,6 +767,210 @@ enum class ErrorType {
   CFILE_CORRUPTION,
   KUDU_2233_CORRUPTION,
 };
+
+class TabletServerStartupWebPageTest : public TabletServerTestBase {
+ public:
+  void SetUp() override {
+    NO_FATALS(TabletServerTestBase::SetUp());
+    NO_FATALS(StartTabletServer(kNumDirs));
+    // Create a bunch of tablets with a bunch of rowsets.
+    ObjectIdGenerator oid;
+    for (int i = 0; i < FLAGS_num_tablets; i++) {
+      const auto tablet_id = oid.Next();
+      ASSERT_OK(mini_server_->AddTestTablet(kTableId, tablet_id, schema_));
+      ASSERT_OK(WaitForTabletRunning(tablet_id.c_str()));
+      for (int r = 0; r < FLAGS_num_rowsets_per_tablet; r++) {
+        NO_FATALS(InsertTestRowsDirect(r, 1, tablet_id));
+        scoped_refptr<TabletReplica> replica;
+        ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(tablet_id, &replica));
+        ASSERT_OK(replica->tablet()->Flush());
+      }
+    }
+  }
+ protected:
+  const int kNumDirs = FLAGS_fs_target_data_dirs_per_tablet + 1;
+
+  void IsStatusValid(const string& startup_page_status) {
+    ASSERT_STR_MATCHES(startup_page_status, "\"init_status\":(100|0)( |,)");
+    ASSERT_STR_MATCHES(startup_page_status, "\"read_filesystem_status\":(100|0)( |,)");
+    ASSERT_STR_MATCHES(startup_page_status, "\"read_instance_metadatafiles_status\":(100|0)( |,)");
+    ASSERT_STR_MATCHES(startup_page_status, "\"read_data_directories_status\":"
+                                            "([0-9]|[1-9][0-9]|100)( |,)");
+    ASSERT_STR_MATCHES(startup_page_status,"\"start_tablets_status\":([0-9]|[1-9][0-9]|100)");
+    ASSERT_STR_MATCHES(startup_page_status,"\"start_rpc_server_status\":(100|0)( |,)");
+  }
+
+  void IsStatusComplete(const string& startup_page_status) {
+    ASSERT_STR_CONTAINS(startup_page_status, "\"init_status\":100");
+    ASSERT_STR_CONTAINS(startup_page_status, "\"read_filesystem_status\":100");
+    ASSERT_STR_CONTAINS(startup_page_status, "\"read_instance_metadatafiles_status\":100");
+    ASSERT_STR_CONTAINS(startup_page_status, "\"read_data_directories_status\":100");
+    ASSERT_STR_CONTAINS(startup_page_status, "\"start_tablets_status\":100");
+    ASSERT_STR_CONTAINS(startup_page_status, "\"start_rpc_server_status\":100");
+  }
+
+  void CheckNonZeroMetricIsStable(const string& metric_name) {
+    EasyCurl c;
+    faststring buf;
+    string addr = mini_server_->bound_http_addr().ToString();
+    const auto url = Substitute("http://$0/metrics?metrics=$1", addr, metric_name);
+    ASSERT_OK(c.FetchURL(url, &buf));
+    const auto orig_buf = buf.ToString();
+    ASSERT_STR_NOT_CONTAINS(orig_buf, "\"value\": 0");
+    SleepFor(MonoDelta::FromMilliseconds(10));
+    ASSERT_OK(c.FetchURL(url, &buf));
+    ASSERT_EQ(orig_buf, buf.ToString());
+  }
+};
+
+TEST_F(TabletServerStartupWebPageTest, TestStartupWebPage) {
+  EasyCurl c;
+  faststring buf;
+  const string url = Substitute("http://$0/startup", mini_server_->bound_http_addr().ToString());
+
+  // Verify if the startup status is complete.
+  mini_server_->WaitStarted();
+  ASSERT_OK(c.FetchURL(url, &buf));
+  NO_FATALS(IsStatusComplete(buf.ToString()));
+
+  // Fail a data directory.
+  FsManager* fs_manager = mini_server_->server()->fs_manager();
+  FLAGS_env_inject_eio_globs = fs_manager->GetDataRootDirs()[1];
+  FLAGS_env_inject_eio = 1.0;
+
+  // Restart the tablet server and monitor the startup page contents.
+  tablet_replica_.reset();
+  mini_server_->Shutdown();
+  std::atomic<bool> run_status_reader = false;
+
+  // Hammer the webpage and validate the status percentages.
+  thread read_startup_page([&] {
+    EasyCurl thread_c;
+    faststring thread_buf;
+    while (!run_status_reader) {
+      if (!thread_c.FetchURL(url, &thread_buf).ok()) {
+        continue;
+      }
+      NO_FATALS(IsStatusValid(thread_buf.ToString()));
+    }
+  });
+  SCOPED_CLEANUP({
+    run_status_reader = true;
+    read_startup_page.join();
+  });
+
+  mini_server_->Start();
+  mini_server_->WaitStarted();
+  run_status_reader = true;
+
+  // After the server has startup up, ensure every startup step has 100 percent status.
+  ASSERT_OK(c.FetchURL(url, &buf));
+  NO_FATALS(IsStatusComplete(buf.ToString()));
+}
+
+TEST_F(TabletServerStartupWebPageTest, TestAggregateStartupMetrics) {
+  EasyCurl c;
+  faststring buf;
+  string addr = mini_server_->bound_http_addr().ToString();
+
+  // Verify the startup steps remaining are zero once the server is started up.
+  mini_server_->WaitStarted();
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics?metrics=startup_progress_steps_remaining",
+                                  addr),
+                       &buf));
+  string raw = buf.ToString();
+  ASSERT_STR_MATCHES(raw, "startup_progress_steps_remaining.*\"value\": 0");
+
+  // Fetch time elapsed twice and ensure it is constant.
+  NO_FATALS(CheckNonZeroMetricIsStable("startup_progress_time_elapsed"));
+}
+
+
+TEST_F(TabletServerStartupWebPageTest, TestTabletsMetrics) {
+  EasyCurl c;
+  faststring buf;
+  // Verify if the startup status is complete.
+  mini_server_->WaitStarted();
+  const string url = Substitute("http://$0/metrics", mini_server_->bound_http_addr().ToString());
+  // Validate populated metrics in case of zero tablets during startup.
+  ASSERT_OK(c.FetchURL(url, &buf));
+  string raw = buf.ToString();
+  ASSERT_STR_MATCHES(raw, "tablets_num_total_startup\",\n[ ]+\"value\": 0");
+  ASSERT_STR_MATCHES(raw, "tablets_num_opened_startup\",\n[ ]+\"value\": 0");
+  ASSERT_STR_NOT_CONTAINS(raw, "tablets_opening_time_startup");
+
+  tablet_replica_.reset();
+  mini_server_->Shutdown();
+  ASSERT_OK(mini_server_->Start());
+  ASSERT_OK(mini_server_->WaitStarted());
+
+  // Validate populated metrics in case of non-zero tablets during startup.
+  ASSERT_OK(c.FetchURL(url, &buf));
+  raw = buf.ToString();
+  ASSERT_STR_MATCHES(raw, Substitute("tablets_num_total_startup\",\n[ ]+\"value\": $0",
+                                     FLAGS_num_tablets + 1));
+  ASSERT_STR_MATCHES(raw, Substitute("tablets_num_opened_startup\",\n[ ]+\"value\": $0",
+                                     FLAGS_num_tablets + 1));
+
+  // Fetch time taken twice and ensure it is constant.
+  NO_FATALS(CheckNonZeroMetricIsStable("tablets_opening_time_startup"));
+}
+
+TEST_F(TabletServerStartupWebPageTest, TestLogBlockContainerMetrics) {
+
+  EasyCurl c;
+  faststring buf;
+  mini_server_->WaitStarted();
+  string addr = mini_server_->bound_http_addr().ToString();
+  // Validate populated metrics in case of zero containers during startup.
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics", addr), &buf));
+  string raw = buf.ToString();
+  if (mini_server_->options()->fs_opts.block_manager_type == "log") {
+    ASSERT_STR_MATCHES(raw, "log_block_manager_total_containers_startup\",\n[ ]+\"value\": 0");
+    ASSERT_STR_MATCHES(raw, "log_block_manager_processed_containers_startup\",\n[ ]+\"value\": 0");
+    // Since we open each directory and read all the contents, the time taken might not be
+    // 0 in case of new servers. So we just check if the time is constant at this point.
+    ASSERT_OK(c.FetchURL(
+        Substitute("http://$0/metrics?metrics=log_block_manager_containers_processing_time_startup",
+                   addr),&buf));
+    string time_elapsed = buf.ToString();
+    SleepFor(MonoDelta::FromMilliseconds(10));
+    ASSERT_OK(c.FetchURL(
+        Substitute("http://$0/metrics?metrics=log_block_manager_containers_processing_time_startup",
+                   addr),&buf));
+    ASSERT_EQ(time_elapsed, buf.ToString());
+    // Create containers, get the count of containers present and shutdown the server.
+    for (int i = 0; i < FLAGS_delete_tablet_bench_num_flushes; i++) {
+      NO_FATALS(InsertTestRowsRemote(i, 1));
+      ASSERT_OK(tablet_replica_->tablet()->Flush());
+    }
+    scoped_refptr<AtomicGauge<uint64_t>> container =
+        METRIC_log_block_manager_containers.Instantiate(
+            mini_server_->server()->metric_entity(), 0);
+    tablet_replica_.reset();
+    mini_server_->Shutdown();
+    ASSERT_OK(mini_server_->Start());
+    ASSERT_OK(mini_server_->WaitStarted());
+
+    // Validate populated metrics in case of non-zero containers during startup.
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics", addr), &buf));
+    raw = buf.ToString();
+    ASSERT_STR_MATCHES(raw,
+        Substitute("log_block_manager_total_containers_startup\",\n[ ]+\"value\": $0",
+                   container->value()));
+    ASSERT_STR_MATCHES(raw,
+        Substitute("log_block_manager_processed_containers_startup\",\n[ ]+\"value\": $0",
+                   container->value()));
+
+    // Fetch time taken twice and ensure it is constant.
+    NO_FATALS(CheckNonZeroMetricIsStable("log_block_manager_containers_processing_time_startup"));
+  } else {
+    ASSERT_STR_NOT_CONTAINS(raw, "log_block_manager_total_containers_startup");
+    ASSERT_STR_NOT_CONTAINS(raw, "log_block_manager_processed_containers_startup");
+    ASSERT_STR_NOT_CONTAINS(raw, "log_block_manager_containers_processing_time_startup");
+  }
+}
+
 
 class TabletServerDiskErrorTest : public TabletServerTestBase,
                                   public testing::WithParamInterface<ErrorType> {

@@ -72,6 +72,7 @@ typedef sig_t sighandler_t;
 
 using mustache::RenderTemplate;
 using std::ostringstream;
+using std::pair;
 using std::stringstream;
 using std::string;
 using std::unordered_set;
@@ -806,17 +807,22 @@ void Webserver::RenderMainTemplate(
   ej["static_pages_available"] = static_pages_available();
   ej["content"] = content;
   AddKnoxVariables(req, &ej);
+  std::vector<pair<string, PathHandler*>> paths_and_handlers;
 
   {
     shared_lock<RWMutex> l(lock_);
     ej["footer_html"] = footer_html_;
+    paths_and_handlers.reserve(path_handlers_.size());
+    for (const auto& [path, handler] : path_handlers_) {
+      paths_and_handlers.emplace_back(path, handler);
+    }
   }
   EasyJson path_handlers = ej.Set("path_handlers", EasyJson::kArray);
-  for (const PathHandlerMap::value_type& handler : path_handlers_) {
-    if (handler.second->is_on_nav_bar()) {
+  for (const auto& [path, handler] : paths_and_handlers) {
+    if (handler->is_on_nav_bar()) {
       EasyJson path_handler = path_handlers.PushBack(EasyJson::kObject);
-      path_handler["path"] = handler.first;
-      path_handler["alias"] = handler.second->alias();
+      path_handler["path"] = path;
+      path_handler["alias"] = handler->alias();
     }
   }
   RenderTemplate(kMainTemplate, opts_.doc_root, ej.value(), output);
