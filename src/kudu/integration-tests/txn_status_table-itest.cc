@@ -482,7 +482,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientMasterDown) {
     int64_t highest_seen_txn_id = -1;
     auto s = txn_sys_client_->BeginTransaction(
         1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
-        MonoDelta::FromMilliseconds(100));
+        MonoTime::Now() + MonoDelta::FromMilliseconds(100));
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
     // The 'highest_seen_txn_id' should be left untouched.
     ASSERT_EQ(-1, highest_seen_txn_id);
@@ -503,7 +503,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientMasterDown) {
   int64_t highest_seen_txn_id = -1;
   ASSERT_OK(txn_sys_client_->BeginTransaction(
       1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
-      MonoDelta::FromSeconds(10)));
+      MonoTime::Now() + MonoDelta::FromSeconds(10)));
   // Make sure the highest txn ID we've seen matches the one we just started.
   ASSERT_EQ(1, highest_seen_txn_id);
 }
@@ -520,7 +520,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientTServerDown) {
     int64_t highest_seen_txn_id = -1;
     auto s = txn_sys_client_->BeginTransaction(
         1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
-        MonoDelta::FromMilliseconds(100));
+        MonoTime::Now() + MonoDelta::FromMilliseconds(100));
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
     // The 'highest_seen_txn_id' should be left untouched.
     ASSERT_EQ(-1, highest_seen_txn_id);
@@ -541,7 +541,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientTServerDown) {
   int64_t highest_seen_txn_id = -1;
   ASSERT_OK(txn_sys_client_->BeginTransaction(
       1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
-      MonoDelta::FromSeconds(10)));
+      MonoTime::Now() + MonoDelta::FromSeconds(10)));
   // Make sure the highest txn ID we've seen matches the one we just started.
   ASSERT_EQ(1, highest_seen_txn_id);
 }
@@ -823,7 +823,7 @@ TEST_F(TxnStatusTableITest, CheckOpenTxnStatusTable) {
   //
   // TODO(aserbin): change this to expected Status::OK() after implementing that
   auto s = txn_sys_client_->RegisterParticipant(
-      kNewTxnId, "txn_participant", kUser, MonoDelta::FromSeconds(10));
+      kNewTxnId, "txn_participant", kUser, MonoTime::Now() + MonoDelta::FromSeconds(10));
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "No tablet covering the requested range partition");
@@ -850,7 +850,7 @@ TEST_F(TxnStatusTableITest, CheckOpenTxnStatusTableConcurrent) {
         ++success_count_begin;
       }
       s = txn_sys_client_->RegisterParticipant(
-          0, kParticipant, kUser, MonoDelta::FromSeconds(10));
+          0, kParticipant, kUser, MonoTime::Now() + MonoDelta::FromSeconds(10));
       if (s.ok()) {
         ++success_count_register;
       }

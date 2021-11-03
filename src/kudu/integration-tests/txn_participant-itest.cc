@@ -847,32 +847,39 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientGetMetadata) {
   // Get commit-related metadata.
   TxnMetadataPB meta_pb;
   Status s = txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA),
+      MonoTime::Now() + kDefaultTimeout,
       /*begin_commit_timestamp*/nullptr, &meta_pb);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
 
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN),
+      MonoTime::Now() + kDefaultTimeout));
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA),
+      MonoTime::Now() + kDefaultTimeout,
       /*begin_commit_timestamp*/nullptr, &meta_pb));
   ASSERT_FALSE(meta_pb.has_aborted());
   ASSERT_FALSE(meta_pb.has_commit_mvcc_op_timestamp());
   ASSERT_FALSE(meta_pb.has_commit_timestamp());
 
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_COMMIT), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_COMMIT),
+      MonoTime::Now() + kDefaultTimeout));
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA),
+      MonoTime::Now() + kDefaultTimeout,
       /*begin_commit_timestamp*/nullptr, &meta_pb));
   ASSERT_FALSE(meta_pb.has_aborted());
   ASSERT_TRUE(meta_pb.has_commit_mvcc_op_timestamp());
   ASSERT_FALSE(meta_pb.has_commit_timestamp());
 
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT),
+      MonoTime::Now() + kDefaultTimeout));
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::GET_METADATA),
+      MonoTime::Now() + kDefaultTimeout,
       /*begin_commit_timestamp*/nullptr, &meta_pb));
   ASSERT_FALSE(meta_pb.has_aborted());
   ASSERT_TRUE(meta_pb.has_commit_mvcc_op_timestamp());
@@ -881,11 +888,14 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientGetMetadata) {
   // Get abort-related metadata.
   constexpr const auto kAbortedTxnId = 1;
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::BEGIN_TXN),
+      MonoTime::Now() + kDefaultTimeout));
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::ABORT_TXN), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::ABORT_TXN),
+      MonoTime::Now() + kDefaultTimeout));
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::GET_METADATA), kDefaultTimeout,
+      tablet_id, MakeParticipantOp(kAbortedTxnId, ParticipantOpPB::GET_METADATA),
+      MonoTime::Now() + kDefaultTimeout,
       /*begin_commit_timestamp*/nullptr, &meta_pb));
   ASSERT_TRUE(meta_pb.has_aborted());
   ASSERT_FALSE(meta_pb.has_commit_mvcc_op_timestamp());
@@ -909,13 +919,15 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientBeginTxnDoesntLock) {
                                     cluster_->messenger()->sasl_proto_name(),
                                     &txn_client));
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kFirstTxn, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kFirstTxn, ParticipantOpPB::BEGIN_TXN),
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kFirstTxn, kOpen, -1 } }));
 
   // Begin another transaction with a lower txn ID. This is allowed, since
   // partition locks are only taken once we write.
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kSecondTxn, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kSecondTxn, ParticipantOpPB::BEGIN_TXN),
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas,
         { { kFirstTxn, kOpen, -1 }, { kSecondTxn, kOpen, -1 } }));
 }
@@ -935,17 +947,20 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientCommitSequence) {
                                     cluster_->messenger()->sasl_proto_name(),
                                     &txn_client));
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN),
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnId, kOpen, -1 } }));
 
   // Try some illegal ops and ensure we get an error.
   Status s = txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT), kDefaultTimeout);
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT),
+      MonoTime::Now() + kDefaultTimeout);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnId, kOpen, -1 } }));
 
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN),
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnId, kOpen, -1 } }));
 
   // Progress the transaction forward, and perform similar checks that we get
@@ -953,12 +968,13 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientCommitSequence) {
   Timestamp begin_commit_ts;
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_COMMIT),
-      kDefaultTimeout, &begin_commit_ts));
+      MonoTime::Now() + kDefaultTimeout, &begin_commit_ts));
   ASSERT_NE(Timestamp::kInvalidTimestamp, begin_commit_ts);
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnId, kCommitInProgress, -1 } }));
 
   s = txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN), kDefaultTimeout);
+      tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN),
+      MonoTime::Now() + kDefaultTimeout);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnId, kCommitInProgress, -1 } }));
 
@@ -967,25 +983,25 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientCommitSequence) {
   Timestamp refetched_begin_commit_ts;
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_COMMIT),
-      kDefaultTimeout, &refetched_begin_commit_ts));
+      MonoTime::Now() + kDefaultTimeout, &refetched_begin_commit_ts));
   ASSERT_EQ(refetched_begin_commit_ts, begin_commit_ts);
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnId, kCommitInProgress, -1 } }));
 
   // Once we finish committing, we should be unable to begin or abort.
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT, kDummyCommitTimestamp),
-      kDefaultTimeout));
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, {{kTxnId, kCommitted, kDummyCommitTimestamp}}));
   for (const auto type : { ParticipantOpPB::BEGIN_TXN, ParticipantOpPB::ABORT_TXN }) {
     Status s = txn_client->ParticipateInTransaction(
-        tablet_id, MakeParticipantOp(kTxnId, type), kDefaultTimeout);
+        tablet_id, MakeParticipantOp(kTxnId, type), MonoTime::Now() + kDefaultTimeout);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   }
   NO_FATALS(CheckReplicasMatchTxns(replicas, {{kTxnId, kCommitted, kDummyCommitTimestamp}}));
   for (const auto type : { ParticipantOpPB::BEGIN_COMMIT, ParticipantOpPB::FINALIZE_COMMIT }) {
     ASSERT_OK(txn_client->ParticipateInTransaction(
         tablet_id, MakeParticipantOp(kTxnId, type, kDummyCommitTimestamp),
-        kDefaultTimeout));
+        MonoTime::Now() + kDefaultTimeout));
   }
   NO_FATALS(CheckReplicasMatchTxns(replicas, {{kTxnId, kCommitted, kDummyCommitTimestamp}}));
 }
@@ -1007,34 +1023,34 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientAbortSequence) {
                                     &txn_client));
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnOne, ParticipantOpPB::BEGIN_TXN),
-      kDefaultTimeout));
+      MonoTime::Now() + kDefaultTimeout));
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnTwo, ParticipantOpPB::BEGIN_TXN),
-      kDefaultTimeout));
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { kTxnOne, kOpen, -1 }, { kTxnTwo, kOpen, -1 } }));
 
   // Once we abort, we should be unable to do anything further.
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnOne, ParticipantOpPB::ABORT_TXN),
-      kDefaultTimeout));
+      MonoTime::Now() + kDefaultTimeout));
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnTwo, ParticipantOpPB::BEGIN_COMMIT),
-      kDefaultTimeout));
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas,
       { { kTxnOne, kAborted, -1 }, { kTxnTwo, kCommitInProgress, -1 } }));
 
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnTwo, ParticipantOpPB::ABORT_TXN),
-      kDefaultTimeout));
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas,
       { { kTxnOne, kAborted, -1 }, { kTxnTwo, kAborted, -1 } }));
   for (const auto type : { ParticipantOpPB::BEGIN_TXN, ParticipantOpPB::BEGIN_COMMIT,
                            ParticipantOpPB::FINALIZE_COMMIT }) {
     Status s = txn_client->ParticipateInTransaction(
-        tablet_id, MakeParticipantOp(kTxnOne, type), kDefaultTimeout);
+        tablet_id, MakeParticipantOp(kTxnOne, type), MonoTime::Now() + kDefaultTimeout);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     s = txn_client->ParticipateInTransaction(
-        tablet_id, MakeParticipantOp(kTxnTwo, type), kDefaultTimeout);
+        tablet_id, MakeParticipantOp(kTxnTwo, type), MonoTime::Now() + kDefaultTimeout);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   }
   NO_FATALS(CheckReplicasMatchTxns(replicas,
@@ -1042,10 +1058,10 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientAbortSequence) {
   // Repeated abort calls are idempotent.
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnOne, ParticipantOpPB::ABORT_TXN),
-      kDefaultTimeout));
+      MonoTime::Now() + kDefaultTimeout));
   ASSERT_OK(txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnTwo, ParticipantOpPB::ABORT_TXN),
-      kDefaultTimeout));
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas,
       { { kTxnOne, kAborted, -1 }, { kTxnTwo, kAborted, -1 } }));
 }
@@ -1065,13 +1081,14 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientErrorWhenNotBegun) {
   for (auto type : { ParticipantOpPB::BEGIN_COMMIT,
                      ParticipantOpPB::FINALIZE_COMMIT }) {
     Status s = txn_client->ParticipateInTransaction(
-        tablet_id, MakeParticipantOp(txn_id++, type), kDefaultTimeout);
+        tablet_id, MakeParticipantOp(txn_id++, type), MonoTime::Now() + kDefaultTimeout);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
     NO_FATALS(CheckReplicasMatchTxns(replicas, {}));
   }
 
   ASSERT_OK(txn_client->ParticipateInTransaction(
-      tablet_id, MakeParticipantOp(txn_id++, ParticipantOpPB::ABORT_TXN), kDefaultTimeout));
+      tablet_id, MakeParticipantOp(txn_id++, ParticipantOpPB::ABORT_TXN),
+      MonoTime::Now() + kDefaultTimeout));
   NO_FATALS(CheckReplicasMatchTxns(replicas, { { 2, kAborted, -1 } }));
 }
 
@@ -1092,18 +1109,18 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientRepeatCalls) {
   for (const auto& type : kCommitSequence) {
     ASSERT_OK(txn_client->ParticipateInTransaction(
         tablet_id, MakeParticipantOp(kTxnOne, type, kDummyCommitTimestamp),
-        kDefaultTimeout));
+        MonoTime::Now() + kDefaultTimeout));
     ASSERT_OK(txn_client->ParticipateInTransaction(
         tablet_id, MakeParticipantOp(kTxnOne, type, kDummyCommitTimestamp),
-        kDefaultTimeout));
+        MonoTime::Now() + kDefaultTimeout));
   }
   for (const auto& type : kAbortSequence) {
     ASSERT_OK(txn_client->ParticipateInTransaction(
         tablet_id, MakeParticipantOp(kTxnTwo, type, kDummyCommitTimestamp),
-        kDefaultTimeout));
+        MonoTime::Now() + kDefaultTimeout));
     ASSERT_OK(txn_client->ParticipateInTransaction(
         tablet_id, MakeParticipantOp(kTxnTwo, type, kDummyCommitTimestamp),
-        kDefaultTimeout));
+        MonoTime::Now() + kDefaultTimeout));
   }
   NO_FATALS(CheckReplicasMatchTxns(
       replicas, { { kTxnOne, kCommitted, kDummyCommitTimestamp }, { kTxnTwo, kAborted, -1 } }));
@@ -1127,7 +1144,7 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientTimeoutWhenNoMajority) {
                                     &txn_client));
   Status s = txn_client->ParticipateInTransaction(
       tablet_id, MakeParticipantOp(kTxnId, ParticipantOpPB::BEGIN_TXN),
-      MonoDelta::FromSeconds(1));
+      MonoTime::Now() + MonoDelta::FromSeconds(1));
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
   // We should have an initializing transaction until a majority is achieved,
@@ -1162,7 +1179,7 @@ Status SendParticipantOps(TxnSystemClient* txn_client, const string& tablet_id,
     int txn_id = (*next_txn_id)++;
     for (const auto& op : kCommitSequence) {
       RETURN_NOT_OK(txn_client->ParticipateInTransaction(
-          tablet_id, MakeParticipantOp(txn_id, op), kLongTimeout));
+          tablet_id, MakeParticipantOp(txn_id, op), MonoTime::Now() + kLongTimeout));
     }
   }
   return Status::OK();
@@ -1457,17 +1474,17 @@ TEST_F(TxnParticipantElectionStormITest, TestTxnSystemClientRetriesThroughStorm)
 
   // Start injecting latency to Raft-related traffic to spur elections.
   FLAGS_raft_enable_pre_election = false;
-  FLAGS_consensus_inject_latency_ms_in_notifications = 1.5 * FLAGS_raft_heartbeat_interval_ms;;
+  FLAGS_consensus_inject_latency_ms_in_notifications = 1.5 * FLAGS_raft_heartbeat_interval_ms;
   SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2));
   constexpr const int64_t kCommittedTxnId = 0;
   constexpr const int64_t kAbortedTxnId = 1;
   for (const auto& op : kCommitSequence) {
     ASSERT_OK(txn_client->ParticipateInTransaction(
-        tablet_id, MakeParticipantOp(kCommittedTxnId, op), kTimeout));
+        tablet_id, MakeParticipantOp(kCommittedTxnId, op), MonoTime::Now() + kTimeout));
   }
   for (const auto& op : kAbortSequence) {
     ASSERT_OK(txn_client->ParticipateInTransaction(
-        tablet_id, MakeParticipantOp(kAbortedTxnId, op), kTimeout));
+        tablet_id, MakeParticipantOp(kAbortedTxnId, op), MonoTime::Now() + kTimeout));
   }
   const vector<TxnParticipant::TxnEntry> expected_txns = {
       { kCommittedTxnId, kCommitted, kDummyCommitTimestamp },

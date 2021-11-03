@@ -194,9 +194,9 @@ Status TxnSystemClient::BeginTransaction(int64_t txn_id,
                                          const string& user,
                                          uint32_t* txn_keepalive_ms,
                                          int64_t* highest_seen_txn_id,
-                                         MonoDelta timeout) {
-  if (!timeout.Initialized()) {
-    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+                                         MonoTime deadline) {
+  if (!deadline.Initialized()) {
+    deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
   }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::BEGIN_TXN);
@@ -205,7 +205,7 @@ Status TxnSystemClient::BeginTransaction(int64_t txn_id,
   Synchronizer s;
   CoordinatorOpResultPB result;
   RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
-                                           timeout,
+                                           deadline,
                                            s.AsStatusCallback(),
                                            &result));
   const auto ret = s.Wait();
@@ -225,9 +225,9 @@ Status TxnSystemClient::BeginTransaction(int64_t txn_id,
 }
 
 Status TxnSystemClient::RegisterParticipant(int64_t txn_id, const string& participant_id,
-                                            const string& user, MonoDelta timeout) {
-  if (!timeout.Initialized()) {
-    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+                                            const string& user, MonoTime deadline) {
+  if (!deadline.Initialized()) {
+    deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
   }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::REGISTER_PARTICIPANT);
@@ -236,16 +236,16 @@ Status TxnSystemClient::RegisterParticipant(int64_t txn_id, const string& partic
   coordinate_txn_op.set_user(user);
   Synchronizer s;
   RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
-                                           timeout,
+                                           deadline,
                                            s.AsStatusCallback()));
   return s.Wait();
 }
 
 Status TxnSystemClient::BeginCommitTransaction(int64_t txn_id,
                                                const string& user,
-                                               MonoDelta timeout) {
-  if (!timeout.Initialized()) {
-    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+                                               MonoTime deadline) {
+  if (!deadline.Initialized()) {
+    deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
   }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::BEGIN_COMMIT_TXN);
@@ -253,16 +253,16 @@ Status TxnSystemClient::BeginCommitTransaction(int64_t txn_id,
   coordinate_txn_op.set_user(user);
   Synchronizer s;
   RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
-                                           timeout,
+                                           deadline,
                                            s.AsStatusCallback()));
   return s.Wait();
 }
 
 Status TxnSystemClient::AbortTransaction(int64_t txn_id,
                                          const string& user,
-                                         MonoDelta timeout) {
-  if (!timeout.Initialized()) {
-    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+                                         MonoTime deadline) {
+  if (!deadline.Initialized()) {
+    deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
   }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::ABORT_TXN);
@@ -270,7 +270,7 @@ Status TxnSystemClient::AbortTransaction(int64_t txn_id,
   coordinate_txn_op.set_user(user);
   Synchronizer s;
   RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
-                                           timeout,
+                                           deadline,
                                            s.AsStatusCallback()));
   return s.Wait();
 }
@@ -278,9 +278,9 @@ Status TxnSystemClient::AbortTransaction(int64_t txn_id,
 Status TxnSystemClient::GetTransactionStatus(int64_t txn_id,
                                              const string& user,
                                              TxnStatusEntryPB* txn_status,
-                                             MonoDelta timeout) {
-  if (!timeout.Initialized()) {
-    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+                                             MonoTime deadline) {
+  if (!deadline.Initialized()) {
+    deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
   }
   DCHECK(txn_status);
   CoordinatorOpPB coordinate_txn_op;
@@ -290,7 +290,7 @@ Status TxnSystemClient::GetTransactionStatus(int64_t txn_id,
   Synchronizer s;
   CoordinatorOpResultPB result;
   RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
-                                           timeout,
+                                           deadline,
                                            s.AsStatusCallback(),
                                            &result));
   const auto rs = s.Wait();
@@ -308,9 +308,9 @@ Status TxnSystemClient::GetTransactionStatus(int64_t txn_id,
 
 Status TxnSystemClient::KeepTransactionAlive(int64_t txn_id,
                                              const string& user,
-                                             MonoDelta timeout) {
-  if (!timeout.Initialized()) {
-    timeout = MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
+                                             MonoTime deadline) {
+  if (!deadline.Initialized()) {
+    deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_system_client_op_timeout_ms);
   }
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::KEEP_TXN_ALIVE);
@@ -318,17 +318,16 @@ Status TxnSystemClient::KeepTransactionAlive(int64_t txn_id,
   coordinate_txn_op.set_user(user);
   Synchronizer s;
   RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
-                                           timeout,
+                                           deadline,
                                            s.AsStatusCallback()));
   return s.Wait();
 }
 
 Status TxnSystemClient::CoordinateTransactionAsync(CoordinatorOpPB coordinate_txn_op,
-                                                   MonoDelta timeout,
+                                                   MonoTime deadline,
                                                    const StatusCallback& cb,
                                                    CoordinatorOpResultPB* result) {
   DCHECK(txn_status_table_);
-  const MonoTime deadline = MonoTime::Now() + timeout;
   unique_ptr<TxnStatusTabletContext> ctx(
       new TxnStatusTabletContext({
           txn_status_table(),
@@ -372,22 +371,21 @@ Status TxnSystemClient::CoordinateTransactionAsync(CoordinatorOpPB coordinate_tx
 
 Status TxnSystemClient::ParticipateInTransaction(const string& tablet_id,
                                                  const ParticipantOpPB& participant_op,
-                                                 const MonoDelta& timeout,
+                                                 MonoTime deadline,
                                                  Timestamp* begin_commit_timestamp,
                                                  TxnMetadataPB* metadata_pb) {
   Synchronizer sync;
-  ParticipateInTransactionAsync(tablet_id, participant_op, timeout,
+  ParticipateInTransactionAsync(tablet_id, participant_op, deadline,
                                 sync.AsStatusCallback(), begin_commit_timestamp, metadata_pb);
   return sync.Wait();
 }
 
 void TxnSystemClient::ParticipateInTransactionAsync(const string& tablet_id,
                                                     ParticipantOpPB participant_op,
-                                                    const MonoDelta& timeout,
+                                                    MonoTime deadline,
                                                     StatusCallback cb,
                                                     Timestamp* begin_commit_timestamp,
                                                     TxnMetadataPB* metadata_pb) {
-  MonoTime deadline = MonoTime::Now() + timeout;
   unique_ptr<TxnParticipantContext> ctx(
       new TxnParticipantContext({
           client_.get(),

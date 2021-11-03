@@ -268,7 +268,7 @@ void CommitTasks::BeginCommitAsyncTask(int participant_idx) {
   txn_client_->ParticipateInTransactionAsync(
       participant_ids_[participant_idx],
       std::move(op_pb),
-      MonoDelta::FromMilliseconds(FLAGS_txn_background_rpc_timeout_ms),
+      MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_background_rpc_timeout_ms),
       std::move(participated_cb),
       &begin_commit_timestamps_[participant_idx]);
 }
@@ -312,7 +312,7 @@ void CommitTasks::FinalizeCommitAsyncTask(int participant_idx) {
   txn_client_->ParticipateInTransactionAsync(
       participant_ids_[participant_idx],
       std::move(op_pb),
-      MonoDelta::FromMilliseconds(FLAGS_txn_background_rpc_timeout_ms),
+      MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_background_rpc_timeout_ms),
       std::move(participated_cb));
 }
 
@@ -354,7 +354,7 @@ void CommitTasks::AbortTxnAsyncTask(int participant_idx) {
   txn_client_->ParticipateInTransactionAsync(
       participant_ids_[participant_idx],
       std::move(op_pb),
-      MonoDelta::FromMilliseconds(FLAGS_txn_background_rpc_timeout_ms),
+      MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_txn_background_rpc_timeout_ms),
       std::move(participated_cb));
 }
 

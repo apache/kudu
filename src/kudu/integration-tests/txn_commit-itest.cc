@@ -676,7 +676,7 @@ TEST_F(TxnCommitITest, TestCommitAfterParticipantAbort) {
   op_pb.set_txn_id(0);
   op_pb.set_type(ParticipantOpPB::ABORT_TXN);
   ASSERT_OK(txn_client_->ParticipateInTransaction(
-      participant_ids_[0], op_pb, MonoDelta::FromSeconds(3)));
+      participant_ids_[0], op_pb, MonoTime::Now() + MonoDelta::FromSeconds(3)));
 
   // When we try to commit, we should end up not completing.
   ASSERT_OK(txn->StartCommit());

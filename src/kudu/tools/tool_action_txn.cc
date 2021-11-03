@@ -401,7 +401,8 @@ Status ShowTxn(const RunnerContext& context) {
     pb.set_txn_id(txn_id);
     pb.set_type(ParticipantOpPB::GET_METADATA);
     RETURN_NOT_OK(txn_client->ParticipateInTransaction(
-        id, pb, MonoDelta::FromMilliseconds(FLAGS_timeout_ms), nullptr, &meta_pb));
+        id, pb, MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_timeout_ms),
+        /*begin_commit_timestamp=*/nullptr, &meta_pb));
     vector<string> col_vals;
     for (const auto& field : participant_fields) {
       switch (field) {

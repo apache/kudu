@@ -89,10 +89,6 @@ class TxnSystemClient {
     return AddTxnStatusTableRangeWithClient(lower_bound, upper_bound, client_.get());
   }
 
-  // TODO(awong): in the methods below with 'timeout' parameter,
-  //              pass a deadline instead of a timeout so we can more easily
-  //              associate it with potential user-specified deadlines.
-
   // Attempts to create a transaction with the given 'txn_id'.
   // Returns an error if the transaction ID has already been taken, or if there
   // was an error writing to the transaction status table. In success case
@@ -107,24 +103,24 @@ class TxnSystemClient {
                           std::string& user,
                           uint32_t* txn_keepalive_ms = nullptr,
                           int64_t* highest_seen_txn_id = nullptr,
-                          MonoDelta timeout = MonoDelta());
+                          MonoTime deadline = MonoTime());
 
   // Attempts to register the given participant with the given transaction.
   // Returns an error if the transaction hasn't yet been started, or if the
   // 'user' isn't permitted to modify the transaction.
   Status RegisterParticipant(int64_t txn_id, const std::string& participant_id,
                              const std::string& user,
-                             MonoDelta timeout = MonoDelta());
+                             MonoTime deadline = MonoTime());
 
   // Initiates committing a transaction with the given identifier.
   Status BeginCommitTransaction(int64_t txn_id,
                                 const std::string& user,
-                                MonoDelta timeout = MonoDelta());
+                                MonoTime deadline = MonoTime());
 
   // Aborts a transaction with the given identifier.
   Status AbortTransaction(int64_t txn_id,
                           const std::string& user,
-                          MonoDelta timeout = MonoDelta());
+                          MonoTime deadline = MonoTime());
 
   // Retrieves transactions status. On success, returns Status::OK() and stores
   // the result status in the 'txn_status' output parameter. On failure,
@@ -132,12 +128,12 @@ class TxnSystemClient {
   Status GetTransactionStatus(int64_t txn_id,
                               const std::string& user,
                               TxnStatusEntryPB* txn_status,
-                              MonoDelta timeout = MonoDelta());
+                              MonoTime deadline = MonoTime());
 
   // Send keep-alive heartbeat for the specified transaction as the given user.
   Status KeepTransactionAlive(int64_t txn_id,
                               const std::string& user,
-                              MonoDelta timeout = MonoDelta());
+                              MonoTime deadline = MonoTime());
 
   // Opens the transaction status table, refreshing metadata with that from the
   // masters.
@@ -155,12 +151,12 @@ class TxnSystemClient {
   // with the timestamp used to replicate the op on the participant.
   Status ParticipateInTransaction(const std::string& tablet_id,
                                   const tserver::ParticipantOpPB& participant_op,
-                                  const MonoDelta& timeout,
+                                  MonoTime deadline,
                                   Timestamp* begin_commit_timestamp = nullptr,
                                   tablet::TxnMetadataPB* metadata_pb = nullptr);
   void ParticipateInTransactionAsync(const std::string& tablet_id,
                                      tserver::ParticipantOpPB participant_op,
-                                     const MonoDelta& timeout,
+                                     MonoTime deadline,
                                      StatusCallback cb,
                                      Timestamp* begin_commit_timestamp = nullptr,
                                      tablet::TxnMetadataPB* metadata_pb = nullptr);
@@ -179,7 +175,7 @@ class TxnSystemClient {
                                                  client::KuduClient* client);
 
   Status CoordinateTransactionAsync(tserver::CoordinatorOpPB coordinate_txn_op,
-                                    MonoDelta timeout,
+                                    MonoTime deadline,
                                     const StatusCallback& cb,
                                     tserver::CoordinatorOpResultPB* result = nullptr);
 

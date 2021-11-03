@@ -18,7 +18,6 @@
 #include "kudu/master/txn_manager.h"
 
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <ostream>
 #include <vector>
@@ -95,16 +94,6 @@ void CheckRespErrorOrSetUnknown(const Status& s, RespClass* resp) {
   }
 }
 
-// Conversion of a deadline specified for an RPC into a timeout, i.e.
-// convert a point in time to a delta between current time and the specified
-// point in time.
-MonoDelta ToDelta(const MonoTime& deadline) {
-  MonoDelta timeout = deadline == MonoTime::Max()
-        ? MonoDelta::FromNanoseconds(std::numeric_limits<int64_t>::max())
-        : deadline - MonoTime::Now();
-  return timeout;
-}
-
 } // anonymous namespace
 
 TxnManager::TxnManager(Master* server)
@@ -147,7 +136,7 @@ Status TxnManager::BeginTransaction(const string& username,
     int64_t highest_seen_txn_id = -1;
     s = txn_sys_client_->BeginTransaction(
         try_txn_id, username, &keepalive_ms,
-        &highest_seen_txn_id, ToDelta(deadline));
+        &highest_seen_txn_id, deadline);
     if (s.ok()) {
       DCHECK_GE(highest_seen_txn_id, 0);
       // The idea is to make the thread that has gotten a transaction reserved
@@ -211,7 +200,7 @@ Status TxnManager::CommitTransaction(int64_t txn_id,
                                      const MonoTime& deadline) {
   RETURN_NOT_OK(CheckInitialized(deadline));
   return txn_sys_client_->BeginCommitTransaction(
-      txn_id, username, ToDelta(deadline));
+      txn_id, username, deadline);
 }
 
 Status TxnManager::GetTransactionState(int64_t txn_id,
@@ -221,21 +210,21 @@ Status TxnManager::GetTransactionState(int64_t txn_id,
   DCHECK(txn_status);
   RETURN_NOT_OK(CheckInitialized(deadline));
   return txn_sys_client_->GetTransactionStatus(
-      txn_id, username, txn_status, ToDelta(deadline));
+      txn_id, username, txn_status, deadline);
 }
 
 Status TxnManager::AbortTransaction(int64_t txn_id,
                                     const string& username,
                                     const MonoTime& deadline) {
   RETURN_NOT_OK(CheckInitialized(deadline));
-  return txn_sys_client_->AbortTransaction(txn_id, username, ToDelta(deadline));
+  return txn_sys_client_->AbortTransaction(txn_id, username, deadline);
 }
 
 Status TxnManager::KeepTransactionAlive(int64_t txn_id,
                                         const string& username,
                                         const MonoTime& deadline) {
   RETURN_NOT_OK(CheckInitialized(deadline));
-  return txn_sys_client_->KeepTransactionAlive(txn_id, username, ToDelta(deadline));
+  return txn_sys_client_->KeepTransactionAlive(txn_id, username, deadline);
 }
 
 // This method isn't supposed to be called concurrently, so there isn't any
@@ -291,8 +280,7 @@ Status TxnManager::CheckInitialized(const MonoTime& deadline) {
   //                earlier the deadline, otherwise client might consider
   //                the call timing out, but we want to deliver
   //                ServiceUnavailable() status instead.
-  auto s = server_->WaitForTxnManagerInit(
-      deadline.Initialized() ? ToDelta(deadline) : MonoDelta());
+  auto s = server_->WaitForTxnManagerInit(deadline);
   if (s.IsTimedOut()) {
     // The state of not-yet-initialized TxnManager is a transitional one,
     // so callers are assumed to retry and succeed eventually.

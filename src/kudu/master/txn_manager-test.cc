@@ -157,7 +157,7 @@ TEST_F(TxnManagerTest, LazyInitialization) {
   // should not be initialized.
   {
     const MonoDelta kTimeout = MonoDelta::FromSeconds(1);
-    auto s = master_->WaitForTxnManagerInit(kTimeout);
+    auto s = master_->WaitForTxnManagerInit(MonoTime::Now() + kTimeout);
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
                         "timed out waiting for TxnManager to initialize");

@@ -1190,7 +1190,7 @@ void TSTabletManager::RegisterAndBeginParticipantTxnTask(
           TabletServerErrorPB::UNKNOWN_ERROR);
     }
     auto s = txn_system_client->RegisterParticipant(
-        txn_id, replica->tablet_id(), user, deadline - now);
+        txn_id, replica->tablet_id(), user, deadline);
     VLOG(2) << Substitute("RegisterParticipant() $0 for txn ID $1 returned $2",
                           replica->tablet_id(), txn_id, s.ToString());
     // If the transaction falls in a range that doesn't exist, re-open the
@@ -1198,7 +1198,7 @@ void TSTabletManager::RegisterAndBeginParticipantTxnTask(
     if (s.IsNotFound()) {
       s = txn_system_client->OpenTxnStatusTable().AndThen([&] {
         return txn_system_client->RegisterParticipant(
-            txn_id, replica->tablet_id(), user, deadline - MonoTime::Now());
+            txn_id, replica->tablet_id(), user, deadline);
       });
     }
     if (PREDICT_FALSE(!s.ok())) {

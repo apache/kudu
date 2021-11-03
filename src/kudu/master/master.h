@@ -35,6 +35,7 @@ namespace kudu {
 class HostPort;
 class MaintenanceManager;
 class MonoDelta;
+class MonoTime;
 class ThreadPool;
 
 namespace rpc {
@@ -76,7 +77,7 @@ class Master : public kserver::KuduServer {
 
   Status StartAsync();
   Status WaitForCatalogManagerInit() const;
-  Status WaitForTxnManagerInit(const MonoDelta& timeout = {}) const;
+  Status WaitForTxnManagerInit(MonoTime deadline = {}) const;
 
   // Wait until this Master's catalog manager instance is the leader and is ready.
   // This method is intended for use by unit tests.

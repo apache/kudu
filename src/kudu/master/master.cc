@@ -346,9 +346,9 @@ Status Master::InitTxnManager() {
   return Status::OK();
 }
 
-Status Master::WaitForTxnManagerInit(const MonoDelta& timeout) const {
-  if (timeout.Initialized()) {
-    const Status* s = txn_manager_init_status_.WaitFor(timeout);
+Status Master::WaitForTxnManagerInit(MonoTime deadline) const {
+  if (deadline.Initialized()) {
+    const Status* s = txn_manager_init_status_.WaitFor(deadline - MonoTime::Now());
     if (!s) {
       return Status::TimedOut("timed out waiting for TxnManager to initialize");
     }
