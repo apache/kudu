@@ -139,9 +139,11 @@ set(CLIENT_VERSION_PATCH 0)
 
 if(NOT APPLE)
   # Localize thirdparty symbols using a linker version script. This hides them
-  # from the client application. The OS X linker does not support the
-  # version-script option.
+  # from the client application. Also, completely remove libprotobuf symbols
+  # (see KUDU-3334 for details). The --version-script and --exclude-libs
+  # GNU ld linker's options are not supported by the OS X linker.
   set(LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map")
+  set(LINK_FLAGS "${LINK_FLAGS} -Wl,--exclude-libs=libprotobuf")
 endif()
 
 set_target_properties(kudu_client_exported
