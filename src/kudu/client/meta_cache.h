@@ -480,6 +480,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
   FRIEND_TEST(client::ClientTest, TestMasterLookupPermits);
   FRIEND_TEST(client::ClientTest, TestMetaCacheExpiry);
+  FRIEND_TEST(MetaCacheLookupStressTest, PerfSynthetic);
 
   // Called on the slow LookupTablet path when the master responds. Populates
   // the tablet caches and returns a reference to the first one.

@@ -384,17 +384,9 @@ string RemoteTablet::ReplicasAsStringUnlocked() const {
 
 bool MetaCacheEntry::Contains(const PartitionKey& partition_key) const {
   DCHECK(Initialized());
-  const auto& entry_hash_key = !lower_bound_partition_key().empty()
-      ? lower_bound_partition_key().hash_key()
-      : upper_bound_partition_key().hash_key();
-  // The hash part of the key has 'the exact' semantics: they should match
-  // for the partition key in question and the meta-cache entry.
-  if (partition_key.hash_key() != entry_hash_key) {
-    return false;
-  }
-  return lower_bound_partition_key().range_key() <= partition_key.range_key() &&
-          (upper_bound_partition_key().empty() ||
-           partition_key.range_key() < upper_bound_partition_key().range_key());
+  return lower_bound_partition_key() <= partition_key &&
+      (upper_bound_partition_key().empty() ||
+       upper_bound_partition_key() > partition_key);
 }
 
 bool MetaCacheEntry::stale() const {

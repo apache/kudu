@@ -32,10 +32,16 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/meta_cache.h"
 #include "kudu/client/scan_predicate.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -47,6 +53,7 @@
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -55,8 +62,14 @@ METRIC_DECLARE_counter(leader_memory_pressure_rejections);
 METRIC_DECLARE_counter(follower_memory_pressure_rejections);
 
 using kudu::client::KuduClient;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduDeleteIgnore;
 using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using std::set;
@@ -70,7 +83,7 @@ namespace kudu {
 
 class ClientStressTest : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     ExternalMiniClusterOptions opts = default_opts();
@@ -82,9 +95,11 @@ class ClientStressTest : public KuduTest {
     ASSERT_OK(cluster_->Start());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     alarm(0);
-    cluster_->Shutdown();
+    if (cluster_) {
+      cluster_->Shutdown();
+    }
     KuduTest::TearDown();
   }
 
@@ -176,7 +191,7 @@ TEST_F(ClientStressTest, TestStartScans) {
 // Override the base test to run in multi-master mode.
 class ClientStressTest_MultiMaster : public ClientStressTest {
  protected:
-  virtual bool multi_master() const OVERRIDE {
+  bool multi_master() const override {
     return true;
   }
 };
@@ -318,5 +333,134 @@ TEST_F(ClientStressTest, TestUniqueClientIds) {
                                << JoinStrings(client_ids, ",");
   }
 }
+
+#if !defined(THREAD_SANITIZER) && !defined(ADDRESS_SANITIZER)
+// Test for stress scenarios exercising meta-cache lookup path. The scenarios
+// not to be run under sanitizer builds since they are CPU intensive.
+class MetaCacheLookupStressTest : public ClientStressTest {
+ public:
+  void SetUp() override {
+    using client::sp::shared_ptr;
+
+    // All scenarios of this test are supposed to be CPU-intensive, so check
+    // for KUDU_ALLOW_SLOW_TESTS during the SetUp() phase.
+    SKIP_IF_SLOW_NOT_ALLOWED();
+    ClientStressTest::SetUp();
+
+    KuduSchemaBuilder b;
+    b.AddColumn(kKeyColumn)->Type(KuduColumnSchema::INT64)->NotNull();
+    b.AddColumn(kStrColumn)->Type(KuduColumnSchema::STRING)->NotNull();
+    b.SetPrimaryKey({ kKeyColumn, kStrColumn });
+    KuduSchema schema;
+    ASSERT_OK(b.Build(&schema));
+
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+
+    unique_ptr<KuduTableCreator> tc(client_->NewTableCreator());
+
+    // The table contains many tablets, so give it extra time to create
+    // corresponding tablets.
+    ASSERT_OK(tc->table_name(kTableName)
+        .schema(&schema)
+        .num_replicas(1)
+        .add_hash_partitions({ kKeyColumn, kStrColumn }, 64)
+        .timeout(MonoDelta::FromSeconds(300))
+        .Create());
+    ASSERT_OK(client_->OpenTable(kTableName, &table_));
+
+    // Prime the client's meta-cache.
+    shared_ptr<KuduSession> session(client_->NewSession());
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+    for (int32_t idx = 0; idx < kNumRows; ++idx) {
+      unique_ptr<KuduDeleteIgnore> op(table_->NewDeleteIgnore());
+      ASSERT_OK(op->mutable_row()->SetInt64(0, idx));
+      ASSERT_OK(op->mutable_row()->SetString(1,
+          string(1, static_cast<char>(idx % 128))));
+      ASSERT_OK(session->Apply(op.release()));
+    }
+    ASSERT_OK(session->Flush());
+  }
+
+ protected:
+  static constexpr auto kNumRows = 1000000;
+  static constexpr const char* kTableName = "meta_cache_lookup";
+  static constexpr const char* kKeyColumn = "key";
+  static constexpr const char* kStrColumn = "str_val";
+
+  ExternalMiniClusterOptions default_opts() const override {
+    ExternalMiniClusterOptions opts;
+    opts.num_tablet_servers = 10;
+    return opts;
+  }
+
+  vector<unique_ptr<KuduDeleteIgnore>> GenerateOperations(int64_t num_ops) {
+    vector<unique_ptr<KuduDeleteIgnore>> ops;
+    ops.reserve(num_ops);
+    for (int64_t idx = 0; idx < num_ops; ++idx) {
+      unique_ptr<KuduDeleteIgnore> op(table_->NewDeleteIgnore());
+      CHECK_OK(op->mutable_row()->SetInt64(0, idx));
+      CHECK_OK(op->mutable_row()->SetString(
+          1, std::to_string(idx) + string(1, static_cast<char>(idx % 128))));
+      ops.emplace_back(std::move(op));
+    }
+    return ops;
+  }
+
+  client::sp::shared_ptr<KuduClient> client_;
+  client::sp::shared_ptr<KuduTable> table_;
+};
+
+// This test scenario creates a table with many partitions and generates a lot
+// of rows, stressing meta-cache fast lookup path in the client.
+TEST_F(MetaCacheLookupStressTest, PerfSynthetic) {
+  vector<unique_ptr<KuduDeleteIgnore>> ops(GenerateOperations(kNumRows));
+
+  // Start the stopwatch and run the benchmark. All the lookups in the
+  // meta-cache should be fast since the meta-cache has been populated
+  // by the activity above.
+  Stopwatch sw;
+  sw.start();
+  {
+    auto& meta_cache = client_->data_->meta_cache_;
+    for (const auto& op : ops) {
+      client::internal::MetaCacheEntry entry;
+      ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(
+          table_.get(), table_->partition_schema().EncodeKey(op->row()), &entry));
+    }
+  }
+  sw.stop();
+
+  const auto wall_spent_ms = sw.elapsed().wall_millis();
+  LOG(INFO) << Substitute("Total time spent: $0 ms", wall_spent_ms);
+  LOG(INFO) << Substitute("Time per row: $0 ms", wall_spent_ms / kNumRows);
+}
+
+TEST_F(MetaCacheLookupStressTest, Perf) {
+  vector<unique_ptr<KuduDeleteIgnore>> ops(GenerateOperations(kNumRows));
+  // Create a session using manual flushing mode and set the buffer to be
+  // large enough to accommodate all the generated operations at once.
+  client::sp::shared_ptr<KuduSession> session(client_->NewSession());
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetMutationBufferSpace(64 * 1024 * 1024));
+
+  // Start the stopwatch and run the benchmark. All the lookups in the
+  // meta-cache should be fast since the meta-cache has been populated
+  // by the activity above. The lookups starts once Apply() is called,
+  // and to make sure every entry has been lookup and, KuduSession::Flush()
+  // is called: in addition to lookups in the meta-cache, it sends all
+  // the accumulated operations to the server.
+  Stopwatch sw;
+  sw.start();
+  for (auto& op : ops) {
+    ASSERT_OK(session->Apply(op.release()));
+  }
+  ASSERT_OK(session->Flush());
+  sw.stop();
+
+  const auto wall_spent_ms = sw.elapsed().wall_millis();
+  LOG(INFO) << Substitute("Total time spent: $0 ms", wall_spent_ms);
+  LOG(INFO) << Substitute("Time per row: $0 ms", wall_spent_ms / kNumRows);
+}
+#endif // #if !defined(THREAD_SANITIZER) && !defined(ADDRESS_SANITIZER)
 
 } // namespace kudu

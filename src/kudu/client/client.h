@@ -56,6 +56,7 @@ namespace kudu {
 class AlterTableTest;
 class AuthzTokenTest;
 class ClientStressTest_TestUniqueClientIds_Test;
+class MetaCacheLookupStressTest_PerfSynthetic_Test;
 class DisableWriteWhenExceedingQuotaTest;
 class KuduPartialRow;
 class MonoDelta;
@@ -997,6 +998,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class tools::TableLister;
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
+  FRIEND_TEST(kudu::MetaCacheLookupStressTest, PerfSynthetic);
   FRIEND_TEST(ClientTest, ClearCacheAndConcurrentWorkload);
   FRIEND_TEST(ClientTest, ConnectionNegotiationTimeout);
   FRIEND_TEST(ClientTest, TestBasicIdBasedLookup);
