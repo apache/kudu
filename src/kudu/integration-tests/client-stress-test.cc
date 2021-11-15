@@ -40,7 +40,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -238,9 +237,9 @@ TEST_F(ClientStressTest_MultiMaster, TestLeaderResolutionTimeout) {
 
 
 // Override the base test to start a cluster with a low memory limit.
-class ClientStressTest_LowMemory : public ClientStressTest {
+class ClientStressLowMemoryTest : public ClientStressTest {
  protected:
-  virtual ExternalMiniClusterOptions default_opts() const OVERRIDE {
+  ExternalMiniClusterOptions default_opts() const override {
     // There's nothing scientific about this number; it must be low enough to
     // trigger memory pressure request rejection yet high enough for the
     // servers to make forward progress.
@@ -259,15 +258,8 @@ class ClientStressTest_LowMemory : public ClientStressTest {
 
 // Stress test where, due to absurdly low memory limits, many client requests
 // are rejected, forcing the client to retry repeatedly.
-TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
-#ifdef THREAD_SANITIZER
-  // TSAN tests run much slower, so we don't want to wait for as many
-  // rejections before declaring the test to be passed.
-  const int64_t kMinRejections = 20;
-#else
+TEST_F(ClientStressLowMemoryTest, TestMemoryThrottling) {
   const int64_t kMinRejections = 100;
-#endif
-
   const MonoDelta kMaxWaitTime = MonoDelta::FromSeconds(60);
 
   TestWorkload work(cluster_.get());
@@ -334,7 +326,6 @@ TEST_F(ClientStressTest, TestUniqueClientIds) {
   }
 }
 
-#if !defined(THREAD_SANITIZER) && !defined(ADDRESS_SANITIZER)
 // Test for stress scenarios exercising meta-cache lookup path. The scenarios
 // not to be run under sanitizer builds since they are CPU intensive.
 class MetaCacheLookupStressTest : public ClientStressTest {
@@ -462,6 +453,5 @@ TEST_F(MetaCacheLookupStressTest, Perf) {
   LOG(INFO) << Substitute("Total time spent: $0 ms", wall_spent_ms);
   LOG(INFO) << Substitute("Time per row: $0 ms", wall_spent_ms / kNumRows);
 }
-#endif // #if !defined(THREAD_SANITIZER) && !defined(ADDRESS_SANITIZER)
 
 } // namespace kudu

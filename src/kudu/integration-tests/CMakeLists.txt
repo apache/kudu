@@ -67,8 +67,6 @@ ADD_KUDU_TEST(catalog_manager_tsk-itest PROCESSORS 2)
 ADD_KUDU_TEST(varchar-itest)
 ADD_KUDU_TEST(client_failover-itest)
 ADD_KUDU_TEST(client-negotiation-failover-itest)
-ADD_KUDU_TEST(client-stress-test
-  RUN_SERIAL true)
 ADD_KUDU_TEST(consensus_peer_health_status-itest)
 ADD_KUDU_TEST(consistency-itest PROCESSORS 5)
 ADD_KUDU_TEST(create-table-itest PROCESSORS 3)
@@ -149,6 +147,15 @@ ADD_KUDU_TEST(webserver-crawl-itest LABELS no_dist_test)
 ADD_KUDU_TEST(webserver-stress-itest RUN_SERIAL true)
 ADD_KUDU_TEST(write_limit-itest)
 ADD_KUDU_TEST(write_throttling-itest)
+
+# The scenarios in client-stress-test are used for benchmarking and stress
+# testing of the client meta-cache. These are CPU and memory intensive, and
+# running them under ASAN/TSAN takes a long time. Other tests (such as
+# client-test, etc.) already provide good coverage for the related components
+# to run under ASAN/TSAN.
+if(NOT "${KUDU_USE_ASAN}" AND NOT "${KUDU_USE_TSAN}")
+  ADD_KUDU_TEST(client-stress-test RUN_SERIAL true)
+endif()
 
 if (NOT APPLE)
   ADD_KUDU_TEST(minidump_generation-itest)
