@@ -71,6 +71,10 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
+namespace {
+int testIteration = 0;
+} // namespace
+
 namespace kudu {
 
 const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
@@ -85,6 +89,11 @@ static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 //
 // This can be checked using the 'IsGTest()' function from test_util_prod.cc.
 bool g_is_gtest = true;
+
+void KuduTestEventListener::OnTestIterationStart(const testing::UnitTest& /*unit_test*/,
+                                                 int iteration) {
+  testIteration = iteration;
+}
 
 ///////////////////////////////////////////////////
 // KuduTest
@@ -130,7 +139,7 @@ KuduTest::KuduTest()
   // If the TEST_TMPDIR variable has been set, then glog will automatically use that
   // as its default log directory. We would prefer that the default log directory
   // instead be the test-case-specific subdirectory.
-  FLAGS_log_dir = GetTestDataDirectory();
+  FLAGS_log_dir = test_dir_;
 }
 
 KuduTest::~KuduTest() {
@@ -223,8 +232,9 @@ string GetTestDataDirectory() {
   // The directory name includes some strings for specific reasons:
   // - program name: identifies the directory to the test invoker
   // - timestamp and pid: disambiguates with prior runs of the same test
+  // - iteration: identifies the iteration when using --gtest_repeat
   //
-  // e.g. "env-test.TestEnv.TestReadFully.1409169025392361-23600"
+  // e.g. "env-test.TestEnv.TestReadFully.1409169025392361-23600-0"
   //
   // If the test is sharded, the shard index is also included so that the test
   // invoker can more easily identify all directories belonging to each shard.
@@ -233,13 +243,14 @@ string GetTestDataDirectory() {
   if (shard_index && shard_index[0] != '\0') {
     shard_index_infix = Substitute("$0.", shard_index);
   }
-  dir += Substitute("/$0.$1$2.$3.$4-$5",
+  dir += Substitute("/$0.$1$2.$3.$4-$5-$6",
     StringReplace(google::ProgramInvocationShortName(), "/", "_", true),
     shard_index_infix,
     StringReplace(test_info->test_case_name(), "/", "_", true),
     StringReplace(test_info->name(), "/", "_", true),
     kTestBeganAtMicros,
-    getpid());
+    getpid(),
+    testIteration);
   Status s = Env::Default()->CreateDir(dir);
   CHECK(s.IsAlreadyPresent() || s.ok())
     << "Could not create directory " << dir << ": " << s.ToString();

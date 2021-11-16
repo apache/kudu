@@ -103,7 +103,8 @@ int main(int argc, char **argv) {
   // cover our bases and call it here too.
   kudu::KuduTest::OverrideKrb5Environment();
 
-  int ret = RUN_ALL_TESTS();
+  testing::TestEventListeners& listeners = testing::UnitTest::GetInstance()->listeners();
+  listeners.Append(new kudu::KuduTestEventListener());
 
-  return ret;
+  return RUN_ALL_TESTS();
 }

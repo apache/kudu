@@ -55,6 +55,10 @@ class Status;
 
 extern const char* kInvalidPath;
 
+class KuduTestEventListener : public ::testing::EmptyTestEventListener {
+  void OnTestIterationStart(const testing::UnitTest& unit_test, int iteration) override;
+};
+
 class KuduTest : public ::testing::Test {
  public:
   KuduTest();
