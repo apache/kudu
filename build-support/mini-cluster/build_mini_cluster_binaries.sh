@@ -84,7 +84,7 @@ if [ -d "$BUILD_ROOT" ]; then
   fi
 fi
 
-THIRDPARTY_DIR=${THIRDPARTY_DIR:-$BASE_DIR/thirdparty}
+THIRDPARTY_DIR=${THIRDPARTY_DIR:-$SOURCE_ROOT/thirdparty}
 cd $SOURCE_ROOT
 if [ -n "$NO_REBUILD_THIRDPARTY" ]; then
   echo Skipping thirdparty because NO_REBUILD_THIRDPARTY is not empty
