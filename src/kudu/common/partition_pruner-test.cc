@@ -1081,7 +1081,9 @@ TEST_F(PartitionPrunerTest, TestKudu2173) {
                   2));
 }
 
-TEST_F(PartitionPrunerTest, TestHashSchemasPerRangePruning) {
+// TODO(aserbin): re-enable this scenario once varying hash dimensions per range
+//                are supported
+TEST_F(PartitionPrunerTest, DISABLED_TestHashSchemasPerRangePruning) {
   // CREATE TABLE t
   // (A INT8, B INT8, C STRING)
   // PRIMARY KEY (A, B, C)
@@ -1480,7 +1482,9 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
                   4, 4));
 }
 
-TEST_F(PartitionPrunerTest, TestSingleRangeElementAndBoundaryCase) {
+// TODO(aserbin): re-enable this scenario once varying hash dimensions per range
+//                are supported
+TEST_F(PartitionPrunerTest, DISABLED_TestSingleRangeElementAndBoundaryCase) {
   // CREATE TABLE t
   // (A INT8, B INT8)
   // PRIMARY KEY (A, B)

@@ -83,7 +83,13 @@ class PartitionKey {
   }
 
   bool operator<(const PartitionKey& other) const {
-    return ToString() < other.ToString();
+    if (hash_key_ < other.hash_key_) {
+      return true;
+    }
+    if (hash_key_ == other.hash_key_) {
+      return range_key_ < other.range_key_;
+    }
+    return false;
   }
 
   bool operator<=(const PartitionKey& other) const {

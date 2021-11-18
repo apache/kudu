@@ -1888,8 +1888,22 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // Create partitions based on specified partition schema and split rows.
   vector<Partition> partitions;
-  RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, range_bounds,
-                                                  range_hash_schemas, schema, &partitions));
+  RETURN_NOT_OK(partition_schema.CreatePartitions(
+      split_rows, range_bounds, range_hash_schemas, schema, &partitions));
+
+  // Check the restriction on the same number of hash dimensions across all the
+  // ranges.
+  //
+  // TODO(aserbin): remove the restriction once the rest of the code is ready
+  //                to handle range partitions with arbitrary hash schemas
+  CHECK(!partitions.empty());
+  const auto hash_dimensions_num = partitions.begin()->hash_buckets().size();
+  for (const auto& p : partitions) {
+    if (p.hash_buckets().size() != hash_dimensions_num) {
+      return Status::NotSupported(
+          "varying number of hash dimensions per range is not yet supported");
+    }
+  }
 
   // If they didn't specify a num_replicas, set it based on the default.
   if (!req.has_num_replicas()) {
