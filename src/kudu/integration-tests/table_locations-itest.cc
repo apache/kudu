@@ -1284,18 +1284,15 @@ TEST_F(TableLocationsCacheMultiMasterTest, ResetCache) {
 
   int leader_master_idx = -1;
   ASSERT_EVENTUALLY([&] {
-    // Induce a change in master leadership (maybe, even few of them, up to the
-    // number of masters in the cluster).
-    for (auto idx = 0; idx < cluster_->num_masters(); ++idx) {
-      ASSERT_OK(cluster_->master(idx)->Pause());
-      // Make one master to stop sending heartbeats, and give the rest about
-      // three heartbeat periods to elect a new leader in case if the stopped
-      // master was a leader.
-      SleepFor(MonoDelta::FromMilliseconds(
-          2 * kRaftHeartbeatIntervalMs * kMaxMissedHeartbeatPeriods +
-          3 * kRaftHeartbeatIntervalMs));
-      ASSERT_OK(cluster_->master(idx)->Resume());
-    }
+    // Induce a change of the masters' leadership.
+    ASSERT_OK(cluster_->master(former_leader_master_idx)->Pause());
+    // Make one master stop sending heartbeats, and give the rest about three
+    // heartbeat periods to elect a new leader (include an extra margin to keep
+    // the scenario stable).
+    SleepFor(MonoDelta::FromMilliseconds(
+        2 * (kRaftHeartbeatIntervalMs * kMaxMissedHeartbeatPeriods +
+             kRaftHeartbeatIntervalMs * 3)));
+    ASSERT_OK(cluster_->master(former_leader_master_idx)->Resume());
     ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_master_idx));
     ASSERT_NE(former_leader_master_idx, leader_master_idx);
   });
