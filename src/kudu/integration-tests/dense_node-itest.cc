@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -31,6 +30,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/schema.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
@@ -44,11 +44,17 @@
 #include "kudu/util/test_macros.h"
 
 METRIC_DECLARE_entity(server);
+METRIC_DECLARE_gauge_uint64(block_manager_total_blocks_created);
+METRIC_DECLARE_gauge_uint64(block_manager_total_bytes_written);
+METRIC_DECLARE_gauge_uint64(block_manager_total_disk_sync);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_bytes_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
 METRIC_DECLARE_gauge_uint64(log_block_manager_full_containers);
 METRIC_DECLARE_gauge_uint64(threads_running);
+
+DECLARE_bool(enable_rowset_compaction);
+DECLARE_string(block_manager);
 
 DEFINE_bool(measure_startup_drop_caches, false,
             "Whether to drop kernel caches before measuring startup time. Must be root");
@@ -109,8 +115,14 @@ TEST_F(DenseNodeTest, RunTest) {
                  FLAGS_max_blocks_per_container),
 
       // UNDO delta block GC runs a lot to eagerly open newly created cfiles.
-      // Disable it so we can maximize flushes and compactions.
+      // Disable it so we can maximize flushes.
       "--enable_undo_delta_block_gc=false",
+
+      // Compactions aim to reduce the number of rowsets and thus reduce the
+      // number of cfiles. Potentially disable them so we can maximize the
+      // number of files. NOTE: this also means we don't exercise the block
+      // deletions that come with compactions.
+      Substitute("--enable_rowset_compaction=$0", FLAGS_enable_rowset_compaction),
 
       // Allow our single tserver to service many, many RPCs.
       "--rpc_service_queue_length=1000",
@@ -177,11 +189,21 @@ TEST_F(DenseNodeTest, RunTest) {
   // Collect some interesting metrics. The cluster is shut down before the
   // metrics are logged so that they're easier to find in the log output.
   vector<pair<string, int64_t>> metrics;
-  for (const auto* m : { &METRIC_log_block_manager_blocks_under_management,
-                         &METRIC_log_block_manager_bytes_under_management,
-                         &METRIC_log_block_manager_containers,
-                         &METRIC_log_block_manager_full_containers,
-                         &METRIC_threads_running }) {
+  vector<GaugePrototype<uint64>*> metric_prototypes;
+  if (FLAGS_block_manager == "log") {
+    metric_prototypes = { &METRIC_log_block_manager_blocks_under_management,
+                          &METRIC_log_block_manager_bytes_under_management,
+                          &METRIC_log_block_manager_containers,
+                          &METRIC_log_block_manager_full_containers,
+                          &METRIC_block_manager_total_disk_sync,
+                          &METRIC_threads_running };
+  } else {
+    metric_prototypes = { &METRIC_block_manager_total_bytes_written,
+                          &METRIC_block_manager_total_blocks_created,
+                          &METRIC_block_manager_total_disk_sync,
+                          &METRIC_threads_running };
+  }
+  for (const auto* m : metric_prototypes) {
     int64_t value;
     ASSERT_OK(itest::GetInt64Metric(
         cluster_->tablet_server(0)->bound_http_hostport(), &METRIC_ENTITY_server,

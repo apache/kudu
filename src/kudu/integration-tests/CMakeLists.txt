@@ -76,6 +76,7 @@ ADD_KUDU_TEST(create-table-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(decimal-itest)
 ADD_KUDU_TEST(delete_table-itest NUM_SHARDS 8 PROCESSORS 4)
 ADD_KUDU_TEST(delete_tablet-itest PROCESSORS 2)
+ADD_KUDU_TEST(dense_node-itest RUN_SERIAL true)
 ADD_KUDU_TEST(disk_failure-itest PROCESSORS 2)
 ADD_KUDU_TEST(disk_reservation-itest)
 ADD_KUDU_TEST(dns_alias-itest)
@@ -151,10 +152,6 @@ ADD_KUDU_TEST(write_throttling-itest)
 
 if (NOT APPLE)
   ADD_KUDU_TEST(minidump_generation-itest)
-  # Opens too many files on macOS because we're not using a file cache for
-  # reading log segments.
-  # TODO(wdb): Re-enable once a file cache is being used.
-  ADD_KUDU_TEST(dense_node-itest RUN_SERIAL true)
 endif()
 
 # Tests that should not be run automatically by ctest.
