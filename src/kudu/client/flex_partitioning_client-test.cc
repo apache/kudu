@@ -353,7 +353,59 @@ TEST_F(FlexPartitioningCreateTableTest, EmptyTableWideHashSchema) {
   // There should be 2 tablets total: one per each range created.
   NO_FATALS(CheckTabletCount(kTableName, 2));
   ASSERT_OK(InsertTestRows(kTableName, -111, 222, KuduSession::MANUAL_FLUSH));
-  NO_FATALS(CheckTableRowsNum(kTableName, 333));
+  NO_FATALS(CheckLiveRowCount(kTableName, 333));
+  // TODO(aserbin): uncomment the line below once PartitionPruner handles such
+  //                cases properly
+  //NO_FATALS(CheckTableRowsNum(kTableName, 333));
+}
+
+TEST_F(FlexPartitioningCreateTableTest, SingleCustomRangeEmptyHashSchema) {
+  // Create a table with the following partitions:
+  //
+  //           hash bucket
+  //   key    0           1
+  //         -------------------------
+  //  <111    x:{key}     x:{key}
+  // 111-222  -           -
+  constexpr const char* const kTableName = "SingleCustomRangeEmptyHashSchema";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(1)
+      .add_hash_partitions({ kKeyColumn }, 2)
+      .set_range_partition_columns({ kKeyColumn });
+
+  // Add a range partition with the table-wide hash partitioning rules.
+  {
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    ASSERT_OK(lower->SetInt32(kKeyColumn, INT32_MIN));
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, 111));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+
+  // Add a range partition with no hash bucketing. Not calling
+  // KuduRangePartition::add_hash_partitions() on the newly created range means
+  // the range doesn't have any hash bucketing.
+  {
+    auto p = CreateRangePartition(111, 222);
+    table_creator->add_custom_range_partition(p.release());
+  }
+
+  ASSERT_OK(table_creator->Create());
+  NO_FATALS(CheckTabletCount(kTableName, 3));
+
+  // Make sure it's possible to insert rows into the table for all the existing
+  // the partitions: first check the range of table-wide schema, then check
+  // the ranges with custom hash schemas.
+  ASSERT_OK(InsertTestRows(kTableName, -111, 0));
+  NO_FATALS(CheckLiveRowCount(kTableName, 111));
+  ASSERT_OK(InsertTestRows(kTableName, 111, 222));
+  NO_FATALS(CheckLiveRowCount(kTableName, 222));
+  // TODO(aserbin): uncomment the line below once PartitionPruner handles such
+  //                cases properly
+  //NO_FATALS(CheckTableRowsNum(kTableName, 222));
 }
 
 // Create a table with mixed set of range partitions, using both table-wide and
@@ -362,7 +414,6 @@ TEST_F(FlexPartitioningCreateTableTest, EmptyTableWideHashSchema) {
 // TODO(aserbin): add verification based on PartitionSchema provided by
 //                KuduTable::partition_schema() once PartitionPruner
 //                recognized custom hash bucket schema for ranges
-// TODO(aserbin): add InsertTestRows() when proper key encoding is implemented
 TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashSchemas) {
   // Create a table with the following partitions:
   //

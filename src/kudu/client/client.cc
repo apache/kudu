@@ -947,7 +947,7 @@ Status KuduTableCreator::Create() {
 
   bool has_range_with_custom_hash_schema = false;
   for (const auto& p : data_->range_partitions_) {
-    if (!p->data_->hash_schema_.empty()) {
+    if (!p->data_->is_table_wide_hash_schema_) {
       has_range_with_custom_hash_schema = true;
       break;
     }
