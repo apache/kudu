@@ -354,7 +354,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Create and register a new TabletReplica, given tablet metadata.
   // Calls RegisterTablet() with the given 'mode' parameter after constructing
-  // the TablerPeer object. See RegisterTablet() for details about the
+  // the TabletReplica object. See RegisterTablet() for details about the
   // semantics of 'mode' and the locking requirements.
   Status CreateAndRegisterTabletReplica(scoped_refptr<tablet::TabletMetadata> meta,
                                         RegisterTabletReplicaMode mode,

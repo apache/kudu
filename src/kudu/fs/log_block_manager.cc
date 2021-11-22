@@ -2990,7 +2990,7 @@ Status LogBlockManager::Repair(
   Status first_fatal_error;
   SCOPED_LOG_TIMING(INFO, "loading block containers with low live blocks");
   for (const auto& e : low_live_block_containers) {
-    if (seen_fatal_error.load()) {
+    if (seen_fatal_error) {
       break;
     }
     LogBlockContainerRefPtr container = FindPtrOrNull(containers_by_name, e.first);
@@ -3031,7 +3031,7 @@ Status LogBlockManager::Repair(
   }
 
   dir->WaitOnClosures();
-  if (seen_fatal_error.load()) {
+  if (seen_fatal_error) {
     LOG_AND_RETURN(WARNING, first_fatal_error);
   }
 

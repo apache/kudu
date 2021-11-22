@@ -178,7 +178,7 @@ class FlushedStoresSnapshot {
   bool IsMemStoreActive(const MemStoreTargetPB& target) const;
 
  private:
-  int64_t last_durable_mrs_id_;
+  int64_t last_durable_mrs_id_ = 0;
   unordered_map<int64_t, int64_t> flushed_dms_by_drs_id_;
 
   DISALLOW_COPY_AND_ASSIGN(FlushedStoresSnapshot);
@@ -221,7 +221,7 @@ class FlushedStoresSnapshot {
 // original WALs, following a crash during bootstrapping, subsequent bootstraps
 // should attempt to replay segments out of the recovery directory.
 //
-// TODO(dralves): Because the table that is being rebuilt is never
+// TODO(dralves): Because the tablet that is being rebuilt is never
 // flushed/compacted, consensus is only set on the tablet after bootstrap, when
 // we get to flushes/compactions though we need to set it before replay or we
 // won't be able to re-rebuild.
@@ -651,7 +651,7 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 
   // This is a new tablet, nothing left to do.
   if (!has_blocks && !needs_recovery) {
-    LOG_WITH_PREFIX(INFO) << "No blocks or log segments found. Creating new log.";
+    LOG_WITH_PREFIX(INFO) << "Neither blocks nor log segments found. Creating new log.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
     RETURN_NOT_OK(FinishBootstrap("No bootstrap required, opened a new log",
                                   rebuilt_log, rebuilt_tablet));
@@ -816,7 +816,7 @@ struct ReplayState {
 
   // Return true if 'b' is allowed to immediately follow 'a' in the log.
   static bool IsValidSequence(const OpId& a, const OpId& b) {
-    if (a.term() == 0 && a.index() == 0) {
+    if (PREDICT_FALSE(a.term() == 0 && a.index() == 0)) {
       // Not initialized - can start with any opid.
       return true;
     }
@@ -831,7 +831,7 @@ struct ReplayState {
     return true;
   }
 
-  // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
+  // Return a Corruption status if 'msg' seems to be out-of-sequence in the log.
   Status CheckSequentialReplicateId(const ReplicateMsg& msg) {
     DCHECK(msg.has_id());
     if (PREDICT_FALSE(!IsValidSequence(prev_op_id, msg.id()))) {
@@ -861,7 +861,7 @@ struct ReplayState {
     }
   }
 
-  void DumpReplayStateToStrings(vector<string>* strings)  const {
+  void DumpReplayStateToStrings(vector<string>* strings) const {
     strings->push_back(Substitute("ReplayState: Previous OpId: $0, Committed OpId: $1, "
         "Pending Replicates: $2, Pending Commits: $3", OpIdToString(prev_op_id),
         OpIdToString(committed_op_id), pending_replicates.size(), pending_commits.size()));
@@ -952,6 +952,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state,
   const ReplicateMsg& replicate = entry->replicate();
   RETURN_NOT_OK(state->CheckSequentialReplicateId(replicate));
   DCHECK(replicate.has_timestamp());
+  // TODO(yingchun): Should we try to update clock by batch?
   CHECK_OK(UpdateClock(replicate.timestamp()));
 
   // Append the replicate message to the log as is
@@ -959,7 +960,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state,
 
   const int64_t index = replicate.id().index();
   const auto existing_entry_iter = state->pending_replicates.find(index);
-  if (existing_entry_iter != state->pending_replicates.end()) {
+  if (PREDICT_FALSE(existing_entry_iter != state->pending_replicates.end())) {
     // If there was a entry with the same index we're overwriting then we need
     // to delete that entry and all entries with higher indexes.
     const auto& existing_entry = existing_entry_iter->second;
@@ -1005,8 +1006,8 @@ Status TabletBootstrap::HandleCommitMessage(const IOContext* io_context, ReplayS
 
   // If there are no pending replicates, or if this commit's index is lower than the
   // the first pending replicate on record this is likely an orphaned commit.
-  if (state->pending_replicates.empty() ||
-      (*state->pending_replicates.begin()).first > committed_op_id.index()) {
+  if (PREDICT_FALSE(state->pending_replicates.empty() ||
+      (*state->pending_replicates.begin()).first > committed_op_id.index())) {
     VLOG_WITH_PREFIX(2) << "Found orphaned commit for " << committed_op_id;
     RETURN_NOT_OK(CheckOrphanedCommitDoesntNeedReplay(entry->commit()));
     stats_.orphaned_commits++;
@@ -1049,21 +1050,17 @@ Status TabletBootstrap::HandleCommitMessage(const IOContext* io_context, ReplayS
 
 TabletBootstrap::ActiveStores TabletBootstrap::AnalyzeActiveStores(const CommitMsg& commit) {
   bool has_mutated_stores = false;
-  bool has_active_stores = false;
 
   for (const OperationResultPB& op_result : commit.result().ops()) {
     for (const MemStoreTargetPB& mutated_store : op_result.mutated_stores()) {
       has_mutated_stores = true;
       if (flushed_stores_.IsMemStoreActive(mutated_store)) {
-        has_active_stores = true;
+        return SOME_STORES_ACTIVE;
       }
     }
   }
 
-  if (!has_mutated_stores) {
-    return NO_MUTATED_STORES;
-  }
-  return has_active_stores ? SOME_STORES_ACTIVE : NO_STORES_ACTIVE;
+  return has_mutated_stores ? NO_STORES_ACTIVE : NO_MUTATED_STORES;
 }
 
 Status TabletBootstrap::CheckOrphanedCommitDoesntNeedReplay(const CommitMsg& commit) {
@@ -1089,11 +1086,10 @@ Status TabletBootstrap::ApplyCommitMessage(const IOContext* io_context,
   // deleted log segment though).
   unique_ptr<LogEntryPB> pending_replicate_entry(EraseKeyReturnValuePtr(
       &state->pending_replicates, committed_op_id.index()));
-  if (pending_replicate_entry) {
-    // We found a replicate with the same index, make sure it also has the same
-    // term.
+  if (PREDICT_TRUE(pending_replicate_entry)) {
+    // We found a replicate with the same index, make sure it also has the same term.
     const auto& replicate = pending_replicate_entry->replicate();
-    if (!OpIdEquals(committed_op_id, replicate.id())) {
+    if (PREDICT_FALSE(!OpIdEquals(committed_op_id, replicate.id()))) {
       string error_msg = Substitute("Committed operation's OpId: $0 didn't match the"
           "commit message's committed OpId: $1. Pending operation: $2, Commit message: $3",
           SecureShortDebugString(replicate.id()),
@@ -1120,8 +1116,8 @@ Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB*
 
 #define RETURN_NOT_OK_REPLAY(ReplayMethodName, io_context, replicate, commit)       \
   RETURN_NOT_OK_PREPEND(ReplayMethodName(io_context, replicate, commit),            \
-                        Substitute(error_fmt, OperationType_Name(op_type), \
-                                   SecureShortDebugString(*(replicate)), \
+                        Substitute(error_fmt, OperationType_Name(op_type),          \
+                                   SecureShortDebugString(*(replicate)),            \
                                    SecureShortDebugString(commit)))
 
   ReplicateMsg* replicate = replicate_entry->mutable_replicate();
@@ -1156,6 +1152,7 @@ Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB*
 
 #undef RETURN_NOT_OK_REPLAY
 
+  // TODO(yingchun): We should try to avoid update MVCC's safe time for every entry?
   // We should only advance MVCC's safe time based on a specific set of
   // operations: those whose timestamps are guaranteed to be monotonically
   // increasing with respect to their entries in the write-ahead log.
@@ -1272,7 +1269,7 @@ Status TabletBootstrap::PlaySegments(const IOContext* io_context,
 
         string entry_debug_info;
         s = HandleEntry(io_context, &state, std::move(entry), &entry_debug_info);
-        if (!s.ok()) {
+        if (PREDICT_FALSE(!s.ok())) {
           DumpReplayStateToLog(state);
           RETURN_NOT_OK_PREPEND(s, DebugInfo(tablet_->tablet_id(),
                                              segment->header().sequence_number(),
@@ -1303,22 +1300,20 @@ Status TabletBootstrap::PlaySegments(const IOContext* io_context,
 
   // If we have non-applied commits they all must belong to pending operations and
   // they should only pertain to stores which are still active.
-  if (!state.pending_commits.empty()) {
-    for (const OpIndexToEntryMap::value_type& entry : state.pending_commits) {
-      if (!ContainsKey(state.pending_replicates, entry.first)) {
-        DumpReplayStateToLog(state);
-        return Status::Corruption("Had orphaned commits at the end of replay.");
-      }
+  for (const auto& entry : state.pending_commits) {
+    if (!ContainsKey(state.pending_replicates, entry.first)) {
+      DumpReplayStateToLog(state);
+      return Status::Corruption("Had orphaned commits at the end of replay.");
+    }
 
-      if (entry.second->commit().op_type() == WRITE_OP &&
-          AnalyzeActiveStores(entry.second->commit()) == NO_STORES_ACTIVE) {
-        DumpReplayStateToLog(state);
-        TabletSuperBlockPB super;
-        WARN_NOT_OK(tablet_meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
-        return Status::Corruption(Substitute("CommitMsg was pending but it did not refer "
-            "to any active memory stores. Commit: $0. TabletMetadata: $1",
-            SecureShortDebugString(entry.second->commit()), SecureShortDebugString(super)));
-      }
+    if (entry.second->commit().op_type() == WRITE_OP &&
+        AnalyzeActiveStores(entry.second->commit()) == NO_STORES_ACTIVE) {
+      DumpReplayStateToLog(state);
+      TabletSuperBlockPB super;
+      WARN_NOT_OK(tablet_meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
+      return Status::Corruption(Substitute("CommitMsg was pending but it did not refer "
+          "to any active memory stores. Commit: $0. TabletMetadata: $1",
+          SecureShortDebugString(entry.second->commit()), SecureShortDebugString(super)));
     }
   }
 
@@ -1366,8 +1361,8 @@ Status TabletBootstrap::PlaySegments(const IOContext* io_context,
   }
 
   // Set up the ConsensusBootstrapInfo structure for the caller.
-  for (OpIndexToEntryMap::value_type& e : state.pending_replicates) {
-    consensus_info->orphaned_replicates.push_back(e.second->release_replicate());
+  for (auto& entry : state.pending_replicates) {
+    consensus_info->orphaned_replicates.push_back(entry.second->release_replicate());
   }
   consensus_info->last_id = state.prev_op_id;
   consensus_info->last_committed_id = state.committed_op_id;

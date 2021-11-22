@@ -681,21 +681,20 @@ string FsManager::GetTabletMetadataPath(const string& tablet_id) const {
 
 bool FsManager::IsValidTabletId(const string& fname) {
   // Prevent warning logs for hidden files or ./..
-  if (HasPrefixString(fname, ".")) {
+  if (PREDICT_FALSE(HasPrefixString(fname, "."))) {
     VLOG(1) << "Ignoring hidden file in tablet metadata dir: " << fname;
     return false;
   }
 
   string canonicalized_uuid;
   Status s = oid_generator_.Canonicalize(fname, &canonicalized_uuid);
-
-  if (!s.ok()) {
+  if (PREDICT_FALSE(!s.ok())) {
     LOG(WARNING) << "Ignoring file in tablet metadata dir: " << fname << ": " <<
                  s.message().ToString();
     return false;
   }
 
-  if (fname != canonicalized_uuid) {
+  if (PREDICT_FALSE(fname != canonicalized_uuid)) {
     LOG(WARNING) << "Ignoring file in tablet metadata dir: " << fname << ": " <<
                  Substitute("canonicalized uuid $0 does not match file name",
                             canonicalized_uuid);
@@ -711,12 +710,13 @@ Status FsManager::ListTabletIds(vector<string>* tablet_ids) {
   RETURN_NOT_OK_PREPEND(ListDir(dir, &children),
                         Substitute("Couldn't list tablets in metadata directory $0", dir));
 
-  vector<string> tablets;
-  for (const string& child : children) {
-    if (!IsValidTabletId(child)) {
+  // Suppose all children are valid tablet metadata.
+  tablet_ids->reserve(children.size());
+  for (auto& child : children) {
+    if (PREDICT_FALSE(!IsValidTabletId(child))) {
       continue;
     }
-    tablet_ids->push_back(child);
+    tablet_ids->emplace_back(std::move(child));
   }
   return Status::OK();
 }

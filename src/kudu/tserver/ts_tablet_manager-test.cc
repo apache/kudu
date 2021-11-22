@@ -26,7 +26,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -39,6 +39,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -49,13 +50,22 @@
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DEFINE_int32(startup_benchmark_tablet_count_for_testing, 100,
+             "Tablet count to do startup benchmark.");
+
+DECLARE_bool(enable_leader_failure_detection);
+DECLARE_int32(num_tablets_to_open_simultaneously);
+DECLARE_bool(tablet_bootstrap_skip_opening_tablet_for_testing);
+DECLARE_int32(tablet_metadata_load_inject_latency_ms);
 DECLARE_int32(update_tablet_metrics_interval_ms);
 
 #define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
@@ -75,6 +85,7 @@ using kudu::tablet::TabletReplica;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -108,6 +119,7 @@ class TsTabletManagerTest : public KuduTest {
 
   Status CreateNewTablet(const std::string& tablet_id,
                          const Schema& schema,
+                         bool wait_leader,
                          boost::optional<TableExtraConfigPB> extra_config,
                          boost::optional<std::string> dimension_label,
                          scoped_refptr<tablet::TabletReplica>* out_tablet_replica) {
@@ -128,7 +140,8 @@ class TsTabletManagerTest : public KuduTest {
     }
 
     RETURN_NOT_OK(tablet_replica->WaitUntilConsensusRunning(MonoDelta::FromMilliseconds(2000)));
-    return tablet_replica->consensus()->WaitUntilLeader(MonoDelta::FromSeconds(10));
+    return wait_leader ? tablet_replica->consensus()->WaitUntilLeader(MonoDelta::FromSeconds(10)) :
+                         Status::OK();
   }
 
   void GenerateFullTabletReport(TabletReportPB* report) {
@@ -177,9 +190,9 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   extra_config.set_history_max_age_sec(7200);
 
   // Create a new tablet.
-  ASSERT_OK(CreateNewTablet(tablet1, schema_, boost::none, boost::none, &replica1));
+  ASSERT_OK(CreateNewTablet(tablet1, schema_, true, boost::none, boost::none, &replica1));
   // Create a new tablet with extra config.
-  ASSERT_OK(CreateNewTablet(tablet2, schema_, extra_config, boost::none, &replica2));
+  ASSERT_OK(CreateNewTablet(tablet2, schema_, true, extra_config, boost::none, &replica2));
   ASSERT_EQ(tablet1, replica1->tablet()->tablet_id());
   ASSERT_EQ(tablet2, replica2->tablet()->tablet_id());
   ASSERT_EQ(boost::none, replica1->tablet()->metadata()->extra_config());
@@ -259,7 +272,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
-  ASSERT_OK(CreateNewTablet("tablet-1", schema_, boost::none, boost::none, nullptr));
+  ASSERT_OK(CreateNewTablet("tablet-1", schema_, true, boost::none, boost::none, nullptr));
   int updated_tablets = 0;
   while (updated_tablets != 1) {
     GenerateIncrementalTabletReport(&report);
@@ -286,7 +299,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
-  ASSERT_OK(CreateNewTablet("tablet-2", schema_, boost::none, boost::none, nullptr));
+  ASSERT_OK(CreateNewTablet("tablet-2", schema_, true, boost::none, boost::none, nullptr));
 
   // Wait up to 10 seconds to get a tablet report from tablet-2.
   // TabletReplica does not mark tablets dirty until after it commits the
@@ -333,8 +346,8 @@ TEST_F(TsTabletManagerTest, TestTabletStatsReports) {
 
   // 1. Create two tablets.
   scoped_refptr<tablet::TabletReplica> replica1;
-  ASSERT_OK(CreateNewTablet("tablet-1", schema_, boost::none, boost::none, &replica1));
-  ASSERT_OK(CreateNewTablet("tablet-2", schema_, boost::none, boost::none, nullptr));
+  ASSERT_OK(CreateNewTablet("tablet-1", schema_, true, boost::none, boost::none, &replica1));
+  ASSERT_OK(CreateNewTablet("tablet-2", schema_, true, boost::none, boost::none, nullptr));
 
   // 2. Do a full report - should include two tablets and statistics are uninitialized.
   NO_FATALS(GenerateFullTabletReport(&report));
@@ -397,6 +410,29 @@ TEST_F(TsTabletManagerTest, TestTabletStatsReports) {
   ASSERT_EQ(kCount, report.updated_tablets(0).stats().live_row_count());
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
   MarkTabletReportAcknowledged(report);
+}
+
+TEST_F(TsTabletManagerTest, StartupBenchmark) {
+  const int64_t kTabletCount = FLAGS_startup_benchmark_tablet_count_for_testing;
+
+  FLAGS_enable_leader_failure_detection = false;
+
+  // Mute logs, cause there are too many tablets to be created.
+  FLAGS_minloglevel = 2;
+  ObjectIdGenerator generator;
+  for (int i = 0; i < kTabletCount; i++) {
+    KLOG_EVERY_N_SECS(ERROR, 1) << Substitute("Created tablet ($0/$1 complete)", i, kTabletCount);
+    ASSERT_OK(CreateNewTablet(generator.Next(), schema_, false, boost::none, boost::none, nullptr));
+  }
+
+  mini_server_->Shutdown();
+  // Revert log level to see how much time cost when load tablet metadata.
+  FLAGS_minloglevel = 0;
+  FLAGS_tablet_bootstrap_skip_opening_tablet_for_testing = true;
+  FLAGS_tablet_metadata_load_inject_latency_ms = 2;
+  ASSERT_OK(mini_server_->Start());
+  // Mute logs, cause there are too many tablets to be shutdown.
+  FLAGS_minloglevel = 2;
 }
 
 } // namespace tserver

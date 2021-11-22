@@ -51,6 +51,7 @@
 #include "kudu/tablet/txn_participant.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
@@ -64,6 +65,11 @@ DEFINE_bool(enable_tablet_orphaned_block_deletion, true,
 TAG_FLAG(enable_tablet_orphaned_block_deletion, advanced);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, hidden);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);
+
+DEFINE_int32(tablet_metadata_load_inject_latency_ms, 0,
+             "Amount of latency in ms to inject when load tablet metadata file. "
+             "Only for testing.");
+TAG_FLAG(tablet_metadata_load_inject_latency_ms, hidden);
 
 using base::subtle::Barrier_AtomicIncrement;
 using kudu::consensus::MinimumOpId;
@@ -139,6 +145,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
 Status TabletMetadata::Load(FsManager* fs_manager,
                             const string& tablet_id,
                             scoped_refptr<TabletMetadata>* metadata) {
+  MAYBE_INJECT_FIXED_LATENCY(FLAGS_tablet_metadata_load_inject_latency_ms);
   scoped_refptr<TabletMetadata> ret(new TabletMetadata(fs_manager, tablet_id));
   RETURN_NOT_OK(ret->LoadFromDisk());
   metadata->swap(ret);
