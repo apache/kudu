@@ -175,9 +175,10 @@ bool TimeManager::HasAdvancedSafeTimeRecentlyUnlocked(string* error_message) {
   max_last_advanced = std::max<int64_t>(max_last_advanced, 100LL);
   MonoDelta max_delta = MonoDelta::FromMilliseconds(max_last_advanced);
   if (time_since_last_advance > max_delta) {
-    *error_message = Substitute("Tablet hasn't heard from leader, or there hasn't been a stable "
-                                "leader for: $0 secs, (max is $1):",
-                                time_since_last_advance.ToString(), max_delta.ToString());
+    *error_message = Substitute(
+        "tablet hasn't heard from leader or there hasn't been a stable leader "
+        "for $0 (maximum allowed $1)",
+        time_since_last_advance.ToString(), max_delta.ToString());
     return false;
   }
   return true;
@@ -187,14 +188,16 @@ bool TimeManager::IsSafeTimeLaggingUnlocked(Timestamp timestamp, string* error_m
   DCHECK(lock_.is_locked());
 
   // Can't calculate safe time lag for the logical clock.
-  if (PREDICT_FALSE(!clock_->HasPhysicalComponent())) return false;
+  if (PREDICT_FALSE(!clock_->HasPhysicalComponent())) {
+    return false;
+  }
   MonoDelta safe_time_diff = clock_->GetPhysicalComponentDifference(timestamp,
                                                                     last_safe_ts_);
   if (safe_time_diff.ToMilliseconds() > FLAGS_safe_time_max_lag_ms) {
-    *error_message = Substitute("Tablet is lagging too much to be able to serve snapshot scan. "
-                                "Lagging by: $0 ms, (max is $1 ms):",
-                                safe_time_diff.ToMilliseconds(),
-                                FLAGS_safe_time_max_lag_ms);
+    *error_message = Substitute(
+        "tablet is lagging too much to be able to serve a snapshot scan: "
+        "current lag $0 ms (maximum allowed $1 ms)",
+        safe_time_diff.ToMilliseconds(), FLAGS_safe_time_max_lag_ms);
     return true;
   }
   return false;

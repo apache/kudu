@@ -36,6 +36,7 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -2267,7 +2268,17 @@ TEST_F(RaftConsensusITest, TestCommitIndexFarBehindAfterLeaderElection) {
 TEST_F(RaftConsensusITest, TestSlowFollower) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
-  NO_FATALS(BuildAndStart());
+  // Leaving the default --missed_heartbeats_before_rejecting_snapshot_scans=1.5
+  // makes the scenario prone to flakiness with the default setting of
+  // --raft_heartbeat_interval_ms=500 because the injected WAL latency of 1000ms
+  // is above of 750 ms (500 * 1.5 = 750). We don't want too many scan requests
+  // to be rejected because the follower replica hasn't heard from the leader
+  // when the safe time has already been advanced beyond the timestamp of the
+  // snapshot scan request. The customized setting for the
+  // --missed_heartbeats_before_rejecting_snapshot_scans flag helps making the
+  // scenario more stable.
+  NO_FATALS(BuildAndStart(
+      {"--missed_heartbeats_before_rejecting_snapshot_scans=3"}));
 
   TServerDetails* leader;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
@@ -2275,9 +2286,9 @@ TEST_F(RaftConsensusITest, TestSlowFollower) {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     ExternalTabletServer* ts = cluster_->tablet_server(i);
     if (ts->instance_id().permanent_uuid() != leader->uuid()) {
-      TServerDetails* follower;
-      follower = GetReplicaWithUuidOrNull(tablet_id_, ts->instance_id().permanent_uuid());
-      ASSERT_TRUE(follower);
+      TServerDetails* follower =
+          GetReplicaWithUuidOrNull(tablet_id_, ts->instance_id().permanent_uuid());
+      ASSERT_NE(nullptr, follower);
       NO_FATALS(EnableLogLatency(follower->generic_proxy.get()));
       num_reconfigured++;
       break;
