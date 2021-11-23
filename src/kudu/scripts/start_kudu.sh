@@ -51,11 +51,11 @@ NUM_TSERVERS=3
 MASTER_RPC_PORT_BASE=8764
 TSERVER_RPC_PORT_BASE=9870
 TIME_SOURCE=system_unsync
-BUILDDIR="$PWD"
+BUILDDIR=""
 CLUSTER_DIR="$PWD"
 EXTRA_TSERVER_FLAGS=""
 EXTRA_MASTER_FLAGS=""
-echo $(readlink -f $(dirname $0))
+
 while (( "$#" )); do
   case "$1" in
     -h|--help)
@@ -115,14 +115,30 @@ while (( "$#" )); do
   esac
 done
 
-WEBSERVER_DOC_ROOT="$BUILDDIR/../../www"
+if [ -z "$BUILDDIR" ]; then
+  echo -n "Assuming that the script was started from the build directory. "
+  echo "You can override this with -b|--builddir option."
+  BUILDDIR="$PWD"
+fi
+
+# If $KUDU_HOME is not set or $KUDU_HOME/www doesn't exists, let's default to $BUILDDIR/../../www
+# In case neither is available we'll issue a warning and won't set the --webserver_doc_root flag
+# for kudu-master and kudu-tserver
+if [ -z "$KUDU_HOME" ] || [ ! -d "$KUDU_HOME/www" ]; then
+  WEBSERVER_DOC_ROOT="$BUILDDIR/../../www"
+fi
+
+if [ ! -d "$WEBSERVER_DOC_ROOT" ]; then
+  echo  -n "Cannot find webroot directory $WEBSERVER_DOC_ROOT at "
+  echo "\$KUDU_HOME/www or \$BUILDDIR/../../www"
+fi
+
 KUDUMASTER="$BUILDDIR/bin/kudu-master"
 KUDUTSERVER="$BUILDDIR/bin/kudu-tserver"
 echo $KUDUMASTER
 echo $KUDUTSERVER
 IP=127.0.0.1
 
-[ ! -d "$WEBSERVER_DOC_ROOT" ] && { echo "Cannot find webroot directory $WEBSERVER_DOC_ROOT"; exit 1; }
 [ ! -x "$KUDUMASTER" ] && { echo "Cannot find $KUDUMASTER executable";  exit 1; }
 [ ! -x "$KUDUTSERVER" ] && { echo "Cannot find $KUDUTSERVER executable";  exit 1; }
 
@@ -167,7 +183,7 @@ function start_master() {
   ARGS="$ARGS --unlock_unsafe_flags"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --webserver_interface=$IP"
-  ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
+  if [ -d "$WEBSERVER_DOC_ROOT" ]; then ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"; fi
   ARGS="$ARGS $EXTRA_MASTER_FLAGS"
   $ARGS &
   pids+=($!)
@@ -187,7 +203,7 @@ function start_tserver() {
   ARGS="$ARGS --unlock_unsafe_flags"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --webserver_interface=$IP"
-  ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
+  if [ -d "$WEBSERVER_DOC_ROOT" ]; then ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"; fi
   ARGS="$ARGS --tserver_master_addrs=$4"
   ARGS="$ARGS $EXTRA_TSERVER_FLAGS"
   $ARGS &
