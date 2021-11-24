@@ -671,7 +671,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     req.mutable_replica_management_info()->CopyFrom(rmi);
     req.mutable_registration()->mutable_rpc_addresses(0)->set_port(1001);
     Status s = proxy_->TSHeartbeat(req, &resp, &rpc);
-    ASSERT_TRUE(s.IsRemoteError());
+    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Tablet server my-ts-uuid is attempting to re-register "
                         "with a different host/port.");

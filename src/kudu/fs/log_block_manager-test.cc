@@ -843,7 +843,7 @@ TEST_P(LogBlockManagerTest, TestMetadataTruncation) {
   // Now try to reopen the container.
   // This should look like a bad checksum, and it's not recoverable.
   s = ReopenBlockManager();
-  ASSERT_TRUE(s.IsCorruption());
+  ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Incorrect checksum");
 
   // Now truncate both the data and metadata files.
@@ -1151,7 +1151,7 @@ TEST_P(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
     FLAGS_crash_on_eio = false;
     FLAGS_env_inject_eio = 1.0;
     Status s = block_transactions[0]->CommitCreatedBlocks();
-    ASSERT_TRUE(s.IsIOError());
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
   }
 
   // Now try to add some more blocks.
@@ -1164,7 +1164,7 @@ TEST_P(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
     // new container.
     Status s = block->Append("x");
     if (i == 0) {
-      ASSERT_TRUE(s.IsIOError());
+      ASSERT_TRUE(s.IsIOError()) << s.ToString();
     } else {
       ASSERT_OK_FAST(s);
       ASSERT_OK_FAST(block->Finalize());

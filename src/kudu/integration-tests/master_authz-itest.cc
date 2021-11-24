@@ -935,7 +935,7 @@ TEST_P(MasterAuthzITest, TestAuthzGiveAwayOwnership) {
     unique_ptr<KuduTableAlterer> alterer(
         this->client_->NewTableAlterer(table_name));
     Status s = alterer->DropColumn("int8_val")->Alter();
-    ASSERT_TRUE(s.IsNotAuthorized());
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   }
 
   // Login as the new owner, create a new client, and alter the table.
@@ -954,7 +954,7 @@ TEST_P(MasterAuthzITest, TestChangeOwnerWithoutDelegateAdmin) {
 
   unique_ptr<KuduTableAlterer> alterer(this->client_->NewTableAlterer(table_name));
   Status s = alterer->SetOwner(kSecondUser)->Alter();
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 }
 
 TEST_P(MasterAuthzITest, TestChangeOwnerWithoutAll) {
@@ -963,7 +963,7 @@ TEST_P(MasterAuthzITest, TestChangeOwnerWithoutAll) {
 
   unique_ptr<KuduTableAlterer> alterer(this->client_->NewTableAlterer(table_name));
   Status s = alterer->SetOwner(kSecondUser)->Alter();
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 }
 
 TEST_P(MasterAuthzITest, TestAlterAndChangeOwner) {
@@ -973,7 +973,7 @@ TEST_P(MasterAuthzITest, TestAlterAndChangeOwner) {
   unique_ptr<KuduTableAlterer> alterer(this->client_->NewTableAlterer(table_name));
   alterer->SetOwner(kSecondUser)->DropColumn("int8_val");
   Status s = alterer->Alter();
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   this->GrantAllWithGrantTablePrivilege({kDatabaseName, kTableName});
   ASSERT_OK(alterer->Alter());
@@ -1020,7 +1020,7 @@ TEST_P(MasterAuthzOwnerITest, TestMismatchedTable) {
   ASSERT_OK(this->cluster_->kdc()->Kinit(kTestUser));
 
   Status s = this->GetTableLocationsWithTableId(table_name_b, table_id_a);
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   ASSERT_STR_MATCHES(s.ToString(), "[Uu]nauthorized action");
 
   ASSERT_OK(this->GrantGetMetadataTablePrivilege({ kDatabaseName, kTableName, kUsername }));

@@ -1210,7 +1210,7 @@ TEST_F(TxnParticipantTest, TestUpdateCommittedTransactionMRS) {
   ASSERT_OK(IterateToStrings(&rows));
   ASSERT_EQ(0, rows.size());
   s = Delete(0);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
                                        clock()->Now().value()));
@@ -1303,7 +1303,7 @@ TEST_F(TxnParticipantTest, TestInsertIgnoreInTransactionMRS) {
   ASSERT_TRUE(rows.empty());
 
   Status s = Write(0, kTxnId);
-  ASSERT_TRUE(s.IsAlreadyPresent());
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   ASSERT_EQ(0, tablet_replica_->tablet()->metrics()->insert_ignore_errors->value());
 
   ASSERT_OK(Write(0, kTxnId, RowOperationsPB::INSERT_IGNORE));
@@ -1329,7 +1329,7 @@ TEST_F(TxnParticipantTest, TestInsertIgnoreInMainMRS) {
   ASSERT_EQ(1, rows.size());
 
   Status s = Write(0, kTxnId);
-  ASSERT_TRUE(s.IsAlreadyPresent());
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   ASSERT_EQ(0, tablet_replica_->tablet()->metrics()->insert_ignore_errors->value());
 
   ASSERT_OK(Write(0, kTxnId, RowOperationsPB::INSERT_IGNORE));
@@ -1514,7 +1514,7 @@ TEST_F(TxnParticipantTest, TestMRSLookupsMetric) {
   // Trying to delete a row that doesn't exist will consult just the committed
   // transactional MRS before attempting to delete from the main MRS.
   Status s = Delete(10);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_EQ(6, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
 
   // Deleting a row that exists in a MRS, the committed transactional MRS is

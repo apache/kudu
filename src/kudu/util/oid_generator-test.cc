@@ -35,7 +35,7 @@ TEST(ObjectIdGeneratorTest, TestCanoicalizeUuid) {
   Status s = gen.Canonicalize("not_a_uuid", &canonicalized);
   {
     SCOPED_TRACE(s.ToString());
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "invalid uuid");
   }
   ASSERT_OK(gen.Canonicalize(

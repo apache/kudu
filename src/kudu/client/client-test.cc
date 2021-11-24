@@ -937,7 +937,7 @@ TEST_F(ClientTest, TestGetTableStatistics) {
 TEST_F(ClientTest, TestBadTable) {
   shared_ptr<KuduTable> t;
   Status s = client_->OpenTable("xxx-does-not-exist", &t);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Not found: the table does not exist");
 }
 
@@ -1008,7 +1008,7 @@ TEST_F(ClientTest, TestConfiguringScannerLimits) {
   KuduScanner scanner(client_table_.get());
   Status s = scanner.SetLimit(-1);
   ASSERT_STR_CONTAINS(s.ToString(), "must be non-negative");
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
 
   // Now actually set the limit and open the scanner.
   ASSERT_OK(scanner.SetLimit(kLimit));
@@ -1017,7 +1017,7 @@ TEST_F(ClientTest, TestConfiguringScannerLimits) {
   // Ensure we can't set the limit once we've opened the scanner.
   s = scanner.SetLimit(kLimit);
   ASSERT_STR_CONTAINS(s.ToString(), "must be set before Open()");
-  ASSERT_TRUE(s.IsIllegalState());
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   int64_t count = 0;
   KuduScanBatch batch;
   while (scanner.HasMoreRows()) {
@@ -2136,7 +2136,7 @@ TEST_F(ClientTest, TestSwappedRangeBounds) {
                 .set_range_partition_columns({ "key" })
                 .Create();
 
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Error creating table TestSwappedRangeBounds on the master: "
                           "range partition lower bound must be less than the upper bound");
@@ -2165,7 +2165,7 @@ TEST_F(ClientTest, TestEqualRangeBounds) {
       .set_range_partition_columns({ "key" })
       .Create();
 
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Error creating table TestEqualRangeBounds on the master: "
                           "range partition lower bound must be less than the upper bound");
@@ -2260,7 +2260,7 @@ TEST_F(ClientTest, TestBasicIdBasedLookup) {
   }
   const auto& kDummyId = "dummy-tablet-id";
   Status s = MetaCacheLookupById(kDummyId, &rt);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_EQ(nullptr, rt);
 
   auto& meta_cache = client_->data_->meta_cache_;
@@ -2508,7 +2508,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
     Status s = client_->data_->GetTabletServer(client_.get(), rt,
                                                KuduClient::LEADER_ONLY,
                                                blacklist, &candidates, &rts);
-    ASSERT_TRUE(s.IsServiceUnavailable());
+    ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
   }
   // Keep blacklisting replicas until we run out.
   ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt,
@@ -2530,7 +2530,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   for (KuduClient::ReplicaSelection selection : selections) {
     Status s = client_->data_->GetTabletServer(client_.get(), rt, selection,
                                                blacklist, &candidates, &rts);
-    ASSERT_TRUE(s.IsServiceUnavailable());
+    ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
   }
 
   // Make sure none of the modes work when all nodes are dead.
@@ -2542,7 +2542,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
     Status s = client_->data_->GetTabletServer(client_.get(), rt,
                                                selection,
                                                blacklist, &candidates, &rts);
-    ASSERT_TRUE(s.IsServiceUnavailable());
+    ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
   }
 }
 
@@ -3684,7 +3684,7 @@ TEST_F(ClientTest, TestCheckMutationBufferSpaceLimitInEffect) {
     ASSERT_OK(session->SetMutationBufferSpace(kBufferSizeBytes));
     s = ApplyInsertToSession(
           session.get(), client_table_, 0, 1, kLongString.c_str());
-    ASSERT_TRUE(s.IsIncomplete()) << "Got unexpected status: " << s.ToString();
+    ASSERT_TRUE(s.IsIncomplete()) << s.ToString();
     EXPECT_FALSE(session->HasPendingOperations());
     vector<KuduError*> errors;
     ElementDeleter deleter(&errors);
@@ -3798,7 +3798,7 @@ TEST_F(ClientTest, TestSetSessionMutationBufferMaxNum) {
   ASSERT_EQ(0, session->CountPendingErrors());
   ASSERT_TRUE(session->HasPendingOperations());
   Status s = session->SetMutationBufferMaxNum(3);
-  ASSERT_TRUE(s.IsIllegalState());
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "Cannot change the limit on maximum number of batchers");
   ASSERT_OK(session->Flush());
@@ -4505,7 +4505,7 @@ TEST_F(ClientTest, TestWriteWithBadColumn) {
   unique_ptr<KuduInsert> insert(table->NewInsert());
   ASSERT_OK(insert->mutable_row()->SetInt32("key", 12345));
   Status s = insert->mutable_row()->SetInt32("bad_col", 12345);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "No such column: bad_col");
 }
 
@@ -4559,7 +4559,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->RenameTo(bad_name);
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "invalid table name");
   }
 
@@ -4581,7 +4581,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "No alter steps provided");
   }
 
@@ -4600,7 +4600,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     Status s = table_alterer
       ->DropColumn("key")
       ->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "cannot remove a key column: key");
   }
 
@@ -4609,7 +4609,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("int_val")->RenameTo("string_val");
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsAlreadyPresent());
+    ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: string_val");
   }
 
@@ -4618,7 +4618,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("string_val");
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "no alter operation specified: string_val");
   }
 
@@ -4627,7 +4627,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("string_val")->Type(KuduColumnSchema::STRING);
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "unsupported alter operation: string_val");
   }
 
@@ -4636,7 +4636,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("string_val")->Nullable();
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "unsupported alter operation: string_val");
   }
 
@@ -4645,7 +4645,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("string_val")->NotNull();
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "unsupported alter operation: string_val");
   }
 
@@ -4669,7 +4669,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AddColumn("new_string_val")->Type(KuduColumnSchema::STRING)
       ->Encoding(KuduColumnStorageAttributes::GROUP_VARINT);
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "encoding GROUP_VARINT not supported for type BINARY");
     ASSERT_EQ(1, tablet_replica->tablet()->metadata()->schema_version());
   }
@@ -4765,7 +4765,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterColumn("non_null_with_default")
         ->Default(KuduValue::CopyString("aaa"));
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "wrong size for default value");
     ASSERT_EQ(7, tablet_replica->tablet()->metadata()->schema_version());
   }
@@ -4900,7 +4900,7 @@ TEST_F(ClientTest, TestDeleteTable) {
 
   // Try to open the deleted table
   Status s = client_->OpenTable(kTableName, &client_table_);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "the table does not exist");
 
   // Create a new table with the same name. This is to ensure that the client
@@ -5401,7 +5401,7 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
       .num_replicas(3)
       .Create();
 #pragma GCC diagnostic pop
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "the requested number of tablet replicas is over the "
                       "maximum permitted at creation time (3)");
@@ -6368,7 +6368,7 @@ TEST_F(ClientTest, TestNoDefaultPartitioning) {
     unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     Status s = table_creator->table_name("TestNoDefaultPartitioning").schema(&schema_).Create();
 
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Table partitioning must be specified");
 }
 
@@ -6972,7 +6972,7 @@ TEST_F(ClientTest, TestBlockScannerHijackingAttempts) {
     bad_guy_scanner.data_->last_response_.set_has_more_results(true);
     KuduScanBatch batch;
     Status s = bad_guy_scanner.NextBatch(&batch);
-    ASSERT_TRUE(s.IsRemoteError());
+    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
     ASSERT_EQ(0, batch.NumRows());
   }

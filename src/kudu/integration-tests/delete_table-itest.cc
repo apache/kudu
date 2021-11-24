@@ -41,6 +41,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
@@ -908,7 +909,7 @@ TEST_F(DeleteTableITest, TestDeleteFollowerWithReplicatingOps) {
   LOG(INFO) << "Writing a row";
   Status s = WriteSimpleTestRow(leader, tablet_id, RowOperationsPB::INSERT,
                                 1, 1, "hola, world", MonoDelta::FromSeconds(5));
-  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "timed out");
 
   LOG(INFO) << "Killing the leader...";

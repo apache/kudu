@@ -243,7 +243,7 @@ TEST_F(DataDirsTest, TestFullDiskGrowsGroup) {
   FLAGS_env_inject_full_globs = "*";
   Status s = dd_manager_->GetDirAddIfNecessary(test_block_opts_, &new_dir);
   ASSERT_STR_CONTAINS(s.ToString(), "No directories available");
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
 }
 
 // Test that concurrently adding dirs to a data dir group yields the expected
@@ -314,7 +314,7 @@ TEST_F(DataDirsTest, TestFailedDirNotReturned) {
   ASSERT_EQ(2, down_cast<AtomicGauge<uint64_t>*>(
         entity_->FindOrNull(METRIC_data_dirs_failed).get())->value());
   Status s = dd_manager_->GetDirAddIfNecessary(test_block_opts_, &failed_dd);
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "No healthy directories exist in tablet's directory group");
 }
 
@@ -344,11 +344,11 @@ TEST_F(DataDirsTest, TestFailedDirNotAddedToGroup) {
   }
   Status s = dd_manager_->MarkDirFailed(kNumDirs - 1);
   ASSERT_STR_CONTAINS(s.ToString(), "All dirs have failed");
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
 
   s = dd_manager_->CreateDataDirGroup(test_tablet_name_);
   ASSERT_STR_CONTAINS(s.ToString(), "No healthy data directories available");
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
 }
 
 TEST_F(DataDirsTest, TestLoadBalancingDistribution) {
@@ -510,7 +510,7 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
   Status s = DataDirManager::OpenExistingForTests(env_, test_roots_,
       {}, &dd_manager_);
   ASSERT_STR_CONTAINS(s.ToString(), "could not open directory manager");
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 }
 
 class TooManyDataDirManagerTest : public DataDirManagerTest {

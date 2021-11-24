@@ -140,7 +140,7 @@ class SocketTest : public KuduTest {
     Status s = client.Recv(buf.get(), kEchoChunkSize, &n);
 
     ASSERT_TRUE(!s.ok());
-    ASSERT_TRUE(s.IsNetworkError());
+    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
     ASSERT_STR_MATCHES(s.message().ToString(), message);
 
     t.join();

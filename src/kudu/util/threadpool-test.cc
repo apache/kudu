@@ -1095,7 +1095,7 @@ TEST_P(ThreadPoolTestTokenTypes, TestTokenSubmissionsAdhereToMaxQueueSize) {
   ASSERT_OK(t->Submit([&latch]() { latch.Wait(); }));
   ASSERT_OK(t->Submit([&latch]() { latch.Wait(); }));
   Status s = t->Submit([&latch]() { latch.Wait(); });
-  ASSERT_TRUE(s.IsServiceUnavailable());
+  ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
 }
 
 TEST_F(ThreadPoolTest, TestTokenConcurrency) {

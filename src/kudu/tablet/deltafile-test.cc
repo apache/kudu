@@ -350,7 +350,7 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   ASSERT_FALSE(opts.snap_to_include.MayHaveAppliedOpsAtOrAfter(Timestamp(10)));
   unique_ptr<DeltaIterator> iter;
   Status s = reader->NewDeltaIterator(opts, &iter);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_EQ(nullptr, iter);
 
   // should include
@@ -409,7 +409,7 @@ TEST_F(TestDeltaFile, TestEmptyFileIsAborted) {
 
     // The block is only deleted when the DeltaFileWriter goes out of scope.
     Status s = dfw.Finish();
-    ASSERT_TRUE(s.IsAborted());
+    ASSERT_TRUE(s.IsAborted()) << s.ToString();
   }
 
   // The block should have been deleted as well.

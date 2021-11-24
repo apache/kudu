@@ -353,7 +353,7 @@ TEST_P(TestRpc, TestCallWithBadPasswordProtectedKey) {
   Sockaddr server_addr = bind_addr();
   Status s = StartTestServer(&server_addr, enable_ssl(), rpc_certificate_file, rpc_private_key_file,
       rpc_ca_certificate_file, rpc_private_key_password_cmd);
-  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "failed to load private key file");
 }
 
@@ -1277,7 +1277,7 @@ TEST_P(TestRpc, TestRpcContextClientDeadline) {
   SleepResponsePB resp;
   RpcController controller;
   Status s = p.SyncRequest("Sleep", req, &resp, &controller);
-  ASSERT_TRUE(s.IsRemoteError());
+  ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Missing required timeout");
 
   controller.Reset();
@@ -1321,7 +1321,7 @@ TEST_P(TestRpc, TestApplicationFeatureFlag) {
     controller.RequireServerFeature(99);
     Status s = p.SyncRequest("Add", req, &resp, &controller);
     SCOPED_TRACE(strings::Substitute("unsupported response: $0", s.ToString()));
-    ASSERT_TRUE(s.IsRemoteError());
+    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
   }
 }
 
@@ -1349,7 +1349,7 @@ TEST_P(TestRpc, TestApplicationFeatureFlagUnsupportedServer) {
     controller.RequireServerFeature(FeatureFlags::FOO);
     Status s = p.SyncRequest("Add", req, &resp, &controller);
     SCOPED_TRACE(strings::Substitute("supported response: $0", s.ToString()));
-    ASSERT_TRUE(s.IsNotSupported());
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
   }
 
   { // No required flag
@@ -1405,7 +1405,7 @@ TEST_P(TestRpc, TestCancellation) {
         controller.RequireServerFeature(FeatureFlags::FOO);
         controller.RequireServerFeature(99);
         Status s = p.SyncRequest("Add", req, &resp, &controller);
-        ASSERT_TRUE(s.IsRemoteError());
+        ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
         break;
       }
       case OutboundCall::FINISHED_SUCCESS:

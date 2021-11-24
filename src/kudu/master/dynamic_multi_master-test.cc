@@ -1014,7 +1014,7 @@ TEST_P(ParameterizedRemoveMasterTest, TestRemoveMaster) {
   // Attempt transferring leadership to the removed master
   LOG(INFO) << "Transferring leadership to master: " << master_to_remove_uuid;
   s = TransferMasterLeadershipAsync(cluster_.get(), master_to_remove_uuid);
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       Substitute("tablet server $0 is not a voter in the active config",
                                  master_to_remove_uuid));

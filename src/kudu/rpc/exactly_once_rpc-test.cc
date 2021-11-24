@@ -550,7 +550,7 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollection) {
 
   resp.Clear();
   Status s = MakeAddCall(sequence_number, 1, &resp);
-  ASSERT_TRUE(s.IsRemoteError());
+  ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "is stale");
 
   // Sleep again, this time for 'remember_clients_ttl_ms' and run GC again.

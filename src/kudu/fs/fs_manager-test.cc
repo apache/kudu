@@ -227,7 +227,7 @@ TEST_P(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
 TEST_P(FsManagerTestBase, TestEmptyWALPath) {
   ReinitFsManagerWithPaths("", {});
   Status s = fs_manager()->CreateInitialFileSystemLayout();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "directory (fs_wal_dir) not provided");
 }
 
@@ -252,7 +252,7 @@ TEST_P(FsManagerTestBase, TestFormatWithSpecificUUID) {
   // Use an invalid uuid at first.
   string uuid = "not_a_valid_uuid";
   Status s = fs_manager()->CreateInitialFileSystemLayout(uuid);
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), Substitute("invalid uuid $0", uuid));
 
   // Now use a valid one.
@@ -328,7 +328,7 @@ TEST_P(FsManagerTestBase, TestMetadataDirInDataRoot) {
   ReinitFsManagerWithOpts(opts);
   Status s = fs_manager()->Open();
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_FALSE(env_->FileExists(opts.data_roots[0]));
   ASSERT_TRUE(env_->FileExists(opts.data_roots[1]));
 
@@ -484,7 +484,7 @@ TEST_P(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
     ReinitFsManagerWithOpts(new_opts);
     Status s = fs_manager()->Open();
     ASSERT_STR_CONTAINS(s.ToString(), "no healthy directories found");
-    ASSERT_TRUE(s.IsNotFound());
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
     // Once we supply the WAL directory as a data directory, we can open successfully.
     new_opts.data_roots.emplace_back(wal_path);
@@ -740,13 +740,13 @@ TEST_P(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
   ASSERT_OK(env_->DeleteDir(kWalRoot));
   ReinitFsManager();
   Status s = fs_manager()->Open();
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
 
   unique_ptr<WritableFile> f;
   ASSERT_OK(env_->NewWritableFile(kWalRoot, &f));
   s = fs_manager()->Open();
-  ASSERT_TRUE(s.IsCorruption());
+  ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "exists but is not a directory");
 }
 
@@ -988,7 +988,7 @@ TEST_P(FsManagerTestBase, TestCannotRemoveDataDirServingAsMetadataDir) {
   opts.data_roots = { opts.data_roots[1] };
   ReinitFsManagerWithOpts(opts);
   Status s = fs_manager()->Open();
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
 }
 

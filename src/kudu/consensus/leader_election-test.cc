@@ -474,7 +474,7 @@ void VoteCounterTest::AssertUndecided(const VoteCounter& counter) {
   ASSERT_FALSE(counter.IsDecided());
   ElectionVote decision;
   Status s = counter.GetDecision(&decision);
-  ASSERT_TRUE(s.IsIllegalState());
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Vote not yet decided");
 }
 
@@ -574,7 +574,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
 
   // Attempt to change vote.
   Status s = counter.RegisterVote(voter_uuids[0], VOTE_DENIED, &duplicate);
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "voted a different way twice");
   LOG(INFO) << "Expected vote-changed error: " << s.ToString();
   NO_FATALS(AssertUndecided(counter));
@@ -612,7 +612,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
 
   // Attempt to vote with > the whole configuration.
   s = counter.RegisterVote("some-random-node", VOTE_GRANTED, &duplicate);
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "cause the number of votes to exceed the expected number");
   LOG(INFO) << "Expected voters-exceeded error: " << s.ToString();
   ASSERT_TRUE(counter.IsDecided());

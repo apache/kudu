@@ -773,7 +773,7 @@ TEST_F(PredicateTest, TestBoolPredicates) {
     ASSERT_TRUE(no_bloom_filters.empty());
     KuduScanner scanner(table.get());
     Status s = scanner.AddConjunctPredicate(bf_predicate);
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "No Bloom filters supplied");
   }
 

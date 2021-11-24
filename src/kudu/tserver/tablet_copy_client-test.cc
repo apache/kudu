@@ -252,13 +252,13 @@ TEST_F(TabletCopyClientTest, TestLifeCycle) {
   ASSERT_OK(StartCopy());
   FLAGS_env_inject_eio = 1.0;
   s = client_->Finish();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_EQ(TabletCopyClient::State::kStarted, client_->state_);
 
   // Closing out the copy should leave the copy client in its terminal state,
   // even upon failure.
   s = client_->Abort();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_EQ(TabletCopyClient::State::kFinished, client_->state_);
   ASSERT_EQ(tablet::TABLET_DATA_TOMBSTONED, meta_->tablet_data_state());
 }
@@ -307,7 +307,7 @@ TEST_F(TabletCopyClientTest, TestDownloadBlockMayFail) {
   ASSERT_OK(ResetTabletCopyClient());
   ASSERT_OK(StartCopy());
   Status s = client_->DownloadBlocks();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Injected failure on downloading block");
 }
 
@@ -320,7 +320,7 @@ TEST_F(TabletCopyClientTest, TestDownloadWalMayFail) {
   ASSERT_OK(ResetTabletCopyClient());
   ASSERT_OK(StartCopy());
   Status s = client_->DownloadWALs();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Injected failure on downloading wal");
 }
 
@@ -442,7 +442,7 @@ TEST_F(TabletCopyClientTest, TestFailedDiskStopsClient) {
 
   // The copy thread should stop and the copy client should return an error.
   copy_thread.join();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
 }
 
 TEST_F(TabletCopyClientTest, TestSupportsLiveRowCount) {

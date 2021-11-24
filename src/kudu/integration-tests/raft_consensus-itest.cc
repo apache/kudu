@@ -1934,7 +1934,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   Status s = replica_ts->consensus_proxy->UpdateConsensus(req, &resp, &rpc);
 
   // Our memory limit was truly tiny, so we should be over it by now...
-  ASSERT_TRUE(s.IsRemoteError());
+  ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Soft memory limit exceeded");
 
   // ...but despite rejecting the request, we should have committed the
@@ -2592,7 +2592,7 @@ TEST_P(RaftConsensusParamReplicationModesITest, Test_KUDU_1735) {
     auto* ts = cluster_->tablet_server_by_uuid(server_uuid);
     auto s = ts->WaitForInjectedCrash(MonoDelta::FromSeconds(5));
     if (server_uuid == evicted_tserver->uuid() && is_3_4_3 && !s.ok()) {
-      ASSERT_TRUE(s.IsTimedOut());
+      ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
       continue;
     }
     ASSERT_TRUE(s.ok()) << s.ToString();

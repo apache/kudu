@@ -1359,7 +1359,7 @@ TEST_F(TxnOpDispatcherITest, BeginTxnLockAbort) {
     // The second transaction should have been automatically aborted in its
     // attempt to write to avoid deadlock.
     Status s = InsertRows(second_txn.get(), 1, &key);
-    ASSERT_TRUE(s.IsIOError());
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
     ASSERT_EQ(0, GetTxnOpDispatchersTotalCount());
     ASSERT_EVENTUALLY([&] {
       bool is_complete;

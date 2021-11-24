@@ -371,7 +371,7 @@ TEST_F(RpcStubTest, TestApplicationError) {
   req.set_sleep_micros(1);
   req.set_return_app_error(true);
   Status s = p.Sleep(req, &resp, &controller);
-  ASSERT_TRUE(s.IsRemoteError());
+  ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
   EXPECT_EQ("Remote error: Got some error", s.ToString());
   EXPECT_EQ("message: \"Got some error\"\n"
             "[kudu.rpc_test.CalculatorError.app_error_ext] {\n"

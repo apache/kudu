@@ -399,7 +399,7 @@ TEST_F(ConsensusQueueTest, TestStatusMessagesToFailedUnrecoverablePeer) {
   // Inject failure to read log messages. This will put the peer in FAILED_UNRECOVERABLE state.
   FLAGS_consensus_fail_log_read_ops = 1.0;
   Status s = queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_tablet_copy);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_EQ("INJECTED FAILURE", s.message().ToString());
   auto health_map = queue_->ReportHealthOfPeers();
   ASSERT_NE(health_map.count(kPeerUuid), 0);

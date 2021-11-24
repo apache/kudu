@@ -227,7 +227,7 @@ TEST_P(LogTestOptionalCompression, TestMultipleEntriesInABatch) {
     ASSERT_OK(log_->reader()->LookupOpId(2, &loaded_op));
     ASSERT_EQ("1.2", OpIdToString(loaded_op));
     Status s = log_->reader()->LookupOpId(3, &loaded_op);
-    ASSERT_TRUE(s.IsNotFound()) << "unexpected status: " << s.ToString();
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   }
 
   ASSERT_OK(log_->Close());
@@ -645,7 +645,7 @@ TEST_P(LogTestOptionalCompression, TestGCOfIndexChunks) {
   ASSERT_EQ(1, num_gced_segments);
 
   Status s = log_->reader()->LookupOpId(999995, &loaded_op);
-  ASSERT_TRUE(s.IsNotFound()) << "unexpected status: " << s.ToString();
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 }
 
 // Tests that we can append FLUSH_MARKER messages to the log queue to make sure
@@ -1128,7 +1128,7 @@ TEST_F(LogTest, TestDiskSpaceCheck) {
   FLAGS_disk_reserved_bytes_free_for_testing = 0;
   options_.segment_size_mb = 1;
   Status s = BuildLog();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_EQ(ENOSPC, s.posix_code());
   ASSERT_STR_CONTAINS(s.ToString(), "Insufficient disk space");
 

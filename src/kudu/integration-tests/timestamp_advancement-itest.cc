@@ -353,7 +353,7 @@ TEST_F(TimestampAdvancementITest, TestUpgradeFromOlderCorruptedData) {
 
   replica = tablet_replica_on_ts(kTserver);
   Status s = replica->tablet()->Compact(tablet::Tablet::COMPACT_NO_FLAGS);
-  ASSERT_TRUE(s.IsCorruption());
+  ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(tablet::TabletStatePB::FAILED, replica->state());
   });

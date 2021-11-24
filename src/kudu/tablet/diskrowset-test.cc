@@ -212,7 +212,7 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   OperationResultPB result;
   ProbeStats stats;
   Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), op_id_, nullptr, &stats, &result);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_EQ(0, result.mutated_stores_size());
 
   // Now read back the value column, and verify that the updates
@@ -247,7 +247,7 @@ TEST_F(TestRowSet, TestErrorDuringUpdate) {
   ProbeStats stats;
   Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), op_id_, nullptr, &stats, &result);
   LOG(INFO) << s.ToString();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
 }
 
 TEST_F(TestRowSet, TestRandomRead) {

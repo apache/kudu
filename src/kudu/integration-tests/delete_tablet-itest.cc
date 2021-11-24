@@ -120,7 +120,7 @@ TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
   FLAGS_fs_wal_dir_reserved_bytes = INT64_MAX;
   ASSERT_OK(mts->Restart());
   Status s = mts->server()->tablet_manager()->WaitForAllBootstrapsToFinish();
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Insufficient disk space");
 
   // Tablet bootstrap failure should result in tablet status == FAILED.

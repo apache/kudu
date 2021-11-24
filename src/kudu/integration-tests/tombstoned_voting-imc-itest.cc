@@ -222,13 +222,13 @@ TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
     Status s = RequestVote(ts1_ets, tablet_id, "B", current_term, last_logged_opid,
                            /*ignore_live_leader=*/ true, /*is_pre_election=*/ false,
                            kTimeout);
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Already voted for candidate A in this term");
 
     // Ask TS1 for a vote that should be denied (old term).
     s = RequestVote(ts1_ets, tablet_id, "B", current_term - 1, last_logged_opid,
                     /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout);
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_MATCHES(s.ToString(), "Denying vote to candidate B for earlier term");
 
     // Increment term.
@@ -238,7 +238,7 @@ TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
     // Ask TS1 for a vote that should be denied (old last-logged opid).
     s = RequestVote(ts1_ets, tablet_id, "B", current_term, old_opid,
                     /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout);
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_MATCHES(s.ToString(),
                       "Denying vote to candidate B.*greater than that of the candidate");
 

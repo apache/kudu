@@ -600,12 +600,12 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
   mgr.Close();
   waiting_thread.join();
   ASSERT_STR_CONTAINS(s.ToString(), "closed");
-  ASSERT_TRUE(s.IsAborted());
+  ASSERT_TRUE(s.IsAborted()) << s.ToString();
 
   // New waiters should abort immediately.
   s = mgr.WaitForApplyingOpsToApply();
   ASSERT_STR_CONTAINS(s.ToString(), "closed");
-  ASSERT_TRUE(s.IsAborted());
+  ASSERT_TRUE(s.IsAborted()) << s.ToString();
 }
 
 // Test that if we abort an op we don't advance the new op lower bound and

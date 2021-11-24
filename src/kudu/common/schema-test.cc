@@ -410,7 +410,7 @@ TEST_F(TestSchema, TestProjectTypeMismatch) {
 
   RowProjector row_projector(&schema1, &schema2);
   Status s = row_projector.Init();
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.message().ToString(), "must have type");
 }
 
@@ -427,7 +427,7 @@ TEST_F(TestSchema, TestProjectMissingColumn) {
 
   RowProjector row_projector(&schema1, &schema2);
   Status s = row_projector.Init();
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.message().ToString(),
     "does not exist in the projection, and it does not have a default value or a nullable type");
 
@@ -709,7 +709,7 @@ TEST_F(TestSchema, TestFindColumn) {
   ASSERT_OK(schema.FindColumn("col2", &col_idx));
   ASSERT_EQ(1, col_idx);
   Status s = schema.FindColumn("col3", &col_idx);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_EQ(s.ToString(), "Not found: No such column: col3");
 }
 

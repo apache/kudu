@@ -177,7 +177,7 @@ TEST_F(PasswdWebserverTest, TestCrashInFIPSMode) {
   }
 
   Status s = server_->Start();
-  ASSERT_TRUE(s.IsIllegalState());
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Digest authentication in FIPS approved mode");
 }
 

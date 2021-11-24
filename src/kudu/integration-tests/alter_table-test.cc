@@ -427,7 +427,7 @@ TEST_F(AlterTableTest, TestAddExistingColumn) {
 
   {
     Status s = AddNewI32Column(kTableName, "c1", 0);
-    ASSERT_TRUE(s.IsAlreadyPresent());
+    ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: c1");
   }
 
@@ -457,7 +457,7 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
     master::CatalogManager::ScopedLeaderSharedLock l(catalog);
     ASSERT_OK(l.first_failed_status());
     Status s = catalog->AlterTableRpc(req, &resp, /*rpc=*/nullptr);
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "column `c2`: NOT NULL columns must have a default");
   }
 
@@ -643,7 +643,7 @@ TEST_F(AlterTableTest, TestAlterOnTSRestart) {
   {
     Status s = AddNewI32Column(kTableName, "new-32", 10,
                                MonoDelta::FromMilliseconds(500));
-    ASSERT_TRUE(s.IsTimedOut());
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
 
   // Verify that the Schema is the old one
@@ -670,7 +670,7 @@ TEST_F(AlterTableTest, TestShutdownWithPendingTasks) {
   {
     Status s = AddNewI32Column(kTableName, "new-i32", 10,
                                MonoDelta::FromMilliseconds(500));
-    ASSERT_TRUE(s.IsTimedOut());
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   }
 }
 
@@ -686,7 +686,7 @@ TEST_F(AlterTableTest, TestRestartTSDuringAlter) {
 
   Status s = AddNewI32Column(kTableName, "new-i32", 10,
                              MonoDelta::FromMilliseconds(1));
-  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
   // Restart the TS while alter is running
   for (int i = 0; i < 3; i++) {
@@ -2263,7 +2263,7 @@ TEST_F(ReplicatedAlterTableTest, AlterReplicationFactor) {
 
   // 5. Set replication factor to 5, while there are only 4 tservers in the cluster.
   auto s = SetReplicationFactor(kTableName, 5);
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "not enough live tablet servers to alter a table with the"
                                     " requested replication factor 5; 4 tablet servers are alive");
   NO_FATALS(VerifyTabletReplicaCount(3, VerifyRowCount::kEnable));
@@ -2271,7 +2271,7 @@ TEST_F(ReplicatedAlterTableTest, AlterReplicationFactor) {
 
   // 6. Set replication factor to -1, it will fail.
   s = SetReplicationFactor(kTableName, -1);
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "illegal replication factor -1: minimum allowed replication"
                                     " factor is 1 (controlled by --min_num_replicas)");
   NO_FATALS(VerifyTabletReplicaCount(3, VerifyRowCount::kEnable));
@@ -2279,14 +2279,14 @@ TEST_F(ReplicatedAlterTableTest, AlterReplicationFactor) {
 
   // 7. Set replication factor to 2, it will fail.
   s = SetReplicationFactor(kTableName, 2);
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "illegal replication factor 2: replication factor must be odd");
   NO_FATALS(VerifyTabletReplicaCount(3, VerifyRowCount::kEnable));
   ASSERT_EQ(2, tablet_replica_->tablet()->metadata()->schema_version());
 
   // 8. Set replication factor to 9, it will fail.
   s = SetReplicationFactor(kTableName, 9);
-  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "illegal replication factor 9: maximum allowed replication "
                                     "factor is 7 (controlled by --max_num_replicas)");
   NO_FATALS(VerifyTabletReplicaCount(3, VerifyRowCount::kEnable));

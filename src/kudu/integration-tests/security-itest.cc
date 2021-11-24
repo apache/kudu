@@ -603,7 +603,7 @@ TEST_F(SecurityITest, TestNonDefaultPrincipal) {
       builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
     }
     const auto s = builder.Build(&client);
-    ASSERT_TRUE(s.IsNotAuthorized());
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "not found in Kerberos database");
 
     // Create a client with the matching SASL proto name and verify it's able to
@@ -622,8 +622,8 @@ TEST_F(SecurityITest, TestNonDefaultPrincipal) {
 TEST_F(SecurityITest, TestNonExistentPrincipal) {
   cluster_opts_.extra_master_flags.emplace_back("--principal=oryx");
   cluster_opts_.extra_tserver_flags.emplace_back("--principal=oryx");
-  Status s = StartCluster();
-  ASSERT_TRUE(s.IsRuntimeError());
+  auto s = StartCluster();
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "failed to start masters");
 }
 
@@ -640,7 +640,7 @@ TEST_F(SecurityITest, TestMismatchingPrincipals) {
   }
   cluster_->Shutdown();
   Status s = cluster_->Restart();
-  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
 TEST_F(SecurityITest, TestRequireAuthenticationInsecureCluster) {
@@ -651,7 +651,7 @@ TEST_F(SecurityITest, TestRequireAuthenticationInsecureCluster) {
   KuduClientBuilder b;
   b.require_authentication(true);
   Status s = cluster_->CreateClient(&b, &client);
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "client requires authentication, but server does not have Kerberos enabled");
 }
@@ -668,7 +668,7 @@ TEST_F(SecurityITest, TestRequireEncryptionInsecureCluster) {
   KuduClientBuilder b;
   b.encryption_policy(client::KuduClientBuilder::REQUIRED);
   Status s = cluster_->CreateClient(&b, &client);
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "server does not support required TLS encryption");
 }
 

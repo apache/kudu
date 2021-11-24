@@ -113,7 +113,7 @@ TEST_F(CertManagementTest, RequestGeneratorBasics) {
   ASSERT_OK(key.ToString(&key_str, DataFormat::PEM));
   // Check for non-supported number of bits for the key.
   Status s = GeneratePrivateKey(7, &key);
-  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
 }
 
 // Check that CertSigner behaves in a predictable way if given non-matching

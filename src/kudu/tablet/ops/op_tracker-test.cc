@@ -263,7 +263,7 @@ TEST_P(OpTrackerTest, TestTooManyOps) {
   LOG(INFO) << "Added " << drivers.size() << " drivers";
   int current_memory_limit_rejections_count = (limit.second <= limit.first) ? 1 : 0;
   int min_memory_limit = limit.first < limit.second ? limit.first : limit.second;
-  ASSERT_TRUE(s.IsServiceUnavailable());
+  ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "exceeds the op memory limit");
   NO_FATALS(CheckMetrics(entity_, drivers.size(), 0, 1, current_memory_limit_rejections_count));
   NO_FATALS(CheckMemTracker(t, min_memory_limit));

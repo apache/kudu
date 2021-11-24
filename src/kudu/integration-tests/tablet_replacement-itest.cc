@@ -332,7 +332,7 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   // This will time out, but should take effect.
   Status s = AddServer(leader_ts, tablet_id, follower_ts, RaftPeerPB::VOTER,
                        MonoDelta::FromSeconds(5));
-  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id, { TABLET_DATA_READY },
                                                  timeout));
   ASSERT_OK(WaitForServersToAgree(timeout, active_ts_map, tablet_id, 3));

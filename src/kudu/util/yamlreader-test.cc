@@ -52,7 +52,7 @@ public:
 TEST_F(YamlReaderTest, FileNotExist) {
   YamlReader r("YamlReaderTest.NotExist");
   Status s = r.Init();
-  ASSERT_TRUE(s.IsCorruption());
+  ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_STR_CONTAINS(
       s.ToString(), "YAML::LoadFile error");
 }

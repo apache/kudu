@@ -200,7 +200,7 @@ TEST(ClientUnitTest, TestRetryFunc) {
                        [&](const MonoTime& deadline, bool* retry) {
                          return TestFunc(deadline, retry, &counter);
                        });
-  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   ASSERT_GT(counter, 5);
   ASSERT_LT(counter, 20);
 }
