@@ -73,6 +73,9 @@ GET_TABLE_LOCATIONS_DIRECT_CALL=GetTableLocationsTestDirectCall
 
 SAME_TABLET_CONCURRENT_WRITES=SameTabletConcurrentWrites
 
+CLIENT_METACACHE_PERF=ClientMetacachePerf
+CLIENT_METACACHE_PERF_SYNTHETIC=ClientMetacachePerfSynthetic
+
 LOG_DIR_NAME=build/latest/bench-logs
 OUT_DIR_NAME=build/latest/bench-out
 HTML_FILE="benchmarks.html"
@@ -411,6 +414,20 @@ run_benchmarks() {
       --num_inserter_threads=16 \
       &> $LOGDIR/${SAME_TABLET_CONCURRENT_WRITES}$i.log
   done
+
+  # Run MetaCacheLookupStressTest.Perf scenario.
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    $PERF_STAT ./build/latest/bin/client-stress-test \
+      --gtest_filter='MetaCacheLookupStressTest.Perf' \
+      &> $LOGDIR/${CLIENT_METACACHE_PERF}$i.log
+  done
+
+  # Run MetaCacheLookupStressTest.PerfSynthetic scenario.
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    $PERF_STAT ./build/latest/bin/client-stress-test \
+      --gtest_filter='MetaCacheLookupStressTest.PerfSynthetic' \
+      &> $LOGDIR/${CLIENT_METACACHE_PERF_SYNTHETIC}$i.log
+  done
 }
 
 parse_and_record_perf_stats() {
@@ -685,6 +702,24 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER ${id}_overflows $i $overflows
   done
 
+  for i in $(seq 1 $NUM_SAMPLES); do
+    local id=$CLIENT_METACACHE_PERF
+    local log=$LOGDIR/${id}${i}.log
+    parse_and_record_perf_stats $BUILD_IDENTIFIER $id $i $log
+
+    local time_per_row=$(grep -o 'Time per row: .* ms' $log | awk '{print $4}')
+    record_result $BUILD_IDENTIFIER ${id}_time_per_row $i $time_per_row
+  done
+
+  for i in $(seq 1 $NUM_SAMPLES); do
+    local id=$CLIENT_METACACHE_PERF_SYNTHETIC
+    local log=$LOGDIR/${id}${i}.log
+    parse_and_record_perf_stats $BUILD_IDENTIFIER $id $i $log
+
+    local time_per_row=$(grep -o 'Time per row: .* ms' $log | awk '{print $4}')
+    record_result $BUILD_IDENTIFIER ${id}_time_per_row $i $time_per_row
+  done
+
   popd
   popd
   popd
@@ -800,6 +835,9 @@ load_stats_and_generate_plots() {
 
   load_and_generate_plot "${SAME_TABLET_CONCURRENT_WRITES}_req_rate" same-tablet-concurrent-writes-rate "RPC rate (req/sec)"
   load_and_generate_plot "${SAME_TABLET_CONCURRENT_WRITES}_overflows" same-tablet-concurrent-writes-overflows "RPC queue overflows (total count)"
+
+  load_and_generate_plot "${CLIENT_METACACHE_PERF}_time_per_row" client-metacache-lookup-perf "per-row apply time (sec)"
+  load_and_generate_plot "${CLIENT_METACACHE_PERF_SYNTHETIC}_time_per_row" client-metacache-lookup-perf-synthetic "per-row lookup time (sec)"
 
   # Generate all the pngs for all the mt-tablet tests
   for i in $(seq 0 $NUM_MT_TABLET_TESTS); do
