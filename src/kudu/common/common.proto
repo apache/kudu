@@ -472,6 +472,9 @@ message TableExtraConfigPB {
   // range [-FLAGS_max_priority_range, FLAGS_max_priority_range] when
   // calculate maintenance priority score.
   optional int32 maintenance_priority = 2;
+
+  // If set true, the table's data on disk is not compacted.
+  optional bool disable_compaction = 3;
 }
 
 // The type of a given table. This is useful in determining whether a

@@ -19,16 +19,19 @@
 #include <unordered_set>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_mm_ops.h"
+#include "kudu/util/hdr_histogram.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -54,6 +57,9 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
     all_possible_metrics_.push_back(metrics->compact_rs_duration);
     all_possible_metrics_.push_back(metrics->delta_minor_compact_rs_duration);
     all_possible_metrics_.push_back(metrics->delta_major_compact_rs_duration);
+    compaction_metrics_.push_back(metrics->flush_mrs_duration);
+    compaction_metrics_.push_back(metrics->flush_dms_duration);
+    compaction_metrics_.push_back(metrics->compact_rs_duration);
   }
 
   // Functions that call MaintenanceOp::UpdateStats() first sleep for a nominal
@@ -95,20 +101,62 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
     }
   }
 
+  void UpsertData() {
+    // Upsert new rows.
+    this->UpsertTestRows(0, 1000, 1000);
+    // Upsert rows that are in the MRS.
+    this->UpsertTestRows(0, 2000, 1001);
+
+    // Flush it.
+    ASSERT_OK(this->tablet()->Flush());
+    // Upsert rows that are in the DRS.
+    this->UpsertTestRows(0, 3000, 1002);
+  }
+
+  void TestNoAffectedMetrics(MaintenanceOp* op) {
+    for (const scoped_refptr<Histogram>& c : compaction_metrics_) {
+      auto min_value = c->histogram()->MinValue();
+      auto mean_value = c->histogram()->MeanValue();
+      auto max_value = c->histogram()->MaxValue();
+      auto total_count = c->histogram()->TotalCount();
+      auto total_sum = c->histogram()->TotalSum();
+      UpsertData();
+      op->UpdateStats(&stats_);
+      ASSERT_FALSE(stats_.runnable());
+      ASSERT_EQ(min_value, c->histogram()->MinValue());
+      ASSERT_EQ(mean_value, c->histogram()->MeanValue());
+      ASSERT_EQ(max_value, c->histogram()->MaxValue());
+      ASSERT_EQ(total_count, c->histogram()->TotalCount());
+      ASSERT_EQ(total_sum, c->histogram()->TotalSum());
+    }
+  }
+
   MaintenanceOpStats stats_;
   MonoTime next_time_;
   std::vector<scoped_refptr<Histogram> > all_possible_metrics_;
+  std::vector<scoped_refptr<Histogram> > compaction_metrics_;
 };
 
 TEST_F(KuduTabletMmOpsTest, TestCompactRowSetsOpCacheStats) {
   CompactRowSetsOp op(tablet().get());
+  ASSERT_FALSE(op.DisableCompaction());
   NO_FATALS(TestFirstCall(&op));
   NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
                                        tablet()->metrics()->compact_rs_duration }));
 }
 
+TEST_F(KuduTabletMmOpsTest, TestDisableCompactRowSetsOp) {
+  CompactRowSetsOp op(tablet().get());
+  TableExtraConfigPB extra_config;
+  extra_config.set_disable_compaction(true);
+  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), boost::make_optional(extra_config)));
+  ASSERT_TRUE(op.DisableCompaction());
+  NO_FATALS(TestNoAffectedMetrics(&op));
+}
+
 TEST_F(KuduTabletMmOpsTest, TestMinorDeltaCompactionOpCacheStats) {
   MinorDeltaCompactionOp op(tablet().get());
+  ASSERT_FALSE(op.DisableCompaction());
   NO_FATALS(TestFirstCall(&op));
   NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
                                        tablet()->metrics()->flush_dms_duration,
@@ -116,14 +164,33 @@ TEST_F(KuduTabletMmOpsTest, TestMinorDeltaCompactionOpCacheStats) {
                                        tablet()->metrics()->delta_minor_compact_rs_duration }));
 }
 
+TEST_F(KuduTabletMmOpsTest, TestDisableMinorDeltaCompactionOp) {
+  MinorDeltaCompactionOp op(tablet().get());
+  TableExtraConfigPB extra_config;
+  extra_config.set_disable_compaction(true);
+  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), boost::make_optional(extra_config)));
+  ASSERT_TRUE(op.DisableCompaction());
+  NO_FATALS(TestNoAffectedMetrics(&op));
+}
+
 TEST_F(KuduTabletMmOpsTest, TestMajorDeltaCompactionOpCacheStats) {
   MajorDeltaCompactionOp op(tablet().get());
+  ASSERT_FALSE(op.DisableCompaction());
   NO_FATALS(TestFirstCall(&op));
   NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
                                        tablet()->metrics()->flush_dms_duration,
                                        tablet()->metrics()->compact_rs_duration,
                                        tablet()->metrics()->delta_minor_compact_rs_duration,
                                        tablet()->metrics()->delta_major_compact_rs_duration }));
+}
+
+TEST_F(KuduTabletMmOpsTest, TestDisableMajorDeltaCompactionOp) {
+  MajorDeltaCompactionOp op(tablet().get());
+  TableExtraConfigPB extra_config;
+  extra_config.set_disable_compaction(true);
+  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), boost::make_optional(extra_config)));
+  ASSERT_TRUE(op.DisableCompaction());
+  NO_FATALS(TestNoAffectedMetrics(&op));
 }
 } // namespace tablet
 } // namespace kudu

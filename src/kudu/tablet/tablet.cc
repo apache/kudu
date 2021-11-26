@@ -1743,6 +1743,13 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   return Status::OK();
 }
 
+bool Tablet::disable_compaction() const {
+  if (metadata_->extra_config() && metadata_->extra_config()->has_disable_compaction()) {
+    return metadata_->extra_config()->disable_compaction();
+  }
+  return false;
+}
+
 void Tablet::GetRowSetsForTests(RowSetVector* out) {
   shared_ptr<RowSetTree> rowsets_copy;
   {

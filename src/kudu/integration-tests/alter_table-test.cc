@@ -376,6 +376,10 @@ class AlterTableTest : public KuduTest {
     }
   }
 
+  void CheckDisableCompaction(const bool& disable_compaction) {
+    ASSERT_EQ(tablet_replica_->tablet()->disable_compaction(), disable_compaction);
+  }
+
  protected:
   virtual int num_replicas() const { return 1; }
   virtual int num_tservers() const { return 1; }
@@ -2511,6 +2515,32 @@ TEST_F(AlterTableTest, TestMaintenancePriorityAlter) {
   // Reset to default priority level.
   ASSERT_OK(table_alterer->AlterExtraConfig({{"kudu.table.maintenance_priority", "0"}})->Alter());
   NO_FATALS(CheckMaintenancePriority(0));
+}
+
+TEST_F(AlterTableTest, TestDisableCompactAlter) {
+  // Default disable_compaction.
+  NO_FATALS(CheckDisableCompaction(false));
+
+  // Set disable_compaction true.
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->AlterExtraConfig(
+                           {{"kudu.table.disable_compaction", "true"}})->Alter());
+  NO_FATALS(CheckDisableCompaction(true));
+
+  // Reset to default disable_compaction.
+  ASSERT_OK(table_alterer->AlterExtraConfig(
+                           {{"kudu.table.disable_compaction", ""}})->Alter());
+  NO_FATALS(CheckDisableCompaction(false));
+
+  // Set disable_compaction false.
+  ASSERT_OK(table_alterer->AlterExtraConfig(
+                           {{"kudu.table.disable_compaction", "false"}})->Alter());
+  NO_FATALS(CheckDisableCompaction(false));
+
+  // Set to invalid string.
+  Status s = table_alterer->AlterExtraConfig(
+                           {{"kudu.table.disable_compaction", "ok"}})->Alter();
+  ASSERT_TRUE(s.IsInvalidArgument());
 }
 
 } // namespace kudu

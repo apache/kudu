@@ -58,6 +58,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/safe_math.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/string_case.h"
 
 namespace kudu {
 class BlockBloomFilterPB;
@@ -666,12 +667,25 @@ Status ParseInt32Config(const string& name, const string& value, int32_t* result
   return Status::OK();
 }
 
+Status ParseBoolConfig(const string& name, const string& value, bool* result) {
+  CHECK(result);
+  bool true_flag = iequals(value, "TRUE");
+  bool false_flag = iequals(value, "FALSE");
+  if (!(true_flag || false_flag)) {
+    return Status::InvalidArgument(Substitute("unable to parse $0", name), value);
+  }
+  *result = true_flag;
+  return Status::OK();
+}
+
 static const std::string kTableHistoryMaxAgeSec = "kudu.table.history_max_age_sec";
 static const std::string kTableMaintenancePriority = "kudu.table.maintenance_priority";
+static const std::string kTableDisableCompaction = "kudu.table.disable_compaction";
 
 Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConfigPB* pb) {
   static const unordered_set<string> kSupportedConfigs({kTableHistoryMaxAgeSec,
-                                                        kTableMaintenancePriority});
+                                                        kTableMaintenancePriority,
+                                                        kTableDisableCompaction});
   TableExtraConfigPB result;
   for (const auto& config : configs) {
     const string& name = config.first;
@@ -693,6 +707,12 @@ Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConf
         RETURN_NOT_OK(ParseInt32Config(name, value, &maintenance_priority));
         result.set_maintenance_priority(maintenance_priority);
       }
+    } else if (name == kTableDisableCompaction) {
+      if (!value.empty()) {
+        bool disable_compaction = false;
+        RETURN_NOT_OK(ParseBoolConfig(name, value, &disable_compaction));
+        result.set_disable_compaction(disable_compaction);
+      }
     } else {
       LOG(FATAL) << "Unknown extra configuration property: " << name;
     }
@@ -708,6 +728,9 @@ Status ExtraConfigPBToPBMap(const TableExtraConfigPB& pb, Map<string, string>* c
   }
   if (pb.has_maintenance_priority()) {
     result[kTableMaintenancePriority] = std::to_string(pb.maintenance_priority());
+  }
+  if (pb.has_disable_compaction()) {
+    result[kTableDisableCompaction] = std::to_string(pb.disable_compaction());
   }
   *configs = std::move(result);
   return Status::OK();

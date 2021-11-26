@@ -113,6 +113,10 @@ int32_t TabletOpBase::priority() const {
   return priority;
 }
 
+bool TabletOpBase::DisableCompaction() const {
+  return tablet_->disable_compaction();
+}
+
 ////////////////////////////////////////////////////////////
 // CompactRowSetsOp
 ////////////////////////////////////////////////////////////
@@ -125,9 +129,10 @@ CompactRowSetsOp::CompactRowSetsOp(Tablet* tablet)
 }
 
 void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
-  if (PREDICT_FALSE(!FLAGS_enable_rowset_compaction)) {
+  if (PREDICT_FALSE(!FLAGS_enable_rowset_compaction || DisableCompaction())) {
     KLOG_EVERY_N_SECS(WARNING, 300)
-        << "Rowset compaction is disabled (check --enable_rowset_compaction)";
+        << Substitute("Rowset compaction is disabled (check --enable_rowset_compaction "
+           "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());
     stats->set_runnable(false);
     return;
   }
@@ -200,9 +205,10 @@ MinorDeltaCompactionOp::MinorDeltaCompactionOp(Tablet* tablet)
 }
 
 void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
-  if (PREDICT_FALSE(!FLAGS_enable_minor_delta_compaction)) {
+  if (PREDICT_FALSE(!FLAGS_enable_minor_delta_compaction || DisableCompaction())) {
     KLOG_EVERY_N_SECS(WARNING, 300)
-        << "Minor delta compaction is disabled (check --enable_minor_delta_compaction)";
+        << Substitute("Minor delta compaction is disabled (check --enable_minor_delta_compaction "
+           "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());
     stats->set_runnable(false);
     return;
   }
@@ -283,9 +289,10 @@ MajorDeltaCompactionOp::MajorDeltaCompactionOp(Tablet* tablet)
 }
 
 void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
-  if (PREDICT_FALSE(!FLAGS_enable_major_delta_compaction)) {
+  if (PREDICT_FALSE(!FLAGS_enable_major_delta_compaction || DisableCompaction())) {
     KLOG_EVERY_N_SECS(WARNING, 300)
-        << "Major delta compaction is disabled (check --enable_major_delta_compaction)";
+        << Substitute("Major delta compaction is disabled (check --enable_major_delta_compaction "
+           "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());
     stats->set_runnable(false);
     return;
   }
