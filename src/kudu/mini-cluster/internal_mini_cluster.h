@@ -113,6 +113,10 @@ class InternalMiniCluster : public MiniCluster {
   // Requires that the master is already running.
   Status AddTabletServer();
 
+  // Add a new TS to the cluster with a specific hostname/ip and port.
+  // Requires that the master is already running.
+  Status AddTabletServer(const HostPort& hp);
+
   // If this cluster is configured for a single non-distributed
   // master, return the single master. Exits with a CHECK failure if
   // there are multiple masters.

@@ -25,11 +25,13 @@
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/mini_master.h"
@@ -41,11 +43,16 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_int32(follower_unavailable_considered_failed_sec);
+DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_int64(fs_wal_dir_reserved_bytes);
 
 using kudu::tablet::TABLET_DATA_DELETED;
@@ -57,10 +64,23 @@ using std::string;
 using std::thread;
 using std::vector;
 
+METRIC_DECLARE_entity(server);
+METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet);
+
 namespace kudu {
 
 class DeleteTabletITest : public MiniClusterITestBase {
 };
+
+Status GetNumDeleteTabletRPCs(const HostPort& http_hp, int64_t* num_rpcs) {
+  return itest::GetInt64Metric(
+      http_hp,
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
+      "total_count",
+      num_rpcs);
+}
 
 // Test deleting a failed replica. Regression test for KUDU-1607.
 TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
@@ -216,6 +236,63 @@ TEST_F(DeleteTabletITest, TestNoOpDeleteTabletRPC) {
   flush_count_after = flush_count();
 
   ASSERT_EQ(0, flush_count_after - flush_count_before);
+}
+
+// Regression test for KUDU-3341: Ensure that master would not retry to send
+// DeleteTablet() RPC to a "wrong server".
+TEST_F(DeleteTabletITest, TestNoMoreRetryWithWongServerUuid) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  FLAGS_raft_heartbeat_interval_ms = 100;
+  FLAGS_follower_unavailable_considered_failed_sec = 2;
+  const int kNumTablets = 3;
+  const int kNumTabletServers = 4;
+
+  // Start a cluster and wait all tablets running and leader elected.
+  NO_FATALS(StartCluster(kNumTabletServers));
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.Setup();
+  ASSERT_EVENTUALLY([&] {
+    ClusterVerifier v(cluster_.get());
+    ASSERT_OK(v.RunKsck());
+  });
+
+  // Get number of replicas on ts-0.
+  int num_replicas = 0;
+  auto* ts = cluster_->mini_tablet_server(0);
+  {
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+    num_replicas = tablet_replicas.size();
+  }
+
+  // Stop ts-0 and wait for replacement of replicas finished.
+  Sockaddr addr = ts->bound_rpc_addr();
+  ts->Shutdown();
+  SleepFor(MonoDelta::FromSeconds(2 * FLAGS_follower_unavailable_considered_failed_sec));
+
+  // Start a new tablet server with new wal/data directories and the same rpc address.
+  ASSERT_OK(cluster_->AddTabletServer(HostPort(addr)));
+
+  auto* new_ts = cluster_->mini_tablet_server(kNumTabletServers);
+  int64_t num_delete_tablet_rpcs = 0;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(GetNumDeleteTabletRPCs(HostPort(new_ts->bound_http_addr()), &num_delete_tablet_rpcs));
+    ASSERT_EQ(num_replicas, num_delete_tablet_rpcs);
+  });
+  // Sleep enough time to verify no additional DeleteTablet RPCs are sent by master.
+  SleepFor(MonoDelta::FromSeconds(5));
+  ASSERT_EQ(num_replicas, num_delete_tablet_rpcs);
+
+  // Stop the new tablet server and restart ts-0, finally outdated tablets on ts-0 would be deleted.
+  new_ts->Shutdown();
+  ASSERT_OK(ts->Start());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(GetNumDeleteTabletRPCs(HostPort(ts->bound_http_addr()), &num_delete_tablet_rpcs));
+    ASSERT_EQ(num_replicas, num_delete_tablet_rpcs);
+    int num_live_tablets = ts->server()->tablet_manager()->GetNumLiveTablets();
+    ASSERT_EQ(0, num_live_tablets);
+  });
 }
 
 } // namespace kudu

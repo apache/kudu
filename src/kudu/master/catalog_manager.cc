@@ -4163,6 +4163,12 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
             target_ts_desc_->ToString(), tablet_id_, status.ToString());
           MarkComplete();
           break;
+        case TabletServerErrorPB::WRONG_SERVER_UUID:
+          LOG(WARNING) << Substitute("TS $0: delete failed for tablet $1 "
+            "because the server uuid is wrong. No further retry: $2",
+            target_ts_desc_->ToString(), tablet_id_, status.ToString());
+          MarkFailed();
+          break;
         default:
           KLOG_EVERY_N_SECS(WARNING, 1) <<
               Substitute("TS $0: delete failed for tablet $1 with error code $2: $3",
