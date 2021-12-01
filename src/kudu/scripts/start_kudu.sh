@@ -22,6 +22,7 @@
 ########################################################################
 
 set -e
+set -o pipefail
 ulimit -n 2048
 
 function usage() {
@@ -166,10 +167,38 @@ function set_port_vars_and_print() {
   echo "  HTTP port $HTTP_PORT"
 }
 
+# Return a flag to set the hard memory limit for the Kudu server processes
+# running at the same node. Each of the processes is able to set the hard
+# memory limit based on the total amount of memory available, but such a
+# provision assumes there is a single Kudu server process running at a node.
+# Since there is going to be NUM_TSERVERS kudu-tserver and NUM_MASTERS
+# kudu-master processes running, it's necessary to divide the available memory
+# among them.
+function get_memory_limit_hard_bytes_flag() {
+  local num_processes=$1
+  local mem_size_bytes=0
+  if [[ "$OSTYPE" =~ ^linux ]]; then
+    local mem_size_kb=$(grep -E '^MemTotal' /proc/meminfo | awk '{print $2}')
+    mem_size_bytes=$((mem_size_kb * 1024))
+  elif [[ "$OSTYPE" =~ ^darwin ]]; then
+    mem_size_bytes=$(sysctl hw.memsize | awk '{print $2}')
+  fi
+
+  # Do not set the limit for a non-recognized OS.
+  if [ $mem_size_bytes -eq 0 ]; then
+    echo ""
+    return
+  fi
+
+  # Allocate 80% of all available memory to be used by all the Kudu processes.
+  local mem_limit_bytes=$((mem_size_bytes * 4 / 5))
+  mem_limit_bytes=$((mem_limit_bytes / num_processes))
+  echo "--memory_limit_hard_bytes=$mem_limit_bytes"
+}
+
 pids=()
 
-# Start master server function
-
+# Start kudu-master process.
 function start_master() {
   create_dirs_and_set_vars $1
   set_port_vars_and_print $1 $2 $3
@@ -183,14 +212,20 @@ function start_master() {
   ARGS="$ARGS --unlock_unsafe_flags"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --webserver_interface=$IP"
-  if [ -d "$WEBSERVER_DOC_ROOT" ]; then ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"; fi
+  if [ -d "$WEBSERVER_DOC_ROOT" ]; then
+    ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
+  fi
+  # NOTE: a kudu-master process doesn't usually consume a lot of memory,
+  #       so the memory hard limit isn't set for them; if kudu-master memory
+  #       consumption becomes an issue, provide the necessary flags for
+  #       kudu-master processing using the --master-flags/-M command line
+  #       option
   ARGS="$ARGS $EXTRA_MASTER_FLAGS"
   $ARGS &
   pids+=($!)
 }
 
-# Start tablet server function
-
+# Start kudu-tserver process.
 function start_tserver() {
   create_dirs_and_set_vars $1
   set_port_vars_and_print $1 $2 $3
@@ -203,8 +238,16 @@ function start_tserver() {
   ARGS="$ARGS --unlock_unsafe_flags"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --webserver_interface=$IP"
-  if [ -d "$WEBSERVER_DOC_ROOT" ]; then ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"; fi
   ARGS="$ARGS --tserver_master_addrs=$4"
+  if [ -d "$WEBSERVER_DOC_ROOT" ]; then
+    ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
+  fi
+
+  # If applicable, set the memory hard limit.
+  local mem_limit_flag=$(get_memory_limit_hard_bytes_flag $NUM_TSERVERS)
+  if [ -n $mem_limit_flag ]; then
+    ARGS="$ARGS $mem_limit_flag"
+  fi
   ARGS="$ARGS $EXTRA_TSERVER_FLAGS"
   $ARGS &
   pids+=($!)
@@ -235,6 +278,5 @@ for i in $(seq 0 $((NUM_TSERVERS - 1))); do
   start_tserver tserver-$i $TSERVER_RPC_PORT $TSERVER_HTTP_PORT $MASTER_ADDRESSES
 done
 
-# Show status of started processes
-
+# Show the status of the started processes.
 ps -wwo args -p ${pids[@]}
