@@ -129,7 +129,7 @@ if [ -z "$KUDU_HOME" ] || [ ! -d "$KUDU_HOME/www" ]; then
   WEBSERVER_DOC_ROOT="$BUILDDIR/../../www"
 fi
 
-if [ ! -d "$WEBSERVER_DOC_ROOT" ]; then
+if [ -n "$WEBSERVER_DOC_ROOT" ] && [ ! -d "$WEBSERVER_DOC_ROOT" ]; then
   echo  -n "Cannot find webroot directory $WEBSERVER_DOC_ROOT at "
   echo "\$KUDU_HOME/www or \$BUILDDIR/../../www"
 fi
