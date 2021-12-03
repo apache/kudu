@@ -97,6 +97,10 @@ class RebalancerTool : public rebalance::Rebalancer {
     // (i.e. succeeded or failed).
     void UpdateOnMoveCompleted(const std::string& ts_uuid);
 
+    // Check if all the tablets servers (excluding those specified in 'ignored_tservers')
+    // are healthy and available for replica placement.
+    Status CheckTabletServers(const rebalance::ClusterRawInfo& raw_info);
+
     // A pointer to the Rebalancer object.
     RebalancerTool* rebalancer_;
 

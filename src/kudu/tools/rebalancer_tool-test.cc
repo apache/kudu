@@ -279,6 +279,71 @@ TEST_P(RebalanceStartCriteriaTest, UnknownIgnoredTServer) {
   }
 }
 
+TEST_P(RebalanceStartCriteriaTest, TabletServerInMaintenanceMode) {
+  const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
+  const vector<string> kMasterFlags = {
+      Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+  };
+  const vector<string> kTserverFlags = {
+      Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+  };
+
+  FLAGS_num_tablet_servers = 5;
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+
+  auto* ts = cluster_->tablet_server(0);
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Set the tserver into maintenance mode.
+  {
+    string out;
+    string err;
+    Status s =
+        RunKuduTool({"tserver", "state", "enter_maintenance", master_addr, ts->uuid()}, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+  }
+
+  // Rebalancer doesn't start if any tserver is in maintenance mode.
+  {
+    string out;
+    string err;
+    Status s = RunKuduTool({"cluster", "rebalance", master_addr}, &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(err, "unacceptable state MAINTENANCE_MODE");
+  }
+
+  // Rebalancer starts when specifying the maintenance tserver in '--ignored_tservers'.
+  {
+    string out;
+    string err;
+    Status s = RunKuduTool(
+        {"cluster", "rebalance", master_addr, "--ignored_tservers=" + ts->uuid()}, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+  }
+
+  // Rebalancer starts when specifying '--force_rebalance_replicas_on_maintenance_tservers'.
+  {
+    string out;
+    string err;
+    Status s = RunKuduTool(
+        {"cluster", "rebalance", master_addr, "--force_rebalance_replicas_on_maintenance_tservers"},
+        &out,
+        &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+  }
+
+  // Now exit maintenance mode and rebalancer could start.
+  {
+    string out;
+    string err;
+    Status s =
+        RunKuduTool({"tserver", "state", "exit_maintenance", master_addr, ts->uuid()}, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    s = RunKuduTool({"cluster", "rebalance", master_addr}, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+  }
+}
+
 // Make sure the rebalancer doesn't start if specified too many ignored tservers.
 class RebalanceStartSafetyTest :
     public AdminCliTest,
@@ -874,12 +939,8 @@ TEST_F(IgnoredTserverGoesDownDuringRebalancingTest, TserverDown) {
       "--max_moves_per_server=1",
     }, &out, &err);
     ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
-
     // The rebalancer tool should not crash.
     ASSERT_STR_NOT_CONTAINS(s.ToString(), kExitOnSignalStr);
-    // The rebalancer tool would log some information of the unhealthy server.
-    ASSERT_STR_CONTAINS(err, Substitute("ignoring unhealthy tablet server $0",
-                                       cluster_->tablet_server(ignored_tserver_idx)->uuid()));
 
     // Restart the ignored tablet server
     ASSERT_OK(cluster_->tablet_server(ignored_tserver_idx)->Restart());

@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -37,19 +36,15 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
-#include "kudu/common/wire_protocol.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master.proxy.h"
 #include "kudu/rebalance/cluster_status.h"
 #include "kudu/rebalance/placement_policy_util.h"
 #include "kudu/rebalance/rebalance_algo.h"
 #include "kudu/rebalance/rebalancer.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/ksck_results.h"
@@ -62,9 +57,7 @@ using kudu::cluster_summary::ServerHealth;
 using kudu::cluster_summary::ServerHealthSummary;
 using kudu::cluster_summary::TableSummary;
 using kudu::cluster_summary::TabletSummary;
-using kudu::master::ListTabletServersRequestPB;
-using kudu::master::ListTabletServersResponsePB;
-using kudu::master::MasterServiceProxy;
+using kudu::master::TServerStatePB;
 using kudu::rebalance::BuildTabletExtraInfoMap;
 using kudu::rebalance::ClusterInfo;
 using kudu::rebalance::ClusterRawInfo;
@@ -110,15 +103,15 @@ Status RebalancerTool::PrintStats(ostream& out) {
   ClusterInfo ci;
   RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
 
-  // Print information about replica count of healthy ignored tservers.
-  RETURN_NOT_OK(PrintIgnoredTserversStats(ci, out));
-
   const auto& ts_id_by_location = ci.locality.servers_by_location;
   if (ts_id_by_location.empty()) {
     // Nothing to report about: there are no tablet servers reported.
     out << "an empty cluster" << endl;
     return Status::OK();
   }
+
+  // Print information about replica count of healthy ignored tservers.
+  RETURN_NOT_OK(PrintIgnoredTserversStats(ci, out));
 
   if (ts_id_by_location.size() == 1) {
     // That's about printing information about the whole cluster.
@@ -169,8 +162,7 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   }
 
   ClusterRawInfo raw_info;
-  RETURN_NOT_OK(
-      KsckResultsToClusterRawInfo(boost::none, ksck_->results(), &raw_info));
+  RETURN_NOT_OK(KsckResultsToClusterRawInfo(boost::none, ksck_->results(), &raw_info));
 
   ClusterInfo ci;
   RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
@@ -263,10 +255,9 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   return Status::OK();
 }
 
-Status RebalancerTool::KsckResultsToClusterRawInfo(
-    const boost::optional<string>& location,
-    const KsckResults& ksck_info,
-    ClusterRawInfo* raw_info) {
+Status RebalancerTool::KsckResultsToClusterRawInfo(const boost::optional<string>& location,
+                                                   const KsckResults& ksck_info,
+                                                   ClusterRawInfo* raw_info) {
   DCHECK(raw_info);
   const auto& cluster_status = ksck_info.cluster_status;
 
@@ -344,9 +335,17 @@ Status RebalancerTool::KsckResultsToClusterRawInfo(
     }
   }
 
+  unordered_set<string> tservers_in_maintenance_mode;
+  for (const auto& ts : tserver_summaries) {
+    if (ContainsKeyValuePair(ksck_info.ts_states, ts.uuid, TServerStatePB::MAINTENANCE_MODE)) {
+      tservers_in_maintenance_mode.emplace(ts.uuid);
+    }
+  }
+
   raw_info->tserver_summaries = std::move(tserver_summaries);
   raw_info->table_summaries = std::move(table_summaries);
   raw_info->tablet_summaries = std::move(tablet_summaries);
+  raw_info->tservers_in_maintenance_mode = std::move(tservers_in_maintenance_mode);
 
   return Status::OK();
 }
@@ -588,9 +587,9 @@ Status RebalancerTool::RunWith(Runner* runner, RunStatus* result_status) {
       break;
     }
 
-    auto has_errors = false;
+    bool has_errors = false;
     while (!is_timed_out) {
-      auto is_scheduled = runner->ScheduleNextMove(&has_errors, &is_timed_out);
+      bool is_scheduled = runner->ScheduleNextMove(&has_errors, &is_timed_out);
       resync_state |= has_errors;
       if (resync_state || is_timed_out) {
         break;
@@ -610,10 +609,9 @@ Status RebalancerTool::RunWith(Runner* runner, RunStatus* result_status) {
       // Poll for the status of pending operations. If some of the in-flight
       // operations are completed, it might be possible to schedule new ones
       // by calling Runner::ScheduleNextMove().
-      auto has_pending_moves = false;
-      auto has_updates = runner->UpdateMovesInProgressStatus(&has_errors,
-                                                             &is_timed_out,
-                                                             &has_pending_moves);
+      bool has_pending_moves = false;
+      bool has_updates =
+          runner->UpdateMovesInProgressStatus(&has_errors, &is_timed_out, &has_pending_moves);
       if (has_updates) {
         // Reset the start of the staleness interval: there was some updates
         // on the status of scheduled move operations.
@@ -719,6 +717,38 @@ void RebalancerTool::BaseRunner::UpdateOnMoveCompleted(const string& ts_uuid) {
     }
   }
   DCHECK(ts_per_op_count_updated);
+}
+
+Status RebalancerTool::BaseRunner::CheckTabletServers(const ClusterRawInfo& raw_info) {
+  // For simplicity, allow to run the rebalancing only when all tablet servers
+  // are in good shape (except those specified in 'ignored_tservers').
+  // Otherwise, the rebalancing might interfere with the
+  // automatic re-replication or get unexpected errors while moving replicas.
+  for (const auto& s : raw_info.tserver_summaries) {
+    if (s.health != ServerHealth::HEALTHY && !ContainsKey(ignored_tservers_, s.uuid)) {
+      return Status::IllegalState(Substitute("tablet server $0 ($1): unacceptable health status $2",
+                                             s.uuid,
+                                             s.address,
+                                             ServerHealthToString(s.health)));
+    }
+  }
+  if (rebalancer_->config_.force_rebalance_replicas_on_maintenance_tservers) {
+    return Status::OK();
+  }
+  // Avoid moving replicas to tablet servers that are set maintenance mode.
+  for (const string& ts_uuid : raw_info.tservers_in_maintenance_mode) {
+    if (!ContainsKey(ignored_tservers_, ts_uuid)) {
+      return Status::IllegalState(
+          Substitute("tablet server $0: unacceptable state MAINTENANCE_MODE.\n"
+                     "You can continue rebalancing in one of the following ways:\n"
+                     "1. Set the tserver uuid into the '--ignored_tservers' flag to ignored it.\n"
+                     "2. Set '--force_rebalance_replicas_on_maintenance_tservers' to force "
+                     "rebalancing replicas among all known tservers.\n"
+                     "3. Exit maintenance mode on the tserver.",
+                     ts_uuid));
+    }
+  }
+  return Status::OK();
 }
 
 RebalancerTool::AlgoBasedRunner::AlgoBasedRunner(
@@ -923,23 +953,7 @@ Status RebalancerTool::AlgoBasedRunner::GetNextMovesImpl(
   const auto& loc = location();
   ClusterRawInfo raw_info;
   RETURN_NOT_OK(rebalancer_->GetClusterRawInfo(loc, &raw_info));
-
-  // For simplicity, allow to run the rebalancing only when all tablet servers
-  // are in good shape (except those specified in 'ignored_tservers_').
-  // Otherwise, the rebalancing might interfere with the
-  // automatic re-replication or get unexpected errors while moving replicas.
-  for (const auto& s : raw_info.tserver_summaries) {
-    if (s.health != ServerHealth::HEALTHY) {
-      if (ContainsKey(ignored_tservers_, s.uuid)) {
-        LOG(INFO) << Substitute("ignoring unhealthy tablet server $0 ($1).",
-                                s.uuid, s.address);
-        continue;
-      }
-      return Status::IllegalState(
-          Substitute("tablet server $0 ($1): unacceptable health status $2",
-                     s.uuid, s.address, ServerHealthToString(s.health)));
-    }
-  }
+  RETURN_NOT_OK(CheckTabletServers(raw_info));
 
   TabletsPlacementInfo tpi;
   if (!loc) {
@@ -1235,24 +1249,8 @@ Status RebalancerTool::ReplaceBasedRunner::GetNextMovesImpl(
     vector<Rebalancer::ReplicaMove>* replica_moves) {
   ClusterRawInfo raw_info;
   RETURN_NOT_OK(rebalancer_->GetClusterRawInfo(boost::none, &raw_info));
+  RETURN_NOT_OK(CheckTabletServers(raw_info));
 
-  // For simplicity, allow to run the rebalancing only when all tablet servers
-  // are in good shape (except those specified in 'ignored_tservers_').
-  // Otherwise, the rebalancing might interfere with the
-  // automatic re-replication or get unexpected errors while moving replicas.
-  // TODO(aserbin): move it somewhere else?
-  for (const auto& s : raw_info.tserver_summaries) {
-    if (s.health != ServerHealth::HEALTHY) {
-      if (ContainsKey(ignored_tservers_, s.uuid)) {
-        LOG(INFO) << Substitute("ignoring unhealthy tablet server $0 ($1).",
-                                s.uuid, s.address);
-        continue;
-      }
-      return Status::IllegalState(
-          Substitute("tablet server $0 ($1): unacceptable health status $2",
-                     s.uuid, s.address, ServerHealthToString(s.health)));
-    }
-  }
   ClusterInfo ci;
   RETURN_NOT_OK(rebalancer_->BuildClusterInfo(raw_info, scheduled_moves_, &ci));
   return GetReplaceMoves(ci, raw_info, replica_moves);
@@ -1437,23 +1435,9 @@ Status RebalancerTool::IgnoredTserversRunner::CheckIgnoredTServers(const Cluster
                    max_replication_factor));
   }
 
-  LeaderMasterProxy proxy(client_);
-  ListTabletServersRequestPB req;
-  ListTabletServersResponsePB resp;
-  req.set_include_states(true);
-  RETURN_NOT_OK((proxy.SyncRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
-      req, &resp, "ListTabletServers", &MasterServiceProxy::ListTabletServersAsync)));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
-  const auto& servers = resp.servers();
-  for (const auto& server : servers) {
-    const auto& ts_uuid = server.instance_id().permanent_uuid();
-    if (!ContainsKey(ci.tservers_to_empty, ts_uuid)) {
-      continue;
-    }
-    if (server.state() != master::TServerStatePB::MAINTENANCE_MODE) {
+  for (const auto& it : ci.tservers_to_empty) {
+    const string& ts_uuid = it.first;
+    if (!ContainsKey(raw_info.tservers_in_maintenance_mode, ts_uuid)) {
       return Status::IllegalState(Substitute(
         "You should set maintenance mode for tablet server $0 first", ts_uuid));
     }

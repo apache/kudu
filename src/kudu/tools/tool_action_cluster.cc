@@ -153,6 +153,15 @@ DEFINE_double(load_imbalance_threshold,
               "proven to be a good choice between 'ideal' and 'good enough' "
               "replica distributions.");
 
+DEFINE_bool(force_rebalance_replicas_on_maintenance_tservers, false,
+            "This flag only takes effect in the case that some tservers are set maintenance "
+            "mode but not specified in 'ignored_tservers'. If set true, the tool would rebalance "
+            "all known replicas among all known tservers. The side effect of this is new "
+            "replicas may be moved to maintenance tservers which are likely to be restarted or "
+            "decommissioned soon. It is generally more recommended to specify all maintenance "
+            "tservers in 'ignored_tservers', so that the rebalancer tool would ignore these "
+            "tservers' states and replicas on them when planning replica moves.");
+
 static bool ValidateMoveSingleReplicas(const char* flag_name,
                                        const string& flag_value) {
   const vector<string> allowed_values = { "auto", "enabled", "disabled" };
@@ -321,7 +330,8 @@ Status RunRebalance(const RunnerContext& context) {
       !FLAGS_disable_policy_fixer,
       !FLAGS_disable_cross_location_rebalancing,
       !FLAGS_disable_intra_location_rebalancing,
-      FLAGS_load_imbalance_threshold));
+      FLAGS_load_imbalance_threshold,
+      FLAGS_force_rebalance_replicas_on_maintenance_tservers));
 
   // Print info on pre-rebalance distribution of replicas.
   RETURN_NOT_OK(rebalancer.PrintStats(cout));
@@ -413,6 +423,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("disable_intra_location_rebalancing")
         .AddOptionalParameter("disable_policy_fixer")
         .AddOptionalParameter("fetch_info_concurrency")
+        .AddOptionalParameter("force_rebalance_replicas_on_maintenance_tservers")
         .AddOptionalParameter("ignored_tservers")
         .AddOptionalParameter("load_imbalance_threshold")
         .AddOptionalParameter("max_moves_per_server")
@@ -432,4 +443,3 @@ unique_ptr<Mode> BuildClusterMode() {
 
 } // namespace tools
 } // namespace kudu
-

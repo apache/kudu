@@ -42,6 +42,7 @@ struct ClusterRawInfo {
   std::vector<cluster_summary::ServerHealthSummary> tserver_summaries;
   std::vector<cluster_summary::TableSummary> table_summaries;
   std::vector<cluster_summary::TabletSummary> tablet_summaries;
+  std::unordered_set<std::string> tservers_in_maintenance_mode;
 };
 
 // A class implementing logic for Kudu cluster rebalancing.
@@ -66,7 +67,8 @@ class Rebalancer {
            bool run_policy_fixer = true,
            bool run_cross_location_rebalancing = true,
            bool run_intra_location_rebalancing = true,
-           double load_imbalance_threshold = kLoadImbalanceThreshold);
+           double load_imbalance_threshold = kLoadImbalanceThreshold,
+           bool force_rebalance_replicas_on_maintenance_tservers = false);
 
     // UUIDs of ignored servers. If empty, run the rebalancing on
     // all tablet servers in the cluster only when all tablet servers
@@ -132,6 +134,8 @@ class Rebalancer {
     // The per-table location load imbalance threshold for the cross-location
     // balancing algorithm.
     double load_imbalance_threshold;
+
+    bool force_rebalance_replicas_on_maintenance_tservers;
   };
 
   // Represents a concrete move of a replica from one tablet server to another.
