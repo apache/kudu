@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
@@ -875,5 +876,223 @@ public class TestPartitionPruner {
     // timestamp IS NULL
     checkPartitions(0, 0, table, partitions,
                     KuduPredicate.newIsNullPredicate(timestamp));
+  }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
+      "--enable_per_range_hash_schemas=true",
+  })
+  public void testPruningWithCustomHashSchemas() throws Exception {
+    // CREATE TABLE timeseries
+    //   (host STRING, metric STRING, timestamp UNIXTIME_MICROS, value DOUBLE)
+    // PRIMARY KEY (host, metric, timestamp)
+    //
+    //    RANGE(timestamp)
+    //        (PARTITION VALUES >= 0,
+    //         PARTITION VALUES <  100)
+    //    HASH (host, metric) 2 PARTITIONS,
+    //
+    //    RANGE(timestamp)
+    //        (PARTITION VALUES >= 100,
+    //         PARTITION VALUES <  200)
+    //    HASH (host) 5 PARTITIONS
+
+    ColumnSchema host =
+        new ColumnSchema.ColumnSchemaBuilder("host", Type.STRING).key(true).build();
+    ColumnSchema metric =
+        new ColumnSchema.ColumnSchemaBuilder("metric", Type.STRING).key(true).build();
+    ColumnSchema timestamp =
+        new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS)
+            .key(true).build();
+    ColumnSchema value = new ColumnSchema.ColumnSchemaBuilder("value", Type.DOUBLE).build();
+    final Schema schema = new Schema(ImmutableList.of(host, metric, timestamp, value));
+
+    CreateTableOptions tableBuilder = new CreateTableOptions();
+    tableBuilder.setRangePartitionColumns(ImmutableList.of("timestamp"));
+
+    // Add range partition with table-wide hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addLong("timestamp", 0);
+      PartialRow upper = schema.newPartialRow();
+      upper.addLong("timestamp", 100);
+      tableBuilder.addRangePartition(lower, upper);
+    }
+
+    // Add range partition with custom hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addLong("timestamp", 100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addLong("timestamp", 200);
+
+      RangePartitionWithCustomHashSchema rangePartition =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      rangePartition.addHashPartitions(ImmutableList.of("host"), 5, 0);
+
+      tableBuilder.addRangePartition(rangePartition);
+    }
+
+    // Add table-wide hash schema.
+    tableBuilder.addHashPartitions(ImmutableList.of("host", "metric"), 2);
+
+    String tableName = "testPruningCHS";
+    client.createTable(tableName, schema, tableBuilder);
+    KuduTable table = client.openTable(tableName);
+
+    final List<Partition> partitions = getTablePartitions(table);
+    assertEquals(7, partitions.size());
+
+    // No Predicates
+    checkPartitions(7, 9, table, partitions);
+
+    checkPartitions(7, 7, table, partitions,
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 50),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.LESS, 150));
+
+    // host = "a"
+    // 2 tablets from the HASH(host, metric) range and 1 from the HASH(host) range.
+    checkPartitions(3, 5, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"));
+
+    // host = "a"
+    // metric = "a"
+    checkPartitions(2, 3, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"));
+
+    // host = "a"
+    // metric = "a"
+    // timestamp >= 9;
+    checkPartitions(2, 3, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 9));
+
+    // host = "a"
+    // metric = "a"
+    // timestamp >= 10;
+    // timestamp < 20;
+    checkPartitions(1, 1, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 10),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.LESS, 20));
+
+    // host = "a"
+    // metric = "a"
+    // timestamp >= 100;
+    // timestamp < 200;
+    checkPartitions(1, 1, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 10),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.LESS, 20));
+
+    // host = "a"
+    // metric = "a"
+    // timestamp < 10;
+    checkPartitions(1, 1, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.LESS, 10));
+
+    // host = "a"
+    // metric = "a"
+    // timestamp < 100;
+    checkPartitions(1, 1, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.LESS, 100));
+
+    // host = "a"
+    // metric = "a"
+    // timestamp >= 10;
+    checkPartitions(2, 3, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 10));
+
+    // host = "a"
+    // metric = "a"
+    // timestamp >= 100;
+    checkPartitions(1, 2, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 100));
+
+    // host = "a"
+    // metric = "a"
+    // timestamp = 100;
+    checkPartitions(1, 1, table, partitions,
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.EQUAL, 100));
+
+    final byte[] hash1 = new byte[] { 0, 0, 0, 1 };
+
+    // partition key < (hash=1)
+    // scan partitions: 1 + 1 + 1
+    checkPartitions(2, 3, table, partitions, null, hash1);
+
+    // partition key >= (hash=1)
+    // scan partitions: 1 + 4 + 1
+    checkPartitions(5, 6, table, partitions, hash1, null);
+
+    // timestamp = 10
+    // partition key < (hash=1)
+    // scan partitions: 0 + 1 + 0
+    checkPartitions(1, 1, table, partitions, null, hash1,
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.EQUAL, 10));
+
+    // timestamp = 10
+    // partition key >= (hash=1)
+    checkPartitions(1, 1, table, partitions, hash1, null,
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.EQUAL, 10));
+
+    // timestamp = 100
+    // partition key >= (hash=1)
+    checkPartitions(4, 4, table, partitions, hash1, null,
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.EQUAL, 100));
+
+    // timestamp IN (99, 100)
+    // host = "a"
+    // metric IN ("foo", "baz")
+    checkPartitions(2, 2, table, partitions,
+        KuduPredicate.newInListPredicate(timestamp, ImmutableList.of(99L, 100L)),
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newInListPredicate(metric, ImmutableList.of("foo", "baz")));
+
+    // timestamp IN (100, 199)
+    // host = "a"
+    // metric IN ("foo", "baz")
+    checkPartitions(1, 1, table, partitions,
+        KuduPredicate.newInListPredicate(timestamp, ImmutableList.of(100L, 199L)),
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newInListPredicate(metric, ImmutableList.of("foo", "baz")));
+
+    // timestamp IN (0, 10)
+    checkPartitions(2, 2, table, partitions,
+        KuduPredicate.newInListPredicate(timestamp, ImmutableList.of(0L, 10L)));
+
+    // timestamp IN (100, 110)
+    checkPartitions(5, 5, table, partitions,
+        KuduPredicate.newInListPredicate(timestamp, ImmutableList.of(100L, 110L)));
+
+    // timestamp IN (99, 100)
+    checkPartitions(7, 7, table, partitions,
+        KuduPredicate.newInListPredicate(timestamp, ImmutableList.of(99L, 100L)));
+
+    // timestamp IS NOT NULL
+    checkPartitions(7, 9, table, partitions,
+        KuduPredicate.newIsNotNullPredicate(timestamp));
+
+    // timestamp IS NULL
+    checkPartitions(0, 0, table, partitions,
+        KuduPredicate.newIsNullPredicate(timestamp));
   }
 }

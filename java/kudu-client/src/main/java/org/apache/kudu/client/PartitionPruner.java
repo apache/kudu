@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import javax.annotation.concurrent.NotThreadSafe;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.ColumnSchema;
@@ -43,7 +45,7 @@ public class PartitionPruner {
 
   /**
    * Constructs a new partition pruner.
-   * @param rangePartitions the valid partition key ranges, in reverse sorted order
+   * @param rangePartitions the valid partition key ranges, sorted in ascending order
    */
   private PartitionPruner(Deque<Pair<byte[], byte[]>> rangePartitions) {
     this.rangePartitions = rangePartitions;
@@ -70,11 +72,11 @@ public class PartitionPruner {
    */
   public static PartitionPruner create(AbstractKuduScannerBuilder<?, ?> scanner) {
     Schema schema = scanner.table.getSchema();
-    PartitionSchema partitionSchema = scanner.table.getPartitionSchema();
+    final PartitionSchema partitionSchema = scanner.table.getPartitionSchema();
     PartitionSchema.RangeSchema rangeSchema = partitionSchema.getRangeSchema();
     Map<String, KuduPredicate> predicates = scanner.predicates;
 
-    // Check if the scan can be short circuited entirely by checking the primary
+    // Check if the scan can be short-circuited entirely by checking the primary
     // key bounds and predicates. This also allows us to assume some invariants of the
     // scan, such as no None predicates and that the lower bound PK < upper
     // bound PK.
@@ -160,6 +162,7 @@ public class PartitionPruner {
     // key bounds, if they are tighter.
     byte[] rangeLowerBound = pushPredsIntoLowerBoundRangeKey(schema, rangeSchema, predicates);
     byte[] rangeUpperBound = pushPredsIntoUpperBoundRangeKey(schema, rangeSchema, predicates);
+
     if (partitionSchema.isSimpleRangePartitioning()) {
       if (Bytes.memcmp(rangeLowerBound, scanner.lowerBoundPrimaryKey) < 0) {
         rangeLowerBound = scanner.lowerBoundPrimaryKey;
@@ -170,100 +173,112 @@ public class PartitionPruner {
         rangeUpperBound = scanner.upperBoundPrimaryKey;
       }
     }
+    // Since the table can contain range-specific hash schemas, it's necessary
+    // to split the original range into sub-ranges where each subrange comes
+    // with appropriate hash schema.
+    List<PartitionSchema.EncodedRangeBoundsWithHashSchema> preliminaryRanges =
+        splitIntoHashSpecificRanges(rangeLowerBound, rangeUpperBound, partitionSchema);
 
-    // Step 2: Create the hash bucket portion of the partition key.
+    List<Pair<byte[], byte[]>> partitionKeyRangeBytes = new ArrayList<>();
 
-    // List of pruned hash buckets per hash component.
-    List<BitSet> hashComponents = new ArrayList<>(partitionSchema.getHashBucketSchemas().size());
-    for (PartitionSchema.HashBucketSchema hashSchema : partitionSchema.getHashBucketSchemas()) {
-      hashComponents.add(pruneHashComponent(schema, hashSchema, predicates));
-    }
+    for (PartitionSchema.EncodedRangeBoundsWithHashSchema preliminaryRange : preliminaryRanges) {
+      // Step 2: Create the hash bucket portion of the partition key.
+      final List<PartitionSchema.HashBucketSchema> hashBucketSchemas =
+          preliminaryRange.hashSchemas;
+      // List of pruned hash buckets per hash component.
+      List<BitSet> hashComponents = new ArrayList<>(hashBucketSchemas.size());
+      for (PartitionSchema.HashBucketSchema hashSchema : hashBucketSchemas) {
+        hashComponents.add(pruneHashComponent(schema, hashSchema, predicates));
+      }
 
-    // The index of the final constrained component in the partition key.
-    int constrainedIndex = 0;
-    if (rangeLowerBound.length > 0 || rangeUpperBound.length > 0) {
-      // The range component is constrained if either of the range bounds are
-      // specified (non-empty).
-      constrainedIndex = partitionSchema.getHashBucketSchemas().size();
-    } else {
-      // Search the hash bucket constraints from right to left, looking for the
-      // first constrained component.
-      for (int i = hashComponents.size(); i > 0; i--) {
-        int numBuckets = partitionSchema.getHashBucketSchemas().get(i - 1).getNumBuckets();
-        BitSet hashBuckets = hashComponents.get(i - 1);
-        if (hashBuckets.nextClearBit(0) < numBuckets) {
-          constrainedIndex = i;
-          break;
+      // The index of the final constrained component in the partition key.
+      int constrainedIndex = 0;
+      if (preliminaryRange.lower.length > 0 || preliminaryRange.upper.length > 0) {
+        // The range component is constrained if either of the range bounds are
+        // specified (non-empty).
+        constrainedIndex = hashBucketSchemas.size();
+      } else {
+        // Search the hash bucket constraints from right to left, looking for the
+        // first constrained component.
+        for (int i = hashComponents.size(); i > 0; i--) {
+          int numBuckets = hashBucketSchemas.get(i - 1).getNumBuckets();
+          BitSet hashBuckets = hashComponents.get(i - 1);
+          if (hashBuckets.nextClearBit(0) < numBuckets) {
+            constrainedIndex = i;
+            break;
+          }
+        }
+      }
+
+      // Build up a set of partition key ranges out of the hash components.
+      //
+      // Each hash component simply appends its bucket number to the
+      // partition key ranges (possibly incrementing the upper bound by one bucket
+      // number if this is the final constraint, see note 2 in the example above).
+      List<Pair<ByteVec, ByteVec>> partitionKeyRanges = new ArrayList<>();
+      partitionKeyRanges.add(new Pair<>(ByteVec.create(), ByteVec.create()));
+
+      for (int hashIdx = 0; hashIdx < constrainedIndex; hashIdx++) {
+        // This is the final partition key component if this is the final constrained
+        // bucket, and the range upper bound is empty. In this case we need to
+        // increment the bucket on the upper bound to convert from inclusive to
+        // exclusive.
+        boolean isLast = hashIdx + 1 == constrainedIndex && preliminaryRange.upper.length == 0;
+        BitSet hashBuckets = hashComponents.get(hashIdx);
+
+        List<Pair<ByteVec, ByteVec>> newPartitionKeyRanges =
+            new ArrayList<>(partitionKeyRanges.size() * hashBuckets.cardinality());
+        for (Pair<ByteVec, ByteVec> partitionKeyRange : partitionKeyRanges) {
+          for (int bucket = hashBuckets.nextSetBit(0);
+               bucket != -1;
+               bucket = hashBuckets.nextSetBit(bucket + 1)) {
+            int bucketUpper = isLast ? bucket + 1 : bucket;
+            ByteVec lower = partitionKeyRange.getFirst().clone();
+            ByteVec upper = partitionKeyRange.getFirst().clone();
+            KeyEncoder.encodeHashBucket(bucket, lower);
+            KeyEncoder.encodeHashBucket(bucketUpper, upper);
+            newPartitionKeyRanges.add(new Pair<>(lower, upper));
+          }
+        }
+        partitionKeyRanges = newPartitionKeyRanges;
+      }
+
+      // Step 3: append the (possibly empty) range bounds to the partition key ranges.
+      for (Pair<ByteVec, ByteVec> range : partitionKeyRanges) {
+        range.getFirst().append(preliminaryRange.lower);
+        range.getSecond().append(preliminaryRange.upper);
+      }
+
+      // Step 4: Filter ranges that fall outside the scan's upper and lower bound partition keys.
+      for (Pair<ByteVec, ByteVec> range : partitionKeyRanges) {
+        byte[] lower = range.getFirst().toArray();
+        byte[] upper = range.getSecond().toArray();
+
+        // Sanity check that the lower bound is less than the upper bound.
+        assert upper.length == 0 || Bytes.memcmp(lower, upper) < 0;
+
+        // Find the intersection of the ranges.
+        if (scanner.lowerBoundPartitionKey.length > 0 &&
+            (lower.length == 0 || Bytes.memcmp(lower, scanner.lowerBoundPartitionKey) < 0)) {
+          lower = scanner.lowerBoundPartitionKey;
+        }
+        if (scanner.upperBoundPartitionKey.length > 0 &&
+            (upper.length == 0 || Bytes.memcmp(upper, scanner.upperBoundPartitionKey) > 0)) {
+          upper = scanner.upperBoundPartitionKey;
+        }
+
+        // If the intersection is valid, then add it as a range partition.
+        if (upper.length == 0 || Bytes.memcmp(lower, upper) < 0) {
+          partitionKeyRangeBytes.add(new Pair<>(lower, upper));
         }
       }
     }
 
-    // Build up a set of partition key ranges out of the hash components.
-    //
-    // Each hash component simply appends its bucket number to the
-    // partition key ranges (possibly incrementing the upper bound by one bucket
-    // number if this is the final constraint, see note 2 in the example above).
-    List<Pair<ByteVec, ByteVec>> partitionKeyRanges = new ArrayList<>();
-    partitionKeyRanges.add(new Pair<>(ByteVec.create(), ByteVec.create()));
-
-    for (int hashIdx = 0; hashIdx < constrainedIndex; hashIdx++) {
-      // This is the final partition key component if this is the final constrained
-      // bucket, and the range upper bound is empty. In this case we need to
-      // increment the bucket on the upper bound to convert from inclusive to
-      // exclusive.
-      boolean isLast = hashIdx + 1 == constrainedIndex && rangeUpperBound.length == 0;
-      BitSet hashBuckets = hashComponents.get(hashIdx);
-
-      List<Pair<ByteVec, ByteVec>> newPartitionKeyRanges =
-          new ArrayList<>(partitionKeyRanges.size() * hashBuckets.cardinality());
-      for (Pair<ByteVec, ByteVec> partitionKeyRange : partitionKeyRanges) {
-        for (int bucket = hashBuckets.nextSetBit(0);
-             bucket != -1;
-             bucket = hashBuckets.nextSetBit(bucket + 1)) {
-          int bucketUpper = isLast ? bucket + 1 : bucket;
-          ByteVec lower = partitionKeyRange.getFirst().clone();
-          ByteVec upper = partitionKeyRange.getFirst().clone();
-          KeyEncoder.encodeHashBucket(bucket, lower);
-          KeyEncoder.encodeHashBucket(bucketUpper, upper);
-          newPartitionKeyRanges.add(new Pair<>(lower, upper));
-        }
-      }
-      partitionKeyRanges = newPartitionKeyRanges;
-    }
-
-    // Step 3: append the (possibly empty) range bounds to the partition key ranges.
-    for (Pair<ByteVec, ByteVec> range : partitionKeyRanges) {
-      range.getFirst().append(rangeLowerBound);
-      range.getSecond().append(rangeUpperBound);
-    }
-
-    // Step 4: Filter ranges that fall outside the scan's upper and lower bound partition keys.
-    Deque<Pair<byte[], byte[]>> partitionKeyRangeBytes =
-        new ArrayDeque<>(partitionKeyRanges.size());
-    for (Pair<ByteVec, ByteVec> range : partitionKeyRanges) {
-      byte[] lower = range.getFirst().toArray();
-      byte[] upper = range.getSecond().toArray();
-
-      // Sanity check that the lower bound is less than the upper bound.
-      assert upper.length == 0 || Bytes.memcmp(lower, upper) < 0;
-
-      // Find the intersection of the ranges.
-      if (scanner.lowerBoundPartitionKey.length > 0 &&
-          (lower.length == 0 || Bytes.memcmp(lower, scanner.lowerBoundPartitionKey) < 0)) {
-        lower = scanner.lowerBoundPartitionKey;
-      }
-      if (scanner.upperBoundPartitionKey.length > 0 &&
-          (upper.length == 0 || Bytes.memcmp(upper, scanner.upperBoundPartitionKey) > 0)) {
-        upper = scanner.upperBoundPartitionKey;
-      }
-
-      // If the intersection is valid, then add it as a range partition.
-      if (upper.length == 0 || Bytes.memcmp(lower, upper) < 0) {
-        partitionKeyRangeBytes.add(new Pair<>(lower, upper));
-      }
-    }
-
-    return new PartitionPruner(partitionKeyRangeBytes);
+    // The PartitionPruner's constructor expects the collection to be sorted
+    // in ascending order.
+    Collections.sort(partitionKeyRangeBytes,
+        (lhs, rhs) -> Bytes.memcmp(lhs.getFirst(), rhs.getFirst()));
+    return new PartitionPruner(new ArrayDeque<>(partitionKeyRangeBytes));
   }
 
   /** @return {@code true} if there are more range partitions to scan. */
@@ -487,6 +502,137 @@ public class PartitionPruner {
     }
 
     return KeyEncoder.encodeRangePartitionKey(row, rangeSchema);
+  }
+
+  static List<PartitionSchema.EncodedRangeBoundsWithHashSchema> splitIntoHashSpecificRanges(
+      byte[] scanLowerBound, byte[] scanUpperBound, PartitionSchema ps) {
+    final List<PartitionSchema.EncodedRangeBoundsWithHashSchema> ranges =
+        ps.getEncodedRangesWithHashSchemas();
+    final List<PartitionSchema.HashBucketSchema> tableWideHashSchema =
+        ps.getHashBucketSchemas();
+
+    // If there aren't any ranges with custom hash schemas or there isn't an
+    // intersection between the set of ranges with custom hash schemas and the
+    // scan range, the result is trivial: the whole scan range is attributed
+    // to the table-wide hash schema.
+    if (ranges.isEmpty()) {
+      return ImmutableList.of(new PartitionSchema.EncodedRangeBoundsWithHashSchema(
+          scanLowerBound, scanUpperBound, tableWideHashSchema));
+    }
+
+    {
+      final byte[] rangesLowerBound = ranges.get(0).lower;
+      final byte[] rangesUpperBound = ranges.get(ranges.size() - 1).upper;
+
+      if ((scanUpperBound.length != 0 &&
+              Bytes.memcmp(scanUpperBound, rangesLowerBound) <= 0) ||
+          (scanLowerBound.length != 0 && rangesUpperBound.length != 0 &&
+              Bytes.memcmp(rangesUpperBound, scanLowerBound) <= 0)) {
+        return ImmutableList.of(new PartitionSchema.EncodedRangeBoundsWithHashSchema(
+            scanLowerBound, scanUpperBound, tableWideHashSchema));
+      }
+    }
+
+    // Index of the known range with custom hash schema that the iterator is
+    // currently pointing at or about to point if the iterator is currently
+    // at the scan boundary.
+    int curIdx = -1;
+
+    // Find the first range that is at or after the specified bounds.
+    // TODO(aserbin): maybe, do this in PartitionSchema with O(ln(N)) complexity?
+    for (int idx = 0; idx < ranges.size(); ++idx) {
+      final PartitionSchema.EncodedRangeBoundsWithHashSchema range = ranges.get(idx);
+
+      // Searching for the first range that is at or after the lower scan bound.
+      if (curIdx >= 0 ||
+          (range.upper.length != 0 && Bytes.memcmp(range.upper, scanLowerBound) <= 0)) {
+        continue;
+      }
+      curIdx = idx;
+    }
+
+    Preconditions.checkState(curIdx >= 0);
+    Preconditions.checkState(curIdx < ranges.size());
+
+    // Current position of the iterator.
+    byte[] curPoint = scanLowerBound;
+
+    // Iterate over the scan range from one known boundary to the next one,
+    // enumerating the resulting consecutive sub-ranges and attributing each
+    // sub-range to a proper hash schema. If that's a known range with custom hash
+    // schema, it's attributed to its range-specific hash schema; otherwise,
+    // a sub-range is attributed to the table-wide hash schema.
+    List<PartitionSchema.EncodedRangeBoundsWithHashSchema> result = new ArrayList<>();
+    while (curIdx < ranges.size() &&
+        (Bytes.memcmp(curPoint, scanUpperBound) < 0 || scanUpperBound.length == 0)) {
+      // Check the disposition of cur_point related to the lower boundary
+      // of the range pointed to by 'cur_idx'.
+      final PartitionSchema.EncodedRangeBoundsWithHashSchema curRange = ranges.get(curIdx);
+      if (Bytes.memcmp(curPoint, curRange.lower) < 0) {
+        // The iterator is before the current range:
+        //     |---|
+        //   ^
+        // The next known bound is either the upper bound of the current range
+        // or the upper bound of the scan.
+        byte[] upperBound;
+        if (scanUpperBound.length == 0) {
+          upperBound = curRange.lower;
+        } else {
+          if (Bytes.memcmp(curRange.lower, scanUpperBound) < 0) {
+            upperBound = curRange.lower;
+          } else {
+            upperBound = scanUpperBound;
+          }
+        }
+        result.add(new PartitionSchema.EncodedRangeBoundsWithHashSchema(
+            curPoint, upperBound, tableWideHashSchema));
+        // Not advancing the 'cur_idx' since cur_point is either at the beginning
+        // of the range or before it at the upper bound of the scan.
+      } else if (Bytes.memcmp(curPoint, curRange.lower) == 0) {
+        // The iterator is at the lower boundary of the current range:
+        //   |---|
+        //   ^
+        if ((curRange.upper.length != 0 && Bytes.memcmp(curRange.upper, scanUpperBound) <= 0) ||
+            scanUpperBound.length == 0) {
+          // The current range is withing the scan boundaries.
+          result.add(curRange);
+        } else {
+          // The current range spans over the upper bound of the scan.
+          result.add(new PartitionSchema.EncodedRangeBoundsWithHashSchema(
+              curPoint, scanUpperBound, curRange.hashSchemas));
+        }
+        // Done with the current range, advance to the next one, if any.
+        ++curIdx;
+      } else {
+        if ((scanUpperBound.length != 0 && Bytes.memcmp(scanUpperBound, curRange.upper) <= 0) ||
+            curRange.upper.length == 0) {
+          result.add(new PartitionSchema.EncodedRangeBoundsWithHashSchema(
+              curPoint, scanUpperBound, curRange.hashSchemas));
+        } else {
+          result.add(new PartitionSchema.EncodedRangeBoundsWithHashSchema(
+              curPoint, curRange.upper, curRange.hashSchemas));
+        }
+        // Done with the current range, advance to the next one, if any.
+        ++curIdx;
+      }
+      Preconditions.checkState(!result.isEmpty());
+      // Advance the iterator.
+      curPoint = result.get(result.size() - 1).upper;
+    }
+
+    // If exiting from the cycle above by the 'cur_idx < ranges.size()' condition,
+    // check if the upper bound of the scan is beyond the upper bound of the last
+    // range with custom hash schema. If so, add an extra range that spans from
+    // the upper bound of the last range to the upper bound of the scan.
+    Preconditions.checkState(!result.isEmpty());
+    final byte[] rangesUpperBound = result.get(result.size() - 1).upper;
+    if (Bytes.memcmp(rangesUpperBound, scanUpperBound) != 0) {
+      Preconditions.checkState(Bytes.memcmp(curPoint, rangesUpperBound) == 0);
+      result.add(new PartitionSchema.EncodedRangeBoundsWithHashSchema(
+          curPoint, scanUpperBound, tableWideHashSchema));
+    }
+
+    return result;
   }
 
   /**

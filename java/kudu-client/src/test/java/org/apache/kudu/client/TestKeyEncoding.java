@@ -94,8 +94,7 @@ public class TestKeyEncoding {
       columnIds.add(i);
     }
     return new PartitionSchema(
-        new PartitionSchema.RangeSchema(columnIds),
-        ImmutableList.of(), schema);
+        new PartitionSchema.RangeSchema(columnIds), ImmutableList.of(), schema);
   }
 
   /**
@@ -378,6 +377,62 @@ public class TestKeyEncoding {
                           'b', 0, 0,            // b = "b"
                           'c'                   // b = "c"
                       });
+  }
+
+  @Test
+  public void testPartitionKeyEncodingCustomHashSchema() {
+    Schema schema = buildSchema(
+        new ColumnSchemaBuilder("a", Type.INT32).key(true),
+        new ColumnSchemaBuilder("b", Type.STRING).key(true),
+        new ColumnSchemaBuilder("c", Type.STRING).key(true));
+
+    PartialRow lower = schema.newPartialRow();
+    lower.addInt("a", 0);
+    lower.addString("b", "B");
+    lower.addString("c", "C");
+
+    PartialRow upper = schema.newPartialRow();
+    upper.addInt("a", 10);
+    upper.addString("b", "b");
+    upper.addString("c", "c");
+
+    final PartitionSchema partitionSchema =
+        new PartitionSchema(
+            new RangeSchema(ImmutableList.of(0, 1, 2)),
+            ImmutableList.of(
+                new HashBucketSchema(ImmutableList.of(2), 3, 0)),
+            ImmutableList.of(
+                new PartitionSchema.RangeWithHashSchema(
+                    lower,
+                    upper,
+                    ImmutableList.of(new HashBucketSchema(ImmutableList.of(0, 1), 32, 0)))),
+            schema);
+
+    // That's the row in the range having its own custom hash schema.
+    PartialRow rowA = schema.newPartialRow();
+    rowA.addInt("a", 1);
+    rowA.addString("b", "C");
+    rowA.addString("c", "D");
+    assertBytesEquals(KeyEncoder.encodePartitionKey(rowA, partitionSchema),
+        new byte[]{
+            0, 0, 0, 0x10,        // hash(1, "")
+            (byte) 0x80, 0, 0, 1, // a = 1
+            'C', 0, 0,            // b = "C"
+            'D'                   // c = "D"
+        });
+
+    // That's the row encoded with the table-wide hash schema.
+    PartialRow rowB = schema.newPartialRow();
+    rowB.addInt("a", 11);
+    rowB.addString("b", "");
+    rowB.addString("c", "d");
+    assertBytesEquals(KeyEncoder.encodePartitionKey(rowB, partitionSchema),
+        new byte[]{
+            0, 0, 0, 0x2,         // hash("d")
+            (byte) 0x80, 0, 0, 11,// a = 11
+            0, 0,                 // b = ""
+            'd'                   // c = "d"
+        });
   }
 
   @Test(timeout = 100000)

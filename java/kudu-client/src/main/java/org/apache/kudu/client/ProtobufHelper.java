@@ -36,6 +36,7 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Common;
+import org.apache.kudu.RowOperations;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.DateUtil;
@@ -222,7 +223,35 @@ public class ProtobufHelper {
       hashSchemas.add(hashSchema);
     }
 
-    return new PartitionSchema(rangeSchema, hashSchemas.build(), schema);
+    // Populate the list of ranges with custom hash schemas.
+    ImmutableList.Builder<PartitionSchema.RangeWithHashSchema> rangesWithHashSchemas =
+        ImmutableList.builder();
+
+    for (Common.PartitionSchemaPB.RangeWithHashSchemaPB rhsPB :
+        pb.getCustomHashSchemaRangesList()) {
+      List<PartitionSchema.HashBucketSchema> rangeHashSchemas = new ArrayList<>();
+      for (Common.PartitionSchemaPB.HashBucketSchemaPB hbs : rhsPB.getHashSchemaList()) {
+        rangeHashSchemas.add(new PartitionSchema.HashBucketSchema(
+            pbToIds(hbs.getColumnsList()), hbs.getNumBuckets(), hbs.getSeed()));
+      }
+
+      // Decode RowOperationsPB into the range bounds.
+      final RowOperations.RowOperationsPB rangeBounds = rhsPB.getRangeBounds();
+      Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
+      final List<RangePartition> partitions = dec.decodeRangePartitions(rangeBounds, schema);
+      if (partitions.size() != 1) {
+        throw new IllegalArgumentException("unexpected range bounds");
+      }
+      final RangePartition p = partitions.get(0);
+
+      PartitionSchema.RangeWithHashSchema rhs =
+          new PartitionSchema.RangeWithHashSchema(
+              p.lowerBound, p.upperBound, rangeHashSchemas);
+      rangesWithHashSchemas.add(rhs);
+    }
+
+    return new PartitionSchema(
+        rangeSchema, hashSchemas.build(), rangesWithHashSchemas.build(), schema);
   }
 
   public static Common.PartitionSchemaPB partitionSchemaToPb(PartitionSchema partitionSchema) {
@@ -243,6 +272,28 @@ public class ProtobufHelper {
               .addAllColumns(idsToPb(partitionSchema.getRangeSchema().getColumnIds()))
               .build();
     builder.setRangeSchema(rangeSchemaPB);
+
+    // Based on the list of ranges with custom hash schemas, populate the
+    // PartitionSchemaPB.custom_hash_schema_ranges field.
+    for (PartitionSchema.RangeWithHashSchema rhs : partitionSchema.getRangesWithHashSchemas()) {
+      Common.PartitionSchemaPB.RangeWithHashSchemaPB.Builder rhsBuilder =
+          Common.PartitionSchemaPB.RangeWithHashSchemaPB.newBuilder();
+      for (PartitionSchema.HashBucketSchema hbs : rhs.hashSchemas) {
+        Common.PartitionSchemaPB.HashBucketSchemaPB.Builder hbsBuilder =
+            Common.PartitionSchemaPB.HashBucketSchemaPB.newBuilder()
+                .addAllColumns(idsToPb(hbs.getColumnIds()))
+                .setNumBuckets(hbs.getNumBuckets())
+                .setSeed(hbs.getSeed());
+        rhsBuilder.addHashSchema(hbsBuilder.build());
+      }
+
+      rhsBuilder.setRangeBounds(new Operation.OperationsEncoder().encodeLowerAndUpperBounds(
+          rhs.lowerBound,
+          rhs.upperBound,
+          RangePartitionBound.INCLUSIVE_BOUND,
+          RangePartitionBound.EXCLUSIVE_BOUND));
+      builder.addCustomHashSchemaRanges(rhsBuilder.build());
+    }
 
     return builder.build();
   }

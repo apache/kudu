@@ -36,7 +36,6 @@ import org.apache.yetus.audience.InterfaceStability;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.RowOperations.RowOperationsPB;
 import org.apache.kudu.Schema;
-import org.apache.kudu.Type;
 import org.apache.kudu.WireProtocol.AppStatusPB.ErrorCode;
 import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 import org.apache.kudu.client.Statistics.Statistic;
@@ -435,7 +434,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     }
 
     public RowOperationsPB encodeRangePartitions(
-        List<CreateTableOptions.RangePartition> rangePartitions,
+        List<RangePartition> rangePartitions,
         List<PartialRow> splitRows) {
 
       if (splitRows.isEmpty() && rangePartitions.isEmpty()) {
@@ -450,15 +449,15 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
         encodeRow(row, ChangeType.SPLIT_ROWS);
       }
 
-      for (CreateTableOptions.RangePartition partition : rangePartitions) {
+      for (RangePartition partition : rangePartitions) {
         encodeRow(partition.getLowerBound(),
-                  partition.getLowerBoundType() == RangePartitionBound.INCLUSIVE_BOUND ?
-                      ChangeType.RANGE_LOWER_BOUND :
-                      ChangeType.EXCLUSIVE_RANGE_LOWER_BOUND);
+            partition.getLowerBoundType() == RangePartitionBound.INCLUSIVE_BOUND ?
+                ChangeType.RANGE_LOWER_BOUND :
+                ChangeType.EXCLUSIVE_RANGE_LOWER_BOUND);
         encodeRow(partition.getUpperBound(),
-                  partition.getUpperBoundType() == RangePartitionBound.EXCLUSIVE_BOUND ?
-                      ChangeType.RANGE_UPPER_BOUND :
-                      ChangeType.INCLUSIVE_RANGE_UPPER_BOUND);
+            partition.getUpperBoundType() == RangePartitionBound.EXCLUSIVE_BOUND ?
+                ChangeType.RANGE_UPPER_BOUND :
+                ChangeType.INCLUSIVE_RANGE_UPPER_BOUND);
       }
 
       return toPB();
@@ -505,7 +504,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
      * @param schema the table schema to use for decoding
      * @return a list of PangePartition objects with corresponding bounds
      */
-    public List<CreateTableOptions.RangePartition> decodeRangePartitions(
+    public List<RangePartition> decodeRangePartitions(
         RowOperationsPB pb, Schema schema) {
       if (pb == null) {
         return null;
@@ -531,7 +530,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
             "unexpected odd number of range partition bounds");
       }
 
-      List<CreateTableOptions.RangePartition> result = new ArrayList<>();
+      List<RangePartition> result = new ArrayList<>();
       for (int i = 0; i < decodedBounds.size(); i += 2) {
         Pair<PartialRow, RowOperationsPB.Type> lower = decodedBounds.get(i);
         Pair<PartialRow, RowOperationsPB.Type> upper = decodedBounds.get(i + 1);
@@ -556,8 +555,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
               "%s: unexpected bound type for the upper bound", upper.getSecond().toString()));
         }
 
-        result.add(new CreateTableOptions.RangePartition(
-            lower.getFirst(), upper.getFirst(), lowerType, upperType));
+        result.add(new RangePartition(lower.getFirst(), upper.getFirst(), lowerType, upperType));
       }
       return result;
     }

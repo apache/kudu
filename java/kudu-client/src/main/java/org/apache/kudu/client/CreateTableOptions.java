@@ -38,8 +38,11 @@ public class CreateTableOptions {
 
   private final List<PartialRow> splitRows = Lists.newArrayList();
   private final List<RangePartition> rangePartitions = Lists.newArrayList();
+  private final List<RangePartitionWithCustomHashSchema> customRangePartitions =
+      Lists.newArrayList(); // range partitions with custom hash schemas
   private Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();
   private boolean wait = true;
+  private boolean isPbGenerationDone = false;
 
   /**
    * Add a set of hash partitions to the table.
@@ -165,6 +168,23 @@ public class CreateTableOptions {
   }
 
   /**
+   * Add range partition with custom hash schema.
+   *
+   * @param rangePartition range partition with custom hash schema
+   * @return this CreateTableOptions object modified accordingly
+   */
+  public CreateTableOptions addRangePartition(RangePartitionWithCustomHashSchema rangePartition) {
+    if (!splitRows.isEmpty()) {
+      throw new IllegalArgumentException(
+          "no range partitions with custom hash schema are allowed when using " +
+              "split rows to define range partitioning for a table");
+    }
+    customRangePartitions.add(rangePartition);
+    pb.getPartitionSchemaBuilder().addCustomHashSchemaRanges(rangePartition.toPB());
+    return this;
+  }
+
+  /**
    * Add a range partition split. The split row must fall in a range partition,
    * and causes the range partition to split into two contiguous range partitions.
    * The row may be reused or modified safely after this call without changing
@@ -174,6 +194,11 @@ public class CreateTableOptions {
    * @return this instance
    */
   public CreateTableOptions addSplitRow(PartialRow row) {
+    if (!customRangePartitions.isEmpty()) {
+      throw new IllegalArgumentException(
+          "no split rows are allowed to define range partitioning for a table " +
+              "when range partitions with custom hash schema are present");
+    }
     splitRows.add(new PartialRow(row));
     return this;
   }
@@ -271,55 +296,51 @@ public class CreateTableOptions {
   }
 
   Master.CreateTableRequestPB.Builder getBuilder() {
-    if (!splitRows.isEmpty() || !rangePartitions.isEmpty()) {
-      pb.setSplitRowsRangeBounds(new Operation.OperationsEncoder()
-                                              .encodeRangePartitions(rangePartitions, splitRows));
+    if (isPbGenerationDone) {
+      return pb;
     }
+
+    if (!splitRows.isEmpty() && !customRangePartitions.isEmpty()) {
+      throw new IllegalArgumentException(
+          "no split rows are allowed to define range partitioning for a table " +
+              "when range partitions with custom hash schema are present");
+    }
+    if (customRangePartitions.isEmpty()) {
+      if (!splitRows.isEmpty() || !rangePartitions.isEmpty()) {
+        pb.setSplitRowsRangeBounds(new Operation.OperationsEncoder()
+            .encodeRangePartitions(rangePartitions, splitRows));
+      }
+    } else {
+      // With the presence of a range with custom hash schema when the
+      // table-wide hash schema is used for a particular range, add proper
+      // element into PartitionSchemaPB::custom_hash_schema_ranges to satisfy
+      // the convention used by the backend. Do so for all the ranges with
+      // table-wide hash schemas.
+      for (RangePartition p : rangePartitions) {
+        org.apache.kudu.Common.PartitionSchemaPB.RangeWithHashSchemaPB.Builder b =
+            pb.getPartitionSchemaBuilder().addCustomHashSchemaRangesBuilder();
+        // Set the hash schema for the range.
+        for (org.apache.kudu.Common.PartitionSchemaPB.HashBucketSchemaPB hashSchema :
+            pb.getPartitionSchemaBuilder().getHashSchemaList()) {
+          b.addHashSchema(hashSchema);
+        }
+        b.setRangeBounds(
+            new Operation.OperationsEncoder().encodeLowerAndUpperBounds(
+                p.lowerBound, p.upperBound, p.lowerBoundType, p.upperBoundType));
+      }
+    }
+    isPbGenerationDone = true;
     return pb;
   }
 
   List<Integer> getRequiredFeatureFlags() {
-    if (rangePartitions.isEmpty()) {
+    if (rangePartitions.isEmpty() && customRangePartitions.isEmpty()) {
       return ImmutableList.of();
-    } else {
-      return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
     }
+    return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
   }
 
   boolean shouldWait() {
     return wait;
-  }
-
-  static final class RangePartition {
-    private final PartialRow lowerBound;
-    private final PartialRow upperBound;
-    private final RangePartitionBound lowerBoundType;
-    private final RangePartitionBound upperBoundType;
-
-    public RangePartition(PartialRow lowerBound,
-                          PartialRow upperBound,
-                          RangePartitionBound lowerBoundType,
-                          RangePartitionBound upperBoundType) {
-      this.lowerBound = lowerBound;
-      this.upperBound = upperBound;
-      this.lowerBoundType = lowerBoundType;
-      this.upperBoundType = upperBoundType;
-    }
-
-    public PartialRow getLowerBound() {
-      return lowerBound;
-    }
-
-    public PartialRow getUpperBound() {
-      return upperBound;
-    }
-
-    public RangePartitionBound getLowerBoundType() {
-      return lowerBoundType;
-    }
-
-    public RangePartitionBound getUpperBoundType() {
-      return upperBoundType;
-    }
   }
 }

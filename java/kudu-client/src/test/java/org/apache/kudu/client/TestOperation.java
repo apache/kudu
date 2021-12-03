@@ -198,7 +198,7 @@ public class TestOperation {
         lower, upper, RangePartitionBound.INCLUSIVE_BOUND, RangePartitionBound.EXCLUSIVE_BOUND);
 
     Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
-    List<CreateTableOptions.RangePartition> decoded =
+    List<RangePartition> decoded =
         dec.decodeRangePartitions(encoded, schema);
     assertEquals(1, decoded.size());
     assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
@@ -241,8 +241,7 @@ public class TestOperation {
         lower, upper, RangePartitionBound.INCLUSIVE_BOUND, RangePartitionBound.EXCLUSIVE_BOUND);
 
     Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
-    List<CreateTableOptions.RangePartition> decoded =
-        dec.decodeRangePartitions(encoded, schema);
+    List<RangePartition> decoded = dec.decodeRangePartitions(encoded, schema);
     assertEquals(1, decoded.size());
     assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
         decoded.get(0).getLowerBoundType());
@@ -294,8 +293,7 @@ public class TestOperation {
         lower, upper, RangePartitionBound.INCLUSIVE_BOUND, RangePartitionBound.EXCLUSIVE_BOUND);
 
     Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
-    List<CreateTableOptions.RangePartition> decoded =
-        dec.decodeRangePartitions(encoded, schema);
+    List<RangePartition> decoded = dec.decodeRangePartitions(encoded, schema);
     assertEquals(1, decoded.size());
     assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
         decoded.get(0).getLowerBoundType());
@@ -338,14 +336,14 @@ public class TestOperation {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT64).build());
     final Schema schema = new Schema(columns);
 
-    List<CreateTableOptions.RangePartition> rangePartitions = new ArrayList<>();
+    List<RangePartition> rangePartitions = new ArrayList<>();
     {
       final PartialRow lower = schema.newPartialRow();
       lower.addInt("c0", 0);
 
       final PartialRow upper = schema.newPartialRow();
       upper.addInt("c0", 100);
-      rangePartitions.add(new CreateTableOptions.RangePartition(
+      rangePartitions.add(new RangePartition(
           lower,
           upper,
           RangePartitionBound.INCLUSIVE_BOUND,
@@ -357,7 +355,7 @@ public class TestOperation {
 
       final PartialRow upper = schema.newPartialRow();
       upper.addInt("c0", 300);
-      rangePartitions.add(new CreateTableOptions.RangePartition(
+      rangePartitions.add(new RangePartition(
           lower,
           upper,
           RangePartitionBound.EXCLUSIVE_BOUND,
@@ -369,8 +367,7 @@ public class TestOperation {
         rangePartitions, ImmutableList.of());
 
     Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
-    List<CreateTableOptions.RangePartition> decoded =
-        dec.decodeRangePartitions(encoded, schema);
+    List<RangePartition> decoded = dec.decodeRangePartitions(encoded, schema);
     assertEquals(2, decoded.size());
 
     assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
@@ -417,7 +414,7 @@ public class TestOperation {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.STRING).nullable(true).build());
     final Schema schema = new Schema(columns);
 
-    List<CreateTableOptions.RangePartition> rangePartitions = new ArrayList<>();
+    List<RangePartition> rangePartitions = new ArrayList<>();
     {
       final PartialRow lower = schema.newPartialRow();
       lower.addInt("c0", 0);
@@ -426,7 +423,7 @@ public class TestOperation {
       final PartialRow upper = schema.newPartialRow();
       upper.addInt("c0", 100);
       upper.addString("c1", "c");
-      rangePartitions.add(new CreateTableOptions.RangePartition(
+      rangePartitions.add(new RangePartition(
           lower,
           upper,
           RangePartitionBound.INCLUSIVE_BOUND,
@@ -440,7 +437,7 @@ public class TestOperation {
       final PartialRow upper = schema.newPartialRow();
       upper.addInt("c0", 300);
       upper.addString("c1", "f");
-      rangePartitions.add(new CreateTableOptions.RangePartition(
+      rangePartitions.add(new RangePartition(
           lower,
           upper,
           RangePartitionBound.EXCLUSIVE_BOUND,
@@ -452,8 +449,7 @@ public class TestOperation {
         rangePartitions, ImmutableList.of());
 
     Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
-    List<CreateTableOptions.RangePartition> decoded =
-        dec.decodeRangePartitions(encoded, schema);
+    List<RangePartition> decoded = dec.decodeRangePartitions(encoded, schema);
     assertEquals(2, decoded.size());
 
     assertEquals(RangePartitionBound.INCLUSIVE_BOUND,

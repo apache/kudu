@@ -742,6 +742,109 @@ public class TestKuduClient {
   }
 
   /**
+   * Test inserting and retrieving rows from a table that has a range partition
+   * with custom hash schema.
+   */
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
+      "--enable_per_range_hash_schemas=true",
+  })
+  public void testRangeWithCustomHashSchema() throws Exception {
+    List<ColumnSchema> cols = new ArrayList<>();
+    cols.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT64).key(true).build());
+    cols.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32).nullable(true).build());
+    Schema schema = new Schema(cols);
+
+    CreateTableOptions options = new CreateTableOptions();
+    options.setRangePartitionColumns(ImmutableList.of("c0"));
+    options.addHashPartitions(ImmutableList.of("c0"), 2);
+
+    // Add range partition with table-wide hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addLong("c0", -100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addLong("c0", 100);
+      options.addRangePartition(lower, upper);
+    }
+
+    // Add a partition with custom hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addLong("c0", 100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addLong("c0", 200);
+
+      RangePartitionWithCustomHashSchema rangePartition =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      rangePartition.addHashPartitions(ImmutableList.of("c0"), 5, 0);
+      options.addRangePartition(rangePartition);
+    }
+
+    client.createTable(TABLE_NAME, schema, options);
+
+    KuduSession session = client.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
+    KuduTable table = client.openTable(TABLE_NAME);
+
+    // Check the range with the table-wide hash schema.
+    {
+      for (int i = 0; i < 10; ++i) {
+        Insert insert = table.newInsert();
+        PartialRow row = insert.getRow();
+        row.addLong("c0", i);
+        row.addInt("c1", 1000 * i);
+        session.apply(insert);
+      }
+
+      // Scan all the rows in the table.
+      List<String> rowStringsAll = scanTableToStrings(table);
+      assertEquals(10, rowStringsAll.size());
+
+      // Now scan the rows that are in the range with the table-wide hash schema.
+      List<String> rowStrings = scanTableToStrings(table,
+          KuduPredicate.newComparisonPredicate(schema.getColumn("c0"), GREATER_EQUAL, 0),
+          KuduPredicate.newComparisonPredicate(schema.getColumn("c0"), LESS, 100));
+      assertEquals(10, rowStrings.size());
+      for (int i = 0; i < rowStrings.size(); ++i) {
+        StringBuilder expectedRow = new StringBuilder();
+        expectedRow.append(String.format("INT64 c0=%d, INT32 c1=%d", i, 1000 * i));
+        assertEquals(expectedRow.toString(), rowStrings.get(i));
+      }
+    }
+
+    // Check the range with the custom hash schema.
+    {
+      for (int i = 100; i < 110; ++i) {
+        Insert insert = table.newInsert();
+        PartialRow row = insert.getRow();
+        row.addLong("c0", i);
+        row.addInt("c1", 2 * i);
+        session.apply(insert);
+      }
+
+      // Scan all the rows in the table.
+      List<String> rowStringsAll = scanTableToStrings(table);
+      assertEquals(20, rowStringsAll.size());
+
+      // Now scan the rows that are in the range with the custom hash schema.
+      List<String> rowStrings = scanTableToStrings(table,
+          KuduPredicate.newComparisonPredicate(schema.getColumn("c0"), GREATER_EQUAL, 100));
+      assertEquals(10, rowStrings.size());
+      for (int i = 0; i < rowStrings.size(); ++i) {
+        StringBuilder expectedRow = new StringBuilder();
+        expectedRow.append(String.format("INT64 c0=%d, INT32 c1=%d",
+            i + 100, 2 * (i + 100)));
+        assertEquals(expectedRow.toString(), rowStrings.get(i));
+      }
+    }
+  }
+
+  /**
   * Test scanning with limits.
   */
   @Test

@@ -92,14 +92,18 @@ class KeyEncoder {
    * @return an encoded partition key
    */
   public static byte[] encodePartitionKey(PartialRow row, PartitionSchema partitionSchema) {
+    ByteVec rangeBuf = ByteVec.create();
+    encodeColumns(row, partitionSchema.getRangeSchema().getColumnIds(), rangeBuf);
+
+    // Get the hash bucket schema for the range.
+    final List<HashBucketSchema> hashSchemas =
+        partitionSchema.getHashSchemaForRange(rangeBuf.toArray());
     ByteVec buf = ByteVec.create();
-    if (!partitionSchema.getHashBucketSchemas().isEmpty()) {
-      for (final HashBucketSchema hashSchema : partitionSchema.getHashBucketSchemas()) {
-        encodeHashBucket(getHashBucket(row, hashSchema), buf);
-      }
+    for (final HashBucketSchema hashSchema : hashSchemas) {
+      encodeHashBucket(getHashBucket(row, hashSchema), buf);
     }
 
-    encodeColumns(row, partitionSchema.getRangeSchema().getColumnIds(), buf);
+    buf.append(rangeBuf);
     return buf.toArray();
   }
 
@@ -252,9 +256,9 @@ class KeyEncoder {
     ByteBuffer buf = ByteBuffer.wrap(key);
     buf.order(ByteOrder.BIG_ENDIAN);
 
+    final List<HashBucketSchema> hashSchemas = partitionSchema.getHashSchemaForRange(key);
     List<Integer> buckets = new ArrayList<>();
-
-    for (int i = 0; i < partitionSchema.getHashBucketSchemas().size(); i++) {
+    for (int i = 0; i < hashSchemas.size(); i++) {
       if (buf.hasRemaining()) {
         buckets.add(buf.getInt());
       } else {
@@ -448,7 +452,8 @@ class KeyEncoder {
                                                byte[] lowerBound,
                                                byte[] upperBound) {
     if (partitionSchema.getRangeSchema().getColumnIds().isEmpty() &&
-        partitionSchema.getHashBucketSchemas().isEmpty()) {
+        partitionSchema.getHashBucketSchemas().isEmpty() &&
+        partitionSchema.getRangesWithHashSchemas().isEmpty()) {
       assert lowerBound.length == 0 && upperBound.length == 0;
       return "<no-partitioning>";
     }
