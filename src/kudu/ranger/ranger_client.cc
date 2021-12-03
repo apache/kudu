@@ -390,7 +390,8 @@ Status RangerClient::Start() {
   const string fifo_path = SubprocessServer::FifoPath(RangerFifoBase());
   vector<string> argv;
   RETURN_NOT_OK(BuildArgv(fifo_path, log_properties_path, &argv));
-  subprocess_.reset(new RangerSubprocess(env_, fifo_path, std::move(argv), metric_entity_));
+  subprocess_.reset(new RangerSubprocess(env_, fifo_path, std::move(argv), metric_entity_,
+                                         "Ranger client subprocess"));
   return subprocess_->Start();
 }
 

@@ -54,8 +54,10 @@ template<class ReqPB, class RespPB, class MetricsPB>
 class SubprocessProxy {
  public:
   SubprocessProxy(Env* env, const std::string& receiver_file,
-                  std::vector<std::string> argv, const scoped_refptr<MetricEntity>& entity)
-      : server_(new SubprocessServer(env, receiver_file, std::move(argv), MetricsPB(entity))) {}
+                  std::vector<std::string> argv, const scoped_refptr<MetricEntity>& entity,
+                  std::string subprocess_name = "subprocess")
+      : server_(new SubprocessServer(env, receiver_file, std::move(argv), MetricsPB(entity))),
+        subprocess_name_(std::move(subprocess_name)) {}
 
   // Starts the underlying subprocess.
   Status Start() {
@@ -69,14 +71,17 @@ class SubprocessProxy {
     SubprocessRequestPB sreq;
     sreq.mutable_request()->PackFrom(req);
     SubprocessResponsePB sresp;
-    RETURN_NOT_OK(server_->Execute(&sreq, &sresp));
+    RETURN_NOT_OK_PREPEND(server_->Execute(&sreq, &sresp),
+        strings::Substitute("Failed to execute $0 request", subprocess_name_));
     if (!sresp.response().UnpackTo(resp)) {
       LOG(ERROR) << strings::Substitute("unable to unpack response: $0",
                                         pb_util::SecureDebugString(sresp));
-      return Status::Corruption("unable to unpack response");
+      return Status::Corruption(
+          strings::Substitute("unable to unpack $0 response", subprocess_name_));
     }
     if (sresp.has_error()) {
-      return StatusFromPB(sresp.error());
+      return StatusFromPB(sresp.error()).CloneAndPrepend(
+          strings::Substitute("error in $0 response", subprocess_name_));
     }
     return Status::OK();
   }
@@ -87,6 +92,7 @@ class SubprocessProxy {
   }
  private:
   std::unique_ptr<SubprocessServer> server_;
+  const std::string subprocess_name_;
 };
 
 } // namespace subprocess
