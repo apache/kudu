@@ -141,7 +141,6 @@ int StartupPathHandler::StartupProgressStepsRemainingMetric() {
   int counter = 0;
   counter += (init_progress_.IsStopped() ? 0 : 1);
   counter += (read_filesystem_progress_.IsStopped() ? 0 : 1);
-  counter += (is_tablet_server_ ? (start_tablets_progress_.IsStopped() ? 0 : 1) : 0);
   if (is_tablet_server_) {
     counter += start_tablets_progress_.IsStopped() ? 0 : 1;
   } else {
