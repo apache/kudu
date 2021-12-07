@@ -3532,6 +3532,37 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfAllRowsFailed) {
             "int32 non_null_with_default=12345)", rows[1]);
 }
 
+TEST_F(ClientTest, TestInsertDuplicateKeys) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+
+  constexpr const char* kTable2Name = "client-testtb2";
+  shared_ptr<KuduTable> second_table;
+  NO_FATALS(CreateTable(kTable2Name, 1, {}, {}, &second_table));
+
+  // Insert initial rows
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "one"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), second_table, 1, 1, "one"));
+  FlushSessionOrDie(session);
+
+  // Try to insert a row with duplicate key and two valid rows
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, "Should suceed"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), second_table, 1, 1, "Attempted dup"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), second_table, 2, 1, "Should succeed"));
+  Status s = session->Flush();
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "failed to flush data: error details are available "
+                      "via KuduSession::GetPendingErrors()");
+  // Fetch and verify the reported errors.
+  vector<KuduError*> errors;
+  ElementDeleter d(&errors);
+  session->GetPendingErrors(&errors, nullptr);
+  // Should be able to determine the table the error belongs to
+  ASSERT_EQ(1, errors.size());
+  ASSERT_EQ(errors[0]->failed_op().table()->name(), second_table->name());
+}
+
 void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(1000);

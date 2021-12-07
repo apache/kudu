@@ -93,6 +93,9 @@ class KUDU_EXPORT KuduWriteOperation {
   /// @note this method does note redact row values. The
   ///   caller must handle redaction themselves, if necessary.
   virtual std::string ToString() const = 0;
+
+  const KuduTable* table() const { return table_.get(); }
+
  protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
@@ -120,8 +123,6 @@ class KUDU_EXPORT KuduWriteOperation {
   friend class internal::WriteRpc;
   friend class internal::ErrorCollector;
   friend class KuduSession;
-
-  const KuduTable* table() const { return table_.get(); }
 
   // Return the number of bytes required to buffer this operation,
   // including direct and indirect data. Once called, the result is cached
