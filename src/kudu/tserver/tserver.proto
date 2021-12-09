@@ -22,6 +22,7 @@ option java_package = "org.apache.kudu.tserver";
 import "kudu/common/common.proto";
 import "kudu/common/row_operations.proto";
 import "kudu/common/wire_protocol.proto";
+import "kudu/consensus/metadata.proto";
 import "kudu/security/token.proto";
 import "kudu/tablet/tablet.proto";
 import "kudu/util/pb_util.proto";
@@ -206,6 +207,7 @@ message ListTabletsResponsePB {
     optional SchemaPB schema = 2;
     optional PartitionSchemaPB partition_schema = 3;
     optional uint32 schema_version = 4;
+    optional consensus.RaftPeerPB.Role role = 5;
   }
 
   repeated StatusAndSchemaPB status_and_schema = 2;

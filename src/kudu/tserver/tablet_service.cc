@@ -54,6 +54,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/replica_management.pb.h"
@@ -84,6 +85,7 @@
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -206,6 +208,7 @@ using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::OpId;
 using kudu::consensus::RaftConsensus;
+using kudu::consensus::RaftPeerPB;
 using kudu::consensus::RunLeaderElectionRequestPB;
 using kudu::consensus::RunLeaderElectionResponsePB;
 using kudu::consensus::StartTabletCopyRequestPB;
@@ -2244,6 +2247,11 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
   for (const scoped_refptr<TabletReplica>& replica : replicas) {
     StatusAndSchemaPB* status = replica_status->Add();
     replica->GetTabletStatusPB(status->mutable_tablet_status());
+    if (status->tablet_status().state() == tablet::RUNNING) {
+      status->set_role(replica->consensus()->role());
+    } else {
+      status->set_role(RaftPeerPB::UNKNOWN_ROLE);
+    }
 
     if (req->need_schema_info()) {
       CHECK_OK(SchemaToPB(replica->tablet_metadata()->schema(),
