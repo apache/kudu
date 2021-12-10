@@ -85,19 +85,16 @@ using strings::Substitute;
     }                                                             \
   } while (0)
 
-TransferCallbacks::~TransferCallbacks()
-{}
-
 InboundTransfer::InboundTransfer()
-  : total_length_(0),
-    cur_offset_(0) {
+    : total_length_(0),
+      cur_offset_(0) {
   buf_.resize(kMsgLengthPrefixLength);
 }
 
 InboundTransfer::InboundTransfer(faststring initial_buf)
-  : buf_(std::move(initial_buf)),
-    total_length_(0),
-    cur_offset_(buf_.size()) {
+    : buf_(std::move(initial_buf)),
+      total_length_(0),
+      cur_offset_(buf_.size()) {
   buf_.resize(std::max<size_t>(kMsgLengthPrefixLength, buf_.size()));
 }
 
@@ -129,14 +126,14 @@ Status InboundTransfer::ReceiveBuffer(Socket* socket, faststring* extra_4) {
     // The length prefix doesn't include its own 4 bytes, so we have to
     // add that back in.
     total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kMsgLengthPrefixLength;
-    if (total_length_ > FLAGS_rpc_max_message_size) {
+    if (PREDICT_FALSE(total_length_ > FLAGS_rpc_max_message_size)) {
       return Status::NetworkError(Substitute(
           "RPC frame had a length of $0, but we only support messages up to $1 bytes "
           "long.", total_length_, FLAGS_rpc_max_message_size));
     }
-    if (total_length_ <= kMsgLengthPrefixLength) {
-      return Status::NetworkError(Substitute("RPC frame had invalid length of $0",
-                                             total_length_));
+    if (PREDICT_FALSE(total_length_ <= kMsgLengthPrefixLength)) {
+      return Status::NetworkError(
+          Substitute("RPC frame had invalid length of $0", total_length_));
     }
     buf_.resize(total_length_ + kExtraReadLength);
 
@@ -144,15 +141,15 @@ Status InboundTransfer::ReceiveBuffer(Socket* socket, faststring* extra_4) {
     // available on the socket.
   }
 
-  // receive message body
-  int32_t nread;
-
   // Socket::Recv() handles at most INT_MAX at a time, so cap the remainder at
   // INT_MAX. The message will be split across multiple Recv() calls.
   // Note that this is only needed when rpc_max_message_size > INT_MAX, which is
   // currently only used for unit tests.
   int32_t rem = std::min(total_length_ - cur_offset_ + kExtraReadLength,
       static_cast<uint32_t>(std::numeric_limits<int32_t>::max()));
+
+  // receive message body
+  int32_t nread;
   Status status = socket->Recv(&buf_[cur_offset_], rem, &nread);
   RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
   cur_offset_ += nread;
@@ -186,25 +183,25 @@ string InboundTransfer::StatusAsString() const {
 
 OutboundTransfer* OutboundTransfer::CreateForCallRequest(int32_t call_id,
                                                          TransferPayload payload,
-                                                         TransferCallbacks *callbacks) {
+                                                         TransferCallbacks* callbacks) {
   return new OutboundTransfer(call_id, std::move(payload), callbacks);
 }
 
 OutboundTransfer* OutboundTransfer::CreateForCallResponse(TransferPayload payload,
-                                                          TransferCallbacks *callbacks) {
+                                                          TransferCallbacks* callbacks) {
   return new OutboundTransfer(kInvalidCallId, std::move(payload), callbacks);
 }
 
 OutboundTransfer::OutboundTransfer(int32_t call_id,
                                    TransferPayload payload,
-                                   TransferCallbacks *callbacks)
-  : payload_slices_(std::move(payload)),
-    cur_slice_idx_(0),
-    cur_offset_in_slice_(0),
-    callbacks_(callbacks),
-    call_id_(call_id),
-    started_(false),
-    aborted_(false) {
+                                   TransferCallbacks* callbacks)
+    : payload_slices_(std::move(payload)),
+      cur_slice_idx_(0),
+      cur_offset_in_slice_(0),
+      callbacks_(callbacks),
+      call_id_(call_id),
+      started_(false),
+      aborted_(false) {
 }
 
 OutboundTransfer::~OutboundTransfer() {
@@ -214,14 +211,14 @@ OutboundTransfer::~OutboundTransfer() {
   }
 }
 
-void OutboundTransfer::Abort(const Status &status) {
+void OutboundTransfer::Abort(const Status& status) {
   CHECK(!aborted_) << "Already aborted";
   CHECK(!TransferFinished()) << "Cannot abort a finished transfer";
   callbacks_->NotifyTransferAborted(status);
   aborted_ = true;
 }
 
-Status OutboundTransfer::SendBuffer(Socket &socket) {
+Status OutboundTransfer::SendBuffer(Socket* socket) {
   CHECK_LT(cur_slice_idx_, payload_slices_.size());
 
   started_ = true;
@@ -230,7 +227,7 @@ Status OutboundTransfer::SendBuffer(Socket &socket) {
   {
     int offset_in_slice = cur_offset_in_slice_;
     for (int i = 0; i < n_iovecs; i++) {
-      Slice &slice = payload_slices_[cur_slice_idx_ + i];
+      auto& slice = payload_slices_[cur_slice_idx_ + i];
       iovec[i].iov_base = slice.mutable_data() + offset_in_slice;
       iovec[i].iov_len = slice.size() - offset_in_slice;
 
@@ -239,12 +236,12 @@ Status OutboundTransfer::SendBuffer(Socket &socket) {
   }
 
   int64_t written;
-  Status status = socket.Writev(iovec, n_iovecs, &written);
+  Status status = socket->Writev(iovec, n_iovecs, &written);
   RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
 
   // Adjust our accounting of current writer position.
   for (int i = cur_slice_idx_; i < payload_slices_.size(); i++) {
-    Slice &slice = payload_slices_[i];
+    const auto& slice = payload_slices_[i];
     int rem_in_slice = slice.size() - cur_offset_in_slice_;
     DCHECK_GE(rem_in_slice, 0);
 
@@ -289,14 +286,14 @@ string OutboundTransfer::HexDump() const {
   }
 
   string ret;
-  for (int i = 0; i < payload_slices_.size(); i++) {
-    ret.append(payload_slices_[i].ToDebugString());
+  for (const auto& s : payload_slices_) {
+    ret.append(s.ToDebugString());
   }
   return ret;
 }
 
-int32_t OutboundTransfer::TotalLength() const {
-  int32_t ret = 0;
+size_t OutboundTransfer::TotalLength() const {
+  size_t ret = 0;
   for (const auto& s : payload_slices_) {
     ret += s.size();
   }

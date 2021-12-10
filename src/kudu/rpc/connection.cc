@@ -805,7 +805,7 @@ Connection::ProcessOutboundTransfersResult Connection::ProcessOutboundTransfers(
     }
 
     last_activity_time_ = reactor_thread_->cur_time();
-    Status status = transfer->SendBuffer(*socket_);
+    Status status = transfer->SendBuffer(socket_.get());
     if (PREDICT_FALSE(!status.ok())) {
       LOG(WARNING) << ToString() << " send error: " << status.ToString();
       reactor_thread_->DestroyConnection(this, status);
