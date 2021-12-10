@@ -46,7 +46,7 @@ versions += [
     jmh            : "1.27",
     jsr305         : "3.0.2",
     junit          : "4.13.1",
-    log4j          : "2.14.0",
+    log4j          : "2.15.0",
     micrometer     : "1.6.2",
     mockito        : "3.6.28",
     murmur         : "1.0.0",
