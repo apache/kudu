@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CONSENSUS_LOG_CACHE_H
-#define KUDU_CONSENSUS_LOG_CACHE_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -80,7 +79,7 @@ class LogCache {
   // The OpId which precedes the returned ops is returned in *preceding_op.
   // The index of this OpId will match 'after_op_index'.
   //
-  // If the ops being requested are not available in the log, this will synchronously
+  // If the ops being requested are not available in the cache, this will synchronously
   // read these ops from disk. Therefore, this function may take a substantial amount
   // of time and should not be called with important locks held, etc.
   Status ReadOps(int64_t after_op_index,
@@ -103,7 +102,7 @@ class LogCache {
   // Following this, reads of truncated indexes using ReadOps(), LookupOpId(),
   // HasOpBeenWritten(), etc, will return as if the operations were never appended.
   //
-  // NOTE: unless a new operation is appended followig 'index', this truncation does
+  // NOTE: unless a new operation is appended following 'index', this truncation does
   // not persist across server restarts.
   void TruncateOpsAfter(int64_t index);
 
@@ -121,9 +120,6 @@ class LogCache {
   int64_t num_cached_ops() const {
     return metrics_.log_cache_num_ops->value();
   }
-
-  // Dump the current contents of the cache to the log.
-  void DumpToLog() const;
 
   // Dumps the contents of the cache to the provided string vector.
   void DumpToStrings(std::vector<std::string>* lines) const;
@@ -149,6 +145,9 @@ class LogCache {
   FRIEND_TEST(LogCacheTest, TestReplaceMessages);
   FRIEND_TEST(LogCacheTest, TestTruncation);
   friend class LogCacheTest;
+
+  // Index of the special 'zero-op' entry in the cache.
+  static constexpr const int64_t kZeroOpIdx = 0;
 
   // An entry in the cache.
   struct CacheEntry {
@@ -193,7 +192,7 @@ class LogCache {
 
   // An ordered map that serves as the buffer for the cached messages.
   // Maps from log index -> ReplicateMsg
-  typedef std::map<uint64_t, CacheEntry> MessageCache;
+  typedef std::map<int64_t, CacheEntry> MessageCache;
   MessageCache cache_;
 
   // The next log index to append. Each append operation must either
@@ -223,10 +222,10 @@ class LogCache {
     explicit Metrics(const scoped_refptr<MetricEntity>& metric_entity);
 
     // Keeps track of the total number of operations in the cache.
-    scoped_refptr<AtomicGauge<int64_t> > log_cache_num_ops;
+    scoped_refptr<AtomicGauge<int64_t>> log_cache_num_ops;
 
     // Keeps track of the memory consumed by the cache, in bytes.
-    scoped_refptr<AtomicGauge<int64_t> > log_cache_size;
+    scoped_refptr<AtomicGauge<int64_t>> log_cache_size;
   };
   Metrics metrics_;
 
@@ -235,4 +234,3 @@ class LogCache {
 
 } // namespace consensus
 } // namespace kudu
-#endif /* KUDU_CONSENSUS_LOG_CACHE_H */
