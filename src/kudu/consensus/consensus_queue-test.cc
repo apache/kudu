@@ -57,6 +57,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -496,6 +497,11 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   // result in async log reads instead of cache hits.
   AppendReplicateMessagesToQueue(queue_.get(), clock_.get(), 1, 100);
 
+  SCOPED_CLEANUP({
+    // Extract the ops from the request to avoid double free.
+    request.mutable_ops()->ExtractSubrange(0, request.ops_size(), nullptr);
+  });
+
   OpId last;
   for (int i = 0; i < 11; i++) {
     VLOG(1) << "Making request " << i;
@@ -504,7 +510,8 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
     ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_tablet_copy));
     ASSERT_FALSE(needs_tablet_copy);
     ASSERT_EQ(kOpsPerRequest, request.ops_size());
-    last = request.ops(request.ops_size() -1).id();
+    ASSERT_GE(request.ops_size(), 1);
+    last = request.ops(request.ops_size() - 1).id();
     SetLastReceivedAndLastCommitted(&response, last);
     VLOG(1) << "Faking received up through " << last;
     send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
@@ -519,9 +526,6 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   SetLastReceivedAndLastCommitted(&response, last);
   send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
   ASSERT_FALSE(send_more_immediately);
-
-  // extract the ops from the request to avoid double free
-  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), nullptr);
 }
 
 TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {

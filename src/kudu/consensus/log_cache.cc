@@ -77,8 +77,6 @@ METRIC_DEFINE_gauge_int64(tablet, log_cache_size, "Log Cache Memory Usage",
 
 static const char kParentMemTrackerId[] = "log_cache";
 
-typedef vector<const ReplicateMsg*>::const_iterator MsgIter;
-
 LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
                    scoped_refptr<log::Log> log,
                    string local_uuid,
@@ -315,23 +313,18 @@ Status LogCache::ReadOps(int64_t after_op_index,
         // Read up to the next entry that's in the cache
         up_to = iter->first - 1;
       }
-
       l.unlock();
 
       vector<ReplicateMsg*> raw_replicate_ptrs;
       RETURN_NOT_OK_PREPEND(
-        log_->reader()->ReadReplicatesInRange(
-          next_index, up_to, remaining_space, &raw_replicate_ptrs),
-        Substitute("Failed to read ops $0..$1", next_index, up_to));
-      l.lock();
-      VLOG_WITH_PREFIX_UNLOCKED(2)
-          << "Successfully read " << raw_replicate_ptrs.size() << " ops "
-          << "from disk (" << next_index << ".."
-          << (next_index + raw_replicate_ptrs.size() - 1) << ")";
-
-      for (ReplicateMsg* msg : raw_replicate_ptrs) {
+          log_->reader()->ReadReplicatesInRange(
+              next_index, up_to, remaining_space, &raw_replicate_ptrs),
+          Substitute("failed to read ops $0..$1", next_index, up_to));
+      VLOG_WITH_PREFIX_UNLOCKED(2) <<
+          Substitute("read $0 ops from log ($1..$2)", raw_replicate_ptrs.size(),
+          next_index, next_index + raw_replicate_ptrs.size() - 1);
+      for (auto* msg : raw_replicate_ptrs) {
         CHECK_EQ(next_index, msg->id().index());
-
         if (remaining_space > 0) {
           messages->push_back(make_scoped_refptr_replicate(msg));
           remaining_space -= TotalByteSizeForMessage(*msg);
@@ -341,12 +334,13 @@ Status LogCache::ReadOps(int64_t after_op_index,
         }
       }
 
+      // Acquire the lock again before going to the next iteration.
+      l.lock();
     } else {
       // Pull contiguous messages from the cache until the size limit is achieved.
       for (; iter != cache_.end(); ++iter) {
         const ReplicateRefPtr& msg = iter->second.msg;
-        int64_t index = msg->get()->id().index();
-        if (index != next_index) {
+        if (next_index != msg->get()->id().index()) {
           continue;
         }
 
@@ -356,7 +350,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
         }
 
         messages->push_back(msg);
-        next_index++;
+        ++next_index;
       }
     }
   }
@@ -379,7 +373,7 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
 
   int64_t bytes_evicted = 0;
   for (auto iter = cache_.begin(); iter != cache_.end();) {
-    const CacheEntry& entry = (*iter).second;
+    const CacheEntry& entry = iter->second;
     const ReplicateRefPtr& msg = entry.msg;
     VLOG_WITH_PREFIX_UNLOCKED(2) << "considering for eviction: " << msg->get()->id();
     int64_t msg_index = msg->get()->id().index();
