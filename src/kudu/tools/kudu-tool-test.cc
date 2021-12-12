@@ -3401,6 +3401,8 @@ TEST_F(ToolTest, TestRemoteReplicaList) {
     ASSERT_STR_CONTAINS(stdout,
                         Substitute("Table name: $0", workload.table_name()));
     ASSERT_STR_CONTAINS(stdout, "key INT32 NOT NULL");
+    ASSERT_STR_CONTAINS(stdout, "Last status: No bootstrap required, opened a new log");
+    ASSERT_STR_CONTAINS(stdout, "Data state: TABLET_DATA_READY");
     ASSERT_STR_CONTAINS(stdout,
         Substitute("Data dirs: $0", JoinStrings(tablet_status.data_dirs(), ", ")));
   }
@@ -3412,6 +3414,8 @@ TEST_F(ToolTest, TestRemoteReplicaList) {
           Substitute("remote_replica list $0 --include_schema=false", ts_addr),
           &stdout));
     ASSERT_STR_NOT_CONTAINS(stdout, "key INT32 NOT NULL");
+    ASSERT_STR_CONTAINS(stdout, "Last status: No bootstrap required, opened a new log");
+    ASSERT_STR_CONTAINS(stdout, "Data state: TABLET_DATA_READY");
   }
 
   {
@@ -3465,6 +3469,8 @@ TEST_F(ToolTest, TestRemoteReplicaList) {
                         Substitute("Tablet id: $0", tablet_status.tablet_id()));
     ASSERT_STR_CONTAINS(stdout,
                         Substitute("Table name: $0", workload.table_name()));
+    ASSERT_STR_CONTAINS(stdout, "Last status: Deleted tablet blocks from disk");
+    ASSERT_STR_CONTAINS(stdout, "Data state: TABLET_DATA_TOMBSTONED");
     ASSERT_STR_CONTAINS(stdout, "Data dirs: <not available>");
   }
 }

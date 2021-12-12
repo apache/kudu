@@ -317,6 +317,7 @@ Status ListReplicas(const RunnerContext& context) {
     const string& state = tablet::TabletStatePB_Name(rs.state());
     cout << "Tablet id: " << rs.tablet_id() << endl;
     cout << "State: " << state << endl;
+    cout << "Last status: " << rs.last_status() << endl;
     cout << "Table name: " << rs.table_name() << endl;
     cout << "Partition: "
          << partition_schema.PartitionDebugString(partition, schema) << endl;
@@ -324,6 +325,8 @@ Status ListReplicas(const RunnerContext& context) {
       cout << "Estimated on disk size: "
            << HumanReadableNumBytes::ToString(rs.estimated_on_disk_size()) << endl;
     }
+    const string& data_state = tablet::TabletDataState_Name(rs.tablet_data_state());
+    cout << "Data state: " << data_state << endl;
     if (rs.data_dirs_size() != 0) {
       cout << "Data dirs: " << JoinStrings(rs.data_dirs(), ", ") << endl;
     } else {
