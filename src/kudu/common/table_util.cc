@@ -31,7 +31,7 @@ DEFINE_string(ranger_default_database, "default",
               "authorization context when the database name is not specified "
               "in the table name. Ranger makes no difference between "
               "<ranger_default_database>.<table> and <table>, so privileges "
-              "granted on <table> in <ranger_default_database> are applied to"
+              "granted on <table> in <ranger_default_database> are applied to "
               "both <ranger_default_database>.<table> and <table> in Kudu.");
 
 using std::string;

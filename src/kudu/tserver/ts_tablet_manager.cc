@@ -153,7 +153,7 @@ DEFINE_int32(delete_tablet_inject_latency_ms, 0,
 TAG_FLAG(delete_tablet_inject_latency_ms, unsafe);
 
 DEFINE_int32(update_tablet_stats_interval_ms, 5000,
-             "Interval at which the tablet statistics should be updated."
+             "Interval at which the tablet statistics should be updated. "
              "Should be greater than 'heartbeat_interval_ms'");
 TAG_FLAG(update_tablet_stats_interval_ms, advanced);
 
@@ -185,7 +185,7 @@ TAG_FLAG(txn_participant_registration_inject_latency_ms, runtime);
 TAG_FLAG(txn_participant_registration_inject_latency_ms, unsafe);
 
 DEFINE_bool(tablet_bootstrap_skip_opening_tablet_for_testing, false,
-            "Whether to skip opening tablet when bootstrap."
+            "Whether to skip opening tablet when bootstrap. "
             "Only for testing.");
 TAG_FLAG(tablet_bootstrap_skip_opening_tablet_for_testing, hidden);
 

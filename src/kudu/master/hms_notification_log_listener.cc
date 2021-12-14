@@ -61,7 +61,7 @@ TAG_FLAG(hive_metastore_notification_log_batch_size, advanced);
 TAG_FLAG(hive_metastore_notification_log_batch_size, runtime);
 
 DEFINE_uint32(hive_metastore_notification_log_poll_inject_latency_ms, 0,
-              "Inject latency into the inner polling loop of the Hive Metastore"
+              "Inject latency into the inner polling loop of the Hive Metastore "
               "notification log listener. Only takes effect during unit tests.");
 TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, hidden);
 TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, unsafe);

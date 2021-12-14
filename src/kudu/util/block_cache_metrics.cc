@@ -37,7 +37,7 @@ METRIC_DEFINE_counter(server, block_cache_misses,
                       kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_misses_caching,
                       "Block Cache Misses (Caching)", kudu::MetricUnit::kBlocks,
-                      "Number of lookups that were expecting a block that didn't yield one."
+                      "Number of lookups that were expecting a block that didn't yield one. "
                       "Use this number instead of cache_misses when trying to determine how "
                       "efficient the cache is",
                       kudu::MetricLevel::kDebug);
@@ -47,7 +47,7 @@ METRIC_DEFINE_counter(server, block_cache_hits,
                       kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_hits_caching,
                       "Block Cache Hits (Caching)", kudu::MetricUnit::kBlocks,
-                      "Number of lookups that were expecting a block that found one."
+                      "Number of lookups that were expecting a block that found one. "
                       "Use this number instead of cache_hits when trying to determine how "
                       "efficient the cache is",
                       kudu::MetricLevel::kDebug);

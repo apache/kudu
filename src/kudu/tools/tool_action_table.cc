@@ -848,7 +848,7 @@ Status ParseValueOfType(const string& default_value,
     case KuduColumnSchema::DataType::DECIMAL:
     default:
       return Status::NotSupported(Substitute(
-        "$0 columns are not supported for setting default value by this tool,"
+        "$0 columns are not supported for setting default value by this tool, "
         "is this tool out of date?",
         KuduColumnSchema::DataTypeToString(type)));
   }

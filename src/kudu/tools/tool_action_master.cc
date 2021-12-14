@@ -854,7 +854,7 @@ unique_ptr<Mode> BuildMasterMode() {
             "columns",
             string("uuid,rpc-addresses,role"),
             string("Comma-separated list of master info fields to "
-                   "include in output.\nPossible values: uuid, cluster_id"
+                   "include in output.\nPossible values: uuid, cluster_id, "
                    "rpc-addresses, http-addresses, version, seqno, "
                    "start_time, role and member_type"))
         .AddOptionalParameter("format")
