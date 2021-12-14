@@ -107,6 +107,7 @@ else
       "ranger")       F_RANGER=1 ;;
       "oatpp")        F_OATPP=1 ;;
       "oatpp-swagger") F_OATPP_SWAGGER=1 ;;
+      "jwt-cpp")      F_JWT_CPP=1;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -419,6 +420,10 @@ fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_OATPP_SWAGGER" ]; then
   build_oatpp_swagger
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_JWT_CPP" ]; then
+  build_jwt_cpp
 fi
 
 restore_env

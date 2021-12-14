@@ -1125,3 +1125,19 @@ build_oatpp_swagger(){
   make -j$PARALLEL install
   popd
 }
+
+build_jwt_cpp() {
+  JWT_CPP_BUILD_DIR=$TP_BUILD_DIR/$JWT_CPP_NAME$MODE_SUFFIX
+  mkdir -p $JWT_CPP_BUILD_DIR
+  pushd $JWT_CPP_BUILD_DIR
+  CFLAGS="$EXTRA_CFLAGS" \
+    CXXFLAGS="$EXTRA_CXXFLAGS $OPENSSL_CFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS $OPENSSL_LDFLAGS" \
+    cmake \
+    -DCMAKE_BUILD_TYPE=release \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DJWT_BUILD_EXAMPLES=OFF \
+    $JWT_CPP_SOURCE
+  make -j$PARALLEL install
+  popd
+}

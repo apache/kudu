@@ -476,6 +476,11 @@ fetch_and_patch \
  $OATPP_SWAGGER_PATCHLEVEL \
 "patch -p1 < $TP_DIR/patches/oatpp-swagger-remove-version-from-path.patch"
 
+JWT_CPP_PATCHLEVEL=0
+fetch_and_patch \
+  $JWT_CPP_NAME.tar.gz \
+  $JWT_CPP_SOURCE \
+  $JWT_CPP_PATCHLEVEL
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
