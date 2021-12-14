@@ -50,6 +50,8 @@ DEFINE_bool(cmeta_force_fsync, false,
             "Whether fsync() should be called when consensus metadata files are updated");
 TAG_FLAG(cmeta_force_fsync, advanced);
 
+DECLARE_bool(cmeta_fsync_override_on_xfs);
+
 using std::string;
 using strings::Substitute;
 
@@ -302,6 +304,8 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
                           "Unable to fsync consensus parent dir " + parent_dir);
   }
 
+  const bool cmeta_force_fsync =
+      FLAGS_cmeta_force_fsync || (FLAGS_cmeta_fsync_override_on_xfs && fs_manager_->meta_on_xfs());
   string meta_file_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
       fs_manager_->env(), meta_file_path, pb_,
@@ -315,7 +319,7 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
       // fsync() due to periodic commit with default settings, whereas other
       // filesystems such as XFS will not commit as often and need the fsync to
       // avoid significant data loss when a crash happens.
-      FLAGS_log_force_fsync_all || FLAGS_cmeta_force_fsync ? pb_util::SYNC : pb_util::NO_SYNC),
+      FLAGS_log_force_fsync_all || cmeta_force_fsync ? pb_util::SYNC : pb_util::NO_SYNC),
           Substitute("Unable to write consensus meta file for tablet $0 to path $1",
                      tablet_id_, meta_file_path));
   return UpdateOnDiskSize();

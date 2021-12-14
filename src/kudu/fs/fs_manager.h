@@ -311,6 +311,10 @@ class FsManager {
   // Prints the file system trees under the file system roots.
   void DumpFileSystemTree(std::ostream& out);
 
+  bool meta_on_xfs() const {
+    return meta_on_xfs_;
+  }
+
  private:
   FRIEND_TEST(fs::FsManagerTestBase, TestDuplicatePaths);
   FRIEND_TEST(fs::FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool);
@@ -406,6 +410,9 @@ class FsManager {
   ObjectIdGenerator oid_generator_;
 
   bool initted_;
+
+  // Cache whether or not the metadata directory is on an XFS directory.
+  bool meta_on_xfs_;
 
   DISALLOW_COPY_AND_ASSIGN(FsManager);
 };

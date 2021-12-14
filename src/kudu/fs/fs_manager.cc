@@ -60,6 +60,14 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/timer.h"
 
+DEFINE_bool(cmeta_fsync_override_on_xfs, true,
+            "Whether to ignore --cmeta_force_fsync and instead always flush if Kudu detects "
+            "the server is on XFS. This can prevent consensus metadata corruption in the "
+            "event of sudden server failure. Disabling this flag may cause data loss in "
+            "the event of a system crash. See KUDU-2195 for more details.");
+TAG_FLAG(cmeta_fsync_override_on_xfs, experimental);
+TAG_FLAG(cmeta_fsync_override_on_xfs, advanced);
+
 DEFINE_bool(enable_data_block_fsync, true,
             "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
             "Disabling this flag may cause data loss in the event of a system crash.");
@@ -175,7 +183,8 @@ FsManager::FsManager(Env* env, FsManagerOpts opts)
   : env_(DCHECK_NOTNULL(env)),
     opts_(std::move(opts)),
     error_manager_(new FsErrorManager()),
-    initted_(false) {
+    initted_(false),
+    meta_on_xfs_(false) {
   DCHECK(opts_.update_instances == UpdateInstanceBehavior::DONT_UPDATE ||
          !opts_.read_only) << "FsManager can only be for updated if not in read-only mode";
 }
@@ -361,10 +370,23 @@ Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
           reference_instance_path, metadata_->uuid() , root.path, pb->uuid()));
     }
   }
-
   if (!metadata_) {
     return Status::NotFound("could not find a healthy instance file");
   }
+  const auto& meta_root_path = canonicalized_metadata_fs_root_.path;
+  const auto bad_meta_fs_msg =
+      Substitute("Could not determine file system of metadata directory $0",
+                 meta_root_path);
+  Status s = env_->IsOnXfsFilesystem(meta_root_path, &meta_on_xfs_);
+  if (FLAGS_cmeta_fsync_override_on_xfs) {
+    // Err on the side of visibility if we expect a behavior change based on
+    // the file system.
+    RETURN_NOT_OK_PREPEND(s, bad_meta_fs_msg);
+  } else {
+    WARN_NOT_OK(s, bad_meta_fs_msg);
+  }
+  VLOG(1) << Substitute("Detected metadata directory is $0on an XFS mount: $1",
+                        meta_on_xfs_ ? "" : "not ", meta_root_path);
   return Status::OK();
 }
 
