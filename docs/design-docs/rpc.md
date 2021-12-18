@@ -608,17 +608,30 @@ The client sends its authentication token to the server in a `TOKEN_EXCHANGE`
 response step negotiation message, and the server responds with an empty
 `TOKEN_EXCHANGE` message on success.
 
+An important detail here is that the client sends the token to the server only
+after verifying the server's authenticity. So in addition to the authentication
+token, the client also needs to be provided with the certificate of the trusted
+CA to be able to verify the server's certificate as a part of the TLS handshake.
+Also, before sending its authentication token to the server, the client makes
+sure the connection to the server is confidential (i.e. encrypted) in accordance
+with the policy defined by the `--rpc_encrypt_loopback_connections` flag.
+
 ```
-Client                                                                    Server
-   |                                                                        |
-   | +----NegotiatePB---------------------+                                 |
-   | | step = TOKEN_EXCHANGE              |                                 |
-   | | authn_token = <client token>       | ------------------------------> |
-   | +------------------------------------+                                 |
-   |                                                                        |
-   |                                              +----NegotiatePB--------+ |
-   | <------------------------------------------- | step = TOKEN_EXCHANGE | |
-   |                                              +-----------------------+ |
+    Client                                                        Server
+with a trusted CA's                                       with a TLS certificate
+   certificate                                               signed by the CA
+                                                           trusted by the client
+      |                                                              |
+      | < ........ successfully negotiated TLS connection ........ > |
+      |                                                              |
+      | +----NegotiatePB---------------+                             |
+      | | step = TOKEN_EXCHANGE        |                             |
+      | | authn_token = <client token> | --------------------------> |
+      | +------------------------------+                             |
+      |                                                              |
+      |                                    +----NegotiatePB--------+ |
+      | <--------------------------------- | step = TOKEN_EXCHANGE | |
+      |                                    +-----------------------+ |
 ```
 
 ## Connection Context
