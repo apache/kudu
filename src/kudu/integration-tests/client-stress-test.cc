@@ -440,6 +440,7 @@ TEST_F(MetaCacheLookupStressTest, Perf) {
   // Create a session using manual flushing mode and set the buffer to be
   // large enough to accommodate all the generated operations at once.
   client::sp::shared_ptr<KuduSession> session(client_->NewSession());
+  session->SetTimeoutMillis(60000);
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_OK(session->SetMutationBufferSpace(64 * 1024 * 1024));
 
