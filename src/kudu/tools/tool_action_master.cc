@@ -938,10 +938,11 @@ unique_ptr<Mode> BuildMasterMode() {
         .Description("Rebuild a Kudu master from tablet server metadata")
         .ExtraDescription(rebuild_extra_description)
         .AddRequiredVariadicParameter({ kTabletServerAddressArg, kTabletServerAddressDesc })
+        .AddOptionalParameter("default_num_replicas")
+        .AddOptionalParameter("default_schema_version")
         .AddOptionalParameter("fs_data_dirs")
         .AddOptionalParameter("fs_metadata_dir")
         .AddOptionalParameter("fs_wal_dir")
-        .AddOptionalParameter("default_num_replicas")
         .Build();
     builder.AddAction(std::move(unsafe_rebuild));
   }

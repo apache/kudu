@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -56,6 +56,12 @@
 #include "kudu/util/status.h"
 
 DECLARE_int32(default_num_replicas);
+DEFINE_uint32(default_schema_version, 0, "The table schema version assigned to tables if one "
+              "cannot be determined automatically. When the tablet server version is < 1.16, a "
+              "viable value can be determined manually using "
+              "'kudu pbc dump tablet-meta/<tablet-id>' on each server and taking the max value "
+              "found across all tablets. In tablet server versions >= 1.16, Kudu will determine "
+              "the proper value for each tablet automatically.");
 
 using kudu::master::Master;
 using kudu::master::MasterOptions;
@@ -178,24 +184,24 @@ Status MasterRebuilder::CheckTableAndTabletConsistency(
 void MasterRebuilder::CreateTable(const ListTabletsResponsePB::StatusAndSchemaPB& replica) {
   scoped_refptr<TableInfo> table(new TableInfo(oid_generator_.Next()));
   table->mutable_metadata()->StartMutation();
-  SysTablesEntryPB* table_metadata = &table->mutable_metadata()->mutable_dirty()->pb;
+  SysTablesEntryPB* metadata = &table->mutable_metadata()->mutable_dirty()->pb;
   const string& table_name = replica.tablet_status().table_name();
-  table_metadata->set_name(table_name);
+  metadata->set_name(table_name);
 
-  // We can't tell the schema version from ListTablets.
-  // If there's multiple schemas reported by the replicas (i.e. if an alter
-  // table is in progress), we'll fail to recover some replicas and only
-  // partially recover the table.
-  table_metadata->set_version(0);
+  if (!replica.has_schema_version()) {
+    metadata->set_version(FLAGS_default_schema_version);
+  } else {
+    metadata->set_version(replica.schema_version());
+  }
 
   // We can't tell the replication factor from ListTablets.
   // We'll guess the default replication factor because it's safe and almost
   // always correct.
   // TODO(awong): there's probably a better heuristic based on the number of
   // replicas reported by the tablet servers.
-  table_metadata->set_num_replicas(FLAGS_default_num_replicas);
-  table_metadata->mutable_schema()->CopyFrom(replica.schema());
-  table_metadata->mutable_partition_schema()->CopyFrom(replica.partition_schema());
+  metadata->set_num_replicas(FLAGS_default_num_replicas);
+  metadata->mutable_schema()->CopyFrom(replica.schema());
+  metadata->mutable_partition_schema()->CopyFrom(replica.partition_schema());
 
   int32_t max_column_id = 0;
   for (const auto& column : replica.schema().columns()) {
@@ -203,9 +209,9 @@ void MasterRebuilder::CreateTable(const ListTabletsResponsePB::StatusAndSchemaPB
       max_column_id = column.id();
     }
   }
-  table_metadata->set_next_column_id(max_column_id + 1);
-  table_metadata->set_state(SysTablesEntryPB::RUNNING);
-  table_metadata->set_state_msg("reconstructed by MasterRebuilder");
+  metadata->set_next_column_id(max_column_id + 1);
+  metadata->set_state(SysTablesEntryPB::RUNNING);
+  metadata->set_state_msg("reconstructed by MasterRebuilder");
   table->mutable_metadata()->CommitMutation();
   InsertOrDie(&tables_by_name_, table_name, table);
 }
@@ -224,6 +230,12 @@ Status MasterRebuilder::CheckTableConsistency(
   RETURN_NOT_OK(SchemaFromPB(replica.schema(), &schema_from_replica));
   if (schema_from_replica.max_col_id() + 1 > metadata->next_column_id()) {
     metadata->set_next_column_id(schema_from_replica.max_col_id() + 1);
+  }
+
+  // Update schema_version if needed.
+  if (replica.has_schema_version() &&
+      replica.schema_version() > metadata->version()) {
+    metadata->set_version(replica.schema_version());
   }
 
   // Check the schemas match.

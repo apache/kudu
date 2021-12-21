@@ -508,6 +508,7 @@ Status GetServerStatus(const string& address, uint16_t default_port,
 Status GetReplicas(TabletServerServiceProxy* proxy,
                    vector<ListTabletsResponsePB::StatusAndSchemaPB>* replicas) {
   ListTabletsRequestPB req;
+  req.set_need_schema_info(true);
   ListTabletsResponsePB resp;
   RpcController rpc;
   rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));

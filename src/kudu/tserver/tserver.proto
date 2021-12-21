@@ -205,6 +205,7 @@ message ListTabletsResponsePB {
     // set 'need_schema_info'.
     optional SchemaPB schema = 2;
     optional PartitionSchemaPB partition_schema = 3;
+    optional uint32 schema_version = 4;
   }
 
   repeated StatusAndSchemaPB status_and_schema = 2;

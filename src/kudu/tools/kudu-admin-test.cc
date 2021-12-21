@@ -3033,6 +3033,67 @@ TEST_F(AdminCliTest, TestRebuildMasterWithTombstones) {
   NO_FATALS(cv.CheckCluster());
 }
 
+TEST_F(AdminCliTest, TestRebuildMasterAndAddColumns) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableId));
+    table_alterer->AddColumn("old_column_0")->Type(KuduColumnSchema::INT32);
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  // Shut down the master and wipe out its data.
+  NO_FATALS(cluster_->master()->Shutdown());
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+
+  // Rebuild the master with the tool.
+  string stdout;
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, /*is_secure*/false, /*log_to_stderr*/true),
+                        &stdout));
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 1 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 1 replicas, of which 0 had errors");
+
+  // Restart the master and the tablet servers.
+  // The tablet servers must be restarted so they accept the new master's certs.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  ASSERT_OK(cluster_->Restart());
+
+  ASSERT_OK(cluster_->WaitForTabletsRunning(cluster_->tablet_server(0),
+                                            1,
+                                            MonoDelta::FromSeconds(10)));
+
+  // The client has to be rebuilt since there's a new master.
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+
+  // Make sure we can add columns to the table we rebuilt.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableId));
+    table_alterer->AddColumn("new_column_0")->Type(KuduColumnSchema::INT32);
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  const string& ts_addr = cluster_->tablet_server(0)->bound_rpc_addr().ToString();
+  ASSERT_EVENTUALLY([&]() {
+    string stdout;
+    ASSERT_OK(RunKuduTool({"remote_replica", "list", ts_addr, "-include_schema"} , &stdout));
+    ASSERT_STR_CONTAINS(stdout, "new_column_0");
+  });
+
+  // Check the altered table is readable.
+  {
+    vector<string> rows;
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTableId, &table));
+    ScanTableToStrings(table.get(), &rows);
+  }
+}
+
 class SecureClusterAdminCliTest : public KuduTest {
  public:
   void SetUpCluster(bool is_secure) {

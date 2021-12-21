@@ -950,9 +950,9 @@ TEST_F(ToolTest, TestHelpXML) {
   string stderr;
   Status s = RunTool("--helpxml", &stdout, &stderr, nullptr, nullptr);
 
-  ASSERT_TRUE(s.IsRuntimeError());
-  ASSERT_FALSE(stdout.empty());
-  ASSERT_TRUE(stderr.empty());
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_FALSE(stdout.empty()) << stdout;
+  ASSERT_TRUE(stderr.empty()) << stderr;
 
   // All wrapped in AllModes node
   ASSERT_STR_MATCHES(stdout, "<\\?xml version=\"1.0\"\\?><AllModes>.*</AllModes>");
