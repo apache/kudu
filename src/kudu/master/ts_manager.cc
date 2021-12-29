@@ -316,6 +316,21 @@ void TSManager::SetAllTServersNeedFullTabletReports() {
   }
 }
 
+Status TSManager::UnregisterTServer(const std::string& ts_uuid,
+                                    bool force_unregister_live_tserver) {
+  lock_guard<rw_spinlock> l(lock_);
+  shared_ptr<TSDescriptor> ts_desc;
+  if (!FindCopy(servers_by_id_, ts_uuid, &ts_desc)) {
+    return Status::NotFound(Substitute("Requested tserver $0 has not been registered", ts_uuid));
+  }
+
+  if (!force_unregister_live_tserver && !ts_desc->PresumedDead()) {
+    return Status::IllegalState(Substitute("TServer $0 is not presumed dead.", ts_uuid));
+  }
+  servers_by_id_.erase(ts_uuid);
+  return Status::OK();
+}
+
 int TSManager::ClusterSkew() const {
   int min_count = std::numeric_limits<int>::max();
   int max_count = 0;

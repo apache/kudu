@@ -75,6 +75,8 @@ class RefreshAuthzCacheRequestPB;
 class RefreshAuthzCacheResponsePB;
 class RemoveMasterRequestPB;
 class RemoveMasterResponsePB;
+class UnregisterTServerRequestPB;
+class UnregisterTServerResponsePB;
 class ReplaceTabletRequestPB;
 class ReplaceTabletResponsePB;
 class TSHeartbeatRequestPB;
@@ -113,6 +115,10 @@ class MasterServiceImpl : public MasterServiceIf {
 
   void RemoveMaster(const RemoveMasterRequestPB* req,
                     RemoveMasterResponsePB* resp, rpc::RpcContext* rpc) override;
+
+  void UnregisterTServer(const UnregisterTServerRequestPB* req,
+                         UnregisterTServerResponsePB* resp,
+                         rpc::RpcContext* rpc) override;
 
   void Ping(const PingRequestPB* req,
             PingResponsePB* resp,

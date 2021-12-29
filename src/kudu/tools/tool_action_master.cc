@@ -89,8 +89,6 @@ DEFINE_string(kudu_abs_path, "", "Absolute file path of the 'kudu' executable us
 
 using kudu::master::AddMasterRequestPB;
 using kudu::master::AddMasterResponsePB;
-using kudu::master::ConnectToMasterRequestPB;
-using kudu::master::ConnectToMasterResponsePB;
 using kudu::master::ListMastersRequestPB;
 using kudu::master::ListMastersResponsePB;
 using kudu::master::Master;
@@ -603,67 +601,6 @@ Status ListMasters(const RunnerContext& context) {
 Status MasterDumpMemTrackers(const RunnerContext& context) {
   const auto& address = FindOrDie(context.required_args, kMasterAddressArg);
   return DumpMemTrackers(address, Master::kDefaultPort);
-}
-
-// Make sure the list of master addresses specified in 'master_addresses'
-// corresponds to the actual list of masters addresses in the cluster,
-// as reported in ConnectToMasterResponsePB::master_addrs.
-Status VerifyMasterAddressList(const vector<string>& master_addresses) {
-  map<string, set<string>> addresses_per_master;
-  for (const auto& address : master_addresses) {
-    unique_ptr<MasterServiceProxy> proxy;
-    RETURN_NOT_OK(BuildProxy(address, Master::kDefaultPort, &proxy));
-
-    RpcController ctl;
-    ctl.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
-    ConnectToMasterRequestPB req;
-    ConnectToMasterResponsePB resp;
-    RETURN_NOT_OK(proxy->ConnectToMaster(req, &resp, &ctl));
-    const auto& resp_master_addrs = resp.master_addrs();
-    if (resp_master_addrs.size() != master_addresses.size()) {
-      const auto addresses_provided = JoinStrings(master_addresses, ",");
-      const auto addresses_cluster_config = JoinMapped(
-          resp_master_addrs,
-          [](const HostPortPB& pb) {
-            return Substitute("$0:$1", pb.host(), pb.port());
-          }, ",");
-      return Status::InvalidArgument(Substitute(
-          "list of master addresses provided ($0) "
-          "does not match the actual cluster configuration ($1) ",
-          addresses_provided, addresses_cluster_config));
-    }
-    set<string> addr_set;
-    for (const auto& hp : resp_master_addrs) {
-      addr_set.emplace(Substitute("$0:$1", hp.host(), hp.port()));
-    }
-    addresses_per_master.emplace(address, std::move(addr_set));
-  }
-
-  bool mismatch = false;
-  if (addresses_per_master.size() > 1) {
-    const auto it_0 = addresses_per_master.cbegin();
-    auto it_1 = addresses_per_master.begin();
-    ++it_1;
-    for (auto it = it_1; it != addresses_per_master.end(); ++it) {
-      if (it->second != it_0->second) {
-        mismatch = true;
-        break;
-      }
-    }
-  }
-
-  if (mismatch) {
-    string err_msg = Substitute("specified: ($0);",
-                                JoinStrings(master_addresses, ","));
-    for (const auto& e : addresses_per_master) {
-      err_msg += Substitute(" from master $0: ($1);",
-                            e.first, JoinStrings(e.second, ","));
-    }
-    return Status::ConfigurationError(
-        Substitute("master address lists mismatch: $0", err_msg));
-  }
-
-  return Status::OK();
 }
 
 Status PrintRebuildReport(const RebuildReport& rebuild_report) {

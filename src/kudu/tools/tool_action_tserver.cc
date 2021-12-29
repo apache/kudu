@@ -34,6 +34,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/response_callback.h"
@@ -57,6 +58,14 @@ DEFINE_bool(error_if_not_fully_quiesced, false, "If true, the command to start "
     "quiescing will return an error if the tserver is not fully quiesced, i.e. "
     "there are still tablet leaders or active scanners on it.");
 
+DEFINE_bool(force_unregister_live_tserver, false,
+            "If true, force the unregistration of the tserver even if it is not presumed dead "
+            "by the master. Make sure the tserver has been shut down before setting this true.");
+DEFINE_bool(remove_tserver_state, true,
+            "If false, remove the tserver from the master's in-memory map but keep its persisted "
+            "state (if any). If the same tserver re-registers on the master it will get its "
+            "original state");
+
 DECLARE_string(columns);
 
 using std::cout;
@@ -72,6 +81,8 @@ using master::ChangeTServerStateResponsePB;
 using master::ListTabletServersRequestPB;
 using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
+using master::UnregisterTServerRequestPB;
+using master::UnregisterTServerResponsePB;
 using master::TServerStateChangePB;
 using rpc::RpcController;
 using tserver::QuiesceTabletServerRequestPB;
@@ -296,6 +307,39 @@ Status QuiescingStatus(const RunnerContext& context) {
   return table.PrintTo(cout);
 }
 
+Status UnregisterTServer(const RunnerContext& context) {
+  const auto& ts_uuid = FindOrDie(context.required_args, kTServerIdArg);
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  RETURN_NOT_OK(VerifyMasterAddressList(master_addresses));
+  if (FLAGS_remove_tserver_state) {
+    // We don't care about FLAGS_allow_missing_tserver because it doesn't
+    // make sense for ExitMaintenance.
+    RETURN_NOT_OK(ExitMaintenance(context));
+  }
+
+  string err_str;
+  for (const auto& address : master_addresses) {
+    unique_ptr<MasterServiceProxy> proxy;
+    RETURN_NOT_OK(BuildProxy(address, master::Master::kDefaultPort, &proxy));
+    UnregisterTServerRequestPB req;
+    req.set_uuid(ts_uuid);
+    req.set_force_unregister_live_tserver(FLAGS_force_unregister_live_tserver);
+    UnregisterTServerResponsePB resp;
+    RpcController rpc;
+    Status s = proxy->UnregisterTServer(req, &resp, &rpc);
+    if (!s.ok() || resp.has_error()) {
+      err_str += Substitute(" Unable to unregister the tserver from master $0, status: $1",
+                            address,
+                            StatusFromPB(resp.error().status()).ToString());
+    }
+  }
+  if (err_str.empty()) {
+    return Status::OK();
+  }
+  return Status::RemoteError(err_str);
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTServerMode() {
@@ -412,6 +456,15 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddAction(std::move(exit_maintenance))
       .Build();
 
+  unique_ptr<Action> unregister_tserver =
+      ClusterActionBuilder("unregister", &UnregisterTServer)
+          .Description(
+              "Unregister a tablet server from the master's in-memory state and system catalog.")
+          .AddRequiredParameter({kTServerIdArg, kTServerIdDesc})
+          .AddOptionalParameter("force_unregister_live_tserver")
+          .AddOptionalParameter("remove_tserver_state")
+          .Build();
+
   return ModeBuilder("tserver")
       .Description("Operate on a Kudu Tablet Server")
       .AddAction(std::move(dump_memtrackers))
@@ -421,6 +474,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddAction(std::move(status))
       .AddAction(std::move(timestamp))
       .AddAction(std::move(list_tservers))
+      .AddAction(std::move(unregister_tserver))
       .AddMode(std::move(quiesce))
       .AddMode(std::move(state))
       .Build();

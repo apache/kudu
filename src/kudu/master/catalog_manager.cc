@@ -6231,6 +6231,7 @@ bool CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrResp
 
 INITTED_OR_RESPOND(ConnectToMasterResponsePB);
 INITTED_OR_RESPOND(GetMasterRegistrationResponsePB);
+INITTED_OR_RESPOND(UnregisterTServerResponsePB);
 INITTED_OR_RESPOND(TSHeartbeatResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(AddMasterResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(AlterTableResponsePB);

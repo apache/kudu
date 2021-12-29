@@ -143,6 +143,8 @@ DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(show_values);
 DECLARE_bool(show_attributes);
 DECLARE_int32(catalog_manager_inject_latency_load_ca_info_ms);
+DECLARE_int32(heartbeat_interval_ms);
+DECLARE_int32(tserver_unresponsive_timeout_ms);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
 DECLARE_string(block_manager);
 DECLARE_string(hive_metastore_uris);
@@ -7446,6 +7448,141 @@ TEST_F(ToolTest, TestNonDefaultPrincipal) {
                          "ksck",
                          "--sasl_protocol_name=oryx",
                          HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())}));
+}
+class UnregisterTServerTest : public ToolTest, public ::testing::WithParamInterface<bool> {
+ public:
+  void StartCluster() {
+    // Test on a multi-master cluster.
+    InternalMiniClusterOptions opts;
+    opts.num_masters = 3;
+    StartMiniCluster(std::move(opts));
+  }
+
+  string GetMasterAddrsStr() {
+    vector<string> master_addrs;
+    for (const auto& hp : mini_cluster_->master_rpc_addrs()) {
+      master_addrs.emplace_back(hp.ToString());
+    }
+    return JoinStrings(master_addrs, ",");
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(, UnregisterTServerTest, ::testing::Bool());
+
+TEST_P(UnregisterTServerTest, TestUnregisterTServer) {
+  bool remove_tserver_state = GetParam();
+
+  // Set a short timeout that masters consider a tserver dead.
+  FLAGS_tserver_unresponsive_timeout_ms = 3000;
+  NO_FATALS(StartCluster());
+  const string master_addrs_str = GetMasterAddrsStr();
+  MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
+  const string ts_uuid = ts->uuid();
+  const string ts_hostport = ts->bound_rpc_addr().ToString();
+
+  // Enter maintenance mode on the tserver and shut it down.
+  ASSERT_OK(RunKuduTool({"tserver", "state", "enter_maintenance", master_addrs_str, ts_uuid}));
+  ts->Shutdown();
+
+  {
+    string out;
+    string err;
+    // Getting an error when running ksck and the output contains the dead tserver.
+    Status s =
+        RunActionStdoutStderrString(Substitute("cluster ksck $0", master_addrs_str), &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(out, Substitute("$0 | $1 | UNAVAILABLE", ts_uuid, ts_hostport));
+  }
+  // Wait the tserver become dead.
+  ASSERT_EVENTUALLY(
+      [&] { ASSERT_EQ(0, mini_cluster_->mini_master(0)->master()->ts_manager()->GetLiveCount()); });
+
+  // Unregister the tserver.
+  ASSERT_OK(RunKuduTool({"tserver",
+                         "unregister",
+                         master_addrs_str,
+                         ts_uuid,
+                         Substitute("-remove_tserver_state=$0", remove_tserver_state)}));
+  {
+    // Run ksck and get no error.
+    string out;
+    NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", master_addrs_str), &out));
+    if (remove_tserver_state) {
+      // Both the persisted state and registration of the tserver was removed.
+      ASSERT_STR_NOT_CONTAINS(out, Substitute(" $0 | MAINTENANCE_MODE", ts_uuid));
+      ASSERT_STR_NOT_CONTAINS(out, ts_uuid);
+    } else {
+      // Only the registration of the tserver was removed.
+      ASSERT_STR_CONTAINS(out, Substitute(" $0 | MAINTENANCE_MODE", ts_uuid));
+      ASSERT_STR_NOT_CONTAINS(out, Substitute("$0 | $1 | UNAVAILABLE", ts_uuid, ts_hostport));
+    }
+  }
+
+  // Restart the tserver and re-register it on masters.
+  ts->Start();
+  {
+    string out;
+    ASSERT_EVENTUALLY([&]() {
+      NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", master_addrs_str), &out));
+    });
+    if (remove_tserver_state) {
+      // The tserver came back as a brand new tserver.
+      ASSERT_STR_NOT_CONTAINS(out, Substitute(" $0 | MAINTENANCE_MODE", ts_uuid));
+      ASSERT_STR_CONTAINS(out, ts_uuid);
+    } else {
+      // The tserver got its original maintenance state.
+      ASSERT_STR_CONTAINS(out, Substitute(" $0 | MAINTENANCE_MODE", ts_uuid));
+      ASSERT_STR_CONTAINS(out, ts_uuid);
+    }
+  }
+}
+
+TEST_F(UnregisterTServerTest, TestUnregisterTServerNotPresumedDead) {
+  // Reduce the TS<->Master heartbeat interval to speed up testing.
+  FLAGS_heartbeat_interval_ms = 100;
+  NO_FATALS(StartCluster());
+  const string master_addrs_str = GetMasterAddrsStr();
+  MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
+  const string ts_uuid = ts->uuid();
+  const string ts_hostport = ts->bound_rpc_addr().ToString();
+
+  // Shut down the tserver.
+  ts->Shutdown();
+  // Get an error because the tserver is not presumed dead by masters.
+  {
+    string out;
+    string err;
+    Status s = RunActionStdoutStderrString(
+        Substitute("tserver unregister $0 $1", master_addrs_str, ts_uuid), &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(err, ts_uuid);
+  }
+  // The ksck output contains the dead tserver.
+  {
+    string out;
+    string err;
+    Status s =
+        RunActionStdoutStderrString(Substitute("cluster ksck $0", master_addrs_str), &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(out, Substitute("$0 | $1 | UNAVAILABLE", ts_uuid, ts_hostport));
+  }
+
+  // We could force unregister the tserver.
+  ASSERT_OK(RunKuduTool(
+      {"tserver", "unregister", master_addrs_str, ts_uuid, "-force_unregister_live_tserver"}));
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", master_addrs_str), &out));
+    ASSERT_STR_NOT_CONTAINS(out, ts_uuid);
+  }
+
+  // After several hearbeat intervals, the tserver still does not appear in ksck output.
+  SleepFor(MonoDelta::FromMilliseconds(3 * FLAGS_heartbeat_interval_ms));
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", master_addrs_str), &out));
+    ASSERT_STR_NOT_CONTAINS(out, ts_uuid);
+  }
 }
 
 } // namespace tools

@@ -23,8 +23,10 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <numeric>
+#include <set>
 #include <stack>
 #include <string>
 #include <unordered_map>
@@ -60,6 +62,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/response_callback.h"
@@ -196,6 +199,8 @@ using kudu::consensus::ReplicateMsg;
 using kudu::log::LogEntryPB;
 using kudu::log::LogEntryReader;
 using kudu::log::ReadableLogSegment;
+using kudu::master::ConnectToMasterRequestPB;
+using kudu::master::ConnectToMasterResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
@@ -222,7 +227,9 @@ using kudu::tserver::TabletServerServiceProxy; // NOLINT
 using kudu::tserver::WriteRequestPB;
 using std::cout;
 using std::endl;
+using std::map;
 using std::ostream;
+using std::set;
 using std::setfill;
 using std::setw;
 using std::shared_ptr;
@@ -739,6 +746,61 @@ Status MasterAddressesToSet(
     vector<HostPort> addr_list(res->begin(), res->end());
     LOG(INFO) << "deduplicated master addresses: "
               << HostPort::ToCommaSeparatedString(addr_list);
+  }
+
+  return Status::OK();
+}
+
+Status VerifyMasterAddressList(const vector<string>& master_addresses) {
+  map<string, set<string>> addresses_per_master;
+  for (const auto& address : master_addresses) {
+    unique_ptr<MasterServiceProxy> proxy;
+    RETURN_NOT_OK(BuildProxy(address, master::Master::kDefaultPort, &proxy));
+
+    RpcController ctl;
+    ctl.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+    ConnectToMasterRequestPB req;
+    ConnectToMasterResponsePB resp;
+    RETURN_NOT_OK(proxy->ConnectToMaster(req, &resp, &ctl));
+    const auto& resp_master_addrs = resp.master_addrs();
+    if (resp_master_addrs.size() != master_addresses.size()) {
+      const auto addresses_provided = JoinStrings(master_addresses, ",");
+      const auto addresses_cluster_config =
+          JoinMapped(resp_master_addrs,
+                     [](const HostPortPB& pb) { return Substitute("$0:$1", pb.host(), pb.port()); },
+                     ",");
+      return Status::InvalidArgument(
+          Substitute("list of master addresses provided ($0) "
+                     "does not match the actual cluster configuration ($1) ",
+                     addresses_provided,
+                     addresses_cluster_config));
+    }
+    set<string> addr_set;
+    for (const auto& hp : resp_master_addrs) {
+      addr_set.emplace(Substitute("$0:$1", hp.host(), hp.port()));
+    }
+    addresses_per_master.emplace(address, std::move(addr_set));
+  }
+
+  bool mismatch = false;
+  if (addresses_per_master.size() > 1) {
+    const auto it_0 = addresses_per_master.cbegin();
+    auto it_1 = addresses_per_master.begin();
+    ++it_1;
+    for (auto it = it_1; it != addresses_per_master.end(); ++it) {
+      if (it->second != it_0->second) {
+        mismatch = true;
+        break;
+      }
+    }
+  }
+
+  if (mismatch) {
+    string err_msg = Substitute("specified: ($0);", JoinStrings(master_addresses, ","));
+    for (const auto& e : addresses_per_master) {
+      err_msg += Substitute(" from master $0: ($1);", e.first, JoinStrings(e.second, ","));
+    }
+    return Status::ConfigurationError(Substitute("master address lists mismatch: $0", err_msg));
   }
 
   return Status::OK();

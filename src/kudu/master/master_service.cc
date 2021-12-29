@@ -331,6 +331,22 @@ void MasterServiceImpl::RemoveMaster(const RemoveMasterRequestPB* req,
   // See completion_cb in CatalogManager::InitiateMasterChangeConfig().
 }
 
+void MasterServiceImpl::UnregisterTServer(const UnregisterTServerRequestPB* req,
+                                          UnregisterTServerResponsePB* resp,
+                                          rpc::RpcContext* rpc) {
+  const auto& ts_uuid = req->uuid();
+  bool force_unregister_live_tserver = req->force_unregister_live_tserver();
+
+  Status s = server_->ts_manager()->UnregisterTServer(ts_uuid, force_unregister_live_tserver);
+  if (PREDICT_FALSE(!s.ok() && !s.IsNotFound())) {
+    // Ignore the NotFound error to make this RPC retriable and effectively idempotent.
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+    resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
+  }
+
+  rpc->RespondSuccess();
+}
+
 void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
                                     TSHeartbeatResponsePB* resp,
                                     rpc::RpcContext* rpc) {

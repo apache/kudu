@@ -125,6 +125,9 @@ class TSManager {
   // Resets the tserver states and reloads them from disk.
   Status ReloadTServerStates(SysCatalogTable* sys_catalog);
 
+  // Remove the tserver from 'servers_by_id_'.
+  Status UnregisterTServer(const std::string& ts_uuid, bool force_unregister_live_tserver);
+
  private:
   friend class TServerStateLoader;
 

@@ -1070,6 +1070,22 @@ message RefreshAuthzCacheResponsePB {
   optional MasterErrorPB error = 1;
 }
 
+// RemoveTabletServerRequest/Response: remove a tablet server from master's
+// in-memory map and persisted catalog.
+message UnregisterTServerRequestPB {
+  // The tserver UUID to be unregistered.
+  optional string uuid = 1;
+
+  // Whether to return an error in case the tserver is not presumed to be dead,
+  // per --tserver_unresponsive_timeout_ms.
+  // Disable this by default to make sure the tserver has been brought down.
+  optional bool force_unregister_live_tserver = 2 [default = false];
+}
+
+message UnregisterTServerResponsePB {
+  optional MasterErrorPB error = 1;
+}
+
 enum MasterFeatures {
   UNKNOWN_FEATURE = 0;
   // The master supports creating tables with non-covering range partitions.
@@ -1181,6 +1197,10 @@ service MasterService {
 
   // Remove a master from the existing cluster.
   rpc RemoveMaster(RemoveMasterRequestPB) returns (RemoveMasterResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
+  }
+
+  rpc UnregisterTServer(UnregisterTServerRequestPB) returns (UnregisterTServerResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
   }
 
