@@ -354,9 +354,10 @@ class RebalancerTool : public rebalance::Rebalancer {
                            const rebalance::ClusterRawInfo& raw_info,
                            std::vector<Rebalancer::ReplicaMove>* replica_moves) override;
 
-    // Check the state of ignored tservers.
-    // Return Status::OK() only when all the ignored tservers are in maintenance mode.
-    Status CheckIgnoredTserversState(const rebalance::ClusterInfo& ci);
+    // Return Status::OK() if it's safe to move all replicas from the ignored to other servers
+    // and all tservers that need to empty are in maintenance mode.
+    Status CheckIgnoredTServers(const rebalance::ClusterRawInfo& raw_info,
+                                const rebalance::ClusterInfo& ci);
 
     void GetMovesFromIgnoredTservers(const IgnoredTserversInfo& ignored_tservers_info,
                                      std::vector<Rebalancer::ReplicaMove>* replica_moves);
@@ -371,10 +372,9 @@ class RebalancerTool : public rebalance::Rebalancer {
   // 'location' means that's about cross-location rebalancing). Basically,
   // 'raw' information is just a sub-set of relevant fields of the KsckResults
   // structure filtered to contain information only for the specified location.
-  static Status KsckResultsToClusterRawInfo(
-      const boost::optional<std::string>& location,
-      const KsckResults& ksck_info,
-      rebalance::ClusterRawInfo* raw_info);
+  Status KsckResultsToClusterRawInfo(const boost::optional<std::string>& location,
+                                     const KsckResults& ksck_info,
+                                     rebalance::ClusterRawInfo* raw_info);
 
   // Print replica count infomation on ClusterInfo::tservers_to_empty.
   Status PrintIgnoredTserversStats(const rebalance::ClusterInfo& ci,
@@ -394,10 +394,6 @@ class RebalancerTool : public rebalance::Rebalancer {
 
   Status PrintPolicyViolationInfo(const rebalance::ClusterRawInfo& raw_info,
                                   std::ostream& out) const;
-
-  // Check whether it is safe to move all replicas from the ignored to other servers.
-  Status CheckIgnoredServers(const rebalance::ClusterRawInfo& raw_info,
-                             const rebalance::ClusterInfo& cluster_info);
 
   // Run rebalancing using the specified runner.
   Status RunWith(Runner* runner, RunStatus* result_status);

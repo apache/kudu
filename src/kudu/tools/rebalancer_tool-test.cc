@@ -173,15 +173,15 @@ Per-table replica distribution summary:
       << ToolRunInfo(s, out, err);
 }
 
-// Make sure the rebalancer doesn't start if a tablet server is down.
-// The rebalancer starts only when the dead tablet server is in the
-// list of ignored_tservers.
 class RebalanceStartCriteriaTest :
     public AdminCliTest,
     public ::testing::WithParamInterface<Kudu1097> {
 };
 INSTANTIATE_TEST_SUITE_P(, RebalanceStartCriteriaTest,
                          ::testing::Values(Kudu1097::Disable, Kudu1097::Enable));
+// Make sure the rebalancer doesn't start if a tablet server is down.
+// The rebalancer starts only when the dead tablet server is in the
+// list of ignored_tservers.
 TEST_P(RebalanceStartCriteriaTest, TabletServerIsDown) {
   const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
   const vector<string> kMasterFlags = {
@@ -230,6 +230,49 @@ TEST_P(RebalanceStartCriteriaTest, TabletServerIsDown) {
       cluster_->master()->bound_rpc_addr().ToString(),
       "--ignored_tservers=" + cluster_->tablet_server(0)->uuid()
     }, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced (moved 0 replicas)")
+        << "stderr: " << err;
+  }
+}
+
+// Make sure the rebalancer doesn't start if specified an unknown tablet server.
+TEST_P(RebalanceStartCriteriaTest, UnknownIgnoredTServer) {
+  const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
+  const vector<string> kMasterFlags = {
+      Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+  };
+  const vector<string> kTserverFlags = {
+      Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+  };
+
+  FLAGS_num_tablet_servers = 5;
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+
+  {
+    string out;
+    string err;
+    Status s = RunKuduTool({"cluster",
+                            "rebalance",
+                            cluster_->master()->bound_rpc_addr().ToString(),
+                            "--ignored_tservers=unknown_tablet_server"},
+                           &out,
+                           &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(
+        err, "ignored tserver unknown_tablet_server is not reported among known tservers")
+        << "stderr: " << err;
+  }
+
+  {
+    string out;
+    string err;
+    Status s = RunKuduTool({"cluster",
+                            "rebalance",
+                            cluster_->master()->bound_rpc_addr().ToString(),
+                            "--ignored_tservers=" + cluster_->tablet_server(0)->uuid()},
+                           &out,
+                           &err);
     ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
     ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced (moved 0 replicas)")
         << "stderr: " << err;
@@ -1963,6 +2006,65 @@ TEST_P(LocationAwareRebalancingParamTest, Rebalance) {
       // check against placement policy violations because that case is treated
       // the same as a location-unaware, whole cluster rebalancing).
       ASSERT_STR_CONTAINS(out, "Placement policy violations:\n  none\n");
+    }
+  }
+}
+
+// Regression test for KUDU-3346.
+TEST_P(LocationAwareRebalancingParamTest, RebalanceWithIgnoredTServer) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  const auto& param = GetParam();
+  const auto& location_info = param.location_info;
+  const auto& excluded_locations = param.excluded_locations;
+  const vector<string>& extra_master_flags = {
+      "--master_client_location_assignment_enabled=false",
+      "--allow_unsafe_replication_factor",
+  };
+  NO_FATALS(Prepare({}, extra_master_flags, location_info, excluded_locations));
+
+  // Pick a random tserver as ignored tserver.
+  int rand_ts_idx = rand() % cluster_->num_tablet_servers();
+  string rand_ts_uuid = cluster_->tablet_server(rand_ts_idx)->uuid();
+
+  {
+    string out;
+    string err;
+    const Status s = RunKuduTool({"cluster",
+                                  "rebalance",
+                                  cluster_->master()->bound_rpc_addr().ToString(),
+                                  "--ignored_tservers=" + rand_ts_uuid},
+                                 &out,
+                                 &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_NOT_CONTAINS(out, rand_ts_uuid);
+    ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced") << "stderr: " << err;
+  }
+
+  {
+    // Run rebalancer tool with 'move_replicas_from_ignored_tservers'.
+    string out;
+    string err;
+    Status s = RunKuduTool({"tserver",
+                            "state",
+                            "enter_maintenance",
+                            cluster_->master()->bound_rpc_addr().ToString(),
+                            rand_ts_uuid},
+                           &out,
+                           &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    s = RunKuduTool({"cluster",
+                     "rebalance",
+                     cluster_->master()->bound_rpc_addr().ToString(),
+                     "--ignored_tservers=" + rand_ts_uuid,
+                     "--move_replicas_from_ignored_tservers"},
+                    &out,
+                    &err);
+    if (s.ok()) {
+      ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced") << "stderr: " << err;
+      ASSERT_STR_CONTAINS(out, Substitute("$0 | 0", rand_ts_uuid)) << "stderr: " << err;
+    } else {
+      // In some cases it's impossible to move replicas from a ignored tserver.
+      ASSERT_STR_CONTAINS(err, "Too many ignored tservers") << "stderr: " << err;
     }
   }
 }

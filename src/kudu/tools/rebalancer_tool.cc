@@ -189,7 +189,6 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   size_t moves_count_total = 0;
   if (config_.move_replicas_from_ignored_tservers) {
     // Move replicas from healthy ignored tservers to other healthy tservers.
-    RETURN_NOT_OK(CheckIgnoredServers(raw_info, ci));
     LOG(INFO) << "replacing replicas on healthy ignored tservers";
     IgnoredTserversRunner runner(
         this, config_.ignored_tservers, config_.max_moves_per_server, deadline);
@@ -269,10 +268,24 @@ Status RebalancerTool::KsckResultsToClusterRawInfo(
     const KsckResults& ksck_info,
     ClusterRawInfo* raw_info) {
   DCHECK(raw_info);
+  const auto& cluster_status = ksck_info.cluster_status;
+
+  // Check whether all ignored tservers in the config are valid.
+  if (!config_.ignored_tservers.empty()) {
+    unordered_set<string> known_tservers;
+    for (const auto& ts_summary : ksck_info.cluster_status.tserver_summaries) {
+      known_tservers.emplace(ts_summary.uuid);
+    }
+    for (const auto& ts : config_.ignored_tservers) {
+      if (!ContainsKey(known_tservers, ts)) {
+        return Status::InvalidArgument(
+            Substitute("ignored tserver $0 is not reported among known tservers", ts));
+      }
+    }
+  }
 
   // Filter out entities that are not relevant to the specified location.
   vector<ServerHealthSummary> tserver_summaries;
-  const auto& cluster_status = ksck_info.cluster_status;
   tserver_summaries.reserve(cluster_status.tserver_summaries.size());
 
   vector<TabletSummary> tablet_summaries;
@@ -641,22 +654,6 @@ Status RebalancerTool::RefreshKsckResults() {
   cluster->set_table_filters(config_.table_filters);
   ksck_.reset(new Ksck(cluster));
   ignore_result(ksck_->Run());
-  return Status::OK();
-}
-
-Status RebalancerTool::CheckIgnoredServers(const rebalance::ClusterRawInfo& raw_info,
-                                           const rebalance::ClusterInfo& cluster_info) {
-  int remaining_tservers_count = cluster_info.balance.servers_by_total_replica_count.size();
-  int max_replication_factor = 0;
-  for (const auto& s : raw_info.table_summaries) {
-    max_replication_factor = std::max(max_replication_factor, s.replication_factor);
-  }
-  if (remaining_tservers_count < max_replication_factor) {
-    return Status::InvalidArgument(
-        Substitute("Too many ignored tservers; "
-                   "$0 healthy non-ignored servers exist but $1 are required.",
-                   remaining_tservers_count, max_replication_factor));
-  }
   return Status::OK();
 }
 
@@ -1381,11 +1378,7 @@ Status RebalancerTool::IgnoredTserversRunner::GetReplaceMoves(
     const rebalance::ClusterInfo& ci,
     const rebalance::ClusterRawInfo& raw_info,
     vector<Rebalancer::ReplicaMove>* replica_moves) {
-
-  // In order not to place any replica on the ignored tservers,
-  // allow to run only when all healthy ignored tservers are in
-  // maintenance (or decommision) mode.
-  RETURN_NOT_OK(CheckIgnoredTserversState(ci));
+  RETURN_NOT_OK(CheckIgnoredTServers(raw_info, ci));
 
   // Build IgnoredTserversInfo.
   IgnoredTserversInfo ignored_tservers_info;
@@ -1425,10 +1418,23 @@ Status RebalancerTool::IgnoredTserversRunner::GetReplaceMoves(
   return Status::OK();
 }
 
-Status RebalancerTool::IgnoredTserversRunner::CheckIgnoredTserversState(
-    const rebalance::ClusterInfo& ci) {
+Status RebalancerTool::IgnoredTserversRunner::CheckIgnoredTServers(const ClusterRawInfo& raw_info,
+                                                                   const ClusterInfo& ci) {
   if (ci.tservers_to_empty.empty()) {
     return Status::OK();
+  }
+
+  int remaining_tservers_count = ci.balance.servers_by_total_replica_count.size();
+  int max_replication_factor = 0;
+  for (const auto& s : raw_info.table_summaries) {
+    max_replication_factor = std::max(max_replication_factor, s.replication_factor);
+  }
+  if (remaining_tservers_count < max_replication_factor) {
+    return Status::InvalidArgument(
+        Substitute("Too many ignored tservers; "
+                   "$0 healthy non-ignored servers exist but $1 are required.",
+                   remaining_tservers_count,
+                   max_replication_factor));
   }
 
   LeaderMasterProxy proxy(client_);
