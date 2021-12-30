@@ -343,14 +343,6 @@ class RebalancerTool : public rebalance::Rebalancer {
     // Key is tserver UUID which corresponds to value.ts_uuid_from.
     typedef std::unordered_multimap<std::string, Rebalancer::ReplicaMove> MovesToSchedule;
 
-    struct TabletInfo {
-      std::string tablet_id;
-      boost::optional<int64_t> config_idx;  // For CAS-like change of Raft configs.
-    };
-
-    // Mapping tserver UUID to tablets on it.
-    typedef std::unordered_map<std::string, std::vector<TabletInfo>> IgnoredTserversInfo;
-
     // Get replica moves to move replicas from healthy ignored tservers.
     // If returns Status::OK() with replica_moves empty, there would be
     // no replica on the healthy ignored tservers.
@@ -360,10 +352,11 @@ class RebalancerTool : public rebalance::Rebalancer {
 
     // Return Status::OK() if it's safe to move all replicas from the ignored to other servers
     // and all tservers that need to empty are in maintenance mode.
-    Status CheckIgnoredTServers(const rebalance::ClusterRawInfo& raw_info,
-                                const rebalance::ClusterInfo& ci);
+    static Status CheckIgnoredTServers(const rebalance::ClusterRawInfo& raw_info,
+                                       const rebalance::ClusterInfo& ci,
+                                       const std::unordered_set<std::string>& tservers_to_empty);
 
-    void GetMovesFromIgnoredTservers(const IgnoredTserversInfo& ignored_tservers_info,
+    void GetMovesFromIgnoredTservers(const TServersToEmptyMap& ignored_tservers_info,
                                      std::vector<Rebalancer::ReplicaMove>* replica_moves);
 
     // Random device and generator for selecting among multiple choices, when appropriate.
@@ -380,8 +373,8 @@ class RebalancerTool : public rebalance::Rebalancer {
                                      const KsckResults& ksck_info,
                                      rebalance::ClusterRawInfo* raw_info);
 
-  // Print replica count infomation on ClusterInfo::tservers_to_empty.
-  Status PrintIgnoredTserversStats(const rebalance::ClusterInfo& ci,
+  // Print replica count infomation about tservers need to empty.
+  Status PrintIgnoredTserversStats(const rebalance::ClusterRawInfo& raw_info,
                                    std::ostream& out) const;
 
   // Print information on the cross-location balance.

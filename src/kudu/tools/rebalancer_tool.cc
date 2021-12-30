@@ -110,8 +110,8 @@ Status RebalancerTool::PrintStats(ostream& out) {
     return Status::OK();
   }
 
-  // Print information about replica count of healthy ignored tservers.
-  RETURN_NOT_OK(PrintIgnoredTserversStats(ci, out));
+  // Print information about tservers need to empty.
+  RETURN_NOT_OK(PrintIgnoredTserversStats(raw_info, out));
 
   if (ts_id_by_location.size() == 1) {
     // That's about printing information about the whole cluster.
@@ -350,16 +350,20 @@ Status RebalancerTool::KsckResultsToClusterRawInfo(const boost::optional<string>
   return Status::OK();
 }
 
-Status RebalancerTool::PrintIgnoredTserversStats(const ClusterInfo& ci,
+Status RebalancerTool::PrintIgnoredTserversStats(const ClusterRawInfo& raw_info,
                                                  ostream& out) const {
-  const auto& tservers_to_empty = ci.tservers_to_empty;
-  if (tservers_to_empty.empty()) {
+  if (config_.ignored_tservers.empty() || !config_.move_replicas_from_ignored_tservers) {
     return Status::OK();
   }
+  unordered_set<string> tservers_to_empty;
+  GetTServersToEmpty(raw_info, &tservers_to_empty);
+  TServersToEmptyMap tservers_to_empty_map;
+  BuildTServersToEmptyInfo(raw_info, MovesInProgress(), tservers_to_empty, &tservers_to_empty_map);
   out << "Per-server replica distribution summary for tservers_to_empty:" << endl;
   DataTable summary({"Server UUID", "Replica Count"});
-  for (const auto& elem: tservers_to_empty) {
-    summary.AddRow({ elem.first, to_string(elem.second) });
+  for (const auto& ts : tservers_to_empty) {
+    auto* tablets = FindOrNull(tservers_to_empty_map, ts);
+    summary.AddRow({ts, tablets ? to_string(tablets->size()) : "0"});
   }
   RETURN_NOT_OK(summary.PrintTo(out));
   out << endl;
@@ -1376,52 +1380,26 @@ Status RebalancerTool::IgnoredTserversRunner::GetReplaceMoves(
     const rebalance::ClusterInfo& ci,
     const rebalance::ClusterRawInfo& raw_info,
     vector<Rebalancer::ReplicaMove>* replica_moves) {
-  RETURN_NOT_OK(CheckIgnoredTServers(raw_info, ci));
+  unordered_set<string> tservers_to_empty;
+  rebalancer_->GetTServersToEmpty(raw_info, &tservers_to_empty);
+  RETURN_NOT_OK(CheckIgnoredTServers(raw_info, ci, tservers_to_empty));
 
-  // Build IgnoredTserversInfo.
-  IgnoredTserversInfo ignored_tservers_info;
-  for (const auto& tablet_summary : raw_info.tablet_summaries) {
-    if (ContainsKey(scheduled_moves_, tablet_summary.id)) {
-      continue;
-    }
-    if (tablet_summary.result != cluster_summary::HealthCheckResult::HEALTHY &&
-        tablet_summary.result != cluster_summary::HealthCheckResult::RECOVERING) {
-      LOG(INFO) << Substitute("tablet $0: not considering replicas for movement "
-                              "since the tablet's status is '$1'",
-                              tablet_summary.id,
-                              cluster_summary::HealthCheckResultToString(tablet_summary.result));
-      continue;
-    }
-    TabletInfo tablet_info;
-    for (const auto& replica_info : tablet_summary.replicas) {
-      if (replica_info.is_leader && replica_info.consensus_state) {
-        const auto& cstate = *replica_info.consensus_state;
-        if (cstate.opid_index) {
-          tablet_info.tablet_id = tablet_summary.id;
-          tablet_info.config_idx = *cstate.opid_index;
-          break;
-        }
-      }
-    }
-    for (const auto& replica_info : tablet_summary.replicas) {
-      if (!ContainsKey(ci.tservers_to_empty, replica_info.ts_uuid)) {
-        continue;
-      }
-      auto& tablets = LookupOrEmplace(
-          &ignored_tservers_info, replica_info.ts_uuid, vector<TabletInfo>());
-      tablets.emplace_back(tablet_info);
-    }
-  }
-  GetMovesFromIgnoredTservers(ignored_tservers_info, replica_moves);
+  TServersToEmptyMap tservers_to_empty_map;
+  BuildTServersToEmptyInfo(raw_info, scheduled_moves_, tservers_to_empty, &tservers_to_empty_map);
+
+  GetMovesFromIgnoredTservers(tservers_to_empty_map, replica_moves);
   return Status::OK();
 }
 
-Status RebalancerTool::IgnoredTserversRunner::CheckIgnoredTServers(const ClusterRawInfo& raw_info,
-                                                                   const ClusterInfo& ci) {
-  if (ci.tservers_to_empty.empty()) {
+Status RebalancerTool::IgnoredTserversRunner::CheckIgnoredTServers(
+    const ClusterRawInfo& raw_info,
+    const ClusterInfo& ci,
+    const unordered_set<string>& tservers_to_empty) {
+  if (tservers_to_empty.empty()) {
     return Status::OK();
   }
 
+  // Check whether it is possible to move replicas emptying some tablet servers.
   int remaining_tservers_count = ci.balance.servers_by_total_replica_count.size();
   int max_replication_factor = 0;
   for (const auto& s : raw_info.table_summaries) {
@@ -1435,18 +1413,19 @@ Status RebalancerTool::IgnoredTserversRunner::CheckIgnoredTServers(const Cluster
                    max_replication_factor));
   }
 
-  for (const auto& it : ci.tservers_to_empty) {
-    const string& ts_uuid = it.first;
-    if (!ContainsKey(raw_info.tservers_in_maintenance_mode, ts_uuid)) {
-      return Status::IllegalState(Substitute(
-        "You should set maintenance mode for tablet server $0 first", ts_uuid));
+  // Make sure tablet servers that we need to empty are set maintenance mode.
+  for (const auto& ts : tservers_to_empty) {
+    if (!ContainsKey(raw_info.tservers_in_maintenance_mode, ts)) {
+      return Status::IllegalState(
+          Substitute("You should set maintenance mode for tablet server $0 first", ts));
     }
   }
+
   return Status::OK();
 }
 
 void RebalancerTool::IgnoredTserversRunner::GetMovesFromIgnoredTservers(
-    const IgnoredTserversInfo& ignored_tservers_info,
+    const TServersToEmptyMap& ignored_tservers_info,
     vector<Rebalancer::ReplicaMove>* replica_moves) {
   DCHECK(replica_moves);
   if (ignored_tservers_info.empty()) {

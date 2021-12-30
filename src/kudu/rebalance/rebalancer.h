@@ -193,6 +193,20 @@ class Rebalancer {
                           const MovesInProgress& moves_in_progress,
                           ClusterInfo* info) const;
 
+  struct TabletInfo {
+    std::string tablet_id;
+    boost::optional<int64_t> config_idx;  // For CAS-like change of Raft configs.
+  };
+
+  // Mapping tserver UUID to tablets on it.
+  typedef std::unordered_map<std::string, std::vector<TabletInfo>> TServersToEmptyMap;
+  void GetTServersToEmpty(const ClusterRawInfo& raw_info,
+                          std::unordered_set<std::string>* tservers_to_empty) const;
+  static void BuildTServersToEmptyInfo(const ClusterRawInfo& raw_info,
+                                       const MovesInProgress& moves_in_progress,
+                                       const std::unordered_set<std::string>& tservers_to_empty,
+                                       TServersToEmptyMap* tservers_to_empty_map);
+
  protected:
   // Helper class to find and schedule next available rebalancing move operation
   // and track already scheduled ones.

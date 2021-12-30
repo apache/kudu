@@ -321,7 +321,8 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
       skipped_tserver_msgs.emplace_back(
           Substitute("skipping tablet server $0 ($1) because of its "
                      "non-HEALTHY status ($2)",
-                     s.uuid, s.address,
+                     s.uuid,
+                     s.address,
                      ServerHealthToString(s.health)));
       unhealthy_tablet_servers.emplace(s.uuid);
       continue;
@@ -454,23 +455,63 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
     table_info_by_skew.emplace(max_count - min_count, std::move(tbi));
   }
 
-  // Populate ClusterInfo::tservers_to_empty.
-  // TODO(zhangyifan): extract this to a seperate method.
-  if (config_.move_replicas_from_ignored_tservers) {
-    auto& tservers_to_empty = result_info.tservers_to_empty;
-    for (const auto& ignored_tserver : config_.ignored_tservers) {
-      if (ContainsKey(unhealthy_tablet_servers, ignored_tserver)) {
-        continue;
-      }
-      int replica_count = FindWithDefault(tserver_replicas_count, ignored_tserver, 0);
-      tservers_to_empty.emplace(ignored_tserver, replica_count);
-    }
-  }
-
   // TODO(aserbin): add sanity checks on the result.
   *info = std::move(result_info);
 
   return Status::OK();
+}
+
+void Rebalancer::GetTServersToEmpty(const ClusterRawInfo& raw_info,
+                                    unordered_set<string>* tservers_to_empty) const {
+  DCHECK(tservers_to_empty);
+  tservers_to_empty->clear();
+  for (const auto& ts_summary : raw_info.tserver_summaries) {
+    if (ts_summary.health == ServerHealth::HEALTHY &&
+        ContainsKey(config_.ignored_tservers, ts_summary.uuid)) {
+      tservers_to_empty->emplace(ts_summary.uuid);
+    }
+  }
+}
+
+void Rebalancer::BuildTServersToEmptyInfo(const ClusterRawInfo& raw_info,
+                                          const MovesInProgress& moves_in_progress,
+                                          const unordered_set<string>& tservers_to_empty,
+                                          TServersToEmptyMap* tservers_to_empty_map) {
+  DCHECK(tservers_to_empty_map);
+  tservers_to_empty_map->clear();
+  for (const auto& tablet_summary : raw_info.tablet_summaries) {
+    if (ContainsKey(moves_in_progress, tablet_summary.id)) {
+      continue;
+    }
+    if (tablet_summary.result != cluster_summary::HealthCheckResult::HEALTHY &&
+        tablet_summary.result != cluster_summary::HealthCheckResult::RECOVERING) {
+      LOG(INFO) << Substitute(
+          "tablet $0: not considering replicas for movement "
+          "since the tablet's status is '$1'",
+          tablet_summary.id,
+          cluster_summary::HealthCheckResultToString(tablet_summary.result));
+      continue;
+    }
+    TabletInfo tablet_info;
+    for (const auto& replica_info : tablet_summary.replicas) {
+      if (replica_info.is_leader && replica_info.consensus_state) {
+        const auto& cstate = *replica_info.consensus_state;
+        if (cstate.opid_index) {
+          tablet_info.tablet_id = tablet_summary.id;
+          tablet_info.config_idx = *cstate.opid_index;
+          break;
+        }
+      }
+    }
+    for (const auto& replica_info : tablet_summary.replicas) {
+      if (!ContainsKey(tservers_to_empty, replica_info.ts_uuid)) {
+        continue;
+      }
+      auto& tablets =
+          LookupOrEmplace(tservers_to_empty_map, replica_info.ts_uuid, vector<TabletInfo>());
+      tablets.emplace_back(tablet_info);
+    }
+  }
 }
 
 void BuildTabletExtraInfoMap(

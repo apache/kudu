@@ -88,10 +88,6 @@ struct ClusterInfo {
 
   // Locality information for a cluster.
   ClusterLocalityInfo locality;
-
-  // Mapping tserver identifier --> total replica count on the server.
-  // Replicas on these tablet servers need to move to other tservers in the cluster.
-  std::unordered_map<std::string, int> tservers_to_empty;
 };
 
 // A directive to move some replica of a table between two tablet servers.
