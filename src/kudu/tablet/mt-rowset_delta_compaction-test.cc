@@ -109,7 +109,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     RowBlockMemory mem(1024);
     RowBlock dst(&schema_, 1000, &mem);
     RowIteratorOptions opts;
-    opts.projection = &schema_;
+    opts.projection = schema_ptr_;
     unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
     uint32_t expected = NoBarrier_Load(&update_counter_);

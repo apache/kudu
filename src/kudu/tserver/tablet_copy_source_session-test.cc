@@ -137,7 +137,7 @@ class TabletCopyTest : public KuduTabletTest {
                         fs_manager(),
                         /*file_cache=*/ nullptr,
                         tablet()->tablet_id(),
-                        *tablet()->schema(),
+                        tablet()->schema(),
                         /*schema_version=*/ 0,
                         /*metric_entity=*/ nullptr,
                         &log));

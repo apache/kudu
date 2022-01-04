@@ -310,8 +310,9 @@ class TabletTestBase : public KuduTabletTest {
                  TabletHarness::Options::ClockType::LOGICAL_CLOCK) :
     KuduTabletTest(TESTSETUP::CreateSchema(), clock_type),
     setup_(),
-    max_rows_(setup_.GetMaxRows())
-  {}
+    max_rows_(setup_.GetMaxRows()) {
+      client_schema_ptr_ = std::make_shared<Schema>(client_schema_);
+  }
 
   // Inserts "count" rows.
   void InsertTestRows(int64_t first_row,
@@ -439,7 +440,7 @@ class TabletTestBase : public KuduTabletTest {
   void VerifyTestRowsWithVerifier(int32_t first_row, uint64_t expected_count,
                                   const boost::optional<TestRowVerifier>& verifier) {
     std::unique_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    ASSERT_OK(tablet()->NewRowIterator(client_schema_ptr_, &iter));
     VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
   }
 
@@ -447,7 +448,7 @@ class TabletTestBase : public KuduTabletTest {
                                               Timestamp timestamp,
                                               const boost::optional<TestRowVerifier>& verifier) {
     RowIteratorOptions opts;
-    opts.projection = &client_schema_;
+    opts.projection = client_schema_ptr_;
     opts.snap_to_include = MvccSnapshot(timestamp);
     std::unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(std::move(opts), &iter));
@@ -520,7 +521,7 @@ class TabletTestBase : public KuduTabletTest {
   // a very small number of rows.
   Status IterateToStringList(std::vector<std::string> *out) {
     std::unique_ptr<RowwiseIterator> iter;
-    RETURN_NOT_OK(this->tablet()->NewRowIterator(this->client_schema_, &iter));
+    RETURN_NOT_OK(this->tablet()->NewRowIterator(this->client_schema_ptr_, &iter));
     RETURN_NOT_OK(iter->Init(nullptr));
     return kudu::tablet::IterateToStringList(iter.get(), out);
   }
@@ -545,6 +546,7 @@ class TabletTestBase : public KuduTabletTest {
 
   TESTSETUP setup_;
 
+  SchemaPtr client_schema_ptr_;
   const uint64_t max_rows_;
 };
 

@@ -211,7 +211,7 @@ class RollingDiskRowSetWriter {
 
   int64_t rows_written_count() const { return written_count_; }
 
-  const Schema &schema() const { return schema_; }
+  const Schema &schema() const { return *schema_.get(); }
 
   // Return the set of rowset paths that were written by this writer.
   // This must only be called after Finish() returns an OK result.
@@ -243,7 +243,7 @@ class RollingDiskRowSetWriter {
   State state_;
 
   TabletMetadata* tablet_metadata_;
-  const Schema schema_;
+  const SchemaPtr schema_;
   std::shared_ptr<RowSetMetadata> cur_drs_metadata_;
   const BloomFilterSizing bloom_sizing_;
   const size_t target_rowset_size_;
@@ -362,7 +362,7 @@ class DiskRowSet :
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
                                 std::unique_ptr<RowwiseIterator>* out) const override;
 
-  virtual Status NewCompactionInput(const Schema* projection,
+  virtual Status NewCompactionInput(const SchemaPtr& projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
                                     std::unique_ptr<CompactionInput>* out) const override;

@@ -161,7 +161,8 @@ Status WriteOp::Prepare() {
   TRACE_EVENT0("op", "WriteOp::Prepare");
   TRACE("PREPARE: Starting.");
   // Decode everything first so that we give up if something major is wrong.
-  Schema client_schema;
+  SchemaPtr client_schema_ptr(new Schema);
+  Schema& client_schema = *client_schema_ptr.get();
   RETURN_NOT_OK_PREPEND(SchemaFromPB(state_->request()->schema(), &client_schema),
                         "Cannot decode client schema");
   if (client_schema.has_column_ids()) {

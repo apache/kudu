@@ -37,6 +37,7 @@
 #include <sparsehash/dense_hash_map>
 
 #include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/macros.h"
@@ -72,10 +73,8 @@ class MetricRegistry;
 class MonitoredTask;
 class NodeInstancePB;
 class PartitionPB;
-class Schema;
 class TableExtraConfigPB;
 class ThreadPool;
-struct ColumnId;
 
 // Working around FRIEND_TEST() ugliness.
 namespace client {
@@ -1056,8 +1055,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status DeleteTskEntries(const std::set<std::string>& entry_ids);
 
   Status ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
-                               std::vector<AlterTableRequestPB::Step> steps,
-                               Schema* new_schema,
+                               const std::vector<AlterTableRequestPB::Step>& steps,
+                               SchemaPtr* new_schema,
                                ColumnId* next_col_id);
 
   Status ApplyAlterPartitioningSteps(const TableMetadataLock& l,

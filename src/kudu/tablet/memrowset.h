@@ -194,10 +194,10 @@ struct MSBTreeTraits : public btree::BTreeTraits {
 // points into that stack storage.
 #define DEFINE_MRSROW_ON_STACK(memrowset, varname, slice_name) \
   size_t varname##_size = sizeof(MRSRow::Header) + \
-                           ContiguousRowHelper::row_size((memrowset)->schema_nonvirtual()); \
+                           ContiguousRowHelper::row_size(*(memrowset)->schema_nonvirtual().get()); \
   uint8_t varname##_storage[varname##_size]; \
   Slice slice_name(varname##_storage, varname##_size); \
-  ContiguousRowHelper::InitNullsBitmap((memrowset)->schema_nonvirtual(), slice_name); \
+  ContiguousRowHelper::InitNullsBitmap(*(memrowset)->schema_nonvirtual().get(), slice_name); \
   MRSRow varname(memrowset, slice_name);
 
 
@@ -213,7 +213,7 @@ class MemRowSet : public RowSet,
   class Iterator;
 
   static Status Create(int64_t id,
-                       const Schema& schema,
+                       const SchemaPtr& schema,
                        log::LogAnchorRegistry* log_anchor_registry,
                        std::shared_ptr<MemTracker> parent_tracker,
                        std::shared_ptr<MemRowSet>* mrs);
@@ -221,7 +221,7 @@ class MemRowSet : public RowSet,
   // Create() variant for a MRS that get inserted to by a single transaction of
   // the given transaction ID and metadata.
   static Status Create(int64_t id,
-                       const Schema& schema,
+                       const SchemaPtr& schema,
                        int64_t txn_id,
                        scoped_refptr<TxnMetadata> txn_metadata,
                        log::LogAnchorRegistry* log_anchor_registry,
@@ -340,18 +340,18 @@ class MemRowSet : public RowSet,
                                 std::unique_ptr<RowwiseIterator>* out) const override;
 
   // Create compaction input.
-  virtual Status NewCompactionInput(const Schema* projection,
+  virtual Status NewCompactionInput(const SchemaPtr& projection,
                                     const MvccSnapshot& snap,
                                     const fs::IOContext* io_context,
                                     std::unique_ptr<CompactionInput>* out) const override;
 
   // Return the Schema for the rows in this memrowset.
-   const Schema &schema() const {
+   const SchemaPtr schema() const {
     return schema_;
   }
 
   // Same as schema(), but non-virtual method
-  const Schema& schema_nonvirtual() const {
+  const SchemaPtr schema_nonvirtual() const {
     return schema_;
   }
 
@@ -456,7 +456,7 @@ class MemRowSet : public RowSet,
 
  protected:
   MemRowSet(int64_t id,
-            const Schema& schema,
+            const SchemaPtr schema,
             boost::optional<int64_t> txn_id,
             scoped_refptr<TxnMetadata> txn_metadata,
             log::LogAnchorRegistry* log_anchor_registry,
@@ -474,7 +474,7 @@ class MemRowSet : public RowSet,
   typedef btree::CBTree<MSBTreeTraits> MSBTree;
 
   int64_t id_;
-  const Schema schema_;
+  SchemaPtr schema_;
 
   // The transaction ID that inserted into this MemRowSet, and its corresponding metadata.
   boost::optional<int64_t> txn_id_;
@@ -573,8 +573,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return "memrowset iterator";
   }
 
-  const Schema& schema() const override {
-    return *opts_.projection;
+  const SchemaPtr schema() const override {
+    return opts_.projection;
   }
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const override {
@@ -583,7 +583,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     // an IteratorStats object for every column; vector::resize() is
     // used as it will also fill the 'stats' with new instances of
     // IteratorStats.
-    stats->resize(schema().num_columns());
+    stats->resize(schema()->num_columns());
   }
 
  private:
@@ -668,7 +668,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
 };
 
 inline const Schema* MRSRow::schema() const {
-  return &memrowset_->schema_nonvirtual();
+  return memrowset_->schema_nonvirtual().get();
 }
 
 } // namespace tablet

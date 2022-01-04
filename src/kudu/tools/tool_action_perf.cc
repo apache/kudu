@@ -979,9 +979,11 @@ Status TabletScan(const RunnerContext& context) {
   // Tablet has been bootstrapped and opened. We can now scan it.
   for (int i = 0; i < FLAGS_num_iters; i++) {
     LOG_TIMING(INFO, Substitute("scanning tablet (iter $0)", i)) {
-      Schema projection = tablet->schema()->CopyWithoutColumnIds();
+      SchemaPtr projection_ptr =
+          std::make_shared<Schema>(tablet->schema()->CopyWithoutColumnIds());
+      Schema& projection = *projection_ptr;
       RowIteratorOptions opts;
-      opts.projection = &projection;
+      opts.projection = projection_ptr;
       opts.order = FLAGS_ordered_scan ? ORDERED : UNORDERED;
       unique_ptr<RowwiseIterator> iter;
       RETURN_NOT_OK(tablet->NewRowIterator(std::move(opts), &iter));

@@ -351,7 +351,8 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     return;
   }
 
-  Schema schema;
+  SchemaPtr schema_ptr(new Schema);
+  Schema& schema = *schema_ptr.get();
   PartitionSchema partition_schema;
   map<string, string> extra_configs;
   vector<scoped_refptr<TabletInfo>> tablets;

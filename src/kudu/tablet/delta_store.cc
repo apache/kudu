@@ -31,7 +31,6 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
@@ -249,7 +248,7 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
   MaybeProcessPreviousRowChange(key.row_idx());
 
   VLOG(4) << "Considering delta " << key.ToString() << ": "
-          << RowChangeList(val).ToString(*opts_.projection);
+          << RowChangeList(val).ToString(*opts_.projection.get());
 
   // Different preparations may use different criteria for delta relevancy. Each
   // criteria offers a short-circuit when processing of the current row is known
@@ -304,7 +303,7 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
         RETURN_NOT_OK(decoder.DecodeNext(&dec));
         int col_idx;
         const void* col_val;
-        RETURN_NOT_OK(dec.Validate(*opts_.projection, &col_idx, &col_val));
+        RETURN_NOT_OK(dec.Validate(*opts_.projection.get(), &col_idx, &col_val));
         if (col_idx == -1) {
           // This column isn't being projected.
           continue;
@@ -569,7 +568,7 @@ template class DeltaPreparer<DeltaFilePreparerTraits<UNDO>>;
 
 Status DebugDumpDeltaIterator(DeltaType type,
                               DeltaIterator* iter,
-                              const Schema& schema,
+                              const SchemaPtr& schema,
                               size_t nrows,
                               vector<std::string>* out) {
   ScanSpec spec;
@@ -600,7 +599,7 @@ Status DebugDumpDeltaIterator(DeltaType type,
                       &cells,
                       &arena));
     for (const DeltaKeyAndUpdate& cell : cells) {
-      LOG_STRING(INFO, out) << cell.Stringify(type, schema, true /*pad_key*/ );
+      LOG_STRING(INFO, out) << cell.Stringify(type, *schema.get(), true /*pad_key*/ );
     }
 
     i += n;

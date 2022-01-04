@@ -56,6 +56,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
@@ -154,12 +155,12 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
     DCHECK(!read_block_);
 
     if (iwb_.encoded_bounds) {
-      decoded_bounds_.emplace(&schema(), decoded_bounds_memory);
+      decoded_bounds_.emplace(schema().get(), decoded_bounds_memory);
       decoded_bounds_->lower = decoded_bounds_->block.row(0);
       decoded_bounds_->upper = decoded_bounds_->block.row(1);
-      RETURN_NOT_OK(schema().DecodeRowKey(
+      RETURN_NOT_OK(schema()->DecodeRowKey(
           iwb_.encoded_bounds->first, &decoded_bounds_->lower, &decoded_bounds_memory->arena));
-      RETURN_NOT_OK(schema().DecodeRowKey(
+      RETURN_NOT_OK(schema()->DecodeRowKey(
           iwb_.encoded_bounds->second, &decoded_bounds_->upper, &decoded_bounds_memory->arena));
     } else {
       RETURN_NOT_OK(PullNextBlock());
@@ -191,8 +192,8 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
   }
 
   // Returns the schema from the underlying iterator.
-  const Schema& schema() const {
-    return DCHECK_NOTNULL(iwb_.iter)->schema();
+  const SchemaPtr schema() const {
+    return iwb_.iter->schema();
   }
 
   // Pulls the next block from the underlying iterator.
@@ -211,8 +212,8 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
 
   string ToString() const {
     return Substitute("[$0,$1]: $2",
-                      schema().DebugRowKey(next_row()),
-                      schema().DebugRowKey(last_row()),
+                      schema()->DebugRowKey(next_row()),
+                      schema()->DebugRowKey(last_row()),
                       iwb_.iter->ToString());
   }
 
@@ -286,7 +287,7 @@ Status MergeIterState::PullNextBlock() {
       << "should not pull next block until current block is exhausted";
 
   if (!read_block_) {
-    read_block_.reset(new RowBlock(&schema(), kMergeRowBuffer, &memory_));
+    read_block_.reset(new RowBlock(schema().get(), kMergeRowBuffer, &memory_));
   }
   while (iwb_.iter->HasNext()) {
     RETURN_NOT_OK(iwb_.iter->NextBlock(read_block_.get()));
@@ -479,7 +480,7 @@ class MergeIterator : public RowwiseIterator {
 
   virtual string ToString() const OVERRIDE;
 
-  virtual const Schema& schema() const OVERRIDE;
+  virtual const SchemaPtr schema() const OVERRIDE;
 
   virtual void GetIteratorStats(vector<IteratorStats>* stats) const OVERRIDE;
 
@@ -516,7 +517,7 @@ class MergeIterator : public RowwiseIterator {
   const MergeIteratorOptions opts_;
 
   // Initialized during Init.
-  unique_ptr<Schema> schema_;
+  SchemaPtr schema_;
 
   bool initted_;
 
@@ -556,7 +557,7 @@ class MergeIterator : public RowwiseIterator {
     bool operator()(const MergeIterState* a, const MergeIterState* b) const {
       // This is counter-intuitive, but it's because boost::heap defaults to
       // a max-heap; the comparator must be inverted to yield a min-heap.
-      return a->schema().Compare(a->next_row(), b->next_row()) > 0;
+      return a->schema()->Compare(a->next_row(), b->next_row()) > 0;
     }
   };
   typedef boost::heap::skew_heap<
@@ -611,15 +612,15 @@ Status MergeIterator::Init(ScanSpec *spec) {
   // It's important to do the verification after initializing the iterators, as
   // they may not know their own schemas until they've been initialized (in the
   // case of a union of unions).
-  schema_.reset(new Schema(states_.front().schema()));
+  schema_ = states_.front().schema();
   CHECK_GT(schema_->num_key_columns(), 0);
   finished_iter_stats_by_col_.resize(schema_->num_columns());
 #ifndef NDEBUG
   for (const auto& s : states_) {
-    if (!s.schema().Equals(*schema_)) {
+    if (!s.schema()->Equals(*schema_.get())) {
       return Status::InvalidArgument(
           Substitute("Schemas do not match: $0 vs. $1",
-                     schema_->ToString(), s.schema().ToString()));
+                     schema_->ToString(), s.schema()->ToString()));
     }
   }
 #endif
@@ -758,7 +759,7 @@ void MergeIterator::DestroySubIterator(MergeIterState* state) {
 Status MergeIterator::NextBlock(RowBlock* dst) {
   VLOG(3) << "Called NextBlock (" << dst->nrows() << " rows) on " << ToString();
   CHECK(initted_);
-  DCHECK_SCHEMA_EQ(*dst->schema(), schema());
+  DCHECK_SCHEMA_EQ(*dst->schema(), *schema().get());
 
   if (dst->arena()) {
     dst->arena()->Reset();
@@ -897,9 +898,9 @@ string MergeIterator::ToString() const {
   return Substitute("Merge($0 iters)", num_orig_iters_);
 }
 
-const Schema& MergeIterator::schema() const {
+const SchemaPtr MergeIterator::schema() const {
   CHECK(initted_);
-  return *schema_;
+  return schema_;
 }
 
 void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
@@ -939,10 +940,10 @@ class UnionIterator : public RowwiseIterator {
 
   string ToString() const OVERRIDE;
 
-  const Schema &schema() const OVERRIDE {
+  const SchemaPtr schema() const OVERRIDE {
     CHECK(initted_);
     CHECK(schema_.get() != NULL) << "Bad schema in " << ToString();
-    return *CHECK_NOTNULL(schema_.get());
+    return schema_;
   }
 
   virtual void GetIteratorStats(vector<IteratorStats>* stats) const OVERRIDE;
@@ -960,7 +961,7 @@ class UnionIterator : public RowwiseIterator {
   void PopFront();
 
   // Schema: initialized during Init()
-  unique_ptr<Schema> schema_;
+  SchemaPtr schema_;
 
   bool initted_;
 
@@ -1004,14 +1005,14 @@ Status UnionIterator::Init(ScanSpec *spec) {
   // It's important to do the verification after initializing the iterators, as
   // they may not know their own schemas until they've been initialized (in the
   // case of a union of unions).
-  schema_.reset(new Schema(iters_.front().iter->schema()));
+  schema_ = iters_.front().iter->schema();
   finished_iter_stats_by_col_.resize(schema_->num_columns());
 #ifndef NDEBUG
   for (const auto& i : iters_) {
-    if (!i.iter->schema().Equals(*schema_)) {
+    if (!i.iter->schema()->Equals(*schema_.get())) {
       return Status::InvalidArgument(
           Substitute("Schemas do not match: $0 vs. $1",
-                     schema_->ToString(), i.iter->schema().ToString()));
+                     schema_->ToString(), i.iter->schema()->ToString()));
     }
   }
 #endif
@@ -1125,7 +1126,7 @@ class MaterializingIterator : public RowwiseIterator {
 
   string ToString() const OVERRIDE;
 
-  const Schema &schema() const OVERRIDE {
+  const SchemaPtr schema() const OVERRIDE {
     return iter_->schema();
   }
 
@@ -1170,7 +1171,7 @@ MaterializingIterator::MaterializingIterator(unique_ptr<ColumnwiseIterator> iter
 Status MaterializingIterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(iter_->Init(spec));
 
-  const int32_t num_columns = schema().num_columns();
+  const int32_t num_columns = schema()->num_columns();
   col_idx_predicates_.clear();
   non_predicate_column_indexes_.clear();
   if (PREDICT_FALSE(!disallow_pushdown_for_tests_) && spec != nullptr) {
@@ -1180,7 +1181,7 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
 
     for (const auto& col_pred : spec->predicates()) {
       const ColumnPredicate& pred = col_pred.second;
-      int col_idx = schema().find_column(pred.column().name());
+      int col_idx = schema()->find_column(pred.column().name());
       if (col_idx == Schema::kColumnNotFound) {
         return Status::InvalidArgument("No such column", col_pred.first);
       }
@@ -1189,7 +1190,7 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
     }
 
     for (int32_t col_idx = 0; col_idx < num_columns; col_idx++) {
-      if (!ContainsKey(spec->predicates(), schema().column(col_idx).name())) {
+      if (!ContainsKey(spec->predicates(), schema()->column(col_idx).name())) {
         non_predicate_column_indexes_.emplace_back(col_idx);
       }
     }
@@ -1366,7 +1367,7 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
 
   string ToString() const OVERRIDE;
 
-  const Schema &schema() const OVERRIDE {
+  const SchemaPtr schema() const OVERRIDE {
     return base_iter_->schema();
   }
 
@@ -1420,7 +1421,7 @@ Status PredicateEvaluatingIterator::Init(ScanSpec *spec) {
     const auto& col_name = col_pred.first;
     const ColumnPredicate& pred = col_pred.second;
     DCHECK_EQ(col_name, pred.column().name());
-    int col_idx = schema().find_column(col_name);
+    int col_idx = schema()->find_column(col_name);
     if (col_idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument("No such column", col_name);
     }

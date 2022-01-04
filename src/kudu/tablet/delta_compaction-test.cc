@@ -195,8 +195,9 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
 
   // Merge
   const Schema& merge_schema = schemas.back();
+  SchemaPtr merge_schema_ptr = std::make_shared<Schema>(merge_schema);
   RowIteratorOptions opts;
-  opts.projection = &merge_schema;
+  opts.projection = merge_schema_ptr;
   unique_ptr<DeltaIterator> merge_iter;
   ASSERT_OK(DeltaIteratorMerger::Create(inputs, opts, &merge_iter));
   unique_ptr<DeltaFileWriter> dfw;
@@ -213,7 +214,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   ASSERT_OK(dfr->NewDeltaIterator(opts, &iter));
 
   vector<string> results;
-  ASSERT_OK(DebugDumpDeltaIterator(REDO, iter.get(), merge_schema,
+  ASSERT_OK(DebugDumpDeltaIterator(REDO, iter.get(), merge_schema_ptr,
                                    ITERATE_OVER_ALL_ROWS, &results));
   for (const string &str : results) {
     VLOG(1) << str;

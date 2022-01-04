@@ -2015,7 +2015,7 @@ TEST_F(ToolTest, TestWalDump) {
                         &fs,
                         /*file_cache*/nullptr,
                         kTestTablet,
-                        kSchemaWithIds,
+                        std::make_shared<Schema>(kSchemaWithIds),
                         0, // schema_version
                         /*metric_entity*/nullptr,
                         &log));
@@ -2139,7 +2139,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
   scoped_refptr<TabletMetadata> meta;
   ASSERT_OK(TabletMetadata::CreateNew(
       &fs, kTestTablet, kTestTableName, kTestTableId,
-      kSchemaWithIds, partition.first, partition.second,
+      std::make_shared<Schema>(kSchemaWithIds), partition.first, partition.second,
       tablet::TABLET_DATA_READY,
       /*tombstone_last_logged_opid=*/ boost::none,
       /*supports_live_row_count=*/ true,
@@ -2177,7 +2177,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
         kSchemaWithIds);
   scoped_refptr<TabletMetadata> meta;
   TabletMetadata::CreateNew(&fs, kTestTablet, kTestTableName, kTestTableId,
-                  kSchemaWithIds, partition.first, partition.second,
+                  std::make_shared<Schema>(kSchemaWithIds), partition.first, partition.second,
                   tablet::TABLET_DATA_READY,
                   /*tombstone_last_logged_opid=*/ boost::none,
                   /*supports_live_row_count=*/ true,
@@ -2195,7 +2195,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   // Verify the contents of the metadata output
   SCOPED_TRACE(stdout);
   string debug_str = meta->partition_schema()
-      .PartitionDebugString(meta->partition(), meta->schema());
+      .PartitionDebugString(meta->partition(), *meta->schema());
   StripWhiteSpace(&debug_str);
   ASSERT_STR_CONTAINS(stdout, debug_str);
   debug_str = Substitute("Table name: $0 Table id: $1",
@@ -2203,7 +2203,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   ASSERT_STR_CONTAINS(stdout, debug_str);
   debug_str = Substitute("Schema (version=$0):", meta->schema_version());
   ASSERT_STR_CONTAINS(stdout, debug_str);
-  debug_str = meta->schema().ToString();
+  debug_str = meta->schema()->ToString();
   StripWhiteSpace(&debug_str);
   ASSERT_STR_CONTAINS(stdout, debug_str);
 
@@ -2346,7 +2346,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 
     SCOPED_TRACE(stdout);
     debug_str = meta->partition_schema()
-        .PartitionDebugString(meta->partition(), meta->schema());
+        .PartitionDebugString(meta->partition(), *meta->schema());
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, debug_str);
     debug_str = Substitute("Table name: $0 Table id: $1",
@@ -2355,7 +2355,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     debug_str = Substitute("Schema (version=$0):", meta->schema_version());
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, debug_str);
-    debug_str = meta->schema().ToString();
+    debug_str = meta->schema()->ToString();
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, debug_str);
 

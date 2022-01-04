@@ -31,9 +31,9 @@
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowid.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/status.h"
@@ -41,12 +41,11 @@
 
 namespace kudu {
 
+class Arena;
 class MonoTime; // IWYU pragma: keep
 class RowChangeList;
 class RowwiseIterator;
-class Schema;
 class Slice;
-struct ColumnId;
 struct IterWithBounds;
 
 namespace consensus {
@@ -72,7 +71,7 @@ struct RowIteratorOptions {
   // The projection to use in the iteration.
   //
   // Defaults to nullptr.
-  const Schema* projection;
+  SchemaPtr projection;
 
   // Ops not committed in this snapshot will be ignored in the iteration.
   //
@@ -153,7 +152,7 @@ class RowSet {
   //
   // The provided 'projection' is for the compaction output. Each row
   // will be projected into this Schema.
-  virtual Status NewCompactionInput(const Schema* projection,
+  virtual Status NewCompactionInput(const SchemaPtr& projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
                                     std::unique_ptr<CompactionInput>* out) const = 0;
@@ -400,7 +399,7 @@ class DuplicatingRowSet : public RowSet {
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
                                 std::unique_ptr<RowwiseIterator>* out) const override;
 
-  virtual Status NewCompactionInput(const Schema* projection,
+  virtual Status NewCompactionInput(const SchemaPtr& projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
                                     std::unique_ptr<CompactionInput>* out) const override;

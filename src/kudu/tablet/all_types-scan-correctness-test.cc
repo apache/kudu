@@ -363,7 +363,7 @@ public:
     } else {
       default_ptr = rowops_.GenerateElement(read_default);
     }
-    SchemaBuilder builder(tablet()->metadata()->schema());
+    SchemaBuilder builder(*tablet()->metadata()->schema());
     builder.RemoveColumn("val_c");
     ASSERT_OK(builder.AddColumn("val_c", rowops_.type_, true, default_ptr, nullptr));
     AlterSchema(builder.Build());
@@ -383,7 +383,8 @@ public:
     *count = 0;
     spec.OptimizeScan(schema, &arena, true);
     unique_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(schema, &iter));
+    SchemaPtr schema_ptr = std::make_shared<Schema>(schema);
+    ASSERT_OK(tablet()->NewRowIterator(schema_ptr, &iter));
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicate.";
     ASSERT_OK(SilentIterateToStringList(iter.get(), count));

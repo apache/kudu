@@ -47,6 +47,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset.h"
@@ -220,7 +221,7 @@ CFileReader* CFileSet::key_index_reader() const {
   // If there is no special index cfile, then we have a non-compound key
   // and we can just use the key column.
   // This is always the first column listed in the tablet schema.
-  int key_col_id = tablet_schema().column_id(0);
+  int key_col_id = tablet_schema()->column_id(0);
   return FindOrDie(readers_by_col_id_, key_col_id).get();
 }
 
@@ -233,7 +234,7 @@ Status CFileSet::NewColumnIterator(ColumnId col_id,
 }
 
 unique_ptr<CFileSet::Iterator> CFileSet::NewIterator(
-    const Schema* projection,
+    SchemaPtr projection,
     const IOContext* io_context) const {
   return unique_ptr<CFileSet::Iterator>(
       new CFileSet::Iterator(shared_from_this(), projection, io_context));
@@ -423,7 +424,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 
   Schema key_schema_for_vlog;
   if (VLOG_IS_ON(1)) {
-    key_schema_for_vlog = base_data_->tablet_schema().CreateKeyProjection();
+    key_schema_for_vlog = base_data_->tablet_schema()->CreateKeyProjection();
   }
 
   const auto* lb_key = spec->lower_bound_key();
@@ -463,6 +464,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 
       VLOG(1) << "Pushed upper bound value "
               << ub_key->Stringify(key_schema_for_vlog)
+              << spec->exclusive_upper_bound_key()->Stringify(key_schema_for_vlog)
               << " as row_idx < " << upper_bound_idx_;
     }
   }

@@ -29,6 +29,7 @@
 
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowid.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -43,9 +44,7 @@ namespace kudu {
 class Arena;
 class ColumnBlock;
 class ScanSpec;
-class Schema;
 class SelectionVector;
-struct ColumnId;
 
 namespace fs {
 struct IOContext;
@@ -573,7 +572,7 @@ enum { ITERATE_OVER_ALL_ROWS = 0 };
 // If 'nrows' is ITERATE_OVER_ALL_ROWS, all rows will be dumped.
 Status DebugDumpDeltaIterator(DeltaType type,
                               DeltaIterator* iter,
-                              const Schema& schema,
+                              const SchemaPtr& schema,
                               size_t nrows,
                               std::vector<std::string>* out);
 

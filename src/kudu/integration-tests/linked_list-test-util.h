@@ -564,11 +564,13 @@ inline Status LinkedListTester::VerifyLinkedListLocal(
                               GenerateSplitInts());
   verifier.StartScanTimer();
 
-  const Schema* tablet_schema = tablet->schema();
+  const Schema* tablet_schema = tablet->schema().get();
   // Cannot use schemas with col indexes in a scan (assertions fire).
-  Schema projection(tablet_schema->columns(), tablet_schema->num_key_columns());
+  SchemaPtr projection_ptr(
+      new Schema(tablet_schema->columns(), tablet_schema->num_key_columns()));
+  Schema& projection = *projection_ptr.get();
   std::unique_ptr<RowwiseIterator> iter;
-  RETURN_NOT_OK_PREPEND(tablet->NewRowIterator(projection, &iter),
+  RETURN_NOT_OK_PREPEND(tablet->NewRowIterator(projection_ptr, &iter),
                         "Cannot create new row iterator");
   RETURN_NOT_OK_PREPEND(iter->Init(nullptr), "Cannot initialize row iterator");
 

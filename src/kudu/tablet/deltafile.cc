@@ -385,9 +385,9 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, const IOContext* io_con
   // TODO(todd): would be nice to avoid allocation here, but we don't want to
   // duplicate all the logic from NewDeltaIterator. So, we'll heap-allocate
   // for now.
-  Schema empty_schema;
+  SchemaPtr empty_schema_ptr = std::make_shared<Schema>();
   RowIteratorOptions opts;
-  opts.projection = &empty_schema;
+  opts.projection = empty_schema_ptr;
   opts.io_context = io_context;
   unique_ptr<DeltaIterator> iter;
   Status s = NewDeltaIterator(opts, &iter);
@@ -703,7 +703,7 @@ Status DeltaFileIterator<Type>::AddDeltas(rowid_t start_row, rowid_t stop_row) {
         RowChangeList rcl(slice);
         DVLOG(3) << "Visited " << DeltaType_Name(DeltaTypeSelector<Type>::kTag)
                  << " delta for key: " << key.ToString() << " Mut: "
-                 << rcl.ToString(*preparer_.opts().projection)
+                 << rcl.ToString(*preparer_.opts().projection.get())
                  << " Continue?: " << (!finished_row ? "TRUE" : "FALSE");
       }
     }

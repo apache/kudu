@@ -104,12 +104,13 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     // Warm up code cache with all the projections we'll be using.
     unique_ptr<RowwiseIterator> iter;
-    CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    client_schema_ptr_ = std::make_shared<Schema>(client_schema_);
+    CHECK_OK(tablet()->NewRowIterator(client_schema_ptr_, &iter));
     uint64_t count;
     CHECK_OK(tablet()->CountRows(&count));
-    const Schema* schema = tablet()->schema();
+    const Schema* schema = tablet()->schema().get();
     ColumnSchema valcol = schema->column(schema->find_column("val"));
-    valcol_projection_ = Schema({ valcol }, 0);
+    valcol_projection_ = std::make_shared<Schema>(Schema({ valcol }, 0));
     CHECK_OK(tablet()->NewRowIterator(valcol_projection_, &iter));
     codegen::CompilationManager::GetSingleton()->Wait();
 
@@ -160,7 +161,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     while (running_insert_count_.count() > 0) {
       unique_ptr<RowwiseIterator> iter;
-      CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
+      CHECK_OK(tablet()->NewRowIterator(client_schema_ptr_, &iter));
       CHECK_OK(iter->Init(nullptr));
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
@@ -228,7 +229,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     while (running_insert_count_.count() > 0) {
       unique_ptr<RowwiseIterator> iter;
-      CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
+      CHECK_OK(tablet()->NewRowIterator(client_schema_ptr_, &iter));
       CHECK_OK(iter->Init(nullptr));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
@@ -255,7 +256,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     RowBlockMemory mem(1024);  // unused, just scanning ints
 
     static const int kBufInts = 1024*1024 / 8;
-    RowBlock block(&valcol_projection_, kBufInts, &mem);
+    RowBlock block(valcol_projection_.get(), kBufInts, &mem);
     ColumnBlock column = block.column_block(0);
 
     uint64_t count_since_report = 0;
@@ -457,9 +458,10 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   vector<thread> threads_;
   CountDownLatch running_insert_count_;
 
+  SchemaPtr client_schema_ptr_;
   // Projection with only an int column.
   // This is provided by both harnesses.
-  Schema valcol_projection_;
+  SchemaPtr valcol_projection_;
 
   TimeSeriesCollector ts_collector_;
 };

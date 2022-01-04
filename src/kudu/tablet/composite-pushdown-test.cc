@@ -117,8 +117,9 @@ class CompositePushdownTest : public KuduTabletTest {
   void ScanTablet(ScanSpec *spec, vector<string> *results, const char *descr) {
     SCOPED_TRACE(descr);
 
+    SchemaPtr schema_ptr = std::make_shared<Schema>(client_schema_);
     unique_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    ASSERT_OK(tablet()->NewRowIterator(schema_ptr, &iter));
     ASSERT_OK(iter->Init(spec));
     ASSERT_TRUE(spec->predicates().empty()) << "Should have accepted all predicates";
     LOG_TIMING(INFO, descr) {

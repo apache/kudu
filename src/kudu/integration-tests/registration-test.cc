@@ -142,7 +142,7 @@ void CreateTableForTesting(MiniMaster* mini_master,
 class RegistrationTest : public KuduTest {
  public:
   RegistrationTest()
-      : schema_({ ColumnSchema("c1", UINT32) }, 1) {
+      : schema_(new Schema({ ColumnSchema("c1", UINT32) }, 1)) {
   }
 
   void SetUp() override {
@@ -219,7 +219,7 @@ class RegistrationTest : public KuduTest {
 
  protected:
   unique_ptr<InternalMiniCluster> cluster_;
-  Schema schema_;
+  SchemaPtr schema_;
   int64_t setup_time_;
 };
 
@@ -311,7 +311,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
   // Add a table, make sure it reports itself.
   string tablet_id_1;
   NO_FATALS(CreateTableForTesting(
-      cluster_->mini_master(), "tablet-reports-1", schema_, &tablet_id_1));
+      cluster_->mini_master(), "tablet-reports-1", *schema_.get(), &tablet_id_1));
   TabletLocationsPB locs_1;
   ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs_1));
   ASSERT_EQ(1, locs_1.interned_replicas_size());
@@ -325,7 +325,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
   // Add another table, make sure it is reported via incremental.
   string tablet_id_2;
   NO_FATALS(CreateTableForTesting(
-      cluster_->mini_master(), "tablet-reports-2", schema_, &tablet_id_2));
+      cluster_->mini_master(), "tablet-reports-2", *schema_.get(), &tablet_id_2));
   ASSERT_OK(WaitForReplicaCount(tablet_id_2, 1));
 
   // Shut down the whole system, bring it back up, and make sure the tablets

@@ -85,8 +85,8 @@ class CompilationTask {
   // of this object.
   CompilationTask(const Schema& base, const Schema& proj, CodeCache* cache,
                   CodeGenerator* generator)
-    : base_(base),
-      proj_(proj),
+    : base_(new Schema(base)),
+      proj_(new Schema(proj)),
       cache_(cache),
       generator_(generator) {}
 
@@ -97,14 +97,14 @@ class CompilationTask {
     // now so there's nowhere to return the status to.
     WARN_NOT_OK(RunWithStatus(),
                 "Failed compilation of row projector from base schema " +
-                base_.ToString() + " to projection schema " +
-                proj_.ToString());
+                base_->ToString() + " to projection schema " +
+                proj_->ToString());
   }
 
  private:
   Status RunWithStatus() {
     faststring key;
-    RETURN_NOT_OK(RowProjectorFunctions::EncodeKey(base_, proj_, &key));
+    RETURN_NOT_OK(RowProjectorFunctions::EncodeKey(*base_.get(), *proj_.get(), &key));
 
     // Check again to make sure we didn't compile it already.
     // This can occur if we request the same schema pair while the
@@ -113,15 +113,15 @@ class CompilationTask {
 
     scoped_refptr<RowProjectorFunctions> functions;
     LOG_TIMING_IF(INFO, FLAGS_codegen_time_compilation, "code-generating row projector") {
-      RETURN_NOT_OK(generator_->CompileRowProjector(base_, proj_, &functions));
+      RETURN_NOT_OK(generator_->CompileRowProjector(*base_.get(), *proj_.get(), &functions));
     }
 
     RETURN_NOT_OK(cache_->AddEntry(functions));
     return Status::OK();
   }
 
-  Schema base_;
-  Schema proj_;
+  SchemaPtr base_;
+  SchemaPtr proj_;
   CodeCache* const cache_;
   CodeGenerator* const generator_;
 

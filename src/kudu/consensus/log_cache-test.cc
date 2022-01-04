@@ -90,11 +90,12 @@ class LogCacheTest : public KuduTest {
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
+    SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
     CHECK_OK(log::Log::Open(log::LogOptions(),
                             fs_manager_.get(),
                             /*file_cache*/nullptr,
                             kTestTablet,
-                            schema_,
+                            schema_ptr,
                             0, // schema_version
                             /*metric_entity*/nullptr,
                             &log_));

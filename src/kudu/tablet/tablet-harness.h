@@ -90,12 +90,13 @@ class TabletHarness {
     }
     RETURN_NOT_OK(fs_manager_->Open());
 
+    SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
     scoped_refptr<TabletMetadata> metadata;
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                options_.tablet_id,
                                                "KuduTableTest",
                                                "KuduTableTestId",
-                                               schema_,
+                                               schema_ptr,
                                                partition.first,
                                                partition.second,
                                                TABLET_DATA_READY,

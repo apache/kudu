@@ -96,7 +96,7 @@ Status AlterSchemaOp::Prepare() {
   TRACE("PREPARE ALTER-SCHEMA: Starting");
 
   // Decode schema
-  unique_ptr<Schema> schema(new Schema);
+  SchemaPtr schema(new Schema);
   Status s = SchemaFromPB(state_->request()->schema(), schema.get());
   if (!s.ok()) {
     state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
@@ -138,7 +138,7 @@ Status AlterSchemaOp::Apply(CommitMsg** commit_msg) {
   }
 
   state_->tablet_replica()->log()
-    ->SetSchemaForNextLogSegment(*DCHECK_NOTNULL(state_->schema()),
+    ->SetSchemaForNextLogSegment(*DCHECK_NOTNULL(state_->schema().get()),
                                  state_->schema_version());
 
   // Altered tablets should be included in the next tserver heartbeat so that

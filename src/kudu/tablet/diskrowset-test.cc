@@ -299,7 +299,8 @@ TEST_F(TestRowSet, TestDelete) {
   Status s;
 
   RowIteratorOptions opts;
-  opts.projection = &schema_;
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
+  opts.projection = schema_ptr;
   for (int i = 0; i < 2; i++) {
     // Reading the MVCC snapshot prior to deletion should show the row.
     opts.snap_to_include = snap_before_delete;
@@ -446,10 +447,11 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   // Ensure that MVCC is respected by reading the value at each of the stored
   // snapshots.
   ASSERT_EQ(5, snaps.size());
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
     RowIteratorOptions opts;
-    opts.projection = &schema_;
+    opts.projection = schema_ptr;
     opts.snap_to_include = snaps[i];
     unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
@@ -464,7 +466,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
     RowIteratorOptions opts;
-    opts.projection = &schema_;
+    opts.projection = schema_ptr;
     opts.snap_to_include = snaps[i];
     unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
@@ -544,11 +546,12 @@ TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
   unique_ptr<DeltaIterator> merge_iter;
-  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(nullptr, 0, num_stores - 1, &schema_,
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
+  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(nullptr, 0, num_stores - 1, schema_ptr,
                                                 &compacted_stores,
                                                 &compacted_blocks, &merge_iter));
   vector<string> results;
-  ASSERT_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
+  ASSERT_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_ptr,
                                           ITERATE_OVER_ALL_ROWS,
                                           &results));
   for (const string &str : results) {
@@ -624,11 +627,12 @@ TEST_F(TestRowSet, TestCompactStores) {
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
   unique_ptr<DeltaIterator> merge_iter;
-  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(nullptr, 0, num_stores - 1, &schema_,
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
+  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(nullptr, 0, num_stores - 1, schema_ptr,
                                                 &compacted_stores,
                                                 &compacted_blocks, &merge_iter));
   vector<string> results;
-  ASSERT_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
+  ASSERT_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_ptr,
                                    ITERATE_OVER_ALL_ROWS,
                                    &results));
   for (const string &str : results) {
@@ -790,7 +794,8 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
                                &read_default);
       col_ids.emplace_back(schema_.max_col_id() + 1);
     }
-    Schema projection(col_schemas, col_ids, 1);
+    SchemaPtr projection_ptr = std::make_shared<Schema>(col_schemas, col_ids, 1);
+    Schema& projection = *projection_ptr;
 
     // Set up the iterator.
     Timestamp ts1(ts1_val);
@@ -799,7 +804,7 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
                             ts1.ToString(), ts2.ToString(), projection.ToString()));
     RowIteratorOptions opts;
     opts.include_deleted_rows = include_deleted_rows;
-    opts.projection = &projection;
+    opts.projection = projection_ptr;
     opts.snap_to_exclude = MvccSnapshot(ts1);
     opts.snap_to_include = MvccSnapshot(ts2);
     unique_ptr<RowwiseIterator> iter;

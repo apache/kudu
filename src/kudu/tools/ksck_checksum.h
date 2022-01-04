@@ -40,8 +40,8 @@
 namespace kudu {
 
 namespace rpc {
-class PeriodicTimer;
 class Messenger;
+class PeriodicTimer;
 } // namespace rpc
 
 namespace tools {
@@ -104,15 +104,15 @@ typedef std::unordered_map<std::string, TabletChecksumResult> TabletChecksumResu
 
 // A convenience struct containing info needed to checksum a particular tablet.
 struct TabletChecksumInfo {
-  TabletChecksumInfo(std::shared_ptr<KsckTablet> tablet, Schema schema)
+  TabletChecksumInfo(std::shared_ptr<KsckTablet> tablet, const Schema& schema)
     : tablet(std::move(tablet)),
-      schema(std::move(schema)) {}
+      schema(new Schema(schema)) {}
 
   // The tablet to be checksummed.
   std::shared_ptr<KsckTablet> tablet;
 
   // The schema of the tablet's table.
-  Schema schema;
+  SchemaPtr schema;
 };
 
 typedef std::unordered_map<std::string, TabletChecksumInfo> TabletInfoMap;

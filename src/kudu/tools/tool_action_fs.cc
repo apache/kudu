@@ -549,7 +549,7 @@ string TabletInfo(Field field, const TabletMetadata& tablet) {
     case Field::kTabletId: return tablet.tablet_id();
     case Field::kPartition: return tablet.partition_schema()
                                          .PartitionDebugString(tablet.partition(),
-                                                               tablet.schema());
+                                                               *tablet.schema().get());
     default: LOG(FATAL) << "unhandled field (this is a bug): " << ToString(field);
   }
 }
@@ -575,7 +575,7 @@ string BlockInfo(Field field,
     case Field::kBlockKind: return block_kind;
 
     case Field::kColumn: if (column_id) {
-      return tablet.schema().column_by_id(*column_id).name();
+      return tablet.schema()->column_by_id(*column_id).name();
     } else { return ""; }
 
     case Field::kColumnId: if (column_id) {
@@ -597,8 +597,8 @@ string FormatCFileKeyMetadata(const TabletMetadata& tablet,
 
   Arena arena(1024);
   EncodedKey* key;
-  CHECK_OK(EncodedKey::DecodeEncodedString(tablet.schema(), &arena, value, &key));
-  return key->Stringify(tablet.schema());
+  CHECK_OK(EncodedKey::DecodeEncodedString(*tablet.schema().get(), &arena, value, &key));
+  return key->Stringify(*tablet.schema().get());
 }
 
 // Formats the delta stats property from CFile metadata.

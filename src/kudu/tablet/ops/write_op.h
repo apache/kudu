@@ -29,7 +29,7 @@
 #include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/row_operations.h"
-#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"

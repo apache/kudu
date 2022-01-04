@@ -176,12 +176,12 @@ class LogTestBase : public KuduTest {
   }
 
   Status BuildLog() {
-    Schema schema_with_ids = SchemaBuilder(schema_).Build();
+    SchemaPtr schema_with_ids_ptr = std::make_shared<Schema>(SchemaBuilder(schema_).Build());
     return Log::Open(options_,
                      fs_manager_.get(),
                      file_cache_.get(),
                      kTestTablet,
-                     schema_with_ids,
+                     schema_with_ids_ptr,
                      0, // schema_version
                      metric_entity_tablet_.get(),
                      &log_);

@@ -200,7 +200,8 @@ class TxnParticipantTest : public TabletReplicaTestBase {
 
   Status IterateToStrings(vector<string>* ret) {
     unique_ptr<RowwiseIterator> iter;
-    RETURN_NOT_OK(tablet_replica_->tablet()->NewRowIterator(GetTestSchema(), &iter));
+    SchemaPtr schema_ptr = std::make_shared<Schema>(GetTestSchema());
+    RETURN_NOT_OK(tablet_replica_->tablet()->NewRowIterator(schema_ptr, &iter));
     RETURN_NOT_OK(iter->Init(nullptr));
     vector<string> out;
     RETURN_NOT_OK(IterateToStringList(iter.get(), &out));

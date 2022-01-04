@@ -108,7 +108,7 @@ class TabletPushdownTest : public KuduTabletTest,
     spec.OptimizeScan(schema_, &arena, true);
 
     unique_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    ASSERT_OK(tablet()->NewRowIterator(client_schema_ptr_, &iter));
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
@@ -173,9 +173,9 @@ class TabletPushdownTest : public KuduTabletTest,
     Arena arena(128);
     spec.OptimizeScan(schema_, &arena, true);
 
-    Schema empty_schema(std::vector<ColumnSchema>(), 0);
+    SchemaPtr empty_schema_ptr = std::make_shared<Schema>(std::vector<ColumnSchema>(), 0);
     unique_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(empty_schema, &iter));
+    ASSERT_OK(tablet()->NewRowIterator(empty_schema_ptr, &iter));
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
@@ -266,7 +266,7 @@ TEST_F(TabletSparsePushdownTest, Kudu2231) {
   spec.AddPredicate(ColumnPredicate::Equality(schema_.column(1), &value));
 
   unique_ptr<RowwiseIterator> iter;
-  ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+  ASSERT_OK(tablet()->NewRowIterator(client_schema_ptr_, &iter));
   ASSERT_OK(iter->Init(&spec));
   ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 

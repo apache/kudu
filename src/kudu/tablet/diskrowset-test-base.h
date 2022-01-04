@@ -215,9 +215,11 @@ class TestRowSet : public KuduRowSetTest {
 
   void VerifyUpdatesWithRowIter(const DiskRowSet &rs,
                                 const std::unordered_set<uint32_t> &updated) {
-    Schema proj_val = CreateProjection(schema_, { "val" });
+    SchemaPtr proj_val_ptr = std::make_shared<Schema>(CreateProjection(schema_, { "val" }));
+    Schema& proj_val = *proj_val_ptr;
+
     RowIteratorOptions opts;
-    opts.projection = &proj_val;
+    opts.projection = proj_val_ptr;
     std::unique_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(nullptr));
@@ -264,7 +266,8 @@ class TestRowSet : public KuduRowSetTest {
     spec.OptimizeScan(schema_, &arena, true);
 
     RowIteratorOptions opts;
-    opts.projection = &schema_;
+    SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
+    opts.projection = schema_ptr;
     std::unique_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(&spec));
@@ -279,7 +282,8 @@ class TestRowSet : public KuduRowSetTest {
   static void IterateProjection(const DiskRowSet &rs, const Schema &schema,
                                 int expected_rows, bool do_log = true) {
     RowIteratorOptions opts;
-    opts.projection = &schema;
+    SchemaPtr schema_ptr = std::make_shared<Schema>(schema);
+    opts.projection = schema_ptr;
     std::unique_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(nullptr));

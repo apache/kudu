@@ -252,9 +252,9 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
   RETURN_NOT_OK(tablet::TabletMetadata::Load(fs_manager, kSysCatalogTabletId, &metadata));
 
   // Verify that the schema is the current one
-  if (!metadata->schema().Equals(BuildTableSchema())) {
+  if (!metadata->schema()->Equals(BuildTableSchema())) {
     // TODO: In this case we probably should execute the migration step.
-    return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
+    return(Status::Corruption("Unexpected schema", metadata->schema()->ToString()));
   }
 
   LOG(INFO) << "Verifying existing consensus state";
@@ -325,7 +325,8 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
 Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   // Create the new Metadata
   scoped_refptr<tablet::TabletMetadata> metadata;
-  Schema schema = BuildTableSchema();
+  SchemaPtr schema_ptr(new Schema(BuildTableSchema()));
+  Schema& schema = *schema_ptr;
   PartitionSchema partition_schema;
   RETURN_NOT_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema, &partition_schema));
 
@@ -338,7 +339,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
                                                   kSysCatalogTabletId,
                                                   table_name(),
                                                   table_id(),
-                                                  schema, partition_schema,
+                                                  schema_ptr, partition_schema,
                                                   partitions[0],
                                                   tablet::TABLET_DATA_READY,
                                                   /*tombstone_last_logged_opid=*/ boost::none,
@@ -780,12 +781,13 @@ Status SysCatalogTable::ProcessRows(
   ScanSpec spec;
   spec.AddPredicate(pred);
 
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
   unique_ptr<RowwiseIterator> iter;
-  RETURN_NOT_OK(tablet_replica_->tablet()->NewRowIterator(schema_, &iter));
+  RETURN_NOT_OK(tablet_replica_->tablet()->NewRowIterator(schema_ptr, &iter));
   RETURN_NOT_OK(iter->Init(&spec));
 
   RowBlockMemory mem(32 * 1024);
-  RowBlock block(&iter->schema(), 512, &mem);
+  RowBlock block(iter->schema().get(), 512, &mem);
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));
     const size_t nrows = block.nrows();

@@ -38,6 +38,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/cfile_set.h"
@@ -82,7 +83,8 @@ MajorDeltaCompaction::MajorDeltaCompaction(
     HistoryGcOpts history_gc_opts,
     string tablet_id)
     : fs_manager_(fs_manager),
-      base_schema_(base_schema),
+      base_schema_(new Schema(base_schema)),
+      partial_schema_(new Schema),
       column_ids_(std::move(col_ids)),
       history_gc_opts_(std::move(history_gc_opts)),
       base_data_(base_data),
@@ -102,9 +104,9 @@ string MajorDeltaCompaction::ColumnNamesToString() const {
   vector<string> col_names;
   col_names.reserve(column_ids_.size());
   for (ColumnId col_id : column_ids_) {
-    int col_idx = base_schema_.find_column_by_id(col_id);
+    int col_idx = base_schema_->find_column_by_id(col_id);
     if (col_idx != Schema::kColumnNotFound) {
-      col_names.push_back(base_schema_.column_by_id(col_id).ToString());
+      col_names.push_back(base_schema_->column_by_id(col_id).ToString());
     } else {
       col_names.push_back(Substitute("[deleted column id $0]", col_id));
     }
@@ -115,7 +117,7 @@ string MajorDeltaCompaction::ColumnNamesToString() const {
 Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   CHECK_EQ(state_, kInitialized);
 
-  unique_ptr<ColumnwiseIterator> old_base_data_cwise(base_data_->NewIterator(&partial_schema_,
+  unique_ptr<ColumnwiseIterator> old_base_data_cwise(base_data_->NewIterator(partial_schema_,
                                                                              io_context));
   unique_ptr<RowwiseIterator> old_base_data_rwise(
       NewMaterializingIterator(std::move(old_base_data_cwise)));
@@ -124,15 +126,15 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   spec.set_cache_blocks(false);
   RETURN_NOT_OK_PREPEND(
       old_base_data_rwise->Init(&spec),
-      "Unable to open iterator for specified columns (" + partial_schema_.ToString() + ")");
+      "Unable to open iterator for specified columns (" + partial_schema_->ToString() + ")");
 
   RETURN_NOT_OK(delta_iter_->Init(&spec));
   RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
 
   RowBlockMemory mem(32 * 1024);
-  RowBlock block(&partial_schema_, kRowsPerBlock, &mem);
+  RowBlock block(partial_schema_.get(), kRowsPerBlock, &mem);
 
-  DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
+  DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_->ToString() << ")";
   unique_ptr<DeltaStats> redo_stats(new DeltaStats);
   unique_ptr<DeltaStats> undo_stats(new DeltaStats);
   size_t nrows = 0;
@@ -221,7 +223,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
     for (const DeltaKeyAndUpdate& key_and_update : out) {
       RowChangeList update(key_and_update.cell);
       DVLOG(4) << "Keeping delta as REDO: "
-               << key_and_update.Stringify(DeltaType::REDO, base_schema_);
+               << key_and_update.Stringify(DeltaType::REDO, *base_schema_.get());
       RETURN_NOT_OK_PREPEND(new_redo_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
       WARN_NOT_OK(redo_stats->UpdateStats(key_and_update.key.timestamp(), update),
@@ -247,7 +249,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   transaction->CommitCreatedBlocks();
 
   DVLOG(1) << "Applied all outstanding deltas for columns "
-           << partial_schema_.ToString()
+           << partial_schema_->ToString()
            << ", and flushed the resulting rowsets and a total of "
            << redo_delta_mutations_written_
            << " REDO delta mutations and "
@@ -262,7 +264,7 @@ Status MajorDeltaCompaction::OpenBaseDataWriter() {
   CHECK(!base_data_writer_);
 
   unique_ptr<MultiColumnWriter> w(new MultiColumnWriter(fs_manager_,
-                                                        &partial_schema_,
+                                                        partial_schema_.get(),
                                                         tablet_id_));
   RETURN_NOT_OK(w->Open());
   base_data_writer_ = std::move(w);
@@ -323,7 +325,8 @@ Status MajorDeltaCompaction::Compact(const IOContext* io_context) {
   CHECK_EQ(state_, kInitialized);
 
   VLOG(1) << "Starting major delta compaction for columns " << ColumnNamesToString();
-  RETURN_NOT_OK(base_schema_.CreateProjectionByIdsIgnoreMissing(column_ids_, &partial_schema_));
+  RETURN_NOT_OK(base_schema_->CreateProjectionByIdsIgnoreMissing(column_ids_,
+                                                                 partial_schema_.get()));
 
   if (VLOG_IS_ON(1)) {
     for (const auto& ds : included_stores_) {
@@ -390,7 +393,7 @@ void MajorDeltaCompaction::CreateMetadataUpdate(
       // NOTE: It's possible that the base data has no data for this column in the
       // case that the column was added and removed in succession after the base
       // data was flushed.
-      CHECK_EQ(base_schema_.find_column_by_id(col_id), Schema::kColumnNotFound)
+      CHECK_EQ(base_schema_->find_column_by_id(col_id), Schema::kColumnNotFound)
         << "major compaction removing column " << col_id << " but still present in Schema!";
       if (base_data_->has_data_for_column_id(col_id)) {
         update->RemoveColumnId(col_id);

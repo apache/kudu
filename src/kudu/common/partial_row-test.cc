@@ -38,7 +38,7 @@ namespace kudu {
 class PartialRowTest : public KuduTest {
  public:
   PartialRowTest()
-    : schema_({ ColumnSchema("key", INT32),
+    : schema_(new Schema({ ColumnSchema("key", INT32),
                 ColumnSchema("int_val", INT32),
                 ColumnSchema("string_val", STRING, true),
                 ColumnSchema("binary_val", BINARY, true),
@@ -46,7 +46,7 @@ class PartialRowTest : public KuduTest {
                              ColumnStorageAttributes(), ColumnTypeAttributes(6, 2)),
                 ColumnSchema("varchar_val", VARCHAR, true, nullptr, nullptr,
                              ColumnStorageAttributes(), ColumnTypeAttributes(10)) },
-              1) {
+              1)) {
     SeedRandom();
   }
 
@@ -70,7 +70,7 @@ class PartialRowTest : public KuduTest {
     NO_COPY,
   };
 
-  Schema schema_;
+  SchemaPtr schema_;
 
   // Utility method to perform checks on copy/no-copy behavior of the
   // PartialRow::Set{Binary,String}{,Copy,NoCopy}() methods.
@@ -79,7 +79,7 @@ class PartialRowTest : public KuduTest {
       const std::function<Status(KuduPartialRow&, int, const Slice&)>& setter,
       int column_idx, CopyBehavior copy_behavior) {
 
-    KuduPartialRow row(&schema_);
+    KuduPartialRow row(schema_.get());
     string src_data = "src-data";
     ASSERT_OK(setter(row, column_idx, src_data));
 
@@ -124,7 +124,7 @@ class PartialRowTest : public KuduTest {
 };
 
 TEST_F(PartialRowTest, UnitTest) {
-  KuduPartialRow row(&schema_);
+  KuduPartialRow row(schema_.get());
   string enc_key;
 
   // Initially all columns are unset.
@@ -301,7 +301,7 @@ TEST_F(PartialRowTest, UnitTest) {
 }
 
 TEST_F(PartialRowTest, TestCopy) {
-  KuduPartialRow row(&schema_);
+  KuduPartialRow row(schema_.get());
 
   // The assignment operator is used in this test because it internally calls
   // the copy constructor.

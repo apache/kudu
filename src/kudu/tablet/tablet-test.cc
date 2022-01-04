@@ -503,7 +503,7 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
 
   // Now iterate the tablet and make sure the rows show up
   unique_ptr<RowwiseIterator> iter;
-  ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_, &iter));
+  ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_ptr_, &iter));
   ASSERT_OK(iter->Init(nullptr));
 
   ASSERT_TRUE(iter->HasNext());
@@ -572,7 +572,7 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
       const int rowsPerBlock = kNumRows / numBlocks;
       // Make a new ordered iterator for the current snapshot.
       RowIteratorOptions opts;
-      opts.projection = &this->client_schema_;
+      opts.projection = this->client_schema_ptr_;
       opts.snap_to_include = snap;
       opts.order = ORDERED;
       unique_ptr<RowwiseIterator> iter;
@@ -680,7 +680,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // Now iterate the tablet and make sure the rows show up.
   unique_ptr<RowwiseIterator> iter;
   const Schema& schema = this->client_schema_;
-  ASSERT_OK(this->tablet()->NewRowIterator(schema, &iter));
+  ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_ptr_, &iter));
   ASSERT_OK(iter->Init(nullptr));
   LOG(INFO) << "Created iter: " << iter->ToString();
 
@@ -1623,11 +1623,12 @@ TYPED_TEST(TestTablet, TestDiffScanUnobservableOperations) {
     bool read_default = false;
     col_schemas.emplace_back("is_deleted", IS_DELETED, /*is_nullable=*/ false,
                              &read_default);
-    Schema projection(col_schemas, this->client_schema().num_key_columns());
+    SchemaPtr projection_ptr = std::make_shared<Schema>(
+        col_schemas, this->client_schema().num_key_columns());
 
     // Do the diff scan.
     RowIteratorOptions opts;
-    opts.projection = &projection;
+    opts.projection = projection_ptr;
     opts.snap_to_exclude = MvccSnapshot(Timestamp(1));
     opts.snap_to_include = MvccSnapshot(Timestamp(2));
     opts.include_deleted_rows = true;

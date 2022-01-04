@@ -107,7 +107,7 @@ class SegmentAllocator {
   // 'schema' and 'schema_version' define the initial schema for the Log.
   SegmentAllocator(const LogOptions* opts,
                    const LogContext* ctx,
-                   Schema schema,
+                   SchemaPtr schema,
                    uint32_t schema_version);
 
   // Initializes the SegmentAllocator using 'sequence_number' as the active
@@ -178,7 +178,7 @@ class SegmentAllocator {
       scoped_refptr<ReadableLogSegment>* new_readable_segment);
 
   // Sets the schema and version to be used for the next allocated segment.
-  void SetSchemaForNextSegment(Schema schema, uint32_t version);
+  void SetSchemaForNextSegment(SchemaPtr schema, uint32_t version);
 
   // Schedules a task to allocate a new log segment.
   // Must be called when the allocation_lock_ is held.
@@ -228,7 +228,7 @@ class SegmentAllocator {
 
   // The schema and schema version to be used for the next segment.
   mutable rw_spinlock schema_lock_;
-  Schema schema_;
+  SchemaPtr schema_;
   uint32_t schema_version_;
 
   // Whether fsyncing has been disabled.
@@ -284,7 +284,7 @@ class Log : public RefCountedThreadSafe<Log> {
                      FsManager* fs_manager,
                      FileCache* file_cache,
                      const std::string& tablet_id,
-                     Schema schema,
+                     SchemaPtr schema,
                      uint32_t schema_version,
                      const scoped_refptr<MetricEntity>& metric_entity,
                      scoped_refptr<Log> *log);
@@ -417,7 +417,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // Set the schema for the _next_ log segment.
   //
   // This method is thread-safe.
-  void SetSchemaForNextLogSegment(Schema schema, uint32_t version);
+  void SetSchemaForNextLogSegment(const Schema& schema, uint32_t version);
  private:
   friend class LogTest;
   friend class LogTestBase;
@@ -436,7 +436,7 @@ class Log : public RefCountedThreadSafe<Log> {
     kLogClosed
   };
 
-  Log(LogOptions options, LogContext ctx, Schema schema, uint32_t schema_version);
+  Log(LogOptions options, LogContext ctx, SchemaPtr schema, uint32_t schema_version);
 
   // Initializes a new one or continues an existing log.
   Status Init();

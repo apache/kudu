@@ -84,7 +84,7 @@ class CFileSet :
 
   // Create an iterator with the given projection. 'projection' must remain valid
   // for the lifetime of the returned iterator.
-  std::unique_ptr<Iterator> NewIterator(const Schema* projection,
+  std::unique_ptr<Iterator> NewIterator(SchemaPtr projection,
                                         const fs::IOContext* io_context) const;
 
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const;
@@ -156,7 +156,7 @@ class CFileSet :
   // (the ad-hoc reader for composite keys, otherwise the key column reader)
   cfile::CFileReader* key_index_reader() const;
 
-  const Schema &tablet_schema() const { return rowset_metadata_->tablet_schema(); }
+  SchemaPtr tablet_schema() const { return rowset_metadata_->tablet_schema(); }
 
   std::shared_ptr<RowSetMetadata> rowset_metadata_;
   std::shared_ptr<MemTracker> bloomfile_tracker_;
@@ -207,8 +207,8 @@ class CFileSet::Iterator : public ColumnwiseIterator {
     return std::string("rowset iterator for ") + base_data_->ToString();
   }
 
-  const Schema &schema() const OVERRIDE {
-    return *projection_;
+  const SchemaPtr schema() const OVERRIDE {
+    return projection_;
   }
 
   // Return the ordinal index of the next row to be returned from
@@ -227,7 +227,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   friend class CFileSet;
 
   // 'projection' must remain valid for the lifetime of this object.
-  Iterator(std::shared_ptr<CFileSet const> base_data, const Schema* projection,
+  Iterator(std::shared_ptr<CFileSet const> base_data, SchemaPtr& projection,
            const fs::IOContext* io_context)
       : base_data_(std::move(base_data)),
         projection_(projection),
@@ -250,7 +250,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   Status PrepareColumn(ColumnMaterializationContext *ctx);
 
   const std::shared_ptr<CFileSet const> base_data_;
-  const Schema* projection_;
+  SchemaPtr projection_;
 
   // Iterator for the key column in the underlying data.
   std::unique_ptr<cfile::CFileIterator> key_iter_;

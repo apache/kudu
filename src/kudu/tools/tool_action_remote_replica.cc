@@ -268,7 +268,8 @@ Status DumpReplica(const RunnerContext& context) {
   vector<ListTabletsResponsePB::StatusAndSchemaPB> replicas;
   RETURN_NOT_OK(GetReplicas(proxy.get(), &replicas));
 
-  Schema schema;
+  SchemaPtr schema_ptr(new Schema);
+  Schema& schema = *schema_ptr.get();
   for (const auto& r : replicas) {
     if (r.tablet_status().tablet_id() == tablet_id) {
       RETURN_NOT_OK(SchemaFromPB(r.schema(), &schema));
@@ -300,7 +301,8 @@ Status ListReplicas(const RunnerContext& context) {
         !ContainsKey(tablet_ids, r.tablet_status().tablet_id())) {
       continue;
     }
-    Schema schema;
+    SchemaPtr schema_ptr(new Schema);
+    Schema& schema = *schema_ptr.get();
     RETURN_NOT_OK_PREPEND(
         SchemaFromPB(r.schema(), &schema),
         "Unable to deserialize schema from " + address);

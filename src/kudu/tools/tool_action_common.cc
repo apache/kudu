@@ -311,7 +311,8 @@ Status PrintDecodedWriteRequestPB(const string& indent,
                                   const Schema& tablet_schema,
                                   const WriteRequestPB& write,
                                   const RequestIdPB* request_id) {
-  Schema request_schema;
+  SchemaPtr schema_ptr(new Schema);
+  Schema& request_schema = *schema_ptr.get();
   RETURN_NOT_OK(SchemaFromPB(write.schema(), &request_schema));
 
   Arena arena(32 * 1024);
@@ -528,7 +529,8 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
     cout << "Header:\n" << SecureDebugString(segment->header());
   }
   if (print_type != DONT_PRINT) {
-    Schema tablet_schema;
+    SchemaPtr schema_ptr(new Schema);
+    Schema& tablet_schema = *schema_ptr.get();
     RETURN_NOT_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
 
     LogEntryReader reader(segment.get());

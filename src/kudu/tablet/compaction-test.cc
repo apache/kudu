@@ -119,6 +119,7 @@ class TestCompaction : public KuduRowSetTest {
         arena_(32*1024),
         clock_(Timestamp::kInitialTimestamp),
         log_anchor_registry_(new log::LogAnchorRegistry()) {
+    schema_ptr_ = std::make_shared<Schema>(schema_);
   }
 
   static Schema CreateSchema() {
@@ -184,11 +185,11 @@ class TestCompaction : public KuduRowSetTest {
                      int row_key,
                      int32_t val) {
     BuildRow(row_key, val);
-    if (!mrs->schema().Equals(*row_builder_.schema())) {
+    if (!mrs->schema()->Equals(*row_builder_.schema())) {
       // The MemRowSet is not projecting the row, so must be done by the caller
-      RowProjector projector(row_builder_.schema(), &mrs->schema());
-      uint8_t rowbuf[ContiguousRowHelper::row_size(mrs->schema())];
-      ContiguousRow dst_row(&mrs->schema(), rowbuf);
+      RowProjector projector(row_builder_.schema(), mrs->schema().get());
+      uint8_t rowbuf[ContiguousRowHelper::row_size(*mrs->schema())];
+      ContiguousRow dst_row(mrs->schema().get(), rowbuf);
       ASSERT_OK_FAST(projector.Init());
       ASSERT_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(),
                                                   &dst_row, static_cast<Arena*>(nullptr)));
@@ -341,13 +342,14 @@ class TestCompaction : public KuduRowSetTest {
                                      const vector<shared_ptr<DiskRowSet> >& rowsets,
                                      const Schema& projection,
                                      unique_ptr<CompactionInput>* out) {
+    SchemaPtr schema_ptr = std::make_shared<Schema>(projection);
     vector<shared_ptr<CompactionInput> > merge_inputs;
     for (const shared_ptr<DiskRowSet> &rs : rowsets) {
       unique_ptr<CompactionInput> input;
-      RETURN_NOT_OK(CompactionInput::Create(*rs, &projection, merge_snap, nullptr, &input));
+      RETURN_NOT_OK(CompactionInput::Create(*rs, schema_ptr, merge_snap, nullptr, &input));
       merge_inputs.push_back(shared_ptr<CompactionInput>(input.release()));
     }
-    out->reset(CompactionInput::Merge(merge_inputs, &projection));
+    out->reset(CompactionInput::Merge(merge_inputs, schema_ptr));
     return Status::OK();
   }
 
@@ -381,9 +383,10 @@ class TestCompaction : public KuduRowSetTest {
   void FlushMRSAndReopen(const MemRowSet& mrs, const Schema& projection,
                          int64_t roll_threshold,
                          vector<shared_ptr<DiskRowSet> >* result_rowsets) {
+    SchemaPtr schema_ptr = std::make_shared<Schema>(projection);
     MvccSnapshot snap(mvcc_);
     vector<shared_ptr<RowSetMetadata> > rowset_metas;
-    unique_ptr<CompactionInput> input(CompactionInput::Create(mrs, &projection, snap));
+    unique_ptr<CompactionInput> input(CompactionInput::Create(mrs, schema_ptr, snap));
     DoFlushAndReopen(input.get(), projection, snap, roll_threshold, result_rowsets);
   }
 
@@ -400,7 +403,7 @@ class TestCompaction : public KuduRowSetTest {
   // the same timestamp.
   shared_ptr<MemRowSet> CreateInvisibleMRS() {
     shared_ptr<MemRowSet> mrs;
-    CHECK_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+    CHECK_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                                mem_trackers_.tablet_tracker, &mrs));
     InsertAndDeleteRow(mrs.get(), 0, 0);
     return mrs;
@@ -428,7 +431,8 @@ class TestCompaction : public KuduRowSetTest {
     for (const Schema& schema : schemas) {
       // Create a memrowset with a bunch of rows and updates.
       shared_ptr<MemRowSet> mrs;
-      CHECK_OK(MemRowSet::Create(delta, schema, log_anchor_registry_.get(),
+      SchemaPtr schema_ptr = std::make_shared<Schema>(schema);
+      CHECK_OK(MemRowSet::Create(delta, schema_ptr, log_anchor_registry_.get(),
                                  mem_trackers_.tablet_tracker, &mrs));
       InsertRows(mrs.get(), 1000, delta);
       UpdateRows(mrs.get(), 1000, delta, 1);
@@ -464,7 +468,7 @@ class TestCompaction : public KuduRowSetTest {
       for (int i = 0; i < FLAGS_merge_benchmark_num_rowsets; i++) {
         // Create a memrowset with a bunch of rows and updates.
         shared_ptr<MemRowSet> mrs;
-        CHECK_OK(MemRowSet::Create(i, schema_, log_anchor_registry_.get(),
+        CHECK_OK(MemRowSet::Create(i, schema_ptr_, log_anchor_registry_.get(),
                                    mem_trackers_.tablet_tracker, &mrs));
 
         for (int n = 0; n < FLAGS_merge_benchmark_num_rows_per_rowset; n++) {
@@ -536,6 +540,7 @@ class TestCompaction : public KuduRowSetTest {
   Arena arena_;
   clock::LogicalClock clock_;
   MvccManager mvcc_;
+  SchemaPtr schema_ptr_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
 
@@ -544,8 +549,9 @@ class TestCompaction : public KuduRowSetTest {
 
 TEST_F(TestCompaction, TestMemRowSetInput) {
   // Create a memrowset with 10 rows and several updates.
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 10, 0);
   UpdateRows(mrs.get(), 10, 0, 1);
@@ -555,7 +561,7 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   // and mutations.
   vector<string> out;
   MvccSnapshot snap(mvcc_);
-  unique_ptr<CompactionInput> input(CompactionInput::Create(*mrs, &schema_, snap));
+  unique_ptr<CompactionInput> input(CompactionInput::Create(*mrs, schema_ptr, snap));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=0, )"
@@ -572,7 +578,7 @@ TEST_F(TestCompaction, TestFlushMRSWithRolling) {
   // Create a memrowset with enough rows so that, when we flush with a small
   // roll threshold, we'll end up creating multiple DiskRowSets.
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 30000, 0);
 
@@ -602,7 +608,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   shared_ptr<DiskRowSet> rs;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
@@ -620,7 +626,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   // Check compaction input
   vector<string> out;
   unique_ptr<CompactionInput> input;
-  ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), nullptr, &input));
+  ASSERT_OK(CompactionInput::Create(*rs, schema_ptr_, MvccSnapshot(mvcc_), nullptr, &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=0, )"
@@ -642,7 +648,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   shared_ptr<DiskRowSet> rs1;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs1);
@@ -655,7 +661,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   shared_ptr<DiskRowSet> rs2;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(1, schema_ptr_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 1);
@@ -667,7 +673,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   shared_ptr<DiskRowSet> rs3;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(2, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(2, schema_ptr_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 2);
@@ -690,7 +696,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
 
   unique_ptr<CompactionInput> input;
   ASSERT_OK(CompactionInput::Create(*result,
-                                    &schema_,
+                                    schema_ptr_,
                                     MvccSnapshot::CreateSnapshotIncludingAllOps(),
                                     nullptr,
                                     &input));
@@ -796,6 +802,8 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
   vector<int> row_ids(total_num_rows);
   std::iota(row_ids.begin(), row_ids.end(), 0);
 
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
+  Schema& schema = *schema_ptr;
   SeedRandom();
   int rs_id = 0;
   for (int i = 0; i < kBaseNumRowSets; ++i) {
@@ -803,7 +811,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
     size_t row_idx = 0;
     for (int j = 0; j < num_rowsets_in_layer; ++j) {
       shared_ptr<MemRowSet> mrs;
-      ASSERT_OK(MemRowSet::Create(rs_id, schema_, log_anchor_registry_.get(),
+      ASSERT_OK(MemRowSet::Create(rs_id, schema_ptr, log_anchor_registry_.get(),
                                   mem_trackers_.tablet_tracker, &mrs));
 
       // For even rows, insert, update and delete them in the mrs.
@@ -816,7 +824,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
         if (row_id % 2 == 0) AddUpdateAndDelete(mrs.get(), row, row_id, row_id + i + 1);
       }
       shared_ptr<DiskRowSet> drs;
-      FlushMRSAndReopenNoRoll(*mrs, schema_, &drs);
+      FlushMRSAndReopenNoRoll(*mrs, schema, &drs);
       // For odd rows, update them and delete them in the drs.
       for (int k = 0; k < kNumRowsPerRowSet; ++k) {
         int row_id = row_ids[row_idx];
@@ -836,7 +844,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
   }
 
   RowBlockMemory mem;
-  RowBlock block(&schema_, kBaseNumRowSets * kNumRowsPerRowSet, &mem);
+  RowBlock block(&schema, kBaseNumRowSets * kNumRowsPerRowSet, &mem);
   // Go through the expected compaction input rows, flip the last undo into a redo and
   // build the base. This will give us the final version that we'll expect the result
   // of the real compaction to match.
@@ -859,7 +867,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
   vector<shared_ptr<CompactionInput>> inputs;
   for (auto& row_set : row_sets) {
     unique_ptr<CompactionInput> ci;
-    CHECK_OK(row_set->NewCompactionInput(&schema_, all_snap, nullptr, &ci));
+    CHECK_OK(row_set->NewCompactionInput(schema_ptr, all_snap, nullptr, &ci));
     inputs.push_back(shared_ptr<CompactionInput>(ci.release()));
   }
 
@@ -881,7 +889,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
 
   vector<string> out;
   unique_ptr<CompactionInput> ci;
-  CHECK_OK(row_sets[0]->NewCompactionInput(&schema_, all_snap, nullptr, &ci));
+  CHECK_OK(row_sets[0]->NewCompactionInput(schema_ptr, all_snap, nullptr, &ci));
   IterateInput(ci.get(), &out);
 
   // Finally go through the final compaction input and through the expected one and make sure
@@ -896,10 +904,11 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
 // the row isn't on the compaction input.
 TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
   // Insert a row in the mrs and flush it.
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
   shared_ptr<DiskRowSet> rs1;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(0, schema_ptr, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRow(mrs.get(), 1, 1);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs1);
@@ -912,7 +921,7 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
   shared_ptr<DiskRowSet> rs2;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(1, schema_ptr, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     ScopedOp op(&mvcc_, clock_.Now());
     op.StartApplying();
@@ -930,16 +939,16 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
   MvccSnapshot all_snap = MvccSnapshot::CreateSnapshotIncludingAllOps();
 
   unique_ptr<CompactionInput> rs1_input;
-  ASSERT_OK(CompactionInput::Create(*rs1, &schema_, all_snap, nullptr, &rs1_input));
+  ASSERT_OK(CompactionInput::Create(*rs1, schema_ptr, all_snap, nullptr, &rs1_input));
 
   unique_ptr<CompactionInput> rs2_input;
-  ASSERT_OK(CompactionInput::Create(*rs2, &schema_, all_snap, nullptr, &rs2_input));
+  ASSERT_OK(CompactionInput::Create(*rs2, schema_ptr, all_snap, nullptr, &rs2_input));
 
   vector<shared_ptr<CompactionInput>> to_merge;
   to_merge.push_back(shared_ptr<CompactionInput>(rs1_input.release()));
   to_merge.push_back(shared_ptr<CompactionInput>(rs2_input.release()));
 
-  unique_ptr<CompactionInput> merged(CompactionInput::Merge(to_merge, &schema_));
+  unique_ptr<CompactionInput> merged(CompactionInput::Merge(to_merge, schema_ptr));
 
   // Make sure the unobservable version of the row that was inserted and deleted in the MRS
   // in the same op doesn't show up in the compaction input.
@@ -958,8 +967,9 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
 // output rowset (on disk).
 TEST_F(TestCompaction, TestOneToOne) {
   // Create a memrowset with a bunch of rows and updates.
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 1000, 0);
   UpdateRows(mrs.get(), 1000, 0, 1);
@@ -975,7 +985,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // Catch the updates that came in after the snapshot flush was made.
   MvccSnapshot snap2(mvcc_);
-  unique_ptr<CompactionInput> input(CompactionInput::Create(*mrs, &schema_, snap2));
+  unique_ptr<CompactionInput> input(CompactionInput::Create(*mrs, schema_ptr, snap2));
 
   // Add some more updates which come into the new rowset while the "reupdate" is happening.
   UpdateRows(rs.get(), 1000, 0, 3);
@@ -987,7 +997,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
   vector<string> out;
-  ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), nullptr, &input));
+  ASSERT_OK(CompactionInput::Create(*rs, schema_ptr, MvccSnapshot(mvcc_), nullptr, &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
   EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=1, )"
@@ -998,7 +1008,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
   unique_ptr<CompactionInput> compact_input;
-  ASSERT_OK(CompactionInput::Create(*rs, &schema_, snap3, nullptr, &compact_input));
+  ASSERT_OK(CompactionInput::Create(*rs, schema_ptr, snap3, nullptr, &compact_input));
   DoFlushAndReopen(compact_input.get(), schema_, snap3, kLargeRollThreshold, nullptr);
 }
 
@@ -1007,8 +1017,9 @@ TEST_F(TestCompaction, TestOneToOne) {
 // output of a compaction, and trying to merge two MRS.
 TEST_F(TestCompaction, TestKUDU102) {
   // Create 2 row sets, flush them
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 10, 0);
   shared_ptr<DiskRowSet> rs;
@@ -1016,7 +1027,7 @@ TEST_F(TestCompaction, TestKUDU102) {
   NO_FATALS();
 
   shared_ptr<MemRowSet> mrs_b;
-  ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(1, schema_ptr, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs_b));
   InsertRows(mrs_b.get(), 10, 100);
   MvccSnapshot snap(mvcc_);
@@ -1032,10 +1043,10 @@ TEST_F(TestCompaction, TestKUDU102) {
   MvccSnapshot snap2(mvcc_);
   vector<shared_ptr<CompactionInput> > merge_inputs;
   merge_inputs.push_back(
-        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs, &schema_, snap2)));
+        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs, schema_ptr, snap2)));
   merge_inputs.push_back(
-        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap2)));
-  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, schema_ptr, snap2)));
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, schema_ptr));
 
   string dummy_name = "";
 
@@ -1075,12 +1086,12 @@ TEST_F(TestCompaction, TestMergeMultipleSchemas) {
 // Test MergeCompactionInput against MemRowSets.
 TEST_F(TestCompaction, TestMergeMRS) {
   shared_ptr<MemRowSet> mrs_a;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs_a));
   InsertRows(mrs_a.get(), 10, 0);
 
   shared_ptr<MemRowSet> mrs_b;
-  ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(1, schema_ptr_, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs_b));
   InsertRows(mrs_b.get(), 10, 1);
 
@@ -1094,10 +1105,10 @@ TEST_F(TestCompaction, TestMergeMRS) {
 
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionInput> > merge_inputs {
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, schema_ptr_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, schema_ptr_, snap))
   };
-  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, schema_ptr_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
   uint64_t total_num_rows = CountRows(result_rs);
@@ -1109,15 +1120,15 @@ TEST_F(TestCompaction, TestMergeMRS) {
 TEST_F(TestCompaction, TestMergeMRSWithInvisibleRows) {
   shared_ptr<MemRowSet> mrs_a = CreateInvisibleMRS();
   shared_ptr<MemRowSet> mrs_b;
-  ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(1, schema_ptr_, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs_b));
   InsertRows(mrs_b.get(), 10, 0);
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionInput> > merge_inputs {
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, schema_ptr_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, schema_ptr_, snap))
   };
-  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, schema_ptr_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
   ASSERT_EQ(1, result_rs.size());
@@ -1130,7 +1141,7 @@ TEST_F(TestCompaction, TestRandomizeDuplicatedRowsAcrossTransactions) {
   constexpr int kMinIters = 2;
   shared_ptr<MemRowSet> main_mrs;
   int mrs_id = 0;
-  ASSERT_OK(MemRowSet::Create(mrs_id++, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(mrs_id++, schema_ptr_, log_anchor_registry_.get(),
             mem_trackers_.tablet_tracker, &main_mrs));
 
   // Keep track of our transactional MRSs. Since we can only mutate a row in
@@ -1177,7 +1188,7 @@ TEST_F(TestCompaction, TestRandomizeDuplicatedRowsAcrossTransactions) {
         break;
       case 1: {
         shared_ptr<MemRowSet> txn_mrs;
-        ASSERT_OK(MemRowSet::Create(mrs_id++, schema_, log_anchor_registry_.get(),
+        ASSERT_OK(MemRowSet::Create(mrs_id++, schema_ptr_, log_anchor_registry_.get(),
                                     mem_trackers_.tablet_tracker, &txn_mrs));
         LOG(INFO) << Substitute("Inserting into mrs $0 and committing", txn_mrs->mrs_id());
         NO_FATALS(InsertRow(txn_mrs.get(), 1, 0));
@@ -1193,11 +1204,11 @@ TEST_F(TestCompaction, TestRandomizeDuplicatedRowsAcrossTransactions) {
   }
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionInput>> merge_inputs;
-  merge_inputs.emplace_back(CompactionInput::Create(*main_mrs, &schema_, snap));
+  merge_inputs.emplace_back(CompactionInput::Create(*main_mrs, schema_ptr_, snap));
   for (auto& mrs : txn_mrss) {
-    merge_inputs.emplace_back(CompactionInput::Create(*mrs, &schema_, snap));
+    merge_inputs.emplace_back(CompactionInput::Create(*mrs, schema_ptr_, snap));
   }
-  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, schema_ptr_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
   ASSERT_EQ(1, result_rs.size());
@@ -1208,13 +1219,13 @@ TEST_F(TestCompaction, TestRandomizeDuplicatedRowsAcrossTransactions) {
 // back and forth between rowsets over time.
 TEST_F(TestCompaction, TestRowHistoryJumpsBetweenRowsets) {
   shared_ptr<MemRowSet> mrs_a;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs_a));
   shared_ptr<MemRowSet> mrs_b;
-  ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(1, schema_ptr_, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs_b));
   shared_ptr<MemRowSet> mrs_c;
-  ASSERT_OK(MemRowSet::Create(2, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(2, schema_ptr_, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs_c));
   // Interleave the history of a row across three MRSs.
   InsertRows(mrs_a.get(), 1, 0);
@@ -1239,11 +1250,11 @@ TEST_F(TestCompaction, TestRowHistoryJumpsBetweenRowsets) {
   // should go off without a hitch.
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionInput> > merge_inputs {
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap)),
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_c, &schema_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, schema_ptr_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, schema_ptr_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_c, schema_ptr_, snap)),
   };
-  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, schema_ptr_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
   ASSERT_EQ(1, result_rs.size());
@@ -1256,10 +1267,10 @@ TEST_F(TestCompaction, TestMergeMRSWithAllInvisibleRows) {
   shared_ptr<MemRowSet> mrs_b = CreateInvisibleMRS();
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionInput> > merge_inputs {
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
-    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, schema_ptr_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, schema_ptr_, snap))
   };
-  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, schema_ptr_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
   ASSERT_TRUE(result_rs.empty());
@@ -1399,7 +1410,7 @@ TEST_F(TestCompaction, TestEmptyFlushDoesntLeakBlocks) {
 
 TEST_F(TestCompaction, TestCountLiveRowsOfMemRowSetFlush) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               mem_trackers_.tablet_tracker, &mrs));
   NO_FATALS(InsertRows(mrs.get(), 100, 0));
   NO_FATALS(UpdateRows(mrs.get(), 80, 0, 1));
@@ -1419,7 +1430,7 @@ TEST_F(TestCompaction, TestCountLiveRowsOfDiskRowSetsCompact) {
   shared_ptr<DiskRowSet> rs1;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     NO_FATALS(InsertRows(mrs.get(), 100, 0));
     NO_FATALS(UpdateRows(mrs.get(), 80, 0, 1));
@@ -1430,7 +1441,7 @@ TEST_F(TestCompaction, TestCountLiveRowsOfDiskRowSetsCompact) {
   shared_ptr<DiskRowSet> rs2;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(1, schema_ptr_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     NO_FATALS(InsertRows(mrs.get(), 100, 1));
     NO_FATALS(UpdateRows(mrs.get(), 80, 1, 1));
@@ -1441,7 +1452,7 @@ TEST_F(TestCompaction, TestCountLiveRowsOfDiskRowSetsCompact) {
   shared_ptr<DiskRowSet> rs3;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(2, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(2, schema_ptr_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     NO_FATALS(InsertRows(mrs.get(), 100, 2));
     NO_FATALS(UpdateRows(mrs.get(), 80, 2, 2));

@@ -181,7 +181,7 @@ class TestCFileSet : public KuduRowSetTest {
                        int32_t lower,
                        int32_t upper) {
     // Create iterator.
-    unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+    unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_ptr_, nullptr));
     unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
 
     // Create a scan with a range predicate on the key column.
@@ -218,7 +218,7 @@ class TestCFileSet : public KuduRowSetTest {
                              vector<size_t> target) {
     LOG(INFO) << "predicates size: " << predicates.size();
     // Create iterator.
-    unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+    unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_ptr_, nullptr));
     unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
     LOG(INFO) << "Target size: " << target.size();
     // Create a scan with a range predicate on the key column.
@@ -287,7 +287,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(),
                            nullptr, &fileset));
 
-  unique_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_, nullptr));
+  unique_ptr<CFileSet::Iterator> iter(fileset->NewIterator(schema_ptr_, nullptr));
   ASSERT_OK(iter->Init(nullptr));
 
   RowBlockMemory mem(4096);
@@ -370,7 +370,8 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
 
   Schema new_schema;
   ASSERT_OK(schema_.CreateProjectionByNames({ "c0", "c2" }, &new_schema));
-  unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema, nullptr));
+  SchemaPtr new_schema_ptr = std::make_shared<Schema>(new_schema);
+  unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(new_schema_ptr, nullptr));
   unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
 
   ASSERT_OK(iter->Init(nullptr));
@@ -403,7 +404,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
                            nullptr, &fileset));
 
   // Create iterator.
-  unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+  unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(schema_ptr_, nullptr));
   CFileSet::Iterator* cfile_iter_raw = cfile_iter.get();
   unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
   Schema key_schema = schema_.CreateKeyProjection();

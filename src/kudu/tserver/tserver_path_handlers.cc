@@ -366,7 +366,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
       }
       replica_json["partition"] =
           tmeta->partition_schema().PartitionDebugString(tmeta->partition(),
-                                                         tmeta->schema());
+                                                         *tmeta->schema());
       replica_json["state"] = replica->HumanReadableState();
       if (status.has_estimated_on_disk_size()) {
         replica_json["n_bytes"] =
@@ -425,7 +425,7 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
   output->Set("table_name", table_name);
 
   const auto& tmeta = replica->tablet_metadata();
-  const Schema& schema = tmeta->schema();
+  const Schema& schema = *tmeta->schema();
   output->Set("partition",
               tmeta->partition_schema().PartitionDebugString(tmeta->partition(), schema));
   output->Set("on_disk_size", HumanReadableNumBytes::ToString(replica->OnDiskSize()));

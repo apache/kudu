@@ -167,7 +167,7 @@ Status TabletReplicaTestBase::StartReplica(const ConsensusBootstrapInfo& info) {
                           fs_manager(),
                           /*file_cache*/nullptr,
                           tablet()->tablet_id(),
-                          *tablet()->schema(),
+                          tablet()->schema(),
                           tablet()->metadata()->schema_version(),
                           metric_entity_.get(),
                           &log));

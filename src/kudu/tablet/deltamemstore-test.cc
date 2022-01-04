@@ -93,6 +93,7 @@ class TestDeltaMemStore : public KuduTest {
   TestDeltaMemStore()
       : op_id_(consensus::MaximumOpId()),
         schema_(CreateSchema()),
+        schema_ptr_(std::make_shared<Schema>(schema_)),
         clock_(Timestamp::kInitialTimestamp) {
     CHECK_OK(DeltaMemStore::Create(0, 0,
                                    new log::LogAnchorRegistry(),
@@ -131,11 +132,11 @@ class TestDeltaMemStore : public KuduTest {
                     size_t col_idx,
                     ColumnBlock *cb) {
     ColumnSchema col_schema(schema_.column(col_idx));
-    Schema single_col_projection({ col_schema },
+    SchemaPtr single_col_projection_ptr = std::make_shared<Schema>(Schema({ col_schema },
                                  { schema_.column_id(col_idx) },
-                                 0);
+                                 0));
     RowIteratorOptions opts;
-    opts.projection = &single_col_projection;
+    opts.projection = single_col_projection_ptr;
     opts.snap_to_include = snapshot;
     unique_ptr<DeltaIterator> iter;
     Status s = dms_->NewDeltaIterator(opts, &iter);
@@ -159,6 +160,7 @@ class TestDeltaMemStore : public KuduTest {
   consensus::OpId op_id_;
 
   const Schema schema_;
+  const SchemaPtr schema_ptr_;
   shared_ptr<DeltaMemStore> dms_;
   clock::LogicalClock clock_;
   MvccManager mvcc_;
@@ -544,7 +546,7 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   ScopedColumnBlock<UINT32> block(100);
 
   RowIteratorOptions opts;
-  opts.projection = &schema_;
+  opts.projection = this->schema_ptr_;
   // TODO(todd): test snapshot reads from different points
   opts.snap_to_include = MvccSnapshot(mvcc_);
 
@@ -594,7 +596,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   mutations.resize(kBatchSize);
 
   RowIteratorOptions opts;
-  opts.projection = &schema_;
+  opts.projection = this->schema_ptr_;
   opts.snap_to_include = MvccSnapshot(mvcc_);
   unique_ptr<DeltaIterator> iter;
   Status s =  dms_->NewDeltaIterator(opts, &iter);

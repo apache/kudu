@@ -38,7 +38,6 @@ using std::unique_ptr;
 namespace kudu {
 
 class ScanSpec;
-class Schema;
 struct IteratorStats;
 
 namespace tablet {
@@ -72,7 +71,7 @@ string DeltaApplier::ToString() const {
   return s;
 }
 
-const Schema &DeltaApplier::schema() const {
+const SchemaPtr DeltaApplier::schema() const {
   return base_iter_->schema();
 }
 

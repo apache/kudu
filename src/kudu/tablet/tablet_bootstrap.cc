@@ -795,7 +795,7 @@ Status TabletBootstrap::OpenNewLog() {
                           tablet_->metadata()->fs_manager(),
                           file_cache_,
                           tablet_->tablet_id(),
-                          *tablet_->schema(),
+                          tablet_->schema(),
                           tablet_->metadata()->schema_version(),
                           tablet_->GetMetricEntity(),
                           &log_));
@@ -1227,7 +1227,8 @@ Status TabletBootstrap::PlaySegments(const IOContext* io_context,
   if (!segments.empty()) {
     const scoped_refptr<ReadableLogSegment>& segment = segments[0];
     // Set the point-in-time schema for the tablet based on the log header.
-    Schema pit_schema;
+    SchemaPtr pit_schema_ptr(new Schema);
+    Schema& pit_schema = *pit_schema_ptr.get();
     RETURN_NOT_OK_PREPEND(SchemaFromPB(segment->header().schema(), &pit_schema),
                           "Couldn't decode log segment schema");
     RETURN_NOT_OK_PREPEND(tablet_->RewindSchemaForBootstrap(
@@ -1535,7 +1536,8 @@ Status TabletBootstrap::PlayAlterSchemaRequest(const IOContext* /*io_context*/,
   AlterSchemaRequestPB* alter_schema = replicate_msg->mutable_alter_schema_request();
 
   // Decode schema
-  Schema schema;
+  SchemaPtr schema_ptr(new Schema);
+  Schema& schema = *schema_ptr.get();
   RETURN_NOT_OK(SchemaFromPB(alter_schema->schema(), &schema));
 
   AlterSchemaOpState op_state(nullptr, alter_schema, nullptr);
@@ -1547,7 +1549,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(const IOContext* /*io_context*/,
   if (!op_state.error()) {
     // If the alter completed successfully, update the log segment header. Note
     // that our new log isn't hooked up to the tablet yet.
-    log_->SetSchemaForNextLogSegment(std::move(schema), op_state.schema_version());
+    log_->SetSchemaForNextLogSegment(schema, op_state.schema_version());
   }
 
   return AppendCommitMsg(commit_msg);
@@ -1638,7 +1640,8 @@ Status TabletBootstrap::PlayRowOperations(const IOContext* io_context,
                                           WriteOpState* op_state,
                                           const TxResultPB& orig_result,
                                           TxResultPB* new_result) {
-  Schema inserts_schema;
+  SchemaPtr inserts_schema_ptr(new Schema);
+  Schema& inserts_schema = *inserts_schema_ptr.get();
   RETURN_NOT_OK_PREPEND(SchemaFromPB(op_state->request()->schema(), &inserts_schema),
                         "Couldn't decode client schema");
 
@@ -1731,7 +1734,7 @@ Status TabletBootstrap::ApplyOperations(const IOContext* io_context,
       return Status::Corruption("Operation which previously succeeded failed "
                                 "during log replay",
                                 Substitute("Op: $0\nFailure: $1",
-                                           op->ToString(*tablet_->schema()),
+                                           op->ToString(*tablet_->schema().get()),
                                            SecureShortDebugString(op->result->failed_status())));
     }
   }

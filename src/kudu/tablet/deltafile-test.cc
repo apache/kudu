@@ -45,6 +45,7 @@
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
@@ -95,10 +96,10 @@ class TestDeltaFile : public KuduTest {
     ASSERT_OK(fs_manager_->Open());
   }
 
-  static Schema CreateSchema() {
+  static SchemaPtr CreateSchema() {
     SchemaBuilder builder;
     CHECK_OK(builder.AddColumn("val", UINT32));
-    return builder.Build();
+    return std::make_shared<Schema>(builder.Build());
   }
 
   void WriteTestFile(int min_timestamp = 0, int max_timestamp = 0) {
@@ -117,7 +118,7 @@ class TestDeltaFile : public KuduTest {
         buf.clear();
         RowChangeListEncoder update(&buf);
         uint32_t new_val = timestamp + i;
-        update.AddColumnUpdate(schema_.column(0), schema_.column_id(0), &new_val);
+        update.AddColumnUpdate(schema_->column(0), schema_->column_id(0), &new_val);
         DeltaKey key(i, Timestamp(timestamp));
         RowChangeList rcl(buf);
         ASSERT_OK_FAST(dfw.AppendDelta<REDO>(key, rcl));
@@ -158,7 +159,7 @@ class TestDeltaFile : public KuduTest {
     opts.snap_to_include = type == REDO ?
                 MvccSnapshot::CreateSnapshotIncludingAllOps() :
                 MvccSnapshot::CreateSnapshotIncludingNoOps();
-    opts.projection = &schema_;
+    opts.projection = schema_;
     return reader->NewDeltaIterator(opts, out);
   }
 
@@ -166,7 +167,7 @@ class TestDeltaFile : public KuduTest {
     shared_ptr<DeltaFileReader> reader;
     ASSERT_OK(OpenDeltaFileReader(test_block_, &reader));
     ASSERT_EQ(((FLAGS_last_row_to_update - FLAGS_first_row_to_update) / 2) + 1,
-              reader->delta_stats().update_count_for_col_id(schema_.column_id(0)));
+              reader->delta_stats().update_count_for_col_id(schema_->column_id(0)));
     ASSERT_EQ(0, reader->delta_stats().delete_count());
     unique_ptr<DeltaIterator> it;
     Status s = OpenDeltaFileIteratorFromReader(REDO, reader, &it);
@@ -177,7 +178,7 @@ class TestDeltaFile : public KuduTest {
     ASSERT_OK(it->Init(nullptr));
 
     RowBlockMemory mem;
-    RowBlock block(&schema_, 100, &mem);
+    RowBlock block(schema_.get(), 100, &mem);
 
     // Iterate through the faked table, starting with batches that
     // come before all of the updates, and extending a bit further
@@ -203,7 +204,7 @@ class TestDeltaFile : public KuduTest {
           (row % 2 == 0);
 
         DCHECK_EQ(block.row(i).cell_ptr(0), dst_col.cell_ptr(i));
-        uint32_t updated_val = *schema_.ExtractColumnFromRow<UINT32>(block.row(i), 0);
+        uint32_t updated_val = *schema_->ExtractColumnFromRow<UINT32>(block.row(i), 0);
         VLOG(2) << "row " << row << ": " << updated_val;
         uint32_t expected_val = should_be_updated ? row : 0;
         // Don't use ASSERT_EQ, since it's slow (records positive results, not just negative)
@@ -219,7 +220,7 @@ class TestDeltaFile : public KuduTest {
 
  protected:
   unique_ptr<FsManager> fs_manager_;
-  Schema schema_;
+  SchemaPtr schema_;
   BlockId test_block_;
 };
 
@@ -326,7 +327,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
         Mutation *mut_head = mutations[i];
         if (mut_head != nullptr) {
           rowid_t row = start_row + i;
-          string str = Mutation::StringifyMutationList(schema_, mut_head);
+          string str = Mutation::StringifyMutationList(*schema_.get(), mut_head);
           VLOG(1) << "Mutation on row " << row << ": " << str;
         }
       }
@@ -343,7 +344,7 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   ASSERT_OK(OpenDeltaFileReader(test_block_, &reader));
 
   RowIteratorOptions opts;
-  opts.projection = &schema_;
+  opts.projection = schema_;
 
   // should skip
   opts.snap_to_include = MvccSnapshot(Timestamp(9));
@@ -444,7 +445,7 @@ TYPED_TEST(DeltaTypeTestDeltaFile, TestFuzz) {
       ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
     }
   }
-  Schema schema(sb.Build());
+  Schema schema = sb.Build();
 
   MirroredDeltas<TypeParam> deltas(&schema);
 
@@ -478,7 +479,7 @@ TYPED_TEST(DeltaTypeTestDeltaFile, BenchmarkPrepareAndApply) {
   for (int i = 0; i < kNumColumns; i++) {
     ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
   }
-  Schema schema(sb.Build());
+  Schema schema = sb.Build();
 
   Random prng(SeedRandom());
   MirroredDeltas<TypeParam> deltas(&schema);
@@ -491,13 +492,14 @@ TYPED_TEST(DeltaTypeTestDeltaFile, BenchmarkPrepareAndApply) {
 
   for (int i = 0; i < kNumScans; i++) {
     // Create a random projection with kNumColumnsToScan columns.
-    Schema projection = GetRandomProjection(schema, &prng, kNumColumnsToScan,
-                                            AllowIsDeleted::NO);
+    SchemaPtr projection = std::make_shared<Schema>(
+        GetRandomProjection(schema, &prng, kNumColumnsToScan,
+                            AllowIsDeleted::NO));
 
     // Create an iterator at a randomly chosen timestamp.
     Timestamp ts = Timestamp(prng.Uniform(kMaxTimestamp));
     RowIteratorOptions opts;
-    opts.projection = &projection;
+    opts.projection = projection;
     opts.snap_to_include = MvccSnapshot(ts);
     unique_ptr<DeltaIterator> iter;
     Status s = reader->NewDeltaIterator(opts, &iter);
@@ -521,7 +523,7 @@ TYPED_TEST(DeltaTypeTestDeltaFile, BenchmarkPrepareAndApply) {
     for (int j = 0; j < kMaxRow; j++) {
       scb[j] = 0;
     }
-    for (int j = 0; j < projection.num_columns(); j++) {
+    for (int j = 0; j < projection->num_columns(); j++) {
       ASSERT_OK(iter->ApplyUpdates(j, &scb, sel_vec));
     }
   }

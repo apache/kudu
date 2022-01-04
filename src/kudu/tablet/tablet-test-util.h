@@ -99,6 +99,8 @@ class KuduTabletTest : public KuduTest {
                           TabletHarness::Options::ClockType::LOGICAL_CLOCK)
     : schema_(schema.CopyWithColumnIds()),
       client_schema_(schema),
+      schema_ptr_(std::make_shared<Schema>(schema_)),
+      client_schema_ptr_(std::make_shared<Schema>(client_schema_)),
       clock_type_(clock_type) {
   }
 
@@ -171,6 +173,8 @@ class KuduTabletTest : public KuduTest {
  protected:
   const Schema schema_;
   const Schema client_schema_;
+  const SchemaPtr schema_ptr_;
+  const SchemaPtr client_schema_ptr_;
   const TabletHarness::Options::ClockType clock_type_;
 
   std::unique_ptr<TabletHarness> harness_;
@@ -199,7 +203,8 @@ class KuduRowSetTest : public KuduTabletTest {
 // This is strictly a measure of decoding and evaluating predicates
 static inline Status SilentIterateToStringList(RowwiseIterator* iter,
                                                int* fetched) {
-  const Schema& schema = iter->schema();
+  const SchemaPtr schema_ptr = iter->schema();
+  const Schema& schema = *schema_ptr;
   RowBlockMemory memory(1024);
   RowBlock block(&schema, 100, &memory);
   *fetched = 0;
@@ -218,7 +223,8 @@ static inline Status IterateToStringList(RowwiseIterator* iter,
                                          std::vector<std::string>* out,
                                          int limit = INT_MAX) {
   out->clear();
-  Schema schema = iter->schema();
+  SchemaPtr schema_ptr = iter->schema();
+  Schema& schema = *schema_ptr;
   RowBlockMemory memory(1024);
   RowBlock block(&schema, 100, &memory);
   int fetched = 0;
@@ -241,10 +247,11 @@ static inline void CollectRowsForSnapshots(
     const Schema& schema,
     const std::vector<MvccSnapshot>& snaps,
     std::vector<std::vector<std::string>* >* collected_rows) {
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema);
   for (const MvccSnapshot& snapshot : snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
     RowIteratorOptions opts;
-    opts.projection = &schema;
+    opts.projection = schema_ptr;
     opts.snap_to_include = snapshot;
     std::unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet->NewRowIterator(std::move(opts), &iter));
@@ -265,13 +272,14 @@ static inline void VerifySnapshotsHaveSameResult(
     const Schema& schema,
     const std::vector<MvccSnapshot>& snaps,
     const std::vector<std::vector<std::string>* >& expected_rows) {
+  SchemaPtr schema_ptr = std::make_shared<Schema>(schema);
   int idx = 0;
   // Now iterate again and make sure we get the same thing.
   for (const MvccSnapshot& snapshot : snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
 
     RowIteratorOptions opts;
-    opts.projection = &schema;
+    opts.projection = schema_ptr;
     opts.snap_to_include = snapshot;
     std::unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet->NewRowIterator(std::move(opts), &iter));
@@ -316,8 +324,9 @@ static inline std::string InitAndDumpIterator(RowwiseIterator* iter) {
 static inline Status DumpTablet(const Tablet& tablet,
                                 const Schema& projection,
                                 std::vector<std::string>* out) {
+  SchemaPtr schema_ptr = std::make_shared<Schema>(projection);
   std::unique_ptr<RowwiseIterator> iter;
-  RETURN_NOT_OK(tablet.NewRowIterator(projection, &iter));
+  RETURN_NOT_OK(tablet.NewRowIterator(schema_ptr, &iter));
   RETURN_NOT_OK(iter->Init(nullptr));
   std::vector<std::string> rows;
   RETURN_NOT_OK(IterateToStringList(iter.get(), &rows));
@@ -938,12 +947,14 @@ void RunDeltaFuzzTest(const DeltaStore& store,
 
     // Create and initialize the iterator. If none iterator is returned, it's
     // because all deltas in 'store' were irrelevant; verify this.
-    Schema projection = GetRandomProjection(*mirror->schema(), prng, kMaxColsToProject,
-                                            lower_ts ? AllowIsDeleted::YES :
-                                                       AllowIsDeleted::NO);
-    SCOPED_TRACE(Substitute("Projection $0", projection.ToString()));
+
+    SchemaPtr projection_ptr = std::make_shared<Schema>(
+        GetRandomProjection(*mirror->schema(), prng, kMaxColsToProject,
+                            lower_ts ? AllowIsDeleted::YES :
+                            AllowIsDeleted::NO));
+    SCOPED_TRACE(Substitute("Projection $0", projection_ptr->ToString()));
     RowIteratorOptions opts;
-    opts.projection = &projection;
+    opts.projection = projection_ptr;
     if (lower_ts) {
       opts.snap_to_exclude = MvccSnapshot(*lower_ts);
     }

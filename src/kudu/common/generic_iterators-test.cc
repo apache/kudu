@@ -79,23 +79,25 @@ using strings::Substitute;
 namespace kudu {
 
 static const int kValColIdx = 0; // Index of 'val' column in these test schemas.
-static const Schema kIntSchema({ ColumnSchema("val", INT64) },
-                               /*key_columns=*/1);
+static const SchemaPtr kIntSchemaPtr(new Schema({ ColumnSchema("val", INT64) },
+                               /*key_columns=*/1));
 static const bool kIsDeletedReadDefault = false;
-static const Schema kIntSchemaWithVCol({ ColumnSchema("val", INT64),
+static const SchemaPtr kIntSchemaWithVColPtr(new Schema({ ColumnSchema("val", INT64),
                                          ColumnSchema("is_deleted", IS_DELETED,
                                                       /*is_nullable=*/false,
                                                       /*read_default=*/&kIsDeletedReadDefault) },
-                                       /*key_columns=*/1);
+                                       /*key_columns=*/1));
+static const Schema& kIntSchema = *kIntSchemaPtr.get();
+static const Schema& kIntSchemaWithVCol = *kIntSchemaWithVColPtr.get();
 
 // Test iterator which just yields integer rows from a provided
 // vector.
 class VectorIterator : public ColumnwiseIterator {
  public:
-  VectorIterator(vector<int64_t> ints, vector<uint8_t> is_deleted, Schema schema)
+  VectorIterator(vector<int64_t> ints, vector<uint8_t> is_deleted, const Schema& schema)
       : ints_(std::move(ints)),
         is_deleted_(std::move(is_deleted)),
-        schema_(std::move(schema)),
+        schema_(new Schema(schema)),
         cur_idx_(0),
         block_size_(ints_.size()),
         sel_vec_(nullptr) {
@@ -182,12 +184,12 @@ class VectorIterator : public ColumnwiseIterator {
     return Substitute("VectorIterator [$0,$1]", ints_[0], ints_[ints_.size() - 1]);
   }
 
-  const Schema& schema() const override {
+  const SchemaPtr schema() const override {
     return schema_;
   }
 
   void GetIteratorStats(vector<IteratorStats>* stats) const override {
-    stats->resize(schema().num_columns());
+    stats->resize(schema()->num_columns());
   }
 
  private:
@@ -196,7 +198,7 @@ class VectorIterator : public ColumnwiseIterator {
   // column so we can call ColumnBlock::SetCellValue() in MaterializeColumn(),
   // whose API requires taking an address to a non-temporary for the value.
   vector<uint8_t> is_deleted_;
-  const Schema schema_;
+  SchemaPtr schema_;
   int cur_idx_;
   int block_size_;
   size_t prepared_;
@@ -608,7 +610,7 @@ class DummyIterator : public RowwiseIterator {
  public:
 
   explicit DummyIterator(const Schema& schema)
-      : schema_(schema) {
+      : schema_(new Schema(schema)) {
   }
 
   Status Init(ScanSpec* /*spec*/) override {
@@ -629,16 +631,16 @@ class DummyIterator : public RowwiseIterator {
     return "DummyIterator";
   }
 
-  const Schema& schema() const override {
+  const SchemaPtr schema() const override {
     return schema_;
   }
 
   void GetIteratorStats(vector<IteratorStats>* stats) const override {
-    stats->resize(schema().num_columns());
+    stats->resize(schema()->num_columns());
   }
 
  private:
-  Schema schema_;
+  SchemaPtr schema_;
 };
 
 // Verify the vectors of ColumnPredicate are the same.
@@ -651,9 +653,10 @@ void CheckColumnPredicatesAreEqual(const vector<ColumnPredicate>& expected,
 }
 
 TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
-  Schema schema({ ColumnSchema("a_int64", INT64),
+  SchemaPtr schema_ptr(new Schema({ ColumnSchema("a_int64", INT64),
                   ColumnSchema("b_int64", INT64),
-                  ColumnSchema("c_int32", INT32) }, 3);
+                  ColumnSchema("c_int32", INT32) }, 3));
+  Schema& schema = *schema_ptr.get();
 
   int64_t zero = 0;
   int64_t two = 2;

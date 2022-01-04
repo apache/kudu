@@ -209,7 +209,7 @@ class OpState {
   }
 
   // Sets a heap object to be managed by this op's AutoReleasePool.
-  void AddToAutoReleasePool(std::unique_ptr<Schema> t) {
+  void AddToAutoReleasePool(SchemaPtr t) {
     schemas_pool_.emplace_back(std::move(t));
   }
 
@@ -283,7 +283,7 @@ class OpState {
   // Optional callback to be called once the op completes.
   std::unique_ptr<OpCompletionCallback> completion_clbk_;
 
-  std::deque<std::unique_ptr<Schema>> schemas_pool_;
+  std::deque<SchemaPtr> schemas_pool_;
 
   // This operation's timestamp.
   // This is only set once during the operation lifecycle, using external synchronization.

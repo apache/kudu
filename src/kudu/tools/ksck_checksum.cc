@@ -423,7 +423,7 @@ void KsckChecksumManager::BeginTabletChecksum(const TabletChecksumInfo& tablet_i
     KsckChecksumOptions options = opts_;
     options.snapshot_timestamp = timestamp_for_tablet;
     ts->RunTabletChecksumScanAsync(tablet_info.tablet->id(),
-                                   tablet_info.schema,
+                                   *tablet_info.schema.get(),
                                    options,
                                    shared_from_this());
   }

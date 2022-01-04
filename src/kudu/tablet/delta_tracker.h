@@ -26,6 +26,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/rowid.h"
+#include "kudu/common/schema.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/cfile_set.h"
@@ -43,9 +44,7 @@ namespace kudu {
 class ColumnwiseIterator;
 class MonoTime;
 class RowChangeList;
-class Schema;
 class Timestamp;
-struct ColumnId;
 
 namespace consensus {
 class OpId;
@@ -333,7 +332,8 @@ class DeltaTracker {
   // hold a lock on 'compact_flush_lock_'in order to guard against a
   // race on 'redo_delta_stores_'.
   Status MakeDeltaIteratorMergerUnlocked(const fs::IOContext* io_context,
-                                         size_t start_idx, size_t end_idx, const Schema* projection,
+                                         size_t start_idx, size_t end_idx,
+                                         SchemaPtr projection,
                                          std::vector<std::shared_ptr<DeltaStore>>* target_stores,
                                          std::vector<BlockId>* target_blocks,
                                          std::unique_ptr<DeltaIterator>* out);

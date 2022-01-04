@@ -430,7 +430,7 @@ bool Log::append_thread_active_for_tests() const {
 
 SegmentAllocator::SegmentAllocator(const LogOptions* opts,
                                    const LogContext* ctx,
-                                   Schema schema,
+                                   SchemaPtr schema,
                                    uint32_t schema_version)
     : opts_(opts),
       ctx_(ctx),
@@ -600,12 +600,12 @@ Status SegmentAllocator::AllocateSegmentAndRollOver(
   return RollOver(finished_segment, new_readable_segment);
 }
 
-void SegmentAllocator::SetSchemaForNextSegment(Schema schema,
+void SegmentAllocator::SetSchemaForNextSegment(SchemaPtr schema,
                                                uint32_t version) {
   VLOG_WITH_PREFIX(2) << Substitute("Setting schema version $0 for next log segment $1",
-                                    version, schema.ToString());
+                                    version, schema->ToString());
   std::lock_guard<rw_spinlock> l(schema_lock_);
-  schema_ = std::move(schema);
+  schema_ = schema;
   schema_version_ = version;
 }
 
@@ -701,7 +701,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
   // Set the new segment's schema.
   {
     shared_lock<rw_spinlock> l(schema_lock_);
-    RETURN_NOT_OK(SchemaToPB(schema_, header.mutable_schema()));
+    RETURN_NOT_OK(SchemaToPB(*schema_.get(), header.mutable_schema()));
     header.set_schema_version(schema_version_);
   }
   RETURN_NOT_OK_PREPEND(new_segment->WriteHeader(header), "Failed to write header");
@@ -753,7 +753,7 @@ Status Log::Open(LogOptions options,
                  FsManager* fs_manager,
                  FileCache* file_cache,
                  const string& tablet_id,
-                 Schema schema,
+                 SchemaPtr schema,
                  uint32_t schema_version,
                  const scoped_refptr<MetricEntity>& metric_entity,
                  scoped_refptr<Log>* log) {
@@ -766,20 +766,21 @@ Status Log::Open(LogOptions options,
   ctx.metrics.reset(metric_entity ? new LogMetrics(metric_entity) : nullptr);
   ctx.fs_manager = fs_manager;
   ctx.file_cache = file_cache;
-  scoped_refptr<Log> new_log(new Log(std::move(options), std::move(ctx), std::move(schema),
+  SchemaPtr schema_clone(new Schema(*schema.get()));
+  scoped_refptr<Log> new_log(new Log(std::move(options), std::move(ctx), schema_clone,
                                      schema_version));
   RETURN_NOT_OK(new_log->Init());
   log->swap(new_log);
   return Status::OK();
 }
 
-Log::Log(LogOptions options, LogContext ctx, Schema schema, uint32_t schema_version)
+Log::Log(LogOptions options, LogContext ctx, SchemaPtr schema, uint32_t schema_version)
     : options_(std::move(options)),
       ctx_(std::move(ctx)),
       log_state_(kLogInitialized),
       entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
       append_thread_(new AppendThread(this)),
-      segment_allocator_(&options_, &ctx_, std::move(schema), schema_version),
+      segment_allocator_(&options_, &ctx_, schema, schema_version),
       on_disk_size_(0) {
 }
 
@@ -1141,9 +1142,10 @@ int64_t Log::OnDiskSize() {
   return ret;
 }
 
-void Log::SetSchemaForNextLogSegment(Schema schema,
+void Log::SetSchemaForNextLogSegment(const Schema& schema,
                                      uint32_t version) {
-  segment_allocator_.SetSchemaForNextSegment(std::move(schema), version);
+  SchemaPtr new_schema(new Schema(schema));
+  segment_allocator_.SetSchemaForNextSegment(new_schema, version);
 }
 
 Status Log::Close() {

@@ -3478,7 +3478,7 @@ class InvalidScanRequest_WithIdsParamTest :
     public ::testing::WithParamInterface<ReadMode> {
 };
 TEST_P(InvalidScanRequest_WithIdsParamTest, Test) {
-  const Schema* projection = tablet_replica_->tablet()->schema();
+  const SchemaPtr projection = tablet_replica_->tablet()->schema();
   ASSERT_TRUE(projection->has_column_ids());
   VerifyScanRequestFailure(*projection,
                            TabletServerErrorPB::INVALID_SCHEMA,
@@ -4098,7 +4098,8 @@ TEST_F(TabletServerTest, TestRpcServerCreateDestroy) {
 
 TEST_F(TabletServerTest, TestWriteOutOfBounds) {
   const char *tabletId = "TestWriteOutOfBoundsTablet";
-  Schema schema = SchemaBuilder(schema_).Build();
+  SchemaPtr schema_ptr = std::make_shared<Schema>(SchemaBuilder(schema_).Build());
+  Schema& schema = *schema_ptr;
 
   PartitionSchema partition_schema;
   CHECK_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema, &partition_schema));
@@ -4117,7 +4118,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
   ASSERT_OK(mini_server_->server()->tablet_manager()->CreateNewTablet(
       "TestWriteOutOfBoundsTable", tabletId,
       partitions[1],
-      tabletId, schema, partition_schema,
+      tabletId, schema_ptr, partition_schema,
       mini_server_->CreateLocalConfig(), boost::none, boost::none, boost::none, nullptr));
 
   ASSERT_OK(WaitForTabletRunning(tabletId));

@@ -156,7 +156,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   void VerifyDataWithMvccAndExpectedState(const MvccSnapshot& snap,
                                           const vector<ExpectedRow>& passed_expected_state) {
       RowIteratorOptions opts;
-      opts.projection = &client_schema_;
+      opts.projection = client_schema_ptr_;
       opts.snap_to_include = snap;
       unique_ptr<RowwiseIterator> row_iter;
       ASSERT_OK(tablet()->NewRowIterator(std::move(opts), &row_iter));

@@ -260,8 +260,8 @@ RowProjectorFunctions::RowProjectorFunctions(const Schema& base_schema,
                                              ProjectionFunction write_f,
                                              unique_ptr<JITCodeOwner> owner)
   : JITWrapper(std::move(owner)),
-    base_schema_(base_schema),
-    projection_(projection),
+    base_schema_(new Schema(base_schema)),
+    projection_(new Schema(projection)),
     read_f_(read_f),
     write_f_(write_f) {
   CHECK(read_f != nullptr)
@@ -461,7 +461,7 @@ Status RowProjector::Init() {
   };
   RETURN_NOT_OK_PREPEND(compat_check(
                           *projector_.base_schema(), *projector_.projection(),
-                          functions_->base_schema(), functions_->projection()),
+                          *functions_->base_schema().get(), *functions_->projection().get()),
                         "Codegenned row projector's schemas incompatible "
                         "with its functions' schemas:"
                         "\n  projector base = " +
@@ -469,9 +469,9 @@ Status RowProjector::Init() {
                         "\n  projector proj = " +
                         projector_.projection()->ToString() +
                         "\n  functions base = " +
-                        functions_->base_schema().ToString() +
+                        functions_->base_schema()->ToString() +
                         "\n  functions proj = " +
-                        functions_->projection().ToString());
+                        functions_->projection()->ToString());
 #endif
   return Status::OK();
 }

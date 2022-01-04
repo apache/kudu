@@ -143,12 +143,14 @@ Status MiniTabletServer::AddTestTablet(const std::string& table_id,
                                        const std::string& tablet_id,
                                        const Schema& schema,
                                        const RaftConfigPB& config) {
-  Schema schema_with_ids = SchemaBuilder(schema).Build();
+  SchemaPtr schema_with_ids_ptr = std::make_shared<Schema>(SchemaBuilder(schema).Build());
+  Schema& schema_with_ids = *schema_with_ids_ptr;
+
   pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(schema_with_ids);
 
   return server_->tablet_manager()->CreateNewTablet(
       table_id, tablet_id, partition.second, table_id,
-      schema_with_ids, partition.first, config, boost::none, boost::none, boost::none, nullptr);
+      schema_with_ids_ptr, partition.first, config, boost::none, boost::none, boost::none, nullptr);
 }
 
 vector<string> MiniTabletServer::ListTablets() const {

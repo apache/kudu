@@ -25,6 +25,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/iterator.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/cfile_set.h"
@@ -35,7 +36,6 @@ namespace kudu {
 
 class ColumnMaterializationContext;
 class ScanSpec;
-class Schema;
 class SelectionVector;
 struct IteratorStats;
 
@@ -61,7 +61,7 @@ class DeltaApplier : public ColumnwiseIterator {
 
   std::string ToString() const OVERRIDE;
 
-  const Schema &schema() const OVERRIDE;
+  const SchemaPtr schema() const OVERRIDE;
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
 

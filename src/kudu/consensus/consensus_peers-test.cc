@@ -90,11 +90,12 @@ class ConsensusPeersTest : public KuduTest {
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
+    SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
     ASSERT_OK(Log::Open(options_,
                         fs_manager_.get(),
                         /*file_cache*/nullptr,
                         kTabletId,
-                        schema_,
+                        schema_ptr,
                         0, // schema_version
                         /*metric_entity*/nullptr,
                         &log_));

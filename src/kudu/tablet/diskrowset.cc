@@ -326,7 +326,7 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(
     BloomFilterSizing bloom_sizing, size_t target_rowset_size)
     : state_(kInitialized),
       tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
-      schema_(schema),
+      schema_(new Schema(schema)),
       bloom_sizing_(bloom_sizing),
       target_rowset_size_(target_rowset_size),
       row_idx_in_cur_drs_(0),
@@ -354,7 +354,7 @@ Status RollingDiskRowSetWriter::RollWriter() {
 
   RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_drs_metadata_));
 
-  cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), &schema_, bloom_sizing_));
+  cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), schema_.get(), bloom_sizing_));
   RETURN_NOT_OK(cur_writer_->Open());
 
   FsManager* fs = tablet_metadata_->fs_manager();
@@ -630,7 +630,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
 
-  const Schema* schema = &rowset_metadata_->tablet_schema();
+  SchemaPtr schema = rowset_metadata_->tablet_schema();
 
   RowIteratorOptions opts;
   opts.projection = schema;
@@ -641,7 +641,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
       opts, REDO, &included_stores, &delta_iter));
 
   out->reset(new MajorDeltaCompaction(rowset_metadata_->fs_manager(),
-                                      *schema,
+                                      *schema.get(),
                                       base_data_.get(),
                                       std::move(delta_iter),
                                       std::move(included_stores),
@@ -665,7 +665,7 @@ Status DiskRowSet::NewRowIterator(const RowIteratorOptions& opts,
   return Status::OK();
 }
 
-Status DiskRowSet::NewCompactionInput(const Schema* projection,
+Status DiskRowSet::NewCompactionInput(const SchemaPtr& projection,
                                       const MvccSnapshot &snap,
                                       const IOContext* io_context,
                                       unique_ptr<CompactionInput>* out) const {
@@ -910,7 +910,8 @@ Status DiskRowSet::DebugDump(vector<string> *lines) {
   // Using CompactionInput to dump our data is an easy way of seeing all the
   // rows and deltas.
   unique_ptr<CompactionInput> input;
-  RETURN_NOT_OK(NewCompactionInput(&rowset_metadata_->tablet_schema(),
+  SchemaPtr schema_ptr = rowset_metadata_->tablet_schema();
+  RETURN_NOT_OK(NewCompactionInput(schema_ptr,
                                    MvccSnapshot::CreateSnapshotIncludingAllOps(),
                                    nullptr, &input));
   return DebugDumpCompactionInput(input.get(), lines);

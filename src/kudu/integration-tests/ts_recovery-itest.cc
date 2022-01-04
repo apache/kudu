@@ -604,7 +604,7 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
                           fs_manager.get(),
                           /*file_cache*/nullptr,
                           tablet_id,
-                          SchemaBuilder(GetSimpleTestSchema()).Build(),
+                          std::make_shared<Schema>(SchemaBuilder(GetSimpleTestSchema()).Build()),
                           0, // schema_version
                           /*metric_entity*/nullptr,
                           &log));

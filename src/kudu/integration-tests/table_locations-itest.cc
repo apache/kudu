@@ -244,7 +244,8 @@ Status TableLocationsTest::CreateTable(
 }
 
 void TableLocationsTest::CreateTable(const string& table_name, int num_splits) {
-  Schema schema({ ColumnSchema("key", INT32) }, 1);
+  SchemaPtr schema_ptr(new Schema({ ColumnSchema("key", INT32) }, 1));
+  Schema& schema = *schema_ptr.get();
   KuduPartialRow row(&schema);
   vector<KuduPartialRow> splits(num_splits, row);
   for (int i = 0; i < num_splits; i++) {
@@ -299,7 +300,8 @@ class TableLocationsWithTSLocationTest : public TableLocationsTest {
 // document.
 TEST_F(TableLocationsTest, TestGetTableLocations) {
   const string table_name = "test";
-  Schema schema({ ColumnSchema("key", STRING) }, 1);
+  SchemaPtr schema_ptr(new Schema({ ColumnSchema("key", STRING) }, 1));
+  Schema& schema = *schema_ptr.get();
   KuduPartialRow row(&schema);
 
   vector<KuduPartialRow> splits(6, row);
@@ -470,11 +472,13 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
 
 TEST_F(TableLocationsTest, RangeSpecificHashingSameDimensions) {
   const string table_name = CURRENT_TEST_NAME();
-  Schema schema({
+  SchemaPtr schema_ptr(
+      new Schema({
                   ColumnSchema("str_0", STRING),
                   ColumnSchema("int_1", INT32),
                   ColumnSchema("str_2", STRING),
-                }, 3);
+                }, 3));
+  Schema& schema = *schema_ptr.get();
   KuduPartialRow row(&schema);
 
   FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
@@ -562,7 +566,9 @@ TEST_F(TableLocationsTest, RangeSpecificHashingSameDimensions) {
 //                are supported
 TEST_F(TableLocationsTest, RangeSpecificHashingVaryingDimensions) {
   const string table_name = "test";
-  Schema schema({ ColumnSchema("key", STRING), ColumnSchema("val", STRING) }, 2);
+  SchemaPtr schema_ptr(new Schema(
+          { ColumnSchema("key", STRING), ColumnSchema("val", STRING) }, 2));
+  Schema& schema = *schema_ptr.get();
   KuduPartialRow row(&schema);
 
   FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
@@ -591,7 +597,8 @@ TEST_F(TableLocationsTest, RangeSpecificHashingVaryingDimensions) {
 
 TEST_F(TableLocationsWithTSLocationTest, TestGetTSLocation) {
   const string table_name = "test";
-  Schema schema({ ColumnSchema("key", STRING) }, 1);
+  SchemaPtr schema_ptr(new Schema({ ColumnSchema("key", STRING) }, 1));
+  Schema& schema = *schema_ptr.get();
   ASSERT_OK(CreateTable(table_name, schema));
 
   NO_FATALS(CheckMasterTableCreation(table_name, 1));

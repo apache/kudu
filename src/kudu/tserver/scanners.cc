@@ -358,12 +358,12 @@ void Scanner::AddTimings(const CpuTimes& elapsed) {
 
 void Scanner::Init(unique_ptr<RowwiseIterator> iter,
                    unique_ptr<ScanSpec> spec,
-                   unique_ptr<Schema> client_projection) {
+                   SchemaPtr client_projection) {
   lock_.AssertAcquired();
   CHECK(!iter_) << "Already initialized";
   iter_ = std::move(iter);
   spec_ = std::move(spec);
-  client_projection_schema_ = std::move(client_projection);
+  client_projection_schema_ = client_projection;
   initted_.store(true, std::memory_order_release);
 }
 
@@ -404,15 +404,16 @@ ScanDescriptor Scanner::Descriptor() const {
 
   const auto& tablet_metadata = tablet_replica_->tablet_metadata();
   descriptor.table_name = tablet_metadata->table_name();
+  SchemaPtr schema = tablet_metadata->schema();
   if (spec().lower_bound_key()) {
     descriptor.predicates.emplace_back(
         Substitute("PRIMARY KEY >= $0", KUDU_REDACT(
-            spec().lower_bound_key()->Stringify(tablet_metadata->schema()))));
+            spec().lower_bound_key()->Stringify(*schema.get()))));
   }
   if (spec().exclusive_upper_bound_key()) {
     descriptor.predicates.emplace_back(
         Substitute("PRIMARY KEY < $0", KUDU_REDACT(
-            spec().exclusive_upper_bound_key()->Stringify(tablet_metadata->schema()))));
+            spec().exclusive_upper_bound_key()->Stringify(*schema.get()))));
   }
 
   for (const auto& predicate : spec().predicates()) {
@@ -422,9 +423,9 @@ ScanDescriptor Scanner::Descriptor() const {
   vector<IteratorStats> iterator_stats;
   iter_->GetIteratorStats(&iterator_stats);
 
-  DCHECK_EQ(iterator_stats.size(), iter_->schema().num_columns());
+  DCHECK_EQ(iterator_stats.size(), iter_->schema()->num_columns());
   for (int col_idx = 0; col_idx < iterator_stats.size(); col_idx++) {
-    descriptor.iterator_stats.emplace_back(iter_->schema().column(col_idx).name(),
+    descriptor.iterator_stats.emplace_back(iter_->schema()->column(col_idx).name(),
                                            iterator_stats[col_idx]);
   }
 

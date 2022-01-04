@@ -30,6 +30,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -57,7 +58,6 @@ class FsManager;
 class NodeInstancePB;
 class Partition;
 class PartitionSchema;
-class Schema;
 class ThreadPool;
 class Timer;
 
@@ -132,7 +132,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                          const std::string& tablet_id,
                          const Partition& partition,
                          const std::string& table_name,
-                         const Schema& schema,
+                         SchemaPtr schema,
                          const PartitionSchema& partition_schema,
                          consensus::RaftConfigPB config,
                          boost::optional<TableExtraConfigPB> extra_config,

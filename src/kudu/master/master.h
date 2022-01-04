@@ -27,6 +27,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/kserver/kserver.h"
 #include "kudu/master/master_options.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/status.h"
 

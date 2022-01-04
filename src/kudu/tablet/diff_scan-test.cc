@@ -41,8 +41,8 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/status.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
 using std::string;
@@ -104,7 +104,7 @@ TEST_P(DiffScanTest, TestDiffScan) {
   opts.include_deleted_rows = include_deleted_rows;
 
   static const bool kIsDeletedDefault = false;
-  SchemaBuilder builder(tablet->metadata()->schema());
+  SchemaBuilder builder(*tablet->metadata()->schema().get());
   if (order_mode == ORDERED) {
     // Define our diff scan to start from snap1.
     // NOTE: it isn't critical to set this given the default is -Inf, but it
@@ -119,8 +119,8 @@ TEST_P(DiffScanTest, TestDiffScan) {
                                 /*read_default=*/ &kIsDeletedDefault,
                                 /*write_default=*/ nullptr));
   }
-  Schema projection = builder.BuildWithoutIds();
-  opts.projection = &projection;
+  SchemaPtr projection = std::make_shared<Schema>(builder.BuildWithoutIds());
+  opts.projection = projection;
 
   unique_ptr<RowwiseIterator> row_iterator;
   ASSERT_OK(tablet->NewRowIterator(std::move(opts),
@@ -188,13 +188,13 @@ TEST_F(OrderedDiffScanWithDeletesTest, TestKudu3108) {
   opts.order = ORDERED;
   opts.include_deleted_rows = true;
   static const bool kIsDeletedDefault = false;
-  SchemaBuilder builder(tablet->metadata()->schema());
+  SchemaBuilder builder(*tablet->metadata()->schema().get());
   ASSERT_OK(builder.AddColumn("deleted", IS_DELETED,
                               /*is_nullable=*/ false,
                               /*read_default=*/ &kIsDeletedDefault,
                               /*write_default=*/ nullptr));
-  Schema projection = builder.BuildWithoutIds();
-  opts.projection = &projection;
+  SchemaPtr projection_ptr = std::make_shared<Schema>(builder.BuildWithoutIds());
+  opts.projection = projection_ptr;
 
   // We should be able to iterate through the rows without issue.
   unique_ptr<RowwiseIterator> row_iterator;
@@ -247,9 +247,9 @@ TEST_F(OrderedDiffScanWithDeletesTest, TestDiffScanAfterDeltaFlushRacesWithBatch
   opts.snap_to_exclude = snap1;
   opts.snap_to_include = snap2;
   opts.order = ORDERED;;
-  SchemaBuilder builder(tablet->metadata()->schema());
-  Schema projection = builder.BuildWithoutIds();
-  opts.projection = &projection;
+  SchemaBuilder builder(*tablet->metadata()->schema().get());
+  SchemaPtr projection_ptr = std::make_shared<Schema>(builder.BuildWithoutIds());
+  opts.projection = projection_ptr;
 
   unique_ptr<RowwiseIterator> row_iterator;
   ASSERT_OK(tablet->NewRowIterator(std::move(opts), &row_iterator));

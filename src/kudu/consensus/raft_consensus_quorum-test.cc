@@ -136,11 +136,12 @@ class RaftConsensusQuorumTest : public KuduTest {
       RETURN_NOT_OK(fs_manager->Open());
 
       scoped_refptr<Log> log;
+      SchemaPtr schema_ptr = std::make_shared<Schema>(schema_);
       RETURN_NOT_OK(Log::Open(LogOptions(),
                               fs_manager.get(),
                               /*file_cache*/nullptr,
                               kTestTablet,
-                              schema_,
+                              schema_ptr,
                               0, // schema_version
                               /*metric_entity*/nullptr,
                               &log));

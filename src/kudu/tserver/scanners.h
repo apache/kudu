@@ -31,6 +31,7 @@
 
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -49,7 +50,6 @@
 namespace kudu {
 
 class RowwiseIterator;
-class Schema;
 class Status;
 class Thread;
 
@@ -261,7 +261,7 @@ class Scanner {
   // show up in the scanner dashboard.
   void Init(std::unique_ptr<RowwiseIterator> iter,
             std::unique_ptr<ScanSpec> spec,
-            std::unique_ptr<Schema> client_projection);
+            SchemaPtr client_projection);
 
   RowwiseIterator* iter() {
     lock_.AssertAcquired();
@@ -414,8 +414,7 @@ class Scanner {
 
   // Stores the request's projection schema, if it differs from the
   // schema used by the iterator.
-  // Assumed to be set once initted_ is true.
-  std::unique_ptr<Schema> client_projection_schema_;
+  SchemaPtr client_projection_schema_;
 
   // The last time that the scanner was accessed.
   // Only modified under lock_ but can be read outside.

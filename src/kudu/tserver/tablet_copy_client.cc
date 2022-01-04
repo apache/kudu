@@ -343,8 +343,9 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   wal_seqnos_.assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
   remote_cstate_.reset(resp.release_initial_cstate());
 
-  Schema schema;
-  RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock_->schema(), &schema),
+  SchemaPtr schema_ptr(new Schema);
+  Schema* schema = schema_ptr.get();
+  RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock_->schema(), schema_ptr.get()),
                         "Cannot deserialize schema from remote superblock");
 
   if (replace_tombstoned_tablet_) {
@@ -396,13 +397,13 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
     Partition::FromPB(superblock_->partition(), &partition);
     PartitionSchema partition_schema;
     RETURN_NOT_OK(PartitionSchema::FromPB(superblock_->partition_schema(),
-                                          schema, &partition_schema));
+                                          *schema, &partition_schema));
 
     // Create the superblock on disk.
     RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_, tablet_id_,
         superblock_->table_name(),
         superblock_->table_id(),
-        schema,
+        schema_ptr,
         partition_schema,
         partition,
         superblock_->tablet_data_state(),

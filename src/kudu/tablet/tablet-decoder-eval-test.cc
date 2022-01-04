@@ -174,7 +174,8 @@ public:
     spec.OptimizeScan(schema_, &arena, true);
     ScanSpec orig_spec = spec;
     unique_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    SchemaPtr client_schema_ptr = std::make_shared<Schema>(client_schema_);
+    ASSERT_OK(tablet()->NewRowIterator(client_schema_ptr, &iter));
     spec = orig_spec;
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
@@ -251,14 +252,16 @@ public:
     spec.OptimizeScan(schema_, &arena, true);
     ScanSpec orig_spec = spec;
     unique_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    SchemaPtr client_schema_ptr = std::make_shared<Schema>(client_schema_);
+    ASSERT_OK(tablet()->NewRowIterator(client_schema_ptr, &iter));
     spec = orig_spec;
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
     RowBlockMemory mem(1024);
     size_t expected_count = ExpectedCount(nrows, cardinality, lower, upper);
-    Schema schema = iter->schema();
+    SchemaPtr schema_ptr = iter->schema();
+    Schema& schema = *schema_ptr;
     RowBlock block(&schema, 100, &mem);
     int fetched = 0;
     string column_str_a;

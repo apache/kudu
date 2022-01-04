@@ -404,10 +404,12 @@ Status TabletServerTestBase::ShutdownAndRebuildTablet(int num_data_dirs) {
 }
 
 // Verifies that a set of expected rows (key, value) is present in the tablet.
-void TabletServerTestBase::VerifyRows(const Schema& schema,
+void TabletServerTestBase::VerifyRows(const Schema& t_schema,
                                       const vector<KeyValue>& expected) {
+  SchemaPtr schema_ptr = std::make_shared<Schema>(t_schema);
+  Schema& schema = *schema_ptr;
   unique_ptr<RowwiseIterator> iter;
-  ASSERT_OK(tablet_replica_->tablet()->NewRowIterator(schema, &iter));
+  ASSERT_OK(tablet_replica_->tablet()->NewRowIterator(schema_ptr, &iter));
   ASSERT_OK(iter->Init(nullptr));
 
   int batch_size = std::max<int>(1,

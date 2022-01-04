@@ -32,6 +32,7 @@
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -610,7 +611,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const string& tablet_id,
                                         const Partition& partition,
                                         const string& table_name,
-                                        const Schema& schema,
+                                        SchemaPtr schema,
                                         const PartitionSchema& partition_schema,
                                         RaftConfigPB config,
                                         boost::optional<TableExtraConfigPB> extra_config,
@@ -643,12 +644,13 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   // Create the metadata.
   TRACE("Creating new metadata...");
   scoped_refptr<TabletMetadata> meta;
+  SchemaPtr schema_ptr(new Schema(*schema.get()));
   RETURN_NOT_OK_PREPEND(
     TabletMetadata::CreateNew(fs_manager_,
                               tablet_id,
                               table_name,
                               table_id,
-                              schema,
+                              schema_ptr,
                               partition_schema,
                               partition,
                               TABLET_DATA_READY,

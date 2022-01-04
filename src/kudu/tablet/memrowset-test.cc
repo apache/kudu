@@ -88,6 +88,8 @@ class TestMemRowSet : public KuduTest {
       log_anchor_registry_(new LogAnchorRegistry()),
       schema_(CreateSchema()),
       key_schema_(schema_.CreateKeyProjection()),
+      schema_ptr_(std::make_shared<Schema>(schema_)),
+      key_schema_ptr_(std::make_shared<Schema>(key_schema_)),
       clock_(Timestamp::kInitialTimestamp) {
   }
 
@@ -230,7 +232,7 @@ class TestMemRowSet : public KuduTest {
   bool CheckRowsAtSnapshot(MemRowSet* mrs, const MvccSnapshot& snap, int expected_rows) {
     RowIteratorOptions opts;
     opts.snap_to_include = snap;
-    opts.projection = &schema_;
+    opts.projection = schema_ptr_;
     return expected_rows == ScanAndCount(mrs, opts);
   }
 
@@ -240,7 +242,7 @@ class TestMemRowSet : public KuduTest {
     RowIteratorOptions opts;
     opts.snap_to_exclude = snap_to_exc;
     opts.snap_to_include = snap_to_inc;
-    opts.projection = &schema_;
+    opts.projection = schema_ptr_;
     return expected_rows == ScanAndCount(mrs, opts);
   }
 
@@ -284,6 +286,8 @@ class TestMemRowSet : public KuduTest {
   faststring mutation_buf_;
   const Schema schema_;
   const Schema key_schema_;
+  const SchemaPtr schema_ptr_;
+  const SchemaPtr key_schema_ptr_;
   clock::LogicalClock clock_;
   MvccManager mvcc_;
 };
@@ -291,7 +295,7 @@ class TestMemRowSet : public KuduTest {
 
 TEST_F(TestMemRowSet, TestInsertAndIterate) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
@@ -324,10 +328,11 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
   ASSERT_OK(builder.AddKeyColumn("key1", STRING));
   ASSERT_OK(builder.AddKeyColumn("key2", INT32));
   ASSERT_OK(builder.AddColumn("val", UINT32));
-  Schema compound_key_schema = builder.Build();
+  SchemaPtr compound_key_schema_ptr = std::make_shared<Schema>(builder.Build());
+  Schema& compound_key_schema = *compound_key_schema_ptr.get();
 
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, compound_key_schema, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, compound_key_schema_ptr, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   RowBuilder rb(&compound_key_schema);
@@ -399,7 +404,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
 // Test that inserting duplicate key data fails with Status::AlreadyPresent
 TEST_F(TestMemRowSet, TestInsertDuplicate) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
@@ -410,7 +415,7 @@ TEST_F(TestMemRowSet, TestInsertDuplicate) {
 // Test for updating rows in memrowset
 TEST_F(TestMemRowSet, TestUpdate) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 1));
@@ -438,7 +443,7 @@ TEST_F(TestMemRowSet, TestUpdate) {
 // existence
 TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   ASSERT_OK(InsertRows(mrs.get(), 100));
@@ -456,7 +461,7 @@ TEST_F(TestMemRowSet, TestDelete) {
   bool present;
 
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   // Insert row.
@@ -511,7 +516,7 @@ TEST_F(TestMemRowSet, TestDelete) {
 
   // Verify that iterating the rowset at the first snapshot shows the row.
   RowIteratorOptions opts;
-  opts.projection = &schema_;
+  opts.projection = schema_ptr_;
   opts.snap_to_include = snapshot_before_delete;
   ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
   ASSERT_EQ(1, rows.size());
@@ -534,7 +539,7 @@ TEST_F(TestMemRowSet, TestDelete) {
 // Can operate as a benchmark by setting --roundtrip_num_rows to a high value like 10M
 TEST_F(TestMemRowSet, TestMemRowSetInsertCountAndScan) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -548,7 +553,7 @@ TEST_F(TestMemRowSet, TestMemRowSetInsertCountAndScan) {
 
   for (int i = 0; i < FLAGS_num_scan_passes; i++) {
     RowIteratorOptions opts;
-    opts.projection = &schema_;
+    opts.projection = schema_ptr_;
     opts.snap_to_include = MvccSnapshot(Timestamp(0));
     LOG_TIMING(INFO, "Scanning rows where none are committed") {
       ASSERT_EQ(0, ScanAndCount(mrs.get(), opts));
@@ -565,7 +570,7 @@ TEST_F(TestMemRowSet, TestMemRowSetInsertCountAndScan) {
 // not committed in that snapshot.
 TEST_F(TestMemRowSet, TestInsertionMVCC) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   vector<MvccSnapshot> snapshots;
 
@@ -592,7 +597,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
 
   ASSERT_EQ(5, snapshots.size());
   RowIteratorOptions opts;
-  opts.projection = &schema_;
+  opts.projection = schema_ptr_;
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
     // Each snapshot 'i' is taken after row 'i' was committed.
@@ -609,7 +614,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
 // will yield old versions of a row which has been updated.
 TEST_F(TestMemRowSet, TestUpdateMVCC) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   // Insert a row ("myrow", 0)
@@ -636,7 +641,7 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
   // Validate that each snapshot returns the expected value
   ASSERT_EQ(6, snapshots.size());
   RowIteratorOptions opts;
-  opts.projection = &schema_;
+  opts.projection = schema_ptr_;
   for (int i = 0; i <= 5; i++) {
     SCOPED_TRACE(i);
     vector<string> rows;
@@ -665,7 +670,7 @@ INSTANTIATE_TEST_SUITE_P(RowIteratorOptionsPermutations, ParameterizedTestMemRow
 
 TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   // Sequence of operations:
@@ -701,9 +706,9 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
                               /*is_nullable=*/false,
                               &kFalse, /*write_default=*/nullptr));
     }
-    Schema projection = sb->Build();
+    SchemaPtr projection_ptr = std::make_shared<Schema>(sb->Build());
     RowIteratorOptions opts;
-    opts.projection = &projection;
+    opts.projection = projection_ptr;
     opts.snap_to_include = include;
     opts.snap_to_exclude = exclude;
     opts.include_deleted_rows = include_deleted_rows;
@@ -761,12 +766,12 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
 
 TEST_F(TestMemRowSet, TestScanIncludeDeletedRows) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   ASSERT_OK(GenerateTestData(mrs.get()));
 
   RowIteratorOptions opts;
-  opts.projection = &schema_;
+  opts.projection = schema_ptr_;
   opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
   ASSERT_EQ(4, ScanAndCount(mrs.get(), opts));
 
@@ -776,7 +781,7 @@ TEST_F(TestMemRowSet, TestScanIncludeDeletedRows) {
 
 TEST_F(TestMemRowSet, TestScanVirtualColumnIsDeleted) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   ASSERT_OK(GenerateTestData(mrs.get()));
 
@@ -787,10 +792,10 @@ TEST_F(TestMemRowSet, TestScanVirtualColumnIsDeleted) {
   ASSERT_OK(sb.AddColumn("deleted", IS_DELETED,
                          /*is_nullable=*/false,
                          &kFalse, /*write_default=*/nullptr));
-  Schema projection = sb.Build();
+  SchemaPtr projection_ptr = std::make_shared<Schema>(sb.Build());
 
   RowIteratorOptions opts;
-  opts.projection = &projection;
+  opts.projection = projection_ptr;
   opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllOps();
   opts.include_deleted_rows = true;
   vector<string> rows;
@@ -809,7 +814,7 @@ TEST_F(TestMemRowSet, TestScanVirtualColumnIsDeleted) {
 // and --times_to_update to a high value.
 TEST_F(TestMemRowSet, TestMemRowSetUpdatePerformance) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   int num_rows = 1000;
   LOG_TIMING(INFO, "Inserting rows") {
@@ -844,7 +849,7 @@ TEST_F(TestMemRowSet, TestMemRowSetUpdatePerformance) {
 
 TEST_F(TestMemRowSet, TestCountLiveRows) {
   shared_ptr<MemRowSet> mrs;
-  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(0, schema_ptr_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
   const auto CheckLiveRowsCount = [&](int64_t expect) {
@@ -879,7 +884,7 @@ TEST_F(TestMemRowSet, TestCommittedTransactionalRows) {
   const int64_t kTxnId = 0;
   shared_ptr<MemRowSet> mrs;
   scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
-  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_, kTxnId, txn_meta, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId, txn_meta, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
@@ -941,7 +946,7 @@ TEST_F(TestMemRowSet, TestAbortBeforeBeginningToCommitTransactionalRows) {
   const int64_t kTxnId = 0;
   shared_ptr<MemRowSet> mrs;
   scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
-  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_, kTxnId, txn_meta, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId, txn_meta, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
@@ -973,7 +978,7 @@ TEST_F(TestMemRowSet, TestAbortAfterBeginningToCommitTransactionalRows) {
   const int64_t kTxnId = 0;
   shared_ptr<MemRowSet> mrs;
   scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
-  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_, kTxnId, txn_meta, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId, txn_meta, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
