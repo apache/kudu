@@ -404,15 +404,16 @@ ScanDescriptor Scanner::Descriptor() const {
 
   const auto& tablet_metadata = tablet_replica_->tablet_metadata();
   descriptor.table_name = tablet_metadata->table_name();
+  SchemaPtr schema_ptr = tablet_metadata->schema();
   if (spec().lower_bound_key()) {
     descriptor.predicates.emplace_back(
         Substitute("PRIMARY KEY >= $0", KUDU_REDACT(
-            spec().lower_bound_key()->Stringify(tablet_metadata->schema()))));
+            spec().lower_bound_key()->Stringify(*schema_ptr))));
   }
   if (spec().exclusive_upper_bound_key()) {
     descriptor.predicates.emplace_back(
         Substitute("PRIMARY KEY < $0", KUDU_REDACT(
-            spec().exclusive_upper_bound_key()->Stringify(tablet_metadata->schema()))));
+            spec().exclusive_upper_bound_key()->Stringify(*schema_ptr))));
   }
 
   for (const auto& predicate : spec().predicates()) {

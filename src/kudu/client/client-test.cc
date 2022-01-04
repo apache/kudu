@@ -4709,7 +4709,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
         ->Default(KuduValue::CopyString("hello!"));
     ASSERT_OK(table_alterer->Alter());
     ASSERT_EQ(4, tablet_replica->tablet()->metadata()->schema_version());
-    Schema schema = tablet_replica->tablet()->metadata()->schema();
+    Schema schema = *tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
     ASSERT_FALSE(col_schema.has_read_default());
     ASSERT_TRUE(col_schema.has_write_default());
@@ -4723,7 +4723,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
         ->Default(KuduValue::FromInt(54321));
     ASSERT_OK(table_alterer->Alter());
     ASSERT_EQ(5, tablet_replica->tablet()->metadata()->schema_version());
-    Schema schema = tablet_replica->tablet()->metadata()->schema();
+    Schema schema = *tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("non_null_with_default"));
     ASSERT_TRUE(col_schema.has_read_default()); // Started with a default
     ASSERT_TRUE(col_schema.has_write_default());
@@ -4737,7 +4737,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
         ->RemoveDefault();
     ASSERT_OK(table_alterer->Alter());
     ASSERT_EQ(6, tablet_replica->tablet()->metadata()->schema_version());
-    Schema schema = tablet_replica->tablet()->metadata()->schema();
+    Schema schema = *tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
     ASSERT_FALSE(col_schema.has_read_default());
     ASSERT_FALSE(col_schema.has_write_default());
@@ -4750,7 +4750,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
         ->RemoveDefault();
     ASSERT_OK(table_alterer->Alter());
     ASSERT_EQ(7, tablet_replica->tablet()->metadata()->schema_version());
-    Schema schema = tablet_replica->tablet()->metadata()->schema();
+    Schema schema = *tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("non_null_with_default"));
     ASSERT_TRUE(col_schema.has_read_default());
     ASSERT_FALSE(col_schema.has_write_default());
@@ -4779,7 +4779,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
         ->BlockSize(16 * 1024 * 1024);
     ASSERT_OK(table_alterer->Alter());
     ASSERT_EQ(8, tablet_replica->tablet()->metadata()->schema_version());
-    Schema schema = tablet_replica->tablet()->metadata()->schema();
+    Schema schema = *tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
     ASSERT_EQ(KuduColumnStorageAttributes::PLAIN_ENCODING, col_schema.attributes().encoding);
     ASSERT_EQ(KuduColumnStorageAttributes::LZ4, col_schema.attributes().compression);

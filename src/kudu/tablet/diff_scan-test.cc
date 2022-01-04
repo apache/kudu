@@ -104,7 +104,7 @@ TEST_P(DiffScanTest, TestDiffScan) {
   opts.include_deleted_rows = include_deleted_rows;
 
   static const bool kIsDeletedDefault = false;
-  SchemaBuilder builder(tablet->metadata()->schema());
+  SchemaBuilder builder(*tablet->metadata()->schema());
   if (order_mode == ORDERED) {
     // Define our diff scan to start from snap1.
     // NOTE: it isn't critical to set this given the default is -Inf, but it
@@ -188,7 +188,7 @@ TEST_F(OrderedDiffScanWithDeletesTest, TestKudu3108) {
   opts.order = ORDERED;
   opts.include_deleted_rows = true;
   static const bool kIsDeletedDefault = false;
-  SchemaBuilder builder(tablet->metadata()->schema());
+  SchemaBuilder builder(*tablet->metadata()->schema());
   ASSERT_OK(builder.AddColumn("deleted", IS_DELETED,
                               /*is_nullable=*/ false,
                               /*read_default=*/ &kIsDeletedDefault,
@@ -247,7 +247,7 @@ TEST_F(OrderedDiffScanWithDeletesTest, TestDiffScanAfterDeltaFlushRacesWithBatch
   opts.snap_to_exclude = snap1;
   opts.snap_to_include = snap2;
   opts.order = ORDERED;;
-  SchemaBuilder builder(tablet->metadata()->schema());
+  SchemaBuilder builder(*tablet->metadata()->schema());
   Schema projection = builder.BuildWithoutIds();
   opts.projection = &projection;
 

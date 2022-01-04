@@ -99,7 +99,7 @@ class RowSetMetadata {
 
   int64_t id() const { return id_; }
 
-  const Schema& tablet_schema() const {
+  const SchemaPtr tablet_schema() const {
     return tablet_metadata_->schema();
   }
 

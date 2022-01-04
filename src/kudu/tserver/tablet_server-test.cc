@@ -3478,7 +3478,7 @@ class InvalidScanRequest_WithIdsParamTest :
     public ::testing::WithParamInterface<ReadMode> {
 };
 TEST_P(InvalidScanRequest_WithIdsParamTest, Test) {
-  const Schema* projection = tablet_replica_->tablet()->schema();
+  const SchemaPtr projection = tablet_replica_->tablet()->schema();
   ASSERT_TRUE(projection->has_column_ids());
   VerifyScanRequestFailure(*projection,
                            TabletServerErrorPB::INVALID_SCHEMA,

@@ -363,7 +363,7 @@ public:
     } else {
       default_ptr = rowops_.GenerateElement(read_default);
     }
-    SchemaBuilder builder(tablet()->metadata()->schema());
+    SchemaBuilder builder(*tablet()->metadata()->schema());
     builder.RemoveColumn("val_c");
     ASSERT_OK(builder.AddColumn("val_c", rowops_.type_, true, default_ptr, nullptr));
     AlterSchema(builder.Build());

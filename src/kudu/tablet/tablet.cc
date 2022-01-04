@@ -262,7 +262,7 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
                shared_ptr<MemTracker> parent_mem_tracker,
                MetricRegistry* metric_registry,
                scoped_refptr<LogAnchorRegistry> log_anchor_registry)
-  : key_schema_(metadata->schema().CreateKeyProjection()),
+  : key_schema_(metadata->schema()->CreateKeyProjection()),
     metadata_(std::move(metadata)),
     log_anchor_registry_(std::move(log_anchor_registry)),
     mem_trackers_(tablet_id(), std::move(parent_mem_tracker)),
@@ -371,7 +371,8 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
 
     // Now that the current state is loaded, create the new MemRowSet with the next id.
     shared_ptr<MemRowSet> new_mrs;
-    RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
+    const SchemaPtr schema_ptr = schema();
+    RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema_ptr,
                                     log_anchor_registry_.get(),
                                     mem_trackers_.tablet_tracker,
                                     &new_mrs));
@@ -386,7 +387,7 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
       // NOTE: we are able to FindOrDie() on these IDs because
       // 'txn_ids_with_mrs' is a subset of the transaction IDs known by the
       // metadata.
-      RETURN_NOT_OK(MemRowSet::Create(0, *schema(), txn_id, FindOrDie(txn_meta_by_id, txn_id),
+      RETURN_NOT_OK(MemRowSet::Create(0, *schema_ptr, txn_id, FindOrDie(txn_meta_by_id, txn_id),
                                       log_anchor_registry_.get(),
                                       mem_trackers_.tablet_tracker,
                                       &txn_mrs));
@@ -462,7 +463,7 @@ void Tablet::Shutdown() {
 
 Status Tablet::GetMappedReadProjection(const Schema& projection,
                                        Schema *mapped_projection) const {
-  const Schema* cur_schema = schema();
+  const SchemaPtr cur_schema = schema();
   return cur_schema->GetMappedReadProjection(projection, mapped_projection);
 }
 
@@ -541,17 +542,18 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
   TRACE("Decoding operations");
   vector<DecodedRowOperation> ops;
 
+  SchemaPtr schema_ptr = schema();
   // Decode the ops
   RowOperationsPBDecoder dec(&op_state->request()->row_operations(),
                              client_schema,
-                             schema(),
+                             schema_ptr.get(),
                              op_state->arena());
   RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
   TRACE_COUNTER_INCREMENT("num_ops", ops.size());
 
   // Important to set the schema before the ops -- we need the
   // schema in order to stringify the ops.
-  op_state->set_schema_at_decode_time(schema());
+  op_state->set_schema_at_decode_time(schema_ptr);
   op_state->SetRowOps(std::move(ops));
 
   return Status::OK();
@@ -605,8 +607,8 @@ Status Tablet::CheckRowInTablet(const ConstContiguousRow& row) const {
   const auto& ps = metadata_->partition_schema();
   if (PREDICT_FALSE(!ps.PartitionContainsRow(metadata_->partition(), row))) {
     return Status::NotFound(
-        Substitute("Row not in tablet partition. Partition: '$0' row: '$1'",
-                   ps.PartitionDebugString(metadata_->partition(), *schema()),
+        Substitute("Row not in tablet partition. Partition: '$0', row: '$1'.",
+                   ps.PartitionDebugString(metadata_->partition(), *schema().get()),
                    ps.PartitionKeyDebugString(row)));
   }
   return Status::OK();
@@ -744,7 +746,7 @@ Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
   }
 
   Timestamp ts = op_state->timestamp();
-  ConstContiguousRow row(schema(), op->decoded_op.row_data);
+  ConstContiguousRow row(schema().get(), op->decoded_op.row_data);
 
   // TODO(todd): the Insert() call below will re-encode the key, which is a
   // waste. Should pass through the KeyProbe structure perhaps.
@@ -819,7 +821,7 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
                                    RowOp* upsert,
                                    RowSet* rowset,
                                    ProbeStats* stats) {
-  const auto* schema = this->schema();
+  const auto* schema = this->schema().get();
   ConstContiguousRow row(schema, upsert->decoded_op.row_data);
   faststring buf;
   RowChangeListEncoder enc(&buf);
@@ -991,7 +993,8 @@ void Tablet::StartApplying(ParticipantOpState* op_state) {
 
 void Tablet::CreateTxnRowSets(int64_t txn_id, scoped_refptr<TxnMetadata> txn_meta) {
   shared_ptr<MemRowSet> new_mrs;
-  CHECK_OK(MemRowSet::Create(0, *schema(), txn_id, std::move(txn_meta),
+  const SchemaPtr schema_ptr = schema();
+  CHECK_OK(MemRowSet::Create(0, *schema_ptr, txn_id, std::move(txn_meta),
                              log_anchor_registry_.get(),
                              mem_trackers_.tablet_tracker,
                              &new_mrs));
@@ -1266,7 +1269,7 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
   }
   DCHECK(op_state != nullptr) << "must have a WriteOpState";
   DCHECK(op_state->op_id().IsInitialized()) << "OpState OpId needed for anchoring";
-  DCHECK_EQ(op_state->schema_at_decode_time(), schema());
+  DCHECK_EQ(op_state->schema_at_decode_time(), schema().get());
 
   // If we were unable to check rowset presence in batch (e.g. because we are processing
   // a batch which contains some duplicate keys) we need to do so now.
@@ -1524,7 +1527,8 @@ Status Tablet::ReplaceMemRowSetsUnlocked(RowSetsInCompaction* compaction,
   }
 
   shared_ptr<MemRowSet> new_mrs;
-  RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
+  const SchemaPtr schema_ptr = schema();
+  RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema_ptr,
                                   log_anchor_registry_.get(),
                                   mem_trackers_.tablet_tracker,
                                   &new_mrs));
@@ -1539,7 +1543,7 @@ Status Tablet::ReplaceMemRowSetsUnlocked(RowSetsInCompaction* compaction,
 }
 
 Status Tablet::CreatePreparedAlterSchema(AlterSchemaOpState* op_state,
-                                         const Schema* schema) {
+                                         const SchemaPtr& schema) {
 
   if (!schema->has_column_ids()) {
     // this probably means that the request is not from the Master
@@ -1556,7 +1560,7 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaOpState* op_state,
 }
 
 Status Tablet::AlterSchema(AlterSchemaOpState* op_state) {
-  DCHECK(key_schema_.KeyTypeEquals(*DCHECK_NOTNULL(op_state->schema())))
+  DCHECK(key_schema_.KeyTypeEquals(*DCHECK_NOTNULL(op_state->schema().get())))
       << "Schema keys cannot be altered(except name)";
 
   // Prevent any concurrent flushes. Otherwise, we run into issues where
@@ -1580,7 +1584,7 @@ Status Tablet::AlterSchema(AlterSchemaOpState* op_state) {
                         << " to " << op_state->schema()->ToString()
                         << " version " << op_state->schema_version();
   DCHECK(schema_lock_.is_locked());
-  metadata_->SetSchema(*op_state->schema(), op_state->schema_version());
+  metadata_->SetSchema(op_state->schema(), op_state->schema_version());
   if (op_state->has_new_table_name()) {
     metadata_->SetTableName(op_state->new_table_name());
     if (metric_entity_) {
@@ -1609,7 +1613,8 @@ Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
   // to flush.
   VLOG_WITH_PREFIX(1) << "Rewinding schema during bootstrap to " << new_schema.ToString();
 
-  metadata_->SetSchema(new_schema, schema_version);
+  SchemaPtr schema = std::make_shared<Schema>(new_schema);
+  metadata_->SetSchema(schema, schema_version);
   {
     std::lock_guard<rw_spinlock> lock(component_lock_);
 
@@ -1617,7 +1622,7 @@ Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
     shared_ptr<RowSetTree> old_rowsets = components_->rowsets;
     CHECK(old_mrs->empty());
     shared_ptr<MemRowSet> new_mrs;
-    RETURN_NOT_OK(MemRowSet::Create(old_mrs->mrs_id(), new_schema,
+    RETURN_NOT_OK(MemRowSet::Create(old_mrs->mrs_id(), *schema,
                                     log_anchor_registry_.get(),
                                     mem_trackers_.tablet_tracker,
                                     &new_mrs));
@@ -1872,7 +1877,8 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   }
 
   shared_ptr<CompactionInput> merge;
-  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema(), &io_context, &merge));
+  const SchemaPtr schema_ptr = schema();
+  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_ptr.get(), &io_context, &merge));
 
   RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), DefaultBloomSizing(),
                                compaction_policy_->target_rowset_size());
@@ -2014,8 +2020,9 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   VLOG_WITH_PREFIX(1) << Substitute("$0: Phase 2: carrying over any updates "
                                     "which arrived during Phase 1. Snapshot: $1",
                                     op_name, non_duplicated_ops_snap.ToString());
+  const SchemaPtr schema_ptr2 = schema();
   RETURN_NOT_OK_PREPEND(
-      input.CreateCompactionInput(non_duplicated_ops_snap, schema(), &io_context, &merge),
+      input.CreateCompactionInput(non_duplicated_ops_snap, schema_ptr2.get(), &io_context, &merge),
           Substitute("Failed to create $0 inputs", op_name).c_str());
 
   // Update the output rowsets with the deltas that came in in phase 1, before we swapped

@@ -107,7 +107,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
     uint64_t count;
     CHECK_OK(tablet()->CountRows(&count));
-    const Schema* schema = tablet()->schema();
+    const Schema* schema = tablet()->schema().get();
     ColumnSchema valcol = schema->column(schema->find_column("val"));
     valcol_projection_ = Schema({ valcol }, 0);
     CHECK_OK(tablet()->NewRowIterator(valcol_projection_, &iter));

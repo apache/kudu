@@ -156,7 +156,7 @@ class CFileSet :
   // (the ad-hoc reader for composite keys, otherwise the key column reader)
   cfile::CFileReader* key_index_reader() const;
 
-  const Schema &tablet_schema() const { return rowset_metadata_->tablet_schema(); }
+  const SchemaPtr tablet_schema() const { return rowset_metadata_->tablet_schema(); }
 
   std::shared_ptr<RowSetMetadata> rowset_metadata_;
   std::shared_ptr<MemTracker> bloomfile_tracker_;

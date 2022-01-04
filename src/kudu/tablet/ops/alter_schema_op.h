@@ -24,6 +24,7 @@
 #include <boost/optional/optional.hpp>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/ops/op.h"
@@ -32,7 +33,6 @@
 
 namespace kudu {
 
-class Schema;
 class rw_semaphore;
 
 namespace tablet {
@@ -59,8 +59,8 @@ class AlterSchemaOpState : public OpState {
   const tserver::AlterSchemaRequestPB* request() const override { return request_; }
   tserver::AlterSchemaResponsePB* response() const override { return response_; }
 
-  void set_schema(const Schema* schema) { schema_ = schema; }
-  const Schema* schema() const { return schema_; }
+  void set_schema(const SchemaPtr& schema) { schema_ = schema; }
+  const SchemaPtr schema() const { return schema_; }
 
   std::string new_table_name() const {
     return request_->new_table_name();
@@ -109,7 +109,7 @@ class AlterSchemaOpState : public OpState {
   DISALLOW_COPY_AND_ASSIGN(AlterSchemaOpState);
 
   // The new (target) Schema.
-  const Schema* schema_;
+  SchemaPtr schema_;
 
   // The original RPC request and response.
   const tserver::AlterSchemaRequestPB *request_;

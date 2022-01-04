@@ -193,9 +193,10 @@ class WriteOpState : public OpState {
 
   void ReleaseMvccTxn(Op::OpResult result);
 
-  void set_schema_at_decode_time(const Schema* schema) {
+  void set_schema_at_decode_time(const SchemaPtr& schema) {
     std::lock_guard<simple_spinlock> l(op_state_lock_);
-    schema_at_decode_time_ = schema;
+    schema_ptr_at_decode_time_ = schema;
+    schema_at_decode_time_ = schema.get();
   }
 
   const Schema* schema_at_decode_time() const {
@@ -319,6 +320,8 @@ class WriteOpState : public OpState {
   // at APPLY time to ensure we don't have races against schema change.
   // Protected by op_state_lock_.
   const Schema* schema_at_decode_time_;
+  // protect schema_at_decode_time_
+  SchemaPtr schema_ptr_at_decode_time_;
 
   // Lock that protects access to various fields of WriteOpState.
   mutable simple_spinlock op_state_lock_;

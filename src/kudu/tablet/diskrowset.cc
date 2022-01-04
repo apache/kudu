@@ -630,10 +630,10 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
 
-  const Schema* schema = &rowset_metadata_->tablet_schema();
+  const SchemaPtr schema_ptr = rowset_metadata_->tablet_schema();
 
   RowIteratorOptions opts;
-  opts.projection = schema;
+  opts.projection = schema_ptr.get();
   opts.io_context = io_context;
   vector<shared_ptr<DeltaStore>> included_stores;
   unique_ptr<DeltaIterator> delta_iter;
@@ -641,7 +641,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
       opts, REDO, &included_stores, &delta_iter));
 
   out->reset(new MajorDeltaCompaction(rowset_metadata_->fs_manager(),
-                                      *schema,
+                                      *schema_ptr,
                                       base_data_.get(),
                                       std::move(delta_iter),
                                       std::move(included_stores),
@@ -910,7 +910,7 @@ Status DiskRowSet::DebugDump(vector<string> *lines) {
   // Using CompactionInput to dump our data is an easy way of seeing all the
   // rows and deltas.
   unique_ptr<CompactionInput> input;
-  RETURN_NOT_OK(NewCompactionInput(&rowset_metadata_->tablet_schema(),
+  RETURN_NOT_OK(NewCompactionInput(rowset_metadata_->tablet_schema().get(),
                                    MvccSnapshot::CreateSnapshotIncludingAllOps(),
                                    nullptr, &input));
   return DebugDumpCompactionInput(input.get(), lines);

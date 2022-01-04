@@ -220,7 +220,7 @@ CFileReader* CFileSet::key_index_reader() const {
   // If there is no special index cfile, then we have a non-compound key
   // and we can just use the key column.
   // This is always the first column listed in the tablet schema.
-  int key_col_id = tablet_schema().column_id(0);
+  int key_col_id = tablet_schema()->column_id(0);
   return FindOrDie(readers_by_col_id_, key_col_id).get();
 }
 
@@ -423,7 +423,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 
   Schema key_schema_for_vlog;
   if (VLOG_IS_ON(1)) {
-    key_schema_for_vlog = base_data_->tablet_schema().CreateKeyProjection();
+    key_schema_for_vlog = base_data_->tablet_schema()->CreateKeyProjection();
   }
 
   const auto* lb_key = spec->lower_bound_key();

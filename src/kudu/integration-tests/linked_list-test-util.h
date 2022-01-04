@@ -564,7 +564,7 @@ inline Status LinkedListTester::VerifyLinkedListLocal(
                               GenerateSplitInts());
   verifier.StartScanTimer();
 
-  const Schema* tablet_schema = tablet->schema();
+  const Schema* tablet_schema = tablet->schema().get();
   // Cannot use schemas with col indexes in a scan (assertions fire).
   Schema projection(tablet_schema->columns(), tablet_schema->num_key_columns());
   std::unique_ptr<RowwiseIterator> iter;

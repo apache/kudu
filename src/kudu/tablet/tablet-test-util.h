@@ -150,8 +150,9 @@ class KuduTabletTest : public KuduTest {
       *(req.mutable_new_extra_config()) = *extra_config;
     }
 
+    SchemaPtr schema_ptr = std::make_shared<Schema>(schema);
     AlterSchemaOpState op_state(nullptr, &req, nullptr);
-    ASSERT_OK(tablet()->CreatePreparedAlterSchema(&op_state, &schema));
+    ASSERT_OK(tablet()->CreatePreparedAlterSchema(&op_state, schema_ptr));
     ASSERT_OK(tablet()->AlterSchema(&op_state));
     op_state.Finish();
   }

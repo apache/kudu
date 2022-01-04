@@ -252,9 +252,10 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
   RETURN_NOT_OK(tablet::TabletMetadata::Load(fs_manager, kSysCatalogTabletId, &metadata));
 
   // Verify that the schema is the current one
-  if (metadata->schema() != BuildTableSchema()) {
+  const SchemaPtr schema_ptr = metadata->schema();
+  if (*schema_ptr != BuildTableSchema()) {
     // TODO: In this case we probably should execute the migration step.
-    return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
+    return(Status::Corruption("Unexpected schema", schema_ptr->ToString()));
   }
 
   LOG(INFO) << "Verifying existing consensus state";

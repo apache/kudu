@@ -261,7 +261,7 @@ class Tablet {
   // An error will be returned if the specified schema is invalid (e.g.
   // key mismatch, or missing IDs)
   Status CreatePreparedAlterSchema(AlterSchemaOpState *op_state,
-                                   const Schema* schema);
+                                   const SchemaPtr& schema);
 
   // Apply the Schema of the specified op.
   // This operation will trigger a flush on the current MemRowSet.
@@ -411,8 +411,8 @@ class Tablet {
   // has a very small number of rows.
   Status DebugDump(std::vector<std::string> *lines = NULL);
 
-  const Schema* schema() const {
-    return &metadata_->schema();
+  const SchemaPtr schema() const {
+    return metadata_->schema();
   }
 
   // Returns a reference to the key projection of the tablet schema.

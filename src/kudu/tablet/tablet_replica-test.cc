@@ -32,9 +32,9 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -540,11 +540,11 @@ TEST_F(TabletReplicaTest, TestRollLogSegmentSchemaOnAlter) {
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
   SchemaPB orig_schema_pb;
-  ASSERT_OK(SchemaToPB(SchemaBuilder(tablet()->metadata()->schema()).Build(), &orig_schema_pb));
+  ASSERT_OK(SchemaToPB(SchemaBuilder(*tablet()->metadata()->schema()).Build(), &orig_schema_pb));
   const int orig_schema_version = tablet()->metadata()->schema_version();
 
   // Add a new column.
-  SchemaBuilder builder(tablet()->metadata()->schema());
+  SchemaBuilder builder(*tablet()->metadata()->schema());
   ASSERT_OK(builder.AddColumn("new_col", INT32));
   Schema new_client_schema = builder.BuildWithoutIds();
   SchemaPB new_schema;
@@ -581,11 +581,11 @@ TEST_F(TabletReplicaTest, Kudu2690Test) {
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
   SchemaPB orig_schema_pb;
-  ASSERT_OK(SchemaToPB(SchemaBuilder(tablet()->metadata()->schema()).Build(), &orig_schema_pb));
+  ASSERT_OK(SchemaToPB(SchemaBuilder(*tablet()->metadata()->schema()).Build(), &orig_schema_pb));
   const int orig_schema_version = tablet()->metadata()->schema_version();
 
   // First things first, add a new column.
-  SchemaBuilder builder(tablet()->metadata()->schema());
+  SchemaBuilder builder(*tablet()->metadata()->schema());
   ASSERT_OK(builder.AddColumn("new_col", INT32));
   Schema new_client_schema = builder.BuildWithoutIds();
   SchemaPB new_schema;

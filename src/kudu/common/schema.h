@@ -48,6 +48,7 @@
 
 namespace kudu {
 class Schema;
+typedef std::shared_ptr<Schema> SchemaPtr;
 }  // namespace kudu
 
 // Check that two schemas are equal, yielding a useful error message

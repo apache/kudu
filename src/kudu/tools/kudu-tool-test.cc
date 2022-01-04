@@ -2431,7 +2431,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   // Verify the contents of the metadata output
   SCOPED_TRACE(stdout);
   string debug_str = meta->partition_schema()
-      .PartitionDebugString(meta->partition(), meta->schema());
+      .PartitionDebugString(meta->partition(), *meta->schema());
   StripWhiteSpace(&debug_str);
   ASSERT_STR_CONTAINS(stdout, debug_str);
   debug_str = Substitute("Table name: $0 Table id: $1",
@@ -2439,7 +2439,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   ASSERT_STR_CONTAINS(stdout, debug_str);
   debug_str = Substitute("Schema (version=$0):", meta->schema_version());
   ASSERT_STR_CONTAINS(stdout, debug_str);
-  debug_str = meta->schema().ToString();
+  debug_str = meta->schema()->ToString();
   StripWhiteSpace(&debug_str);
   ASSERT_STR_CONTAINS(stdout, debug_str);
 
@@ -2583,7 +2583,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 
     SCOPED_TRACE(stdout);
     debug_str = meta->partition_schema()
-        .PartitionDebugString(meta->partition(), meta->schema());
+        .PartitionDebugString(meta->partition(), *meta->schema());
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, debug_str);
     debug_str = Substitute("Table name: $0 Table id: $1",
@@ -2592,7 +2592,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     debug_str = Substitute("Schema (version=$0):", meta->schema_version());
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, debug_str);
-    debug_str = meta->schema().ToString();
+    debug_str = meta->schema()->ToString();
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, debug_str);
 
