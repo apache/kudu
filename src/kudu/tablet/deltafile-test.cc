@@ -45,7 +45,6 @@
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"

@@ -132,7 +132,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                          const std::string& tablet_id,
                          const Partition& partition,
                          const std::string& table_name,
-                         SchemaPtr schema,
+                         SchemaPtr& schema,
                          const PartitionSchema& partition_schema,
                          consensus::RaftConfigPB config,
                          boost::optional<TableExtraConfigPB> extra_config,

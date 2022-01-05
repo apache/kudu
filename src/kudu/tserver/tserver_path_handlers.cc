@@ -35,6 +35,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -92,8 +93,6 @@ using strings::Substitute;
 DECLARE_int32(scan_history_count);
 
 namespace kudu {
-
-class Schema;
 
 namespace tserver {
 

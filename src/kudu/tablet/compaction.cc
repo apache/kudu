@@ -46,7 +46,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/delta_store.h"

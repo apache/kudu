@@ -28,7 +28,6 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/common/schema.h"
 #include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/mathlimits.h"

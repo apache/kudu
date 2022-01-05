@@ -28,7 +28,6 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
 

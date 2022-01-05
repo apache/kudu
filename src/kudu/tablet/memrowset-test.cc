@@ -884,7 +884,8 @@ TEST_F(TestMemRowSet, TestCommittedTransactionalRows) {
   const int64_t kTxnId = 0;
   shared_ptr<MemRowSet> mrs;
   scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
-  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId, txn_meta, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId,
+                              txn_meta, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
@@ -946,7 +947,8 @@ TEST_F(TestMemRowSet, TestAbortBeforeBeginningToCommitTransactionalRows) {
   const int64_t kTxnId = 0;
   shared_ptr<MemRowSet> mrs;
   scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
-  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId, txn_meta, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId,
+                              txn_meta, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
@@ -978,7 +980,8 @@ TEST_F(TestMemRowSet, TestAbortAfterBeginningToCommitTransactionalRows) {
   const int64_t kTxnId = 0;
   shared_ptr<MemRowSet> mrs;
   scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
-  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId, txn_meta, log_anchor_registry_.get(),
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_ptr_, kTxnId,
+                              txn_meta, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
   MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
   ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
