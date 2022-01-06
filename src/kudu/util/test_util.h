@@ -95,6 +95,8 @@ bool AllowSlowTests();
 // to true. This is required to pass certain tests in FIPS approved mode.
 bool UseLargeKeys();
 
+bool EnableEncryption();
+
 // Override the given gflag to the new value, only in the case that
 // slow tests are enabled and the user hasn't otherwise overridden
 // it on the command line.

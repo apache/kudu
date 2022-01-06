@@ -66,6 +66,7 @@ DEFINE_string(test_leave_files, "on_failure",
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
 DECLARE_string(time_source);
+DECLARE_bool(encrypt_data_at_rest);
 
 using std::string;
 using std::vector;
@@ -80,6 +81,7 @@ namespace kudu {
 const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
 static const char* const kSlowTestsEnvVar = "KUDU_ALLOW_SLOW_TESTS";
 static const char* const kLargeKeysEnvVar = "KUDU_USE_LARGE_KEYS_IN_TESTS";
+static const char* const kEncryptDataInTests = "KUDU_ENCRYPT_DATA_IN_TESTS";
 
 static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 
@@ -136,6 +138,11 @@ KuduTest::KuduTest()
     // reports an error since the flag is unknown to the gflags runtime.
     google::SetCommandLineOptionWithMode(e.first, e.second, google::SET_FLAGS_DEFAULT);
   }
+
+  if (EnableEncryption()) {
+    FLAGS_encrypt_data_at_rest = true;
+  }
+
   // If the TEST_TMPDIR variable has been set, then glog will automatically use that
   // as its default log directory. We would prefer that the default log directory
   // instead be the test-case-specific subdirectory.
@@ -194,6 +201,8 @@ void KuduTest::OverrideKrb5Environment() {
 bool AllowSlowTests() { return GetBooleanEnvironmentVariable(kSlowTestsEnvVar); }
 
 bool UseLargeKeys() { return GetBooleanEnvironmentVariable(kLargeKeysEnvVar); }
+
+bool EnableEncryption() { return GetBooleanEnvironmentVariable(kEncryptDataInTests); }
 
 void OverrideFlagForSlowTests(const std::string& flag_name,
                               const std::string& new_value) {
