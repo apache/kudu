@@ -40,6 +40,7 @@ start_kudu.sh [flags]
                     (default: system_unsync)
 -b, --builddir      Path to the Kudu build directory
 -c  --clusterdir    Path to place the Kudu masters and tablet servers.
+-H, --host          RPC address host (default: 127.0.0.1)
 -T, --tserver-flags Extra flags to be used on the tablet servers. Multiple
                     flags can be specified if wrapped in ""s.
 -M, --master-flags  Extra flags to be used on the master servers. Multiple
@@ -56,6 +57,7 @@ BUILDDIR=""
 CLUSTER_DIR="$PWD"
 EXTRA_TSERVER_FLAGS=""
 EXTRA_MASTER_FLAGS=""
+IP="127.0.0.1"
 
 while (( "$#" )); do
   case "$1" in
@@ -99,6 +101,10 @@ while (( "$#" )); do
       EXTRA_MASTER_FLAGS=$2
       shift 2
       ;;
+    -H|--host)
+      IP=$2
+      shift 2
+      ;;
     --) # end argument parsing
       shift
       break
@@ -138,7 +144,6 @@ KUDUMASTER="$BUILDDIR/bin/kudu-master"
 KUDUTSERVER="$BUILDDIR/bin/kudu-tserver"
 echo $KUDUMASTER
 echo $KUDUTSERVER
-IP=127.0.0.1
 
 [ ! -x "$KUDUMASTER" ] && { echo "Cannot find $KUDUMASTER executable";  exit 1; }
 [ ! -x "$KUDUTSERVER" ] && { echo "Cannot find $KUDUTSERVER executable";  exit 1; }
@@ -211,7 +216,6 @@ function start_master() {
   ARGS="$ARGS --time_source=$TIME_SOURCE"
   ARGS="$ARGS --unlock_unsafe_flags"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
-  ARGS="$ARGS --webserver_interface=$IP"
   if [ -d "$WEBSERVER_DOC_ROOT" ]; then
     ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
   fi
@@ -237,7 +241,6 @@ function start_tserver() {
   ARGS="$ARGS --time_source=$TIME_SOURCE"
   ARGS="$ARGS --unlock_unsafe_flags"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
-  ARGS="$ARGS --webserver_interface=$IP"
   ARGS="$ARGS --tserver_master_addrs=$4"
   if [ -d "$WEBSERVER_DOC_ROOT" ]; then
     ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
