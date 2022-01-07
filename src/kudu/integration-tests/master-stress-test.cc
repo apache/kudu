@@ -22,6 +22,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -116,7 +117,7 @@ static const MonoDelta kTransientStateBackoff = MonoDelta::FromMilliseconds(50);
 
 // Parameterized based on HmsMode.
 class MasterStressTest : public ExternalMiniClusterITestBase,
-                         public ::testing::WithParamInterface<HmsMode> {
+                         public ::testing::WithParamInterface<std::tuple<HmsMode, bool>> {
  public:
   MasterStressTest()
     : done_(1),
@@ -146,9 +147,18 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
     opts.start_process_timeout = MonoDelta::FromSeconds(60);
     opts.rpc_negotiation_timeout = MonoDelta::FromSeconds(30);
 
-    opts.hms_mode = GetParam();
+    opts.hms_mode = std::get<0>(GetParam());
     // Tune down the notification log poll period in order to speed up catalog convergence.
     opts.extra_master_flags.emplace_back("--hive_metastore_notification_log_poll_period_seconds=1");
+
+    if (std::get<1>(GetParam())) {
+      // Set shorter intervals to trigger frequent cleanup tasks.
+      opts.extra_master_flags.emplace_back(
+          "--enable_metadata_cleanup_for_deleted_tables_and_tablets=true");
+      opts.extra_master_flags.emplace_back("--catalog_manager_bg_task_wait_ms=10");
+      opts.extra_master_flags.emplace_back(
+          "--metadata_for_deleted_table_and_tablet_reserved_secs=0");
+    }
 
     // Set max missed heartbeats periods to 1.0 (down from 3.0).
     opts.extra_master_flags.emplace_back("--leader_failure_max_missed_heartbeat_periods=1.0");
@@ -205,7 +215,7 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
         new MasterServiceProxy(cluster_->messenger(), addr, addr.host()));
     ASSERT_OK(CreateTabletServerMap(m_proxy, cluster_->messenger(), &ts_map_));
 
-    if (GetParam() == HmsMode::ENABLE_METASTORE_INTEGRATION) {
+    if (std::get<0>(GetParam()) == HmsMode::ENABLE_METASTORE_INTEGRATION) {
       thrift::ClientOptions hms_opts;
       hms_opts.service_principal = "hive";
       hms_client_.reset(new HmsClient(cluster_->hms()->address(), hms_opts));
@@ -525,10 +535,12 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
   std::unordered_map<string, itest::TServerDetails*> ts_map_;
 };
 
-// Run the test with the HMS integration enabled and disabled.
-INSTANTIATE_TEST_SUITE_P(HmsConfigurations, MasterStressTest, ::testing::ValuesIn(
-    vector<HmsMode> { HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION }
-));
+INSTANTIATE_TEST_SUITE_P(
+    CatalogManagerConfigurations,
+    MasterStressTest,
+    ::testing::Combine(/*hms_mode*/ ::testing::ValuesIn(vector<HmsMode>{
+                           HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION}),
+                       /*enable_metadata_cleanup_for_deleted_table(t)s*/ ::testing::Bool()));
 
 TEST_P(MasterStressTest, Test) {
   OverrideFlagForSlowTests("num_create_table_threads", "10");

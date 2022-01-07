@@ -151,6 +151,9 @@ message SysTabletsEntryPB {
   // The dimension label for the tablet. Used for dimension-specific
   // placement of the tablet's replicas.
   optional string dimension_label = 8;
+
+  // The delete time of the tablet, in seconds since the epoch.
+  optional int64 delete_timestamp = 9;
 }
 
 // The on-disk entry in the sys.catalog table ("metadata" column) for
@@ -215,6 +218,9 @@ message SysTablesEntryPB {
 
   // The comment on the table.
   optional string comment = 17;
+
+  // The delete time of the table, in seconds since the epoch.
+  optional int64 delete_timestamp = 18;
 }
 
 // The on-disk entry in the sys.catalog table ("metadata" column) to represent

@@ -488,7 +488,7 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
   {
     CatalogManager::ScopedLeaderSharedLock leader_lock(catalog_manager_);
     RETURN_NOT_OK(leader_lock.first_failed_status());
-    RETURN_NOT_OK(catalog_manager_->GetAllTables(&table_infos));
+    catalog_manager_->GetAllTables(&table_infos);
   }
 
   table_summaries.reserve(table_infos.size());

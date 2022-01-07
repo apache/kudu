@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <sys/types.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -767,7 +769,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // the catalog manager is not yet running. Caller must hold leader_lock_.
   //
   // NOTE: This should only be used by tests or web-ui
-  Status GetAllTables(std::vector<scoped_refptr<TableInfo>>* tables);
+  void GetAllTables(std::vector<scoped_refptr<TableInfo>>* tables);
 
   // Check if a table exists by name, setting 'exist' appropriately. May fail
   // if the catalog manager is not yet running. Caller must hold leader_lock_.
@@ -848,12 +850,17 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // This test exclusively acquires the leader_lock_ directly.
   FRIEND_TEST(kudu::client::ServiceUnavailableRetryClientTest, CreateTable);
 
+  // // This test calls GetAllTabletsForTests() directly.
+  FRIEND_TEST(MasterTest, TestDeletedTablesAndTabletsCleanup);
+
   friend class AutoRebalancerTest;
   friend class TableLoader;
   friend class TabletLoader;
 
   typedef std::unordered_map<std::string, scoped_refptr<TableInfo>> TableInfoMap;
   typedef std::unordered_map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
+
+  void GetAllTabletsForTests(std::vector<scoped_refptr<TabletInfo>>* tablets);
 
   // Check whether the table's write limit is reached,
   // if true, the write permission should be disabled.
@@ -1037,6 +1044,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Extract the set of tablets that must be processed because not running yet.
   void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
 
+  // Extract the set of tables and tablets that have been deleted or replaced.
+  void ExtractDeletedTablesAndTablets(std::vector<scoped_refptr<TableInfo>>* deleted_tables,
+                                      std::vector<scoped_refptr<TabletInfo>>* deleted_tablets);
+
   // Check if it's time to generate a new Token Signing Key for TokenSigner.
   // If so, generate one and persist it into the system table. After that,
   // push it into the TokenSigner's key queue.
@@ -1127,6 +1138,16 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                const std::string& deletion_msg);
 
   void ResetTableLocationsCache();
+
+  // Task that takes care of deleted tables, is called in a backgroud thread.
+  // Clean up the metadata of tables if the time since they were deleted has passed
+  // 'FLAGS_metadata_for_deleted_table_and_tablet_reserved_secs'.
+  Status ProcessDeletedTables(const std::vector<scoped_refptr<TableInfo>>& tables,
+                              time_t current_timestamp);
+
+  // Tasks that takes care of delete tablets, similar to 'ProcessDeletedTables'.
+  Status ProcessDeletedTablets(const std::vector<scoped_refptr<TabletInfo>>& tablets,
+                               time_t current_timestamp);
 
   std::string GenerateId() { return oid_generator_.Next(); }
 

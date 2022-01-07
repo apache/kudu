@@ -562,6 +562,7 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
 }
 
 Status KuduClient::ListTables(vector<string>* tables, const string& filter) {
+  tables->clear();
   vector<Data::TableInfo> tables_info;
   RETURN_NOT_OK(data_->ListTablesWithInfo(this, &tables_info, filter));
   for (auto& info : tables_info) {

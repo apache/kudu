@@ -761,7 +761,7 @@ TEST_F(TsTabletManagerITest, TestTableStats) {
     ASSERT_OK(l.first_failed_status());
     // Get the TableInfo.
     vector<scoped_refptr<TableInfo>> table_infos;
-    ASSERT_OK(catalog->GetAllTables(&table_infos));
+    catalog->GetAllTables(&table_infos);
     ASSERT_EQ(1, table_infos.size());
     // Run the check function.
     NO_FATALS(check_function(table_infos[0].get(), live_row_count));
