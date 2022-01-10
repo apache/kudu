@@ -21,7 +21,9 @@
 
 #include <krb5/krb5.h>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 
 namespace kudu {
 namespace security {
@@ -63,6 +65,12 @@ class KinitContext {
  private:
   Status KinitInternal();
 
+  // Safe stop the renewal thread before destroying KinitContext
+  void Kdestroy();
+
+  // Periodically calls DoRenewal().
+  void RenewThread();
+
   // Helper for DoRenewal() that tries to do a renewal. On success, returns OK and sets
   // *found_in_cache = true. If there is an error doing the renewal itself, returns an
   // error. If the TGT to be renewed was not found in the cache, return OK and set
@@ -79,6 +87,11 @@ class KinitContext {
 
   // This is the time that the current TGT in use expires.
   int32_t ticket_end_timestamp_;
+
+  // To stop reacquire_thread_ when process stopping.
+  CountDownLatch stop_latch_;
+  // A thread to renew and reacquire Kerberos credentials.
+  scoped_refptr<Thread> reacquire_thread_;
 };
 
 } // namespace security

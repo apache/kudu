@@ -55,6 +55,9 @@ Status InitKerberosForServer(const std::string& raw_principal,
                              const std::string& krb5ccname = kKrb5CCName,
                              bool disable_krb5_replay_cache = true);
 
+// Destroy Kerberos for a server.
+void DestroyKerberosForServer();
+
 // Returns the process lock 'kerberos_reinit_lock'
 // This lock is taken in write mode while the ticket is being reacquired, and
 // taken in read mode before using the SASL library which might require a ticket.

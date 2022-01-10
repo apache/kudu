@@ -869,6 +869,8 @@ void ServerBase::ShutdownImpl() {
     tcmalloc_memory_gc_thread_->Join();
   }
 #endif
+
+  security::DestroyKerberosForServer();
 }
 
 #ifdef TCMALLOC_ENABLED
