@@ -37,7 +37,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/security/kinit_context.h"
@@ -496,11 +495,8 @@ Status InitKerberosForServer(const std::string& raw_principal, const std::string
   RETURN_NOT_OK_PREPEND(g_kinit_ctx->Kinit(
       keytab_file, configured_principal), "unable to kinit");
 
-  scoped_refptr<Thread> reacquire_thread;
-  // Start the reacquire thread.
-  RETURN_NOT_OK(Thread::Create("kerberos", "reacquire thread", &RenewThread, &reacquire_thread));
-
-  return Status::OK();
+  // Start the thread to renew and reacquire Kerberos tickets.
+  return Thread::Create("kerberos", "reacquire thread", &RenewThread, nullptr);
 }
 
 string GetKrb5ConfigFile() {

@@ -285,7 +285,8 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // Starts the thread running SuperviseThread(), and returns once that thread has
   // initialised and its TID has been read. Waits for notification from the started
   // thread that initialisation is complete before returning. On success, stores a
-  // reference to the thread in holder.
+  // reference to the thread into the 'holder' parameter which can be passed as
+  // 'nullptr' if the reference isn't needed.
   static Status StartThread(std::string category, std::string name,
                             std::function<void()> functor, uint64_t flags,
                             scoped_refptr<Thread>* holder);
