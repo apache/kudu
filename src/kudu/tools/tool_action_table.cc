@@ -239,7 +239,8 @@ enum PartitionAction {
   DROP,
 };
 
-Status AddLogicalType(JsonWriter *writer, const char *type, const char *logical_type) {
+Status AddLogicalType(JsonWriter* writer, const string& type, const string& logical_type,
+                      const ColumnSchema& col_schema) {
   writer->StartArray();
   writer->StartObject();
   writer->String("type");
@@ -248,66 +249,88 @@ Status AddLogicalType(JsonWriter *writer, const char *type, const char *logical_
   writer->String(logical_type);
   writer->EndObject();
   writer->EndArray();
+  if (col_schema.has_read_default()) {
+    writer->String("default");
+    writer->String(col_schema.Stringify(col_schema.read_default_value()));
+  }
   return Status::OK();
 }
 
-Status PopulateAvroSchema(const string &table_name,
-                          const string &cluster_id,
-                          const KuduSchema &schema) {
+Status AddPrimitiveType(const ColumnSchema& col_schema, const string& type, JsonWriter* writer) {
+  if (col_schema.is_nullable()) {
+    writer->StartArray();
+    writer->String("null");
+    writer->String(type);
+    writer->EndArray();
+  } else {
+    writer->String(type);
+  }
+  if (col_schema.has_read_default()) {
+    writer->String("default");
+    writer->String(col_schema.Stringify(col_schema.read_default_value()));
+  }
+  return Status::OK();
+}
+
+Status PopulateAvroSchema(const string& table_name,
+                          const string& cluster_id,
+                          const KuduSchema& kudu_schema) {
   std::ostringstream out;
   JsonWriter writer(&out, JsonWriter::Mode::PRETTY);
   // Start writing in Json format
   writer.StartObject();
-  vector<string> json_attributes = {"name", "table", "type", table_name,
+  vector<string> json_attributes = {"type", "table", "name", table_name,
                                     "namespace", "kudu.cluster." + cluster_id, "fields"};
-  for (const string &json: json_attributes) {
+  for (const string& json: json_attributes) {
     writer.String(json);
   }
   writer.StartArray();
-
+  const Schema schema = kudu::client::KuduSchema::ToSchema(kudu_schema);
   // Each column type is a nested field
   for (int i = 0; i < schema.num_columns(); i++) {
     writer.StartObject();
     writer.String("name");
-    writer.String(schema.Column(i).name());
+    writer.String(kudu_schema.Column(i).name());
     writer.String("type");
-    switch (schema.Column(i).type()) {
+    switch (kudu_schema.Column(i).type()) {
       case kudu::client::KuduColumnSchema::INT8:
       case kudu::client::KuduColumnSchema::INT16:
       case kudu::client::KuduColumnSchema::INT32:
-        writer.String("int");
+        RETURN_NOT_OK(AddPrimitiveType(schema.column(i), "int", &writer));
         break;
       case kudu::client::KuduColumnSchema::INT64:
-        writer.String("long");
+        RETURN_NOT_OK(AddPrimitiveType(schema.column(i), "long", &writer));
         break;
       case kudu::client::KuduColumnSchema::STRING:
-        writer.String("string");
+        RETURN_NOT_OK(AddPrimitiveType(schema.column(i), "string", &writer));
         break;
       case kudu::client::KuduColumnSchema::BOOL:
-        writer.String("bool");
+        RETURN_NOT_OK(AddPrimitiveType(schema.column(i), "bool", &writer));
         break;
       case kudu::client::KuduColumnSchema::FLOAT:
-        writer.String("float");
+        RETURN_NOT_OK(AddPrimitiveType(schema.column(i), "float", &writer));
         break;
       case kudu::client::KuduColumnSchema::DOUBLE:
-        writer.String("double");
+        RETURN_NOT_OK(AddPrimitiveType(schema.column(i), "double", &writer));
         break;
       case kudu::client::KuduColumnSchema::BINARY:
-        writer.String("bytes");
+        RETURN_NOT_OK(AddPrimitiveType(schema.column(i), "bytes", &writer));
         break;
       case kudu::client::KuduColumnSchema::VARCHAR:
-        writer.String("string");
+        RETURN_NOT_OK(AddPrimitiveType(schema.column(i), "string", &writer));
         break;
       // Each logical type in avro schema has sub-nested fields
       case kudu::client::KuduColumnSchema::UNIXTIME_MICROS:
-        RETURN_NOT_OK(AddLogicalType(&writer, "long", "time-micros"));
+        RETURN_NOT_OK(AddLogicalType(&writer, "long", "time-micros", schema.column(i)));
         break;
       case kudu::client::KuduColumnSchema::DATE:
-        RETURN_NOT_OK(AddLogicalType(&writer, "int", "date"));
+        RETURN_NOT_OK(AddLogicalType(&writer, "int", "date", schema.column(i)));
         break;
       case kudu::client::KuduColumnSchema::DECIMAL:
-        RETURN_NOT_OK(AddLogicalType(&writer, "bytes", "decimal"));
+        RETURN_NOT_OK(AddLogicalType(&writer, "bytes", "decimal", schema.column(i)));
         break;
+      default:
+        LOG(DFATAL) << kudu_schema.Column(i).name() << ": Invalid column type";
     }
     writer.EndObject();
   }
@@ -339,7 +362,6 @@ Status DescribeTable(const RunnerContext& context) {
                                          client->cluster_id(), schema);
   }
   cout << "TABLE " << table_name << " " << schema.ToString() << endl;
-
   // The partition schema with current range partitions.
   vector<Partition> partitions;
   RETURN_NOT_OK_PREPEND(table->ListPartitions(&partitions),
