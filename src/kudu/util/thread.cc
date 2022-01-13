@@ -111,6 +111,12 @@ METRIC_DEFINE_gauge_uint64(server, involuntary_context_switches,
                            kudu::MetricLevel::kInfo,
                            kudu::EXPOSE_AS_COUNTER);
 
+METRIC_DEFINE_gauge_int32(server, scheduling_priority,
+                          "Scheduling Priority",
+                          kudu::MetricUnit::kState,
+                          "The scheduling priority of the process",
+                          kudu::MetricLevel::kDebug);
+
 DEFINE_int32(thread_inject_start_latency_ms, 0,
              "Number of ms to sleep when starting a new thread. (For tests).");
 TAG_FLAG(thread_inject_start_latency_ms, hidden);
@@ -140,6 +146,19 @@ static uint64_t GetInVoluntaryContextSwitches() {
   struct rusage ru;
   CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
   return ru.ru_nivcsw;
+}
+
+static int32_t GetSchedulingPriority() {
+  const int saved_errno = errno;
+  SCOPED_CLEANUP({
+    errno = saved_errno;
+  });
+  errno = 0;
+  int prio = getpriority(PRIO_PROCESS, getpid());
+  // No errors expected here per the manual page for the getpriority() syscall:
+  // see https://man7.org/linux/man-pages/man2/setpriority.2.html.
+  PCHECK(errno == 0);
+  return prio;
 }
 
 class ThreadMgr;
@@ -301,6 +320,9 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
   metrics->NeverRetire(
       METRIC_involuntary_context_switches.InstantiateFunctionGauge(
           metrics, []() { return GetInVoluntaryContextSwitches(); }));
+  metrics->NeverRetire(
+      METRIC_scheduling_priority.InstantiateFunctionGauge(
+          metrics, []() { return GetSchedulingPriority(); }));
 
   if (web) {
     DCHECK_NOTNULL(web)->RegisterPathHandler(
