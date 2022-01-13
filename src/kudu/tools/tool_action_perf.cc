@@ -546,7 +546,14 @@ Status GenerateRowData(Generator* key_gen, Generator* value_gen, KuduPartialRow*
         RETURN_NOT_OK(row->SetUnixTimeMicros(idx, gen->Next<int64_t>()));
         break;
       case DATE:
-        RETURN_NOT_OK(row->SetDate(idx, gen->Next<int32_t>()));
+        {
+          // The DATE type has limits on the min and max value dictated by the
+          // representation such as 0001-01-01 and 9999-12-31 correspondingly.
+          int32_t val = gen->Next<int32_t>();
+          val = std::max(val, *DataTypeTraits<DATE>::min_value());
+          val = std::min(val, *DataTypeTraits<DATE>::max_value());
+          RETURN_NOT_OK(row->SetDate(idx, val));
+        }
         break;
       case FLOAT:
         RETURN_NOT_OK(row->SetFloat(idx, gen->Next<float>()));
