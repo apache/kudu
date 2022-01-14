@@ -221,7 +221,7 @@ class DisableWriteWhenExceedingQuotaTest : public KuduTest {
       ASSERT_OK(InsertKeyToTable(client_table_.get(), good_session.get(), k));
       s = good_session->Flush();
       if (!s.ok()) {
-        // break the loop once the write is blocked
+        // break the loop once the write failed
         break;
       }
       WaitForTServerUpdatesStatisticsToMaster(1000);
@@ -328,7 +328,7 @@ class DisableWriteWhenExceedingQuotaTest : public KuduTest {
   }
 
   // change the table limit through admin user
-  void ModifyLimit(const int64_t disk_size_limit, const int64_t row_count_limit) {
+  void ModifyLimit(int64_t disk_size_limit, int64_t row_count_limit) {
     ASSERT_OK(SetupClient(kSuperUser));
     ASSERT_OK(SetTableLimit(kTableName, client_, disk_size_limit, row_count_limit));
   }
@@ -414,10 +414,16 @@ TEST_F(DisableWriteWhenExceedingQuotaTest, TestDisableWritePrivilegeWhenExceedin
   NO_FATALS(TestRowLimit());
 }
 
-// Verify the table's disk size limit
+// Verify the table's disk size limit.
 TEST_F(DisableWriteWhenExceedingQuotaTest, TestDisableWritePrivilegeWhenExceedingSizeQuota) {
-  // modify the table limit to allow more rows but small size
-  NO_FATALS(ModifyLimit(1024L * 1024 + 120L * 1024, kRowCountLimit));
+  // Modify the limits for the table size: allow all the test rows to be
+  // inserted but set a restrictive limit on the size of the table's data on
+  // disk. The latter limit is to be hit while inserting the test rows. The
+  // limit is tuned to allow for at least one row to be inserted after all the
+  // flush, compaction, and GC jazz performed in the context of TestSizeLimit(),
+  // taking into account all the auxiliary data kept on disk by corresponding
+  // tablet servers.
+  NO_FATALS(ModifyLimit(1024 * (1024 + 110), kRowCountLimit));
   // refresh the client
   ASSERT_OK(SetupClient(kUser));
   NO_FATALS(TestSizeLimit());
