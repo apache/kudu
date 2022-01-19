@@ -30,6 +30,7 @@ import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ForkJoinTaskSupport
 import scala.concurrent.forkjoin.ForkJoinPool
@@ -224,8 +225,8 @@ object KuduRestore {
     //  will cause subsequent restores to fail unless the table is deleted or the restore suffix is
     //  changed. We ought to try to clean up the mess when a failure happens.
     val parallelTables = options.tables.par
-    val pool = new ForkJoinPool(options.numParallelRestores) // Need a clean-up reference.
-    parallelTables.tasksupport = new ForkJoinTaskSupport(pool)
+    parallelTables.tasksupport = new ForkJoinTaskSupport(
+      new ForkJoinPool(options.numParallelRestores))
     val restoreResults = parallelTables.map { tableName =>
       val restoreResult =
         Try(doRestore(tableName, context, session, io, options, backupMap))
@@ -240,7 +241,6 @@ object KuduRestore {
       }
       (tableName, restoreResult)
     }
-    pool.shutdown()
 
     restoreResults.filter(_._2.isFailure).foreach {
       case (tableName, ex) =>

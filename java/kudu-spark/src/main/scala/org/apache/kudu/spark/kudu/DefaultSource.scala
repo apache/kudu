@@ -22,7 +22,6 @@ import org.apache.kudu.client.AsyncKuduClient.EncryptionPolicy
 import java.net.InetAddress
 import java.util.Locale
 import scala.collection.JavaConverters._
-import scala.util.Try
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._

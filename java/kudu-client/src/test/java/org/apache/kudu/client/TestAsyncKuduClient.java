@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.base.Splitter;
 import com.google.common.base.Stopwatch;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
@@ -212,14 +213,14 @@ public class TestAsyncKuduClient {
       tabletPb.addInternedReplicas(ProtobufUtils.getFakeTabletInternedReplicaPB(
               i, Metadata.RaftPeerPB.Role.FOLLOWER));
       tabletLocations.add(tabletPb.build());
-      String[] hostPort = tservers.get(i).toString().split(":");
-      String tserverHost = hostPort[0];
+      List<String> hostPort = Splitter.on(':').splitToList(tservers.get(i).toString());
+      String tserverHost = hostPort.get(0);
       if (i == tserverIdx) {
         // simulate IP resolve failure by hacking the hostname
         tserverHost = tserverHost + "xxx";
       }
       tsInfos.add(ProtobufUtils.getFakeTSInfoPB("tserver",
-              tserverHost, Integer.parseInt(hostPort[1])).build());
+              tserverHost, Integer.parseInt(hostPort.get(1))).build());
     }
     try {
       asyncClient.discoverTablets(table, new byte[0], 100,

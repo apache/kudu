@@ -31,7 +31,9 @@ my $pat_allow_non_java =
     qr{(?:\.(?:txt|xml|properties|json|proto|MF|jnilib|so|swp)|
           LICENSE|NOTICE|DEPENDENCIES|
           # The kudu-spark DataSourceRegister file.
-          DataSourceRegister)$}x;
+          DataSourceRegister|
+          # Netty's block hound integration file.
+          reactor\.blockhound\.integration\.BlockHoundIntegration)$}x;
 
 # Allowed filenames of shaded dependencies in JARs.
 my $pat_allow_kudu_shaded =

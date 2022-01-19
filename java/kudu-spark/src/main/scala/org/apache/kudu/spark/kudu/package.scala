@@ -40,6 +40,6 @@ package object kudu {
   implicit class KuduDataFrameWriter[T](writer: DataFrameWriter[T]) {
 
     @deprecated("Use `.format(\"kudu\").save` instead", "1.9.0")
-    def kudu = writer.format("org.apache.kudu.spark.kudu").save
+    def kudu() = writer.format("org.apache.kudu.spark.kudu").save
   }
 }

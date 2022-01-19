@@ -295,7 +295,7 @@ class RpcProxy {
       } else if (decoded.getSecond() instanceof TxnManager.TxnManagerErrorPB) {
         TxnManager.TxnManagerErrorPB error =
             (TxnManager.TxnManagerErrorPB) decoded.getSecond();
-        exception = dispatchTxnManagerError(client, connection, rpc, error, traceBuilder);
+        exception = dispatchTxnManagerError(client, rpc, error, traceBuilder);
         if (exception == null) {
           // Exception was taken care of.
           return;
@@ -430,7 +430,6 @@ class RpcProxy {
    */
   private static KuduException dispatchTxnManagerError(
       AsyncKuduClient client,
-      Connection connection,
       KuduRpc<?> rpc,
       TxnManager.TxnManagerErrorPB pbError,
       RpcTraceFrame.RpcTraceFrameBuilder tracer) {
