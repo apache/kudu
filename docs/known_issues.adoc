@@ -126,8 +126,11 @@ include::top.adoc[tags=version]
 
 * Tablet servers can’t change address/port.
 
-* Kudu has a hard requirement on having up-to-date NTP. Kudu masters and tablet servers
-  will crash when out of sync.
+* Kudu has a requirement on having the server-side clock synchronized with NTP.
+  Kudu masters and tablet servers crash if detecting that the clock is out of
+  sync. For the clock synchronization, either synchronize the local clock
+  using an NTP server such as `ntpd` or `chronyd`, or use the built-in NTP
+  client for Kudu masters and tablet servers.
 
 == Scale
 
