@@ -38,15 +38,9 @@ see the technical report <<ht>>.
 
 Kudu's transactional semantics and architecture are inspired by state-of-the-art
 systems such as Spanner <<spanner>> and Calvin <<fdt>>. Kudu builds upon decades of database
-research. The core philosophy is to make the lives of developers easier by providing transactions with
-simple, strong semantics, without sacrificing performance or the ability to tune to different
+research. The core philosophy is to make the lives of developers easier by providing transactions
+with simple, strong semantics, without sacrificing performance or the ability to tune to different
 requirements.
-
-Kudu is designed to eventually be fully ACID, however, multi-tablet transactions are not
-yet implemented. As such, this discussion focuses on single-tablet write operations, and only
-briefly touches multi-tablet reads. Eventually Kudu will support fully strict-serializable
-semantics. In fact it already does in a limited context, but not all corner cases are covered
-as this is still a work in progress.
 
 Kudu currently allows the following operations:
 
@@ -54,8 +48,13 @@ Kudu currently allows the following operations:
 engine, in a single tablet with multiple replicas. Write operations do not have separate
 "read sets" i.e. they do not scan existing data before performing the write. Each write
 is only concerned with previous state of the rows that are about to change.
-Writes are not  "committed" explicitly by the user. Instead, they are committed automatically
+Writes are not "committed" explicitly by the user. Instead, they are committed automatically
 by the system, after completion.
+
+* *Write transactions* are groups of write operations across potentially multiple tablets
+that are committed atomically upon the user's request. Once each write operation within a
+transaction is complete, the user sends an explicit "commit" request to make the contents of the
+transaction visible to readers at a single timestamp.
 
 * *Scans* are read operations that can traverse multiple tablets and read information
 with different levels of consistency or correctness guarantees. Scans can perform
@@ -99,30 +98,27 @@ though in an admittedly limited context. See this
 link:http://www.bailis.org/blog/linearizability-versus-serializability[blog post]
 for a little more context regarding what these semantics mean.
 
-While Isolated and Durable in an ACID sense, multi-row write operations are not yet fully Atomic.
-The failure of a single write in a batch operation does not roll back the operation,
-but produces per-row errors.
+While Isolated and Durable in an ACID sense, multi-row write operations, even within a single
+tablet, are not fully Atomic unless they are a part of a multi-tablet write transaction. The failure
+of a single write in a batch operation does not roll back the operation, but produces per-row
+errors.
 
-== Writing to multiple tablets
+== Multi-tablet write operations
 
-Kudu does not yet support transactions that span multiple tablets. However,
-consistent snapshot reads are possible (with caveats in the current implementation)
-as explained below.
-
-Writes from a Kudu client are optionally buffered in memory until they are flushed and sent
-to the server. When client's session flushes, the rows for each tablet are batched
-together, and sent to the tablet server which hosts the leader replica of the tablet.
-Since there are no inter-tablet transactions, each of these batches represents a single,
-independent write operation with its own timestamp. However, the client API provides
-the option to impose some constraints on the assigned timestamps and on how writes to
-different tablets can be observed by clients.
+Regardless of whether they are a part of a transaction, writes from a Kudu client are optionally
+buffered in memory until they are flushed and sent the server. When a client's session flushes, the
+rows for each tablet are batched together, and sent to the tablet server that hosts the leader
+replica of the tablet. Outside of a transaction, each of these batches represents a single,
+independent write operation with its own timestamp. However, the client API provides the option to
+impose some constraints on the assigned timestamps and on how writes to different tablets are
+observed by clients.
 
 Kudu, like Spanner, was designed to be externally consistent <<consistency>>, preserving consistency
 when operations span multiple tablets and even multiple data centers. In practice this
 means that, if a write operation changes item _x_ at tablet _A_, and a following write
 operation changes item _y_ at tablet _B_, you might want to enforce that if
 the change to _y_ is observed, the change to _x_ must also be observed. There
-are many examples where this can be important. For example,  if Kudu is
+are many examples where this can be important. For example, if Kudu is
 storing clickstreams for further analysis, and two clicks follow each other but
 are stored in different tablets, subsequent clicks should be assigned subsequent
 timestamps so that the causal relationship between them is captured.
@@ -168,6 +164,55 @@ Java Client:: Call `KuduSession#setExternalConsistencyMode(ExternalConsistencyMo
 CAUTION: `COMMIT_WAIT` consistency is considered an experimental feature. It may return
 incorrect results, exhibit performance issues, or negatively impact cluster stability.
 Use in production environments is discouraged.
+
+== Multi-tablet write transactions
+
+Kudu provides transactionality on top of the write operations, meaning all operations that occur
+within a transaction abide by the same consistency behavior described above.
+
+When a client begins a transaction, Kudu automatically assigns the transaction a unique identifier
+(called a "transaction ID"). The identifier can be used to create sessions to which write operations
+are applied, potentially across multiple clients per transaction. Write operations applied in the
+context of a transaction are not visible until a client commits the transaction.
+
+Kudu exposes the following APIs to pass a transaction identifier between potentially multiple
+processes:
+
+Java Client:: Call `KuduTransaction#serialize(...)` to get a bytes representation of the transaction
+ID, and call `KuduTransaction#deserialize(...)` to get a `KuduTransaction` object.
+
+{cpp} Client:: Call `KuduTransaction::Serialize(...)` to get a bytes representation of the
+transaction ID, and call `KuduTransaction::Deserialize(...)` to get a `KuduTransaction` object.
+
+As writes are applied in the context of the transaction, each tablet that participates in the
+transaction automatically registers itself as a participant, and is locked for further transactions
+until the transaction is complete. Per-row locks are taken as per the normal flow of a write
+operation, but per row locks are released upon replicating the write operation, in favor of relying
+on the tablet-wide lock.
+
+If multiple transactions lock the same tablet, Kudu uses the wait-die scheme to avoid deadlocks when
+locking the participant: if a transaction _b_ attempts to lock a tablet that is already locked by
+transaction _a_, if _a_ > _b_ (_a_ is newer than _b_), transaction _b_ continues trying to lock
+until it is successful (it "waits"). Otherwise, transaction _b_ is automatically aborted, and it is
+up to the application to retry the transaction.
+
+When the client commits a transaction, Kudu orchestrates a two-phase commit that assigns a "commit
+timestamp" to all write operations that is higher than each of their individually assigned
+timestamps. The mutations of the transaction are all visible to clients as of this commit timestamp.
+Additionally, subsequent write operations on all participants are guaranteed to be assigned
+timestamps higher than this timestamp. It is up to applications to ensure that all desired write
+operations have succeeded (i.e. did not return row errors) before committing.
+
+As long as a transaction is expected to remain active, applications are expected to maintain at
+least one reference to the given transaction's handle, each of which can be configured to
+automatically heartbeat to the Kudu cluster, indicating liveness of the transacting application. By
+default, only the first created transaction handle for a transaction will heartbeat, with the
+expectation that it is kept alive for the entire duration of the transaction. If only a single
+transaction handle is expected to be kept alive at once across multiple clients, the heartbeating
+can be enabled with the following calls when serializing the handle for use in other processes.
+
+Java Client:: Call `KuduTransaction.SerializationOptions#setEnableKeepalive(true)`
+{cpp} Client:: Call `KuduTransaction::SerializationOptions::enable_keepalive(true)`
 
 == Read Operations (Scans)
 
@@ -231,6 +276,12 @@ in some situations, at the moment. Below are the details and next, some recommen
   time-synchronization protocol, such as NTP (Network Time Protocol). Its use
   is discouraged in production environments.
 
+* Multi-tablet transaction support currently only allows a tablet to participate in a single
+  transaction at a time.
+
+* Multi-tablet transaction support currently only guarantees
+  link:https://jepsen.io/consistency/models/read-committed["read committed"] semantics.
+
 === Reads (Scans)
 
 * On a leader change, `READ_AT_SNAPSHOT` scans at a snapshot whose timestamp is beyond the last
@@ -239,14 +290,14 @@ in some situations, at the moment. Below are the details and next, some recommen
   See <<recommendations>> for a workaround.
 * Impala scans are currently performed as `READ_LATEST` and have no consistency
   guarantees.
-* In `AUTO_BACKGROUND_FLUSH` mode, or when using "async" flushing mechanisms,
-  writes applied to a single client session may become reordered due to the
-  concurrency of flushing the data to the server. This may be particularly
-  noticeable if a single row is quickly updated with different values in
-  succession. This phenomenon affects all client API implementations.
-  Workarounds are described in the API documentation for the respective
-  implementations in the docs for `FlushMode` or `AsyncKuduSession`.
-  See link:https://issues.apache.org/jira/browse/KUDU-1767[KUDU-1767].
+* In `AUTO_BACKGROUND_FLUSH` mode, or when using "async" flushing mechanisms, writes applied to a
+  single client session may become reordered due to the concurrency of flushing the data to the
+  server. This may be particularly noticeable if a single row is quickly updated with different
+  values in succession. This phenomenon affects all client API implementations, including
+  transactional APIs. Workarounds are described in the API documentation for the respective
+  implementations in the docs for `FlushMode` or `AsyncKuduSession`. See
+  link:https://issues.apache.org/jira/browse/KUDU-1767[KUDU-1767].
+* Dirty reads (i.e. reads within an uncommitted transaction) are not currently supported.
 
 [[recommendations]]
 === Recommendations
@@ -258,10 +309,10 @@ in some situations, at the moment. Below are the details and next, some recommen
   faster, since they are unlikely to block.
 
 * If external consistency is a requirement and you decide to use `COMMIT_WAIT`, the
-  time-synchronization protocol needs to be tuned carefully. Each transaction will wait
-  2x the maximum clock error at the time of execution, which is usually in the 100 msec.
-  to 1 sec. range with the default settings, maybe more. Thus, transactions would take at least
-  200 msec. to 2 sec. to complete when using the default settings and may even time out.
+  time-synchronization protocol needs to be tuned carefully. Each operation will wait 2x the maximum
+  clock error at the time of execution, which is usually in the 100 msec. to 1 sec. range with the
+  default settings, maybe more. Thus, write operations would take at least 200 msec. to 2 sec. to
+  complete when using the default settings and may even time out.
 
   ** A local server should be used as a time server. We've performed experiments using the default
   NTP time source available in a Google Compute Engine data center and were able to obtain
