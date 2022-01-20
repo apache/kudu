@@ -240,6 +240,22 @@ will eventually allow Kudu to have full `strict-serializable` semantics for read
 and writes. This is still a work in progress and some anomalies are still possible
 (see <<known_issues>>). Only scans in this mode can be fault-tolerant.
 
+`READ_YOUR_WRITES`:: This read mode relies on the state of a Kudu client to
+issue subsequent scan requests. When issuing a scan request in this read mode,
+a Kudu client provides the latest timestamp it observed so far. The server
+selects a timestamp higher than the timestamp provided by the client, that is
+also guaranteed to have all prior write operations committed and applied to
+the data. That translates into read-your-writes and read-your-reads behavior
+which is useful in scenarios where subsequent scan requests should contain the
+data the client has seen so far while reading and writing during its current
+session. link:https://issues.apache.org/jira/browse/KUDU-1704[KUDU-1704] could
+provide more details and references, if necessary. To summarize, this read mode
+
+- ensures read-your-writes and read-your-reads session guarantees
+- minimizes the latency caused by waiting for outstanding write operations
+  at the server side to complete
+- doesn't guarantee linearizability
+
 Selecting between read modes requires balancing the trade-offs and making a choice
 that fits your workload. For instance, a reporting application that needs to
 scan the entire database might need to perform careful accounting operations, so that
