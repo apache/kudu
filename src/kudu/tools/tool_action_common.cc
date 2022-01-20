@@ -74,6 +74,7 @@
 #include "kudu/tools/tool.pb.h" // IWYU pragma: keep
 #include "kudu/tools/tool_action.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"   // IWYU pragma: keep
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/async_util.h"
@@ -345,7 +346,7 @@ Status PrintDecodedWriteRequestPB(const string& indent,
   return Status::OK();
 }
 
-Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
+Status PrintDecoded(const LogEntryPB& entry, Schema* tablet_schema) {
   PrintIdOnly(entry);
 
   const string indent = "\t";
@@ -356,9 +357,16 @@ Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
     if (replicate.op_type() == consensus::WRITE_OP) {
       RETURN_NOT_OK(PrintDecodedWriteRequestPB(
           indent,
-          tablet_schema,
+          *tablet_schema,
           replicate.write_request(),
           replicate.has_request_id() ? &replicate.request_id() : nullptr));
+    } else if (replicate.op_type() == consensus::ALTER_SCHEMA_OP) {
+      if (!replicate.has_alter_schema_request()) {
+        LOG(ERROR) << "read an ALTER_SCHEMA_OP log entry, but has no alter_schema_request";
+        return Status::RuntimeError("ALTER_SCHEMA_OP log entry has no alter_schema_request");
+      }
+      RETURN_NOT_OK(SchemaFromPB(replicate.alter_schema_request().schema(), tablet_schema));
+      cout << indent << SecureShortDebugString(replicate) << endl;
     } else {
       cout << indent << SecureShortDebugString(replicate) << endl;
     }
@@ -555,7 +563,7 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
 
         cout << "Entry:\n" << SecureDebugString(*entry);
       } else if (print_type == PRINT_DECODED) {
-        RETURN_NOT_OK(PrintDecoded(*entry, tablet_schema));
+        RETURN_NOT_OK(PrintDecoded(*entry, &tablet_schema));
       } else if (print_type == PRINT_ID) {
         PrintIdOnly(*entry);
       }
