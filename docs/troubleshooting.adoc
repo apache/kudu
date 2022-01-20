@@ -348,7 +348,7 @@ $ ntpq -nc opeers
 TIP: Both `lpeers` and `opeers` may be helpful as `lpeers` lists refid and
 jitter, while `opeers` lists clock dispersion.
 
-
+[[chronyd]]
 ===== Installing And Running `chronyd`
 Kudu has been tested and is supported on machines whose local clock is
 synchronized with NTP using `chronyd` version 3.2 and newer.
