@@ -2128,6 +2128,224 @@ TEST_F(ToolTest, TestWalDump) {
   }
 }
 
+TEST_F(ToolTest, TestWalDumpWithAlterSchema) {
+  const string kTestDir = GetTestPath("test");
+  const string kTestTablet = "ffffffffffffffffffffffffffffffff";
+  Schema schema(GetSimpleTestSchema());
+  Schema schema_with_ids(SchemaBuilder(schema).Build());
+
+  FsManager fs(env_, FsManagerOpts(kTestDir));
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
+
+  const std::string kFirstMessage("this is a test insert");
+  const std::string kAddColumnName1("addcolumn1_addcolumn1");
+  const std::string kAddColumnName2("addcolumn2_addcolumn2");
+  const std::string kAddColumnName1Message("insert a record, after alter schema");
+  const std::string kAddColumnName2Message("upsert a record, after alter schema");
+  {
+    scoped_refptr<Log> log;
+    ASSERT_OK(Log::Open(LogOptions(),
+                        &fs,
+                        /*file_cache*/nullptr,
+                        kTestTablet,
+                        schema_with_ids,
+                        0, // schema_version
+                        /*metric_entity*/nullptr,
+                        &log));
+
+    std::vector<ReplicateRefPtr> replicates;
+    {
+      OpId opid = consensus::MakeOpId(1, 1);
+      ReplicateRefPtr replicate =
+          consensus::make_scoped_refptr_replicate(new ReplicateMsg());
+      replicate->get()->set_op_type(consensus::WRITE_OP);
+      replicate->get()->mutable_id()->CopyFrom(opid);
+      replicate->get()->set_timestamp(1);
+      WriteRequestPB* write = replicate->get()->mutable_write_request();
+      ASSERT_OK(SchemaToPB(schema, write->mutable_schema()));
+      AddTestRowToPB(RowOperationsPB::INSERT, schema,
+                     opid.index(), 0, kFirstMessage,
+                     write->mutable_row_operations());
+      write->set_tablet_id(kTestTablet);
+      replicates.emplace_back(replicate);
+    }
+    {
+      OpId opid = consensus::MakeOpId(1, 2);
+      ReplicateRefPtr replicate =
+          consensus::make_scoped_refptr_replicate(new ReplicateMsg());
+      replicate->get()->set_op_type(consensus::ALTER_SCHEMA_OP);
+      replicate->get()->mutable_id()->CopyFrom(opid);
+      replicate->get()->set_timestamp(2);
+      tserver::AlterSchemaRequestPB* alter_schema =
+          replicate->get()->mutable_alter_schema_request();
+      SchemaBuilder schema_builder = SchemaBuilder(schema);
+      ASSERT_OK(schema_builder.AddColumn(kAddColumnName1, STRING, true, nullptr, nullptr));
+      ASSERT_OK(schema_builder.AddColumn(kAddColumnName2, STRING, true, nullptr, nullptr));
+      schema = schema_builder.BuildWithoutIds();
+      schema_with_ids = SchemaBuilder(schema).Build();
+      ASSERT_OK(SchemaToPB(schema_with_ids, alter_schema->mutable_schema()));
+      alter_schema->set_tablet_id(kTestTablet);
+      alter_schema->set_schema_version(1);
+      replicates.emplace_back(replicate);
+    }
+    {
+      OpId opid = consensus::MakeOpId(1, 3);
+      ReplicateRefPtr replicate =
+          consensus::make_scoped_refptr_replicate(new ReplicateMsg());
+      replicate->get()->set_op_type(consensus::WRITE_OP);
+      replicate->get()->mutable_id()->CopyFrom(opid);
+      replicate->get()->set_timestamp(3);
+      WriteRequestPB* write = replicate->get()->mutable_write_request();
+      ASSERT_OK(SchemaToPB(schema, write->mutable_schema()));
+      AddTestRowToPBAppendColumns(RowOperationsPB::INSERT, schema,
+                                  opid.index(), 2, kFirstMessage,
+                                  {{kAddColumnName1, kAddColumnName1Message}},
+                                  write->mutable_row_operations());
+      write->set_tablet_id(kTestTablet);
+      replicates.emplace_back(replicate);
+    }
+    {
+      OpId opid = consensus::MakeOpId(1, 4);
+      ReplicateRefPtr replicate =
+          consensus::make_scoped_refptr_replicate(new ReplicateMsg());
+      replicate->get()->set_op_type(consensus::WRITE_OP);
+      replicate->get()->mutable_id()->CopyFrom(opid);
+      replicate->get()->set_timestamp(4);
+      WriteRequestPB* write = replicate->get()->mutable_write_request();
+      ASSERT_OK(SchemaToPB(schema, write->mutable_schema()));
+      AddTestRowToPBAppendColumns(RowOperationsPB::UPSERT, schema,
+                                  1, 1111, kFirstMessage,
+                                  {
+                                  {kAddColumnName1, kAddColumnName1Message},
+                                  {kAddColumnName2, kAddColumnName2Message},
+                                  },
+                                  write->mutable_row_operations());
+      write->set_tablet_id(kTestTablet);
+      replicates.emplace_back(replicate);
+    }
+
+    Synchronizer s;
+    ASSERT_OK(log->AsyncAppendReplicates(replicates, s.AsStatusCallback()));
+    ASSERT_OK(s.Wait());
+  }
+
+  string wal_path = fs.GetWalSegmentFileName(kTestTablet, 1);
+  string stdout;
+  for (const auto& args : { Substitute("wal dump $0", wal_path),
+                            Substitute("local_replica dump wals --fs_wal_dir=$0 $1",
+                                       kTestDir, kTestTablet)
+                           }) {
+    SCOPED_TRACE(args);
+    for (const auto& print_entries : { "true", "1", "yes", "decoded" }) {
+      SCOPED_TRACE(print_entries);
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=$1",
+                                                 args, print_entries), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_MATCHES(stdout, "1\\.2@2");
+      ASSERT_STR_MATCHES(stdout, "1\\.3@3");
+      ASSERT_STR_MATCHES(stdout, "1\\.4@4");
+      ASSERT_STR_MATCHES(stdout, kFirstMessage);
+      ASSERT_STR_MATCHES(stdout, kAddColumnName1);
+      ASSERT_STR_MATCHES(stdout, "ALTER_SCHEMA_OP");
+      ASSERT_STR_MATCHES(stdout, kAddColumnName1Message);
+      ASSERT_STR_MATCHES(stdout, kAddColumnName2Message);
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    for (const auto& print_entries : { "false", "0", "no" }) {
+      SCOPED_TRACE(print_entries);
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=$1",
+                                                 args, print_entries), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.2@2");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.3@3");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.4@4");
+      ASSERT_STR_NOT_MATCHES(stdout, kFirstMessage);
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName1);
+      ASSERT_STR_NOT_MATCHES(stdout, "ALTER_SCHEMA_OP");
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName1Message);
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName2Message);
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=pb",
+                                                 args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.2@2");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.3@3");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.4@4");
+      ASSERT_STR_MATCHES(stdout, kFirstMessage);
+      ASSERT_STR_MATCHES(stdout, kAddColumnName1);
+      ASSERT_STR_MATCHES(stdout, "ALTER_SCHEMA_OP");
+      ASSERT_STR_MATCHES(stdout, kAddColumnName1Message);
+      ASSERT_STR_MATCHES(stdout, kAddColumnName2Message);
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_entries=pb --truncate_data=1", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.2@2");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.3@3");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.4@4");
+      ASSERT_STR_NOT_MATCHES(stdout, kFirstMessage);
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName1);
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName1Message);
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName2Message);
+      ASSERT_STR_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_entries=id", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_MATCHES(stdout, "1\\.2@2");
+      ASSERT_STR_MATCHES(stdout, "1\\.3@3");
+      ASSERT_STR_MATCHES(stdout, "1\\.4@4");
+      ASSERT_STR_NOT_MATCHES(stdout, kFirstMessage);
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName1);
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName1Message);
+      ASSERT_STR_NOT_MATCHES(stdout, kAddColumnName2Message);
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_meta=false", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_NOT_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_MATCHES(stdout, "1\\.2@2");
+      ASSERT_STR_MATCHES(stdout, "1\\.3@3");
+      ASSERT_STR_MATCHES(stdout, "1\\.4@4");
+      ASSERT_STR_MATCHES(stdout, kFirstMessage);
+      ASSERT_STR_MATCHES(stdout, kAddColumnName1);
+      ASSERT_STR_MATCHES(stdout, kAddColumnName1Message);
+      ASSERT_STR_MATCHES(stdout, kAddColumnName2Message);
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_NOT_MATCHES(stdout, "Footer:");
+    }
+  }
+}
+
 TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
   constexpr const char* const kTestTablet = "ffffffffffffffffffffffffffffffff";
   constexpr const char* const kTestTableId = "test-table";
