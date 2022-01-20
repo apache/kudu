@@ -152,6 +152,7 @@ line tool.
 
 | kudu.table.history_max_age_sec | integer | | Number of seconds to retain history for tablets in this table.
 | kudu.table.maintenance_priority | integer | 0 | Priority level of a table for maintenance.
+| kudu.table.disable_compaction | false, true | false | Whether to disable data compaction maintenance tasks for all tablets of this table.
 |===
 
 == Next Steps
