@@ -205,6 +205,44 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     return columns;
   }
 
+  /**
+   * create a new RemoteTablet from TabletMetadata
+   * @param tabletMetadata the tablet metadata
+   * @param tableId the table Id
+   * @param partition the partition
+   * @return a RemoteTablet object
+   */
+  public static RemoteTablet newRemoteTabletFromTabletMetadata(
+      Client.TabletMetadataPB tabletMetadata,
+      String tableId,
+      Partition partition) {
+    List<LocatedTablet.Replica> replicas = new ArrayList<>();
+    for (Client.TabletMetadataPB.ReplicaMetadataPB replicaMetadataPB :
+        tabletMetadata.getReplicasList()) {
+      Client.ServerMetadataPB server =
+          tabletMetadata.getTabletServers(replicaMetadataPB.getTsIdx());
+      LocatedTablet.Replica replica = new LocatedTablet.Replica(
+          server.getRpcAddresses(0).getHost(),
+          server.getRpcAddresses(0).getPort(),
+          replicaMetadataPB.getRole(), replicaMetadataPB.getDimensionLabel());
+      replicas.add(replica);
+    }
+
+    List<ServerInfo> servers = new ArrayList<>();
+    for (Client.ServerMetadataPB serverMetadataPB : tabletMetadata.getTabletServersList()) {
+      HostAndPort hostPort =
+          ProtobufHelper.hostAndPortFromPB(serverMetadataPB.getRpcAddresses(0));
+      final InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHost());
+      ServerInfo serverInfo = new ServerInfo(serverMetadataPB.getUuid().toStringUtf8(),
+          hostPort, inetAddress, serverMetadataPB.getLocation());
+      servers.add(serverInfo);
+    }
+
+    RemoteTablet remoteTablet = new RemoteTablet(tableId,
+        tabletMetadata.getTabletId(), partition, replicas, servers);
+    return remoteTablet;
+  }
+
   @SuppressWarnings("deprecation")
   private static KuduScanner.KuduScannerBuilder pbIntoScannerBuilder(
       ScanTokenPB message, KuduClient client) throws KuduException {
@@ -226,30 +264,8 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         TableLocationsCache tableLocationsCache =
             client.asyncClient.getOrCreateTableLocationsCache(table.getTableId());
 
-        List<LocatedTablet.Replica> replicas = new ArrayList<>();
-        for (Client.TabletMetadataPB.ReplicaMetadataPB replicaMetadataPB :
-            tabletMetadata.getReplicasList()) {
-          Client.ServerMetadataPB server =
-              tabletMetadata.getTabletServers(replicaMetadataPB.getTsIdx());
-          LocatedTablet.Replica replica = new LocatedTablet.Replica(
-              server.getRpcAddresses(0).getHost(),
-              server.getRpcAddresses(0).getPort(),
-              replicaMetadataPB.getRole(), replicaMetadataPB.getDimensionLabel());
-          replicas.add(replica);
-        }
-
-        List<ServerInfo> servers = new ArrayList<>();
-        for (Client.ServerMetadataPB serverMetadataPB : tabletMetadata.getTabletServersList()) {
-          HostAndPort hostPort =
-              ProtobufHelper.hostAndPortFromPB(serverMetadataPB.getRpcAddresses(0));
-          final InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHost());
-          ServerInfo serverInfo = new ServerInfo(serverMetadataPB.getUuid().toString(),
-              hostPort, inetAddress, serverMetadataPB.getLocation());
-          servers.add(serverInfo);
-        }
-
-        RemoteTablet remoteTablet = new RemoteTablet(table.getTableId(),
-            tabletMetadata.getTabletId(), partition, replicas, servers);
+        RemoteTablet remoteTablet =
+            newRemoteTabletFromTabletMetadata(tabletMetadata, table.getTableId(), partition);
 
         tableLocationsCache.cacheTabletLocations(Collections.singletonList(remoteTablet),
             partition.partitionKeyStart, 1, tabletMetadata.getTtlMillis());
