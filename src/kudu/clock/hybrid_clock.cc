@@ -75,8 +75,14 @@ TAG_FLAG(max_clock_sync_error_usec, runtime);
 
 DEFINE_bool(use_hybrid_clock, true,
             "Whether HybridClock should be used as the default clock "
-            "implementation. This should be disabled for testing purposes only.");
+            "implementation. Setting this flag to 'false' is highly "
+            "discouraged in any production-grade deployment, as it can "
+            "introduce extensive latency and surprising behavior such as not "
+            "operating in COMMIT_WAIT consistency mode, failing to handle scan "
+            "operations in READ_AT_SNAPSHOT and READ_YOUR_WRITES modes, etc. "
+            "This flag may be set to 'false' for testing purposes only.");
 TAG_FLAG(use_hybrid_clock, hidden);
+TAG_FLAG(use_hybrid_clock, unsafe);
 
 DEFINE_int32(hybrid_clock_inject_init_delay_ms, 0,
              "If enabled, injects the given number of milliseconds delay into "
