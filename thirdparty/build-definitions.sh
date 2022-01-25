@@ -579,7 +579,7 @@ build_lz4() {
     -DBUILD_STATIC_LIBS=On \
     -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
     $EXTRA_CMAKE_FLAGS \
-    $LZ4_SOURCE/contrib/cmake_unofficial
+    $LZ4_SOURCE/build/cmake
   ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
