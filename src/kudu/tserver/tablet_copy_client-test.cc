@@ -168,12 +168,16 @@ class TabletCopyClientTest : public TabletCopyTest {
 
 Status TabletCopyClientTest::CompareFileContents(const string& path1, const string& path2) {
   shared_ptr<RandomAccessFile> file1, file2;
-  RETURN_NOT_OK(env_util::OpenFileForRandom(fs_manager_->env(), path1, &file1));
-  RETURN_NOT_OK(env_util::OpenFileForRandom(fs_manager_->env(), path2, &file2));
+  RandomAccessFileOptions opts;
+  opts.is_sensitive = true;
+  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->env(), path1, &file1));
+  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->env(), path2, &file2));
 
   uint64_t size1, size2;
   RETURN_NOT_OK(file1->Size(&size1));
   RETURN_NOT_OK(file2->Size(&size2));
+  size1 -= file1->GetEncryptionHeaderSize();
+  size2 -= file2->GetEncryptionHeaderSize();
   if (size1 != size2) {
     return Status::Corruption("Sizes of files don't match",
                               Substitute("$0 vs $1 bytes", size1, size2));
@@ -184,8 +188,8 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
   scratch2.resize(size2);
   Slice slice1(scratch1.data(), size1);
   Slice slice2(scratch2.data(), size2);
-  RETURN_NOT_OK(file1->Read(0, slice1));
-  RETURN_NOT_OK(file2->Read(0, slice2));
+  RETURN_NOT_OK(file1->Read(file1->GetEncryptionHeaderSize(), slice1));
+  RETURN_NOT_OK(file2->Read(file2->GetEncryptionHeaderSize(), slice2));
   int result = strings::fastmemcmp_inlined(slice1.data(), slice2.data(), size1);
   if (result != 0) {
     return Status::Corruption("Files do not match");

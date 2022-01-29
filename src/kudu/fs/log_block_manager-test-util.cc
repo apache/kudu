@@ -92,8 +92,7 @@ Status LBMCorruptor::Init() {
         // File size is an imprecise proxy for whether a container is full, but
         // it should be good enough.
         uint64_t data_file_size;
-        RETURN_NOT_OK(env_->GetFileSize(e.second.data_filename,
-                                        &data_file_size));
+        RETURN_NOT_OK(env_->GetFileSize(e.second.data_filename, &data_file_size));
         if (data_file_size >= FLAGS_log_container_max_size) {
           full_containers.push_back(e.second);
         }

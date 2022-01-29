@@ -44,6 +44,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(encrypt_data_at_rest);
+
 namespace kudu {
 namespace pb_util {
 
@@ -94,6 +96,10 @@ class TestPBUtil : public KuduTest {
 
   // Truncate the specified file to the specified length.
   Status TruncateFile(const string& path, uint64_t size);
+
+  void EnableEncryption(bool enable) {
+    FLAGS_encrypt_data_at_rest = enable;
+  }
 
   // Output file name for most unit tests.
   string path_;
@@ -158,7 +164,9 @@ Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uin
   // Read the data from disk.
   {
     unique_ptr<RandomAccessFile> file;
-    RETURN_NOT_OK(env_->NewRandomAccessFile(path, &file));
+    RandomAccessFileOptions opts;
+    opts.is_sensitive = false;
+    RETURN_NOT_OK(env_->NewRandomAccessFile(opts, path, &file));
     uint64_t size;
     RETURN_NOT_OK(file->Size(&size));
     faststring scratch;
@@ -176,7 +184,9 @@ Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uin
 
   // Write the data back to disk.
   unique_ptr<WritableFile> file;
-  RETURN_NOT_OK(env_->NewWritableFile(path, &file));
+  WritableFileOptions opts;
+  opts.is_sensitive = false;
+  RETURN_NOT_OK(env_->NewWritableFile(opts, path, &file));
   RETURN_NOT_OK(file->Append(buf));
   RETURN_NOT_OK(file->Close());
 
@@ -187,6 +197,7 @@ Status TestPBUtil::TruncateFile(const string& path, uint64_t size) {
   unique_ptr<RWFile> file;
   RWFileOptions opts;
   opts.mode = Env::MUST_EXIST;
+  opts.is_sensitive = false;
   RETURN_NOT_OK(env_->NewRWFile(opts, path, &file));
   RETURN_NOT_OK(file->Truncate(size));
   return Status::OK();
@@ -239,6 +250,7 @@ TEST_F(TestPBUtil, TestWritableFileOutputStream) {
 
 // Basic read/write test.
 TEST_F(TestPBUtil, TestPBContainerSimple) {
+  EnableEncryption(true);
   // Exercise both the SYNC and NO_SYNC codepaths, along with SENSITIVE and
   // NOT_SENSITIVE, despite the fact that we aren't able to observe a difference
   // in the test.
@@ -272,7 +284,9 @@ TEST_P(TestPBContainerVersions, TestCorruption) {
   {
     // Create the empty file.
     unique_ptr<WritableFile> file;
-    ASSERT_OK(env_->NewWritableFile(path_, &file));
+    WritableFileOptions opts;
+    opts.is_sensitive = false;
+    ASSERT_OK(env_->NewWritableFile(opts, path_, &file));
     ASSERT_OK(file->Close());
   }
   s = ReadPBContainerFromPath(env_, path_, &test_pb, NOT_SENSITIVE);

@@ -104,7 +104,7 @@ class FileCacheTest : public KuduTest {
     RWFileOptions opts;
     opts.is_sensitive = true;
     RETURN_NOT_OK(env_->NewRWFile(opts, name, &f));
-    RETURN_NOT_OK(f->Write(0, data));
+    RETURN_NOT_OK(f->Write(f->GetEncryptionHeaderSize(), data));
     return Status::OK();
   }
 
@@ -155,7 +155,7 @@ TYPED_TEST(FileCacheTest, TestBasicOperations) {
     for (int i = 0; i < 3; i++) {
       uint64_t size;
       ASSERT_OK(f1->Size(&size));
-      ASSERT_EQ(kData1.size(), size);
+      ASSERT_EQ(kData1.size(), size - Env::Default()->GetEncryptionHeaderSize());
       NO_FATALS(this->AssertFdsAndDescriptors(1, 1));
     }
 
@@ -262,10 +262,12 @@ TYPED_TEST(FileCacheTest, TestInvalidation) {
   ASSERT_OK(this->WriteTestFile(kFile2, kData2));
   ASSERT_OK(this->env_->RenameFile(kFile2, kFile1));
 
+  const uint8_t kHeaderSize = Env::Default()->GetEncryptionHeaderSize();
+
   // We should still be able to access the file, since it has a cached fd.
   uint64_t size;
   ASSERT_OK(f->Size(&size));
-  ASSERT_EQ(kData1.size(), size);
+  ASSERT_EQ(kData1.size(), size - kHeaderSize);
 
   // If we invalidate it from the cache and try again, it should crash because
   // the existing descriptor was invalidated.
@@ -277,7 +279,7 @@ TYPED_TEST(FileCacheTest, TestInvalidation) {
   shared_ptr<TypeParam> f2;
   ASSERT_OK(this->cache_->template OpenFile<Env::MUST_EXIST>(kFile1, &f2));
   ASSERT_OK(f2->Size(&size));
-  ASSERT_EQ(kData2.size(), size);
+  ASSERT_EQ(kData2.size(), size - kHeaderSize);
 }
 
 
@@ -311,8 +313,8 @@ TYPED_TEST(FileCacheTest, TestHeavyReads) {
     const auto& f = opened_files[idx];
     uint64_t size;
     ASSERT_OK(f->Size(&size));
-    Slice s(buf.get(), size);
-    ASSERT_OK(f->Read(0, s));
+    Slice s(buf.get(), size - f->GetEncryptionHeaderSize());
+    ASSERT_OK(f->Read(f->GetEncryptionHeaderSize(), s));
     ASSERT_EQ(data, s);
     ASSERT_LE(this->CountOpenFds(),
               this->initial_open_fds_ + kCacheCapacity);
@@ -444,12 +446,13 @@ TEST_P(MixedFileCacheTest, TestBothFileTypes) {
   // Create the two test files.
   {
     unique_ptr<RWFile> f;
+    const uint8_t kHeaderSize = Env::Default()->GetEncryptionHeaderSize();
     RWFileOptions opts;
     opts.is_sensitive = true;
     ASSERT_OK(env_->NewRWFile(opts, kFile1, &f));
-    ASSERT_OK(f->Write(0, kData1));
+    ASSERT_OK(f->Write(kHeaderSize, kData1));
     ASSERT_OK(env_->NewRWFile(opts, kFile2, &f));
-    ASSERT_OK(f->Write(0, kData2));
+    ASSERT_OK(f->Write(kHeaderSize, kData2));
   }
 
   FileCache cache("test", env_, 1, /*entity=*/ nullptr);
@@ -465,12 +468,12 @@ TEST_P(MixedFileCacheTest, TestBothFileTypes) {
   uint64_t size;
   ASSERT_OK(rwf->Size(&size));
   uint8_t buf[16];
-  Slice s1(buf, size);
-  ASSERT_OK(rwf->Read(0, s1));
+  Slice s1(buf, size - rwf->GetEncryptionHeaderSize());
+  ASSERT_OK(rwf->Read(rwf->GetEncryptionHeaderSize(), s1));
   ASSERT_EQ(kData1, s1);
   ASSERT_OK(raf->Size(&size));
-  Slice s2(buf, size);
-  ASSERT_OK(raf->Read(0, s2));
+  Slice s2(buf, size - raf->GetEncryptionHeaderSize());
+  ASSERT_OK(raf->Read(raf->GetEncryptionHeaderSize(), s2));
   ASSERT_EQ(kData2, s2);
 
   // It's okay to reopen the test file using the same file type, but not with a

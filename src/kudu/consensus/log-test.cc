@@ -1073,7 +1073,7 @@ TEST_F(LogTest, TestGetGCableDataSize) {
 
   const int kNumTotalSegments = 5;
   const int kNumOpsPerSegment = 5;
-  const int kSegmentSizeBytes = 331;
+  const int kSegmentSizeBytes = 331 + env_->GetEncryptionHeaderSize();
   OpId op_id = MakeOpId(1, 10);
   // Create 5 segments, starting from log index 10, with 5 ops per segment.
   // [10-14], [15-19], [20-24], [25-29], [30-34]

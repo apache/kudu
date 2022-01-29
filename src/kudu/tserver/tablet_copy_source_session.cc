@@ -330,9 +330,15 @@ Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
                         "Tablet copy source could not get log segment");
   ImmutableRWFileInfo* file_info;
   RETURN_NOT_OK(FindLogSegment(segment_seqno, &file_info, error_code));
-  RETURN_NOT_OK(ReadFileChunkToBuf(file_info, offset, client_maxlen,
+  const auto& kHeaderSize = file_info->readable->GetEncryptionHeaderSize();
+  // To make sure unencrypted tservers can copy tablets from encrypted tservers
+  // and vice versa (which is a valid scenario when encrypting an existing
+  // cluster in place), we add the encryption header size here and start at 0 at
+  // the client side.
+  RETURN_NOT_OK(ReadFileChunkToBuf(file_info, offset + kHeaderSize, client_maxlen,
                                    Substitute("log segment $0", segment_seqno),
                                    data, log_file_size, error_code));
+  *log_file_size -= kHeaderSize;
 
   // Note: We do not eagerly close log segment files, since we share ownership
   // of the LogSegment objects with the Log itself.

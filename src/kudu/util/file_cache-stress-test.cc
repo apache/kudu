@@ -126,7 +126,9 @@ class FileCacheStressTest : public KuduTest {
                                           oid_generator.Next());
       {
         unique_ptr<WritableFile> next_file;
-        CHECK_OK(env_->NewWritableFile(next_file_name, &next_file));
+        WritableFileOptions opts;
+        opts.is_sensitive = true;
+        CHECK_OK(env_->NewWritableFile(opts, next_file_name, &next_file));
         uint8_t buf[rand.Uniform((32 * 1024) - 1) + 1];
         CHECK_OK(next_file->Append(GenerateRandomChunk(buf, sizeof(buf), &rand)));
         CHECK_OK(next_file->Close());
@@ -286,8 +288,11 @@ class FileCacheStressTest : public KuduTest {
 
     uint64_t file_size;
     RETURN_NOT_OK(file->Size(&file_size));
-    uint64_t off = file_size > 0 ? rand->Uniform(file_size) : 0;
-    size_t len = file_size > 0 ? rand->Uniform(file_size - off) : 0;
+    const uint8_t kHeaderSize = file->GetEncryptionHeaderSize();;
+    uint64_t off = file_size > kHeaderSize
+      ? rand->Uniform(file_size - kHeaderSize) + kHeaderSize
+      : kHeaderSize;
+    size_t len = file_size > kHeaderSize ? rand->Uniform(file_size - off) : 0;
     unique_ptr<uint8_t[]> scratch(new uint8_t[len]);
     RETURN_NOT_OK(file->Read(off, Slice(scratch.get(), len)));
 
@@ -307,7 +312,10 @@ class FileCacheStressTest : public KuduTest {
 
     uint64_t file_size;
     RETURN_NOT_OK(file->Size(&file_size));
-    uint64_t off = file_size > 0 ? rand->Uniform(file_size) : 0;
+    const uint8_t kHeaderSize = file->GetEncryptionHeaderSize();
+    uint64_t off = file_size > kHeaderSize
+      ? rand->Uniform(file_size - kHeaderSize) + kHeaderSize
+      : kHeaderSize;
     uint8_t buf[64];
     RETURN_NOT_OK(file->Write(off, GenerateRandomChunk(buf, sizeof(buf), rand)));
     (*metrics)[BaseName(file->filename())]["write"]++;

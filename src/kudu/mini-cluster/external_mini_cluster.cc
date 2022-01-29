@@ -101,6 +101,7 @@ using strings::Substitute;
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
+DECLARE_bool(encrypt_data_at_rest);
 DECLARE_string(block_manager);
 DECLARE_string(dns_addr_resolution_override);
 
@@ -124,7 +125,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       principal("kudu"),
       hms_mode(HmsMode::NONE),
       enable_ranger(false),
-      enable_encryption(false),
+      enable_encryption(FLAGS_encrypt_data_at_rest),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3))

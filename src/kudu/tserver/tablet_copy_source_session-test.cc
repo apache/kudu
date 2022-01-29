@@ -337,13 +337,13 @@ TEST_F(TabletCopyTest, TestBlocksEqual) {
       buf.resize(tablet_block_size);
       Slice data2(buf.data(), tablet_block_size);
       ASSERT_OK(tablet_block->Read(0, data2));
-      uint32_t tablet_crc = crc::Crc32c(data.data(), data.size());
+      uint32_t tablet_crc = crc::Crc32c(data2.data(), data2.size());
       LOG(INFO) << "tablet block file has size of " << tablet_block_size
                 << " and CRC32C of " << tablet_crc
                 << ": " << block_id;
 
       // Compare the blocks.
-      ASSERT_EQ(tablet_block_size, session_block_size);
+      ASSERT_EQ(tablet_block_size, session_block_size - Env::Default()->GetEncryptionHeaderSize());
       ASSERT_EQ(tablet_crc, session_crc);
     }
   }

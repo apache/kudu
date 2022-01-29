@@ -668,10 +668,9 @@ string SecureShortDebugString(const Message& msg) {
 
 WritablePBContainerFile::WritablePBContainerFile(shared_ptr<RWFile> writer)
   : state_(FileState::NOT_INITIALIZED),
-    offset_(0),
+    offset_(writer->GetEncryptionHeaderSize()),
     version_(kPBContainerDefaultVersion),
-    writer_(std::move(writer)) {
-}
+    writer_(std::move(writer)) {}
 
 WritablePBContainerFile::~WritablePBContainerFile() {
   WARN_NOT_OK(Close(), "Could not Close() when destroying file");
@@ -889,7 +888,7 @@ void WritablePBContainerFile::PopulateDescriptorSet(
 ReadablePBContainerFile::ReadablePBContainerFile(shared_ptr<RandomAccessFile> reader)
   : state_(FileState::NOT_INITIALIZED),
     version_(kPBContainerInvalidVersion),
-    offset_(0),
+    offset_(reader->GetEncryptionHeaderSize()),
     reader_(std::move(reader)) {
 }
 

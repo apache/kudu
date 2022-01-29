@@ -660,8 +660,8 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
 
   // Updates this container data file's position based on the offset and length
   // of a block, marking this container as full if needed. Should only be called
-  // when a block is fully written, as it will round up the container data file's
-  // position.
+  // when a block is fully written, or after an encryption header is written, as
+  // it will round up the container data file's position.
   //
   // This function is thread unsafe.
   void UpdateNextBlockOffset(int64_t block_offset, int64_t block_length);
@@ -746,6 +746,15 @@ LogBlockContainer::LogBlockContainer(
       blocks_being_written_(0),
       dead_(false),
       metrics_(block_manager->metrics()) {
+  // If we have an encryption header, we need to align the next offset to the
+  // next file system block.
+  if (auto encryption_header_size = data_file_->GetEncryptionHeaderSize();
+      encryption_header_size > 0) {
+    UpdateNextBlockOffset(0, encryption_header_size);
+    live_bytes_.Store(encryption_header_size);
+    total_bytes_.Store(next_block_offset_.Load());
+    live_bytes_aligned_.Store(next_block_offset_.Load());
+  }
 }
 
 LogBlockContainer::~LogBlockContainer() {
@@ -842,7 +851,6 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     unique_ptr<WritablePBContainerFile> metadata_file(new WritablePBContainerFile(
         std::move(metadata_writer)));
     RETURN_NOT_OK_CONTAINER_DISK_FAILURE(metadata_file->CreateNew(BlockRecordPB()));
-
     container->reset(new LogBlockContainer(block_manager,
                                            dir,
                                            std::move(metadata_file),
@@ -928,14 +936,17 @@ Status LogBlockContainer::CheckContainerFiles(LogBlockManager* block_manager,
     RETURN_NOT_OK_CONTAINER_DISK_FAILURE(s_meta);
   }
 
+  const auto kEncryptionHeaderSize = env->GetEncryptionHeaderSize();
+  const auto kMinimumValidLength = pb_util::kPBContainerMinimumValidLength + kEncryptionHeaderSize;
+
   // Check that both the metadata and data files exist and have valid lengths.
   // This covers a commonly seen case at startup, where the previous incarnation
   // of the server crashed due to "too many open files" just as it was trying
   // to create a file. This orphans an empty or invalid length file, which we can
   // safely delete. And another case is that the metadata and data files exist,
   // but the lengths are invalid.
-  if (PREDICT_FALSE(metadata_size < pb_util::kPBContainerMinimumValidLength &&
-                    data_size == 0)) {
+  if (PREDICT_FALSE(metadata_size < kMinimumValidLength &&
+                    data_size <= kEncryptionHeaderSize)) {
     report->incomplete_container_check->entries.emplace_back(common_path);
     return Status::Aborted(Substitute("orphaned empty or invalid length file $0", common_path));
   }
@@ -945,7 +956,7 @@ Status LogBlockContainer::CheckContainerFiles(LogBlockManager* block_manager,
   // metadata file will be deleted when repairing.
   //
   // Open the metadata file and quickly check whether or not there is any live blocks.
-  if (PREDICT_FALSE(metadata_size >= pb_util::kPBContainerMinimumValidLength &&
+  if (PREDICT_FALSE(metadata_size >= kMinimumValidLength &&
                     s_data.IsNotFound())) {
     Status read_status;
     BlockIdSet live_blocks;
@@ -1079,8 +1090,11 @@ Status LogBlockContainer::ProcessRecord(
         RETURN_NOT_OK_HANDLE_ERROR(data_file_->Size(data_file_size));
       }
 
-      // If the record still extends beyond the end of the file, it is malformed.
-      if (PREDICT_FALSE(record->offset() + record->length() > *data_file_size)) {
+      // If the record still extends beyond the end of the file, it is
+      // malformed, except if the length is 0, because in this case nothing has
+      // actually been written.
+      if (PREDICT_FALSE(record->offset() + record->length() > *data_file_size &&
+                        record->length() > 0)) {
         // TODO(adar): treat as a different kind of inconsistency?
         report->malformed_record_check->entries.emplace_back(ToString(), record);
         break;
@@ -1303,6 +1317,12 @@ Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
       next_append_length > preallocated_offset_ - block_start_offset) {
     int64_t off = std::max(preallocated_offset_, block_start_offset);
     int64_t len = FLAGS_log_container_preallocate_bytes;
+    // If encryption is enabled, preallocation happens after the encryption
+    // header is written. This keeps the file size a multiple of
+    // log_container_preallocate_bytes even in this case.
+    if (block_start_offset < FLAGS_log_container_preallocate_bytes) {
+      len -= block_start_offset;
+    }
     RETURN_NOT_OK_HANDLE_ERROR(data_file_->PreAllocate(off, len, RWFile::CHANGE_FILE_SIZE));
     RETURN_NOT_OK_HANDLE_ERROR(data_dir_->RefreshAvailableSpace(Dir::RefreshMode::ALWAYS));
     VLOG(2) << Substitute("Preallocated $0 bytes at offset $1 in container $2",

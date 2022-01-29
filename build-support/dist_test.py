@@ -389,6 +389,7 @@ def create_archive_input(staging, execution, dep_extractor,
   command = ['../../build-support/run_dist_test.py',
              '-e', 'KUDU_TEST_TIMEOUT=%d' % (TEST_TIMEOUT_SECS - 30),
              '-e', 'KUDU_ALLOW_SLOW_TESTS=%s' % os.environ.get('KUDU_ALLOW_SLOW_TESTS', 1),
+             '-e', 'KUDU_ENCRYPT_DATA_IN_TESTS=%s' % os.environ.get('KUDU_ENCRYPT_DATA_IN_TESTS', 0),
              '-e', 'KUDU_COMPRESS_TEST_OUTPUT=%s' % \
                     os.environ.get('KUDU_COMPRESS_TEST_OUTPUT', 0)]
   for k, v in execution.env.items():

@@ -60,6 +60,15 @@ Status WriteStringToFileSync(Env* env, const Slice& data,
                              const std::string& fname) {
   return DoWriteStringToFile(env, data, fname, true, false);
 }
+Status WriteStringToFileEncrypted(Env* env, const Slice& data,
+                                  const std::string& fname) {
+  return DoWriteStringToFile(env, data, fname, false, true);
+}
+
+Status WriteStringToFileEncryptedSync(Env* env, const Slice& data,
+                                      const std::string& fname) {
+  return DoWriteStringToFile(env, data, fname, true, true);
+}
 
 Status DoReadFileToString(Env* env, const std::string& fname, faststring* data, bool is_sensitive) {
   data->clear();
@@ -88,6 +97,10 @@ Status DoReadFileToString(Env* env, const std::string& fname, faststring* data, 
 
 Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
   return DoReadFileToString(env, fname, data, false);
+}
+
+Status ReadFileToStringEncrypted(Env* env, const std::string& fname, faststring* data) {
+  return DoReadFileToString(env, fname, data, true);
 }
 
 }  // namespace kudu

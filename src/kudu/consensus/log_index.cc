@@ -121,7 +121,7 @@ Status LogIndex::IndexChunk::GetEntry(int entry_index, PhysicalEntry* ret) const
   DCHECK_LT(entry_index, kEntriesPerIndexChunk);
 
   Slice s(reinterpret_cast<const uint8_t*>(ret), sizeof(PhysicalEntry));
-  return file_->Read(sizeof(PhysicalEntry) * entry_index, s);
+  return file_->Read(file_->GetEncryptionHeaderSize() + sizeof(PhysicalEntry) * entry_index, s);
 }
 
 Status LogIndex::IndexChunk::SetEntry(int entry_index, const PhysicalEntry& entry) {
@@ -129,7 +129,7 @@ Status LogIndex::IndexChunk::SetEntry(int entry_index, const PhysicalEntry& entr
   DCHECK_LT(entry_index, kEntriesPerIndexChunk);
 
   Slice s(reinterpret_cast<const uint8_t*>(&entry), sizeof(PhysicalEntry));
-  return file_->Write(sizeof(PhysicalEntry) * entry_index, s);
+  return file_->Write(file_->GetEncryptionHeaderSize() + sizeof(PhysicalEntry) * entry_index, s);
 }
 
 ////////////////////////////////////////////////////////////

@@ -30,6 +30,7 @@ class Env;
 class RandomAccessFile;
 class SequentialFile;
 class WritableFile;
+struct RandomAccessFileOptions;
 struct WritableFileOptions;
 
 namespace env_util {
@@ -41,6 +42,9 @@ Status OpenFileForWrite(const WritableFileOptions& opts,
                         Env *env, const std::string &path,
                         std::shared_ptr<WritableFile> *file);
 
+Status OpenFileForRandom(const RandomAccessFileOptions& opts,
+                         Env *env, const std::string &path,
+                         std::shared_ptr<RandomAccessFile> *file);
 Status OpenFileForRandom(Env *env, const std::string &path,
                          std::shared_ptr<RandomAccessFile> *file);
 

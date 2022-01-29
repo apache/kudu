@@ -310,8 +310,16 @@ class Descriptor<RWFile> : public RWFile {
     return opened.file()->GetExtentMap(out);
   }
 
+  bool IsEncrypted() const override {
+    return true;
+  }
+
   const string& filename() const override {
     return base_.filename();
+  }
+
+  size_t GetEncryptionHeaderSize() const override {
+    return base_.env()->GetEncryptionHeaderSize();
   }
 
  private:
@@ -390,6 +398,10 @@ class Descriptor<RandomAccessFile> : public RandomAccessFile {
 
   const string& filename() const override {
     return base_.filename();
+  }
+
+  size_t GetEncryptionHeaderSize() const override {
+    return base_.env()->GetEncryptionHeaderSize();
   }
 
   size_t memory_footprint() const override {

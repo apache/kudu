@@ -438,9 +438,10 @@ Status ReadableLogSegment::ReadHeader() {
   Slice header_slice(header_space, header_size);
   LogSegmentHeaderPB header;
 
+  uint8_t offset = file_->GetEncryptionHeaderSize() + kLogSegmentHeaderMagicAndHeaderLength;
+
   // Read and parse the log segment header.
-  RETURN_NOT_OK_PREPEND(file_->Read(kLogSegmentHeaderMagicAndHeaderLength,
-                                    header_slice),
+  RETURN_NOT_OK_PREPEND(file_->Read(offset, header_slice),
                         "Unable to read fully");
 
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&header,
@@ -454,7 +455,7 @@ Status ReadableLogSegment::ReadHeader() {
   }
 
   header_ = std::move(header);
-  first_entry_offset_ = header_size + kLogSegmentHeaderMagicAndHeaderLength;
+  first_entry_offset_ = header_size + offset;
 
   return Status::OK();
 }
@@ -463,7 +464,7 @@ Status ReadableLogSegment::ReadHeader() {
 Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) const {
   uint8_t scratch[kLogSegmentHeaderMagicAndHeaderLength];
   Slice slice(scratch, kLogSegmentHeaderMagicAndHeaderLength);
-  RETURN_NOT_OK(file_->Read(0, slice));
+  RETURN_NOT_OK(file_->Read(file_->GetEncryptionHeaderSize(), slice));
   RETURN_NOT_OK(ParseHeaderMagicAndHeaderLength(slice, len));
   return Status::OK();
 }
@@ -786,10 +787,11 @@ Status WritableLogSegment::WriteHeader(const LogSegmentHeaderPB& new_header) {
   PutFixed32(&buf, static_cast<uint32_t>(new_header.ByteSizeLong()));
   // Then Serialize the PB.
   pb_util::AppendToString(new_header, &buf);
-  RETURN_NOT_OK(file_->Write(0, Slice(buf)));
+  uint8_t offset = file_->GetEncryptionHeaderSize();
+  RETURN_NOT_OK(file_->Write(offset, Slice(buf)));
 
   header_.CopyFrom(new_header);
-  first_entry_offset_ = buf.size();
+  first_entry_offset_ = buf.size() + offset;
   written_offset_ = first_entry_offset_;
   is_header_written_ = true;
 

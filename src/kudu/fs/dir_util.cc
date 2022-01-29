@@ -70,6 +70,9 @@ Status CheckHolePunch(Env* env, const string& path) {
   string filename = JoinPathSegments(path, "hole_punch_test_file");
   unique_ptr<RWFile> file;
   RWFileOptions opts;
+  // Encrypted files are larger due to the header size, which causes the file
+  // size calculations below to be off. We don't need the file to be encrypted
+  // for the hole punch test.
   opts.is_sensitive = false;
   RETURN_NOT_OK(env->NewRWFile(opts, filename, &file));
 

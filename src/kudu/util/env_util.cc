@@ -117,8 +117,6 @@ namespace env_util {
 
 Status OpenFileForWrite(Env* env, const string& path,
                         shared_ptr<WritableFile>* file) {
-  WritableFileOptions opts;
-  opts.is_sensitive = true;
   return OpenFileForWrite(WritableFileOptions(), env, path, file);
 }
 
@@ -133,9 +131,13 @@ Status OpenFileForWrite(const WritableFileOptions& opts,
 
 Status OpenFileForRandom(Env *env, const string &path,
                          shared_ptr<RandomAccessFile> *file) {
+  return OpenFileForRandom(RandomAccessFileOptions(), env, path, file);
+}
+
+Status OpenFileForRandom(const RandomAccessFileOptions& opts,
+                         Env* env, const string& path,
+                         shared_ptr<RandomAccessFile>* file) {
   unique_ptr<RandomAccessFile> r;
-  RandomAccessFileOptions opts;
-  opts.is_sensitive = true;
   RETURN_NOT_OK(env->NewRandomAccessFile(opts, path, &r));
   file->reset(r.release());
   return Status::OK();
@@ -144,9 +146,7 @@ Status OpenFileForRandom(Env *env, const string &path,
 Status OpenFileForSequential(Env *env, const string &path,
                              shared_ptr<SequentialFile> *file) {
   unique_ptr<SequentialFile> r;
-  SequentialFileOptions opts;
-  opts.is_sensitive = true;
-  RETURN_NOT_OK(env->NewSequentialFile(opts, path, &r));
+  RETURN_NOT_OK(env->NewSequentialFile(SequentialFileOptions(), path, &r));
   file->reset(r.release());
   return Status::OK();
 }
@@ -240,11 +240,18 @@ Status CreateDirsRecursively(Env* env, const string& path) {
 Status CopyFile(Env* env, const string& source_path, const string& dest_path,
                 WritableFileOptions opts) {
   unique_ptr<SequentialFile> source;
-  RETURN_NOT_OK(env->NewSequentialFile(source_path, &source));
+  // Both the source and the destination files are treated as insensitive,
+  // because if they're encrypted, it would be unnecessary to decrypt and
+  // re-encrypt it. This way, we make a byte for byte copy of the file
+  // regardless if it's encrypted.
+  SequentialFileOptions source_opts;
+  source_opts.is_sensitive = false;
+  RETURN_NOT_OK(env->NewSequentialFile(source_opts, source_path, &source));
   uint64_t size;
   RETURN_NOT_OK(env->GetFileSize(source_path, &size));
 
   unique_ptr<WritableFile> dest;
+  opts.is_sensitive = false;
   RETURN_NOT_OK(env->NewWritableFile(opts, dest_path, &dest));
   RETURN_NOT_OK(dest->PreAllocate(size));
 

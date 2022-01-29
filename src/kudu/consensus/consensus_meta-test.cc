@@ -80,7 +80,7 @@ class ConsensusMetadataTest : public KuduTest, public ::testing::WithParamInterf
 
 
   void EnableEncryption(bool enable) {
-    FLAGS_encrypt_data_at_rest = true;
+    FLAGS_encrypt_data_at_rest = enable;
   }
 
   FsManager fs_manager_;

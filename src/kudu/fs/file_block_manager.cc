@@ -519,6 +519,7 @@ Status FileReadableBlock::Size(uint64_t* sz) const {
   DCHECK(!closed_.Load());
 
   RETURN_NOT_OK_HANDLE_ERROR(reader_->Size(sz));
+  *sz -= reader_->GetEncryptionHeaderSize();
   return Status::OK();
 }
 
@@ -529,7 +530,7 @@ Status FileReadableBlock::Read(uint64_t offset, Slice result) const {
 Status FileReadableBlock::ReadV(uint64_t offset, ArrayView<Slice> results) const {
   DCHECK(!closed_.Load());
 
-  RETURN_NOT_OK_HANDLE_ERROR(reader_->ReadV(offset, results));
+  RETURN_NOT_OK_HANDLE_ERROR(reader_->ReadV(offset + reader_->GetEncryptionHeaderSize(), results));
 
   if (block_manager_->metrics_) {
     // Calculate the read amount of data

@@ -190,7 +190,7 @@ class Env {
   virtual Status DeleteRecursively(const std::string &dirname) = 0;
 
   // Store the logical size of fname in *file_size.
-  virtual Status GetFileSize(const std::string& fname, uint64_t* file_size) = 0;
+  virtual Status GetFileSize(const std::string& fname, uint64_t* file_size)= 0;
 
   // Store the physical size of fname in *file_size.
   //
@@ -374,13 +374,16 @@ class Env {
   // Creates symlink 'dst' that points to 'source'.
   virtual Status CreateSymLink(const std::string& src, const std::string& dst) = 0;
 
+  // Returns the encryption header size.
+  virtual size_t GetEncryptionHeaderSize() const = 0;
+
   // Special string injected into file-growing operations' random failures
   // (if enabled).
   //
   // Only useful for tests.
   static const char* const kInjectedFailureStatusMsg;
 
-  virtual const bool IsEncryptionEnabled() = 0;
+  virtual bool IsEncryptionEnabled() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Env);
@@ -390,6 +393,9 @@ class Env {
 class File {
  public:
   virtual ~File();
+
+  // Returns the encryption header size.
+  virtual size_t GetEncryptionHeaderSize() const = 0;
 
   // Returns the filename provided at construction time.
   virtual const std::string& filename() const = 0;
@@ -689,6 +695,8 @@ class RWFile : public File {
   // Retrieves the file's size.
   virtual Status Size(uint64_t* size) const = 0;
 
+  virtual bool IsEncrypted() const = 0;
+
   // Retrieve a map of the file's live extents.
   //
   // Each map entry is an offset and size representing a section of live file
@@ -722,9 +730,20 @@ extern Status WriteStringToFile(Env* env, const Slice& data,
 extern Status WriteStringToFileSync(Env* env, const Slice& data,
                                     const std::string& fname);
 
+// A utility routine: write "data" to the named encrypted file.
+extern Status WriteStringToFileEncrypted(Env* env, const Slice& data,
+                                         const std::string& fname);
+// Like above but also fsyncs the new file.
+extern Status WriteStringToFileEncryptedSync(Env* env, const Slice& data,
+                                             const std::string& fname);
+
 // A utility routine: read contents of named file into *data
 extern Status ReadFileToString(Env* env, const std::string& fname,
                                faststring* data);
+
+// A utility routine: read contents of named encrypted file into *data
+extern Status ReadFileToStringEncrypted(Env* env, const std::string& fname,
+                                        faststring* data);
 
 // Overloaded operator for printing Env::ResourceLimitType.
 std::ostream& operator<<(std::ostream& o, Env::ResourceLimitType t);

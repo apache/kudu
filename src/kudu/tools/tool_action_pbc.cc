@@ -104,10 +104,13 @@ namespace {
 const char* const kPathArg = "path";
 
 bool IsFileEncrypted(Env* env, const std::string& fname) {
-  // TODO(abukor): replace with real encryption check. As instance files are the
-  // only PBC files that are unencrypted right now, this check will suffice
-  // until we can tell if a file is encrypted based on an encryption header.
-  return fname.length() < 8 || fname.compare(fname.length() - 8, 8, "instance") != 0;
+  if (!env->IsEncryptionEnabled()) {
+    return false;
+  }
+  RandomAccessFileOptions opts;
+  opts.is_sensitive = true;
+  unique_ptr<RandomAccessFile> reader;
+  return env->NewRandomAccessFile(opts, fname, &reader).ok();
 }
 
 Status DumpPBContainerFile(const RunnerContext& context) {
