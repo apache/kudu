@@ -616,6 +616,10 @@ if [ -n "$F_TSAN" -o -n "$F_OATPP_SWAGGER" ]; then
   build_oatpp_swagger
 fi
 
+if [ -n "$F_TSAN" -o -n "$F_JWT_CPP" ]; then
+  build_jwt_cpp
+fi
+
 restore_env
 
 finish
