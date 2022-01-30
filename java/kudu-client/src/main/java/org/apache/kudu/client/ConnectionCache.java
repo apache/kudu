@@ -64,6 +64,8 @@ class ConnectionCache {
 
   private boolean encryptLoopback;
 
+  private long negotiationTimeoutMs;
+
   /**
    * Container mapping server IP/port into the established connection from the client to the
    * server. It may be up to two connections per server: one established with secondary
@@ -79,13 +81,15 @@ class ConnectionCache {
                   String saslProtocolName,
                   boolean requireAuthentication,
                   boolean requireEncryption,
-                  boolean encryptLoopback) {
+                  boolean encryptLoopback,
+                  long negotiationTimeoutMs) {
     this.securityContext = securityContext;
     this.bootstrap = bootstrap;
     this.saslProtocolName = saslProtocolName;
     this.requireAuthentication = requireAuthentication;
     this.requireEncryption = requireEncryption;
     this.encryptLoopback = encryptLoopback;
+    this.negotiationTimeoutMs = negotiationTimeoutMs;
   }
 
   /**
@@ -142,7 +146,8 @@ class ConnectionCache {
                                 saslProtocolName,
                                 requireAuthentication,
                                 requireEncryption,
-                                encryptLoopback);
+                                encryptLoopback,
+                                negotiationTimeoutMs);
         connections.add(result);
         // There can be at most 2 connections to the same destination: one with primary and another
         // with secondary credentials.

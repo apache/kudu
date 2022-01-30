@@ -303,6 +303,7 @@ public class AsyncKuduClient implements AutoCloseable {
   public static final long INVALID_TXN_ID = -1;
   public static final long DEFAULT_OPERATION_TIMEOUT_MS = 30000;
   public static final long DEFAULT_KEEP_ALIVE_PERIOD_MS = 15000; // 25% of the default scanner ttl.
+  public static final long DEFAULT_NEGOTIATION_TIMEOUT_MS = 10000;
   private static final long MAX_RPC_ATTEMPTS = 100;
 
   /**
@@ -427,7 +428,7 @@ public class AsyncKuduClient implements AutoCloseable {
     this.securityContext = new SecurityContext();
     this.connectionCache = new ConnectionCache(securityContext, bootstrap, b.saslProtocolName,
         b.requireAuthentication, !b.encryptionPolicy.equals(EncryptionPolicy.OPTIONAL),
-        b.encryptionPolicy.equals(EncryptionPolicy.REQUIRED));
+        b.encryptionPolicy.equals(EncryptionPolicy.REQUIRED), b.defaultNegotiationTimeoutMs);
     this.tokenReacquirer = new AuthnTokenReacquirer(this);
     this.authzTokenCache = new AuthzTokenCache(this);
   }
@@ -2764,6 +2765,7 @@ public class AsyncKuduClient implements AutoCloseable {
     private final List<HostAndPort> masterAddresses;
     private long defaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
     private long defaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
+    private long defaultNegotiationTimeoutMs = DEFAULT_NEGOTIATION_TIMEOUT_MS;
 
     private final HashedWheelTimer timer = new HashedWheelTimer(
         new ThreadFactoryBuilder().setDaemon(true).build(), 20, MILLISECONDS);
@@ -2830,6 +2832,18 @@ public class AsyncKuduClient implements AutoCloseable {
      */
     public AsyncKuduClientBuilder defaultOperationTimeoutMs(long timeoutMs) {
       this.defaultOperationTimeoutMs = timeoutMs;
+      return this;
+    }
+
+    /**
+     * Sets the default timeout used for connection negotiation.
+     * Optional.
+     * If not provided, defaults to 10s.
+     * @param timeoutMs a timeout in milliseconds
+     * @return this builder
+     */
+    public AsyncKuduClientBuilder connectionNegotiationTimeoutMs(long timeoutMs) {
+      this.defaultNegotiationTimeoutMs = timeoutMs;
       return this;
     }
 

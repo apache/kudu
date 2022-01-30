@@ -24,7 +24,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -124,21 +123,16 @@ public class TestTimeouts {
   }
 
   /**
-   * KUDU-1868: This tests that negotiation can time out on the client side. It passes if the
-   * hardcoded negotiation timeout is lowered to 500ms. In general it is hard to get it to work
-   * right because injecting latency to negotiation server side affects all client connections,
-   * including the harness's Java client, the kudu tool used to create the test cluster, and the
-   * other members of the test cluster. There isn't a way to configure the kudu tool's
-   * negotiation timeout within a Java test, presently.
+   * KUDU-1868: This tests that negotiation can time out on the client side.
    */
   @Test(timeout = 100000)
-  @Ignore
   @MasterServerConfig(flags = { "--rpc_negotiation_inject_delay_ms=1000" })
   public void testClientNegotiationTimeout() throws Exception {
     // Make a new client so we can turn down the operation timeout-- otherwise this test takes 50s!
     try (KuduClient lowTimeoutsClient =
              new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
                  .defaultAdminOperationTimeoutMs(5000)
+                 .connectionNegotiationTimeoutMs(500)
                  .build()) {
       try {
         lowTimeoutsClient.getTablesList();

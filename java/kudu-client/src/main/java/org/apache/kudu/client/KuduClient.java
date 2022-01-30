@@ -536,6 +536,18 @@ public class KuduClient implements AutoCloseable {
     }
 
     /**
+     * Sets the default timeout used for connection negotiation.
+     * Optional.
+     * If not provided, defaults to 10s.
+     * @param timeoutMs a timeout in milliseconds
+     * @return this builder
+     */
+    public KuduClientBuilder connectionNegotiationTimeoutMs(long timeoutMs) {
+      clientBuilder.connectionNegotiationTimeoutMs(timeoutMs);
+      return this;
+    }
+
+    /**
      * Socket read timeouts are no longer used in the Java client and have no effect.
      * Setting this has no effect.
      * @param timeoutMs a timeout in milliseconds
