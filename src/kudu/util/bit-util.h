@@ -32,6 +32,16 @@ class BitUtil {
     return value / divisor + (value % divisor != 0);
   }
 
+  // Similar to the above, but a bit optimized for the case when the divisor
+  // is a power of two: LOG2_DIV is log2(divisor), e.g. 3 for the divisor of 8.
+  template <int LOG2_DIV>
+  static inline int Ceil(int value) {
+    constexpr int kDivisor = 1 << LOG2_DIV;
+    constexpr int kComplement = kDivisor - 1;
+    constexpr int kComplementMask = -kDivisor;
+    return ((value + kComplement) & kComplementMask) >> LOG2_DIV;
+  }
+
   // Returns the 'num_bits' least-significant bits of 'v'.
   static inline uint64_t TrailingBits(uint64_t v, int num_bits) {
     if (PREDICT_FALSE(num_bits == 0)) return 0;

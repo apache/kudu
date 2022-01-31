@@ -31,6 +31,7 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/util/bit-stream-utils.h"
 #include "kudu/util/bit-stream-utils.inline.h"
+#include "kudu/util/bit-util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/rle-encoding.h"
@@ -92,6 +93,22 @@ int BooleanRLE(faststring* buffer) {
   return bytes_written;
 }
 
+int BitUtilCeil(int num_iter) {
+  volatile int res = 0;
+  for (int i = 0; i < num_iter; ++i) {
+    res = BitUtil::Ceil(i, 8);
+  }
+  return res;
+}
+
+int BitUtilCeilLog2Div(int num_iter) {
+  volatile int res;
+  for (int i = 0; i < num_iter; ++i) {
+    res = BitUtil::Ceil<3>(i);
+  }
+  return res;
+}
+
 } // namespace kudu
 
 int main(int argc, char** argv) {
@@ -119,6 +136,22 @@ int main(int argc, char** argv) {
       bytes_written = kudu::BooleanRLE(&buffer);
     }
     LOG(INFO) << "Wrote " << bytes_written << " bytes";
+  }
+
+  {
+    int res = 0;
+    LOG_TIMING(INFO, "BitUtil::Ceil(..., 8)") {
+      res = kudu::BitUtilCeil(1000000000);
+    }
+    LOG(INFO) << "Result: " << res;
+  }
+
+  {
+    int res = 0;
+    LOG_TIMING(INFO, "BitUtil::Ceil<3>(...)") {
+      res = kudu::BitUtilCeilLog2Div(1000000000);
+    }
+    LOG(INFO) << "Result: " << res;
   }
 
   return 0;
