@@ -42,47 +42,36 @@ DEFINE_int32(bitstream_num_bytes, 1 * 1024 * 1024,
 namespace kudu {
 
 // Measure writing and reading single-bit streams
-void BooleanBitStream() {
-  faststring buffer(FLAGS_bitstream_num_bytes);
-  BitWriter writer(&buffer);
-
+int BooleanBitStream(faststring* buffer) {
   // Write alternating strings of repeating 0's and 1's
-  for (int i = 0; i < FLAGS_bitstream_num_bytes; ++i) {
-    writer.PutValue(i % 2, 1);
-    writer.PutValue(i % 2, 1);
-    writer.PutValue(i % 2, 1);
-    writer.PutValue(i % 2, 1);
-    writer.PutValue(i % 2, 1);
-    writer.PutValue(i % 2, 1);
-    writer.PutValue(i % 2, 1);
-    writer.PutValue(i % 2, 1);
+  const auto num_bytes = buffer->capacity();
+  BitWriter writer(buffer);
+  for (auto i = 0; i < num_bytes; ++i) {
+    auto val = i % 2;
+    for (auto j = 0; j < 8; ++j) {
+      writer.PutValue(val, 1);
+    }
   }
   writer.Flush();
+  const auto bytes_written = writer.bytes_written();
 
-  LOG(INFO) << "Wrote " << writer.bytes_written() << " bytes";
-
-  BitReader reader(buffer.data(), writer.bytes_written());
-  for (int i = 0; i < FLAGS_bitstream_num_bytes; ++i) {
+  BitReader reader(buffer->data(), bytes_written);
+  for (auto i = 0; i < num_bytes; ++i) {
     bool val;
-    reader.GetValue(1, &val);
-    reader.GetValue(1, &val);
-    reader.GetValue(1, &val);
-    reader.GetValue(1, &val);
-    reader.GetValue(1, &val);
-    reader.GetValue(1, &val);
-    reader.GetValue(1, &val);
-    reader.GetValue(1, &val);
+    for (auto j = 0; j < 8; ++j) {
+      reader.GetValue(1, &val);
+    }
   }
+
+  return bytes_written;
 }
 
 // Measure bulk puts and decoding runs of RLE bools
-void BooleanRLE() {
-  const int num_iters = 3 * 1024;
+int BooleanRLE(faststring* buffer) {
+  constexpr int kNumIters = 3 * 1024;
 
-  faststring buffer(45 * 1024);
-  RleEncoder<bool> encoder(&buffer, 1);
-
-  for (int i = 0; i < num_iters; i++) {
+  RleEncoder<bool> encoder(buffer, 1);
+  for (auto i = 0; i < kNumIters; ++i) {
     encoder.Put(false, 100 * 1024);
     encoder.Put(true, 3);
     encoder.Put(false, 3);
@@ -92,28 +81,44 @@ void BooleanRLE() {
     encoder.Put(false, 4);
   }
 
-  LOG(INFO) << "Wrote " << encoder.len() << " bytes";
+  const auto bytes_written = encoder.len();
 
-  RleDecoder<bool> decoder(buffer.data(), encoder.len(), 1);
+  RleDecoder<bool> decoder(buffer->data(), encoder.len(), 1);
   bool val = false;
-  for (int i = 0; i < num_iters * 7; i++) {
+  for (auto i = 0; i < kNumIters * 7; ++i) {
     ignore_result(decoder.GetNextRun(&val, MathLimits<size_t>::kMax));
   }
+
+  return bytes_written;
 }
 
 } // namespace kudu
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   FLAGS_logtostderr = 1;
   google::ParseCommandLineFlags(&argc, &argv, true);
   kudu::InitGoogleLoggingSafe(argv[0]);
 
-  LOG_TIMING(INFO, "BooleanBitStream") {
-    kudu::BooleanBitStream();
+  {
+    // kudu::BooleanBitStream() assumes fastring::capacity() returns
+    // the actual capacity of the buffer.
+    CHECK_GT(FLAGS_bitstream_num_bytes, kudu::faststring::kInitialCapacity);
+
+    int bytes_written = 0;
+    kudu::faststring buffer(FLAGS_bitstream_num_bytes);
+    LOG_TIMING(INFO, "BooleanBitStream") {
+      bytes_written = kudu::BooleanBitStream(&buffer);
+    }
+    LOG(INFO) << "Wrote " << bytes_written << " bytes";
   }
 
-  LOG_TIMING(INFO, "BooleanRLE") {
-    kudu::BooleanRLE();
+  {
+    int bytes_written = 0;
+    kudu::faststring buffer(45 * 1024);
+    LOG_TIMING(INFO, "BooleanRLE") {
+      bytes_written = kudu::BooleanRLE(&buffer);
+    }
+    LOG(INFO) << "Wrote " << bytes_written << " bytes";
   }
 
   return 0;
