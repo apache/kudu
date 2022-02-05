@@ -412,7 +412,7 @@ TEST_F(TokenTest, TestGenerateAuthzToken) {
                                       &signed_token_pb));
   ASSERT_TRUE(signed_token_pb.has_token_data());
   TokenPB token_pb;
-  ASSERT_EQ(VerificationResult::VALID,
+  ASSERT_EQ(TokenVerificationResult::VALID,
             verifier->VerifyTokenSignature(signed_token_pb, &token_pb));
   ASSERT_TRUE(token_pb.has_authz());
   ASSERT_EQ(kAuthorized, token_pb.authz().username());
@@ -619,11 +619,11 @@ TEST_F(TokenTest, TestEndToEnd_Valid) {
   TokenVerifier verifier;
   ASSERT_OK(verifier.ImportKeys(signer.verifier().ExportKeys()));
   TokenPB token;
-  ASSERT_EQ(VerificationResult::VALID, verifier.VerifyTokenSignature(signed_token, &token));
+  ASSERT_EQ(TokenVerificationResult::VALID, verifier.VerifyTokenSignature(signed_token, &token));
 }
 
 // Test all of the possible cases covered by token verification.
-// See VerificationResult.
+// See TokenVerificationResult.
 TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
   // Key rotation interval 0 allows adding 2 keys in a row with no delay.
   TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, 0);
@@ -643,7 +643,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
     ASSERT_OK(signer.SignToken(&signed_token));
     signed_token.set_token_data("xyz");
     TokenPB token;
-    ASSERT_EQ(VerificationResult::INVALID_TOKEN,
+    ASSERT_EQ(TokenVerificationResult::INVALID_TOKEN,
               verifier.VerifyTokenSignature(signed_token, &token));
   }
 
@@ -653,7 +653,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
     ASSERT_OK(signer.SignToken(&signed_token));
     signed_token.set_signature("xyz");
     TokenPB token;
-    ASSERT_EQ(VerificationResult::INVALID_SIGNATURE,
+    ASSERT_EQ(TokenVerificationResult::INVALID_SIGNATURE,
               verifier.VerifyTokenSignature(signed_token, &token));
   }
 
@@ -662,7 +662,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
     SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() - 10);
     ASSERT_OK(signer.SignToken(&signed_token));
     TokenPB token;
-    ASSERT_EQ(VerificationResult::EXPIRED_TOKEN,
+    ASSERT_EQ(TokenVerificationResult::EXPIRED_TOKEN,
               verifier.VerifyTokenSignature(signed_token, &token));
   }
 
@@ -671,7 +671,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
     SignedTokenPB signed_token = MakeIncompatibleToken();
     ASSERT_OK(signer.SignToken(&signed_token));
     TokenPB token;
-    ASSERT_EQ(VerificationResult::INCOMPATIBLE_FEATURE,
+    ASSERT_EQ(TokenVerificationResult::INCOMPATIBLE_FEATURE,
               verifier.VerifyTokenSignature(signed_token, &token));
   }
 
@@ -690,7 +690,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
     SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
     ASSERT_OK(signer.SignToken(&signed_token));
     TokenPB token;
-    ASSERT_EQ(VerificationResult::UNKNOWN_SIGNING_KEY,
+    ASSERT_EQ(TokenVerificationResult::UNKNOWN_SIGNING_KEY,
               verifier.VerifyTokenSignature(signed_token, &token));
   }
 
@@ -713,7 +713,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
     // Current implementation allows to use an expired key to sign tokens.
     ASSERT_OK(signer.SignToken(&signed_token));
     TokenPB token;
-    ASSERT_EQ(VerificationResult::EXPIRED_SIGNING_KEY,
+    ASSERT_EQ(TokenVerificationResult::EXPIRED_SIGNING_KEY,
               verifier.VerifyTokenSignature(signed_token, &token));
   }
 }
@@ -771,20 +771,23 @@ TEST_F(TokenTest, TestVaryingTokenValidityIntervals) {
   ASSERT_OK(signer.GenerateAuthzToken(kUser, table_privilege, &signed_authz));
   TokenPB authn_token;
   TokenPB authz_token;
-  ASSERT_EQ(VerificationResult::VALID, verifier->VerifyTokenSignature(signed_authn, &authn_token));
-  ASSERT_EQ(VerificationResult::VALID, verifier->VerifyTokenSignature(signed_authz, &authz_token));
+  ASSERT_EQ(TokenVerificationResult::VALID,
+            verifier->VerifyTokenSignature(signed_authn, &authn_token));
+  ASSERT_EQ(TokenVerificationResult::VALID,
+            verifier->VerifyTokenSignature(signed_authz, &authz_token));
 
   // Wait for the authz validity interval to pass and verify its expiration.
   SleepFor(MonoDelta::FromSeconds(1 + kShortValiditySeconds));
-  EXPECT_EQ(VerificationResult::VALID, verifier->VerifyTokenSignature(signed_authn, &authn_token));
-  EXPECT_EQ(VerificationResult::EXPIRED_TOKEN,
+  EXPECT_EQ(TokenVerificationResult::VALID,
+            verifier->VerifyTokenSignature(signed_authn, &authn_token));
+  EXPECT_EQ(TokenVerificationResult::EXPIRED_TOKEN,
             verifier->VerifyTokenSignature(signed_authz, &authz_token));
 
   // Wait for the authn validity interval to pass and verify its expiration.
   SleepFor(MonoDelta::FromSeconds(kLongValiditySeconds - kShortValiditySeconds));
-  EXPECT_EQ(VerificationResult::EXPIRED_TOKEN,
+  EXPECT_EQ(TokenVerificationResult::EXPIRED_TOKEN,
             verifier->VerifyTokenSignature(signed_authn, &authn_token));
-  EXPECT_EQ(VerificationResult::EXPIRED_TOKEN,
+  EXPECT_EQ(TokenVerificationResult::EXPIRED_TOKEN,
             verifier->VerifyTokenSignature(signed_authz, &authz_token));
 }
 
@@ -837,9 +840,9 @@ TEST_F(TokenTest, TestKeyValidity) {
     TokenPB token_pb;
     const auto result = verifier->VerifyTokenSignature(signed_token, &token_pb);
     const auto expire_secs = token_pb.expire_unix_epoch_seconds();
-    ASSERT_EQ(VerificationResult::EXPIRED_TOKEN, result)
+    ASSERT_EQ(TokenVerificationResult::EXPIRED_TOKEN, result)
         << Substitute("validation result '$0': $1 token expires at $2, now $3",
-                      VerificationResultToString(result), token_type,
+                      TokenVerificationResultToString(result), token_type,
                       expire_secs, WallTime_Now());
   };
 

@@ -35,7 +35,7 @@ class SignedTokenPB;
 class TokenPB;
 class TokenSigningPublicKey;
 class TokenSigningPublicKeyPB;
-enum class VerificationResult;
+enum class TokenVerificationResult;
 
 // Class responsible for verifying tokens provided to a server.
 //
@@ -85,8 +85,8 @@ class TokenVerifier {
 
   // Verify the signature on the given signed token, and deserialize the
   // contents into 'token'.
-  VerificationResult VerifyTokenSignature(const SignedTokenPB& signed_token,
-                                          TokenPB* token) const;
+  TokenVerificationResult VerifyTokenSignature(
+      const SignedTokenPB& signed_token, TokenPB* token) const;
 
  private:
   typedef std::map<int64_t, std::unique_ptr<TokenSigningPublicKey>> KeysMap;
@@ -100,7 +100,7 @@ class TokenVerifier {
 
 // Result of a token verification.
 // Values added to this enum must also be added to VerificationResultToString().
-enum class VerificationResult {
+enum class TokenVerificationResult {
   // The signature is valid and the token is not expired.
   VALID,
   // The token itself is invalid (e.g. missing its signature or data,
@@ -120,7 +120,7 @@ enum class VerificationResult {
   INCOMPATIBLE_FEATURE
 };
 
-const char* VerificationResultToString(VerificationResult r);
+const char* TokenVerificationResultToString(TokenVerificationResult r);
 
 } // namespace security
 } // namespace kudu

@@ -54,7 +54,7 @@ using kudu::cluster::InternalMiniClusterOptions;
 using kudu::security::TokenPB;
 using kudu::security::TokenSigningPublicKeyPB;
 using kudu::security::SignedTokenPB;
-using kudu::security::VerificationResult;
+using kudu::security::TokenVerificationResult;
 
 namespace kudu {
 namespace master {
@@ -235,9 +235,9 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
     // There might be some delay due to parallel OS activity, but the public
     // part of TSK should reach all tablet servers in a few heartbeat intervals.
     AssertEventually([&] {
-        const VerificationResult res = ts->messenger()->token_verifier().
+        const TokenVerificationResult res = ts->messenger()->token_verifier().
             VerifyTokenSignature(stoken, &token);
-        ASSERT_EQ(VerificationResult::VALID, res);
+        ASSERT_EQ(TokenVerificationResult::VALID, res);
     }, MonoDelta::FromMilliseconds(5L * FLAGS_heartbeat_interval_ms));
     NO_PENDING_FATALS();
   }
@@ -276,9 +276,9 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
       ASSERT_NE(nullptr, ts);
       const int64_t time_pre = WallTime_Now();
       TokenPB token;
-      const VerificationResult res = ts->messenger()->token_verifier().
-          VerifyTokenSignature(stoken_eotai, &token);
-      if (res == VerificationResult::VALID) {
+      const auto res = ts->messenger()->token_verifier().VerifyTokenSignature(
+          stoken_eotai, &token);
+      if (res == TokenVerificationResult::VALID) {
         // Both authn token and its TSK should be valid.
         valid_at_tserver[i] = true;
         ASSERT_GE(token.expire_unix_epoch_seconds(), time_pre);
@@ -286,7 +286,7 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
       } else {
         expired_at_tserver[i] = true;
         // The only expected error here is EXPIRED_TOKEN.
-        ASSERT_EQ(VerificationResult::EXPIRED_TOKEN, res);
+        ASSERT_EQ(TokenVerificationResult::EXPIRED_TOKEN, res);
         const int64_t time_post = WallTime_Now();
         ASSERT_LT(token.expire_unix_epoch_seconds(), time_post);
       }
@@ -312,7 +312,7 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
     const tserver::TabletServer* ts = cluster_->mini_tablet_server(i)->server();
     ASSERT_NE(nullptr, ts);
     TokenPB token;
-    ASSERT_EQ(VerificationResult::EXPIRED_TOKEN,
+    ASSERT_EQ(TokenVerificationResult::EXPIRED_TOKEN,
               ts->messenger()->token_verifier().
               VerifyTokenSignature(stoken_eotai, &token));
   }

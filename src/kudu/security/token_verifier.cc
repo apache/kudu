@@ -103,29 +103,29 @@ std::vector<TokenSigningPublicKeyPB> TokenVerifier::ExportKeys(
 }
 
 // Verify the signature on the given token.
-VerificationResult TokenVerifier::VerifyTokenSignature(const SignedTokenPB& signed_token,
-                                                       TokenPB* token) const {
+TokenVerificationResult TokenVerifier::VerifyTokenSignature(
+    const SignedTokenPB& signed_token, TokenPB* token) const {
   if (!signed_token.has_signature() ||
       !signed_token.has_signing_key_seq_num() ||
       !signed_token.has_token_data()) {
-    return VerificationResult::INVALID_TOKEN;
+    return TokenVerificationResult::INVALID_TOKEN;
   }
 
   if (!token->ParseFromString(signed_token.token_data()) ||
       !token->has_expire_unix_epoch_seconds()) {
-    return VerificationResult::INVALID_TOKEN;
+    return TokenVerificationResult::INVALID_TOKEN;
   }
 
   int64_t now = WallTime_Now();
   if (token->expire_unix_epoch_seconds() < now) {
-    return VerificationResult::EXPIRED_TOKEN;
+    return TokenVerificationResult::EXPIRED_TOKEN;
   }
 
   for (auto flag : token->incompatible_features()) {
     if (!TokenPB::Feature_IsValid(flag)) {
       KLOG_EVERY_N_SECS(WARNING, 60) << "received token with unknown feature; "
                                         "server needs to be updated";
-      return VerificationResult::INCOMPATIBLE_FEATURE;
+      return TokenVerificationResult::INCOMPATIBLE_FEATURE;
     }
   }
 
@@ -133,34 +133,34 @@ VerificationResult TokenVerifier::VerifyTokenSignature(const SignedTokenPB& sign
     shared_lock<RWMutex> l(lock_);
     auto* tsk = FindPointeeOrNull(keys_by_seq_, signed_token.signing_key_seq_num());
     if (!tsk) {
-      return VerificationResult::UNKNOWN_SIGNING_KEY;
+      return TokenVerificationResult::UNKNOWN_SIGNING_KEY;
     }
     if (tsk->pb().expire_unix_epoch_seconds() < now) {
-      return VerificationResult::EXPIRED_SIGNING_KEY;
+      return TokenVerificationResult::EXPIRED_SIGNING_KEY;
     }
     if (!tsk->VerifySignature(signed_token)) {
-      return VerificationResult::INVALID_SIGNATURE;
+      return TokenVerificationResult::INVALID_SIGNATURE;
     }
   }
 
-  return VerificationResult::VALID;
+  return TokenVerificationResult::VALID;
 }
 
-const char* VerificationResultToString(VerificationResult r) {
+const char* TokenVerificationResultToString(TokenVerificationResult r) {
   switch (r) {
-    case security::VerificationResult::VALID:
+    case security::TokenVerificationResult::VALID:
       return "valid";
-    case security::VerificationResult::INVALID_TOKEN:
+    case security::TokenVerificationResult::INVALID_TOKEN:
       return "invalid token";
-    case security::VerificationResult::INVALID_SIGNATURE:
+    case security::TokenVerificationResult::INVALID_SIGNATURE:
       return "invalid token signature";
-    case security::VerificationResult::EXPIRED_TOKEN:
+    case security::TokenVerificationResult::EXPIRED_TOKEN:
       return "token expired";
-    case security::VerificationResult::EXPIRED_SIGNING_KEY:
+    case security::TokenVerificationResult::EXPIRED_SIGNING_KEY:
       return "token signing key expired";
-    case security::VerificationResult::UNKNOWN_SIGNING_KEY:
+    case security::TokenVerificationResult::UNKNOWN_SIGNING_KEY:
       return "token signed with unknown key";
-    case security::VerificationResult::INCOMPATIBLE_FEATURE:
+    case security::TokenVerificationResult::INCOMPATIBLE_FEATURE:
       return "token uses incompatible feature";
     default:
       LOG(FATAL) << "unexpected VerificationResult value: "
@@ -170,4 +170,3 @@ const char* VerificationResultToString(VerificationResult r) {
 
 } // namespace security
 } // namespace kudu
-

@@ -222,7 +222,7 @@ using kudu::fault_injection::MaybeTrue;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::ErrorStatusPB;
-using kudu::rpc::ParseVerificationResult;
+using kudu::rpc::ParseTokenVerificationResult;
 using kudu::rpc::RpcContext;
 using kudu::rpc::RpcSidecar;
 using kudu::security::TokenPB;
@@ -621,7 +621,7 @@ static bool VerifyAuthzTokenOrRespond(const TokenVerifier& token_verifier,
   TokenPB token_pb;
   const auto result = token_verifier.VerifyTokenSignature(req.authz_token(), &token_pb);
   ErrorStatusPB::RpcErrorCodePB error;
-  Status s = ParseVerificationResult(result,
+  Status s = ParseTokenVerificationResult(result,
       ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN, &error);
   if (!s.ok()) {
     context->RespondRpcFailure(error, s.CloneAndPrepend("authz token verification failure"));

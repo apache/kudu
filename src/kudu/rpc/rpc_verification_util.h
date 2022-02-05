@@ -23,7 +23,7 @@
 namespace kudu {
 
 namespace security {
-enum class VerificationResult;
+enum class TokenVerificationResult;
 } // namespace security
 
 namespace rpc {
@@ -33,9 +33,10 @@ namespace rpc {
 // otherwise returns non-OK and sets 'error' appropriately.
 // 'retry_error' is the error code to be returned to denote that verification
 // should be retried after retrieving a new token.
-Status ParseVerificationResult(const security::VerificationResult& result,
-                               ErrorStatusPB::RpcErrorCodePB retry_error,
-                               ErrorStatusPB::RpcErrorCodePB* error);
+Status ParseTokenVerificationResult(
+    const security::TokenVerificationResult& result,
+    ErrorStatusPB::RpcErrorCodePB retry_error,
+    ErrorStatusPB::RpcErrorCodePB* error);
 
 } // namespace rpc
 } // namespace kudu

@@ -85,7 +85,7 @@ using security::TokenPB;
 using security::TokenSigner;
 using security::TokenSigningPrivateKeyPB;
 using security::TokenVerifier;
-using security::VerificationResult;
+using security::TokenVerificationResult;
 
 class SecurityUnknownTskTest : public KuduTest {
  public:
@@ -151,7 +151,8 @@ class SecurityUnknownTskTest : public KuduTest {
     TokenSigner* signer = cluster_->mini_master()->master()->token_signer();
     TokenPB token;
     const TokenVerifier& verifier = signer->verifier();
-    if (verifier.VerifyTokenSignature(*authn_token, &token) != VerificationResult::VALID) {
+    if (verifier.VerifyTokenSignature(*authn_token, &token) !=
+        TokenVerificationResult::VALID) {
       return Status::RuntimeError("current client authn token is not valid");
     }
 

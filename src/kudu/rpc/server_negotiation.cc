@@ -701,7 +701,7 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
   security::TokenPB token;
   auto verification_result = token_verifier_->VerifyTokenSignature(pb.authn_token(), &token);
   ErrorStatusPB::RpcErrorCodePB error;
-  Status s = ParseVerificationResult(verification_result,
+  Status s = ParseTokenVerificationResult(verification_result,
       ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, &error);
   if (!s.ok()) {
     RETURN_NOT_OK(SendError(error, s));
@@ -722,26 +722,26 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
   }
 
   if (PREDICT_FALSE(FLAGS_rpc_inject_invalid_authn_token_ratio > 0)) {
-    security::VerificationResult res;
+    security::TokenVerificationResult res;
     int sel = rand() % 4;
     switch (sel) {
       case 0:
-        res = security::VerificationResult::INVALID_TOKEN;
+        res = security::TokenVerificationResult::INVALID_TOKEN;
         break;
       case 1:
-        res = security::VerificationResult::INVALID_SIGNATURE;
+        res = security::TokenVerificationResult::INVALID_SIGNATURE;
         break;
       case 2:
-        res = security::VerificationResult::EXPIRED_TOKEN;
+        res = security::TokenVerificationResult::EXPIRED_TOKEN;
         break;
       case 3:
-        res = security::VerificationResult::EXPIRED_SIGNING_KEY;
+        res = security::TokenVerificationResult::EXPIRED_SIGNING_KEY;
         break;
       default:
         LOG(FATAL) << "unreachable";
     }
     if (kudu::fault_injection::MaybeTrue(FLAGS_rpc_inject_invalid_authn_token_ratio)) {
-      Status s = Status::NotAuthorized(VerificationResultToString(res));
+      Status s = Status::NotAuthorized(TokenVerificationResultToString(res));
       RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
       return s;
     }

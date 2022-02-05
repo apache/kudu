@@ -26,33 +26,33 @@
 
 namespace kudu {
 
-using security::VerificationResult;
+using security::TokenVerificationResult;
 
 namespace rpc {
 
-Status ParseVerificationResult(const VerificationResult& result,
-                               ErrorStatusPB::RpcErrorCodePB retry_error,
-                               ErrorStatusPB::RpcErrorCodePB* error) {
+Status ParseTokenVerificationResult(const TokenVerificationResult& result,
+                                    ErrorStatusPB::RpcErrorCodePB retry_error,
+                                    ErrorStatusPB::RpcErrorCodePB* error) {
   DCHECK(error);
   switch (result) {
-    case VerificationResult::VALID: return Status::OK();
+    case TokenVerificationResult::VALID: return Status::OK();
 
-    case VerificationResult::INVALID_TOKEN:
-    case VerificationResult::INVALID_SIGNATURE:
-    case VerificationResult::EXPIRED_TOKEN:
-    case VerificationResult::EXPIRED_SIGNING_KEY: {
+    case TokenVerificationResult::INVALID_TOKEN:
+    case TokenVerificationResult::INVALID_SIGNATURE:
+    case TokenVerificationResult::EXPIRED_TOKEN:
+    case TokenVerificationResult::EXPIRED_SIGNING_KEY: {
       // These errors indicate the client should get a new token and try again.
       *error = retry_error;
       break;
     }
-    case VerificationResult::UNKNOWN_SIGNING_KEY: {
+    case TokenVerificationResult::UNKNOWN_SIGNING_KEY: {
       // The server doesn't recognize the signing key. This indicates that the
       // server has not been updated with the most recent TSKs, so tell the
       // client to try again later.
       *error = ErrorStatusPB::ERROR_UNAVAILABLE;
       break;
     }
-    case VerificationResult::INCOMPATIBLE_FEATURE: {
+    case TokenVerificationResult::INCOMPATIBLE_FEATURE: {
       // These error types aren't recoverable by having the client get a new token.
       *error = ErrorStatusPB::FATAL_UNAUTHORIZED;
       break;
@@ -60,7 +60,7 @@ Status ParseVerificationResult(const VerificationResult& result,
     default:
       LOG(FATAL) << "Unknown verification result: " << static_cast<int>(result);
   }
-  return Status::NotAuthorized(VerificationResultToString(result));
+  return Status::NotAuthorized(TokenVerificationResultToString(result));
 }
 
 } // namespace rpc
