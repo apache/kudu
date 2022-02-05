@@ -204,7 +204,7 @@ double WidthByDataSize(const Slice& prev, const Slice& next,
 
   for (const auto& rs_rsi : active) {
     double fraction = StringFractionInRange(rs_rsi.second, prev, next);
-    for (const auto col_id : col_ids) {
+    for (const auto& col_id : col_ids) {
       weight += rs_rsi.second->size_bytes(col_id) * fraction;
     }
   }
