@@ -281,6 +281,7 @@ Status Schema::Reset(vector<ColumnSchema> cols,
   }
 
   // Calculate the offset of each column in the row format.
+  col_offsets_.clear();
   col_offsets_.reserve(cols_.size() + 1);  // Include space for total byte size at the end.
   size_t off = 0;
   size_t i = 0;
