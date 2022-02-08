@@ -330,6 +330,25 @@ class KuduContext(
   }
 
   /**
+   * Deletes the rows of a [[DataFrame]] from a Kudu table, ignoring any none-existing
+   * rows.
+   *
+   * @param data the data to delete from Kudu
+   *             note that only the key columns should be specified for deletes
+   * @param tableName The Kudu tabe to delete from
+   * @param writeOptions the Kudu write options
+   */
+  def deleteIgnoreRows(
+      data: DataFrame,
+      tableName: String,
+      writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    log.info(s"deleting rows from table '$tableName'")
+    writeRows(data, tableName, DeleteIgnore, writeOptions)
+    log.info(
+      s"deleted up to ${numDeletes.value.get(tableName)} rows from table '$tableName' using DELETE_IGNORE")
+  }
+
+  /**
    * Deletes the rows of a [[DataFrame]] from a Kudu table.
    *
    * @param data the data to delete from Kudu
