@@ -314,6 +314,18 @@ TEST_F(TestSchema, TestReset) {
                          1));
   ASSERT_TRUE(schema.initialized());
 
+  Schema schema1;
+  ASSERT_OK(schema1.Reset({ ColumnSchema("col3", UINT64),
+                            ColumnSchema("col4", STRING),
+                            ColumnSchema("col5", UINT32),
+                            ColumnSchema("col6", STRING) }, 2));
+  ASSERT_OK(schema.Reset(schema1.columns(), 2));
+  ASSERT_TRUE(schema == schema1);
+  for (int i = 0; i < schema1.num_columns(); i++) {
+    ASSERT_EQ(schema.column_offset(i), schema1.column_offset(i));
+  }
+  ASSERT_EQ(schema.key_byte_size(), schema1.key_byte_size());
+
   // Move an uninitialized schema into the initialized schema.
   Schema schema2;
   schema = std::move(schema2);
