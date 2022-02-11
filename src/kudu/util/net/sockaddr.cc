@@ -70,7 +70,9 @@ Sockaddr Sockaddr::Wildcard() {
 }
 
 Sockaddr& Sockaddr::operator=(const Sockaddr& other) noexcept {
-  if (&other == this) return *this;
+  if (&other == this) {
+    return *this;
+  }
   set_length(other.len_);
   memcpy(&storage_, &other.storage_, len_);
   return *this;
@@ -81,8 +83,14 @@ Sockaddr::Sockaddr(const struct sockaddr& addr, socklen_t len) {
   memcpy(&storage_, &addr, len);
 }
 
+// When storing sockaddr_in, do not count the padding sin_zero field in the
+// length of Sockaddr::storage_ since the padding might contain irrelevant
+// non-zero bytes that should not be passed along with the rest of the valid
+// and properly initialized sockaddr_in's fields to BytewiseCompare() and
+// HashCode().
 Sockaddr::Sockaddr(const struct sockaddr_in& addr) :
-    Sockaddr(reinterpret_cast<const struct sockaddr&>(addr), sizeof(addr)) {
+    Sockaddr(reinterpret_cast<const struct sockaddr&>(addr),
+             offsetof(struct sockaddr_in, sin_zero)) {
   DCHECK_EQ(AF_INET, addr.sin_family);
 }
 
@@ -97,9 +105,20 @@ Status Sockaddr::ParseFromNumericHostPort(const HostPort& hp) {
   if (inet_pton(AF_INET, hp.host().c_str(), &addr) != 1) {
     return Status::InvalidArgument("Invalid IP address", hp.host());
   }
-  set_length(sizeof(struct sockaddr_in));
+  // Do not count the padding sin_zero field in the length of Sockaddr::storage_
+  // since the padding might contain irrelevant non-zero bytes that should not
+  // be passed along with the rest of the valid and properly initialized
+  // sockaddr_in's fields to BytewiseCompare() and HashCode().
+  constexpr auto len = offsetof(struct sockaddr_in, sin_zero);
+  set_length(len);
+  static_assert(len > offsetof(struct sockaddr_in, sin_addr));
   storage_.in.sin_family = AF_INET;
+  static_assert(len > offsetof(struct sockaddr_in, sin_family));
   storage_.in.sin_addr = addr;
+#ifndef __linux__
+  static_assert(len > offsetof(struct sockaddr_in, sin_len));
+  storage_.in.sin_len = sizeof(struct sockaddr_in);
+#endif
   set_port(hp.port());
   return Status::OK();
 }
@@ -165,8 +184,12 @@ Sockaddr::UnixAddressType Sockaddr::unix_address_type() const {
 }
 
 Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {
-  set_length(sizeof(addr));
-  memcpy(&storage_, &addr, sizeof(addr));
+  // Do not count the padding sin_zero field since it contains irrelevant bytes
+  // that should not be passed along with the rest of the valid and properly
+  // initialized fields into storage_.
+  constexpr auto len = offsetof(struct sockaddr_in, sin_zero);
+  set_length(len);
+  memcpy(&storage_, &addr, len);
   DCHECK_EQ(family(), AF_INET);
   return *this;
 }
@@ -191,7 +214,7 @@ void Sockaddr::set_length(socklen_t len) {
 }
 
 uint32_t Sockaddr::HashCode() const {
-  return HashStringThoroughly(reinterpret_cast<const char*>(&storage_), addrlen());
+  return HashStringThoroughly(reinterpret_cast<const char*>(&storage_), len_);
 }
 
 void Sockaddr::set_port(int port) {

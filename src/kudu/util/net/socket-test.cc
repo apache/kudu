@@ -44,6 +44,52 @@ namespace kudu {
 
 constexpr size_t kEchoChunkSize = 32 * 1024 * 1024;
 
+// A test scenario to make sure Sockaddr::HashCode() works as expected for
+// addresses which are logically the same. In essence, the implementation of
+// the Sockaddr class should zero out the zero padding field
+// sockaddr_in::sin_zero to avoid issues related to not-initialized and former
+// contents of the memory backing the zero padding field.
+TEST(SockaddrHashTest, ZeroPadding) {
+  constexpr const char* const kIpAddr = "127.0.0.1";
+  constexpr const char* const kPath = "/tmp/some/long/enough/path/to.sock";
+  constexpr uint16_t kPort = 5678;
+
+  Sockaddr s_in;
+  ASSERT_OK(s_in.ParseString(kIpAddr, kPort));
+
+  Sockaddr s_un;
+  ASSERT_OK(s_un.ParseUnixDomainPath(kPath));
+
+  // Make 's_un' to be logically the same object as 's_in', but reusing the
+  // Sockaddr::storage_ field from its prior incarnation.
+  ASSERT_OK(s_un.ParseString(kIpAddr, kPort));
+
+  // The hash should be the same since 's_in' and 's_un' represent the same
+  // logical entity.
+  ASSERT_EQ(s_in.HashCode(), s_un.HashCode());
+  ASSERT_EQ(s_in, s_un);
+
+  Sockaddr s_in_0(s_in);
+  ASSERT_EQ(s_in.HashCode(), s_in_0.HashCode());
+  ASSERT_EQ(s_in, s_in_0);
+
+  Sockaddr s_in_1(s_un);
+  ASSERT_EQ(s_in.HashCode(), s_in_1.HashCode());
+  ASSERT_EQ(s_in, s_in_1);
+
+  Sockaddr s_un_0;
+  ASSERT_OK(s_un.ParseUnixDomainPath(kPath));
+  s_un_0 = s_in_0;
+  ASSERT_EQ(s_in.HashCode(), s_un_0.HashCode());
+  ASSERT_EQ(s_in_0, s_un_0);
+
+  Sockaddr s_un_1;
+  ASSERT_OK(s_un_1.ParseUnixDomainPath(kPath));
+  s_un_1 = s_in.ipv4_addr();
+  ASSERT_EQ(s_in.HashCode(), s_un_1.HashCode());
+  ASSERT_EQ(s_in, s_un_1);
+}
+
 class SocketTest : public KuduTest {
  protected:
   Socket listener_;

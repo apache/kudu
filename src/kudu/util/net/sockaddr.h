@@ -135,8 +135,12 @@ class Sockaddr {
   const struct sockaddr* addr() const {
     return reinterpret_cast<const sockaddr*>(&storage_);
   }
+
   socklen_t addrlen() const {
     DCHECK(is_initialized());
+    if (family() == AF_INET) {
+      return sizeof(struct sockaddr_in);
+    }
     return len_;
   }
 
