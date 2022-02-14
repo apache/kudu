@@ -534,6 +534,7 @@ class Schema {
   // Return the number of bytes needed to represent
   // only the key portion of this schema.
   size_t key_byte_size() const {
+    DCHECK(initialized());
     return col_offsets_[num_key_columns_];
   }
 
@@ -545,6 +546,7 @@ class Schema {
     // division-by-a-constant gets optimized into multiplication,
     // the multiplication instruction has a significantly higher latency
     // than the simple load.
+    DCHECK_EQ(cols_.size(), name_to_index_.size());
     return name_to_index_.size();
   }
 
@@ -597,12 +599,11 @@ class Schema {
   // Return the column index corresponding to the given column,
   // or kColumnNotFound if the column is not in this schema.
   int find_column(const StringPiece col_name) const {
-    auto iter = name_to_index_.find(col_name);
+    const auto iter = name_to_index_.find(col_name);
     if (PREDICT_FALSE(iter == name_to_index_.end())) {
       return kColumnNotFound;
-    } else {
-      return (*iter).second;
     }
+    return iter->second;
   }
 
   // Returns true if the schema contains nullable columns
@@ -622,8 +623,9 @@ class Schema {
 
   // Returns the list of primary key column IDs.
   std::vector<ColumnId> get_key_column_ids() const {
-    return std::vector<ColumnId>(
-        col_ids_.begin(), col_ids_.begin() + num_key_columns_);
+    DCHECK_LE(num_key_columns_, col_ids_.size());
+    return std::vector<ColumnId>(col_ids_.begin(),
+                                 col_ids_.begin() + num_key_columns_);
   }
 
   // Return true if this Schema is initialized and valid.
@@ -717,15 +719,19 @@ class Schema {
 
   // Return the projection of this schema which contains only
   // the key columns.
-  // TODO: this should take a Schema* out-parameter to avoid an
+  //
+  // TODO(todd): this should take a Schema* out-parameter to avoid an
   // extra copy of the ColumnSchemas.
-  // TODO this should probably be cached since the key projection
+  //
+  // TODO(dralves): this should probably be cached since the key projection
   // is not supposed to change, for a single schema.
   Schema CreateKeyProjection() const {
+    DCHECK_LE(num_key_columns_, cols_.size());
     std::vector<ColumnSchema> key_cols(cols_.begin(),
-                                  cols_.begin() + num_key_columns_);
+                                       cols_.begin() + num_key_columns_);
     std::vector<ColumnId> col_ids;
     if (!col_ids_.empty()) {
+      DCHECK_LE(num_key_columns_, col_ids_.size());
       col_ids.assign(col_ids_.begin(), col_ids_.begin() + num_key_columns_);
     }
 
@@ -869,7 +875,7 @@ class Schema {
     const bool use_column_ids = base_schema.has_column_ids() && has_column_ids();
 
     int proj_idx = 0;
-    for (int i = 0; i < num_columns(); ++i) {
+    for (size_t i = 0; i < num_columns(); ++i) {
       const ColumnSchema& col_schema = cols_[i];
 
       // try to lookup the column by ID if present or just by name.
