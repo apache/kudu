@@ -120,6 +120,12 @@ The levels are ordered and lower levels include the levels above them. If no lev
    * `warn` - Metrics which can often indicate operational oddities that may need
               more investigation.
 
+- `/metrics?types=type1,type2` - limits the returned metrics based on their types.
+
+- `/metrics?ids=id1,id2` - limits the returned metrics based on their ids.
+
+- `/metrics?attributes=table_name,table1,table_name,table2` - limits the returned metrics based on their attributes.
+
 For example:
 
 [source,bash]
