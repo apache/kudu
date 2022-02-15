@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -44,19 +43,52 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-namespace kudu {
-namespace tablet {
-
 using std::string;
-using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
+namespace kudu {
+
+// Return true if the schemas have exactly the same set of columns
+// and respective types.
+bool EqualSchemas(const Schema& lhs, const Schema& rhs) {
+  if (lhs != rhs) {
+    return false;
+  }
+
+  if (lhs.num_key_columns_ != rhs.num_key_columns_) {
+    return false;
+  }
+  if (lhs.num_columns() != rhs.num_columns()) {
+    return false;
+  }
+  for (size_t i = 0; i < rhs.num_columns(); ++i) {
+    if (!lhs.cols_[i].Equals(rhs.cols_[i])) {
+      return false;
+    }
+  }
+
+  if (lhs.has_column_ids() != rhs.has_column_ids()) {
+    return false;
+  }
+  if (lhs.has_column_ids()) {
+    if (lhs.col_ids_ != rhs.col_ids_) {
+      return false;
+    }
+    if (lhs.max_col_id() != rhs.max_col_id()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+namespace tablet {
+
 // Copy a row and its referenced data into the given Arena.
-static Status CopyRowToArena(const Slice &row,
-                             const Schema &schema,
-                             Arena *dst_arena,
-                             ContiguousRow *copied) {
+static Status CopyRowToArena(const Slice& row,
+                             Arena* dst_arena,
+                             ContiguousRow* copied) {
   Slice row_data;
 
   // Copy the direct row data to arena
@@ -65,8 +97,7 @@ static Status CopyRowToArena(const Slice &row,
   }
 
   copied->Reset(row_data.mutable_data());
-  RETURN_NOT_OK(RelocateIndirectDataToArena(copied, dst_arena));
-  return Status::OK();
+  return RelocateIndirectDataToArena(copied, dst_arena);
 }
 
 class TestSchema : public KuduTest {};
@@ -159,11 +190,10 @@ TEST_P(ParameterizedSchemaTest, TestCopyAndMove) {
 
   vector<ColumnSchema> cols = { col1, col2, col3 };
   vector<ColumnId> ids = { ColumnId(0), ColumnId(1), ColumnId(2) };
-  const int kNumKeyCols = 1;
+  constexpr int kNumKeyCols = 1;
 
-  Schema schema = GetParam() == INCLUDE_COL_IDS ?
-                      Schema(cols, ids, kNumKeyCols) :
-                      Schema(cols, kNumKeyCols);
+  const auto& schema = GetParam() == INCLUDE_COL_IDS
+      ? Schema(cols, ids, kNumKeyCols) : Schema(cols, kNumKeyCols);
 
   NO_FATALS(check_schema(schema));
 
@@ -172,7 +202,7 @@ TEST_P(ParameterizedSchemaTest, TestCopyAndMove) {
   {
     Schema copied_schema = schema;
     NO_FATALS(check_schema(copied_schema));
-    ASSERT_TRUE(copied_schema.Equals(schema, Schema::COMPARE_ALL));
+    ASSERT_TRUE(EqualSchemas(schema, copied_schema));
 
     // Move-assign to 'moved_to_schema' from 'copied_schema' and then let
     // 'copied_schema' go out of scope to make sure none of the 'moved_schema'
@@ -184,18 +214,18 @@ TEST_P(ParameterizedSchemaTest, TestCopyAndMove) {
     copied_schema.ToString(); // NOLINT(*)
   }
   NO_FATALS(check_schema(moved_schema));
-  ASSERT_TRUE(moved_schema.Equals(schema, Schema::COMPARE_ALL));
+  ASSERT_TRUE(EqualSchemas(schema, moved_schema));
 
   // Check copy- and move-construction.
   {
     Schema copied_schema(schema);
     NO_FATALS(check_schema(copied_schema));
-    ASSERT_TRUE(copied_schema.Equals(schema, Schema::COMPARE_ALL));
+    ASSERT_TRUE(EqualSchemas(schema, copied_schema));
 
     Schema moved_schema(std::move(copied_schema));
     copied_schema.ToString(); // NOLINT(*)
     NO_FATALS(check_schema(moved_schema));
-    ASSERT_TRUE(moved_schema.Equals(schema, Schema::COMPARE_ALL));
+    ASSERT_TRUE(EqualSchemas(schema, moved_schema));
   }
 }
 
@@ -254,10 +284,10 @@ TEST_F(TestSchema, TestSchemaEqualsWithDecimal) {
   Schema schema_17_10({ col1, col_17_10 }, 1);
   Schema schema_17_9({ col1, col_17_9 }, 1);
 
-  EXPECT_TRUE(schema_18_10.Equals(schema_18_10));
-  EXPECT_FALSE(schema_18_10.Equals(schema_18_9));
-  EXPECT_FALSE(schema_18_10.Equals(schema_17_10));
-  EXPECT_FALSE(schema_18_10.Equals(schema_17_9));
+  EXPECT_EQ(schema_18_10, schema_18_10);
+  EXPECT_NE(schema_18_10, schema_18_9);
+  EXPECT_NE(schema_18_10, schema_17_10);
+  EXPECT_NE(schema_18_10, schema_17_9);
 }
 
 TEST_F(TestSchema, TestColumnSchemaEquals) {
@@ -294,14 +324,14 @@ TEST_F(TestSchema, TestSchemaEquals) {
                    ColumnSchema("col2", UINT32),
                    ColumnSchema("col3", UINT32, false) },
                  2);
-  ASSERT_FALSE(schema1.Equals(schema2));
+  ASSERT_NE(schema1, schema2);
   ASSERT_TRUE(schema1.KeyEquals(schema1));
   ASSERT_TRUE(schema1.KeyEquals(schema2, ColumnSchema::COMPARE_TYPE));
   ASSERT_FALSE(schema1.KeyEquals(schema2, ColumnSchema::COMPARE_NAME));
   ASSERT_TRUE(schema1.KeyTypeEquals(schema2));
   ASSERT_FALSE(schema2.KeyTypeEquals(schema3));
-  ASSERT_FALSE(schema3.Equals(schema4));
-  ASSERT_TRUE(schema4.Equals(schema4));
+  ASSERT_NE(schema3, schema4);
+  ASSERT_EQ(schema4, schema4);
   ASSERT_TRUE(schema3.KeyEquals(schema4, ColumnSchema::COMPARE_NAME_AND_TYPE));
 }
 
@@ -470,7 +500,7 @@ TEST_F(TestSchema, TestGetMappedReadProjection) {
   ASSERT_EQ(1, mapped.num_key_columns());
   ASSERT_EQ(2, mapped.num_columns());
   ASSERT_TRUE(mapped.has_column_ids());
-  ASSERT_FALSE(mapped.Equals(projection, Schema::COMPARE_ALL));
+  ASSERT_FALSE(EqualSchemas(mapped, projection));
 
   // The column id for the 'key' column in the mapped projection should match
   // the one from the tablet schema.
@@ -521,7 +551,7 @@ TEST_F(TestSchema, TestRowOperations) {
   rb.AddUint32(3);
   rb.AddInt32(-3);
   ContiguousRow row_a(&schema);
-  ASSERT_OK(CopyRowToArena(rb.data(), schema, &arena, &row_a));
+  ASSERT_OK(CopyRowToArena(rb.data(), &arena, &row_a));
 
   rb.Reset();
   rb.AddString(string("row_b_1"));
@@ -529,7 +559,7 @@ TEST_F(TestSchema, TestRowOperations) {
   rb.AddUint32(3);
   rb.AddInt32(-3);
   ContiguousRow row_b(&schema);
-  ASSERT_OK(CopyRowToArena(rb.data(), schema, &arena, &row_b));
+  ASSERT_OK(CopyRowToArena(rb.data(), &arena, &row_b));
 
   ASSERT_GT(schema.Compare(row_b, row_a), 0);
   ASSERT_LT(schema.Compare(row_a, row_b), 0);

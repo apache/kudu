@@ -1565,7 +1565,7 @@ Status Tablet::AlterSchema(AlterSchemaOpState* op_state) {
   std::lock_guard<Semaphore> lock(rowsets_flush_sem_);
 
   // If the current version >= new version, there is nothing to do.
-  bool same_schema = schema()->Equals(*op_state->schema());
+  const bool same_schema = (*schema() == *op_state->schema());
   if (metadata_->schema_version() >= op_state->schema_version()) {
     const string msg =
         Substitute("Skipping requested alter to schema version $0, tablet already "

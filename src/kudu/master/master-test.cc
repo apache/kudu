@@ -1398,7 +1398,7 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
       } else {
         Schema receivedSchema;
         CHECK_OK(SchemaFromPB(resp.schema(), &receivedSchema));
-        CHECK(kTableSchema.Equals(receivedSchema)) <<
+        CHECK(kTableSchema == receivedSchema) <<
             strings::Substitute("$0 not equal to $1",
                                 kTableSchema.ToString(), receivedSchema.ToString());
         CHECK_EQ(kTableName, resp.table_name());

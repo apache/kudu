@@ -878,8 +878,7 @@ Status KuduSchema::Reset(const vector<KuduColumnSchema>& columns, int key_column
 }
 
 bool KuduSchema::operator==(const KuduSchema& rhs) const {
-  return this == &rhs ||
-      (schema_ && rhs.schema_ && schema_->Equals(*rhs.schema_));
+  return this == &rhs || (schema_ && rhs.schema_ && (*schema_ == *rhs.schema_));
 }
 
 bool KuduSchema::operator!=(const KuduSchema& rhs) const {

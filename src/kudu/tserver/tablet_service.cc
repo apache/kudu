@@ -1170,8 +1170,8 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
       return;
     }
 
-    Schema tablet_schema = replica->tablet_metadata()->schema();
-    if (req_schema.Equals(tablet_schema)) {
+    const auto& tablet_schema = replica->tablet_metadata()->schema();
+    if (req_schema == tablet_schema) {
       context->RespondSuccess();
       return;
     }

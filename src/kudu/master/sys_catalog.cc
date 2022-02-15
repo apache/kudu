@@ -252,7 +252,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
   RETURN_NOT_OK(tablet::TabletMetadata::Load(fs_manager, kSysCatalogTabletId, &metadata));
 
   // Verify that the schema is the current one
-  if (!metadata->schema().Equals(BuildTableSchema())) {
+  if (metadata->schema() != BuildTableSchema()) {
     // TODO: In this case we probably should execute the migration step.
     return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
   }

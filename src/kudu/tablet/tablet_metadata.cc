@@ -167,7 +167,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, tablet_id, metadata);
   if (s.ok()) {
-    if (!(*metadata)->schema().Equals(schema)) {
+    if ((*metadata)->schema() != schema) {
       return Status::Corruption(Substitute("Schema on disk ($0) does not "
         "match expected schema ($1)", (*metadata)->schema().ToString(),
         schema.ToString()));

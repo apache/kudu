@@ -616,7 +616,7 @@ Status MergeIterator::Init(ScanSpec *spec) {
   finished_iter_stats_by_col_.resize(schema_->num_columns());
 #ifndef NDEBUG
   for (const auto& s : states_) {
-    if (!s.schema().Equals(*schema_)) {
+    if (s.schema() != *schema_) {
       return Status::InvalidArgument(
           Substitute("Schemas do not match: $0 vs. $1",
                      schema_->ToString(), s.schema().ToString()));
@@ -1008,7 +1008,7 @@ Status UnionIterator::Init(ScanSpec *spec) {
   finished_iter_stats_by_col_.resize(schema_->num_columns());
 #ifndef NDEBUG
   for (const auto& i : iters_) {
-    if (!i.iter->schema().Equals(*schema_)) {
+    if (i.iter->schema() != *schema_) {
       return Status::InvalidArgument(
           Substitute("Schemas do not match: $0 vs. $1",
                      schema_->ToString(), i.iter->schema().ToString()));

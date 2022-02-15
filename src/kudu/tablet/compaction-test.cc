@@ -184,7 +184,7 @@ class TestCompaction : public KuduRowSetTest {
                      int row_key,
                      int32_t val) {
     BuildRow(row_key, val);
-    if (!mrs->schema().Equals(*row_builder_.schema())) {
+    if (*row_builder_.schema() != mrs->schema()) {
       // The MemRowSet is not projecting the row, so must be done by the caller
       RowProjector projector(row_builder_.schema(), &mrs->schema());
       uint8_t rowbuf[ContiguousRowHelper::row_size(mrs->schema())];

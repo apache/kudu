@@ -307,8 +307,8 @@ class AlterTableTest : public KuduTest {
         } else {
           ASSERT_EQ(first_node_replica->tablet()->tablet_id(),
             cur_node_replica->tablet()->tablet_id());
-          ASSERT_TRUE(first_node_replica->tablet()->schema()->Equals(
-            *(cur_node_replica->tablet()->schema())));
+          ASSERT_EQ(*(first_node_replica->tablet()->schema()),
+                    *(cur_node_replica->tablet()->schema()));
           if (verify_row_count == VerifyRowCount::kEnable) {
             uint64_t cur_count = 0;
             ASSERT_OK(cur_node_replica->CountLiveRows(&cur_count));

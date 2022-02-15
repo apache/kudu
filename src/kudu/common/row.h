@@ -144,7 +144,7 @@ class RowProjector {
   // The two Schema pointers must remain valid for the lifetime of this object.
   RowProjector(const Schema* base_schema, const Schema* projection)
     : base_schema_(base_schema), projection_(projection),
-      is_identity_(base_schema->Equals(*projection)) {
+      is_identity_(*base_schema == *projection) {
   }
 
   // Initialize the projection mapping with the specified base_schema and projection
@@ -157,7 +157,7 @@ class RowProjector {
     projection_ = projection;
     base_cols_mapping_.clear();
     projection_defaults_.clear();
-    is_identity_ = base_schema->Equals(*projection);
+    is_identity_ = (*base_schema == *projection);
     return Init();
   }
 
@@ -275,7 +275,7 @@ class DeltaProjector {
   // of the object.
   DeltaProjector(const Schema* delta_schema, const Schema* projection)
     : delta_schema_(delta_schema), projection_(projection),
-      is_identity_(delta_schema->Equals(*projection)) {
+      is_identity_(*delta_schema == *projection) {
   }
 
   Status Init() {

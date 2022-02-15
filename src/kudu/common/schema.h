@@ -50,12 +50,12 @@ namespace kudu {
 class Schema;
 }  // namespace kudu
 
-// Check that two schemas are equal, yielding a useful error message in the case that
-// they are not.
+// Check that two schemas are equal, yielding a useful error message
+// if they are not.
 #define DCHECK_SCHEMA_EQ(s1, s2) \
   do { \
-    DCHECK((s1).Equals((s2))) << "Schema " << (s1).ToString() \
-                              << " does not match " << (s2).ToString(); \
+    DCHECK((s1) == (s2)) << "Schema " << (s1).ToString() \
+                           << " does not match " << (s2).ToString(); \
   } while (0)
 
 #define DCHECK_KEY_PROJECTION_SCHEMA_EQ(s1, s2) \
@@ -787,40 +787,26 @@ class Schema {
   // so should only be used when necessary for output.
   std::string ToString(ToStringMode mode = ToStringMode::WITH_COLUMN_IDS) const;
 
-  // Compare column ids in Equals() method.
-  enum SchemaComparisonType {
-    COMPARE_COLUMNS = 1 << 0,
-    COMPARE_COLUMN_IDS = 1 << 1,
-
-    COMPARE_ALL = COMPARE_COLUMNS | COMPARE_COLUMN_IDS
-  };
-
-  // Return true if the schemas have exactly the same set of columns
-  // and respective types.
-  bool Equals(const Schema& other, SchemaComparisonType flags = COMPARE_COLUMNS) const {
-    if (this == &other) return true;
-
-    if (flags & COMPARE_COLUMNS) {
-      if (this->num_key_columns_ != other.num_key_columns_) return false;
-      if (this->num_columns() != other.num_columns()) return false;
-      for (size_t i = 0; i < other.num_columns(); i++) {
-        if (!this->cols_[i].Equals(other.cols_[i])) return false;
-      }
+  bool operator==(const Schema& other) const {
+    if (this == &other) {
+      return true;
     }
 
-    if (flags & COMPARE_COLUMN_IDS) {
-      if (this->has_column_ids() != other.has_column_ids()) return false;
-      if (this->has_column_ids()) {
-        if (this->col_ids_ != other.col_ids_) return false;
-        if (this->max_col_id() != other.max_col_id()) return false;
+    if (this->num_key_columns_ != other.num_key_columns_) {
+      return false;
+    }
+
+    const size_t num_columns = this->num_columns();
+    if (num_columns != other.num_columns()) {
+      return false;
+    }
+    for (size_t i = 0; i < num_columns; ++i) {
+      if (!this->cols_[i].Equals(other.cols_[i])) {
+        return false;
       }
     }
 
     return true;
-  }
-
-  bool operator==(const Schema& other) const {
-    return this->Equals(other);
   }
 
   bool operator!=(const Schema& other) const {
@@ -966,6 +952,9 @@ class Schema {
   }
 
   friend class SchemaBuilder;
+
+  // 'Deep' compare two schemas: this is used by Schema's unit tests.
+  friend bool EqualSchemas(const Schema&, const Schema&);
 
   std::vector<ColumnSchema> cols_;
   size_t num_key_columns_;
