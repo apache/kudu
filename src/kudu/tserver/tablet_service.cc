@@ -2254,10 +2254,10 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
     }
 
     if (req->need_schema_info()) {
-      CHECK_OK(SchemaToPB(replica->tablet_metadata()->schema(),
-                          status->mutable_schema()));
+      const auto& tablet_schema = replica->tablet_metadata()->schema();
+      CHECK_OK(SchemaToPB(tablet_schema, status->mutable_schema()));
       CHECK_OK(replica->tablet_metadata()->partition_schema().ToPB(
-          replica->tablet_metadata()->schema(), status->mutable_partition_schema()));
+          tablet_schema, status->mutable_partition_schema()));
       status->set_schema_version(replica->tablet_metadata()->schema_version());
     }
   }
@@ -2345,7 +2345,7 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
 
   // Decode encoded key
   Arena arena(256);
-  Schema tablet_schema = replica->tablet_metadata()->schema();
+  const auto& tablet_schema = replica->tablet_metadata()->schema();
   EncodedKey* start = nullptr;
   EncodedKey* stop = nullptr;
   if (req->has_start_primary_key()) {
@@ -2788,7 +2788,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     }
   }
 
-  const Schema& tablet_schema = replica->tablet_metadata()->schema();
+  const auto& tablet_schema = replica->tablet_metadata()->schema();
 
   ScanSpec spec;
   s = SetupScanSpec(scan_pb, tablet_schema, scanner, &spec);

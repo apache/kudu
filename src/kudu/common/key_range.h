@@ -46,14 +46,14 @@ class KeyRange {
     return stop_key_;
   }
 
-  const uint64_t size_bytes() const {
+  uint64_t size_bytes() const {
     return size_bytes_;
   }
 
  private:
-  std::string start_key_;
-  std::string stop_key_;
-  uint64_t size_bytes_;
+  const std::string start_key_;
+  const std::string stop_key_;
+  const uint64_t size_bytes_;
 };
 
 } // namespace kudu
