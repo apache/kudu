@@ -313,7 +313,7 @@ Status TlsHandshake::Finish(unique_ptr<Socket>* socket) {
   if (data_size != 0) {
     int fd = SSL_get_fd(ssl);
     Socket sock(fd);
-    uint8_t* data = reinterpret_cast<uint8_t*>(rbio_pending_data_.data());
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(rbio_pending_data_.data());
     int32_t written = 0;
     RETURN_NOT_OK(sock.Write(data, data_size, &written));
     if (written != data_size) {
