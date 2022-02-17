@@ -29,6 +29,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/int128.h"
+#include "kudu/util/int128_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
 
