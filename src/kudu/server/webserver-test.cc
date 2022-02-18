@@ -111,7 +111,7 @@ class WebserverTest : public KuduTest {
       ASSERT_EQ(addrs.size(), 1);
       ASSERT_TRUE(addrs[0].IsWildcard());
       ASSERT_OK(addr_.ParseString("127.0.0.1", addrs[0].port()));
-      url_ = Substitute("http://$0", addr_.ToString());
+      url_ = Substitute(use_ssl() ? "https://$0/" : "http://$0", addr_.ToString());
       // For testing purposes, we assume the server has been initialized. Typically this
       // is set to true after the rpc server is started in the server startup process.
       server_->SetStartupComplete(true);
@@ -414,7 +414,7 @@ TEST_F(SslWebserverTest, TestSSL) {
   // We use a self-signed cert, so we need to disable cert verification in curl.
   curl_.set_verify_peer(false);
 
-  ASSERT_OK(curl_.FetchURL(Substitute("https://$0/", addr_.ToString()), &buf_));
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
   // Should have expected title.
   ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
 }
