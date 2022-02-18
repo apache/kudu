@@ -24,6 +24,7 @@
 
 #include <cstdlib>
 #include <functional>
+#include <initializer_list>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -61,8 +62,13 @@ using std::vector;
 using std::unique_ptr;
 using strings::Substitute;
 
+DECLARE_bool(webserver_hsts_include_sub_domains);
+DECLARE_int32(webserver_hsts_max_age_seconds);
 DECLARE_int32(webserver_max_post_length_bytes);
 DECLARE_string(trusted_certificate_file);
+DECLARE_string(webserver_cache_control_options);
+DECLARE_string(webserver_x_content_type_options);
+DECLARE_string(webserver_x_frame_options);
 
 DEFINE_bool(test_sensitive_flag, false, "a sensitive flag");
 TAG_FLAG(test_sensitive_flag, sensitive);
@@ -360,14 +366,42 @@ TEST_F(SpnegoWebserverTest, TestAuthNotRequiredForOptions) {
 TEST_F(WebserverTest, TestIndexPage) {
   curl_.set_return_headers(true);
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
-  // Check expected header.
+
+  // Check for the expected headers.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Cache-Control: no-store");
   ASSERT_STR_CONTAINS(buf_.ToString(), "X-Frame-Options: DENY");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "X-Content-Type-Options: nosniff");
+
+  FLAGS_webserver_hsts_max_age_seconds = 1000;
+  // The HTTP strict transport security policy (HSTS) header should be absent
+  // in the response sent from the plain HTTP (i.e. non-TLS) endpoint.
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "Strict-Transport-Security");
 
   // Should have expected title.
   ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
 
   // Should have link to default path handlers (e.g memz)
   ASSERT_STR_CONTAINS(buf_.ToString(), "memz");
+
+  // Check that particular headers are generated as expected when customizing
+  // the Cache-Control and X-Content-Type-Options headers.
+  FLAGS_webserver_cache_control_options = "no-cache";
+  FLAGS_webserver_x_frame_options = "SAMEORIGIN";
+  FLAGS_webserver_x_content_type_options = "nosnuff";
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Cache-Control: no-cache");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "X-Frame-Options: SAMEORIGIN");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "X-Content-Type-Options: nosnuff");
+
+  // Check that particular headers aren't added when corresponding flags
+  // have empty settings.
+  FLAGS_webserver_cache_control_options = "";
+  FLAGS_webserver_x_frame_options = "";
+  FLAGS_webserver_x_content_type_options = "";
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "Cache-Control");
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "X-Frame-Options");
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "X-Content-Type-Options");
 }
 
 TEST_F(WebserverTest, TestHttpCompression) {
@@ -433,6 +467,46 @@ TEST_F(SslWebserverTest, TestSSL) {
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
   // Should have expected title.
   ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
+}
+
+TEST_F(SslWebserverTest, StrictTransportSecurtyPolicyHeaders) {
+  constexpr const char* const kHstsHeader = "Strict-Transport-Security";
+  // Since the server uses a self-signed TLS certificate, disable the cert
+  // validation in curl.
+  curl_.set_verify_peer(false);
+  curl_.set_return_headers(true);
+
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  // Basic sanity check: the page should have the expected title.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
+
+  // The HSTS policy is disabled by default for the embedded Kudu webserver.
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), kHstsHeader);
+
+  // There should be the HTTP strict transport security policy (HSTS) header
+  // in the response sent from the HTTPS (i.e. TLS-protected) endpoint.
+  for (auto max_age : {0, 1, 1000, 31536000}) {
+    FLAGS_webserver_hsts_max_age_seconds = max_age;
+    ASSERT_OK(curl_.FetchURL(url_, &buf_));
+    ASSERT_STR_CONTAINS(buf_.ToString(), Substitute(
+        "$0: max-age=$1", kHstsHeader, max_age));
+    ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "includeSubDomains");
+  }
+
+  // Setting the flag to a negative value should result in no HSTS headers.
+  for (auto max_age : {-31536000, -100, -1 }) {
+    FLAGS_webserver_hsts_max_age_seconds = max_age;
+    ASSERT_OK(curl_.FetchURL(url_, &buf_));
+    ASSERT_STR_NOT_CONTAINS(buf_.ToString(), kHstsHeader);
+  }
+
+  constexpr auto kMaxAge = 888;
+  FLAGS_webserver_hsts_max_age_seconds = kMaxAge;
+  FLAGS_webserver_hsts_include_sub_domains = true;
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), Substitute(
+      "$0: max-age=$1; includeSubDomains", kHstsHeader, kMaxAge));
 }
 
 TEST_F(WebserverTest, TestDefaultPaths) {

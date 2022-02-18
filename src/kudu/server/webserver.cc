@@ -88,15 +88,52 @@ DEFINE_int32(webserver_max_post_length_bytes, 1024 * 1024,
 TAG_FLAG(webserver_max_post_length_bytes, advanced);
 TAG_FLAG(webserver_max_post_length_bytes, runtime);
 
+DEFINE_string(webserver_cache_control_options, "no-store",
+              "The webserver adds 'Cache-Control' HTTP header with this value "
+              "to all responses.");
+TAG_FLAG(webserver_cache_control_options, advanced);
+TAG_FLAG(webserver_cache_control_options, runtime);
+
 DEFINE_string(webserver_x_frame_options, "DENY",
               "The webserver will add an 'X-Frame-Options' HTTP header with this value "
               "to all responses. This can help prevent clickjacking attacks.");
 TAG_FLAG(webserver_x_frame_options, advanced);
+TAG_FLAG(webserver_x_frame_options, runtime);
 
 DEFINE_bool(webserver_enable_csp, true,
             "The webserver adds the Content-Security-Policy header to response when enabled.");
 TAG_FLAG(webserver_enable_csp, advanced);
 TAG_FLAG(webserver_enable_csp, runtime);
+
+DEFINE_int32(webserver_hsts_max_age_seconds, -1,
+             "The time, in seconds, that a browser should remember that the "
+             "webserver must only be accessed using HTTPS. The HTTP Strict "
+             "Transport Security (HSTS) policy is implemented by adding a "
+             "'Strict-Transport-Security' header. If greater or equal to zero, "
+             "a TLS-enabled webserver adds the HSTS header with corresponding "
+             "'max-age' setting to the response. If the setting is negative, "
+             "the HSTS header is not present in the response. As an option, it "
+             "is possible to add 'includeSubDomains' directive as specified "
+             "by the --webserver_hsts_include_sub_domains flag. "
+             "WARNING: once enabled, the HSTS policy affects *everything* at "
+             "the node/domain, so any HTTP endpoint at the node/domain "
+             "effectively becomes unreachable to the browser which has reached "
+             "the embedded webserver at this node via HTTPS");
+TAG_FLAG(webserver_hsts_max_age_seconds, advanced);
+TAG_FLAG(webserver_hsts_max_age_seconds, runtime);
+
+DEFINE_bool(webserver_hsts_include_sub_domains, false,
+            "Whether to add 'includeSubDomains' directive into the "
+            "'Strict-Transport-Security' header when the latter is enabled. "
+            "See --webserver_hsts_max_age_seconds's description for details.");
+TAG_FLAG(webserver_hsts_include_sub_domains, advanced);
+TAG_FLAG(webserver_hsts_include_sub_domains, runtime);
+
+DEFINE_string(webserver_x_content_type_options, "nosniff",
+              "The webserver adds 'X-Content-Type-Options' HTTP header with "
+              "this value to all responses.");
+TAG_FLAG(webserver_x_content_type_options, advanced);
+TAG_FLAG(webserver_x_content_type_options, runtime);
 
 
 namespace kudu {
@@ -692,7 +729,7 @@ void Webserver::SendResponse(struct sq_connection* connection,
   oss << Substitute("HTTP/1.1 $0\r\n", HttpStatusCodeToString(resp->status_code));
 
   // The "Content-Type" is defined by the value of the 'mode' parameter.
-  const char* content_type = nullptr;
+  const char* content_type = "text/plain";
   switch (mode) {
     case StyleMode::STYLED:
       content_type = "text/html";
@@ -704,8 +741,8 @@ void Webserver::SendResponse(struct sq_connection* connection,
       content_type = "application/octet-stream";
       break;
     default:
-      LOG(FATAL) << "unexpected style mode: " << static_cast<uint32_t>(mode);
-      break;  // unreachable
+      LOG(DFATAL) << "unexpected style mode: " << static_cast<uint32_t>(mode);
+      break;
   }
   oss << Substitute("Content-Type: $0\r\n", content_type);
 
@@ -713,6 +750,11 @@ void Webserver::SendResponse(struct sq_connection* connection,
   if (is_compressed) {
     oss << "Content-Encoding: gzip\r\n";
   }
+  const auto& cache_control_options = FLAGS_webserver_cache_control_options;
+  if (!cache_control_options.empty()) {
+    oss << Substitute("Cache-Control: $0\r\n", cache_control_options);
+  }
+
   if (PREDICT_TRUE(FLAGS_webserver_enable_csp)) {
     // TODO(aserbin): add information on when to update the SHA hash and
     //                how to do so (ideally, the exact command line)
@@ -720,19 +762,37 @@ void Webserver::SendResponse(struct sq_connection* connection,
         << "style-src 'self' 'unsafe-hashes' 'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=';"
         << "img-src 'self' data:;\r\n";
   }
-  oss << Substitute("X-Frame-Options: $0\r\n", FLAGS_webserver_x_frame_options);
+  const auto& x_frame_options = FLAGS_webserver_x_frame_options;
+  if (!x_frame_options.empty()) {
+    oss << Substitute("X-Frame-Options: $0\r\n", x_frame_options);
+  }
+  if (IsSecure() && FLAGS_webserver_hsts_max_age_seconds >= 0) {
+    oss << Substitute("Strict-Transport-Security: max-age=$0",
+                      FLAGS_webserver_hsts_max_age_seconds);
+    if (FLAGS_webserver_hsts_include_sub_domains) {
+      oss << "; includeSubDomains";
+    }
+    oss << "\r\n";
+  }
+  const auto& x_content_type_options = FLAGS_webserver_x_content_type_options;
+  if (!x_content_type_options.empty()) {
+    oss << Substitute("X-Content-Type-Options: $0\r\n", x_content_type_options);
+  }
   static const unordered_set<string> kInvalidHeaders = {
+    "Cache-Control",
     "Content-Encoding",
     "Content-Length",
-    "Content-Type",
     "Content-Security-Policy",
+    "Content-Type",
+    "Strict-Transport-Security",
+    "X-Content-Type-Options",
     "X-Frame-Options",
   };
   for (const auto& entry : resp->response_headers) {
     // It's forbidden to override the above headers.
     if (PREDICT_FALSE(ContainsKey(kInvalidHeaders, entry.first))) {
-      LOG(FATAL) << Substitute("Reserved header $0 was overridden by handler",
-                               entry.first);
+      LOG(DFATAL) << Substitute("reserved header $0 was overridden by handler",
+                                entry.first);
     }
     oss << Substitute("$0: $1\r\n", entry.first, entry.second);
   }
