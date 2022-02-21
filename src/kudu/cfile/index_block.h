@@ -105,7 +105,7 @@ class IndexBlockReader {
   // a new block.
   //
   // Note: this does not copy the data, so the slice must
-  // remain valid for the lifetime of the reader (or until the next Parse call)
+  // remain valid for the lifetime of the reader (or until the next Parse call).
   Status Parse(const Slice &data);
 
   size_t Count() const;

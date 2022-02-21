@@ -25,7 +25,7 @@
 // Strings:
 //   raw strings that were written
 // Offsets:  [pointed to by offsets_pos]
-//   gvint-encoded offsets pointing to the beginning of each string
+//   gvint-encoded offsets pointing to the beginning of each string.
 #ifndef KUDU_CFILE_BINARY_PLAIN_BLOCK_H
 #define KUDU_CFILE_BINARY_PLAIN_BLOCK_H
 
@@ -93,7 +93,7 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
   size_t end_of_data_offset_;
   size_t size_estimate_;
 
-  // Offsets of each entry, relative to the start of the block
+  // Offsets of each entry, relative to the start of the block.
   std::vector<uint32_t> offsets_;
 
   bool finished_;

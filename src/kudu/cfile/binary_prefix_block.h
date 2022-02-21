@@ -44,7 +44,7 @@ namespace cfile {
 struct WriterOptions;
 
 // Encoding for data blocks of binary data that have common prefixes.
-// This encodes in a manner similar to LevelDB (prefix coding)
+// This encodes in a manner similar to LevelDB (prefix coding).
 class BinaryPrefixBlockBuilder final : public BlockBuilder {
  public:
   explicit BinaryPrefixBlockBuilder(const WriterOptions *options);
@@ -72,7 +72,7 @@ class BinaryPrefixBlockBuilder final : public BlockBuilder {
   faststring buffer_;
   faststring last_val_;
 
-  // Restart points, offsets relative to start of block
+  // Restart points, offsets relative to start of block.
   std::vector<uint32_t> restarts_;
 
   int val_count_;
@@ -114,7 +114,7 @@ class BinaryPrefixBlockDecoder final : public BlockDecoder {
   }
 
   // Minimum length of a header.
-  // Currently one group of varints for an empty block, so minimum is 5 bytes
+  // Currently one group of varints for an empty block, so minimum is 5 bytes.
   static const size_t kMinHeaderSize = 5;
 
  private:

@@ -176,7 +176,7 @@ class BinaryDictBlockDecoder final : public BlockDecoder {
   Slice data_;
   bool parsed_;
 
-  // Dictionary block decoder
+  // Dictionary block decoder.
   BinaryPlainBlockDecoder* dict_decoder_;
 
   std::unique_ptr<BlockDecoder> data_decoder_;
