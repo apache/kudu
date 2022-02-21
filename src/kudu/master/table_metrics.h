@@ -49,6 +49,8 @@ struct TableMetrics {
 
   scoped_refptr<AtomicGauge<uint64_t>> on_disk_size;
   scoped_refptr<AtomicGauge<uint64_t>> live_row_count;
+  scoped_refptr<AtomicGauge<uint32_t>> column_count;
+  scoped_refptr<AtomicGauge<uint32_t>> schema_version;
   scoped_refptr<AtomicGauge<size_t>> merged_entities_count_of_table;
 
   void AddTabletNoOnDiskSize(const std::string& tablet_id);

@@ -360,9 +360,13 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   void UnregisterMetrics();
 
   // Update stats belonging to 'tablet_id' in the table's metrics.
-  void UpdateMetrics(const std::string& tablet_id,
-                     const tablet::ReportedTabletStatsPB& old_stats,
-                     const tablet::ReportedTabletStatsPB& new_stats);
+  void UpdateStatsMetrics(const std::string& tablet_id,
+                          const tablet::ReportedTabletStatsPB& old_stats,
+                          const tablet::ReportedTabletStatsPB& new_stats);
+
+  // Update table's schema related metrics, for exapmle, schema version,
+  // column count, and etc.
+  void UpdateSchemaMetrics();
 
   // Invalidate stats belonging to 'tablet_id' in the table's metrics.
   void InvalidateMetrics(const std::string& tablet_id);

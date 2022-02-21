@@ -36,12 +36,22 @@ METRIC_DEFINE_gauge_uint64(table, live_row_count, "Table Live Row count",
     "Pre-replication aggregated number of live rows in this table. "
     "Only accurate if all tablets in the table support live row counting.",
     kudu::MetricLevel::kInfo);
+METRIC_DEFINE_gauge_uint32(table, column_count, "Table Column count",
+    kudu::MetricUnit::kUnits,
+    "The column count in the table's latest schema.",
+    kudu::MetricLevel::kInfo);
+METRIC_DEFINE_gauge_uint32(table, schema_version, "Table Schema Version",
+    kudu::MetricUnit::kUnits,
+    "The table's schema version.",
+    kudu::MetricLevel::kInfo);
 
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
 #define HIDEINIT(x, v) x(METRIC_##x.InstantiateHidden(entity, v))
 TableMetrics::TableMetrics(const scoped_refptr<MetricEntity>& entity)
   : GINIT(on_disk_size),
     GINIT(live_row_count),
+    GINIT(column_count),
+    GINIT(schema_version),
     HIDEINIT(merged_entities_count_of_table, 1) {
 }
 #undef GINIT

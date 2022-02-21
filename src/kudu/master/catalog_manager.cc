@@ -590,6 +590,10 @@ class TableLoader : public TableVisitor {
       // It's unnecessary to register metrics for the deleted tables.
       table->RegisterMetrics(catalog_manager_->master_->metric_registry(),
           CatalogManager::NormalizeTableName(metadata.name()));
+
+      // Update table's schema related metrics after being loaded.
+      table->UpdateSchemaMetrics();
+
       LOG(INFO) << Substitute("Loaded metadata for table $0", table->ToString());
     }
     VLOG(2) << Substitute("Metadata for table $0: $1",
@@ -2103,6 +2107,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
   TRACE("Inserted table and tablets into CatalogManager maps");
 
+  // Update table's schema related metrics after being created.
+  table->UpdateSchemaMetrics();
+
   resp->set_table_id(table->id());
   VLOG(1) << "Created table " << table->ToString();
   background_tasks_->Wake();
@@ -3382,6 +3389,9 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
       (!tablets_to_add.empty() || !tablets_to_drop.empty())) {
     table_locations_cache_->Remove(table->id());
   }
+
+  // Update table's schema related metrics after being altered.
+  table->UpdateSchemaMetrics();
 
   background_tasks_->Wake();
   return Status::OK();
@@ -4981,7 +4991,7 @@ Status CatalogManager::ProcessTabletReport(
       if (report.has_stats()) {
         // For the versions >= 1.11.x, the tserver reports stats. But keep in
         // mind that 'live_row_count' is not supported for the legacy replicas.
-        tablet->table()->UpdateMetrics(tablet_id, tablet->GetStats(), report.stats());
+        tablet->table()->UpdateStatsMetrics(tablet_id, tablet->GetStats(), report.stats());
         tablet->UpdateStats(report.stats());
       } else {
         // For the versions < 1.11.x, the tserver doesn't report stats. Thus,
@@ -6739,9 +6749,9 @@ void TableInfo::UnregisterMetrics() {
   }
 }
 
-void TableInfo::UpdateMetrics(const string& tablet_id,
-                              const tablet::ReportedTabletStatsPB& old_stats,
-                              const tablet::ReportedTabletStatsPB& new_stats) {
+void TableInfo::UpdateStatsMetrics(const string& tablet_id,
+                                   const tablet::ReportedTabletStatsPB& old_stats,
+                                   const tablet::ReportedTabletStatsPB& new_stats) {
   if (!metrics_) {
     return;
   }
@@ -6806,6 +6816,13 @@ void TableInfo::UpdateMetrics(const string& tablet_id,
       }
     }
   }
+}
+
+void TableInfo::UpdateSchemaMetrics() {
+  TableMetadataLock l(this, LockMode::READ);
+  const SysTablesEntryPB& pb = metadata().state().pb;
+  metrics_->column_count->set_value(pb.schema().columns().size());
+  metrics_->schema_version->set_value(pb.version());
 }
 
 void TableInfo::InvalidateMetrics(const std::string& tablet_id) {

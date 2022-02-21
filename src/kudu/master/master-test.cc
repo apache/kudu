@@ -2491,7 +2491,7 @@ TEST_F(MasterTest, TestHideLiveRowCountInTableMetrics) {
       old_stats.set_live_row_count(1);
       new_stats.set_live_row_count(1);
     }
-    tables[0]->UpdateMetrics(tablet->id(), old_stats, new_stats);
+    tables[0]->UpdateStatsMetrics(tablet->id(), old_stats, new_stats);
   };
 
   // Trigger to cause 'live_row_count' invisible.
@@ -2560,7 +2560,7 @@ TEST_F(MasterTest, TestTableStatisticsWithOldVersion) {
     tablet::ReportedTabletStatsPB new_stats;
     new_stats.set_on_disk_size(1024);
     new_stats.set_live_row_count(1000);
-    table->UpdateMetrics(tablets.back()->id(), old_stats, new_stats);
+    table->UpdateStatsMetrics(tablets.back()->id(), old_stats, new_stats);
     ASSERT_TRUE(table->GetMetrics()->TableSupportsOnDiskSize());
     ASSERT_TRUE(table->GetMetrics()->TableSupportsLiveRowCount());
     ASSERT_EQ(1024, table->GetMetrics()->on_disk_size->value());
@@ -2625,6 +2625,54 @@ TEST_F(MasterTest, TestDeletedTablesAndTabletsCleanup) {
     master_->catalog_manager()->GetAllTabletsForTests(&tablets);
     ASSERT_EQ(0, tablets.size());
   });
+}
+
+TEST_F(MasterTest, TestTableSchemaMetrics) {
+  const char* kTableName = "testtable";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  vector<scoped_refptr<TableInfo>> tables;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    master_->catalog_manager()->GetAllTables(&tables);
+    ASSERT_EQ(1, tables.size());
+  }
+  const auto& table = tables[0];
+
+  ASSERT_EQ(1, table->GetMetrics()->column_count->value());
+  ASSERT_EQ(0, table->GetMetrics()->schema_version->value());
+
+  {
+    AlterTableRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+    AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
+    step->set_type(AlterTableRequestPB::ADD_COLUMN);
+    ColumnSchemaToPB(ColumnSchema("c1", INT32, true),
+                     step->mutable_add_column()->mutable_schema());
+
+    AlterTableResponsePB resp;
+    RpcController controller;
+    ASSERT_OK(proxy_->AlterTable(req, &resp, &controller));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(2, table->GetMetrics()->column_count->value());
+    ASSERT_EQ(1, table->GetMetrics()->schema_version->value());
+  }
+
+  {
+    AlterTableRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+    AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
+    step->set_type(AlterTableRequestPB::DROP_COLUMN);
+    step->mutable_drop_column()->set_name("c1");
+
+    AlterTableResponsePB resp;
+    RpcController controller;
+    ASSERT_OK(proxy_->AlterTable(req, &resp, &controller));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(1, table->GetMetrics()->column_count->value());
+    ASSERT_EQ(2, table->GetMetrics()->schema_version->value());
+  }
 }
 
 class AuthzTokenMasterTest : public MasterTest,
