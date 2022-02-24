@@ -688,12 +688,17 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
   NegotiatePB pb;
   RETURN_NOT_OK(RecvNegotiatePB(&pb, recv_buf));
 
-  if (pb.step() != NegotiatePB::TOKEN_EXCHANGE) {
-    Status s =  Status::NotAuthorized("expected TOKEN_EXCHANGE step",
-                                      NegotiatePB::NegotiateStep_Name(pb.step()));
+  if (PREDICT_FALSE(pb.step() != NegotiatePB::TOKEN_EXCHANGE)) {
+    const auto s = Status::NotAuthorized("expected TOKEN_EXCHANGE step",
+                                         NegotiatePB::NegotiateStep_Name(pb.step()));
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    return s;
   }
-  if (!pb.has_authn_token()) {
-    Status s = Status::NotAuthorized("TOKEN_EXCHANGE message must include an authentication token");
+  if (PREDICT_FALSE(!pb.has_authn_token())) {
+    const auto s = Status::NotAuthorized(
+        "TOKEN_EXCHANGE message must include an authentication token");
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    return s;
   }
 
   // TODO(KUDU-1924): propagate the specific token verification failure back to the client,
@@ -701,9 +706,10 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
   security::TokenPB token;
   auto verification_result = token_verifier_->VerifyTokenSignature(pb.authn_token(), &token);
   ErrorStatusPB::RpcErrorCodePB error;
-  Status s = ParseTokenVerificationResult(verification_result,
-      ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, &error);
-  if (!s.ok()) {
+  if (const auto s = ParseTokenVerificationResult(
+        verification_result,
+        ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN,
+        &error); !s.ok()) {
     RETURN_NOT_OK(SendError(error, s));
     return s;
   }
