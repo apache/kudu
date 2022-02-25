@@ -521,6 +521,13 @@ or because Kudu multi-master support was still experimental at the time. This wo
 how to migrate to a multi-master configuration. It can also be used to migrate from two masters to
 three, with straightforward modifications. Note that the number of masters must be odd.
 
+NOTE: From Kudu version 1.16.0 onwards, new Kudu Masters automatically attempt to contact other
+masters, determine whether a quorum has already been established, and if so, attempt to join the
+quorum. The below steps do not need to be performed in these versions.
+
+NOTE: From Kudu version 1.15.0 onwards, the `kudu master add` command has been added that simplifies
+the orchestration to migrate an existing Kudu cluster to multiple masters.
+
 WARNING: The workflow is unsafe for adding new masters to an existing configuration that already has
 three or more masters. Do not use it for that purpose.
 
@@ -533,9 +540,6 @@ commands assume the Kudu Unix user is `kudu`, which is typical.
 WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
 using vendor-specific tools the workflow also presupposes familiarity with
 it and the vendor's instructions should be used instead as details may differ.
-
-NOTE: From Kudu version 1.15.0, a new `kudu master add` command has been added that
-simplifies the orchestration to migrate an existing Kudu cluster to multiple masters.
 
 ==== Prepare for the migration
 
