@@ -243,19 +243,20 @@ Status WriteOp::Start() {
   return Status::OK();
 }
 
-void WriteOp::UpdatePerRowErrors() {
-  // Add per-row errors to the result, update metrics.
-  for (int i = 0; i < state()->row_ops().size(); ++i) {
-    const RowOp* op = state()->row_ops()[i];
+void WriteOp::UpdatePerRowMetricsAndErrors() {
+  // Update metrics or add per-row errors to the result.
+  size_t idx = 0;
+  for (const auto* op : state()->row_ops()) {
     if (op->result->has_failed_status()) {
       // Replicas disregard the per row errors, for now
       // TODO(unknown): check the per-row errors against the leader's, at least in debug mode
       WriteResponsePB::PerRowErrorPB* error = state()->response()->add_per_row_errors();
-      error->set_row_index(i);
+      error->set_row_index(idx);
       error->mutable_error()->CopyFrom(op->result->failed_status());
+    } else {
+      state()->UpdateMetricsForOp(*op);
     }
-
-    state()->UpdateMetricsForOp(*op);
+    ++idx;
   }
 }
 
@@ -276,7 +277,7 @@ Status WriteOp::Apply(CommitMsg** commit_msg) {
   RETURN_NOT_OK(tablet->ApplyRowOperations(state()));
   TRACE("APPLY: Finished.");
 
-  UpdatePerRowErrors();
+  UpdatePerRowMetricsAndErrors();
 
   // Create the Commit message
   *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(state_->pb_arena());
@@ -477,9 +478,7 @@ void WriteOpState::ReleaseTxResultPB(TxResultPB* result) const {
 }
 
 void WriteOpState::UpdateMetricsForOp(const RowOp& op) {
-  if (op.result->has_failed_status()) {
-    return;
-  }
+  DCHECK(!op.result->has_failed_status());
   switch (op.decoded_op.type) {
     case RowOperationsPB::INSERT:
       DCHECK(!op.error_ignored);

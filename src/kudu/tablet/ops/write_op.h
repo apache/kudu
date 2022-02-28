@@ -29,7 +29,7 @@
 #include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/row_operations.h"
-#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -385,7 +385,10 @@ class WriteOp : public Op {
   std::string ToString() const override;
 
  private:
-  void UpdatePerRowErrors();
+  // For each row of this write operation, update corresponding metrics or set
+  // corresponding error information in the response. The former is for
+  // successfully written rows, the latter is for failed ones.
+  void UpdatePerRowMetricsAndErrors();
 
   // this op's start time
   MonoTime start_time_;
