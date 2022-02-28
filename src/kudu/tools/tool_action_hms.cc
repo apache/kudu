@@ -376,7 +376,9 @@ struct CatalogReport {
 Status AnalyzeCatalogs(const string& master_addrs,
                        HmsCatalog* hms_catalog,
                        KuduClient* kudu_client,
-                       CatalogReport* report) {
+                       CatalogReport* report,
+                       int* kudu_catalog_count = nullptr,
+                       int* hms_catalog_count = nullptr) {
   // Step 1: retrieve all Kudu tables, and aggregate them by ID and by name. The
   // by-ID map will be used to match the HMS Kudu table entries. The by-name map
   // will be used to match against legacy Impala/Kudu HMS table entries.
@@ -385,6 +387,9 @@ Status AnalyzeCatalogs(const string& master_addrs,
   {
     vector<string> kudu_table_names;
     RETURN_NOT_OK(kudu_client->ListTables(&kudu_table_names));
+    if (kudu_catalog_count) {
+      *kudu_catalog_count = kudu_table_names.size();
+    }
     for (const string& kudu_table_name : kudu_table_names) {
       shared_ptr<KuduTable> kudu_table;
       // TODO(dan): When the error is NotFound, prepend an admonishment about not
@@ -405,6 +410,9 @@ Status AnalyzeCatalogs(const string& master_addrs,
   {
     vector<hive::Table> hms_tables;
     RETURN_NOT_OK(hms_catalog->GetKuduTables(&hms_tables));
+    if (hms_catalog_count) {
+      *hms_catalog_count = hms_tables.size();
+    }
     for (hive::Table& hms_table : hms_tables) {
       // If the addresses in the HMS entry don't overlap at all with the
       // expected addresses, the entry is likely from another Kudu cluster.
@@ -626,8 +634,14 @@ Status FixHmsMetadata(const RunnerContext& context) {
   RETURN_NOT_OK(Init(context, &kudu_client, &hms_catalog, &master_addrs));
 
   CatalogReport report;
-  RETURN_NOT_OK(AnalyzeCatalogs(master_addrs, hms_catalog.get(), kudu_client.get(), &report));
-
+  int kudu_catalog_count = 0;
+  int hms_catalog_count = 0;
+  RETURN_NOT_OK(AnalyzeCatalogs(master_addrs, hms_catalog.get(), kudu_client.get(), &report,
+                                &kudu_catalog_count, &hms_catalog_count));
+  if (FLAGS_dryrun && kudu_catalog_count == 0) {
+    LOG(INFO) << "NOTE: There are zero kudu tables listed. If the cluster indeed has kudu tables "
+                 "please re-run the command with right credentials." << endl;
+  }
   bool success = true;
 
   if (FLAGS_drop_orphan_hms_tables) {
@@ -850,7 +864,10 @@ Status FixHmsMetadata(const RunnerContext& context) {
       }
     }
   }
-
+  LOG(INFO) << Substitute("Number of Kudu tables found in Kudu master catalog: $0",
+                          kudu_catalog_count) << endl;
+  LOG(INFO) << Substitute("Number of Kudu tables found in HMS catalog: $0", hms_catalog_count)
+            << endl;
   if (FLAGS_dryrun || success) {
     return Status::OK();
   }
