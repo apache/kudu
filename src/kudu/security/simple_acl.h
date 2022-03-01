@@ -50,6 +50,8 @@ class SimpleAcl {
   void Reset(std::set<std::string> users);
 
  private:
+  static const std::string kWildcardAny;
+
   // The set of users, or a set with the single value '*' for the wildcard.
   std::set<std::string> users_;
 };

@@ -34,6 +34,8 @@ using std::vector;
 namespace kudu {
 namespace security {
 
+const std::string SimpleAcl::kWildcardAny = "*";
+
 SimpleAcl::SimpleAcl() {
 }
 
@@ -44,10 +46,12 @@ Status SimpleAcl::ParseFlag(const string& flag) {
   vector<StringPiece> fields = strings::Split(flag, ",", strings::SkipWhitespace());
   set<string> users;
   for (const auto& field : fields) {
-    if (field.empty()) continue;
+    if (field.empty()) {
+      continue;
+    }
     // if any field is a wildcard, no need to include the rest.
-    if (flag == "*") {
-      Reset({"*"});
+    if (flag == kWildcardAny) {
+      Reset({kWildcardAny});
       return Status::OK();
     }
 
@@ -81,7 +85,7 @@ void SimpleAcl::Reset(set<string> users) {
 }
 
 bool SimpleAcl::UserAllowed(const string& username) const {
-  return ContainsKey(users_, "*") || ContainsKey(users_, username);
+  return ContainsKey(users_, kWildcardAny) || ContainsKey(users_, username);
 }
 
 } // namespace security
