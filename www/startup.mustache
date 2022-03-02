@@ -22,7 +22,7 @@ under the License.
 {{^error}}
   <h2>Server Startup Progress</h2>
     <table class='table table-striped'>
-      <tr style="background-color: #eee">
+      <tr class="startup-header">
         <th>Step</th>
         <th>Progress (%)</th>
         <th>Elapsed Time</th>
@@ -38,20 +38,20 @@ under the License.
         <th>{{read_filesystem_time}}</th>
       </tr>
       <tr>
-        <td style="padding-left:50px">Reading instance metadata files</td>
+        <td class="startup-indented">Reading instance metadata files</td>
         <td>{{read_instance_metadatafiles_status}}%</td>
         <td>{{read_instance_metadatafiles_time}}</td>
       </tr>
       {{#is_log_block_manager}}
         <tr>
-          <td style="padding-left:50px">Opening container files&emsp; &emsp;({{containers_processed}}/{{containers_total}})</td>
+          <td class="startup-indented">Opening container files&emsp; &emsp;({{containers_processed}}/{{containers_total}})</td>
           <td>{{read_data_directories_status}}%</td>
           <td>{{read_data_directories_time}}</td>
         </tr>
       {{/is_log_block_manager}}
       {{^is_log_block_manager}}
         <tr>
-          <td style="padding-left:50px">Reporting filesystem</td>
+          <td class="startup-indented">Reporting filesystem</td>
           <td>{{read_data_directories_status}}%</td>
           <td>{{read_data_directories_time}}</td>
         </tr>

@@ -53,3 +53,15 @@ body {
 .glyphicon-hide {
   color: transparent;
 }
+
+.navbar-brand {
+  padding-top: 5px;
+}
+
+tr.startup-header {
+  background-color: #eee !important;
+}
+
+td.startup-indented {
+  padding-left: 50px !important;
+}

@@ -63,6 +63,8 @@ DECLARE_int32(webserver_max_post_length_bytes);
 DEFINE_bool(test_sensitive_flag, false, "a sensitive flag");
 TAG_FLAG(test_sensitive_flag, sensitive);
 
+DECLARE_bool(webserver_enable_csp);
+
 namespace kudu {
 
 namespace {
@@ -451,6 +453,24 @@ TEST_F(WebserverTest, TestRedactFlagsDump) {
   ASSERT_OK(curl_.FetchURL(Substitute("$0/varz?raw=1", url_), &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), Substitute("--test_sensitive_flag=$0",
                                                   kRedactionMessage));
+}
+
+TEST_F(WebserverTest, TestCSPHeader) {
+  constexpr const char* kCspHeader = "Content-Security-Policy";
+
+  curl_.set_return_headers(true);
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  // Basic sanity check: the page should have the expected title.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
+
+  // The CSP policy is enabled by default for the embedded Kudu webserver.
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), kCspHeader);
+
+  // Check if response doesn't contain CSP header when disabled.
+  FLAGS_webserver_enable_csp = false;
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), kCspHeader);
 }
 
 // Used in symbolization test below.

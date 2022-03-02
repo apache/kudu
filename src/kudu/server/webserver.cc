@@ -90,6 +90,11 @@ DEFINE_string(webserver_x_frame_options, "DENY",
               "to all responses. This can help prevent clickjacking attacks.");
 TAG_FLAG(webserver_x_frame_options, advanced);
 
+DEFINE_bool(webserver_enable_csp, true,
+            "The webserver adds the Content-Security-Policy header to response when enabled.");
+TAG_FLAG(webserver_enable_csp, advanced);
+TAG_FLAG(webserver_enable_csp, runtime);
+
 
 namespace kudu {
 
@@ -681,10 +686,18 @@ void Webserver::SendResponse(struct sq_connection* connection,
                     mode == StyleMode::STYLED ? "text/html" : "text/plain");
   oss << Substitute("Content-Length: $0\r\n", body.length());
   if (is_compressed) oss << "Content-Encoding: gzip\r\n";
+  if (PREDICT_TRUE(FLAGS_webserver_enable_csp)) {
+    // TODO(aserbin): add information on when to update the SHA hash and
+    //                how to do so (ideally, the exact command line)
+    oss << "Content-Security-Policy: default-src 'self';"
+        << "style-src 'self' 'unsafe-hashes' 'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=';"
+        << "img-src 'self' data:;\r\n";
+  }
   oss << Substitute("X-Frame-Options: $0\r\n", FLAGS_webserver_x_frame_options);
   static const unordered_set<string> kInvalidHeaders = {
     "Content-Length",
     "Content-Type",
+    "Content-Security-Policy",
     "X-Frame-Options"
   };
   for (const auto& entry : resp->response_headers) {
@@ -771,7 +784,7 @@ static const char* const kMainTemplate = R"(
     <nav class="navbar navbar-default">
       <div class="container-fluid">
         <div class="navbar-header">
-          <a class="navbar-brand" style="padding-top: 5px;" href="{{base_url}}/">
+          <a class="navbar-brand" href="{{base_url}}/">
             <img src="{{base_url}}/logo.png" width='61' height='45' alt="Kudu"/>
           </a>
         </div>
