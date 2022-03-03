@@ -742,6 +742,7 @@ build_curl() {
     --disable-smtp \
     --disable-telnet \
     --disable-tftp \
+    --without-brotli \
     --without-libidn2 \
     --without-libpsl \
     --without-librtmp \
