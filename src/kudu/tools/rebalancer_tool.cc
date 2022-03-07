@@ -39,6 +39,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rebalance/cluster_status.h"
@@ -190,7 +191,12 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   }
   if (ts_id_by_location.size() == 1) {
     const auto& location = ts_id_by_location.cbegin()->first;
-    LOG(INFO) << "running whole-cluster rebalancing";
+    const auto& table_filters = config_.table_filters;
+    const auto& msg = table_filters.empty()
+        ? "running whole-cluster rebalancing"
+        : Substitute("running rebalancing for tables: $0",
+                     JoinStrings(table_filters, ","));
+    LOG(INFO) << msg;
     IntraLocationRunner runner(
         this, config_.ignored_tservers, config_.max_moves_per_server, deadline, location);
     RETURN_NOT_OK(runner.Init(config_.master_addresses));
