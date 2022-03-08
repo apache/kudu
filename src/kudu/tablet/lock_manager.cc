@@ -34,6 +34,8 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/faststring.h"
@@ -52,8 +54,6 @@ using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
-
-class OpState;
 
 // ============================================================================
 //  LockTable
@@ -77,6 +77,10 @@ class LockEntry {
 
   string ToString() const {
     return KUDU_REDACT(key_.ToDebugString());
+  }
+
+  uint64_t key_hash() const {
+    return key_hash_;
   }
 
   void Unlock();
@@ -579,8 +583,11 @@ void LockManager::AcquireLockOnEntry(LockEntry* entry, const OpState* op) {
     int waited_seconds = 0;
     while (!entry->sem.TimedAcquire(MonoDelta::FromSeconds(1))) {
       const OpState* cur_holder = ANNOTATE_UNPROTECTED_READ(entry->holder_);
-      LOG(WARNING) << "Waited " << (++waited_seconds) << " seconds to obtain row lock on key "
-                   << entry->ToString() << " cur holder: " << cur_holder;
+      LOG(WARNING) << Substitute(
+          "Waited $0 seconds to obtain row lock on key '$1' (key hash $2) "
+          "tablet $3 cur holder $4",
+          ++waited_seconds, entry->ToString(), entry->key_hash(),
+          op->tablet_replica()->tablet_id(), cur_holder);
       // TODO(unknown): would be nice to also include some info about the blocking op,
       // but it's a bit tricky to do in a non-racy fashion (the other op may
       // complete at any point)
@@ -588,7 +595,8 @@ void LockManager::AcquireLockOnEntry(LockEntry* entry, const OpState* op) {
     MicrosecondsInt64 wait_us = GetMonoTimeMicros() - start_wait_us;
     TRACE_COUNTER_INCREMENT("row_lock_wait_us", wait_us);
     if (wait_us > 100 * 1000) {
-      TRACE("Waited $0us for lock on $1", wait_us, KUDU_REDACT(entry->ToString()));
+      TRACE("Waited $0us for lock on $1 (key hash $2)",
+            wait_us, entry->ToString(), entry->key_hash());
     }
   }
 

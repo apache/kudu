@@ -22,6 +22,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include <boost/optional/optional.hpp>
@@ -46,6 +47,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/ops/alter_schema_op.h"
 #include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/ops/op_driver.h"
@@ -57,12 +59,14 @@
 #include "kudu/tablet/tablet_replica_mm_ops.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -89,6 +93,7 @@ using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 
 namespace kudu {
@@ -687,6 +692,59 @@ TEST_F(TabletReplicaTest, TestRestartAfterGCDeletedRowsets) {
   SleepFor(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec));
   ASSERT_OK(tablet->DeleteAncientDeletedRowsets());
   ASSERT_EQ(1, tablet->num_rowsets());
+}
+
+// This is a trivial test scenario to check how row locking works in case of
+// concurrent attempts to lock the same row with relatively long waiting times.
+// The thread attempting to acquire the row lock for long times should be able
+// to acquire the lock eventually and log about its attempts to acquire the log.
+// The logging part isn't covered by any special assertions, though.
+// An alternative place to add this scenario could be lock_manager-test.cc, but
+// for proper logging a real WriteOpState backed by a tablet is necessary.
+TEST_F(TabletReplicaTest, RowLocksLongWaitAndLogging) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  constexpr const char* const kKey = "key";
+  constexpr int32_t kValue = 0;
+
+  const Schema schema(GetTestSchema());
+
+  Slice key[]{kKey};
+  unique_ptr<WriteRequestPB> req(new WriteRequestPB);
+  req->set_tablet_id(tablet()->tablet_id());
+  CHECK_OK(SchemaToPB(schema, req->mutable_schema()));
+  KuduPartialRow row(&schema);
+  CHECK_OK(row.SetInt32(kKey, kValue));
+  {
+    RowOperationsPBEncoder enc(req->mutable_row_operations());
+    enc.Add(RowOperationsPB::DELETE, row);
+  }
+  unique_ptr<WriteResponsePB> resp(new WriteResponsePB);
+  LockManager lock_manager;
+
+  thread t0([&]{
+    unique_ptr<WriteOpState> op_state(new WriteOpState(
+        tablet_replica_.get(), req.get(), nullptr, resp.get()));
+    ScopedRowLock row_lock(
+        &lock_manager, op_state.get(), key, LockManager::LOCK_EXCLUSIVE);
+    CHECK(row_lock.acquired());
+    // Pause for a while when the other thread tries to acquire the lock,
+    // so the other thread logs about its attempts to acquire the row lock.
+    SleepFor(MonoDelta::FromMilliseconds(3000));
+  });
+
+  thread t1([&]{
+    // Let the other thread acquire the lock first.
+    SleepFor(MonoDelta::FromMilliseconds(500));
+    unique_ptr<WriteOpState> op_state(new WriteOpState(
+        tablet_replica_.get(), req.get(), nullptr, resp.get()));
+    ScopedRowLock row_lock(
+        &lock_manager, op_state.get(), key, LockManager::LOCK_EXCLUSIVE);
+    CHECK(row_lock.acquired());
+  });
+
+  t0.join();
+  t1.join();
 }
 
 } // namespace tablet
