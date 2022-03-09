@@ -41,6 +41,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/common/partial_row.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/quorum_util.h"
@@ -511,18 +512,46 @@ static Status CreateTables(
     const string& table_name_pattern,
     int num_tables,
     int rep_factor,
+    int num_table_hash_partitions = 3,
+    int num_table_range_partitions = 0,
     vector<string>* table_names = nullptr) {
+  DCHECK_GE(num_table_range_partitions, 0);
+  if (num_table_range_partitions != 0 && num_table_range_partitions < 2) {
+    // That's an artificial restriction to simplify the logic for creating
+    // range partitions which cover the whole key space.
+    return Status::InvalidArgument(
+        "number of range partitions should be at least 2");
+  }
   // Create tables with their tablet replicas landing only on the tablet servers
   // which are up and running.
   auto client_schema = KuduSchema::FromSchema(table_schema);
   for (auto i = 0; i < num_tables; ++i) {
     string table_name = Substitute(table_name_pattern, i);
     unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
-    RETURN_NOT_OK(table_creator->table_name(table_name)
-                  .schema(&client_schema)
-                  .add_hash_partitions({ "key" }, 3)
-                  .num_replicas(rep_factor)
-                  .Create());
+    table_creator->table_name(table_name);
+    table_creator->schema(&client_schema);
+    table_creator->num_replicas(rep_factor);
+    if (num_table_hash_partitions > 1) {
+      table_creator->add_hash_partitions({ "key" }, num_table_hash_partitions);
+    }
+    for (auto i = 0; i < num_table_range_partitions; ++i) {
+      unique_ptr<KuduPartialRow> lower_bound(client_schema.NewRow());
+      unique_ptr<KuduPartialRow> upper_bound(client_schema.NewRow());
+      if (i == 0) {
+        RETURN_NOT_OK(lower_bound->SetInt32("key", INT32_MIN));
+        RETURN_NOT_OK(upper_bound->SetInt32("key", 0));
+      } else if (i + 1 == num_table_range_partitions) {
+        RETURN_NOT_OK(lower_bound->SetInt32("key", (i - 1) * 1000));
+        RETURN_NOT_OK(upper_bound->SetInt32("key", INT32_MAX));
+      } else {
+        RETURN_NOT_OK(lower_bound->SetInt32("key", (i - 1) * 1000));
+        RETURN_NOT_OK(upper_bound->SetInt32("key", i * 1000));
+      }
+      table_creator->add_range_partition(lower_bound.release(),
+                                         upper_bound.release());
+    }
+    RETURN_NOT_OK(table_creator->Create());
+
     RETURN_NOT_OK(RunKuduTool({
       "perf",
       "loadgen",
@@ -551,6 +580,8 @@ static Status CreateUnbalancedTables(
     int tserver_idx_from,
     int tserver_num,
     int tserver_unresponsive_ms,
+    int num_table_hash_partitions,
+    int num_table_range_partitions,
     vector<string>* table_names = nullptr) {
   // Keep running only some tablet servers and shut down the rest.
   for (auto i = tserver_idx_from; i < tserver_num; ++i) {
@@ -560,8 +591,9 @@ static Status CreateUnbalancedTables(
   // Wait for the catalog manager to understand that not all tablet servers
   // are available.
   SleepFor(MonoDelta::FromMilliseconds(5 * tserver_unresponsive_ms / 4));
-  RETURN_NOT_OK(CreateTables(cluster, client, table_schema, table_name_pattern,
-                             num_tables, rep_factor, table_names));
+  RETURN_NOT_OK(CreateTables(
+    cluster, client, table_schema, table_name_pattern, num_tables, rep_factor,
+    num_table_hash_partitions, num_table_range_partitions, table_names));
   for (auto i = tserver_idx_from; i < tserver_num; ++i) {
     RETURN_NOT_OK(cluster->tablet_server(i)->Restart());
   }
@@ -589,6 +621,8 @@ TEST_P(RebalanceParamTest, Rebalance) {
   constexpr auto kNumTables = 5;
   const string table_name_pattern = "rebalance_test_table_$0";
   constexpr auto kTserverUnresponsiveMs = 3000;
+  constexpr auto kNumTableHashPartitions = 3;
+  constexpr auto kNumTableRangePartitions = 0;
   const auto timeout = MonoDelta::FromSeconds(30);
   const vector<string> kMasterFlags = {
     "--allow_unsafe_replication_factor",
@@ -605,7 +639,8 @@ TEST_P(RebalanceParamTest, Rebalance) {
 
   ASSERT_OK(CreateUnbalancedTables(
       cluster_.get(), client_.get(), schema_, table_name_pattern, kNumTables,
-      kRepFactor, kRepFactor + 1, kNumTservers, kTserverUnresponsiveMs));
+      kRepFactor, kRepFactor + 1, kNumTservers, kTserverUnresponsiveMs,
+      kNumTableHashPartitions, kNumTableRangePartitions));
 
   // Workloads aren't run for 3-2-3 replica movement with RF = 1 because
   // the tablet is unavailable during the move until the target voter replica
@@ -709,6 +744,14 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
 
   virtual bool is_343_scheme() const = 0;
 
+  virtual int num_hash_partitions_for_test_tables() const {
+    return 3;
+  }
+
+  virtual int num_range_partitions_for_test_tables() const {
+    return 0;
+  }
+
  protected:
   static const char* const kExitOnSignalStr;
   static const char* const kTableNamePattern;
@@ -737,7 +780,10 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
       ASSERT_OK(CreateUnbalancedTables(
           cluster_.get(), client_.get(), schema_, kTableNamePattern,
           num_tables_, rep_factor_, rep_factor_ + 1, num_tservers_,
-          tserver_unresponsive_ms_, created_tables_names));
+          tserver_unresponsive_ms_,
+          num_hash_partitions_for_test_tables(),
+          num_range_partitions_for_test_tables(),
+          created_tables_names));
     } else {
       ASSERT_OK(CreateTablesExcludingLocations(empty_locations,
                                                kTableNamePattern,
@@ -778,6 +824,8 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
     SleepFor(MonoDelta::FromMilliseconds(5 * tserver_unresponsive_ms_ / 4));
     RETURN_NOT_OK(CreateTables(cluster_.get(), client_.get(), schema_,
                                table_name_pattern, num_tables_, rep_factor_,
+                               num_hash_partitions_for_test_tables(),
+                               num_range_partitions_for_test_tables(),
                                table_names));
     // Start tablet servers at the excluded locations.
     if (!excluded_locations.empty()) {
@@ -822,6 +870,8 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
     SleepFor(MonoDelta::FromMilliseconds(5 * tserver_unresponsive_ms_ / 4));
     RETURN_NOT_OK(CreateTables(cluster_.get(), client_.get(), schema_,
                                table_name_pattern, num_tables_, rep_factor_,
+                               num_hash_partitions_for_test_tables(),
+                               num_range_partitions_for_test_tables(),
                                table_names));
     // Start tablet servers at the excluded locations.
     for (const auto& uuid : excluded_tserver_uuids) {
@@ -2223,6 +2273,91 @@ TEST_F(IntraLocationRebalancingBasicTest, LocationsWithEmptyTabletServers) {
     // to another tserver, so there is at least one move.
     ASSERT_STR_NOT_CONTAINS(out, "(moved 0 replicas)");
     ASSERT_STR_CONTAINS(out, "Placement policy violations:\n  none\n");
+  }
+}
+
+class TableRangeRebalancingTest : public RebalancingTest {
+ public:
+  TableRangeRebalancingTest()
+      : RebalancingTest(/*num_tables=*/ 1,
+                        /*rep_factor*/ 3,
+                        /*num_tservers*/ 3) {
+  }
+
+  bool is_343_scheme() const override {
+    return true;
+  }
+
+  int num_hash_partitions_for_test_tables() const override {
+    return 8;
+  }
+
+  int num_range_partitions_for_test_tables() const override {
+    return 2;
+  }
+};
+
+TEST_F(TableRangeRebalancingTest, Basic) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  constexpr const char kPerServerReferenceOutput[] =
+    R"***(Per-server replica distribution summary:
+       Statistic       |   Value
+-----------------------+-----------
+ Minimum Replica Count | 16
+ Maximum Replica Count | 16
+ Average Replica Count | 16)***";
+
+  constexpr const char kReplicaDistributionReferenceOutput[] =
+    R"***(Per-table replica distribution summary:
+ Replica Skew |  Value
+--------------+----------
+ Minimum      | 0
+ Maximum      | 0
+ Average      | 0)***";
+
+  // There should be 8 tablet replicas for a particular range per tablet server.
+  constexpr const char kFirstRangeReferencePattern[] =
+    "Range start key: '00000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
+  constexpr const char kSecondRangeReferencePattern[] =
+    "Range start key: 'ff80000000'\n.+\n.+\n .+ 8\n .+ 8\n .+ 8\n";
+
+  vector<string> table_names;
+  NO_FATALS(Prepare({}, {}, {}, kEmptySet, &table_names));
+  ASSERT_EQ(1, table_names.size());
+  {
+    const vector<string> tool_args = {
+      "cluster",
+      "rebalance",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      "--enable_range_rebalancing",
+      Substitute("--tables=$0", table_names.front()),
+    };
+    string out;
+    string err;
+    const Status s = RunKuduTool(tool_args, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced")
+        << "stderr: " << err;
+  }
+  {
+    const vector<string> report_tool_args = {
+      "cluster",
+      "rebalance",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      "--enable_range_rebalancing",
+      Substitute("--tables=$0", table_names.front()),
+      "--report_only",
+      "--output_replica_distribution_details",
+    };
+    string out;
+    string err;
+    const Status s = RunKuduTool(report_tool_args, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out, kPerServerReferenceOutput);
+    ASSERT_STR_CONTAINS(out, kReplicaDistributionReferenceOutput);
+    ASSERT_STR_MATCHES(out, kFirstRangeReferencePattern);
+    ASSERT_STR_MATCHES(out, kSecondRangeReferencePattern);
   }
 }
 

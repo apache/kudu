@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/container_hash/extensions.hpp>
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
@@ -104,6 +105,24 @@ Status MoveOneReplica(const string& src,
 }
 } // anonymous namespace
 
+size_t TableIdAndTagHash::operator()(const TableIdAndTag& idt) const noexcept {
+  size_t seed = 0;
+  boost::hash_combine(seed, idt.table_id);
+  boost::hash_combine(seed, idt.tag);
+  return seed;
+}
+
+bool TableIdAndTagEqual::operator()(const TableIdAndTag& lhs,
+                                    const TableIdAndTag& rhs) const {
+  return lhs.table_id == rhs.table_id && lhs.tag == rhs.tag;
+}
+
+std::ostream& operator<<(std::ostream& out, const TableIdAndTag& table_info) {
+  out << "table_id: " << table_info.table_id
+      << " table tag: " << table_info.tag;
+  return out;
+}
+
 Status RebalancingAlgo::GetNextMoves(const ClusterInfo& cluster_info,
                                      int max_moves_num,
                                      vector<TableReplicaMove>* moves) {
@@ -163,7 +182,7 @@ Status RebalancingAlgo::ApplyMove(const TableReplicaMove& move,
   bool found_table_info = false;
   for (auto it = table_info_by_skew.begin(); it != table_info_by_skew.end(); ) {
     TableBalanceInfo& info = it->second;
-    if (info.table_id != move.table_id) {
+    if (info.table_id != move.table_id || info.tag != move.tag) {
       ++it;
       continue;
     }
@@ -245,22 +264,23 @@ Status TwoDimensionalGreedyAlgo::GetNextMove(
     const auto& servers_by_table_replica_count = tbi.servers_by_replica_count;
     if (servers_by_table_replica_count.empty()) {
       return Status::InvalidArgument(Substitute(
-          "no information on replicas of table $0", tbi.table_id));
+          "no information on replicas of table $0 tag '$1'",
+          tbi.table_id, tbi.tag));
     }
 
     const auto min_replica_count = servers_by_table_replica_count.begin()->first;
     const auto max_replica_count = servers_by_table_replica_count.rbegin()->first;
     VLOG(1) << Substitute(
-        "balancing table $0 with replica count skew $1 "
-        "(min_replica_count: $2, max_replica_count: $3)",
-        tbi.table_id, table_info_by_skew.rbegin()->first,
+        "balancing table $0 (tag '$1') with replica count skew $2 "
+        "(min_replica_count: $3, max_replica_count: $4)",
+        tbi.table_id, tbi.tag, table_info_by_skew.rbegin()->first,
         min_replica_count, max_replica_count);
 
     // Compute the intersection of the tablet servers most loaded for the table
     // with the tablet servers most loaded overall, and likewise for least loaded.
     // These are our ideal candidates for moving from and to, respectively.
-    int32_t max_count_table;
-    int32_t max_count_total;
+    int32_t max_count_table = 0;
+    int32_t max_count_total = 0;
     vector<string> max_loaded;
     vector<string> max_loaded_intersection;
     RETURN_NOT_OK(GetIntersection(
@@ -268,8 +288,8 @@ Status TwoDimensionalGreedyAlgo::GetNextMove(
         servers_by_table_replica_count, servers_by_total_replica_count,
         &max_count_table, &max_count_total,
         &max_loaded, &max_loaded_intersection));
-    int32_t min_count_table;
-    int32_t min_count_total;
+    int32_t min_count_table = 0;
+    int32_t min_count_total = 0;
     vector<string> min_loaded;
     vector<string> min_loaded_intersection;
     RETURN_NOT_OK(GetIntersection(
@@ -328,7 +348,8 @@ Status TwoDimensionalGreedyAlgo::GetNextMove(
 
     // Move a replica of the selected table from a most loaded server to a
     // least loaded server.
-    *move = TableReplicaMove{ tbi.table_id, max_loaded_uuid, min_loaded_uuid };
+    *move = TableReplicaMove{ tbi.table_id, tbi.tag,
+                              max_loaded_uuid, min_loaded_uuid };
     break;
   }
 
@@ -413,12 +434,12 @@ Status LocationBalancingAlgo::GetNextMove(
   *move = boost::none;
 
   // Per-table information on locations load.
-  // TODO(aserbin): maybe, move this container into ClusterInfo?
-  unordered_map<string, multimap<double, string>> location_load_info_by_table;
+  unordered_map<TableIdAndTag, multimap<double, string>,
+      TableIdAndTagHash, TableIdAndTagEqual> location_load_info_by_table;
 
   // A dictionary to map location-wise load imbalance into table identifier.
   // The most imbalanced tables come last.
-  multimap<double, string> table_id_by_load_imbalance;
+  multimap<double, TableIdAndTag> table_id_by_load_imbalance;
   for (const auto& elem : cluster_info.balance.table_info_by_skew) {
     const auto& table_info = elem.second;
     // Number of replicas of all tablets comprising the table, per location.
@@ -441,24 +462,26 @@ Status LocationBalancingAlgo::GetNextMove(
     }
 
     const auto& table_id = table_info.table_id;
+    const auto& table_tag = table_info.tag;
     const auto load_min = location_by_load.cbegin()->first;
     const auto load_max = location_by_load.crbegin()->first;
     const auto imbalance = load_max - load_min;
     DCHECK(!std::isnan(imbalance));
-    table_id_by_load_imbalance.emplace(imbalance, table_id);
+    table_id_by_load_imbalance.emplace(imbalance,
+                                       TableIdAndTag{table_id, table_tag});
     EmplaceOrDie(&location_load_info_by_table,
-                 table_id, std::move(location_by_load));
-  }
+                 TableIdAndTag{ table_id, table_tag },
+                 std::move(location_by_load)); }
 
-  string imbalanced_table_id;
-  if (!IsBalancingNeeded(table_id_by_load_imbalance, &imbalanced_table_id)) {
+  TableIdAndTag imbalanced_table_info;
+  if (!IsBalancingNeeded(table_id_by_load_imbalance, &imbalanced_table_info)) {
     // Nothing to do: all tables are location-balanced enough.
     return Status::OK();
   }
 
   // Work on the most location-wise unbalanced tables first.
   const auto& load_info = FindOrDie(
-      location_load_info_by_table, imbalanced_table_id);
+      location_load_info_by_table, imbalanced_table_info);
 
   vector<string> loc_loaded_least;
   {
@@ -496,18 +519,19 @@ Status LocationBalancingAlgo::GetNextMove(
     VLOG(1) << "loc_leaded_most: " << s.str();
   }
 
-  return FindBestMove(imbalanced_table_id, loc_loaded_least, loc_loaded_most,
+  return FindBestMove(imbalanced_table_info, loc_loaded_least, loc_loaded_most,
                       cluster_info, move);
 }
 
 bool LocationBalancingAlgo::IsBalancingNeeded(
     const TableByLoadImbalance& imbalance_info,
-    string* most_imbalanced_table_id) const {
+    TableIdAndTag* most_imbalanced_table_info) const {
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     ostringstream ss;
     ss << "Table imbalance report: " << endl;
     for (const auto& elem : imbalance_info) {
-      ss << "  " << elem.second << ": " << elem.first << endl;
+      ss << "  " << elem.second.table_id << ":" << elem.second.tag
+         << ": " << elem.first << endl;
     }
     VLOG(1) << ss.str();
   }
@@ -530,7 +554,7 @@ bool LocationBalancingAlgo::IsBalancingNeeded(
   const auto it = imbalance_info.crbegin();
   const auto imbalance = it->first;
   if (imbalance > load_imbalance_threshold_) {
-    *most_imbalanced_table_id = it->second;
+    *most_imbalanced_table_info = it->second;
     return true;
   }
   return false;
@@ -540,7 +564,7 @@ bool LocationBalancingAlgo::IsBalancingNeeded(
 // the source and destination tablet server to move a replica of the specified
 // tablet to improve per-table location load balance as much as possible.
 Status LocationBalancingAlgo::FindBestMove(
-    const string& table_id,
+    const TableIdAndTag& table_info,
     const vector<string>& loc_loaded_least,
     const vector<string>& loc_loaded_most,
     const ClusterInfo& cluster_info,
@@ -612,7 +636,7 @@ Status LocationBalancingAlgo::FindBestMove(
   const auto& src_ts_id = it_max->second;
   CHECK_NE(src_ts_id, dst_ts_id);
 
-  *move = TableReplicaMove{ table_id, src_ts_id, dst_ts_id };
+  *move = TableReplicaMove{ table_info.table_id, table_info.tag, src_ts_id, dst_ts_id };
 
   return Status::OK();
 }

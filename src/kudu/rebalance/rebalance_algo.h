@@ -16,7 +16,9 @@
 // under the License.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <iosfwd>
 #include <map>
 #include <random>
 #include <set>
@@ -40,9 +42,35 @@ namespace rebalance {
 // replica counts.
 typedef std::multimap<int32_t, std::string> ServersByCountMap;
 
+// A structure to contain information on a table with attribution to a grouping
+// criterion encoded in the 'tag' field. This is used for table range
+// rebalancing: in such case, the 'tag' field contains information on the key
+// for a particular a range of the table.
+struct TableIdAndTag {
+  std::string table_id;
+  std::string tag;
+};
+
+struct TableIdAndTagHash {
+  size_t operator()(const TableIdAndTag& idt) const noexcept;
+};
+
+struct TableIdAndTagEqual {
+  bool operator()(const TableIdAndTag& lhs, const TableIdAndTag& rhs) const;
+};
+
+std::ostream& operator<<(std::ostream& out, const TableIdAndTag& table_info);
+
 // Balance information for a table.
 struct TableBalanceInfo {
+  // The identifier of a table (table UUID).
   std::string table_id;
+
+  // A tag for grouping table-specific information (e.g., the key for the
+  // beginning of a table range). The 'servers_by_replica_count' map has data
+  // aggregated for the {table_id, tag} pair correspondingly. This is used for
+  // range rebalancing.
+  std::string tag;
 
   // Mapping table replica count -> tablet server.
   //
@@ -92,9 +120,18 @@ struct ClusterInfo {
 
 // A directive to move some replica of a table between two tablet servers.
 struct TableReplicaMove {
+  // The identifier of the table which replicas to move.
   std::string table_id;
-  std::string from;     // Unique identifier of the source tablet server.
-  std::string to;       // Unique identifier of the target tablet server.
+
+  // Tag/hint to find matching replicas for this move. For example, if
+  // rebalancing range partitions, that's the key of the range partition start.
+  std::string tag;
+
+  // Unique identifier of the source tablet server.
+  std::string from;
+
+  // Unique identifier of the target tablet server.
+  std::string to;
 };
 
 // A rebalancing algorithm, which orders replica moves aiming to balance a
@@ -266,7 +303,7 @@ class LocationBalancingAlgo : public RebalancingAlgo {
                      boost::optional<TableReplicaMove>* move) override;
  private:
   FRIEND_TEST(RebalanceAlgoUnitTest, RandomizedTest);
-  typedef std::multimap<double, std::string> TableByLoadImbalance;
+  typedef std::multimap<double, TableIdAndTag> TableByLoadImbalance;
 
   // Check if any rebalancing is needed across cluster locations based on the
   // information provided by the 'imbalance_info' parameter. Returns 'true'
@@ -274,14 +311,15 @@ class LocationBalancingAlgo : public RebalancingAlgo {
   // the identifier of the most cross-location imbalanced table is output into
   // the 'most_imbalanced_table_id' parameter (which must not be null).
   bool IsBalancingNeeded(const TableByLoadImbalance& imbalance_info,
-                         std::string* most_imbalanced_table_id) const;
+                         TableIdAndTag* most_imbalanced_table_info) const;
 
   // Given the set of the most and the least table-wise loaded locations, choose
   // the source and destination tablet server to move a replica of the specified
   // tablet to improve per-table location load balance as much as possible.
   // If no replica can be moved to balance the load, the 'move' output parameter
   // is set to 'boost::none'.
-  Status FindBestMove(const std::string& table_id,
+  static Status FindBestMove(
+      const TableIdAndTag& table_info,
       const std::vector<std::string>& loc_loaded_least,
       const std::vector<std::string>& loc_loaded_most,
       const ClusterInfo& cluster_info,

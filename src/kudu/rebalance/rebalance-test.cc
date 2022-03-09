@@ -62,6 +62,7 @@ struct ServerHealthSummaryInput {
 struct TabletSummaryInput {
   std::string id;
   std::string table_id;
+  std::string range_key_begin;
   std::vector<ReplicaSummaryInput> replicas;
 };
 
@@ -103,6 +104,7 @@ ClusterRawInfo GenerateRawClusterInfo(const KsckResultsInput& input) {
       TabletSummary summary;
       summary.id = summary_input.id;
       summary.table_id = summary_input.table_id;
+      summary.range_key_begin = summary_input.range_key_begin;
       auto& replicas = summary.replicas;
       for (const auto& replica_input : summary_input.replicas) {
         ReplicaSummary replica;
@@ -182,12 +184,13 @@ bool HasSameContents(const multimap<int32_t, T>& lhs, const multimap<int32_t, T>
 bool operator==(const TableBalanceInfo& lhs, const TableBalanceInfo& rhs) {
   return
     lhs.table_id == rhs.table_id &&
+    lhs.tag == rhs.tag &&
     HasSameContents(lhs.servers_by_replica_count,
                     rhs.servers_by_replica_count);
 }
 
 bool operator<(const TableBalanceInfo& lhs, const TableBalanceInfo& rhs) {
-  return lhs.table_id < rhs.table_id;
+  return lhs.table_id + "." + lhs.tag < rhs.table_id + "." + rhs.tag;
 }
 
 bool operator==(const ClusterBalanceInfo& lhs, const ClusterBalanceInfo& rhs) {
@@ -205,7 +208,7 @@ ostream& operator<<(ostream& s, const ClusterBalanceInfo& info) {
   s << " ]; [";
   for (const auto& elem : info.table_info_by_skew) {
     s << " " << elem.first << ":{ " << elem.second.table_id
-      << " [";
+      << " '" << elem.second.tag << "' [";
     for (const auto& e : elem.second.servers_by_replica_count) {
       s << " " << e.first << ":" << e.second;
     }
@@ -277,11 +280,11 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveRf1Replicas) {
     {
       {
         { { "ts_0" }, },
-        { { "tablet_0", "table_a", { { "ts_0", true }, }, }, },
+        { { "tablet_0", "table_a", "", { { "ts_0", true }, }, }, },
         { { "table_a", 1 }, },
       },
       {
-        { { 0, { "table_a", { { 1, "ts_0" }, } } }, },
+        { { 0, { "table_a", "", { { 1, "ts_0" }, } } }, },
         { { 1, "ts_0" }, },
       }
     },
@@ -290,15 +293,15 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveRf1Replicas) {
       {
         { { "ts_0" }, { "ts_1" }, { "ts_2" }, },
         {
-          { "tablet_a0", "table_a", { { "ts_0", true }, }, },
-          { "tablet_a0", "table_a", { { "ts_1", true }, }, },
-          { "tablet_a0", "table_a", { { "ts_2", true }, }, },
+          { "tablet_a0", "table_a", "", { { "ts_0", true }, }, },
+          { "tablet_a0", "table_a", "", { { "ts_1", true }, }, },
+          { "tablet_a0", "table_a", "", { { "ts_2", true }, }, },
         },
         { { "table_a", 3 } },
       },
       {
         {
-          { 0, { "table_a", {
+          { 0, { "table_a", "", {
                 { 1, "ts_2" },
                 { 1, "ts_1" },
                 { 1, "ts_0" },
@@ -316,25 +319,25 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveRf1Replicas) {
       {
         { { "ts_0" }, { "ts_1" }, { "ts_2" }, },
         {
-          { "tablet_a_0", "table_a", { { "ts_0", true }, }, },
-          { "tablet_b_0", "table_b", { { "ts_0", true }, }, },
-          { "tablet_c_0", "table_c", { { "ts_0", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_0", true }, }, },
+          { "tablet_b_0", "table_b", "", { { "ts_0", true }, }, },
+          { "tablet_c_0", "table_c", "", { { "ts_0", true }, }, },
         },
         { { { "table_a", 1 }, { "table_b", 1 }, { "table_c", 1 }, } },
       },
       {
         {
-          { 1, { "table_c", {
+          { 1, { "table_c", "", {
                 { 0, "ts_1" }, { 0, "ts_2" }, { 1, "ts_0" },
               }
             }
           },
-          { 1, { "table_b", {
+          { 1, { "table_b", "", {
                 { 0, "ts_1" }, { 0, "ts_2" }, { 1, "ts_0" },
               }
             }
           },
-          { 1, { "table_a", {
+          { 1, { "table_a", "", {
                 { 0, "ts_1" }, { 0, "ts_2" }, { 1, "ts_0" },
               }
             }
@@ -352,30 +355,30 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveRf1Replicas) {
       {
         { { "ts_0" }, { "ts_1" }, { "ts_2" }, },
         {
-          { "tablet_a_0", "table_a", { { "ts_0", true }, }, },
-          { "tablet_a_0", "table_a", { { "ts_1", true }, }, },
-          { "tablet_a_0", "table_a", { { "ts_2", true }, }, },
-          { "tablet_b_0", "table_b", { { "ts_0", true }, }, },
-          { "tablet_b_1", "table_b", { { "ts_0", true }, }, },
-          { "tablet_b_2", "table_b", { { "ts_0", true }, }, },
-          { "tablet_c_0", "table_c", { { "ts_1", true }, }, },
-          { "tablet_c_1", "table_c", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_0", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", "", { { "ts_0", true }, }, },
+          { "tablet_b_1", "table_b", "", { { "ts_0", true }, }, },
+          { "tablet_b_2", "table_b", "", { { "ts_0", true }, }, },
+          { "tablet_c_0", "table_c", "", { { "ts_1", true }, }, },
+          { "tablet_c_1", "table_c", "", { { "ts_1", true }, }, },
         },
         { { { "table_a", 3 }, { "table_b", 1 }, { "table_c", 1 }, } },
       },
       {
         {
-          { 2, { "table_c", {
+          { 2, { "table_c", "", {
                 { 0, "ts_0" }, { 0, "ts_2" }, { 2, "ts_1" },
               }
             }
           },
-          { 3, { "table_b", {
+          { 3, { "table_b", "", {
                 { 0, "ts_1" }, { 0, "ts_2" }, { 3, "ts_0" },
               }
             }
           },
-          { 0, { "table_a", {
+          { 0, { "table_a", "", {
                 { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
               }
             }
@@ -415,7 +418,7 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
     {
       {
         { { "ts_0" }, },
-        { { "tablet_0", "table_a", { { "ts_0", true }, }, }, },
+        { { "tablet_0", "table_a", "", { { "ts_0", true }, }, }, },
         { { "table_a", 1 }, },
       },
       {
@@ -428,9 +431,9 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
       {
         { { "ts_0" }, { "ts_1" }, },
         {
-          { "tablet_a0", "table_a", { { "ts_0", true }, }, },
-          { "tablet_b0", "table_b", { { "ts_0", true }, }, },
-          { "tablet_b1", "table_b", { { "ts_1", true }, }, },
+          { "tablet_a0", "table_a", "", { { "ts_0", true }, }, },
+          { "tablet_b0", "table_b", "", { { "ts_0", true }, }, },
+          { "tablet_b1", "table_b", "", { { "ts_1", true }, }, },
         },
         { { "table_a", 1 }, { "table_b", 1 } },
       },
@@ -446,14 +449,14 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
       {
         { { "ts_0" }, { "ts_1" }, { "ts_2" }, },
         {
-          { "tablet_a_0", "table_a", { { "ts_0", true }, }, },
-          { "tablet_a_0", "table_a", { { "ts_1", true }, }, },
-          { "tablet_a_0", "table_a", { { "ts_2", true }, }, },
-          { "tablet_b_0", "table_b", { { "ts_0", true }, }, },
-          { "tablet_b_1", "table_b", { { "ts_0", true }, }, },
-          { "tablet_b_2", "table_b", { { "ts_0", true }, }, },
-          { "tablet_c_0", "table_c", { { "ts_1", true }, }, },
-          { "tablet_c_1", "table_c", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_0", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", "", { { "ts_0", true }, }, },
+          { "tablet_b_1", "table_b", "", { { "ts_0", true }, }, },
+          { "tablet_b_2", "table_b", "", { { "ts_0", true }, }, },
+          { "tablet_c_0", "table_c", "", { { "ts_1", true }, }, },
+          { "tablet_c_1", "table_c", "", { { "ts_1", true }, }, },
         },
         { { { "table_a", 3 }, { "table_b", 1 }, { "table_c", 1 }, } },
       },
@@ -461,7 +464,7 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
         {
           {
             0, {
-              "table_a", {
+              "table_a", "", {
                 { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
               }
             }
@@ -500,24 +503,24 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveIgnoredTserversReplicas) {
       {
         { { "ts_0" }, { "ts_1" }, { "ts_2" }, { "ts_3" }, { "ts_4" }, },
         {
-          { "tablet_a_0", "table_a", { { "ts_0", true }, }, },
-          { "tablet_a_0", "table_a", { { "ts_1", true }, }, },
-          { "tablet_a_0", "table_a", { { "ts_2", true }, }, },
-          { "tablet_b_0", "table_b", { { "ts_1", true }, }, },
-          { "tablet_b_0", "table_b", { { "ts_2", true }, }, },
-          { "tablet_b_0", "table_b", { { "ts_3", true }, }, },
-          { "tablet_b_1", "table_b", { { "ts_2", true }, }, },
-          { "tablet_b_1", "table_b", { { "ts_3", true }, }, },
-          { "tablet_b_1", "table_b", { { "ts_4", true }, }, },
-          { "tablet_c_0", "table_c", { { "ts_1", true }, }, },
-          { "tablet_c_0", "table_c", { { "ts_2", true }, }, },
-          { "tablet_c_0", "table_c", { { "ts_3", true }, }, },
-          { "tablet_c_1", "table_c", { { "ts_1", true }, }, },
-          { "tablet_c_1", "table_c", { { "ts_2", true }, }, },
-          { "tablet_c_1", "table_c", { { "ts_3", true }, }, },
-          { "tablet_c_2", "table_c", { { "ts_2", true }, }, },
-          { "tablet_c_2", "table_c", { { "ts_3", true }, }, },
-          { "tablet_c_2", "table_c", { { "ts_4", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_0", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", "", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", "", { { "ts_1", true }, }, },
+          { "tablet_b_0", "table_b", "", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", "", { { "ts_3", true }, }, },
+          { "tablet_b_1", "table_b", "", { { "ts_2", true }, }, },
+          { "tablet_b_1", "table_b", "", { { "ts_3", true }, }, },
+          { "tablet_b_1", "table_b", "", { { "ts_4", true }, }, },
+          { "tablet_c_0", "table_c", "", { { "ts_1", true }, }, },
+          { "tablet_c_0", "table_c", "", { { "ts_2", true }, }, },
+          { "tablet_c_0", "table_c", "", { { "ts_3", true }, }, },
+          { "tablet_c_1", "table_c", "", { { "ts_1", true }, }, },
+          { "tablet_c_1", "table_c", "", { { "ts_2", true }, }, },
+          { "tablet_c_1", "table_c", "", { { "ts_3", true }, }, },
+          { "tablet_c_2", "table_c", "", { { "ts_2", true }, }, },
+          { "tablet_c_2", "table_c", "", { { "ts_3", true }, }, },
+          { "tablet_c_2", "table_c", "", { { "ts_4", true }, }, },
         },
         { { { "table_a", 3 }, { "table_b", 3 }, { "table_c", 3 }, } },
       },
@@ -525,21 +528,21 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveIgnoredTserversReplicas) {
         {
           {
             1, {
-              "table_a", {
+              "table_a", "", {
                 { 0, "ts_4" }, { 0, "ts_3" }, { 1, "ts_2" },
               }
             }
           },
           {
             1, {
-              "table_b", {
+              "table_b", "", {
                 { 1, "ts_4" }, { 2, "ts_3" }, { 2, "ts_2" },
               }
             }
           },
           {
             2, {
-              "table_c", {
+              "table_c", "", {
                 { 1, "ts_4" }, { 3, "ts_3" }, { 3, "ts_2" },
               }
             }
@@ -553,6 +556,153 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveIgnoredTserversReplicas) {
   };
 
   NO_FATALS(RunTest(rebalancer_config, test_configs));
+}
+
+TEST_F(KsckResultsToClusterBalanceInfoTest, RangeRebalancingInfo) {
+  const vector<KsckResultsTestConfig> test_configs = {
+    // Empty
+    {
+      {},
+      {}
+    },
+    // One tserver, one table, one tablet, RF=1.
+    {
+      {
+        { { "ts_0" }, },
+        { { "tablet_0", "table_a", "x", { { "ts_0", true }, }, }, },
+        { { "table_a", 1 }, },
+      },
+      {
+        {},
+        { { 0, "ts_0" }, }
+      }
+    },
+    // table_a: 1 tablet with RF=3
+    // table_b: 3 tablets with RF=1
+    // table_c: 2 tablets with RF=1
+    {
+      {
+        { { "ts_0" }, { "ts_1" }, { "ts_2" }, },
+        {
+          { "tablet_a_0", "table_a", "x", { { "ts_0", true }, }, },
+          { "tablet_a_0", "table_a", "x", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", "x", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", "x", { { "ts_0", true }, }, },
+          { "tablet_b_1", "table_b", "x", { { "ts_0", true }, }, },
+          { "tablet_b_2", "table_b", "x", { { "ts_0", true }, }, },
+          { "tablet_c_0", "table_c", "x", { { "ts_1", true }, }, },
+          { "tablet_c_1", "table_c", "x", { { "ts_1", true }, }, },
+        },
+        { { { "table_a", 3 }, { "table_b", 1 }, { "table_c", 1 }, } },
+      },
+      {
+        {
+          {
+            0, {
+              "table_a", "x", {
+                { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
+              }
+            }
+          },
+        },
+        {
+          { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
+        },
+      }
+    },
+    {
+      {
+        { { "ts_0" }, { "ts_1" }, { "ts_2" }, },
+        {
+          { "tablet_a_0", "table_a", "x", { { "ts_0", true }, }, },
+          { "tablet_a_0", "table_a", "x", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", "x", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", "y", { { "ts_0", true }, }, },
+          { "tablet_b_1", "table_b", "y", { { "ts_0", true }, }, },
+          { "tablet_b_2", "table_b", "y", { { "ts_0", true }, }, },
+          { "tablet_c_0", "table_c", "z", { { "ts_1", true }, }, },
+          { "tablet_c_1", "table_c", "z", { { "ts_1", true }, }, },
+          { "tablet_c_2", "table_c", "z", { { "ts_2", true }, }, },
+        },
+        { { { "table_a", 3 }, { "table_b", 3 }, { "table_c", 3 }, } },
+      },
+      {
+        {
+          {
+            0, {
+              "table_a", "x", {
+                { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
+              }
+            }
+          },
+          {
+            3, {
+              "table_b", "y", {
+                { 0, "ts_2" }, { 0, "ts_1" }, { 3, "ts_0" },
+              }
+            }
+          },
+          {
+            2, {
+              "table_c", "z", {
+                { 1, "ts_2" }, { 2, "ts_1" }, { 0, "ts_0" },
+              }
+            }
+          },
+        },
+        {
+          { 2, "ts_2" }, { 3, "ts_1" }, { 4, "ts_0" },
+        },
+      },
+    },
+    {
+      {
+        { { "ts_0" }, { "ts_1" }, { "ts_2" }, },
+        {
+          { "tablet_r0h0", "table_a", "0", { { "ts_0", true }, }, },
+          { "tablet_r1h0", "table_a", "1", { { "ts_1", true }, }, },
+          { "tablet_r2h0", "table_a", "2", { { "ts_2", true }, }, },
+          { "tablet_r0h1", "table_a", "0", { { "ts_0", true }, }, },
+          { "tablet_r1h1", "table_a", "1", { { "ts_0", true }, }, },
+          { "tablet_r2h1", "table_a", "2", { { "ts_0", true }, }, },
+          { "tablet_r0h2", "table_a", "0", { { "ts_1", true }, }, },
+          { "tablet_r1h2", "table_a", "1", { { "ts_1", true }, }, },
+          { "tablet_r2h2", "table_a", "2", { { "ts_1", true }, }, },
+        },
+        { { { "table_a", 3 }, } },
+      },
+      {
+        {
+          {
+            2, {
+              "table_a", "0", {
+                { 0, "ts_2" }, { 1, "ts_1" }, { 2, "ts_0" },
+              }
+            }
+          },
+          {
+            2, {
+              "table_a", "1", {
+                { 0, "ts_2" }, { 2, "ts_1" }, { 1, "ts_0" },
+              }
+            }
+          },
+          {
+            0, {
+              "table_a", "2", {
+                { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
+              }
+            }
+          },
+        },
+        {
+          { 1, "ts_2" }, { 4, "ts_1" }, { 4, "ts_0" },
+        },
+      }
+    },
+  };
+
+  NO_FATALS(RunTest(Rebalancer::Config(), test_configs));
 }
 
 } // namespace rebalance

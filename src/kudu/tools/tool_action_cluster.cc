@@ -138,6 +138,9 @@ DEFINE_bool(disable_intra_location_rebalancing, false,
             "replica distribution within each location. "
             "This setting is applicable to multi-location clusters only.");
 
+DEFINE_bool(enable_range_rebalancing, false,
+            "Whether to enable table range rebalancing");
+
 DEFINE_bool(move_replicas_from_ignored_tservers, false,
             "Whether to move replicas from the specified 'ignored_tservers' to other "
             "servers when the source tablet server is healthy. "
@@ -320,6 +323,12 @@ Status RunRebalance(const RunnerContext& context) {
   const vector<string> table_filters =
       Split(FLAGS_tables, ",", strings::SkipEmpty());
 
+  if (FLAGS_enable_range_rebalancing && table_filters.size() != 1) {
+    return Status::NotSupported(
+        "range rebalancing is currently implemented for a single table only: "
+        "use '--tables' to specify a table for range rebalancing");
+  }
+
   // Evaluate --move_single_replicas flag: decide whether enable to disable
   // moving of single-replica tablets based on the reported version of the
   // Kudu components.
@@ -341,7 +350,8 @@ Status RunRebalance(const RunnerContext& context) {
       !FLAGS_disable_intra_location_rebalancing,
       FLAGS_load_imbalance_threshold,
       FLAGS_force_rebalance_replicas_on_maintenance_tservers,
-      FLAGS_intra_location_rebalancing_concurrency));
+      FLAGS_intra_location_rebalancing_concurrency,
+      FLAGS_enable_range_rebalancing));
 
   // Print info on pre-rebalance distribution of replicas.
   RETURN_NOT_OK(rebalancer.PrintStats(cout));
@@ -443,6 +453,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("move_replicas_from_ignored_tservers")
         .AddOptionalParameter("move_single_replicas")
         .AddOptionalParameter("output_replica_distribution_details")
+        .AddOptionalParameter("enable_range_rebalancing")
         .AddOptionalParameter("report_only")
         .AddOptionalParameter("tables")
         .Build();

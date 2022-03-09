@@ -22,12 +22,15 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <numeric>
 #include <random>
 #include <set>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -493,6 +496,15 @@ Status RebalancerTool::PrintLocationBalanceStats(const string& location,
     out << "--------------------------------------------------" << endl;
   }
 
+  // Build dictionary to resolve tablet server UUID into its RPC address.
+  unordered_map<string, string> tserver_endpoints;
+  {
+    const auto& tserver_summaries = raw_info.tserver_summaries;
+    for (const auto& summary : tserver_summaries) {
+      tserver_endpoints.emplace(summary.uuid, summary.address);
+    }
+  }
+
   // Per-server replica distribution stats.
   {
     out << "Per-server replica distribution summary:" << endl;
@@ -521,17 +533,10 @@ Status RebalancerTool::PrintLocationBalanceStats(const string& location,
     out << endl;
 
     if (config_.output_replica_distribution_details) {
-      const auto& tserver_summaries = raw_info.tserver_summaries;
-      unordered_map<string, string> tserver_endpoints;
-      for (const auto& summary : tserver_summaries) {
-        tserver_endpoints.emplace(summary.uuid, summary.address);
-      }
-
       out << "Per-server replica distribution details:" << endl;
       DataTable servers_info({ "UUID", "Address", "Replica Count" });
-      for (const auto& elem : servers_load_info) {
-        const auto& id = elem.second;
-        servers_info.AddRow({ id, tserver_endpoints[id], to_string(elem.first) });
+      for (const auto& [load, id] : servers_load_info) {
+        servers_info.AddRow({ id, tserver_endpoints[id], to_string(load) });
       }
       RETURN_NOT_OK(servers_info.PrintTo(out));
       out << endl;
@@ -568,24 +573,99 @@ Status RebalancerTool::PrintLocationBalanceStats(const string& location,
       for (const auto& summary : table_summaries) {
         table_info.emplace(summary.id, &summary);
       }
-      out << "Per-table replica distribution details:" << endl;
-      DataTable skew(
-          { "Table Id", "Replica Count", "Replica Skew", "Table Name" });
-      for (const auto& elem : table_skew_info) {
-        const auto& table_id = elem.second.table_id;
-        const auto it = table_info.find(table_id);
-        const auto* table_summary =
-            (it == table_info.end()) ? nullptr : it->second;
-        const auto& table_name = table_summary ? table_summary->name : "";
-        const auto total_replica_count = table_summary
-            ? table_summary->replication_factor * table_summary->TotalTablets()
-            : 0;
-        skew.AddRow({ table_id,
-                      to_string(total_replica_count),
-                      to_string(elem.first),
-                      table_name });
+      if (config_.enable_range_rebalancing) {
+        out << "Per-range replica distribution details for tables" << endl;
+
+        // Build mapping {table_id, tag} --> per-server replica count map.
+        // Using ordered dictionary since it's targeted for printing later.
+        map<pair<string, string>, map<string, size_t>> range_dist_stats;
+        for (const auto& [_, balance_info] : table_skew_info) {
+          const auto& table_id = balance_info.table_id;
+          const auto& tag = balance_info.tag;
+          auto it = range_dist_stats.emplace(
+              std::make_pair(table_id, tag), map<string, size_t>{});
+          const auto& server_info = balance_info.servers_by_replica_count;
+          for (const auto& [count, server_uuid] : server_info) {
+            auto count_it = it.first->second.emplace(server_uuid, 0).first;
+            count_it->second += count;
+          }
+        }
+
+        // Build the mapping for the per-range skew summary table, i.e.
+        // {tablet_id, tag} --> {num_of_replicas, per_server_replica_skew}.
+        map<pair<string, string>, pair<size_t, size_t>> range_skew_stats;
+        for (const auto& [table_range, per_server_stats] : range_dist_stats) {
+          size_t total_count = 0;
+          size_t min_per_server_count = std::numeric_limits<size_t>::max();
+          size_t max_per_server_count = std::numeric_limits<size_t>::min();
+          for (const auto& [server_uuid, replica_count] : per_server_stats) {
+            total_count += replica_count;
+            if (replica_count > max_per_server_count) {
+              max_per_server_count = replica_count;
+            }
+            if (replica_count < min_per_server_count) {
+              min_per_server_count = replica_count;
+            }
+          }
+          size_t skew = max_per_server_count - min_per_server_count;
+          range_skew_stats.emplace(table_range, std::make_pair(total_count, skew));
+        }
+
+        string prev_table_id;
+        for (const auto& [table_info, per_server_stats] : range_dist_stats) {
+          const auto& table_id = table_info.first;
+          const auto& table_range = table_info.second;
+          if (prev_table_id != table_id) {
+            prev_table_id = table_id;
+            out << endl << "Table: " << table_id << endl << endl;
+            out << "Number of tablet replicas at servers for each range" << endl;
+            DataTable range_skew_summary_table(
+                { "Max Skew", "Total Count", "Range Start Key" });
+            const auto it_begin = range_skew_stats.find(table_info);
+            for (auto it = it_begin; it != range_skew_stats.end(); ++it) {
+              const auto& cur_table_id = it->first.first;
+              if (cur_table_id != table_id) {
+                break;
+              }
+              const auto& range = it->first.second;
+              const auto replica_count = it->second.first;
+              const auto replica_skew = it->second.second;
+              range_skew_summary_table.AddRow(
+                  { to_string(replica_skew), to_string(replica_count), range });
+            }
+            RETURN_NOT_OK(range_skew_summary_table.PrintTo(out));
+            out << endl;
+          }
+          out << "Range start key: '" << table_range << "'" << endl;
+          DataTable skew_table({ "UUID", "Server address", "Replica Count" });
+          for (const auto& stat : per_server_stats) {
+            const auto& srv_uuid = stat.first;
+            const auto& srv_address = FindOrDie(tserver_endpoints, srv_uuid);
+            skew_table.AddRow({ srv_uuid, srv_address, to_string(stat.second) });
+          }
+          RETURN_NOT_OK(skew_table.PrintTo(out));
+          out << endl;
+        }
+      } else {
+        out << "Per-table replica distribution details:" << endl;
+        DataTable skew_table(
+            { "Table Id", "Replica Count", "Replica Skew", "Table Name" });
+        for (const auto& [skew, balance_info] : table_skew_info) {
+          const auto& table_id = balance_info.table_id;
+          const auto it = table_info.find(table_id);
+          const auto* table_summary =
+              (it == table_info.end()) ? nullptr : it->second;
+          const auto& table_name = table_summary ? table_summary->name : "";
+          const auto total_replica_count = table_summary
+              ? table_summary->replication_factor * table_summary->TotalTablets()
+              : 0;
+          skew_table.AddRow({ table_id,
+                              to_string(total_replica_count),
+                              to_string(skew),
+                              table_name });
+        }
+        RETURN_NOT_OK(skew_table.PrintTo(out));
       }
-      RETURN_NOT_OK(skew.PrintTo(out));
       out << endl;
     }
   }
@@ -1107,7 +1187,7 @@ Status RebalancerTool::AlgoBasedRunner::GetNextMovesImpl(
             });
   for (const auto& move : moves) {
     vector<string> tablet_ids;
-    FindReplicas(move, raw_info, &tablet_ids);
+    rebalancer_->FindReplicas(move, raw_info, &tablet_ids);
     if (!loc) {
       // In case of cross-location (a.k.a. inter-location) rebalancing it is
       // necessary to make sure the majority of replicas would not end up
