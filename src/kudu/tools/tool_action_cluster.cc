@@ -91,6 +91,15 @@ DEFINE_uint32(max_staleness_interval_sec, 300,
               "cluster or when some unexpected concurrent activity is "
               "present (such as automatic recovery of failed replicas, etc.)");
 
+DEFINE_uint32(intra_location_rebalancing_concurrency, 0,
+              "How many independent intra-location rebalancing sessions can be "
+              "run in parallel. Since the location assignment naturally provides "
+              "non-intersecting sets of servers, it's possible to "
+              "independently move tablet replicas within different locations "
+              "in parallel. Value of 0 means 'the number of CPU cores'. "
+              "The actual number of concurrent sessions is the minimum of two "
+              "values: this setting and the number of locations in a cluster.");
+
 DEFINE_int64(max_run_time_sec, 0,
              "Maximum time to run the rebalancing, in seconds. Specifying 0 "
              "means not imposing any limit on the rebalancing run time.");
@@ -331,7 +340,8 @@ Status RunRebalance(const RunnerContext& context) {
       !FLAGS_disable_cross_location_rebalancing,
       !FLAGS_disable_intra_location_rebalancing,
       FLAGS_load_imbalance_threshold,
-      FLAGS_force_rebalance_replicas_on_maintenance_tservers));
+      FLAGS_force_rebalance_replicas_on_maintenance_tservers,
+      FLAGS_intra_location_rebalancing_concurrency));
 
   // Print info on pre-rebalance distribution of replicas.
   RETURN_NOT_OK(rebalancer.PrintStats(cout));
@@ -425,6 +435,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("fetch_info_concurrency")
         .AddOptionalParameter("force_rebalance_replicas_on_maintenance_tservers")
         .AddOptionalParameter("ignored_tservers")
+        .AddOptionalParameter("intra_location_rebalancing_concurrency")
         .AddOptionalParameter("load_imbalance_threshold")
         .AddOptionalParameter("max_moves_per_server")
         .AddOptionalParameter("max_run_time_sec")

@@ -18,8 +18,8 @@
 #include "kudu/tools/rebalancer_tool.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -41,6 +41,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rebalance/cluster_status.h"
 #include "kudu/rebalance/placement_policy_util.h"
@@ -52,7 +53,9 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
+#include "kudu/util/threadpool.h"
 
 using kudu::cluster_summary::ServerHealth;
 using kudu::cluster_summary::ServerHealthSummary;
@@ -84,6 +87,7 @@ using std::sort;
 using std::string;
 using std::to_string;
 using std::transform;
+using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
@@ -93,7 +97,7 @@ namespace kudu {
 namespace tools {
 
 RebalancerTool::RebalancerTool(const Config& config)
-  : Rebalancer(config) {
+    : Rebalancer(config) {
 }
 
 Status RebalancerTool::PrintStats(ostream& out) {
@@ -140,6 +144,7 @@ Status RebalancerTool::PrintStats(ostream& out) {
   sort(locations.begin(), locations.end());
 
   for (const auto& location : locations) {
+    shared_lock<decltype(ksck_lock_)> guard(ksck_lock_);
     ClusterRawInfo raw_info;
     RETURN_NOT_OK(KsckResultsToClusterRawInfo(location, ksck_->results(), &raw_info));
     ClusterInfo ci;
@@ -163,7 +168,11 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   }
 
   ClusterRawInfo raw_info;
-  RETURN_NOT_OK(KsckResultsToClusterRawInfo(boost::none, ksck_->results(), &raw_info));
+  {
+    shared_lock<decltype(ksck_lock_)> guard(ksck_lock_);
+    RETURN_NOT_OK(KsckResultsToClusterRawInfo(
+        boost::none, ksck_->results(), &raw_info));
+  }
 
   ClusterInfo ci;
   RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
@@ -237,21 +246,94 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
       RETURN_NOT_OK(RunWith(&runner, result_status));
       moves_count_total += runner.moves_count();
     }
-    if (config_.run_intra_location_rebalancing) {
+    if (config_.run_intra_location_rebalancing && !ts_id_by_location.empty()) {
+      const size_t locations_num = ts_id_by_location.size();
+      DCHECK_GT(locations_num, 0);
+
+      vector<RunStatus> location_run_status(locations_num, RunStatus::UNKNOWN);
+      vector<Status> location_status(locations_num, Status::OK());
+      vector<size_t> location_moves_count(locations_num, 0);
+      vector<string> location_by_idx(locations_num);
+
+      // Thread pool to run intra-location rebalancing tasks in parallel. Since
+      // the location assignment provides non-intersecting sets of servers, it's
+      // possible to independently move replicas within different locations.
+      // The pool is automatically shutdown in its destructor.
+      unique_ptr<ThreadPool> rebalance_pool;
+      RETURN_NOT_OK(ThreadPoolBuilder("intra-location-rebalancing")
+                    .set_trace_metric_prefix("rebalancer")
+                    .set_max_threads(
+                        config_.intra_location_rebalancing_concurrency == 0
+                            ? base::NumCPUs()
+                            : config_.intra_location_rebalancing_concurrency)
+                    .Build(&rebalance_pool));
+
       // Run the rebalancing within every location (intra-location rebalancing).
+      size_t location_idx = 0;
       for (const auto& elem : ts_id_by_location) {
-        const auto& location = elem.first;
-        // TODO(aserbin): it would be nice to run these rebalancers in parallel
-        LOG(INFO) << "running rebalancer within location '" << location << "'";
-        IntraLocationRunner runner(this,
-                                   config_.ignored_tservers,
-                                   config_.max_moves_per_server,
-                                   deadline,
-                                   location);
-        RETURN_NOT_OK(runner.Init(config_.master_addresses));
-        RETURN_NOT_OK(RunWith(&runner, result_status));
-        moves_count_total += runner.moves_count();
+        auto location = elem.first;
+        location_by_idx[location_idx] = location;
+        LOG(INFO) << Substitute(
+            "starting rebalancing within location '$0'", location);
+        RETURN_NOT_OK(rebalance_pool->Submit(
+            [this, deadline, location = std::move(location),
+             &config = std::as_const(config_),
+             &location_status = location_status[location_idx],
+             &location_moves_count = location_moves_count[location_idx],
+             &location_run_status = location_run_status[location_idx]]() mutable {
+          IntraLocationRunner runner(this,
+                                     config.ignored_tservers,
+                                     config.max_moves_per_server,
+                                     deadline,
+                                     std::move(location));
+          if (const auto& s = runner.Init(config.master_addresses); !s.ok()) {
+            location_status = s;
+            return;
+          }
+          if (const auto& s = RunWith(&runner, &location_run_status); !s.ok()) {
+            location_status = s;
+            return;
+          }
+          location_moves_count = runner.moves_count();
+        }));
+        ++location_idx;
       }
+      // Wait for the completion of the rebalancing process in every location.
+      rebalance_pool->Wait();
+
+      size_t location_balancing_moves = 0;
+      Status status;
+      RunStatus result_run_status = RunStatus::UNKNOWN;
+      for (size_t location_idx = 0; location_idx < locations_num; ++location_idx) {
+        // This 'for' cycle scope contains logic to compose the overall status
+        // of the intra-location rebalancing based on the statuses of
+        // the individual per-location rebalancing tasks.
+        const auto& s = location_status[location_idx];
+        if (s.ok()) {
+          const auto rs = location_run_status[location_idx];
+          DCHECK(rs != RunStatus::UNKNOWN);
+          if (result_run_status == RunStatus::UNKNOWN ||
+              result_run_status == RunStatus::CLUSTER_IS_BALANCED) {
+            result_run_status = rs;
+          }
+          location_balancing_moves += location_moves_count[location_idx];
+        } else {
+          auto s_with_location_info = s.CloneAndPrepend(Substitute(
+              "location $0", location_by_idx[location_idx]));
+          if (status.ok()) {
+            // Update the overall status to be first seen non-OK status.
+            status = s_with_location_info;
+          } else {
+            // Update the overall status to add info on next non-OK status;
+            status = status.CloneAndAppend(s_with_location_info.message());
+          }
+        }
+      }
+      // Check for the status and bail out if there was an error.
+      RETURN_NOT_OK(status);
+
+      moves_count_total += location_balancing_moves;
+      *result_status = result_run_status;
     }
   }
   if (moves_count != nullptr) {
@@ -651,18 +733,45 @@ Status RebalancerTool::RunWith(Runner* runner, RunStatus* result_status) {
 Status RebalancerTool::GetClusterRawInfo(const boost::optional<string>& location,
                                          ClusterRawInfo* raw_info) {
   RETURN_NOT_OK(RefreshKsckResults());
+  shared_lock<decltype(ksck_lock_)> guard(ksck_lock_);
   return KsckResultsToClusterRawInfo(location, ksck_->results(), raw_info);
 }
 
 Status RebalancerTool::RefreshKsckResults() {
+  std::unique_lock<std::mutex> refresh_guard(ksck_refresh_lock_);
+  if (ksck_refreshing_) {
+    // Other thread is already refreshing the ksck info.
+    ksck_refresh_cv_.wait(refresh_guard, [this]{ return !ksck_refreshing_; });
+    return ksck_refresh_status_;
+  }
+
+  // This thread will be refreshing the ksck info.
+  ksck_refreshing_ = true;
+  refresh_guard.unlock();
+
+  Status refresh_status;
+  SCOPED_CLEANUP({
+    refresh_guard.lock();
+    ksck_refresh_status_ = refresh_status;
+    ksck_refreshing_ = false;
+    refresh_guard.unlock();
+    ksck_refresh_cv_.notify_all();
+  });
   shared_ptr<KsckCluster> cluster;
-  RETURN_NOT_OK_PREPEND(
-      RemoteKsckCluster::Build(config_.master_addresses, &cluster),
-      "unable to build KsckCluster");
+  const auto s = RemoteKsckCluster::Build(config_.master_addresses, &cluster);
+  if (!s.ok()) {
+    refresh_status = s.CloneAndPrepend("unable to build KsckCluster");
+    return refresh_status;
+  }
   cluster->set_table_filters(config_.table_filters);
-  ksck_.reset(new Ksck(cluster));
-  ignore_result(ksck_->Run());
-  return Status::OK();
+
+  {
+    unique_ptr<Ksck> new_ksck(new Ksck(cluster));
+    ignore_result(new_ksck->Run());
+    std::lock_guard<decltype(ksck_lock_)> guard(ksck_lock_);
+    ksck_ = std::move(new_ksck);
+  }
+  return refresh_status;
 }
 
 RebalancerTool::BaseRunner::BaseRunner(RebalancerTool* rebalancer,

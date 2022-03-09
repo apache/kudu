@@ -1759,6 +1759,32 @@ TEST_F(LocationAwareRebalancingBasicTest, Basic) {
   }
 }
 
+// Test that rebalancing tasks are scheduled for each of the existing locations
+// even if running the intra-location rebalancing in a non-concurrent fashion.
+TEST_F(LocationAwareRebalancingBasicTest, IntraLocationNoConcurrency) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const LocationInfo location_info = { { "/A", 2 }, { "/B", 2 }, { "/C", 2 }, };
+  vector<string> table_names;
+  NO_FATALS(Prepare({}, {}, location_info, kEmptySet, &table_names));
+
+  const vector<string> tool_args = {
+    "cluster",
+    "rebalance",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    "--intra_location_rebalancing_concurrency=1",
+  };
+
+  string out;
+  string err;
+  const auto s = RunKuduTool(tool_args, &out, &err);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+  ASSERT_STR_NOT_CONTAINS(s.ToString(), kExitOnSignalStr);
+  ASSERT_STR_CONTAINS(err, "starting rebalancing within location '/A'");
+  ASSERT_STR_CONTAINS(err, "starting rebalancing within location '/B'");
+  ASSERT_STR_CONTAINS(err, "starting rebalancing within location '/C'");
+}
+
 class LocationAwareBalanceInfoTest : public RebalancingTest {
  public:
   LocationAwareBalanceInfoTest()

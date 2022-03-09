@@ -73,7 +73,8 @@ Rebalancer::Config::Config(vector<string> ignored_tservers_param,
                            bool run_cross_location_rebalancing,
                            bool run_intra_location_rebalancing,
                            double load_imbalance_threshold,
-                           bool force_rebalance_replicas_on_maintenance_tservers)
+                           bool force_rebalance_replicas_on_maintenance_tservers,
+                           size_t intra_location_rebalancing_concurrency)
     : ignored_tservers(ignored_tservers_param.begin(), ignored_tservers_param.end()),
       master_addresses(std::move(master_addresses)),
       table_filters(std::move(table_filters)),
@@ -88,7 +89,9 @@ Rebalancer::Config::Config(vector<string> ignored_tservers_param,
       run_intra_location_rebalancing(run_intra_location_rebalancing),
       load_imbalance_threshold(load_imbalance_threshold),
       force_rebalance_replicas_on_maintenance_tservers(
-          force_rebalance_replicas_on_maintenance_tservers) {
+          force_rebalance_replicas_on_maintenance_tservers),
+      intra_location_rebalancing_concurrency(
+          intra_location_rebalancing_concurrency) {
   DCHECK_GE(max_moves_per_server, 0);
 }
 

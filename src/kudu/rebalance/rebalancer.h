@@ -68,7 +68,8 @@ class Rebalancer {
            bool run_cross_location_rebalancing = true,
            bool run_intra_location_rebalancing = true,
            double load_imbalance_threshold = kLoadImbalanceThreshold,
-           bool force_rebalance_replicas_on_maintenance_tservers = false);
+           bool force_rebalance_replicas_on_maintenance_tservers = false,
+           size_t intra_location_rebalancing_concurrency = 0);
 
     // UUIDs of ignored servers. If empty, run the rebalancing on
     // all tablet servers in the cluster only when all tablet servers
@@ -136,6 +137,10 @@ class Rebalancer {
     double load_imbalance_threshold;
 
     bool force_rebalance_replicas_on_maintenance_tservers;
+
+    // The maximum number of intra-location rebalancing sessions that can be run
+    // in parallel. Value of 0 means 'the number of CPU cores at the node'.
+    size_t intra_location_rebalancing_concurrency;
   };
 
   // Represents a concrete move of a replica from one tablet server to another.

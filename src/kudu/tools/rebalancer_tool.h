@@ -16,11 +16,13 @@
 // under the License.
 #pragma once
 
-#include <cstddef>
+#include <condition_variable> // IWYU pragma: keep
 #include <cstdint>
+#include <ctime>
 #include <iosfwd>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <random>
 #include <set>
 #include <string>
@@ -33,6 +35,8 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/rebalance/rebalance_algo.h"
 #include "kudu/rebalance/rebalancer.h"
+#include "kudu/tools/ksck.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"     // IWYU pragma: keep
 #include "kudu/util/status.h"
 
@@ -44,7 +48,6 @@ class KuduClient;
 
 namespace tools {
 
-class Ksck;
 struct KsckResults;
 
 // A class implementing logic for Kudu cluster rebalancing.
@@ -404,7 +407,13 @@ class RebalancerTool : public rebalance::Rebalancer {
   Status RefreshKsckResults();
 
   // Auxiliary Ksck object to get information on the cluster.
-  std::shared_ptr<Ksck> ksck_;
+  std::unique_ptr<Ksck> ksck_;    // protected by ksck_lock_
+  rw_spinlock ksck_lock_;
+
+  bool ksck_refreshing_{false};   // protected by ksck_refresh_lock_
+  Status ksck_refresh_status_;    // protected by ksck_refresh_lock_
+  std::mutex ksck_refresh_lock_;
+  std::condition_variable ksck_refresh_cv_;
 };
 
 } // namespace tools
