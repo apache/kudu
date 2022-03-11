@@ -30,6 +30,7 @@
 
 #include "kudu/common/row_operations.h"
 #include "kudu/common/row_operations.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -44,7 +45,6 @@
 
 namespace kudu {
 
-class Schema;
 class rw_semaphore;
 
 namespace rpc {

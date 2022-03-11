@@ -159,7 +159,9 @@ void WriteOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
 
 Status WriteOp::Prepare() {
   TRACE_EVENT0("op", "WriteOp::Prepare");
-  TRACE("PREPARE: Starting.");
+
+  Tablet* tablet = state()->tablet_replica()->tablet();
+  TRACE(Substitute("PREPARE: Starting on tablet $0", tablet->tablet_id()));
   // Decode everything first so that we give up if something major is wrong.
   Schema client_schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(state_->request()->schema(), &client_schema),
@@ -171,8 +173,6 @@ Status WriteOp::Prepare() {
     state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
     return s;
   }
-
-  Tablet* tablet = state()->tablet_replica()->tablet();
 
   // Before taking any other locks, acquire the transaction state lock and
   // ensure it is open.
@@ -224,7 +224,7 @@ Status WriteOp::Prepare() {
   }
   RETURN_NOT_OK(tablet->AcquireRowLocks(state()));
 
-  TRACE("PREPARE: Finished.");
+  TRACE("PREPARE: Finished");
   return Status::OK();
 }
 
@@ -264,7 +264,7 @@ void WriteOp::UpdatePerRowMetricsAndErrors() {
 // it seems pointless to return a Status!
 Status WriteOp::Apply(CommitMsg** commit_msg) {
   TRACE_EVENT0("op", "WriteOp::Apply");
-  TRACE("APPLY: Starting.");
+  TRACE("APPLY: Starting");
 
   if (PREDICT_FALSE(ANNOTATE_UNPROTECTED_READ(
       FLAGS_tablet_inject_latency_on_apply_write_op_ms) > 0)) {
@@ -275,7 +275,7 @@ Status WriteOp::Apply(CommitMsg** commit_msg) {
 
   Tablet* tablet = state()->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->ApplyRowOperations(state()));
-  TRACE("APPLY: Finished.");
+  TRACE("APPLY: Finished");
 
   UpdatePerRowMetricsAndErrors();
 
@@ -293,29 +293,30 @@ void WriteOp::Finish(OpResult result) {
   state()->FinishApplyingOrAbort(result);
 
   if (PREDICT_FALSE(result == Op::ABORTED)) {
-    TRACE("FINISH: Op aborted.");
+    TRACE("FINISH: Op aborted");
     return;
   }
 
   DCHECK_EQ(result, Op::APPLIED);
 
-  TRACE("FINISH: Updating metrics.");
+  TRACE("FINISH: Updating metrics");
 
-  TabletMetrics* metrics = state_->tablet_replica()->tablet()->metrics();
-  if (metrics) {
+  if (auto* metrics = state_->tablet_replica()->tablet()->metrics();
+      PREDICT_TRUE(metrics != nullptr)) {
     // TODO(unknown): should we change this so it's actually incremented by the
     // Tablet code itself instead of this wrapper code?
-    metrics->rows_inserted->IncrementBy(state_->metrics().successful_inserts);
-    metrics->insert_ignore_errors->IncrementBy(state_->metrics().insert_ignore_errors);
-    metrics->rows_upserted->IncrementBy(state_->metrics().successful_upserts);
-    metrics->rows_updated->IncrementBy(state_->metrics().successful_updates);
-    metrics->update_ignore_errors->IncrementBy(state_->metrics().update_ignore_errors);
-    metrics->rows_deleted->IncrementBy(state_->metrics().successful_deletes);
-    metrics->delete_ignore_errors->IncrementBy(state_->metrics().delete_ignore_errors);
+    const auto& op_m = state_->metrics();
+    metrics->rows_inserted->IncrementBy(op_m.successful_inserts);
+    metrics->insert_ignore_errors->IncrementBy(op_m.insert_ignore_errors);
+    metrics->rows_upserted->IncrementBy(op_m.successful_upserts);
+    metrics->rows_updated->IncrementBy(op_m.successful_updates);
+    metrics->update_ignore_errors->IncrementBy(op_m.update_ignore_errors);
+    metrics->rows_deleted->IncrementBy(op_m.successful_deletes);
+    metrics->delete_ignore_errors->IncrementBy(op_m.delete_ignore_errors);
 
     if (type() == consensus::LEADER) {
       if (state()->external_consistency_mode() == COMMIT_WAIT) {
-        metrics->commit_wait_duration->Increment(state_->metrics().commit_wait_duration_usec);
+        metrics->commit_wait_duration->Increment(op_m.commit_wait_duration_usec);
       }
       uint64_t op_duration_usec =
           (MonoTime::Now() - start_time_).ToMicroseconds();
