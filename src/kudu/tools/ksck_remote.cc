@@ -31,8 +31,10 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
+#include "kudu/client/tablet_info_provider-internal.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -84,6 +86,7 @@ using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduTable;
 using kudu::client::internal::ReplicaController;
+using kudu::client::internal::TabletInfoProvider;
 using kudu::cluster_summary::ServerHealth;
 using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
@@ -684,13 +687,17 @@ Status RemoteKsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table
 
   vector<shared_ptr<KsckTablet>> tablets;
   for (const auto* t : tokens) {
-    if (!MatchesAnyPattern(tablet_id_filters_, t->tablet().id())) {
+    const auto& tablet_id = t->tablet().id();
+    if (!MatchesAnyPattern(tablet_id_filters_, tablet_id)) {
       filtered_tablets_count_++;
-      VLOG(1) << "Skipping tablet " << t->tablet().id();
+      VLOG(1) << "Skipping tablet " << tablet_id;
       continue;
     }
+    Partition partition;
+    RETURN_NOT_OK(TabletInfoProvider::GetPartitionInfo(
+        client_.get(), tablet_id, &partition));
     shared_ptr<KsckTablet> tablet(
-        new KsckTablet(table.get(), t->tablet().id()));
+        new KsckTablet(table.get(), t->tablet().id(), std::move(partition)));
     vector<shared_ptr<KsckTabletReplica>> replicas;
     for (const auto* r : t->tablet().replicas()) {
       replicas.push_back(make_shared<KsckTabletReplica>(

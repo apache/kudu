@@ -297,6 +297,7 @@ message TabletSummaryPB {
   optional string status = 5;
   optional ConsensusStatePB master_cstate = 6;
   repeated ReplicaSummaryPB replicas = 7;
+  optional string range_key_begin = 8;
 }
 
 message ReplicaSummaryPB {

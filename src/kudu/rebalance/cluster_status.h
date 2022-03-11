@@ -212,6 +212,7 @@ struct TabletSummary {
   std::string id;
   std::string table_id;
   std::string table_name;
+  std::string range_key_begin;
   HealthCheckResult result;
   std::string status;
   ConsensusState master_cstate;

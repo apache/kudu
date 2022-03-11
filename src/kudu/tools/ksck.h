@@ -33,6 +33,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
@@ -89,9 +90,10 @@ class KsckTabletReplica {
 // Representation of a tablet belonging to a table. The tablet is composed of replicas.
 class KsckTablet {
  public:
-  KsckTablet(KsckTable* table, std::string id)
-      : id_(std::move(id)),
-        table_(table) {
+  KsckTablet(KsckTable* table, std::string id, Partition partition)
+      : table_(table),
+        id_(std::move(id)),
+        partition_(std::move(partition)) {
   }
 
   const std::string& id() const {
@@ -100,6 +102,10 @@ class KsckTablet {
 
   const std::vector<std::shared_ptr<KsckTabletReplica>>& replicas() const {
     return replicas_;
+  }
+
+  const Partition& partition() const {
+    return partition_;
   }
 
   void set_replicas(std::vector<std::shared_ptr<KsckTabletReplica>> replicas) {
@@ -111,9 +117,10 @@ class KsckTablet {
   }
 
  private:
-  const std::string id_;
-  std::vector<std::shared_ptr<KsckTabletReplica>> replicas_;
   KsckTable* table_;
+  const std::string id_;
+  const Partition partition_;
+  std::vector<std::shared_ptr<KsckTabletReplica>> replicas_;
   DISALLOW_COPY_AND_ASSIGN(KsckTablet);
 };
 

@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cstddef>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -34,6 +35,7 @@
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
 
+#include "kudu/common/partition.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
@@ -1010,6 +1012,17 @@ HealthCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
   tablet_summary.status = status;
   tablet_summary.master_cstate = std::move(master_config);
   tablet_summary.replicas.swap(replicas);
+
+  // Add printable representation of the key for the start of the range.
+  const auto& range_key_begin = tablet->partition().begin().range_key();
+  ostringstream ss_range_key_begin;
+  for (size_t i = 0; i < range_key_begin.size(); ++i) {
+    ss_range_key_begin << std::hex << std::setw(2) << std::setfill('0')
+                       << static_cast<uint16_t>(range_key_begin[i]);
+  }
+  tablet_summary.range_key_begin = ss_range_key_begin.str();
+  VLOG(1) << Substitute("range start key for tablet $0: '$1'",
+      tablet_summary.id, tablet_summary.range_key_begin);
   results_.cluster_status.tablet_summaries.push_back(std::move(tablet_summary));
   return result;
 }

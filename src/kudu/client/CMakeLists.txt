@@ -50,6 +50,7 @@ set(CLIENT_SRCS
   scanner-internal.cc
   replica-internal.cc
   replica_controller-internal.cc
+  tablet_info_provider-internal.cc
   resource_metrics.cc
   schema.cc
   session-internal.cc

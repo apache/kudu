@@ -39,6 +39,7 @@
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
@@ -337,13 +338,15 @@ class KsckTest : public KuduTest {
     NO_FATALS(CreateDefaultAssignmentPlan(create_txn_status_table ? 2 : 1));
 
     auto table = CreateAndAddTable("test", 1);
-    auto tablet(make_shared<KsckTablet>(table.get(), "tablet-id-1"));
+    auto tablet(make_shared<KsckTablet>(
+        table.get(), "tablet-id-1", Partition{}));
     NO_FATALS(CreateAndFillTablet(tablet, 1, true, true));
     table->set_tablets({ tablet });
 
     if (create_txn_status_table) {
       auto sys_table = CreateAndAddTxnStatusTable(1);
-      auto sys_tablet(make_shared<KsckTablet>(sys_table.get(), "sys-tablet-id-1"));
+      auto sys_tablet(make_shared<KsckTablet>(
+          sys_table.get(), "sys-tablet-id-1", Partition{}));
       NO_FATALS(CreateAndFillTablet(sys_tablet, 1, true, true));
       sys_table->set_tablets({ sys_tablet });
     }
@@ -359,7 +362,9 @@ class KsckTest : public KuduTest {
     vector<shared_ptr<KsckTablet>> tablets;
     for (int i = 0; i < num_tablets; i++) {
       auto tablet(make_shared<KsckTablet>(
-          table.get(), Substitute("$0tablet-id-$1", tablet_id_prefix, i)));
+          table.get(),
+          Substitute("$0tablet-id-$1", tablet_id_prefix, i),
+          Partition{}));
       CreateAndFillTablet(tablet, num_replicas, true, true);
       tablets.push_back(std::move(tablet));
     }
@@ -375,7 +380,7 @@ class KsckTest : public KuduTest {
     vector<shared_ptr<KsckTablet>> tablets;
     for (int i = 0; i < num_tablets; i++) {
       auto tablet(make_shared<KsckTablet>(
-          table.get(), Substitute("tablet-id-$0", i)));
+          table.get(), Substitute("tablet-id-$0", i), Partition{}));
       CreateAndFillTablet(tablet, num_replicas, true, i != 0);
       tablets.push_back(std::move(tablet));
     }
@@ -388,7 +393,7 @@ class KsckTest : public KuduTest {
 
     auto table = CreateAndAddTable("test", 3);
 
-    auto tablet(make_shared<KsckTablet>(table.get(), "tablet-id-1"));
+    auto tablet(make_shared<KsckTablet>(table.get(), "tablet-id-1", Partition{}));
     CreateAndFillTablet(tablet, 2, false, true);
     table->set_tablets({ tablet });
   }
@@ -742,6 +747,7 @@ void CheckJsonVsTabletSummaries(const JsonReader& r,
       const auto* replica = replicas[j];
       CheckJsonVsReplicaSummary(r, replica, ref_replica);
     }
+    EXPECT_JSON_STRING_FIELD(r, tablet, "range_key_begin", ref_tablet.range_key_begin);
   }
 }
 

@@ -920,6 +920,7 @@ void TabletSummaryToPb(const TabletSummary& tablet, TabletSummaryPB* pb) {
   for (const auto& replica : tablet.replicas) {
     ReplicaSummaryToPb(replica, pb->add_replicas());
   }
+  pb->set_range_key_begin(tablet.range_key_begin);
 }
 
 void TableSummaryToPb(const TableSummary& table, TableSummaryPB* pb) {

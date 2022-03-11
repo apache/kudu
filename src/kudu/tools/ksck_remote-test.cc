@@ -34,6 +34,7 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
@@ -41,6 +42,7 @@
 #include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/rebalance/cluster_status.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_results.h"
@@ -86,8 +88,8 @@ using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
-using std::thread;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -822,6 +824,89 @@ TEST_F(RemoteKsckTest, TestTabletFilters) {
       " Tables         | 1\n"
       " Tablets        | 1\n"
       " Replicas       | 3\n");
+}
+
+// Make sure the tablet summaries have the 'range_key_begin' field set
+// correspondingly for tables with and without range partitions.
+TEST_F(RemoteKsckTest, RangeKeysInTabletSummaries) {
+  static constexpr const char* const kColumn0 = "c0";
+  static constexpr const char* const kColumn1 = "c1";
+  static constexpr const char* const kTableWithRanges = "table_with_ranges";
+  static constexpr const char* const kTableWithoutRanges = "table_without_ranges";
+
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  client::KuduSchema schema;
+  KuduSchemaBuilder b;
+  b.AddColumn(kColumn0)->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn(kColumn1)->Type(KuduColumnSchema::INT32)->NotNull();
+  b.SetPrimaryKey({ kColumn0, kColumn1 });
+  ASSERT_OK(b.Build(&schema));
+
+  // Create range-partitioned table.
+  {
+    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+    ASSERT_OK(lower_bound->SetInt32(kColumn0, 0));
+    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+    ASSERT_OK(upper_bound->SetInt32(kColumn0, 1000));
+
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableWithRanges)
+        .schema(&schema)
+        .set_range_partition_columns({ kColumn0 })
+        .add_range_partition(lower_bound.release(), upper_bound.release())
+        .add_hash_partitions({ kColumn1 }, 2)
+        .num_replicas(3)
+        .Create());
+  }
+
+  // Create a table with no range partitions.
+  {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableWithoutRanges)
+        .schema(&schema)
+        .add_hash_partitions({ kColumn1 }, 3)
+        .num_replicas(3)
+        .Create());
+  }
+
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  // This scenario doesn't care about consistency of the tables in terms of
+  // matching Raft status between the catalog manager and tablet servers, etc.
+  // For this scenario, the important point is just to collect the information
+  // on tablets.
+  ignore_result(ksck_->CheckTablesConsistency());
+
+  vector<string> range_keys;
+  vector<string> no_range_keys;
+  const auto& tablet_summaries = ksck_->results().cluster_status.tablet_summaries;
+  for (const auto& summary : tablet_summaries) {
+    if (summary.table_name == kTableWithoutRanges) {
+      no_range_keys.emplace_back(summary.range_key_begin);
+    } else if (summary.table_name == kTableWithRanges) {
+      range_keys.emplace_back(summary.range_key_begin);
+    }
+  }
+
+  // Check the results for the range-paritioned table.
+  // There is 1 range partition [0, 1000) and 2 hash buckets.
+  ASSERT_EQ(2, range_keys.size());
+  for (const auto& key : range_keys) {
+    ASSERT_FALSE(key.empty()) << key;
+  }
+  // The keys for the beginning of the range partition should be the same for
+  // every tablet reported: that's exactly the same range partition,
+  // but different hash buckets.
+  ASSERT_EQ(range_keys.front(), range_keys.back());
+
+  // Check the results for the table without range partitions.
+  // There are no range partitions: just 3 hash buckets, so all the range start
+  // keys in the tablet summaries should be empty.
+  ASSERT_EQ(3, no_range_keys.size());
+  for (const auto& key : no_range_keys) {
+    ASSERT_TRUE(key.empty()) << key;
+  }
 }
 
 } // namespace tools
