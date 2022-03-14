@@ -698,6 +698,7 @@ enum RunCopyTableCheckArgsType {
   kTestCopyTableUpsert,
   kTestCopyTableSchemaOnly,
   kTestCopyTableComplexSchema,
+  kTestCopyUnpartitionedTable,
   kTestCopyTablePredicates
 };
 // Subclass of ToolTest that allows running individual test cases with different parameters to run
@@ -720,6 +721,10 @@ class ToolTestCopyTableParameterized :
     if (test_case_ == kTestCopyTableComplexSchema) {
       KuduSchema schema;
       ASSERT_OK(CreateComplexSchema(&schema));
+      ww.set_schema(schema);
+    } else if (test_case_ == kTestCopyUnpartitionedTable) {
+      KuduSchema schema;
+      ASSERT_OK(CreateUnpartitionedTable(&schema));
       ww.set_schema(schema);
     }
     ww.Setup();
@@ -759,6 +764,9 @@ class ToolTestCopyTableParameterized :
         args.columns = kComplexSchemaColumns;
         args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
         return { args };
+      case kTestCopyUnpartitionedTable:
+        args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
+        return {args};
       case kTestCopyTablePredicates: {
         auto mid = total_rows_ / 2;
         vector<RunCopyTableCheckArgs> multi_args;
@@ -898,6 +906,19 @@ class ToolTestCopyTableParameterized :
     return Status::OK();
   }
 
+  Status CreateUnpartitionedTable(KuduSchema* schema) {
+    shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(cluster_->CreateClient(nullptr, &client));
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    *schema = KuduSchema::FromSchema(GetSimpleTestSchema());
+    RETURN_NOT_OK(table_creator->table_name(kTableName)
+                      .schema(schema)
+                      .set_range_partition_columns({})
+                      .num_replicas(1)
+                      .Create());
+    return Status::OK();
+  }
+
   void InsertOneRowWithNullCell() {
     shared_ptr<KuduClient> client;
     ASSERT_OK(cluster_->CreateClient(nullptr, &client));
@@ -932,6 +953,7 @@ INSTANTIATE_TEST_SUITE_P(CopyTableParameterized,
                                            kTestCopyTableUpsert,
                                            kTestCopyTableSchemaOnly,
                                            kTestCopyTableComplexSchema,
+                                           kTestCopyUnpartitionedTable,
                                            kTestCopyTablePredicates));
 
 void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {

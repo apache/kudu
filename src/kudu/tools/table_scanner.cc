@@ -461,6 +461,12 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
     table_creator->add_range_partition(lower.release(), upper.release());
   }
 
+  if (partition_schema.hash_schema().empty() &&
+      partition_schema.range_schema().column_ids.empty()) {
+    // This src table is unpartitioned, just create a table range partitioned on no columns.
+    table_creator->set_range_partition_columns({});
+  }
+
   // Create table.
   RETURN_NOT_OK(table_creator->Create());
   LOG(INFO) << "Table " << dst_table_name << " created successfully";
