@@ -112,10 +112,10 @@ namespace kudu {
 namespace tools {
 namespace {
 
-const char* const kTabletServerAddressArg = "tserver_address";
-const char* const kTabletServerAddressDesc = "Address of a Kudu tablet server "
-    "of form 'hostname:port'. Port may be omitted if the tablet server is "
-    "bound to the default port.";
+const char* const kTabletServerAddressArg = "tserver_addresses";
+const char* const kTabletServerAddressDesc = "Address list of Kudu tablet servers"
+    " of form 'hostname-0:port-0 hostname-1:port-1 ... hostname-n:port-n'. Port may"
+    " be omitted if the tablet server is bound to the default port.";
 const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
 
