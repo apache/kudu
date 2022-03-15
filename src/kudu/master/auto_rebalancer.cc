@@ -133,6 +133,8 @@ DEFINE_uint32(auto_rebalancing_wait_for_replica_moves_seconds, 1,
               "How long to wait before checking to see if the scheduled replica movement "
               "in this iteration of auto-rebalancing has completed.");
 
+DECLARE_bool(auto_rebalancing_enabled);
+
 namespace kudu {
 
 namespace master {
@@ -163,31 +165,33 @@ AutoRebalancerTask::AutoRebalancerTask(CatalogManager* catalog_manager,
 }
 
 AutoRebalancerTask::~AutoRebalancerTask() {
-  if (thread_) {
-    Shutdown();
-  }
+  Shutdown();
 }
 
 Status AutoRebalancerTask::Init() {
   DCHECK(!thread_) << "AutoRebalancerTask is already initialized";
   RETURN_NOT_OK(MessengerBuilder("auto-rebalancer").Build(&messenger_));
-  return Thread::Create("catalog manager", "auto-rebalancer",
+  if (FLAGS_auto_rebalancing_enabled) {
+    return Thread::Create("catalog manager", "auto-rebalancer",
                         [this]() { this->RunLoop(); }, &thread_);
+  }
+  LOG(INFO) << Substitute("auto_rebalancing_enabled is disabled: $0, auto rebalancer "
+                          "do not start", FLAGS_auto_rebalancing_enabled);
+  return Status::OK();;
 }
 
 void AutoRebalancerTask::Shutdown() {
-  CHECK(thread_) << "AutoRebalancerTask is not initialized";
   if (!shutdown_.CountDown()) {
     return;
   }
-  CHECK_OK(ThreadJoiner(thread_.get()).Join());
-  thread_.reset();
+  if (thread_) {
+    CHECK_OK(ThreadJoiner(thread_.get()).Join());
+    thread_.reset();
+  }
 }
 
-void AutoRebalancerTask::RunLoop() {
+bool AutoRebalancerTask::RunReplicaRebalancer() {
   vector<Rebalancer::ReplicaMove> replica_moves;
-  while (!shutdown_.WaitFor(
-      MonoDelta::FromSeconds(FLAGS_auto_rebalancing_interval_seconds))) {
 
     // If catalog manager isn't initialized or isn't the leader, don't do rebalancing.
     // Putting the auto-rebalancer to sleep shouldn't affect the master's ability
@@ -197,7 +201,7 @@ void AutoRebalancerTask::RunLoop() {
       CatalogManager::ScopedLeaderSharedLock l(catalog_manager_);
       if (!l.first_failed_status().ok()) {
         moves_scheduled_this_round_for_test_ = 0;
-        continue;
+        return false;
       }
     }
 
@@ -210,7 +214,7 @@ void AutoRebalancerTask::RunLoop() {
     Status s = BuildClusterRawInfo(/*location*/boost::none, &raw_info);
     if (!s.ok()) {
       LOG(WARNING) << Substitute("Could not retrieve cluster info: $0", s.ToString());
-      continue;
+      return false;
     }
 
     // NOTE: There should be no moves in progress, because this loop waits for
@@ -218,13 +222,13 @@ void AutoRebalancerTask::RunLoop() {
     s = rebalancer_.BuildClusterInfo(raw_info, Rebalancer::MovesInProgress(), &cluster_info);
     if (!s.ok()) {
       LOG(WARNING) << Substitute("Could not build cluster info: $0", s.ToString());
-      continue;
+      return false;
     }
     if (config_.run_policy_fixer) {
       s = BuildTabletsPlacementInfo(raw_info, Rebalancer::MovesInProgress(), &placement_info);
       if (!s.ok()) {
         LOG(WARNING) << Substitute("Could not build tablet placement info: $0", s.ToString());
-        continue;
+        return false;
       }
     }
 
@@ -233,21 +237,33 @@ void AutoRebalancerTask::RunLoop() {
     if (!s.ok()) {
       LOG(WARNING) << Substitute("could not retrieve auto-rebalancing replica moves: $0",
                                  s.ToString());
-      continue;
+      return false;
     }
     WARN_NOT_OK(ExecuteMoves(replica_moves),
                 "failed to send replica move request");
     moves_scheduled_this_round_for_test_ = replica_moves.size();
+    LOG(INFO) << "replica rebalance tasks: " << moves_scheduled_this_round_for_test_;
 
     // Wait for all of the moves from this iteration to complete.
     do {
       if (shutdown_.WaitFor(MonoDelta::FromSeconds(
             FLAGS_auto_rebalancing_wait_for_replica_moves_seconds))) {
-        return;
+        return true;
       }
       WARN_NOT_OK(CheckReplicaMovesCompleted(&replica_moves),
                   "scheduled replica move failed to complete");
     } while (!replica_moves.empty());
+    return false;
+}
+
+void AutoRebalancerTask::RunLoop() {
+  while (!shutdown_.WaitFor(
+      MonoDelta::FromSeconds(FLAGS_auto_rebalancing_interval_seconds))) {
+    bool should_stop = RunReplicaRebalancer();
+    if (should_stop) {
+      // stop the loop
+      return;
+    }
   }
 }
 

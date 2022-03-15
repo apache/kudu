@@ -98,6 +98,7 @@
 #include "kudu/hms/hms_catalog.h"
 #include "kudu/master/authz_provider.h"
 #include "kudu/master/auto_rebalancer.h"
+#include "kudu/master/auto_leader_rebalancer.h"
 #include "kudu/master/default_authz_provider.h"
 #include "kudu/master/hms_notification_log_listener.h"
 #include "kudu/master/master.h"
@@ -345,6 +346,11 @@ DEFINE_bool(auto_rebalancing_enabled, false,
             "Whether auto-rebalancing is enabled.");
 TAG_FLAG(auto_rebalancing_enabled, advanced);
 TAG_FLAG(auto_rebalancing_enabled, experimental);
+
+DEFINE_bool(auto_leader_rebalancing_enabled, false,
+            "Whether auto-leader-rebalancing is enabled.");
+TAG_FLAG(auto_leader_rebalancing_enabled, advanced);
+TAG_FLAG(auto_leader_rebalancing_enabled, experimental);
 
 DEFINE_uint32(table_locations_cache_capacity_mb, 0,
               "Capacity for the table locations cache (in MiB); a value "
@@ -992,12 +998,20 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
 
-  if (FLAGS_auto_rebalancing_enabled) {
-    unique_ptr<AutoRebalancerTask> task(
-        new AutoRebalancerTask(this, master_->ts_manager()));
-    RETURN_NOT_OK_PREPEND(task->Init(), "failed to initialize auto-rebalancing task");
-    auto_rebalancer_ = std::move(task);
-  }
+  unique_ptr<AutoRebalancerTask> task(
+      new AutoRebalancerTask(this, master_->ts_manager()));
+  RETURN_NOT_OK_PREPEND(task->Init(), "failed to initialize auto-rebalancing task");
+  auto_rebalancer_ = std::move(task);
+
+  // Perfect leader rebalance depend on a good replicas topology, that is we'd better enable
+  // auto_rebalancing, but when auto_rebalancing is disabled and leader rebalance is enabled,
+  // that is ok, we support it.
+
+  unique_ptr<AutoLeaderRebalancerTask> leader_task(
+      new AutoLeaderRebalancerTask(this, master_->ts_manager()));
+  RETURN_NOT_OK_PREPEND(leader_task->Init(),
+                        "failed thie initialize auto-leader-rebalancing task");
+  auto_leader_rebalancer_ = std::move(leader_task);
 
   vector<HostPort> master_addresses;
   RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addresses));
@@ -3669,6 +3683,15 @@ Status CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableI
 
   shared_lock<LockType> l(lock_);
   *table = FindPtrOrNull(table_ids_map_, table_id);
+  return Status::OK();
+}
+
+Status CatalogManager::GetTableInfoByName(const string& table_name,
+                                          scoped_refptr<TableInfo> *table) {
+  // leader_lock_.AssertAcquiredForReading();
+
+  shared_lock<LockType> l(lock_);
+  *table = FindPtrOrNull(normalized_table_names_map_, table_name);
   return Status::OK();
 }
 

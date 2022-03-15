@@ -115,6 +115,7 @@ namespace master {
 
 class AuthzProvider;
 class AutoRebalancerTask;
+class AutoLeaderRebalancerTask;
 class CatalogManagerBgTasks;
 class HmsNotificationLogListenerTask;
 class Master;
@@ -765,6 +766,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // NOTE: This should only be used by tests or web-ui
   Status GetTableInfo(const std::string& table_id, scoped_refptr<TableInfo> *table);
 
+  Status GetTableInfoByName(const std::string& table_name, scoped_refptr<TableInfo> *table);
+
   // Retrieve all known tables, even those that are not running. May fail if
   // the catalog manager is not yet running. Caller must hold leader_lock_.
   //
@@ -815,6 +818,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
   master::AutoRebalancerTask* auto_rebalancer() const {
     return auto_rebalancer_.get();
+  }
+
+  master::AutoLeaderRebalancerTask* auto_leader_rebalancer() const {
+    return auto_leader_rebalancer_.get();
   }
 
   // Returns the normalized form of the provided table name.
@@ -1221,6 +1228,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   std::unique_ptr<master::AuthzProvider> authz_provider_;
 
   std::unique_ptr<AutoRebalancerTask> auto_rebalancer_;
+
+  std::unique_ptr<AutoLeaderRebalancerTask> auto_leader_rebalancer_;
 
   enum State {
     kConstructed,

@@ -119,6 +119,7 @@ void MiniTabletServer::Shutdown() {
 }
 
 Status MiniTabletServer::Restart() {
+  Shutdown();
   return Start();
 }
 

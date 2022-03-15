@@ -76,9 +76,13 @@ class AutoRebalancerTask {
   // before shutting down the catalog manager.
   void Shutdown();
 
+  // return true should stop the RunLoop, false continue RunLoop
+  bool RunReplicaRebalancer();
+
  private:
 
   friend class AutoRebalancerTest;
+  friend class LeaderRebalancerTest;
 
   // Runs the main loop of the auto-rebalancing thread.
   void RunLoop();
