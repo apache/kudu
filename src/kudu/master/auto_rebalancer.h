@@ -78,6 +78,7 @@ class AutoRebalancerTask {
  private:
 
   friend class AutoRebalancerTest;
+  friend class LeaderRebalancerTest;
 
   // Runs the main loop of the auto-rebalancing thread.
   void RunLoop();

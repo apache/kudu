@@ -51,6 +51,7 @@ ADD_EXPORTABLE_LIBRARY(txn_manager_proto
 set(MASTER_SRCS
   authz_provider.cc
   auto_rebalancer.cc
+  auto_leader_rebalancer.cc
   catalog_manager.cc
   hms_notification_log_listener.cc
   location_cache.cc
@@ -107,6 +108,7 @@ SET_KUDU_TEST_LINK_LIBS(
   mini_kdc)
 
 ADD_KUDU_TEST(auto_rebalancer-test)
+ADD_KUDU_TEST(auto_leader_rebalancer-test)
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(dynamic_multi_master-test NUM_SHARDS 6)
 ADD_KUDU_TEST(hms_notification_log_listener-test)

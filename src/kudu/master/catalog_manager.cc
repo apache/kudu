@@ -97,6 +97,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/hms/hms_catalog.h"
 #include "kudu/master/authz_provider.h"
+#include "kudu/master/auto_leader_rebalancer.h"
 #include "kudu/master/auto_rebalancer.h"
 #include "kudu/master/default_authz_provider.h"
 #include "kudu/master/hms_notification_log_listener.h"
@@ -347,6 +348,12 @@ DEFINE_bool(auto_rebalancing_enabled, false,
 TAG_FLAG(auto_rebalancing_enabled, advanced);
 TAG_FLAG(auto_rebalancing_enabled, experimental);
 TAG_FLAG(auto_rebalancing_enabled, runtime);
+
+DEFINE_bool(auto_leader_rebalancing_enabled, false,
+            "Whether automatic leader rebalancing is enabled.");
+TAG_FLAG(auto_leader_rebalancing_enabled, advanced);
+TAG_FLAG(auto_leader_rebalancing_enabled, experimental);
+TAG_FLAG(auto_leader_rebalancing_enabled, runtime);
 
 DEFINE_uint32(table_locations_cache_capacity_mb, 0,
               "Capacity for the table locations cache (in MiB); a value "
@@ -1051,6 +1058,21 @@ Status CatalogManager::Init(bool is_first_run) {
   unique_ptr<AutoRebalancerTask> task(new AutoRebalancerTask(this, master_->ts_manager()));
   RETURN_NOT_OK_PREPEND(task->Init(), "failed to initialize auto-rebalancing task");
   auto_rebalancer_ = std::move(task);
+
+  // Leader rebalancer depends on a good replicas balance, that means we'd better enable
+  // auto_rebalancing. If auto-rebalancing is disabled and leader rebalancing is enabled,
+  // the algorithm can work, but the effect of leader rebalancing is limited, kudu
+  // cluster cannot reach the best balanced effect.
+  //
+  // The algorithm can work even if auto-rebalancing is disabled, because it tries to keep
+  // a propotion of leaders/followers (1 : replication_refactor - 1) for every tserver'
+  // every table.
+
+  unique_ptr<AutoLeaderRebalancerTask> leader_task(
+      new AutoLeaderRebalancerTask(this, master_->ts_manager()));
+  RETURN_NOT_OK_PREPEND(leader_task->Init(),
+                        "failed thie initialize auto-leader-rebalancing task");
+  auto_leader_rebalancer_ = std::move(leader_task);
 
   vector<HostPort> master_addresses;
   RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addresses));
@@ -4107,6 +4129,14 @@ Status CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableI
   shared_lock<LockType> l(lock_);
   *table = FindPtrOrNull(table_ids_map_, table_id);
   return Status::OK();
+}
+
+void CatalogManager::GetTableInfoByName(const string& table_name,
+                                        scoped_refptr<TableInfo> *table) {
+  leader_lock_.AssertAcquiredForReading();
+
+  shared_lock<LockType> l(lock_);
+  *table = FindPtrOrNull(normalized_table_names_map_, table_name);
 }
 
 void CatalogManager::GetAllTables(vector<scoped_refptr<TableInfo>>* tables) {

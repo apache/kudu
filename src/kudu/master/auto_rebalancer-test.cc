@@ -37,6 +37,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/master/auto_leader_rebalancer.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -66,12 +67,14 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_bool(auto_leader_rebalancing_enabled);
 DECLARE_bool(auto_rebalancing_enabled);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
 DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_int32(tablet_copy_download_file_inject_latency_ms);
 DECLARE_int32(tserver_unresponsive_timeout_ms);
+DECLARE_uint32(auto_leader_rebalancing_interval_seconds);
 DECLARE_uint32(auto_rebalancing_interval_seconds);
 DECLARE_uint32(auto_rebalancing_max_moves_per_server);
 DECLARE_uint32(auto_rebalancing_wait_for_replica_moves_seconds);
@@ -97,13 +100,20 @@ namespace {
 namespace kudu {
 namespace master {
 
+enum class BalanceThreadType {
+  REPLICA_REBALANCE,
+  LEADER_REBALANCE
+};
+
 class AutoRebalancerTest : public KuduTest {
   public:
 
-  Status CreateAndStartCluster() {
+  Status CreateAndStartCluster(bool enable_leader_rebalance = true) {
     FLAGS_auto_rebalancing_interval_seconds = 1; // Shorten for testing.
     FLAGS_auto_rebalancing_wait_for_replica_moves_seconds = 0; // Shorten for testing.
     FLAGS_auto_rebalancing_enabled = true; // Enable for testing.
+    FLAGS_auto_leader_rebalancing_enabled = enable_leader_rebalance; // If enable for testing.
+    FLAGS_auto_leader_rebalancing_interval_seconds = 2; // shorten for testing.
     cluster_.reset(new InternalMiniCluster(env_, cluster_opts_));
     return cluster_->Start();
   }
@@ -161,14 +171,30 @@ class AutoRebalancerTest : public KuduTest {
   }
 
   // Make sure the leader master has begun the auto-rebalancing thread.
-  void CheckAutoRebalancerStarted() {
+  void CheckAutoRebalancerStarted(BalanceThreadType type =
+                                  BalanceThreadType::REPLICA_REBALANCE) {
     ASSERT_EVENTUALLY([&] {
       int leader_idx;
       ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-      ASSERT_LT(0, NumLoopIterations(leader_idx));
+      ASSERT_LT(0, NumLoopIterations(leader_idx, type));
     });
   }
 
+  void CheckNoLeaderMovesScheduled() {
+    int leader_idx;
+    ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+    const auto leader_initial_loop_iterations =
+      NumLoopIterations(leader_idx, BalanceThreadType::LEADER_REBALANCE);
+    ASSERT_EVENTUALLY([&] {
+      if (FLAGS_auto_leader_rebalancing_enabled) {
+        ASSERT_LT(leader_initial_loop_iterations + 3,
+                  NumLoopIterations(leader_idx, BalanceThreadType::LEADER_REBALANCE));
+      } else {
+        SleepFor(MonoDelta::FromSeconds(3 * FLAGS_auto_rebalancing_interval_seconds));
+      }
+      ASSERT_EQ(0, NumMovesScheduled(leader_idx, BalanceThreadType::LEADER_REBALANCE));
+    });
+  }
   // Make sure the auto-rebalancing loop has iterated a few times,
   // and no moves were scheduled.
   void CheckNoMovesScheduled() {
@@ -179,6 +205,7 @@ class AutoRebalancerTest : public KuduTest {
       ASSERT_LT(initial_loop_iterations + 3, NumLoopIterations(leader_idx));
       ASSERT_EQ(0, NumMovesScheduled(leader_idx));
     });
+    CheckNoLeaderMovesScheduled();
   }
 
   void CheckSomeMovesScheduled() {
@@ -223,16 +250,26 @@ class AutoRebalancerTest : public KuduTest {
     return ret;
   }
 
-  int NumLoopIterations(int master_idx) {
+  int NumLoopIterations(int master_idx,
+                        BalanceThreadType type = BalanceThreadType::REPLICA_REBALANCE) {
     DCHECK(cluster_ != nullptr);
-    return cluster_->mini_master(master_idx)->master()->catalog_manager()->
+    if (type == BalanceThreadType::REPLICA_REBALANCE) {
+      return cluster_->mini_master(master_idx)->master()->catalog_manager()->
         auto_rebalancer()->number_of_loop_iterations_for_test_;
+    }
+    return cluster_->mini_master(master_idx)->master()->catalog_manager()->
+        auto_leader_rebalancer()->number_of_loop_iterations_for_test_;
   }
 
-  int NumMovesScheduled(int master_idx) {
+  int NumMovesScheduled(int master_idx,
+                        BalanceThreadType type = BalanceThreadType::REPLICA_REBALANCE) {
     DCHECK(cluster_ != nullptr);
+    if (type == BalanceThreadType::REPLICA_REBALANCE) {
     return cluster_->mini_master(master_idx)->master()->catalog_manager()->
         auto_rebalancer()->moves_scheduled_this_round_for_test_;
+    }
+    return cluster_->mini_master(master_idx)->master()->catalog_manager()->
+        auto_leader_rebalancer()->moves_scheduled_this_round_for_test_;
   }
 
   void CreateWorkloadTable(int num_tablets, int num_replicas) {
@@ -255,7 +292,8 @@ class AutoRebalancerTest : public KuduTest {
     unique_ptr<TestWorkload> workload_;
   };
 
-// Make sure that only the leader master is doing auto-rebalancing.
+// Make sure that only the leader master is doing auto-rebalancing
+// and auto leader-rebalancing.
 TEST_F(AutoRebalancerTest, OnlyLeaderDoesAutoRebalancing) {
   const int kNumMasters = 3;
   const int kNumTservers = 3;
@@ -264,6 +302,7 @@ TEST_F(AutoRebalancerTest, OnlyLeaderDoesAutoRebalancing) {
   cluster_opts_.num_tablet_servers = kNumTservers;
   ASSERT_OK(CreateAndStartCluster());
   NO_FATALS(CheckAutoRebalancerStarted());
+  NO_FATALS(CheckAutoRebalancerStarted(BalanceThreadType::LEADER_REBALANCE));
 
   CreateWorkloadTable(kNumTablets, /*num_replicas*/1);
 
@@ -272,11 +311,13 @@ TEST_F(AutoRebalancerTest, OnlyLeaderDoesAutoRebalancing) {
   for (int i = 0; i < kNumMasters; i++) {
     if (i == leader_idx) {
       ASSERT_EVENTUALLY([&] {
-        ASSERT_LT(0, NumLoopIterations(i));
+        ASSERT_LT(0, NumLoopIterations(i, BalanceThreadType::REPLICA_REBALANCE));
+        ASSERT_LT(0, NumLoopIterations(i, BalanceThreadType::LEADER_REBALANCE));
       });
     } else {
       ASSERT_EVENTUALLY([&] {
-        ASSERT_EQ(0, NumMovesScheduled(i));
+        ASSERT_EQ(0, NumLoopIterations(i, BalanceThreadType::REPLICA_REBALANCE));
+        ASSERT_EQ(0, NumLoopIterations(i, BalanceThreadType::LEADER_REBALANCE));
       });
     }
   }
@@ -319,6 +360,7 @@ TEST_F(AutoRebalancerTest, NextLeaderResumesAutoRebalancing) {
   cluster_opts_.num_tablet_servers = kNumTservers;
   ASSERT_OK(CreateAndStartCluster());
   NO_FATALS(CheckAutoRebalancerStarted());
+  NO_FATALS(CheckAutoRebalancerStarted(BalanceThreadType::LEADER_REBALANCE));
 
   CreateWorkloadTable(kNumTablets, /*num_replicas*/1);
 
@@ -329,6 +371,7 @@ TEST_F(AutoRebalancerTest, NextLeaderResumesAutoRebalancing) {
   for (int i = 0; i < kNumMasters; i++) {
     if (i != leader_idx) {
       ASSERT_EQ(0, NumLoopIterations(i));
+      ASSERT_EQ(0, NumLoopIterations(i, BalanceThreadType::LEADER_REBALANCE));
     }
   }
   cluster_->mini_master(leader_idx)->Shutdown();
@@ -341,10 +384,13 @@ TEST_F(AutoRebalancerTest, NextLeaderResumesAutoRebalancing) {
     ASSERT_NE(leader_idx, new_leader_idx);
     auto iterations = NumLoopIterations(new_leader_idx);
     ASSERT_LT(0, iterations);
+
+    auto iterations_leader = NumLoopIterations(new_leader_idx, BalanceThreadType::LEADER_REBALANCE);
+    ASSERT_LT(0, iterations_leader);
   });
 }
 
-// Create a cluster that is initially balanced.
+// Create a cluster that is initially balanced and leader balanced.
 // Bring up another tserver, and verify that moves are scheduled,
 // since the cluster is no longer balanced.
 TEST_F(AutoRebalancerTest, MovesScheduledIfAddTserver) {
@@ -378,6 +424,8 @@ TEST_F(AutoRebalancerTest, MovesScheduledIfAddTserver) {
                               kNumTServers + 1);
     ASSERT_GT(bytes_fetched_in_new_tservers, 0);
   });
+
+  NO_FATALS(CheckNoMovesScheduled());
 }
 
 // A cluster with no tservers is balanced.
@@ -523,6 +571,8 @@ TEST_F(AutoRebalancerTest, TestMaxMovesPerServer) {
   // The average number of moves per tablet server should not exceed that specified.
   ASSERT_GE(FLAGS_auto_rebalancing_max_moves_per_server * cluster_->num_tablet_servers(),
       AggregateMetricCounts(open_copy_clients_by_uuid, 0, cluster_->num_tablet_servers()));
+
+  NO_FATALS(CheckNoLeaderMovesScheduled());
 }
 
 // Attempt rebalancing a cluster with unstable Raft configurations.
@@ -565,6 +615,8 @@ TEST_F(AutoRebalancerTest, AutoRebalancingUnstableCluster) {
                               cluster_->num_tablet_servers());
     ASSERT_GT(bytes_fetched_in_new_tservers, 0);
   });
+
+  NO_FATALS(CheckNoLeaderMovesScheduled());
 }
 
 // A cluster that cannot become healthy and meet the replication factor
@@ -598,7 +650,8 @@ TEST_F(AutoRebalancerTest, NoRebalancingIfReplicasRecovering) {
   const int kNumTablets = 4;
 
   cluster_opts_.num_tablet_servers = kNumTservers;
-  ASSERT_OK(CreateAndStartCluster());
+  bool auto_leader_rebalancing_enabled = false;
+  ASSERT_OK(CreateAndStartCluster(auto_leader_rebalancing_enabled));
   NO_FATALS(CheckAutoRebalancerStarted());
 
   CreateWorkloadTable(kNumTablets, /*num_replicas*/3);
@@ -620,12 +673,13 @@ TEST_F(AutoRebalancerTest, TestHandlingFailedTservers) {
   // Set a high timeout for an unresponsive tserver to be presumed dead,
   // so the TSManager believes it is still available.
   FLAGS_tserver_unresponsive_timeout_ms = 120 * 1000;
+  bool auto_leader_rebalancing_enabled = false; // Disable for testing.
 
   const int kNumTservers = 3;
   const int kNumTablets = 4;
 
   cluster_opts_.num_tablet_servers = kNumTservers;
-  ASSERT_OK(CreateAndStartCluster());
+  ASSERT_OK(CreateAndStartCluster(auto_leader_rebalancing_enabled));
   NO_FATALS(CheckAutoRebalancerStarted());
 
   CreateWorkloadTable(kNumTablets, /*num_replicas*/3);
@@ -675,6 +729,7 @@ TEST_F(AutoRebalancerTest, TestHandlingFailedTservers) {
   for (const auto& str : post_capture_logs.logged_msgs()) {
     ASSERT_STR_NOT_CONTAINS(str, "scheduled replica move failed to complete: Network error");
   }
+  NO_FATALS(CheckNoLeaderMovesScheduled());
 }
 
 // Test that we schedule moves even if some tablets belong to deleted tables.
@@ -687,7 +742,8 @@ TEST_F(AutoRebalancerTest, TestDeletedTables) {
   const int kNumTServers = 3;
   const int kNumTablets = 4;
   cluster_opts_.num_tablet_servers = kNumTServers;
-  ASSERT_OK(CreateAndStartCluster());
+  bool auto_leader_rebalancing_enabled = false; // Disable for testing.
+  ASSERT_OK(CreateAndStartCluster(auto_leader_rebalancing_enabled));
   NO_FATALS(CheckAutoRebalancerStarted());
 
   // Create some tablets across multiple tables, so we can test rebalancing
@@ -753,6 +809,7 @@ TEST_F(AutoRebalancerTest, TestDeletedTables) {
                    JoinStrings(deleted_tablet_ids, ","),
                    JoinStrings(tablets_on_new_ts, ","));
   }
+  NO_FATALS(CheckNoLeaderMovesScheduled());
 }
 
 } // namespace master
