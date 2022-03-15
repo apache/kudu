@@ -104,7 +104,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteRpcPerSec) {
     MonoDelta delta = end - begin;
     double qps = TARGET_QPS / delta.ToSeconds();
     LOG(INFO) << "Iteration " << t << " qps: " << qps;
-    ASSERT_LE(qps, TARGET_QPS * 1.2f);
+    ASSERT_LE(qps, TARGET_QPS * 1.25f);
   }
 }
 
