@@ -515,6 +515,36 @@ For troubleshooting tips on clock synchronisation with chronyd see
 link:https://chrony.tuxfamily.org/faq.html#_computer_is_not_synchronising[this
 useful guide].
 
+===== Notes on running `chronyd` in local reference mode
+When running Kudu cluster in an isolated network, it's possible to synchronize
+the clocks on all nodes with one another, but not necessarily to true time.
+The local clock of one dedicated server can be kept vaguely in line with true
+time by manual input, and other nodes will synchronize with that one. The
+`chronyd` at the dedicated server runs in
+link:https://chrony.tuxfamily.org/doc/3.4/chrony.conf.html#local[local reference mode],
+and `chronyd` at other nodes synchronize with it as with a regular true time
+reference.
+
+If using such a setup, it's not recommended to run any Kudu servers at the
+node where `chronyd` is running with local reference mode (at least for
+`chronyd` of version 3.4 and below). Otherwise, the following might happen:
+
+ - `chronyc tracking` reports that all is well, `Leap Status` is `Normal`
+ - `ntptime` reports that the local clock is out of sync
+ - `ntp_gettime() returns code 5 (ERROR)`
+ - `ntp_adjtime() returns code 5 (ERROR)` with `status 0x40 (UNSYNC)`
+
+With that, `kudu-master` and `kudu-tserver` fail to start, reporting an
+errors like below:
+
+----
+E0321 09:47:04.076095  2558 master_main.cc:40] Service unavailable: RunMasterServer() failed: Cannot initialize clock: timed out waiting for clock synchronisation: Error reading clock. Clock considered unsynchronized
+----
+
+----
+E0321 09:50:03.023491  2853 tablet_server_main.cc:40] Service unavailable: RunTabletServer() failed: Cannot initialize clock: timed out waiting for clock synchronisation: Error reading clock. Clock considered unsynchronized
+----
+
 ==== NTP Configuration Best Practices
 In order to provide stable time synchronization with low maximum error, follow
 these best NTP configuration best practices.
