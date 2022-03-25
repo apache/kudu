@@ -82,6 +82,11 @@ class Messenger;
 class ResultTracker;
 } // namespace rpc
 
+namespace tools {
+struct RunnerContext;
+Status CopyFromLocal(const RunnerContext& context);
+} // namespace tools
+
 namespace tablet {
 class AlterSchemaOpState;
 class OpDriver;
@@ -390,6 +395,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   void BeginTxnParticipantOp(int64_t txn_id, RegisteredTxnCallback began_txn_cb);
 
  private:
+  friend Status kudu::tools::CopyFromLocal(const kudu::tools::RunnerContext& context);
   friend class kudu::AlterTableTest;
   friend class RefCountedThreadSafe<TabletReplica>;
   friend class TabletReplicaTest;
@@ -399,6 +405,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   FRIEND_TEST(TabletReplicaTest, TestDMSAnchorPreventsLogGC);
   FRIEND_TEST(TabletReplicaTest, TestMRSAnchorPreventsLogGC);
   FRIEND_TEST(kudu::TxnOpDispatcherITest, LifecycleBasic);
+
+  // Only for CLI tools and tests.
+  TabletReplica();
 
   // A class to properly dispatch transactional write operations arriving
   // with TabletServerService::Write() RPC for the specified tablet replica.

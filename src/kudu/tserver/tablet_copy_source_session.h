@@ -91,18 +91,17 @@ struct ImmutableReadableBlockInfo {
   }
 };
 
+enum class TabletCopyMode {
+  REMOTE = 0,
+  LOCAL = 1
+};
+
 // A potential Learner must establish a TabletCopySourceSession with the leader in order
 // to fetch the needed superblock, blocks, and log segments.
 // This class is refcounted to make it easy to remove it from the session map
 // on expiration while it is in use by another thread.
 class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSession> {
  public:
-  TabletCopySourceSession(scoped_refptr<tablet::TabletReplica> tablet_replica,
-                          std::string session_id,
-                          std::string requestor_uuid,
-                          FsManager* fs_manager,
-                          TabletCopySourceMetrics* tablet_copy_metrics);
-
   // Initialize the session, including anchoring files (TODO) and fetching the
   // tablet superblock and list of WAL segments.
   //
@@ -115,13 +114,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   }
 
   // Return ID of tablet corresponding to this session.
-  const std::string& tablet_id() const;
-
-  // Return ID of session.
-  const std::string& session_id() const { return session_id_; }
-
-  // Return UUID of the requestor that initiated this session.
-  const std::string& requestor_uuid() const;
+  const std::string& tablet_id() const { return tablet_id_; }
 
   // Open block for reading, if it's not already open, and read some of it.
   // If maxlen is 0, we use a system-selected length for the data piece.
@@ -162,7 +155,11 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   // Check if a block is currently open.
   bool IsBlockOpenForTests(const BlockId& block_id) const;
 
- private:
+ protected:
+  TabletCopySourceSession(std::string tablet_id,
+                          FsManager* fs_manager,
+                          TabletCopySourceMetrics* tablet_copy_metrics);
+
   friend class RefCountedThreadSafe<TabletCopySourceSession>;
 
   typedef std::unordered_map<
@@ -172,10 +169,10 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
       BlockIdEqual> BlockMap;
   typedef std::unordered_map<uint64_t, ImmutableRWFileInfo*> LogMap;
 
-  ~TabletCopySourceSession();
+  virtual ~TabletCopySourceSession();
 
   // Internal helper method for Init().
-  Status InitOnce();
+  virtual Status InitOnce() = 0;
 
   // Returns an error if any directories in the tablet's directory group are
   // unhealthy and sets 'error_code' appropriately.
@@ -197,12 +194,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
                         ImmutableRWFileInfo** file_info,
                         TabletCopyErrorPB::Code* error_code);
 
-  // Unregister log anchor, if it's registered.
-  Status UnregisterAnchorIfNeededUnlocked();
-
-  const scoped_refptr<tablet::TabletReplica> tablet_replica_;
-  const std::string session_id_;
-  const std::string requestor_uuid_;
+  const std::string tablet_id_;
   FsManager* const fs_manager_;
 
   // Protects concurrent access to Init().
@@ -222,6 +214,45 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   TabletCopySourceMetrics* tablet_copy_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopySourceSession);
+};
+
+// Copy replica from remote peer.
+class RemoteTabletCopySourceSession : public TabletCopySourceSession {
+ public:
+  RemoteTabletCopySourceSession(scoped_refptr<tablet::TabletReplica> tablet_replica,
+                                std::string session_id,
+                                std::string requestor_uuid,
+                                FsManager* fs_manager,
+                                TabletCopySourceMetrics* tablet_copy_metrics);
+
+  ~RemoteTabletCopySourceSession() override;
+
+  // Return ID of session.
+  const std::string& session_id() const { return session_id_; }
+
+  // Return UUID of the requestor that initiated this session.
+  const std::string& requestor_uuid() const { return requestor_uuid_; }
+
+  // Unregister log anchor, if it's registered.
+  Status UnregisterAnchorIfNeededUnlocked();
+
+ private:
+  Status InitOnce() override;
+
+  scoped_refptr<tablet::TabletReplica> tablet_replica_;
+  const std::string session_id_;
+  const std::string requestor_uuid_;
+};
+
+// Copy replica from local file system.
+class LocalTabletCopySourceSession : public TabletCopySourceSession {
+ public:
+  LocalTabletCopySourceSession(std::string tablet_id,
+                               FsManager* fs_manager,
+                               TabletCopySourceMetrics* tablet_copy_metrics);
+
+ private:
+  Status InitOnce() override;
 };
 
 } // namespace tserver

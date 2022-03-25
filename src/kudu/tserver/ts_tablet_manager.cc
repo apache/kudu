@@ -924,8 +924,8 @@ void TSTabletManager::RunTabletCopy(
   //   to the leader.
   //
   // TODO(aserbin): make this robust and more optimal than it is now.
-  TabletCopyClient tc_client(tablet_id, fs_manager_, cmeta_manager_,
-                             server_->messenger(), &tablet_copy_metrics_);
+  RemoteTabletCopyClient tc_client(tablet_id, fs_manager_, cmeta_manager_,
+                                   server_->messenger(), &tablet_copy_metrics_);
 
   // Download and persist the remote superblock in TABLET_DATA_COPYING state.
   if (replacing_tablet) {

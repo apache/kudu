@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/gutil/macros.h"
@@ -48,6 +49,10 @@ class TSDescriptor;
 namespace rpc {
 class Messenger;
 } // namespace rpc
+
+namespace tools {
+class ToolTest_TestRebuildTserverByLocalReplicaCopy_Test;
+} // namespace tools
 
 namespace tserver {
 class MiniTabletServer;
@@ -215,6 +220,7 @@ class InternalMiniCluster : public MiniCluster {
       int idx) const override;
 
  private:
+  FRIEND_TEST(kudu::tools::ToolTest, TestRebuildTserverByLocalReplicaCopy);
 
   // Creates and starts the cluster masters.
   Status StartMasters();

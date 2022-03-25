@@ -106,7 +106,8 @@ using tablet::TabletReplica;
 using tablet::TabletSuperBlockPB;
 using tablet::WriteOpState;
 
-class TabletCopyTest : public KuduTabletTest {
+class TabletCopyTest : public KuduTabletTest,
+                       public ::testing::WithParamInterface<TabletCopyMode> {
  public:
   TabletCopyTest()
       : KuduTabletTest(Schema({ ColumnSchema("key", STRING),
@@ -231,8 +232,14 @@ class TabletCopyTest : public KuduTabletTest {
   }
 
   void InitSession() {
-    session_.reset(new TabletCopySourceSession(tablet_replica_.get(), "TestSession", "FakeUUID",
-                   fs_manager(), nullptr /* no metrics */));
+    if (GetParam() == TabletCopyMode::REMOTE) {
+      session_.reset(new RemoteTabletCopySourceSession(
+          tablet_replica_.get(), "TestSession", "FakeUUID",
+          fs_manager(), nullptr /* no metrics */));
+    } else {
+      session_.reset(new LocalTabletCopySourceSession(
+          tablet_replica_->tablet_id(), fs_manager(), nullptr /* no metrics */));
+    }
     ASSERT_OK(session_->Init());
   }
 
@@ -276,9 +283,13 @@ class TabletCopyTest : public KuduTabletTest {
   scoped_refptr<TabletCopySourceSession> session_;
 };
 
+INSTANTIATE_TEST_SUITE_P(TabletCopyTestModes, TabletCopyTest,
+                         testing::Values(TabletCopyMode::REMOTE,
+                                         TabletCopyMode::LOCAL));
+
 // Ensure that the serialized SuperBlock included in the TabletCopySourceSession is
 // equal to the serialized live superblock (on a quiesced tablet).
-TEST_F(TabletCopyTest, TestSuperBlocksEqual) {
+TEST_P(TabletCopyTest, TestSuperBlocksEqual) {
   // Compare content of superblocks.
   faststring session_buf;
   faststring tablet_buf;
@@ -307,7 +318,7 @@ TEST_F(TabletCopyTest, TestSuperBlocksEqual) {
 
 // Test fetching all files from tablet server, ensure the checksums for each
 // chunk and the total file sizes match.
-TEST_F(TabletCopyTest, TestBlocksEqual) {
+TEST_P(TabletCopyTest, TestBlocksEqual) {
   TabletSuperBlockPB tablet_superblock;
   ASSERT_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
   for (int i = 0; i < tablet_superblock.rowsets_size(); i++) {
@@ -351,7 +362,7 @@ TEST_F(TabletCopyTest, TestBlocksEqual) {
 
 // Ensure that blocks are still readable through the open session even
 // after they've been deleted.
-TEST_F(TabletCopyTest, TestBlocksAreFetchableAfterBeingDeleted) {
+TEST_P(TabletCopyTest, TestBlocksAreFetchableAfterBeingDeleted) {
   TabletSuperBlockPB tablet_superblock;
   ASSERT_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
 

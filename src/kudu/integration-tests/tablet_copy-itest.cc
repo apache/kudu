@@ -129,7 +129,7 @@ using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletSuperBlockPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::ListTabletsResponsePB_StatusAndSchemaPB;
-using kudu::tserver::TabletCopyClient;
+using kudu::tserver::RemoteTabletCopyClient;
 using std::atomic;
 using std::lock_guard;
 using std::mutex;
@@ -513,12 +513,11 @@ TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
 
   {
     // Start up a TabletCopyClient and open a tablet copy session.
-    TabletCopyClient tc_client(tablet_id, fs_manager.get(),
-                               cmeta_manager, cluster_->messenger(),
-                               nullptr /* no metrics */);
+    RemoteTabletCopyClient tc_client(tablet_id, fs_manager.get(),
+                                     cmeta_manager, cluster_->messenger(),
+                                     nullptr /* no metrics */);
     scoped_refptr<tablet::TabletMetadata> meta;
-    ASSERT_OK(tc_client.Start(cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
-                              &meta));
+    ASSERT_OK(tc_client.Start(cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(), &meta));
 
     // Tombstone the tablet on the remote!
     ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));

@@ -80,11 +80,15 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
 
   void Shutdown() override;
 
+  // Validate the data identifier in a FetchData request.
+  static Status ValidateFetchRequestDataId(const DataIdPB& data_id,
+                                           TabletCopyErrorPB::Code* app_error);
+
  private:
   struct SessionEntry {
-    explicit SessionEntry(scoped_refptr<TabletCopySourceSession> session_in);
+    explicit SessionEntry(scoped_refptr<RemoteTabletCopySourceSession> session_in);
 
-    scoped_refptr<TabletCopySourceSession> session;
+    scoped_refptr<RemoteTabletCopySourceSession> session;
     MonoTime last_accessed_time; // Time this session was last accessed.
     MonoDelta expire_timeout;
   };
@@ -94,11 +98,7 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
   // Look up session in session map.
   Status FindSessionUnlocked(const std::string& session_id,
                              TabletCopyErrorPB::Code* app_error,
-                             scoped_refptr<TabletCopySourceSession>* session) const;
-
-  // Validate the data identifier in a FetchData request.
-  static Status ValidateFetchRequestDataId(const DataIdPB& data_id,
-                                           TabletCopyErrorPB::Code* app_error);
+                             scoped_refptr<RemoteTabletCopySourceSession>* session) const;
 
   // Take note of session activity; Re-update the session timeout deadline.
   void ResetSessionExpirationUnlocked(const std::string& session_id);

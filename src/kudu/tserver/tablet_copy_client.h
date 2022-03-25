@@ -26,6 +26,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tserver/tablet_copy_source_session.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
@@ -37,7 +38,9 @@ class BlockId;
 class BlockIdPB;
 class FsManager;
 class HostPort;
+class Schema;
 class ThreadPool;
+class WritableFile;
 
 namespace consensus {
 class ConsensusMetadata;
@@ -47,6 +50,7 @@ class ConsensusStatePB;
 
 namespace fs {
 class BlockCreationTransaction;
+class WritableBlock;
 } // namespace fs
 
 namespace rpc {
@@ -79,19 +83,9 @@ struct TabletCopyClientMetrics {
 //
 class TabletCopyClient {
  public:
-
-  // Construct the tablet copy client.
-  //
-  // Objects behind raw pointers must remain valid until this object is destroyed.
-  TabletCopyClient(std::string tablet_id,
-                   FsManager* fs_manager,
-                   scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
-                   std::shared_ptr<rpc::Messenger> messenger,
-                   TabletCopyClientMetrics* tablet_copy_metrics);
-
   // Attempt to clean up resources on the remote end by sending an
   // EndTabletCopySession() RPC
-  ~TabletCopyClient();
+  virtual ~TabletCopyClient();
 
   // Pass in the existing metadata for a tombstoned tablet, which will be
   // replaced if validation checks pass in Start().
@@ -112,8 +106,16 @@ class TabletCopyClient {
   //
   // Upon success, tablet metadata will be created and the tablet will be
   // assigned to a data directory group.
-  Status Start(const HostPort& copy_source_addr,
-               scoped_refptr<tablet::TabletMetadata>* meta);
+  virtual Status Start(const HostPort& /*copy_source_addr*/,
+                       scoped_refptr<tablet::TabletMetadata>* /*meta*/) {
+    return Status::NotSupported("copy from remote peer not supported");
+  }
+
+  // Similar to above, but copy from local filesystem.
+  virtual Status Start(const std::string& /*tablet_id*/,
+                       scoped_refptr<tablet::TabletMetadata>* /*meta*/) {
+    return Status::NotSupported("copy from local filesystem not supported");
+  }
 
   // Runs a "full" tablet copy, copying the physical layout of a tablet
   // from the leader of the specified consensus configuration.
@@ -130,17 +132,26 @@ class TabletCopyClient {
   // WALs downloaded so far. Does nothing if called after Finish().
   Status Abort();
 
- private:
-  FRIEND_TEST(TabletCopyClientTest, TestNoBlocksAtStart);
-  FRIEND_TEST(TabletCopyClientTest, TestBeginEndSession);
-  FRIEND_TEST(TabletCopyClientTest, TestDownloadBlock);
-  FRIEND_TEST(TabletCopyClientTest, TestLifeCycle);
-  FRIEND_TEST(TabletCopyClientTest, TestVerifyData);
-  FRIEND_TEST(TabletCopyClientTest, TestDownloadBlockMayFail);
-  FRIEND_TEST(TabletCopyClientTest, TestDownloadWalMayFail);
-  FRIEND_TEST(TabletCopyClientTest, TestDownloadWalSegment);
-  FRIEND_TEST(TabletCopyClientTest, TestDownloadAllBlocks);
+ protected:
+  FRIEND_TEST(TabletCopyClientBasicTest, TestNoBlocksAtStart);
+  FRIEND_TEST(TabletCopyClientBasicTest, TestBeginEndSession);
+  FRIEND_TEST(TabletCopyClientBasicTest, TestDownloadBlock);
+  FRIEND_TEST(TabletCopyClientBasicTest, TestLifeCycle);
+  FRIEND_TEST(TabletCopyClientBasicTest, TestVerifyData);
+  FRIEND_TEST(TabletCopyClientBasicTest, TestDownloadBlockMayFail);
+  FRIEND_TEST(TabletCopyClientBasicTest, TestDownloadWalMayFail);
+  FRIEND_TEST(TabletCopyClientBasicTest, TestDownloadWalSegment);
+  FRIEND_TEST(TabletCopyClientBasicTest, TestDownloadAllBlocks);
   FRIEND_TEST(TabletCopyClientAbortTest, TestAbort);
+
+  // Construct the tablet copy client.
+  //
+  // Objects behind raw pointers must remain valid until this object is destroyed.
+  TabletCopyClient(std::string tablet_id,
+                   FsManager* dst_fs_manager,
+                   scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
+                   std::shared_ptr<rpc::Messenger> messenger,
+                   TabletCopyClientMetrics* dst_tablet_copy_metrics);
 
   // State machine that guides the progression of a single tablet copy.
   // A tablet copy will go through the states:
@@ -180,6 +191,8 @@ class TabletCopyClient {
 
   // End the tablet copy session.
   Status EndRemoteSession();
+
+  Status InitTabletMeta(const Schema& schema, const std::string& copy_peer_uuid);
 
   // Download all WAL files in parallel.
   Status DownloadWALs();
@@ -244,15 +257,8 @@ class TabletCopyClient {
   Status DownloadBlock(const BlockId& old_block_id,
                        BlockId* new_block_id);
 
-  // Download a single remote file. The block and WAL implementations delegate
-  // to this method when downloading files.
-  //
-  // An Appendable is typically a WritableBlock (block) or WritableFile (WAL).
-  //
-  // Only used in one compilation unit, otherwise the implementation would
-  // need to be in the header.
-  template<class Appendable>
-  Status DownloadFile(const DataIdPB& data_id, Appendable* appendable);
+  virtual Status TransferFile(const DataIdPB& data_id, fs::WritableBlock* appendable) = 0;
+  virtual Status TransferFile(const DataIdPB& data_id, WritableFile* appendable) = 0;
 
   Status VerifyData(uint64_t offset, const DataChunkPB& chunk);
 
@@ -266,7 +272,7 @@ class TabletCopyClient {
 
   // Set-once members.
   const std::string tablet_id_;
-  FsManager* const fs_manager_;
+  FsManager* const dst_fs_manager_;
   const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
   const std::shared_ptr<rpc::Messenger> messenger_;
 
@@ -296,7 +302,7 @@ class TabletCopyClient {
 
   Random rng_;
 
-  TabletCopyClientMetrics* tablet_copy_metrics_;
+  TabletCopyClientMetrics* dst_tablet_copy_metrics_;
 
   // Block transaction for the tablet copy.
   std::unique_ptr<fs::BlockCreationTransaction> transaction_;
@@ -309,6 +315,62 @@ class TabletCopyClient {
   simple_spinlock simple_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);
+};
+
+class RemoteTabletCopyClient : public TabletCopyClient {
+ public:
+  RemoteTabletCopyClient(
+      std::string tablet_id,
+      FsManager* dst_fs_manager,
+      scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
+      std::shared_ptr<rpc::Messenger> messenger,
+      TabletCopyClientMetrics* dst_tablet_copy_metrics);
+
+  ~RemoteTabletCopyClient() override;
+
+  Status Start(const HostPort& copy_source_addr,
+               scoped_refptr<tablet::TabletMetadata>* meta) override;
+
+ private:
+  Status TransferFile(const DataIdPB& data_id, fs::WritableBlock* appendable) override;
+  Status TransferFile(const DataIdPB& data_id, WritableFile* appendable) override;
+
+  // Download a single remote file. The block and WAL implementations delegate
+  // to this method when downloading files.
+  //
+  // An Appendable is typically a fs::WritableBlock (block) or WritableFile (WAL).
+  //
+  // Only used in one compilation unit, otherwise the implementation would
+  // need to be in the header.
+  template<class Appendable>
+  Status DownloadFile(const DataIdPB& data_id, Appendable* appendable);
+};
+
+class LocalTabletCopyClient : public TabletCopyClient {
+ public:
+  LocalTabletCopyClient(
+      std::string tablet_id,
+      FsManager* dst_fs_manager,
+      scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
+      std::shared_ptr<rpc::Messenger> messenger,
+      TabletCopyClientMetrics* dst_tablet_copy_metrics,
+      FsManager* src_fs_manager,
+      TabletCopySourceMetrics* src_tablet_copy_metrics);
+
+  Status Start(const std::string& tablet_id,
+               scoped_refptr<tablet::TabletMetadata>* meta) override;
+
+ private:
+  Status TransferFile(const DataIdPB& data_id, fs::WritableBlock* appendable) override;
+  Status TransferFile(const DataIdPB& data_id, WritableFile* appendable) override;
+
+  // Similar to RemoteTabletCopyClient::DownloadFile, but copy file from local filesystem.
+  template<class Appendable>
+  Status CopyFile(const DataIdPB& data_id, Appendable* appendable);
+
+  FsManager* const src_fs_manager_;
+  TabletCopySourceMetrics* src_tablet_copy_metrics_;
+  scoped_refptr<TabletCopySourceSession> session_;
 };
 
 } // namespace tserver

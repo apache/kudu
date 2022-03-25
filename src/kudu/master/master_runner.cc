@@ -84,7 +84,7 @@ using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
 using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletMetadata;
-using kudu::tserver::TabletCopyClient;
+using kudu::tserver::RemoteTabletCopyClient;
 using kudu::tserver::TSTabletManager;
 using std::set;
 using std::string;
@@ -314,8 +314,9 @@ Status ClearLocalSystemCatalogAndCopy(const HostPort& src_hp) {
   LOG(INFO) << "Copying system tablet from " << src_hp.ToString();
   std::shared_ptr<rpc::Messenger> messenger;
   RETURN_NOT_OK(rpc::MessengerBuilder("tablet_copy_client").Build(&messenger));
-  TabletCopyClient copy_client(SysCatalogTable::kSysCatalogTabletId, &fs_manager, cmeta_manager,
-                               messenger, nullptr /* no metrics */);
+  RemoteTabletCopyClient copy_client(SysCatalogTable::kSysCatalogTabletId,
+                                     &fs_manager, cmeta_manager,
+                                     messenger, nullptr /* no metrics */);
   RETURN_NOT_OK(copy_client.Start(src_hp, /*meta*/nullptr));
   RETURN_NOT_OK(copy_client.FetchAll(/*tablet_replica*/nullptr));
   return copy_client.Finish();

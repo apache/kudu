@@ -22,6 +22,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -77,13 +78,16 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 
 namespace kudu {
 namespace rpc {
@@ -112,6 +116,30 @@ DEFINE_bool(ignore_nonexistent, false,
             "Whether to ignore non-existent tablet replicas when deleting: if "
             "set to 'true', the tool does not report an error if the requested "
             "tablet replica to remove is not found");
+DEFINE_string(src_fs_wal_dir, "",
+              "Source: Directory with write-ahead logs.");
+DEFINE_string(src_fs_data_dirs, "",
+              "Source: Comma-separated list of directories with data blocks. If this "
+              "is not specified, --src_fs_wal_dir will be used as the sole data "
+              "block directory.");
+DEFINE_string(src_fs_metadata_dir, "",
+              "Source: Directory with metadata. If this is not specified, for "
+              "compatibility with Kudu 1.6 and below, Kudu will check the "
+              "first entry of --dst_fs_data_dirs for metadata and use it as the "
+              "metadata directory if any exists. If none exists, --dst_fs_wal_dir "
+              "will be used as the metadata directory.");
+DEFINE_string(dst_fs_wal_dir, "",
+              "Destination: Directory with write-ahead logs.");
+DEFINE_string(dst_fs_data_dirs, "",
+              "Destination: Comma-separated list of directories with data blocks. If this "
+              "is not specified, --dst_fs_wal_dir will be used as the sole data "
+              "block directory.");
+DEFINE_string(dst_fs_metadata_dir, "",
+              "Destination: Directory with metadata. If this is not specified, for "
+              "compatibility with Kudu 1.6 and below, Kudu will check the "
+              "first entry of --dst_fs_data_dirs for metadata and use it as the "
+              "metadata directory if any exists. If none exists, --dst_fs_wal_dir "
+              "will be used as the metadata directory.");;
 
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
 
@@ -133,13 +161,16 @@ using kudu::tablet::RowIteratorOptions;
 using kudu::tablet::RowSetMetadata;
 using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletMetadata;
+using kudu::tablet::TabletReplica;
+using kudu::tserver::LocalTabletCopyClient;
+using kudu::tserver::RemoteTabletCopyClient;
 using kudu::tserver::TSTabletManager;
-using kudu::tserver::TabletCopyClient;
 using std::cout;
 using std::endl;
 using std::map;
 using std::pair;
 using std::shared_ptr;
+using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -168,6 +199,7 @@ constexpr const char* const kRaftPeersArgDesc =
 string Indent(int indent) {
   return string(indent, ' ');
 }
+} // anonymous namespace
 
 Status FsInit(bool skip_block_manager, unique_ptr<FsManager>* fs_manager) {
   FsManagerOpts fs_opts;
@@ -398,11 +430,66 @@ Status CopyFromRemote(const RunnerContext& context) {
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
   shared_ptr<Messenger> messenger;
   RETURN_NOT_OK(BuildMessenger("tablet_copy_client", &messenger));
-  TabletCopyClient client(tablet_id, &fs_manager, cmeta_manager,
-                          messenger, nullptr /* no metrics */);
+  RemoteTabletCopyClient client(tablet_id, &fs_manager, cmeta_manager,
+                                messenger, nullptr /* no metrics */);
   RETURN_NOT_OK(client.Start(hp, nullptr));
   RETURN_NOT_OK(client.FetchAll(nullptr));
   return client.Finish();
+}
+
+Status CopyFromLocal(const RunnerContext& context) {
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+
+  FsManagerOpts src_fs_mgr_opt;
+  src_fs_mgr_opt.wal_root = FLAGS_src_fs_wal_dir;
+  src_fs_mgr_opt.metadata_root = FLAGS_src_fs_metadata_dir;
+  src_fs_mgr_opt.data_roots = strings::Split(FLAGS_src_fs_data_dirs, ",", strings::SkipEmpty());
+  FsManager src_fs_manager(Env::Default(), src_fs_mgr_opt);
+  RETURN_NOT_OK(src_fs_manager.Open());
+
+  vector<string> tablet_ids;
+  RETURN_NOT_OK(src_fs_manager.ListTabletIds(&tablet_ids));
+  set<string> tablet_ids_set(tablet_ids.begin(), tablet_ids.end());
+  if (!ContainsKey(tablet_ids_set, tablet_id)) {
+    return Status::NotFound("There is no matched tablet");
+  }
+
+  FsManagerOpts dst_fs_mgr_opt;
+  dst_fs_mgr_opt.wal_root = FLAGS_dst_fs_wal_dir;
+  dst_fs_mgr_opt.metadata_root = FLAGS_dst_fs_metadata_dir;
+  dst_fs_mgr_opt.data_roots = strings::Split(FLAGS_dst_fs_data_dirs, ",", strings::SkipEmpty());
+
+  FsManager dst_fs_manager(Env::Default(), dst_fs_mgr_opt);
+  RETURN_NOT_OK(dst_fs_manager.Open());
+  scoped_refptr<ConsensusMetadataManager> dst_cmeta_manager(
+      new ConsensusMetadataManager(&dst_fs_manager));
+
+  LocalTabletCopyClient client(tablet_id,
+                               &dst_fs_manager,
+                               dst_cmeta_manager,
+                               /* messenger */ nullptr,
+                               /* tablet_copy_client_metrics */ nullptr,
+                               &src_fs_manager,
+                               /* tablet_copy_source_metrics */ nullptr);
+
+  // Create a fake replica to obtain copy process periodically.
+  scoped_refptr<TabletReplica> fake_replica(new TabletReplica());
+  CountDownLatch latch(1);
+  scoped_refptr<Thread> check_thread;
+  RETURN_NOT_OK(Thread::Create("Kudu-tool", "check_progress",
+                               [&latch, fake_replica]() {
+                                 while (!latch.WaitFor(MonoDelta::FromSeconds(10))) {
+                                   LOG(INFO) << fake_replica->last_status();
+                                }
+      }, &check_thread));
+
+  RETURN_NOT_OK(client.Start(tablet_id, /* meta */ nullptr));
+  RETURN_NOT_OK(client.FetchAll(fake_replica));
+  RETURN_NOT_OK(client.Finish());
+  latch.CountDown();
+  check_thread->Join();
+
+  return Status::OK();
 }
 
 Status DeleteLocalReplica(const string& tablet_id,
@@ -898,8 +985,6 @@ unique_ptr<Mode> BuildDumpMode() {
       .Build();
 }
 
-} // anonymous namespace
-
 unique_ptr<Mode> BuildLocalReplicaMode() {
   unique_ptr<Action> print_replica_uuids =
       ActionBuilder("print_replica_uuids", &PrintReplicaUuids)
@@ -954,6 +1039,20 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("tablet_copy_download_threads_nums_per_session")
       .Build();
 
+  unique_ptr<Action> copy_from_local =
+      ActionBuilder("copy_from_local", &CopyFromLocal)
+      .Description("Copy a tablet replica from local filesystem. Before using this tool, you "
+          "MUST stop the master/tserver you want to copy from, and make sure --src_*_dir(s) and "
+          "--dst_*_dir(s) are exactly what whey should be.")
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddOptionalParameter("src_fs_wal_dir")
+      .AddOptionalParameter("src_fs_metadata_dir")
+      .AddOptionalParameter("src_fs_data_dirs")
+      .AddOptionalParameter("dst_fs_wal_dir")
+      .AddOptionalParameter("dst_fs_metadata_dir")
+      .AddOptionalParameter("dst_fs_data_dirs")
+      .Build();
+
   unique_ptr<Action> list =
       ActionBuilder("list", &ListLocalReplicas)
       .Description("Show list of tablet replicas in the local filesystem")
@@ -988,6 +1087,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
   return ModeBuilder("local_replica")
       .Description("Operate on local tablet replicas via the local filesystem")
       .AddMode(std::move(cmeta))
+      .AddAction(std::move(copy_from_local))
       .AddAction(std::move(copy_from_remote))
       .AddAction(std::move(data_size))
       .AddAction(std::move(delete_local_replica))

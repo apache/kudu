@@ -126,8 +126,8 @@ class TabletCopyTest : public TabletServerTestBase {
     return tablet_replica_->permanent_uuid();
   }
 
-  const std::string& GetTabletId() const {
-    return tablet_replica_->tablet()->tablet_id();
+  virtual const std::string& GetTabletId() const {
+    return tablet_replica_->tablet_id();
   }
 
   // Read a block file from the file system fully into memory and return a

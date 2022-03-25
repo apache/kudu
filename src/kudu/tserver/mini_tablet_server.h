@@ -28,6 +28,7 @@ namespace kudu {
 class HostPort;
 class Schema;
 class Status;
+struct FsManagerOpts;
 
 namespace consensus {
 class RaftConfigPB;
@@ -99,6 +100,9 @@ class MiniTabletServer {
   bool is_started() const { return server_ ? true : false; }
 
   void FailHeartbeats();
+
+  static void InitFsOpts(int num_data_dirs, const std::string& fs_root,
+                         FsManagerOpts* fs_opts);
 
  private:
   const std::string fs_root_;

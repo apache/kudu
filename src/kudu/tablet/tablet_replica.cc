@@ -186,6 +186,13 @@ TabletReplica::TabletReplica(
       last_status_("Tablet initializing...") {
 }
 
+TabletReplica::TabletReplica()
+    : apply_pool_(nullptr),
+      reload_txn_status_tablet_pool_(nullptr),
+      state_(SHUTDOWN),
+      last_status_("Fake replica created") {
+}
+
 TabletReplica::~TabletReplica() {
   // We are required to call Shutdown() before destroying a TabletReplica.
   CHECK(state_ == SHUTDOWN || state_ == FAILED)

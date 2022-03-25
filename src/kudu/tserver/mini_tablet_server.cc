@@ -72,16 +72,23 @@ MiniTabletServer::MiniTabletServer(string fs_root,
   opts_.rpc_opts.rpc_bind_addresses = rpc_bind_addr.ToString();
   opts_.webserver_opts.bind_interface = rpc_bind_addr.host();
   opts_.webserver_opts.port = 0;
+  InitFsOpts(num_data_dirs, fs_root_, &opts_.fs_opts);
+}
+
+void MiniTabletServer::InitFsOpts(int num_data_dirs, const string& fs_root,
+                                  FsManagerOpts* fs_opts) {
+  CHECK(fs_opts);
   if (num_data_dirs == 1) {
-    opts_.fs_opts.wal_root = fs_root_;
-    opts_.fs_opts.data_roots = { fs_root_ };
+    fs_opts->wal_root = fs_root;
+    fs_opts->data_roots = { fs_root };
   } else {
     vector<string> fs_data_dirs;
+    fs_data_dirs.reserve(num_data_dirs);
     for (int dir = 0; dir < num_data_dirs; dir++) {
-      fs_data_dirs.emplace_back(JoinPathSegments(fs_root_, Substitute("data-$0", dir)));
+      fs_data_dirs.emplace_back(JoinPathSegments(fs_root, Substitute("data-$0", dir)));
     }
-    opts_.fs_opts.wal_root = JoinPathSegments(fs_root_, "wal");
-    opts_.fs_opts.data_roots = fs_data_dirs;
+    fs_opts->wal_root = JoinPathSegments(fs_root, "wal");
+    fs_opts->data_roots = fs_data_dirs;
   }
 }
 

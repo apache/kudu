@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstring>
 #include <sys/stat.h>
 
 #include <algorithm>
@@ -291,7 +292,7 @@ class ToolTest : public KuduTest {
     Status s = RunTool(arg_str, stdout, &stderr, nullptr, nullptr);
     SCOPED_TRACE(*stdout);
     SCOPED_TRACE(stderr);
-    ASSERT_OK(s);
+    ASSERT_TRUE(s.ok()) << arg_str;
   }
 
   void RunActionStdinStdoutString(const string& arg_str, const string& stdin,
@@ -663,6 +664,14 @@ class ToolTest : public KuduTest {
     ASSERT_STR_CONTAINS(stderr, expect_err);
   }
 
+  string GetMasterAddrsStr() {
+    vector<string> master_addrs;
+    for (const auto& hp : mini_cluster_->master_rpc_addrs()) {
+      master_addrs.emplace_back(hp.ToString());
+    }
+    return JoinStrings(master_addrs, ",");
+  }
+
  protected:
   // Note: Each test case must have a single invocation of RunLoadgen() otherwise it leads to
   //       memory leaks.
@@ -673,6 +682,7 @@ class ToolTest : public KuduTest {
                   string* tool_stderr = nullptr);
   void StartExternalMiniCluster(ExternalMiniClusterOptions opts = {});
   void StartMiniCluster(InternalMiniClusterOptions opts = {});
+  void StopMiniCluster();
   unique_ptr<ExternalMiniCluster> cluster_;
   unique_ptr<MiniClusterFsInspector> inspect_;
   unordered_map<string, TServerDetails*> ts_map_;
@@ -970,6 +980,10 @@ void ToolTest::StartMiniCluster(InternalMiniClusterOptions opts) {
   ASSERT_OK(mini_cluster_->Start());
 }
 
+void ToolTest::StopMiniCluster() {
+  mini_cluster_->Shutdown();
+}
+
 TEST_F(ToolTest, TestHelpXML) {
   string stdout;
   string stderr;
@@ -1088,7 +1102,8 @@ TEST_F(ToolTest, TestModeHelp) {
         "cmeta.*Operate on a local tablet replica's consensus",
         "data_size.*Summarize the data size",
         "dump.*Dump a Kudu filesystem",
-        "copy_from_remote.*Copy a tablet replica",
+        "copy_from_remote.*Copy a tablet replica from a remote server",
+        "copy_from_local.*Copy a tablet replica from local filesystem",
         "delete.*Delete tablet replicas from the local filesystem",
         "list.*Show list of tablet replicas",
     };
@@ -1122,6 +1137,16 @@ TEST_F(ToolTest, TestModeHelp) {
                           kLocalReplicaCopyFromRemoteRegexes));
     // Try with hyphens instead of underscores.
     NO_FATALS(RunTestHelp("local-replica copy-from-remote --help",
+                          kLocalReplicaCopyFromRemoteRegexes));
+  }
+  {
+    const vector<string> kLocalReplicaCopyFromRemoteRegexes = {
+        "Copy a tablet replica from local filesystem",
+    };
+    NO_FATALS(RunTestHelp("local_replica copy_from_local --help",
+                          kLocalReplicaCopyFromRemoteRegexes));
+    // Try with hyphens instead of underscores.
+    NO_FATALS(RunTestHelp("local-replica copy-from-local --help",
                           kLocalReplicaCopyFromRemoteRegexes));
   }
   {
@@ -6845,7 +6870,9 @@ TEST_P(ControlShellToolTest, TestControlShell) {
 }
 
 static void CreateTableWithFlushedData(const string& table_name,
-                                       InternalMiniCluster* cluster) {
+                                       InternalMiniCluster* cluster,
+                                       int num_tablets = 1,
+                                       int num_replicas = 1) {
   // Use a schema with a high number of columns to encourage the creation of
   // many data blocks.
   KuduSchemaBuilder schema_builder;
@@ -6865,10 +6892,11 @@ static void CreateTableWithFlushedData(const string& table_name,
   TestWorkload workload(cluster);
   workload.set_schema(schema);
   workload.set_table_name(table_name);
-  workload.set_num_replicas(1);
+  workload.set_num_tablets(num_tablets);
+  workload.set_num_replicas(num_replicas);
   workload.Setup();
   workload.Start();
-  ASSERT_EVENTUALLY([&](){
+  ASSERT_EVENTUALLY([&]() {
     ASSERT_GE(workload.rows_inserted(), 10000);
   });
   workload.StopAndJoin();
@@ -7728,6 +7756,7 @@ TEST_F(ToolTest, TestNonDefaultPrincipal) {
                          "--sasl_protocol_name=oryx",
                          HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())}));
 }
+
 class UnregisterTServerTest : public ToolTest, public ::testing::WithParamInterface<bool> {
  public:
   void StartCluster() {
@@ -7735,14 +7764,6 @@ class UnregisterTServerTest : public ToolTest, public ::testing::WithParamInterf
     InternalMiniClusterOptions opts;
     opts.num_masters = 3;
     StartMiniCluster(std::move(opts));
-  }
-
-  string GetMasterAddrsStr() {
-    vector<string> master_addrs;
-    for (const auto& hp : mini_cluster_->master_rpc_addrs()) {
-      master_addrs.emplace_back(hp.ToString());
-    }
-    return JoinStrings(master_addrs, ",");
   }
 };
 
@@ -7862,6 +7883,187 @@ TEST_F(UnregisterTServerTest, TestUnregisterTServerNotPresumedDead) {
     NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", master_addrs_str), &out));
     ASSERT_STR_NOT_CONTAINS(out, ts_uuid);
   }
+}
+
+TEST_F(ToolTest, TestLocalReplicaCopyLocal) {
+  // Create replicas and fill some data.
+  InternalMiniClusterOptions opts;
+  opts.num_data_dirs = 3;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+  NO_FATALS(CreateTableWithFlushedData("tablename", mini_cluster_.get()));
+
+  string tablet_id;
+  string src_fs_paths_with_prefix;
+  string src_fs_paths;
+  {
+    tablet_id = mini_cluster_->mini_tablet_server(0)->ListTablets()[0];
+
+    // Obtain source filesystem options.
+    auto fs_manager = mini_cluster_->mini_tablet_server(0)->server()->fs_manager();
+    string src_fs_wal_dir = fs_manager->GetWalsRootDir();
+    src_fs_wal_dir = src_fs_wal_dir.substr(0, src_fs_wal_dir.length() - strlen("/wals"));
+    string src_fs_data_dirs = JoinMapped(fs_manager->GetDataRootDirs(),
+        [] (const string& data_dir) {
+          return data_dir.substr(0, data_dir.length() - strlen("/data"));
+        }, ",");
+    src_fs_paths_with_prefix = "--src_fs_wal_dir=" + src_fs_wal_dir + " "
+                               "--src_fs_data_dirs=" + src_fs_data_dirs;
+    src_fs_paths = "--fs_wal_dir=" + src_fs_wal_dir + " "
+                   "--fs_data_dirs=" + src_fs_data_dirs;
+  }
+
+  string dst_fs_paths_with_prefix;
+  string dst_fs_paths;
+  {
+    // Build destination filesystem layout, and obtain filesystem options.
+    const string kTestDstDir = GetTestPath("dst_test");
+    unique_ptr<FsManager> dst_fs_manager =
+        std::make_unique<FsManager>(Env::Default(), FsManagerOpts(kTestDstDir));
+    ASSERT_OK(dst_fs_manager->CreateInitialFileSystemLayout());
+    ASSERT_OK(dst_fs_manager->Open());
+    dst_fs_paths_with_prefix = "--dst_fs_wal_dir=" + kTestDstDir + " "
+                               "--dst_fs_data_dirs=" + kTestDstDir;
+    dst_fs_paths = "--fs_wal_dir=" + kTestDstDir + " "
+                   "--fs_data_dirs=" + kTestDstDir;
+  }
+
+  string encryption_args = env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "";
+
+  // Copy replica from local filesystem failed, because the tserver on source filesystem
+  // is still running.
+  string stdout;
+  string stderr;
+  Status s = RunActionStdoutStderrString(
+      Substitute("local_replica copy_from_local $0 $1 $2 $3",
+                 tablet_id, src_fs_paths_with_prefix, dst_fs_paths_with_prefix, encryption_args),
+      &stdout, &stderr);
+  SCOPED_TRACE(stdout);
+  SCOPED_TRACE(stderr);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_MATCHES(stderr,
+                     "failed to load instance files: Could not lock instance file. "
+                     "Make sure that Kudu is not already running");
+
+  // Shutdown mini cluster and copy replica from local filesystem successfully.
+  mini_cluster_->Shutdown();
+  NO_FATALS(RunActionStdoutString(
+      Substitute("local_replica copy_from_local $0 $1 $2 $3",
+                 tablet_id, src_fs_paths_with_prefix, dst_fs_paths_with_prefix, encryption_args),
+      &stdout));
+  SCOPED_TRACE(stdout);
+
+  // Check the source and destination data is matched.
+  string src_stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("local_replica data_size $0 $1 $2",
+                 tablet_id, src_fs_paths, encryption_args), &src_stdout));
+  SCOPED_TRACE(src_stdout);
+
+  string dst_stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("local_replica data_size $0 $1 $2",
+                 tablet_id, dst_fs_paths, encryption_args), &dst_stdout));
+  SCOPED_TRACE(dst_stdout);
+
+  ASSERT_EQ(src_stdout, dst_stdout);
+}
+
+TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {
+  // Create replicas and fill some data.
+  const int kNumTserver = 3;
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTserver;
+  // The source filesystem has only 1 data directory.
+  opts.num_data_dirs = 1;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+  NO_FATALS(CreateTableWithFlushedData("tablename", mini_cluster_.get(), 8, 3));
+
+  // Obtain source cluster options.
+  const int kCopyTserverIndex = 2;
+  vector<string> tablet_ids = mini_cluster_->mini_tablet_server(kCopyTserverIndex)->ListTablets();
+  vector<HostPort> hps;
+  hps.reserve(mini_cluster_->num_tablet_servers());
+  for (int i = 0; i < mini_cluster_->num_tablet_servers(); ++i) {
+    hps.emplace_back(HostPort(mini_cluster_->mini_tablet_server(i)->bound_rpc_addr()));
+  }
+  auto fs_manager = mini_cluster_->mini_tablet_server(kCopyTserverIndex)->server()->fs_manager();
+  string src_fs_wal_dir = fs_manager->GetWalsRootDir();
+  src_fs_wal_dir = src_fs_wal_dir.substr(0, src_fs_wal_dir.length() - strlen("/wals"));
+  string src_fs_data_dirs = JoinMapped(fs_manager->GetDataRootDirs(),
+      [] (const string& data_dir) {
+        return data_dir.substr(0, data_dir.length() - strlen("/data"));
+      }, ",");
+  string src_fs_paths_with_prefix = "--src_fs_wal_dir=" + src_fs_wal_dir + " "
+                                    "--src_fs_data_dirs=" + src_fs_data_dirs;
+  string src_fs_paths = "--fs_wal_dir=" + src_fs_wal_dir + " "
+                        "--fs_data_dirs=" + src_fs_data_dirs;
+
+  // Build destination filesystem layout with source fs uuid, and obtain filesystem options.
+  string dst_fs_paths_with_prefix;
+  string src_tserver_fs_root = mini_cluster_->GetTabletServerFsRoot(kCopyTserverIndex);
+  string dst_tserver_fs_root = mini_cluster_->GetTabletServerFsRoot(kNumTserver);
+  {
+    FsManagerOpts fs_opts;
+    // The new fs layout has 3 data directories.
+    MiniTabletServer::InitFsOpts(3, dst_tserver_fs_root, &fs_opts);
+    string dst_fs_wal_dir = fs_opts.wal_root;
+    string dst_fs_data_dirs = JoinMapped(fs_opts.data_roots,
+        [] (const string& data_root) {
+          return data_root;
+        }, ",");
+    string dst_fs_paths = "--fs_wal_dir=" + dst_fs_wal_dir + " "
+                          "--fs_data_dirs=" + dst_fs_data_dirs;
+    ASSERT_OK(Env::Default()->CreateDir(dst_tserver_fs_root));
+    // Use 'kudu fs format' with '--uuid' to format the new data directories.
+    NO_FATALS(RunActionStdoutNone(Substitute("fs format $0 --uuid=$1",
+                                             dst_fs_paths, fs_manager->uuid())));
+    dst_fs_paths_with_prefix = "--dst_fs_wal_dir=" + dst_fs_wal_dir + " "
+                               "--dst_fs_data_dirs=" + dst_fs_data_dirs;
+  }
+
+  // Shutdown the cluster before copying.
+  NO_FATALS(StopMiniCluster());
+
+  // Copy source tserver's all replicas from local filesystem.
+  string encryption_args = env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "";
+  for (const auto& tablet_id : tablet_ids) {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(Substitute("local_replica copy_from_local $0 $1 $2 $3",
+                                               tablet_id,
+                                               src_fs_paths_with_prefix,
+                                               dst_fs_paths_with_prefix,
+                                               encryption_args),
+                                    &stdout));
+    SCOPED_TRACE(stdout);
+  }
+
+  // Replace the old data/wal dirs with the new ones.
+  ASSERT_OK(Env::Default()->RenameFile(src_tserver_fs_root, src_tserver_fs_root + ".bak"));
+  ASSERT_OK(Env::Default()->RenameFile(dst_tserver_fs_root, src_tserver_fs_root));
+
+  // Start masters only.
+  mini_cluster_->opts_.num_tablet_servers = 0;
+  NO_FATALS(mini_cluster_->Start());
+  // Then start tserver with old host:port.
+  ASSERT_OK(mini_cluster_->AddTabletServer(hps[0]));
+  ASSERT_OK(mini_cluster_->AddTabletServer(hps[1]));
+  // The new tserver has 3 data directories.
+  mini_cluster_->opts_.num_data_dirs = 3;
+  ASSERT_OK(mini_cluster_->AddTabletServer(hps[2]));
+  // Wait all tserver start normally.
+  ASSERT_OK(mini_cluster_->WaitForTabletServerCount(3));
+  for (int i = 0; i < mini_cluster_->num_tablet_servers(); ++i) {
+    ASSERT_OK(mini_cluster_->mini_tablet_server(i)->WaitStarted());
+  }
+
+  // Restart the cluster, and check the cluster state is OK.
+  ASSERT_EVENTUALLY([&] {
+    string out;
+    string err;
+    Status s =
+        RunActionStdoutStderrString(Substitute("cluster ksck $0", GetMasterAddrsStr()), &out, &err);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ", err:\n" << err << ", out:\n" << out;
+  });
 }
 
 } // namespace tools
