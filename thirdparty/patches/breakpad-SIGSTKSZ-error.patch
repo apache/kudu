@@ -1,0 +1,11 @@
+--- src/client/linux/handler/exception_handler.cc	2022-04-01 18:31:33.463554421 +0200
++++ src/client/linux/handler/exception_handler.cc	2022-04-01 18:32:20.503739341 +0200
+@@ -138,7 +138,7 @@
+   // SIGSTKSZ may be too small to prevent the signal handlers from overrunning
+   // the alternative stack. Ensure that the size of the alternative stack is
+   // large enough.
+-  static const unsigned kSigStackSize = std::max(16384, SIGSTKSZ);
++  static const unsigned kSigStackSize = std::max(16384u, (unsigned)SIGSTKSZ);
+ 
+   // Only set an alternative stack if there isn't already one, or if the current
+   // one is too small.

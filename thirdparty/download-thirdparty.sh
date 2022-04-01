@@ -329,7 +329,7 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=5
+LLVM_PATCHLEVEL=6
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
@@ -338,7 +338,9 @@ fetch_and_patch \
   "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch" \
   "patch -p1 < $TP_DIR/patches/llvm-MicrosoftDemangleNodes-e0402b5c9813a2458b8dd3f640883110db280395.patch" \
   "patch -p0 < $TP_DIR/patches/llvm-iwyu-sized-deallocation.patch" \
-  "patch -d projects -p1 < $TP_DIR/patches/llvm-947f9692440836dcb8d88b74b69dd379d85974ce.patch"
+  "patch -d projects -p1 < $TP_DIR/patches/llvm-947f9692440836dcb8d88b74b69dd379d85974ce.patch" \
+  "patch -d projects -p1 < $TP_DIR/patches/llvm-remove-cyclades-inclusion-in-sanitizer.patch" \
+  "patch -p2 < $TP_DIR/patches/llvm-fix-missing-include.patch"
 
 LZ4_PATCHLEVEL=0
 fetch_and_patch \
@@ -364,13 +366,14 @@ fetch_and_patch \
  $BOOST_SOURCE \
  $BOOST_PATCHLEVEL
 
-BREAKPAD_PATCHLEVEL=2
+BREAKPAD_PATCHLEVEL=3
 fetch_and_patch \
  breakpad-${BREAKPAD_VERSION}.tar.gz \
  $BREAKPAD_SOURCE \
  $BREAKPAD_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-syscall-rsp-clobber-fix.patch"
+ "patch -p1 < $TP_DIR/patches/breakpad-syscall-rsp-clobber-fix.patch" \
+ "patch -p0 < $TP_DIR/patches/breakpad-SIGSTKSZ-error.patch"
 
 SPARSEHASH_PATCHLEVEL=3
 fetch_and_patch \
