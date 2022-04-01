@@ -62,11 +62,7 @@ class PartitionPruner {
 
   // Returns the number of partition key ranges remaining in the scan.
   size_t NumRangesRemaining() const {
-    size_t num_ranges = 0;
-    for (const auto& range: range_bounds_to_partition_key_ranges_) {
-      num_ranges += range.partition_key_ranges.size();
-    }
-    return num_ranges;
+    return partition_key_ranges_.size();
   }
 
   // Returns a text description of this partition pruner suitable for debug
@@ -85,11 +81,6 @@ class PartitionPruner {
   struct PartitionKeyRange {
     PartitionKey start;
     PartitionKey end;
-  };
-
-  struct RangeBoundsAndPartitionKeyRanges {
-    RangeBounds range_bounds;
-    std::vector<PartitionKeyRange> partition_key_ranges;
   };
 
   // Search all combinations of in-list and equality predicates.
@@ -126,10 +117,9 @@ class PartitionPruner {
     const PartitionSchema::RangesWithHashSchemas& ranges_with_custom_hash_schemas,
     PartitionSchema::RangesWithHashSchemas* ranges);
 
-  // A vector of a pair of lower and upper range bounds mapped to a reverse
-  // sorted set of partition key ranges. Each partition key range within the set
+  // The reverse sorted set of partition key ranges. Each range
   // has an inclusive lower bound and an exclusive upper bound.
-  std::vector<RangeBoundsAndPartitionKeyRanges> range_bounds_to_partition_key_ranges_;
+  std::vector<PartitionKeyRange> partition_key_ranges_;
 
   DISALLOW_COPY_AND_ASSIGN(PartitionPruner);
 };

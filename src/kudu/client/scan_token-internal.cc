@@ -462,7 +462,6 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
       pruner.RemovePartitionKeyRange(tablet->partition().end());
       continue;
     }
-
     vector<internal::RemoteReplica> replicas;
     tablet->GetRemoteReplicas(&replicas);
 

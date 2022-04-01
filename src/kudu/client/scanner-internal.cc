@@ -540,7 +540,7 @@ Status KuduScanner::Data::OpenTablet(const PartitionKey& partition_key,
     // it's likely that the tablet is undergoing a leader election and will
     // soon have one.
     if (lookup_status.IsServiceUnavailable() && MonoTime::Now() < deadline) {
-      // ServiceUnavailable means that we have already blacklisted all of the candidate
+      // ServiceUnavailable means that we have already blacklisted all the candidate
       // tablet servers. So, we clear the list so that we will cycle through them all
       // another time.
       blacklist->clear();

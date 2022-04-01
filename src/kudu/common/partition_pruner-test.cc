@@ -1161,7 +1161,6 @@ TEST_F(PartitionPrunerTest, DISABLED_TestHashSchemasPerRangePruning) {
 
   // No Bounds
   NO_FATALS(check({}, {}, {}, 12, 12));
-
   // A = 1
   NO_FATALS(check({ ColumnPredicate::Equality(schema.column(0), &one) },
             {}, {}, 7, 7));
