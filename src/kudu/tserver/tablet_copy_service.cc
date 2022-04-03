@@ -34,6 +34,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/server_base.h"
@@ -285,7 +286,7 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
 
   const DataIdPB& data_id = req->data_id();
   TabletCopyErrorPB::Code error_code = TabletCopyErrorPB::UNKNOWN_ERROR;
-  RPC_RETURN_NOT_OK(ValidateFetchRequestDataId(data_id, &error_code, session),
+  RPC_RETURN_NOT_OK(ValidateFetchRequestDataId(data_id, &error_code),
                     error_code, "Invalid DataId", context);
 
   DataChunkPB* data_chunk = resp->mutable_chunk();
@@ -368,8 +369,7 @@ Status TabletCopyServiceImpl::FindSessionUnlocked(
 
 Status TabletCopyServiceImpl::ValidateFetchRequestDataId(
         const DataIdPB& data_id,
-        TabletCopyErrorPB::Code* app_error,
-        const scoped_refptr<TabletCopySourceSession>& session) const {
+        TabletCopyErrorPB::Code* app_error) {
   if (PREDICT_FALSE(data_id.has_block_id() && data_id.has_wal_segment_seqno())) {
     *app_error = TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST;
     return Status::InvalidArgument(

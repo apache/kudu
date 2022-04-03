@@ -106,9 +106,9 @@ class TabletCopyServiceTest : public TabletCopyTest {
   }
 
   Status DoBeginValidTabletCopySession(string* session_id,
-                                            tablet::TabletSuperBlockPB* superblock = nullptr,
-                                            uint64_t* idle_timeout_millis = nullptr,
-                                            vector<uint64_t>* sequence_numbers = nullptr) {
+                                       tablet::TabletSuperBlockPB* superblock = nullptr,
+                                       uint64_t* idle_timeout_millis = nullptr,
+                                       vector<uint64_t>* sequence_numbers = nullptr) {
     BeginTabletCopySessionResponsePB resp;
     RpcController controller;
     RETURN_NOT_OK(DoBeginTabletCopySession(GetTabletId(), GetLocalUUID(), &resp, &controller));
@@ -218,9 +218,9 @@ TEST_F(TabletCopyServiceTest, TestSimpleBeginEndSession) {
   uint64_t idle_timeout_millis;
   vector<uint64_t> segment_seqnos;
   ASSERT_OK(DoBeginValidTabletCopySession(&session_id,
-                                               &superblock,
-                                               &idle_timeout_millis,
-                                               &segment_seqnos));
+                                          &superblock,
+                                          &idle_timeout_millis,
+                                          &segment_seqnos));
   // Basic validation of returned params.
   ASSERT_FALSE(session_id.empty());
   ASSERT_EQ(FLAGS_tablet_copy_idle_timeout_sec * 1000, idle_timeout_millis);
