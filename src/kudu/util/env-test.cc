@@ -684,14 +684,14 @@ INSTANTIATE_TEST_SUITE_P(ResourceLimitTypes,
 TEST_P(ResourceLimitTypeTest, TestIncreaseLimit) {
   // Increase the resource limit. It should either increase or remain the same.
   Env::ResourceLimitType t = GetParam();
-  int64_t limit_before = env_->GetResourceLimit(t);
+  uint64_t limit_before = env_->GetResourceLimit(t);
   env_->IncreaseResourceLimit(t);
-  int64_t limit_after = env_->GetResourceLimit(t);
+  uint64_t limit_after = env_->GetResourceLimit(t);
   ASSERT_GE(limit_after, limit_before);
 
   // Try again. It should definitely be the same now.
   env_->IncreaseResourceLimit(t);
-  int64_t limit_after_again = env_->GetResourceLimit(t);
+  uint64_t limit_after_again = env_->GetResourceLimit(t);
   ASSERT_EQ(limit_after, limit_after_again);
 }
 
