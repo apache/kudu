@@ -113,7 +113,7 @@ function(GET_LINKER_VERSION)
     set(ld_version_flag "--version")
   endif()
   execute_process(
-    COMMAND ${CMAKE_CXX_COMPILER} "-Wl,${ld_version_flag}" ${ARGN}
+    COMMAND ${CMAKE_CXX_COMPILER} "-Wl,${ld_version_flag}" -o /dev/null ${ARGN}
     ERROR_VARIABLE LINKER_STDERR
     OUTPUT_VARIABLE LINKER_STDOUT
     RESULT_VARIABLE LINKER_EXITCODE)
