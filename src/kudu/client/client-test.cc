@@ -2722,9 +2722,11 @@ int64_t SumResults(const KuduScanBatch& batch) {
 } // anonymous namespace
 
 TEST_F(ClientTest, TestScannerKeepAlive) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   NO_FATALS(InsertTestRows(client_table_.get(), 1000));
-  // Set the scanner ttl really low
-  FLAGS_scanner_ttl_ms = 100; // 100 milliseconds
+  // Set the scanner TTL low.
+  FLAGS_scanner_ttl_ms = 500;
   // Start a scan but don't get the whole data back
   KuduScanner scanner(client_table_.get());
   // This will make sure we have to do multiple NextBatch calls to the second tablet.
@@ -2756,9 +2758,11 @@ TEST_F(ClientTest, TestScannerKeepAlive) {
   sum += SumResults(batch);
   ASSERT_TRUE(scanner.HasMoreRows());
 
-  // Now loop while keeping the scanner alive. Each time we loop we sleep 1/2 a scanner
-  // ttl interval (the garbage collector is running each 50 msecs too.).
-  for (int i = 0; i < 5; i++) {
+  // Now loop while keeping the scanner alive. Each loop we sleep about 1/10
+  // of the scanner's TTL interval to avoid flakiness due to scheduling
+  // anomalies. The garbage collector runs each 50 msec as well in this test
+  // scenario (controlled by FLAGS_scanner_gc_check_interval_us).
+  for (int i = 0; i < 15; i++) {
     SleepFor(MonoDelta::FromMilliseconds(50));
     ASSERT_OK(scanner.KeepAlive());
   }
@@ -2772,7 +2776,7 @@ TEST_F(ClientTest, TestScannerKeepAlive) {
   }
 
   ASSERT_TRUE(scanner.HasMoreRows());
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 15; i++) {
     SleepFor(MonoDelta::FromMilliseconds(50));
     ASSERT_OK(scanner.KeepAlive());
   }
