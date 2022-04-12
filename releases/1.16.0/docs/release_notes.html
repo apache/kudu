@@ -1,0 +1,518 @@
+---
+title: Apache Kudu 1.16.0 Release Notes
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2022-04-11 16:50:08 +0200'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu 1.16.0 Release Notes</h1>
+      <div class="sect1">
+<h2 id="rn_1.16.0_upgrade_notes"><a class="link" href="#rn_1.16.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.16.0_deprecations"><a class="link" href="#rn_1.16.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Support for Python 2.x and Python 3.4 and earlier is deprecated and may be
+removed in the next minor release.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.16.0_new_features"><a class="link" href="#rn_1.16.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Clients can now require authentication and encryption instead of depending on
+server-side settings
+(<a href="https://issues.apache.org/jira/browse/KUDU-1921">KUDU-1921</a>).</p>
+</li>
+<li>
+<p>Kudu Masters now automatically attempt to add themselves to an existing
+cluster if there is a healthy Raft quorum among Kudu Masters.</p>
+</li>
+<li>
+<p>A new tool <code>kudu master unsafe_rebuild</code> is added to reconstruct the master
+catalog from tablet metadata collected from tablet servers. This can be used
+in emergencies to restore access to tables when all masters are unavailable.</p>
+</li>
+<li>
+<p>A new tool <code>kudu table set_replication_factor</code> is added to alter the
+replication factor of a table. The tool immediately updates table metadata in
+the master, and the master will asynchronously effect the new replication
+factor. Progress can be monitored by running <code>ksck</code>.</p>
+</li>
+<li>
+<p>It’s now possible to require a minimum replication factor for a Kudu table.
+This can be achieved by customizing the setting for the newly introduced
+<code>--min_num_replicas</code> kudu-master’s flag. For example, setting
+<code>--min_num_replicas=3</code> enforces every newly created table to have at least 3
+replicas for each of its tablets, so there cannot be a data loss when just a
+single tablet server in the cluster fails irrecoverably. For the sake of
+backward compatibility, <code>--min_num_replicas</code> is set to 1 by default.</p>
+</li>
+<li>
+<p>It’s now possible to track startup progress on the <code>/startup</code> page on the web
+UI. There are also metrics added to track the overall server startup progress
+as well as the processing of the log block containers and starting of the
+tablets (<a href="https://issues.apache.org/jira/browse/KUDU-1959">KUDU-1959</a>).</p>
+</li>
+<li>
+<p>A new tool <code>kudu table add_column</code> is added to add columns to existing tables
+using the CLI
+(<a href="https://issues.apache.org/jira/browse/KUDU-3339">KUDU-3339</a>).</p>
+</li>
+<li>
+<p>A new tool <code>kudu tserver unregister</code> is added to remove a dead tablet server
+from the cluster without restarting the masters
+(<a href="https://issues.apache.org/jira/browse/KUDU-2915">KUDU-2915</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.16.0_improvements"><a class="link" href="#rn_1.16.0_improvements">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu will now more aggressively fsync consensus-related metadata when metadata
+is configured to be on an XFS mount. This may lead to increased contention on
+the device that backs metadata, but will prevent corruption in the event of an
+outage (<a href="https://issues.apache.org/jira/browse/KUDU-2195">KUDU-2195</a>).</p>
+</li>
+<li>
+<p>A clearer message is logged when the Ranger subprocess crashes, to specify a
+problem with the Ranger client.</p>
+</li>
+<li>
+<p>Two new flags have been introduced for the <code>kudu table scan</code> and <code>kudu perf
+table_scan</code> CLI tools: <code>--row_count_only</code> and <code>--report_scanner_stats</code>. With
+these new flags, the above mentioned CLI tools allow to issue scan requests
+equivalent to running “SELECT COUNT(1) FROM &lt;table_name&gt;” from impala-shell.
+These new provisions are useful in detecting and troubleshooting scan
+performance issues.</p>
+</li>
+<li>
+<p>Added replica selection configuration knob for the <code>kudu table scan</code> and <code>kudu
+perf table_scan</code> CLI tools: it’s controlled by the <code>--replica_selection</code> flag.</p>
+</li>
+<li>
+<p>To improve security, the following flags are now marked as sensitive and will
+be redacted in the logs and WebUI when the redaction is enabled:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>--webserver_private_key_file</code></p>
+</li>
+<li>
+<p><code>--webserver_private_key_password_cmd</code></p>
+</li>
+<li>
+<p><code>--webserver_password_file</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>The logic to select the effective time source when running with
+<code>--time_source=auto</code> has been updated. The <code>builtin</code> time source would be
+auto-selected if a Kudu server runs with <code>--time_source=auto</code> in an
+environment where the instance detector isn&#8217;t aware of dedicated NTP servers
+AND the <code>--builtin_ntp_servers</code> flag is set to a valid value. Otherwise, if
+<code>--builtin_ntp_servers</code> flag is set to an empty or invalid value, the
+effective time source becomes <code>system</code> for platforms supporting the
+<code>get_ntptime()</code> API, otherwise the catch-all case selects the <code>system_unsync</code>
+as the time effective source.</p>
+</li>
+<li>
+<p>It is now possible to print or edit PBC files in batch using the <code>kudu pbc</code>
+CLI tool, and also to format its JSON input/output as “pretty”.</p>
+</li>
+<li>
+<p>Client connection timeout is now configurable in the Java client
+(<a href="https://issues.apache.org/jira/browse/KUDU-3240">KUDU-3240</a>).</p>
+</li>
+<li>
+<p>A new <code>/healthz</code> endpoint is now available on the kudu-master and tablet-server
+embedded web servers for liveness checks
+(<a href="https://issues.apache.org/jira/browse/KUDU-3308">KUDU-3308</a>).</p>
+</li>
+<li>
+<p>Hive Metastore URI is now logged to the console when connecting via <code>kudu hms</code>
+CLI tool (<a href="https://issues.apache.org/jira/browse/KUDU-3189">KUDU-3189</a>).</p>
+</li>
+<li>
+<p>It is now possible to start up a master when there is an additional master
+address present in the master addresses flag
+(<a href="https://issues.apache.org/jira/browse/KUDU-3311">KUDU-3311</a>).</p>
+</li>
+<li>
+<p>Table entity is now accessible in <code>KuduWriteOperation</code> in the C++ client,
+making understanding errors on the client side easier
+(<a href="https://issues.apache.org/jira/browse/KUDU-2623">KUDU-2623</a>).</p>
+</li>
+<li>
+<p>The rebalancer tool now doesn’t move replicas to tablet servers in maintenance
+mode (<a href="https://issues.apache.org/jira/browse/KUDU-3328">KUDU-3328</a>).</p>
+</li>
+<li>
+<p>Improved the performance of the run length encoding (RLE).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.16.0_fixed_issues"><a class="link" href="#rn_1.16.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Log4J used in Ranger subprocess was upgraded to 2.17.1 which contains patches
+go several security vulnerabilities
+(<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-44832">CVE-2021-44832</a>,
+<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-45105">CVE-2021-45105</a>,
+<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-45046">CVE-2021-45046</a>, and
+<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-44228">CVE-2021-44228</a>).</p>
+</li>
+<li>
+<p>Kudu servers previously crashed if hostnames became unresolvable via DNS (e.g.
+if the container hosting a server were destroyed). Such errors are now treated
+as transient and the lookups are retried periodically. See
+<a href="https://issues.apache.org/jira/browse/KUDU-75">KUDU-75</a>,
+<a href="https://issues.apache.org/jira/browse/KUDU-1620">KUDU-1620</a>,
+and <a href="https://issues.apache.org/jira/browse/KUDU-1885">KUDU-1885</a> for more details.</p>
+</li>
+<li>
+<p>Fixed an issue in Kudu Java client where concurrent flushing of data buffers
+could lead to errors reported as 'java.lang.AssertionError: This Deferred was
+already called'
+(<a href="https://issues.apache.org/jira/browse/KUDU-3277">KUDU-3277</a>).</p>
+</li>
+<li>
+<p>Fixed Kudu RPC negotiation issue when running with cyrus-sasl-gssapi-2.1.27-5
+and newer versions of the RPM package. A failed RPC connection negotiation
+attempt would result in an error logged along with the full connection
+negotiation trace: <code>Runtime error: SASL(-15): mechanism too weak for this
+user: Unable to find a callback: 32775</code>
+(<a href="https://issues.apache.org/jira/browse/KUDU-3297">KUDU-3297</a>).</p>
+</li>
+<li>
+<p>Fixed crash in kudu-master and kudu-tserver when running with kernel where the
+<code>getrandom(2)</code> API is not available (versions of Linux kernel prior to 3.17).</p>
+</li>
+<li>
+<p>Fixed bug which could lead to exhaustion of the address space for the outgoing
+connections on a busy Kudu cluster
+(<a href="https://issues.apache.org/jira/browse/KUDU-3352">KUDU-3352</a>).</p>
+</li>
+<li>
+<p>Fixed a bug in the Java client where a malformed tablet server ID in the scan
+token causes connection failures and timeouts in some cases
+(<a href="https://issues.apache.org/jira/browse/KUDU-3349">KUDU-3349</a>).</p>
+</li>
+<li>
+<p>Fixed a bug where the rebalancer failed with <code>-ignored_tservers</code> flag
+(<a href="https://issues.apache.org/jira/browse/KUDU-3346">KUDU-3346</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.16.0_wire_compatibility"><a class="link" href="#rn_1.16.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.16.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.16 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.15 and Kudu 1.16 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.16 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.16 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.16 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.16 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.16.0_incompatible_changes"><a class="link" href="#rn_1.16.0_incompatible_changes">Incompatible Changes in Kudu 1.16.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="rn_1.16.0_client_compatibility"><a class="link" href="#rn_1.16.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.16 Java client library is API- and ABI-compatible with Kudu 1.15. Applications
+written against Kudu 1.15 will compile and run against the Kudu 1.16 client library and
+vice-versa.</p>
+</li>
+<li>
+<p>The Kudu 1.16 C&#43;&#43; client is API- and ABI-forward-compatible with Kudu 1.15.
+Applications written and compiled against the Kudu 1.15 client library will run without
+modification against the Kudu 1.16 client library. Applications written and compiled
+against the Kudu 1.16 client library will run without modification against the Kudu 1.15
+client library.</p>
+</li>
+<li>
+<p>The Kudu 1.16 Python client is API-compatible with Kudu 1.15. Applications
+written against Kudu 1.15 will continue to run against the Kudu 1.16 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.16.0_known_issues"><a class="link" href="#rn_1.16.0_known_issues">Known Issues and Limitations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Please refer to the <a href="known_issues.html">Known Issues and Limitations</a> section of the
+documentation.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.16.0_contributors"><a class="link" href="#rn_1.16.0_contributors">Contributors</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.16.0 includes contributions from 17 people, including 5 first-time contributors:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Riza Suminto</p>
+</li>
+<li>
+<p>Zoltan Chovan</p>
+</li>
+<li>
+<p>kedeng</p>
+</li>
+<li>
+<p>khazarmammadli</p>
+</li>
+<li>
+<p>yejiabao</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Thank you for your contributions!</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="resources_and_next_steps"><a class="link" href="#resources_and_next_steps">Resources</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="http://kudu.apache.org">Kudu Website</a></p>
+</li>
+<li>
+<p><a href="http://github.com/apache/kudu">Kudu GitHub Repository</a></p>
+</li>
+<li>
+<p><a href="index.html">Kudu Documentation</a></p>
+</li>
+<li>
+<p><a href="prior_release_notes.html">Release notes for older releases</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installation_options"><a class="link" href="#_installation_options">Installation Options</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>For full installation details, see <a href="installation.html">Kudu Installation</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="quickstart.html">Kudu Quickstart</a></p>
+</li>
+<li>
+<p><a href="installation.html">Installing Kudu</a></p>
+</li>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Release Notes</span>
+            <ul class="sectlevel1">
+<li><a href="#rn_1.16.0_upgrade_notes">Upgrade Notes</a></li>
+<li><a href="#rn_1.16.0_deprecations">Deprecations</a></li>
+<li><a href="#rn_1.16.0_new_features">New features</a></li>
+<li><a href="#rn_1.16.0_improvements">Optimizations and improvements</a></li>
+<li><a href="#rn_1.16.0_fixed_issues">Fixed Issues</a></li>
+<li><a href="#rn_1.16.0_wire_compatibility">Wire Protocol compatibility</a></li>
+<li><a href="#rn_1.16.0_incompatible_changes">Incompatible Changes in Kudu 1.16.0</a>
+<ul class="sectlevel2">
+<li><a href="#rn_1.16.0_client_compatibility">Client Library Compatibility</a></li>
+</ul>
+</li>
+<li><a href="#rn_1.16.0_known_issues">Known Issues and Limitations</a></li>
+<li><a href="#rn_1.16.0_contributors">Contributors</a></li>
+<li><a href="#resources_and_next_steps">Resources</a></li>
+<li><a href="#_installation_options">Installation Options</a></li>
+<li><a href="#_next_steps">Next Steps</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Quickstart Guide</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="metrics_reference.html">Kudu Metrics Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
