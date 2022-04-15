@@ -690,6 +690,9 @@ public final class AsyncKuduScanner {
         @Override
         public RowResultIterator call(final Response resp) {
           numRowsReturned += resp.data.getNumRows();
+          if (isFaultTolerant && resp.lastPrimaryKey != null) {
+            lastPrimaryKey = resp.lastPrimaryKey;
+          }
           if (!resp.more) {  // We're done scanning this tablet.
             scanFinished();
             return resp.data;
@@ -817,6 +820,11 @@ public final class AsyncKuduScanner {
       buf.append(", endPrimaryKey=").append(Bytes.hex(endPrimaryKey));
     } else {
       buf.append(", endPrimaryKey=<end>");
+    }
+    if (lastPrimaryKey.length > 0) {
+      buf.append(", lastPrimaryKey=").append(Bytes.hex(lastPrimaryKey));
+    } else {
+      buf.append(", lastPrimaryKey=<last>");
     }
     buf.append(')');
     return buf.toString();

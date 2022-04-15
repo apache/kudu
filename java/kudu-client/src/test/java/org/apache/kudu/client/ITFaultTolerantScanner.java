@@ -38,8 +38,20 @@ public class ITFaultTolerantScanner extends ITScannerMultiTablet {
    * of tablet scanning and verifies the scan results are as expected.
    */
   @Test(timeout = 100000)
-  public void testFaultTolerantScannerRestart() throws Exception {
+  public void testFaultTolerantScannerRestartFirstScanRequest() throws Exception {
     serverFaultInjection(true, true, false);
+  }
+
+  /**
+   * Tests fault tolerant scanner by restarting the tserver in the middle
+   * of tablet scanning and verifies the scan results are as expected.
+   * Notice, the fault injection happens at the 2nd ScanRequest or next scan
+   * request rather than the first scan request.
+   * @throws Exception
+   */
+  @Test(timeout = 100000)
+  public void testFaultTolerantScannerRestartAfterSecondScanRequest() throws Exception {
+    serverFaultInjectionRestartAfterSecondScanRequest();
   }
 
   /**
