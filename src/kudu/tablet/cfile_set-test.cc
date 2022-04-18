@@ -47,6 +47,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/util/block_bloom_filter.h"
@@ -57,7 +58,9 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DECLARE_int32(cfile_default_block_size);
 
@@ -68,6 +71,18 @@ using std::vector;
 
 namespace kudu {
 namespace tablet {
+
+ScanSpec GetInListScanSpec(const ColumnSchema& col_schema, const vector<int>& value_list) {
+  vector<const void*> pred_list;
+  pred_list.reserve(value_list.size());
+  for (int i = 0; i < value_list.size(); i++) {
+    pred_list.emplace_back(&value_list[i]);
+  }
+  ColumnPredicate pred = ColumnPredicate::InList(col_schema, &pred_list);
+  ScanSpec spec;
+  spec.AddPredicate(pred);
+  return spec;
+}
 
 class TestCFileSet : public KuduRowSetTest {
  public:
@@ -161,16 +176,16 @@ class TestCFileSet : public KuduRowSetTest {
       uint32_t hash2 = HashUtil::ComputeHash32(second, FAST_HASH, 0);
 
       if (bf1_contain->Find(hash1)) {
-        ret1_contain->push_back(i);
+        ret1_contain->push_back(curr1);
       }
       if (bf1_exclude->Find(hash1)) {
-        ret1_exclude->push_back(i);
+        ret1_exclude->push_back(curr1);
       }
       if (bf2_contain->Find(hash2)) {
-        ret2_contain->push_back(i);
+        ret2_contain->push_back(curr1);
       }
       if (bf2_exclude->Find(hash2)) {
-        ret2_exclude->push_back(i);
+        ret2_exclude->push_back(curr1);
       }
     }
   }
@@ -227,7 +242,7 @@ class TestCFileSet : public KuduRowSetTest {
       spec.AddPredicate(pred);
     }
     ASSERT_OK(iter->Init(&spec));
-    // Check that the range was respected on all the results.
+    // Check that InBloomFilter predicates were respected on all the results.
     RowBlockMemory mem(1024);
     RowBlock block(&schema_, 100, &mem);
     while (iter->HasNext()) {
@@ -235,8 +250,8 @@ class TestCFileSet : public KuduRowSetTest {
       for (size_t i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {
           RowBlockRow row = block.row(i);
-          size_t index = row.row_index();
-          auto target_iter = std::find(target.begin(), target.end(), index);
+          int32_t row_key = *schema_.ExtractColumnFromRow<INT32>(row, 0);
+          auto target_iter = std::find(target.begin(), target.end(), row_key);
           if (target_iter == target.end()) {
             FAIL() << "Row " << schema_.DebugRow(row) << " should not have "
                    << "passed predicate ";
@@ -252,9 +267,49 @@ class TestCFileSet : public KuduRowSetTest {
     }
   }
 
-  Status MaterializeColumn(CFileSet::Iterator *iter,
-                           size_t col_idx,
-                           ColumnBlock *cb) {
+  // Issue a InList scan and verify that all result rows indeed fall inside that predicate.
+  void DoTestInListScan(const shared_ptr<CFileSet>& fileset, int upper_bound, int interval) {
+    // Create iterator.
+    unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+    unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
+
+    // Create a scan with a InList predicate on the key column.
+    vector<int> value_list;
+    vector<int> result_list;
+    for (int i = 0; i < upper_bound; i += interval) {
+      value_list.emplace_back(i * kRatio[0]);
+      result_list.emplace_back(i * kRatio[0]);
+    }
+    auto spec = GetInListScanSpec(schema_.column(0), value_list);
+    ASSERT_OK(iter->Init(&spec));
+
+    // Check that the InList predicate was respected on all the results.
+    RowBlockMemory mem(1024);
+    RowBlock block(&schema_, 100, &mem);
+    int selected_size = 0;
+    while (iter->HasNext()) {
+      mem.Reset();
+      ASSERT_OK_FAST(iter->NextBlock(&block));
+      for (size_t i = 0; i < block.nrows(); i++) {
+        if (block.selection_vector()->IsRowSelected(i)) {
+          RowBlockRow row = block.row(i);
+          int32_t row_key = *schema_.ExtractColumnFromRow<INT32>(row, 0);
+          auto target_iter = std::find(result_list.begin(), result_list.end(), row_key);
+          if (target_iter == result_list.end()) {
+            FAIL() << "Row " << schema_.DebugRow(row) << " should not have passed predicate.";
+          }
+          result_list.erase(target_iter);
+        }
+      }
+      selected_size += block.selection_vector()->CountSelected();
+    }
+    LOG(INFO) << "Selected size: " << selected_size;
+    if (!result_list.empty()) {
+      FAIL() << result_list.size() << " values should have passed predicate.";
+    }
+  }
+
+  static Status MaterializeColumn(CFileSet::Iterator* iter, size_t col_idx, ColumnBlock* cb) {
     SelectionVector sel(cb->nrows());
     ColumnMaterializationContext ctx(col_idx, nullptr, cb, &sel);
     return iter->MaterializeColumn(&ctx);
@@ -544,14 +599,10 @@ TEST_F(TestCFileSet, TestBloomFilterPredicates) {
   // BloomFilter of column 0 contain with lower and upper bound.
   int32_t lower = 8;
   int32_t upper = 58;
-  int32_t lower_row_index = lower / 2;
-  int32_t upper_row_index = upper / 2;
   vector<size_t> ret1_contain_range = ret1_contain;
-  auto left = std::lower_bound(ret1_contain_range.begin(),
-                               ret1_contain_range.end(), lower_row_index);
+  auto left = std::lower_bound(ret1_contain_range.begin(), ret1_contain_range.end(), lower);
   ret1_contain_range.erase(ret1_contain_range.begin(), left); // don't erase left
-  auto right = std::lower_bound(ret1_contain_range.begin(),
-                                ret1_contain_range.end(), upper_row_index);
+  auto right = std::lower_bound(ret1_contain_range.begin(), ret1_contain_range.end(), upper);
   ret1_contain_range.erase(right, ret1_contain_range.end()); // earse right
   auto range = ColumnPredicate::Range(schema_.column(0), &lower, &upper);
   DoTestBloomFilterScan(fileset, { pred1_contain, range }, ret1_contain_range);
@@ -560,6 +611,111 @@ TEST_F(TestCFileSet, TestBloomFilterPredicates) {
   auto bf_with_range = ColumnPredicate::InBloomFilter(schema_.column(0), {&bf1_contain},
                                                       &lower, &upper);
   DoTestBloomFilterScan(fileset, { bf_with_range }, ret1_contain_range);
+}
+
+TEST_F(TestCFileSet, TestInListPredicates) {
+  const int kNumRows = 10000;
+  WriteTestRowSet(kNumRows);
+
+  shared_ptr<CFileSet> fileset;
+  ASSERT_OK(CFileSet::Open(
+      rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(), nullptr, &fileset));
+
+  // Test different size and interval.
+  DoTestInListScan(fileset, 1, 1);
+  DoTestInListScan(fileset, 10, 1);
+  DoTestInListScan(fileset, 100, 5);
+  DoTestInListScan(fileset, 1000, 10);
+}
+
+class InListPredicateBenchmark : public KuduRowSetTest {
+ public:
+  InListPredicateBenchmark()
+      : KuduRowSetTest(Schema({ColumnSchema("c0", INT32), ColumnSchema("c1", INT32)}, 2)) {}
+
+  void SetUp() OVERRIDE {
+    KuduRowSetTest::SetUp();
+
+    // Use a small cfile block size, so that when we skip materializing a given
+    // column for 10,000 rows, it can actually skip over a number of blocks.
+    FLAGS_cfile_default_block_size = 512;
+  }
+
+  // Write out a test rowset with two int columns.
+  // The two columns make up a composite primary key.
+  // The first column contains only one value 1.
+  // The second contains the row index * 10.
+  void WriteTestRowSet(int nrows) {
+    DiskRowSetWriter rsw(
+        rowset_meta_.get(), &schema_, BloomFilterSizing::BySizeAndFPRate(32 * 1024, 0.01F));
+
+    ASSERT_OK(rsw.Open());
+
+    RowBuilder rb(&schema_);
+    for (int i = 0; i < nrows; i++) {
+      rb.Reset();
+      rb.AddInt32(1);
+      rb.AddInt32(i * 10);
+      ASSERT_OK_FAST(WriteRow(rb.data(), &rsw));
+    }
+    ASSERT_OK(rsw.Finish());
+  }
+
+  void BenchmarkInListScan(const ColumnSchema& col_schema, const vector<int>& value_list) {
+    // Write some rows and open the fileset.
+    const int kNumRows = 10000;
+    const int kNumIters = AllowSlowTests() ? 10000 : 100;
+    WriteTestRowSet(kNumRows);
+    shared_ptr<CFileSet> fileset;
+    ASSERT_OK(CFileSet::Open(rowset_meta_,
+                             MemTracker::GetRootTracker(),
+                             MemTracker::GetRootTracker(),
+                             nullptr,
+                             &fileset));
+    Stopwatch sw;
+    sw.start();
+    int selected_size = 0;
+    for (int i = 0; i < kNumIters; i++) {
+      // LOG(INFO) << "Start scan";
+      // Create iterator.
+      unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+      unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
+      // Create a scan with a InList predicate on the key column.
+      auto spec = GetInListScanSpec(col_schema, value_list);
+      ASSERT_OK(iter->Init(&spec));
+      RowBlockMemory mem(1024);
+      RowBlock block(&schema_, 100, &mem);
+      selected_size = 0;
+      while (iter->HasNext()) {
+        mem.Reset();
+        ASSERT_OK_FAST(iter->NextBlock(&block));
+        selected_size += block.selection_vector()->CountSelected();
+      }
+    }
+    sw.stop();
+    LOG(INFO) << Substitute(
+        "Selected $0 rows cost $1 seconds.", selected_size, sw.elapsed().user_cpu_seconds());
+  }
+};
+
+TEST_F(InListPredicateBenchmark, PredicateOnFirstColumn) {
+  // Test an "IN" predicate on the first column which could be optimized to a "=" predicate.
+  vector<int> value_list;
+  value_list.reserve(100);
+  for (int i = 0; i < 100; i++) {
+    value_list.emplace_back(i);
+  }
+  BenchmarkInListScan(schema_.column(0), value_list);
+}
+
+TEST_F(InListPredicateBenchmark, PredicateOnSecondColumn) {
+  // Test an "IN" predicate on the second column which could be optimized to skip unnecessary rows.
+  vector<int> value_list;
+  value_list.reserve(100);
+  for (int i = 100; i < 200; i++) {
+    value_list.emplace_back(i * 10);
+  }
+  BenchmarkInListScan(schema_.column(1), value_list);
 }
 
 } // namespace tablet

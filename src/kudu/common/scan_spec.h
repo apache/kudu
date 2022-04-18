@@ -67,6 +67,10 @@ class ScanSpec {
   // into the upper or lower primary key bounds are removed.
   //
   // Idempotent.
+  void UnifyPrimaryKeyBoundsAndColumnPredicates(const Schema& schema,
+                                                Arena* arena,
+                                                bool remove_pushed_predicates);
+
   void OptimizeScan(const Schema& schema,
                     Arena* arena,
                     bool remove_pushed_predicates);

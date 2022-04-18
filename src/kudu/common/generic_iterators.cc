@@ -1175,7 +1175,8 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
   const int32_t num_columns = schema().num_columns();
   col_idx_predicates_.clear();
   non_predicate_column_indexes_.clear();
-  if (PREDICT_FALSE(!disallow_pushdown_for_tests_) && spec != nullptr) {
+  if (PREDICT_TRUE(!disallow_pushdown_for_tests_) && spec != nullptr &&
+      !spec->predicates().empty()) {
     col_idx_predicates_.reserve(spec->predicates().size());
     DCHECK_GE(num_columns, spec->predicates().size());
     non_predicate_column_indexes_.reserve(num_columns - spec->predicates().size());

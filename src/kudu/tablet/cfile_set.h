@@ -38,6 +38,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/make_shared.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -222,17 +223,21 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   friend class CFileSet;
 
   // 'projection' must remain valid for the lifetime of this object.
-  Iterator(std::shared_ptr<CFileSet const> base_data, const Schema* projection,
+  Iterator(std::shared_ptr<CFileSet const> base_data,
+           const Schema* projection,
            const fs::IOContext* io_context)
       : base_data_(std::move(base_data)),
         projection_(projection),
         initted_(false),
         cur_idx_(0),
         prepared_count_(0),
-        io_context_(io_context) {}
+        io_context_(io_context),
+        arena_(256) {}
 
   // Fill in col_iters_ for each of the requested columns.
   Status CreateColumnIterators(const ScanSpec* spec);
+
+  Status OptimizePKPredicates(ScanSpec* spec);
 
   // Look for a predicate which can be converted into a range scan using the key
   // column's index. If such a predicate exists, remove it from the scan spec and
@@ -276,6 +281,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   // stored in 'col_iters_'.
   std::vector<cfile::ColumnIterator*> prepared_iters_;
 
+  Arena arena_;
 };
 
 } // namespace tablet
