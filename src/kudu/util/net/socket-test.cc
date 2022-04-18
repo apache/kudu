@@ -133,17 +133,17 @@ class SocketTest : public KuduTest {
         CHECK_OK(listener_.Close());
       }
     });
+    SCOPED_CLEANUP({
+      t.join();
+    });
 
     Socket client = ConnectToListeningServer();
     int n;
     std::unique_ptr<uint8_t[]> buf(new uint8_t[kEchoChunkSize]);
-    Status s = client.Recv(buf.get(), kEchoChunkSize, &n);
+    const auto s = client.Recv(buf.get(), kEchoChunkSize, &n);
 
-    ASSERT_TRUE(!s.ok());
     ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
     ASSERT_STR_MATCHES(s.message().ToString(), message);
-
-    t.join();
   }
 
   void DoUnixSocketTest(const string& path) {
@@ -166,6 +166,7 @@ class SocketTest : public KuduTest {
               MonoTime::Now() + MonoDelta::FromSeconds(10)));
           CHECK_OK(sock.Close());
         });
+    auto cleanup = MakeScopedCleanup([&] { t.join(); });
 
     Socket client = ConnectToListeningServer();
 
@@ -178,7 +179,9 @@ class SocketTest : public KuduTest {
     char buf[kData.size()];
     ASSERT_OK(client.BlockingRecv(reinterpret_cast<uint8_t*>(buf), kData.size(), &n,
                                   MonoTime::Now() + MonoDelta::FromSeconds(5)));
+    cleanup.cancel();
     t.join();
+
     ASSERT_OK(client.Close());
 
     ASSERT_EQ(n, kData.size());
