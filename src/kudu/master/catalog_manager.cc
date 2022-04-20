@@ -3645,31 +3645,27 @@ bool CatalogManager::IsTableWriteDisabled(const scoped_refptr<TableInfo>& table,
     // disable write immediately.
     if (pb.has_table_disk_size_limit()) {
       table_disk_size_limit = pb.table_disk_size_limit();
-      if (static_cast<double>(table_disk_size) >=
-           (static_cast<double>(table_disk_size_limit) *
-            FLAGS_table_write_limit_ratio)) {
-        disallow_write = true;
-      }
+      disallow_write = static_cast<double>(table_disk_size) >=
+          (static_cast<double>(table_disk_size_limit) * FLAGS_table_write_limit_ratio);
     }
-    if (!disallow_write && pb.has_table_row_count_limit()) {
+    if (pb.has_table_row_count_limit()) {
       table_rows_limit = pb.table_row_count_limit();
-      if (static_cast<double>(table_rows) >=
-              (static_cast<double>(table_rows_limit) *
-               FLAGS_table_write_limit_ratio)) {
-        disallow_write = true;
-      }
+      disallow_write |= static_cast<double>(table_rows) >=
+          (static_cast<double>(table_rows_limit) * FLAGS_table_write_limit_ratio);
     }
   }
 
   if (disallow_write) {
     // The writing into the table is disallowed.
     LOG(INFO) << Substitute("table $0 row count is $1, on disk size is $2, "
-                            "row count limit is $3, size limit is $4, writing is forbidden",
+                            "row count limit is $3, size limit is $4, "
+                            "table_write_limit_ratio is $5, writing is forbidden",
                             table_name,
                             table_rows,
                             table_disk_size,
                             table_rows_limit,
-                            table_disk_size_limit);
+                            table_disk_size_limit,
+                            FLAGS_table_write_limit_ratio);
   }
   return disallow_write;
 }
