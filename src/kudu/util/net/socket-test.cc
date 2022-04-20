@@ -21,6 +21,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -28,13 +29,16 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -122,19 +126,26 @@ class SocketTest : public KuduTest {
 
   void DoTestServerDisconnects(bool accept, const std::string &message) {
     NO_FATALS(BindAndListen("0.0.0.0:0"));
-    std::thread t([&]{
+
+    CountDownLatch latch(1);
+    scoped_refptr<kudu::Thread> t;
+    Status status = kudu::Thread::Create("pool", "worker", ([&]{
       if (accept) {
         Sockaddr new_addr;
         Socket sock;
         CHECK_OK(listener_.Accept(&sock, &new_addr, 0));
         CHECK_OK(sock.Close());
       } else {
-        SleepFor(MonoDelta::FromMilliseconds(200));
+        while (!latch.WaitFor(MonoDelta::FromMilliseconds(10))) {}
         CHECK_OK(listener_.Close());
       }
-    });
+    }), &t);
+    ASSERT_OK(status);
     SCOPED_CLEANUP({
-      t.join();
+      latch.CountDown();
+      if (t) {
+        t->Join();
+      }
     });
 
     Socket client = ConnectToListeningServer();
