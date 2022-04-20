@@ -278,7 +278,7 @@ class TabletServerDiskErrorITest : public DiskErrorITestBase {
         // Then allow for recovery.
         { "enable_tablet_copy", "true" },
       };
-      return SetFlags(cluster_->tablet_server(i), recovery_flags);
+      RETURN_NOT_OK(SetFlags(cluster_->tablet_server(i), recovery_flags));
     }
     return Status::OK();
   }
