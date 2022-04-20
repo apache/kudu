@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -44,8 +45,8 @@ typedef std::unordered_map<std::string, std::string> JsonKVMap;
 // This class represent cryptographic public key for JSON Web Token (JWT) verification.
 class JWTPublicKey {
  public:
-    JWTPublicKey(std::string algorithm, std::string pub_key)
-    : verifier_(jwt::verify()), algorithm_(std::move(algorithm)), public_key_(std::move(pub_key)) {}
+  JWTPublicKey(std::string algorithm, std::string pub_key)
+  : verifier_(jwt::verify()), algorithm_(std::move(algorithm)), public_key_(std::move(pub_key)) {}
 
   // Verify the given decoded token.
   Status Verify(const DecodedJWT& decoded_jwt, const std::string& algorithm) const;
@@ -205,13 +206,15 @@ class ES512JWTPublicKey : public JWTPublicKey {
 // Construct a JWKPublicKey of HS from the JWK.
 class HSJWTPublicKeyBuilder {
  public:
-  static Status CreateJWKPublicKey(const JsonKVMap& kv_map, JWTPublicKey** pub_key_out);
+  static Status CreateJWKPublicKey(const JsonKVMap& kv_map,
+                                   std::unique_ptr<JWTPublicKey>* pub_key_out);
 };
 
 // Construct a JWKPublicKey of RSA from the JWK.
 class RSAJWTPublicKeyBuilder {
  public:
-  static Status CreateJWKPublicKey(const JsonKVMap& kv_map, JWTPublicKey** pub_key_out);
+  static Status CreateJWKPublicKey(const JsonKVMap& kv_map,
+                                   std::unique_ptr<JWTPublicKey>* pub_key_out);
 
  private:
   // Convert public key of RSA from JWK format to PEM encoded format by using OpenSSL
@@ -223,7 +226,8 @@ class RSAJWTPublicKeyBuilder {
 // Construct a JWKPublicKey of EC from the JWK.
 class ECJWTPublicKeyBuilder {
  public:
-  static Status CreateJWKPublicKey(const JsonKVMap& kv_map, JWTPublicKey** pub_key_out);
+  static Status CreateJWKPublicKey(const JsonKVMap& kv_map,
+                                   std::unique_ptr<JWTPublicKey>* pub_key_out);
 
  private:
   // Convert public key of EC from JWK format to PEM encoded format by using OpenSSL
@@ -238,7 +242,7 @@ class ECJWTPublicKeyBuilder {
 // and updates it atomically when the public keys in JWKS are changed. Clients can obtain
 // an immutable copy. Class instances can be created through the implicitly-defined
 // default and copy constructors.
-class JWKSSnapshot {
+class JWKSSnapshot final {
  public:
   JWKSSnapshot() = default;
   JWKSSnapshot(const JWKSSnapshot&) = default;
@@ -288,11 +292,11 @@ class JWKSSnapshot {
 
   // Following two functions are called inside Init().
   // Add a RSA public key.
-  void AddRSAPublicKey(const std::string& key_id, JWTPublicKey* jwk_pub_key);
+  void AddRSAPublicKey(const std::string& key_id, std::unique_ptr<JWTPublicKey> jwk_pub_key);
   // Add a HS key.
-  void AddHSKey(const std::string& key_id, JWTPublicKey* jwk_pub_key);
+  void AddHSKey(const std::string& key_id, std::unique_ptr<JWTPublicKey> jwk_pub_key);
   // Add an EC public key.
-  void AddECPublicKey(const std::string& key_id, JWTPublicKey* jwk_pub_key);
+  void AddECPublicKey(const std::string& key_id, std::unique_ptr<JWTPublicKey> jwk_pub_key);
 
   // Note: According to section 4.5 of RFC 7517 (JSON Web Key), different keys might use
   // the same "kid" value is if they have different "kty" (key type) values but are

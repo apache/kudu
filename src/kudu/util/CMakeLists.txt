@@ -629,7 +629,8 @@ endif()
 ADD_KUDU_TEST(jwt-util-test)
 if(NOT NO_TESTS)
   target_link_libraries(jwt-util-test
-    kudu_jwt_util)
+    kudu_jwt_util
+    server_process)
 endif()
 
 #######################################

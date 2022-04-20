@@ -19,16 +19,13 @@
 
 #include "kudu/util/jwt-util.h"
 
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include <chrono>
-#include <cstdio> // file stuff
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <jwt-cpp/jwt.h>
@@ -36,15 +33,21 @@
 #include <jwt-cpp/traits/kazuho-picojson/traits.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/server/webserver.h"
+#include "kudu/server/webserver_options.h"
 #include "kudu/util/env.h"
 #include "kudu/util/jwt-util-internal.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/web_callback_registry.h"
 
 namespace kudu {
 
 using std::string;
+using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 const std::string kRsaPrivKeyPem = R"(-----BEGIN PRIVATE KEY-----
@@ -367,27 +370,21 @@ class TempTestDataFile {
   // Creates a temporary file with the specified contents.
   explicit TempTestDataFile(const std::string& contents);
 
-  ~TempTestDataFile() { Delete(); }
-
   /// Returns the absolute path to the file.
   const std::string& Filename() const { return name_; }
 
  private:
   std::string name_;
-  bool deleted_;
-
-  // Delete this temporary file
-  void Delete();
+  std::unique_ptr<WritableFile> tmp_file_;
 };
 
 TempTestDataFile::TempTestDataFile(const std::string& contents)
-  : name_("/tmp/jwks_XXXXXX"), deleted_(false) {
-  std::unique_ptr<WritableFile> tmp_file;
+  : name_("/tmp/jwks_XXXXXX") {
   string created_filename;
   WritableFileOptions opts;
   opts.is_sensitive = false;
   Status status;
-  status = Env::Default()->NewTempWritableFile(opts, &name_[0], &created_filename, &tmp_file);
+  status = Env::Default()->NewTempWritableFile(opts, &name_[0], &created_filename, &tmp_file_);
   if (!status.ok()) {
     std::cerr << Substitute("Error creating temp file: $0", created_filename);
   }
@@ -398,15 +395,6 @@ TempTestDataFile::TempTestDataFile(const std::string& contents)
   }
 
   name_ = created_filename;
-}
-
-void TempTestDataFile::Delete() {
-  if (deleted_) return;
-  deleted_ = true;
-  if (remove(name_.c_str()) != 0) {
-    std::cout << "Error deleting temp file; " << strerror(errno) << std::endl;
-    abort();
-  }
 }
 
 TEST(JwtUtilTest, LoadJwksFile) {
@@ -1061,8 +1049,11 @@ TEST(JwtUtilTest, VerifyJwtTokenWithoutKeyId) {
 
   // Create a JWT token without key ID.
   auto token =
-      jwt::create().set_issuer("auth0").set_type("JWS").set_algorithm("RS256").sign(
-          jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
+      jwt::create()
+          .set_issuer("auth0")
+          .set_type("JWS")
+          .set_algorithm("RS256")
+          .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
   // Verify the token by trying each key in JWK set and there is one matched key.
   JWTHelper::UniqueJWTDecodedToken decoded_token;
   status = JWTHelper::Decode(token, decoded_token);
@@ -1082,8 +1073,11 @@ TEST(JwtUtilTest, VerifyJwtFailTokenWithoutKeyId) {
 
   // Create a JWT token without key ID.
   auto token =
-      jwt::create().set_issuer("auth0").set_type("JWS").set_algorithm("RS512").sign(
-          jwt::algorithm::rs512(kRsa512PubKeyPem, kRsa512PrivKeyPem, "", ""));
+      jwt::create()
+          .set_issuer("auth0")
+          .set_type("JWS")
+          .set_algorithm("RS512")
+          .sign(jwt::algorithm::rs512(kRsa512PubKeyPem, kRsa512PrivKeyPem, "", ""));
   // Verify the token by trying each key in JWK set, but there is no matched key.
   JWTHelper::UniqueJWTDecodedToken decoded_token;
   status = JWTHelper::Decode(token, decoded_token);
@@ -1143,6 +1137,71 @@ TEST(JwtUtilTest, VerifyJwtFailExpiredToken) {
   ASSERT_TRUE(status.ToString().find("Verification failed, error: token expired")
       != std::string::npos)
       << " Actual error: " << status.ToString();
+}
+
+namespace {
+
+void JWKSHandler(const Webserver::WebRequest& /*req*/,
+                 Webserver::PrerenderedWebResponse* resp) {
+  resp->output <<
+      Substitute(kJwksRsaFileFormat, kKid1, "RS256",
+          kRsaPubKeyJwkN, kRsaPubKeyJwkE, kKid2, "RS256", kRsaInvalidPubKeyJwkN,
+          kRsaPubKeyJwkE);
+  resp->status_code = HttpStatusCode::Ok;
+}
+
+class JWKSMockServer {
+ public:
+  Status Start() {
+    WebserverOptions opts;
+    opts.port = 0;
+    opts.bind_interface = "127.0.0.1";
+    webserver_.reset(new Webserver(opts));
+    webserver_->RegisterPrerenderedPathHandler("/jwks", "JWKS", JWKSHandler,
+                                               /*is_styled*/false, /*is_on_nav_bar*/false);
+    RETURN_NOT_OK(webserver_->Start());
+    vector<Sockaddr> addrs;
+    RETURN_NOT_OK(webserver_->GetBoundAddresses(&addrs));
+    url_ = Substitute("http://$0/jwks", addrs[0].ToString());
+    return Status::OK();
+  }
+
+  const string& url() const {
+    return url_;
+  }
+ private:
+  unique_ptr<Webserver> webserver_;
+  string url_;
+};
+
+} // anonymous namespace
+
+TEST(JwtUtilTest, VerifyJWKSUrl) {
+  JWKSMockServer jwks_server;
+  ASSERT_OK(jwks_server.Start());
+
+  JWTHelper jwt_helper;
+  ASSERT_OK(jwt_helper.Init(jwks_server.url(), false));
+  auto encoded_token =
+      jwt::create()
+          .set_issuer("auth0")
+          .set_type("JWS")
+          .set_algorithm("RS256")
+          .set_key_id(kKid1)
+          .set_payload_claim("username", picojson::value("impala"))
+          .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
+  ASSERT_EQ(
+      "eyJhbGciOiJSUzI1NiIsImtpZCI6InB1YmxpYzpjNDI0YjY3Yi1mZTI4LTQ1ZDctYjAxNS1mNzlkYTUwYj"
+      "ViMjEiLCJ0eXAiOiJKV1MifQ.eyJpc3MiOiJhdXRoMCIsInVzZXJuYW1lIjoiaW1wYWxhIn0.OW5H2SClL"
+      "lsotsCarTHYEbqlbRh43LFwOyo9WubpNTwE7hTuJDsnFoVrvHiWI02W69TZNat7DYcC86A_ogLMfNXagHj"
+      "lMFJaRnvG5Ekag8NRuZNJmHVqfX-qr6x7_8mpOdU554kc200pqbpYLhhuK4Qf7oT7y9mOrtNrUKGDCZ0Q2"
+      "y_mizlbY6SMg4RWqSz0RQwJbRgXIWSgcbZd0GbD_MQQ8x7WRE4nluU-5Fl4N2Wo8T9fNTuxALPiuVeIczO"
+      "25b5n4fryfKasSgaZfmk0CoOJzqbtmQxqiK9QNSJAiH2kaqMwLNgAdgn8fbd-lB1RAEGeyPH8Px8ipqcKs"
+      "Pk0bg",
+      encoded_token);
+  JWTHelper::UniqueJWTDecodedToken decoded_token;
+  ASSERT_OK(jwt_helper.Decode(encoded_token, decoded_token));
+  ASSERT_OK(jwt_helper.Verify(decoded_token.get()));
 }
 
 } // namespace kudu
