@@ -56,9 +56,8 @@ class Promise {
   const T* WaitFor(const MonoDelta& delta) const {
     if (latch_.WaitFor(delta)) {
       return &val_;
-    } else {
-      return NULL;
     }
+    return nullptr;
   }
 
   // Set the value of this promise.

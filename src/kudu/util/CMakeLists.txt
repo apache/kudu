@@ -353,6 +353,17 @@ target_link_libraries(kudu_curl_util
   gutil)
 
 #######################################
+# kudu_jwt_util
+#######################################
+add_library(kudu_jwt_util
+  jwt-util.cc)
+target_link_libraries(kudu_jwt_util
+  gutil
+  security
+  kudu_curl_util
+  kudu_util)
+
+#######################################
 # kudu_cloud_util
 #######################################
 add_library(kudu_cloud_util
@@ -609,6 +620,15 @@ ADD_KUDU_TEST(curl_util-test)
 if(NOT NO_TESTS)
   target_link_libraries(curl_util-test
     kudu_curl_util)
+endif()
+
+#######################################
+# jwt-util-test
+#######################################
+ADD_KUDU_TEST(jwt-util-test)
+if(NOT NO_TESTS)
+  target_link_libraries(jwt-util-test
+    kudu_jwt_util)
 endif()
 
 #######################################
