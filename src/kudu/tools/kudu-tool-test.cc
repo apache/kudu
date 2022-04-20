@@ -7969,6 +7969,7 @@ TEST_F(ToolTest, TestLocalReplicaCopyLocal) {
 }
 
 TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
   // Create replicas and fill some data.
   const int kNumTserver = 3;
   InternalMiniClusterOptions opts;
