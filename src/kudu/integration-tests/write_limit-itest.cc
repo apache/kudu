@@ -150,7 +150,7 @@ class DisableWriteWhenExceedingQuotaTest : public KuduTest {
   const char* const kTableName = "test-table";
   const char* const kUser = "token-user";
   const char* const kSuperUser = "super-user";
-  const int64_t kRowCountLimit = 20;
+  static const int64_t kRowCountLimit = 20;
 
   void SetUp() override {
     KuduTest::SetUp();
@@ -213,11 +213,11 @@ class DisableWriteWhenExceedingQuotaTest : public KuduTest {
   }
 
   // Disable write privilege through authz token when exceeding size quota
-  void TestSizeLimit() {
+  void TestSizeLimit(int64_t row_count_limit = kRowCountLimit) {
     shared_ptr<KuduSession> good_session(client_->NewSession());
     Status s = Status::OK();
     int k = 0;
-    for (k = 0; k < kRowCountLimit; k++) {
+    for (k = 0; k < row_count_limit; k++) {
       ASSERT_OK(InsertKeyToTable(client_table_.get(), good_session.get(), k));
       s = good_session->Flush();
       if (!s.ok()) {
@@ -423,16 +423,17 @@ TEST_F(DisableWriteWhenExceedingQuotaTest, TestDisableWritePrivilegeWhenExceedin
   // flush, compaction, and GC jazz performed in the context of TestSizeLimit(),
   // taking into account all the auxiliary data kept on disk by corresponding
   // tablet servers.
-  NO_FATALS(ModifyLimit(1024 * (1024 + 110), kRowCountLimit));
+  int64_t row_limit = 100 * kRowCountLimit;
+  NO_FATALS(ModifyLimit(1024 * (1024 + 110), row_limit));
   // refresh the client
   ASSERT_OK(SetupClient(kUser));
-  NO_FATALS(TestSizeLimit());
+  NO_FATALS(TestSizeLimit(row_limit));
 
   // restart the cluster to verify it again
   cluster_->Shutdown();
   ASSERT_OK(cluster_->Start());
   ASSERT_OK(SetupClient(kUser));
-  NO_FATALS(TestSizeLimit());
+  NO_FATALS(TestSizeLimit(row_limit));
 }
 
 TEST_F(DisableWriteWhenExceedingQuotaTest, TestDisableWriteWhenExceedingRowsQuotaWithFactor) {
