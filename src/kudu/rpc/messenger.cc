@@ -22,6 +22,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -33,7 +34,7 @@
 #include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/inbound_call.h"
-#include "kudu/rpc/outbound_call.h"
+#include "kudu/rpc/outbound_call.h" // IWYU pragma: keep
 #include "kudu/rpc/reactor.h"
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -319,6 +320,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
                                             bld.rpc_tls_min_protocol_,
                                             bld.rpc_tls_excluded_protocols_)),
       token_verifier_(new security::TokenVerifier),
+      jwt_verifier_(nullptr),
       rpcz_store_(new RpczStore),
       metric_entity_(bld.metric_entity_),
       rpc_negotiation_timeout_ms_(bld.rpc_negotiation_timeout_ms_),

@@ -20,8 +20,11 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/util/jwt-util-internal.h"
+#include "kudu/util/jwt.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -84,6 +87,25 @@ class JWTHelper {
   // JWKS Manager for Json Web Token (JWT) verification.
   // Only one instance per daemon.
   std::unique_ptr<JWKSMgr> jwks_mgr_;
+};
+
+// JwtVerifier implementation that uses JWKS to verify tokens.
+class KeyBasedJwtVerifier : public JwtVerifier {
+ public:
+  KeyBasedJwtVerifier(std::string jwks_uri, bool is_local_file)
+      : jwt_(JWTHelper::GetInstance()),
+        jwks_uri_(std::move(jwks_uri)),
+        is_local_file_(is_local_file) {
+  }
+  ~KeyBasedJwtVerifier() override = default;
+  Status Init();
+  Status VerifyToken(const std::string& bytes_raw, std::string* subject) const override;
+ private:
+  JWTHelper* jwt_;
+  std::string jwks_uri_;
+  bool is_local_file_;
+
+  DISALLOW_COPY_AND_ASSIGN(KeyBasedJwtVerifier);
 };
 
 } // namespace kudu

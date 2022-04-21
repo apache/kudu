@@ -100,6 +100,7 @@ message AuthenticationTypePB {
   message Sasl {};
   message Token {};
   message Certificate {};
+  message Jwt {};
 
   oneof type {
     // The server and client mutually authenticate via SASL.
@@ -116,6 +117,11 @@ message AuthenticationTypePB {
     //
     // Certificate authentication requires the connection to be TLS encrypted.
     Certificate certificate = 3;
+
+    // The server authenticates the client via a JSON web token.
+    //
+    // Requires the connection to be TLS encrypted.
+    Jwt jwt = 4;
   }
 }
 
@@ -130,6 +136,7 @@ message NegotiatePB {
     SASL_RESPONSE  = 4;
     TLS_HANDSHAKE  = 5;
     TOKEN_EXCHANGE = 6;
+    JWT_EXCHANGE   = 7;
   }
 
   message SaslMechanism {
@@ -185,6 +192,10 @@ message NegotiatePB {
 
   // During the TOKEN_EXCHANGE step, contains the client's signed authentication token.
   optional security.SignedTokenPB authn_token = 8;
+
+  // During the JWT_EXCHANGE step, contains the client's JWT used for
+  // authentication.
+  optional security.JwtRawPB jwt_raw = 10;
 }
 
 message RemoteMethodPB {
@@ -336,6 +347,9 @@ message ErrorStatusPB {
     // negotiation failed, and the client should obtain a new authn token and
     // try to reconnect.
     FATAL_INVALID_AUTHENTICATION_TOKEN = 16;
+
+    // The JWT is invalid or expired.
+    FATAL_INVALID_JWT = 18;
   }
 
   required string message = 1;

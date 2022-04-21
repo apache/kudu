@@ -42,6 +42,7 @@
 
 namespace kudu {
 
+class JwtVerifier;
 class Sockaddr;
 class faststring;
 
@@ -65,6 +66,7 @@ class ServerNegotiation {
   ServerNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
                     const security::TokenVerifier* token_verifier,
+                    const JwtVerifier* jwt_verifier,
                     security::RpcEncryption encryption,
                     bool encrypt_loopback,
                     std::string sasl_proto_name);
@@ -192,6 +194,8 @@ class ServerNegotiation {
   // 'recv_buf' allows a receive buffer to be reused.
   Status AuthenticateByToken(faststring* recv_buf) WARN_UNUSED_RESULT;
 
+  Status AuthenticateByJwt(faststring* recv_buf) WARN_UNUSED_RESULT;
+
   // Authenticate the client using the client's TLS certificate. Populates the
   // 'authenticated_user_' field with the certificate's subject.
   Status AuthenticateByCertificate() WARN_UNUSED_RESULT;
@@ -234,6 +238,7 @@ class ServerNegotiation {
 
   // TSK state.
   const security::TokenVerifier* token_verifier_;
+  const JwtVerifier* jwt_verifier_;
 
   // The set of features supported by the client and server. Filled in during negotiation.
   std::set<RpcFeatureFlag> client_features_;

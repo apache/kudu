@@ -35,6 +35,7 @@ enum class AuthenticationType {
   SASL,
   TOKEN,
   CERTIFICATE,
+  JWT,
 };
 const char* AuthenticationTypeToString(AuthenticationType t);
 

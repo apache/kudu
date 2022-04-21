@@ -65,6 +65,7 @@ class ClientNegotiation {
   ClientNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
                     std::optional<security::SignedTokenPB> authn_token,
+                    std::optional<security::JwtRawPB> jwt,
                     security::RpcEncryption encryption,
                     bool encrypt_loopback,
                     std::string sasl_proto_name);
@@ -186,6 +187,9 @@ class ClientNegotiation {
   Status AuthenticateByToken(faststring* recv_buf,
                              std::unique_ptr<ErrorStatusPB> *rpc_error) WARN_UNUSED_RESULT;
 
+  Status AuthenticateByJwt(faststring* recv_buf,
+                           std::unique_ptr<ErrorStatusPB>* rpc_error) WARN_UNUSED_RESULT;
+
   // Send an SASL_INITIATE message to the server.
   // Returns:
   //  Status::OK if the SASL_SUCCESS message is expected next.
@@ -234,6 +238,7 @@ class ClientNegotiation {
 
   // TSK state.
   std::optional<security::SignedTokenPB> authn_token_;
+  std::optional<security::JwtRawPB> jwt_;
 
   // Authentication state.
   std::string plain_auth_user_;

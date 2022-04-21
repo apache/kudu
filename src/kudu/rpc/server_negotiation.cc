@@ -53,6 +53,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/jwt.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -156,6 +157,7 @@ static int ServerNegotiationPlainAuthCb(sasl_conn_t* conn,
 ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
                                      const security::TokenVerifier* token_verifier,
+                                     const JwtVerifier* jwt_verifier,
                                      RpcEncryption encryption,
                                      bool encrypt_loopback,
                                      std::string sasl_proto_name)
@@ -167,6 +169,7 @@ ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
       tls_negotiated_(false),
       encrypt_loopback_(encrypt_loopback),
       token_verifier_(token_verifier),
+      jwt_verifier_(jwt_verifier),
       negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),
       sasl_proto_name_(std::move(sasl_proto_name)),
@@ -281,6 +284,9 @@ Status ServerNegotiation::Negotiate() {
     case AuthenticationType::TOKEN:
       RETURN_NOT_OK(AuthenticateByToken(&recv_buf));
       break;
+    case AuthenticationType::JWT:
+      RETURN_NOT_OK(AuthenticateByJwt(&recv_buf));
+      break;
     case AuthenticationType::CERTIFICATE:
       RETURN_NOT_OK(AuthenticateByCertificate());
       break;
@@ -307,7 +313,7 @@ Status ServerNegotiation::PreflightCheckGSSAPI(const std::string& sasl_proto_nam
   // We aren't going to actually send/receive any messages, but
   // this makes it easier to reuse the initialization code.
   ServerNegotiation server(
-      nullptr, nullptr, nullptr, RpcEncryption::OPTIONAL, false, sasl_proto_name);
+      nullptr, nullptr, nullptr, nullptr, RpcEncryption::OPTIONAL, false, sasl_proto_name);
   Status s = server.EnableGSSAPI();
   if (!s.ok()) {
     return Status::RuntimeError(s.message());
@@ -494,6 +500,11 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
             authn_types.insert(AuthenticationType::CERTIFICATE);
           }
           break;
+        case AuthenticationTypePB::kJwt:
+          if (jwt_verifier_) {
+            authn_types.insert(AuthenticationType::JWT);
+          }
+          break;
         case AuthenticationTypePB::TYPE_NOT_SET: {
           Sockaddr addr;
           RETURN_NOT_OK(socket_->GetPeerAddress(&addr));
@@ -529,6 +540,9 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
     // TODO(KUDU-1924): consider adding the TSK sequence number to the authentication
     // message.
     negotiated_authn_ = AuthenticationType::TOKEN;
+  } else if (ContainsKey(authn_types, AuthenticationType::JWT) &&
+             encryption_ != RpcEncryption::DISABLED) {
+    negotiated_authn_ = AuthenticationType::JWT;
   } else {
     // Otherwise we always can fallback to SASL.
     DCHECK(ContainsKey(authn_types, AuthenticationType::SASL));
@@ -578,6 +592,9 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
       }
       break;
     }
+    case AuthenticationType::JWT:
+      response.add_authn_types()->mutable_jwt();
+      break;
     case AuthenticationType::INVALID: LOG(FATAL) << "unreachable";
   }
 
@@ -683,6 +700,47 @@ Status ServerNegotiation::AuthenticateBySasl(faststring* recv_buf) {
     authenticated_user_.SetUnauthenticated(c_username);
   }
   return Status::OK();
+}
+
+Status ServerNegotiation::AuthenticateByJwt(faststring* recv_buf) {
+  // Sanity check that TLS has been negotiated. Receiving the token on an
+  // unencrypted channel is a big no-no.
+  DCHECK(tls_negotiated_);
+  if (!tls_negotiated_) {
+    return Status::IllegalState("Attempting to authenticate using JWT on an unencrypted channel");
+  }
+
+  if (!jwt_verifier_) {
+    return Status::IllegalState("No JWT verifier available");
+  }
+
+  // Receive the token from the client.
+  NegotiatePB pb;
+  RETURN_NOT_OK(RecvNegotiatePB(&pb, recv_buf));
+
+  if (PREDICT_FALSE(pb.step() != NegotiatePB::JWT_EXCHANGE)) {
+    auto s = Status::NotAuthorized("expected JWT_EXCHANGE step",
+                                   NegotiatePB::NegotiateStep_Name(pb.step()));
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    return s;
+  }
+  if (!pb.has_jwt_raw()) {
+    Status s = Status::NotAuthorized("JWT_EXCHANGE message must include a JWT");
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_JWT, s));
+    return s;
+  }
+  string subject;
+  auto result = jwt_verifier_->VerifyToken(pb.jwt_raw().jwt_data(), &subject);
+  if (result.ok()) {
+    authenticated_user_.SetAuthenticatedByToken(std::move(subject));
+  } else {
+    auto s = Status::NotAuthorized(result.message());
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_JWT, s));
+    return s;
+  }
+  pb.Clear();
+  pb.set_step(NegotiatePB::JWT_EXCHANGE);
+  return SendNegotiatePB(pb);
 }
 
 Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {

@@ -17,11 +17,11 @@
 
 #include "kudu/rpc/negotiation.h"
 
+#include <ctime>
 #include <poll.h>
 #include <sys/socket.h>
 
 #include <cerrno>
-#include <ctime>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -43,6 +43,7 @@
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -86,6 +87,7 @@ const char* AuthenticationTypeToString(AuthenticationType t) {
     case AuthenticationType::SASL: return "SASL"; break;
     case AuthenticationType::TOKEN: return "TOKEN"; break;
     case AuthenticationType::CERTIFICATE: return "CERTIFICATE"; break;
+    case AuthenticationType::JWT: return "JWT"; break;
   }
   return "<cannot reach here>";
 }
@@ -176,6 +178,7 @@ static Status DoClientNegotiation(Connection* conn,
   ClientNegotiation client_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
                                        authn_token,
+                                       messenger->jwt(),
                                        encryption,
                                        encrypt_loopback,
                                        messenger->sasl_proto_name());
@@ -259,6 +262,7 @@ static Status DoServerNegotiation(Connection* conn,
   ServerNegotiation server_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
                                        &messenger->token_verifier(),
+                                       messenger->jwt_verifier(),
                                        encryption,
                                        encrypt_loopback,
                                        messenger->sasl_proto_name());

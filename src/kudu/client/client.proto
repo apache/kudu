@@ -211,4 +211,7 @@ message AuthenticationCredentialsPB {
 
   // Trusted root CA certificates.
   repeated bytes ca_cert_ders = 2;
+
+  // A JWT to be verified by the master.
+  optional security.JwtRawPB jwt = 4;
 }

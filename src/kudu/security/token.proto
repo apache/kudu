@@ -90,6 +90,11 @@ message TokenPB {
   }
 };
 
+// JSON Web Token: a wrapper to pass around a JWT as is.
+message JwtRawPB {
+  optional bytes jwt_data = 1;
+}
+
 message SignedTokenPB {
   // The actual token data. This is a serialized TokenPB protobuf. However, we use a
   // 'bytes' field, since protobuf doesn't guarantee that if two implementations serialize

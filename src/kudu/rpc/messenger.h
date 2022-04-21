@@ -42,6 +42,7 @@
 
 namespace kudu {
 
+class JwtVerifier;
 class Socket;
 class ThreadPool;
 
@@ -376,6 +377,9 @@ class Messenger {
     return token_verifier_;
   }
 
+  const JwtVerifier* jwt_verifier() const { return jwt_verifier_.get(); }
+  JwtVerifier* mutable_jwt_verifier() { return jwt_verifier_.get(); }
+
   std::optional<security::SignedTokenPB> authn_token() const {
     std::lock_guard<simple_spinlock> l(authn_token_lock_);
     return authn_token_;
@@ -383,6 +387,15 @@ class Messenger {
   void set_authn_token(const security::SignedTokenPB& token) {
     std::lock_guard<simple_spinlock> l(authn_token_lock_);
     authn_token_ = token;
+  }
+
+  std::optional<security::JwtRawPB> jwt() const {
+    std::lock_guard<simple_spinlock> l(authn_token_lock_);
+    return jwt_;
+  }
+  void set_jwt(const security::JwtRawPB& token) {
+    std::lock_guard<simple_spinlock> l(authn_token_lock_);
+    jwt_ = token;
   }
 
   security::RpcAuthentication authentication() const { return authentication_; }
@@ -502,10 +515,12 @@ class Messenger {
 
   // A TokenVerifier, which can verify client provided authentication tokens.
   std::shared_ptr<security::TokenVerifier> token_verifier_;
+  std::shared_ptr<JwtVerifier> jwt_verifier_;
 
   // An optional token, which can be used to authenticate to a server.
   mutable simple_spinlock authn_token_lock_;
   std::optional<security::SignedTokenPB> authn_token_;
+  std::optional<security::JwtRawPB> jwt_;
 
   std::unique_ptr<RpczStore> rpcz_store_;
 

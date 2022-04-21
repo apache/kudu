@@ -118,6 +118,7 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
 ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
                                      std::optional<security::SignedTokenPB> authn_token,
+                                     std::optional<security::JwtRawPB> jwt,
                                      RpcEncryption encryption,
                                      bool encrypt_loopback,
                                      std::string sasl_proto_name)
@@ -129,6 +130,7 @@ ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
       tls_negotiated_(false),
       encrypt_loopback_(encrypt_loopback),
       authn_token_(std::move(authn_token)),
+      jwt_(std::move(jwt)),
       psecret_(nullptr, std::free),
       negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),
@@ -223,6 +225,9 @@ Status ClientNegotiation::Negotiate(unique_ptr<ErrorStatusPB>* rpc_error) {
       break;
     case AuthenticationType::TOKEN:
       RETURN_NOT_OK(AuthenticateByToken(&recv_buf, rpc_error));
+      break;
+    case AuthenticationType::JWT:
+      RETURN_NOT_OK(AuthenticateByJwt(&recv_buf, rpc_error));
       break;
     case AuthenticationType::CERTIFICATE:
       // The TLS handshake has already authenticated the server.
@@ -349,6 +354,11 @@ Status ClientNegotiation::SendNegotiate() {
     msg.add_authn_types()->mutable_token();
   }
 
+  if (jwt_) {
+    // TODO(zchovan): make sure that we are using a trusted certificate
+    msg.add_authn_types()->mutable_jwt();
+  }
+
   if (PREDICT_FALSE(msg.authn_types().empty())) {
     return Status::NotAuthorized("client is not configured with an authentication type");
   }
@@ -399,6 +409,9 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
               "server chose token authentication, but client has no token");
         }
         negotiated_authn_ = AuthenticationType::TOKEN;
+        return Status::OK();
+      case AuthenticationTypePB::kJwt:
+        negotiated_authn_ = AuthenticationType::JWT;
         return Status::OK();
       case AuthenticationTypePB::kCertificate:
         if (!tls_context_->has_signed_cert()) {
@@ -539,6 +552,21 @@ Status ClientNegotiation::AuthenticateBySasl(faststring* recv_buf,
   NegotiatePB success;
   RETURN_NOT_OK(RecvNegotiatePB(&success, recv_buf, rpc_error));
   return HandleSaslSuccess(success);
+}
+
+Status ClientNegotiation::AuthenticateByJwt(faststring* recv_buf,
+                                            unique_ptr<ErrorStatusPB>* rpc_error) {
+  NegotiatePB pb;
+  pb.set_step(NegotiatePB::JWT_EXCHANGE);
+  *pb.mutable_jwt_raw() = std::move(*jwt_);
+  RETURN_NOT_OK(SendNegotiatePB(pb));
+  pb.Clear();
+  RETURN_NOT_OK(RecvNegotiatePB(&pb, recv_buf, rpc_error));
+  if (pb.step() != NegotiatePB::JWT_EXCHANGE) {
+    return Status::NotAuthorized("expected JWT_EXCHANGE step",
+                                 NegotiatePB::NegotiateStep_Name(pb.step()));
+  }
+  return Status::OK();
 }
 
 Status ClientNegotiation::AuthenticateByToken(faststring* recv_buf,
