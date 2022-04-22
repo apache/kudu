@@ -85,6 +85,12 @@ class MessengerBuilder {
 
   explicit MessengerBuilder(std::string name);
 
+  MessengerBuilder& set_jwt_verifier(
+      std::shared_ptr<JwtVerifier> jwt_verifier) {
+    jwt_verifier_ = std::move(jwt_verifier);
+    return *this;
+  }
+
   // Set the length of time we will keep a TCP connection will alive with no traffic.
   MessengerBuilder& set_connection_keepalive_time(const MonoDelta& keepalive) {
     connection_keepalive_time_ = keepalive;
@@ -277,6 +283,7 @@ class MessengerBuilder {
   std::string rpc_ca_certificate_file_;
   std::string rpc_private_key_password_cmd_;
   std::string keytab_file_;
+  std::shared_ptr<JwtVerifier> jwt_verifier_;
   bool enable_inbound_tls_;
   bool reuseport_;
 };

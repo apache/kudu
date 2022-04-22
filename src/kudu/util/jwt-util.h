@@ -98,7 +98,7 @@ class KeyBasedJwtVerifier : public JwtVerifier {
         is_local_file_(is_local_file) {
   }
   ~KeyBasedJwtVerifier() override = default;
-  Status Init();
+  Status Init() override;
   Status VerifyToken(const std::string& bytes_raw, std::string* subject) const override;
  private:
   JWTHelper* jwt_;

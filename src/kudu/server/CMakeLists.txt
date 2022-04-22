@@ -63,6 +63,7 @@ target_link_libraries(server_process
   krpc
   kudu_common
   kudu_fs
+  kudu_jwt_util
   kudu_util
   mustache
   server_base_proto

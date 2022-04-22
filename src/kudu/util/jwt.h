@@ -28,6 +28,7 @@ namespace kudu {
 class JwtVerifier {
  public:
   virtual ~JwtVerifier() {}
+  virtual Status Init() = 0;
   // Verifies a JWT, which is passed as bytes_raw, then extracts the subject from the verified
   // token and returns it by pointer in subject. The returned pointer is owned by the caller.
   virtual Status VerifyToken(const std::string& bytes_raw, std::string* subject) const = 0;
@@ -39,6 +40,7 @@ class SimpleJwtVerifier : public JwtVerifier {
  public:
   SimpleJwtVerifier() = default;
   ~SimpleJwtVerifier() override = default;
+  Status Init() override { return Status::OK(); }
   Status VerifyToken(const std::string&  /*bytes_raw*/,
                      std::string*  /*subject*/) const override {
     return Status::NotAuthorized("JWT verification not configured");
