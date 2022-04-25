@@ -277,7 +277,7 @@ class ClientTest : public KuduTest {
         .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
         .Build(&client_));
 
-    NO_FATALS(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
+    ASSERT_OK(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
   }
 
   // Looks up the remote tablet entry for a given partition key in the meta cache.
@@ -709,22 +709,22 @@ class ClientTest : public KuduTest {
 
   // Creates a table with 'num_replicas', split into tablets based on
   // 'split_rows' and 'range_bounds' (or single tablet if both are empty).
-  void CreateTable(const string& table_name,
-                   int num_replicas,
-                   vector<unique_ptr<KuduPartialRow>> split_rows,
-                   vector<pair<unique_ptr<KuduPartialRow>,
-                               unique_ptr<KuduPartialRow>>> range_bounds,
-                   shared_ptr<KuduTable>* table) {
+  Status CreateTable(const string& table_name,
+                     int num_replicas,
+                     vector<unique_ptr<KuduPartialRow>> split_rows,
+                     vector<pair<unique_ptr<KuduPartialRow>,
+                                 unique_ptr<KuduPartialRow>>> range_bounds,
+                     shared_ptr<KuduTable>* table) {
 
     bool added_replicas = false;
     // Add more tablet servers to satisfy all replicas, if necessary.
     while (cluster_->num_tablet_servers() < num_replicas) {
-      ASSERT_OK(cluster_->AddTabletServer());
+      RETURN_NOT_OK(cluster_->AddTabletServer());
       added_replicas = true;
     }
 
     if (added_replicas) {
-      ASSERT_OK(cluster_->WaitForTabletServerCount(num_replicas));
+      RETURN_NOT_OK(cluster_->WaitForTabletServerCount(num_replicas));
     }
 
     unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
@@ -734,14 +734,14 @@ class ClientTest : public KuduTest {
     for (auto& bound : range_bounds) {
       table_creator->add_range_partition(bound.first.release(), bound.second.release());
     }
-    ASSERT_OK(table_creator->table_name(table_name)
+    RETURN_NOT_OK(table_creator->table_name(table_name)
                             .schema(&schema_)
                             .num_replicas(num_replicas)
                             .set_range_partition_columns({ "key" })
                             .timeout(MonoDelta::FromSeconds(60))
                             .Create());
 
-    ASSERT_OK(client_->OpenTable(table_name, table));
+    return client_->OpenTable(table_name, table);
   }
 
   // Kills a tablet server.
@@ -886,7 +886,7 @@ TEST_F(ClientTest, TestClusterId) {
 TEST_F(ClientTest, TestListTables) {
   const char* kTable2Name = "client-testtb2";
   shared_ptr<KuduTable> second_table;
-  NO_FATALS(CreateTable(kTable2Name, 1, {}, {}, &second_table));
+  ASSERT_OK(CreateTable(kTable2Name, 1, {}, {}, &second_table));
 
   vector<string> tables;
   ASSERT_OK(client_->ListTables(&tables));
@@ -1257,7 +1257,7 @@ TEST_P(ScanMultiTabletParamTest, Test) {
       ASSERT_OK(row->SetInt32(0, i * kRowsPerTablet));
       rows.emplace_back(std::move(row));
     }
-    NO_FATALS(CreateTable("TestScanMultiTablet", 1,
+    ASSERT_OK(CreateTable("TestScanMultiTablet", 1,
                           std::move(rows), {}, &table));
   }
 
@@ -1532,7 +1532,7 @@ TEST_F(ClientTest, TestInvalidPredicates) {
 TEST_F(ClientTest, TestScanCloseProxy) {
   const string kEmptyTable = "TestScanCloseProxy";
   shared_ptr<KuduTable> table;
-  NO_FATALS(CreateTable(kEmptyTable, 3, GenerateSplitRows(), {}, &table));
+  ASSERT_OK(CreateTable(kEmptyTable, 3, GenerateSplitRows(), {}, &table));
 
   {
     // Open and close an empty scanner.
@@ -1670,7 +1670,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   FLAGS_leader_failure_exp_backoff_max_delta_ms = 1000;
 
   const int kNumReplicas = 3;
-  NO_FATALS(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
+  ASSERT_OK(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
   NO_FATALS(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
   // Do an initial scan to determine the expected rows for later verification.
@@ -1739,7 +1739,7 @@ TEST_F(ClientTest, TestNonFaultTolerantScannerExpired) {
   shared_ptr<KuduTable> table;
 
   const int kNumReplicas = 1;
-  NO_FATALS(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
+  ASSERT_OK(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
   NO_FATALS(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
   KuduScanner scanner(table.get());
@@ -2471,7 +2471,7 @@ TEST_F(ClientTest, TestMetaCacheLookupNoLeaders) {
 
 TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   shared_ptr<KuduTable> table;
-  NO_FATALS(CreateTable("blacklist",
+  ASSERT_OK(CreateTable("blacklist",
                         3,
                         GenerateSplitRows(),
                         {},
@@ -2548,7 +2548,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
 
 TEST_F(ClientTest, TestGetTabletServerDeterministic) {
   shared_ptr<KuduTable> table;
-  NO_FATALS(CreateTable("selection",
+  ASSERT_OK(CreateTable("selection",
                         3,
                         GenerateSplitRows(),
                         {},
@@ -2598,7 +2598,7 @@ TEST_F(ClientTest, TestGetTabletServerDeterministic) {
 
 TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   shared_ptr<KuduTable> table;
-  NO_FATALS(CreateTable("split-table",
+  ASSERT_OK(CreateTable("split-table",
                         1, /* replicas */
                         GenerateSplitRows(),
                         {},
@@ -3304,7 +3304,7 @@ TEST_F(ClientTest, TestSessionClose) {
 // contains multiple rows spread across multiple tablets.
 TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
   shared_ptr<KuduTable> second_table;
-  NO_FATALS(CreateTable("second table", 1, {}, {}, &second_table));
+  ASSERT_OK(CreateTable("second table", 1, {}, {}, &second_table));
 
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
@@ -3542,7 +3542,7 @@ TEST_F(ClientTest, TestInsertDuplicateKeys) {
 
   constexpr const char* kTable2Name = "client-testtb2";
   shared_ptr<KuduTable> second_table;
-  NO_FATALS(CreateTable(kTable2Name, 1, {}, {}, &second_table));
+  ASSERT_OK(CreateTable(kTable2Name, 1, {}, {}, &second_table));
 
   // Insert initial rows
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "one"));
@@ -4012,7 +4012,7 @@ TEST_F(ClientTest, TestAutoFlushBackgroundAndErrorCollector) {
     // the crux of the race condition for KUDU-1743.
     const string table_name = Substitute("table.$0", i);
     shared_ptr<KuduTable> table;
-    NO_FATALS(CreateTable(table_name, 3, std::move(splits), {}, &table));
+    ASSERT_OK(CreateTable(table_name, 3, std::move(splits), {}, &table));
 
     shared_ptr<KuduSession> session(client_->NewSession());
     scoped_refptr<ErrorCollector> ec(new CustomErrorCollector);
@@ -4909,7 +4909,7 @@ TEST_F(ClientTest, TestDeleteTable) {
 
   // Create a new table with the same name. This is to ensure that the client
   // doesn't cache anything inappropriately by table name (see KUDU-1055).
-  NO_FATALS(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
+  ASSERT_OK(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
 
   // Should be able to insert successfully into the new table.
   NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
@@ -4940,7 +4940,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   const int kNumReplicas = 3;
 
   shared_ptr<KuduTable> table;
-  NO_FATALS(CreateTable(kReplicatedTable,
+  ASSERT_OK(CreateTable(kReplicatedTable,
                         kNumReplicas,
                         GenerateSplitRows(),
                         {},
@@ -4966,7 +4966,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   const int kNumTries = 100;
 
   shared_ptr<KuduTable> table;
-  NO_FATALS(CreateTable(kReplicatedTable,
+  ASSERT_OK(CreateTable(kReplicatedTable,
                         kNumReplicas,
                         GenerateSplitRows(),
                         {},
@@ -5020,7 +5020,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   const int kNumReplicas = 3;
 
   shared_ptr<KuduTable> table;
-  NO_FATALS(CreateTable(kReplicatedTable, kNumReplicas, {}, {}, &table));
+  ASSERT_OK(CreateTable(kReplicatedTable, kNumReplicas, {}, {}, &table));
 
   // Insert some data.
   NO_FATALS(InsertTestRows(table.get(), kNumRowsToWrite));
@@ -5772,7 +5772,7 @@ TEST_F(ClientTest, TestReadAtSnapshotNoTimestampSet) {
       CHECK_OK(row->SetInt32(0, i * kRowsPerTablet));
       rows.push_back(std::move(row));
     }
-    NO_FATALS(CreateTable("test_table", 1, std::move(rows), {}, &table));
+    ASSERT_OK(CreateTable("test_table", 1, std::move(rows), {}, &table));
     // Insert some data into the table, so each tablet would get populated.
     shared_ptr<KuduSession> session(client_->NewSession());
     ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
@@ -6487,7 +6487,7 @@ TEST_F(ClientTest, TestBatchScanConstIterator) {
 TEST_F(ClientTest, TestTableNumReplicas) {
   for (int i : { 1, 3, 5, 7 }) {
     shared_ptr<KuduTable> table;
-    NO_FATALS(CreateTable(Substitute("table_with_$0_replicas", i),
+    ASSERT_OK(CreateTable(Substitute("table_with_$0_replicas", i),
                           i, {}, {}, &table));
     ASSERT_EQ(i, table->num_replicas());
   }
