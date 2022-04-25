@@ -90,12 +90,23 @@ class ThreadPoolTest : public KuduTest {
         .Build(&pool_);
   }
 
+  Status RebuildPoolWithScheduler(int min_threads, int max_threads) {
+    return ThreadPoolBuilder(kDefaultPoolName)
+        .set_min_threads(min_threads)
+        .set_max_threads(max_threads)
+        .set_enable_scheduler()
+        .set_schedule_period_ms(100)
+        .Build(&pool_);
+  }
+
  protected:
   unique_ptr<ThreadPool> pool_;
 };
 
 TEST_F(ThreadPoolTest, TestNoTaskOpenClose) {
   ASSERT_OK(RebuildPoolWithMinMax(4, 4));
+  pool_->Shutdown();
+  ASSERT_OK(RebuildPoolWithScheduler(4, 4));
   pool_->Shutdown();
 }
 
@@ -122,6 +133,8 @@ class SimpleTask {
 };
 
 TEST_F(ThreadPoolTest, TestSimpleTasks) {
+  constexpr int kDelayMs = 1000;
+
   ASSERT_OK(RebuildPoolWithMinMax(4, 4));
 
   Atomic32 counter(0);
@@ -134,6 +147,20 @@ TEST_F(ThreadPoolTest, TestSimpleTasks) {
   ASSERT_OK(pool_->Submit([&counter]() { SimpleTaskMethod(123, &counter); }));
   pool_->Wait();
   ASSERT_EQ(10 + 15 + 20 + 15 + 123, base::subtle::NoBarrier_Load(&counter));
+
+  ASSERT_OK(RebuildPoolWithScheduler(4, 4));
+  unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
+  MonoTime start = MonoTime::Now();
+  ASSERT_OK(token->Schedule([&counter]() {
+    SimpleTaskMethod(13, &counter);
+  }, kDelayMs));
+
+  pool_->WaitForScheduler();
+  ASSERT_EQ(10 + 15 + 20 + 15 + 123 + 13, base::subtle::NoBarrier_Load(&counter));
+  MonoDelta delta = MonoTime::Now() - start;
+  MonoDelta expect_upper_limit = MonoDelta::FromMilliseconds(static_cast<int>(kDelayMs * 1.2));
+  MonoDelta expect_lower_limit = MonoDelta::FromMilliseconds(static_cast<int>(kDelayMs * 0.9));
+  ASSERT_TRUE(delta.MoreThan(expect_lower_limit) && delta.LessThan(expect_upper_limit));
 }
 
 static void IssueTraceStatement() {
@@ -160,6 +187,11 @@ TEST_F(ThreadPoolTest, TestSubmitAfterShutdown) {
   Status s = pool_->Submit(&IssueTraceStatement);
   ASSERT_EQ("Service unavailable: The pool has been shut down.",
             s.ToString());
+
+  ASSERT_OK(RebuildPoolWithScheduler(1, 1));
+  unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
+  pool_->Shutdown();
+  ASSERT_TRUE(token->Schedule(&IssueTraceStatement, 1000).IsServiceUnavailable());
 }
 
 TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
@@ -196,6 +228,53 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
   ASSERT_EQ(0, pool_->active_threads_);
   pool_->Shutdown();
   ASSERT_EQ(0, pool_->num_threads());
+}
+
+TEST_F(ThreadPoolTest, TestThreadPoolWithSchedulerAndNoMinimum) {
+  constexpr int kIdleTimeoutMs = 1;
+  constexpr int kDelayMs = 1000;
+  ASSERT_OK(RebuildPoolWithBuilder(
+      ThreadPoolBuilder(kDefaultPoolName)
+      .set_min_threads(0)
+      .set_max_threads(4)
+      .set_enable_scheduler()
+      .set_idle_timeout(MonoDelta::FromMilliseconds(kIdleTimeoutMs))));
+  // There are no threads to start with.
+  ASSERT_EQ(0, pool_->active_threads_);
+  ASSERT_EQ(0, pool_->num_threads());
+
+  CountDownLatch latch(1);
+  SCOPED_CLEANUP({
+      latch.CountDown();
+  });
+  ASSERT_OK(pool_->Submit([&latch]() { latch.Wait(); }));
+  ASSERT_OK(pool_->Submit([&latch]() { latch.Wait(); }));
+  ASSERT_OK(pool_->Submit([&latch]() { latch.Wait(); }));
+  ASSERT_OK(pool_->Submit([&latch]() { latch.Wait(); }));
+  ASSERT_EQ(4, pool_->num_threads());
+  unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
+  ASSERT_OK(token->Submit([&latch]() { latch.Wait(); }));
+  ASSERT_EQ(4, pool_->num_threads());
+
+  ASSERT_OK(token->Schedule([&latch]() { latch.Wait(); }, kDelayMs));
+  ASSERT_OK(token->Schedule([&latch]() { latch.Wait(); }, static_cast<int>(kDelayMs * 1.2)));
+  ASSERT_EQ(4, pool_->num_threads());
+  latch.CountDown();
+  pool_->Wait();
+
+  latch.Reset(1);
+  ASSERT_EQ(0, pool_->num_active_threads());
+  SleepFor(MonoDelta::FromMilliseconds(static_cast<int>(kDelayMs * 1.5)));
+  ASSERT_GT(pool_->num_active_threads(), 0);
+  ASSERT_OK(token->Schedule([&latch]() { latch.Wait(); }, kDelayMs));
+  latch.CountDown();
+  pool_->Wait();
+  ASSERT_EQ(0, pool_->num_active_threads());
+  SleepFor(MonoDelta::FromMilliseconds(10 * kIdleTimeoutMs));
+  ASSERT_EQ(0, pool_->num_threads());
+  ASSERT_EQ(0, pool_->num_active_threads());
+  pool_->Shutdown();
+  ASSERT_EQ(nullptr, pool_->scheduler());
 }
 
 TEST_F(ThreadPoolTest, TestThreadPoolWithNoMaxThreads) {

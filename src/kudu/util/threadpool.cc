@@ -17,14 +17,14 @@
 
 #include "kudu/util/threadpool.h"
 
-#include <algorithm>
-#include <cstdint>
 #include <deque>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <glog/logging.h>
 
@@ -41,9 +41,9 @@
 namespace kudu {
 
 using std::deque;
-using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 ////////////////////////////////////////////////////////
@@ -55,7 +55,9 @@ ThreadPoolBuilder::ThreadPoolBuilder(string name)
       min_threads_(0),
       max_threads_(base::NumCPUs()),
       max_queue_size_(std::numeric_limits<int>::max()),
-      idle_timeout_(MonoDelta::FromMilliseconds(500)) {}
+      idle_timeout_(MonoDelta::FromMilliseconds(500)),
+      enable_scheduler_(false),
+      schedule_period_ms_(100) {}
 
 ThreadPoolBuilder& ThreadPoolBuilder::set_trace_metric_prefix(const string& prefix) {
   trace_metric_prefix_ = prefix;
@@ -89,6 +91,16 @@ ThreadPoolBuilder& ThreadPoolBuilder::set_metrics(ThreadPoolMetrics metrics) {
   return *this;
 }
 
+ThreadPoolBuilder& ThreadPoolBuilder::set_enable_scheduler() {
+  enable_scheduler_ = true;
+  return *this;
+}
+
+ThreadPoolBuilder& ThreadPoolBuilder::set_schedule_period_ms(uint32_t schedule_period_ms) {
+  schedule_period_ms_ = schedule_period_ms;
+  return *this;
+}
+
 ThreadPoolBuilder& ThreadPoolBuilder::set_queue_overload_threshold(
     const MonoDelta& threshold) {
   queue_overload_threshold_ = threshold;
@@ -98,6 +110,50 @@ ThreadPoolBuilder& ThreadPoolBuilder::set_queue_overload_threshold(
 Status ThreadPoolBuilder::Build(unique_ptr<ThreadPool>* pool) const {
   pool->reset(new ThreadPool(*this));
   return (*pool)->Init();
+}
+
+SchedulerThread::SchedulerThread(string thread_pool_name, uint32_t schedule_period_ms)
+    : thread_pool_name_(std::move(thread_pool_name)),
+      schedule_period_ms_(schedule_period_ms),
+      shutdown_(1) {}
+
+SchedulerThread::~SchedulerThread() {
+  if (thread_) {
+    Shutdown();
+  }
+}
+
+Status SchedulerThread::Start() {
+  return Thread::Create(
+      thread_pool_name_, "scheduler", [this]() { this->RunLoop(); }, &thread_);
+}
+
+Status SchedulerThread::Shutdown() {
+  if (thread_) {
+    shutdown_.CountDown();
+    thread_->Join();
+  }
+  return Status::OK();
+}
+
+void SchedulerThread::RunLoop() {
+  while (!shutdown_.WaitFor(MonoDelta::FromMilliseconds(schedule_period_ms_))) {
+    MonoTime now = MonoTime::Now();
+    vector<SchedulerTask> pending_tasks;
+    {
+      MutexLock auto_lock(mutex_);
+      auto upper_it = tasks_.upper_bound(now);
+      for (auto it = tasks_.begin(); it != upper_it; it++) {
+        pending_tasks.emplace_back(std::move(it->second));
+      }
+      tasks_.erase(tasks_.begin(), upper_it);
+    }
+
+    for (const auto& task : pending_tasks) {
+      ThreadPoolToken* token = task.thread_pool_token_;
+      CHECK_OK(token->Submit(task.f));
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////
@@ -182,6 +238,18 @@ void ThreadPoolToken::Shutdown() {
       t.trace->Release();
     }
   }
+}
+
+// Submit a task, running after delay_ms delay some time
+Status ThreadPoolToken::Schedule(std::function<void()> f, int64_t delay_ms) {
+  if (PREDICT_FALSE(!MaySubmitNewTasks())) {
+    return Status::ServiceUnavailable("Thread pool token was shut down");
+  }
+  CHECK(mode() == ThreadPool::ExecutionMode::SERIAL);
+  MonoTime excute_time = MonoTime::Now();
+  excute_time.AddDelta(MonoDelta::FromMilliseconds(delay_ms));
+  pool_->scheduler()->Schedule(this, std::move(f), excute_time);
+  return Status::OK();
 }
 
 void ThreadPoolToken::Wait() {
@@ -284,7 +352,10 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
       active_threads_(0),
       total_queued_tasks_(0),
       tokenless_(NewToken(ExecutionMode::CONCURRENT)),
-      metrics_(builder.metrics_) {
+      metrics_(builder.metrics_),
+      scheduler_(nullptr),
+      schedule_period_ms_(builder.schedule_period_ms_),
+      enable_scheduler_(builder.enable_scheduler_) {
   string prefix = !builder.trace_metric_prefix_.empty() ?
       builder.trace_metric_prefix_ : builder.name_;
 
@@ -322,6 +393,10 @@ Status ThreadPool::Init() {
       return status;
     }
   }
+  if (enable_scheduler_) {
+    scheduler_ = new SchedulerThread(name_, schedule_period_ms_);
+    RETURN_NOT_OK(scheduler_->Start());
+  }
   return Status::OK();
 }
 
@@ -329,6 +404,11 @@ void ThreadPool::Shutdown() {
   MutexLock unique_lock(lock_);
   CheckNotPoolThreadUnlocked();
 
+  if (scheduler_) {
+    scheduler_->Shutdown();
+    delete scheduler_;
+    scheduler_ = nullptr;
+  }
   // Note: this is the same error seen at submission if the pool is at
   // capacity, so clients can't tell them apart. This isn't really a practical
   // concern though because shutting down a pool typically requires clients to
@@ -555,6 +635,18 @@ void ThreadPool::Wait() {
   MutexLock unique_lock(lock_);
   CheckNotPoolThreadUnlocked();
   while (total_queued_tasks_ > 0 || active_threads_ > 0) {
+    idle_cond_.Wait();
+  }
+}
+
+void ThreadPool::WaitForScheduler() {
+  MutexLock unique_lock(lock_);
+  CheckNotPoolThreadUnlocked();
+  // Generally, ignore scheduler's pending tasks, but
+  // set ScheduledTaskWaitType::WAIT at unit tests.
+  bool wait_scheduler = (scheduler_ != nullptr);
+  while (total_queued_tasks_ > 0 || active_threads_ > 0 ||
+        (wait_scheduler && !scheduler_->empty())) {
     idle_cond_.Wait();
   }
 }
