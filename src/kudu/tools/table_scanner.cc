@@ -88,6 +88,9 @@ using strings::Substitute;
 
 DEFINE_bool(create_table, true,
             "Whether to create the destination table if it doesn't exist.");
+DEFINE_int32(create_table_replication_factor, -1,
+             "The replication factor of the destination table if the table will be created. "
+             "By default, the replication factor of source table will be used.");
 DEFINE_bool(fill_cache, true,
             "Whether to fill block cache when scanning.");
 DEFINE_string(predicates, "",
@@ -116,7 +119,7 @@ DEFINE_bool(show_values, false,
 DEFINE_string(write_type, "insert",
               "How data should be copied to the destination table. Valid values are 'insert', "
               "'upsert' or the empty string. If the empty string, data will not be copied "
-              "(useful when create_table is 'true').");
+              "(useful when --create_table=true).");
 DEFINE_string(replica_selection, "CLOSEST",
               "Replica selection for scan operations. Acceptable values are: "
               "CLOSEST, LEADER (maps into KuduClient::CLOSEST_REPLICA and "
@@ -415,10 +418,12 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
   };
 
   // Table schema and replica number.
+  int num_replicas = FLAGS_create_table_replication_factor == -1 ?
+      src_table->num_replicas() : FLAGS_create_table_replication_factor;
   unique_ptr<KuduTableCreator> table_creator(dst_client->NewTableCreator());
   table_creator->table_name(dst_table_name)
       .schema(&dst_table_schema)
-      .num_replicas(src_table->num_replicas());
+      .num_replicas(num_replicas);
 
   // Add hash partition schema.
   for (const auto& hash_dimension : partition_schema.hash_schema()) {

@@ -517,6 +517,7 @@ class ToolTest : public KuduTest {
     int64_t max_value;
     string columns;
     TableCopyMode mode;
+    int32_t create_table_replication_factor;
   };
 
   void RunCopyTableCheck(const RunCopyTableCheckArgs& args) {
@@ -566,14 +567,15 @@ class ToolTest : public KuduTest {
     string stdout;
     NO_FATALS(RunActionStdoutString(
                 Substitute("table copy $0 $1 $2 -dst_table=$3 -predicates=$4 -write_type=$5 "
-                           "-create_table=$6",
+                           "-create_table=$6 -create_table_replication_factor=$7",
                            cluster_->master()->bound_rpc_addr().ToString(),
                            args.src_table_name,
                            cluster_->master()->bound_rpc_addr().ToString(),
                            kDstTableName,
                            args.predicates_json,
                            write_type,
-                           create_table),
+                           create_table,
+                           args.create_table_replication_factor),
                 &stdout));
 
     // Check total count.
@@ -599,10 +601,15 @@ class ToolTest : public KuduTest {
                    cluster_->master()->bound_rpc_addr().ToString(),
                    kDstTableName), &dst_schema));
 
-      // Remove the first lines, which are the different table names.
-      src_schema.erase(src_schema.begin());
-      dst_schema.erase(dst_schema.begin());
-      ASSERT_EQ(src_schema, dst_schema);
+      ASSERT_EQ(src_schema.size(), dst_schema.size());
+      for (int i = 0; i < src_schema.size(); ++i) {
+        // Table name is different.
+        if (HasPrefixString(src_schema[i], "TABLE ")) continue;
+        // Replication factor is different when explicitly set it to 3 (default 1).
+        if (args.create_table_replication_factor == 3 &&
+            HasPrefixString(src_schema[i], "REPLICAS ")) continue;
+        ASSERT_EQ(src_schema[i], dst_schema[i]);
+      }
     }
 
     // Check all values.
@@ -719,7 +726,13 @@ class ToolTestCopyTableParameterized :
  public:
   void SetUp() override {
     test_case_ = GetParam();
-    NO_FATALS(StartExternalMiniCluster());
+    ExternalMiniClusterOptions opts;
+    if (test_case_ == kTestCopyTableSchemaOnly) {
+      // In kTestCopyTableSchemaOnly case, we may create table with RF=3,
+      // means 3 tservers needed at least.
+      opts.num_tablet_servers = 3;
+    }
+    NO_FATALS(StartExternalMiniCluster(opts));
 
     // Create the src table and write some data to it.
     TestWorkload ww(cluster_.get());
@@ -757,7 +770,8 @@ class ToolTestCopyTableParameterized :
                                    1,
                                    total_rows_,
                                    kSimpleSchemaColumns,
-                                   TableCopyMode::INSERT_TO_EXIST_TABLE };
+                                   TableCopyMode::INSERT_TO_EXIST_TABLE,
+                                   -1 };
     switch (test_case_) {
       case kTestCopyTableDstTableExist:
         return { args };
@@ -767,9 +781,25 @@ class ToolTestCopyTableParameterized :
       case kTestCopyTableUpsert:
         args.mode = TableCopyMode::UPSERT_TO_EXIST_TABLE;
         return { args };
-      case kTestCopyTableSchemaOnly:
+      case kTestCopyTableSchemaOnly: {
         args.mode = TableCopyMode::COPY_SCHEMA_ONLY;
-        return { args };
+        vector<RunCopyTableCheckArgs> multi_args;
+        {
+          auto args_temp = args;
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.create_table_replication_factor = 1;
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.create_table_replication_factor = 3;
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        return multi_args;
+      }
       case kTestCopyTableComplexSchema:
         args.columns = kComplexSchemaColumns;
         args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;

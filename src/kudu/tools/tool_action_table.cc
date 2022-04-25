@@ -58,6 +58,7 @@
 #include "kudu/tools/tool.pb.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/status.h"
@@ -130,6 +131,8 @@ DEFINE_bool(show_avro_format_schema, false,
             "table schema in Avro format without any other information like "
             "partition/owner/comments. It cannot be used in conjunction with other flags");
 
+DECLARE_bool(create_table);
+DECLARE_int32(create_table_replication_factor);
 DECLARE_bool(row_count_only);
 DECLARE_bool(show_scanner_stats);
 
@@ -145,6 +148,17 @@ DEFINE_string(comment, "", "Comment for this column.");
 DECLARE_bool(show_values);
 DECLARE_string(replica_selection);
 DECLARE_string(tables);
+
+bool ValidateCreateTable() {
+  if (!FLAGS_create_table && FLAGS_create_table_replication_factor != -1) {
+    LOG(ERROR) << Substitute("--create_table_replication_factor is meaningless "
+                             "when --create_table=false");
+    return false;
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(create_table, ValidateCreateTable);
 
 namespace kudu {
 namespace tools {
@@ -1553,6 +1567,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kTableNameArg, "Name of the source table" })
       .AddRequiredParameter({ kDestMasterAddressesArg, kDestMasterAddressesArgDesc })
       .AddOptionalParameter("create_table")
+      .AddOptionalParameter("create_table_replication_factor")
       .AddOptionalParameter("dst_table")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")
