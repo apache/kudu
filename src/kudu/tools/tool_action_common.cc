@@ -133,8 +133,7 @@ DEFINE_string(memtracker_output, "table",
               "the memtracker hierarchy.");
 
 DEFINE_int32(num_threads, 2,
-             "Number of threads to run. Each thread runs its own "
-             "KuduSession.");
+             "Number of threads to run.");
 static bool ValidateNumThreads(const char* flag_name, int32_t flag_value) {
   if (flag_value <= 0) {
     LOG(ERROR) << strings::Substitute("'$0' flag should have a positive value",

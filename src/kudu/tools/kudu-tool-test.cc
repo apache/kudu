@@ -1133,7 +1133,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "data_size.*Summarize the data size",
         "dump.*Dump a Kudu filesystem",
         "copy_from_remote.*Copy a tablet replica from a remote server",
-        "copy_from_local.*Copy a tablet replica from local filesystem",
+        "copy_from_local.*Copy tablet replicas from local filesystem",
         "delete.*Delete tablet replicas from the local filesystem",
         "list.*Show list of tablet replicas",
     };
@@ -1171,7 +1171,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kLocalReplicaCopyFromRemoteRegexes = {
-        "Copy a tablet replica from local filesystem",
+        "Copy tablet replicas from local filesystem",
     };
     NO_FATALS(RunTestHelp("local_replica copy_from_local --help",
                           kLocalReplicaCopyFromRemoteRegexes));
@@ -8057,16 +8057,14 @@ TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {
 
   // Copy source tserver's all replicas from local filesystem.
   string encryption_args = env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "";
-  for (const auto& tablet_id : tablet_ids) {
-    string stdout;
-    NO_FATALS(RunActionStdoutString(Substitute("local_replica copy_from_local $0 $1 $2 $3",
-                                               tablet_id,
-                                               src_fs_paths_with_prefix,
-                                               dst_fs_paths_with_prefix,
-                                               encryption_args),
-                                    &stdout));
-    SCOPED_TRACE(stdout);
-  }
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute("local_replica copy_from_local $0 $1 $2 $3",
+                                             JoinStrings(tablet_ids, ","),
+                                             src_fs_paths_with_prefix,
+                                             dst_fs_paths_with_prefix,
+                                             encryption_args),
+                                  &stdout));
+  SCOPED_TRACE(stdout);
 
   // Replace the old data/wal dirs with the new ones.
   ASSERT_OK(Env::Default()->RenameFile(src_tserver_fs_root, src_tserver_fs_root + ".bak"));
