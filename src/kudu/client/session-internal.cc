@@ -22,29 +22,37 @@
 #include <utility>
 
 #include <glog/logging.h>
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/message.h>
 
 #include "kudu/client/batcher.h"
 #include "kudu/client/callbacks.h"
 #include "kudu/client/error_collector.h"
+#include "kudu/client/resource_metrics-internal.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/logging.h"
 
-
+using google::protobuf::FieldDescriptor;
+using google::protobuf::Reflection;
 using kudu::client::internal::Batcher;
 using kudu::client::internal::ErrorCollector;
 using kudu::client::sp::shared_ptr;
 using kudu::client::sp::weak_ptr;
 using kudu::rpc::Messenger;
+using kudu::tserver::ResourceMetricsPB;
 using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
+
 namespace client {
 
 KuduSession::Data::Data(shared_ptr<KuduClient> client,
@@ -575,6 +583,19 @@ int64_t KuduSession::Data::GetPendingOperationsSizeForTests() const {
 size_t KuduSession::Data::GetBatchersCountForTests() const {
   std::lock_guard<Mutex> l(mutex_);
   return batchers_num_;
+}
+
+void KuduSession::Data::UpdateWriteOpMetrics(const ResourceMetricsPB& resource_metrics) {
+  const auto* reflection = resource_metrics.GetReflection();
+  const auto* desc = resource_metrics.GetDescriptor();
+  for (int i = 0; i < desc->field_count(); i++) {
+    const FieldDescriptor* field = desc->field(i);
+    if (reflection->HasField(resource_metrics, field) &&
+        field->cpp_type() == FieldDescriptor::CPPTYPE_INT64) {
+      write_op_metrics_.data_->Increment(StringPiece(field->name()),
+                                         reflection->GetInt64(resource_metrics, field));
+    }
+  }
 }
 
 } // namespace client

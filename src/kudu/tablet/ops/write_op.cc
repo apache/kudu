@@ -81,11 +81,12 @@ using strings::Substitute;
 namespace kudu {
 namespace tablet {
 
-using pb_util::SecureShortDebugString;
 using consensus::CommitMsg;
 using consensus::DriverType;
 using consensus::ReplicateMsg;
 using consensus::WRITE_OP;
+using pb_util::SecureShortDebugString;
+using tserver::ResourceMetricsPB;
 using tserver::TabletServerErrorPB;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
@@ -289,6 +290,11 @@ Status WriteOp::Apply(CommitMsg** commit_msg) {
 
 void WriteOp::Finish(OpResult result) {
   TRACE_EVENT0("op", "WriteOp::Finish");
+
+  if (result == Op::APPLIED) {
+    // Populate response metrics.
+    state()->FillResponseMetrics(type());
+  }
 
   state()->FinishApplyingOrAbort(result);
 
@@ -653,6 +659,21 @@ string WriteOpState::ToString() const {
                     SecureShortDebugString(op_id()),
                     ts_str,
                     row_ops_str);
+}
+
+void WriteOpState::FillResponseMetrics(consensus::DriverType type) {
+  const auto& op_m = op_metrics_;
+  tserver::ResourceMetricsPB* resp_metrics = response_->mutable_resource_metrics();
+  resp_metrics->set_successful_inserts(op_m.successful_inserts);
+  resp_metrics->set_insert_ignore_errors(op_m.insert_ignore_errors);
+  resp_metrics->set_successful_upserts(op_m.successful_upserts);
+  resp_metrics->set_successful_updates(op_m.successful_updates);
+  resp_metrics->set_update_ignore_errors(op_m.update_ignore_errors);
+  resp_metrics->set_successful_deletes(op_m.successful_deletes);
+  resp_metrics->set_delete_ignore_errors(op_m.delete_ignore_errors);
+  if (type == consensus::LEADER && external_consistency_mode() == COMMIT_WAIT) {
+    resp_metrics->set_commit_wait_duration_usec(op_m.commit_wait_duration_usec);
+  }
 }
 
 }  // namespace tablet

@@ -65,6 +65,7 @@ class KUDU_EXPORT ResourceMetrics {
 
  private:
   friend class KuduScanner;
+  friend class KuduSession;
   class KUDU_NO_EXPORT Data;
   Data* data_;
 };

@@ -261,6 +261,11 @@ class WriteOpState : public OpState {
   // the partition lock.
   void TransferOrReleasePartitionLock();
 
+  // Copy metrics from 'op_metrics_' into the response's 'resource_metrics'.
+  // Should only be called before FinishApplyingOrAbort() to make sure that 'response_'
+  // has not been released.
+  void FillResponseMetrics(consensus::DriverType type);
+
  private:
   // Releases all the row locks acquired by this op.
   void ReleaseRowLocks();

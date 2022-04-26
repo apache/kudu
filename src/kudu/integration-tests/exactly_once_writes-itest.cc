@@ -28,6 +28,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
@@ -174,6 +175,13 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(Sockaddr address,
       }
       // If there was no error, store the response.
       if (status.ok()) {
+        if (response.has_resource_metrics()) {
+          // Release resource_metrics because it is not relevant to this test.
+          // We are asserting that all responses are equal, but in case of exactly-once
+          // RPC semantics, metrics in retried requests may all come zeroed out or even
+          // not populated.
+          response.clear_resource_metrics();
+        }
         responses->push_back(response);
         break;
       }

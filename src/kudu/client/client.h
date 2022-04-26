@@ -2566,6 +2566,9 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// @return Client for the session: pointer to the associated client object.
   KuduClient* client() const;
 
+  /// @return Cumulative write operation metrics since the beginning of the session.
+  const ResourceMetrics& GetWriteOpMetrics() const;
+
  private:
   class KUDU_NO_EXPORT Data;
 

@@ -966,6 +966,11 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
     had_errors_ = true;
   }
 
+  // Collect metrics
+  if (sp::shared_ptr<KuduSession> session = weak_session_.lock()) {
+    session->data_->UpdateWriteOpMetrics(rpc.resp().resource_metrics());
+  }
+
   // Remove all the ops from the "in-flight" list. It's essential to do so
   // _after_ adding all errors into the collector, otherwise there might be
   // a race which manifests itself as described at KUDU-1743. Essentially,

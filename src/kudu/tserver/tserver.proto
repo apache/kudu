@@ -185,6 +185,14 @@ message WriteResponsePB {
   // The timestamp chosen by the server for this write.
   // TODO KUDU-611 propagate timestamps with server signature.
   optional fixed64 timestamp = 3;
+
+  // The write operation metrics of this RPC.
+  // This metrics contains the number of successful/unsuccessful operation
+  // ('successful_inserts' to 'delete_ignore_errors' fields in ResourceMetricsPB message)
+  // related to the associated write request.
+  // Additionally, contains 'commit_wait_duration_usec' metric if the responding server is
+  // a LEADER and the request external_consistency_mode is COMMIT_WAIT.
+  optional ResourceMetricsPB resource_metrics = 4;
 }
 
 // A list tablets request
@@ -404,6 +412,22 @@ message ResourceMetricsPB {
   optional int64 cpu_user_nanos = 6;
   // Total elapsed CPU system time in nanoseconds for all scan rpc requests for this scanner.
   optional int64 cpu_system_nanos = 7;
+  // Total number of successful INSERT/INSERT_IGNORE operation.
+  optional int64 successful_inserts = 8;
+  // Total number of unsuccessful INSERT_IGNORE operation.
+  optional int64 insert_ignore_errors = 9;
+  // Total number of successful UPSERT operation.
+  optional int64 successful_upserts = 10;
+  // Total number of successful UPDATE/UPDATE_IGNORE operation.
+  optional int64 successful_updates = 11;
+  // Total number of unsuccessful UPDATE_IGNORE operation.
+  optional int64 update_ignore_errors = 12;
+  // Total number of successful DELETE operation.
+  optional int64 successful_deletes = 13;
+  // Total number of unsuccessful DELETE_IGNORE operation.
+  optional int64 delete_ignore_errors = 14;
+  // Total observed commit wait duration in microseconds.
+  optional int64 commit_wait_duration_usec = 15;
 }
 
 message ScanResponsePB {

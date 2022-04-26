@@ -1447,6 +1447,10 @@ KuduClient* KuduSession::client() const {
   return data_->client_.get();
 }
 
+const ResourceMetrics& KuduSession::GetWriteOpMetrics() const {
+  return data_->write_op_metrics_;
+}
+
 ////////////////////////////////////////////////////////////
 // KuduTableAlterer
 ////////////////////////////////////////////////////////////

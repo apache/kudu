@@ -2936,6 +2936,24 @@ static void DoTestVerifyRows(const shared_ptr<KuduTable>& tbl, int num_rows) {
   }
 }
 
+static void DoVerifyMetrics(const KuduSession* session,
+                            int64_t successful_inserts,
+                            int64_t insert_ignore_errors,
+                            int64_t successful_upserts,
+                            int64_t successful_updates,
+                            int64_t update_ignore_errors,
+                            int64_t successful_deletes,
+                            int64_t delete_ignore_errors) {
+  auto metrics = session->GetWriteOpMetrics().Get();
+  ASSERT_EQ(successful_inserts, metrics["successful_inserts"]);
+  ASSERT_EQ(insert_ignore_errors, metrics["insert_ignore_errors"]);
+  ASSERT_EQ(successful_upserts, metrics["successful_upserts"]);
+  ASSERT_EQ(successful_updates, metrics["successful_updates"]);
+  ASSERT_EQ(update_ignore_errors, metrics["update_ignore_errors"]);
+  ASSERT_EQ(successful_deletes, metrics["successful_deletes"]);
+  ASSERT_EQ(delete_ignore_errors, metrics["delete_ignore_errors"]);
+}
+
 TEST_F(ClientTest, TestInsertIgnore) {
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(10000);
@@ -2945,6 +2963,7 @@ TEST_F(ClientTest, TestInsertIgnore) {
     unique_ptr<KuduInsert> insert(BuildTestInsert(client_table_.get(), 1));
     ASSERT_OK(session->Apply(insert.release()));
     DoTestVerifyRows(client_table_, 1);
+    DoVerifyMetrics(session.get(), 1, 0, 0, 0, 0, 0, 0);
   }
 
   {
@@ -2952,6 +2971,7 @@ TEST_F(ClientTest, TestInsertIgnore) {
     unique_ptr<KuduInsertIgnore> insert_ignore(BuildTestInsertIgnore(client_table_.get(), 1));
     ASSERT_OK(session->Apply(insert_ignore.release()));
     DoTestVerifyRows(client_table_, 1);
+    DoVerifyMetrics(session.get(), 1, 1, 0, 0, 0, 0, 0);
   }
 
   {
@@ -2963,6 +2983,7 @@ TEST_F(ClientTest, TestInsertIgnore) {
     ASSERT_OK(insert_ignore->mutable_row()->SetInt32("non_null_with_default", 999));
     ASSERT_OK(session->Apply(insert_ignore.release())); // returns ok but results in no change
     DoTestVerifyRows(client_table_, 1);
+    DoVerifyMetrics(session.get(), 1, 2, 0, 0, 0, 0, 0);
   }
 
   {
@@ -2970,6 +2991,7 @@ TEST_F(ClientTest, TestInsertIgnore) {
     unique_ptr<KuduInsertIgnore> insert_ignore(BuildTestInsertIgnore(client_table_.get(), 2));
     ASSERT_OK(session->Apply(insert_ignore.release()));
     DoTestVerifyRows(client_table_, 2);
+    DoVerifyMetrics(session.get(), 2, 2, 0, 0, 0, 0, 0);
   }
 }
 
@@ -2983,12 +3005,14 @@ TEST_F(ClientTest, TestUpdateIgnore) {
     unique_ptr<KuduUpdateIgnore> update_ignore(BuildTestUpdateIgnore(client_table_.get(), 1));
     ASSERT_OK(session->Apply(update_ignore.release()));
     DoTestVerifyRows(client_table_, 0);
+    DoVerifyMetrics(session.get(), 0, 0, 0, 0, 1, 0, 0);
   }
 
   {
     unique_ptr<KuduInsert> insert(BuildTestInsert(client_table_.get(), 1));
     ASSERT_OK(session->Apply(insert.release()));
     DoTestVerifyRows(client_table_, 1);
+    DoVerifyMetrics(session.get(), 1, 0, 0, 0, 1, 0, 0);
   }
 
   {
@@ -2999,6 +3023,7 @@ TEST_F(ClientTest, TestUpdateIgnore) {
     ASSERT_OK(update_ignore->mutable_row()->SetStringCopy("string_val", "hello world"));
     ASSERT_OK(update_ignore->mutable_row()->SetInt32("non_null_with_default", 999));
     ASSERT_OK(session->Apply(update_ignore.release()));
+    DoVerifyMetrics(session.get(), 1, 0, 0, 1, 1, 0, 0);
 
     vector<string> rows;
     KuduScanner scanner(client_table_.get());
@@ -3018,6 +3043,7 @@ TEST_F(ClientTest, TestDeleteIgnore) {
     unique_ptr<KuduInsert> insert(BuildTestInsert(client_table_.get(), 1));
     ASSERT_OK(session->Apply(insert.release()));
     DoTestVerifyRows(client_table_, 1);
+    DoVerifyMetrics(session.get(), 1, 0, 0, 0, 0, 0, 0);
   }
 
   {
@@ -3025,6 +3051,7 @@ TEST_F(ClientTest, TestDeleteIgnore) {
     unique_ptr<KuduDeleteIgnore> delete_ignore(BuildTestDeleteIgnore(client_table_.get(), 1));
     ASSERT_OK(session->Apply(delete_ignore.release()));
     DoTestVerifyRows(client_table_, 0);
+    DoVerifyMetrics(session.get(), 1, 0, 0, 0, 0, 1, 0);
   }
 
   {
@@ -3032,6 +3059,7 @@ TEST_F(ClientTest, TestDeleteIgnore) {
     unique_ptr<KuduDeleteIgnore> delete_ignore(BuildTestDeleteIgnore(client_table_.get(), 1));
     ASSERT_OK(session->Apply(delete_ignore.release()));
     DoTestVerifyRows(client_table_, 0);
+    DoVerifyMetrics(session.get(), 1, 0, 0, 0, 0, 1, 1);
   }
 }
 
@@ -4438,6 +4466,7 @@ TEST_F(ClientTest, TestUpsert) {
   // Perform and verify UPSERT which acts as an INSERT.
   ASSERT_OK(ApplyUpsertToSession(session.get(), client_table_, 1, 1, "original row"));
   FlushSessionOrDie(session);
+  DoVerifyMetrics(session.get(), 0, 0, 1, 0, 0, 0, 0);
 
   {
     vector<string> rows;
@@ -4450,6 +4479,7 @@ TEST_F(ClientTest, TestUpsert) {
   // Perform and verify UPSERT which acts as an UPDATE.
   ASSERT_OK(ApplyUpsertToSession(session.get(), client_table_, 1, 2, "upserted row"));
   FlushSessionOrDie(session);
+  DoVerifyMetrics(session.get(), 0, 0, 2, 0, 0, 0, 0);
 
   {
     vector<string> rows;
@@ -4468,6 +4498,7 @@ TEST_F(ClientTest, TestUpsert) {
     ASSERT_OK(row->SetInt32("non_null_with_default", 999));
     ASSERT_OK(session->Apply(update.release()));
     FlushSessionOrDie(session);
+    DoVerifyMetrics(session.get(), 0, 0, 2, 1, 0, 0, 0);
   }
   {
     vector<string> rows;
@@ -4481,6 +4512,7 @@ TEST_F(ClientTest, TestUpsert) {
   // column, and therefore should not revert it back to its default.
   ASSERT_OK(ApplyUpsertToSession(session.get(), client_table_, 1, 3, "upserted row 2"));
   FlushSessionOrDie(session);
+  DoVerifyMetrics(session.get(), 0, 0, 3, 1, 0, 0, 0);
   {
     vector<string> rows;
     ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
@@ -4492,6 +4524,7 @@ TEST_F(ClientTest, TestUpsert) {
   // Delete the row.
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
+  DoVerifyMetrics(session.get(), 0, 0, 3, 1, 0, 1, 0);
   {
     vector<string> rows;
     ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));

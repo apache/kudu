@@ -25,6 +25,7 @@
 #include "kudu/client/batcher.h"
 #include "kudu/client/client.h"
 #include "kudu/client/error_collector.h"
+#include "kudu/client/resource_metrics.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
@@ -39,6 +40,10 @@ namespace kudu {
 namespace rpc {
 class Messenger;
 } // namespace rpc
+
+namespace tserver {
+class ResourceMetricsPB;
+}  // namespace tserver
 
 namespace client {
 
@@ -160,6 +165,9 @@ class KuduSession::Data {
   // primary key and perform other validations with regard to the column schema.
   Status ValidateWriteOperation(KuduWriteOperation* op) const;
 
+  // Adds given write operation metrics into session's total write operation metrics.
+  void UpdateWriteOpMetrics(const tserver::ResourceMetricsPB& metrics);
+
   // This constant represents a meaningful name for the first argument in
   // expressions like FlushCurrentBatcher(1, cbk): this is the watermark
   // corresponding to 1 byte of data. This watermark level is the minimum
@@ -245,6 +253,9 @@ class KuduSession::Data {
   // Transaction ID for this session's transaction (if any): txn_id_.IsValid()
   // returns true only if the upper-level session is a transactional one.
   const TxnId txn_id_;
+
+  // Metrics of all write operations in the session.
+  ResourceMetrics write_op_metrics_;
 
  private:
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
