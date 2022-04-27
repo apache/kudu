@@ -53,6 +53,7 @@ public class ITScannerMultiTablet {
       ITScannerMultiTablet.class.getName() + "-" + System.currentTimeMillis();
   protected static final int ROW_COUNT = 20000;
   protected static final int TABLET_COUNT = 3;
+  protected static final String METRIC_NAME = "total_duration_nanos";
 
   private static Schema schema = getBasicSchema();
   protected KuduTable table;
@@ -222,6 +223,12 @@ public class ITScannerMultiTablet {
           int previousRow = Integer.MIN_VALUE;
           boolean faultInjected = !this.enableFaultInjection;
           int faultInjectionLowBound = (ROW_COUNT / TABLET_COUNT / 2);
+          boolean firstScanRequest = true;
+
+          long firstScannedMetric = 0;
+          long firstPropagatedTimestamp = 0;
+          long lastScannedMetric = 0;
+          long lastPropagatedTimestamp = 0;
           while (scanner.hasMoreRows()) {
             RowResultIterator rri = scanner.nextRows();
             while (rri.hasNext()) {
@@ -234,11 +241,21 @@ public class ITScannerMultiTablet {
               if (!faultInjected && rowCount > faultInjectionLowBound) {
                 harness.restartTabletServer(scanner.currentTablet());
                 faultInjected = true;
+              } else {
+                if (firstScanRequest) {
+                  firstScannedMetric = scanner.getResourceMetrics().getMetric(METRIC_NAME);
+                  firstPropagatedTimestamp = harness.getClient().getLastPropagatedTimestamp();
+                  firstScanRequest = false;
+                }
+                lastScannedMetric = scanner.getResourceMetrics().getMetric(METRIC_NAME);
+                lastPropagatedTimestamp = harness.getClient().getLastPropagatedTimestamp();
               }
               previousRow = key;
               rowCount++;
             }
           }
+          assertTrue(lastScannedMetric != firstScannedMetric);
+          assertTrue(lastPropagatedTimestamp > firstPropagatedTimestamp);
         } catch (Exception e) {
           LOG.error("Scan error, {}", e.getMessage());
           e.printStackTrace();
