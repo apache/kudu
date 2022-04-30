@@ -96,7 +96,7 @@ public abstract class AbstractKuduScannerBuilder
   public S setFaultTolerant(boolean isFaultTolerant) {
     this.isFaultTolerant = isFaultTolerant;
     if (isFaultTolerant) {
-      readMode = AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT;
+      this.readMode = AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT;
     }
     return (S) this;
   }

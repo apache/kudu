@@ -1060,5 +1060,35 @@ TEST_P(StaleScanTokensParamTest, DroppingFirstRange) {
 INSTANTIATE_TEST_SUITE_P(FirstRangeDropped, StaleScanTokensParamTest,
                          testing::Range(FirstRangeChangeMode::BEGIN,
                                         FirstRangeChangeMode::END));
+
+TEST_F(ScanTokenTest, ToggleFaultToleranceForScanConfiguration) {
+  constexpr const char* const kTableName = "fault_tolerance_toggle";
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(CreateAndOpenTable(kTableName, schema, &table));
+  ScanConfiguration sc(table.get());
+  ASSERT_FALSE(sc.is_fault_tolerant());
+  ASSERT_EQ(KuduScanner::READ_LATEST, sc.read_mode());
+
+  ASSERT_OK(sc.SetFaultTolerant(true));
+  ASSERT_TRUE(sc.is_fault_tolerant());
+  ASSERT_EQ(KuduScanner::READ_AT_SNAPSHOT, sc.read_mode());
+
+  ASSERT_OK(sc.SetFaultTolerant(false));
+  ASSERT_FALSE(sc.is_fault_tolerant());
+  ASSERT_EQ(KuduScanner::READ_AT_SNAPSHOT, sc.read_mode());
+
+  ASSERT_OK(sc.SetReadMode(KuduScanner::READ_YOUR_WRITES));
+  ASSERT_OK(sc.SetFaultTolerant(false));
+  ASSERT_FALSE(sc.is_fault_tolerant());
+  ASSERT_EQ(KuduScanner::READ_YOUR_WRITES, sc.read_mode());
+}
+
 } // namespace client
 } // namespace kudu

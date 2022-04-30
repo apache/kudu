@@ -27,6 +27,7 @@ import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
 import static org.apache.kudu.test.MetricTestUtils.totalRequestCount;
 import static org.apache.kudu.test.MetricTestUtils.validateRequestCount;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -864,5 +865,26 @@ public class TestScanToken {
         new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString()).build();
     KuduScanner scanner = tokens.get(0).intoScanner(newClient);
     assertEquals(1, countRowsInScan(scanner));
+  }
+
+  @Test
+  public void testScannerBuilderFaultToleranceToggle() throws IOException {
+    KuduTable table = createDefaultTable(client, testTableName);
+    KuduScanner.KuduScannerBuilder scannerBuilder =
+        new KuduScanner.KuduScannerBuilder(asyncClient, table);
+    assertFalse(scannerBuilder.isFaultTolerant);
+    assertEquals(AsyncKuduScanner.ReadMode.READ_LATEST, scannerBuilder.readMode);
+
+    scannerBuilder.setFaultTolerant(true);
+    assertTrue(scannerBuilder.isFaultTolerant);
+    assertEquals(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT, scannerBuilder.readMode);
+
+    scannerBuilder.setFaultTolerant(false);
+    assertFalse(scannerBuilder.isFaultTolerant);
+    assertEquals(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT, scannerBuilder.readMode);
+
+    scannerBuilder.readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES);
+    assertFalse(scannerBuilder.isFaultTolerant);
+    assertEquals(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES, scannerBuilder.readMode);
   }
 }
