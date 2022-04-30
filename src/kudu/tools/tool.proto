@@ -68,6 +68,21 @@ message CreateClusterRequestPB {
     optional string renew_lifetime = 2;
   }
   optional MiniKdcOptionsPB mini_kdc_options = 8;
+
+  // Options pertaining to a single JWKS.
+  message JwksOptionsPB {
+    optional string account_id = 1;
+    optional bool is_valid_key = 2;
+  }
+
+  message MiniOidcOptionsPB {
+    // The default expiration time for JWTs.
+    optional string expiration_time = 1;
+
+    // Options for JWKS to host.
+    repeated JwksOptionsPB jwks_options = 2;
+  }
+  optional MiniOidcOptionsPB mini_oidc_options = 11;
 }
 
 // Destroys a cluster created via 'create_cluster'.
@@ -90,6 +105,7 @@ enum DaemonType {
   MASTER = 1;
   TSERVER = 2;
   KDC = 3;
+  JWKS = 4;
 }
 
 // Identifier for a cluster daemon, unique to the cluster.
@@ -177,6 +193,14 @@ message KdestroyRequestPB {};
 message KinitRequestPB {
   optional string username = 1 [ default = "test-admin" ];
 };
+
+message GetJwtServerResponsePB {
+  // Server info.
+  optional DaemonInfoPB servers = 1;
+}
+
+// Gets information on each started tablet server.
+message GetJwtServerRequestPB {}
 
 // Call SetFlag() on the specific daemon.
 message SetDaemonFlagRequestPB {
@@ -522,4 +546,15 @@ message TablesInfoPB {
   }
 
   repeated TableInfoPB tables = 1;
+}
+
+message CreateJwtPB {
+  // The account ID with which a JWT will be created.
+  optional string account_id = 1;
+
+  // The subject authenticated by this JWT.
+  optional string subject = 2;
+
+  // Whether or not the returned token should supply a valid key ID.
+  optional bool is_valid_key = 3;
 }
