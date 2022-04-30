@@ -145,15 +145,14 @@ class KeyEncoder {
       throw new IllegalStateException(String.format("Primary key column %s is not set",
                                                     column.getName()));
     }
-    final Type type = column.getType();
-    if (type == Type.STRING || type == Type.BINARY ||
-        type == Type.VARCHAR) {
-      encodeBinary(row.getVarLengthData().get(columnIdx), isLast, buf);
+    if (column.getType().isFixedSize()) {
+      encodeSignedInt(
+          row.getRowAlloc(),
+          schema.getColumnOffset(columnIdx),
+          column.getTypeSize(),
+          buf);
     } else {
-      encodeSignedInt(row.getRowAlloc(),
-                      schema.getColumnOffset(columnIdx),
-                      column.getTypeSize(),
-                      buf);
+      encodeBinary(row.getVarLengthData().get(columnIdx), isLast, buf);
     }
   }
 

@@ -163,8 +163,8 @@ public enum Type {
       case DOUBLE:
       case UNIXTIME_MICROS:
         return Longs.BYTES;
-      default: throw new IllegalArgumentException("The provided data type doesn't map" +
-          " to know any known one.");
+      default: throw new IllegalArgumentException(
+          "the provided data type doesn't map to any known one");
     }
   }
 
@@ -205,9 +205,8 @@ public enum Type {
       case DECIMAL128:
         return DECIMAL;
       default:
-        throw new IllegalArgumentException("The provided data type doesn't map" +
-            " to know any known one: " + type.getDescriptorForType().getFullName());
-
+        throw new IllegalArgumentException("the provided data type doesn't map " +
+            "to any known one: " + type.getDescriptorForType().getFullName());
     }
   }
 
@@ -228,4 +227,10 @@ public enum Type {
     throw new IllegalArgumentException("The provided name doesn't map to any known type: " + name);
   }
 
+  /**
+   * @return true if this type has a pre-determined fixed size, false otherwise
+   */
+  public boolean isFixedSize() {
+    return this != BINARY && this != STRING && this != VARCHAR;
+  }
 }

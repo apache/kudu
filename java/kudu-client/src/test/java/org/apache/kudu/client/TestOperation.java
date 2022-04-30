@@ -18,9 +18,12 @@
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Longs;
@@ -35,6 +38,7 @@ import org.apache.kudu.Type;
 import org.apache.kudu.client.Operation.ChangeType;
 import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.tserver.Tserver.WriteRequestPBOrBuilder;
+import org.apache.kudu.util.CharUtil;
 import org.apache.kudu.util.DateUtil;
 
 /**
@@ -46,7 +50,7 @@ public class TestOperation {
   public RetryRule retryRule = new RetryRule();
 
   private Schema createManyStringsSchema() {
-    ArrayList<ColumnSchema> columns = new ArrayList<>(4);
+    ArrayList<ColumnSchema> columns = new ArrayList<>(5);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.STRING).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.STRING).build());
@@ -173,6 +177,330 @@ public class TestOperation {
       fail("Should not be able to stringifyRowKey when not all keys are specified");
     } catch (IllegalStateException ise) {
       // Expected.
+    }
+  }
+
+  @Test
+  public void testEncodeDecodeRangeSimpleTypes() {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(2);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT64).build());
+    final Schema schema = new Schema(columns);
+
+    final PartialRow lower = schema.newPartialRow();
+    lower.addInt("c0", 0);
+
+    final PartialRow upper = schema.newPartialRow();
+    upper.addInt("c0", 100);
+
+    final Operation.OperationsEncoder enc = new Operation.OperationsEncoder();
+    final RowOperationsPB encoded = enc.encodeLowerAndUpperBounds(
+        lower, upper, RangePartitionBound.INCLUSIVE_BOUND, RangePartitionBound.EXCLUSIVE_BOUND);
+
+    Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
+    List<CreateTableOptions.RangePartition> decoded =
+        dec.decodeRangePartitions(encoded, schema);
+    assertEquals(1, decoded.size());
+    assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
+        decoded.get(0).getLowerBoundType());
+    assertEquals(RangePartitionBound.EXCLUSIVE_BOUND,
+        decoded.get(0).getUpperBoundType());
+    final PartialRow lowerDecoded = decoded.get(0).getLowerBound();
+    final PartialRow upperDecoded = decoded.get(0).getUpperBound();
+
+    assertTrue(lowerDecoded.isSet("c0"));
+    assertEquals(0, lowerDecoded.getInt("c0"));
+    assertFalse(lowerDecoded.isSet("c1"));
+    assertEquals(lower.toString(), lowerDecoded.toString());
+
+    assertTrue(upperDecoded.isSet("c0"));
+    assertEquals(100, upperDecoded.getInt("c0"));
+    assertFalse(upperDecoded.isSet("c1"));
+    assertEquals(upper.toString(), upperDecoded.toString());
+  }
+
+  @Test
+  public void testEncodeDecodeRangeStringTypes() {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(2);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.STRING).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.VARCHAR)
+        .nullable(true)
+        .typeAttributes(CharUtil.typeAttributes(10))
+        .build());
+    final Schema schema = new Schema(columns);
+
+    final PartialRow lower = schema.newPartialRow();
+    lower.addString("c0", "a");
+
+    final PartialRow upper = schema.newPartialRow();
+    upper.addString("c0", "b");
+
+    final Operation.OperationsEncoder enc = new Operation.OperationsEncoder();
+    final RowOperationsPB encoded = enc.encodeLowerAndUpperBounds(
+        lower, upper, RangePartitionBound.INCLUSIVE_BOUND, RangePartitionBound.EXCLUSIVE_BOUND);
+
+    Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
+    List<CreateTableOptions.RangePartition> decoded =
+        dec.decodeRangePartitions(encoded, schema);
+    assertEquals(1, decoded.size());
+    assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
+        decoded.get(0).getLowerBoundType());
+    assertEquals(RangePartitionBound.EXCLUSIVE_BOUND,
+        decoded.get(0).getUpperBoundType());
+    final PartialRow lowerDecoded = decoded.get(0).getLowerBound();
+    final PartialRow upperDecoded = decoded.get(0).getUpperBound();
+
+    assertTrue(lowerDecoded.isSet("c0"));
+    assertEquals("a", lowerDecoded.getString("c0"));
+    assertFalse(lowerDecoded.isSet("c1"));
+    assertFalse(lowerDecoded.isSet("c2"));
+    assertEquals(lower.toString(), lowerDecoded.toString());
+
+    assertTrue(upperDecoded.isSet("c0"));
+    assertEquals("b", upperDecoded.getString("c0"));
+    assertFalse(upperDecoded.isSet("c1"));
+    assertFalse(upperDecoded.isSet("c2"));
+    assertEquals(upper.toString(), upperDecoded.toString());
+  }
+
+  @Test
+  public void testEncodeDecodeRangeMixedTypes() {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(2);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0i", Type.INT32).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1s", Type.STRING).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2i", Type.INT64).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3s", Type.STRING).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c4i", Type.INT16).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c5s", Type.BINARY).nullable(true).build());
+    final Schema schema = new Schema(columns);
+
+    final PartialRow lower = schema.newPartialRow();
+    lower.addInt("c0i", 0);
+    lower.addString("c1s", "a");
+    lower.addLong("c2i", -10);
+    lower.addString("c3s", "A");
+    lower.addShort("c4i", (short)-100);
+
+    final PartialRow upper = schema.newPartialRow();
+    upper.addInt("c0i", 1);
+    upper.addString("c1s", "b");
+    upper.addLong("c2i", 10);
+    upper.addString("c3s", "B");
+    upper.addShort("c4i", (short)100);
+
+    final Operation.OperationsEncoder enc = new Operation.OperationsEncoder();
+    final RowOperationsPB encoded = enc.encodeLowerAndUpperBounds(
+        lower, upper, RangePartitionBound.INCLUSIVE_BOUND, RangePartitionBound.EXCLUSIVE_BOUND);
+
+    Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
+    List<CreateTableOptions.RangePartition> decoded =
+        dec.decodeRangePartitions(encoded, schema);
+    assertEquals(1, decoded.size());
+    assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
+        decoded.get(0).getLowerBoundType());
+    assertEquals(RangePartitionBound.EXCLUSIVE_BOUND,
+        decoded.get(0).getUpperBoundType());
+    final PartialRow lowerDecoded = decoded.get(0).getLowerBound();
+    final PartialRow upperDecoded = decoded.get(0).getUpperBound();
+
+    assertTrue(lowerDecoded.isSet("c0i"));
+    assertEquals(0, lowerDecoded.getInt("c0i"));
+    assertTrue(lowerDecoded.isSet("c1s"));
+    assertEquals("a", lowerDecoded.getString("c1s"));
+    assertTrue(lowerDecoded.isSet("c2i"));
+    assertEquals(-10, lowerDecoded.getLong("c2i"));
+    assertTrue(lowerDecoded.isSet("c3s"));
+    assertEquals("A", lowerDecoded.getString("c3s"));
+    assertTrue(lowerDecoded.isSet("c4i"));
+    assertEquals(-100, lowerDecoded.getShort("c4i"));
+    assertFalse(lowerDecoded.isSet("c5s"));
+    assertEquals(lower.toString(), lowerDecoded.toString());
+
+    assertTrue(upperDecoded.isSet("c0i"));
+    assertEquals(1, upperDecoded.getInt("c0i"));
+    assertTrue(upperDecoded.isSet("c1s"));
+    assertEquals("b", upperDecoded.getString("c1s"));
+    assertTrue(upperDecoded.isSet("c2i"));
+    assertEquals(10, upperDecoded.getLong("c2i"));
+    assertTrue(upperDecoded.isSet("c3s"));
+    assertEquals("B", upperDecoded.getString("c3s"));
+    assertTrue(upperDecoded.isSet("c4i"));
+    assertEquals(100, upperDecoded.getShort("c4i"));
+    assertFalse(upperDecoded.isSet("c5s"));
+    assertEquals(upper.toString(), upperDecoded.toString());
+  }
+
+  @Test
+  public void testEncodeDecodeMultipleRangePartitions() {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(2);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT64).build());
+    final Schema schema = new Schema(columns);
+
+    List<CreateTableOptions.RangePartition> rangePartitions = new ArrayList<>();
+    {
+      final PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", 0);
+
+      final PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 100);
+      rangePartitions.add(new CreateTableOptions.RangePartition(
+          lower,
+          upper,
+          RangePartitionBound.INCLUSIVE_BOUND,
+          RangePartitionBound.EXCLUSIVE_BOUND));
+    }
+    {
+      final PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", 200);
+
+      final PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 300);
+      rangePartitions.add(new CreateTableOptions.RangePartition(
+          lower,
+          upper,
+          RangePartitionBound.EXCLUSIVE_BOUND,
+          RangePartitionBound.INCLUSIVE_BOUND));
+    }
+
+    final Operation.OperationsEncoder enc = new Operation.OperationsEncoder();
+    final RowOperationsPB encoded = enc.encodeRangePartitions(
+        rangePartitions, ImmutableList.of());
+
+    Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
+    List<CreateTableOptions.RangePartition> decoded =
+        dec.decodeRangePartitions(encoded, schema);
+    assertEquals(2, decoded.size());
+
+    assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
+        decoded.get(0).getLowerBoundType());
+    assertEquals(RangePartitionBound.EXCLUSIVE_BOUND,
+        decoded.get(0).getUpperBoundType());
+    {
+      final PartialRow lowerDecoded = decoded.get(0).getLowerBound();
+      final PartialRow upperDecoded = decoded.get(0).getUpperBound();
+
+      assertTrue(lowerDecoded.isSet("c0"));
+      assertEquals(0, lowerDecoded.getInt("c0"));
+      assertFalse(lowerDecoded.isSet("c1"));
+
+      assertTrue(upperDecoded.isSet("c0"));
+      assertEquals(100, upperDecoded.getInt("c0"));
+      assertFalse(upperDecoded.isSet("c1"));
+    }
+
+    assertEquals(RangePartitionBound.EXCLUSIVE_BOUND,
+        decoded.get(1).getLowerBoundType());
+    assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
+        decoded.get(1).getUpperBoundType());
+    {
+      final PartialRow lowerDecoded = decoded.get(1).getLowerBound();
+      final PartialRow upperDecoded = decoded.get(1).getUpperBound();
+
+      assertTrue(lowerDecoded.isSet("c0"));
+      assertEquals(200, lowerDecoded.getInt("c0"));
+      assertFalse(lowerDecoded.isSet("c1"));
+
+      assertTrue(upperDecoded.isSet("c0"));
+      assertEquals(300, upperDecoded.getInt("c0"));
+      assertFalse(upperDecoded.isSet("c1"));
+    }
+  }
+
+  @Test
+  public void testEncodeDecodeMultipleRangePartitionsNullableColumns() {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(2);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.INT64).nullable(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.STRING).nullable(true).build());
+    final Schema schema = new Schema(columns);
+
+    List<CreateTableOptions.RangePartition> rangePartitions = new ArrayList<>();
+    {
+      final PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", 0);
+      lower.addString("c1", "a");
+
+      final PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 100);
+      upper.addString("c1", "c");
+      rangePartitions.add(new CreateTableOptions.RangePartition(
+          lower,
+          upper,
+          RangePartitionBound.INCLUSIVE_BOUND,
+          RangePartitionBound.EXCLUSIVE_BOUND));
+    }
+    {
+      final PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", 200);
+      lower.addString("c1", "e");
+
+      final PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 300);
+      upper.addString("c1", "f");
+      rangePartitions.add(new CreateTableOptions.RangePartition(
+          lower,
+          upper,
+          RangePartitionBound.EXCLUSIVE_BOUND,
+          RangePartitionBound.INCLUSIVE_BOUND));
+    }
+
+    final Operation.OperationsEncoder enc = new Operation.OperationsEncoder();
+    final RowOperationsPB encoded = enc.encodeRangePartitions(
+        rangePartitions, ImmutableList.of());
+
+    Operation.OperationsDecoder dec = new Operation.OperationsDecoder();
+    List<CreateTableOptions.RangePartition> decoded =
+        dec.decodeRangePartitions(encoded, schema);
+    assertEquals(2, decoded.size());
+
+    assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
+        decoded.get(0).getLowerBoundType());
+    assertEquals(RangePartitionBound.EXCLUSIVE_BOUND,
+        decoded.get(0).getUpperBoundType());
+    {
+      final PartialRow lowerDecoded = decoded.get(0).getLowerBound();
+      final PartialRow upperDecoded = decoded.get(0).getUpperBound();
+
+      assertTrue(lowerDecoded.isSet("c0"));
+      assertEquals(0, lowerDecoded.getInt("c0"));
+      assertTrue(lowerDecoded.isSet("c1"));
+      assertEquals("a", lowerDecoded.getString("c1"));
+      assertFalse(lowerDecoded.isSet("c2"));
+      assertFalse(lowerDecoded.isSet("c3"));
+
+      assertTrue(upperDecoded.isSet("c0"));
+      assertEquals(100, upperDecoded.getInt("c0"));
+      assertTrue(upperDecoded.isSet("c1"));
+      assertEquals("c", upperDecoded.getString("c1"));
+      assertFalse(upperDecoded.isSet("c2"));
+      assertFalse(upperDecoded.isSet("c3"));
+    }
+
+
+    assertEquals(RangePartitionBound.EXCLUSIVE_BOUND,
+        decoded.get(1).getLowerBoundType());
+    assertEquals(RangePartitionBound.INCLUSIVE_BOUND,
+        decoded.get(1).getUpperBoundType());
+    {
+      final PartialRow lowerDecoded = decoded.get(1).getLowerBound();
+      final PartialRow upperDecoded = decoded.get(1).getUpperBound();
+
+      assertTrue(lowerDecoded.isSet("c0"));
+      assertEquals(200, lowerDecoded.getInt("c0"));
+      assertTrue(lowerDecoded.isSet("c1"));
+      assertEquals("e", lowerDecoded.getString("c1"));
+      assertFalse(lowerDecoded.isSet("c2"));
+      assertFalse(lowerDecoded.isSet("c3"));
+
+      assertTrue(upperDecoded.isSet("c0"));
+      assertEquals(300, upperDecoded.getInt("c0"));
+      assertTrue(upperDecoded.isSet("c1"));
+      assertEquals("f", upperDecoded.getString("c1"));
+      assertFalse(upperDecoded.isSet("c2"));
+      assertFalse(upperDecoded.isSet("c3"));
     }
   }
 }

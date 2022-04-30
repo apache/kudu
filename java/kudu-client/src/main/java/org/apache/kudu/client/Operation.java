@@ -407,8 +407,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
         ColumnSchema col = schema.getColumnByIndex(colIdx);
         // Keys should always be specified, maybe check?
         if (row.isSet(colIdx) && !row.isSetToNull(colIdx)) {
-          if (col.getType() == Type.STRING || col.getType() == Type.BINARY ||
-              col.getType() == Type.VARCHAR) {
+          if (col.getType().isFixedSize()) {
+            rows.put(rowData, currentRowOffset, col.getTypeSize());
+          } else {
             ByteBuffer varLengthData = row.getVarLengthData().get(colIdx);
             varLengthData.reset();
             rows.putLong(indirectWrittenBytes);
@@ -416,9 +417,6 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
             rows.putLong(bbSize);
             indirect.add(varLengthData);
             indirectWrittenBytes += bbSize;
-          } else {
-            // This is for cols other than strings
-            rows.put(rowData, currentRowOffset, col.getTypeSize());
           }
         }
         currentRowOffset += col.getTypeSize();
@@ -480,6 +478,162 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
                     ChangeType.RANGE_UPPER_BOUND :
                     ChangeType.INCLUSIVE_RANGE_UPPER_BOUND);
       return toPB();
+    }
+  }
+
+  static class OperationsDecoder {
+    private Schema schema;
+    private int columnBitmapSize;
+    private int columnCount;
+
+    /**
+     * Utility method to initialize internals of the OperationsDecoder class.
+     *
+     * @param schema table's schema used for encoding/decoding of the data
+     */
+    private void init(Schema schema) {
+      this.schema = schema;
+      this.columnCount = schema.getColumnCount();
+      this.columnBitmapSize = Bytes.getBitSetSize(this.columnCount);
+    }
+
+    /**
+     * Decode range partitions from the 'pb' message, assuming the data has been
+     * encoded using the table schema in 'schema'.
+     *
+     * @param pb the encoded data
+     * @param schema the table schema to use for decoding
+     * @return a list of PangePartition objects with corresponding bounds
+     */
+    public List<CreateTableOptions.RangePartition> decodeRangePartitions(
+        RowOperationsPB pb, Schema schema) {
+      if (pb == null) {
+        return null;
+      }
+      if (!pb.hasRows()) {
+        throw new IllegalArgumentException("row operation PB lacks 'rows' field");
+      }
+
+      init(schema);
+
+      ByteBuffer rowsBuf = ByteBuffer.wrap(pb.getRows().toByteArray());
+      rowsBuf.order(ByteOrder.LITTLE_ENDIAN);
+      final byte[] indirectData = pb.getIndirectData().toByteArray();
+
+      List<Pair<PartialRow, RowOperationsPB.Type>> decodedBounds =
+          new ArrayList<>();
+      while (rowsBuf.hasRemaining()) {
+        decodedBounds.add(decodeBound(rowsBuf, indirectData));
+      }
+
+      if (decodedBounds.size() % 2 != 0) {
+        throw new IllegalArgumentException(
+            "unexpected odd number of range partition bounds");
+      }
+
+      List<CreateTableOptions.RangePartition> result = new ArrayList<>();
+      for (int i = 0; i < decodedBounds.size(); i += 2) {
+        Pair<PartialRow, RowOperationsPB.Type> lower = decodedBounds.get(i);
+        Pair<PartialRow, RowOperationsPB.Type> upper = decodedBounds.get(i + 1);
+
+        RangePartitionBound lowerType;
+        if (lower.getSecond() == RowOperationsPB.Type.EXCLUSIVE_RANGE_LOWER_BOUND) {
+          lowerType = RangePartitionBound.EXCLUSIVE_BOUND;
+        } else if (lower.getSecond() == RowOperationsPB.Type.RANGE_LOWER_BOUND) {
+          lowerType = RangePartitionBound.INCLUSIVE_BOUND;
+        } else {
+          throw new IllegalArgumentException(String.format(
+              "%s: unexpected bound type for the lower bound", lower.getSecond().toString()));
+        }
+
+        RangePartitionBound upperType;
+        if (upper.getSecond() == RowOperationsPB.Type.INCLUSIVE_RANGE_UPPER_BOUND) {
+          upperType = RangePartitionBound.INCLUSIVE_BOUND;
+        } else if (upper.getSecond() == RowOperationsPB.Type.RANGE_UPPER_BOUND) {
+          upperType = RangePartitionBound.EXCLUSIVE_BOUND;
+        } else {
+          throw new IllegalArgumentException(String.format(
+              "%s: unexpected bound type for the upper bound", upper.getSecond().toString()));
+        }
+
+        result.add(new CreateTableOptions.RangePartition(
+            lower.getFirst(), upper.getFirst(), lowerType, upperType));
+      }
+      return result;
+    }
+
+    /**
+     * Decode lower and upper range bounds encoded with the RowOperationsPB
+     * conventions.
+     *
+     * @param rowsBuf byte buffer wrapping RowOperationsPB.rows
+     * @param indirectData byte array of the RowOperationsPB.indirect_data field
+     * @return a pair: decoded bound as PartialRow and the type of the bound
+     */
+    public Pair<PartialRow, RowOperationsPB.Type> decodeBound(
+        ByteBuffer rowsBuf, byte[] indirectData) {
+      RowOperationsPB.Type opType;
+      final byte opTypeEncoded = rowsBuf.get();
+      switch (opTypeEncoded) {
+        case RowOperationsPB.Type.EXCLUSIVE_RANGE_LOWER_BOUND_VALUE:
+          opType = RowOperationsPB.Type.EXCLUSIVE_RANGE_LOWER_BOUND;
+          break;
+        case RowOperationsPB.Type.RANGE_LOWER_BOUND_VALUE:
+          opType = RowOperationsPB.Type.RANGE_LOWER_BOUND;
+          break;
+        case RowOperationsPB.Type.INCLUSIVE_RANGE_UPPER_BOUND_VALUE:
+          opType = RowOperationsPB.Type.INCLUSIVE_RANGE_UPPER_BOUND;
+          break;
+        case RowOperationsPB.Type.RANGE_UPPER_BOUND_VALUE:
+          opType = RowOperationsPB.Type.RANGE_UPPER_BOUND;
+          break;
+        default:
+          throw new IllegalArgumentException(String.format(
+              "%d: unexpected operation type", opTypeEncoded));
+      }
+
+      // Read the 'isset' column bitmap.
+      byte[] columnsBitArray = new byte[columnBitmapSize];
+      rowsBuf.get(columnsBitArray);
+      BitSet columnsBitSet = Bytes.toBitSet(columnsBitArray, 0, 8 * columnBitmapSize);
+
+      // If present, read the 'null' column bitmap.
+      BitSet nullsBitSet = null;
+      if (schema.hasNullableColumns()) {
+        byte[] columnsNullArray = new byte[columnBitmapSize];
+        rowsBuf.get(columnsNullArray);
+        nullsBitSet = Bytes.toBitSet(columnsNullArray, 0, 8 * columnBitmapSize);
+      }
+
+      // Construct the PartialRow object to contain the boundary as decoded.
+      PartialRow resultRow = schema.newPartialRow();
+      for (int i = 0; i < columnsBitSet.size(); ++i) {
+        // Read the columns which has been set to a non-null value.
+        if (columnsBitSet.get(i) && (nullsBitSet == null || !nullsBitSet.get(i))) {
+          final ColumnSchema columnSchema = schema.getColumnByIndex(i);
+          if (columnSchema.getType().isFixedSize()) {
+            // The data for fixed-size types is read from the 'rowsBuf' buffer.
+            byte[] columnData = new byte[columnSchema.getTypeSize()];
+            rowsBuf.get(columnData);
+            resultRow.setRaw(i, columnData);
+          } else {
+            // The data for variable-size types is read from the 'indirectData'
+            // byte array.
+            final int indirectOffset = (int)rowsBuf.getLong();
+            final int indirectSize = (int)rowsBuf.getLong();
+
+            ByteBuffer auxBuf = ByteBuffer.wrap(
+                indirectData, indirectOffset, indirectSize);
+            auxBuf.order(ByteOrder.LITTLE_ENDIAN);
+
+            byte[] columnData = new byte[indirectSize];
+            auxBuf.get(columnData);
+            resultRow.setRaw(i, columnData);
+          }
+        }
+
+      }
+      return new Pair<PartialRow, RowOperationsPB.Type>(resultRow, opType);
     }
   }
 }
