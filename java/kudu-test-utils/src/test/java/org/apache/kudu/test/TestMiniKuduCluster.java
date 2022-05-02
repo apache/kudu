@@ -37,6 +37,8 @@ import org.apache.kudu.client.TimeoutTracker;
 import org.apache.kudu.test.cluster.FakeDNS;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
 import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.tools.Tool.CreateClusterRequestPB.JwksOptionsPB;
+import org.apache.kudu.tools.Tool.CreateClusterRequestPB.MiniOidcOptionsPB;
 
 public class TestMiniKuduCluster {
 
@@ -104,6 +106,21 @@ public class TestMiniKuduCluster {
         // Resuming master while it's not paused doesn't do anything.
         cluster.resumeTabletServer(tsHostPort);
       }
+    }
+  }
+
+  @Test(timeout = 50000)
+  public void testJwt() throws Exception {
+    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+                                                      .numMasterServers(NUM_MASTERS)
+                                                      .numTabletServers(0)
+                                                      .enableClientJwt()
+                                                      .addJwks("account-id", true)
+                                                      .build();
+         KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build()) {
+      String jwt = cluster.createJwtFor("account-id", "subject", true);
+
+      assertNotNull(jwt);
     }
   }
 
