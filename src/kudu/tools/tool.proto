@@ -72,7 +72,7 @@ message CreateClusterRequestPB {
   // Options pertaining to a single JWKS.
   message JwksOptionsPB {
     optional string account_id = 1;
-    optional bool is_valid_key = 2;
+    optional bool is_valid_key = 2 [ default = true ];
   }
 
   message MiniOidcOptionsPB {
@@ -223,6 +223,7 @@ message ControlShellResponsePB {
     GetMastersResponsePB get_masters = 2;
     GetTServersResponsePB get_tservers = 3;
     GetKDCEnvVarsResponsePB get_kdc_env_vars = 4;
+    CreateJwtResponsePB create_jwt = 5;
   }
 }
 
@@ -249,6 +250,7 @@ message ControlShellRequestPB {
     SetDaemonFlagRequestPB set_daemon_flag = 12;
     PauseDaemonRequestPB pause_daemon = 13;
     ResumeDaemonRequestPB resume_daemon = 14;
+    CreateJwtRequestPB create_jwt = 15;
   }
 }
 
@@ -548,7 +550,7 @@ message TablesInfoPB {
   repeated TableInfoPB tables = 1;
 }
 
-message CreateJwtPB {
+message CreateJwtRequestPB {
   // The account ID with which a JWT will be created.
   optional string account_id = 1;
 
@@ -557,4 +559,8 @@ message CreateJwtPB {
 
   // Whether or not the returned token should supply a valid key ID.
   optional bool is_valid_key = 3;
+}
+
+message CreateJwtResponsePB {
+  optional string jwt = 1;
 }

@@ -609,7 +609,7 @@ class TestKuduBackup extends KuduTestSuite {
     // Check the range bounds and the hash schema of each range of the restored table.
     val restoredTable = kuduClient.openTable(s"$tableName-restore")
     assertEquals(
-        "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
+      "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
         "100 <= VALUES < 200 HASH(key) PARTITIONS 3]",
       restoredTable.getFormattedRangePartitionsWithHashSchema(10000).toString
     )
@@ -635,7 +635,7 @@ class TestKuduBackup extends KuduTestSuite {
     // Check the range bounds and the hash schema of each range of the restored table.
     val restoredTable = kuduClient.openTable(s"$tableName-restore")
     assertEquals(
-        "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
+      "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
         "100 <= VALUES < 200 HASH(key) PARTITIONS 3, " +
         "200 <= VALUES < 300 HASH(key) PARTITIONS 4]",
       restoredTable.getFormattedRangePartitionsWithHashSchema(10000).toString
@@ -694,7 +694,7 @@ class TestKuduBackup extends KuduTestSuite {
     // Check the range bounds and the hash schema of each range of the restored table.
     val restoredTable = kuduClient.openTable(s"$tableName-restore")
     assertEquals(
-        "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
+      "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
         "100 <= VALUES < 200 HASH(key) PARTITIONS 3, " +
         "200 <= VALUES < 300 HASH(key) PARTITIONS 5, " +
         "300 <= VALUES < 400 HASH(key) PARTITIONS 6]",

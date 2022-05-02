@@ -50,7 +50,10 @@ import org.apache.kudu.test.TempDirUtils;
 import org.apache.kudu.tools.Tool.ControlShellRequestPB;
 import org.apache.kudu.tools.Tool.ControlShellResponsePB;
 import org.apache.kudu.tools.Tool.CreateClusterRequestPB;
+import org.apache.kudu.tools.Tool.CreateClusterRequestPB.JwksOptionsPB;
 import org.apache.kudu.tools.Tool.CreateClusterRequestPB.MiniKdcOptionsPB;
+import org.apache.kudu.tools.Tool.CreateClusterRequestPB.MiniOidcOptionsPB;
+import org.apache.kudu.tools.Tool.CreateJwtRequestPB;
 import org.apache.kudu.tools.Tool.DaemonIdentifierPB;
 import org.apache.kudu.tools.Tool.DaemonInfoPB;
 import org.apache.kudu.tools.Tool.GetKDCEnvVarsRequestPB;
@@ -110,9 +113,11 @@ public final class MiniKuduCluster implements AutoCloseable {
   private final ImmutableList<String> locationInfo;
   private final String clusterRoot;
   private final String principal;
+  private final boolean enableClientJwt;
 
   private MiniKdcOptionsPB kdcOptionsPb;
   private final Common.HmsMode hmsMode;
+  private MiniOidcOptionsPB oidcOptionsPb;
 
   private MiniKuduCluster(boolean enableKerberos,
       int numMasters,
@@ -123,7 +128,9 @@ public final class MiniKuduCluster implements AutoCloseable {
       MiniKdcOptionsPB kdcOptionsPb,
       String clusterRoot,
       Common.HmsMode hmsMode,
-      String principal) {
+      String principal,
+      boolean enableClientJwt,
+      MiniOidcOptionsPB oidcOptionsPb) {
     this.enableKerberos = enableKerberos;
     this.numMasters = numMasters;
     this.numTservers = numTservers;
@@ -133,6 +140,8 @@ public final class MiniKuduCluster implements AutoCloseable {
     this.kdcOptionsPb = kdcOptionsPb;
     this.principal = principal;
     this.hmsMode = hmsMode;
+    this.enableClientJwt = enableClientJwt;
+    this.oidcOptionsPb = oidcOptionsPb;
 
     if (clusterRoot == null) {
       // If a cluster root was not set, create a unique temp directory to use.
@@ -227,7 +236,8 @@ public final class MiniKuduCluster implements AutoCloseable {
         .addAllExtraTserverFlags(extraTserverFlags)
         .setMiniKdcOptions(kdcOptionsPb)
         .setClusterRoot(clusterRoot)
-        .setPrincipal(principal);
+        .setPrincipal(principal)
+        .setMiniOidcOptions(oidcOptionsPb);
 
     // Set up the location mapping command flag if there is location info.
     if (!locationInfo.isEmpty()) {
@@ -321,6 +331,18 @@ public final class MiniKuduCluster implements AutoCloseable {
    */
   public String getPrincipal() {
     return principal;
+  }
+
+  public String createJwtFor(String accountId, String subject, boolean isValid) throws IOException {
+    ControlShellResponsePB resp = sendRequestToCluster(ControlShellRequestPB.newBuilder()
+        .setCreateJwt(CreateJwtRequestPB
+            .newBuilder()
+            .setAccountId(accountId)
+            .setSubject(subject)
+            .setIsValidKey(isValid)
+            .build())
+        .build());
+    return resp.getCreateJwt().getJwt();
   }
 
   /**
@@ -703,8 +725,10 @@ public final class MiniKuduCluster implements AutoCloseable {
     private final List<String> locationInfo = new ArrayList<>();
     private String clusterRoot = null;
     private String principal = "kudu";
+    private boolean enableClientJwt = false;
 
     private MiniKdcOptionsPB.Builder kdcOptionsPb = MiniKdcOptionsPB.newBuilder();
+    private MiniOidcOptionsPB.Builder oidcOptionsPb = MiniOidcOptionsPB.newBuilder();
     private Common.HmsMode hmsMode = Common.HmsMode.NONE;
 
     public MiniKuduClusterBuilder numMasterServers(int numMasterServers) {
@@ -723,6 +747,11 @@ public final class MiniKuduCluster implements AutoCloseable {
      */
     public MiniKuduClusterBuilder enableKerberos() {
       enableKerberos = true;
+      return this;
+    }
+
+    public MiniKuduClusterBuilder enableClientJwt() {
+      enableClientJwt = true;
       return this;
     }
 
@@ -788,6 +817,15 @@ public final class MiniKuduCluster implements AutoCloseable {
       return this;
     }
 
+    public MiniKuduClusterBuilder addJwks(String accountId, boolean isValid) {
+      this.oidcOptionsPb.addJwksOptions(
+          JwksOptionsPB.newBuilder()
+              .setAccountId(accountId)
+              .setIsValidKey(isValid)
+              .build());
+      return this;
+    }
+
     /**
      * Builds and starts a new {@link MiniKuduCluster} using builder state.
      * @return the newly started {@link MiniKuduCluster}
@@ -798,7 +836,8 @@ public final class MiniKuduCluster implements AutoCloseable {
           new MiniKuduCluster(enableKerberos,
               numMasterServers, numTabletServers,
               extraTabletServerFlags, extraMasterServerFlags, locationInfo,
-              kdcOptionsPb.build(), clusterRoot, hmsMode, principal);
+              kdcOptionsPb.build(), clusterRoot, hmsMode, principal, enableClientJwt,
+              oidcOptionsPb.build());
       try {
         cluster.start();
       } catch (IOException e) {
