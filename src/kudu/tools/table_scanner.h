@@ -68,6 +68,7 @@ class TableScanner {
 
   Status StartScan();
   Status StartCopy();
+  Status StartExport();
 
   uint64_t TotalScannedCount() const {
     return total_count_.Load();
@@ -76,7 +77,8 @@ class TableScanner {
  private:
   enum class WorkType {
     kScan,
-    kCopy
+    kCopy,
+    kExport
   };
 
   Status StartWork(WorkType type);
@@ -84,6 +86,7 @@ class TableScanner {
                   const std::function<void(const kudu::client::KuduScanBatch& batch)>& cb);
   void ScanTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
   void CopyTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
+  void ExportTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
 
   Status AddRow(const client::sp::shared_ptr<kudu::client::KuduTable>& table,
                 const kudu::client::KuduSchema& table_schema,

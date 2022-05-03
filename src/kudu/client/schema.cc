@@ -926,6 +926,12 @@ string KuduSchema::ToString() const {
                  : "()";
 }
 
+void KuduSchema::ToCSVRowString(char& delimeter, std::string& output) const {
+  schema_->ToCSVRowString(FLAGS_show_attributes ?
+                                     Schema::ToStringMode::WITH_COLUMN_ATTRIBUTES
+                                     : Schema::ToStringMode::BASE_INFO, &delimeter,&output);
+}
+
 KuduSchema KuduSchema::FromSchema(const Schema& schema) {
   return KuduSchema(schema.CopyWithoutColumnIds());
 }

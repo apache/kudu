@@ -36,6 +36,7 @@
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include <vector>
 
 namespace kudu {
 class Schema;
@@ -343,6 +344,7 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 
   /// @return String representation for this row.
   std::string ToString() const;
+  std::string* ToCSVRowString(std::string& ret, std::vector<std::string>& row_array, char& delimeter ) const;
 
  private:
   friend class KuduScanBatch;

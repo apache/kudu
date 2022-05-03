@@ -156,6 +156,7 @@ struct ColumnStorageAttributes {
   }
 
   std::string ToString() const;
+  std::string ToCSVRowString() const;
 
   EncodingType encoding;
   CompressionType compression;
@@ -264,6 +265,7 @@ class ColumnSchema {
   // Return a string identifying this column, including its
   // name.
   std::string ToString(ToStringMode mode = ToStringMode::WITHOUT_ATTRIBUTES) const;
+  std::string ToCSVRowString(ToStringMode mode = ToStringMode::WITHOUT_ATTRIBUTES) const;
 
   // Same as above, but only including the type information.
   // For example, "STRING NOT NULL".
@@ -410,6 +412,17 @@ class ColumnSchema {
     ret->append("=");
     if (is_nullable_ && cell.is_null()) {
       ret->append("NULL");
+    } else {
+      type_info_->AppendDebugStringForValue(cell.ptr(), ret);
+    }
+  }
+
+    // Append a debug csv string for this cell.
+  // ex: "bar".
+  template<class CellType>
+  void DebugCSVCellAppend(const CellType& cell, std::string* ret) const {
+    if (is_nullable_ && cell.is_null()) {
+      ret->append("");
     } else {
       type_info_->AppendDebugStringForValue(cell.ptr(), ret);
     }
@@ -786,6 +799,7 @@ class Schema {
   // Stringify this Schema. This is not particularly efficient,
   // so should only be used when necessary for output.
   std::string ToString(ToStringMode mode = ToStringMode::WITH_COLUMN_IDS) const;
+  void ToCSVRowString(ToStringMode mode = ToStringMode::WITH_COLUMN_IDS,char* delimeter=NULL,std::string* output=NULL) const;
 
   // Compare column ids in Equals() method.
   enum SchemaComparisonType {
