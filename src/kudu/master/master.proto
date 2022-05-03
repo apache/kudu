@@ -732,6 +732,9 @@ message AlterTableRequestPB {
     // The dimension label for the tablet. Used for dimension-specific placement
     // of the tablet's replicas.
     optional string dimension_label = 2;
+
+    // The custom hash partition schema for the range if specified.
+    repeated PartitionSchemaPB.HashBucketSchemaPB custom_hash_schema = 3;
   }
   message DropRangePartition {
     // A set of row operations containing the lower and upper range bound for
