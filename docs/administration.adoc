@@ -528,9 +528,6 @@ quorum. The below steps do not need to be performed in these versions.
 NOTE: From Kudu version 1.15.0 onwards, the `kudu master add` command has been added that simplifies
 the orchestration to migrate an existing Kudu cluster to multiple masters.
 
-WARNING: The workflow is unsafe for adding new masters to an existing configuration that already has
-three or more masters. Do not use it for that purpose.
-
 WARNING: An even number of masters doesn't provide any benefit over having one fewer masters.  This
 guide should always be used for migrating to three masters.
 
@@ -561,8 +558,10 @@ and restart the single master.
   or an alias in /etc/hosts. The alias should be an abstract representation of the master (e.g.
   `master-1`).
 +
-WARNING: Without DNS aliases it is not possible to recover from permanent master failures without
-bringing the cluster down for maintenance, and as such, it is highly recommended.
+WARNING: Without DNS aliases it is not possible to recover from permanent
+master failures without restarting the tablet servers in the cluster
+to pick up the replacement master node at different hostname. It is highly
+recommended to use DNS aliases for Kudu master nodes to avoid that.
 +
 . If you have Kudu tables that are accessed from Impala, you must update
 the master addresses in the Apache Hive Metastore (HMS) database.
