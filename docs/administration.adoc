@@ -553,30 +553,13 @@ checked using the `kudu master get_flags` command.
 If not specified, supply `--master_addresses=<hostname>:<port>` to master's configuration
 and restart the single master.
 
-* Optional: configure a DNS alias for the master. The alias could be a DNS cname (if the machine
-  already has an A record in DNS), an A record (if the machine is only known by its IP address),
-  or an alias in /etc/hosts. The alias should be an abstract representation of the master (e.g.
-  `master-1`).
+* Optional: configure a DNS alias for the master. The alias is a DNS CNAME
+record.
 +
 WARNING: Without DNS aliases it is not possible to recover from permanent
 master failures without restarting the tablet servers in the cluster
 to pick up the replacement master node at different hostname. It is highly
 recommended to use DNS aliases for Kudu master nodes to avoid that.
-+
-. If you have Kudu tables that are accessed from Impala, you must update
-the master addresses in the Apache Hive Metastore (HMS) database.
-* If you set up the DNS aliases, run the following statement in `impala-shell`,
-replacing `master-1` and `master-2` with your actual aliases.
-+
-[source,sql]
-----
-ALTER TABLE table_name
-SET TBLPROPERTIES
-('kudu.master_addresses' = 'master-1,master-2');
-----
-+
-* If you do not have DNS aliases set up, see Step #7 in the Performing
-the migration section for updating HMS.
 +
 . Perform the following preparatory steps for each new master:
 * Choose an unused machine in the cluster. The master generates very little load
@@ -586,7 +569,6 @@ the migration section for updating HMS.
   `kudu-master` packages should be installed), or via some other means.
 * Choose and record the directory where the master's data will live.
 * Choose and record the port the master should use for RPCs.
-* Optional: configure a DNS alias for the master (e.g. `master-2`, `master-3`, etc).
 
 [[perform-the-migration]]
 ==== Perform the migration
@@ -626,26 +608,42 @@ port:: master's previously recorded RPC port number
 
 . Restart the existing masters one by one.
 . Start the new master.
-. Modify the value of the `tserver_master_addrs` configuration parameter for each
-tablet server. The new value must be a comma-separated list of masters where each entry is a string
-of the form `<hostname>:<port>`
-hostname:: master's previously recorded hostname or alias
-port:: master's previously recorded RPC port number
-. Restart all the tablet servers to pick up the new master configuration.
-. If you have Kudu tables that are accessed from Impala and you didn't set up
-DNS aliases, update the HMS database manually in the underlying database that
-provides the storage for HMS.
-* The following is an example SQL statement you should run in the HMS database:
+. Repeat the steps above to add the desired number of masters into the cluster
+(for example, in case of adding two extra masters `master-2` and `master-3`,
+the sequence of those steps should be run for `master-2` and then for
+`master-3`).
+. *After adding all the desired masters into the cluster*, modify the
+value of the `tserver_master_addrs` configuration parameter for each tablet
+server. The new value must be a comma-separated list of masters where each
+entry is a string of the form `<hostname>:<port>`
+hostname:: master's hostname
+port:: master's RPC port number
+. Restart all the tablet servers to pick up the new masters' configuration.
+. If you have Kudu tables that are accessed from Impala, update the master
+addresses in the Apache Hive Metastore (HMS) database.
+* The following is an example SQL statement you should run manually in the
+underlying database that provides the storage for HMS (e.g., PostgreSQL)
+after migrating from one to three masters in a Kudu cluster:
 +
 [source,sql]
 ----
 UPDATE TABLE_PARAMS
 SET PARAM_VALUE =
-  'master-1.example.com,master-2.example.com'
+  'master-1.example.com,master-2.example.com,master-3.example.com'
 WHERE PARAM_KEY = 'kudu.master_addresses' AND PARAM_VALUE = 'master-1.example.com';
 ----
 +
-* In `impala-shell`, run:
+* Alternatively, instead of running a single query in the HMS database,
+you can run the following query for every Kudu table in `impala-shell`:
++
+[source,sql]
+----
+ALTER TABLE <table_name>
+SET TBLPROPERTIES
+('kudu.master_addresses' = 'master-1.example.com,master-2.example.com,master-3.example.com');
+----
++
+. In `impala-shell`, run:
 +
 [source,bash]
 ----
@@ -653,7 +651,6 @@ INVALIDATE METADATA;
 ----
 
 ==== Verify the migration was successful
-
 To verify that all masters are working properly, perform the following sanity checks:
 
 * Using a browser, visit each master's web UI. Look at the `/masters` page. All the masters should
