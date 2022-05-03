@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-#include <boost/functional/hash/hash.hpp>
+#include <boost/container_hash/extensions.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/any.pb.h>
@@ -36,6 +36,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/postgres/mini_postgres.h"
 #include "kudu/ranger/mini_ranger.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/subprocess/server.h"
@@ -70,6 +71,7 @@ using std::vector;
 using strings::SkipEmpty;
 using strings::Split;
 using strings::Substitute;
+using kudu::postgres::MiniPostgres;
 
 namespace kudu {
 namespace ranger {
@@ -353,7 +355,7 @@ class RangerClientTestBase : public KuduTest {
   }
 
   Status InitializeRanger() {
-    ranger_.reset(new MiniRanger("127.0.0.1"));
+    ranger_.reset(new MiniRanger("127.0.0.1", std::make_shared<MiniPostgres>("127.0.0.1")));
     RETURN_NOT_OK(ranger_->Start());
     // Create a policy so the Ranger client policy refresher can pick something
     // up. In some environments the absense of policies can cause the plugin to

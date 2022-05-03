@@ -82,6 +82,14 @@ Status CreateDirsRecursively(Env* env, const std::string& path);
 Status CopyFile(Env* env, const std::string& source_path, const std::string& dest_path,
                 WritableFileOptions opts);
 
+// Copy the contents of a directory from source_path to dest_path.
+// This is not atomic, if there is an error while reading or writing,
+// a partial copy of the directory may be left in dest_path.
+// The contents of the directory will be copied recursively. Does not fsync the parent
+// directory of dest_path -- if you need durability then do that yourself.
+Status CopyDirectory(Env* env, const std::string& source_path, const std::string& dest_path,
+                     WritableFileOptions opts);
+
 // Deletes files matching 'pattern' in excess of 'max_matches' files.
 // 'max_matches' must be greater than or equal to 0.
 // The oldest files are deleted first, as determined by last modified time.

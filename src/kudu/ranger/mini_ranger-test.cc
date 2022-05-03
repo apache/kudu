@@ -17,18 +17,22 @@
 
 #include "kudu/ranger/mini_ranger.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "kudu/postgres/mini_postgres.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/util/curl_util.h"
-#include "kudu/util/path_util.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+using kudu::postgres::MiniPostgres;
 
 using std::string;
 
@@ -37,8 +41,8 @@ namespace ranger {
 
 class MiniRangerTest : public KuduTest {
  public:
-  MiniRangerTest()
-    : ranger_("127.0.0.1") {}
+  MiniRangerTest() :
+    ranger_("127.0.0.1", std::make_shared<MiniPostgres>("127.0.0.1")) {}
   void SetUp() override {
     ASSERT_OK(ranger_.Start());
   }

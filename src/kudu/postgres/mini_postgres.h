@@ -69,6 +69,10 @@ class MiniPostgres {
     return port_;
   }
 
+  const std::string& host() const {
+    return host_;
+  }
+
   std::string pg_root() const {
     return JoinPathSegments(data_root_, "postgres");
   }
@@ -76,6 +80,10 @@ class MiniPostgres {
   std::string pg_bin_dir() const {
     return JoinPathSegments(bin_dir_, "postgres");
   }
+
+  bool IsFirstRun() const { return !Env::Default()->FileExists(pg_root()); }
+
+  bool IsStarted() const { return process_ && process_->IsStarted(); }
 
  private:
   static std::string GetBinDir() {

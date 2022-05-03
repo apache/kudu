@@ -48,6 +48,10 @@ class Env;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
+namespace rangerkms {
+class MiniRangerKMS;
+}  // namespace rangerkms
+
 namespace security {
 class KeyProvider;
 }  // namespace security
@@ -74,6 +78,10 @@ class MasterServiceProxy;
 namespace rpc {
 class Messenger;
 } // namespace rpc
+
+namespace postgres {
+class MiniPostgres;
+} // namespace postgres
 
 namespace ranger {
 class MiniRanger;
@@ -213,6 +221,11 @@ struct ExternalMiniClusterOptions {
   //
   // Default: false.
   bool enable_ranger;
+
+  // If true, set up a Ranger KMS service as part of this ExternalMiniCluster.
+  //
+  // Default: false.
+  bool enable_ranger_kms;
 
   // If true, enable data at rest encryption.
   //
@@ -376,8 +389,16 @@ class ExternalMiniCluster : public MiniCluster {
     return hms_.get();
   }
 
+  postgres::MiniPostgres* postgres() const {
+    return postgres_.get();
+  }
+
   ranger::MiniRanger* ranger() const {
     return ranger_.get();
+  }
+
+  rangerkms::MiniRangerKMS* ranger_kms() const {
+    return ranger_kms_.get();
   }
 
   const std::string& cluster_root() const {
@@ -550,8 +571,10 @@ class ExternalMiniCluster : public MiniCluster {
 #endif
   std::unique_ptr<MiniKdc> kdc_;
   std::unique_ptr<hms::MiniHms> hms_;
-  std::unique_ptr<ranger::MiniRanger> ranger_;
+  std::shared_ptr<postgres::MiniPostgres> postgres_;
+  std::shared_ptr<ranger::MiniRanger> ranger_;
   std::unique_ptr<security::KeyProvider> key_provider_;
+  std::unique_ptr<rangerkms::MiniRangerKMS> ranger_kms_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
 

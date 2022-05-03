@@ -53,11 +53,10 @@ Status MiniPostgres::Start() {
   if (process_) {
     return Status::IllegalState("Postgres already running");
   }
-  Env* env = Env::Default();
 
   VLOG(1) << "Starting Postgres";
   string pgr = pg_root();
-  if (!env->FileExists(pgr)) {
+  if (IsFirstRun()) {
     // This is our first time running. Set up our directories, config files,
     // and port.
     LOG(INFO) << "Running initdb...";

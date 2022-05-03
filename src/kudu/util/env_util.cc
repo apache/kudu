@@ -248,19 +248,48 @@ Status CopyFile(Env* env, const string& source_path, const string& dest_path,
 
   unique_ptr<WritableFile> dest;
   RETURN_NOT_OK(env->NewWritableFile(opts, dest_path, &dest));
-  RETURN_NOT_OK(dest->PreAllocate(size));
+  if (size > 0) {
+    RETURN_NOT_OK(dest->PreAllocate(size));
 
-  const int32_t kBufferSize = 1024 * 1024;
-  unique_ptr<uint8_t[]> scratch(new uint8_t[kBufferSize]);
+    const int32_t kBufferSize = 1024 * 1024;
+    unique_ptr<uint8_t[]> scratch(new uint8_t[kBufferSize]);
 
-  uint64_t bytes_read = 0;
-  while (bytes_read < size) {
-    uint64_t max_bytes_to_read = std::min<uint64_t>(size - bytes_read, kBufferSize);
-    Slice data(scratch.get(), max_bytes_to_read);
-    RETURN_NOT_OK(source->Read(&data));
-    RETURN_NOT_OK(dest->Append(data));
-    bytes_read += data.size();
+    uint64_t bytes_read = 0;
+    while (bytes_read < size) {
+      uint64_t max_bytes_to_read = std::min<uint64_t>(size - bytes_read, kBufferSize);
+      Slice data(scratch.get(), max_bytes_to_read);
+      RETURN_NOT_OK(source->Read(&data));
+      RETURN_NOT_OK(dest->Append(data));
+      bytes_read += data.size();
+    }
   }
+  return Status::OK();
+}
+
+Status CopyDirectory(Env* env, const std::string& source_path, const std::string& dest_path,
+                     WritableFileOptions opts) {
+  bool is_dir;
+  RETURN_NOT_OK(env->IsDirectory(source_path, &is_dir));
+
+  if (!is_dir) {
+    return Status::InvalidArgument("source is not a directory");
+  }
+
+  vector<string> children;
+  RETURN_NOT_OK(ListFilesInDir(env, source_path, &children));
+
+  RETURN_NOT_OK(env->CreateDir(dest_path));
+  for (const auto& c : children) {
+    string source = JoinPathSegments(source_path, c);
+    string dest = JoinPathSegments(dest_path, c);
+    RETURN_NOT_OK(env->IsDirectory(source, &is_dir));
+    if (is_dir) {
+      RETURN_NOT_OK(CopyDirectory(env, source, dest, opts));
+    } else {
+      RETURN_NOT_OK(CopyFile(env, source, dest, opts));
+    }
+  }
+
   return Status::OK();
 }
 

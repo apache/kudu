@@ -35,6 +35,8 @@
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
 #include "kudu/fs/fs.pb.h"
+#include "kudu/postgres/mini_postgres.h"
+#include "kudu/ranger-kms/mini_ranger_kms.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/server/key_provider.h"
 #if !defined(NO_CHRONY)
@@ -131,6 +133,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       principal("kudu"),
       hms_mode(HmsMode::NONE),
       enable_ranger(false),
+      enable_ranger_kms(false),
       enable_encryption(FLAGS_encrypt_data_at_rest),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
@@ -323,9 +326,12 @@ Status ExternalMiniCluster::Start() {
   }
 #endif // #if !defined(NO_CHRONY) ...
 
-  if (opts_.enable_ranger) {
+  if (opts_.enable_ranger || opts_.enable_ranger_kms) {
+    if (!postgres_ || !postgres_->IsStarted()) {
+      postgres_.reset(new postgres::MiniPostgres(cluster_root(), GetBindIpForExternalServer(0)));
+    }
     string host = GetBindIpForExternalServer(0);
-    ranger_.reset(new ranger::MiniRanger(cluster_root(), host));
+    ranger_.reset(new ranger::MiniRanger(cluster_root(), host, postgres_));
     if (opts_.enable_kerberos) {
 
       // The SPNs match the ones defined in mini_ranger_configs.h.
@@ -355,6 +361,21 @@ Status ExternalMiniCluster::Start() {
     RETURN_NOT_OK_PREPEND(ranger_->CreateClientConfig(JoinPathSegments(cluster_root(),
                                                                        "ranger-client")),
                           "Failed to write Ranger client config");
+  }
+
+  if (opts_.enable_ranger_kms) {
+    string host = GetBindIpForExternalServer(0);
+    ranger_kms_.reset(new rangerkms::MiniRangerKMS(cluster_root(), host, postgres_, ranger_));
+    if (opts_.enable_kerberos) {
+      string keytab;
+      RETURN_NOT_OK_PREPEND(kdc_->CreateServiceKeytab(
+      Substitute("rangerkms/$0@KRBTEST.COM", host),
+                  &keytab),
+                  "could not create rangeradmin keytab");
+
+      ranger_kms_->EnableKerberos(kdc_->GetEnvVars()["KRB5_CONFIG"], keytab);
+    }
+    RETURN_NOT_OK_PREPEND(ranger_kms_->Start(), "Failed to start the Ranger KMS service");
   }
 
   // Start the HMS.

@@ -38,6 +38,7 @@ set(MINI_CLUSTER_LIBS
   mini_hms
   mini_kdc
   mini_ranger
+  mini_ranger_kms
   server_base_proto
   tablet_proto
   tserver

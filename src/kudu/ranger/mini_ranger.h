@@ -29,17 +29,19 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/postgres/mini_postgres.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
 class EasyJson;
-class Subprocess;
+namespace postgres {
+class MiniPostgres;
+}  // namespace postgres
 
 namespace ranger {
 
@@ -70,15 +72,17 @@ struct AuthorizationPolicy {
 // Wrapper around Apache Ranger to be used in integration tests.
 class MiniRanger {
  public:
-  explicit MiniRanger(std::string host)
-    : MiniRanger(GetTestDataDirectory(), std::move(host)) {}
+  explicit MiniRanger(std::string host, std::shared_ptr<postgres::MiniPostgres> mini_pg) :
+  MiniRanger(GetTestDataDirectory(), std::move(host), std::move(mini_pg)) {}
 
   ~MiniRanger();
 
-  MiniRanger(std::string data_root, std::string host)
+  MiniRanger(std::string data_root,
+             std::string host,
+             std::shared_ptr<postgres::MiniPostgres> mini_pg)
     : data_root_(std::move(data_root)),
       host_(std::move(host)),
-      mini_pg_(data_root_, host_),
+      mini_pg_(std::move(mini_pg)),
       kerberos_(false),
       env_(Env::Default()) {
         curl_.set_auth(CurlAuthType::BASIC, "admin", "admin");
@@ -115,14 +119,19 @@ class MiniRanger {
     return ranger_admin_url_;
   }
 
- private:
+  bool IsRunning() const { return process_ && process_->IsStarted(); }
+
+  // Sends a POST request to Ranger with 'payload'.
+  Status PostToRanger(std::string url, EasyJson payload) WARN_UNUSED_RESULT;
+
+private:
   // Starts the Ranger service.
   Status StartRanger() WARN_UNUSED_RESULT;
 
   // Initializes Ranger within 'admin_home' (home directory of the Ranger
   // admin). Sets 'fresh_install' to true if 'admin_home' didn't exist before
   // calling InitRanger().
-  Status InitRanger(std::string admin_home, bool* fresh_install)
+  Status InitRanger(const std::string& admin_home, bool* fresh_install)
     WARN_UNUSED_RESULT;
 
   // Creates configuration files.
@@ -134,9 +143,6 @@ class MiniRanger {
 
   // Creates a Kudu service in Ranger.
   Status CreateKuduService() WARN_UNUSED_RESULT;
-
-  // Sends a POST request to Ranger with 'payload'.
-  Status PostToRanger(std::string url, EasyJson payload) WARN_UNUSED_RESULT;
 
   // Returns Ranger admin's home directory.
   std::string ranger_admin_home() const {
@@ -162,8 +168,7 @@ class MiniRanger {
   // Directory in which to put all our stuff.
   const std::string data_root_;
   const std::string host_;
-
-  postgres::MiniPostgres mini_pg_;
+  std::shared_ptr<kudu::postgres::MiniPostgres> mini_pg_;
   std::unique_ptr<Subprocess> process_;
 
   // URL of the Ranger admin REST API.
