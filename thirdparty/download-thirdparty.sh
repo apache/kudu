@@ -485,5 +485,11 @@ fetch_and_patch \
   $JWT_CPP_SOURCE \
   $JWT_CPP_PATCHLEVEL
 
+RANGER_KMS_PATCHLEVEL=0
+fetch_and_patch \
+  $RANGER_KMS_NAME.tar.gz \
+  $RANGER_KMS_SOURCE \
+  $RANGER_KMS_PATCHLEVEL
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

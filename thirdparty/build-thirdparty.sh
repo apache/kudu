@@ -107,7 +107,8 @@ else
       "ranger")       F_RANGER=1 ;;
       "oatpp")        F_OATPP=1 ;;
       "oatpp-swagger") F_OATPP_SWAGGER=1 ;;
-      "jwt-cpp")      F_JWT_CPP=1;;
+      "jwt-cpp")      F_JWT_CPP=1 ;;
+      "ranger-kms")   F_RANGER_KMS=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -284,6 +285,18 @@ if [ -n "$F_COMMON" -o -n "$F_RANGER" ]; then
   # Symlink conf.dist to conf
   ln -nsf $PREFIX/opt/ranger/ews/webapp/WEB-INF/classes/conf.dist \
   $PREFIX/opt/ranger/ews/webapp/WEB-INF/classes/conf
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_RANGER_KMS" ]; then
+  mkdir -p $PREFIX/opt
+  # Remove any hadoop jars included in the Ranger package to avoid unexpected
+  # runtime behavior due to different versions of hadoop jars.
+  rm -rf $RANGER_KMS_SOURCE/lib/hadoop-[a-z-]*.jar
+  ln -nsf $RANGER_KMS_SOURCE $PREFIX/opt/ranger-kms
+
+  # Symlink conf.dist to conf
+  ln -nsf $PREFIX/opt/ranger-kms/ews/webapp/WEB-INF/classes/conf.dist \
+  $PREFIX/opt/ranger-kms/ews/webapp/WEB-INF/classes/conf
 fi
 
 ### Build C dependencies without instrumentation
