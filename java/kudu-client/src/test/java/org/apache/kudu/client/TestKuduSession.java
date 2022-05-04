@@ -344,6 +344,24 @@ public class TestKuduSession {
     }
   }
 
+  private void doVerifyMetrics(KuduSession session,
+                              long successfulInserts,
+                              long insertIgnoreErrors,
+                              long successfulUpserts,
+                              long successfulUpdates,
+                              long updateIgnoreErrors,
+                              long successfulDeletes,
+                              long deleteIgnoreErrors) {
+    ResourceMetrics metrics = session.getWriteOpMetrics();
+    assertEquals(successfulInserts, metrics.getMetric("successful_inserts"));
+    assertEquals(insertIgnoreErrors, metrics.getMetric("insert_ignore_errors"));
+    assertEquals(successfulUpserts, metrics.getMetric("successful_upserts"));
+    assertEquals(successfulUpdates, metrics.getMetric("successful_updates"));
+    assertEquals(updateIgnoreErrors, metrics.getMetric("update_ignore_errors"));
+    assertEquals(successfulDeletes, metrics.getMetric("successful_deletes"));
+    assertEquals(deleteIgnoreErrors, metrics.getMetric("delete_ignore_errors"));
+  }
+
   @Test(timeout = 10000)
   public void testUpsert() throws Exception {
     KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
@@ -358,6 +376,7 @@ public class TestKuduSession {
         "INT32 key=1, INT32 column1_i=1, INT32 column2_i=3, " +
             "STRING column3_s=a string, BOOL column4_b=true",
         rowStrings.get(0));
+    doVerifyMetrics(session, 0, 0, 1, 0, 0, 0, 0);
 
     // Test an Upsert that acts as an Update.
     assertFalse(session.apply(createUpsert(table, 1, 2, false)).hasRowError());
@@ -366,6 +385,7 @@ public class TestKuduSession {
         "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
             "STRING column3_s=a string, BOOL column4_b=true",
         rowStrings.get(0));
+    doVerifyMetrics(session, 0, 0, 2, 0, 0, 0, 0);
   }
 
   @Test(timeout = 10000)
@@ -378,6 +398,7 @@ public class TestKuduSession {
     session.apply(createUpsert(table, 1, 1, false));
     session.apply(createInsertIgnore(table, 1));
     List<OperationResponse> results = session.flush();
+    doVerifyMetrics(session, 1, 1, 1, 0, 0, 0, 0);
     for (OperationResponse result : results) {
       assertFalse(result.toString(), result.hasRowError());
     }
@@ -398,6 +419,7 @@ public class TestKuduSession {
     session.apply(createInsertIgnore(table, 1));
     session.apply(createInsert(table, 1));
     List<OperationResponse> results = session.flush();
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0);
     assertFalse(results.get(0).toString(), results.get(0).hasRowError());
     assertTrue(results.get(1).toString(), results.get(1).hasRowError());
     assertTrue(results.get(1).getRowError().getErrorStatus().isAlreadyPresent());
@@ -421,6 +443,7 @@ public class TestKuduSession {
             "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
                     "STRING column3_s=a string, BOOL column4_b=true",
             rowStrings.get(0));
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0);
 
     // Test insert ignore does not return a row error.
     assertFalse(session.apply(createInsertIgnore(table, 1)).hasRowError());
@@ -429,6 +452,7 @@ public class TestKuduSession {
             "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
                     "STRING column3_s=a string, BOOL column4_b=true",
             rowStrings.get(0));
+    doVerifyMetrics(session, 1, 1, 0, 0, 0, 0, 0);
 
   }
 
@@ -440,9 +464,11 @@ public class TestKuduSession {
     // Test update ignore does not return a row error.
     assertFalse(session.apply(createUpdateIgnore(table, 1, 1, false)).hasRowError());
     assertEquals(0, scanTableToStrings(table).size());
+    doVerifyMetrics(session, 0, 0, 0, 0, 1, 0, 0);
 
     assertFalse(session.apply(createInsert(table, 1)).hasRowError());
     assertEquals(1, scanTableToStrings(table).size());
+    doVerifyMetrics(session, 1, 0, 0, 0, 1, 0, 0);
 
     // Test update ignore implements normal update.
     assertFalse(session.apply(createUpdateIgnore(table, 1, 2, false)).hasRowError());
@@ -452,6 +478,7 @@ public class TestKuduSession {
         "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
             "STRING column3_s=a string, BOOL column4_b=true",
         rowStrings.get(0));
+    doVerifyMetrics(session, 1, 0, 0, 1, 1, 0, 0);
   }
 
   @Test(timeout = 10000)
@@ -461,13 +488,16 @@ public class TestKuduSession {
 
     // Test delete ignore does not return a row error.
     assertFalse(session.apply(createDeleteIgnore(table, 1)).hasRowError());
+    doVerifyMetrics(session, 0, 0, 0, 0, 0, 0, 1);
 
     assertFalse(session.apply(createInsert(table, 1)).hasRowError());
     assertEquals(1, scanTableToStrings(table).size());
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 1);
 
     // Test delete ignore implements normal delete.
     assertFalse(session.apply(createDeleteIgnore(table, 1)).hasRowError());
     assertEquals(0, scanTableToStrings(table).size());
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 1, 1);
   }
 
   @Test(timeout = 10000)

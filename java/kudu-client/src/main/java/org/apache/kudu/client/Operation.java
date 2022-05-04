@@ -223,11 +223,14 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
         error = null;
       }
     }
+    Tserver.ResourceMetricsPB metricsPB = builder.hasResourceMetrics() ?
+            builder.getResourceMetrics() : null;
     OperationResponse response = new OperationResponse(timeoutTracker.getElapsedMillis(),
                                                        tsUUID,
                                                        builder.getTimestamp(),
                                                        this,
-                                                       error);
+                                                       error,
+                                                       metricsPB);
     return new Pair<>(response, builder.hasError() ? builder.getError() : null);
   }
 

@@ -184,12 +184,15 @@ class Batch extends KuduRpc<BatchResponse> {
       }
       errorsPB = filteredErrors;
     }
+    ResourceMetrics metrics = builder.hasResourceMetrics() ?
+        ResourceMetrics.fromResourceMetricsPB(builder.getResourceMetrics()) : null;
     BatchResponse response = new BatchResponse(timeoutTracker.getElapsedMillis(),
                                                tsUUID,
                                                builder.getTimestamp(),
                                                errorsPB,
                                                operations,
-                                               operationIndexes);
+                                               operationIndexes,
+                                               metrics);
 
     if (injectedError != null) {
       if (injectedlatencyMs > 0) {

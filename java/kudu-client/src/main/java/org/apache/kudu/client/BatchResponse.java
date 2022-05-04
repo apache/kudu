@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import javax.annotation.Nullable;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -37,6 +38,7 @@ public class BatchResponse extends KuduRpcResponse {
   private final List<RowError> rowErrors;
   private final List<OperationResponse> individualResponses;
   private final List<Integer> responsesIndexes;
+  private final ResourceMetrics writeOpMetrics;
 
   /**
    * Package-private constructor to be used by the RPCs.
@@ -45,13 +47,15 @@ public class BatchResponse extends KuduRpcResponse {
    * @param errorsPB a list of row errors, can be empty
    * @param operations the list of operations which created this response
    * @param indexes the list of operations' order index
+   * @param writeOpMetrics the write operation metrics, can be null
    */
   BatchResponse(long elapsedMillis,
                 String tsUUID,
                 long writeTimestamp,
                 List<Tserver.WriteResponsePB.PerRowErrorPB> errorsPB,
                 List<Operation> operations,
-                List<Integer> indexes) {
+                List<Integer> indexes,
+                ResourceMetrics writeOpMetrics) {
     super(elapsedMillis, tsUUID);
     this.writeTimestamp = writeTimestamp;
     individualResponses = new ArrayList<>(operations.size());
@@ -61,6 +65,7 @@ public class BatchResponse extends KuduRpcResponse {
     } else {
       rowErrors = new ArrayList<>(errorsPB.size());
     }
+    this.writeOpMetrics = writeOpMetrics;
 
     // Populate the list of individual row responses and the list of row errors. Not all the rows
     // maybe have errors, but 'errorsPB' contains them in the same order as the operations that
@@ -95,6 +100,7 @@ public class BatchResponse extends KuduRpcResponse {
     rowErrors = ImmutableList.of();
     this.individualResponses = individualResponses;
     this.responsesIndexes = indexes;
+    this.writeOpMetrics = null;
   }
 
   /**
@@ -120,6 +126,15 @@ public class BatchResponse extends KuduRpcResponse {
    */
   List<Integer> getResponseIndexes() {
     return responsesIndexes;
+  }
+
+  /**
+   * Return the write operation metrics associated with this batch.
+   * @return write operation metrics associated with this batch, or null if there is none.
+   */
+  @Nullable
+  ResourceMetrics getWriteOpMetrics() {
+    return this.writeOpMetrics;
   }
 
 }

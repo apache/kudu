@@ -207,4 +207,10 @@ public interface SessionConfiguration {
    * @return an object that contains the errors and the overflow status
    */
   RowErrorsAndOverflowStatus getPendingErrors();
+
+  /**
+   * Return cumulative write operation metrics since the beginning of the session.
+   * @return cumulative write operation metrics since the beginning of the session.
+   */
+  ResourceMetrics getWriteOpMetrics();
 }

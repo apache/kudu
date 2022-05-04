@@ -203,4 +203,9 @@ public class KuduSession implements SessionConfiguration {
   public RowErrorsAndOverflowStatus getPendingErrors() {
     return session.getPendingErrors();
   }
+
+  @Override
+  public ResourceMetrics getWriteOpMetrics() {
+    return session.getWriteOpMetrics();
+  }
 }

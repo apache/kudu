@@ -35,7 +35,7 @@ import org.apache.kudu.tserver.Tserver.ResourceMetricsPB;
  * A container for scanner resource metrics.
  * <p>
  * This class wraps a mapping from metric name to metric value for server-side
- * metrics associated with a scanner.
+ * metrics associated with a scanner and write operation.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
@@ -76,11 +76,37 @@ public class ResourceMetrics {
   }
 
   /**
+   * Increment this instance's metric values with those found in 'resourceMetrics'.
+   * Noop if 'resourceMetrics' is null.
+   * @param resourceMetrics resource metrics protobuf object to be used to update this object.
+   *                        Can be null, which will not do anything.
+   */
+  void update(ResourceMetrics resourceMetrics) {
+    if (resourceMetrics != null) {
+      for (Map.Entry<String, LongAdder> entry : resourceMetrics.metrics.entrySet()) {
+        increment(entry.getKey(), entry.getValue().sum());
+      }
+    }
+  }
+
+  /**
    * Increment the metric value by the specific amount.
    * @param name the name of the metric whose value is to be incremented
    * @param amount the amount to increment the value by
    */
   private void increment(String name, long amount) {
     metrics.computeIfAbsent(name, k -> new LongAdder()).add(amount);
+  }
+
+  /**
+   * Converts a ResourceMetricsPB into a ResourceMetrics.
+   * @param resourceMetricsPb a resource metrics in its PB format. Must not be null.
+   * @return a ResourceMetrics
+   */
+  static ResourceMetrics fromResourceMetricsPB(ResourceMetricsPB resourceMetricsPb) {
+    Preconditions.checkNotNull(resourceMetricsPb);
+    ResourceMetrics result = new ResourceMetrics();
+    result.update(resourceMetricsPb);
+    return result;
   }
 }

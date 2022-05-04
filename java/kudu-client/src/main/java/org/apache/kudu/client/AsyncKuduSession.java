@@ -184,6 +184,11 @@ public class AsyncKuduSession implements SessionConfiguration {
   private boolean ignoreAllNotFoundRows = false;
 
   /**
+   * Cumulative operation metrics since the beginning of the session.
+   */
+  private final ResourceMetrics writeOpMetrics = new ResourceMetrics();
+
+  /**
    * Package-private constructor meant to be used via AsyncKuduClient
    * @param client client that creates this session
    */
@@ -315,6 +320,11 @@ public class AsyncKuduSession implements SessionConfiguration {
   @Override
   public RowErrorsAndOverflowStatus getPendingErrors() {
     return errorCollector.getErrors();
+  }
+
+  @Override
+  public ResourceMetrics getWriteOpMetrics() {
+    return this.writeOpMetrics;
   }
 
   /**
@@ -452,6 +462,7 @@ public class AsyncKuduSession implements SessionConfiguration {
             // are visible should the callback interrogate the error collector.
             operationResponse.getOperation().callback(operationResponse);
           }
+          writeOpMetrics.update(response.getWriteOpMetrics());
 
           return response;
         }
@@ -624,6 +635,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     return client.sendRpcToTablet(operation)
         .addCallbackDeferring(resp -> {
           client.updateLastPropagatedTimestamp(resp.getWriteTimestampRaw());
+          writeOpMetrics.update(resp.getWriteOpMetrics());
           return Deferred.fromResult(resp);
         })
         .addErrback(new SingleOperationErrCallback(operation));

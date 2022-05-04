@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import java.util.ArrayList;
 import java.util.List;
+import javax.annotation.Nullable;
 
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -32,6 +33,7 @@ public class OperationResponse extends KuduRpcResponse {
   private final long writeTimestamp;
   private final RowError rowError;
   private final Operation operation;
+  private final ResourceMetrics writeOpMetrics;
 
   /**
    * Package-private constructor to build an OperationResponse with a row error in the pb format.
@@ -44,11 +46,14 @@ public class OperationResponse extends KuduRpcResponse {
                     String tsUUID,
                     long writeTimestamp,
                     Operation operation,
-                    Tserver.WriteResponsePB.PerRowErrorPB errorPB) {
+                    Tserver.WriteResponsePB.PerRowErrorPB errorPB,
+                    Tserver.ResourceMetricsPB metricsPB) {
     super(elapsedMillis, tsUUID);
     this.writeTimestamp = writeTimestamp;
     this.rowError = errorPB == null ? null : RowError.fromRowErrorPb(errorPB, operation, tsUUID);
     this.operation = operation;
+    this.writeOpMetrics = metricsPB == null ?
+            null : ResourceMetrics.fromResourceMetricsPB(metricsPB);
   }
 
   /**
@@ -67,6 +72,7 @@ public class OperationResponse extends KuduRpcResponse {
     this.writeTimestamp = writeTimestamp;
     this.rowError = rowError;
     this.operation = operation;
+    this.writeOpMetrics = null;
   }
 
   /**
@@ -115,5 +121,14 @@ public class OperationResponse extends KuduRpcResponse {
    */
   Operation getOperation() {
     return operation;
+  }
+
+  /**
+   * Return the write operation metrics associated with this batch.
+   * @return write operation metrics associated with this batch, or null if there is none.
+   */
+  @Nullable
+  ResourceMetrics getWriteOpMetrics() {
+    return this.writeOpMetrics;
   }
 }
