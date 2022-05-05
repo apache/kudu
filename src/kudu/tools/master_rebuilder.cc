@@ -135,6 +135,7 @@ Status MasterRebuilder::RebuildMaster() {
       }
       Status s = CheckTableAndTabletConsistency(replica);
       if (!s.ok()) {
+        // TODO(yingchun): should abort rebuilding master if any fatal error happened.
         LOG(WARNING) << Substitute("Failed to process metadata for replica of tablet $0 "
                                    "of table $1 on tablet server $2 in state $3: $4",
                                    tablet_id, table_name, tserver_addr, state_str, s.ToString());
@@ -220,52 +221,80 @@ Status MasterRebuilder::CheckTableConsistency(
     const ListTabletsResponsePB::StatusAndSchemaPB& replica) {
   const string& tablet_id = replica.tablet_status().tablet_id();
   const string& table_name = replica.tablet_status().table_name();
-  scoped_refptr<TableInfo> table = FindOrDie(tables_by_name_, table_name);
+  Schema schema_from_replica;
+  RETURN_NOT_OK(SchemaFromPB(replica.schema(), &schema_from_replica));
 
-  TableMetadataLock l_table(table.get(), LockMode::WRITE);
+  scoped_refptr<TableInfo> table = FindOrDie(tables_by_name_, table_name);
+  table->mutable_metadata()->StartMutation();
   SysTablesEntryPB* metadata = &table->mutable_metadata()->mutable_dirty()->pb;
 
   // Update next_column_id if needed.
-  Schema schema_from_replica;
-  RETURN_NOT_OK(SchemaFromPB(replica.schema(), &schema_from_replica));
   if (schema_from_replica.max_col_id() + 1 > metadata->next_column_id()) {
     metadata->set_next_column_id(schema_from_replica.max_col_id() + 1);
   }
 
-  // Update schema_version if needed.
+  // Update schema if needed.
+  // Suppose the schema with a higher version would be newer, we will replace
+  // the schema_version, SchemaPB and PartitionSchemaPB.
   if (replica.has_schema_version() &&
       replica.schema_version() > metadata->version()) {
     metadata->set_version(replica.schema_version());
+    metadata->mutable_schema()->CopyFrom(replica.schema());
+    metadata->mutable_partition_schema()->CopyFrom(replica.partition_schema());
   }
 
-  // Check the schemas match.
+  // Obtain Schema and PartitionSchema before CommitMutation, since
+  // CommitMutation will reset metadata.
+  int table_version = metadata->version();
   Schema schema_from_table;
   RETURN_NOT_OK(SchemaFromPB(metadata->schema(), &schema_from_table));
+  PartitionSchema pschema_from_table;
+  RETURN_NOT_OK(PartitionSchema::FromPB(
+      metadata->partition_schema(), schema_from_table, &pschema_from_table));
+  table->mutable_metadata()->CommitMutation();
+
+  // Check for the consistency.
+  // Only matched when they have the same version.
+  if (replica.has_schema_version() &&
+      replica.schema_version() != table_version) {
+    LOG(WARNING) << Substitute(
+        "Ignoring mismatched schema version for tablet $0 of table $1", tablet_id, table_name);
+    LOG(WARNING) << Substitute("Table schema version: $0", table_version);
+    LOG(WARNING) << Substitute("Mismatched schema version: $0", replica.schema_version());
+    return Status::OK();
+  }
+
+  string error_message;
+  // Check the schemas match.
   if (schema_from_table != schema_from_replica) {
-    LOG(WARNING) << Substitute("Schema mismatch for tablet $0 of table $1", tablet_id, table_name);
+    error_message = "schema mismatch";
+    LOG(WARNING) << Substitute(
+        "Schema mismatch for tablet $0 of table $1", tablet_id, table_name);
     LOG(WARNING) << Substitute("Table schema: $0", schema_from_table.ToString());
     LOG(WARNING) << Substitute("Mismatched schema: $0", schema_from_replica.ToString());
-    return Status::Corruption("inconsistent replica: schema mismatch");
   }
 
   // Check the partition schemas match.
-  PartitionSchema pschema_from_table;
   PartitionSchema pschema_from_replica;
-  RETURN_NOT_OK(PartitionSchema::FromPB(metadata->partition_schema(),
-                                        schema_from_table,
-                                        &pschema_from_table));
-  RETURN_NOT_OK(PartitionSchema::FromPB(replica.partition_schema(),
-                                        schema_from_replica,
-                                        &pschema_from_replica));
+  RETURN_NOT_OK(PartitionSchema::FromPB(
+      replica.partition_schema(), schema_from_replica, &pschema_from_replica));
   if (pschema_from_table != pschema_from_replica) {
-    LOG(WARNING) << Substitute("Partition schema mismatch for tablet $0 of table $1",
-                               tablet_id, table_name);
+    if (!error_message.empty()) {
+      error_message += ", ";
+    }
+    error_message += "partition schema mismatch";
+    LOG(WARNING) << Substitute(
+        "Partition schema mismatch for tablet $0 of table $1", tablet_id, table_name);
     LOG(WARNING) << Substitute("First seen partition schema: $0",
                                pschema_from_table.DebugString(schema_from_table));
     LOG(WARNING) << Substitute("Mismatched partition schema $0",
                                pschema_from_replica.DebugString(schema_from_replica));
-    return Status::Corruption("inconsistent replica: partition schema mismatch");
   }
+
+  if (!error_message.empty()) {
+    return Status::Corruption(Substitute("inconsistent replica: $0", error_message));
+  }
+
   return Status::OK();
 }
 
@@ -318,7 +347,7 @@ Status MasterRebuilder::CheckTabletConsistency(
     LOG(WARNING) << Substitute("First seen partition: $0",
                                metadata.partition().DebugString());
     LOG(WARNING) << Substitute("Mismatched partition $0",
-                               replica.tablet_status().partition().DebugString());;
+                               replica.tablet_status().partition().DebugString());
     return Status::Corruption("inconsistent replica: partition mismatch");
   }
 
