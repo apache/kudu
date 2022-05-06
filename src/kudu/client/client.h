@@ -2522,7 +2522,7 @@ class KUDU_EXPORT KuduScanner {
   /// Default scanner timeout.
   /// This is set to 3x the default RPC timeout returned by
   /// KuduClientBuilder::default_rpc_timeout().
-  enum { kScanTimeoutMillis = 30000 };
+  enum { kScanTimeoutMillis = 30000000 };
 
   /// Constructor for KuduScanner.
   ///
