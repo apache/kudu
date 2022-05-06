@@ -527,6 +527,11 @@ void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens, Status* threa
 
 void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thread_status) {
   string FilePath;
+   // One session per thread.
+  client::sp::shared_ptr<KuduSession> session(dst_client_.get()->NewSession());
+  CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+  CHECK_OK(session->SetErrorBufferSpace(1024));
+  session->SetTimeoutMillis(30000);
 
   std::thread::id currentThreadId = std::this_thread::get_id();
   std::stringstream ss;
@@ -565,6 +570,11 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
       s.flush();
     }
   });
+  CheckPendingErrors(session);
+    // Flush here to make sure all write operations have been sent,
+    // and all strings reference to batch are still valid.
+  CHECK_OK(session->Flush());
+  s.close();
 }
 
 void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens, Status* thread_status) {
