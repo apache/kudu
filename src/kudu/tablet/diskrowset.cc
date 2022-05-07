@@ -559,7 +559,7 @@ Status DiskRowSet::MinorCompactDeltaStores(const IOContext* io_context) {
 Status DiskRowSet::MajorCompactDeltaStores(const IOContext* io_context,
                                            HistoryGcOpts history_gc_opts) {
   vector<ColumnId> col_ids;
-  delta_tracker_->GetColumnIdsWithUpdates(&col_ids);
+  delta_tracker_->GetColumnIdsToCompact(&col_ids);
 
   if (col_ids.empty()) {
     VLOG_WITH_PREFIX(2) << "There are no column ids with updates";
@@ -846,10 +846,9 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
   }
 
   if (type == RowSet::MAJOR_DELTA_COMPACTION) {
-    vector<ColumnId> col_ids_with_updates;
-    delta_tracker_->GetColumnIdsWithUpdates(&col_ids_with_updates);
-    // If we have files but no updates, we don't want to major compact.
-    if (!col_ids_with_updates.empty()) {
+    vector<ColumnId> col_ids_for_compact;
+    delta_tracker_->GetColumnIdsToCompact(&col_ids_for_compact);
+    if (!col_ids_for_compact.empty()) {
       DiskRowSetSpace drss;
       GetDiskRowSetSpaceUsage(&drss);
       double ratio = static_cast<double>(drss.redo_deltas_size) / drss.base_data_size;

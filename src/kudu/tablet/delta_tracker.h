@@ -266,8 +266,8 @@ class DeltaTracker {
   // Return the size on-disk of REDO deltas, in bytes.
   uint64_t RedoDeltaOnDiskSize() const;
 
-  // Retrieves the list of column indexes that currently have updates.
-  void GetColumnIdsWithUpdates(std::vector<ColumnId>* col_ids) const;
+  // Retrieves the list of column indexes to compact.
+  void GetColumnIdsToCompact(std::vector<ColumnId>* col_ids) const;
 
   Mutex* compact_flush_lock() {
     return &compact_flush_lock_;
@@ -395,6 +395,13 @@ class DeltaTracker {
   // When the flush completes, this is merged into the RowSetMetadata
   // and reset.
   int64_t deleted_row_count_;
+
+  // As a supplement to KUDU-1625, we need to release storage space for old
+  // tablet metadata that does not support the live row count function.
+  // We record the latest update time of the delta file, so as to trigger
+  // gc scheduler to release storage space after a long time of no update
+  // operation.
+  std::atomic<MonoTime> last_update_time_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaTracker);
 };

@@ -29,6 +29,7 @@
 #include <boost/iterator/iterator_facade.hpp>
 #include <boost/iterator/reverse_iterator.hpp>
 #include <boost/range/adaptor/reversed.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/cfile_util.h"
@@ -57,6 +58,18 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
+
+DECLARE_int32(tablet_history_max_age_sec);
+
+DEFINE_uint64(all_delete_op_delta_file_cnt_for_compaction, 1,
+              "The minimum number of REDO delta files containing only ancient DELETE "
+              "operations to schedule a major delta compaction on them. A DELETE "
+              "operation is considered ancient if it was applied more than "
+              "--tablet_history_max_age_sec seconds ago. "
+              "If you want to control the number of REDO delta files containing only "
+              "ancient DELETE operations, you can turn up this parameter value. "
+              "Otherwise, it is recommended to keep the default value to release "
+              "storage space efficiently.");
 
 namespace kudu {
 
@@ -101,7 +114,8 @@ DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
       mem_trackers_(std::move(mem_trackers)),
       next_dms_id_(rowset_metadata_->last_durable_redo_dms_id() + 1),
       dms_exists_(false),
-      deleted_row_count_(0) {}
+      deleted_row_count_(0),
+      last_update_time_(MonoTime::Now()) {}
 
 Status DeltaTracker::OpenDeltaReaders(vector<DeltaBlockIdAndStats> blocks,
                                       const IOContext* io_context,
@@ -363,6 +377,8 @@ void DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_re
 
   VLOG_WITH_PREFIX(1) << "New " << DeltaType_Name(type) << " stores: "
                       << JoinDeltaStoreStrings(*stores_to_update);
+
+  last_update_time_.store(MonoTime::Now());
 }
 
 Status DeltaTracker::Compact(const IOContext* io_context) {
@@ -622,6 +638,9 @@ Status DeltaTracker::DoCompactStores(const IOContext* io_context,
                                                &dfw));
   RETURN_NOT_OK(dfw.Finish());
   *output_stats = dfw.release_delta_stats();
+
+  last_update_time_.store(MonoTime::Now());
+
   return Status::OK();
 }
 
@@ -714,6 +733,7 @@ Status DeltaTracker::Update(Timestamp timestamp,
       MemStoreTargetPB* target = result->add_mutated_stores();
       target->set_rs_id(rowset_metadata_->id());
       target->set_dms_id(dms_->id());
+      last_update_time_.store(MonoTime::Now());
     }
     return s;
   }
@@ -865,6 +885,8 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
     redo_delta_stores_[idx] = dfr;
   }
 
+  last_update_time_.store(MonoTime::Now());
+
   return Status::OK();
 }
 
@@ -921,19 +943,41 @@ uint64_t DeltaTracker::RedoDeltaOnDiskSize() const {
   return size;
 }
 
-void DeltaTracker::GetColumnIdsWithUpdates(std::vector<ColumnId>* col_ids) const {
+void DeltaTracker::GetColumnIdsToCompact(std::vector<ColumnId>* col_ids) const {
   shared_lock<rw_spinlock> lock(component_lock_);
 
-  set<ColumnId> column_ids_with_updates;
+  set<ColumnId> column_ids_to_compact;
+  uint32_t all_delete_op_delta_store_cnt = 0;
   for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
     // We won't force open files just to read their stats.
     if (!ds->has_delta_stats()) {
       continue;
     }
 
-    ds->delta_stats().AddColumnIdsWithUpdates(&column_ids_with_updates);
+    ds->delta_stats().AddColumnIdsWithUpdates(&column_ids_to_compact);
+
+    // Count the number of REDO delta stores that contain only DELETE
+    // operations where more than a single DELETE operation is present.
+    if ((ds->delta_stats().reinsert_count() == 0) &&
+        (ds->delta_stats().UpdateCount() == 0) &&
+        (ds->delta_stats().delete_count() > 1)) {
+      all_delete_op_delta_store_cnt++;
+    }
   }
-  col_ids->assign(column_ids_with_updates.begin(), column_ids_with_updates.end());
+
+  // Get the cold delta files with delete only ops to be compacted.
+  //
+  // See KUDU-3367 for more details.
+  const auto max_delta_age = MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec);
+  MonoTime last_update_time = last_update_time_.load();
+  if (all_delete_op_delta_store_cnt > FLAGS_all_delete_op_delta_file_cnt_for_compaction
+      && MonoTime::Now() - last_update_time > max_delta_age) {
+    const auto& schema_column_ids =
+        rowset_metadata_->tablet_metadata()->schema()->column_ids();
+    column_ids_to_compact.insert(schema_column_ids.begin(),
+                                 schema_column_ids.end());
+  }
+  col_ids->assign(column_ids_to_compact.begin(), column_ids_to_compact.end());
 }
 
 Status DeltaTracker::InitAllDeltaStoresForTests(WhichStores stores) {

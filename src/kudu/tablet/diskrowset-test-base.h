@@ -152,6 +152,30 @@ class TestRowSet : public KuduRowSetTest {
     }
   }
 
+  // Delete rows in the specified range from the given rowset.
+  void DeleteExistingRows(DiskRowSet* rs, int start_idx, int end_idx,
+                          std::unordered_set<uint32_t>* deleted) {
+    ASSERT_LE(start_idx, end_idx);
+    ASSERT_LE(start_idx, n_rows_);
+    ASSERT_LE(end_idx, n_rows_);
+    faststring delete_buf;
+    RowChangeListEncoder update(&delete_buf);
+    for (int i = start_idx; i < end_idx; i++) {
+      update.Reset();
+      update.SetToDelete();
+      OperationResultPB result;
+      ASSERT_OK(MutateRow(rs,
+                          i,
+                          RowChangeList(delete_buf),
+                          &result));
+      ASSERT_EQ(1, result.mutated_stores_size());
+      ASSERT_EQ(rs->metadata()->id(), result.mutated_stores(0).rs_id());
+      if (deleted != nullptr) {
+        deleted->insert(i);
+      }
+    }
+  }
+
   // Delete the row with the given identifier.
   Status DeleteRow(DiskRowSet *rs, uint32_t row_idx, OperationResultPB* result) {
     faststring update_buf;
