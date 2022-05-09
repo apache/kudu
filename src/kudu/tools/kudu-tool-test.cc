@@ -15,13 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstring>
 #include <sys/stat.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <initializer_list>
@@ -42,6 +42,7 @@
 #include <glog/stl_logging.h>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile_util.h"
@@ -1187,17 +1188,19 @@ TEST_F(ToolTest, TestModeHelp) {
         "get_flags.*Get the gflags",
         "run.*Run a Kudu Master",
         "set_flag.*Change a gflag value",
+        "set_flag_for_all.*Change a gflag value",
         "status.*Get the status",
         "timestamp.*Get the current timestamp",
         "list.*List masters in a Kudu cluster",
         "add.*Add a master to the Kudu cluster",
-        "remove.*Remove a master from the Kudu cluster"
+        "remove.*Remove a master from the Kudu cluster",
     };
     NO_FATALS(RunTestHelp(kCmd, kMasterModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kCmd,
         { "dump_memtrackers",
           "get_flags",
           "set_flag",
+          "set_flag_for_all",
           "status",
           "timestamp",
           "list",
@@ -1361,6 +1364,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "dump_memtrackers.*Dump the memtrackers",
         "get_flags.*Get the gflags",
         "set_flag.*Change a gflag value",
+        "set_flag_for_all.*Change a gflag value",
         "run.*Run a Kudu Tablet Server",
         "state.*Operate on the state",
         "status.*Get the status",
@@ -1373,6 +1377,7 @@ TEST_F(ToolTest, TestModeHelp) {
         { "dump_memtrackers",
           "get_flags",
           "set_flag",
+          "set_flag_for_all",
           "status",
           "timestamp",
           "list",
@@ -8093,6 +8098,73 @@ TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {
         RunActionStdoutStderrString(Substitute("cluster ksck $0", GetMasterAddrsStr()), &out, &err);
     ASSERT_TRUE(s.ok()) << s.ToString() << ", err:\n" << err << ", out:\n" << out;
   });
+}
+
+class SetFlagForAllTest :
+    public ToolTest,
+    public ::testing::WithParamInterface<bool> {
+};
+
+INSTANTIATE_TEST_SUITE_P(IsMaster, SetFlagForAllTest, ::testing::Bool());
+TEST_P(SetFlagForAllTest, TestSetFlagForAll) {
+  const auto is_master = GetParam();
+
+  ExternalMiniClusterOptions opts;
+  string role = "master";
+  if (is_master) {
+    opts.num_masters = 3;
+    role = "master";
+  } else {
+    opts.num_tablet_servers = 3;
+    role = "tserver";
+  }
+
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  vector<string> master_addresses;
+  for (int i = 0; i < opts.num_masters; i++) {
+    master_addresses.emplace_back(cluster_->master(i)->bound_rpc_addr().ToString());
+  }
+  string str_master_addresses = JoinMapped(master_addresses, [](string addr){return addr;}, ",");
+  const string flag_key = "max_log_size";
+  const string flag_value = "10";
+  NO_FATALS(RunActionStdoutNone(
+      Substitute("$0 set_flag_for_all $1 $2 $3",
+          role, str_master_addresses, flag_key, flag_value)));
+
+  int hosts_num = is_master? opts.num_masters : opts.num_tablet_servers;
+  string out;
+  for (int i = 0; i < hosts_num; i++) {
+    if (is_master) {
+      NO_FATALS(RunActionStdoutString(
+          Substitute("$0 get_flags $1 --format=json", role,
+              cluster_->master(i)->bound_rpc_addr().ToString()),
+              &out));
+    } else {
+      NO_FATALS(RunActionStdoutString(
+          Substitute("$0 get_flags $1 --format=json", role,
+          cluster_->tablet_server(i)->bound_rpc_addr().ToString()),
+          &out));
+    }
+    rapidjson::Document doc;
+    doc.Parse<0>(out.c_str());
+    for (int i = 0; i < doc.Size(); i++) {
+      const rapidjson::Value& item = doc[i];
+      ASSERT_TRUE(item["flag"].IsString());
+      if (item["flag"].GetString() == flag_key) {
+        ASSERT_TRUE(item["value"].IsString());
+        ASSERT_TRUE(item["value"].GetString() == flag_value);
+        return;
+      }
+    }
+  }
+
+  // A test for setting a non-existing flag.
+  Status s = RunTool(
+      Substitute("$0 set_flag_for_all $2 test_flag test_value",
+          role, str_master_addresses),
+      nullptr, nullptr, nullptr, nullptr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(s.ToString(), "set flag failed");
 }
 
 } // namespace tools

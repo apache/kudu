@@ -123,6 +123,42 @@ Status TServerSetFlag(const RunnerContext& context) {
                        flag, value);
 }
 
+Status TServerSetAllTServersFlag(const RunnerContext& context) {
+  const string& flag = FindOrDie(context.required_args, kFlagArg);
+  const string& value = FindOrDie(context.required_args, kValueArg);
+
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+
+  ListTabletServersRequestPB req;
+  ListTabletServersResponsePB resp;
+
+  RETURN_NOT_OK((proxy.SyncRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
+      req, &resp, "ListTabletServers", &MasterServiceProxy::ListTabletServersAsync)));
+
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  const auto hostport_to_string = [](const HostPortPB& hostport) {
+    return Substitute("$0:$1", hostport.host(), hostport.port());
+  };
+  const auto& servers = resp.servers();
+  bool set_failed_flag = false;
+  for (const auto& server : servers) {
+    const string& addr = JoinMapped(server.registration().rpc_addresses(), hostport_to_string, ",");
+    Status s = SetServerFlag(addr, tserver::TabletServer::kDefaultPort, flag, value);
+    if (!s.ok()) {
+      set_failed_flag = true;
+      LOG(WARNING) << Substitute("Set config {$0:$1} for $2 failed, error message: $3",
+                                 flag, value, addr, s.ToString());
+    }
+  }
+  if (set_failed_flag) {
+    return Status::RuntimeError("Some Tablet Servers set flag failed!");
+  }
+  return Status::OK();
+}
+
 Status TServerStatus(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kTServerAddressArg);
   return PrintServerStatus(address, tserver::TabletServer::kDefaultPort);
@@ -389,6 +425,13 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddOptionalParameter("force")
       .Build();
 
+  unique_ptr<Action> set_flag_for_all =
+      ClusterActionBuilder("set_flag_for_all", &TServerSetAllTServersFlag)
+      .Description("Change a gflag value for all Kudu Tablet Servers in the cluster")
+      .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
+      .AddRequiredParameter({ kValueArg, "New value for the gflag" })
+      .Build();
+
   unique_ptr<Action> status =
       TServerActionBuilder("status", &TServerStatus)
       .Description("Get the status of a Kudu Tablet Server")
@@ -471,6 +514,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddAction(std::move(get_flags))
       .AddAction(std::move(run))
       .AddAction(std::move(set_flag))
+      .AddAction(std::move(set_flag_for_all))
       .AddAction(std::move(status))
       .AddAction(std::move(timestamp))
       .AddAction(std::move(list_tservers))

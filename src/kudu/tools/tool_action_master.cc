@@ -143,6 +143,56 @@ Status MasterSetFlag(const RunnerContext& context) {
   return SetServerFlag(address, Master::kDefaultPort, flag, value);
 }
 
+Status MasterSetAllMasterFlag(const RunnerContext& context) {
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+
+  ListMastersRequestPB req;
+  ListMastersResponsePB resp;
+
+  RETURN_NOT_OK((proxy.SyncRpc<ListMastersRequestPB, ListMastersResponsePB>(
+      req, &resp, "ListMasters", &MasterServiceProxy::ListMastersAsync)));
+
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  const auto hostport_to_string = [] (const HostPortPB& hostport) {
+    return Substitute("$0:$1", hostport.host(), hostport.port());
+  };
+
+  vector<ServerEntryPB> masters;
+  std::copy_if(resp.masters().begin(), resp.masters().end(), std::back_inserter(masters),
+               [](const ServerEntryPB& master) {
+                 if (master.has_error()) {
+                   LOG(WARNING) << "Failed to retrieve info for master: "
+                                << StatusFromPB(master.error()).ToString();
+                   return false;
+                 }
+                 return true;
+               });
+  vector<string> master_addresses;
+  for (const auto& master : masters) {
+    master_addresses.push_back(JoinMapped(master.registration().rpc_addresses(),
+                     hostport_to_string, ","));
+  }
+  const string& flag = FindOrDie(context.required_args, kFlagArg);
+  const string& value = FindOrDie(context.required_args, kValueArg);
+  bool set_failed_flag = false;
+  for (const auto& addr : master_addresses) {
+      Status s = SetServerFlag(addr, Master::kDefaultPort, flag, value);
+      if (!s.ok()) {
+        set_failed_flag = true;
+        LOG(WARNING) << Substitute("Set config {$0:$1} for $2 failed, error message: $3",
+                                   flag, value, addr, s.ToString());
+      }
+  }
+  if (set_failed_flag) {
+    return Status::RuntimeError("Some Masters set flag failed!");
+  }
+  return Status::OK();
+}
+
 Status MasterStatus(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kMasterAddressArg);
   return PrintServerStatus(address, Master::kDefaultPort);
@@ -768,6 +818,16 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddOptionalParameter("force")
         .Build();
     builder.AddAction(std::move(set_flag));
+  }
+  {
+    unique_ptr<Action> set_flag_for_all =
+        ClusterActionBuilder("set_flag_for_all", &MasterSetAllMasterFlag)
+        .Description("Change a gflag value for all Kudu Masters in the cluster")
+        .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
+        .AddRequiredParameter({ kValueArg, "New value for the gflag" })
+        .AddOptionalParameter("force")
+        .Build();
+    builder.AddAction(std::move(set_flag_for_all));
   }
   {
     unique_ptr<Action> status =
