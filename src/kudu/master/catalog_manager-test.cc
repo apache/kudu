@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <glog/logging.h>
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -36,6 +37,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_bool(require_new_spec_for_custom_hash_schema_range_bound);
 
 using std::iota;
 using std::string;
@@ -134,8 +137,24 @@ TEST(TableInfoTest, GetTableLocationsLegacyCustomHashSchemas) {
   table->AddRemoveTablets({ tablet }, {});
 
   // Query by specifying the start of the partition via the partition_key_start
-  // field: it should fail since the table has a range with custom hash schema.
+  // field: it should pass even if the table has a range with custom hash schema
+  // since as of now all the range partitions must have the number of hash
+  // dimenstions fixed across all the ranges in a table.
   {
+    GetTableLocationsRequestPB req;
+    req.set_max_returned_locations(1);
+    req.mutable_table()->mutable_table_name()->assign(table_id);
+    req.mutable_partition_key_start()->assign("a");
+    vector<scoped_refptr<TabletInfo>> tablets_in_range;
+    ASSERT_OK(table->GetTabletsInRange(&req, &tablets_in_range));
+    ASSERT_EQ(1, tablets_in_range.size());
+  }
+
+  // Query by specifying the start of the partition via the partition_key_start
+  // field: it should fail since the table has a range with custom hash schema
+  // and --require_new_spec_for_custom_hash_schema_range_bound=true.
+  {
+    FLAGS_require_new_spec_for_custom_hash_schema_range_bound = true;
     GetTableLocationsRequestPB req;
     req.set_max_returned_locations(1);
     req.mutable_table()->mutable_table_name()->assign(table_id);

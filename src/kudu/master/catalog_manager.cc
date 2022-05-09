@@ -397,6 +397,13 @@ DEFINE_bool(enable_chunked_tablet_writes, true,
 TAG_FLAG(enable_chunked_tablet_writes, experimental);
 TAG_FLAG(enable_chunked_tablet_writes, runtime);
 
+DEFINE_bool(require_new_spec_for_custom_hash_schema_range_bound, false,
+            "Whether to require the client to use newer signature to specify "
+            "range bounds when working with a table having custom hash schema "
+            "per range");
+TAG_FLAG(require_new_spec_for_custom_hash_schema_range_bound, experimental);
+TAG_FLAG(require_new_spec_for_custom_hash_schema_range_bound, runtime);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int64(tsk_rotation_seconds);
 DECLARE_string(ranger_config_path);
@@ -807,7 +814,7 @@ void CatalogManagerBgTasks::Run() {
           catalog_manager_->ExtractDeletedTablesAndTablets(&deleted_tables, &deleted_tablets);
           Status s = Status::OK();
           // Clean up metadata for deleted tablets first and then clean up metadata for deleted
-          // tables. This is the reverse of the order in which we load them. So for any remaining
+          // tables. This is the reverse of the order in which we load them. So for any remaining
           // tablet, the metadata of the table to which it belongs must exist.
           const time_t now = time(nullptr);
           if (!deleted_tablets.empty()) {
@@ -6557,6 +6564,11 @@ Status TableInfo::GetTabletsInRange(
     const GetTableLocationsRequestPB* req,
     vector<scoped_refptr<TabletInfo>>* ret) const {
 
+  static constexpr const char* const kErrRangeNewSpec =
+      "$0: for a table with custom per-range hash schemas the range must "
+      "be specified using partition_key_range field, not "
+      "partition_key_{start,end} fields";
+
   size_t hash_dimensions_num = 0;
   bool has_custom_hash_schemas = false;
   {
@@ -6579,11 +6591,9 @@ Status TableInfo::GetTabletsInRange(
       has_key_start = true;
     }
   } else if (req->has_partition_key_start()) {
-    if (has_custom_hash_schemas) {
-      return Status::InvalidArgument(Substitute(
-          "$0: for a table with custom per-range hash schemas the range must "
-          "be specified using partition_key_range field, not "
-          "partition_key_{start,end} fields", ToString()));
+    if (has_custom_hash_schemas &&
+        FLAGS_require_new_spec_for_custom_hash_schema_range_bound) {
+      return Status::InvalidArgument(Substitute(kErrRangeNewSpec, ToString()));
     }
     partition_key_start = Partition::StringToPartitionKey(
         req->partition_key_start(), hash_dimensions_num);
@@ -6599,11 +6609,9 @@ Status TableInfo::GetTabletsInRange(
       has_key_end = true;
     }
   } else if (req->has_partition_key_end()) {
-    if (has_custom_hash_schemas) {
-      return Status::InvalidArgument(Substitute(
-          "$0: for a table with custom per-range hash schemas the range must "
-          "be specified using partition_key_range field, not "
-          "partition_key_{start,end} fields", ToString()));
+    if (has_custom_hash_schemas &&
+        FLAGS_require_new_spec_for_custom_hash_schema_range_bound) {
+      return Status::InvalidArgument(Substitute(kErrRangeNewSpec, ToString()));
     }
     partition_key_end = Partition::StringToPartitionKey(
         req->partition_key_end(), hash_dimensions_num);
