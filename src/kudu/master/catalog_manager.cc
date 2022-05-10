@@ -2618,7 +2618,6 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
   PartitionSchema partition_schema;
   RETURN_NOT_OK(PartitionSchema::FromPB(
       l.data().pb.partition_schema(), schema, &partition_schema));
-
   TableInfo::TabletInfoMap existing_tablets = table->tablet_map();
   TableInfo::TabletInfoMap new_tablets;
   auto abort_mutations = MakeScopedCleanup([&new_tablets]() {
@@ -2627,9 +2626,22 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     }
   });
 
+  vector<PartitionSchema::HashSchema> range_hash_schemas;
   for (const auto& step : steps) {
     vector<DecodedRowOperation> ops;
     if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION) {
+      if (FLAGS_enable_per_range_hash_schemas &&
+          step.add_range_partition().custom_hash_schema_size() > 0) {
+        const Schema schema = client_schema.CopyWithColumnIds();
+        PartitionSchema::HashSchema hash_schema;
+        RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
+            schema, step.add_range_partition().custom_hash_schema(), &hash_schema));
+        if (partition_schema.hash_schema().size() != hash_schema.size()) {
+          return Status::NotSupported(
+              "varying number of hash dimensions per range is not yet supported");
+        }
+        range_hash_schemas.emplace_back(std::move(hash_schema));
+      }
       RowOperationsPBDecoder decoder(&step.add_range_partition().range_bounds(),
                                      &client_schema, &schema, nullptr);
       RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
@@ -2666,7 +2678,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
     vector<Partition> partitions;
     RETURN_NOT_OK(partition_schema.CreatePartitions(
-        {}, {{ *ops[0].split_row, *ops[1].split_row }}, {}, schema, &partitions));
+        {}, {{ *ops[0].split_row, *ops[1].split_row }}, range_hash_schemas, schema, &partitions));
     switch (step.type()) {
       case AlterTableRequestPB::ADD_RANGE_PARTITION: {
         for (const Partition& partition : partitions) {
