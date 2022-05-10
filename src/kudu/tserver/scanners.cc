@@ -49,7 +49,7 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 
-DEFINE_int32(scanner_ttl_ms, 60000,
+DEFINE_int32(scanner_ttl_ms, 6000000,
              "Number of milliseconds of inactivity allowed for a scanner"
              "before it may be expired");
 TAG_FLAG(scanner_ttl_ms, advanced);
