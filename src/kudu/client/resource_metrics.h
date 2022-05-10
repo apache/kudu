@@ -17,8 +17,9 @@
 #ifndef KUDU_CLIENT_RESOURCE_METRICS_H
 #define KUDU_CLIENT_RESOURCE_METRICS_H
 
-// NOTE: using stdint.h instead of cstdint because this file is supposed
-//       to be processed by a compiler lacking C++11 support.
+// NOTE: using stdint.h instead of cstdint because this file might be
+//       processed by a compiler lacking C++11 support (Kudu C++ client API
+//       still keeps C++98 compatibility)
 #include <stdint.h>
 
 #include <map>
@@ -27,6 +28,7 @@
 #include "kudu/util/kudu_export.h"
 
 #ifdef KUDU_HEADERS_NO_STUBS
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #else
 #include "kudu/client/stubs.h"
@@ -68,6 +70,8 @@ class KUDU_EXPORT ResourceMetrics {
   friend class KuduSession;
   class KUDU_NO_EXPORT Data;
   Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(ResourceMetrics);
 };
 
 } // namespace client
