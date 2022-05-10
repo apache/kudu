@@ -29,6 +29,7 @@
 #ifdef KUDU_HEADERS_NO_STUBS
 #include <gtest/gtest_prod.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #else
 #include "kudu/client/stubs.h"
@@ -552,6 +553,8 @@ class KUDU_EXPORT KuduColumnSpec {
 
   // Owned.
   Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduColumnSpec);
 };
 
 /// @brief Builder API for constructing a KuduSchema object.
@@ -613,6 +616,8 @@ class KUDU_EXPORT KuduSchemaBuilder {
 
   // Owned.
   Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduSchemaBuilder);
 };
 
 /// @brief A representation of a table's schema.

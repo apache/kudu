@@ -3359,6 +3359,8 @@ class KUDU_EXPORT KuduPartitioner {
 
   explicit KuduPartitioner(Data* data);
   Data* data_; // Owned.
+
+  DISALLOW_COPY_AND_ASSIGN(KuduPartitioner);
 };
 
 
