@@ -32,6 +32,7 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -761,7 +762,8 @@ Status GenerateHeader(EncryptionHeader* eh) {
   return Status::OK();
 }
 
-Status WriteEncryptionHeader(int fd, const string& filename, const EncryptionHeader& eh) {
+Status WriteEncryptionHeader(int fd, const string& filename, const EncryptionHeader& server_key,
+                             const EncryptionHeader& eh) {
   vector<Slice> headerv = { kEncryptionHeaderMagic };
   uint32_t key_size;
   uint8_t algorithm[1];
@@ -790,7 +792,7 @@ Status WriteEncryptionHeader(int fd, const string& filename, const EncryptionHea
   Slice efk(encrypted_file_key, key_size);
   vector<Slice> clear = {file_key};
   vector<Slice> cipher = {efk};
-  RETURN_NOT_OK(DoEncryptV(&kDummyEncryptionKey, 0, clear, cipher));
+  RETURN_NOT_OK(DoEncryptV(&server_key, 0, clear, cipher));
 
   // Add the encrypted file key and trailing zeros to the header.
   headerv.emplace_back(efk);
@@ -819,7 +821,8 @@ Status DoIsOnXfsFilesystem(const string& path, bool* result) {
   return Status::OK();
 }
 
-Status ReadEncryptionHeader(int fd, const string& filename, EncryptionHeader* eh) {
+Status ReadEncryptionHeader(int fd, const string& filename, const EncryptionHeader& server_key,
+                            EncryptionHeader* eh) {
   char magic[7];
   uint8_t algorithm[1];
   char file_key[32];
@@ -847,7 +850,7 @@ Status ReadEncryptionHeader(int fd, const string& filename, EncryptionHeader* eh
   // the file. The actual key size can be used when storing the key in memory.
   // See WriteEncryptionHeader for more info.
   vector<Slice> v = {Slice(file_key, (key_size + 15) & -16)};
-  RETURN_NOT_OK(DoDecryptV(&kDummyEncryptionKey, 0, v));
+  RETURN_NOT_OK(DoDecryptV(&server_key, 0, v));
   memcpy(&eh->key, file_key, key_size);
   return Status::OK();
 }
@@ -1509,11 +1512,15 @@ class PosixFileLock : public FileLock {
   int fd_;
 };
 
+static Env* default_env;
+
 class PosixEnv : public Env {
  public:
   ~PosixEnv() {
-    fprintf(stderr, "Destroying Env::Default()\n");
-    exit(1);
+    if (this == default_env) {
+      fprintf(stderr, "Destroying Env::Default()\n");
+      exit(1);
+    }
   }
 
   virtual Status NewSequentialFile(const string& fname,
@@ -1535,9 +1542,10 @@ class PosixEnv : public Env {
     bool encrypted = opts.is_sensitive && IsEncryptionEnabled();
     EncryptionHeader header;
     if (encrypted) {
+      DCHECK(server_key_);
       int fd;
       RETURN_NOT_OK(DoOpen(fname, OpenMode::MUST_EXIST, &fd));
-      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, &header));
+      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *server_key_, &header));
       if (fseek(f, kEncryptionHeaderSize, SEEK_CUR)) {
         return IOError(fname, errno);
       }
@@ -1565,7 +1573,8 @@ class PosixEnv : public Env {
     EncryptionHeader header;
     bool encrypted = opts.is_sensitive && IsEncryptionEnabled();
     if (encrypted) {
-      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, &header));
+      DCHECK(server_key_);
+      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *server_key_, &header));
     }
     result->reset(new PosixRandomAccessFile(fname, fd,
                   encrypted, header));
@@ -1620,11 +1629,12 @@ class PosixEnv : public Env {
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
     EncryptionHeader eh;
     if (encrypt) {
+      DCHECK(server_key_);
       if (size >= kEncryptionHeaderSize) {
-        RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, &eh));
+        RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *server_key_, &eh));
       } else {
         RETURN_NOT_OK(GenerateHeader(&eh));
-        RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, eh));
+        RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, *server_key_, eh));
       }
     }
     result->reset(new PosixRWFile(fname, fd, opts.sync_on_close,
@@ -1640,8 +1650,9 @@ class PosixEnv : public Env {
     bool encrypt = opts.is_sensitive && IsEncryptionEnabled();
     EncryptionHeader eh;
     if (encrypt) {
+      DCHECK(server_key_);
       RETURN_NOT_OK(GenerateHeader(&eh));
-      RETURN_NOT_OK(WriteEncryptionHeader(fd, *created_filename, eh));
+      RETURN_NOT_OK(WriteEncryptionHeader(fd, *created_filename, *server_key_, eh));
     }
     res->reset(new PosixRWFile(*created_filename, fd, opts.sync_on_close,
                                encrypt, eh));
@@ -2262,6 +2273,25 @@ class PosixEnv : public Env {
 
   bool IsEncryptionEnabled() const override { return FLAGS_encrypt_data_at_rest; }
 
+  void SetEncryptionKey(int key_size, const uint8_t* server_key) override {
+    EncryptionHeader eh;
+    switch (key_size) {
+      case 128:
+        eh.algorithm = EncryptionAlgorithm::AES128ECB;
+        break;
+      case 192:
+        eh.algorithm = EncryptionAlgorithm::AES192ECB;
+        break;
+      case 256:
+        eh.algorithm = EncryptionAlgorithm::AES256ECB;
+        break;
+      default:
+        LOG(FATAL) << "Illegal key size";
+    }
+    memcpy(eh.key, server_key, key_size / 8);
+    server_key_ = eh;
+  }
+
  private:
   // unique_ptr Deleter implementation for fts_close
   struct FtsCloser {
@@ -2310,12 +2340,13 @@ class PosixEnv : public Env {
     bool encrypt = opts.is_sensitive && IsEncryptionEnabled();
     EncryptionHeader eh;
     if (encrypt) {
+      DCHECK(server_key_);
       if (file_size < kEncryptionHeaderSize) {
         RETURN_NOT_OK(GenerateHeader(&eh));
-        RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, eh));
+        RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, *server_key_, eh));
         file_size = kEncryptionHeaderSize;
       } else {
-        RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, &eh));
+        RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *server_key_, &eh));
       }
     }
     result->reset(new PosixWritableFile(fname, fd, file_size, opts.sync_on_close,
@@ -2366,17 +2397,22 @@ class PosixEnv : public Env {
     }
     return Status::OK();
   }
+
+  std::optional<EncryptionHeader> server_key_;
 };
 
 }  // namespace
 
 static pthread_once_t once = PTHREAD_ONCE_INIT;
-static Env* default_env;
 static void InitDefaultEnv() { default_env = new PosixEnv; }
 
 Env* Env::Default() {
   pthread_once(&once, InitDefaultEnv);
   return default_env;
+}
+
+unique_ptr<Env> Env::NewEnv() {
+  return unique_ptr<Env>(new PosixEnv());
 }
 
 std::ostream& operator<<(std::ostream& o, Env::ResourceLimitType t) {

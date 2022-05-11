@@ -500,7 +500,8 @@ Status TabletCopyClient::Finish() {
     string meta_copy_path = Substitute("$0.copy.$1$2", meta_path, start_time_micros_, kTmpInfix);
     WritableFileOptions opts;
     opts.is_sensitive = true;
-    RETURN_NOT_OK_PREPEND(env_util::CopyFile(Env::Default(), meta_path, meta_copy_path, opts),
+    RETURN_NOT_OK_PREPEND(env_util::CopyFile(dst_fs_manager_->env(), meta_path,
+                                             meta_copy_path, opts),
                           "Unable to make copy of tablet metadata");
   }
 
@@ -808,7 +809,8 @@ Status TabletCopyClient::WriteConsensusMetadata() {
     string cmeta_copy_path = Substitute("$0.copy.$1$2", cmeta_path, start_time_micros_, kTmpInfix);
     WritableFileOptions opts;
     opts.is_sensitive = true;
-    RETURN_NOT_OK_PREPEND(env_util::CopyFile(Env::Default(), cmeta_path, cmeta_copy_path, opts),
+    RETURN_NOT_OK_PREPEND(env_util::CopyFile(dst_fs_manager_->env(), cmeta_path,
+                                             cmeta_copy_path, opts),
                           "Unable to make copy of consensus metadata");
   }
 

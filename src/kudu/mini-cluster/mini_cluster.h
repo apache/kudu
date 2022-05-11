@@ -134,6 +134,10 @@ class MiniCluster {
   // Returns the Env on which the cluster operates.
   virtual Env* env() const = 0;
 
+  virtual Env* ts_env(int ts_idx) const = 0;
+
+  virtual Env* master_env(int master_idx) const = 0;
+
   /// Reserves a unique socket address for a mini-cluster daemon. The address
   /// can be ascertained through the returned socket, and will remain reserved
   /// for the life of the socket. The daemon must use the SO_REUSEPORT socket

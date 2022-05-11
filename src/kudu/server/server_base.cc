@@ -611,7 +611,11 @@ Status ServerBase::Init() {
   if (s.IsNotFound()) {
     LOG(INFO) << "This appears to be a new deployment of Kudu; creating new FS layout";
     is_first_run_ = true;
-    s = fs_manager_->CreateInitialFileSystemLayout();
+    if (options_.server_key.empty()) {
+      s = fs_manager_->CreateInitialFileSystemLayout();
+    } else {
+      s = fs_manager_->CreateInitialFileSystemLayout(boost::none, options_.server_key);
+    }
     if (s.IsAlreadyPresent()) {
       return s.CloneAndPrepend("FS layout already exists; not overwriting existing layout");
     }

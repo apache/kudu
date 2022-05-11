@@ -84,6 +84,8 @@ DEFINE_bool(print_rows, true,
 DEFINE_string(uuid, "",
               "The uuid to use in the filesystem. "
               "If not provided, one is generated");
+DEFINE_string(server_key, "",
+              "The encrypted server key to use in the filesystem.");
 DEFINE_bool(repair, false,
             "Repair any inconsistencies in the filesystem.");
 
@@ -224,10 +226,14 @@ Status Check(const RunnerContext& /*context*/) {
 Status Format(const RunnerContext& /*context*/) {
   FsManager fs_manager(Env::Default(), FsManagerOpts());
   boost::optional<string> uuid;
+  boost::optional<string> server_key;
   if (!FLAGS_uuid.empty()) {
     uuid = FLAGS_uuid;
   }
-  return fs_manager.CreateInitialFileSystemLayout(uuid);
+  if (!FLAGS_server_key.empty()) {
+    server_key = FLAGS_server_key;
+  }
+  return fs_manager.CreateInitialFileSystemLayout(uuid, server_key);
 }
 
 Status DumpUuid(const RunnerContext& /*context*/) {

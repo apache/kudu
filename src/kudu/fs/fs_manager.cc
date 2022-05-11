@@ -22,6 +22,7 @@
 #include <functional>
 #include <initializer_list>
 #include <iostream>
+#include <openssl/rand.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -40,6 +41,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -53,6 +55,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -123,6 +126,9 @@ METRIC_DEFINE_gauge_int64(server, log_block_manager_containers_processing_time_s
                           "The total time taken by the server to open all the container"
                           "files during the startup",
                           kudu::MetricLevel::kDebug);
+
+DECLARE_bool(encrypt_data_at_rest);
+DECLARE_int32(encryption_key_length);
 
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
@@ -451,6 +457,12 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     read_instance_metadata_files->Stop();
   }
 
+  if (!server_key().empty()) {
+    env_->SetEncryptionKey(server_key().length() * 4,
+                           reinterpret_cast<const uint8_t*>(
+                             strings::a2b_hex(server_key()).c_str()));
+  }
+
   // Open the directory manager if it has not been opened already.
   if (!dd_manager_) {
     DataDirManagerOptions dm_opts;
@@ -530,7 +542,8 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   return Status::OK();
 }
 
-Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
+Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid,
+                                                boost::optional<string> server_key) {
   CHECK(!opts_.read_only);
 
   RETURN_NOT_OK(Init());
@@ -554,7 +567,7 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   //
   // Files/directories created will NOT be synchronized to disk.
   InstanceMetadataPB metadata;
-  RETURN_NOT_OK_PREPEND(CreateInstanceMetadata(std::move(uuid), &metadata),
+  RETURN_NOT_OK_PREPEND(CreateInstanceMetadata(std::move(uuid), std::move(server_key), &metadata),
                         "unable to create instance metadata");
   RETURN_NOT_OK_PREPEND(FsManager::CreateFileSystemRoots(
       canonicalized_all_fs_roots_, metadata, &created_dirs, &created_files),
@@ -649,6 +662,7 @@ Status FsManager::CreateFileSystemRoots(
 }
 
 Status FsManager::CreateInstanceMetadata(boost::optional<string> uuid,
+                                         boost::optional<string> server_key,
                                          InstanceMetadataPB* metadata) {
   if (uuid) {
     string canonicalized_uuid;
@@ -656,6 +670,16 @@ Status FsManager::CreateInstanceMetadata(boost::optional<string> uuid,
     metadata->set_uuid(canonicalized_uuid);
   } else {
     metadata->set_uuid(oid_generator_.Next());
+  }
+  if (server_key) {
+    metadata->set_server_key(server_key.get());
+  } else if (FLAGS_encrypt_data_at_rest) {
+    uint8_t key_bytes[32];
+    int num_bytes = FLAGS_encryption_key_length / 8;
+    DCHECK(num_bytes <= sizeof(key_bytes));
+    OPENSSL_RET_NOT_OK(RAND_bytes(key_bytes, num_bytes),
+                       "Failed to generate random key");
+    strings::b2a_hex(key_bytes, metadata->mutable_server_key(), num_bytes);
   }
 
   string time_str;
@@ -686,6 +710,10 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
 
 const string& FsManager::uuid() const {
   return CHECK_NOTNULL(metadata_.get())->uuid();
+}
+
+const string& FsManager::server_key() const {
+  return CHECK_NOTNULL(metadata_.get())->server_key();
 }
 
 vector<string> FsManager::GetDataRootDirs() const {

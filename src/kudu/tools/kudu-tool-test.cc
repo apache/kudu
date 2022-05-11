@@ -140,6 +140,7 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/url-coding.h"
 
+DECLARE_bool(encrypt_data_at_rest);
 DECLARE_bool(fs_data_dirs_consider_available_space);
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(show_values);
@@ -1589,6 +1590,14 @@ TEST_F(ToolTest, TestFsDumpUuid) {
 }
 
 TEST_F(ToolTest, TestPbcTools) {
+  // It's pointless to run these tests in an encrypted environment, as it uses
+  // instance files to test pbc tools, which are not encrypted anyway. The tests
+  // also make assumptions about the contents of the instance files, which are
+  // different on encrypted servers, as they contain an extra server_key field,
+  // which would make these tests break.
+  if (FLAGS_encrypt_data_at_rest) {
+    GTEST_SKIP();
+  }
   const string kTestDir = GetTestPath("test");
   string uuid;
   string instance_path;
@@ -1782,6 +1791,7 @@ TEST_F(ToolTest, TestPbcToolsOnMultipleBlocks) {
 
   // Generate a block container metadata file.
   string metadata_path;
+  string encryption_args;
   {
     // Open FsManager to write file later.
     FsManager fs(env_, FsManagerOpts(kTestDir));
@@ -1814,9 +1824,12 @@ TEST_F(ToolTest, TestPbcToolsOnMultipleBlocks) {
     }
     ASSERT_EQ(1, metadata_files.size());
     metadata_path = metadata_files[0];
-  }
 
-  string encryption_args = env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "";
+    if (env_->IsEncryptionEnabled()) {
+      encryption_args = GetEncryptionArgs() + " --instance_file=" +
+          fs.GetInstanceMetadataPath(kTestDir);
+      }
+  }
 
   // Test default dump
   {
@@ -2133,7 +2146,11 @@ TEST_F(ToolTest, TestWalDump) {
   }
 
   string wal_path = fs.GetWalSegmentFileName(kTestTablet, 1);
-  string encryption_args = env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "";
+  string encryption_args;
+  if (env_->IsEncryptionEnabled()) {
+    encryption_args = GetEncryptionArgs() + " --instance_file=" +
+        fs.GetInstanceMetadataPath(kTestDir);
+  }
   string stdout;
   for (const auto& args : { Substitute("wal dump $0 $1", wal_path, encryption_args),
                             Substitute("local_replica dump wals --fs_wal_dir=$0 $1 $2",
@@ -2314,9 +2331,14 @@ TEST_F(ToolTest, TestWalDumpWithAlterSchema) {
 
   string wal_path = fs.GetWalSegmentFileName(kTestTablet, 1);
   string stdout;
-  for (const auto& args : { Substitute("wal dump $0", wal_path),
-                            Substitute("local_replica dump wals --fs_wal_dir=$0 $1",
-                                       kTestDir, kTestTablet)
+  string encryption_args;
+  if (env_->IsEncryptionEnabled()) {
+    encryption_args = GetEncryptionArgs() + " --instance_file=" +
+        fs.GetInstanceMetadataPath(kTestDir);
+  }
+  for (const auto& args : { Substitute("wal dump $0 $1", encryption_args, wal_path),
+                            Substitute("local_replica dump wals --fs_wal_dir=$0 $1 $2",
+                                       kTestDir, encryption_args, kTestTablet)
                            }) {
     SCOPED_TRACE(args);
     for (const auto& print_entries : { "true", "1", "yes", "decoded" }) {
@@ -4046,7 +4068,13 @@ TEST_F(ToolTest, TestLocalReplicaCMetaOps) {
   for (int i = 0; i < kNumTabletServers; ++i) {
     ts_uuids.emplace_back(mini_cluster_->mini_tablet_server(i)->uuid());
   }
-  string encryption_args = env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "";
+  string encryption_args;
+
+  if (env_->IsEncryptionEnabled()) {
+    encryption_args = GetEncryptionArgs() + " --instance_file=" +
+        JoinPathSegments(mini_cluster_->mini_tablet_server(0)->options()->fs_opts.wal_root,
+                         "instance");
+  }
   const string& flags =
       Substitute("-fs-wal-dir $0 $1",
                  mini_cluster_->mini_tablet_server(0)->options()->fs_opts.wal_root,
@@ -8004,7 +8032,10 @@ TEST_F(ToolTest, TestLocalReplicaCopyLocal) {
 }
 
 TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {
-  SKIP_IF_SLOW_NOT_ALLOWED();
+  // Local copies are not supported on encrypted severs at this time.
+  if (FLAGS_encrypt_data_at_rest) {
+    GTEST_SKIP();
+  }
   // Create replicas and fill some data.
   const int kNumTserver = 3;
   InternalMiniClusterOptions opts;
@@ -8061,13 +8092,11 @@ TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {
   NO_FATALS(StopMiniCluster());
 
   // Copy source tserver's all replicas from local filesystem.
-  string encryption_args = env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "";
   string stdout;
-  NO_FATALS(RunActionStdoutString(Substitute("local_replica copy_from_local $0 $1 $2 $3",
+  NO_FATALS(RunActionStdoutString(Substitute("local_replica copy_from_local $0 $1 $2",
                                              JoinStrings(tablet_ids, ","),
                                              src_fs_paths_with_prefix,
-                                             dst_fs_paths_with_prefix,
-                                             encryption_args),
+                                             dst_fs_paths_with_prefix),
                                   &stdout));
   SCOPED_TRACE(stdout);
 

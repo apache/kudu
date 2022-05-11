@@ -75,7 +75,7 @@ Status LogVerifier::ScanForCommittedOpIds(int ts_idx, const string& tablet_id,
 
   shared_ptr<LogReader> reader;
   const string wal_dir = JoinPathSegments(inspector_->WalDirForTS(ts_idx), tablet_id);
-  RETURN_NOT_OK(LogReader::Open(env_,
+  RETURN_NOT_OK(LogReader::Open(cluster_->ts_env(ts_idx),
                                 wal_dir,
                                 /*index*/nullptr,
                                 tablet_id,

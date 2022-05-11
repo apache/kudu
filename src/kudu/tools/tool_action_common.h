@@ -241,6 +241,10 @@ Status MasterAddressesToSet(
 // as reported in ConnectToMasterResponsePB::master_addrs.
 Status VerifyMasterAddressList(const std::vector<std::string>& master_addresses);
 
+// Parses the instance file set by the 'instance_file' flag, and sets the
+// server key on the default Env.
+Status SetServerKey();
+
 // A table of data to present to the user.
 //
 // Supports formatting based on the --format flag.

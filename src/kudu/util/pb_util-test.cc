@@ -97,10 +97,6 @@ class TestPBUtil : public KuduTest {
   // Truncate the specified file to the specified length.
   Status TruncateFile(const string& path, uint64_t size);
 
-  void EnableEncryption(bool enable) {
-    FLAGS_encrypt_data_at_rest = enable;
-  }
-
   // Output file name for most unit tests.
   string path_;
 };
@@ -250,7 +246,7 @@ TEST_F(TestPBUtil, TestWritableFileOutputStream) {
 
 // Basic read/write test.
 TEST_F(TestPBUtil, TestPBContainerSimple) {
-  EnableEncryption(true);
+  SetEncryptionFlags(true);
   // Exercise both the SYNC and NO_SYNC codepaths, along with SENSITIVE and
   // NOT_SENSITIVE, despite the fact that we aren't able to observe a difference
   // in the test.

@@ -132,7 +132,12 @@ class RaftConsensusQuorumTest : public KuduTest {
       opts.wal_root = test_path;
       opts.data_roots = { test_path };
       unique_ptr<FsManager> fs_manager(new FsManager(env_, opts));
-      RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
+      string server_key = GetEncryptionKey();
+      if (server_key.empty()) {
+        RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
+      } else {
+        RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout(boost::none, server_key));
+      }
       RETURN_NOT_OK(fs_manager->Open());
 
       scoped_refptr<Log> log;

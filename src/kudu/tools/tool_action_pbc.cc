@@ -46,6 +46,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/tools/tool_action.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
@@ -126,6 +127,7 @@ Status DumpPBContainerFile(const RunnerContext& context) {
     format = ReadablePBContainerFile::Format::DEBUG;
   }
 
+  RETURN_NOT_OK(SetServerKey());
   Env* env = Env::Default();
   unique_ptr<RandomAccessFile> reader;
   RandomAccessFileOptions opts;
@@ -158,6 +160,7 @@ Status RunEditor(const string& path) {
 }
 
 Status EditFile(const RunnerContext& context) {
+  RETURN_NOT_OK(SetServerKey());
   Env* env = Env::Default();
   const string& path = FindOrDie(context.required_args, kPathArg);
   const string& dir = DirName(path);

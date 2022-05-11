@@ -16,9 +16,9 @@
 // under the License.
 #include "kudu/tserver/tablet_copy_client.h"
 
-#include <cstring>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <ostream>
@@ -27,6 +27,7 @@
 #include <tuple>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -122,7 +123,12 @@ class TabletCopyClientTest : public TabletCopyTest {
     metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "test");
     opts.metric_entity = metric_entity_;
     fs_manager_.reset(new FsManager(Env::Default(), opts));
-    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    string server_key = KuduTest::GetEncryptionKey();
+    if (server_key.empty()) {
+      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    } else {
+      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(boost::none, server_key));
+    }
     ASSERT_OK(fs_manager_->Open());
     ASSERT_OK(ResetTabletCopyClient());
   }

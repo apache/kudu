@@ -164,6 +164,20 @@ class InternalMiniCluster : public MiniCluster {
     return env_;
   }
 
+  // Returns the default environment. As the servers in an internal mini-cluster
+  // share the same Env, each tablet server uses the same server key, so the
+  // default Env can be used here.
+  Env* ts_env(int ts_idx) const override {
+    return env_;
+  }
+
+  // Returns the default environment. As the servers in an internal mini-cluster
+  // share the same Env, each master uses the same server key, so the default
+  // Env can be used here.
+  Env* master_env(int master_idx) const override {
+    return env_;
+  }
+
   BindMode bind_mode() const override {
     return opts_.bind_mode;
   }

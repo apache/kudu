@@ -239,10 +239,6 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
     ASSERT_TRUE(report.partial_record_check->entries.empty());
   }
 
-  void EnableEncryption(bool enable) {
-    FLAGS_encrypt_data_at_rest = enable;
-  }
-
   DataDirGroupPB test_group_pb_;
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
@@ -342,7 +338,7 @@ static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
 INSTANTIATE_TEST_SUITE_P(EncryptionEnabled, LogBlockManagerTest, ::testing::Values(false, true));
 
 TEST_P(LogBlockManagerTest, MetricsTest) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
   ASSERT_OK(ReopenBlockManager(entity));
@@ -515,7 +511,7 @@ TEST_P(LogBlockManagerTest, MetricsTest) {
 }
 
 TEST_P(LogBlockManagerTest, ContainerPreallocationTest) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   string kTestData = "test data";
 
   // For this test to work properly, the preallocation window has to be at
@@ -560,7 +556,7 @@ TEST_P(LogBlockManagerTest, ContainerPreallocationTest) {
 // Test for KUDU-2202 to ensure that once the block manager has been notified
 // of a block ID, it will not reuse it.
 TEST_P(LogBlockManagerTest, TestBumpBlockIds) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int kNumBlocks = 10;
   vector<BlockId> block_ids;
   unique_ptr<WritableBlock> writer;
@@ -593,7 +589,7 @@ TEST_P(LogBlockManagerTest, TestBumpBlockIds) {
 // Regression test for KUDU-1190, a crash at startup when a block ID has been
 // reused.
 TEST_P(LogBlockManagerTest, TestReuseBlockIds) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Typically, the LBM starts with a random block ID when running as a
   // gtest. In this test, we want to control the block IDs.
   bm_->next_block_id_.Store(1);
@@ -668,7 +664,7 @@ TEST_P(LogBlockManagerTest, TestReuseBlockIds) {
 // Note that we rely on filesystem integrity to ensure that we do not lose
 // trailing, fsync()ed metadata.
 TEST_P(LogBlockManagerTest, TestMetadataTruncation) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Create several blocks.
   vector<BlockId> created_blocks;
   BlockId last_block_id;
@@ -863,7 +859,7 @@ TEST_P(LogBlockManagerTest, TestMetadataTruncation) {
 // Regression test for a crash when a container's append offset exceeded its
 // preallocation offset.
 TEST_P(LogBlockManagerTest, TestAppendExceedsPreallocation) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   FLAGS_log_container_preallocate_bytes = 1;
 
   // Create a container, preallocate it by one byte, and append more than one.
@@ -879,7 +875,7 @@ TEST_P(LogBlockManagerTest, TestAppendExceedsPreallocation) {
 }
 
 TEST_P(LogBlockManagerTest, TestPreallocationAndTruncation) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Ensure preallocation window is greater than the container size itself.
   FLAGS_log_container_max_size = 1024 * 1024;
   FLAGS_log_container_preallocate_bytes = 32 * 1024 * 1024;
@@ -943,7 +939,7 @@ TEST_P(LogBlockManagerTest, TestPreallocationAndTruncation) {
 }
 
 TEST_P(LogBlockManagerTest, TestContainerWithManyHoles) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // This is a regression test of sorts for KUDU-1508, though it doesn't
   // actually fail if the fix is missing; it just corrupts the filesystem.
 
@@ -1002,7 +998,7 @@ TEST_P(LogBlockManagerTest, TestContainerWithManyHoles) {
 }
 
 TEST_P(LogBlockManagerTest, TestParseKernelRelease) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   ASSERT_TRUE(LogBlockManager::IsBuggyEl6Kernel("1.7.0.0.el6.x86_64"));
 
   // no el6 infix
@@ -1126,7 +1122,7 @@ TEST_P(LogBlockManagerStartupBenchmarkTest, StartupBenchmark) {
 #endif
 
 TEST_P(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Create multiple transactions that will share a container.
   const int kNumTransactions = 3;
   vector<unique_ptr<BlockCreationTransaction>> block_transactions;
@@ -1185,7 +1181,7 @@ TEST_P(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
 }
 
 TEST_P(LogBlockManagerTest, TestLookupBlockLimit) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   int64_t limit_1024 = LogBlockManager::LookupBlockLimit(1024);
   int64_t limit_2048 = LogBlockManager::LookupBlockLimit(2048);
   int64_t limit_4096 = LogBlockManager::LookupBlockLimit(4096);
@@ -1203,7 +1199,7 @@ TEST_P(LogBlockManagerTest, TestLookupBlockLimit) {
 }
 
 TEST_P(LogBlockManagerTest, TestContainerBlockLimitingByBlockNum) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int kNumBlocks = 1000;
 
   // Creates 'kNumBlocks' blocks with minimal data.
@@ -1238,7 +1234,7 @@ TEST_P(LogBlockManagerTest, TestContainerBlockLimitingByBlockNum) {
 }
 
 TEST_P(LogBlockManagerTest, TestContainerBlockLimitingByMetadataSize) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int kNumBlocks = 1000;
 
   // Creates 'kNumBlocks' blocks with minimal data.
@@ -1365,8 +1361,7 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimitingByMetadataSizeWithCompacti
 }
 
 TEST_P(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
-  EnableEncryption(GetParam());
-
+  SetEncryptionFlags(GetParam());
   FLAGS_log_container_preallocate_bytes = 0;
   const int kNumBlocks = 100;
 
@@ -1469,7 +1464,7 @@ TEST_P(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
 }
 
 TEST_P(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Enforce that the container's actual size is strictly upper-bounded by the
   // calculated size so we can more easily trigger repairs.
   FLAGS_log_container_excess_space_before_cleanup_fraction = 0.0;
@@ -1518,7 +1513,7 @@ TEST_P(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
 }
 
 TEST_P(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int kNumBlocks = 100;
 
   // Enforce that the container's actual size is strictly upper-bounded by the
@@ -1579,7 +1574,7 @@ TEST_P(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
 }
 
 TEST_P(LogBlockManagerTest, TestRepairIncompleteContainer) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int kNumContainers = 20;
 
   // Create some incomplete containers. The corruptor will select between
@@ -1610,7 +1605,7 @@ TEST_P(LogBlockManagerTest, TestRepairIncompleteContainer) {
 }
 
 TEST_P(LogBlockManagerTest, TestDetectMalformedRecords) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int kNumRecords = 50;
 
   // Create one container.
@@ -1643,7 +1638,7 @@ TEST_P(LogBlockManagerTest, TestDetectMalformedRecords) {
 }
 
 TEST_P(LogBlockManagerTest, TestDetectMisalignedBlocks) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int kNumBlocks = 50;
 
   // Create one container.
@@ -1676,7 +1671,7 @@ TEST_P(LogBlockManagerTest, TestDetectMisalignedBlocks) {
 }
 
 TEST_P(LogBlockManagerTest, TestRepairPartialRecords) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int kNumContainers = 50;
   const int kNumRecords = 10;
 
@@ -1718,7 +1713,7 @@ TEST_P(LogBlockManagerTest, TestRepairPartialRecords) {
 }
 
 TEST_P(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Force our single container to become full once created.
   FLAGS_log_container_max_size = 0;
 
@@ -1756,7 +1751,7 @@ TEST_P(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
 }
 
 TEST_P(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // With this ratio, the metadata of a full container comprised of half dead
   // blocks will be compacted at startup.
   FLAGS_log_container_live_metadata_before_compact_ratio = 0.50;
@@ -1822,7 +1817,7 @@ TEST_P(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
 // The bug was related to a stale file descriptor left in the file_cache, so
 // this test explicitly targets that scenario.
 TEST_P(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Compact aggressively.
   FLAGS_log_container_live_metadata_before_compact_ratio = 0.99;
   // Use a single shard so that we have an accurate max cache capacity
@@ -1886,7 +1881,7 @@ TEST_P(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
 // will run smoothly. The directory manager will note the failed directories
 // and only healthy ones are reported.
 TEST_P(LogBlockManagerTest, TestOpenWithFailedDirectories) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Initialize a new directory manager with multiple directories.
   bm_.reset();
   vector<string> test_dirs;
@@ -1936,7 +1931,7 @@ TEST_P(LogBlockManagerTest, TestOpenWithFailedDirectories) {
 // 2) the block cannot be opened/found until close it.
 // 3) the same container is not marked as available twice.
 TEST_P(LogBlockManagerTest, TestFinalizeBlock) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Create 4 blocks.
   vector<unique_ptr<WritableBlock>> blocks;
   for (int i = 0; i < 4; i++) {
@@ -1961,7 +1956,7 @@ TEST_P(LogBlockManagerTest, TestFinalizeBlock) {
 
 // Test available log container selection is LIFO.
 TEST_P(LogBlockManagerTest, TestLIFOContainerSelection) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Create 4 blocks and 4 opened containers that are not full.
   vector<unique_ptr<WritableBlock>> blocks;
   for (int i = 0; i < 4; i++) {
@@ -2014,7 +2009,7 @@ TEST_P(LogBlockManagerTest, TestAbortBlock) {
 }
 
 TEST_P(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const auto TestProcess = [&] (int block_num) {
     ASSERT_GT(block_num, 0);
     MetricRegistry registry;
@@ -2134,7 +2129,7 @@ TEST_P(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
 // Test for KUDU-2665 to ensure that once the container is full and has no live
 // blocks but with a reference by WritableBlock, it will not be deleted.
 TEST_P(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Lower the max container size.
   FLAGS_log_container_max_size = 64 * 1024;
 
@@ -2198,7 +2193,7 @@ TEST_P(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
 }
 
 TEST_P(LogBlockManagerTest, TestHalfPresentContainer) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   BlockId block_id;
   string data_file_name;
   string metadata_file_name;

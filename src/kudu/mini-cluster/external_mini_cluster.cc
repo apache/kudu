@@ -34,6 +34,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
+#include "kudu/fs/fs.pb.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #if !defined(NO_CHRONY)
 #include "kudu/clock/test/mini_chronyd.h"
@@ -41,6 +42,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -97,6 +99,7 @@ using std::string;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
+using strings::a2b_hex;
 using strings::Substitute;
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
@@ -151,6 +154,14 @@ ExternalMiniCluster::~ExternalMiniCluster() {
 
 Env* ExternalMiniCluster::env() const {
   return Env::Default();
+}
+
+Env* ExternalMiniCluster::ts_env(int ts_idx) const {
+  return tablet_server(ts_idx)->env();
+}
+
+Env* ExternalMiniCluster::master_env(int master_idx) const {
+  return master(master_idx)->env();
 }
 
 Status ExternalMiniCluster::DeduceBinRoot(std::string* ret) {
@@ -537,6 +548,7 @@ Status ExternalMiniCluster::StartMasters() {
     scoped_refptr<ExternalMaster> peer;
     RETURN_NOT_OK(CreateMaster(master_rpc_addrs, i, &peer));
     RETURN_NOT_OK_PREPEND(peer->Start(), Substitute("Unable to start Master at index $0", i));
+    RETURN_NOT_OK(peer->SetServerKey());
     masters_.emplace_back(std::move(peer));
   }
   return Status::OK();
@@ -599,6 +611,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   }
 
   RETURN_NOT_OK(ts->Start());
+  RETURN_NOT_OK(ts->SetServerKey());
   tablet_servers_.push_back(ts);
   return Status::OK();
 }
@@ -1256,6 +1269,23 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   return Status::OK();
 }
 
+Env* ExternalDaemon::env() const {
+  return Env::Default();
+}
+
+Status ExternalDaemon::SetServerKey() {
+  string path = JoinPathSegments(this->wal_dir(), "instance");;
+  LOG(INFO) << "Reading " << path;
+  InstanceMetadataPB instance;
+  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env(), path, &instance, pb_util::NOT_SENSITIVE));
+  if (string key = instance.server_key();
+      !key.empty()) {
+    LOG(INFO) << "Setting key " << key;
+    env()->SetEncryptionKey(key.size() * 4, reinterpret_cast<const uint8_t*>(a2b_hex(key).c_str()));
+  }
+  return Status::OK();
+}
+
 void ExternalDaemon::SetExePath(string exe) {
   CHECK(IsShutdown()) << "Call Shutdown() before changing the executable path";
   opts_.exe = std::move(exe);
@@ -1527,7 +1557,8 @@ ScopedResumeExternalDaemon::~ScopedResumeExternalDaemon() {
 //------------------------------------------------------------
 
 ExternalMaster::ExternalMaster(ExternalDaemonOptions opts)
-    : ExternalDaemon(std::move(opts)) {
+    : ExternalDaemon(std::move(opts)),
+      env_(Env::NewEnv()) {
 }
 
 ExternalMaster::~ExternalMaster() {
@@ -1652,7 +1683,8 @@ vector<string> ExternalMaster::GetMasterFlags(const ExternalDaemonOptions& opts)
 ExternalTabletServer::ExternalTabletServer(ExternalDaemonOptions opts,
                                            vector<HostPort> master_addrs)
     : ExternalDaemon(std::move(opts)),
-      master_addrs_(std::move(master_addrs)) {
+      master_addrs_(std::move(master_addrs)),
+      env_(Env::NewEnv()) {
   DCHECK(!master_addrs_.empty());
 }
 

@@ -35,6 +35,9 @@ message InstanceMetadataPB {
   // initialized.
   required string format_stamp = 2;
 
+  // Encrypted server key used to encrypt/decrypt file keys on this server.
+  optional bytes server_key = 3;
+
   // TODO: add a "node type" (TS/Master?)
 }
 

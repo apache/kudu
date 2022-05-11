@@ -45,6 +45,8 @@ struct ServerBaseOptions {
 
   int32_t metrics_log_interval_ms;
 
+  std::string server_key;
+
  protected:
   ServerBaseOptions();
 };

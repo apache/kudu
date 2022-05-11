@@ -53,9 +53,6 @@ using std::vector;
 using strings::Substitute;
 
 namespace {
-  void SetEncryptionFlags(bool encryption_enabled) {
-    FLAGS_encrypt_data_at_rest = encryption_enabled;
-  }
 } // namespace
 
 namespace kudu {

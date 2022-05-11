@@ -165,7 +165,8 @@ Status MiniClusterFsInspector::ReadTabletSuperBlockOnTS(int ts_idx,
                                                         const string& tablet_id,
                                                         TabletSuperBlockPB* sb) {
   const auto& sb_path = GetTabletSuperBlockPathOnTS(ts_idx, tablet_id);
-  return pb_util::ReadPBContainerFromPath(env_, sb_path, sb, pb_util::SENSITIVE);
+  return pb_util::ReadPBContainerFromPath(cluster_->ts_env(ts_idx), sb_path, sb,
+                                          pb_util::SENSITIVE);
 }
 
 int64_t MiniClusterFsInspector::GetTabletSuperBlockMTimeOrDie(int ts_idx,
@@ -190,7 +191,8 @@ Status MiniClusterFsInspector::ReadConsensusMetadataOnTS(int ts_idx,
   if (!env_->FileExists(cmeta_path)) {
     return Status::NotFound("Consensus metadata file not found", cmeta_path);
   }
-  return pb_util::ReadPBContainerFromPath(env_, cmeta_path, cmeta_pb, pb_util::SENSITIVE);
+  return pb_util::ReadPBContainerFromPath(cluster_->ts_env(ts_idx), cmeta_path, cmeta_pb,
+                                          pb_util::SENSITIVE);
 }
 
 Status MiniClusterFsInspector::WriteConsensusMetadataOnTS(
@@ -198,7 +200,7 @@ Status MiniClusterFsInspector::WriteConsensusMetadataOnTS(
     const string& tablet_id,
     const ConsensusMetadataPB& cmeta_pb) {
   auto cmeta_path = GetConsensusMetadataPathOnTS(ts_idx, tablet_id);
-  return pb_util::WritePBContainerToPath(env_, cmeta_path, cmeta_pb,
+  return pb_util::WritePBContainerToPath(cluster_->ts_env(ts_idx), cmeta_path, cmeta_pb,
                                          pb_util::OVERWRITE, pb_util::NO_SYNC,
                                          pb_util::SENSITIVE);
 }

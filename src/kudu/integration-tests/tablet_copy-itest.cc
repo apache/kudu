@@ -984,6 +984,45 @@ TEST_F(TabletCopyITest, TestSlowCopyDoesntFail) {
                             workload.rows_inserted()));
 }
 
+TEST_F(TabletCopyITest, TestTabletCopyEncryptedServers) {
+  SetEncryptionFlags(true);
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 3;
+  NO_FATALS(StartClusterWithOpts(opts));
+
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 1000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ExternalTabletServer* replica_ets = cluster_->tablet_server(2);
+  TServerDetails* replica_ts = ts_map_[replica_ets->uuid()];
+  ASSERT_OK(WaitForNumTabletsOnTS(replica_ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Tombstone the follower.
+  LOG(INFO) << "Tombstoning follower tablet " << tablet_id << " on TS " << replica_ts->uuid();
+  ASSERT_OK(DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+
+  // Wait for tablet copy to start.
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(2, tablet_id,
+                                                 { tablet::TABLET_DATA_COPYING }, timeout));
+
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
+                            workload.rows_inserted()));
+}
+
 // Attempting to start Tablet Copy on a tablet that was deleted with
 // TABLET_DATA_DELETED should fail. This behavior helps avoid thrashing when
 // a follower tablet is deleted and the leader notices before it has processed

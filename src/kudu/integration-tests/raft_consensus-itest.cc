@@ -826,8 +826,9 @@ TEST_P(RaftConsensusParamEncryptionITest, TestCatchupAfterOpsEvicted) {
   if (GetParam()) {
     // We need to enable encryption both in the mini-cluster and in the current
     // process, as both of them access encrypted files.
+    SetEncryptionFlags(true);
     kTsFlags.emplace_back("--encrypt_data_at_rest=true");
-    FLAGS_encrypt_data_at_rest = true;
+    kTsFlags.emplace_back("--test_server_key=" + GetEncryptionKey());
   }
 
   NO_FATALS(BuildAndStart(kTsFlags));

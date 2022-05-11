@@ -79,10 +79,6 @@ class ConsensusMetadataTest : public KuduTest, public ::testing::WithParamInterf
                          int64_t opid_index, const string& permanant_uuid, int64_t term);
 
 
-  void EnableEncryption(bool enable) {
-    FLAGS_encrypt_data_at_rest = enable;
-  }
-
   FsManager fs_manager_;
   RaftConfigPB config_;
 };
@@ -104,7 +100,7 @@ INSTANTIATE_TEST_SUITE_P(, ConsensusMetadataTest, ::testing::Values(false, true)
 
 // Test the basic "happy case" of creating and then loading a file.
 TEST_P(ConsensusMetadataTest, TestCreateLoad) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Create the file.
   {
     ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
@@ -120,7 +116,7 @@ TEST_P(ConsensusMetadataTest, TestCreateLoad) {
 
 // Test deferred creation.
 TEST_P(ConsensusMetadataTest, TestDeferredCreateLoad) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Create the cmeta object, but not the file.
   scoped_refptr<ConsensusMetadata> writer;
   ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
@@ -141,7 +137,7 @@ TEST_P(ConsensusMetadataTest, TestDeferredCreateLoad) {
 
 // Ensure that Create() will not overwrite an existing file.
 TEST_P(ConsensusMetadataTest, TestCreateNoOverwrite) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   // Create the consensus metadata file.
   ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
                                       config_, kInitialTerm));
@@ -154,7 +150,7 @@ TEST_P(ConsensusMetadataTest, TestCreateNoOverwrite) {
 
 // Ensure that we get an error when loading a file that doesn't exist.
 TEST_P(ConsensusMetadataTest, TestFailedLoad) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   Status s = ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid());
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   LOG(INFO) << "Expected failure: " << s.ToString();
@@ -162,7 +158,7 @@ TEST_P(ConsensusMetadataTest, TestFailedLoad) {
 
 // Check that changes are not written to disk until Flush() is called.
 TEST_P(ConsensusMetadataTest, TestFlush) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   const int64_t kNewTerm = 4;
   scoped_refptr<ConsensusMetadata> cmeta;
   ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
@@ -206,7 +202,7 @@ RaftConfigPB BuildConfig(const vector<string>& uuids) {
 
 // Test ConsensusMetadata active role calculation.
 TEST_P(ConsensusMetadataTest, TestActiveRole) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   vector<string> uuids = { "a", "b", "c", "d" };
   string peer_uuid = "e";
   RaftConfigPB config1 = BuildConfig(uuids); // We aren't a member of this config...
@@ -273,7 +269,7 @@ TEST_P(ConsensusMetadataTest, TestActiveRole) {
 // Ensure that invocations of ToConsensusStatePB() return the expected state
 // in the returned object.
 TEST_P(ConsensusMetadataTest, TestToConsensusStatePB) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   vector<string> uuids = { "a", "b", "c", "d" };
   string peer_uuid = "e";
 
@@ -333,7 +329,7 @@ static void AssertConsensusMergeExpected(const scoped_refptr<ConsensusMetadata>&
 
 // Ensure that MergeCommittedConsensusStatePB() works as advertised.
 TEST_P(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB) {
-  EnableEncryption(GetParam());
+  SetEncryptionFlags(GetParam());
   vector<string> uuids = { "a", "b", "c", "d" };
 
   RaftConfigPB committed_config = BuildConfig(uuids); // We aren't a member of this config...

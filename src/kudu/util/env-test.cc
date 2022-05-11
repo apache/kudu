@@ -80,6 +80,7 @@ DECLARE_int32(env_inject_short_read_bytes);
 DECLARE_int32(env_inject_short_write_bytes);
 DECLARE_int32(encryption_key_length);
 DECLARE_string(env_inject_eio_globs);
+DECLARE_string(encryption_server_key);
 
 namespace kudu {
 
@@ -1254,7 +1255,7 @@ TEST_F(TestEnv, TestCreateFifo) {
 class TestEncryptedEnv : public TestEnv, public ::testing::WithParamInterface<int> {
  public:
   void SetUp() override {
-    FLAGS_encrypt_data_at_rest = true;
+    SetEncryptionFlags(true);
     FLAGS_encryption_key_length = GetParam();
   }
 };
@@ -1262,7 +1263,6 @@ class TestEncryptedEnv : public TestEnv, public ::testing::WithParamInterface<in
 INSTANTIATE_TEST_SUITE_P(TestEncryption, TestEncryptedEnv, ::testing::Values(128, 192, 256));
 
 TEST_P(TestEncryptedEnv, TestEncryption) {
-  FLAGS_encrypt_data_at_rest = true;
   const string kFile = JoinPathSegments(test_dir_, "encrypted_file");
   unique_ptr<RWFile> rw;
   RWFileOptions opts;

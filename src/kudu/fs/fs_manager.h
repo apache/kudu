@@ -199,11 +199,14 @@ class FsManager {
               std::atomic<int>* containers_total = nullptr );
 
   // Create the initial filesystem layout. If 'uuid' is provided, uses it as
-  // uuid of the filesystem. Otherwise generates one at random.
+  // uuid of the filesystem. Otherwise generates one at random. If 'server_key'
+  // is provided, it is used as the server key of the filesystem. Otherwise, if
+  // encryption is enabled, generates one at random.
   //
   // Returns an error if the file system is already initialized.
   Status CreateInitialFileSystemLayout(
-      boost::optional<std::string> uuid = boost::none);
+      boost::optional<std::string> uuid = boost::none,
+      boost::optional<std::string> server_key = boost::none);
 
   // ==========================================================================
   //  Error handling helpers
@@ -288,6 +291,12 @@ class FsManager {
   // Open() have not been called, this will crash.
   const std::string& uuid() const;
 
+  // Return the server key persisted on the local filesystem. After the server
+  // key is decrypted, it can be used to encrypt/decrypt file keys on the
+  // filesystem.  If PartialOpen() or Open() have not been called, this will
+  // crash. If the file system is not encrypted, it returns an empty string.
+  const std::string& server_key() const;
+
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================
@@ -348,6 +357,7 @@ class FsManager {
 
   // Create a new InstanceMetadataPB.
   Status CreateInstanceMetadata(boost::optional<std::string> uuid,
+                                boost::optional<std::string> server_key,
                                 InstanceMetadataPB* metadata);
 
   // Save a InstanceMetadataPB to the filesystem.

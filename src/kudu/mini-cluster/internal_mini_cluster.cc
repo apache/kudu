@@ -31,6 +31,7 @@
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/master/master_options.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
@@ -155,6 +156,7 @@ Status InternalMiniCluster::StartMasters() {
     for (int i = 0; i < num_masters; i++) {
       auto mini_master(std::make_shared<MiniMaster>(
           GetMasterFsRoot(i), master_rpc_addrs[i]));
+      mini_master->mutable_options()->server_key = KuduTest::GetEncryptionKey();
       if (num_masters > 1 || opts_.supply_single_master_addr) {
         mini_master->SetMasterAddresses(master_rpc_addrs);
       }
@@ -212,6 +214,8 @@ Status InternalMiniCluster::AddTabletServer(const HostPort& hp) {
   unique_ptr<MiniTabletServer> tablet_server(
       new MiniTabletServer(GetTabletServerFsRoot(new_idx), hp, opts_.num_data_dirs));
   tablet_server->options()->master_addresses = master_rpc_addrs();
+  tablet_server->options()->server_key = KuduTest::GetEncryptionKey();
+
   RETURN_NOT_OK(tablet_server->Start());
   mini_tablet_servers_.emplace_back(std::move(tablet_server));
   return Status::OK();
