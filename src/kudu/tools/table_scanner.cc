@@ -626,7 +626,7 @@ Status TableScanner::StartWork(WorkType type) {
   if (mode_) {
     RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
   }
-  RETURN_NOT_OK(builder.SetTimeoutMillis(30000));
+  RETURN_NOT_OK(builder.SetTimeoutMillis(3000000));
 
   // Set projection if needed.
   if (type == WorkType::kScan) {
