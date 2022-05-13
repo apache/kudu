@@ -234,6 +234,7 @@ DEFINE_int32(max_create_tablets_per_ts, 60,
              "The number of tablet replicas per TS that can be requested for a "
              "new table. If 0, no limit is enforced.");
 TAG_FLAG(max_create_tablets_per_ts, advanced);
+TAG_FLAG(max_create_tablets_per_ts, runtime);
 
 DEFINE_int32(master_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
              "Amount of time to give a newly-elected leader master to load"
