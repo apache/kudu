@@ -270,29 +270,6 @@ class FlexPartitioningTest : public KuduTest {
 // specified when creating a table.
 class FlexPartitioningCreateTableTest : public FlexPartitioningTest {};
 
-// Create tables with range partitions using custom hash bucket schemas only.
-//
-// TODO(aserbin): turn the sub-scenarios with non-primary-key columns for
-//                custom hash buckets into negative ones after proper
-//                checks are added at the server side
-// TODO(aserbin): add verification based on PartitionSchema provided by
-//                KuduTable::partition_schema() once PartitionPruner
-//                recognized custom hash bucket schema for ranges
-TEST_F(FlexPartitioningCreateTableTest, CustomHashSchema) {
-  // One-level hash bucket structure: { 3, "key" }.
-  {
-    constexpr const char* const kTableName = "3@key";
-    RangePartitions partitions;
-    partitions.emplace_back(CreateRangePartition(0, 100));
-    auto& p = partitions.back();
-    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 0));
-    ASSERT_OK(CreateTable(kTableName, std::move(partitions)));
-    NO_FATALS(CheckTabletCount(kTableName, 3));
-    ASSERT_OK(InsertTestRows(kTableName, 0, 100));
-    NO_FATALS(CheckTableRowsNum(kTableName, 100));
-  }
-}
-
 TEST_F(FlexPartitioningCreateTableTest, TableWideHashSchema) {
   // Create a table with the following partitions:
   //
@@ -357,6 +334,23 @@ TEST_F(FlexPartitioningCreateTableTest, EmptyTableWideHashSchema) {
   // TODO(aserbin): uncomment the line below once PartitionPruner handles such
   //                cases properly
   //NO_FATALS(CheckTableRowsNum(kTableName, 333));
+}
+
+// Create tables with range partitions using custom hash bucket schemas only.
+TEST_F(FlexPartitioningCreateTableTest, CustomHashSchemaDiffersFromTableWide) {
+  // Using one-level hash bucketing { 3, "key" } as the custom hash schema
+  // for the newly created range partition. Note that the table-wide hash schema
+  // is empty per FlexPartitioningTest::FlexPartitioningTest(), so the attempt
+  // to create such a table fails with the Status::NotSupported() status.
+  constexpr const char* const kTableName = "3@key";
+  RangePartitions partitions;
+  partitions.emplace_back(CreateRangePartition(0, 100));
+  auto& p = partitions.back();
+  ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 0));
+  const auto s = CreateTable(kTableName, std::move(partitions));
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+      "varying number of hash dimensions per range is not yet supported");
 }
 
 // TODO(aserbin): re-enable this scenario once varying hash dimensions per range
@@ -579,6 +573,7 @@ std::ostream& operator<<(std::ostream& os,
 struct PerRangeTestParameters {
   bool allowed;
   TablePartitionParameters partition_params;
+  vector<HashDimensionParameters> table_wide_hash_schema_params;
 };
 std::ostream& operator<<(std::ostream& os,
                          const PerRangeTestParameters& params) {
@@ -619,6 +614,11 @@ class FlexPartitioningCreateTableParamTest :
       table_creator->add_custom_range_partition(p.release());
     }
 
+    for (const auto& table_wide_params : params.table_wide_hash_schema_params) {
+      table_creator->add_hash_partitions(table_wide_params.columns,
+                                         table_wide_params.num_buckets);
+    }
+
     if (params.allowed) {
       ASSERT_OK(table_creator->Create());
     } else {
@@ -636,13 +636,17 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
     true,
     {
       { { INT32_MIN, 0 }, {} },
-    }
+    },
+    {}  // empty table-wide hash schema
   },
   // A single range with minimal hash schema.
   {
     true,
     {
       { { INT32_MIN, 0 }, { { { kKeyColumn }, 2, } } },
+    },
+    {
+      { { kKeyColumn }, 3 },
     }
   },
   // A single range with hashing on both columns of the primary key.
@@ -650,6 +654,9 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
     true,
     {
       { { INT32_MIN, 0 }, { { { kKeyColumn, kIntValColumn }, 2, } } },
+    },
+    {
+      { { kKeyColumn }, 5 },
     }
   },
   // Varying the number of hash buckets.
@@ -660,6 +667,9 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
       { { 100, 200 }, { { { kKeyColumn }, 3, } } },
       { { 200, 300 }, { { { kKeyColumn }, 2, } } },
       { { 300, 400 }, { { { kKeyColumn }, 10, } } },
+    },
+    {
+      { { kIntValColumn }, 5 },
     }
   },
   // Varying the set of columns for hash bucketing.
@@ -670,6 +680,9 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
       { { 200, 300 }, { { { kKeyColumn, kIntValColumn }, 2, } } },
       { { 300, 400 }, { { { kIntValColumn }, 2, } } },
       { { 400, 500 }, { { { kIntValColumn, kKeyColumn }, 2, } } },
+    },
+    {
+      { { kIntValColumn }, 3 },
     }
   },
   // Varying the set of columns for hash bucketing and number of buckets.
@@ -683,6 +696,9 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
       { { 600, 700 }, { { { kKeyColumn }, 3, } } },
       { { 700, 800 }, { { { kIntValColumn, kKeyColumn }, 16, } } },
       { { 800, 900 }, { { { kIntValColumn }, 32, } } },
+    },
+    {
+      { { kIntValColumn }, 7 },
     }
   },
   // Below are multiple scenarios with varying number of hash dimensions
@@ -692,13 +708,17 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
     {
       { { INT32_MIN, 0 }, {} },
       { { 0, 100 }, { { { kKeyColumn }, 2 } } },
-    }
+    },
+    {}  // an empty table-wide schema
   },
   {
     false,
     {
       { { INT32_MIN, 0 }, { { { kKeyColumn }, 3 } } },
       { { 0, 100 }, {} },
+    },
+    {
+      { { kKeyColumn }, 8 },
     }
   },
   {
@@ -707,7 +727,8 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
       { { INT32_MIN, 0 }, {} },
       { {   0, 100 }, { { { kKeyColumn }, 2 } } },
       { { 100, 200 }, {} },
-    }
+    },
+    {}  // an empty table-wide schema
   },
   {
     false,
@@ -715,13 +736,18 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
       { { INT32_MIN, 0 }, { { { kKeyColumn }, 3 } } },
       { {   0, 100 }, {} },
       { { 100, 200 }, { { { kIntValColumn }, 2 } } },
-    }
+    },
+    {}  // an empty table-wide schema
   },
   {
     false,
     {
       { {  0,  100 }, { { { kKeyColumn }, 2 }, { { kIntValColumn }, 2 } } },
       { { 100, 200 }, { { { kKeyColumn, kIntValColumn }, 2 } } },
+    },
+    {
+      { { kKeyColumn }, 7 },
+      { { kIntValColumn }, 3 },
     }
   },
   {
@@ -729,6 +755,9 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
     {
       { { 100, 200 }, { { { kKeyColumn }, 2 }, { { kIntValColumn }, 3 } } },
       { { 200, 300 }, { { { kKeyColumn }, 3 } } },
+    },
+    {
+      { { kKeyColumn }, 7 },
     }
   },
   {
@@ -736,6 +765,9 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
     {
       { { 300, 400 }, { { { kKeyColumn }, 2 }, { { kIntValColumn }, 3 } } },
       { { 400, 500 }, { { { kKeyColumn }, 3 } } },
+    },
+    {
+      { { kKeyColumn }, 7 },
     }
   },
   {
@@ -744,7 +776,8 @@ const vector<PerRangeTestParameters> kPerRangeTestParameters = {
       { { 500, 600 }, { { { kKeyColumn }, 10 }, { { kIntValColumn }, 5 } } },
       { { 600, 700 }, { { { kKeyColumn }, 2 } } },
       { { 700, INT32_MAX }, {} },
-    }
+    },
+    {}  // an empty table-wide schema
   },
 };
 INSTANTIATE_TEST_SUITE_P(Variations, FlexPartitioningCreateTableParamTest,

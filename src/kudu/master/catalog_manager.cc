@@ -1943,12 +1943,13 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
       split_rows, range_bounds, range_hash_schemas, schema, &partitions));
 
   // Check the restriction on the same number of hash dimensions across all the
-  // ranges.
+  // ranges. Also, check that the table-wide hash schema has the same number
+  // of hash dimensions as all the partitions with custom hash schemas.
   //
   // TODO(aserbin): remove the restriction once the rest of the code is ready
   //                to handle range partitions with arbitrary hash schemas
   CHECK(!partitions.empty());
-  const auto hash_dimensions_num = partitions.begin()->hash_buckets().size();
+  const auto hash_dimensions_num = partition_schema.hash_schema().size();
   for (const auto& p : partitions) {
     if (p.hash_buckets().size() != hash_dimensions_num) {
       return Status::NotSupported(
