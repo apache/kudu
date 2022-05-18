@@ -494,6 +494,7 @@ Status TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& t
 
     uint64_t count = 0;
     while (scanner->HasMoreRows()) {
+      scanner->KeepAlive();
       KuduScanBatch batch;
       RETURN_NOT_OK(scanner->NextBatch(&batch));
       count += batch.NumRows();
