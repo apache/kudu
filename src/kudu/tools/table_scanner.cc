@@ -131,6 +131,9 @@ DEFINE_string(target_folder, ".",
 DEFINE_int64(write_buffer_char_length,10000,
               "exporting buffer size. It will reserve the exporting string size from the memory. If the buffer get filled before export it will dynamically grow");
 
+DEFINE_int64(export_batch_size,1000,"export batch size bytes");
+DEFINE_int64(timeout_millis,3000000,"timeout milliseconds");
+
 
 static bool ValidateWriteType(const char* flag_name,
                               const string& flag_value) {
@@ -627,7 +630,8 @@ Status TableScanner::StartWork(WorkType type) {
   if (mode_) {
     RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
   }
-  RETURN_NOT_OK(builder.SetTimeoutMillis(3000000));
+  RETURN_NOT_OK(builder.SetTimeoutMillis(FLAGS_timeout_millis));
+  RETURN_NOT_OK(builder.SetBatchSizeBytes(FLAGS_export_batch_size));
 
   // Set projection if needed.
   if (type == WorkType::kScan) {
