@@ -20,11 +20,11 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
@@ -48,6 +48,8 @@ DECLARE_bool(hive_metastore_sasl_enabled);
 
 using kudu::rpc::SaslProtection;
 using std::make_pair;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -218,7 +220,7 @@ class HmsCatalogTest : public KuduTest {
                   const string& table_name,
                   const string& table_id,
                   const string& cluster_id,
-                  const boost::optional<const string&>& owner,
+                  const optional<string>& owner,
                   const Schema& schema,
                   const string& comment) {
     hive::Table table;
@@ -365,29 +367,29 @@ TEST_F(HmsCatalogTest, TestExternalTable) {
   // Create the Kudu table (default.a).
   Schema schema = AllTypesSchema();
   ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.a",
-      kClusterId, boost::none, schema, kComment));
-  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, boost::none, schema, kComment));
+      kClusterId, nullopt, schema, kComment));
+  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, nullopt, schema, kComment));
 
   // Try and create a Kudu table with the same name as the external table.
   Status s = hms_catalog_->CreateTable(kTableId, "default.ext",
-      kClusterId, boost::none, schema, kComment);
+      kClusterId, nullopt, schema, kComment);
   EXPECT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   NO_FATALS(CheckExternalTable());
 
   // Try and rename the Kudu table to the external table name.
   s = hms_catalog_->AlterTable(kTableId, "default.a", "default.ext",
-      kClusterId, boost::none, schema, kComment);
+      kClusterId, nullopt, schema, kComment);
   EXPECT_TRUE(s.IsIllegalState()) << s.ToString();
   NO_FATALS(CheckExternalTable());
-  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, boost::none, schema, kComment));
+  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, nullopt, schema, kComment));
 
   // Try and rename the external table. This shouldn't succeed because the Table
   // ID doesn't match.
   s = hms_catalog_->AlterTable(kTableId, "default.ext", "default.b",
-      kClusterId, boost::none, schema, kComment);
+      kClusterId, nullopt, schema, kComment);
   EXPECT_TRUE(s.IsNotFound()) << s.ToString();
   NO_FATALS(CheckExternalTable());
-  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, boost::none, schema, kComment));
+  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, nullopt, schema, kComment));
   NO_FATALS(CheckTableDoesNotExist("default", "b"));
 
   // Try and drop the external table as if it were a Kudu table.

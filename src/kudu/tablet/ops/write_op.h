@@ -21,10 +21,10 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
 
@@ -120,7 +120,7 @@ class WriteOpState : public OpState {
                const tserver::WriteRequestPB* request,
                const rpc::RequestIdPB* request_id,
                tserver::WriteResponsePB* response = nullptr,
-               boost::optional<WriteAuthorizationContext> authz_ctx = boost::none);
+               std::optional<WriteAuthorizationContext> authz_ctx = std::nullopt);
   ~WriteOpState();
 
   // Returns the result of this op in its protocol buffers form. The op result
@@ -143,13 +143,14 @@ class WriteOpState : public OpState {
     return response_;
   }
 
-  boost::optional<int64_t> txn_id() const {
-    return request_->has_txn_id() ? boost::make_optional(request_->txn_id()) : boost::none;
+  std::optional<int64_t> txn_id() const {
+    return request_->has_txn_id() ? std::make_optional(request_->txn_id())
+                                  : std::nullopt;
   }
 
-  // Returns the state associated with authorizing this op, or 'none' if no
+  // Returns the state associated with authorizing this op, or 'nullopt' if no
   // authorization is necessary.
-  const boost::optional<WriteAuthorizationContext>& authz_context() const {
+  const std::optional<WriteAuthorizationContext>& authz_context() const {
     return authz_context_;
   }
 
@@ -287,9 +288,9 @@ class WriteOpState : public OpState {
   const tserver::WriteRequestPB* request_;
   tserver::WriteResponsePB* response_;
 
-  // Encapsulates state required to authorize a write request. If 'none', then
-  // no authorization is required.
-  boost::optional<WriteAuthorizationContext> authz_context_;
+  // Encapsulates state required to authorize a write request. If 'nullopt',
+  // then no authorization is required.
+  std::optional<WriteAuthorizationContext> authz_context_;
 
   // The row operations which are decoded from the request during Prepare().
   // Protected by op_state_lock_.

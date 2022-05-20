@@ -20,11 +20,9 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
-#include <boost/type_traits/decay.hpp>
 
 #include "kudu/common/rowid.h"
 #include "kudu/common/timestamp.h"
@@ -156,11 +154,11 @@ class DeltaMemStore : public DeltaStore,
   int64_t deleted_row_count() const;
 
   // Returns the highest timestamp of any updates applied to this DMS. Returns
-  // 'none' if no updates have been applied.
-  boost::optional<Timestamp> highest_timestamp() const {
+  // 'nullopt' if no updates have been applied.
+  std::optional<Timestamp> highest_timestamp() const {
     std::lock_guard<simple_spinlock> l(ts_lock_);
-    return highest_timestamp_ == Timestamp::kMin ?
-        boost::none : boost::make_optional(highest_timestamp_);
+    return highest_timestamp_ == Timestamp::kMin
+        ? std::nullopt : std::make_optional(highest_timestamp_);
   }
 
  protected:

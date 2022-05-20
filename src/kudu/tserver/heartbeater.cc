@@ -23,13 +23,14 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
@@ -452,9 +453,7 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
 
   // Check with the TS cert manager if it has a cert that needs signing.
   // If so, send the CSR in the heartbeat for the master to sign.
-  boost::optional<security::CertSignRequest> csr =
-      server_->mutable_tls_context()->GetCsrIfNecessary();
-  if (csr != boost::none) {
+  if (auto csr = server_->mutable_tls_context()->GetCsrIfNecessary(); csr) {
     RETURN_NOT_OK(csr->ToString(req.mutable_csr_der(), security::DataFormat::DER));
     VLOG(1) << "Sending a CSR to the master in the next heartbeat";
   }

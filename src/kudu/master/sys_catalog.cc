@@ -22,12 +22,12 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
@@ -324,6 +324,8 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
 }
 
 Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
+  using std::nullopt;
+
   // Create the new Metadata
   scoped_refptr<tablet::TabletMetadata> metadata;
   Schema schema = BuildTableSchema();
@@ -335,19 +337,20 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, {}, schema, &partitions));
   DCHECK_EQ(1, partitions.size());
 
-  RETURN_NOT_OK(tablet::TabletMetadata::CreateNew(fs_manager,
-                                                  kSysCatalogTabletId,
-                                                  table_name(),
-                                                  table_id(),
-                                                  schema, partition_schema,
-                                                  partitions[0],
-                                                  tablet::TABLET_DATA_READY,
-                                                  /*tombstone_last_logged_opid=*/ boost::none,
-                                                  /*supports_live_row_count=*/ true,
-                                                  /*extra_config=*/ boost::none,
-                                                  /*dimension_label=*/ boost::none,
-                                                  /*table_type=*/ boost::none,
-                                                  &metadata));
+  RETURN_NOT_OK(tablet::TabletMetadata::CreateNew(
+      fs_manager,
+      kSysCatalogTabletId,
+      table_name(),
+      table_id(),
+      schema, partition_schema,
+      partitions[0],
+      tablet::TABLET_DATA_READY,
+      /*tombstone_last_logged_opid=*/ nullopt,
+      /*supports_live_row_count=*/ true,
+      /*extra_config=*/ nullopt,
+      /*dimension_label=*/ nullopt,
+      /*table_type=*/ nullopt,
+      &metadata));
 
   RaftConfigPB config;
   if (master_->opts().IsDistributed()) {

@@ -21,6 +21,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -29,7 +30,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -420,7 +420,7 @@ TEST_F(TxnCommitITest, TestCommitWhileDeletingTxnStatusManager) {
 
   ASSERT_OK(txn->StartCommit());
   ASSERT_OK(cluster_->mini_tablet_server(0)->server()->tablet_manager()->DeleteTablet(
-      tsm_id_, tablet::TABLET_DATA_TOMBSTONED, boost::none));
+      tsm_id_, tablet::TABLET_DATA_TOMBSTONED, std::nullopt));
 
   Status completion_status;
   bool is_complete;

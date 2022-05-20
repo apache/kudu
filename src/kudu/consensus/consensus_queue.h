@@ -19,13 +19,13 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <ostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -363,10 +363,10 @@ class PeerMessageQueue {
   ~PeerMessageQueue();
 
   // Begin or end the watch for an eligible successor. If 'successor_uuid' is
-  // boost::none, the queue will notify its observers when 'successor_uuid' is
+  // std::nullopt, the queue will notify its observers when 'successor_uuid' is
   // caught up to the leader. Otherwise, it will notify its observers
   // with the UUID of the first voter that is caught up.
-  void BeginWatchForSuccessor(const boost::optional<std::string>& successor_uuid);
+  void BeginWatchForSuccessor(const std::optional<std::string>& successor_uuid);
   void EndWatchForSuccessor();
 
  private:
@@ -426,9 +426,9 @@ class PeerMessageQueue {
     int64_t current_term;
 
     // The first index that we saw that was part of this current term.
-    // When the term advances, this is set to boost::none, and then set
+    // When the term advances, this is set to std::nullopt, and then set
     // when the first operation is appended in the new term.
-    boost::optional<int64_t> first_index_in_current_term;
+    std::optional<int64_t> first_index_in_current_term;
 
     // The size of the majority for the queue.
     int majority_size_;
@@ -569,7 +569,7 @@ class PeerMessageQueue {
   mutable simple_spinlock queue_lock_; // TODO(todd): rename
 
   bool successor_watch_in_progress_;
-  boost::optional<std::string> designated_successor_uuid_;
+  std::optional<std::string> designated_successor_uuid_;
 
   // We assume that we never have multiple threads racing to append to the queue.
   // This fake mutex adds some extra assurance that this implementation property

@@ -30,12 +30,12 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
@@ -92,6 +92,7 @@ using kudu::pb_util::internal::WritableFileOutputStream;
 using std::deque;
 using std::endl;
 using std::initializer_list;
+using std::optional;
 using std::ostream;
 using std::shared_ptr;
 using std::string;
@@ -242,8 +243,8 @@ Status ParseAndCompareChecksum(const uint8_t* checksum_buf,
 // If 'cached_file_size' already has a value, this is a no-op.
 template<typename ReadableFileType>
 Status CacheFileSize(ReadableFileType* reader,
-                     boost::optional<uint64_t>* cached_file_size) {
-  if (*cached_file_size) {
+                     optional<uint64_t>* cached_file_size) {
+  if (cached_file_size->has_value()) {
     return Status::OK();
   }
 
@@ -285,15 +286,15 @@ Status RestOfFileIsAllZeros(ReadableFileType* reader,
 // updated with the new offset on success. On failure, 'offset' is not modified.
 template<typename ReadableFileType>
 Status ReadPBStartingAt(ReadableFileType* reader, int version,
-                        boost::optional<uint64_t>* cached_file_size,
+                        optional<uint64_t>* cached_file_size,
                         uint64_t* offset, Message* msg) {
   uint64_t tmp_offset = *offset;
   VLOG(1) << "Reading PB with version " << version << " starting at offset " << *offset;
 
   RETURN_NOT_OK(CacheFileSize(reader, cached_file_size));
-  uint64_t file_size = cached_file_size->get();
+  const uint64_t file_size = *(*cached_file_size);
 
-  if (tmp_offset == *cached_file_size) {
+  if (tmp_offset == file_size) {
     return Status::EndOfFile("Reached end of file");
   }
 
@@ -378,9 +379,9 @@ Status ReadPBStartingAt(ReadableFileType* reader, int version,
 // Status::Incomplete() for V1 format files.
 template<typename ReadableFileType>
 Status ReadFullPB(ReadableFileType* reader, int version,
-                  boost::optional<uint64_t>* cached_file_size,
+                  optional<uint64_t>* cached_file_size,
                   uint64_t* offset, Message* msg) {
-  bool had_cached_size = *cached_file_size != boost::none;
+  const bool had_cached_size = cached_file_size->has_value();
   Status s = ReadPBStartingAt(reader, version, cached_file_size, offset, msg);
   if (PREDICT_FALSE(s.IsIncomplete() && version == 1)) {
     return Status::Corruption("Unrecoverable incomplete record", s.ToString());
@@ -388,7 +389,7 @@ Status ReadFullPB(ReadableFileType* reader, int version,
   // If we hit EOF, but we were using a cached view of the file size, then it might be
   // that the file has been extended. Invalidate the cache and try again.
   if (had_cached_size && (s.IsIncomplete() || s.IsEndOfFile())) {
-    *cached_file_size = boost::none;
+    cached_file_size->reset();
     return ReadFullPB(reader, version, cached_file_size, offset, msg);
   }
   return s;
@@ -396,10 +397,10 @@ Status ReadFullPB(ReadableFileType* reader, int version,
 
 // Read and parse the protobuf container file-level header documented in pb_util.h.
 template<typename ReadableFileType>
-Status ParsePBFileHeader(ReadableFileType* reader, boost::optional<uint64_t>* cached_file_size,
+Status ParsePBFileHeader(ReadableFileType* reader, optional<uint64_t>* cached_file_size,
                          uint64_t* offset, int* version) {
   RETURN_NOT_OK(CacheFileSize(reader, cached_file_size));
-  uint64_t file_size = cached_file_size->get();
+  const uint64_t file_size = *(*cached_file_size);
 
   // We initially read enough data for a V2+ file header. This optimizes for
   // V2+ and is valid on a V1 file because we don't consider these files valid
@@ -452,7 +453,7 @@ Status ParsePBFileHeader(ReadableFileType* reader, boost::optional<uint64_t>* ca
 // Read and parse the supplemental header from the container file.
 template<typename ReadableFileType>
 Status ReadSupplementalHeader(ReadableFileType* reader, int version,
-                              boost::optional<uint64_t>* cached_file_size,
+                              optional<uint64_t>* cached_file_size,
                               uint64_t* offset,
                               ContainerSupHeaderPB* sup_header) {
   RETURN_NOT_OK_PREPEND(ReadFullPB(reader, version, cached_file_size, offset, sup_header),
@@ -729,12 +730,12 @@ Status WritablePBContainerFile::CreateNew(const Message& msg) {
 
 Status WritablePBContainerFile::OpenExisting() {
   DCHECK_EQ(FileState::NOT_INITIALIZED, state_);
-  boost::optional<uint64_t> size;
+  optional<uint64_t> size;
   RETURN_NOT_OK(ParsePBFileHeader(writer_.get(), &size, &offset_, &version_));
   ContainerSupHeaderPB sup_header;
   RETURN_NOT_OK(ReadSupplementalHeader(writer_.get(), version_, &size,
                                        &offset_, &sup_header));
-  offset_ = size.get(); // Reset the write offset to the end of the file.
+  offset_ = *size; // Reset the write offset to the end of the file.
   state_ = FileState::OPEN;
   return Status::OK();
 }

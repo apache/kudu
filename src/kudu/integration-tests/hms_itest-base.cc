@@ -50,6 +50,7 @@ using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::hms::HmsClient;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
@@ -118,7 +119,7 @@ Status HmsITestHarness::CreateKuduTable(const string& database_name,
 Status HmsITestHarness::CreateHmsTable(const string& database_name,
                                        const string& table_name,
                                        const string& table_type,
-                                       const boost::optional<const string&>& kudu_table_name) {
+                                       const optional<string>& kudu_table_name) {
   hive::Table hms_table;
   hms_table.dbName = database_name;
   hms_table.tableName = table_name;
@@ -201,7 +202,7 @@ Status HmsITestHarness::AlterHmsTableExternalPurge(const string& database_name,
 
 void HmsITestHarness::CheckTable(const string& database_name,
                                  const string& table_name,
-                                 const boost::optional<const string&>& user,
+                                 const optional<string>& user,
                                  const unique_ptr<ExternalMiniCluster>& cluster,
                                  const shared_ptr<KuduClient>& client,
                                  const string& table_type) {

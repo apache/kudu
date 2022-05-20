@@ -20,9 +20,11 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <queue>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -206,7 +208,7 @@ void DiagnosticsLog::RunThread() {
     if (dump_stacks_now_reason_) {
       what = WakeupType::STACKS;
       reason = std::move(*dump_stacks_now_reason_);
-      dump_stacks_now_reason_ = boost::none;
+      dump_stacks_now_reason_.reset();
     } else if (MonoTime::Now() >= next_log) {
       what = wakeups.top().second;
       reason = "periodic";

@@ -22,15 +22,16 @@
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -69,6 +70,7 @@ DECLARE_bool(materializing_iterator_do_pushdown);
 DECLARE_int32(predicate_effectivess_num_skip_blocks);
 
 using std::map;
+using std::optional;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -297,7 +299,7 @@ void TestMerge(const Schema& schema,
     vector<int64_t> ints;
     vector<uint8_t> is_deleted;
     unique_ptr<SelectionVector> sv;
-    boost::optional<pair<string, string>> encoded_bounds;
+    optional<pair<string, string>> encoded_bounds;
   };
 
   vector<List> all_ints;
@@ -311,8 +313,8 @@ void TestMerge(const Schema& schema,
     List list(FLAGS_num_rows);
     unordered_set<int64_t> seen_this_list;
 
-    boost::optional<int64_t> min_entry;
-    boost::optional<int64_t> max_entry;
+    optional<int64_t> min_entry;
+    optional<int64_t> max_entry;
     if (overlapping_ranges) {
       entry = 0;
     }
@@ -390,8 +392,8 @@ void TestMerge(const Schema& schema,
       DCHECK(max_entry);
       min_entry = *min_entry - prng.Uniform(5);
       max_entry = *max_entry + prng.Uniform(5);
-      encoder.Encode(&(min_entry.get()), &list.encoded_bounds->first);
-      encoder.Encode(&(max_entry.get()), &list.encoded_bounds->second);
+      encoder.Encode(&(*min_entry), &list.encoded_bounds->first);
+      encoder.Encode(&(*max_entry), &list.encoded_bounds->second);
     }
     all_ints.emplace_back(std::move(list));
   }

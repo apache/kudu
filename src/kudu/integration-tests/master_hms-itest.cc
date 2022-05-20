@@ -20,11 +20,11 @@
 #include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
@@ -49,14 +49,14 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::none;
-using boost::optional;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::hms::HmsClient;
 using kudu::transactions::TxnSystemClient;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -101,60 +101,60 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     return harness_.StopHms(cluster_);
   }
 
-  Status CreateDatabase(const std::string& database_name) {
+  Status CreateDatabase(const string& database_name) {
     return harness_.CreateDatabase(database_name);
   }
 
-  Status CreateKuduTable(const std::string& database_name,
-                         const std::string& table_name,
+  Status CreateKuduTable(const string& database_name,
+                         const string& table_name,
                          MonoDelta timeout = {}) {
     return HmsITestHarness::CreateKuduTable(database_name, table_name, client_, timeout);
   }
 
-  Status CreateHmsTable(const std::string& database_name,
-                        const std::string& table_name,
-                        const std::string& table_type = hms::HmsClient::kManagedTable,
-                        const boost::optional<const std::string&>& kudu_table_name = boost::none) {
+  Status CreateHmsTable(const string& database_name,
+                        const string& table_name,
+                        const string& table_type = hms::HmsClient::kManagedTable,
+                        const optional<string>& kudu_table_name = nullopt) {
     return harness_.CreateHmsTable(database_name, table_name, table_type, kudu_table_name);
   }
 
-  Status RenameHmsTable(const std::string& database_name,
-                        const std::string& old_table_name,
-                        const std::string& new_table_name) {
+  Status RenameHmsTable(const string& database_name,
+                        const string& old_table_name,
+                        const string& new_table_name) {
     return harness_.RenameHmsTable(database_name, old_table_name, new_table_name);
   }
 
-  Status ChangeHmsOwner(const std::string& database_name,
-                        const std::string& table_name,
-                        const std::string& new_table_owner) {
+  Status ChangeHmsOwner(const string& database_name,
+                        const string& table_name,
+                        const string& new_table_owner) {
     return harness_.ChangeHmsOwner(database_name, table_name, new_table_owner);
   }
 
-  Status ChangeHmsTableComment(const std::string& database_name,
-                               const std::string& table_name,
-                               const std::string& new_table_comment) {
+  Status ChangeHmsTableComment(const string& database_name,
+                               const string& table_name,
+                               const string& new_table_comment) {
     return harness_.ChangeHmsTableComment(database_name, table_name, new_table_comment);
   }
 
-  Status AlterHmsTableDropColumns(const std::string& database_name,
-                                  const std::string& table_name) {
+  Status AlterHmsTableDropColumns(const string& database_name,
+                                  const string& table_name) {
     return harness_.AlterHmsTableDropColumns(database_name, table_name);
   }
 
-  Status AlterHmsTableExternalPurge(const std::string& database_name,
-                                    const std::string& table_name) {
+  Status AlterHmsTableExternalPurge(const string& database_name,
+                                    const string& table_name) {
     return harness_.AlterHmsTableExternalPurge(database_name, table_name);
   }
 
-  void CheckTable(const std::string& database_name,
-                  const std::string& table_name,
-                  const boost::optional<const std::string&>& user,
-                  const std::string& table_type = hms::HmsClient::kManagedTable) {
+  void CheckTable(const string& database_name,
+                  const string& table_name,
+                  const optional<string>& user,
+                  const string& table_type = hms::HmsClient::kManagedTable) {
     harness_.CheckTable(database_name, table_name, user, cluster_, client_, table_type);
   }
 
-  void CheckTableDoesNotExist(const std::string& database_name,
-                              const std::string& table_name) {
+  void CheckTableDoesNotExist(const string& database_name,
+                              const string& table_name) {
     harness_.CheckTableDoesNotExist(database_name, table_name, client_);
   }
 
@@ -204,7 +204,7 @@ TEST_F(MasterHmsTest, TestCreateTable) {
   // Drop the HMS entry and create the table through Kudu.
   ASSERT_OK(harness_.hms_client()->DropTable(hms_database_name, hms_table_name));
   ASSERT_OK(CreateKuduTable(hms_database_name, hms_table_name));
-  NO_FATALS(CheckTable(hms_database_name, hms_table_name, /*user=*/none));
+  NO_FATALS(CheckTable(hms_database_name, hms_table_name, /*user=*/nullopt));
 
   // Create an external table in the HMS and validate it's not created Kudu side.
   const char* external_table_name = "externalTable";
@@ -225,14 +225,14 @@ TEST_F(MasterHmsTest, TestCreateTable) {
     // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
     ASSERT_OK(CreateKuduTable(hms_database_name, "foo"));
   });
-  NO_FATALS(CheckTable(hms_database_name, "foo", /*user=*/none));
+  NO_FATALS(CheckTable(hms_database_name, "foo", /*user=*/nullopt));
 }
 
 TEST_F(MasterHmsTest, TestRenameTable) {
   // Create the database and Kudu table.
   ASSERT_OK(CreateDatabase("db"));
   ASSERT_OK(CreateKuduTable("db", "a"));
-  NO_FATALS(CheckTable("db", "a", /*user=*/none));
+  NO_FATALS(CheckTable("db", "a", /*user=*/nullopt));
 
   // Create a non-Kudu ('external') HMS table entry.
   ASSERT_OK(CreateHmsTable("db", "b", HmsClient::kExternalTable));
@@ -279,13 +279,13 @@ TEST_F(MasterHmsTest, TestRenameTable) {
     // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
     ASSERT_OK(table_alterer->Alter());
   });
-  NO_FATALS(CheckTable("db", "c", /*user=*/ none));
+  NO_FATALS(CheckTable("db", "c", /*user=*/nullopt));
   NO_FATALS(CheckTableDoesNotExist("db", "a"));
 
   // Rename the table through the HMS, and ensure the rename is handled in Kudu.
   ASSERT_OK(RenameHmsTable("db", "c", "d"));
   ASSERT_EVENTUALLY([&] {
-    NO_FATALS(CheckTable("db", "d", /*user=*/ none));
+    NO_FATALS(CheckTable("db", "d", /*user=*/nullopt));
   });
 
   // Check that the two tables still exist.
@@ -305,10 +305,10 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   ASSERT_OK(CreateDatabase("db1"));
   ASSERT_OK(CreateDatabase("db2"));
   ASSERT_OK(CreateKuduTable("db1", "t1"));
-  NO_FATALS(CheckTable("db1", "t1", /*user=*/ none));
+  NO_FATALS(CheckTable("db1", "t1", /*user=*/ nullopt));
   table_alterer.reset(client_->NewTableAlterer("db1.t1"));
   ASSERT_OK(table_alterer->RenameTo("db2.t2")->Alter());
-  NO_FATALS(CheckTable("db2", "t2", /*user=*/ none));
+  NO_FATALS(CheckTable("db2", "t2", /*user=*/ nullopt));
   NO_FATALS(CheckTableDoesNotExist("db1", "t1"));
   NO_FATALS(CheckTableDoesNotExist("db1", "t2"));
 }
@@ -316,7 +316,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
 TEST_F(MasterHmsTest, TestAlterTableOwner) {
   // Create the Kudu table.
   ASSERT_OK(CreateKuduTable("default", "userTable"));
-  NO_FATALS(CheckTable("default", "userTable", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "userTable", /*user=*/ nullopt));
 
   // Change the owner through the HMS, and ensure the owner is handled in Kudu.
   const string user_a = "user_a";
@@ -337,13 +337,13 @@ TEST_F(MasterHmsTest, TestAlterTableOwner) {
 TEST_F(MasterHmsTest, TestAlterTableComment) {
   // Create the Kudu table.
   ASSERT_OK(CreateKuduTable("default", "commentTable"));
-  NO_FATALS(CheckTable("default", "commentTable", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "commentTable", /*user=*/ nullopt));
 
   // Change the table comment through the HMS, and ensure the comment is handled in Kudu.
   const string comment_a = "comment a";
   ASSERT_OK(ChangeHmsTableComment("default", "commentTable", comment_a));
   ASSERT_EVENTUALLY([&] {
-    NO_FATALS(CheckTable("default", "commentTable", /*user=*/ none));
+    NO_FATALS(CheckTable("default", "commentTable", /*user=*/nullopt));
   });
 
   // Change the table comment through Kudu, and ensure the comment is reflected in HMS.
@@ -351,14 +351,14 @@ TEST_F(MasterHmsTest, TestAlterTableComment) {
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("default.commentTable"));
   ASSERT_OK(table_alterer->SetComment(comment_b)->Alter());
   ASSERT_EVENTUALLY([&] {
-    NO_FATALS(CheckTable("default", "commentTable", /*user=*/ none));
+    NO_FATALS(CheckTable("default", "commentTable", /*user=*/ nullopt));
   });
 }
 
 TEST_F(MasterHmsTest, TestAlterTable) {
   // Create the Kudu table.
   ASSERT_OK(CreateKuduTable("default", "a"));
-  NO_FATALS(CheckTable("default", "a", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "a", /*user=*/ nullopt));
 
   // Alter the HMS table entry in a destructive way (remove all columns).
   ASSERT_OK(AlterHmsTableDropColumns("default", "a"));
@@ -366,25 +366,25 @@ TEST_F(MasterHmsTest, TestAlterTable) {
   // Drop a column in Kudu. This should correct the entire set of columns in the HMS.
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("default.a"));
   ASSERT_OK(table_alterer->DropColumn("int8_val")->Alter());
-  NO_FATALS(CheckTable("default", "a", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "a", /*user=*/ nullopt));
 
   // Alter a column comment in Kudu. This should be reflected in the HMS.
   unique_ptr<KuduTableAlterer> comment_alterer(client_->NewTableAlterer("default.a"));
   comment_alterer->AlterColumn("key")->Comment("");
   comment_alterer->AlterColumn("int16_val")->Comment("A new comment");
   ASSERT_OK(comment_alterer->Alter());
-  NO_FATALS(CheckTable("default", "a", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "a", /*user=*/ nullopt));
 
   // Create the Kudu table and alter the HMS entry to be an external table
   // with `external.table.purge = true`, then alter it in the HMS and ensure
   // the Kudu table is actually altered.
   ASSERT_OK(CreateKuduTable("default", "b"));
   ASSERT_OK(AlterHmsTableExternalPurge("default", "b"));
-  NO_FATALS(CheckTable("default", "b", /*user=*/ none, hms::HmsClient::kExternalTable));
+  NO_FATALS(CheckTable("default", "b", /*user=*/ nullopt, hms::HmsClient::kExternalTable));
   unique_ptr<KuduTableAlterer> comment_alterer_b(client_->NewTableAlterer("default.b"));
   comment_alterer_b->AlterColumn("int16_val")->Comment("Another comment");
   ASSERT_OK(comment_alterer_b->Alter());
-  NO_FATALS(CheckTable("default", "b", /*user=*/ none, hms::HmsClient::kExternalTable));
+  NO_FATALS(CheckTable("default", "b", /*user=*/ nullopt, hms::HmsClient::kExternalTable));
 
   // Shutdown the HMS and try to alter the table.
   ASSERT_OK(StopHms());
@@ -398,7 +398,7 @@ TEST_F(MasterHmsTest, TestAlterTable) {
     // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
     ASSERT_OK(table_alterer->Alter());
   });
-  NO_FATALS(CheckTable("default", "a", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "a", /*user=*/ nullopt));
 
   // Only alter the table in Kudu, the corresponding table in the HMS will not be altered.
   table_alterer.reset(client_->NewTableAlterer("default.a")->RenameTo("default.c")
@@ -414,7 +414,7 @@ TEST_F(MasterHmsTest, TestAlterTable) {
 TEST_F(MasterHmsTest, TestDeleteTable) {
   // Create a Kudu table, then drop it from Kudu and ensure the HMS entry is removed.
   ASSERT_OK(CreateKuduTable("default", "a"));
-  NO_FATALS(CheckTable("default", "a", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "a", /*user=*/ nullopt));
   hive::Table hms_table;
   ASSERT_OK(harness_.hms_client()->GetTable("default", "a", &hms_table));
 
@@ -423,7 +423,7 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
 
   // Create the Kudu table, then drop it from the HMS, and ensure the Kudu table is deleted.
   ASSERT_OK(CreateKuduTable("default", "b"));
-  NO_FATALS(CheckTable("default", "b", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "b", /*user=*/ nullopt));
   hive::Table hms_table_b;
   ASSERT_OK(harness_.hms_client()->GetTable("default", "b", &hms_table_b));
   shared_ptr<KuduTable> table;
@@ -438,7 +438,7 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   // the Kudu table is deleted.
   ASSERT_OK(CreateKuduTable("default", "b"));
   ASSERT_OK(AlterHmsTableExternalPurge("default", "b"));
-  NO_FATALS(CheckTable("default", "b", /*user=*/ none, hms::HmsClient::kExternalTable));
+  NO_FATALS(CheckTable("default", "b", /*user=*/ nullopt, hms::HmsClient::kExternalTable));
   shared_ptr<KuduTable> table2;
   ASSERT_OK(client_->OpenTable("default.b", &table2));
   ASSERT_OK(harness_.hms_client()->DropTable("default", "b"));
@@ -448,12 +448,12 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
 
   // Ensure that dropping a table while the HMS is unreachable fails.
   ASSERT_OK(CreateKuduTable("default", "c"));
-  NO_FATALS(CheckTable("default", "c", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "c", /*user=*/ nullopt));
   ASSERT_OK(StopHms());
   Status s = client_->DeleteTable("default.c");
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
   ASSERT_OK(StartHms());
-  NO_FATALS(CheckTable("default", "c", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "c", /*user=*/ nullopt));
   ASSERT_EVENTUALLY([&] {
     // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
     ASSERT_OK(client_->DeleteTable("default.c"));
@@ -463,7 +463,7 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   // Create a Kudu table, then only drop it from Kudu. Ensure the HMS
   // entry is not removed.
   ASSERT_OK(CreateKuduTable("default", "d"));
-  NO_FATALS(CheckTable("default", "d", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "d", /*user=*/ nullopt));
   hive::Table hms_table_d;
   ASSERT_OK(harness_.hms_client()->GetTable("default", "d", &hms_table_d));
   ASSERT_OK(client_->DeleteTableInCatalogs("default.d", false));
@@ -479,14 +479,14 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
 TEST_F(MasterHmsTest, TestNotificationLogListener) {
   // Create a Kudu table.
   ASSERT_OK(CreateKuduTable("default", "a"));
-  NO_FATALS(CheckTable("default", "a", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "a", /*user=*/ nullopt));
 
   // Rename the table in the HMS, and ensure that the notification log listener
   // detects the rename and updates the Kudu catalog accordingly.
   ASSERT_OK(RenameHmsTable("default", "a", "b"));
   ASSERT_EVENTUALLY([&] {
     NO_FATALS({
-      CheckTable("default", "b", /*user=*/ none);
+      CheckTable("default", "b", /*user=*/ nullopt);
       CheckTableDoesNotExist("default", "a");
     });
   });
@@ -504,10 +504,10 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
   unique_ptr<KuduTableAlterer> table_alterer;
   table_alterer.reset(client_->NewTableAlterer("default.a")->RenameTo("default.b"));
   ASSERT_OK(table_alterer->Alter());
-  NO_FATALS(CheckTable("default", "b", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "b", /*user=*/ nullopt));
   table_alterer.reset(client_->NewTableAlterer("default.b")->RenameTo("default.a"));
   ASSERT_OK(table_alterer->Alter());
-  NO_FATALS(CheckTable("default", "a", /*user=*/ none));
+  NO_FATALS(CheckTable("default", "a", /*user=*/ nullopt));
 
 
   // Ensure that Kudu can rename a table just after it's been renamed through the HMS.
@@ -539,14 +539,14 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
   // with `external.table.purge = true`.
   ASSERT_OK(CreateKuduTable("default", "d"));
   ASSERT_OK(AlterHmsTableExternalPurge("default", "d"));
-  NO_FATALS(CheckTable("default", "d", /*user=*/ none, hms::HmsClient::kExternalTable));
+  NO_FATALS(CheckTable("default", "d", /*user=*/ nullopt, hms::HmsClient::kExternalTable));
 
   // Rename the table in the HMS, and ensure that the notification log listener
   // detects the rename and updates the Kudu catalog accordingly.
   ASSERT_OK(RenameHmsTable("default", "d", "e"));
   ASSERT_EVENTUALLY([&] {
   NO_FATALS({
-      CheckTable("default", "e", /*user=*/ none, hms::HmsClient::kExternalTable);
+      CheckTable("default", "e", /*user=*/ nullopt, hms::HmsClient::kExternalTable);
       CheckTableDoesNotExist("default", "d");
     });
   });
@@ -654,9 +654,9 @@ TEST_F(MasterHmsTest, TestIgnoreOtherClusterIds) {
 
 TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {
   ASSERT_OK(CreateKuduTable("default", "MyTable"));
-  NO_FATALS(CheckTable("default", "MyTable", /*user=*/none));
-  NO_FATALS(CheckTable("default", "mytable", /*user=*/none));
-  NO_FATALS(CheckTable("default", "MYTABLE", /*user=*/none));
+  NO_FATALS(CheckTable("default", "MyTable", /*user=*/nullopt));
+  NO_FATALS(CheckTable("default", "mytable", /*user=*/nullopt));
+  NO_FATALS(CheckTable("default", "MYTABLE", /*user=*/nullopt));
 
   // Kudu table schema lookups should be case-insensitive.
   for (const auto& name : { "default.MyTable",
@@ -683,14 +683,14 @@ TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {
   // Rename the table to something different.
   table_alterer.reset(client_->NewTableAlterer("DEFAULT.MYTABLE"));
   ASSERT_OK(table_alterer->RenameTo("default.T_1/1")->Alter());
-  NO_FATALS(CheckTable("default", "T_1/1", /*user=*/none));
-  NO_FATALS(CheckTable("default", "t_1/1", /*user=*/none));
-  NO_FATALS(CheckTable("DEFAULT", "T_1/1", /*user=*/none));
+  NO_FATALS(CheckTable("default", "T_1/1", /*user=*/nullopt));
+  NO_FATALS(CheckTable("default", "t_1/1", /*user=*/nullopt));
+  NO_FATALS(CheckTable("DEFAULT", "T_1/1", /*user=*/nullopt));
 
   // Rename the table through the HMS.
   ASSERT_OK(RenameHmsTable("default", "T_1/1", "AbC"));
   ASSERT_EVENTUALLY([&] {
-    NO_FATALS(CheckTable("default", "AbC", /*user=*/none));
+    NO_FATALS(CheckTable("default", "AbC", /*user=*/nullopt));
   });
 
   // Listing tables shows the normalized case.

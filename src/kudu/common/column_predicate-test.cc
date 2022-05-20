@@ -22,11 +22,11 @@
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>

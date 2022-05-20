@@ -14,10 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TABLET_REPLICA_LOOKUP_H_
-#define KUDU_TSERVER_TABLET_REPLICA_LOOKUP_H_
+#pragma once
 
-#include <boost/optional/optional_fwd.hpp>
 #include <functional>
 #include <memory>
 #include <string>
@@ -64,5 +62,3 @@ class TabletReplicaLookupIf {
 
 } // namespace tserver
 } // namespace kudu
-
-#endif // KUDU_TSERVER_TABLET_REPLICA_LOOKUP_H_

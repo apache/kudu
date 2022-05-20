@@ -19,12 +19,12 @@
 
 #include <cstdint>
 #include <fstream>  // IWYU pragma: keep
-#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
@@ -67,9 +67,8 @@ using kudu::consensus::REMOVE_PEER;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::rpc::RpcController;
-using std::cerr;
-using std::cout;
-using std::endl;
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -138,7 +137,7 @@ Status DoLeaderStepDown(const string& tablet_id,
                         const string& leader_uuid,
                         const HostPort& leader_hp,
                         LeaderStepDownMode mode,
-                        const boost::optional<string>& new_leader_uuid,
+                        const optional<string>& new_leader_uuid,
                         const MonoDelta& timeout) {
   if (mode == LeaderStepDownMode::ABRUPT && new_leader_uuid) {
     return Status::InvalidArgument(
@@ -153,7 +152,7 @@ Status DoLeaderStepDown(const string& tablet_id,
   req.set_tablet_id(tablet_id);
   req.set_mode(mode);
   if (new_leader_uuid) {
-    req.set_new_leader_uuid(new_leader_uuid.get());
+    req.set_new_leader_uuid(*new_leader_uuid);
   }
 
   RpcController rpc;
@@ -289,7 +288,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
           (is_343_scheme || DoKsckForTablet(master_addresses, tablet_id).ok())) {
         // The leader is the node we intend to remove; make it step down.
         ignore_result(DoLeaderStepDown(tablet_id, orig_leader_uuid, orig_leader_hp,
-                                       LeaderStepDownMode::GRACEFUL, boost::none,
+                                       LeaderStepDownMode::GRACEFUL, nullopt,
                                        client->default_admin_operation_timeout()));
       }
       from_ts_uuid_in_config = true;
@@ -354,7 +353,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
       if (opid.term() == cstate.current_term()) {
         bool cas_failed = false;
         const auto s = DoChangeConfig(master_addresses, tablet_id, from_ts_uuid,
-                                      boost::none, REMOVE_PEER,
+                                      nullopt, REMOVE_PEER,
                                       cstate.committed_config().opid_index(),
                                       &cas_failed);
         if (cas_failed) {
@@ -382,7 +381,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
 Status SetReplace(const client::sp::shared_ptr<client::KuduClient>& client,
                   const string& tablet_id,
                   const string& ts_uuid,
-                  const boost::optional<int64_t>& cas_opid_idx,
+                  const optional<int64_t>& cas_opid_idx,
                   bool* cas_failed) {
   // Safely set the 'cas_failed' output parameter to 'false' to cover an earlier
   // return due to an error.
@@ -499,7 +498,7 @@ Status CheckCompleteReplace(const client::sp::shared_ptr<client::KuduClient>& cl
           leader_uuid == ts_uuid && leader_uuid == cstate.leader_uuid()) {
         // The leader is the node we intend to remove; make it step down.
         ignore_result(DoLeaderStepDown(tablet_id, leader_uuid, leader_hp,
-                                       LeaderStepDownMode::GRACEFUL, boost::none,
+                                       LeaderStepDownMode::GRACEFUL, nullopt,
                                        client->default_admin_operation_timeout()));
       }
       break;
@@ -650,9 +649,9 @@ Status GetRpcAddressForTS(const client::sp::shared_ptr<KuduClient>& client,
 Status DoChangeConfig(const vector<string>& master_addresses,
                       const string& tablet_id,
                       const string& replica_uuid,
-                      const boost::optional<RaftPeerPB::MemberType>& member_type,
+                      const optional<RaftPeerPB::MemberType>& member_type,
                       ChangeConfigType cc_type,
-                      const boost::optional<int64_t>& cas_opid_idx,
+                      const optional<int64_t>& cas_opid_idx,
                       bool* cas_failed) {
   if (cas_failed) {
     *cas_failed = false;
@@ -718,7 +717,7 @@ Status DoChangeConfig(const vector<string>& master_addresses,
 // is less fragile than the string matching required to use GetFlags with old
 // versions.
 Status Is343SchemeCluster(const vector<string>& master_addresses,
-                          const boost::optional<string>& tablet_id_in,
+                          const optional<string>& tablet_id_in,
                           bool* is_343_scheme) {
   client::sp::shared_ptr<client::KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));

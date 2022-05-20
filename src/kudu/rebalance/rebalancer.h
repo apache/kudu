@@ -18,13 +18,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <random>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/rebalance/cluster_status.h"
 #include "kudu/util/status.h"
@@ -153,7 +152,7 @@ class Rebalancer {
     std::string tablet_uuid;
     std::string ts_uuid_from;
     std::string ts_uuid_to;
-    boost::optional<int64_t> config_opid_idx; // for CAS-enabled Raft changes
+    std::optional<int64_t> config_opid_idx; // for CAS-enabled Raft changes
   };
 
   enum class RunStatus {
@@ -204,7 +203,7 @@ class Rebalancer {
 
   struct TabletInfo {
     std::string tablet_id;
-    boost::optional<int64_t> config_idx;  // For CAS-like change of Raft configs.
+    std::optional<int64_t> config_idx;  // For CAS-like change of Raft configs.
   };
 
   // Mapping tserver UUID to tablets on it.

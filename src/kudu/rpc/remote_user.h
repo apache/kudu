@@ -16,10 +16,9 @@
 // under the License.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <utility>
-
-#include <boost/optional/optional.hpp>
 
 namespace kudu {
 namespace rpc {
@@ -49,7 +48,7 @@ class RemoteUser {
 
   const std::string& username() const { return username_; }
 
-  boost::optional<std::string> principal() const {
+  std::optional<std::string> principal() const {
     return principal_;
   }
 
@@ -63,11 +62,11 @@ class RemoteUser {
   void SetUnauthenticated(std::string username) {
     authenticated_by_ = UNAUTHENTICATED;
     username_ = std::move(username);
-    principal_ = boost::none;
+    principal_.reset();
   }
 
   void SetAuthenticatedByClientCert(std::string username,
-                                    boost::optional<std::string> principal) {
+                                    std::optional<std::string> principal) {
     authenticated_by_ = CLIENT_CERT;
     username_ = std::move(username);
     principal_ = std::move(principal);
@@ -76,7 +75,7 @@ class RemoteUser {
   void SetAuthenticatedByToken(std::string username) {
     authenticated_by_ = AUTHN_TOKEN;
     username_ = std::move(username);
-    principal_ = boost::none;
+    principal_.reset();
   }
 
   // Returns a string representation of the object.
@@ -90,7 +89,7 @@ class RemoteUser {
 
   // The full principal of the remote user. This is only set in the
   // case of a strong-authenticated user.
-  boost::optional<std::string> principal_;
+  std::optional<std::string> principal_;
 
   Method authenticated_by_ = UNAUTHENTICATED;
 };

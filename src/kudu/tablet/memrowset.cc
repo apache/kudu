@@ -18,11 +18,12 @@
 #include "kudu/tablet/memrowset.h"
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include <boost/none_t.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -97,8 +98,8 @@ Status MemRowSet::Create(int64_t id,
                          shared_ptr<MemTracker> parent_tracker,
                          shared_ptr<MemRowSet>* mrs) {
   auto local_mrs(MemRowSet::make_shared(
-      id, schema, /*txn_id*/boost::none, /*txn_metadata*/nullptr, log_anchor_registry,
-      std::move(parent_tracker)));
+      id, schema, /*txn_id*/std::nullopt, /*txn_metadata*/nullptr,
+      log_anchor_registry, std::move(parent_tracker)));
   *mrs = std::move(local_mrs);
   return Status::OK();
 }
@@ -111,7 +112,7 @@ Status MemRowSet::Create(int64_t id,
                          shared_ptr<MemTracker> parent_tracker,
                          shared_ptr<MemRowSet>* mrs) {
   auto local_mrs(MemRowSet::make_shared(
-      id, schema, boost::make_optional(txn_id), std::move(txn_metadata), log_anchor_registry,
+      id, schema, std::make_optional(txn_id), std::move(txn_metadata), log_anchor_registry,
       std::move(parent_tracker)));
   *mrs = std::move(local_mrs);
   return Status::OK();
@@ -120,7 +121,7 @@ Status MemRowSet::Create(int64_t id,
 
 MemRowSet::MemRowSet(int64_t id,
                      const Schema& schema,
-                     boost::optional<int64_t> txn_id,
+                     std::optional<int64_t> txn_id,
                      scoped_refptr<TxnMetadata> txn_metadata,
                      LogAnchorRegistry* log_anchor_registry,
                      shared_ptr<MemTracker> parent_tracker)
@@ -319,11 +320,11 @@ Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, const IOContext* 
   return Status::OK();
 }
 
-MemRowSet::Iterator *MemRowSet::NewIterator(const RowIteratorOptions& opts) const {
+MemRowSet::Iterator* MemRowSet::NewIterator(const RowIteratorOptions& opts) const {
   return new MemRowSet::Iterator(shared_from_this(), tree_.NewIterator(), opts);
 }
 
-MemRowSet::Iterator *MemRowSet::NewIterator() const {
+MemRowSet::Iterator* MemRowSet::NewIterator() const {
   // TODO(todd): can we kill this function? should be only used by tests?
   RowIteratorOptions opts;
   opts.projection = &schema();
@@ -454,8 +455,8 @@ Status MemRowSet::Iterator::Init(ScanSpec *spec) {
   }
 
   if (spec && spec->exclusive_upper_bound_key()) {
-    const Slice &upper_bound = spec->exclusive_upper_bound_key()->encoded_key();
-    exclusive_upper_bound_.reset(upper_bound);
+    exclusive_upper_bound_.emplace(
+        spec->exclusive_upper_bound_key()->encoded_key());
   }
 
   state_ = kScanning;
@@ -465,7 +466,7 @@ Status MemRowSet::Iterator::Init(ScanSpec *spec) {
 Status MemRowSet::Iterator::SeekAtOrAfter(const Slice &key, bool *exact) {
   DCHECK_NE(state_, kUninitialized) << "not initted";
 
-  if (key.size() > 0) {
+  if (!key.empty()) {
     ConstContiguousRow row_slice(&memrowset_->schema(), key);
     memrowset_->schema().EncodeComparableKey(row_slice, &tmp_buf);
   } else {
@@ -473,12 +474,10 @@ Status MemRowSet::Iterator::SeekAtOrAfter(const Slice &key, bool *exact) {
     tmp_buf.resize(0);
   }
 
-  if (iter_->SeekAtOrAfter(Slice(tmp_buf), exact) ||
-      key.size() == 0) {
+  if (iter_->SeekAtOrAfter(Slice(tmp_buf), exact) || key.empty()) {
     return Status::OK();
-  } else {
-    return Status::NotFound("no match in memrowset");
   }
+  return Status::NotFound("no match in memrowset");
 }
 
 Status MemRowSet::Iterator::NextBlock(RowBlock *dst) {
@@ -703,7 +702,7 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
                                           Mutation** redo_head,
                                           Arena* mutation_arena,
                                           Timestamp* insertion_timestamp) {
-  DCHECK(boost::none == opts_.snap_to_exclude);
+  DCHECK(!opts_.snap_to_exclude);
   DCHECK(redo_head != nullptr);
 
   // Get the row from the MemRowSet. It may have a different schema from the iterator projection.
@@ -713,7 +712,7 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
     // NOTE: we currently only support flushing committed MRSs.
     const auto& txn_meta = memrowset_->txn_metadata();
     CHECK(opts_.snap_to_include.IsCommitted(*txn_meta.get()));
-    CHECK(boost::none != txn_meta->commit_timestamp());
+    CHECK(txn_meta->commit_timestamp());
     *insertion_timestamp = *txn_meta->commit_timestamp();
   } else {
     *insertion_timestamp = src_row.insertion_timestamp();

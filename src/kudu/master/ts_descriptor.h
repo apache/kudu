@@ -19,12 +19,13 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <type_traits>  // IWYU pragma: keep
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -69,7 +70,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
  public:
   static Status RegisterNew(const NodeInstancePB& instance,
                             const ServerRegistrationPB& registration,
-                            const boost::optional<std::string>& location,
+                            const std::optional<std::string>& location,
                             DnsResolver* dns_resolver,
                             std::shared_ptr<TSDescriptor>* desc);
 
@@ -94,7 +95,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Register this tablet server.
   Status Register(const NodeInstancePB& instance,
                   const ServerRegistrationPB& registration,
-                  const boost::optional<std::string>& location,
+                  const std::optional<std::string>& location,
                   DnsResolver* dns_resolver);
 
   const std::string &permanent_uuid() const { return permanent_uuid_; }
@@ -143,7 +144,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Return the number of live replicas (i.e running or bootstrapping).
   // If dimension is none, return the total number of replicas in the tablet server.
   // Otherwise, return the number of replicas in the dimension.
-  int num_live_replicas(const boost::optional<std::string>& dimension = boost::none) const {
+  int num_live_replicas(const std::optional<std::string>& dimension = std::nullopt) const {
     shared_lock<rw_spinlock> l(lock_);
     if (dimension) {
       int32_t num_live_tablets = 0;
@@ -158,7 +159,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Return the location of the tablet server. This returns a safe copy
   // since the location could change at any time if the tablet server
   // re-registers.
-  boost::optional<std::string> location() const {
+  std::optional<std::string> location() const {
     shared_lock<rw_spinlock> l(lock_);
     return location_;
   }
@@ -206,10 +207,10 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   int num_live_replicas_;
 
   // The number of live replicas in each dimension, from the last heartbeat.
-  boost::optional<TabletNumByDimensionMap> num_live_tablets_by_dimension_;
+  std::optional<TabletNumByDimensionMap> num_live_tablets_by_dimension_;
 
   // The tablet server's location, as determined by the master at registration.
-  boost::optional<std::string> location_;
+  std::optional<std::string> location_;
 
   std::unique_ptr<ServerRegistrationPB> registration_;
 

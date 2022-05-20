@@ -21,13 +21,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <tuple>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -837,14 +837,14 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
   // 'col_idx'. If 'val' is unset, deletes the row.
   auto mutate_row = [&](rowid_t row_idx,
                         size_t col_idx,
-                        boost::optional<uint32_t> val) {
+                        std::optional<uint32_t> val) {
     // Build the mutation.
     faststring buf;
     RowChangeListEncoder enc(&buf);
     if (val) {
       enc.AddColumnUpdate(schema_.column(col_idx),
                           schema_.column_id(col_idx),
-                          val.get_ptr());
+                          &(*val));
     } else {
       enc.SetToDelete();
     }
@@ -893,7 +893,7 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
   NO_FATALS(maybe_flush_compact());
   NO_FATALS(mutate_row(3, 1, 400)); // ts 4
   NO_FATALS(maybe_flush_compact());
-  NO_FATALS(mutate_row(3, 1, boost::none)); // ts 5
+  NO_FATALS(mutate_row(3, 1, std::nullopt)); // ts 5
   NO_FATALS(maybe_flush_compact());
 
   // Run the diff scan test on every permutation of time bounds.

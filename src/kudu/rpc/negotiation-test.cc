@@ -26,13 +26,14 @@
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -101,6 +102,8 @@ using kudu::security::TlsContext;
 using kudu::security::TokenSigner;
 using kudu::security::TokenSigningPrivateKey;
 using kudu::security::TokenVerifier;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -216,7 +219,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
     ASSERT_OK(token_signer.AddKey(std::move(key)));
   }
   TokenVerifier token_verifier;
-  boost::optional<SignedTokenPB> authn_token;
+  optional<SignedTokenPB> authn_token;
   if (desc.client.token) {
     authn_token = SignedTokenPB();
     security::TokenPB token;
@@ -1050,7 +1053,7 @@ static void RunGSSAPINegotiationClient(unique_ptr<Socket> conn,
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(conn), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL,
+                                       nullopt, RpcEncryption::OPTIONAL,
                                        /* encrypt_loopback */ false, "kudu");
   client_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(client_negotiation.EnableGSSAPI());
@@ -1226,7 +1229,7 @@ static void RunTimeoutNegotiationClient(unique_ptr<Socket> sock) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(sock), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL,
+                                       nullopt, RpcEncryption::OPTIONAL,
                                        /* encrypt_loopback */ false, "kudu");
   CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
@@ -1262,7 +1265,7 @@ static void RunTimeoutExpectingClient(unique_ptr<Socket> socket) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(socket), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL,
+                                       nullopt, RpcEncryption::OPTIONAL,
                                        /* encrypt_loopback */ false, "kudu");
   CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   Status s = client_negotiation.Negotiate();

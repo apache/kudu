@@ -21,12 +21,12 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -310,7 +310,7 @@ Status ClearLocalSystemCatalogAndCopy(const HostPort& src_hp) {
   RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, SysCatalogTable::kSysCatalogTabletId, &meta));
   RETURN_NOT_OK(TSTabletManager::DeleteTabletData(
       meta, cmeta_manager, TabletDataState::TABLET_DATA_DELETED,
-      /*last_logged_opid*/boost::none));
+      /*last_logged_opid*/std::nullopt));
   LOG(INFO) << "Copying system tablet from " << src_hp.ToString();
   std::shared_ptr<rpc::Messenger> messenger;
   RETURN_NOT_OK(rpc::MessengerBuilder("tablet_copy_client").Build(&messenger));

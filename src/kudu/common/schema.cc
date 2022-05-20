@@ -132,7 +132,7 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
 
   if (col_delta.default_value) {
     const void* value = type_info()->physical_type() == BINARY ?
-                        reinterpret_cast<const void*>(&col_delta.default_value.get()) :
+                        reinterpret_cast<const void*>(&(*col_delta.default_value)) :
                         reinterpret_cast<const void*>(col_delta.default_value->data());
     write_default_ = std::make_shared<Variant>(type_info()->type(), value);
   }

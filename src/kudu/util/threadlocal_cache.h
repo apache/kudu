@@ -19,9 +19,9 @@
 
 #include "kudu/util/threadlocal.h"
 
-#include <boost/optional/optional.hpp>
 #include <array>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace kudu {
@@ -52,7 +52,10 @@ class ThreadLocalCache {
       auto& p = cache_[idx];
       if (p.first == key) {
         last_hit_ = idx;
-        return p.second.get_ptr();
+        if (p.second) {
+          return &(*p.second);
+        }
+        return nullptr;
       }
     }
     return nullptr;
@@ -69,7 +72,7 @@ class ThreadLocalCache {
     auto& p = cache_[next_slot_++ % kItemCapacity];
     p.second.emplace(std::forward<Args>(args)...);
     p.first = key;
-    return p.second.get_ptr();
+    return &(*p.second);
   }
 
   // Get the the cache instance for this thread, creating it if it has not yet been
@@ -83,7 +86,7 @@ class ThreadLocalCache {
   }
 
  private:
-  using EntryPair = std::pair<Key, boost::optional<T>>;
+  using EntryPair = std::pair<Key, std::optional<T>>;
   std::array<EntryPair, kItemCapacity> cache_;
 
   // The next slot that we will write into. We always modulo this by the capacity

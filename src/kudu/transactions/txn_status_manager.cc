@@ -22,6 +22,7 @@
 #include <functional>
 #include <iterator>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <tuple>
@@ -29,7 +30,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -141,6 +141,8 @@ using kudu::tablet::TabletReplica;
 using kudu::tablet::ParticipantIdsByTxnId;
 using kudu::tserver::ParticipantOpPB;
 using kudu::tserver::TabletServerErrorPB;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::unordered_map;
 using std::vector;
@@ -395,7 +397,7 @@ void CommitTasks::ScheduleBeginAbortTxnWrite() {
         // Clear out these commit tasks so we can start new ones focused on
         // aborting.
         tsm->RemoveCommitTask(txn_id, this);
-        WARN_NOT_OK(tsm->BeginAbortTransaction(txn_id.value(), boost::none, &ts_error),
+        WARN_NOT_OK(tsm->BeginAbortTransaction(txn_id.value(), nullopt, &ts_error),
                     "Error writing to transaction status table");
       } else {
         // It's possible that while we were waiting to be scheduled, a client
@@ -822,7 +824,7 @@ Status TxnStatusManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
 }
 
 Status TxnStatusManager::GetTransaction(int64_t txn_id,
-                                        const boost::optional<string>& user,
+                                        const optional<string>& user,
                                         scoped_refptr<TransactionEntry>* txn,
                                         TabletServerErrorPB* ts_error) const {
   leader_lock_.AssertAcquiredForReading();
@@ -1086,7 +1088,7 @@ Status TxnStatusManager::FinalizeCommitTransaction(
     TabletServerErrorPB* ts_error) {
   leader_lock_.AssertAcquiredForReading();
   scoped_refptr<TransactionEntry> txn;
-  RETURN_NOT_OK(GetTransaction(txn_id, boost::none, &txn, ts_error));
+  RETURN_NOT_OK(GetTransaction(txn_id, nullopt, &txn, ts_error));
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
@@ -1122,7 +1124,7 @@ Status TxnStatusManager::CompleteCommitTransaction(int64_t txn_id) {
   leader_lock_.AssertAcquiredForReading();
   scoped_refptr<TransactionEntry> txn;
   TabletServerErrorPB ts_error;
-  RETURN_NOT_OK(GetTransaction(txn_id, boost::none, &txn, &ts_error));
+  RETURN_NOT_OK(GetTransaction(txn_id, nullopt, &txn, &ts_error));
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
@@ -1157,7 +1159,7 @@ Status TxnStatusManager::FinalizeAbortTransaction(int64_t txn_id) {
   leader_lock_.AssertAcquiredForReading();
   TabletServerErrorPB ts_error;
   scoped_refptr<TransactionEntry> txn;
-  RETURN_NOT_OK(GetTransaction(txn_id, /*user*/boost::none, &txn, &ts_error));
+  RETURN_NOT_OK(GetTransaction(txn_id, /*user*/nullopt, &txn, &ts_error));
 
   TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
   const auto& pb = txn_lock.data().pb;
@@ -1180,7 +1182,7 @@ Status TxnStatusManager::FinalizeAbortTransaction(int64_t txn_id) {
 }
 
 Status TxnStatusManager::BeginAbortTransaction(int64_t txn_id,
-                                               const boost::optional<string>& user,
+                                               const optional<string>& user,
                                                TabletServerErrorPB* ts_error) {
 
   leader_lock_.AssertAcquiredForReading();

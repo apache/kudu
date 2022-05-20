@@ -18,9 +18,8 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/gutil/port.h"
 #include "kudu/hms/hms_client.h"
@@ -61,7 +60,7 @@ class HmsITestHarness {
   Status CreateHmsTable(const std::string& database_name,
                         const std::string& table_name,
                         const std::string& table_type = hms::HmsClient::kManagedTable,
-                        const boost::optional<const std::string&>& kudu_table_name = boost::none);
+                        const std::optional<std::string>& kudu_table_name = std::nullopt);
 
   // Renames a table entry in the HMS catalog.
   Status RenameHmsTable(const std::string& database_name,
@@ -92,7 +91,7 @@ class HmsITestHarness {
   // checks against the logged in user).
   void CheckTable(const std::string& database_name,
                   const std::string& table_name,
-                  const boost::optional<const std::string&>& user,
+                  const std::optional<std::string>& user,
                   const std::unique_ptr<cluster::ExternalMiniCluster>& cluster,
                   const client::sp::shared_ptr<client::KuduClient>& client,
                   const std::string& table_type = hms::HmsClient::kManagedTable);

@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <set>
 #include <string>
@@ -36,7 +37,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
@@ -84,6 +84,8 @@ using std::inserter;
 using std::ostream;
 using std::map;
 using std::pair;
+using std::nullopt;
+using std::optional;
 using std::set;
 using std::shared_ptr;
 using std::sort;
@@ -106,7 +108,7 @@ RebalancerTool::RebalancerTool(const Config& config)
 Status RebalancerTool::PrintStats(ostream& out) {
   // First, report on the current balance state of the cluster.
   ClusterRawInfo raw_info;
-  RETURN_NOT_OK(GetClusterRawInfo(boost::none, &raw_info));
+  RETURN_NOT_OK(GetClusterRawInfo(nullopt, &raw_info));
 
   ClusterInfo ci;
   RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
@@ -165,7 +167,7 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   DCHECK(result_status);
   *result_status = RunStatus::UNKNOWN;
 
-  boost::optional<MonoTime> deadline;
+  optional<MonoTime> deadline;
   if (config_.max_run_time_sec != 0) {
     deadline = MonoTime::Now() + MonoDelta::FromSeconds(config_.max_run_time_sec);
   }
@@ -174,7 +176,7 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   {
     shared_lock<decltype(ksck_lock_)> guard(ksck_lock_);
     RETURN_NOT_OK(KsckResultsToClusterRawInfo(
-        boost::none, ksck_->results(), &raw_info));
+        nullopt, ksck_->results(), &raw_info));
   }
 
   ClusterInfo ci;
@@ -346,7 +348,7 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   return Status::OK();
 }
 
-Status RebalancerTool::KsckResultsToClusterRawInfo(const boost::optional<string>& location,
+Status RebalancerTool::KsckResultsToClusterRawInfo(const optional<string>& location,
                                                    const KsckResults& ksck_info,
                                                    ClusterRawInfo* raw_info) {
   DCHECK(raw_info);
@@ -810,7 +812,7 @@ Status RebalancerTool::RunWith(Runner* runner, RunStatus* result_status) {
   return Status::OK();
 }
 
-Status RebalancerTool::GetClusterRawInfo(const boost::optional<string>& location,
+Status RebalancerTool::GetClusterRawInfo(const optional<string>& location,
                                          ClusterRawInfo* raw_info) {
   RETURN_NOT_OK(RefreshKsckResults());
   shared_lock<decltype(ksck_lock_)> guard(ksck_lock_);
@@ -857,7 +859,7 @@ Status RebalancerTool::RefreshKsckResults() {
 RebalancerTool::BaseRunner::BaseRunner(RebalancerTool* rebalancer,
                                        std::unordered_set<std::string> ignored_tservers,
                                        size_t max_moves_per_server,
-                                       boost::optional<MonoTime> deadline)
+                                       optional<MonoTime> deadline)
     : rebalancer_(rebalancer),
       ignored_tservers_(std::move(ignored_tservers)),
       max_moves_per_server_(max_moves_per_server),
@@ -954,7 +956,7 @@ RebalancerTool::AlgoBasedRunner::AlgoBasedRunner(
     RebalancerTool* rebalancer,
     std::unordered_set<std::string> ignored_tservers,
     size_t max_moves_per_server,
-    boost::optional<MonoTime> deadline)
+    optional<MonoTime> deadline)
     : BaseRunner(rebalancer,
                  std::move(ignored_tservers),
                  max_moves_per_server,
@@ -1300,7 +1302,7 @@ RebalancerTool::IntraLocationRunner::IntraLocationRunner(
     RebalancerTool* rebalancer,
     std::unordered_set<std::string> ignored_tservers,
     size_t max_moves_per_server,
-    boost::optional<MonoTime> deadline,
+    optional<MonoTime> deadline,
     std::string location)
     : AlgoBasedRunner(rebalancer,
                       std::move(ignored_tservers),
@@ -1314,7 +1316,7 @@ RebalancerTool::CrossLocationRunner::CrossLocationRunner(
     std::unordered_set<std::string> ignored_tservers,
     size_t max_moves_per_server,
     double load_imbalance_threshold,
-    boost::optional<MonoTime> deadline)
+    optional<MonoTime> deadline)
     : AlgoBasedRunner(rebalancer,
                       std::move(ignored_tservers),
                       max_moves_per_server,
@@ -1326,7 +1328,7 @@ RebalancerTool::ReplaceBasedRunner::ReplaceBasedRunner(
     RebalancerTool* rebalancer,
     std::unordered_set<std::string> ignored_tservers,
     size_t max_moves_per_server,
-    boost::optional<MonoTime> deadline)
+    optional<MonoTime> deadline)
     : BaseRunner(rebalancer,
                  std::move(ignored_tservers),
                  max_moves_per_server,
@@ -1447,7 +1449,7 @@ bool RebalancerTool::ReplaceBasedRunner::UpdateMovesInProgressStatus(
 Status RebalancerTool::ReplaceBasedRunner::GetNextMovesImpl(
     vector<Rebalancer::ReplicaMove>* replica_moves) {
   ClusterRawInfo raw_info;
-  RETURN_NOT_OK(rebalancer_->GetClusterRawInfo(boost::none, &raw_info));
+  RETURN_NOT_OK(rebalancer_->GetClusterRawInfo(nullopt, &raw_info));
   RETURN_NOT_OK(CheckTabletServers(raw_info));
 
   ClusterInfo ci;
@@ -1511,7 +1513,7 @@ RebalancerTool::PolicyFixer::PolicyFixer(
     RebalancerTool* rebalancer,
     std::unordered_set<std::string> ignored_tservers,
     size_t max_moves_per_server,
-    boost::optional<MonoTime> deadline)
+    optional<MonoTime> deadline)
     : ReplaceBasedRunner(rebalancer,
                          std::move(ignored_tservers),
                          max_moves_per_server,
@@ -1563,7 +1565,7 @@ RebalancerTool::IgnoredTserversRunner::IgnoredTserversRunner(
     RebalancerTool* rebalancer,
     std::unordered_set<std::string> ignored_tservers,
     size_t max_moves_per_server,
-    boost::optional<MonoTime> deadline)
+    optional<MonoTime> deadline)
     : ReplaceBasedRunner(rebalancer,
                          std::move(ignored_tservers),
                          max_moves_per_server,

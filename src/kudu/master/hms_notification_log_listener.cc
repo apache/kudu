@@ -21,12 +21,12 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <rapidjson/error/en.h>
@@ -67,9 +67,9 @@ TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, hidden);
 TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, unsafe);
 TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, runtime);
 
-using boost::optional;
 using rapidjson::Document;
 using rapidjson::Value;
+using std::optional;
 using std::string;
 using std::vector;
 using strings::Substitute;

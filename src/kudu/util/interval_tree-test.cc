@@ -15,28 +15,30 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// All rights reserved.
+#include "kudu/util/interval_tree.h"
+#include "kudu/util/interval_tree-inl.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/interval_tree.h"
-#include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/test_util.h"
 
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::string;
 using std::vector;
@@ -56,21 +58,21 @@ struct IntInterval {
         id(id) {
   }
 
-  // boost::none means infinity.
+  // std::nullopt means infinity.
   // [left,  right] is closed interval.
   // [lower, upper) is half-open interval, so the upper is exclusive.
-  bool Intersects(const boost::optional<int>& lower,
-                  const boost::optional<int>& upper) const {
-    if (lower == boost::none && upper == boost::none) {
+  bool Intersects(const optional<int>& lower,
+                  const optional<int>& upper) const {
+    if (!lower && !upper) {
       //         [left, right]
       //            |     |
       // [-OO,                      +OO)
-    } else if (lower == boost::none) {
+    } else if (!lower) {
       //         [left, right]
       //            |
       // [-OO,    upper)
       if (*upper <= this->left) return false;
-    } else if (upper == boost::none) {
+    } else if (!upper) {
       //         [left, right]
       //                     \
       //                      [lower, +OO)
@@ -132,10 +134,10 @@ struct IntTraits {
     return -compare(b, a);
   }
 
-  static int compare(const boost::optional<int>& a,
+  static int compare(const optional<int>& a,
                      const int b,
                      const EndpointIfNone& type) {
-    if (a == boost::none) {
+    if (!a) {
       return ((POSITIVE_INFINITY == type) ? 1 : -1);
     }
 
@@ -143,7 +145,7 @@ struct IntTraits {
   }
 
   static int compare(const int a,
-                     const boost::optional<int>& b,
+                     const optional<int>& b,
                      const EndpointIfNone& type) {
     return -compare(b, a, type);
   }
@@ -184,8 +186,8 @@ static void FindContainingBruteForce(const vector<IntInterval>& intervals,
 
 // Find any intervals in 'intervals' which intersect 'query_interval' by brute force.
 static void FindIntersectingBruteForce(const vector<IntInterval>& intervals,
-                                       const boost::optional<int>& lower,
-                                       const boost::optional<int>& upper,
+                                       const optional<int>& lower,
+                                       const optional<int>& upper,
                                        vector<IntInterval>* results) {
   for (const IntInterval& i : intervals) {
     if (i.Intersects(lower, upper)) {
@@ -217,8 +219,8 @@ static void VerifyFindContainingPoint(const vector<IntInterval>& all_intervals,
 static void VerifyFindIntersectingInterval(const vector<IntInterval>& all_intervals,
                                            const IntervalTree<IntTraits>& tree,
                                            const IntInterval& query_interval) {
-  const auto& Process = [&] (const boost::optional<int>& lower,
-                             const boost::optional<int>& upper) {
+  const auto& Process = [&] (const optional<int>& lower,
+                             const optional<int>& upper) {
     vector<IntInterval> results;
     tree.FindIntersectingInterval(lower, upper, &results);
     std::sort(results.begin(), results.end(), CompareIntervals);
@@ -231,32 +233,32 @@ static void VerifyFindIntersectingInterval(const vector<IntInterval>& all_interv
 
   {
     // [lower, upper)
-    boost::optional<int> lower = query_interval.left;
-    boost::optional<int> upper = query_interval.right;
+    optional<int> lower = query_interval.left;
+    optional<int> upper = query_interval.right;
     SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=[%d, %d)}", *lower, *upper));
     Process(lower, upper);
   }
 
   {
     // [-OO, upper)
-    boost::optional<int> lower = boost::none;
-    boost::optional<int> upper = query_interval.right;
+    optional<int> lower = nullopt;
+    optional<int> upper = query_interval.right;
     SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=[-OO, %d)}", *upper));
     Process(lower, upper);
   }
 
   {
     // [lower, +OO)
-    boost::optional<int> lower = query_interval.left;
-    boost::optional<int> upper = boost::none;
+    optional<int> lower = query_interval.left;
+    optional<int> upper = nullopt;
     SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=[%d, +OO)}", *lower));
     Process(lower, upper);
   }
 
   {
     // [-OO, +OO)
-    boost::optional<int> lower = query_interval.left;
-    boost::optional<int> upper = boost::none;
+    optional<int> lower = query_interval.left;
+    optional<int> upper = nullopt;
     SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=[-OO, +OO)}"));
     Process(lower, upper);
   }
@@ -402,7 +404,7 @@ TEST_F(TestIntervalTree, TestMultiQuery) {
   // Check the property that, when the batch query points are in sorted order,
   // the results are grouped by interval, and within each interval, sorted by
   // query point. Each interval may have at most two groups.
-  boost::optional<pair<string, int>> prev = boost::none;
+  optional<pair<string, int>> prev = nullopt;
   std::map<string, int> intervals_seen;
   for (int i = 0; i < results_batch.size(); i++) {
     const auto& cur = results_batch[i];

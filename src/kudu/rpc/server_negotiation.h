@@ -20,12 +20,12 @@
 #include <sasl/sasl.h>
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
@@ -223,7 +223,7 @@ class ServerNegotiation {
   std::vector<sasl_callback_t> callbacks_;
   std::unique_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
-  boost::optional<std::string> nonce_;
+  std::optional<std::string> nonce_;
 
   // TLS state.
   const security::TlsContext* tls_context_;

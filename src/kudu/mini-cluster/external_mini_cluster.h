@@ -23,13 +23,13 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -499,7 +499,7 @@ class ExternalMiniCluster : public MiniCluster {
   // 'dir_index' is an optional numeric suffix to be added to the default path.
   // If it is not specified, the cluster must be configured to use a single data dir.
   std::string GetDataPath(const std::string& daemon_id,
-                          boost::optional<uint32_t> dir_index = boost::none) const;
+                          std::optional<uint32_t> dir_index = std::nullopt) const;
 
   // Returns paths where 'daemon_id' is expected to store its data, each with a
   // numeric suffix appropriate for 'opts_.num_data_dirs'

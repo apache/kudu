@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -25,7 +26,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -55,8 +55,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::none;
-using boost::optional;
 using kudu::client::KuduClient;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduScanToken;
@@ -85,9 +83,12 @@ using kudu::rpc::UserCredentials;
 using kudu::transactions::TxnSystemClient;
 using std::function;
 using std::move;
+using std::nullopt;
+using std::optional;
 using std::ostream;
 using std::string;
 using std::thread;
+using std::tuple;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
@@ -149,7 +150,7 @@ class MasterAuthzITestHarness {
   virtual ~MasterAuthzITestHarness() {}
 
   static Status GetTableLocationsWithTableId(const string& table_name,
-                                             const optional<const string&>& table_id,
+                                             const optional<string>& table_id,
                                              const unique_ptr<ExternalMiniCluster>& cluster) {
     const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
     std::shared_ptr<MasterServiceProxy> proxy = cluster->master_proxy();
@@ -221,7 +222,7 @@ class MasterAuthzITestHarness {
 
   static Status GetTableLocations(const OperationParams& p,
                                   const unique_ptr<ExternalMiniCluster>& cluster) {
-    return GetTableLocationsWithTableId(p.table_name, /*table_id=*/none, cluster);
+    return GetTableLocationsWithTableId(p.table_name, /*table_id=*/nullopt, cluster);
   }
 
   static Status GetTabletLocations(const OperationParams& p,
@@ -297,10 +298,10 @@ class MasterAuthzITestHarness {
 
   static void CheckTable(const string& database_name,
                          const string& table_name,
-                         const boost::optional<const string&>& /*user*/,
+                         const optional<string>& /*user*/,
                          const unique_ptr<ExternalMiniCluster>& /*cluster*/,
                          const shared_ptr<KuduClient>& client,
-                         const std::string& /*table_type*/ = hms::HmsClient::kManagedTable) {
+                         const string& /*table_type*/ = hms::HmsClient::kManagedTable) {
     SCOPED_TRACE(Substitute("Checking table $0.$1", database_name, table_name));
     shared_ptr<KuduTable> table;
     ASSERT_OK(client->OpenTable(Substitute("$0.$1", database_name, table_name), &table));
@@ -603,7 +604,7 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
   }
 
   Status GetTableLocationsWithTableId(const string& table_name,
-                                      const optional<const string&>& table_id) {
+                                      const optional<string>& table_id) {
     return harness_->GetTableLocationsWithTableId(table_name, table_id, cluster_);
   }
 
@@ -691,21 +692,21 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
     return harness_->GetTabletLocations(p, cluster_);
   }
 
-  Status CreateKuduTable(const std::string& database_name,
-                         const std::string& table_name,
+  Status CreateKuduTable(const string& database_name,
+                         const string& table_name,
                          MonoDelta timeout = {}) {
     return harness_->CreateKuduTable(database_name, table_name, client_, timeout);
   }
 
-  void CheckTable(const std::string& database_name,
-                  const std::string& table_name,
-                  const boost::optional<const std::string&>& user,
-                  const std::string& table_type = hms::HmsClient::kManagedTable) {
+  void CheckTable(const string& database_name,
+                  const string& table_name,
+                  const optional<string>& user,
+                  const string& table_type = hms::HmsClient::kManagedTable) {
     harness_->CheckTable(database_name, table_name, user, cluster_, client_, table_type);
   }
 
-  void CheckTableDoesNotExist(const std::string& database_name,
-                              const std::string& table_name) {
+  void CheckTableDoesNotExist(const string& database_name,
+                              const string& table_name) {
     harness_->CheckTableDoesNotExist(database_name, table_name, client_);
   }
 
@@ -718,7 +719,7 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
   }
 
  protected:
-  std::unique_ptr<MasterAuthzITestHarness> harness_;
+  unique_ptr<MasterAuthzITestHarness> harness_;
 };
 
 class MasterAuthzITest : public MasterAuthzITestBase,
@@ -980,8 +981,8 @@ TEST_P(MasterAuthzITest, TestAlterAndChangeOwner) {
 }
 
 class MasterAuthzOwnerITest : public MasterAuthzITestBase,
-                              public ::testing::WithParamInterface<std::tuple<HarnessEnum,
-                                                                              std::string>> {
+                              public ::testing::WithParamInterface<
+                                  tuple<HarnessEnum, string>> {
  public:
   void SetUp() override {
     NO_FATALS(MasterAuthzITestBase::SetUp());
@@ -1014,7 +1015,7 @@ TEST_P(MasterAuthzOwnerITest, TestMismatchedTable) {
   ASSERT_OK(this->cluster_->CreateClient(nullptr, &client));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client->OpenTable(table_name_a, &table));
-  optional<const string&> table_id_a = table->id();
+  optional<const string> table_id_a = table->id();
 
   // Log back as 'test-user'.
   ASSERT_OK(this->cluster_->kdc()->Kinit(kTestUser));
@@ -1071,7 +1072,7 @@ ostream& operator <<(ostream& out, const AuthzDescriptor& d) {
 
 class TestAuthzTable :
     public MasterAuthzITestBase,
-    public ::testing::WithParamInterface<std::tuple<HarnessEnum, AuthzDescriptor, std::string>> {
+    public ::testing::WithParamInterface<tuple<HarnessEnum, AuthzDescriptor, string>> {
  public:
   void SetUp() override {
     NO_FATALS(MasterAuthzITestBase::SetUp());
@@ -1227,7 +1228,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 class AuthzErrorHandlingTest :
     public MasterAuthzITestBase,
-    public ::testing::WithParamInterface<std::tuple<HarnessEnum, AuthzFuncs>> {
+    public ::testing::WithParamInterface<tuple<HarnessEnum, AuthzFuncs>> {
     // TODO(aserbin): update the test to introduce authz privilege caching
  public:
   void SetUp() override {

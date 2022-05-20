@@ -20,10 +20,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/column_predicate.h"
@@ -58,6 +58,8 @@ using kudu::tablet::WriteOpState;
 using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -231,7 +233,7 @@ Status TxnStatusTablet::VisitTransactions(TransactionsVisitor* visitor) {
 
   // Keep track of the current transaction ID so we know when to start a new
   // transaction.
-  boost::optional<int64_t> prev_txn_id = boost::none;
+  optional<int64_t> prev_txn_id = nullopt;
   TxnStatusEntryPB prev_status_entry_pb;
   vector<ParticipantIdAndPB> prev_participants;
   RowBlockMemory mem;

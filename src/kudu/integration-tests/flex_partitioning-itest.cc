@@ -22,13 +22,13 @@
 #include <cstdint>
 #include <memory>
 #include <ostream>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -57,7 +57,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::none;
 using kudu::client::KuduClient;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduInsert;
@@ -78,6 +77,7 @@ using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
 using kudu::master::MasterErrorPB;
 using kudu::rpc::RpcController;
+using std::nullopt;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -433,7 +433,7 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
                               table_->name(),
                               MonoDelta::FromSeconds(32),
                               master::VOTER_REPLICA,
-                              /*table_id=*/none,
+                              /*table_id=*/nullopt,
                               &table_locations));
 
   vector<string> rows;
@@ -468,7 +468,7 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScanWithPKRange(int lower, int
                               table_->name(),
                               MonoDelta::FromSeconds(32),
                               master::VOTER_REPLICA,
-                              /*table_id=*/none,
+                              /*table_id=*/nullopt,
                               &table_locations));
   vector<string> rows;
 

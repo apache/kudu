@@ -16,8 +16,9 @@
 // under the License.
 #pragma once
 
+#include <optional>
+
 #include <glog/logging.h>
-#include <boost/optional/optional.hpp>
 
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/ref_counted.h"
@@ -32,8 +33,8 @@ namespace tablet {
 class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
  public:
   explicit TxnMetadata(bool aborted = false,
-                       boost::optional<Timestamp> commit_mvcc_op_timestamp = boost::none,
-                       boost::optional<Timestamp> commit_ts = boost::none,
+                       std::optional<Timestamp> commit_mvcc_op_timestamp = std::nullopt,
+                       std::optional<Timestamp> commit_ts = std::nullopt,
                        bool flushed_committed_mrs = false)
       : aborted_(aborted),
         commit_mvcc_op_timestamp_(std::move(commit_mvcc_op_timestamp)),
@@ -51,19 +52,19 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
 
   void set_aborted() {
     std::lock_guard<simple_spinlock> l(lock_);
-    CHECK(boost::none == commit_timestamp_);
+    CHECK(std::nullopt == commit_timestamp_);
     aborted_ = true;
   }
   void set_commit_timestamp(Timestamp commit_ts) {
     std::lock_guard<simple_spinlock> l(lock_);
-    CHECK(boost::none == commit_timestamp_);
+    CHECK(std::nullopt == commit_timestamp_);
     CHECK(!aborted_);
-    CHECK(boost::none != commit_mvcc_op_timestamp_);
+    CHECK(std::nullopt != commit_mvcc_op_timestamp_);
     commit_timestamp_ = commit_ts;
   }
   void set_commit_mvcc_op_timestamp(Timestamp op_ts) {
     std::lock_guard<simple_spinlock> l(lock_);
-    CHECK(boost::none == commit_timestamp_);
+    CHECK(std::nullopt == commit_timestamp_);
     commit_mvcc_op_timestamp_ = op_ts;
   }
 
@@ -71,17 +72,17 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
     std::lock_guard<simple_spinlock> l(lock_);
     return aborted_;
   }
-  boost::optional<Timestamp> commit_timestamp() const {
+  std::optional<Timestamp> commit_timestamp() const {
     std::lock_guard<simple_spinlock> l(lock_);
     return commit_timestamp_;
   }
-  boost::optional<Timestamp> commit_mvcc_op_timestamp() const {
+  std::optional<Timestamp> commit_mvcc_op_timestamp() const {
     std::lock_guard<simple_spinlock> l(lock_);
     return commit_mvcc_op_timestamp_;
   }
 
-  void GetTimestamps(boost::optional<Timestamp>* op_ts,
-                     boost::optional<Timestamp>* commit_ts) const {
+  void GetTimestamps(std::optional<Timestamp>* op_ts,
+                     std::optional<Timestamp>* commit_ts) const {
     std::lock_guard<simple_spinlock> l(lock_);
     *op_ts = commit_mvcc_op_timestamp_;
     *commit_ts = commit_timestamp_;
@@ -115,9 +116,9 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
 
   // If the MVCC op with this timestamp is considered applied, either
   // 'aborted_' is set to true, or 'commit_timestamp_' is set.
-  boost::optional<Timestamp> commit_mvcc_op_timestamp_;
+  std::optional<Timestamp> commit_mvcc_op_timestamp_;
 
-  boost::optional<Timestamp> commit_timestamp_;
+  std::optional<Timestamp> commit_timestamp_;
 
   bool flushed_committed_mrs_;
 };

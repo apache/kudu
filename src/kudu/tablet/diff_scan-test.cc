@@ -19,13 +19,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -41,8 +41,8 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/status.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
 using std::string;

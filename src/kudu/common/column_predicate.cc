@@ -22,8 +22,6 @@
 #include <iterator>
 #include <type_traits>
 
-#include <boost/optional/optional.hpp>
-
 #include "kudu/common/columnblock.h"
 #include "kudu/common/key_util.h"
 #include "kudu/common/rowblock.h"
@@ -119,10 +117,10 @@ ColumnPredicate ColumnPredicate::InBloomFilter(ColumnSchema column,
   return pred;
 }
 
-boost::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema column,
-                                                                 const void* lower,
-                                                                 const void* upper,
-                                                                 Arena* arena) {
+std::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema column,
+                                                               const void* lower,
+                                                               const void* upper,
+                                                               Arena* arena) {
   CHECK(lower != nullptr || upper != nullptr);
 
   if (upper != nullptr) {
@@ -138,12 +136,10 @@ boost::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema co
           // then return an IS NOT NULL predicate, so that null values will be
           // filtered.
           return ColumnPredicate::IsNotNull(move(column));
-        } else {
-          return boost::none;
         }
-      } else {
-        upper = nullptr;
+        return std::nullopt;
       }
+      upper = nullptr;
     } else {
       upper = buf;
     }

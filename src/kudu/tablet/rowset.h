@@ -20,11 +20,11 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -80,11 +80,11 @@ struct RowIteratorOptions {
   MvccSnapshot snap_to_include;
 
   // Ops committed in this snapshot will be ignored in the iteration.
-  // This is stored in a boost::optional so that iterators can ignore it
+  // This is stored in a std::optional so that iterators can ignore it
   // entirely if it is unset (the common case).
   //
-  // Defaults to none.
-  boost::optional<MvccSnapshot> snap_to_exclude;
+  // Defaults to std::nullopt.
+  std::optional<MvccSnapshot> snap_to_exclude;
 
   // Whether iteration should be ordered by primary key. Only relevant to those
   // iterators that deal with primary key order.

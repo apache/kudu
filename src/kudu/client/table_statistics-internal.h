@@ -17,9 +17,8 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"
@@ -33,10 +32,10 @@ using strings::Substitute;
 
 class KuduTableStatistics::Data {
  public:
-  Data(boost::optional<int64_t> on_disk_size,
-       boost::optional<int64_t> live_row_count,
-       boost::optional<int64_t> on_disk_size_limit,
-       boost::optional<int64_t> live_row_count_limit)
+  Data(std::optional<int64_t> on_disk_size,
+       std::optional<int64_t> live_row_count,
+       std::optional<int64_t> on_disk_size_limit,
+       std::optional<int64_t> live_row_count_limit)
       : on_disk_size_(on_disk_size),
         live_row_count_(live_row_count),
         on_disk_size_limit_(on_disk_size_limit),
@@ -58,10 +57,10 @@ class KuduTableStatistics::Data {
 
   }
 
-  const boost::optional<int64_t> on_disk_size_;
-  const boost::optional<int64_t> live_row_count_;
-  const boost::optional<int64_t> on_disk_size_limit_;
-  const boost::optional<int64_t> live_row_count_limit_;
+  const std::optional<int64_t> on_disk_size_;
+  const std::optional<int64_t> live_row_count_;
+  const std::optional<int64_t> on_disk_size_limit_;
+  const std::optional<int64_t> live_row_count_limit_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);

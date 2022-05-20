@@ -17,10 +17,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <memory>
 #include <string>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -81,7 +80,7 @@ class DiagnosticsLog {
   // If a stack dump is triggered externally, holds the reason why.
   // Otherwise, unset.
   // Protected by 'lock_'.
-  boost::optional<std::string> dump_stacks_now_reason_;
+  std::optional<std::string> dump_stacks_now_reason_;
 
   MonoDelta metrics_log_interval_;
 

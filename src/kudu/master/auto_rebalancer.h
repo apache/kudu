@@ -19,11 +19,10 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -85,10 +84,10 @@ class AutoRebalancerTask {
 
   // Collects information about the cluster at the location specified by the
   // 'location' parameter. If there is no location specified (and the parameter
-  // is set to 'boost::none'), information is being collected about the cluster
+  // is set to 'std::nullopt'), information is being collected about the cluster
   // to do cross-location rebalancing.
   Status BuildClusterRawInfo(
-      const boost::optional<std::string>& location,
+      const std::optional<std::string>& location,
       rebalance::ClusterRawInfo* raw_info) const;
 
   // Gets a set of replica moves using the specified rebalancing algorithm and

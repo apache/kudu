@@ -18,13 +18,13 @@
 #include "kudu/master/master_service.h"
 
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -679,7 +679,9 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
     desc->GetNodeInstancePB(entry->mutable_instance_id());
     desc->GetRegistration(entry->mutable_registration());
     entry->set_millis_since_heartbeat(desc->TimeSinceHeartbeat().ToMilliseconds());
-    if (desc->location()) entry->set_location(desc->location().get());
+    if (desc->location()) {
+      entry->set_location(*desc->location());
+    }
 
     // If we need to return states, do so.
     const auto& uuid = desc->permanent_uuid();

@@ -28,11 +28,11 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -86,6 +86,8 @@ DEFINE_string(keytab_file, "",
 TAG_FLAG(keytab_file, stable);
 
 using std::mt19937;
+using std::nullopt;
+using std::optional;
 using std::random_device;
 using std::string;
 using std::uniform_int_distribution;
@@ -463,13 +465,17 @@ Status GetConfiguredPrincipal(const string& in_principal, string* out_principal)
   return Status::OK();
 }
 
-boost::optional<string> GetLoggedInPrincipalFromKeytab() {
-  if (!g_kinit_ctx) return boost::none;
+optional<string> GetLoggedInPrincipalFromKeytab() {
+  if (!g_kinit_ctx) {
+    return nullopt;
+  }
   return g_kinit_ctx->principal_str();
 }
 
-boost::optional<string> GetLoggedInUsernameFromKeytab() {
-  if (!g_kinit_ctx) return boost::none;
+optional<string> GetLoggedInUsernameFromKeytab() {
+  if (!g_kinit_ctx) {
+    return nullopt;
+  }
   return g_kinit_ctx->username_str();
 }
 

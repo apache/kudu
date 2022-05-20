@@ -476,12 +476,12 @@ string ExternalMiniCluster::GetLogPath(const string& daemon_id) const {
 }
 
 string ExternalMiniCluster::GetDataPath(const string& daemon_id,
-                                        boost::optional<uint32_t> dir_index) const {
+                                        std::optional<uint32_t> dir_index) const {
   CHECK(!opts_.cluster_root.empty());
   string data_path = "data";
   if (dir_index) {
     CHECK_LT(*dir_index, opts_.num_data_dirs);
-    data_path = Substitute("$0-$1", data_path, dir_index.get());
+    data_path = Substitute("$0-$1", data_path, *dir_index);
   } else {
     CHECK_EQ(1, opts_.num_data_dirs);
   }

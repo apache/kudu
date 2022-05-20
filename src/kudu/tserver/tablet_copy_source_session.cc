@@ -19,10 +19,11 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <ostream>
+#include <type_traits>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/consensus/consensus.pb.h"
@@ -154,10 +155,12 @@ Status RemoteTabletCopySourceSession::InitOnce() {
   }
 
   // Get the latest opid in the log at this point in time so we can re-anchor.
-  // TODO(mpercy): Do we need special handling for boost::none case?
-  boost::optional<OpId> last_logged_opid =
+  // TODO(mpercy): Do we need special handling for std::nullopt case?
+  std::optional<OpId> last_logged_opid =
       tablet_replica_->consensus()->GetLastOpId(consensus::RECEIVED_OPID);
-  if (!last_logged_opid) last_logged_opid = MinimumOpId();
+  if (!last_logged_opid) {
+    last_logged_opid = MinimumOpId();
+  }
 
   // Get the current segments from the log, including the active segment.
   // The Log doesn't add the active segment to the log reader's list until

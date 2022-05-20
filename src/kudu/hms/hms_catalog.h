@@ -18,10 +18,10 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/port.h"
@@ -73,7 +73,7 @@ class HmsCatalog {
   Status CreateTable(const std::string& id,
                      const std::string& name,
                      const std::string& cluster_id,
-                     const boost::optional<const std::string&>& owner,
+                     const std::optional<std::string>& owner,
                      const Schema& schema,
                      const std::string& comment,
                      const std::string& table_type = hms::HmsClient::kManagedTable)
@@ -105,7 +105,7 @@ class HmsCatalog {
                     const std::string& name,
                     const std::string& new_name,
                     const std::string& cluster_id,
-                    boost::optional<const std::string&> owner,
+                    const std::optional<std::string>& owner,
                     const Schema& schema,
                     const std::string& comment,
                     const bool& check_id = true) WARN_UNUSED_RESULT;
@@ -167,7 +167,7 @@ class HmsCatalog {
   // The table owner will not be overwritten if an owner is not provided.
   static Status PopulateTable(const std::string& id,
                               const std::string& name,
-                              const boost::optional<const std::string&>& owner,
+                              const std::optional<std::string>& owner,
                               const Schema& schema,
                               const std::string& comment,
                               const std::string& cluster_id,
@@ -230,9 +230,9 @@ class HmsCatalog {
   // Protects 'uuid_'.
   simple_spinlock uuid_lock_;
 
-  // The UUID of the remote HMS instance. Will be boost::none if the HMS is
+  // The UUID of the remote HMS instance. Will be std::nullopt if the HMS is
   // down, or if the HMS does not support UUIDs.
-  boost::optional<std::string> uuid_;
+  std::optional<std::string> uuid_;
 };
 
 } // namespace hms

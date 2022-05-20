@@ -28,6 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <set>
@@ -38,7 +39,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -2035,7 +2035,7 @@ TEST_F(TxnOpDispatcherITest, TxnWriteWhileReplicaDeleted) {
     tablet_delete_status = cluster_->mini_tablet_server(0)->server()->
         tablet_manager()->DeleteTablet(tablet_id,
                                        tablet::TABLET_DATA_TOMBSTONED,
-                                       boost::none);
+                                       std::nullopt);
   });
   auto cleanup = MakeScopedCleanup([&]() {
     tablet_deleter.join();

@@ -17,9 +17,9 @@
 
 #include "kudu/common/table_util.h"
 
+#include <optional>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/strings/charset.h"
@@ -57,7 +57,7 @@ Status ParseHiveTableIdentifier(const string& table_name,
                            "0123456789"
                            "_/");
 
-  auto separator_idx = boost::make_optional<int>(false, 0);
+  std::optional<int> separator_idx;
   for (int idx = 0; idx < table_name.size(); idx++) {
     char c = table_name[idx];
     if (!charset.Test(c)) {
@@ -81,7 +81,7 @@ Status ParseHiveTableIdentifier(const string& table_name,
 Status ParseRangerTableIdentifier(const string& table_name,
                                   string* ranger_database,
                                   Slice* ranger_table) {
-  auto separator_idx = boost::make_optional<int>(false, 0);
+  std::optional<int> separator_idx;
   for (int idx = 0; idx < table_name.size(); ++idx) {
     char c = table_name[idx];
     if (c == kSeparator) {

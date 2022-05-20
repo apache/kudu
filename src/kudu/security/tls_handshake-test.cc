@@ -22,11 +22,11 @@
 
 #include <atomic>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -429,12 +429,12 @@ TEST_F(TestTlsHandshake, HandshakeSequenceTLSv1dot3) {
 TEST_F(TestTlsHandshake, TestTlsContextCertTransition) {
   ASSERT_FALSE(server_tls_.has_cert());
   ASSERT_FALSE(server_tls_.has_signed_cert());
-  ASSERT_EQ(boost::none, server_tls_.GetCsrIfNecessary());
+  ASSERT_FALSE(server_tls_.GetCsrIfNecessary().has_value());
 
   ASSERT_OK(server_tls_.GenerateSelfSignedCertAndKey());
   ASSERT_TRUE(server_tls_.has_cert());
   ASSERT_FALSE(server_tls_.has_signed_cert());
-  ASSERT_NE(boost::none, server_tls_.GetCsrIfNecessary());
+  ASSERT_TRUE(server_tls_.GetCsrIfNecessary().has_value());
   ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_NONE, TlsVerificationMode::VERIFY_NONE));
   ASSERT_STR_MATCHES(RunHandshake(TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
                                   TlsVerificationMode::VERIFY_NONE).ToString(),

@@ -18,13 +18,13 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -59,7 +59,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::none;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
@@ -73,17 +72,17 @@ using kudu::itest::TabletServerMap;
 using kudu::master::MasterServiceProxy;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
-
-DECLARE_int32(heartbeat_interval_ms);
-DECLARE_bool(log_preallocate_segments);
-DEFINE_int32(num_test_tablets, 60, "Number of tablets for stress test");
-
+using std::nullopt;
 using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+DECLARE_int32(heartbeat_interval_ms);
+DECLARE_bool(log_preallocate_segments);
+DEFINE_int32(num_test_tablets, 60, "Number of tablets for stress test");
 
 namespace kudu {
 
@@ -257,7 +256,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(0);
-    Status s = catalog->GetTableLocations(&req, &resp, /*user=*/none);
+    Status s = catalog->GetTableLocations(&req, &resp, /*user=*/nullopt);
     ASSERT_STR_CONTAINS(
         s.ToString(),
         "max_returned_locations must be greater than 0 if specified");
@@ -270,7 +269,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(1);
-    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/none));
+    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
     ASSERT_EQ(resp.tablet_locations_size(), 1);
     // empty since it's the first
     ASSERT_EQ(resp.tablet_locations(0).partition().partition_key_start(), "");
@@ -285,7 +284,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(half_tablets);
-    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/none));
+    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
     ASSERT_EQ(half_tablets, resp.tablet_locations_size());
   }
 
@@ -296,7 +295,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(FLAGS_num_test_tablets);
-    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/none));
+    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
     ASSERT_EQ(FLAGS_num_test_tablets, resp.tablet_locations_size());
   }
 
@@ -340,7 +339,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(1);
     req.set_partition_key_start(start_key_middle);
-    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/none));
+    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
     ASSERT_EQ(1, resp.tablet_locations_size())
         << "Response: [" << pb_util::SecureDebugString(resp) << "]";
     ASSERT_EQ(start_key_middle, resp.tablet_locations(0).partition().partition_key_start());

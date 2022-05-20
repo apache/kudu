@@ -19,9 +19,9 @@
 
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -77,7 +77,7 @@ TEST(TSDescriptorTest, TestRegistration) {
   ASSERT_EQ(uuid, desc->permanent_uuid());
   ASSERT_EQ(0, desc->latest_seqno());
   // There is no location as --location_mapping_cmd is unset by default.
-  ASSERT_EQ(boost::none, desc->location());
+  ASSERT_FALSE(desc->location().has_value());
   ASSERT_EQ("test (localhost:12345)", desc->ToString());
 }
 

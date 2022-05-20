@@ -20,13 +20,13 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -109,6 +109,7 @@ using kudu::tserver::ParticipantResponsePB;
 using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::WriteRequestPB;
+using std::nullopt;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -802,7 +803,7 @@ TEST_F(TxnParticipantITest, TestProxyTabletNotRunning) {
   ASSERT_OK(leader_replica->consensus()->WaitUntilLeader(kDefaultTimeout));
   auto* tablet_manager = cluster_->mini_tablet_server(kLeaderIdx)->server()->tablet_manager();
   ASSERT_OK(tablet_manager->DeleteTablet(leader_replica->tablet_id(),
-      tablet::TABLET_DATA_TOMBSTONED, boost::none));
+      tablet::TABLET_DATA_TOMBSTONED, nullopt));
 
   auto admin_proxy = cluster_->tserver_admin_proxy(kLeaderIdx);
   for (const auto& op : kCommitSequence) {
@@ -1267,7 +1268,8 @@ TEST_F(TxnParticipantITest, TestTxnSystemClientRetriesWhenReplicaNotFound) {
   // Stop quiescing so proper failover can happen, as we kill each server.
   StopQuiescingServers();
   auto* tablet_manager = cluster_->mini_tablet_server(kLeaderIdx)->server()->tablet_manager();
-  ASSERT_OK(tablet_manager->DeleteTablet(tablet_id, tablet::TABLET_DATA_TOMBSTONED, boost::none));
+  ASSERT_OK(tablet_manager->DeleteTablet(
+      tablet_id, tablet::TABLET_DATA_TOMBSTONED, nullopt));
   ASSERT_EVENTUALLY([&] {
     scoped_refptr<TabletReplica> r;
     ASSERT_TRUE(tablet_manager->LookupTablet(tablet_id, &r));

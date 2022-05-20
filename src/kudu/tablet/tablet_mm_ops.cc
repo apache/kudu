@@ -18,14 +18,14 @@
 #include "kudu/tablet/tablet_mm_ops.h"
 
 #include <mutex>
+#include <optional>
 #include <ostream>
+#include <type_traits>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/common/common.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset.h"

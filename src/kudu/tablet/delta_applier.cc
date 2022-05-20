@@ -17,12 +17,12 @@
 
 #include "kudu/tablet/delta_applier.h"
 
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/column_materialization_context.h"

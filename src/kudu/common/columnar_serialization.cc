@@ -27,6 +27,7 @@
 #include <cstring>
 #include <ostream>
 #include <string> // IWYU pragma: keep
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -584,8 +585,8 @@ void CopySelectedVarlenCellsFromColumn(const ColumnBlock& cblock,
   dst->data.resize_with_extra_capacity(sizeof(offset_type) * new_offset_count);
   offset_type* dst_offset = reinterpret_cast<offset_type*>(dst->data.data()) + initial_offset_count;
   const Slice* src_slices = reinterpret_cast<const Slice*>(cblock.cell_ptr(0));
-  CopySlicesAndWriteEndOffsets(src_slices, sel_rows,
-                               dst_offset, boost::get_pointer(dst->varlen_data));
+  CopySlicesAndWriteEndOffsets(src_slices, sel_rows, dst_offset,
+      dst->varlen_data ? &(*dst->varlen_data) : nullptr);
 }
 
 } // anonymous namespace

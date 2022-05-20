@@ -22,6 +22,7 @@
 #include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -29,7 +30,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -83,6 +83,8 @@ using kudu::tserver::ParticipantOpPB;
 using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::WriteRequestPB;
 using std::map;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -150,7 +152,8 @@ class TxnParticipantTest : public TabletReplicaTestBase {
     ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
   }
 
-  Status Write(int key, boost::optional<int64_t> txn_id = boost::none,
+  Status Write(int key,
+               optional<int64_t> txn_id = nullopt,
                RowOperationsPB::Type type = RowOperationsPB::INSERT) {
     WriteRequestPB req;
     if (txn_id) {
@@ -171,7 +174,7 @@ class TxnParticipantTest : public TabletReplicaTestBase {
   }
 
   Status Delete(int key) {
-    return Write(key, boost::none, RowOperationsPB::DELETE);
+    return Write(key, nullopt, RowOperationsPB::DELETE);
   }
 
   Status CallParticipantOpCheckResp(int64_t txn_id, ParticipantOpPB::ParticipantOpType op_type,
@@ -762,7 +765,7 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, kDummyCommitTimestamp));
   ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   auto txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
-  ASSERT_EQ(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_EQ(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT,
                                        kDummyCommitTimestamp));
   // We should have two anchors: one that lasts until we flush, another that
@@ -771,12 +774,12 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
 
   // We should have an MVCC op timestamp in the metadata, even after
   // restarting.
-  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   const auto orig_mvcc_op_timestamp = *txn_meta->commit_mvcc_op_timestamp();
   txn_meta.reset();
   RestartReplica(/*reset_tablet*/true);
   txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
-  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
 
   // Once we flush, we should drop down to one anchor.
@@ -795,11 +798,11 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
 
   // As another sanity check, we should still have metadata for the MVCC op
   // after restarting.
-  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   txn_meta.reset();
   RestartReplica(/*reset_tablet*/true);
   txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
-  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
 }
 
@@ -807,18 +810,18 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
 TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFinalize) {
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, kDummyCommitTimestamp));
   auto txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
-  ASSERT_EQ(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_EQ(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT,
                                        kDummyCommitTimestamp));
-  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   const auto orig_mvcc_op_timestamp = *txn_meta->commit_mvcc_op_timestamp();
 
   // Restarting shouldn't affect our metadata.
   txn_meta.reset();
   RestartReplica(/*reset_tablet*/true);
   txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
-  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
 
   // We should have two anchors, one that lasts until we flush, another that
@@ -831,7 +834,7 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFinalize) {
   txn_meta.reset();
   RestartReplica(/*reset_tablet*/true);
   txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
-  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_NE(nullopt, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
 
   // One anchor should be gone and another should be registered in its place
@@ -1171,21 +1174,21 @@ TEST_F(TxnParticipantTest, TestUpdateAfterAborting) {
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
   ASSERT_OK(Write(0, kTxnId));
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::ABORT_TXN, -1));
-  Status s = Write(0, boost::none, RowOperationsPB::UPDATE);
+  Status s = Write(0, nullopt, RowOperationsPB::UPDATE);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  ASSERT_OK(Write(0, boost::none, RowOperationsPB::UPDATE_IGNORE));
+  ASSERT_OK(Write(0, nullopt, RowOperationsPB::UPDATE_IGNORE));
   ASSERT_EQ(1, tablet_replica_->tablet()->metrics()->update_ignore_errors->value());
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_EQ(0, tablet_replica_->CountLiveRowsNoFail());
 
-  s = Write(0, boost::none, RowOperationsPB::DELETE);
+  s = Write(0, nullopt, RowOperationsPB::DELETE);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  ASSERT_OK(Write(0, boost::none, RowOperationsPB::DELETE_IGNORE));
+  ASSERT_OK(Write(0, nullopt, RowOperationsPB::DELETE_IGNORE));
   ASSERT_EQ(1, tablet_replica_->tablet()->metrics()->delete_ignore_errors->value());
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_EQ(0, tablet_replica_->CountLiveRowsNoFail());
 
-  ASSERT_OK(Write(0, boost::none, RowOperationsPB::UPSERT));
+  ASSERT_OK(Write(0, nullopt, RowOperationsPB::UPSERT));
   ASSERT_EQ(1, tablet_replica_->CountLiveRowsNoFail());
 }
 

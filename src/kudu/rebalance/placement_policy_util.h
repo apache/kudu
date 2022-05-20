@@ -18,10 +18,9 @@
 
 #include <cstdint>
 #include <string>
+#include <optional>
 #include <unordered_map>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/rebalance/rebalancer.h"
 #include "kudu/util/status.h"
@@ -47,7 +46,7 @@ struct TabletReplicaInfo {
 
 struct TabletInfo {
   std::vector<TabletReplicaInfo> replicas_info;
-  boost::optional<int64_t> config_idx;  // For CAS-like change of Raft configs.
+  std::optional<int64_t> config_idx;  // For CAS-like change of Raft configs.
 };
 
 struct TableInfo {

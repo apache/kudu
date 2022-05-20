@@ -18,12 +18,12 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -113,8 +113,8 @@ TEST_F(TombstonedVotingIMCITest, TestNoVoteAfterShutdown) {
 
   // Tombstone TS1's replica.
   LOG(INFO) << "Tombstoning ts1...";
-  ASSERT_OK(ts_tablet_manager->DeleteTablet(tablet_id, TABLET_DATA_TOMBSTONED,
-                                            boost::none));
+  ASSERT_OK(ts_tablet_manager->DeleteTablet(
+      tablet_id, TABLET_DATA_TOMBSTONED, std::nullopt));
   ASSERT_EQ(TabletStatePB::STOPPED, ts1_replica->state());
 
   scoped_refptr<TabletReplica> ts0_replica;

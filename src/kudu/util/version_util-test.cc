@@ -17,17 +17,18 @@
 
 #include "kudu/util/version_util.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/version_info.h"
 
+using std::nullopt;
 using std::string;
 using std::pair;
 using std::vector;
@@ -36,18 +37,18 @@ namespace kudu {
 
 TEST(VersionUtilTest, TestVersion) {
   const vector<pair<Version, string>> good_test_cases = {
-    { { "0.0.0", 0, 0, 0, boost::none, "" }, "0.0.0" },
-    { { "1.0.0", 1, 0, 0, boost::none, "" }, "1.0.0" },
-    { { "1.1.0", 1, 1, 0, boost::none, "" }, "1.1.0" },
-    { { "1.1.1", 1, 1, 1, boost::none, "" }, "1.1.1" },
-    { { "1.1.1-", 1, 1, 1, boost::none, "" }, "1.1.1" },
+    { { "0.0.0", 0, 0, 0, nullopt, "" }, "0.0.0" },
+    { { "1.0.0", 1, 0, 0, nullopt, "" }, "1.0.0" },
+    { { "1.1.0", 1, 1, 0, nullopt, "" }, "1.1.0" },
+    { { "1.1.1", 1, 1, 1, nullopt, "" }, "1.1.1" },
+    { { "1.1.1-", 1, 1, 1, nullopt, "" }, "1.1.1" },
     { { "1.1.1-0-1-2", 1, 1, 1, '-', "0-1-2" }, "1.1.1-0-1-2" },
     { { "1.10.100-1000.0", 1, 10, 100, '-', "1000.0" }, "1.10.100-1000.0" },
     { { "1.2.3-SNAPSHOT", 1, 2, 3, '-', "SNAPSHOT" }, "1.2.3-SNAPSHOT" },
     { { "1.8.0-x-SNAPSHOT", 1, 8, 0, '-', "x-SNAPSHOT" }, "1.8.0-x-SNAPSHOT" },
     { { "0.1.2-a-b-c-d", 0, 1, 2, '-', "a-b-c-d" }, "0.1.2-a-b-c-d" },
     // no octals: leading zeros are just chopped off
-    { { "00.01.010", 0, 1, 10, boost::none, "" }, "0.1.10" },
+    { { "00.01.010", 0, 1, 10, nullopt, "" }, "0.1.10" },
     { { "  0.1.2----suffix  ", 0, 1, 2, '-', "---suffix" }, "0.1.2----suffix" },
     { { "0.1.2- - -x- -y- ", 0, 1, 2, '-', " - -x- -y-" }, "0.1.2- - -x- -y-" },
     { { "1.11.0.7.0.0.0-SNAPSHOT", 1, 11, 0, '.', "7.0.0.0-SNAPSHOT" }, "1.11.0.7.0.0.0-SNAPSHOT" },

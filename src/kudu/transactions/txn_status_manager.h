@@ -20,12 +20,12 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -385,7 +385,7 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   // to each participant in the transaction. This may not be directly called by
   // a user -- as such, the 'user' field is optional.
   Status BeginAbortTransaction(int64_t txn_id,
-                               const boost::optional<std::string>& user,
+                               const std::optional<std::string>& user,
                                tserver::TabletServerErrorPB* ts_error);
 
   // Writes a record to the TxnStatusManager indicating the given transaction
@@ -478,7 +478,7 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   // transaction. In addition, if the underlying replica isn't a leader,
   // sets the code in 'ts_error' to TabletServerErrorPB::NOT_THE_LEADER
   // correspondingly.
-  Status GetTransaction(int64_t txn_id, const boost::optional<std::string>& user,
+  Status GetTransaction(int64_t txn_id, const std::optional<std::string>& user,
                         scoped_refptr<TransactionEntry>* txn,
                         tserver::TabletServerErrorPB* ts_error) const;
 

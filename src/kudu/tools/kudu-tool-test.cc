@@ -28,15 +28,16 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -155,7 +156,6 @@ DECLARE_string(hive_metastore_uris);
 METRIC_DECLARE_counter(bloom_lookups);
 METRIC_DECLARE_entity(tablet);
 
-using boost::optional;
 using kudu::cfile::CFileWriter;
 using kudu::cfile::StringDataGenerator;
 using kudu::cfile::WriterOptions;
@@ -216,6 +216,8 @@ using std::copy;
 using std::make_pair;
 using std::map;
 using std::max;
+using std::nullopt;
+using std::optional;
 using std::ostringstream;
 using std::pair;
 using std::set;
@@ -2475,11 +2477,11 @@ TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
       &fs, kTestTablet, kTestTableName, kTestTableId,
       kSchemaWithIds, partition.first, partition.second,
       tablet::TABLET_DATA_READY,
-      /*tombstone_last_logged_opid=*/ boost::none,
+      /*tombstone_last_logged_opid=*/ nullopt,
       /*supports_live_row_count=*/ true,
-      /*extra_config=*/ boost::none,
-      /*dimension_label=*/ boost::none,
-      /*table_type=*/ boost::none,
+      /*extra_config=*/ nullopt,
+      /*dimension_label=*/ nullopt,
+      /*table_type=*/ nullopt,
       &meta));
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump data_dirs $0 "
@@ -2516,11 +2518,11 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   TabletMetadata::CreateNew(&fs, kTestTablet, kTestTableName, kTestTableId,
                   kSchemaWithIds, partition.first, partition.second,
                   tablet::TABLET_DATA_READY,
-                  /*tombstone_last_logged_opid=*/ boost::none,
+                  /*tombstone_last_logged_opid=*/ nullopt,
                   /*supports_live_row_count=*/ true,
-                  /*extra_config=*/ boost::none,
-                  /*dimension_label=*/ boost::none,
-                  /*table_type=*/ boost::none,
+                  /*extra_config=*/ nullopt,
+                  /*dimension_label=*/ nullopt,
+                  /*table_type=*/ nullopt,
                   &meta);
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump meta $0 "
@@ -4042,8 +4044,8 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
               tablet_replicas[0]->tablet_metadata()->tablet_data_state());
     optional<OpId> tombstoned_opid =
         tablet_replicas[0]->tablet_metadata()->tombstone_last_logged_opid();
-    ASSERT_NE(boost::none, tombstoned_opid);
-    ASSERT_NE(boost::none, last_logged_opid);
+    ASSERT_NE(nullopt, tombstoned_opid);
+    ASSERT_NE(nullopt, last_logged_opid);
     ASSERT_EQ(last_logged_opid->term(), tombstoned_opid->term());
     ASSERT_EQ(last_logged_opid->index(), tombstoned_opid->index());
   }
@@ -5422,7 +5424,7 @@ Status CreateLegacyHmsTable(HmsClient* client,
                             const string& kudu_table_name,
                             const string& kudu_master_addrs,
                             const string& table_type,
-                            const optional<const string&>& owner) {
+                            const optional<string>& owner) {
   hive::Table table;
   table.dbName = hms_database_name;
   table.tableName = hms_table_name;
@@ -5747,7 +5749,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("impala::default.legacy_no_owner", &legacy_no_owner));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_no_owner",
         "impala::default.legacy_no_owner", master_addrs_str, HmsClient::kManagedTable,
-        boost::none));
+        nullopt));
 
   // Test case: legacy managed table with a Hive-incompatible name (no database).
   shared_ptr<KuduTable> legacy_hive_incompatible_name;
@@ -5770,7 +5772,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.no_owner_in_hms", &no_owner_in_hms));
   ASSERT_OK(hms_catalog.CreateTable(
       no_owner_in_hms->id(), no_owner_in_hms->name(), kudu_client->cluster_id(),
-      boost::none, KuduSchema::ToSchema(no_owner_in_hms->schema()), no_owner_in_hms->comment()));
+      nullopt, KuduSchema::ToSchema(no_owner_in_hms->schema()), no_owner_in_hms->comment()));
 
   // Test case: no owner in Kudu
   shared_ptr<KuduTable> no_owner_in_kudu;
@@ -6307,7 +6309,7 @@ TEST_F(ToolTest, TestHmsList) {
       KuduSchema::ToSchema(simple_table->schema()),
       "comment 1", hms::HmsClient::kManagedTable));
   ASSERT_OK(hms_catalog.CreateTable(
-      "2", "default.table2", "cluster-id", boost::none,
+      "2", "default.table2", "cluster-id", nullopt,
       KuduSchema::ToSchema(simple_table->schema()),
       "", hms::HmsClient::kExternalTable));
 
@@ -7093,7 +7095,7 @@ TEST_F(ToolTest, TestFsRemoveDataDirWithTombstone) {
   ASSERT_EQ(1, tablet_ids.size());
   TabletServerErrorPB::Code error;
   ASSERT_OK(mts->server()->tablet_manager()->DeleteTablet(
-      tablet_ids[0], TabletDataState::TABLET_DATA_TOMBSTONED, boost::none, &error));
+      tablet_ids[0], TabletDataState::TABLET_DATA_TOMBSTONED, nullopt, &error));
 
   // Set things up so we can restart with one fewer directory.
   string data_root = mts->options()->fs_opts.data_roots[0];
@@ -7641,7 +7643,7 @@ TEST_P(Is343ReplicaUtilTest, Is343Cluster) {
 
   {
     bool is_343 = false;
-    const auto s = Is343SchemeCluster({ master_addr }, boost::none, &is_343);
+    const auto s = Is343SchemeCluster({ master_addr }, nullopt, &is_343);
     ASSERT_TRUE(s.IsIncomplete()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "not a single table found");
   }
@@ -7654,7 +7656,7 @@ TEST_P(Is343ReplicaUtilTest, Is343Cluster) {
 
   {
     bool is_343 = false;
-    const auto s = Is343SchemeCluster({ master_addr }, boost::none, &is_343);
+    const auto s = Is343SchemeCluster({ master_addr }, nullopt, &is_343);
     ASSERT_TRUE(s.ok()) << s.ToString();
     ASSERT_EQ(is_343_scheme, is_343);
   }

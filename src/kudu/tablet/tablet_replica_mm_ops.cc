@@ -20,14 +20,14 @@
 #include <algorithm>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/tablet_metadata.h"

@@ -27,11 +27,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/common/row_operations.pb.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -258,8 +257,8 @@ Status RequestVote(const TServerDetails* replica,
                    const std::string& candidate_uuid,
                    int64_t candidate_term,
                    const consensus::OpId& last_logged_opid,
-                   boost::optional<bool> ignore_live_leader,
-                   boost::optional<bool> is_pre_election,
+                   std::optional<bool> ignore_live_leader,
+                   std::optional<bool> is_pre_election,
                    const MonoDelta& timeout);
 
 // Cause a leader to step down on the specified server.
@@ -295,7 +294,7 @@ Status AddServer(const TServerDetails* leader,
                  consensus::RaftPeerPB::MemberType member_type,
                  const MonoDelta& timeout,
                  const consensus::RaftPeerAttrsPB& attrs = {},
-                 const boost::optional<int64_t>& cas_config_index = boost::none,
+                 const std::optional<int64_t>& cas_config_index = std::nullopt,
                  tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Run a ConfigChange to REMOVE_PEER on 'replica_to_remove'.
@@ -304,7 +303,7 @@ Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,
                     const TServerDetails* replica_to_remove,
                     const MonoDelta& timeout,
-                    const boost::optional<int64_t>& cas_config_index = boost::none,
+                    const std::optional<int64_t>& cas_config_index = std::nullopt,
                     tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Change type of the given replica to the specified type.
@@ -314,7 +313,7 @@ Status ChangeReplicaType(const TServerDetails* leader,
                          const TServerDetails* target_replica,
                          consensus::RaftPeerPB::MemberType replica_type,
                          const MonoDelta& timeout,
-                         const boost::optional<int64_t>& cas_config_index = boost::none,
+                         const std::optional<int64_t>& cas_config_index = std::nullopt,
                          tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Convenience function for bulk change config API.
@@ -323,7 +322,7 @@ Status BulkChangeConfig(const TServerDetails* leader,
                         const std::vector<consensus::BulkChangeConfigRequestPB
                                                             ::ConfigChangeItemPB>& changes,
                         const MonoDelta& timeout,
-                        const boost::optional<int64_t>& cas_config_index = boost::none,
+                        const std::optional<int64_t>& cas_config_index = std::nullopt,
                         tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Get the list of tablets from the remote server.
@@ -349,7 +348,7 @@ Status GetTableLocations(const std::shared_ptr<master::MasterServiceProxy>& mast
                          const std::string& table_name,
                          const MonoDelta& timeout,
                          master::ReplicaTypeFilter filter,
-                         boost::optional<const std::string&> table_id,
+                         const std::optional<std::string>& table_id,
                          master::GetTableLocationsResponsePB* table_locations);
 
 // Wait for the specified number of voters to be reported to the config on the
@@ -369,7 +368,7 @@ Status WaitForNumTabletsOnTS(
     int count,
     const MonoDelta& timeout,
     std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets = nullptr,
-    boost::optional<tablet::TabletStatePB> state = boost::none);
+    std::optional<tablet::TabletStatePB> state = std::nullopt);
 
 // Check if the tablet is in the specified state.
 Status CheckIfTabletInState(const TServerDetails* ts,
@@ -400,7 +399,7 @@ Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
                     const tablet::TabletDataState& delete_type,
                     const MonoDelta& timeout,
-                    const boost::optional<int64_t>& cas_config_index = boost::none,
+                    const std::optional<int64_t>& cas_config_index = std::nullopt,
                     tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Repeatedly try to delete the tablet, retrying on failure up to the
@@ -411,7 +410,7 @@ Status DeleteTabletWithRetries(
     const std::string& tablet_id,
     tablet::TabletDataState delete_type,
     const MonoDelta& timeout,
-    const boost::optional<int64_t>& cas_config_index = boost::none);
+    const std::optional<int64_t>& cas_config_index = std::nullopt);
 
 // Cause the remote to initiate tablet copy using the specified host as a
 // source.

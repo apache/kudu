@@ -25,14 +25,15 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
@@ -78,6 +79,8 @@ using kudu::tablet::TabletDataState;
 using kudu::transactions::TxnStatusTablet;
 
 using std::make_shared;
+using std::nullopt;
+using std::optional;
 using std::ostringstream;
 using std::shared_ptr;
 using std::static_pointer_cast;
@@ -548,7 +551,7 @@ class GetFlagsUnavailableKsckTest : public KsckTest {
 void CheckJsonVsServerHealthSummaries(
     const JsonReader& r,
     const string& key,
-    const boost::optional<vector<ServerHealthSummary>>& summaries) {
+    const optional<vector<ServerHealthSummary>>& summaries) {
   if (!summaries || summaries->empty()) {
     EXPECT_JSON_FIELD_NOT_PRESENT(r, r.root(), key.c_str());
     return;
@@ -666,7 +669,7 @@ void CheckJsonVsReplicaSummary(const JsonReader& r,
 
 void CheckJsonVsMasterConsensus(const JsonReader& r,
                                 bool ref_conflict,
-                                const boost::optional<ConsensusStateMap>& ref_cstates) {
+                                const optional<ConsensusStateMap>& ref_cstates) {
   if (!ref_cstates || ref_cstates->empty()) {
     EXPECT_JSON_FIELD_NOT_PRESENT(r, r.root(), "master_consensus_states");
     return;
@@ -683,7 +686,7 @@ void CheckJsonVsMasterConsensus(const JsonReader& r,
 
 void CheckJsonVsTableSummaries(const JsonReader& r,
                                const string& key,
-                               const boost::optional<vector<TableSummary>>& ref_tables) {
+                               const optional<vector<TableSummary>>& ref_tables) {
   if (!ref_tables || ref_tables->empty()) {
     EXPECT_JSON_FIELD_NOT_PRESENT(r, r.root(), key.c_str());
     return;
@@ -716,7 +719,7 @@ void CheckJsonVsTableSummaries(const JsonReader& r,
 
 void CheckJsonVsTabletSummaries(const JsonReader& r,
                                 const string& key,
-                                const boost::optional<vector<TabletSummary>>& ref_tablets) {
+                                const optional<vector<TabletSummary>>& ref_tablets) {
   if (!ref_tablets || ref_tablets->empty()) {
     EXPECT_JSON_FIELD_NOT_PRESENT(r, r.root(), key.c_str());
     return;
@@ -753,7 +756,7 @@ void CheckJsonVsTabletSummaries(const JsonReader& r,
 
 void CheckJsonVsChecksumResults(const JsonReader& r,
                                 const string& key,
-                                const boost::optional<KsckChecksumResults>& ref_checksum_results) {
+                                const optional<KsckChecksumResults>& ref_checksum_results) {
   if (!ref_checksum_results || ref_checksum_results->tables.empty()) {
     EXPECT_JSON_FIELD_NOT_PRESENT(r, r.root(), key.c_str());
     return;
@@ -804,7 +807,7 @@ void CheckJsonVsChecksumResults(const JsonReader& r,
 
 void CheckJsonVsVersionSummaries(const JsonReader& r,
                                  const string& key,
-                                 const boost::optional<KsckVersionToServersMap>& ref_result) {
+                                 const optional<KsckVersionToServersMap>& ref_result) {
   if (!ref_result || ref_result->empty()) {
     EXPECT_JSON_FIELD_NOT_PRESENT(r, r.root(), key.c_str());
     return;
@@ -831,7 +834,7 @@ void CheckJsonVsVersionSummaries(const JsonReader& r,
 
 void CheckJsonVsCountSummaries(const JsonReader& r,
                                const string& key,
-                               const boost::optional<KsckResults>& ref_result) {
+                               const optional<KsckResults>& ref_result) {
   if (!ref_result) {
     EXPECT_JSON_FIELD_NOT_PRESENT(r, r.root(), key.c_str());
     return;
@@ -914,54 +917,54 @@ void CheckJsonStringVsKsckResults(const string& json,
       r,
       "master_summaries",
       sections & PrintSections::Values::MASTER_SUMMARIES ?
-      boost::optional<vector<ServerHealthSummary>>
-        (results.cluster_status.master_summaries) : boost::none));
+      optional<vector<ServerHealthSummary>>
+        (results.cluster_status.master_summaries) : nullopt));
   NO_FATALS(CheckJsonVsMasterConsensus(
       r,
       results.cluster_status.master_consensus_conflict,
       sections & PrintSections::Values::MASTER_SUMMARIES ?
-      boost::optional<ConsensusStateMap>
-        (results.cluster_status.master_consensus_state_map) : boost::none));
+      optional<ConsensusStateMap>
+        (results.cluster_status.master_consensus_state_map) : nullopt));
   NO_FATALS(CheckJsonVsServerHealthSummaries(
       r,
       "tserver_summaries",
       sections & PrintSections::Values::TSERVER_SUMMARIES ?
-      boost::optional<vector<ServerHealthSummary>>
-        (results.cluster_status.tserver_summaries) : boost::none));
+      optional<vector<ServerHealthSummary>>
+        (results.cluster_status.tserver_summaries) : nullopt));
   NO_FATALS(CheckJsonVsVersionSummaries(
       r,
       "version_summaries",
       sections & PrintSections::Values::VERSION_SUMMARIES ?
-      boost::optional<KsckVersionToServersMap>
-        (results.version_summaries) : boost::none));
+      optional<KsckVersionToServersMap>
+        (results.version_summaries) : nullopt));
   NO_FATALS(CheckJsonVsTabletSummaries(
       r,
       "tablet_summaries",
       sections & PrintSections::Values::TABLET_SUMMARIES ?
-      boost::optional<vector<TabletSummary>>
-        (results.cluster_status.tablet_summaries) : boost::none));
+      optional<vector<TabletSummary>>
+        (results.cluster_status.tablet_summaries) : nullopt));
   NO_FATALS(CheckJsonVsTableSummaries(
       r,
       "table_summaries",
       sections & PrintSections::Values::TABLE_SUMMARIES ?
-      boost::optional<vector<TableSummary>>
-        (results.cluster_status.table_summaries) : boost::none));
+      optional<vector<TableSummary>>
+        (results.cluster_status.table_summaries) : nullopt));
   NO_FATALS(CheckJsonVsTableSummaries(
       r,
       "system_table_summaries",
       sections & PrintSections::Values::SYSTEM_TABLE_SUMMARIES ?
-      boost::optional<vector<TableSummary>>
-        (results.cluster_status.system_table_summaries) : boost::none));
+      optional<vector<TableSummary>>
+        (results.cluster_status.system_table_summaries) : nullopt));
   NO_FATALS(CheckJsonVsChecksumResults(
       r,
       "checksum_results",
       sections & PrintSections::Values::CHECKSUM_RESULTS ?
-      boost::optional<KsckChecksumResults>(results.checksum_results) : boost::none));
+      optional<KsckChecksumResults>(results.checksum_results) : nullopt));
   NO_FATALS(CheckJsonVsCountSummaries(
       r,
       "count_summaries",
       sections & PrintSections::Values::TOTAL_COUNT ?
-      boost::optional<KsckResults>(results) : boost::none));
+      optional<KsckResults>(results) : nullopt));
   NO_FATALS(CheckJsonVsErrors(r, "errors", results.error_messages));
 }
 
@@ -998,7 +1001,7 @@ TEST_F(KsckTest, TestMasterUnavailable) {
   shared_ptr<MockKsckMaster> master =
       std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(1));
   master->fetch_info_status_ = Status::NetworkError("gremlins");
-  master->cstate_ = boost::none;
+  master->cstate_.reset();
   ASSERT_TRUE(ksck_->CheckMasterHealth().IsNetworkError());
   ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
   ASSERT_OK(ksck_->PrintResults());

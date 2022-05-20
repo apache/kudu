@@ -20,8 +20,8 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/macros.h"
@@ -118,7 +118,7 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer>,
   // subsequent tasks.
   //
   // Does nothing if the timer was already started.
-  void Start(boost::optional<MonoDelta> next_task_delta = boost::none);
+  void Start(std::optional<MonoDelta> next_task_delta = std::nullopt);
 
   // Snoozes the timer for one period.
   //
@@ -131,7 +131,7 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer>,
   // time X + P/2, the timer is snoozed until X+P/2+P, not X+2P.
   //
   // Does nothing if the timer is stopped.
-  void Snooze(boost::optional<MonoDelta> next_task_delta = boost::none);
+  void Snooze(std::optional<MonoDelta> next_task_delta = std::nullopt);
 
   // Stops the timer.
   //
@@ -166,7 +166,7 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer>,
   void StopUnlocked();
 
   // Like Snooze() but must be called with 'lock_' held.
-  void SnoozeUnlocked(boost::optional<MonoDelta> next_task_delta = boost::none);
+  void SnoozeUnlocked(std::optional<MonoDelta> next_task_delta = std::nullopt);
 
   // Returns the number of times that Callback() has been called by this timer.
   //

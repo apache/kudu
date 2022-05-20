@@ -23,10 +23,10 @@
 #include <functional>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -146,7 +146,7 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
   // Assign the location for the tablet server outside the lock: assigning
   // a location involves calling the location mapping script which is relatively
   // long and expensive operation.
-  boost::optional<string> location;
+  std::optional<string> location;
   if (location_cache_) {
     // In some test scenarios the location is assigned per tablet server UUID.
     // That's the case when multiple (or even all) tablet servers have the same

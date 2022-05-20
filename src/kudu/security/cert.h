@@ -21,6 +21,7 @@
 #include <openssl/x509.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,11 +29,6 @@
 #include "kudu/util/openssl_util.h"
 
 typedef struct X509_name_st X509_NAME;
-
-namespace boost {
-template <class T>
-class optional;
-}
 
 namespace kudu {
 
@@ -68,10 +64,10 @@ class Cert : public RawDataWrapper<STACK_OF(X509)> {
   std::vector<std::string> Hostnames() const;
 
   // Return the 'userId' extension of the end-user cert, if set.
-  boost::optional<std::string> UserId() const;
+  std::optional<std::string> UserId() const;
 
   // Return the Kerberos principal encoded in the end-user certificate, if set.
-  boost::optional<std::string> KuduKerberosPrincipal() const;
+  std::optional<std::string> KuduKerberosPrincipal() const;
 
   // Check whether the specified private key matches the end-user certificate.
   // Return Status::OK() if key match the end-user certificate.

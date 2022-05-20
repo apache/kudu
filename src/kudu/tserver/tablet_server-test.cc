@@ -27,6 +27,7 @@
 #include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <random>
 #include <set>
 #include <sstream>
@@ -36,7 +37,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
@@ -146,6 +146,7 @@ using kudu::tablet::TabletSuperBlockPB;
 using std::endl;
 using std::make_shared;
 using std::map;
+using std::nullopt;
 using std::pair;
 using std::ostringstream;
 using std::set;
@@ -644,7 +645,7 @@ TEST_F(TabletServerTest, TestFailedTabletsOnWebUI) {
   // replica were deleted.
   TabletServerErrorPB::Code error_code;
   ASSERT_OK(tablet_manager->DeleteTablet(kTabletId,
-      tablet::TABLET_DATA_TOMBSTONED, boost::none, &error_code));
+      tablet::TABLET_DATA_TOMBSTONED, nullopt, &error_code));
 
   EasyCurl c;
   faststring buf;
@@ -664,7 +665,7 @@ TEST_F(TabletServerTest, TestTombstonedTabletOnWebUI) {
   ASSERT_OK(
       tablet_manager->DeleteTablet(kTabletId,
                                    tablet::TABLET_DATA_TOMBSTONED,
-                                   boost::none,
+                                   nullopt,
                                    &error_code));
 
   // Restart the server. We drop the tablet_replica_ reference since it becomes
@@ -4130,7 +4131,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
       "TestWriteOutOfBoundsTable", tabletId,
       partitions[1],
       tabletId, schema, partition_schema,
-      mini_server_->CreateLocalConfig(), boost::none, boost::none, boost::none, nullptr));
+      mini_server_->CreateLocalConfig(), nullopt, nullopt, nullopt, nullptr));
 
   ASSERT_OK(WaitForTabletRunning(tabletId));
 

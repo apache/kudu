@@ -20,6 +20,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <string>
@@ -28,7 +29,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -94,6 +94,8 @@ using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using strings::Substitute;
 
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unordered_map;
@@ -207,7 +209,7 @@ void AutoRebalancerTask::RunLoop() {
     ClusterRawInfo raw_info;
     ClusterInfo cluster_info;
     TabletsPlacementInfo placement_info;
-    Status s = BuildClusterRawInfo(/*location*/boost::none, &raw_info);
+    Status s = BuildClusterRawInfo(/*location*/nullopt, &raw_info);
     if (!s.ok()) {
       LOG(WARNING) << Substitute("Could not retrieve cluster info: $0", s.ToString());
       continue;
@@ -378,7 +380,7 @@ Status AutoRebalancerTask::GetTabletLeader(
         ReplicaTypeFilter::VOTER_REPLICA,
         &locs_pb,
         &ts_infos_dict,
-        boost::none));
+        nullopt));
   }
   for (const auto& r : locs_pb.interned_replicas()) {
     if (r.role() == RaftPeerPB::LEADER) {
@@ -451,7 +453,7 @@ Status AutoRebalancerTask::ExecuteMoves(
 }
 
 Status AutoRebalancerTask::BuildClusterRawInfo(
-    const boost::optional<string>& location,
+    const optional<string>& location,
     ClusterRawInfo* raw_info) const {
 
   vector<ServerHealthSummary> tserver_summaries;
@@ -533,7 +535,7 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
             ReplicaTypeFilter::VOTER_REPLICA,
             &locs_pb,
             &ts_infos_dict,
-            boost::none));
+            nullopt));
       }
 
       // Consensus state information is the same for all replicas of this tablet.

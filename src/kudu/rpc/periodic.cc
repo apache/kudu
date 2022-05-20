@@ -20,8 +20,8 @@
 #include <algorithm>
 #include <memory>
 #include <mutex>
+#include <optional>
 
-#include <boost/function.hpp>
 #include <glog/logging.h>
 
 #include "kudu/rpc/messenger.h"
@@ -30,6 +30,7 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 
+using std::optional;
 using std::shared_ptr;
 using std::weak_ptr;
 
@@ -71,7 +72,7 @@ PeriodicTimer::~PeriodicTimer() {
   Stop();
 }
 
-void PeriodicTimer::Start(boost::optional<MonoDelta> next_task_delta) {
+void PeriodicTimer::Start(optional<MonoDelta> next_task_delta) {
   std::unique_lock<simple_spinlock> l(lock_);
   if (!started_) {
     started_ = true;
@@ -94,12 +95,12 @@ void PeriodicTimer::StopUnlocked() {
   started_ = false;
 }
 
-void PeriodicTimer::Snooze(boost::optional<MonoDelta> next_task_delta) {
+void PeriodicTimer::Snooze(optional<MonoDelta> next_task_delta) {
   std::lock_guard<simple_spinlock> l(lock_);
   SnoozeUnlocked(std::move(next_task_delta));
 }
 
-void PeriodicTimer::SnoozeUnlocked(boost::optional<MonoDelta> next_task_delta) {
+void PeriodicTimer::SnoozeUnlocked(optional<MonoDelta> next_task_delta) {
   DCHECK(lock_.is_locked());
   if (!started_) {
     return;

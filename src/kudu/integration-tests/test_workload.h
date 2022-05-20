@@ -20,12 +20,12 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
@@ -343,7 +343,7 @@ class TestWorkload {
   client::sp::shared_ptr<client::KuduClient> client_;
   ThreadSafeRandom rng_;
 
-  boost::optional<int> payload_bytes_;
+  std::optional<int> payload_bytes_;
   int num_write_threads_;
   int num_read_threads_;
   int read_timeout_millis_;

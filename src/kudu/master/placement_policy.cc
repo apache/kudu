@@ -18,10 +18,10 @@
 #include "kudu/master/placement_policy.h"
 
 #include <iterator>
-#include <limits>
 #include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
@@ -29,7 +29,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
@@ -39,7 +38,7 @@
 #include "kudu/util/random_util.h"
 
 using std::multimap;
-using std::numeric_limits;
+using std::optional;
 using std::set;
 using std::shared_ptr;
 using std::string;
@@ -52,7 +51,7 @@ namespace master {
 
 namespace {
 
-double GetTSLoad(const boost::optional<string>& dimension, TSDescriptor* desc) {
+double GetTSLoad(const optional<string>& dimension, TSDescriptor* desc) {
   // TODO (oclarms): get the number of times this tablet server has recently been
   //  selected to create a tablet replica by dimension.
   return desc->RecentReplicaCreations() + desc->num_live_replicas(dimension);
@@ -62,7 +61,7 @@ double GetTSLoad(const boost::optional<string>& dimension, TSDescriptor* desc) {
 // which to place a tablet replica. Ties are broken using 'rng'.
 shared_ptr<TSDescriptor> PickBetterReplica(
     const TSDescriptorVector& two_choices,
-    const boost::optional<std::string>& dimension,
+    const optional<std::string>& dimension,
     ThreadSafeRandom* rng) {
   CHECK_EQ(2, two_choices.size());
 
@@ -70,8 +69,9 @@ shared_ptr<TSDescriptor> PickBetterReplica(
   const auto& b = two_choices[1];
 
   // When creating replicas, we consider two aspects of load:
-  //   (1) how many tablet replicas are already on the server (if dimension is not none, only
-  //       return the number of tablet replicas in the dimension), and
+  //   (1) how many tablet replicas are already on the server (if dimension is
+  //       not std::nullopt, only return the number of tablet replicas in the dimension),
+  // and
   //   (2) how often we've chosen this server recently.
   //
   // The first factor will attempt to put more replicas on servers that
@@ -114,7 +114,7 @@ PlacementPolicy::PlacementPolicy(TSDescriptorVector descs,
 }
 
 Status PlacementPolicy::PlaceTabletReplicas(int nreplicas,
-                                            const boost::optional<std::string>& dimension,
+                                            const optional<std::string>& dimension,
                                             TSDescriptorVector* ts_descs) const {
   DCHECK(ts_descs);
 
@@ -134,7 +134,7 @@ Status PlacementPolicy::PlaceTabletReplicas(int nreplicas,
 
 Status PlacementPolicy::PlaceExtraTabletReplica(
     TSDescriptorVector existing,
-    const boost::optional<std::string>& dimension,
+    const optional<std::string>& dimension,
     shared_ptr<TSDescriptor>* ts_desc) const {
   DCHECK(ts_desc);
 
@@ -157,7 +157,7 @@ Status PlacementPolicy::PlaceExtraTabletReplica(
   ReplicaLocationsInfo location_info;
   for (const auto& desc : existing_set) {
     // It's OK to use an empty string in the meaning of 'no location'
-    // (instead of e.g. boost::none) because valid location strings begin with
+    // (instead of e.g. std::nullopt) because valid location strings begin with
     // '/' and therefore are nonempty.
     string location = desc->location() ? *desc->location() : "";
     ++LookupOrEmplace(&location_info, std::move(location), 0);
@@ -232,7 +232,7 @@ Status PlacementPolicy::SelectReplicaLocations(
 
 Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs,
                                        int nreplicas,
-                                       const boost::optional<string>& dimension,
+                                       const optional<string>& dimension,
                                        TSDescriptorVector* result_ts_descs) const {
   if (nreplicas > source_ts_descs.size()) {
     return Status::InvalidArgument(
@@ -283,7 +283,7 @@ Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs
 //
 shared_ptr<TSDescriptor> PlacementPolicy::SelectReplica(
     const TSDescriptorVector& ts_descs,
-    const boost::optional<string>& dimension,
+    const optional<string>& dimension,
     const set<shared_ptr<TSDescriptor>>& excluded) const {
   // Pick two random servers, excluding those we've already picked.
   // If we've only got one server left, 'two_choices' will actually

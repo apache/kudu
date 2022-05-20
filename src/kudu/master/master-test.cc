@@ -25,6 +25,7 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
@@ -34,7 +35,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -98,8 +98,6 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
 
-using boost::none;
-using boost::optional;
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::itest::GetClusterId;
 using kudu::pb_util::SecureDebugString;
@@ -108,6 +106,8 @@ using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using std::accumulate;
+using std::nullopt;
+using std::optional;
 using std::map;
 using std::multiset;
 using std::pair;
@@ -195,9 +195,9 @@ class MasterTest : public KuduTest {
 
   Status CreateTable(const string& name,
                      const Schema& schema,
-                     const optional<TableTypePB>& type = none,
-                     const optional<string>& owner = none,
-                     const optional<string>& comment = none);
+                     const optional<TableTypePB>& type = nullopt,
+                     const optional<string>& owner = nullopt,
+                     const optional<string>& comment = nullopt);
 
   Status CreateTable(const string& name,
                      const Schema& schema,
@@ -246,7 +246,7 @@ Status MasterTest::CreateTable(
     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
     const vector<RangeWithHashSchema>& ranges_with_hash_schemas) {
   CreateTableResponsePB resp;
-  return CreateTable(name, schema, none, none, none, split_rows, bounds,
+  return CreateTable(name, schema, nullopt, nullopt, nullopt, split_rows, bounds,
                      ranges_with_hash_schemas, {}, &resp);
 }
 
@@ -923,7 +923,7 @@ TEST_P(AlterTableWithRangeSpecificHashSchema, TestAlterTableWithDifferentHashDim
   ASSERT_OK(a_upper.SetInt32("key", 100));
   CreateTableResponsePB create_table_resp;
   ASSERT_OK(CreateTable(
-      kTableName, kTableSchema, none, none, none, {}, {{a_lower, a_upper}},
+      kTableName, kTableSchema, nullopt, nullopt, nullopt, {}, {{a_lower, a_upper}},
       {}, {{{"key"}, 2, 0}}, &create_table_resp));
 
   // Populate the custom hash schemas with different hash dimension count based on
@@ -1018,7 +1018,7 @@ TEST_F(MasterTest, AlterTableAddRangeWithSpecificHashSchema) {
     KuduPartialRow upper(&kTableSchema);
     ASSERT_OK(upper.SetInt32(kCol0, 100));
     ASSERT_OK(CreateTable(
-        kTableName, kTableSchema, none, none, none, {}, {{lower, upper}},
+        kTableName, kTableSchema, nullopt, nullopt, nullopt, {}, {{lower, upper}},
         {}, {{{kCol0}, 2, 0}}, &create_table_resp));
   }
 
@@ -1342,7 +1342,7 @@ TEST_F(MasterTest, TestCreateTableOwnerNameTooLong) {
       "abcdefghijklmnopqrstuvwxyz01234567899";
 
   const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
-  Status s = CreateTable(kTableName, kTableSchema, none, kOwnerName);
+  Status s = CreateTable(kTableName, kTableSchema, nullopt, kOwnerName);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "invalid owner name");
 }
@@ -1351,7 +1351,7 @@ TEST_F(MasterTest, TestCreateTableCommentTooLong) {
   constexpr const char* const kTableName = "testb";
   const string kComment = string(FLAGS_max_table_comment_length + 1, 'x');
   const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
-  Status s = CreateTable(kTableName, kTableSchema, none, none, kComment);
+  Status s = CreateTable(kTableName, kTableSchema, nullopt, nullopt, kComment);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "invalid table comment");
 }
@@ -1783,7 +1783,7 @@ TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
   CatalogManager* cm = mini_master_->master()->catalog_manager();
   const auto* token_signer = supports_authz_
       ? mini_master_->master()->token_signer() : nullptr;
-  optional<const string&> username;
+  optional<string> username;
   if (supports_authz_) {
     username = kUserName;
   }

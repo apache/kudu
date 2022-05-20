@@ -14,14 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_MASTER_TEST_UTIL_H_
-#define KUDU_MASTER_TEST_UTIL_H_
+#pragma once
 
 #include <algorithm>
+#include <optional>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/schema.h"
@@ -54,7 +52,7 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
     {
       CatalogManager::ScopedLeaderSharedLock l(catalog);
       RETURN_NOT_OK(l.first_failed_status());
-      RETURN_NOT_OK(catalog->GetTableLocations(&req, resp, /*user=*/boost::none));
+      RETURN_NOT_OK(catalog->GetTableLocations(&req, resp, /*user=*/std::nullopt));
     }
     if (resp->tablet_locations_size() >= expected_count) {
       return Status::OK();
@@ -74,5 +72,3 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
 
 } // namespace master
 } // namespace kudu
-
-#endif /* KUDU_MASTER_TEST_UTIL_H_ */

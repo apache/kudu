@@ -19,11 +19,11 @@
 
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -76,7 +76,7 @@ static void SetOverallHealth(HealthReportPB* health_report,
 static void AddPeer(RaftConfigPB* config,
                     const string& uuid,
                     RaftPeerPB::MemberType type,
-                    boost::optional<char> overall_health = boost::none,
+                    std::optional<char> overall_health = std::nullopt,
                     vector<Attr> attrs = {}) {
   RaftPeerPB* peer = config->add_peers();
   peer->set_permanent_uuid(uuid);

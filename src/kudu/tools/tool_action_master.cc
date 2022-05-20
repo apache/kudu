@@ -24,6 +24,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -31,7 +32,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -754,7 +754,7 @@ unique_ptr<Mode> BuildMasterMode() {
         ClusterActionBuilder("refresh", &RefreshAuthzCache)
         .Description("Refresh the authorization policies")
         .AddOptionalParameter(
-            "force", boost::none,
+            "force", std::nullopt,
             string(
                 "Ignore mismatches of the specified and the actual lists "
                 "of master addresses in the cluster"))

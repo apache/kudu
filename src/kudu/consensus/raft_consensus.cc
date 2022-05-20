@@ -24,11 +24,12 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <google/protobuf/util/message_differencer.h>
 
@@ -162,11 +163,12 @@ METRIC_DEFINE_gauge_int64(tablet, time_since_last_leader_heartbeat,
                           kudu::MetricLevel::kDebug);
 
 
-using boost::optional;
 using google::protobuf::util::MessageDifferencer;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::PeriodicTimer;
 using kudu::tserver::TabletServerErrorPB;
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -358,7 +360,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
 
     // If this is the first term expire the FD immediately so that we have a
     // fast first election, otherwise we just let the timer expire normally.
-    boost::optional<MonoDelta> fd_initial_delta;
+    optional<MonoDelta> fd_initial_delta;
     if (CurrentTermUnlocked() == 0) {
       // The failure detector is initialized to a low value to trigger an early
       // election (unless someone else requested a vote from us first, which
@@ -585,7 +587,7 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   return Status::OK();
 }
 
-Status RaftConsensus::TransferLeadership(const boost::optional<string>& new_leader_uuid,
+Status RaftConsensus::TransferLeadership(const optional<string>& new_leader_uuid,
                                          LeaderStepDownResponsePB* resp) {
   TRACE_EVENT0("consensus", "RaftConsensus::TransferLeadership");
   ThreadRestrictions::AssertWaitAllowed();
@@ -623,7 +625,7 @@ Status RaftConsensus::TransferLeadership(const boost::optional<string>& new_lead
 }
 
 Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
-    const boost::optional<string>& successor_uuid) {
+    const optional<string>& successor_uuid) {
   DCHECK(lock_.is_locked());
   if (std::atomic_exchange(&leader_transfer_in_progress_, true)) {
     return Status::ServiceUnavailable(
@@ -721,7 +723,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   return Status::OK();
 }
 
-Status RaftConsensus::BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta) {
+Status RaftConsensus::BecomeReplicaUnlocked(optional<MonoDelta> fd_delta) {
   DCHECK(lock_.is_locked());
 
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Becoming Follower/Learner. State: "
@@ -995,7 +997,7 @@ void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
   req.set_cas_config_opid_index(committed_config.opid_index());
   LOG(INFO) << LogPrefixThreadSafe() << "Attempting to remove follower "
             << uuid << " from the Raft config. Reason: " << reason;
-  boost::optional<TabletServerErrorPB::Code> error_code;
+  optional<TabletServerErrorPB::Code> error_code;
   WARN_NOT_OK(ChangeConfig(req, &DoNothingStatusCB, &error_code),
               LogPrefixThreadSafe() + "Unable to remove follower " + uuid);
 }
@@ -1047,7 +1049,7 @@ void RaftConsensus::TryPromoteNonVoterTask(const string& peer_uuid) {
   req.set_cas_config_opid_index(current_committed_config_index);
   LOG(INFO) << LogPrefixThreadSafe() << "attempting to promote NON_VOTER "
             << peer_uuid << " to VOTER";
-  boost::optional<TabletServerErrorPB::Code> error_code;
+  optional<TabletServerErrorPB::Code> error_code;
   WARN_NOT_OK(ChangeConfig(req, &DoNothingStatusCB, &error_code),
               LogPrefixThreadSafe() + Substitute("Unable to promote non-voter $0", peer_uuid));
 }
@@ -1856,7 +1858,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
 
 Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
                                    StatusCallback client_cb,
-                                   boost::optional<TabletServerErrorPB::Code>* error_code) {
+                                   optional<TabletServerErrorPB::Code>* error_code) {
   TRACE_EVENT2("consensus", "RaftConsensus::ChangeConfig",
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
@@ -1883,7 +1885,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
 
 Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
                                        StatusCallback client_cb,
-                                       boost::optional<TabletServerErrorPB::Code>* error_code) {
+                                       optional<TabletServerErrorPB::Code>* error_code) {
   TRACE_EVENT2("consensus", "RaftConsensus::BulkChangeConfig",
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
@@ -2073,7 +2075,7 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
 
 Status RaftConsensus::UnsafeChangeConfig(
     const UnsafeChangeConfigRequestPB& req,
-    boost::optional<tserver::TabletServerErrorPB::Code>* error_code) {
+    optional<tserver::TabletServerErrorPB::Code>* error_code) {
   if (PREDICT_FALSE(!req.has_new_config())) {
     *error_code = TabletServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument("Request must contain 'new_config' argument "
@@ -2447,7 +2449,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
 
   // Give peer time to become leader. Snooze one more time after persisting our
   // vote. When disk latency is high, this should help reduce churn.
-  SnoozeFailureDetector(/*reason_for_log=*/boost::none, backoff);
+  SnoozeFailureDetector(/*reason_for_log=*/nullopt, backoff);
 
   LOG(INFO) << Substitute("$0: Granting yes vote for candidate $1 in term $2.",
                           GetRequestVoteLogPrefixUnlocked(*request),
@@ -2794,16 +2796,18 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   }
 }
 
-boost::optional<OpId> RaftConsensus::GetLastOpId(OpIdType type) {
+optional<OpId> RaftConsensus::GetLastOpId(OpIdType type) {
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
   return GetLastOpIdUnlocked(type);
 }
 
-boost::optional<OpId> RaftConsensus::GetLastOpIdUnlocked(OpIdType type) {
+optional<OpId> RaftConsensus::GetLastOpIdUnlocked(OpIdType type) {
   // Return early if this method is called on an instance of RaftConsensus that
   // has not yet been started, failed during Init(), or failed during Start().
-  if (!queue_ || !pending_) return boost::none;
+  if (!queue_ || !pending_) {
+    return nullopt;
+  }
 
   switch (type) {
     case RECEIVED_OPID:
@@ -2813,7 +2817,7 @@ boost::optional<OpId> RaftConsensus::GetLastOpIdUnlocked(OpIdType type) {
                       pending_->GetCommittedIndex());
     default:
       LOG(DFATAL) << LogPrefixUnlocked() << "Invalid OpIdType " << type;
-      return boost::none;
+      return nullopt;
   }
 }
 
@@ -2941,7 +2945,7 @@ void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, con
   }
 }
 
-void RaftConsensus::EnableFailureDetector(boost::optional<MonoDelta> delta) {
+void RaftConsensus::EnableFailureDetector(optional<MonoDelta> delta) {
   if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
     failure_detector_->Start(std::move(delta));
   }
@@ -2953,7 +2957,7 @@ void RaftConsensus::DisableFailureDetector() {
   }
 }
 
-void RaftConsensus::UpdateFailureDetectorState(boost::optional<MonoDelta> delta) {
+void RaftConsensus::UpdateFailureDetectorState(optional<MonoDelta> delta) {
   DCHECK(lock_.is_locked());
   const auto& uuid = peer_uuid();
   if (uuid != cmeta_->leader_uuid() &&
@@ -2967,8 +2971,8 @@ void RaftConsensus::UpdateFailureDetectorState(boost::optional<MonoDelta> delta)
   }
 }
 
-void RaftConsensus::SnoozeFailureDetector(boost::optional<string> reason_for_log,
-                                          boost::optional<MonoDelta> delta) {
+void RaftConsensus::SnoozeFailureDetector(optional<string> reason_for_log,
+                                          optional<MonoDelta> delta) {
   if (PREDICT_TRUE(failure_detector_ && FLAGS_enable_leader_failure_detection)) {
     if (reason_for_log) {
       VLOG(1) << LogPrefixThreadSafe()

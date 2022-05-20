@@ -18,15 +18,14 @@
 // Utilities for dealing with protocol buffers.
 // These are mostly just functions similar to what are found in the protobuf
 // library itself, but using kudu::faststring instances instead of STL strings.
-#ifndef KUDU_UTIL_PB_UTIL_H
-#define KUDU_UTIL_PB_UTIL_H
+#pragma once
 
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
+#include <optional>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <google/protobuf/message.h>
 #include <gtest/gtest_prod.h>
 
@@ -451,7 +450,7 @@ class ReadablePBContainerFile {
 
   // The size of the file we are reading, or 'none' if it hasn't yet been
   // read.
-  boost::optional<uint64_t> cached_file_size_;
+  std::optional<uint64_t> cached_file_size_;
 
   // The fully-qualified PB type name of the messages in the container.
   std::string pb_type_;
@@ -522,4 +521,3 @@ class PbTracer : public debug::ConvertableToTraceFormat {
 } // namespace pb_util
 
 } // namespace kudu
-#endif

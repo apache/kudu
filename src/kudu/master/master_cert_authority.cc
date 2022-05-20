@@ -18,10 +18,10 @@
 #include "kudu/master/master_cert_authority.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -34,7 +34,7 @@
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
 
-using boost::optional;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 

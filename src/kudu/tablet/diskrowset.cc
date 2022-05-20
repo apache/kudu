@@ -19,10 +19,10 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <ostream>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -79,6 +79,19 @@ DEFINE_bool(rowset_metadata_store_keys, false,
             "metadata. If false, keys will be read from the data blocks.");
 TAG_FLAG(rowset_metadata_store_keys, experimental);
 
+using kudu::cfile::BloomFileWriter;
+using kudu::fs::BlockManager;
+using kudu::fs::BlockCreationTransaction;
+using kudu::fs::CreateBlockOptions;
+using kudu::fs::IOContext;
+using kudu::fs::WritableBlock;
+using kudu::log::LogAnchorRegistry;
+using std::optional;
+using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
+using std::vector;
+
 namespace kudu {
 
 class Mutex;
@@ -88,18 +101,6 @@ class OpId;
 }
 
 namespace tablet {
-
-using cfile::BloomFileWriter;
-using fs::BlockManager;
-using fs::BlockCreationTransaction;
-using fs::CreateBlockOptions;
-using fs::IOContext;
-using fs::WritableBlock;
-using log::LogAnchorRegistry;
-using std::shared_ptr;
-using std::string;
-using std::unique_ptr;
-using std::vector;
 
 const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
@@ -686,9 +687,9 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
 #endif
   shared_lock<rw_spinlock> l(component_lock_);
 
-  boost::optional<rowid_t> row_idx;
+  optional<rowid_t> row_idx;
   RETURN_NOT_OK(base_data_->FindRow(probe, io_context, &row_idx, stats));
-  if (PREDICT_FALSE(row_idx == boost::none)) {
+  if (PREDICT_FALSE(!row_idx)) {
     return Status::NotFound("row not found");
   }
 #ifndef NDEBUG

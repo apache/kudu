@@ -27,8 +27,10 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <typeinfo>
 #include <unordered_map>
 #include <utility>
@@ -237,7 +239,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
     RowBlockRow lower;
     RowBlockRow upper;
   };
-  boost::optional<DecodedBounds> decoded_bounds_;
+  std::optional<DecodedBounds> decoded_bounds_;
 
   // Current block of buffered rows from the iterator.
   //

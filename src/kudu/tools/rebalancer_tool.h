@@ -23,14 +23,13 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/rebalance/rebalance_algo.h"
@@ -76,7 +75,7 @@ class RebalancerTool : public rebalance::Rebalancer {
     BaseRunner(RebalancerTool* rebalancer,
                std::unordered_set<std::string> ignored_tservers,
                size_t max_moves_per_server,
-               boost::optional<MonoTime> deadline);
+               std::optional<MonoTime> deadline);
 
     Status Init(std::vector<std::string> master_addresses) override;
 
@@ -117,7 +116,7 @@ class RebalancerTool : public rebalance::Rebalancer {
 
     // Deadline for the activity performed by the Runner class in
     // ScheduleNextMoves() and UpdateMovesInProgressStatus() methods.
-    const boost::optional<MonoTime> deadline_;
+    const std::optional<MonoTime> deadline_;
 
     // Client object to make queries to Kudu masters for various auxiliary info
     // while scheduling move operations and monitoring their status.
@@ -148,13 +147,13 @@ class RebalancerTool : public rebalance::Rebalancer {
     // ignored by rebalancer.
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
-    // The 'deadline' specifies the deadline for the run, 'boost::none'
-    // if no timeout is set. If 'location' is boost::none, rebalance across
+    // The 'deadline' specifies the deadline for the run, 'std::nullopt'
+    // if no timeout is set. If 'location' is std::nullopt, rebalance across
     // locations.
     AlgoBasedRunner(RebalancerTool* rebalancer,
                     std::unordered_set<std::string> ignored_tservers,
                     size_t max_moves_per_server,
-                    boost::optional<MonoTime> deadline);
+                    std::optional<MonoTime> deadline);
 
     Status Init(std::vector<std::string> master_addresses) override;
 
@@ -167,8 +166,8 @@ class RebalancerTool : public rebalance::Rebalancer {
                                      bool* has_pending_moves) override;
 
     // Get the cluster location the runner is slated to run/running at.
-    // 'boost::none' means all the cluster.
-    virtual const boost::optional<std::string>& location() const = 0;
+    // 'std::nullopt' means all the cluster.
+    virtual const std::optional<std::string>& location() const = 0;
 
     // Rebalancing algorithm that running uses to find replica moves.
     virtual rebalance::RebalancingAlgo* algorithm() = 0;
@@ -218,26 +217,26 @@ class RebalancerTool : public rebalance::Rebalancer {
     // ignored by rebalancer.
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
-    // The 'deadline' specifies the deadline for the run, 'boost::none'
+    // The 'deadline' specifies the deadline for the run, 'std::nullopt'
     // if no timeout is set. In case of non-location aware cluster or if there
     // is just one location defined in the whole cluster, the whole cluster will
     // be rebalanced.
     IntraLocationRunner(RebalancerTool* rebalancer,
                         std::unordered_set<std::string> ignored_tservers,
                         size_t max_moves_per_server,
-                        boost::optional<MonoTime> deadline,
+                        std::optional<MonoTime> deadline,
                         std::string location);
 
     rebalance::RebalancingAlgo* algorithm() override {
       return &algorithm_;
     }
 
-    const boost::optional<std::string>& location() const override {
+    const std::optional<std::string>& location() const override {
       return location_;
     }
 
    private:
-    const boost::optional<std::string> location_;
+    const std::optional<std::string> location_;
 
     // An instance of the balancing algorithm.
     rebalance::TwoDimensionalGreedyAlgo algorithm_;
@@ -251,24 +250,24 @@ class RebalancerTool : public rebalance::Rebalancer {
     // per tablet server (both the source and the destination are counted in).
     // The 'load_imbalance_threshold' specified the threshold for the
     // balancing algorithm used for finding the most optimal replica movements.
-    // The 'deadline' specifies the deadline for the run, 'boost::none'
+    // The 'deadline' specifies the deadline for the run, 'std::nullopt'
     // if no timeout is set.
     CrossLocationRunner(RebalancerTool* rebalancer,
                         std::unordered_set<std::string> ignored_tservers,
                         size_t max_moves_per_server,
                         double load_imbalance_threshold,
-                        boost::optional<MonoTime> deadline);
+                        std::optional<MonoTime> deadline);
 
     rebalance::RebalancingAlgo* algorithm() override {
       return &algorithm_;
     }
 
-    const boost::optional<std::string>& location() const override {
+    const std::optional<std::string>& location() const override {
       return location_;
     }
 
    private:
-    const boost::optional<std::string> location_ = boost::none;
+    const std::optional<std::string> location_ = std::nullopt;
 
     // An instance of the balancing algorithm.
     rebalance::LocationBalancingAlgo algorithm_;
@@ -283,12 +282,12 @@ class RebalancerTool : public rebalance::Rebalancer {
     // per tablet server (both the source and the destination are counted in).
     // The 'load_imbalance_threshold' specified the threshold for the
     // balancing algorithm used for finding the most optimal replica movements.
-    // The 'deadline' specifies the deadline for the run, 'boost::none'
+    // The 'deadline' specifies the deadline for the run, 'std::nullopt'
     // if no timeout is set.
     ReplaceBasedRunner(RebalancerTool* rebalancer,
                        std::unordered_set<std::string> ignored_tservers,
                        size_t max_moves_per_server,
-                       boost::optional<MonoTime> deadline);
+                       std::optional<MonoTime> deadline);
 
     Status Init(std::vector<std::string> master_addresses) override;
 
@@ -324,7 +323,7 @@ class RebalancerTool : public rebalance::Rebalancer {
     PolicyFixer(RebalancerTool* rebalancer,
                 std::unordered_set<std::string> ignored_tservers,
                 size_t max_moves_per_server,
-                boost::optional<MonoTime> deadline);
+                std::optional<MonoTime> deadline);
    private:
    // Get replica moves to restore the placement policy restrictions.
    // If returns Status::OK() with replica_moves empty, the distribution
@@ -340,7 +339,7 @@ class RebalancerTool : public rebalance::Rebalancer {
     IgnoredTserversRunner(RebalancerTool* rebalancer,
                           std::unordered_set<std::string> ignored_tservers,
                           size_t max_moves_per_server,
-                          boost::optional<MonoTime> deadline);
+                          std::optional<MonoTime> deadline);
 
    private:
     // Key is tserver UUID which corresponds to value.ts_uuid_from.
@@ -368,11 +367,11 @@ class RebalancerTool : public rebalance::Rebalancer {
   };
 
   // Convert ksck results into information relevant to rebalancing the cluster
-  // at the location specified by 'location' parameter ('boost::none' for
+  // at the location specified by 'location' parameter ('std::nullopt' for
   // 'location' means that's about cross-location rebalancing). Basically,
   // 'raw' information is just a sub-set of relevant fields of the KsckResults
   // structure filtered to contain information only for the specified location.
-  Status KsckResultsToClusterRawInfo(const boost::optional<std::string>& location,
+  Status KsckResultsToClusterRawInfo(const std::optional<std::string>& location,
                                      const KsckResults& ksck_info,
                                      rebalance::ClusterRawInfo* raw_info);
 
@@ -400,7 +399,7 @@ class RebalancerTool : public rebalance::Rebalancer {
 
   // Refresh the information on the cluster for the specified location
   // (involves running ksck).
-  Status GetClusterRawInfo(const boost::optional<std::string>& location,
+  Status GetClusterRawInfo(const std::optional<std::string>& location,
                            rebalance::ClusterRawInfo* raw_info);
 
   // Reset ksck-related fields and run ksck against the cluster.

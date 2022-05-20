@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_LAYER_BASEDATA_H
-#define KUDU_TABLET_LAYER_BASEDATA_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,11 +39,6 @@
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/status.h"
-
-namespace boost {
-template <class T>
-class optional;
-}  // namespace boost
 
 namespace kudu {
 
@@ -109,10 +104,10 @@ class CFileSet :
   uint64_t OnDiskColumnDataSize(const ColumnId& col_id) const;
 
   // Determine the index of the given row key.
-  // Sets *idx to boost::none if the row is not found.
+  // Sets *idx to std::nullopt if the row is not found.
   Status FindRow(const RowSetKeyProbe& probe,
                  const fs::IOContext* io_context,
-                 boost::optional<rowid_t>* idx,
+                 std::optional<rowid_t>* idx,
                  ProbeStats* stats) const;
 
   std::string ToString() const {
@@ -285,4 +280,3 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
 } // namespace tablet
 } // namespace kudu
-#endif

@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <mutex>
 #include <ostream>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -85,6 +86,8 @@
 #endif
 
 using kudu::security::ca::CertRequestGenerator;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::unique_lock;
 using std::vector;
@@ -472,7 +475,7 @@ Status SetCertAttributes(CertRequestGenerator::Config* config) {
   // If the server has logged in from a keytab, then we have a 'real' identity,
   // and our desired CN should match the local username mapped from the Kerberos
   // principal name. Otherwise, we'll make up a common name based on the hostname.
-  boost::optional<string> principal = GetLoggedInPrincipalFromKeytab();
+  optional<string> principal = GetLoggedInPrincipalFromKeytab();
   if (!principal) {
     string uid;
     RETURN_NOT_OK_PREPEND(GetLoggedInUser(&uid),
@@ -534,13 +537,13 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
   return Status::OK();
 }
 
-boost::optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
+optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   shared_lock<RWMutex> lock(lock_);
   if (csr_) {
     return csr_->Clone();
   }
-  return boost::none;
+  return nullopt;
 }
 
 Status TlsContext::AdoptSignedCert(const Cert& cert) {
@@ -577,7 +580,7 @@ Status TlsContext::AdoptSignedCert(const Cert& cert) {
   OPENSSL_CHECK_OK(SSL_CTX_check_private_key(ctx_.get()))
     << "certificate does not match the private key";
 
-  csr_ = boost::none;
+  csr_.reset();
 
   return Status::OK();
 }

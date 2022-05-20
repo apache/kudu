@@ -23,11 +23,11 @@
 #include <cerrno>
 #include <ctime>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -172,7 +172,7 @@ static Status DoClientNegotiation(Connection* conn,
   const auto* messenger = conn->reactor_thread()->reactor()->messenger();
   // Prefer secondary credentials (such as authn token) if permitted by policy.
   const auto authn_token = (conn->credentials_policy() == CredentialsPolicy::PRIMARY_CREDENTIALS)
-      ? boost::none : messenger->authn_token();
+      ? std::nullopt : messenger->authn_token();
   ClientNegotiation client_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
                                        authn_token,
@@ -228,7 +228,7 @@ static Status DoClientNegotiation(Connection* conn,
 
   // Sanity check: if no authn token was supplied as user credentials,
   // the negotiated authentication type cannot be AuthenticationType::TOKEN.
-  DCHECK(!(authn_token == boost::none &&
+  DCHECK(!(!authn_token &&
            client_negotiation.negotiated_authn() == AuthenticationType::TOKEN));
 
   return Status::OK();

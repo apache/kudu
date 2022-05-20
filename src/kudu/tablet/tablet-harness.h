@@ -91,19 +91,20 @@ class TabletHarness {
     RETURN_NOT_OK(fs_manager_->Open());
 
     scoped_refptr<TabletMetadata> metadata;
-    RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
-                                               options_.tablet_id,
-                                               "KuduTableTest",
-                                               "KuduTableTestId",
-                                               schema_,
-                                               partition.first,
-                                               partition.second,
-                                               TABLET_DATA_READY,
-                                               /*tombstone_last_logged_opid=*/ boost::none,
-                                               /*extra_config=*/ boost::none,
-                                               /*dimension_label=*/ boost::none,
-                                               /*table_type=*/ boost::none,
-                                               &metadata));
+    RETURN_NOT_OK(TabletMetadata::LoadOrCreate(
+        fs_manager_.get(),
+        options_.tablet_id,
+        "KuduTableTest",
+        "KuduTableTestId",
+        schema_,
+        partition.first,
+        partition.second,
+        TABLET_DATA_READY,
+        /*tombstone_last_logged_opid=*/ std::nullopt,
+        /*extra_config=*/ std::nullopt,
+        /*dimension_label=*/ std::nullopt,
+        /*table_type=*/ std::nullopt,
+        &metadata));
     metrics_registry_.reset(new MetricRegistry);
     metric_entity_ = METRIC_ENTITY_server.Instantiate(metrics_registry_.get(),
                                                       "tablet-harness");

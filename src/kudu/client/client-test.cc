@@ -28,16 +28,17 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <set>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -68,7 +69,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
-#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
@@ -200,7 +200,6 @@ using base::subtle::Atomic32;
 using base::subtle::NoBarrier_AtomicIncrement;
 using base::subtle::NoBarrier_Load;
 using base::subtle::NoBarrier_Store;
-using boost::none;
 using google::protobuf::util::MessageDifferencer;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
@@ -216,6 +215,8 @@ using kudu::transactions::TxnTokenPB;
 using kudu::tserver::MiniTabletServer;
 using std::function;
 using std::map;
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::set;
 using std::string;
@@ -377,7 +378,7 @@ class ClientTest : public KuduTest {
         cluster_->mini_master()->master()->catalog_manager();
     CatalogManager::ScopedLeaderSharedLock l(catalog);
     CHECK_OK(l.first_failed_status());
-    CHECK_OK(catalog->GetTableLocations(&req, &resp, /*user=*/none));
+    CHECK_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
     CHECK(resp.tablet_locations_size() > 0);
     return resp.tablet_locations(0).tablet_id();
   }
@@ -3090,19 +3091,20 @@ TEST_F(ClientTest, TestInsertAutoFlushSync) {
   }
 }
 
-static Status ApplyInsertToSession(KuduSession* session,
-                                   const shared_ptr<KuduTable>& table,
-                                   int row_key,
-                                   int int_val,
-                                   const char* string_val,
-                                   boost::optional<int> non_null_with_default = boost::none) {
+static Status ApplyInsertToSession(
+    KuduSession* session,
+    const shared_ptr<KuduTable>& table,
+    int row_key,
+    int int_val,
+    const char* string_val,
+    optional<int> non_null_with_default = nullopt) {
   unique_ptr<KuduInsert> insert(table->NewInsert());
   RETURN_NOT_OK(insert->mutable_row()->SetInt32("key", row_key));
   RETURN_NOT_OK(insert->mutable_row()->SetInt32("int_val", int_val));
   RETURN_NOT_OK(insert->mutable_row()->SetStringCopy("string_val", string_val));
   if (non_null_with_default) {
     RETURN_NOT_OK(insert->mutable_row()->SetInt32("non_null_with_default",
-                                                  non_null_with_default.get()));
+                                                  *non_null_with_default));
   }
   return session->Apply(insert.release());
 }
@@ -3132,11 +3134,11 @@ static Status ApplyUpdateToSession(KuduSession* session,
 static Status ApplyDeleteToSession(KuduSession* session,
                                    const shared_ptr<KuduTable>& table,
                                    int row_key,
-                                   boost::optional<int> int_val = boost::none) {
+                                   optional<int> int_val = nullopt) {
   unique_ptr<KuduDelete> del(table->NewDelete());
   RETURN_NOT_OK(del->mutable_row()->SetInt32("key", row_key));
   if (int_val) {
-    RETURN_NOT_OK(del->mutable_row()->SetInt32("int_val", int_val.get()));
+    RETURN_NOT_OK(del->mutable_row()->SetInt32("int_val", *int_val));
   }
   return session->Apply(del.release());
 }
@@ -4832,7 +4834,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterExtraConfig(extra_configs);
     ASSERT_OK(table_alterer->Alter());
     ASSERT_EQ(9, tablet_replica->tablet()->metadata()->schema_version());
-    ASSERT_NE(boost::none, tablet_replica->tablet()->metadata()->extra_config());
+    ASSERT_NE(nullopt, tablet_replica->tablet()->metadata()->extra_config());
     ASSERT_TRUE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
     ASSERT_EQ(3600, tablet_replica->tablet()->metadata()->extra_config()->history_max_age_sec());
   }
@@ -4844,7 +4846,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterExtraConfig(extra_configs);
     ASSERT_OK(table_alterer->Alter());
     ASSERT_EQ(10, tablet_replica->tablet()->metadata()->schema_version());
-    ASSERT_NE(boost::none, tablet_replica->tablet()->metadata()->extra_config());
+    ASSERT_NE(nullopt, tablet_replica->tablet()->metadata()->extra_config());
     ASSERT_TRUE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
     ASSERT_EQ(7200, tablet_replica->tablet()->metadata()->extra_config()->history_max_age_sec());
   }
@@ -4862,7 +4864,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
                         "kudu.table.maintenance_priority_BAD_NAME");
     // Schema version and old properties are not changed.
     ASSERT_EQ(10, tablet_replica->tablet()->metadata()->schema_version());
-    ASSERT_NE(boost::none, tablet_replica->tablet()->metadata()->extra_config());
+    ASSERT_NE(nullopt, tablet_replica->tablet()->metadata()->extra_config());
     ASSERT_TRUE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
     ASSERT_EQ(7200, tablet_replica->tablet()->metadata()->extra_config()->history_max_age_sec());
     ASSERT_FALSE(tablet_replica->tablet()->metadata()->extra_config()->has_maintenance_priority());
@@ -4875,7 +4877,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterExtraConfig(extra_configs);
     ASSERT_OK(table_alterer->Alter());
     ASSERT_EQ(11, tablet_replica->tablet()->metadata()->schema_version());
-    ASSERT_NE(boost::none, tablet_replica->tablet()->metadata()->extra_config());
+    ASSERT_NE(nullopt, tablet_replica->tablet()->metadata()->extra_config());
     ASSERT_FALSE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
   }
 
@@ -6643,7 +6645,7 @@ TEST_F(ClientTest, TestConnectToClusterCompatibility) {
 // the data can be exported and re-imported into a new client.
 TEST_F(ClientTest, TestGetSecurityInfoFromMaster) {
   // Client is already connected when the test starts.
-  ASSERT_TRUE(client_->data_->messenger_->authn_token() != boost::none);
+  ASSERT_TRUE(client_->data_->messenger_->authn_token());
   ASSERT_EQ(1, client_->data_->messenger_->tls_context().trusted_cert_count_for_tests());
 
   string authn_creds;

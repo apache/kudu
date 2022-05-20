@@ -21,13 +21,13 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
 #include <tuple>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -127,7 +127,7 @@ class TabletCopyClientTest : public TabletCopyTest {
     if (server_key.empty()) {
       ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     } else {
-      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(boost::none, server_key));
+      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(std::nullopt, server_key));
     }
     ASSERT_OK(fs_manager_->Open());
     ASSERT_OK(ResetTabletCopyClient());

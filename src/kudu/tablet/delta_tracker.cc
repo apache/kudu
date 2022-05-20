@@ -19,13 +19,13 @@
 
 #include <algorithm>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
 #include <type_traits>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <glog/logging.h>
 
@@ -466,8 +466,8 @@ Status DeltaTracker::CompactStores(const IOContext* io_context, int start_idx, i
 bool DeltaTracker::EstimateAllRedosAreAncient(Timestamp ancient_history_mark) {
   shared_ptr<DeltaStore> newest_redo;
   std::lock_guard<rw_spinlock> lock(component_lock_);
-  const boost::optional<Timestamp> dms_highest_timestamp =
-      dms_ ? dms_->highest_timestamp() : boost::none;
+  const std::optional<Timestamp> dms_highest_timestamp =
+      dms_ ? dms_->highest_timestamp() : std::nullopt;
   if (dms_highest_timestamp) {
     return *dms_highest_timestamp < ancient_history_mark;
   }

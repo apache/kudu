@@ -22,17 +22,17 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <ostream>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
-#include "kudu/client/tablet_info_provider-internal.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/tablet_info_provider-internal.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
@@ -40,7 +40,6 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"

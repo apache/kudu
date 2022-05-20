@@ -21,12 +21,12 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -317,7 +317,7 @@ TEST_F(ConsensusQueueTest, TestTransferLeadershipWhenAppropriate) {
   NO_FATALS(verify_elections(/*election_happened*/false));
 
   // Even after waiting for a successor, this peer isn't ready yet.
-  queue_->BeginWatchForSuccessor(boost::none);
+  queue_->BeginWatchForSuccessor(std::nullopt);
   NO_FATALS(verify_elections(/*election_happened*/false));
 
   // Once the peer says it's gotten the last-appended op, we should be good to
@@ -330,7 +330,7 @@ TEST_F(ConsensusQueueTest, TestTransferLeadershipWhenAppropriate) {
 
   // And if we try to step down but specify a different peer, we also won't try
   // electing the peer in-hand.
-  queue_->BeginWatchForSuccessor(boost::make_optional<string>("different-peer"));
+  queue_->BeginWatchForSuccessor(std::make_optional<string>("different-peer"));
   NO_FATALS(verify_elections(/*election_happened*/false));
 
   // Even if we begin quiescing, because we're looking for a specific

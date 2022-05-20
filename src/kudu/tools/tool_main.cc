@@ -20,11 +20,11 @@
 #include <deque>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -87,7 +87,8 @@ Status MarshalArgs(const vector<Mode*>& chain,
   // Marshal the required arguments from the command line.
   for (const auto& a : args.required) {
     if (input.empty()) {
-      return Status::InvalidArgument(Substitute("must provide positional argument $0", a.name));
+      return Status::InvalidArgument(
+          Substitute("must provide positional argument $0", a.name));
     }
     InsertOrDie(required, a.name, input.front());
     input.pop_front();
@@ -95,10 +96,10 @@ Status MarshalArgs(const vector<Mode*>& chain,
 
   // Marshal the variable length arguments, if they exist.
   if (args.variadic) {
-    const ActionArgsDescriptor::Arg& a = args.variadic.get();
+    const ActionArgsDescriptor::Arg& a = *args.variadic;
     if (input.empty()) {
-      return Status::InvalidArgument(Substitute("must provide variadic positional argument $0",
-                                                a.name));
+      return Status::InvalidArgument(
+          Substitute("must provide variadic positional argument $0", a.name));
     }
 
     variadic->assign(input.begin(), input.end());

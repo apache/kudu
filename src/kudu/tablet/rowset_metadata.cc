@@ -78,8 +78,8 @@ void RowSetMetadata::LoadFromPB(const RowSetDataPB& pb) {
   id_ = pb.id();
 
   // Load the min/max keys.
-  min_encoded_key_ = boost::none;
-  max_encoded_key_ = boost::none;
+  min_encoded_key_.reset();
+  max_encoded_key_.reset();
   DCHECK_EQ(pb.has_min_encoded_key(), pb.has_max_encoded_key());
   if (pb.has_min_encoded_key() && pb.has_max_encoded_key()) {
     min_encoded_key_ = pb.min_encoded_key();

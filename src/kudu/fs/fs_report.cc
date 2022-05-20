@@ -18,8 +18,9 @@
 
 #include <iostream>
 #include <string>
-#include <utility>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -288,7 +289,7 @@ void FsReport::MergeFrom(const FsReport& other) {
 
 #define MERGE_ONE_CHECK(c) \
   if ((c) && other.c) { \
-    (c)->MergeFrom(other.c.get()); \
+    (c)->MergeFrom(*(other.c)); \
   } else if (other.c) { \
     (c) = other.c; \
   }

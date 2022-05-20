@@ -19,13 +19,12 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
-#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/client/client.h"
@@ -77,7 +76,9 @@ using kudu::master::ReplaceTabletResponsePB;
 using std::cerr;
 using std::cout;
 using std::endl;
-using std::shared_ptr;
+using std::make_optional;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -110,7 +111,7 @@ Status WaitForCleanKsck(const vector<string>& master_addresses,
 Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& replica_uuid = FindOrDie(context.required_args, kTsUuidArg);
-  boost::optional<RaftPeerPB::MemberType> member_type;
+  optional<RaftPeerPB::MemberType> member_type;
   if (cc_type == consensus::ADD_PEER || cc_type == consensus::MODIFY_PEER) {
     const string& replica_type = FindOrDie(context.required_args, kReplicaTypeArg);
     string uppercase_peer_type;
@@ -146,9 +147,9 @@ Status LeaderStepDown(const RunnerContext& context) {
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const LeaderStepDownMode mode = FLAGS_abrupt ? LeaderStepDownMode::ABRUPT :
                                                  LeaderStepDownMode::GRACEFUL;
-  const boost::optional<string> new_leader_uuid =
-    FLAGS_new_leader_uuid.empty() ? boost::none :
-                                    boost::make_optional(FLAGS_new_leader_uuid);
+  const optional<string> new_leader_uuid =
+    FLAGS_new_leader_uuid.empty() ? nullopt
+                                  : make_optional(FLAGS_new_leader_uuid);
   if (mode == LeaderStepDownMode::ABRUPT && new_leader_uuid) {
     return Status::InvalidArgument("cannot specify both --new_leader_uuid and --abrupt");
   }
@@ -166,7 +167,7 @@ Status LeaderStepDown(const RunnerContext& context) {
     // error if there's no leader since we can't orchestrate the transfer.
     if (new_leader_uuid) {
         return s.CloneAndPrepend(
-            Substitute("unable to transfer leadership to $0", new_leader_uuid.get()));
+            Substitute("unable to transfer leadership to $0", *new_leader_uuid));
     }
     // Otherwise, a new election should happen soon, which will achieve
     // something like what the client wanted, so we'll exit gracefully.
@@ -176,7 +177,7 @@ Status LeaderStepDown(const RunnerContext& context) {
   RETURN_NOT_OK(s);
 
   // If the requested new leader is the leader, the command can short-circuit.
-  if (new_leader_uuid && (leader_uuid == new_leader_uuid.get())) {
+  if (new_leader_uuid && (leader_uuid == *new_leader_uuid)) {
     cout << Substitute("Requested new leader $0 is already the leader",
                        leader_uuid) << endl;
     return Status::OK();

@@ -18,9 +18,8 @@
 #include "kudu/security/security-test-util.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"

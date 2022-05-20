@@ -22,15 +22,17 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/map.h>
 #include <google/protobuf/stubs/common.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/columnblock.h"
@@ -60,21 +62,20 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/string_case.h"
 
-namespace kudu {
-class BlockBloomFilterPB;
-}  // namespace kudu
-
 using google::protobuf::Map;
 using google::protobuf::RepeatedPtrField;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::map;
+using std::optional;
 using std::string;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+class BlockBloomFilterPB;
 
 void StatusToPB(const Status& status, AppStatusPB* pb) {
   pb->Clear();
@@ -268,7 +269,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
   }
 }
 
-Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, boost::optional<ColumnSchema>* col_schema) {
+Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, optional<ColumnSchema>* col_schema) {
   const void *write_default_ptr = nullptr;
   const void *read_default_ptr = nullptr;
   Slice write_default;
@@ -366,25 +367,25 @@ void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDelta
 ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb) {
   ColumnSchemaDelta col_delta(pb.name());
   if (pb.has_new_name()) {
-    col_delta.new_name = boost::optional<string>(pb.new_name());
+    col_delta.new_name = pb.new_name();
   }
   if (pb.has_default_value()) {
-    col_delta.default_value = boost::optional<Slice>(Slice(pb.default_value()));
+    col_delta.default_value = Slice(pb.default_value());
   }
   if (pb.has_remove_default()) {
     col_delta.remove_default = true;
   }
   if (pb.has_encoding()) {
-    col_delta.encoding = boost::optional<EncodingType>(pb.encoding());
+    col_delta.encoding = pb.encoding();
   }
   if (pb.has_compression()) {
-    col_delta.compression = boost::optional<CompressionType>(pb.compression());
+    col_delta.compression = pb.compression();
   }
   if (pb.has_block_size()) {
-    col_delta.cfile_block_size = boost::optional<int32_t>(pb.block_size());
+    col_delta.cfile_block_size = pb.block_size();
   }
   if (pb.has_new_comment()) {
-    col_delta.new_comment = boost::optional<string>(pb.new_comment());
+    col_delta.new_comment = pb.new_comment();
   }
   return col_delta;
 }
@@ -398,7 +399,7 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
   int num_key_columns = 0;
   bool is_handling_key = true;
   for (const ColumnSchemaPB& pb : column_pbs) {
-    boost::optional<ColumnSchema> column;
+    optional<ColumnSchema> column;
     RETURN_NOT_OK(ColumnSchemaFromPB(pb, &column));
     columns.emplace_back(std::move(*column));
     if (pb.is_key()) {
@@ -556,7 +557,7 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate,
 Status ColumnPredicateFromPB(const Schema& schema,
                              Arena* arena,
                              const ColumnPredicatePB& pb,
-                             boost::optional<ColumnPredicate>* predicate) {
+                             optional<ColumnPredicate>* predicate) {
   if (!pb.has_column()) {
     return Status::InvalidArgument("Column predicate must include a column", SecureDebugString(pb));
   }

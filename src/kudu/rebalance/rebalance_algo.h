@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <map>
+#include <optional>
 #include <random>
 #include <set>
 #include <string>
@@ -29,10 +30,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/util/status.h"
-
-namespace boost {
-template <class T> class optional;
-} // namespace boost
 
 namespace kudu {
 namespace rebalance {
@@ -157,11 +154,11 @@ class RebalancingAlgo {
                               std::vector<TableReplicaMove>* moves);
  protected:
   // Get the next rebalancing move from the algorithm. If there is no such move,
-  // the 'move' output parameter is set to 'boost::none'.
+  // the 'move' output parameter is set to 'std::nullopt'.
   //
   // 'move' must be non-NULL.
   virtual Status GetNextMove(const ClusterInfo& cluster_info,
-                             boost::optional<TableReplicaMove>* move) = 0;
+                             std::optional<TableReplicaMove>* move) = 0;
 
   // Update the balance state in 'balance_info' with the outcome of the move
   // 'move'. 'balance_info' is an in-out parameter and must be non-NULL.
@@ -189,7 +186,7 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
 
  protected:
   Status GetNextMove(const ClusterInfo& cluster_info,
-                     boost::optional<TableReplicaMove>* move) override;
+                     std::optional<TableReplicaMove>* move) override;
 
  private:
   enum class ExtremumType { MAX, MIN, };
@@ -300,7 +297,7 @@ class LocationBalancingAlgo : public RebalancingAlgo {
 
  protected:
   Status GetNextMove(const ClusterInfo& cluster_info,
-                     boost::optional<TableReplicaMove>* move) override;
+                     std::optional<TableReplicaMove>* move) override;
  private:
   FRIEND_TEST(RebalanceAlgoUnitTest, RandomizedTest);
   typedef std::multimap<double, TableIdAndTag> TableByLoadImbalance;
@@ -317,13 +314,13 @@ class LocationBalancingAlgo : public RebalancingAlgo {
   // the source and destination tablet server to move a replica of the specified
   // tablet to improve per-table location load balance as much as possible.
   // If no replica can be moved to balance the load, the 'move' output parameter
-  // is set to 'boost::none'.
+  // is set to 'std::nullopt'.
   static Status FindBestMove(
       const TableIdAndTag& table_info,
       const std::vector<std::string>& loc_loaded_least,
       const std::vector<std::string>& loc_loaded_most,
       const ClusterInfo& cluster_info,
-      boost::optional<TableReplicaMove>* move);
+      std::optional<TableReplicaMove>* move);
 
   const double load_imbalance_threshold_;
 };

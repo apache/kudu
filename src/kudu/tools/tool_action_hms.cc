@@ -21,6 +21,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <type_traits>
@@ -29,7 +30,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -83,6 +83,7 @@ using kudu::hms::HmsClient;
 using std::cout;
 using std::endl;
 using std::make_pair;
+using std::nullopt;
 using std::ostream;
 using std::pair;
 using std::set;
@@ -956,16 +957,16 @@ unique_ptr<Mode> BuildHmsMode() {
   unique_ptr<Action> hms_check =
       ClusterActionBuilder("check", &CheckHmsMetadata)
       .Description("Check metadata consistency between Kudu and the Hive Metastore catalogs")
-      .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
-      .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
+      .AddOptionalParameter("hive_metastore_sasl_enabled", nullopt, kHmsSaslEnabledDesc)
+      .AddOptionalParameter("hive_metastore_uris", nullopt, kHmsUrisDesc)
       .AddOptionalParameter("ignore_other_clusters")
       .Build();
 
   unique_ptr<Action> hms_downgrade =
       ClusterActionBuilder("downgrade", &HmsDowngrade)
       .Description("Downgrade the metadata to legacy format for Kudu and the Hive Metastores")
-      .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
-      .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
+      .AddOptionalParameter("hive_metastore_sasl_enabled", nullopt, kHmsSaslEnabledDesc)
+      .AddOptionalParameter("hive_metastore_uris", nullopt, kHmsUrisDesc)
       .Build();
 
   unique_ptr<Action> hms_fix =
@@ -977,8 +978,8 @@ unique_ptr<Mode> BuildHmsMode() {
       .AddOptionalParameter("create_missing_hms_tables")
       .AddOptionalParameter("fix_inconsistent_tables")
       .AddOptionalParameter("upgrade_hms_tables")
-      .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
-      .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
+      .AddOptionalParameter("hive_metastore_sasl_enabled", nullopt, kHmsSaslEnabledDesc)
+      .AddOptionalParameter("hive_metastore_uris", nullopt, kHmsUrisDesc)
       .AddOptionalParameter("ignore_other_clusters")
       .Build();
 

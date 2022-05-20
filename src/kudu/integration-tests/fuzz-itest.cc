@@ -22,15 +22,15 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp> // IWYU pragma: keep
-#include <boost/optional/optional_io.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -85,10 +85,8 @@ DECLARE_bool(scanner_allow_snapshot_scans_with_logical_timestamps);
 DECLARE_bool(tserver_txn_write_op_handling_enabled);
 DECLARE_bool(use_hybrid_clock);
 
-using boost::optional;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
-using kudu::client::KuduDelete;
 using kudu::client::KuduPredicate;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
@@ -107,6 +105,8 @@ using kudu::tserver::ParticipantResponsePB;
 using std::list;
 using std::map;
 using std::make_pair;
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::string;
 using std::vector;
@@ -252,7 +252,7 @@ enum class RedoType {
 
 struct Redo {
 
-  Redo(RedoType t, int32_t k, optional<int32_t> v = boost::none)
+  Redo(RedoType t, int32_t k, optional<int32_t> v = nullopt)
       : rtype(t),
         key(k),
         val(v) {}
@@ -444,7 +444,7 @@ class FuzzTest : public KuduTest {
       case TEST_UPSERT_PK_ONLY: {
         // For "upsert PK only" and "insert ignore PK only", we expect the row
         // to keep its old value if the row existed, or NULL if there was no old row.
-        ret.val = old_row ? old_row->val : boost::none;
+        ret.val = old_row ? old_row->val : nullopt;
         break;
       }
       default: LOG(FATAL) << "Invalid test op type: " << TestOpType_names[type];
@@ -480,8 +480,8 @@ class FuzzTest : public KuduTest {
     return ret;
   }
 
-  // Adds a delete of the given row to 'ops', returning boost::none (indicating that
-  // the row no longer exists).
+  // Adds a delete of the given row to 'ops', returning std::nullopt
+  // (indicating that the row no longer exists).
   optional<ExpectedKeyValueRow> DeleteRow(int key, TestOpType type) {
     unique_ptr<KuduWriteOperation> op;
     if (type == TEST_DELETE_IGNORE) {
@@ -492,11 +492,11 @@ class FuzzTest : public KuduTest {
     KuduPartialRow* row = op->mutable_row();
     CHECK_OK(row->SetInt32(0, key));
     CHECK_OK(session_->Apply(op.release()));
-    return boost::none;
+    return nullopt;
   }
 
   // Random-read the given row, returning its current value.
-  // If the row doesn't exist, returns boost::none.
+  // If the row doesn't exist, returns std::nullopt.
   optional<ExpectedKeyValueRow> GetRow(int key) {
     KuduScanner s(table_.get());
     CHECK_OK(s.AddConjunctPredicate(table_->NewComparisonPredicate(
@@ -510,12 +510,12 @@ class FuzzTest : public KuduTest {
         CHECK_OK(row.GetInt32(0, &ret.key));
         if (schema_.num_columns() > 1 && !row.IsNull(1)) {
           ret.val = 0;
-          CHECK_OK(row.GetInt32(1, ret.val.get_ptr()));
+          CHECK_OK(row.GetInt32(1, &(*ret.val)));
         }
         return ret;
       }
     }
-    return boost::none;
+    return nullopt;
   }
 
   // Checks that the rows in 'found' match the state we've stored 'saved_values_' corresponding
@@ -588,7 +588,7 @@ class FuzzTest : public KuduTest {
         RETURN_NOT_OK(row.GetInt32(0, &ret.key));
         if (schema_.num_columns() == 2 && !row.IsNull(1)) {
           ret.val = 0;
-          RETURN_NOT_OK(row.GetInt32(1, ret.val.get_ptr()));
+          RETURN_NOT_OK(row.GetInt32(1, &(*ret.val)));
         }
         if (is_deleted) {
           bool b;
@@ -1075,8 +1075,8 @@ void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
           for (const auto& key_and_exists : pending_existence_per_row) {
             const auto& row_key = key_and_exists.first;
             exists[row_key] = key_and_exists.second;
-            DCHECK_EQ(kNoTxnId, txn_touching_row[row_key]);
-            txn_touching_row[row_key] = boost::none;
+            DCHECK_EQ(kNoTxnId, *txn_touching_row[row_key]);
+            txn_touching_row[row_key].reset();
           }
           pending_existence_per_row.clear();
         }
@@ -1180,7 +1180,7 @@ void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
           // if there are any inserted rows.
           data_in_mrs = true;
           exists[key] = true;
-          txn_touching_row[key] = boost::none;
+          txn_touching_row[key].reset();
         }
         // Commit replicates two ops (BEGIN_COMMIT and FINALIZE_COMMIT).
         op_timestamps += 2;
@@ -1193,7 +1193,7 @@ void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
         ops->emplace_back(r, txn_id);
         auto pending_existence = EraseKeyReturnValuePtr(&pending_existence_per_txn, txn_id);
         for (const auto& key_and_exists : pending_existence) {
-          txn_touching_row[key_and_exists.first] = boost::none;
+          txn_touching_row[key_and_exists.first].reset();
         }
         op_timestamps++;
         break;
@@ -1406,10 +1406,10 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
           break;
         }
         FindOrDie(pending_redos_per_txn, kNoTxnId).emplace_back(
-            RedoType::DELETE, row_key, boost::none);
+            RedoType::DELETE, row_key, nullopt);
         auto& pending_row_by_key =
             LookupOrEmplace(&pending_vals_per_txn, kNoTxnId, ValueByRowKey{});
-        EmplaceOrUpdate(&pending_row_by_key, row_key, boost::none);
+        EmplaceOrUpdate(&pending_row_by_key, row_key, nullopt);
         break;
       }
       case TEST_FLUSH_OPS: {

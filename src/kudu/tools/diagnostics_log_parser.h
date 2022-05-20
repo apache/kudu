@@ -18,19 +18,21 @@
 #pragma once
 
 #include <iostream>
+#include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <rapidjson/document.h>
 
 #include "kudu/gutil/strings/stringpiece.h"
-#include "kudu/util/jsonreader.h"
+#include "kudu/util/jsonreader.h" // IWYU pragma: keep
 #include "kudu/util/status.h"
 
 namespace kudu {
+
 namespace tools {
 
 // One of the record types from the log.
@@ -116,7 +118,7 @@ class ParsedLine {
 
   // A JsonReader initialized from the most recent line.
   // This will be 'none' before any lines have been read.
-  boost::optional<JsonReader> json_;
+  std::optional<JsonReader> json_;
 };
 
 // Parser for a metrics log.

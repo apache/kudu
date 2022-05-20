@@ -19,13 +19,13 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -685,7 +685,7 @@ TEST_F(AutoRebalancerTest, TestDeletedTables) {
   GetTableLocationsResponsePB table_locs;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), kNewTableName,
                               MonoDelta::FromSeconds(10), ReplicaTypeFilter::ANY_REPLICA,
-                              /*table_id*/boost::none, &table_locs));
+                              /*table_id*/std::nullopt, &table_locs));
   unordered_set<string> deleted_tablet_ids;
   for (const auto& t : table_locs.tablet_locations()) {
     EmplaceIfNotPresent(&deleted_tablet_ids, t.tablet_id());

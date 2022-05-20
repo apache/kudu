@@ -19,12 +19,12 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
@@ -169,14 +169,14 @@ Status ServicePool::QueueInboundCall(unique_ptr<InboundCall> call) {
   TRACE_TO(c->trace(), "Inserting onto call queue");
 
   // Queue message on service queue
-  boost::optional<InboundCall*> evicted;
+  std::optional<InboundCall*> evicted;
   auto queue_status = service_queue_.Put(c, &evicted);
   if (queue_status == QUEUE_FULL) {
     RejectTooBusy(c);
     return Status::OK();
   }
 
-  if (PREDICT_FALSE(evicted != boost::none)) {
+  if (PREDICT_TRUE(evicted)) {
     RejectTooBusy(*evicted);
   }
 

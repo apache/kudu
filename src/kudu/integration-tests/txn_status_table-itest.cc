@@ -22,13 +22,12 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/none_t.hpp>
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -147,7 +146,7 @@ class TxnStatusTableITest : public KuduTest {
     map<TableTypePB, int> type_counts;
     for (const auto& r : replicas) {
       const auto optional_table_type = r->tablet_metadata()->table_type();
-      if (boost::none == optional_table_type) {
+      if (!optional_table_type.has_value()) {
         LookupOrEmplace(&type_counts, TableTypePB::DEFAULT_TABLE, 0)++;
       } else {
         ASSERT_EQ(TableTypePB::TXN_STATUS_TABLE, *optional_table_type);
@@ -920,7 +919,7 @@ TEST_F(MultiServerTxnStatusTableITest, TestSystemClientDeletedTablet) {
   ASSERT_FALSE(orig_leader_uuid.empty());
   ASSERT_OK(cluster_->mini_tablet_server_by_uuid(
       orig_leader_uuid)->server()->tablet_manager()->DeleteTablet(
-          tablet_id, tablet::TABLET_DATA_TOMBSTONED, /*cas_config_index*/boost::none));
+          tablet_id, tablet::TABLET_DATA_TOMBSTONED, /*cas_config_index*/std::nullopt));
 
   // The client should automatically try to get a new location for the tablet.
   ASSERT_OK(txn_sys_client_->BeginTransaction(2, kUser));

@@ -20,12 +20,12 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -95,11 +95,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                           const PartitionSchema& partition_schema,
                           const Partition& partition,
                           const TabletDataState& initial_tablet_data_state,
-                          boost::optional<consensus::OpId> tombstone_last_logged_opid,
+                          std::optional<consensus::OpId> tombstone_last_logged_opid,
                           bool supports_live_row_count,
-                          boost::optional<TableExtraConfigPB> extra_config,
-                          boost::optional<std::string> dimension_label,
-                          boost::optional<TableTypePB> table_type,
+                          std::optional<TableExtraConfigPB> extra_config,
+                          std::optional<std::string> dimension_label,
+                          std::optional<TableTypePB> table_type,
                           scoped_refptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk.
@@ -120,10 +120,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              const PartitionSchema& partition_schema,
                              const Partition& partition,
                              const TabletDataState& initial_tablet_data_state,
-                             boost::optional<consensus::OpId> tombstone_last_logged_opid,
-                             boost::optional<TableExtraConfigPB> extra_config,
-                             boost::optional<std::string> dimension_label,
-                             boost::optional<TableTypePB> table_type,
+                             std::optional<consensus::OpId> tombstone_last_logged_opid,
+                             std::optional<TableExtraConfigPB> extra_config,
+                             std::optional<std::string> dimension_label,
+                             std::optional<TableTypePB> table_type,
                              scoped_refptr<TabletMetadata>* metadata);
 
   static std::vector<BlockIdPB> CollectBlockIdPBs(
@@ -146,7 +146,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     return table_id_;
   }
 
-  const boost::optional<TableTypePB>& table_type() const;
+  const std::optional<TableTypePB>& table_type() const;
 
   std::string table_name() const;
 
@@ -227,7 +227,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Note: this will always update the in-memory state, but upon failure,
   // may not update the on-disk state.
   Status DeleteTabletData(TabletDataState delete_type,
-                          const boost::optional<consensus::OpId>& last_logged_opid);
+                          const std::optional<consensus::OpId>& last_logged_opid);
 
   // Return true if this metadata references no blocks (either live or orphaned) and is
   // already marked as tombstoned. If this is the case, then calling DeleteTabletData
@@ -301,13 +301,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   void SetPreFlushCallback(StatusClosure callback);
 
   // Return the last-logged opid of a tombstoned tablet, if known.
-  boost::optional<consensus::OpId> tombstone_last_logged_opid() const;
+  std::optional<consensus::OpId> tombstone_last_logged_opid() const;
 
   // Returns the table's extra configuration properties.
-  boost::optional<TableExtraConfigPB> extra_config() const;
+  std::optional<TableExtraConfigPB> extra_config() const;
 
   // Returns the table's dimension label.
-  boost::optional<std::string> dimension_label() const;
+  std::optional<std::string> dimension_label() const;
 
   // Loads the currently-flushed superblock from disk into the given protobuf.
   Status ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) const;
@@ -367,11 +367,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                  const Schema& schema, PartitionSchema partition_schema,
                  Partition partition,
                  const TabletDataState& tablet_data_state,
-                 boost::optional<consensus::OpId> tombstone_last_logged_opid,
+                 std::optional<consensus::OpId> tombstone_last_logged_opid,
                  bool supports_live_row_count,
-                 boost::optional<TableExtraConfigPB> extra_config,
-                 boost::optional<std::string> dimension_label,
-                 boost::optional<TableTypePB> table_type);
+                 std::optional<TableExtraConfigPB> extra_config,
+                 std::optional<std::string> dimension_label,
+                 std::optional<TableTypePB> table_type);
 
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager* fs_manager, std::string tablet_id);
@@ -458,16 +458,16 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Record of the last opid logged by the tablet before it was last
   // tombstoned. Has no meaning for non-tombstoned tablets.
   // Protected by 'data_lock_'.
-  boost::optional<consensus::OpId> tombstone_last_logged_opid_;
+  std::optional<consensus::OpId> tombstone_last_logged_opid_;
 
   // Table extra config.
-  boost::optional<TableExtraConfigPB> extra_config_;
+  std::optional<TableExtraConfigPB> extra_config_;
 
   // Tablet's dimension label.
-  boost::optional<std::string> dimension_label_;
+  std::optional<std::string> dimension_label_;
 
   // The table type of the table this tablet belongs to.
-  boost::optional<TableTypePB> table_type_;
+  std::optional<TableTypePB> table_type_;
 
   // If this counter is > 0 then Flush() will not write any data to
   // disk.

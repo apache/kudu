@@ -18,13 +18,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
-#include <boost/optional/optional_io.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -33,11 +33,11 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -60,7 +60,8 @@ DEFINE_int32(update_delete_ratio, 4, "ratio of update:delete when mutating exist
 
 DECLARE_int32(deltafile_default_block_size);
 
-using boost::optional;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -117,7 +118,7 @@ class TestRandomAccess : public KuduTabletTest {
     vector<LocalTabletWriter::RowOp> pending;
     for (int i = 0; i < 3; i++) {
       int new_val = rand();
-      if (cur_val == boost::none) {
+      if (!cur_val) {
         // If there is no row, then randomly insert, insert ignore,
         // update ignore, delete ignore, or upsert.
         switch (rand() % 5) {
@@ -211,12 +212,12 @@ class TestRandomAccess : public KuduTabletTest {
 
   // Adds an insert for the given key/value pair to 'ops', returning the expected value
   optional<ExpectedKeyValueRow> InsertRow(int key, int val, vector<LocalTabletWriter::RowOp>* ops) {
-    return DoRowOp(RowOperationsPB::INSERT, key, val, boost::none, ops);
+    return DoRowOp(RowOperationsPB::INSERT, key, val, nullopt, ops);
   }
 
   optional<ExpectedKeyValueRow> InsertIgnoreRow(int key, int val,
                                                 vector<LocalTabletWriter::RowOp>* ops) {
-    return DoRowOp(RowOperationsPB::INSERT_IGNORE, key, val, boost::none, ops);
+    return DoRowOp(RowOperationsPB::INSERT_IGNORE, key, val, nullopt, ops);
   }
 
   optional<ExpectedKeyValueRow> UpsertRow(int key,
@@ -262,7 +263,7 @@ class TestRandomAccess : public KuduTabletTest {
         switch (val % 2) {
           case 0:
             CHECK_OK(row->SetNull(1));
-            ret->val = boost::none;
+            ret->val.reset();
             break;
           case 1:
             CHECK_OK(row->SetInt32(1, val));
@@ -277,8 +278,8 @@ class TestRandomAccess : public KuduTabletTest {
           // was previously set to.
           CHECK_OK(row->Unset(1));
 
-          if (type == RowOperationsPB::INSERT || old_row == boost::none) {
-            ret->val = boost::none;
+          if (type == RowOperationsPB::INSERT || !old_row) {
+            ret->val.reset();
           } else {
             ret->val = old_row->val;
           }
@@ -286,7 +287,7 @@ class TestRandomAccess : public KuduTabletTest {
         break;
       case RowOperationsPB::DELETE:
       case RowOperationsPB::DELETE_IGNORE:
-        ret = boost::none;
+        ret.reset();
         break;
       default:
         LOG(FATAL) << "Unknown type: " << type;
@@ -301,7 +302,7 @@ class TestRandomAccess : public KuduTabletTest {
     unique_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
     ops->push_back(LocalTabletWriter::RowOp(RowOperationsPB::DELETE, row.release()));
-    return boost::none;
+    return nullopt;
   }
 
   // Adds a delete ignore of the given row to 'ops', returning an empty string (indicating that
@@ -310,11 +311,11 @@ class TestRandomAccess : public KuduTabletTest {
     unique_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
     ops->push_back(LocalTabletWriter::RowOp(RowOperationsPB::DELETE_IGNORE, row.release()));
-    return boost::none;
+    return nullopt;
   }
 
   // Random-read the given row, returning its current value.
-  // If the row doesn't exist, returns boost::none.
+  // If the row doesn't exist, returns std::nullopt.
   optional<ExpectedKeyValueRow> GetRow(int key) {
     ScanSpec spec;
     const Schema& schema = this->client_schema_;
@@ -339,7 +340,7 @@ class TestRandomAccess : public KuduTabletTest {
         // We expect to only get exactly one result per read.
         CHECK_EQ(n_results, 0)
           << "Already got result when looking up row "
-          << key << ": " << ret
+          << key << ": " << *ret
           << " and now have new matching row: "
           << schema.DebugRow(block.row(i))
           << "  iterator: " << iter->ToString();

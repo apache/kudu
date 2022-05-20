@@ -17,16 +17,15 @@
 
 #include "kudu/rebalance/placement_policy_util.h"
 
-#include <cstdint>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 

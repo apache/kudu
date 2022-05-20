@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <type_traits>
@@ -27,7 +28,6 @@
 #include <utility>
 
 #include <boost/intrusive/list.hpp>
-#include <boost/optional/optional.hpp>
 #include <ev++.h>
 #include <glog/logging.h>
 
@@ -335,7 +335,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
 
   // The ConnectionId that serves as a key into the client connection map
   // within this reactor. Only set in the case of outbound connections.
-  boost::optional<ConnectionId> outbound_connection_id_;
+  std::optional<ConnectionId> outbound_connection_id_;
 
   // The authenticated remote user (if this is an inbound connection on the server).
   RemoteUser remote_user_;

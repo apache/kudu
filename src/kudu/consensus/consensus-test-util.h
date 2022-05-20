@@ -593,7 +593,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
 
     if (s.ok()) {
       s = peer->RequestVote(&other_peer_req,
-                            TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                            TabletVotingState(std::nullopt, tablet::TABLET_DATA_READY),
                             &other_peer_resp);
     }
     if (!s.ok()) {

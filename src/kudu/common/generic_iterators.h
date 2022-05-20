@@ -17,11 +17,10 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/common/iterator.h"
 #include "kudu/util/status.h"
@@ -37,7 +36,7 @@ class ScanSpec;
 // The bounds are optional because some rowsets (e.g. MRS) don't have them.
 struct IterWithBounds {
   std::unique_ptr<RowwiseIterator> iter;
-  boost::optional<std::pair<std::string, std::string>> encoded_bounds;
+  std::optional<std::pair<std::string, std::string>> encoded_bounds;
 };
 
 // Options struct for the MergeIterator.

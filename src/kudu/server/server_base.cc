@@ -21,12 +21,12 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -614,7 +614,7 @@ Status ServerBase::Init() {
     if (options_.server_key.empty()) {
       s = fs_manager_->CreateInitialFileSystemLayout();
     } else {
-      s = fs_manager_->CreateInitialFileSystemLayout(boost::none, options_.server_key);
+      s = fs_manager_->CreateInitialFileSystemLayout(std::nullopt, options_.server_key);
     }
     if (s.IsAlreadyPresent()) {
       return s.CloneAndPrepend("FS layout already exists; not overwriting existing layout");
@@ -688,7 +688,7 @@ Status ServerBase::Init() {
 
 Status ServerBase::InitAcls() {
   string service_user;
-  boost::optional<string> keytab_user = security::GetLoggedInUsernameFromKeytab();
+  std::optional<string> keytab_user = security::GetLoggedInUsernameFromKeytab();
   if (keytab_user) {
     // If we're logged in from a keytab, then everyone should be, and we expect them
     // to use the same mapped username.

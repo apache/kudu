@@ -20,8 +20,8 @@
 // is used by a few tests.
 #pragma once
 
-#include <boost/optional.hpp>
 #include <iostream>
+#include <optional>
 #include <string>
 
 #include "kudu/common/schema.h"
@@ -36,7 +36,7 @@ struct ExpectedKeyValueRow {
   int32_t key;
 
   // Nullable value.
-  boost::optional<int32_t> val;
+  std::optional<int32_t> val;
 
   bool operator==(const ExpectedKeyValueRow& other) const {
     return key == other.key && val == other.val;
@@ -48,7 +48,7 @@ struct ExpectedKeyValueRow {
 
   std::string ToString() const {
     std::string ret = strings::Substitute("{$0,", key);
-    if (val == boost::none) {
+    if (!val) {
       ret.append("NULL}");
     } else {
       ret.append(strings::Substitute("$0}", *val));

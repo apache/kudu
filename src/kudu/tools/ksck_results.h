@@ -19,12 +19,11 @@
 #include <cstdint>
 #include <iosfwd>
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/master/master.pb.h"
 #include "kudu/rebalance/cluster_status.h"
@@ -57,7 +56,7 @@ typedef std::map<std::string, KsckTabletChecksum> KsckTableChecksum;
 typedef std::map<std::string, KsckTableChecksum> KsckTableChecksumMap;
 
 struct KsckChecksumResults {
-  boost::optional<uint64_t> snapshot_timestamp;
+  std::optional<uint64_t> snapshot_timestamp;
   KsckTableChecksumMap tables;
 };
 
@@ -208,7 +207,7 @@ Status PrintTabletSummaries(
 // master's point of view of the consensus state of the tablet.
 Status PrintConsensusMatrix(
     const std::vector<std::string>& server_uuids,
-    const boost::optional<cluster_summary::ConsensusState>& ref_cstate,
+    const std::optional<cluster_summary::ConsensusState>& ref_cstate,
     const cluster_summary::ConsensusStateMap& cstates,
     std::ostream& out);
 

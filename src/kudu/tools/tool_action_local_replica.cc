@@ -23,6 +23,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -30,7 +31,6 @@
 #include <vector>
 
 #include <boost/container/flat_map.hpp>
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -575,7 +575,7 @@ Status CopyFromLocal(const RunnerContext& context) {
 Status DeleteLocalReplica(const string& tablet_id,
                           FsManager* fs_manager,
                           const scoped_refptr<ConsensusMetadataManager>& cmeta_manager) {
-  boost::optional<OpId> last_logged_opid = boost::none;
+  std::optional<OpId> last_logged_opid = std::nullopt;
   TabletDataState state = TabletDataState::TABLET_DATA_DELETED;
   if (!FLAGS_clean_unsafe) {
     state = TabletDataState::TABLET_DATA_TOMBSTONED;

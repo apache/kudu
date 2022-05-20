@@ -22,13 +22,13 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>  // IWYU pragma: keep
 #include <gtest/gtest_prod.h>
 #include <sparsepp/spp.h>
 
@@ -447,7 +447,7 @@ class LogBlockManager : public BlockManager {
   // Maps a data directory to an upper bound on the number of blocks that a
   // container residing in that directory should observe, if one is necessary.
   std::unordered_map<const Dir*,
-                     boost::optional<int64_t>> block_limits_by_data_dir_;
+                     std::optional<int64_t>> block_limits_by_data_dir_;
 
   // Manages files opened for reading.
   FileCache* file_cache_;

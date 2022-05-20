@@ -20,12 +20,12 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
-#include <boost/optional/optional.hpp>
 
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -143,7 +143,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
   Status ValidateBeginCommit(tserver::TabletServerErrorPB::Code* code,
                              Timestamp* begin_commit_ts) const {
     DCHECK(state_lock_.is_locked());
-    boost::optional<Timestamp> already_applied_timestamp;
+    std::optional<Timestamp> already_applied_timestamp;
     if (PREDICT_FALSE(state_ == kInitializing)) {
       Timestamp timestamp;
       TxnState meta_state;

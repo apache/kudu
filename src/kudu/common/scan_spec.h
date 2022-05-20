@@ -17,11 +17,11 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/column_predicate.h" // IWYU pragma: keep
@@ -40,7 +40,7 @@ class ScanSpec {
     : lower_bound_key_(nullptr),
       exclusive_upper_bound_key_(nullptr),
       cache_blocks_(true),
-      limit_(boost::none) {
+      limit_(std::nullopt) {
   }
 
   // Add a predicate on the column.
@@ -142,7 +142,7 @@ class ScanSpec {
   }
 
   bool has_limit() const {
-    return limit_ != boost::none;
+    return limit_.has_value();
   }
 
   void set_limit(int64_t limit) {
@@ -183,7 +183,7 @@ class ScanSpec {
   PartitionKey lower_bound_partition_key_;
   PartitionKey exclusive_upper_bound_partition_key_;
   bool cache_blocks_;
-  boost::optional<int64_t> limit_;
+  std::optional<int64_t> limit_;
 };
 
 } // namespace kudu

@@ -16,14 +16,14 @@
 // under the License.
 #pragma once
 
-#include <limits.h>
-
 #include <algorithm>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
@@ -32,7 +32,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -143,7 +142,7 @@ class KuduTabletTest : public KuduTest {
   }
 
   void AlterSchema(const Schema& schema,
-                   boost::optional<TableExtraConfigPB> extra_config = boost::none) {
+                   std::optional<TableExtraConfigPB> extra_config = std::nullopt) {
     tserver::AlterSchemaRequestPB req;
     req.set_schema_version(tablet()->metadata()->schema_version() + 1);
     if (extra_config) {
@@ -375,7 +374,7 @@ class MirroredDeltas {
   }
 
   // Returns true if all tracked deltas are irrelevant to 'ts', false otherwise.
-  bool CheckAllDeltasCulled(const boost::optional<Timestamp>& lower_ts,
+  bool CheckAllDeltasCulled(const std::optional<Timestamp>& lower_ts,
                             Timestamp upper_ts) const {
     for (const auto& e1 : all_deltas_) {
       for (const auto& e2 : e1.second) {
@@ -419,7 +418,7 @@ class MirroredDeltas {
   // Deltas not relevant to 'lower_ts' or 'upper_ts' are skipped. The set of
   // rows considered is determined by 'start_row_idx' and the number of rows in 'cb'.
   Status ApplyUpdates(const Schema& projection,
-                      const boost::optional<Timestamp>& lower_ts, Timestamp upper_ts,
+                      const std::optional<Timestamp>& lower_ts, Timestamp upper_ts,
                       rowid_t start_row_idx, int col_idx, ColumnBlock* cb,
                       const SelectionVector& filter) {
     if (VLOG_IS_ON(3)) {
@@ -506,27 +505,27 @@ class MirroredDeltas {
   void SelectDeltas(Timestamp lower_ts, Timestamp upper_ts,
                      rowid_t start_row_idx, SelectionVector* sel_vec) {
     for (int i = 0; i < sel_vec->nrows(); i++) {
-      boost::optional<const typename MirroredDeltaTimestampMap::mapped_type&> first;
-      boost::optional<const typename MirroredDeltaTimestampMap::mapped_type&> last;
+      const typename MirroredDeltaTimestampMap::mapped_type* ptr_first = nullptr;
+      const typename MirroredDeltaTimestampMap::mapped_type* ptr_last = nullptr;
       for (const auto& e : all_deltas_[start_row_idx + i]) {
         if (!IsDeltaRelevantForSelect(lower_ts, upper_ts, e.first)) {
           // Must keep iterating; short-circuit out of the select criteria is
           // complex and not worth using in test code.
           continue;
         }
-        if (!first.is_initialized()) {
-          first = e.second;
+        if (!ptr_first) {
+          ptr_first = &e.second;
         }
-        last = e.second;
+        ptr_last = &e.second;
       }
 
       // No relevant deltas.
-      if (!first) {
+      if (!ptr_first) {
         continue;
       }
 
       // One relevant delta.
-      if (first == last) {
+      if (ptr_first == ptr_last) {
         sel_vec->SetRowSelected(i);
         continue;
       }
@@ -534,14 +533,14 @@ class MirroredDeltas {
       // At least two relevant deltas.
       bool first_liveness;
       {
-        RowChangeList changes(*first);
+        RowChangeList changes(*ptr_first);
         RowChangeListDecoder decoder(changes);
         decoder.InitNoSafetyChecks();
         first_liveness = !decoder.is_reinsert();
       }
       bool last_liveness;
       {
-        RowChangeList changes(*last);
+        RowChangeList changes(*ptr_last);
         RowChangeListDecoder decoder(changes);
         decoder.InitNoSafetyChecks();
         last_liveness = !decoder.is_delete();
@@ -698,7 +697,7 @@ void CreateRandomDeltas(const Schema& schema,
   faststring buf;
   RowChangeListEncoder encoder(&buf);
   bool is_deleted = false;
-  auto prev_row_idx = boost::make_optional<rowid_t>(false, 0);
+  std::optional<rowid_t> prev_row_idx;
   for (i = 0; i < sorted_keys.size(); i++) {
     encoder.Reset();
     const auto& k = sorted_keys[i];
@@ -919,7 +918,7 @@ void RunDeltaFuzzTest(const DeltaStore& store,
     // Pick a timestamp for the iterator. The last iteration will use a snapshot
     // that includes all deltas.
     Timestamp upper_ts;
-    boost::optional<Timestamp> lower_ts;
+    std::optional<Timestamp> lower_ts;
     if (i < kNumScans) {
       uint64_t upper_ts_val = prng->Uniform(ts_range.second - ts_range.first) +
                               ts_range.first;

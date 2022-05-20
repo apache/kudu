@@ -23,13 +23,13 @@
 #include <initializer_list>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/arena.h>
@@ -701,7 +701,7 @@ TEST_F(TableLocationsTest, GetTableLocationsBenchmarkFunctionCall) {
   NO_FATALS(CreateTable(table_name, kNumSplits));
 
   CatalogManager* cm = cluster_->mini_master()->master()->catalog_manager();
-  const boost::optional<const string&> username = kUserName;
+  const std::optional<string> username = kUserName;
 
   std::atomic<bool> stop(false);
   vector<thread> threads;

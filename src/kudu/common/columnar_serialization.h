@@ -17,10 +17,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/util/faststring.h"
 
@@ -59,10 +58,10 @@ class ColumnarSerializedBatch {
     faststring data;
 
     // Data for varlen columns (those with BINARY physical type)
-    boost::optional<faststring> varlen_data;
+    std::optional<faststring> varlen_data;
 
     // Each bit is set when a value is non-null
-    boost::optional<faststring> non_null_bitmap;
+    std::optional<faststring> non_null_bitmap;
   };
 
   const std::vector<Column>& columns() const {

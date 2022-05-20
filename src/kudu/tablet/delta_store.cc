@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ostream>
+#include <type_traits>
 
 #include <glog/logging.h>
 
@@ -46,13 +47,14 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 
-namespace kudu {
-namespace tablet {
-
-using std::shared_ptr;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace tablet {
 
 string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema, bool pad_key) const {
   return StrCat(Substitute("($0 delta key=$2, change_list=$1)",
@@ -149,7 +151,7 @@ void SelectedDeltas::ProcessDelta(rowid_t row_idx, Delta new_delta) {
 
 string SelectedDeltas::ToString() const {
   rowid_t idx = 0;
-  return JoinMapped(rows_, [&idx](const boost::optional<DeltaPair>& dp) {
+  return JoinMapped(rows_, [&idx](const optional<DeltaPair>& dp) {
       if (!dp) {
         return Substitute("$0: UNSELECTED", idx++);
       }
@@ -232,7 +234,7 @@ void DeltaPreparer<Traits>::Start(size_t nrows, int prepare_flags) {
 
 template<class Traits>
 void DeltaPreparer<Traits>::Finish(size_t nrows) {
-  MaybeProcessPreviousRowChange(boost::none);
+  MaybeProcessPreviousRowChange(nullopt);
   prev_prepared_idx_ = cur_prepared_idx_;
   cur_prepared_idx_ += nrows;
 
@@ -507,7 +509,7 @@ Status DeltaPreparer<Traits>::InitDecoderIfNecessary(RowChangeListDecoder* decod
 }
 
 template<class Traits>
-void DeltaPreparer<Traits>::MaybeProcessPreviousRowChange(boost::optional<rowid_t> cur_row_idx) {
+void DeltaPreparer<Traits>::MaybeProcessPreviousRowChange(optional<rowid_t> cur_row_idx) {
   if (prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY &&
       last_added_idx_ &&
       (!cur_row_idx || cur_row_idx != *last_added_idx_)) {

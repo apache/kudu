@@ -21,13 +21,13 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -132,7 +132,7 @@ class RemoteTabletServer {
   // The path on which this server is listening for unix domain socket connections.
   // This should only be used in the case that it can be determined that the tablet
   // server is local to the client.
-  boost::optional<std::string> unix_domain_socket_path_;
+  std::optional<std::string> unix_domain_socket_path_;
 
   std::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
   std::shared_ptr<tserver::TabletServerAdminServiceProxy> admin_proxy_;

@@ -21,11 +21,10 @@
 #include <cstdint>
 #include <functional>
 #include <iosfwd>
+#include <optional>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
@@ -47,9 +46,9 @@ class TableScanner {
  public:
   TableScanner(client::sp::shared_ptr<client::KuduClient> client,
                std::string table_name,
-               boost::optional<client::sp::shared_ptr<client::KuduClient>> dst_client
-                   = boost::none,
-               boost::optional<std::string> dst_table_name = boost::none);
+               std::optional<client::sp::shared_ptr<client::KuduClient>> dst_client =
+                   std::nullopt,
+               std::optional<std::string> dst_table_name = std::nullopt);
 
   // Set output stream of this tool, or disable output if not set.
   // 'out' must remain valid for the lifetime of this class.
@@ -100,12 +99,12 @@ class TableScanner {
                 Status* thread_status);
 
   std::atomic<uint64_t> total_count_;
-  boost::optional<client::KuduScanner::ReadMode> mode_;
+  std::optional<client::KuduScanner::ReadMode> mode_;
   client::sp::shared_ptr<client::KuduClient> client_;
   std::string table_name_;
   client::KuduClient::ReplicaSelection replica_selection_;
-  boost::optional<client::sp::shared_ptr<client::KuduClient>> dst_client_;
-  boost::optional<std::string> dst_table_name_;
+  std::optional<client::sp::shared_ptr<client::KuduClient>> dst_client_;
+  std::optional<std::string> dst_table_name_;
   int32_t scan_batch_size_;
   std::unique_ptr<ThreadPool> thread_pool_;
 

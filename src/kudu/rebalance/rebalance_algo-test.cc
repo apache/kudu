@@ -23,13 +23,13 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -65,6 +65,8 @@ struct TestClusterConfig;
   } while (false)
 
 using std::endl;
+using std::nullopt;
+using std::optional;
 using std::ostream;
 using std::ostringstream;
 using std::pair;
@@ -329,11 +331,11 @@ TEST(RebalanceAlgoUnitTest, NoTableSkewInClusterBalanceInfoGetNextMoves) {
 // Test the behavior of the internal (non-public) algorithm's method
 // GetNextMove() when no input information is given.
 TEST(RebalanceAlgoUnitTest, EmptyBalanceInfoGetNextMove) {
-  boost::optional<TableReplicaMove> move;
+  optional<TableReplicaMove> move;
   const ClusterInfo info = {};
   const auto s = TwoDimensionalGreedyAlgo().GetNextMove(info, &move);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  EXPECT_EQ(boost::none, move);
+  EXPECT_EQ(nullopt, move);
 }
 
 // Workaround for older libstdc++ (like on RH/CentOS 6). In case of newer
@@ -1197,7 +1199,7 @@ TEST(RebalanceAlgoUnitTest, RandomizedTest) {
       ClusterInfo ci;
       ClusterConfigToClusterInfo(cfg, &ci);
       TwoDimensionalGreedyAlgo algo;
-      boost::optional<TableReplicaMove> move;
+      optional<TableReplicaMove> move;
       // Set a generous upper bound on the number of moves allowed before we
       // conclude the algorithm is not converging.
       // We shouldn't need to do more moves than there are replicas.

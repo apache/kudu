@@ -18,11 +18,11 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -377,7 +377,7 @@ class ConnectToClusterBaseTest : public KuduTest {
     client::sp::shared_ptr<KuduClient> client;
     ASSERT_OK(cluster_->CreateClient(&builder, &client));
     ASSERT_EQ(1, client->data_->messenger_->tls_context().trusted_cert_count_for_tests());
-    ASSERT_NE(boost::none, client->data_->messenger_->authn_token());
+    ASSERT_TRUE(client->data_->messenger_->authn_token());
   }
 
   void Run() {

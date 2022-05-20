@@ -20,11 +20,11 @@
 #include <algorithm>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
@@ -42,7 +42,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::optional;
+using std::optional;
 using kudu::rpc::SaslProtection;
 using std::make_pair;
 using std::string;
@@ -91,7 +91,7 @@ class HmsClientTest : public KuduTest,
 
 INSTANTIATE_TEST_SUITE_P(ProtectionTypes,
                          HmsClientTest,
-                         ::testing::Values(boost::none
+                         ::testing::Values(std::nullopt
                                         , SaslProtection::kIntegrity
 // On macos, krb5 has issues repeatedly spinning up new KDCs ('unable to reach
 // any KDC in realm KRBTEST.COM, tried 1 KDC'). Integrity protection gives us
@@ -103,8 +103,7 @@ INSTANTIATE_TEST_SUITE_P(ProtectionTypes,
                                           ));
 
 TEST_P(HmsClientTest, TestHmsOperations) {
-  auto protection = boost::make_optional<SaslProtection::Type>(false, SaslProtection::kIntegrity);
-  protection = GetParam();
+  const auto protection = GetParam();
 
   MiniKdc kdc;
   MiniHms hms;
@@ -291,8 +290,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
 }
 
 TEST_P(HmsClientTest, TestLargeObjects) {
-  auto protection = boost::make_optional<SaslProtection::Type>(false, SaslProtection::kIntegrity);
-  protection = GetParam();
+  const auto protection = GetParam();
 
   MiniKdc kdc;
   MiniHms hms;

@@ -19,6 +19,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -26,7 +27,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -52,7 +52,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::none;
 using kudu::consensus::ADD_PEER;
 using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusStatePB;
@@ -69,6 +68,8 @@ using kudu::itest::GetConsensusState;
 using kudu::tserver::RaftConsensusITestBase;
 using kudu::master::VOTER_REPLICA;
 using kudu::pb_util::SecureShortDebugString;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::unordered_set;
 using std::vector;
@@ -132,7 +133,7 @@ TEST_F(RaftConfigChangeITest, TestKudu2147) {
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                              kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
+                              kTimeout, VOTER_REPLICA, /*table_id=*/nullopt, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(3, table_locations.tablet_locations(0).interned_replicas_size()); // 3 replicas.
   string tablet_id = table_locations.tablet_locations(0).tablet_id();
@@ -197,7 +198,7 @@ TEST_F(RaftConfigChangeITest, TestNonVoterPromotion) {
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                              kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
+                              kTimeout, VOTER_REPLICA, /*table_id=*/nullopt, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(3, table_locations.tablet_locations(0).interned_replicas_size()); // 3 replicas.
   string tablet_id = table_locations.tablet_locations(0).tablet_id();
@@ -256,7 +257,7 @@ TEST_F(RaftConfigChangeITest, TestBulkChangeConfig) {
   ASSERT_OK(inspect_->WaitForReplicaCount(kNumInitialReplicas));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                              kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
+                              kTimeout, VOTER_REPLICA, /*table_id=*/nullopt, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(kNumInitialReplicas, table_locations.tablet_locations(0).interned_replicas_size());
   string tablet_id = table_locations.tablet_locations(0).tablet_id();
@@ -300,7 +301,7 @@ TEST_F(RaftConfigChangeITest, TestBulkChangeConfig) {
 
   // Now comes the actual config change testing.
   auto bulk_change = [&](const vector<BulkSpec>& changes,
-                         boost::optional<int64_t> cas_config_index = boost::none) {
+                         optional<int64_t> cas_config_index = nullopt) {
     vector<consensus::BulkChangeConfigRequestPB::ConfigChangeItemPB> changes_pb;
     for (const auto& chg : changes) {
       const auto& ts_uuid = cluster_->tablet_server(chg.tserver_index)->uuid();

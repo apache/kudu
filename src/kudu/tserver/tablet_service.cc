@@ -23,13 +23,13 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <type_traits>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
@@ -243,6 +243,9 @@ using kudu::tablet::WriteAuthorizationContext;
 using kudu::tablet::WriteOpState;
 using kudu::tablet::WritePrivilegeType;
 using kudu::tablet::WritePrivileges;
+using std::make_optional;
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -476,7 +479,7 @@ static bool GetScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const Sc
   unordered_set<ColumnId> required_privileges;
   // Determine the scan's projected key column IDs.
   for (int i = 0; i < scan_pb.projected_columns_size(); i++) {
-    boost::optional<ColumnSchema> projected_column;
+    optional<ColumnSchema> projected_column;
     Status s = ColumnSchemaFromPB(scan_pb.projected_columns(i), &projected_column);
     if (PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << s.ToString();
@@ -667,7 +670,7 @@ static void SetupErrorAndRespond(TabletServerErrorPB* error,
 
 template <class ReqType, class RespType>
 void HandleErrorResponse(const ReqType* req, RespType* resp, RpcContext* context,
-                         const boost::optional<TabletServerErrorPB::Code>& error_code,
+                         const optional<TabletServerErrorPB::Code>& error_code,
                          const Status& s) {
   resp->Clear();
   if (error_code) {
@@ -1474,10 +1477,10 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
       schema,
       partition_schema,
       req->config(),
-      req->has_extra_config() ? boost::make_optional(req->extra_config()) : boost::none,
-      req->has_dimension_label() ? boost::make_optional(req->dimension_label()) : boost::none,
+      req->has_extra_config() ? make_optional(req->extra_config()) : nullopt,
+      req->has_dimension_label() ? make_optional(req->dimension_label()) : nullopt,
       req->has_table_type() && req->table_type() != TableTypePB::DEFAULT_TABLE ?
-          boost::make_optional(req->table_type()) : boost::none,
+          make_optional(req->table_type()) : nullopt,
       nullptr);
   if (PREDICT_FALSE(!s.ok())) {
     TabletServerErrorPB::Code code;
@@ -1512,7 +1515,7 @@ void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
             << " from " << context->requestor_string();
   VLOG(1) << "Full request: " << SecureDebugString(*req);
 
-  boost::optional<int64_t> cas_config_opid_index_less_or_equal;
+  optional<int64_t> cas_config_opid_index_less_or_equal;
   if (req->has_cas_config_opid_index_less_or_equal()) {
     cas_config_opid_index_less_or_equal = req->cas_config_opid_index_less_or_equal();
   }
@@ -1542,7 +1545,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
         server_->tablet_manager(), tablet_id, resp, context, &replica)) {
     return;
   }
-  boost::optional<WriteAuthorizationContext> authz_context;
+  optional<WriteAuthorizationContext> authz_context;
   if (FLAGS_tserver_enforce_access_control) {
     TokenPB token;
     if (!VerifyAuthzTokenOrRespond(server_->token_verifier(), *req, context, &token)) {
@@ -1786,7 +1789,7 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
     return;
   }
 
-  boost::optional<OpId> last_logged_opid;
+  optional<OpId> last_logged_opid;
   tablet::TabletDataState data_state = replica->tablet_metadata()->tablet_data_state();
 
   LOG(INFO) << "Received RequestConsensusVote() RPC: " << SecureShortDebugString(*req);
@@ -1835,7 +1838,7 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
 
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
-  boost::optional<TabletServerErrorPB::Code> error_code;
+  optional<TabletServerErrorPB::Code> error_code;
   Status s = consensus->ChangeConfig(
       *req, [req, resp, context](const Status& s) {
         HandleResponse(req, resp, context, s);
@@ -1862,8 +1865,10 @@ void ConsensusServiceImpl::BulkChangeConfig(const BulkChangeConfigRequestPB* req
   }
 
   shared_ptr<RaftConsensus> consensus;
-  if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
-  boost::optional<TabletServerErrorPB::Code> error_code;
+  if (!GetConsensusOrRespond(replica, resp, context, &consensus)) {
+    return;
+  }
+  optional<TabletServerErrorPB::Code> error_code;
   Status s = consensus->BulkChangeConfig(
       *req, [req, resp, context](const Status& s) {
         HandleResponse(req, resp, context, s);
@@ -1894,7 +1899,7 @@ void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB*
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) {
     return;
   }
-  boost::optional<TabletServerErrorPB::Code> error_code;
+  optional<TabletServerErrorPB::Code> error_code;
   const Status s = consensus->UnsafeChangeConfig(*req, &error_code);
   if (PREDICT_FALSE(!s.ok())) {
     HandleErrorResponse(req, resp, context, error_code, s);
@@ -1968,10 +1973,9 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
       HandleResponse(req, resp, context, consensus->StepDown(resp));
       break;
     case LeaderStepDownMode::GRACEFUL: {
-      const auto new_leader_uuid =
-        req->new_leader_uuid().empty() ?
-        boost::none :
-        boost::make_optional(req->new_leader_uuid());
+      const auto new_leader_uuid = req->new_leader_uuid().empty()
+          ? nullopt
+          : make_optional(req->new_leader_uuid());
       Status s = consensus->TransferLeadership(new_leader_uuid, resp);
       HandleResponse(req, resp, context, s);
       break;
@@ -2009,7 +2013,7 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
                        resp, context);
     return;
   }
-  boost::optional<OpId> opid = consensus->GetLastOpId(req->opid_type());
+  optional<OpId> opid = consensus->GetLastOpId(req->opid_type());
   if (!opid) {
     SetupErrorAndRespond(resp->mutable_error(),
                          Status::IllegalState("Cannot fetch last OpId in WAL"),
@@ -2640,7 +2644,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
 
   // First the column predicates.
   for (const ColumnPredicatePB& pred_pb : scan_pb.column_predicates()) {
-    boost::optional<ColumnPredicate> predicate;
+    optional<ColumnPredicate> predicate;
     RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pred_pb, &predicate));
     spec->AddPredicate(std::move(*predicate));
   }
@@ -2654,7 +2658,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
         string("Invalid predicate ") + SecureShortDebugString(pred_pb) +
         ": has no lower or upper bound.");
     }
-    boost::optional<ColumnSchema> col;
+    optional<ColumnSchema> col;
     RETURN_NOT_OK(ColumnSchemaFromPB(pred_pb.column(), &col));
 
     const void* lower_bound = nullptr;
@@ -2716,7 +2720,7 @@ Status VerifyNotAncientHistory(Tablet* tablet, ReadMode read_mode, Timestamp tim
 // to read by checking against the ancient history mark and ensuring that the
 // start timestamp is earlier than the end timestamp.
 Status VerifyLegalSnapshotTimestamps(Tablet* tablet, ReadMode read_mode,
-                                     const boost::optional<Timestamp>& snap_start_timestamp,
+                                     const optional<Timestamp>& snap_start_timestamp,
                                      const Timestamp& snap_end_timestamp) {
   RETURN_NOT_OK(VerifyNotAncientHistory(tablet, read_mode, snap_end_timestamp,
                                         "snapshot scan end timestamp"));
@@ -2893,7 +2897,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   }
 
   unique_ptr<RowwiseIterator> iter;
-  boost::optional<Timestamp> snap_start_timestamp;
+  optional<Timestamp> snap_start_timestamp;
 
   {
     TRACE("Creating iterator");
@@ -3217,7 +3221,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                                                Tablet* tablet,
                                                TimeManager* time_manager,
                                                unique_ptr<RowwiseIterator>* iter,
-                                               boost::optional<Timestamp>* snap_start_timestamp,
+                                               optional<Timestamp>* snap_start_timestamp,
                                                Timestamp* snap_timestamp,
                                                TabletServerErrorPB::Code* error_code) {
   const auto read_mode = scan_pb.read_mode();
@@ -3302,7 +3306,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   opts.snap_to_include = snap;
   opts.order = scan_pb.order_mode();
 
-  boost::optional<Timestamp> tmp_snap_start_timestamp;
+  optional<Timestamp> tmp_snap_start_timestamp;
   if (scan_pb.has_snap_start_timestamp()) {
     tmp_snap_start_timestamp = Timestamp(scan_pb.snap_start_timestamp());
     opts.snap_to_exclude = MvccSnapshot(*tmp_snap_start_timestamp);

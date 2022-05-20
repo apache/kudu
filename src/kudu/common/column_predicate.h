@@ -14,17 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -104,13 +103,13 @@ class ColumnPredicate {
   // arena is used for allocating an incremented upper bound to transform the
   // bound to exclusive. The arena must outlive the returned predicate.
   //
-  // If a normalized column predicate cannot be created, then boost::none will
+  // If a normalized column predicate cannot be created, then std::nullopt will
   // be returned. This indicates that the predicate would cover the entire
   // column range.
-  static boost::optional<ColumnPredicate> InclusiveRange(ColumnSchema column,
-                                                         const void* lower,
-                                                         const void* upper,
-                                                         Arena* arena);
+  static std::optional<ColumnPredicate> InclusiveRange(ColumnSchema column,
+                                                       const void* lower,
+                                                       const void* upper,
+                                                       Arena* arena);
 
   // Creates a new range column predicate from an exclusive lower bound and an
   // exclusive upper bound.

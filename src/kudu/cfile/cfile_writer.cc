@@ -20,10 +20,10 @@
 #include <functional>
 #include <iterator>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 

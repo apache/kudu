@@ -19,12 +19,12 @@
 
 #include <cmath>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -53,6 +53,7 @@ TAG_FLAG(tserver_last_replica_creations_halflife_ms, hidden);
 
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -63,7 +64,7 @@ namespace master {
 
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  const ServerRegistrationPB& registration,
-                                 const boost::optional<std::string>& location,
+                                 const optional<std::string>& location,
                                  DnsResolver* dns_resolver,
                                  shared_ptr<TSDescriptor>* desc) {
   shared_ptr<TSDescriptor> ret(TSDescriptor::make_shared(instance.permanent_uuid()));
@@ -102,7 +103,7 @@ static bool HostPortPBsEqual(const google::protobuf::RepeatedPtrField<HostPortPB
 
 Status TSDescriptor::Register(const NodeInstancePB& instance,
                               const ServerRegistrationPB& registration,
-                              const boost::optional<std::string>& location,
+                              const optional<std::string>& location,
                               DnsResolver* dns_resolver) {
   std::lock_guard<rw_spinlock> l(lock_);
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);

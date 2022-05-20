@@ -34,6 +34,7 @@
 #include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/slice.h"
 
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -102,13 +103,13 @@ struct RowSetIntervalTraits {
     return -compare(b, a);
   }
 
-  // When 'a' is boost::none:
+  // When 'a' is std::nullopt:
   //  (1)'a' is +OO when 'positive_direction' is true;
   //  (2)'a' is -OO when 'positive_direction' is false.
-  static int compare(const boost::optional<Slice>& a,
+  static int compare(const optional<Slice>& a,
                      const Slice& b,
                      const EndpointIfNone& type) {
-    if (a == boost::none) {
+    if (!a) {
       return ((POSITIVE_INFINITY == type) ? 1 : -1);
     }
 
@@ -116,7 +117,7 @@ struct RowSetIntervalTraits {
   }
 
   static int compare(const Slice& a,
-                     const boost::optional<Slice>& b,
+                     const optional<Slice>& b,
                      const EndpointIfNone& type) {
     return -compare(b, a, type);
   }
@@ -193,8 +194,8 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   return Status::OK();
 }
 
-void RowSetTree::FindRowSetsIntersectingInterval(const boost::optional<Slice>& lower_bound,
-                                                 const boost::optional<Slice>& upper_bound,
+void RowSetTree::FindRowSetsIntersectingInterval(const optional<Slice>& lower_bound,
+                                                 const optional<Slice>& upper_bound,
                                                  vector<RowSet*>* rowsets) const {
   DCHECK(initted_);
 

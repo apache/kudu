@@ -24,11 +24,11 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <optional>
 #include <map>
 #include <memory>
 #include <set>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <rapidjson/document.h>
@@ -76,6 +76,8 @@ using kudu::client::KuduWriteOperation;
 using kudu::iequals;
 using std::endl;
 using std::map;
+using std::nullopt;
+using std::optional;
 using std::ostream;
 using std::ostringstream;
 using std::right;
@@ -286,9 +288,9 @@ KuduPredicate* NewInListPredicate(const client::sp::shared_ptr<KuduTable>& table
 Status AddPredicate(const client::sp::shared_ptr<KuduTable>& table,
                     const string& predicate_type,
                     const string& column_name,
-                    const boost::optional<const rapidjson::Value*>& value,
+                    const optional<const rapidjson::Value*>& value,
                     const JsonReader& reader,
-                    KuduScanTokenBuilder& builder) {
+                    KuduScanTokenBuilder* builder) {
   if (predicate_type.empty() || column_name.empty()) {
     return Status::OK();
   }
@@ -305,7 +307,7 @@ Status AddPredicate(const client::sp::shared_ptr<KuduTable>& table,
     case PredicateType::Equality:
     case PredicateType::Range:
       CHECK(value);
-      predicate = NewComparisonPredicate(table, type, predicate_type, column_name, value.get());
+      predicate = NewComparisonPredicate(table, type, predicate_type, column_name, *value);
       break;
     case PredicateType::IsNotNull:
     case PredicateType::IsNull:
@@ -314,20 +316,20 @@ Status AddPredicate(const client::sp::shared_ptr<KuduTable>& table,
       break;
     case PredicateType::InList: {
       CHECK(value);
-      predicate = NewInListPredicate(table, type, column_name, reader, value.get());
+      predicate = NewInListPredicate(table, type, column_name, reader, *value);
       break;
     }
     default:
       return Status::NotSupported(Substitute("not support predicate_type $0", predicate_type));
   }
   CHECK(predicate);
-  RETURN_NOT_OK(builder.AddConjunctPredicate(predicate));
+  RETURN_NOT_OK(builder->AddConjunctPredicate(predicate));
 
   return Status::OK();
 }
 
 Status AddPredicates(const client::sp::shared_ptr<KuduTable>& table,
-                     KuduScanTokenBuilder& builder) {
+                     KuduScanTokenBuilder* builder) {
   if (FLAGS_predicates.empty()) {
     return Status::OK();
   }
@@ -358,8 +360,8 @@ Status AddPredicates(const client::sp::shared_ptr<KuduTable>& table,
       RETURN_NOT_OK(AddPredicate(table,
           elements[0]->GetString(),
           elements[1]->GetString(),
-          elements.size() == 2 ?
-            boost::none : boost::optional<const rapidjson::Value*>(elements[2]),
+          elements.size() == 2 ? nullopt
+                               : optional<const rapidjson::Value*>(elements[2]),
           reader,
           builder));
     } else {
@@ -491,8 +493,8 @@ void CheckPendingErrors(const client::sp::shared_ptr<KuduSession>& session) {
 TableScanner::TableScanner(
     client::sp::shared_ptr<client::KuduClient> client,
     std::string table_name,
-    boost::optional<client::sp::shared_ptr<client::KuduClient>> dst_client,
-    boost::optional<std::string> dst_table_name)
+    optional<client::sp::shared_ptr<client::KuduClient>> dst_client,
+    optional<std::string> dst_table_name)
     : total_count_(0),
       client_(std::move(client)),
       table_name_(std::move(table_name)),
@@ -557,11 +559,11 @@ void TableScanner::ScanTask(const vector<KuduScanToken*>& tokens, Status* thread
 
 void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens, Status* thread_status) {
   client::sp::shared_ptr<KuduTable> dst_table;
-  CHECK_OK(dst_client_.get()->OpenTable(*dst_table_name_, &dst_table));
+  CHECK_OK((*dst_client_)->OpenTable(*dst_table_name_, &dst_table));
   const KuduSchema& dst_table_schema = dst_table->schema();
 
   // One session per thread.
-  client::sp::shared_ptr<KuduSession> session(dst_client_.get()->NewSession());
+  client::sp::shared_ptr<KuduSession> session((*dst_client_)->NewSession());
   CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
   CHECK_OK(session->SetErrorBufferSpace(1024));
   session->SetTimeoutMillis(FLAGS_timeout_ms);
@@ -612,7 +614,7 @@ Status TableScanner::StartWork(WorkType type) {
   KuduScanTokenBuilder builder(src_table.get());
   RETURN_NOT_OK(builder.SetCacheBlocks(FLAGS_fill_cache));
   if (mode_) {
-    RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
+    RETURN_NOT_OK(builder.SetReadMode(*mode_));
   }
   if (scan_batch_size_ >= 0) {
     // Batch size of 0 is valid and has special semantics: the server sends
@@ -636,7 +638,7 @@ Status TableScanner::StartWork(WorkType type) {
   }
 
   // Set predicates.
-  RETURN_NOT_OK(AddPredicates(src_table, builder));
+  RETURN_NOT_OK(AddPredicates(src_table, &builder));
 
   vector<KuduScanToken*> tokens;
   ElementDeleter deleter(&tokens);

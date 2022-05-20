@@ -15,12 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
@@ -29,7 +29,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
@@ -91,6 +90,7 @@ using kudu::tablet::WritePrivileges;
 using kudu::tablet::WritePrivilegeToString;
 using kudu::tablet::WritePrivilegeType;
 using std::make_shared;
+using std::optional;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -574,7 +574,7 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
       }
     }
     // Determine which column to sabotage if needed.
-    boost::optional<string> misnamed_col;
+    optional<string> misnamed_col;
     if (special_col == SpecialColumn::MISNAMED) {
       misnamed_col = SelectRandomElement<unordered_set<string>, string, Random>(
           scan.projected_cols, &prng_);
@@ -616,7 +616,7 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
     Schema client_schema = schema_.CopyWithoutColumnIds();
 
     // Determine which column to sabotage if needed.
-    boost::optional<string> misnamed_col;
+    optional<string> misnamed_col;
     if (special_col == SpecialColumn::MISNAMED) {
       misnamed_col = SelectRandomElement<unordered_set<string>, string, Random>(cols, &prng_);
     }

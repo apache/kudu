@@ -22,13 +22,14 @@
 #include <cstring>
 #include <list>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -58,6 +59,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::optional;
 using std::string;
 using std::tuple;
 using std::vector;
@@ -714,7 +716,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
 
   ColumnSchema col1("col1", STRING);
   ColumnSchemaToPB(col1, &pb);
-  boost::optional<ColumnSchema> col1fpb;
+  optional<ColumnSchema> col1fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col1fpb));
   ASSERT_FALSE(col1fpb->has_read_default());
   ASSERT_FALSE(col1fpb->has_write_default());
@@ -722,7 +724,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
 
   ColumnSchema col2("col2", STRING, false, &read_default_str);
   ColumnSchemaToPB(col2, &pb);
-  boost::optional<ColumnSchema> col2fpb;
+  optional<ColumnSchema> col2fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col2fpb));
   ASSERT_TRUE(col2fpb->has_read_default());
   ASSERT_FALSE(col2fpb->has_write_default());
@@ -731,7 +733,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
 
   ColumnSchema col3("col3", STRING, false, &read_default_str, &write_default_str);
   ColumnSchemaToPB(col3, &pb);
-  boost::optional<ColumnSchema> col3fpb;
+  optional<ColumnSchema> col3fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col3fpb));
   ASSERT_TRUE(col3fpb->has_read_default());
   ASSERT_TRUE(col3fpb->has_write_default());
@@ -740,7 +742,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
 
   ColumnSchema col4("col4", UINT32, false, &read_default_u32);
   ColumnSchemaToPB(col4, &pb);
-  boost::optional<ColumnSchema> col4fpb;
+  optional<ColumnSchema> col4fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col4fpb));
   ASSERT_TRUE(col4fpb->has_read_default());
   ASSERT_FALSE(col4fpb->has_write_default());
@@ -749,7 +751,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
 
   ColumnSchema col5("col5", UINT32, false, &read_default_u32, &write_default_u32);
   ColumnSchemaToPB(col5, &pb);
-  boost::optional<ColumnSchema> col5fpb;
+  optional<ColumnSchema> col5fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col5fpb));
   ASSERT_TRUE(col5fpb->has_read_default());
   ASSERT_TRUE(col5fpb->has_write_default());
@@ -763,7 +765,7 @@ TEST_F(WireProtocolTest, TestCrashOnAlignedLoadOf128BitReadDefault) {
   pb.set_name("col");
   pb.set_type(DECIMAL128);
   pb.set_read_default_value(string(16, 'a'));
-  boost::optional<ColumnSchema> col;
+  optional<ColumnSchema> col;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col));
 }
 
@@ -774,7 +776,7 @@ TEST_F(WireProtocolTest, TestInvalidReadAndWriteDefault) {
     pb.set_name("col");
     pb.set_type(DECIMAL128);
     pb.set_read_default_value(string(8, 'a'));
-    boost::optional<ColumnSchema> col;
+    optional<ColumnSchema> col;
     Status s = ColumnSchemaFromPB(pb, &col);
     EXPECT_TRUE(s.IsCorruption());
     ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Not enough bytes for decimal: read default");
@@ -784,7 +786,7 @@ TEST_F(WireProtocolTest, TestInvalidReadAndWriteDefault) {
     pb.set_name("col");
     pb.set_type(DECIMAL128);
     pb.set_write_default_value(string(8, 'a'));
-    boost::optional<ColumnSchema> col;
+    optional<ColumnSchema> col;
     Status s = ColumnSchemaFromPB(pb, &col);
     EXPECT_TRUE(s.IsCorruption());
     ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Not enough bytes for decimal: write default");
@@ -796,7 +798,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
   vector<ColumnSchema> cols = { col1 };
   Schema schema(cols, 1);
   RowBlockMemory mem(1024);
-  boost::optional<ColumnPredicate> predicate;
+  optional<ColumnPredicate> predicate;
 
   { // col1 IN (5, 6, 10)
     int five = 5;
@@ -832,7 +834,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     pb.mutable_in_list();
 
     RowBlockMemory mem(1024);
-    boost::optional<ColumnPredicate> predicate;
+    optional<ColumnPredicate> predicate;
     ASSERT_OK(ColumnPredicateFromPB(schema, &mem.arena, pb, &predicate));
     ASSERT_EQ(PredicateType::None, predicate->predicate_type());
   }
@@ -844,7 +846,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     *pb.mutable_in_list()->mutable_values()->Add() = string("\0", 1);
 
     RowBlockMemory mem(1024);
-    boost::optional<ColumnPredicate> predicate;
+    optional<ColumnPredicate> predicate;
     ASSERT_TRUE(ColumnPredicateFromPB(schema, &mem.arena, pb, &predicate).IsInvalidArgument());
   }
 }
@@ -885,7 +887,7 @@ protected:
 };
 
 TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilter) {
-  boost::optional<ColumnPredicate> predicate;
+  optional<ColumnPredicate> predicate;
   ColumnSchema col1 = schema_.column(0);
   { // Single BloomFilter predicate.
     kudu::ColumnPredicate ibf =
@@ -909,7 +911,7 @@ TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilter) {
 }
 
 TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilterWithBound) {
-  boost::optional<ColumnPredicate> predicate;
+  optional<ColumnPredicate> predicate;
   ColumnSchema col1 = schema_.column(0);
   { // Simply BloomFilter with lower bound.
     int lower = 1;

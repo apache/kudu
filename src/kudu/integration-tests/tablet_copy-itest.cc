@@ -22,6 +22,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
@@ -30,7 +31,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -97,7 +97,6 @@ DEFINE_int32(test_delete_leader_num_writer_threads, 1,
 DECLARE_bool(tablet_copy_download_wal_inject_latency);
 DECLARE_int32(log_segment_size_mb);
 
-using boost::none;
 using kudu::client::KuduScanner;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduSchema;
@@ -1286,8 +1285,11 @@ TEST_P(TabletCopyFailureITest, TestTabletCopyNewReplicaFailureCanVote) {
 
   ASSERT_OK(inspect_->WaitForReplicaCount(kNumReplicas));
   master::GetTableLocationsResponsePB table_locations;
-  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                                     kTimeout, master::VOTER_REPLICA, /*table_id=*/none,
+  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(),
+                                     TestWorkload::kDefaultTableName,
+                                     kTimeout,
+                                     master::VOTER_REPLICA,
+                                     /*table_id=*/std::nullopt,
                                      &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size());
   string tablet_id = table_locations.tablet_locations(0).tablet_id();

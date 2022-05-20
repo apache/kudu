@@ -22,14 +22,15 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <random>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/arena.h>
@@ -222,6 +223,8 @@ using kudu::log::LogAnchorRegistry;
 using kudu::log::MinLogIndexAnchorer;
 using std::endl;
 using std::make_shared;
+using std::nullopt;
+using std::optional;
 using std::ostream;
 using std::pair;
 using std::shared_ptr;
@@ -2230,10 +2233,10 @@ Status Tablet::CaptureConsistentIterators(
 
   // Cull row-sets in the case of key-range queries.
   if (spec != nullptr && (spec->lower_bound_key() || spec->exclusive_upper_bound_key())) {
-    boost::optional<Slice> lower_bound = spec->lower_bound_key() ? \
-        boost::optional<Slice>(spec->lower_bound_key()->encoded_key()) : boost::none;
-    boost::optional<Slice> upper_bound = spec->exclusive_upper_bound_key() ? \
-        boost::optional<Slice>(spec->exclusive_upper_bound_key()->encoded_key()) : boost::none;
+    optional<Slice> lower_bound = spec->lower_bound_key() ?
+        optional<Slice>(spec->lower_bound_key()->encoded_key()) : nullopt;
+    optional<Slice> upper_bound = spec->exclusive_upper_bound_key() ?
+        optional<Slice>(spec->exclusive_upper_bound_key()->encoded_key()) : nullopt;
     vector<RowSet*> interval_sets;
     components_->rowsets->FindRowSetsIntersectingInterval(lower_bound, upper_bound, &interval_sets);
     for (const auto* rs : interval_sets) {

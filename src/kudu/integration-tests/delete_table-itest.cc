@@ -23,6 +23,7 @@
 #include <initializer_list>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
@@ -31,7 +32,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
@@ -79,7 +79,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::none;
 using kudu::client::KuduClient;
 using kudu::client::KuduScanner;
 using kudu::client::KuduScanBatch;
@@ -383,7 +382,7 @@ TEST_F(DeleteTableITest, TestAtomicDeleteTablet) {
   TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
 
   // The committed config starts off with an opid_index of -1, so choose something lower.
-  boost::optional<int64_t> opid_index(-2);
+  std::optional<int64_t> opid_index(-2);
   tserver::TabletServerErrorPB::Code error_code;
   ASSERT_OK(itest::WaitUntilTabletRunning(ts, tablet_id, timeout));
 
@@ -1171,9 +1170,12 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
   // The table should have replicas on three tservers.
   ASSERT_OK(inspect_->WaitForReplicaCount(kNumReplicas));
   master::GetTableLocationsResponsePB table_locations;
-  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                                     kTimeout, master::VOTER_REPLICA, /*table_id=*/none,
-                                     &table_locations));
+  ASSERT_OK(itest::GetTableLocations(
+      cluster_->master_proxy(),
+      TestWorkload::kDefaultTableName,
+      kTimeout, master::VOTER_REPLICA,
+      /*table_id=*/std::nullopt,
+      &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   string tablet_id;
   std::set<string> replicas;

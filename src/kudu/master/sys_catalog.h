@@ -19,11 +19,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/schema.h"
@@ -189,7 +189,7 @@ class SysCatalogTable {
     std::vector<scoped_refptr<TabletInfo>> tablets_to_add;
     std::vector<scoped_refptr<TabletInfo>> tablets_to_update;
     std::vector<scoped_refptr<TabletInfo>> tablets_to_delete;
-    boost::optional<int64_t> hms_notification_log_event_id;
+    std::optional<int64_t> hms_notification_log_event_id;
   };
 
   // The way how actions are persisted into the system catalog table when

@@ -18,12 +18,12 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/tablet/metadata.pb.h"
@@ -72,9 +72,9 @@ enum class ConsensusConfigType {
 struct ConsensusState {
   ConsensusState() = default;
   ConsensusState(ConsensusConfigType type,
-                        boost::optional<int64_t> term,
-                        boost::optional<int64_t> opid_index,
-                        boost::optional<std::string> leader_uuid,
+                        std::optional<int64_t> term,
+                        std::optional<int64_t> opid_index,
+                        std::optional<std::string> leader_uuid,
                         const std::vector<std::string>& voters,
                         const std::vector<std::string>& non_voters)
     : type(type),
@@ -104,9 +104,9 @@ struct ConsensusState {
   }
 
   ConsensusConfigType type;
-  boost::optional<int64_t> term;
-  boost::optional<int64_t> opid_index;
-  boost::optional<std::string> leader_uuid;
+  std::optional<int64_t> term;
+  std::optional<int64_t> opid_index;
+  std::optional<std::string> leader_uuid;
   std::set<std::string> voter_uuids;
   std::set<std::string> non_voter_uuids;
 };
@@ -141,8 +141,8 @@ struct ServerHealthSummary {
   std::string uuid;
   std::string address;
   std::string ts_location;
-  boost::optional<std::string> version;
-  boost::optional<QuiescingInfo> quiescing_info;
+  std::optional<std::string> version;
+  std::optional<QuiescingInfo> quiescing_info;
   ServerHealth health = ServerHealth::HEALTHY;
   Status status = Status::OK();
 };
@@ -198,13 +198,13 @@ const char* ServerTypeToString(ServerType type);
 // A summary of the state of a tablet replica.
 struct ReplicaSummary {
   std::string ts_uuid;
-  boost::optional<std::string> ts_address;
+  std::optional<std::string> ts_address;
   bool ts_healthy = false;
   bool is_leader = false;
   bool is_voter = false;
   tablet::TabletStatePB state = tablet::UNKNOWN;
-  boost::optional<tablet::TabletStatusPB> status_pb;
-  boost::optional<ConsensusState> consensus_state;
+  std::optional<tablet::TabletStatusPB> status_pb;
+  std::optional<ConsensusState> consensus_state;
 };
 
 // A summary of the state of a tablet.

@@ -21,7 +21,6 @@
 #include <memory>
 #include <ostream>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/row_changelist.h"
@@ -38,16 +37,16 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-namespace kudu {
-namespace tablet {
-
-using fs::IOContext;
-using log::LogAnchorRegistry;
+using kudu::fs::IOContext;
+using kudu::log::LogAnchorRegistry;
 using std::string;
 using std::shared_ptr;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace tablet {
 
 ////////////////////////////////////////////////////////////
 // DeltaMemStore implementation

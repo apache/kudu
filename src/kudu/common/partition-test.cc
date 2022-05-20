@@ -19,11 +19,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
@@ -41,8 +41,9 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::optional;
 using google::protobuf::util::MessageDifferencer;
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::string;
 using std::vector;
@@ -412,7 +413,7 @@ TEST_F(PartitionTest, TestCreateRangePartitions) {
     // [ ("h\0"), ("z")   )
 
     vector<pair<optional<string>, optional<string>>> bounds {
-      { boost::none, string("b") },
+      { nullopt, string("b") },
       { string("c"), string("f") },
       { string("f"), string("z") },
     };
@@ -441,7 +442,7 @@ TEST_F(PartitionTest, TestCreateRangePartitions) {
     // [ ("m"),   ("")   )
 
     vector<pair<optional<string>, optional<string>>> bounds {
-      { boost::none, boost::none },
+      { nullopt, nullopt },
     };
     vector<string> splits { "m" };
     vector<pair<string, string>> partitions {
@@ -705,25 +706,25 @@ TEST_F(PartitionTest, TestIncrementRangePartitionBounds) {
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
-  vector<vector<boost::optional<int8_t>>> tests {
+  vector<vector<optional<int8_t>>> tests {
     // Big list of test cases. First three columns are the input columns, final
     // three columns are the expected output columns. For example,
     { 1, 2, 3, 1, 2, 4 },
     // corresponds to the test case:
     // (1, 2, 3) -> (1, 2, 4)
 
-    { 1, 2, boost::none, 1, 2, -127 },
-    { 1, boost::none, 3, 1, boost::none, 4 },
-    { boost::none, 2, 3, boost::none, 2, 4 },
-    { 1, boost::none, boost::none, 1, boost::none, -127 },
-    { boost::none, boost::none, 3, boost::none, boost::none, 4 },
-    { boost::none, 2, boost::none, boost::none, 2, -127 },
-    { 1, 2, 127, 1, 3, boost::none },
+    { 1, 2, nullopt, 1, 2, -127 },
+    { 1, nullopt, 3, 1, nullopt, 4 },
+    { nullopt, 2, 3, nullopt, 2, 4 },
+    { 1, nullopt, nullopt, 1, nullopt, -127 },
+    { nullopt, nullopt, 3, nullopt, nullopt, 4 },
+    { nullopt, 2, nullopt, nullopt, 2, -127 },
+    { 1, 2, 127, 1, 3, nullopt },
     { 1, 127, 3, 1, 127, 4},
-    { 1, 127, 127, 2, boost::none, boost::none },
+    { 1, 127, 127, 2, nullopt, nullopt },
   };
 
-  auto check = [&] (const vector<boost::optional<int8_t>>& test, bool lower_bound) {
+  auto check = [&] (const vector<optional<int8_t>>& test, bool lower_bound) {
     CHECK_EQ(6, test.size());
     KuduPartialRow bound(&schema);
     if (test[0]) ASSERT_OK(bound.SetInt8("c1", *test[0]));
@@ -769,11 +770,11 @@ TEST_F(PartitionTest, TestIncrementRangePartitionBounds) {
 
   // Special cases:
   // lower bound: (_, _, _) -> (_, _, -127)
-  check({ boost::none, boost::none, boost::none, boost::none, boost::none, -127 }, true);
+  check({ nullopt, nullopt, nullopt, nullopt, nullopt, -127 }, true);
   // upper bound: (_, _, _) -> (_, _, _)
-  check({ boost::none, boost::none, boost::none, boost::none, boost::none, boost::none }, false);
+  check({ nullopt, nullopt, nullopt, nullopt, nullopt, nullopt }, false);
   // upper bound: (127, 127, 127) -> (_, _, _)
-  check({ 127, 127, 127, boost::none, boost::none, boost::none }, false);
+  check({ 127, 127, 127, nullopt, nullopt, nullopt }, false);
 
   // lower bound: (127, 127, 127) -> fail!
     KuduPartialRow lower_bound(&schema);
@@ -797,12 +798,12 @@ TEST_F(PartitionTest, TestIncrementRangePartitionStringBounds) {
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
-  vector<vector<boost::optional<string>>> tests {
+  vector<vector<optional<string>>> tests {
     { string("a"), string("b"), string("a"), string("b\0", 2) },
-    { string("a"), boost::none, string("a"), string("\0", 1) },
+    { string("a"), nullopt, string("a"), string("\0", 1) },
   };
 
-  auto check = [&] (const vector<boost::optional<string>>& test, bool lower_bound) {
+  auto check = [&] (const vector<optional<string>>& test, bool lower_bound) {
     CHECK_EQ(4, test.size());
     KuduPartialRow bound(&schema);
     if (test[0]) ASSERT_OK(bound.SetString("c1", *test[0]));
@@ -851,12 +852,12 @@ TEST_F(PartitionTest, TestVarcharRangePartitions) {
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
 
-  vector<vector<boost::optional<string>>> tests {
+  vector<vector<optional<string>>> tests {
     { string("a"), string("b"), string("a"), string("b\0", 2) },
-    { string("a"), boost::none, string("a"), string("\0", 1) },
+    { string("a"), nullopt, string("a"), string("\0", 1) },
   };
 
-  auto check = [&] (const vector<boost::optional<string>>& test, bool lower_bound) {
+  auto check = [&] (const vector<optional<string>>& test, bool lower_bound) {
     CHECK_EQ(4, test.size());
     KuduPartialRow bound(&schema);
     if (test[0]) ASSERT_OK(bound.SetVarchar("c1", *test[0]));

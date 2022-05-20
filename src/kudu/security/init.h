@@ -16,12 +16,8 @@
 // under the License.
 #pragma once
 
+#include <optional>
 #include <string>
-
-namespace boost {
-template <class T>
-class optional;
-}
 
 namespace kudu {
 
@@ -66,11 +62,11 @@ RWMutex* KerberosReinitLock();
 // Return the full principal (user/host@REALM) that the server has used to
 // log in from the keytab.
 //
-// If the server has not logged in from a keytab, returns boost::none.
-boost::optional<std::string> GetLoggedInPrincipalFromKeytab();
+// If the server has not logged in from a keytab, returns std::nullopt.
+std::optional<std::string> GetLoggedInPrincipalFromKeytab();
 
 // Same, but returns the mapped short username.
-boost::optional<std::string> GetLoggedInUsernameFromKeytab();
+std::optional<std::string> GetLoggedInUsernameFromKeytab();
 
 // Canonicalize the given principal name by adding '@DEFAULT_REALM' in the case that
 // the principal has no realm.

@@ -19,12 +19,12 @@
 
 #include <openssl/obj_mac.h>
 
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -136,8 +136,8 @@ TEST_F(CertTest, CertMismatchesRsaPrivateKey) {
 }
 
 TEST_F(CertTest, TestGetKuduSpecificFieldsWhenMissing) {
-  EXPECT_EQ(boost::none, ca_cert_.UserId());
-  EXPECT_EQ(boost::none, ca_cert_.KuduKerberosPrincipal());
+  EXPECT_FALSE(ca_cert_.UserId().has_value());
+  EXPECT_FALSE(ca_cert_.KuduKerberosPrincipal().has_value());
 }
 
 TEST_F(CertTest, DnsHostnameInSanField) {

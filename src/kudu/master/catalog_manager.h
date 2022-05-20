@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -33,7 +34,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 #include <sparsehash/dense_hash_map>
@@ -612,7 +612,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // provided, checks that the user is authorized to get such information.
   Status IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                            IsCreateTableDoneResponsePB* resp,
-                           boost::optional<const std::string&> user);
+                           const std::optional<std::string>& user);
 
   // Delete the specified table in response to a DeleteTableRequest RPC.
   //
@@ -640,16 +640,16 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // notification log listener event.
   Status AlterTableHms(const std::string& table_id,
                         const std::string& table_name,
-                        const boost::optional<std::string>& new_table_name,
-                        const boost::optional<std::string>& new_table_owner,
-                        const boost::optional<std::string>& new_table_comment,
+                        const std::optional<std::string>& new_table_name,
+                        const std::optional<std::string>& new_table_owner,
+                        const std::optional<std::string>& new_table_comment,
                         int64_t notification_log_event_id) WARN_UNUSED_RESULT;
 
   // Get the information about an in-progress alter operation. If 'user' is
   // provided, checks that the user is authorized to get such information.
   Status IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                           IsAlterTableDoneResponsePB* resp,
-                          boost::optional<const std::string&> user);
+                          const std::optional<std::string>& user);
 
   // Get the information about the specified table. If 'user' is provided,
   // checks that the user is authorized to get such information. If a token
@@ -657,20 +657,20 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // token will be attached to the response.
   Status GetTableSchema(const GetTableSchemaRequestPB* req,
                         GetTableSchemaResponsePB* resp,
-                        boost::optional<const std::string&> user,
+                        const std::optional<std::string>& user,
                         const security::TokenSigner* token_signer);
 
   // Lists all the running tables. If 'user' is provided, only lists those that
   // the given user is authorized to see.
   Status ListTables(const ListTablesRequestPB* req,
                     ListTablesResponsePB* resp,
-                    boost::optional<const std::string&> user);
+                    const std::optional<std::string>& user);
 
   // Get table statistics. If 'user' is provided, checks if the user is
   // authorized to get such statistics.
   Status GetTableStatistics(const GetTableStatisticsRequestPB* req,
                             GetTableStatisticsResponsePB* resp,
-                            boost::optional<const std::string&> user);
+                            const std::optional<std::string>& user);
 
   // Lookup the tablets contained in the partition range of the request. If 'user'
   // is provided, checks that the user is authorized to get such information.
@@ -678,7 +678,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Returns an error if any of the tablets are not running.
   Status GetTableLocations(const GetTableLocationsRequestPB* req,
                            GetTableLocationsResponsePB* resp,
-                           boost::optional<const std::string&> user);
+                           const std::optional<std::string>& user);
 
   // Dictionary mapping tablet servers to indexes, so that when a GetTableLocations
   // response returns many replicas mapping to the same UUID, they can be sent
@@ -724,7 +724,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                             master::ReplicaTypeFilter filter,
                             TabletLocationsPB* locs_pb,
                             TSInfosDict* ts_infos_dict,
-                            boost::optional<const std::string&> user);
+                            const std::optional<std::string>& user);
 
   // Replace the given tablet with a new, empty one. The replaced tablet is
   // deleted and its data is permanently lost.
@@ -880,8 +880,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // catalog.
   Status DeleteTable(const DeleteTableRequestPB& req,
                      DeleteTableResponsePB* resp,
-                     boost::optional<int64_t> hms_notification_log_event_id,
-                     boost::optional<const std::string&> user) WARN_UNUSED_RESULT;
+                     std::optional<int64_t> hms_notification_log_event_id,
+                     const std::optional<std::string>& user) WARN_UNUSED_RESULT;
 
   // Alter the specified table in the catalog. If 'user' is provided,
   // checks that the user is authorized to alter the table. Otherwise,
@@ -892,8 +892,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // catalog along with the altered table metadata.
   Status AlterTable(const AlterTableRequestPB& req,
                     AlterTableResponsePB* resp,
-                    boost::optional<int64_t> hms_notification_log_event_id,
-                    boost::optional<const std::string&> user) WARN_UNUSED_RESULT;
+                    std::optional<int64_t> hms_notification_log_event_id,
+                    const std::optional<std::string>& user) WARN_UNUSED_RESULT;
 
   // Called by SysCatalog::SysCatalogStateChanged when this node
   // becomes the leader of a consensus configuration. Executes
@@ -1004,7 +1004,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // "dirty" state field.
   scoped_refptr<TabletInfo> CreateTabletInfo(const scoped_refptr<TableInfo>& table,
                                              const PartitionPB& partition,
-                                             const boost::optional<std::string>& dimension_label);
+                                             const std::optional<std::string>& dimension_label);
 
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo
   // and the replica type filter specified. Populates locs_pb and returns
@@ -1041,7 +1041,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                    RespClass* response,
                                    LockMode lock_mode,
                                    F authz_func,
-                                   boost::optional<const std::string&> user,
+                                   const std::optional<std::string>& user,
                                    scoped_refptr<TableInfo>* table_info,
                                    TableMetadataLock* table_lock) WARN_UNUSED_RESULT;
 
@@ -1177,7 +1177,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   template<typename RespClass>
   Status ValidateNumberReplicas(const std::string& normalized_table_name,
                                 RespClass* resp, ValidateType type,
-                                const boost::optional<int>& partitions_count,
+                                const std::optional<int>& partitions_count,
                                 int num_replicas);
 
   // TODO(unknown): the maps are a little wasteful of RAM, since the TableInfo/TabletInfo

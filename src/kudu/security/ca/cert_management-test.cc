@@ -18,11 +18,11 @@
 #include "kudu/security/ca/cert_management.h"
 
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 

@@ -24,9 +24,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
@@ -101,9 +101,9 @@ class CertRequestGenerator : public CertRequestGeneratorBase {
     // FQDN name to put into the 'DNS' fields of the subjectAltName extension.
     std::string hostname;
     // userId (UID)
-    boost::optional<std::string> user_id;
+    std::optional<std::string> user_id;
     // Our custom extension which stores the full Kerberos principal for IPKI certs.
-    boost::optional<std::string> kerberos_principal;
+    std::optional<std::string> kerberos_principal;
   };
 
   // 'config' contains the properties to fill into the X509 attributes of the

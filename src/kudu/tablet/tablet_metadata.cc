@@ -20,13 +20,13 @@
 #include <algorithm>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <google/protobuf/stubs/port.h>
 
@@ -80,6 +80,9 @@ using kudu::log::MinLogIndexAnchorer;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::memory_order_relaxed;
+using std::make_optional;
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -103,11 +106,11 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const PartitionSchema& partition_schema,
                                  const Partition& partition,
                                  const TabletDataState& initial_tablet_data_state,
-                                 boost::optional<OpId> tombstone_last_logged_opid,
+                                 optional<OpId> tombstone_last_logged_opid,
                                  bool supports_live_row_count,
-                                 boost::optional<TableExtraConfigPB> extra_config,
-                                 boost::optional<string> dimension_label,
-                                 boost::optional<TableTypePB> table_type,
+                                 optional<TableExtraConfigPB> extra_config,
+                                 optional<string> dimension_label,
+                                 optional<TableTypePB> table_type,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
   // Verify that no existing tablet exists with the same ID.
@@ -133,8 +136,9 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
       supports_live_row_count,
       std::move(extra_config),
       std::move(dimension_label),
-      !table_type || *table_type == TableTypePB::DEFAULT_TABLE ?
-          boost::none : std::move(table_type)));
+      !table_type ||
+          *table_type == TableTypePB::DEFAULT_TABLE ? nullopt
+                                                    : std::move(table_type)));
   RETURN_NOT_OK(ret->Flush());
   dir_group_cleanup.cancel();
 
@@ -160,10 +164,10 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const PartitionSchema& partition_schema,
                                     const Partition& partition,
                                     const TabletDataState& initial_tablet_data_state,
-                                    boost::optional<OpId> tombstone_last_logged_opid,
-                                    boost::optional<TableExtraConfigPB> extra_config,
-                                    boost::optional<string> dimension_label,
-                                    boost::optional<TableTypePB> table_type,
+                                    optional<OpId> tombstone_last_logged_opid,
+                                    optional<TableExtraConfigPB> extra_config,
+                                    optional<string> dimension_label,
+                                    optional<TableTypePB> table_type,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, tablet_id, metadata);
   if (s.ok()) {
@@ -222,7 +226,7 @@ BlockIdContainer TabletMetadata::CollectBlockIds() {
 }
 
 Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
-                                        const boost::optional<OpId>& last_logged_opid) {
+                                        const optional<OpId>& last_logged_opid) {
   DCHECK(!last_logged_opid || last_logged_opid->IsInitialized());
   CHECK(delete_type == TABLET_DATA_DELETED ||
         delete_type == TABLET_DATA_TOMBSTONED ||
@@ -300,11 +304,11 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
                                const Schema& schema, PartitionSchema partition_schema,
                                Partition partition,
                                const TabletDataState& tablet_data_state,
-                               boost::optional<OpId> tombstone_last_logged_opid,
+                               optional<OpId> tombstone_last_logged_opid,
                                bool supports_live_row_count,
-                               boost::optional<TableExtraConfigPB> extra_config,
-                               boost::optional<string> dimension_label,
-                               boost::optional<TableTypePB> table_type)
+                               optional<TableExtraConfigPB> extra_config,
+                               optional<string> dimension_label,
+                               optional<TableTypePB> table_type)
     : state_(kNotWrittenYet),
       tablet_id_(std::move(tablet_id)),
       table_id_(std::move(table_id)),
@@ -486,19 +490,19 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
         !OpIdEquals(MinimumOpId(), superblock.tombstone_last_logged_opid())) {
       tombstone_last_logged_opid_ = superblock.tombstone_last_logged_opid();
     } else {
-      tombstone_last_logged_opid_ = boost::none;
+      tombstone_last_logged_opid_.reset();
     }
 
     if (superblock.has_extra_config()) {
       extra_config_ = superblock.extra_config();
     } else {
-      extra_config_ = boost::none;
+      extra_config_.reset();
     }
 
     if (superblock.has_dimension_label()) {
       dimension_label_ = superblock.dimension_label();
     } else {
-      dimension_label_ = boost::none;
+      dimension_label_.reset();
     }
 
     if (superblock.has_table_type() && superblock.table_type() != TableTypePB::DEFAULT_TABLE) {
@@ -512,11 +516,11 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
           new TxnMetadata(
               txn_meta.has_aborted() && txn_meta.aborted(),
               txn_meta.has_commit_mvcc_op_timestamp() ?
-                  boost::make_optional(Timestamp(txn_meta.commit_mvcc_op_timestamp())) :
-                  boost::none,
+                  make_optional(Timestamp(txn_meta.commit_mvcc_op_timestamp())) :
+                  nullopt,
               txn_meta.has_commit_timestamp() ?
-                  boost::make_optional(Timestamp(txn_meta.commit_timestamp())) :
-                  boost::none,
+                  make_optional(Timestamp(txn_meta.commit_timestamp())) :
+                  nullopt,
               txn_meta.has_flushed_committed_mrs() && txn_meta.flushed_committed_mrs()
           ));
     }
@@ -716,7 +720,7 @@ void TabletMetadata::SetPreFlushCallback(StatusClosure callback) {
   pre_flush_callback_ = std::move(callback);
 }
 
-boost::optional<consensus::OpId> TabletMetadata::tombstone_last_logged_opid() const {
+std::optional<consensus::OpId> TabletMetadata::tombstone_last_logged_opid() const {
   std::lock_guard<LockType> l(data_lock_);
   return tombstone_last_logged_opid_;
 }
@@ -977,7 +981,7 @@ uint32_t TabletMetadata::schema_version() const {
 void TabletMetadata::set_tablet_data_state(TabletDataState state) {
   std::lock_guard<LockType> l(data_lock_);
   if (state == TABLET_DATA_READY) {
-    tombstone_last_logged_opid_ = boost::none;
+    tombstone_last_logged_opid_.reset();
   }
   tablet_data_state_ = state;
 }
@@ -992,17 +996,17 @@ void TabletMetadata::SetExtraConfig(TableExtraConfigPB extra_config) {
   extra_config_ = std::move(extra_config);
 }
 
-boost::optional<TableExtraConfigPB> TabletMetadata::extra_config() const {
+optional<TableExtraConfigPB> TabletMetadata::extra_config() const {
   std::lock_guard<LockType> l(data_lock_);
   return extra_config_;
 }
 
-boost::optional<string> TabletMetadata::dimension_label() const {
+optional<string> TabletMetadata::dimension_label() const {
   std::lock_guard<LockType> l(data_lock_);
   return dimension_label_;
 }
 
-const boost::optional<TableTypePB>& TabletMetadata::table_type() const {
+const optional<TableTypePB>& TabletMetadata::table_type() const {
   std::lock_guard<LockType> l(data_lock_);
   return table_type_;
 }

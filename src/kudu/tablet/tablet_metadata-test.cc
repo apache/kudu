@@ -20,12 +20,12 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -114,7 +114,7 @@ TEST_F(TestTabletMetadata, TestLoadFromSuperBlock) {
   // Alter table's extra configuration properties.
   TableExtraConfigPB extra_config;
   extra_config.set_history_max_age_sec(7200);
-  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), boost::make_optional(extra_config)));
+  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), std::make_optional(extra_config)));
 
   // Shut down the tablet.
   harness_->tablet()->Shutdown();
@@ -264,21 +264,21 @@ TEST_F(TestTabletMetadata, TestTxnMetadata) {
 
     const auto& committed_txn = FindOrDie(txn_metas, kCommittedTxnId);
     ASSERT_FALSE(committed_txn->aborted());
-    ASSERT_NE(boost::none, committed_txn->commit_mvcc_op_timestamp());
+    ASSERT_TRUE(committed_txn->commit_mvcc_op_timestamp().has_value());
     ASSERT_EQ(kDummyTimestamp, *committed_txn->commit_mvcc_op_timestamp());
-    ASSERT_NE(boost::none, committed_txn->commit_timestamp());
+    ASSERT_TRUE(committed_txn->commit_timestamp().has_value());
     ASSERT_EQ(kDummyTimestamp, *committed_txn->commit_timestamp());
 
     const auto& aborted_txn = FindOrDie(txn_metas, kAbortedTxnId);
     ASSERT_TRUE(aborted_txn->aborted());
-    ASSERT_EQ(boost::none, aborted_txn->commit_timestamp());
-    ASSERT_NE(boost::none, aborted_txn->commit_mvcc_op_timestamp());
+    ASSERT_FALSE(aborted_txn->commit_timestamp().has_value());
+    ASSERT_TRUE(aborted_txn->commit_mvcc_op_timestamp().has_value());
     ASSERT_EQ(kDummyTimestamp, *aborted_txn->commit_mvcc_op_timestamp());
 
     const auto& in_flight_txn = FindOrDie(txn_metas, kInFlightTxnId);
     ASSERT_FALSE(in_flight_txn->aborted());
-    ASSERT_EQ(boost::none, in_flight_txn->commit_timestamp());
-    ASSERT_NE(boost::none, in_flight_txn->commit_mvcc_op_timestamp());
+    ASSERT_FALSE(in_flight_txn->commit_timestamp().has_value());
+    ASSERT_TRUE(in_flight_txn->commit_mvcc_op_timestamp().has_value());
     ASSERT_EQ(kDummyTimestamp, *in_flight_txn->commit_mvcc_op_timestamp());
 
     unordered_set<int64_t> in_flight_txn_ids;

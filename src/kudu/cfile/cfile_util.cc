@@ -19,9 +19,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/cfile/cfile_reader.h"
@@ -47,7 +47,7 @@ WriterOptions::WriterOptions()
     write_posidx(false),
     write_validx(false),
     optimize_index_keys(true),
-    validx_key_encoder(boost::none) {
+    validx_key_encoder(std::nullopt) {
 }
 
 Status DumpIterator(const CFileReader& reader,

@@ -15,14 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/tablet_mm_ops.h"
+
 #include <memory>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -30,7 +33,6 @@
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
-#include "kudu/tablet/tablet_mm_ops.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
@@ -149,7 +151,7 @@ TEST_F(KuduTabletMmOpsTest, TestDisableCompactRowSetsOp) {
   CompactRowSetsOp op(tablet().get());
   TableExtraConfigPB extra_config;
   extra_config.set_disable_compaction(true);
-  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), boost::make_optional(extra_config)));
+  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), std::make_optional(extra_config)));
   ASSERT_TRUE(op.DisableCompaction());
   NO_FATALS(TestNoAffectedMetrics(&op));
 }
@@ -168,7 +170,7 @@ TEST_F(KuduTabletMmOpsTest, TestDisableMinorDeltaCompactionOp) {
   MinorDeltaCompactionOp op(tablet().get());
   TableExtraConfigPB extra_config;
   extra_config.set_disable_compaction(true);
-  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), boost::make_optional(extra_config)));
+  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), std::make_optional(extra_config)));
   ASSERT_TRUE(op.DisableCompaction());
   NO_FATALS(TestNoAffectedMetrics(&op));
 }
@@ -188,7 +190,7 @@ TEST_F(KuduTabletMmOpsTest, TestDisableMajorDeltaCompactionOp) {
   MajorDeltaCompactionOp op(tablet().get());
   TableExtraConfigPB extra_config;
   extra_config.set_disable_compaction(true);
-  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), boost::make_optional(extra_config)));
+  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), std::make_optional(extra_config)));
   ASSERT_TRUE(op.DisableCompaction());
   NO_FATALS(TestNoAffectedMetrics(&op));
 }

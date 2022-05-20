@@ -16,10 +16,9 @@
 // under the License.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
@@ -41,7 +40,7 @@ class KuduClientBuilder::Data {
   MonoDelta connection_negotiation_timeout_;
   std::string authn_creds_;
   internal::ReplicaController::Visibility replica_visibility_;
-  boost::optional<int> num_reactors_;
+  std::optional<int> num_reactors_;
   std::string sasl_protocol_name_;
   bool require_authentication_;
   EncryptionPolicy encryption_policy_;

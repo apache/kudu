@@ -14,15 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef CFILE_UTIL_H_
-#define CFILE_UTIL_H_
+#pragma once
 
 #include <cstddef>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <memory>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/common/schema.h"
 #include "kudu/util/slice.h"
@@ -87,7 +85,7 @@ struct WriterOptions {
 
   // An optional value index key encoder. If not set, the default encoder
   // encodes the entire value.
-  boost::optional<ValidxKeyEncoder> validx_key_encoder;
+  std::optional<ValidxKeyEncoder> validx_key_encoder;
 
   WriterOptions();
 };
@@ -122,5 +120,3 @@ void GetSeparatingKey(const Slice& left, Slice* right);
 
 }  // namespace cfile
 }  // namespace kudu
-
-#endif /* CFILE_UTIL_H_ */

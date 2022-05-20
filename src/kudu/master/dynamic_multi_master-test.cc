@@ -23,6 +23,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -31,7 +32,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -105,6 +105,7 @@ using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
 using std::atomic;
 using std::map;
+using std::optional;
 using std::string;
 using std::thread;
 using std::tuple;
@@ -152,7 +153,7 @@ Status ReserveSocketForMaster(int master_idx, unique_ptr<Socket>* socket,
 // Functor that takes a leader_master_idx and runs the desired master RPC against
 // the leader master returning the RPC status and the optional MasterErrorPB::Code.
 typedef std::function<
-    std::pair<Status, boost::optional<MasterErrorPB::Code>>(int leader_master_idx)> MasterRPC;
+    std::pair<Status, optional<MasterErrorPB::Code>>(int leader_master_idx)> MasterRPC;
 
 // Helper function that runs the master RPC against the leader master and retries the RPC
 // if the expected leader master returns NOT_THE_LEADER error due to leadership change.
@@ -192,7 +193,10 @@ Status RunListMasters(ListMastersResponsePB* resp, ExternalMiniCluster* cluster)
     ListMastersRequestPB req;
     RpcController rpc;
     Status s = cluster->master_proxy(leader_master_idx)->ListMasters(req, resp, &rpc);
-    boost::optional<MasterErrorPB::Code> err_code(resp->has_error(), resp->error().code());
+    optional<MasterErrorPB::Code> err_code;
+    if (resp->has_error()) {
+      err_code.emplace(resp->error().code());
+    }
     return std::make_pair(s, err_code);
   };
   return RunLeaderMasterRPC(list_masters, cluster);

@@ -17,10 +17,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs.pb.h"
@@ -182,7 +181,7 @@ struct LBMPartialRecordCheck {
 // annotated with relevant information (i.e. an entry for a missing block will
 // include that block's ID). The contents of a check can be converted to a
 // string for logging, and can be merged with another check of the same type
-// for aggregation. Each check is encapsulated in a boost::optional to
+// for aggregation. Each check is encapsulated in a std::optional to
 // emphasize that, depending on the context, it may not have been performed.
 //
 // Inconsistencies fall into one of these categories:
@@ -260,15 +259,15 @@ struct FsReport {
   std::string metadata_dir;
 
   // General inconsistency checks.
-  boost::optional<MissingBlockCheck> missing_block_check;
-  boost::optional<OrphanedBlockCheck> orphaned_block_check;
+  std::optional<MissingBlockCheck> missing_block_check;
+  std::optional<OrphanedBlockCheck> orphaned_block_check;
 
   // LBM-specific inconsistency checks.
-  boost::optional<LBMFullContainerSpaceCheck> full_container_space_check;
-  boost::optional<LBMIncompleteContainerCheck> incomplete_container_check;
-  boost::optional<LBMMalformedRecordCheck> malformed_record_check;
-  boost::optional<LBMMisalignedBlockCheck> misaligned_block_check;
-  boost::optional<LBMPartialRecordCheck> partial_record_check;
+  std::optional<LBMFullContainerSpaceCheck> full_container_space_check;
+  std::optional<LBMIncompleteContainerCheck> incomplete_container_check;
+  std::optional<LBMMalformedRecordCheck> malformed_record_check;
+  std::optional<LBMMisalignedBlockCheck> misaligned_block_check;
+  std::optional<LBMPartialRecordCheck> partial_record_check;
 };
 
 } // namespace fs

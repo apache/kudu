@@ -172,12 +172,12 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -1036,7 +1036,7 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("string_len")
       .AddOptionalParameter(
           "table_name",
-          boost::none,
+          std::nullopt,
           string("Name of an existing table to use for the test. The test will "
                  "determine the structure of the table schema and "
                  "populate it with data accordingly. If left empty, "

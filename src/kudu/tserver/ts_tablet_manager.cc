@@ -21,13 +21,14 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -288,8 +289,9 @@ using kudu::tablet::TabletMetadata;
 using kudu::tablet::TabletReplica;
 using kudu::transactions::TxnStatusManager;
 using kudu::transactions::TxnStatusManagerFactory;
-using kudu::tserver::TabletCopyClient;
 using std::make_shared;
+using std::nullopt;
+using std::optional;
 using std::set;
 using std::shared_ptr;
 using std::string;
@@ -613,9 +615,9 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const Schema& schema,
                                         const PartitionSchema& partition_schema,
                                         RaftConfigPB config,
-                                        boost::optional<TableExtraConfigPB> extra_config,
-                                        boost::optional<string> dimension_label,
-                                        boost::optional<TableTypePB> table_type,
+                                        optional<TableExtraConfigPB> extra_config,
+                                        optional<string> dimension_label,
+                                        optional<TableTypePB> table_type,
                                         scoped_refptr<TabletReplica>* replica) {
   CHECK_EQ(state(), MANAGER_RUNNING);
   CHECK(IsRaftConfigMember(server_->instance_pb().permanent_uuid(), config));
@@ -652,7 +654,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               partition_schema,
                               partition,
                               TABLET_DATA_READY,
-                              boost::none,
+                              nullopt,
                               /*supports_live_row_count=*/ true,
                               std::move(extra_config),
                               std::move(dimension_label),
@@ -734,7 +736,7 @@ void TSTabletManager::StartTabletCopy(
   runnable->DisableCallback();
 
   // Check if the tablet is already in transition (i.e. being copied).
-  boost::optional<string> transition;
+  optional<string> transition;
   {
     // Lock must be dropped before executing callbacks.
     shared_lock<RWMutex> lock(lock_);
@@ -822,7 +824,7 @@ void TSTabletManager::RunTabletCopy(
         LOG(FATAL) << LogPrefix(tablet_id) << "Tablet Copy: "
                    << "Found tablet in TABLET_DATA_COPYING state during StartTabletCopy()";
       case TABLET_DATA_TOMBSTONED: {
-        boost::optional<OpId> last_logged_opid = meta->tombstone_last_logged_opid();
+        optional<OpId> last_logged_opid = meta->tombstone_last_logged_opid();
         if (last_logged_opid) {
           CALLBACK_RETURN_NOT_OK_WITH_ERROR(CheckLeaderTermNotLower(tablet_id, leader_term,
                                                                     last_logged_opid->term()),
@@ -839,7 +841,7 @@ void TSTabletManager::RunTabletCopy(
           CALLBACK_AND_RETURN(
               Status::IllegalState("consensus unavailable: tablet not running", tablet_id));
         }
-        boost::optional<OpId> opt_last_logged_opid = consensus->GetLastOpId(RECEIVED_OPID);
+        optional<OpId> opt_last_logged_opid = consensus->GetLastOpId(RECEIVED_OPID);
         if (!opt_last_logged_opid) {
           CALLBACK_AND_RETURN(
               Status::IllegalState("cannot determine last-logged opid: tablet not running",
@@ -1052,7 +1054,7 @@ public:
   DeleteTabletRunnable(TSTabletManager* ts_tablet_manager,
                        string tablet_id,
                        tablet::TabletDataState delete_type,
-                       const boost::optional<int64_t>& cas_config_index, // NOLINT
+                       const optional<int64_t>& cas_config_index, // NOLINT
                        std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
       : TabletManagerRunnable(ts_tablet_manager, std::move(cb)),
         tablet_id_(std::move(tablet_id)),
@@ -1070,7 +1072,7 @@ public:
 private:
   const string tablet_id_;
   const tablet::TabletDataState delete_type_;
-  const boost::optional<int64_t> cas_config_index_;
+  const optional<int64_t> cas_config_index_;
 
   DISALLOW_COPY_AND_ASSIGN(DeleteTabletRunnable);
 };
@@ -1078,7 +1080,7 @@ private:
 void TSTabletManager::DeleteTabletAsync(
     const string& tablet_id,
     tablet::TabletDataState delete_type,
-    const boost::optional<int64_t>& cas_config_index,
+    const optional<int64_t>& cas_config_index,
     const std::function<void(const Status&, TabletServerErrorPB::Code)>& cb) {
   auto runnable = make_shared<DeleteTabletRunnable>(this, tablet_id, delete_type,
                                                     cas_config_index, cb);
@@ -1096,7 +1098,7 @@ void TSTabletManager::DeleteTabletAsync(
 Status TSTabletManager::DeleteTablet(
     const string& tablet_id,
     TabletDataState delete_type,
-    const boost::optional<int64_t>& cas_config_index,
+    const optional<int64_t>& cas_config_index,
     TabletServerErrorPB::Code* error_code) {
 
   if (delete_type != TABLET_DATA_DELETED && delete_type != TABLET_DATA_TOMBSTONED) {
@@ -1154,7 +1156,7 @@ Status TSTabletManager::DeleteTablet(
 
   replica->Stop();
 
-  boost::optional<OpId> opt_last_logged_opid;
+  optional<OpId> opt_last_logged_opid;
   if (consensus) {
     opt_last_logged_opid = consensus->GetLastOpId(RECEIVED_OPID);
     DCHECK(!opt_last_logged_opid || opt_last_logged_opid->IsInitialized());
@@ -1598,7 +1600,7 @@ TabletNumByDimensionMap TSTabletManager::GetNumLiveTabletsByDimension() const {
     tablet::TabletStatePB state = entry.second->state();
     if (state == tablet::BOOTSTRAPPING ||
         state == tablet::RUNNING) {
-      boost::optional<string> dimension_label = entry.second->tablet_metadata()->dimension_label();
+      optional<string> dimension_label = entry.second->tablet_metadata()->dimension_label();
       if (dimension_label) {
         result[*dimension_label]++;
       }
@@ -1798,7 +1800,7 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
 
   if (!skip_deletion) {
     // Passing no OpId will retain the last_logged_opid that was previously in the metadata.
-    RETURN_NOT_OK(DeleteTabletData(meta, cmeta_manager_, data_state, boost::none));
+    RETURN_NOT_OK(DeleteTabletData(meta, cmeta_manager_, data_state, nullopt));
   }
 
   // Register TOMBSTONED tablets so that they get reported to the Master, which
@@ -1817,7 +1819,7 @@ Status TSTabletManager::DeleteTabletData(
     const scoped_refptr<TabletMetadata>& meta,
     const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
     TabletDataState delete_type,
-    boost::optional<OpId> last_logged_opid) {
+    optional<OpId> last_logged_opid) {
   const string& tablet_id = meta->tablet_id();
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
             << "Deleting tablet data with delete state "

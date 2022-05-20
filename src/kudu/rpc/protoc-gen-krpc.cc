@@ -22,12 +22,12 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/compiler/code_generator.h>
 #include <google/protobuf/compiler/plugin.h>
@@ -45,7 +45,6 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/rpc/rpc_header.pb.h"
 
-using boost::optional;
 using google::protobuf::FileDescriptor;
 using google::protobuf::io::Printer;
 using google::protobuf::MethodDescriptor;
@@ -64,17 +63,17 @@ namespace rpc {
 namespace {
 
 // Return the name of the authorization method specified for this
-// RPC method, or boost::none if none is specified.
+// RPC method, or std::nullopt if none is specified.
 //
 // This handles fallback to the service-wide default.
-optional<string> GetAuthzMethod(const MethodDescriptor& method) {
+std::optional<string> GetAuthzMethod(const MethodDescriptor& method) {
   if (method.options().HasExtension(authz_method)) {
     return method.options().GetExtension(authz_method);
   }
   if (method.service()->options().HasExtension(default_authz_method)) {
     return method.service()->options().GetExtension(default_authz_method);
   }
-  return boost::none;
+  return std::nullopt;
 }
 
 } // anonymous namespace
@@ -173,7 +172,7 @@ class MethodSubstitutions : public Substituter {
     m["metric_enum_key"] = Substitute("kMetricIndex$0", method_->name());
     bool track_result = static_cast<bool>(method_->options().GetExtension(track_rpc_result));
     m["track_result"] = track_result ? " true" : "false";
-    m["authz_method"] = GetAuthzMethod(*method_).get_value_or("AuthorizeAllowAll");
+    m["authz_method"] = GetAuthzMethod(*method_).value_or("AuthorizeAllowAll");
   }
 
   // Strips the package from method arguments if they are in the same package as
@@ -370,7 +369,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
             "      ::kudu::rpc::RpcContext* context) = 0;\n");
         subs->Pop(); // method
         if (auto m = GetAuthzMethod(*method)) {
-          authz_methods.insert(m.get());
+          authz_methods.insert(*m);
         }
       }
 

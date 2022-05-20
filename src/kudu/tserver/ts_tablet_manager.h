@@ -22,6 +22,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -45,11 +46,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
-
-namespace boost {
-template <class T>
-class optional;
-}
 
 namespace kudu {
 
@@ -135,9 +131,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                          const Schema& schema,
                          const PartitionSchema& partition_schema,
                          consensus::RaftConfigPB config,
-                         boost::optional<TableExtraConfigPB> extra_config,
-                         boost::optional<std::string> dimension_label,
-                         boost::optional<TableTypePB> table_type,
+                         std::optional<TableExtraConfigPB> extra_config,
+                         std::optional<std::string> dimension_label,
+                         std::optional<TableTypePB> table_type,
                          scoped_refptr<tablet::TabletReplica>* replica);
 
   // Delete the specified tablet asynchronously with callback 'cb'.
@@ -151,14 +147,14 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   //   CAS_FAILED.
   void DeleteTabletAsync(const std::string& tablet_id,
                          tablet::TabletDataState delete_type,
-                         const boost::optional<int64_t>& cas_config_index,
+                         const std::optional<int64_t>& cas_config_index,
                          const std::function<void(const Status&, TabletServerErrorPB::Code)>& cb);
 
   // Delete the specified tablet synchronously.
   // See DeleteTabletAsync() for more information.
   Status DeleteTablet(const std::string& tablet_id,
                       tablet::TabletDataState delete_type,
-                      const boost::optional<int64_t>& cas_config_index,
+                      const std::optional<int64_t>& cas_config_index,
                       TabletServerErrorPB::Code* error_code = nullptr);
 
   // Lookup the given tablet replica by its ID.
@@ -223,13 +219,13 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   //
   // If set, 'last_logged_opid' will be persisted in the
   // 'tombstone_last_logged_opid' field in the tablet metadata. Otherwise, if
-  // 'last_logged_opid' is equal to boost::none, the tablet metadata will
+  // 'last_logged_opid' is equal to std::nullopt, the tablet metadata will
   // retain its previous value of 'tombstone_last_logged_opid', if any.
   static Status DeleteTabletData(
       const scoped_refptr<tablet::TabletMetadata>& meta,
       const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
       tablet::TabletDataState delete_type,
-      boost::optional<consensus::OpId> last_logged_opid);
+      std::optional<consensus::OpId> last_logged_opid);
 
   // Synchronously makes the specified tablet unavailable for further I/O and
   // schedules its asynchronous shutdown.

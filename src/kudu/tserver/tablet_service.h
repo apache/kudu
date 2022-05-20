@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "kudu/consensus/consensus.service.h"
@@ -28,10 +29,6 @@
 #include "kudu/tserver/tserver_service.service.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
-
-namespace boost {
-template <class T> class optional;
-} // namespace boost
 
 namespace google {
 namespace protobuf {
@@ -181,7 +178,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
                               tablet::Tablet* tablet,
                               consensus::TimeManager* time_manager,
                               std::unique_ptr<RowwiseIterator>* iter,
-                              boost::optional<Timestamp>* snap_start_timestamp,
+                              std::optional<Timestamp>* snap_start_timestamp,
                               Timestamp* snap_timestamp,
                               TabletServerErrorPB::Code* error_code);
 

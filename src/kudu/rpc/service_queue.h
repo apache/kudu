@@ -17,6 +17,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <set>
 #include <vector>
@@ -30,11 +31,6 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
-
-namespace boost {
-template <class T>
-class optional;
-}
 
 namespace kudu {
 namespace rpc {
@@ -94,7 +90,7 @@ class LifoServiceQueue {
   // In the case of a 'QUEUE_SUCCESS' response, the new element may have bumped
   // another call out of the queue. In that case, *evicted will be set to the
   // call that was bumped.
-  QueueStatus Put(InboundCall* call, boost::optional<InboundCall*>* evicted);
+  QueueStatus Put(InboundCall* call, std::optional<InboundCall*>* evicted);
 
   // Shut down the queue.
   // When a blocking queue is shut down, no more elements can be added to it,

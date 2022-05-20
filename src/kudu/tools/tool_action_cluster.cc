@@ -22,11 +22,11 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -290,7 +290,7 @@ Status EvaluateMoveSingleReplicasFlag(const vector<string>& master_addresses,
   // destination replica to catch up. During that time the tablet would not be
   // available. The idea is to reduce the risk of unintended unavailability
   // unless it's explicitly requested by the operator.
-  boost::optional<string> tid;
+  std::optional<string> tid;
   if (!ksck_results.cluster_status.tablet_summaries.empty()) {
     tid = ksck_results.cluster_status.tablet_summaries.front().id;
   }

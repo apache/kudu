@@ -27,7 +27,6 @@
 #include <unordered_set>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -147,6 +146,7 @@ using kudu::fs::UpdateInstanceBehavior;
 using kudu::fs::WritableBlock;
 using kudu::pb_util::SecureDebugString;
 using kudu::security::DefaultKeyProvider;
+using std::optional;
 using std::ostream;
 using std::string;
 using std::unique_ptr;
@@ -552,8 +552,8 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   return Status::OK();
 }
 
-Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid,
-                                                boost::optional<string> server_key) {
+Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
+                                                optional<string> server_key) {
   CHECK(!opts_.read_only);
 
   RETURN_NOT_OK(Init());
@@ -671,18 +671,18 @@ Status FsManager::CreateFileSystemRoots(
   return Status::OK();
 }
 
-Status FsManager::CreateInstanceMetadata(boost::optional<string> uuid,
-                                         boost::optional<string> server_key,
+Status FsManager::CreateInstanceMetadata(optional<string> uuid,
+                                         optional<string> server_key,
                                          InstanceMetadataPB* metadata) {
   if (uuid) {
     string canonicalized_uuid;
-    RETURN_NOT_OK(oid_generator_.Canonicalize(uuid.get(), &canonicalized_uuid));
+    RETURN_NOT_OK(oid_generator_.Canonicalize(*uuid, &canonicalized_uuid));
     metadata->set_uuid(canonicalized_uuid);
   } else {
     metadata->set_uuid(oid_generator_.Next());
   }
   if (server_key) {
-    RETURN_NOT_OK(key_provider_->EncryptServerKey(server_key.get(),
+    RETURN_NOT_OK(key_provider_->EncryptServerKey(*server_key,
                                                   metadata->mutable_server_key()));
   } else if (FLAGS_encrypt_data_at_rest) {
     uint8_t key_bytes[32];

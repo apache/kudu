@@ -20,12 +20,13 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -218,8 +219,8 @@ class TabletReplicaTest : public TabletReplicaTestBase {
   // Assert that the Log GC() anchor is earlier than the latest OpId in the Log.
   void AssertLogAnchorEarlierThanLogLatest() {
     log::RetentionIndexes retention = tablet_replica_->GetRetentionIndexes();
-    boost::optional<OpId> last_log_opid = tablet_replica_->consensus()->GetLastOpId(RECEIVED_OPID);
-    ASSERT_NE(boost::none, last_log_opid);
+    std::optional<OpId> last_log_opid = tablet_replica_->consensus()->GetLastOpId(RECEIVED_OPID);
+    ASSERT_TRUE(last_log_opid);
     ASSERT_LT(retention.for_durability, last_log_opid->index())
       << "Expected valid log anchor, got earliest opid: " << retention.for_durability
       << " (expected any value earlier than last log id: " << SecureShortDebugString(*last_log_opid)
@@ -328,8 +329,8 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(2, segments.size());
 
-  boost::optional<OpId> id = consensus->GetLastOpId(consensus::RECEIVED_OPID);
-  ASSERT_NE(boost::none, id);
+  std::optional<OpId> id = consensus->GetLastOpId(consensus::RECEIVED_OPID);
+  ASSERT_TRUE(id);
   LOG(INFO) << "Before: " << *id;
 
   // We currently have no anchors and the last operation in the log is 0.3

@@ -36,7 +36,7 @@ template<class Traits>
 class ITNode;
 }
 
-// End point type when boost::none.
+// End point type when std::nullopt.
 enum EndpointIfNone {
   POSITIVE_INFINITY,
   NEGATIVE_INFINITY

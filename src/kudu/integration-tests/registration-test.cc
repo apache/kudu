@@ -19,11 +19,11 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -67,7 +67,6 @@ DECLARE_int32(heartbeat_interval_ms);
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
 
-using boost::none;
 using kudu::cluster::InternalMiniCluster;
 using kudu::master::CatalogManager;
 using kudu::master::CreateTableRequestPB;
@@ -80,6 +79,7 @@ using kudu::master::TSDescriptor;
 using kudu::master::TabletLocationsPB;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tserver::MiniTabletServer;
+using std::nullopt;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -116,7 +116,7 @@ void CreateTableForTesting(MiniMaster* mini_master,
     {
       CatalogManager::ScopedLeaderSharedLock l(catalog);
       ASSERT_OK(l.first_failed_status());
-      ASSERT_OK(catalog->IsCreateTableDone(&req, &resp, /*user=*/none));
+      ASSERT_OK(catalog->IsCreateTableDone(&req, &resp, /*user=*/nullopt));
     }
     if (resp.done()) {
       is_table_created = true;
@@ -205,7 +205,7 @@ class RegistrationTest : public KuduTest {
                                         master::VOTER_REPLICA,
                                         &loc,
                                         &infos_dict,
-                                        /*user=*/none);
+                                        /*user=*/nullopt);
       } while (false);
       if (s.ok() && loc.interned_replicas_size() == expected_count) {
         if (locations) {

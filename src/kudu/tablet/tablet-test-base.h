@@ -19,11 +19,11 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -433,11 +433,11 @@ class TabletTestBase : public KuduTabletTest {
   }
 
   void VerifyTestRows(int32_t first_row, uint64_t expected_count) {
-    VerifyTestRowsWithVerifier(first_row, expected_count, boost::none);
+    VerifyTestRowsWithVerifier(first_row, expected_count, std::nullopt);
   }
 
   void VerifyTestRowsWithVerifier(int32_t first_row, uint64_t expected_count,
-                                  const boost::optional<TestRowVerifier>& verifier) {
+                                  const std::optional<TestRowVerifier>& verifier) {
     std::unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
@@ -445,7 +445,7 @@ class TabletTestBase : public KuduTabletTest {
 
   void VerifyTestRowsWithTimestampAndVerifier(int32_t first_row, uint64_t expected_count,
                                               Timestamp timestamp,
-                                              const boost::optional<TestRowVerifier>& verifier) {
+                                              const std::optional<TestRowVerifier>& verifier) {
     RowIteratorOptions opts;
     opts.projection = &client_schema_;
     opts.snap_to_include = MvccSnapshot(timestamp);
@@ -456,7 +456,7 @@ class TabletTestBase : public KuduTabletTest {
 
   void VerifyTestRowsWithRowIteratorAndVerifier(int32_t first_row, uint64_t expected_row_count,
                                                 std::unique_ptr<RowwiseIterator> iter,
-                                                const boost::optional<TestRowVerifier>& verifier) {
+                                                const std::optional<TestRowVerifier>& verifier) {
     ASSERT_OK(iter->Init(nullptr));
     int batch_size = std::max<size_t>(1, std::min<size_t>(expected_row_count / 10,
                                                           4L * 1024 * 1024 / schema_.byte_size()));

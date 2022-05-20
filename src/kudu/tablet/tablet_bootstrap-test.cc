@@ -20,12 +20,12 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -105,22 +105,25 @@ class BootstrapTest : public LogTestBase {
   }
 
   Status LoadTestTabletMetadata(int mrs_id, int delta_id, scoped_refptr<TabletMetadata>* meta) {
+    using std::nullopt;
+
     Schema schema = SchemaBuilder(schema_).Build();
     std::pair<PartitionSchema, Partition> partition = CreateDefaultPartition(schema);
 
-    RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
-                                               log::kTestTablet,
-                                               log::kTestTable,
-                                               log::kTestTableId,
-                                               schema,
-                                               partition.first,
-                                               partition.second,
-                                               TABLET_DATA_READY,
-                                               /*tombstone_last_logged_opid=*/ boost::none,
-                                               /*extra_config=*/ boost::none,
-                                               /*dimension_label=*/ boost::none,
-                                               /*table_type=*/ boost::none,
-                                               meta));
+    RETURN_NOT_OK(TabletMetadata::LoadOrCreate(
+        fs_manager_.get(),
+        log::kTestTablet,
+        log::kTestTable,
+        log::kTestTableId,
+        schema,
+        partition.first,
+        partition.second,
+        TABLET_DATA_READY,
+        /*tombstone_last_logged_opid=*/ nullopt,
+        /*extra_config=*/ nullopt,
+        /*dimension_label=*/ nullopt,
+        /*table_type=*/ nullopt,
+        meta));
     (*meta)->SetLastDurableMrsIdForTests(mrs_id);
     if ((*meta)->GetRowSetForTests(0) != nullptr) {
       (*meta)->GetRowSetForTests(0)->SetLastDurableRedoDmsIdForTests(delta_id);

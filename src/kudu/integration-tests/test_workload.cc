@@ -193,7 +193,7 @@ void TestWorkload::WriteThread() {
           GenerateDataForRow(schema_, key, &rng_, row);
           if (payload_bytes_) {
             // Note: overriding payload_bytes_ requires the "simple" schema.
-            std::string test_payload(payload_bytes_.get(), '0');
+            std::string test_payload(*payload_bytes_, '0');
             CHECK_OK(row->SetStringCopy(2, test_payload));
           }
           CHECK_OK(session->Apply(insert.release()));

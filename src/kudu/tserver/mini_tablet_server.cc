@@ -17,11 +17,11 @@
 
 #include "kudu/tserver/mini_tablet_server.h"
 
+#include <optional>
 #include <ostream>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
@@ -52,6 +52,7 @@ DECLARE_bool(rpc_server_allow_ephemeral_ports);
 using kudu::tablet::TabletReplica;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::RaftConfigPB;
+using std::nullopt;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -156,7 +157,7 @@ Status MiniTabletServer::AddTestTablet(const std::string& table_id,
 
   return server_->tablet_manager()->CreateNewTablet(
       table_id, tablet_id, partition.second, table_id,
-      schema_with_ids, partition.first, config, boost::none, boost::none, boost::none, nullptr);
+      schema_with_ids, partition.first, config, nullopt, nullopt, nullopt, nullptr);
 }
 
 vector<string> MiniTabletServer::ListTablets() const {

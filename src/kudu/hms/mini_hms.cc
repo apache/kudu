@@ -24,7 +24,6 @@
 #include <ostream>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -37,7 +36,6 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
-using boost::none;
 using kudu::rpc::SaslProtection;
 using std::map;
 using std::string;

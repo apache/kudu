@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -28,7 +29,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <sparsehash/dense_hash_map>
 
@@ -179,24 +179,24 @@ public:
 
   const std::string name;
 
-  boost::optional<std::string> new_name;
+  std::optional<std::string> new_name;
 
   // NB: these properties of a column cannot be changed yet,
   // ergo type and nullable should always be empty.
   // TODO(wdberkeley) allow changing of type and nullability
-  boost::optional<DataType> type;
+  std::optional<DataType> type;
 
-  boost::optional<bool> nullable;
+  std::optional<bool> nullable;
 
-  boost::optional<Slice> default_value;
+  std::optional<Slice> default_value;
 
   bool remove_default;
 
-  boost::optional<EncodingType> encoding;
-  boost::optional<CompressionType> compression;
-  boost::optional<int32_t> cfile_block_size;
+  std::optional<EncodingType> encoding;
+  std::optional<CompressionType> compression;
+  std::optional<int32_t> cfile_block_size;
 
-  boost::optional<std::string> new_comment;
+  std::optional<std::string> new_comment;
 };
 
 // The schema for a given column.

@@ -17,10 +17,9 @@
 
 #include "kudu/fs/log_block_manager.h"
 
-#include <errno.h>
-
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -28,14 +27,15 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -202,18 +202,15 @@ METRIC_DEFINE_gauge_uint64(server, log_block_manager_processed_containers_startu
                            "the server startup",
                            kudu::MetricLevel::kInfo);
 
-namespace kudu {
-
-namespace fs {
-
-using internal::LogBlock;
-using internal::LogBlockContainer;
-using internal::LogBlockDeletionTransaction;
-using internal::LogWritableBlock;
-using pb_util::ReadablePBContainerFile;
-using pb_util::WritablePBContainerFile;
+using kudu::fs::internal::LogBlock;
+using kudu::fs::internal::LogBlockContainer;
+using kudu::fs::internal::LogBlockDeletionTransaction;
+using kudu::fs::internal::LogWritableBlock;
+using kudu::pb_util::ReadablePBContainerFile;
+using kudu::pb_util::WritablePBContainerFile;
 using std::accumulate;
 using std::map;
+using std::optional;
 using std::set;
 using std::shared_ptr;
 using std::string;
@@ -222,6 +219,10 @@ using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+
+namespace fs {
 
 bool ValidateMetadataCompactFlags() {
   if (FLAGS_log_container_metadata_runtime_compact &&
@@ -739,7 +740,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   // The data directory where the container lives.
   Dir* data_dir_;
 
-  const boost::optional<int64_t> max_num_blocks_;
+  const optional<int64_t> max_num_blocks_;
 
   // Offset up to which we have preallocated bytes.
   int64_t preallocated_offset_ = 0;
@@ -2265,7 +2266,7 @@ Status LogBlockManager::Open(FsReport* report, std::atomic<int>* containers_proc
   // Establish (and log) block limits for each data directory using kernel,
   // filesystem, and gflags information.
   for (const auto& dd : dd_manager_->dirs()) {
-    boost::optional<int64_t> limit;
+    optional<int64_t> limit;
     if (FLAGS_log_container_max_blocks == -1) {
       // No limit, unless this is KUDU-1508.
 

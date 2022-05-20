@@ -25,16 +25,17 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>

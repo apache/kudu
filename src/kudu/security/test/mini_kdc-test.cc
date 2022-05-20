@@ -18,9 +18,9 @@
 #include "kudu/security/test/mini_kdc.h"
 
 #include <initializer_list>
+#include <optional>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/security/init.h"

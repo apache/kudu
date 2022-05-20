@@ -20,14 +20,13 @@
 #include <algorithm>
 #include <cstdint>
 #include <ostream>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 
-#include "kudu/common/timestamp.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/txn_metadata.h"

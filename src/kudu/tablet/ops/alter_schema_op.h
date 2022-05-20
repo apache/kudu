@@ -19,9 +19,8 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
@@ -99,7 +98,7 @@ class AlterSchemaOpState : public OpState {
   // Sets the fact that the alter had an error.
   void SetError(const Status& s);
 
-  boost::optional<OperationResultPB> error() const {
+  std::optional<OperationResultPB> error() const {
     return error_;
   }
 
@@ -120,7 +119,7 @@ class AlterSchemaOpState : public OpState {
 
   // The error result of this alter schema op. May be empty if the
   // op hasn't been applied or if the alter succeeded.
-  boost::optional<OperationResultPB> error_;
+  std::optional<OperationResultPB> error_;
 };
 
 // Executes the alter schema op.

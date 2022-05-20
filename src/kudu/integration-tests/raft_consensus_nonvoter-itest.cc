@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -28,7 +29,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -70,7 +70,6 @@ DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_source_sessions);
 
-using boost::none;
 using kudu::client::sp::shared_ptr;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -105,6 +104,7 @@ using kudu::master::TabletLocationsPB;
 using kudu::master::VOTER_REPLICA;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
+using std::nullopt;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -281,7 +281,7 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
   {
     GetTableLocationsResponsePB table_locations;
     ASSERT_OK(GetTableLocations(cluster_->master_proxy(), table_->name(),
-                                kTimeout, VOTER_REPLICA, /*table_id=*/none,
+                                kTimeout, VOTER_REPLICA, /*table_id=*/nullopt,
                                 &table_locations));
     ASSERT_EQ(1, table_locations.tablet_locations().size());
     const TabletLocationsPB& locations = table_locations.tablet_locations(0);
@@ -295,7 +295,7 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
   {
     GetTableLocationsResponsePB table_locations;
     ASSERT_OK(GetTableLocations(cluster_->master_proxy(), table_->name(),
-                                kTimeout, ANY_REPLICA, /*table_id=*/none,
+                                kTimeout, ANY_REPLICA, /*table_id=*/nullopt,
                                 &table_locations));
     ASSERT_EQ(1, table_locations.tablet_locations().size());
     const TabletLocationsPB& locations = table_locations.tablet_locations(0);

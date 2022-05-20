@@ -21,11 +21,11 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/iterator.h"
@@ -361,7 +361,7 @@ class MemRowSet : public RowSet,
 
   // Transaction ID that inserted the rows of this MRS. 'none' if the rows in
   // this MRS were not inserted as a part of a transaction.
-  const boost::optional<int64_t>& txn_id() const {
+  const std::optional<int64_t>& txn_id() const {
     return txn_id_;
   }
 
@@ -457,7 +457,7 @@ class MemRowSet : public RowSet,
  protected:
   MemRowSet(int64_t id,
             const Schema& schema,
-            boost::optional<int64_t> txn_id,
+            std::optional<int64_t> txn_id,
             scoped_refptr<TxnMetadata> txn_metadata,
             log::LogAnchorRegistry* log_anchor_registry,
             std::shared_ptr<MemTracker> parent_tracker);
@@ -477,7 +477,7 @@ class MemRowSet : public RowSet,
   const Schema schema_;
 
   // The transaction ID that inserted into this MemRowSet, and its corresponding metadata.
-  boost::optional<int64_t> txn_id_;
+  std::optional<int64_t> txn_id_;
   scoped_refptr<TxnMetadata> txn_metadata_;
 
   std::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
@@ -523,14 +523,14 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   virtual ~Iterator();
 
-  virtual Status Init(ScanSpec *spec) override;
+  Status Init(ScanSpec *spec) override;
 
   Status SeekAtOrAfter(const Slice &key, bool *exact);
 
-  virtual Status NextBlock(RowBlock *dst) override;
+  Status NextBlock(RowBlock *dst) override;
 
   bool has_upper_bound() const {
-    return exclusive_upper_bound_.is_initialized();
+    return exclusive_upper_bound_.has_value();
   }
 
   bool out_of_bounds(const Slice &key) const {
@@ -543,7 +543,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return iter_->remaining_in_leaf();
   }
 
-  virtual bool HasNext() const override {
+  bool HasNext() const override {
     DCHECK_NE(state_, kUninitialized) << "not initted";
     return state_ != kFinished && iter_->IsValid();
   }
@@ -577,7 +577,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return *opts_.projection;
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const override {
+  void GetIteratorStats(std::vector<IteratorStats>* stats) const override {
     // Currently we do not expose any non-disk related statistics in
     // IteratorStats.  However, callers of GetIteratorStats expected
     // an IteratorStats object for every column; vector::resize() is
@@ -664,7 +664,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   ScanState state_;
 
   // Pushed down encoded upper bound key, if any
-  boost::optional<const Slice &> exclusive_upper_bound_;
+  std::optional<const Slice> exclusive_upper_bound_;
 };
 
 inline const Schema* MRSRow::schema() const {

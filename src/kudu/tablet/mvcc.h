@@ -19,11 +19,11 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -93,8 +93,8 @@ class MvccSnapshot {
   // - If this is a kTimestamp snapshot, WaitUntil(ALL_APPLIED) was called with
   //   a timestamp equal to or higher than this snapshot's timestamp.
   inline bool IsCommitted(const TxnMetadata& txn_metadata) const {
-    boost::optional<Timestamp> commit_mvcc_op_ts;
-    boost::optional<Timestamp> commit_ts;
+    std::optional<Timestamp> commit_mvcc_op_ts;
+    std::optional<Timestamp> commit_ts;
     txn_metadata.GetTimestamps(&commit_mvcc_op_ts, &commit_ts);
     // If there is no commit MVCC op in the metadata, the transaction could not
     // have been committed at the time this snapshot represents.

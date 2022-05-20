@@ -22,11 +22,11 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -48,7 +48,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/thread.h"
 
-using boost::optional;
+using std::optional;
 using std::move;
 using std::string;
 using std::vector;
@@ -146,7 +146,7 @@ void HmsCatalog::Stop() {
 Status HmsCatalog::CreateTable(const string& id,
                                const string& name,
                                const string& cluster_id,
-                               const optional<const string&>& owner,
+                               const optional<string>& owner,
                                const Schema& schema,
                                const string& comment,
                                const string& table_type) {
@@ -261,7 +261,7 @@ Status HmsCatalog::AlterTable(const string& id,
                               const string& name,
                               const string& new_name,
                               const string& cluster_id,
-                              optional<const string&> owner,
+                              const optional<string>& owner,
                               const Schema& schema,
                               const std::string& comment,
                               const bool& check_id) {
@@ -366,7 +366,7 @@ void ToLowerCase(Slice s) {
 
 Status HmsCatalog::PopulateTable(const string& id,
                                  const string& name,
-                                 const optional<const string&>& owner,
+                                 const optional<string>& owner,
                                  const Schema& schema,
                                  const std::string& comment,
                                  const string& cluster_id,

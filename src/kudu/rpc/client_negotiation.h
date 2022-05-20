@@ -21,12 +21,12 @@
 
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
@@ -64,7 +64,7 @@ class ClientNegotiation {
   // The provided TlsContext must outlive this negotiation instance.
   ClientNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
-                    boost::optional<security::SignedTokenPB> authn_token,
+                    std::optional<security::SignedTokenPB> authn_token,
                     security::RpcEncryption encryption,
                     bool encrypt_loopback,
                     std::string sasl_proto_name);
@@ -223,7 +223,7 @@ class ClientNegotiation {
   std::vector<sasl_callback_t> callbacks_;
   std::unique_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
-  boost::optional<std::string> nonce_;
+  std::optional<std::string> nonce_;
 
   // TLS state.
   const security::TlsContext* tls_context_;
@@ -233,7 +233,7 @@ class ClientNegotiation {
   bool encrypt_loopback_;
 
   // TSK state.
-  boost::optional<security::SignedTokenPB> authn_token_;
+  std::optional<security::SignedTokenPB> authn_token_;
 
   // Authentication state.
   std::string plain_auth_user_;

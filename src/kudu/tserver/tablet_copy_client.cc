@@ -21,10 +21,11 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
+#include <type_traits>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
@@ -160,30 +161,33 @@ METRIC_DEFINE_gauge_int32(server, tablet_copy_open_client_sessions,
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \
   RETURN_NOT_OK_PREPEND(UnwindRemoteError(status, controller), msg)
 
-namespace kudu {
-namespace tserver {
-
-using consensus::ConsensusMetadata;
-using consensus::ConsensusMetadataManager;
-using consensus::MakeOpId;
-using consensus::OpId;
-using fs::BlockManager;
-using fs::CreateBlockOptions;
-using fs::WritableBlock;
-using rpc::Messenger;
+using kudu::consensus::ConsensusMetadata;
+using kudu::consensus::ConsensusMetadataManager;
+using kudu::consensus::MakeOpId;
+using kudu::consensus::OpId;
+using kudu::fs::BlockManager;
+using kudu::fs::CreateBlockOptions;
+using kudu::fs::WritableBlock;
+using kudu::rpc::Messenger;
+using kudu::tablet::ColumnDataPB;
+using kudu::tablet::DeltaDataPB;
+using kudu::tablet::RowSetDataPB;
+using kudu::tablet::TabletDataState;
+using kudu::tablet::TabletDataState_Name;
+using kudu::tablet::TabletMetadata;
+using kudu::tablet::TabletReplica;
+using kudu::tablet::TabletSuperBlockPB;
 using std::atomic;
+using std::make_optional;
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
-using tablet::ColumnDataPB;
-using tablet::DeltaDataPB;
-using tablet::RowSetDataPB;
-using tablet::TabletDataState;
-using tablet::TabletDataState_Name;
-using tablet::TabletMetadata;
-using tablet::TabletReplica;
-using tablet::TabletSuperBlockPB;
+
+namespace kudu {
+namespace tserver {
 
 TabletCopyClientMetrics::TabletCopyClientMetrics(const scoped_refptr<MetricEntity>& metric_entity)
     : bytes_fetched(METRIC_tablet_copy_bytes_fetched.Instantiate(metric_entity)),
@@ -237,7 +241,7 @@ Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>&
                                            data_state));
   }
 
-  boost::optional<OpId> last_logged_opid = meta->tombstone_last_logged_opid();
+  optional<OpId> last_logged_opid = meta->tombstone_last_logged_opid();
   if (!last_logged_opid) {
     // There are certain cases where we can end up with a tombstoned replica
     // that does not store its last-logged opid. One such case is when there is
@@ -374,7 +378,7 @@ Status TabletCopyClient::InitTabletMeta(const Schema& schema, const string& copy
     // source peer, even after passing the term check from the caller in
     // SetTabletToReplace().
 
-    boost::optional<OpId> last_logged_opid = meta_->tombstone_last_logged_opid();
+    optional<OpId> last_logged_opid = meta_->tombstone_last_logged_opid();
     if (last_logged_opid && last_logged_opid->term() > remote_cstate_->current_term()) {
       return Status::InvalidArgument(
           Substitute("Tablet $0: source peer has term $1 but "
@@ -400,7 +404,7 @@ Status TabletCopyClient::InitTabletMeta(const Schema& schema, const string& copy
     RETURN_NOT_OK_PREPEND(
         TSTabletManager::DeleteTabletData(meta_, cmeta_manager_,
                                           tablet::TABLET_DATA_COPYING,
-                                          /*last_logged_opid=*/ boost::none),
+                                          /*last_logged_opid=*/ nullopt),
         "Could not replace superblock with COPYING data state");
     TRACE("Replaced tombstoned tablet metadata.");
 
@@ -430,11 +434,11 @@ Status TabletCopyClient::InitTabletMeta(const Schema& schema, const string& copy
         superblock_->tombstone_last_logged_opid(),
         remote_superblock_->supports_live_row_count(),
         superblock_->has_extra_config() ?
-            boost::make_optional(superblock_->extra_config()) : boost::none,
+            make_optional(superblock_->extra_config()) : nullopt,
         superblock_->has_dimension_label() ?
-            boost::make_optional(superblock_->dimension_label()) : boost::none,
+            make_optional(superblock_->dimension_label()) : nullopt,
         superblock_->has_table_type() ?
-            boost::make_optional(superblock_->table_type()) : boost::none,
+            make_optional(superblock_->table_type()) : nullopt,
         &meta_));
     TRACE("Wrote new tablet metadata");
 
@@ -480,7 +484,7 @@ Status TabletCopyClient::Finish() {
   LOG_WITH_PREFIX(INFO) << "Tablet Copy complete. Replacing tablet superblock.";
   SetStatusMessage("Replacing tablet superblock");
 
-  boost::optional<OpId> last_logged_opid = superblock_->tombstone_last_logged_opid();
+  optional<OpId> last_logged_opid = superblock_->tombstone_last_logged_opid();
   auto revert_activate_superblock = MakeScopedCleanup([&] {
     // If we fail below, revert the updated state so further calls to Abort()
     // can clean up appropriately.
@@ -541,7 +545,7 @@ Status TabletCopyClient::Abort() {
   RETURN_NOT_OK_PREPEND(
       TSTabletManager::DeleteTabletData(meta_, cmeta_manager_,
                                         tablet::TABLET_DATA_TOMBSTONED,
-                                        /*last_logged_opid=*/ boost::none),
+                                        /*last_logged_opid=*/ nullopt),
       LogPrefix() + "Failed to tombstone tablet after aborting tablet copy");
 
   SetStatusMessage(Substitute("Tombstoned tablet $0: Tablet copy aborted", tablet_id_));

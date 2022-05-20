@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/consensus/consensus_queue.h"
 
 #include <algorithm>
@@ -22,12 +23,11 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
-#include <boost/optional/optional_io.hpp>
 #include <gflags/gflags.h>
 #include <google/protobuf/stubs/port.h>
 
@@ -85,6 +85,7 @@ using kudu::log::Log;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::atomic;
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -198,7 +199,7 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
   DCHECK(last_locally_replicated.IsInitialized());
   DCHECK(last_locally_committed.IsInitialized());
   queue_state_.current_term = 0;
-  queue_state_.first_index_in_current_term = boost::none;
+  queue_state_.first_index_in_current_term.reset();
   queue_state_.committed_index = 0;
   queue_state_.all_replicated_index = 0;
   queue_state_.majority_replicated_index = 0;
@@ -218,7 +219,7 @@ void PeerMessageQueue::SetLeaderMode(int64_t committed_index,
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   if (current_term != queue_state_.current_term) {
     CHECK_GT(current_term, queue_state_.current_term) << "Terms should only increase";
-    queue_state_.first_index_in_current_term = boost::none;
+    queue_state_.first_index_in_current_term.reset();
     queue_state_.current_term = current_term;
   }
 
@@ -417,7 +418,7 @@ Status PeerMessageQueue::AppendOperations(vector<ReplicateRefPtr> msgs,
       queue_state_.current_term = id.term();
       queue_state_.first_index_in_current_term = id.index();
     } else if (id.term() == queue_state_.current_term &&
-               queue_state_.first_index_in_current_term == boost::none) {
+               !queue_state_.first_index_in_current_term.has_value()) {
       queue_state_.first_index_in_current_term = id.index();
     }
   }
@@ -925,7 +926,7 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
 }
 
 void PeerMessageQueue::BeginWatchForSuccessor(
-    const boost::optional<string>& successor_uuid) {
+    const optional<string>& successor_uuid) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
   successor_watch_in_progress_ = true;
   designated_successor_uuid_ = successor_uuid;
@@ -1115,7 +1116,7 @@ void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
 
   // If looking for a specific successor, ignore peers as appropriate.
   if (successor_watch_in_progress_ &&
-      designated_successor_uuid_ && peer.uuid() != designated_successor_uuid_.get()) {
+      designated_successor_uuid_ && peer.uuid() != *designated_successor_uuid_) {
     return;
   }
 
@@ -1146,7 +1147,7 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
   CHECK(!response.has_error());
 
   bool send_more_immediately = false;
-  boost::optional<int64_t> updated_commit_index;
+  optional<int64_t> updated_commit_index;
   Mode mode_copy;
   {
     std::lock_guard<simple_spinlock> scoped_lock(queue_lock_);
@@ -1284,14 +1285,14 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       // consider peers whose last contact was an error in the watermark
       // calculation. See the TODO in AdvanceQueueWatermark() for more details.
       int64_t commit_index_before = queue_state_.committed_index;
-      if (queue_state_.first_index_in_current_term != boost::none &&
+      if (queue_state_.first_index_in_current_term.has_value() &&
           queue_state_.majority_replicated_index >= queue_state_.first_index_in_current_term &&
           queue_state_.majority_replicated_index > queue_state_.committed_index) {
         queue_state_.committed_index = queue_state_.majority_replicated_index;
       } else {
         VLOG_WITH_PREFIX_UNLOCKED(2) << "Cannot advance commit index, waiting for > "
                                      << "first index in current leader term: "
-                                     << queue_state_.first_index_in_current_term << ". "
+                                     << *queue_state_.first_index_in_current_term << ". "
                                      << "current majority_replicated_index: "
                                      << queue_state_.majority_replicated_index << ", "
                                      << "current committed_index: "
@@ -1319,7 +1320,7 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     UpdateMetricsUnlocked();
   }
 
-  if (mode_copy == LEADER && updated_commit_index != boost::none) {
+  if (mode_copy == LEADER && updated_commit_index.has_value()) {
   // Suppress false positive about 'updated_commit_index' used when uninitialized.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
@@ -1348,7 +1349,7 @@ int64_t PeerMessageQueue::GetCommittedIndex() const {
 
 bool PeerMessageQueue::IsCommittedIndexInCurrentTerm() const {
   std::lock_guard<simple_spinlock> lock(queue_lock_);
-  return queue_state_.first_index_in_current_term != boost::none &&
+  return queue_state_.first_index_in_current_term.has_value() &&
       queue_state_.committed_index >= *queue_state_.first_index_in_current_term;
 }
 

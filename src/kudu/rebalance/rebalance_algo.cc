@@ -23,6 +23,7 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -30,7 +31,6 @@
 #include <vector>
 
 #include <boost/container_hash/extensions.hpp>
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
@@ -42,6 +42,7 @@ using std::back_inserter;
 using std::endl;
 using std::multimap;
 using std::numeric_limits;
+using std::optional;
 using std::ostringstream;
 using std::set_intersection;
 using std::shuffle;
@@ -154,7 +155,7 @@ Status RebalancingAlgo::GetNextMoves(const ClusterInfo& cluster_info,
   // Copy cluster_info so we can apply moves to the copy.
   ClusterInfo info(cluster_info);
   for (decltype(max_moves_num) i = 0; i < max_moves_num; ++i) {
-    boost::optional<TableReplicaMove> move;
+    optional<TableReplicaMove> move;
     RETURN_NOT_OK(GetNextMove(info, &move));
     if (!move) {
       // No replicas to move.
@@ -219,11 +220,11 @@ TwoDimensionalGreedyAlgo::TwoDimensionalGreedyAlgo(EqualSkewOption opt)
 
 Status TwoDimensionalGreedyAlgo::GetNextMove(
     const ClusterInfo& cluster_info,
-    boost::optional<TableReplicaMove>* move) {
+    optional<TableReplicaMove>* move) {
   DCHECK(move);
-  // Set the output to none: this fits the short-circuit cases when there is
+  // Set the output to nullopt: this fits the short-circuit cases when there is
   // an issue with the parameters or there aren't any moves to return.
-  *move = boost::none;
+  move->reset();
 
   const auto& balance_info = cluster_info.balance;
   // Due to the nature of the table_info_by_skew container, the very last
@@ -429,9 +430,9 @@ LocationBalancingAlgo::LocationBalancingAlgo(double load_imbalance_threshold)
 
 Status LocationBalancingAlgo::GetNextMove(
     const ClusterInfo& cluster_info,
-    boost::optional<TableReplicaMove>* move) {
+    optional<TableReplicaMove>* move) {
   DCHECK(move);
-  *move = boost::none;
+  move->reset();
 
   // Per-table information on locations load.
   unordered_map<TableIdAndTag, multimap<double, string>,
@@ -568,7 +569,7 @@ Status LocationBalancingAlgo::FindBestMove(
     const vector<string>& loc_loaded_least,
     const vector<string>& loc_loaded_most,
     const ClusterInfo& cluster_info,
-    boost::optional<TableReplicaMove>* move) {
+    optional<TableReplicaMove>* move) {
   // Among the available candidate locations, prefer those having the most and
   // least loaded tablet servers in terms of total number of hosted replicas.
   // The rationale is that the per-table location load is a relative metric

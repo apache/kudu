@@ -21,13 +21,13 @@
 #include <cstdio>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <tuple>
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -70,16 +70,18 @@ DEFINE_double(update_ratio, 0.2,
 DEFINE_int32(times_to_update, 5000,
              "Number of updates for each row for the update performance test");
 
-namespace kudu {
-namespace tablet {
-
-using consensus::OpId;
-using log::LogAnchorRegistry;
+using kudu::consensus::OpId;
+using kudu::log::LogAnchorRegistry;
+using std::nullopt;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
+
+namespace kudu {
+namespace tablet {
 
 class TestMemRowSet : public KuduTest {
  public:
@@ -691,7 +693,7 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
 
   auto DumpAndCheck = [&](const MvccSnapshot& exclude,
                           const MvccSnapshot& include,
-                          boost::optional<int> row_value,
+                          optional<int> row_value,
                           bool is_deleted = false) {
     // Set up the iterator options.
     unique_ptr<SchemaBuilder> sb = CreateSchemaBuilder();
@@ -713,11 +715,11 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
     ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
 
     // Test the results.
-    if (row_value.is_initialized()) {
+    if (row_value) {
       ASSERT_EQ(1, rows.size());
       string expected;
       StrAppend(&expected, "(string key=\"row\", uint32 val=");
-      StrAppend(&expected, row_value.get());
+      StrAppend(&expected, *row_value);
       if (add_vc_is_deleted) {
         StrAppend(&expected, ", is_deleted deleted=");
         StrAppend(&expected, is_deleted ? "true" : "false");
@@ -731,12 +733,12 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
 
   // Captures zero rows; a snapshot range [x, x) does not include anything.
   for (const auto& s : snaps) {
-    NO_FATALS(DumpAndCheck(s, s, boost::none));
+    NO_FATALS(DumpAndCheck(s, s, nullopt));
   }
 
   // If we include deleted rows, the row's value will be 1 due to the UPDATE
   // that preceeded it.
-  boost::optional<int> deleted_v = include_deleted_rows ? boost::optional<int>(1) : boost::none;
+  optional<int> deleted_v = include_deleted_rows ? optional<int>(1) : nullopt;
 
   {
     NO_FATALS(DumpAndCheck(snaps[0], snaps[1], 0)); // INSERT
@@ -752,7 +754,7 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
   }
 
   {
-    NO_FATALS(DumpAndCheck(snaps[0], snaps[3], boost::none)); // INSERT, UPDATE, DELETE
+    NO_FATALS(DumpAndCheck(snaps[0], snaps[3], nullopt)); // INSERT, UPDATE, DELETE
     NO_FATALS(DumpAndCheck(snaps[1], snaps[4], 2)); // UPDATE, DELETE, REINSERT
   }
 

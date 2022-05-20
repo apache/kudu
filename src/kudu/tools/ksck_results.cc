@@ -26,6 +26,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
@@ -67,6 +68,8 @@ using kudu::cluster_summary::ServerTypeToString;
 using std::endl;
 using std::left;
 using std::map;
+using std::nullopt;
+using std::optional;
 using std::ostream;
 using std::ostringstream;
 using std::setw;
@@ -191,7 +194,7 @@ Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
                                              out));
     if (mode == PrintMode::PLAIN_FULL || cluster_status.master_consensus_conflict) {
       RETURN_NOT_OK(PrintConsensusMatrix(cluster_status.master_uuids,
-                                         boost::none,
+                                         nullopt,
                                          cluster_status.master_consensus_state_map,
                                          out));
     }
@@ -374,7 +377,7 @@ Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
 }
 
 Status PrintConsensusMatrix(const vector<string>& server_uuids,
-                            const boost::optional<ConsensusState>& ref_cstate,
+                            const optional<ConsensusState>& ref_cstate,
                             const ConsensusStateMap& cstates,
                             ostream& out) {
   map<string, char> replica_labels;
@@ -603,7 +606,7 @@ Status PrintTabletSummaries(const vector<TabletSummary>& tablet_summaries,
         out << Color(AnsiCode::GREEN, "RUNNING") << spec_str << endl;
         continue;
       }
-      if (r.status_pb == boost::none) {
+      if (!r.status_pb) {
         out << Color(AnsiCode::YELLOW, "missing") << spec_str << endl;
         continue;
       }

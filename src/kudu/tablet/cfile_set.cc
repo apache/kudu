@@ -25,7 +25,6 @@
 
 #include <boost/container/flat_map.hpp>
 #include <boost/container/vector.hpp>
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -62,25 +61,26 @@ TAG_FLAG(consult_bloom_filters, hidden);
 
 DECLARE_bool(rowset_metadata_store_keys);
 
-namespace kudu {
-
-class MemTracker;
-
-namespace tablet {
-
-using cfile::BloomFileReader;
-using cfile::CFileIterator;
-using cfile::CFileReader;
-using cfile::ColumnIterator;
-using cfile::ReaderOptions;
-using cfile::DefaultColumnValueIterator;
-using fs::IOContext;
-using fs::ReadableBlock;
+using kudu::cfile::BloomFileReader;
+using kudu::cfile::CFileIterator;
+using kudu::cfile::CFileReader;
+using kudu::cfile::ColumnIterator;
+using kudu::cfile::ReaderOptions;
+using kudu::cfile::DefaultColumnValueIterator;
+using kudu::fs::IOContext;
+using kudu::fs::ReadableBlock;
+using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+
+class MemTracker;
+
+namespace tablet {
 
 ////////////////////////////////////////////////////////////
 // Utilities
@@ -276,7 +276,7 @@ uint64_t CFileSet::OnDiskColumnDataSize(const ColumnId& col_id) const {
 
 Status CFileSet::FindRow(const RowSetKeyProbe &probe,
                          const IOContext* io_context,
-                         boost::optional<rowid_t>* idx,
+                         optional<rowid_t>* idx,
                          ProbeStats* stats) const {
   if (FLAGS_consult_bloom_filters) {
     // Fully open the BloomFileReader if it was lazily opened earlier.
@@ -288,7 +288,7 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
     bool present;
     Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), io_context, &present);
     if (s.ok() && !present) {
-      *idx = boost::none;
+      idx->reset();
       return Status::OK();
     }
     if (!s.ok()) {
@@ -310,7 +310,7 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
   bool exact;
   Status s = key_iter->SeekAtOrAfter(probe.encoded_key(), &exact);
   if (s.IsNotFound() || (s.ok() && !exact)) {
-    *idx = boost::none;
+    idx->reset();
     return Status::OK();
   }
   RETURN_NOT_OK(s);
@@ -321,9 +321,9 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
 
 Status CFileSet::CheckRowPresent(const RowSetKeyProbe& probe, const IOContext* io_context,
                                  bool* present, rowid_t* rowid, ProbeStats* stats) const {
-  boost::optional<rowid_t> opt_rowid;
+  optional<rowid_t> opt_rowid;
   RETURN_NOT_OK(FindRow(probe, io_context, &opt_rowid, stats));
-  *present = opt_rowid != boost::none;
+  *present = opt_rowid.has_value();
   if (*present) {
   // Suppress false positive about 'opt_rowid' used when uninitialized.
 #pragma GCC diagnostic push

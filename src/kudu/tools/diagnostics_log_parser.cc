@@ -21,10 +21,10 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <utility>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <rapidjson/document.h>
 
@@ -35,7 +35,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/jsonreader.h"
+#include "kudu/util/jsonreader.h" // IWYU pragma: keep
 #include "kudu/util/status.h"
 
 using std::array;
@@ -111,7 +111,7 @@ Status ParsedLine::Parse(string line) {
   json_.emplace(fields[4].ToString());
   Status s = json_->Init();
   if (!s.ok()) {
-    json_ = boost::none;
+    json_.reset();
     return s.CloneAndPrepend("invalid JSON payload");
   }
   date_ = fields[0];

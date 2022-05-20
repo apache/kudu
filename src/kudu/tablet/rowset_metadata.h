@@ -21,13 +21,13 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <boost/container/flat_map.hpp>
 #include <boost/container/vector.hpp>
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/schema.h"
@@ -126,7 +126,7 @@ class RowSetMetadata {
   Status CommitUndoDeltaDataBlock(const BlockId& block_id);
 
   bool has_encoded_keys_unlocked() const {
-    return min_encoded_key_ != boost::none && max_encoded_key_ != boost::none;
+    return min_encoded_key_ && max_encoded_key_;
   }
 
   bool has_encoded_keys() const {
@@ -146,13 +146,13 @@ class RowSetMetadata {
 
   std::string min_encoded_key() const {
     std::lock_guard<LockType> l(lock_);
-    DCHECK(min_encoded_key_ != boost::none);
+    DCHECK(min_encoded_key_);
     return *min_encoded_key_;
   }
 
   std::string max_encoded_key() const {
     std::lock_guard<LockType> l(lock_);
-    DCHECK(max_encoded_key_ != boost::none);
+    DCHECK(max_encoded_key_);
     return *max_encoded_key_;
   }
 
@@ -270,8 +270,8 @@ class RowSetMetadata {
   mutable LockType lock_;
 
   // The min and max keys of the rowset.
-  boost::optional<std::string> min_encoded_key_;
-  boost::optional<std::string> max_encoded_key_;
+  std::optional<std::string> min_encoded_key_;
+  std::optional<std::string> max_encoded_key_;
 
   BlockId bloom_block_;
   BlockId adhoc_index_block_;

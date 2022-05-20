@@ -20,12 +20,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/column_predicate.h"
@@ -44,10 +44,11 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using boost::optional;
 using std::count_if;
 using std::get;
 using std::make_tuple;
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::string;
 using std::tuple;
@@ -231,36 +232,36 @@ TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
   };
 
   // No bounds
-  NO_FATALS(check(boost::none, boost::none, 3));
+  NO_FATALS(check(nullopt, nullopt, 3));
 
   // PK < (-1, min, min)
-  NO_FATALS(check(boost::none,
+  NO_FATALS(check(nullopt,
                   make_tuple<int8_t, int8_t, int8_t>(-1, INT8_MIN, INT8_MIN),
                   1));
 
   // PK < (10, 10, 10)
-  NO_FATALS(check(boost::none,
+  NO_FATALS(check(nullopt,
                   make_tuple<int8_t, int8_t, int8_t>(10, 10, 10),
                   2));
 
   // PK < (100, min, min)
-  NO_FATALS(check(boost::none,
+  NO_FATALS(check(nullopt,
                   make_tuple<int8_t, int8_t, int8_t>(100, INT8_MIN, INT8_MIN),
                   3));
 
   // PK >= (-10, -10, -10)
   NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(-10, -10, -10),
-                  boost::none,
+                  nullopt,
                   3));
 
   // PK >= (0, 0, 0)
   NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
-                  boost::none,
+                  nullopt,
                   2));
 
   // PK >= (100, 0, 0)
   NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(100, 0, 0),
-                  boost::none,
+                  nullopt,
                   1));
 
   // PK >= (-10, 0, 0)
@@ -319,8 +320,8 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
   // Applies the specified lower and upper bound primary keys against the
   // schema, and checks that the expected number of partitions are pruned.
   const auto check = [&] (optional<tuple<int8_t, string, string>> lower,
-                    optional<tuple<int8_t, string, string>> upper,
-                    size_t remaining_tablets ) {
+                          optional<tuple<int8_t, string, string>> upper,
+                          size_t remaining_tablets ) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
@@ -349,31 +350,31 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
   };
 
   // No bounds
-  NO_FATALS(check(boost::none, boost::none, 3));
+  NO_FATALS(check(nullopt, nullopt, 3));
 
   // PK < (-1, "", "")
-  NO_FATALS(check(boost::none, make_tuple<int8_t, string, string>(-1, "", ""), 1));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, string, string>(-1, "", ""), 1));
 
   // PK < (10, "r", "")
-  NO_FATALS(check(boost::none, make_tuple<int8_t, string, string>(10, "r", ""), 2));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, string, string>(10, "r", ""), 2));
 
   // PK < (10, "r", "z")
-  NO_FATALS(check(boost::none, make_tuple<int8_t, string, string>(10, "r", "z"), 3));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, string, string>(10, "r", "z"), 3));
 
   // PK < (100, "", "")
-  NO_FATALS(check(boost::none, make_tuple<int8_t, string, string>(100, "", ""), 3));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, string, string>(100, "", ""), 3));
 
   // PK >= (-10, "m", "")
-  NO_FATALS(check(make_tuple<int8_t, string, string>(-10, "m", ""), boost::none, 3));
+  NO_FATALS(check(make_tuple<int8_t, string, string>(-10, "m", ""), nullopt, 3));
 
   // PK >= (0, "", "")
-  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "", ""), boost::none, 3));
+  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "", ""), nullopt, 3));
 
   // PK >= (0, "m", "")
-  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "m", ""), boost::none, 2));
+  NO_FATALS(check(make_tuple<int8_t, string, string>(0, "m", ""), nullopt, 2));
 
   // PK >= (100, "", "")
-  NO_FATALS(check(make_tuple<int8_t, string, string>(100, "", ""), boost::none, 1));
+  NO_FATALS(check(make_tuple<int8_t, string, string>(100, "", ""), nullopt, 1));
 
   // PK >= (-10, "", "")
   // PK  < (100, "", "")
@@ -428,8 +429,8 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
   // Applies the specified lower and upper bound primary keys against the
   // schema, and checks that the expected number of partitions are pruned.
   const auto check = [&] (optional<tuple<int8_t, int8_t, int8_t>> lower,
-                    optional<tuple<int8_t, int8_t, int8_t>> upper,
-                    size_t remaining_tablets ) {
+                          optional<tuple<int8_t, int8_t, int8_t>> upper,
+                          size_t remaining_tablets ) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
@@ -458,32 +459,32 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
   };
 
   // No bounds
-  NO_FATALS(check(boost::none, boost::none, 2));
+  NO_FATALS(check(nullopt, nullopt, 2));
 
   // PK < (0, 0, min)
-  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), 1));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), 1));
 
   // PK < (0, 0, 0);
-  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), 2));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), 2));
 
   // PK < (0, max, 0);
-  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, INT8_MAX, 0), 2));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, int8_t, int8_t>(0, INT8_MAX, 0), 2));
 
   // PK < (max, max, min);
-  NO_FATALS(check(boost::none,
+  NO_FATALS(check(nullopt,
                   make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, INT8_MIN), 2));
 
   // PK < (max, max, 0);
-  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, 0), 2));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, 0), 2));
 
   // PK >= (0, 0, 0);
-  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), boost::none, 1));
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), nullopt, 1));
 
   // PK >= (0, 0, -1);
-  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, -1), boost::none, 1));
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, -1), nullopt, 1));
 
   // PK >= (0, 0, min);
-  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), boost::none, 1));
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), nullopt, 1));
 }
 
 TEST_F(PartitionPrunerTest, TestRangePruning) {
@@ -1302,9 +1303,9 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
   // Applies the specified lower and upper bound primary keys against the
   // schema, and checks that the expected number of partitions are pruned.
   const auto check = [&] (optional<tuple<int8_t, int8_t, int8_t>> lower,
-                    optional<tuple<int8_t, int8_t, int8_t>> upper,
-                    size_t remaining_tablets,
-                    size_t pruner_ranges) {
+                          optional<tuple<int8_t, int8_t, int8_t>> upper,
+                          size_t remaining_tablets,
+                          size_t pruner_ranges) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
@@ -1332,16 +1333,16 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
   };
 
   // No bounds
-  NO_FATALS(check(boost::none, boost::none, 9, 9));
+  NO_FATALS(check(nullopt, nullopt, 9, 9));
 
   // PK < (2, 2, min)
-  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN), 2, 2));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, int8_t, int8_t>(2, 2, INT8_MIN), 2, 2));
 
   // PK < (2, 2, 0)
-  NO_FATALS(check(boost::none, make_tuple<int8_t, int8_t, int8_t>(2, 2, 0), 5, 5));
+  NO_FATALS(check(nullopt, make_tuple<int8_t, int8_t, int8_t>(2, 2, 0), 5, 5));
 
   // PK >= (2, 2, 0)
-  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(2, 2, 0), boost::none, 7, 7));
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(2, 2, 0), nullopt, 7, 7));
 
   // PK >= (2, 2, min)
   // PK < (4, 4, min)
@@ -1359,7 +1360,7 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
                   make_tuple<int8_t, int8_t, int8_t>(4, 2, INT8_MIN), 5, 5));
 
   // PK >= (6, 6, min)
-  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(6, 6, INT8_MIN), boost::none, 0, 0));
+  NO_FATALS(check(make_tuple<int8_t, int8_t, int8_t>(6, 6, INT8_MIN), nullopt, 0, 0));
 
   // PK >= (4, 4, min)
   // PK < (2, 2, min)

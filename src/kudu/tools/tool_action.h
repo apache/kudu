@@ -19,11 +19,11 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/status.h"
 
@@ -167,9 +167,9 @@ struct ActionArgsDescriptor {
     // The gflag name.
     std::string name;
     // A default value to override the default gflag value.
-    boost::optional<std::string> default_value;
+    std::optional<std::string> default_value;
     // A description to override the gflag description.
-    boost::optional<std::string> description;
+    std::optional<std::string> description;
   };
 
   // Positional (required) command line arguments.
@@ -183,7 +183,7 @@ struct ActionArgsDescriptor {
 
   // Variable length command line argument. There may be at most one per
   // Action, and it's always found at the end of the command line.
-  boost::optional<Arg> variadic;
+  std::optional<Arg> variadic;
 };
 
 // Builds a new action (leaf) node.
@@ -241,9 +241,10 @@ class ActionBuilder {
   // The default value and description of the flag can be optionally overriden,
   // for cases where the values are action-dependent. Otherwise, the default
   // value and description from the gflag declaration will be used.
-  ActionBuilder& AddOptionalParameter(std::string param,
-                                      boost::optional<std::string> default_value = boost::none,
-                                      boost::optional<std::string> description = boost::none);
+  ActionBuilder& AddOptionalParameter(
+      std::string param,
+      std::optional<std::string> default_value = std::nullopt,
+      std::optional<std::string> description = std::nullopt);
 
   // Creates an action using builder state.
   virtual std::unique_ptr<Action> Build();
@@ -253,9 +254,9 @@ class ActionBuilder {
 
   std::string description_;
 
-  boost::optional<std::string> extra_description_;
+  std::optional<std::string> extra_description_;
 
-  boost::optional<std::string> program_name_;
+  std::optional<std::string> program_name_;
 
   ActionRunner runner_;
 
@@ -290,11 +291,11 @@ class Action {
 
   const std::string& description() const { return description_; }
 
-  const boost::optional<std::string>& extra_description() const {
+  const std::optional<std::string>& extra_description() const {
     return extra_description_;
   }
 
-  const boost::optional<std::string>& program_name() const {
+  const std::optional<std::string>& program_name() const {
     return program_name_;
   }
 
@@ -313,9 +314,9 @@ class Action {
 
   std::string description_;
 
-  boost::optional<std::string> extra_description_;
+  std::optional<std::string> extra_description_;
 
-  boost::optional<std::string> program_name_;
+  std::optional<std::string> program_name_;
 
   ActionRunner runner_;
 

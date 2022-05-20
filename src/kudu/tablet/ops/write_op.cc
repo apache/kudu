@@ -22,11 +22,12 @@
 #include <cstdint>
 #include <ctime>
 #include <new>
+#include <optional>
 #include <ostream>
+#include <type_traits>
 #include <vector>
 
 #include <boost/container/small_vector.hpp>
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/arena.h>
@@ -73,6 +74,7 @@ TAG_FLAG(tablet_inject_latency_on_apply_write_op_ms, runtime);
 
 DECLARE_bool(enable_txn_partition_lock);
 
+using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -354,7 +356,7 @@ WriteOpState::WriteOpState(TabletReplica* tablet_replica,
                            const tserver::WriteRequestPB *request,
                            const rpc::RequestIdPB* request_id,
                            tserver::WriteResponsePB *response,
-                           boost::optional<WriteAuthorizationContext> authz_ctx)
+                           optional<WriteAuthorizationContext> authz_ctx)
   : OpState(tablet_replica),
     request_(DCHECK_NOTNULL(request)),
     response_(response),

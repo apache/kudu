@@ -22,12 +22,12 @@
 #include <ctime>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -38,11 +38,11 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/key_range.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/port.h"
@@ -748,7 +748,7 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
   // Ensure that rows exist
   ASSERT_EQ(max_rows, this->TabletCount());
   NO_FATALS(this->CheckLiveRowsCount(max_rows));
-  this->VerifyTestRowsWithTimestampAndVerifier(0, max_rows, t, boost::none);
+  this->VerifyTestRowsWithTimestampAndVerifier(0, max_rows, t, std::nullopt);
 
   // TODO(unknown): add some more data, re-flush
 }

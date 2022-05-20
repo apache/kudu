@@ -21,10 +21,10 @@
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
@@ -211,8 +211,8 @@ class FsManager {
   //
   // Returns an error if the file system is already initialized.
   Status CreateInitialFileSystemLayout(
-      boost::optional<std::string> uuid = boost::none,
-      boost::optional<std::string> server_key = boost::none);
+      std::optional<std::string> uuid = std::nullopt,
+      std::optional<std::string> server_key = std::nullopt);
 
   // ==========================================================================
   //  Error handling helpers
@@ -362,8 +362,8 @@ class FsManager {
                                std::vector<std::string>* created_files);
 
   // Create a new InstanceMetadataPB.
-  Status CreateInstanceMetadata(boost::optional<std::string> uuid,
-                                boost::optional<std::string> server_key,
+  Status CreateInstanceMetadata(std::optional<std::string> uuid,
+                                std::optional<std::string> server_key,
                                 InstanceMetadataPB* metadata);
 
   // Save a InstanceMetadataPB to the filesystem.

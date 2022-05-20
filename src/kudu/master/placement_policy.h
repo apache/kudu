@@ -19,12 +19,12 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/master/ts_descriptor.h"
@@ -53,7 +53,7 @@ namespace master {
 // TODO(aserbin): add a link to the doc once it appears in the upstream repo.
 //
 // NOTE: in the implementation of this class, it's OK to use an empty string
-// in place of boost::none for a location because valid location strings begin
+// in place of std::nullopt for a location because valid location strings begin
 // with '/' and therefore are nonempty.
 class PlacementPolicy {
  public:
@@ -79,7 +79,7 @@ class PlacementPolicy {
   //   'ts_descs'   The result set of tablet server descriptors is output into the 'ts_descs'
   //                placeholder (must not be null).
   Status PlaceTabletReplicas(int nreplicas,
-                             const boost::optional<std::string>& dimension,
+                             const std::optional<std::string>& dimension,
                              TSDescriptorVector* ts_descs) const;
 
   // Select tablet server to host an additional tablet replica.
@@ -92,7 +92,7 @@ class PlacementPolicy {
   //               dimension. Otherwise, based on the number of tablets at a tablet server.
   //   'ts_desc'   The new member is output into 'ts_desc' placeholer (must not be null).
   Status PlaceExtraTabletReplica(TSDescriptorVector existing,
-                                 const boost::optional<std::string>& dimension,
+                                 const std::optional<std::string>& dimension,
                                  std::shared_ptr<TSDescriptor>* ts_desc) const;
 
  private:
@@ -139,7 +139,7 @@ class PlacementPolicy {
   // servers to place tablet replicas.
   Status SelectReplicas(const TSDescriptorVector& source_ts_descs,
                         int nreplicas,
-                        const boost::optional<std::string>& dimension,
+                        const std::optional<std::string>& dimension,
                         TSDescriptorVector* result_ts_descs) const;
 
   // Given the tablet servers in 'ts_descs', pick a tablet server to host
@@ -147,7 +147,7 @@ class PlacementPolicy {
   // servers in 'ts_descs' that are not in 'existing', return nullptr.
   std::shared_ptr<TSDescriptor> SelectReplica(
       const TSDescriptorVector& ts_descs,
-      const boost::optional<std::string>& dimension,
+      const std::optional<std::string>& dimension,
       const std::set<std::shared_ptr<TSDescriptor>>& excluded) const;
 
   // Select location for next replica of a tablet with the specified replication

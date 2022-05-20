@@ -24,14 +24,16 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
@@ -129,6 +131,9 @@ using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
 using kudu::tserver::ScanResponsePB;
 using std::map;
+using std::make_optional;
+using std::nullopt;
+using std::optional;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -370,7 +375,7 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
         data_->connection_negotiation_timeout_.ToMilliseconds());
   }
   if (data_->num_reactors_) {
-    builder.set_num_reactors(data_->num_reactors_.get());
+    builder.set_num_reactors(*data_->num_reactors_);
   }
   if (!data_->sasl_protocol_name_.empty()) {
     builder.set_sasl_proto_name(data_->sasl_protocol_name_);
@@ -694,10 +699,10 @@ Status KuduClient::GetTableStatistics(const string& table_name,
   }
   unique_ptr<KuduTableStatistics> table_statistics(new KuduTableStatistics);
   table_statistics->data_ = new KuduTableStatistics::Data(
-      resp.has_on_disk_size() ? boost::optional<int64_t>(resp.on_disk_size()) : boost::none,
-      resp.has_live_row_count() ? boost::optional<int64_t>(resp.live_row_count()) : boost::none,
-      resp.has_disk_size_limit() ? boost::optional<int64_t>(resp.disk_size_limit()) : boost::none,
-      resp.has_row_count_limit() ? boost::optional<int64_t>(resp.row_count_limit()) : boost::none);
+      resp.has_on_disk_size() ? optional<int64_t>(resp.on_disk_size()) : nullopt,
+      resp.has_live_row_count() ? optional<int64_t>(resp.live_row_count()) : nullopt,
+      resp.has_disk_size_limit() ? optional<int64_t>(resp.disk_size_limit()) : nullopt,
+      resp.has_row_count_limit() ? optional<int64_t>(resp.row_count_limit()) : nullopt);
 
   *statistics = table_statistics.release();
   return Status::OK();
@@ -738,8 +743,7 @@ void KuduClient::SetLatestObservedTimestamp(uint64_t ht_timestamp) {
 Status KuduClient::ExportAuthenticationCredentials(string* authn_creds) const {
   AuthenticationCredentialsPB pb;
 
-  boost::optional<security::SignedTokenPB> tok = data_->messenger_->authn_token();
-  if (tok) {
+  if (auto tok = data_->messenger_->authn_token(); tok) {
     pb.mutable_authn_token()->CopyFrom(*tok);
   }
   pb.set_real_user(data_->user_credentials_.real_user());
@@ -916,21 +920,21 @@ Status KuduTableCreator::Create() {
   // Build request.
   CreateTableRequestPB req;
   req.set_name(data_->table_name_);
-  if (data_->num_replicas_ != boost::none) {
-    req.set_num_replicas(data_->num_replicas_.get());
+  if (data_->num_replicas_) {
+    req.set_num_replicas(*data_->num_replicas_);
   }
   if (data_->dimension_label_) {
-    req.set_dimension_label(data_->dimension_label_.get());
+    req.set_dimension_label(*data_->dimension_label_);
   }
   if (data_->extra_configs_) {
     req.mutable_extra_configs()->insert(data_->extra_configs_->begin(),
                                         data_->extra_configs_->end());
   }
-  if (data_->owner_ != boost::none) {
-    req.set_owner(data_->owner_.get());
+  if (data_->owner_) {
+    req.set_owner(*data_->owner_);
   }
-  if (data_->comment_ != boost::none) {
-    req.set_comment(data_->comment_.get());
+  if (data_->comment_) {
+    req.set_comment(*data_->comment_);
   }
   RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema(),
                                    SCHEMA_PB_WITHOUT_WRITE_DEFAULT),
@@ -1539,7 +1543,7 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartitionWithDimension(
                  unique_ptr<KuduPartialRow>(upper_bound),
                  lower_bound_type,
                  upper_bound_type,
-                 dimension_label.empty() ? boost::none : boost::make_optional(dimension_label) };
+                 dimension_label.empty() ? nullopt : make_optional(dimension_label) };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
   return this;

@@ -20,11 +20,11 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -64,6 +64,7 @@ DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_string(time_source);
 
 using kudu::clock::HybridClock;
+using std::nullopt;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -305,11 +306,11 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMRSFlush) {
   NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(200)));
 
   NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, 0,
-                                                   time_before_insert, boost::none));
+                                                   time_before_insert, nullopt));
   NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(),
                                                    time_after_insert, kRowsEqual0));
   NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, 0,
-                                                   time_after_delete, boost::none));
+                                                   time_after_delete, nullopt));
 
   // Now flush the MRS. No trace should remain after this.
   ASSERT_OK(tablet()->Flush());
@@ -345,7 +346,8 @@ TEST_F(TabletHistoryGcTest, TestUndoGCOnMergeCompaction) {
   NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual0));
 
   // The earliest thing we can see is an empty tablet.
-  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, 0, time_before_insert, boost::none));
+  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(
+      kStartRow, 0, time_before_insert, nullopt));
 
   // Move the clock so the insert is prior to the AHM, then compact.
   NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(2)));
@@ -393,7 +395,8 @@ TEST_F(TabletHistoryGcTest, TestRowRemovalGCOnMergeCompaction) {
   // will be GCed.
   ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
   NO_FATALS(VerifyDebugDumpRowsMatch(""));
-  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, 0, prev_time, boost::none));
+  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(
+      kStartRow, 0, prev_time, nullopt));
   ASSERT_EQ(0, tablet()->OnDiskDataSize());
 }
 

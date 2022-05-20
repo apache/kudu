@@ -18,10 +18,10 @@
 #include "kudu/client/scan_predicate.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/client/hash-internal.h"
@@ -37,7 +37,7 @@
 #include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/status.h"
 
-using boost::optional;
+using std::optional;
 using std::move;
 using std::shared_ptr;
 using std::unique_ptr;

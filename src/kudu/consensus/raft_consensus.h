@@ -22,11 +22,11 @@
 #include <iosfwd>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -97,9 +97,9 @@ struct ConsensusOptions {
 };
 
 struct TabletVotingState {
-  boost::optional<OpId> tombstone_last_logged_opid_;
+  std::optional<OpId> tombstone_last_logged_opid_;
   tablet::TabletDataState data_state_;
-  TabletVotingState(boost::optional<OpId> tombstone_last_logged_opid,
+  TabletVotingState(std::optional<OpId> tombstone_last_logged_opid,
                     tablet::TabletDataState data_state)
           : tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
             data_state_(data_state) {}
@@ -199,7 +199,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Attempts to gracefully transfer leadership to the peer with uuid
   // 'new_leader_uuid' or to the next up-to-date peer the leader gets
-  // a response from if 'new_leader_uuid' is boost::none. To allow peers time
+  // a response from if 'new_leader_uuid' is std::nullopt. To allow peers time
   // to catch up, the leader will not accept write or config change requests
   // during a 'transfer period' that lasts one election timeout. If no
   // successor is eligible by the end of the transfer period, leadership
@@ -207,7 +207,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // asynchronous: once the transfer period is started the method returns
   // success.
   // Additional calls to this method during the transfer period prolong it.
-  Status TransferLeadership(const boost::optional<std::string>& new_leader_uuid,
+  Status TransferLeadership(const std::optional<std::string>& new_leader_uuid,
                             LeaderStepDownResponsePB* resp);
 
   // Begin or end a leadership transfer period. During a transfer period, a
@@ -215,7 +215,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // followers. If a leader transfer period is already in progress,
   // BeginLeaderTransferPeriodUnlocked returns ServiceUnavailable.
   Status BeginLeaderTransferPeriodUnlocked(
-      const boost::optional<std::string>& successor_uuid);
+      const std::optional<std::string>& successor_uuid);
   void EndLeaderTransferPeriod();
 
   // Creates a new ConsensusRound, the entity that owns all the data
@@ -307,21 +307,21 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Implement a ChangeConfig() request.
   Status ChangeConfig(const ChangeConfigRequestPB& req,
                       StatusCallback client_cb,
-                      boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
+                      std::optional<tserver::TabletServerErrorPB::Code>* error_code);
 
   // Implement a BulkChangeConfig() request.
   Status BulkChangeConfig(const BulkChangeConfigRequestPB& req,
                           StatusCallback client_cb,
-                          boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
+                          std::optional<tserver::TabletServerErrorPB::Code>* error_code);
 
   // Implement an UnsafeChangeConfig() request.
   Status UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
-                            boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
+                            std::optional<tserver::TabletServerErrorPB::Code>* error_code);
 
   // Returns the last OpId (either received or committed, depending on the
   // 'type' argument) that the Consensus implementation knows about.
-  // Returns boost::none if RaftConsensus was not properly initialized.
-  boost::optional<OpId> GetLastOpId(OpIdType type);
+  // Returns std::nullopt if RaftConsensus was not properly initialized.
+  std::optional<OpId> GetLastOpId(OpIdType type);
 
   // Returns the current Raft role of this instance.
   RaftPeerPB::Role role() const;
@@ -522,7 +522,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // See EnableFailureDetector() for description of the 'fd_delta' parameter.
   //
   // 'lock_' must be held for configuration change before calling.
-  Status BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta = boost::none);
+  Status BecomeReplicaUnlocked(std::optional<MonoDelta> fd_delta = std::nullopt);
 
   // Updates the state in a replica by storing the received operations in the log
   // and triggering the required ops. This method won't return until all
@@ -660,7 +660,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // detection. Otherwise, the minimum election timeout is used.
   //
   // If the failure detector is already enabled, this has no effect.
-  void EnableFailureDetector(boost::optional<MonoDelta> delta = boost::none);
+  void EnableFailureDetector(std::optional<MonoDelta> delta = std::nullopt);
 
   // Stops tracking the leader for failures. This occurs when a local peer
   // transitions from FOLLOWER to LEADER or from VOTER to NON_VOTER.
@@ -676,7 +676,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // See EnableFailureDetector() for an explanation of the 'delta' parameter,
   // which is used if it is determined that the failure detector should be
   // enabled.
-  void UpdateFailureDetectorState(boost::optional<MonoDelta> delta = boost::none);
+  void UpdateFailureDetectorState(std::optional<MonoDelta> delta = std::nullopt);
 
   // "Reset" the failure detector to indicate leader activity.
   //
@@ -688,8 +688,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // If 'reason_for_log' is set, then this method will print a log message when called.
   //
   // If the failure detector is unregistered, has no effect.
-  void SnoozeFailureDetector(boost::optional<std::string> reason_for_log = boost::none,
-                             boost::optional<MonoDelta> delta = boost::none);
+  void SnoozeFailureDetector(std::optional<std::string> reason_for_log = std::nullopt,
+                             std::optional<MonoDelta> delta = std::nullopt);
 
   // Update the voting withhold interval, bumping it up for the minimum
   // election timeout interval, i.e. 'FLAGS_raft_heartbeat_interval_ms' *
@@ -833,7 +833,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   const ConsensusOptions& GetOptions() const;
 
   // See GetLastOpId().
-  boost::optional<OpId> GetLastOpIdUnlocked(OpIdType type);
+  std::optional<OpId> GetLastOpIdUnlocked(OpIdType type);
 
   std::string LogPrefix() const;
   std::string LogPrefixUnlocked() const;
@@ -912,7 +912,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // A few fields used for the leadership transfer process.
   std::atomic<bool> leader_transfer_in_progress_;
-  boost::optional<std::string> designated_successor_uuid_;
+  std::optional<std::string> designated_successor_uuid_;
   std::shared_ptr<rpc::PeriodicTimer> transfer_period_timer_;
 
   // Any RequestVote() arriving before this timestamp is ignored (i.e. responded

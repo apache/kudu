@@ -194,9 +194,9 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
   }
   location_ = pb.location();
   if (pb.has_unix_domain_socket_path()) {
-    unix_domain_socket_path_ = pb.unix_domain_socket_path();
+    unix_domain_socket_path_.emplace(pb.unix_domain_socket_path());
   } else {
-    unix_domain_socket_path_ = boost::none;
+    unix_domain_socket_path_.reset();
   }
 }
 

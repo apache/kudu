@@ -26,11 +26,11 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <string>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -68,6 +68,7 @@
 #endif // #if defined(__APPLE__)
 
 using kudu::security::RpcEncryption;
+using std::optional;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -770,8 +771,8 @@ Status ServerNegotiation::AuthenticateByCertificate() {
   security::Cert cert;
   RETURN_NOT_OK(tls_handshake_.GetRemoteCert(&cert));
 
-  boost::optional<string> user_id = cert.UserId();
-  boost::optional<string> principal = cert.KuduKerberosPrincipal();
+  optional<string> user_id = cert.UserId();
+  optional<string> principal = cert.KuduKerberosPrincipal();
 
   if (!user_id) {
     Status s = Status::NotAuthorized("did not find expected X509 userId extension in cert");
@@ -912,8 +913,11 @@ Status ServerNegotiation::SendSaslSuccess() {
 
   if (negotiated_mech_ == SaslMechanism::GSSAPI) {
     // Send a nonce to the client.
-    nonce_ = string();
-    RETURN_NOT_OK(security::GenerateNonce(nonce_.get_ptr()));
+    {
+      string nonce;
+      RETURN_NOT_OK(security::GenerateNonce(&nonce));
+      nonce_.emplace(std::move(nonce));
+    }
     response.set_nonce(*nonce_);
 
     if (tls_negotiated_ && PREDICT_TRUE(FLAGS_rpc_send_channel_bindings)) {

@@ -14,12 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CLIENT_SCHEMA_INTERNAL_H
-#define KUDU_CLIENT_SCHEMA_INTERNAL_H
+#pragma once
 
+#include <optional>
 #include <string>
-
-#include <boost/optional/optional.hpp>
 
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"
@@ -74,21 +72,20 @@ class KuduColumnSpec::Data {
 
   const std::string name;
 
-  boost::optional<KuduColumnSchema::DataType> type;
-  boost::optional<int8_t> precision;
-  boost::optional<int8_t> scale;
-  boost::optional<uint16_t> length;
-  boost::optional<KuduColumnStorageAttributes::EncodingType> encoding;
-  boost::optional<KuduColumnStorageAttributes::CompressionType> compression;
-  boost::optional<int32_t> block_size;
-  boost::optional<bool> nullable;
+  std::optional<KuduColumnSchema::DataType> type;
+  std::optional<int8_t> precision;
+  std::optional<int8_t> scale;
+  std::optional<uint16_t> length;
+  std::optional<KuduColumnStorageAttributes::EncodingType> encoding;
+  std::optional<KuduColumnStorageAttributes::CompressionType> compression;
+  std::optional<int32_t> block_size;
+  std::optional<bool> nullable;
   bool primary_key;
-  boost::optional<KuduValue*> default_val;  // Owned.
+  std::optional<KuduValue*> default_val;  // Owned.
   bool remove_default;                      // For ALTER
-  boost::optional<std::string> rename_to;   // For ALTER
-  boost::optional<std::string> comment;
+  std::optional<std::string> rename_to;   // For ALTER
+  std::optional<std::string> comment;
 };
 
 } // namespace client
 } // namespace kudu
-#endif // KUDU_CLIENT_SCHEMA_INTERNAL_H
