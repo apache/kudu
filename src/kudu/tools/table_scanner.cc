@@ -595,6 +595,9 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   std::fstream s(FilePath, s.out);
 
   *thread_status = ScanCSVData(tokens, [&](const KuduScanBatch& batch, const unique_ptr<KuduScanner>& scanner) {
+    Stopwatch sw2(Stopwatch::THIS_THREAD);
+    sw2.start();
+
     if (FLAGS_show_values) {
 
       if (!coloum_Names_added){
@@ -604,13 +607,20 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
         coloum_Names_added=true;
       }
       for (const auto& row : batch) {
+        if ((sw2.elapsed().wall_millis()>FLAGS_keepAliveDuration) &&(FLAGS_keepAliveDuration!=-1)){
+          scanner->KeepAlive();
+          sw2.stop();
+          sw2.start();
+
+        }
         row.ToCSVRowString(ret,row_array,delimeter);
         (*row_batch_ptr).append(ret.append("\n"));
         ret.clear();
-      }
-      s<<*row_batch_ptr;
+        s<<*row_batch_ptr;
       (*row_batch_ptr).clear();
       s.flush();
+      }
+      
     }
   });
   // CheckPendingErrors(session);
