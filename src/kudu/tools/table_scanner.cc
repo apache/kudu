@@ -131,7 +131,7 @@ DEFINE_string(target_folder, ".",
 DEFINE_int64(write_buffer_char_length,10000,
               "exporting buffer size. It will reserve the exporting string size from the memory. If the buffer get filled before export it will dynamically grow");
 
-DEFINE_int64(export_batch_size,1000,"export batch size bytes");
+DEFINE_int64(export_batch_size,10000,"export batch size bytes");
 DEFINE_int64(timeout_millis,3000000,"timeout milliseconds");
 DEFINE_int64(keepAliveDuration,-1,"keep alive calling to keep the scanners alive while exporting ");
 
@@ -582,9 +582,9 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   std::string currentThreadIdStr = ss.str();
   FilePath=FLAGS_target_folder+"//"+currentThreadIdStr+".csv";
   bool coloum_Names_added=false;
-  string row_batch;
+  string row_batch="";
   string* row_batch_ptr=&row_batch;
-  row_batch.reserve(FLAGS_write_buffer_char_length);
+  row_batch.reserve(FLAGS_export_batch_size);
 
   std::string ret="";
   ret.reserve(FLAGS_export_batch_size/2);
