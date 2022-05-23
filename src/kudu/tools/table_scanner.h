@@ -85,7 +85,7 @@ class TableScanner {
   Status ScanData(const std::vector<kudu::client::KuduScanToken*>& tokens,
                   const std::function<void(const kudu::client::KuduScanBatch& batch)>& cb);
   Status ScanCSVData(const std::vector<kudu::client::KuduScanToken*>& tokens,
-                  const std::function<void(const kudu::client::KuduScanBatch& batch, const kudu::client::KuduScanner* scanner)>& cb);
+                  const std::function<void(const kudu::client::KuduScanBatch& batch, const std::unique_ptr<kudu::client::KuduScanner>& scanner)>& cb);
   void ScanTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
   void CopyTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
   void ExportTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
