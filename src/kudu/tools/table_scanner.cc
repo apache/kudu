@@ -616,12 +616,12 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
         }
         row.ToCSVRowString(ret,row_array,delimeter);
         row_array.clear();
-        ret.append("\n");
+        ret.append(1,'\n');
         // (*row_batch_ptr).append(ret.append("\n"));
         // ret.clear();
-        if (row_batch.length()+ret.length()>=FLAGS_export_batch_size){
+        if (row_batch.length()+ret.length()>FLAGS_export_batch_size){
           int balance=FLAGS_export_batch_size-row_batch.length();
-          row_batch.append(ret.substr(0,balance-5));
+          row_batch.append(ret.substr(0,balance));
           std::cout<<balance<<endl;
           std::cout<<row_batch;
           //wrting part
@@ -631,7 +631,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
           
 
           //balance appending
-          row_batch.append(ret.substr(balance-5,ret.length()));
+          row_batch.append(ret.substr(balance,ret.length()));
           
         }else{
           row_batch.append(ret);
