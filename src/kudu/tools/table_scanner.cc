@@ -586,9 +586,8 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   string* row_batch_ptr=&row_batch;
   row_batch.reserve(FLAGS_write_buffer_char_length);
 
-  std::string ret;
-  ret.clear();
-  ret.reserve(FLAGS_write_buffer_char_length/2);
+  std::string ret="";
+  ret.reserve(FLAGS_export_batch_size/2);
   vector<std::string> row_array;
   char delimeter=',';
   string column_namess; 
@@ -621,15 +620,16 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
         // ret.clear();
         if (row_batch.length()+ret.length()>=FLAGS_export_batch_size){
           int balance=FLAGS_export_batch_size-row_batch.length();
-          row_batch.append(ret,0,balance-5);
+          row_batch.append(ret.substr(0,balance-5));
 
           //wrting part
           s<<row_batch;
-          row_batch.clear();
           s.flush();
+          row_batch.clear();
+          
 
           //balance appending
-          row_batch.append(ret,balance-5);
+          row_batch.append(ret.substr(balance-5));
           
         }else{
           row_batch.append(ret);
@@ -640,8 +640,9 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
       //appending balance part
       if (row_batch.length()>0){
           s<<row_batch;
-          row_batch.clear();
           s.flush();
+          row_batch.clear();
+          
         }
       // s<<*row_batch_ptr;
       // (*row_batch_ptr).clear();
