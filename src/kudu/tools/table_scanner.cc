@@ -520,7 +520,7 @@ Status TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& t
 }
 
 Status TableScanner::ScanCSVData(const std::vector<kudu::client::KuduScanToken*>& tokens,
-                              const std::function<void(const KuduScanBatch& batch, const KuduScanner scanner)>& cb) {
+                              const std::function<void(const KuduScanBatch& batch, const unique_ptr<KuduScanner> scanner)>& cb) {
 
   for (auto token : tokens) {
     Stopwatch sw(Stopwatch::THIS_THREAD);
