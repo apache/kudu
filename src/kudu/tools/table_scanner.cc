@@ -133,6 +133,7 @@ DEFINE_int64(write_buffer_char_length,10000,
 
 DEFINE_int64(export_batch_size,1000,"export batch size bytes");
 DEFINE_int64(timeout_millis,3000000,"timeout milliseconds");
+DEFINE_int64(keepAliveDuration,-1,"keep alive calling to keep the scanners alive while exporting ")
 
 
 static bool ValidateWriteType(const char* flag_name,
@@ -504,6 +505,42 @@ Status TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& t
       count += batch.NumRows();
       total_count_.IncrementBy(batch.NumRows());
       cb(batch);
+    }
+
+    sw.stop();
+    if (out_) {
+      MutexLock l(output_lock_);
+      *out_ << "T " << token->tablet().id() << " scanned count " << count
+           << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
+    }
+  }
+
+  return Status::OK();
+
+}
+
+Status TableScanner::ScanCSVData(const std::vector<kudu::client::KuduScanToken*>& tokens,
+                              const std::function<void(const KuduScanBatch& batch), const KuduScanner scanner>& cb) {
+
+  for (auto token : tokens) {
+    Stopwatch sw(Stopwatch::THIS_THREAD);
+    sw.start();
+
+    KuduScanner* scanner_ptr;
+    RETURN_NOT_OK(token->IntoKuduScanner(&scanner_ptr));
+
+    unique_ptr<KuduScanner> scanner(scanner_ptr);
+    RETURN_NOT_OK(scanner->Open());
+
+    uint64_t count = 0;
+    while (scanner->HasMoreRows()) {
+      scanner->KeepAlive();
+      KuduScanBatch batch;
+      RETURN_NOT_OK(scanner->NextBatch(&batch));
+      scanner->KeepAlive();
+      count += batch.NumRows();
+      total_count_.IncrementBy(batch.NumRows());
+      cb(batch,scanner);
     }
 
     sw.stop();
