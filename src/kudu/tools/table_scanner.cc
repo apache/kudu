@@ -133,7 +133,7 @@ DEFINE_int64(write_buffer_char_length,10000,
 
 DEFINE_int64(export_batch_size,1000,"export batch size bytes");
 DEFINE_int64(timeout_millis,3000000,"timeout milliseconds");
-DEFINE_int64(keepAliveDuration,-1,"keep alive calling to keep the scanners alive while exporting ")
+DEFINE_int64(keepAliveDuration,-1,"keep alive calling to keep the scanners alive while exporting ");
 
 
 static bool ValidateWriteType(const char* flag_name,
