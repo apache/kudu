@@ -527,9 +527,10 @@ Status TableScanner::ScanCSVData(const std::vector<kudu::client::KuduScanToken*>
     sw.start();
 
     KuduScanner* scanner_ptr;
+    KuduScanner* scanner=scanner_ptr;
     RETURN_NOT_OK(token->IntoKuduScanner(&scanner_ptr));
 
-    unique_ptr<KuduScanner> scanner(scanner_ptr);
+    // unique_ptr<KuduScanner> scanner(scanner_ptr);
     RETURN_NOT_OK(scanner->Open());
 
     uint64_t count = 0;
@@ -540,7 +541,7 @@ Status TableScanner::ScanCSVData(const std::vector<kudu::client::KuduScanToken*>
       scanner->KeepAlive();
       count += batch.NumRows();
       total_count_.IncrementBy(batch.NumRows());
-      cb(batch,scanner_ptr);
+      cb(batch,scanner);
     }
 
     sw.stop();
@@ -556,7 +557,7 @@ Status TableScanner::ScanCSVData(const std::vector<kudu::client::KuduScanToken*>
 }
 
 void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens, Status* thread_status) {
-  *thread_status = ScanData(tokens, [&](const KuduScanBatch& batch) {
+  *thread_status = ScanCSVData(tokens, [&](const KuduScanBatch& batch,const KuduScanner* scanner) {
     if (out_ && FLAGS_show_values) {
       MutexLock l(output_lock_);
       for (const auto& row : batch) {
@@ -593,7 +594,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
 
   std::fstream s(FilePath, s.out);
 
-  *thread_status = ScanData(tokens, [&](const KuduScanBatch& batch) {
+  *thread_status = ScanCSVData(tokens, [&](const KuduScanBatch& batch) {
     if (FLAGS_show_values) {
 
       if (!coloum_Names_added){
