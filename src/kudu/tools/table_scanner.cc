@@ -608,6 +608,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
       }
       for (const auto& row : batch) {
         if ((sw2.elapsed().wall_millis()>FLAGS_keepAliveDuration) &&(FLAGS_keepAliveDuration!=-1)){
+          std::cout<<time;
           scanner->KeepAlive();
           sw2.stop();
           sw2.start();
@@ -616,10 +617,10 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
         row.ToCSVRowString(ret,row_array,delimeter);
         (*row_batch_ptr).append(ret.append("\n"));
         ret.clear();
-        s<<*row_batch_ptr;
+      }
+      s<<*row_batch_ptr;
       (*row_batch_ptr).clear();
       s.flush();
-      }
       
     }
   });
