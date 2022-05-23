@@ -94,7 +94,7 @@ class HostPort {
   // Takes a vector of HostPort objects and returns a comma separated
   // string containing of "host:port" pairs. This method is the
   // "inverse" of ParseStrings().
-  static std::string ToCommaSeparatedString(const std::vector<HostPort>& host_ports);
+  static std::string ToCommaSeparatedString(const std::vector<HostPort>& hostports);
 
   // Returns true if addr is within 127.0.0.0/8 range.
   static bool IsLoopback(uint32_t addr);

@@ -83,6 +83,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/string_case.h"
 
 DEFINE_double(sys_catalog_fail_during_write, 0.0,
               "Fraction of the time when system table writes will fail");
@@ -221,7 +222,7 @@ Status SysCatalogTable::VerifyAndPopulateSingleMasterConfig(ConsensusMetadata* c
     if (peer.has_last_known_addr()) {
       // Verify the supplied master address matches with the on-disk Raft config.
       auto raft_master_addr = HostPortFromPB(peer.last_known_addr());
-      if (raft_master_addr != master_addr) {
+      if (!iequals(raft_master_addr.ToString(), master_addr.ToString())) {
         return Status::InvalidArgument(
             Substitute("Single master Raft config error. On-disk master: $0 and "
                        "supplied master: $1 are different", raft_master_addr.ToString(),
@@ -273,9 +274,12 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     // Make sure the set of masters passed in at start time matches the set in
     // the on-disk cmeta.
     set<string> peer_addrs_from_opts;
+    string hp_str;
     const auto& master_addresses = master_->opts().master_addresses();
     for (const auto& hp : master_addresses) {
-      peer_addrs_from_opts.insert(hp.ToString());
+      hp_str = hp.ToString();
+      ToLowerCase(&hp_str);
+      peer_addrs_from_opts.insert(hp_str);
     }
     if (peer_addrs_from_opts.size() < master_addresses.size()) {
       LOG(WARNING) << Substitute("Found duplicates in --master_addresses: "
@@ -283,8 +287,11 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
                                  JoinStrings(peer_addrs_from_opts, ", "));
     }
     set<string> peer_addrs_from_disk;
+    string last_known_addr_str;
     for (const auto& p : cstate.committed_config().peers()) {
-      peer_addrs_from_disk.insert(HostPortFromPB(p.last_known_addr()).ToString());
+      last_known_addr_str = HostPortFromPB(p.last_known_addr()).ToString();
+      ToLowerCase(&last_known_addr_str);
+      peer_addrs_from_disk.insert(last_known_addr_str);
     }
     vector<string> symm_diff;
     std::set_symmetric_difference(peer_addrs_from_opts.begin(),
