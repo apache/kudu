@@ -622,8 +622,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
         if (row_batch.length()+ret.length()>FLAGS_export_batch_size){
           int balance=FLAGS_export_batch_size-row_batch.length();
           row_batch.append(ret.substr(0,balance));
-          std::cout<<balance<<endl;
-          std::cout<<row_batch;
+          
           //wrting part
           s<<row_batch;
           s.flush();
