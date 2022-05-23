@@ -615,6 +615,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
 
         }
         row.ToCSVRowString(ret,row_array,delimeter);
+        row_array.clear();
         ret.append("\n");
         // (*row_batch_ptr).append(ret.append("\n"));
         // ret.clear();
