@@ -1323,7 +1323,6 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("predicates")
       .AddOptionalParameter("tablets")
       .AddOptionalParameter("target_folder")
-      .AddOptionalParameter("write_buffer_char_length")
       .AddOptionalParameter("export_batch_size")
       .AddOptionalParameter("timeout_millis")
       .AddOptionalParameter("keepAliveDuration")

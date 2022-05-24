@@ -128,10 +128,7 @@ DEFINE_string(write_type, "insert",
 DEFINE_string(target_folder, ".",
               "target folder for exporting the kudu table data to csv. default target folder is current directory");
 
-DEFINE_int64(write_buffer_char_length,10000,
-              "exporting buffer size. It will reserve the exporting string size from the memory. If the buffer get filled before export it will dynamically grow");
-
-DEFINE_int64(export_batch_size,10000,"export batch size bytes");
+DEFINE_int64(export_batch_size,10000,"export batch size bytes. Batch Size should be greater than 10000 ");
 DEFINE_int64(timeout_millis,3000000,"timeout milliseconds");
 DEFINE_int64(keepAliveDuration,30000,"keep alive calling to keep the scanners alive while exporting ");
 
@@ -573,7 +570,10 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   std::thread::id currentThreadId = std::this_thread::get_id();
   std::stringstream ss;
 
-  int batch_size=FLAGS_export_batch_size;
+  int batch_size;
+  if (batch_size>=10000){
+    batch_size=FLAGS_export_batch_size;
+  }
   ss << currentThreadId;
   std::string currentThreadIdStr = ss.str();
   FilePath=FLAGS_target_folder+"//"+currentThreadIdStr+".csv";
@@ -582,8 +582,10 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   string* row_batch_ptr=&row_batch;
   row_batch.reserve(batch_size);
 
+  int balance;
+
   std::string ret="";
-  ret.reserve(batch_size/2);
+  ret.reserve(10000);
   vector<std::string> row_array;
   char delimeter=',';
   string column_namess; 
@@ -604,7 +606,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
       }
       for (const auto& row : batch) {
         if ((sw2.elapsed().wall_millis()>FLAGS_keepAliveDuration) &&(FLAGS_keepAliveDuration!=-1)){
-          std::cout<<"Scanner Called after "<<time;
+          std::cout<<"Keep Alive called because exceeding "<<time;
           scanner->KeepAlive();
           sw2.stop();
           sw2.start();
@@ -614,7 +616,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
         row_array.clear();
         ret.append(1,'\n');
         if (row_batch.length()+ret.length()>batch_size){
-          int balance=batch_size-row_batch.length();
+          balance=batch_size-row_batch.length();
           row_batch.append(ret.substr(0,balance));
           
           //wrting part
