@@ -133,7 +133,7 @@ DEFINE_int64(write_buffer_char_length,10000,
 
 DEFINE_int64(export_batch_size,10000,"export batch size bytes");
 DEFINE_int64(timeout_millis,3000000,"timeout milliseconds");
-DEFINE_int64(keepAliveDuration,-1,"keep alive calling to keep the scanners alive while exporting ");
+DEFINE_int64(keepAliveDuration,30000,"keep alive calling to keep the scanners alive while exporting ");
 
 
 static bool ValidateWriteType(const char* flag_name,
@@ -535,7 +535,6 @@ Status TableScanner::ScanCSVData(const std::vector<kudu::client::KuduScanToken*>
 
     uint64_t count = 0;
     while (scanner->HasMoreRows()) {
-      scanner->KeepAlive();
       KuduScanBatch batch;
       RETURN_NOT_OK(scanner->NextBatch(&batch));
       scanner->KeepAlive();
@@ -570,24 +569,21 @@ void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens, Status* threa
 
 void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thread_status) {
   string FilePath;
-   // One session per thread.
-  // client::sp::shared_ptr<KuduSession> session(dst_client_.get()->NewSession());
-  // CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
-  // CHECK_OK(session->SetErrorBufferSpace(1024));
-  // session->SetTimeoutMillis(30000);
 
   std::thread::id currentThreadId = std::this_thread::get_id();
   std::stringstream ss;
+
+  int batch_size=FLAGS_export_batch_size;
   ss << currentThreadId;
   std::string currentThreadIdStr = ss.str();
   FilePath=FLAGS_target_folder+"//"+currentThreadIdStr+".csv";
   bool coloum_Names_added=false;
   string row_batch="";
   string* row_batch_ptr=&row_batch;
-  row_batch.reserve(FLAGS_export_batch_size);
+  row_batch.reserve(batch_size);
 
   std::string ret="";
-  ret.reserve(FLAGS_export_batch_size/2);
+  ret.reserve(batch_size/2);
   vector<std::string> row_array;
   char delimeter=',';
   string column_namess; 
@@ -608,7 +604,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
       }
       for (const auto& row : batch) {
         if ((sw2.elapsed().wall_millis()>FLAGS_keepAliveDuration) &&(FLAGS_keepAliveDuration!=-1)){
-          std::cout<<time;
+          std::cout<<"Scanner Called after "<<time;
           scanner->KeepAlive();
           sw2.stop();
           sw2.start();
@@ -617,10 +613,8 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
         row.ToCSVRowString(ret,row_array,delimeter);
         row_array.clear();
         ret.append(1,'\n');
-        // (*row_batch_ptr).append(ret.append("\n"));
-        // ret.clear();
-        if (row_batch.length()+ret.length()>FLAGS_export_batch_size){
-          int balance=FLAGS_export_batch_size-row_batch.length();
+        if (row_batch.length()+ret.length()>batch_size){
+          int balance=batch_size-row_batch.length();
           row_batch.append(ret.substr(0,balance));
           
           //wrting part
@@ -645,16 +639,9 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
           row_batch.clear();
           
         }
-      // s<<*row_batch_ptr;
-      // (*row_batch_ptr).clear();
-      // s.flush();
       
     }
   });
-  // CheckPendingErrors(session);
-  //   // Flush here to make sure all write operations have been sent,
-  //   // and all strings reference to batch are still valid.
-  // CHECK_OK(session->Flush());
   s.close();
 }
 
