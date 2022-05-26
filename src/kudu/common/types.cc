@@ -45,6 +45,7 @@ TypeInfo::TypeInfo(TypeTraitsClass /*t*/)
     max_value_(TypeTraitsClass::max_value()),
     is_virtual_(TypeTraitsClass::IsVirtual()),
     append_func_(TypeTraitsClass::AppendDebugStringForValue),
+    append_csv_func_(TypeTraitsClass::AppendDebugStringForValue),
     compare_func_(TypeTraitsClass::Compare),
     are_consecutive_func_(TypeTraitsClass::AreConsecutive) {
 }
@@ -54,6 +55,14 @@ void TypeInfo::AppendDebugStringForValue(const void *ptr, string *str) const {
     str->append(kRedactionMessage);
   } else {
     append_func_(ptr, str);
+  }
+}
+
+void TypeInfo::AppendDebugCSVStringForValue(const void *ptr, string *str) const {
+  if (KUDU_SHOULD_REDACT()) {
+    str->append(kRedactionMessage);
+  } else {
+    append_csv_func_(ptr, str);
   }
 }
 

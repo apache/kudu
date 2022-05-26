@@ -424,7 +424,7 @@ class ColumnSchema {
     if (is_nullable_ && cell.is_null()) {
       ret->append("");
     } else {
-      type_info_->AppendDebugStringForValue(cell.ptr(), ret);
+      type_info_->AppendDebugCSVStringForValue(cell.ptr(), ret);
     }
   }
 

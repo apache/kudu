@@ -64,6 +64,7 @@ class TypeInfo {
   const std::string& name() const { return name_; }
   const size_t size() const { return size_; }
   void AppendDebugStringForValue(const void *ptr, std::string *str) const;
+  void AppendDebugCSVStringForValue(const void *ptr, std::string *str) const;
   int Compare(const void *lhs, const void *rhs) const;
   // Returns true if increment(a) is equal to b.
   bool AreConsecutive(const void* a, const void* b) const;
@@ -93,6 +94,8 @@ class TypeInfo {
 
   typedef void (*AppendDebugFunc)(const void *, std::string *);
   const AppendDebugFunc append_func_;
+  const AppendDebugFunc append_csv_func_;
+  const AppendDebugFunc append_debug_func;
 
   typedef int (*CompareFunc)(const void *, const void *);
   const CompareFunc compare_func_;
@@ -144,6 +147,11 @@ struct DataTypeTraits<UINT8> {
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const uint8_t *>(val)));
   }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const uint8_t *>(val)));
+  }
+
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT8>(lhs, rhs);
   }
@@ -169,6 +177,10 @@ struct DataTypeTraits<INT8> {
     return "int8";
   }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const int8_t *>(val)));
+  }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const int8_t *>(val)));
   }
   static int Compare(const void *lhs, const void *rhs) {
@@ -198,6 +210,10 @@ struct DataTypeTraits<UINT16> {
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const uint16_t *>(val)));
   }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const uint16_t *>(val)));
+  }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT16>(lhs, rhs);
   }
@@ -223,6 +239,10 @@ struct DataTypeTraits<INT16> {
     return "int16";
   }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const int16_t *>(val)));
+  }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const int16_t *>(val)));
   }
   static int Compare(const void *lhs, const void *rhs) {
@@ -252,6 +272,10 @@ struct DataTypeTraits<UINT32> {
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const uint32_t *>(val)));
   }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const uint32_t *>(val)));
+  }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT32>(lhs, rhs);
   }
@@ -277,6 +301,9 @@ struct DataTypeTraits<INT32> {
     return "int32";
   }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const int32_t *>(val)));
+  }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const int32_t *>(val)));
   }
   static int Compare(const void *lhs, const void *rhs) {
@@ -306,6 +333,9 @@ struct DataTypeTraits<UINT64> {
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const uint64_t *>(val)));
   }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const uint64_t *>(val)));
+  }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT64>(lhs, rhs);
   }
@@ -331,6 +361,9 @@ struct DataTypeTraits<INT64> {
     return "int64";
   }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const int64_t *>(val)));
+  }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(*reinterpret_cast<const int64_t *>(val)));
   }
   static int Compare(const void *lhs, const void *rhs) {
@@ -360,6 +393,9 @@ struct DataTypeTraits<INT128> {
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     str->append(SimpleItoa(UnalignedLoad<int128_t>(val)));
   }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(UnalignedLoad<int128_t>(val)));
+  }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT128>(lhs, rhs);
   }
@@ -387,6 +423,9 @@ struct DataTypeTraits<FLOAT> {
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     str->append(SimpleFtoa(*reinterpret_cast<const float *>(val)));
   }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    str->append(SimpleFtoa(*reinterpret_cast<const float *>(val)));
+  }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<FLOAT>(lhs, rhs);
   }
@@ -412,6 +451,9 @@ struct DataTypeTraits<DOUBLE> {
     return "double";
   }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
+    str->append(SimpleDtoa(*reinterpret_cast<const double *>(val)));
+  }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     str->append(SimpleDtoa(*reinterpret_cast<const double *>(val)));
   }
   static int Compare(const void *lhs, const void *rhs) {
@@ -443,6 +485,10 @@ struct DataTypeTraits<BINARY> {
     str->push_back('"');
     str->append(strings::CHexEscape(s->ToString()));
     str->push_back('"');
+  }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->append(strings::CHexEscape(s->ToString()));
   }
   static int Compare(const void *lhs, const void *rhs) {
     const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
@@ -484,6 +530,10 @@ struct DataTypeTraits<BOOL> {
   static void AppendDebugStringForValue(const void* val, std::string* str) {
     str->append(*reinterpret_cast<const bool *>(val) ? "true" : "false");
   }
+
+  static void AppendDebugCSVStringForValue(const void* val, std::string* str) {
+    str->append(*reinterpret_cast<const bool *>(val) ? "true" : "false");
+  }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<BOOL>(lhs, rhs);
   }
@@ -511,6 +561,9 @@ struct DerivedTypeTraits {
   static const DataType physical_type = PhysicalType;
 
   static void AppendDebugStringForValue(const void *val, std::string *str) {
+    DataTypeTraits<PhysicalType>::AppendDebugStringForValue(val, str);
+  }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     DataTypeTraits<PhysicalType>::AppendDebugStringForValue(val, str);
   }
 
@@ -545,6 +598,10 @@ struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
     str->append(strings::Utf8SafeCEscape(s->ToString()));
     str->push_back('"');
   }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->append(strings::Utf8SafeCEscape(s->ToString()));
+  }
 };
 
 
@@ -576,6 +633,25 @@ struct DataTypeTraits<UNIXTIME_MICROS> : public DerivedTypeTraits<INT64>{
     snprintf(time, sizeof(time), kDateMicrosAndTzFormat, time_up_to_secs, remaining_micros);
     str->append(time);
   }
+
+  static void AppendDebugCSVStringForValue(const void* val, std::string* str) {
+    int64_t timestamp_micros = *reinterpret_cast<const int64_t *>(val);
+    time_t secs_since_epoch = timestamp_micros / kMicrosInSecond;
+    // If the time is negative we need to take into account that any microseconds
+    // will actually decrease the time in seconds by one.
+    int remaining_micros = static_cast<int>(timestamp_micros % kMicrosInSecond);
+    if (remaining_micros < 0) {
+      secs_since_epoch--;
+      remaining_micros = kMicrosInSecond - std::abs(remaining_micros);
+    }
+    struct tm tm_info;
+    gmtime_r(&secs_since_epoch, &tm_info);
+    char time_up_to_secs[24];
+    strftime(time_up_to_secs, sizeof(time_up_to_secs), kDateFormat, &tm_info);
+    char time[34];
+    snprintf(time, sizeof(time), kDateMicrosAndTzFormat, time_up_to_secs, remaining_micros);
+    str->append(time);
+  }
 };
 
 template<>
@@ -589,6 +665,7 @@ struct DataTypeTraits<DATE> : public DerivedTypeTraits<INT32>{
   }
 
   static void AppendDebugStringForValue(const void* val, std::string* str);
+  static void AppendDebugCSVStringForValue(const void* val, std::string* str);
 
   static const cpp_type* min_value() {
     static int32_t value = kMinValue;
@@ -615,6 +692,11 @@ struct DataTypeTraits<DECIMAL32> : public DerivedTypeTraits<INT32>{
     DataTypeTraits<physical_type>::AppendDebugStringForValue(val, str);
     str->append("_D32");
   }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    DataTypeTraits<physical_type>::AppendDebugCSVStringForValue(val, str);
+    str->append("_D32");
+  }
 };
 
 template<>
@@ -629,6 +711,11 @@ struct DataTypeTraits<DECIMAL64> : public DerivedTypeTraits<INT64>{
     DataTypeTraits<physical_type>::AppendDebugStringForValue(val, str);
     str->append("_D64");
   }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    DataTypeTraits<physical_type>::AppendDebugCSVStringForValue(val, str);
+    str->append("_D64");
+  }
 };
 
 template<>
@@ -641,6 +728,11 @@ struct DataTypeTraits<DECIMAL128> : public DerivedTypeTraits<INT128>{
   // type information available to format it.
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     DataTypeTraits<physical_type>::AppendDebugStringForValue(val, str);
+    str->append("_D128");
+  }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    DataTypeTraits<physical_type>::AppendDebugCSVStringForValue(val, str);
     str->append("_D128");
   }
 };
@@ -665,6 +757,10 @@ struct DataTypeTraits<VARCHAR> : public DerivedTypeTraits<BINARY>{
     str->push_back('"');
     str->append(strings::Utf8SafeCEscape(s->ToString()));
     str->push_back('"');
+  }
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->append(strings::Utf8SafeCEscape(s->ToString()));
   }
 };
 
