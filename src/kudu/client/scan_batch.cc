@@ -405,7 +405,7 @@ string* KuduScanBatch::RowPtr::ToCSVRowString(std::string& ret, std::vector<std:
   for (int i = 0; i < schema_->num_columns(); i++) {
     RowCell cell(this, i);
     schema_->column(i).DebugCSVCellAppend(cell, &ret);
-    row_array.push_back(ret.substr(1,ret.length()-1));
+    row_array.push_back(ret);
     ret.clear();
   }
   JoinCSVLineWithDelimiter(row_array,delimeter,&ret);
