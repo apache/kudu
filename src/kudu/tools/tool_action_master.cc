@@ -72,6 +72,7 @@ DECLARE_int64(timeout_ms);
 DECLARE_string(columns);
 DECLARE_string(fs_wal_dir);
 DECLARE_string(fs_data_dirs);
+DECLARE_string(tables);
 
 DEFINE_string(master_uuid, "", "Permanent UUID of the master. Only needed to disambiguate in case "
                                "of multiple masters with same RPC address");
@@ -880,6 +881,7 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddOptionalParameter("fs_data_dirs")
         .AddOptionalParameter("fs_metadata_dir")
         .AddOptionalParameter("fs_wal_dir")
+        .AddOptionalParameter("tables")
         .Build();
     builder.AddAction(std::move(unsafe_rebuild));
   }

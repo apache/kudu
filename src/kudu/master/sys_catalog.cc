@@ -1147,5 +1147,20 @@ void SysCatalogTable::InitLocalRaftPeerPB() {
   *local_peer_pb_.mutable_last_known_addr() = HostPortToPB(hps[0]);
 }
 
+void SimpleTableVisitor::Reset() {
+  tables.clear();
+}
+
+Status SimpleTableVisitor::VisitTable(const string& table_id,
+                                     const SysTablesEntryPB& metadata) {
+  // Setup the table info
+  scoped_refptr<TableInfo> table = new TableInfo(table_id);
+  TableMetadataLock l(table.get(), LockMode::WRITE);
+  l.mutable_data()->pb.CopyFrom(metadata);
+  l.Commit();
+  tables.emplace_back(std::move(table));
+  return Status::OK();
+}
+
 } // namespace master
 } // namespace kudu

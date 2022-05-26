@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -62,6 +64,7 @@ DEFINE_uint32(default_schema_version, 0, "The table schema version assigned to t
               "'kudu pbc dump tablet-meta/<tablet-id>' on each server and taking the max value "
               "found across all tablets. In tablet server versions >= 1.16, Kudu will determine "
               "the proper value for each tablet automatically.");
+DECLARE_string(tables);
 
 using kudu::master::Master;
 using kudu::master::MasterOptions;
@@ -74,7 +77,9 @@ using kudu::master::TabletInfo;
 using kudu::master::TabletMetadataGroupLock;
 using kudu::master::TabletMetadataLock;
 using kudu::tserver::ListTabletsResponsePB;
+using std::map;
 using std::string;
+using std::set;
 using std::vector;
 using strings::Substitute;
 
@@ -114,13 +119,15 @@ Status MasterRebuilder::RebuildMaster() {
       bad_tservers++;
       continue;
     }
-
+    const set<string>& filter_tables = strings::Split(FLAGS_tables, ",",
+                                                      strings::SkipWhitespace());
     for (const auto& replica : replicas) {
       const auto& tablet_status_pb = replica.tablet_status();
       const auto& state_pb = tablet_status_pb.state();
       const auto& state_str = TabletStatePB_Name(state_pb);
       const auto& tablet_id = tablet_status_pb.tablet_id();
       const auto& table_name = tablet_status_pb.table_name();
+      if (!filter_tables.empty() && !ContainsKey(filter_tables, table_name)) continue;
       switch (state_pb) {
         case tablet::STOPPING:
         case tablet::STOPPED:
@@ -156,10 +163,14 @@ Status MasterRebuilder::RebuildMaster() {
   if (bad_tservers == tserver_addrs_.size()) {
     return Status::ServiceUnavailable("unable to gather any tablet server metadata");
   }
-
-  // Now that we've assembled all the metadata, we can write to a syscatalog table.
-  RETURN_NOT_OK(WriteSysCatalog());
-
+  if (!FLAGS_tables.empty()) {
+    std::cout << "wangxixu-upsert-:" << FLAGS_tables << std::endl;
+    RETURN_NOT_OK(UpsertSysCatalog());
+  } else {
+    std::cout << "wangxixu-wrie-:" << FLAGS_tables << std::endl;
+    // Now that we've assembled all the metadata, we can write to a syscatalog table.
+    RETURN_NOT_OK(WriteSysCatalog());
+  }
   state_ = State::DONE;
   return Status::OK();
 }
@@ -187,7 +198,6 @@ void MasterRebuilder::CreateTable(const ListTabletsResponsePB::StatusAndSchemaPB
   SysTablesEntryPB* metadata = &table->mutable_metadata()->mutable_dirty()->pb;
   const string& table_name = replica.tablet_status().table_name();
   metadata->set_name(table_name);
-
   if (!replica.has_schema_version()) {
     metadata->set_version(FLAGS_default_schema_version);
   } else {
@@ -366,5 +376,85 @@ Status MasterRebuilder::WriteSysCatalog() {
   return Status::OK();
 }
 
+Status MasterRebuilder::UpsertSysCatalog() {
+  MasterOptions opts;
+  Master master(opts);
+  std::cout << "wal2:" << opts.fs_opts.wal_root << std::endl;
+  std::cout << "meta2:" << opts.fs_opts.metadata_root << std::endl;
+  std::cout << "data2:" << opts.fs_opts.data_roots[0] << std::endl;
+  std::cout << "wangxiixu-init-master:" << std::endl;
+  RETURN_NOT_OK(master.Init());
+  SysCatalogTable sys_catalog(&master, &NoOpCb);
+  std::cout << "wangxiixu-load-master:" << std::endl;
+  RETURN_NOT_OK(sys_catalog.Load(master.fs_manager()));
+  SCOPED_CLEANUP({
+    sys_catalog.Shutdown();
+    master.Shutdown();
+  });
+
+  vector<scoped_refptr<TabletInfo>> tablets;
+  const auto kLeaderTimeout = MonoDelta::FromSeconds(10);
+  RETURN_NOT_OK(sys_catalog.tablet_replica()->consensus()->WaitUntilLeader(kLeaderTimeout));
+
+  // If a table found in master, upate it, or add it.
+  auto visitor = sys_catalog.getSimpleTableVisitor();
+  sys_catalog.VisitTables(&visitor);
+  map<string, scoped_refptr<master::TableInfo>> tables_map_to_update;
+  map<string, scoped_refptr<master::TableInfo>> tables_map_to_add;
+  bool find_same_table_flag = false;
+  string old_table_name = "";
+  string new_table_name = "";
+  for (const auto& table_entry : tables_by_name_) {
+    find_same_table_flag = false;
+    for (const auto& table : visitor.tables) {
+      table->metadata().ReadLock();
+      old_table_name = table->metadata().state().name();
+      table->metadata().ReadUnlock();
+      table_entry.second->metadata().ReadLock();
+      new_table_name = table_entry.second->metadata().state().name();
+      table_entry.second->metadata().ReadUnlock();
+      if (old_table_name == new_table_name) {
+        InsertOrDie(&tables_map_to_update, table_entry.first, table_entry.second);
+        find_same_table_flag = true;
+        break;
+      }
+    }
+    if (!find_same_table_flag) {
+      InsertOrDie(&tables_map_to_add, table_entry.first, table_entry.second);
+    }
+  }
+
+  for (const auto& table_entry : tables_map_to_update) {
+    const auto& table = table_entry.second;
+    std::cout << "wangxixu-update-table:" << table_entry.first << std::endl;
+    table->GetAllTablets(&tablets);
+    TableMetadataLock l_table(table.get(), LockMode::WRITE);
+    TabletMetadataGroupLock l_tablets(LockMode::RELEASED);
+    l_tablets.AddMutableInfos(tablets);
+    l_tablets.Lock(LockMode::WRITE);
+    SysCatalogTable::Actions actions;
+    actions.table_to_update = table;
+    actions.tablets_to_update = tablets;
+    RETURN_NOT_OK_PREPEND(sys_catalog.Write(actions),
+                          Substitute("unable to write metadata for table $0 to sys_catalog",
+                                     table_entry.first));
+  }
+  for (const auto& table_entry : tables_map_to_add) {
+    std::cout << "wangxixu-add-table:" << table_entry.first << std::endl;
+    const auto& table = table_entry.second;
+    table->GetAllTablets(&tablets);
+    TableMetadataLock l_table(table.get(), LockMode::WRITE);
+    TabletMetadataGroupLock l_tablets(LockMode::RELEASED);
+    l_tablets.AddMutableInfos(tablets);
+    l_tablets.Lock(LockMode::WRITE);
+    SysCatalogTable::Actions actions;
+    actions.table_to_add = table;
+    actions.tablets_to_add = tablets;
+    RETURN_NOT_OK_PREPEND(sys_catalog.Write(actions),
+                          Substitute("unable to write metadata for table $0 to sys_catalog",
+                                     table_entry.first));
+  }
+  return Status::OK();
+}
 } // namespace tools
 } // namespace kudu

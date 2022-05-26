@@ -619,7 +619,7 @@ Status ServerBase::Init() {
     s = fs_manager_->Open(&report, startup_path_handler_->read_instance_metadata_files_progress(),
                           startup_path_handler_->read_data_directories_progress());
   }
-  RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
+  RETURN_NOT_OK_PREPEND(s, "hello Failed to load FS layout");
   RETURN_NOT_OK(report.LogAndCheckForFatalErrors());
   read_filesystem->Stop();
   RETURN_NOT_OK(InitAcls());

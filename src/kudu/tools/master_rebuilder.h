@@ -110,6 +110,9 @@ class MasterRebuilder {
   // Write the syscatalog table based on the collated tablet server metadata.
   Status WriteSysCatalog();
 
+  // Update or write the syscatalog table based on the collated tablet server metadata.
+  Status UpsertSysCatalog();
+
   State state_;
 
   // Addresses of the tablet servers used for the reconstruction.
@@ -128,6 +131,5 @@ class MasterRebuilder {
 
   DISALLOW_COPY_AND_ASSIGN(MasterRebuilder);
 };
-
 } // namespace tools
 } // namespace kudu

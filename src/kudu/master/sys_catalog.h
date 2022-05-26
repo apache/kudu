@@ -101,6 +101,16 @@ class TServerStateVisitor {
                        const SysTServerStateEntryPB& metadata) = 0;
 };
 
+class SimpleTableVisitor : public TableVisitor {
+ public:
+  void Reset();
+
+  Status VisitTable(const std::string& table_id,
+                    const SysTablesEntryPB& metadata) override;
+
+  std::vector<scoped_refptr<TableInfo>> tables;
+};
+
 // SysCatalogTable is a Kudu table that keeps track of the following
 // system information:
 //   * cluster id
@@ -262,6 +272,10 @@ class SysCatalogTable {
     return tablet_replica_;
   }
 
+  SimpleTableVisitor getSimpleTableVisitor() const {
+    return simpleTableLoader_;
+  }
+
  private:
   FRIEND_TEST(MasterTest, TestMasterMetadataConsistentDespiteFailures);
   DISALLOW_COPY_AND_ASSIGN(SysCatalogTable);
@@ -397,6 +411,8 @@ class SysCatalogTable {
   consensus::RaftPeerPB local_peer_pb_;
 
   scoped_refptr<Counter> oversized_write_requests_;
+
+  SimpleTableVisitor simpleTableLoader_;
 };
 
 } // namespace master

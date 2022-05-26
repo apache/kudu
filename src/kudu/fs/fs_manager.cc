@@ -619,6 +619,7 @@ Status FsManager::CreateFileSystemRoots(
     RETURN_NOT_OK_PREPEND(env_util::IsDirectoryEmpty(env_, root.path, &is_empty),
                           "unable to check if FSManager root is empty");
     if (!is_empty) {
+      std::cout << "wangxiux-not-mepyt:" << root.path << std::endl;
       non_empty_roots.emplace_back(root.path);
     }
   }

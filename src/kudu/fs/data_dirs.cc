@@ -248,6 +248,7 @@ Status DataDirManager::OpenExisting(Env* env, CanonicalizedRootsList data_fs_roo
                                     unique_ptr<DataDirManager>* dd_manager) {
   unique_ptr<DataDirManager> dm;
   dm.reset(new DataDirManager(env, opts, std::move(data_fs_roots)));
+  std::cout << "wangxixu-fs_roots:" << std::endl;
   RETURN_NOT_OK(dm->Open());
   dd_manager->swap(dm);
   return Status::OK();
