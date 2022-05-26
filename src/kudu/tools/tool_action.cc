@@ -18,6 +18,7 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -71,44 +72,6 @@ string FakeDescribeOneFlag(const ActionArgsDescriptor::Arg& arg) {
 
 string BuildUsageString(const vector<Mode*>& chain) {
   return JoinMapped(chain, [](Mode* a){ return a->name(); }, " ");
-}
-
-
-// Append 'to_append' to 'dst', but hard-wrapped at 78 columns.
-// After any newline, 'continuation_indent' spaces are prepended.
-void AppendHardWrapped(StringPiece to_append,
-                       int continuation_indent,
-                       string* dst) {
-  const int kWrapColumns = 78;
-  DCHECK_LT(continuation_indent, kWrapColumns);
-
-  // The string we're appending to might not be already at a newline.
-  int last_line_length = 0;
-  auto newline_pos = dst->rfind('\n');
-  if (newline_pos != string::npos) {
-    last_line_length = dst->size() - newline_pos;
-  }
-
-  // Iterate through the words deciding where to wrap.
-  vector<StringPiece> words = strings::Split(to_append, " ");
-  if (words.empty()) return;
-
-  for (const auto& word : words) {
-    // If the next word won't fit on this line, break before we append it.
-    if (last_line_length + word.size() > kWrapColumns) {
-      dst->push_back('\n');
-      for (int i = 0; i < continuation_indent; i++) {
-        dst->push_back(' ');
-      }
-      last_line_length = continuation_indent;
-    }
-    word.AppendToString(dst);
-    dst->push_back(' ');
-    last_line_length += word.size() + 1;
-  }
-
-  // Remove the extra space that we added at the end.
-  dst->resize(dst->size() - 1);
 }
 
 string SpacePad(StringPiece s, int len) {
@@ -424,5 +387,45 @@ void Action::SetOptionalParameterDefaultValues() const {
   }
 }
 
+void AppendHardWrapped(StringPiece to_append,
+                       int continuation_indent,
+                       string* dst) {
+  constexpr int kWrapColumns = 78;
+  DCHECK_LT(continuation_indent, kWrapColumns);
+
+  if (to_append.empty() && dst->empty()) return;
+
+  // The string we're appending to might not be already at a newline.
+  size_t last_line_length = dst->size();
+  auto newline_pos = dst->rfind('\n');
+  if (newline_pos != string::npos) {
+    last_line_length = dst->size() - newline_pos;
+  }
+  vector<StringPiece> lines = strings::Split(to_append, "\n");
+  for (const auto& line : lines) {
+    // Iterate through the words deciding where to wrap.
+    vector<StringPiece> words = strings::Split(line, " ");
+    if (words.empty()) continue;
+    for (const auto& word : words) {
+      // If the next word won't fit on this line, break before we append it.
+      if (last_line_length + word.size() > kWrapColumns) {
+        dst->push_back('\n');
+        for (int i = 0; i < continuation_indent; i++) {
+          dst->push_back(' ');
+        }
+        last_line_length = continuation_indent;
+      }
+      word.AppendToString(dst);
+      dst->push_back(' ');
+      last_line_length += word.size() + 1;
+    }
+    // Remove the extra space that we added at the end.
+    dst->resize(dst->size() - 1);
+    dst->push_back('\n');
+    last_line_length = continuation_indent;
+  }
+  // Remove the extra Enter key that we added at the end.
+  dst->resize(dst->size() - 1);
+}
 } // namespace tools
 } // namespace kudu

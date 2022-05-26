@@ -24,7 +24,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
-
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -321,6 +321,12 @@ class Action {
 
   ActionArgsDescriptor args_;
 };
+
+// Append 'to_append' to 'dst', but hard-wrapped at 78 columns.
+// After any newline, 'continuation_indent' spaces are prepended.
+void AppendHardWrapped(StringPiece to_append,
+                       int continuation_indent,
+                       std::string* dst);
 
 // Returns new nodes for each major mode.
 std::unique_ptr<Mode> BuildClusterMode();

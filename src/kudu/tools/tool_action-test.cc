@@ -150,5 +150,105 @@ TEST(ToolActionTest, TestMasterAddressesToSet) {
   ASSERT_NE(std_set, bad_host_set);
 }
 
+TEST(ToolActionTest, TestAppendHardWrapped) {
+  // Case 1: string is empty.
+  const string& msg1 = "";
+  string formated_msg1;
+  AppendHardWrapped(msg1, 0, &formated_msg1);
+  ASSERT_EQ("", formated_msg1);
+
+  // Case 2: string is a blank space.
+  const string& msg3 = " ";
+  string formated_msg3;
+  AppendHardWrapped(msg3, 0, &formated_msg3);
+  ASSERT_EQ(" ", formated_msg3);
+
+  // Case 3: string length is less than 78.
+  const string& msg2 = "Attempts to create on-disk metadata";
+  string formated_msg2;
+  AppendHardWrapped(msg2, 0, &formated_msg2);
+  ASSERT_EQ("Attempts to create on-disk metadata", formated_msg2);
+
+  // Case 4: string length is more than 78 a little.
+  const string& msg4 = "Attempts to create on-disk metadata "
+                       "that can be used by a non-replicated master";
+  string formated_msg4;
+  AppendHardWrapped(msg4, 0, &formated_msg4);
+  const string& expected_output4 = "Attempts to create on-disk metadata "
+                                   "that can be used by a non-replicated \nmaster";
+  // Contains one '\n'.
+  ASSERT_EQ(expected_output4, formated_msg4);
+
+  // Case 5: string length is less than 78 with one '\n' in the end.
+  const string& msg5 = "Attempts to create on-disk metadata\n";
+  string formated_msg5;
+  AppendHardWrapped(msg5, 0, &formated_msg5);
+  // Contains one '\n'
+  ASSERT_EQ("Attempts to create on-disk metadata\n", formated_msg5);
+
+  // Case 6: string length is more than 78 with one '\n' in the middle.
+  const string& msg6 = "Attempts to create on-disk metadata \n"
+                       "that can be used by a non-replicated master";
+  string formated_msg6;
+  AppendHardWrapped(msg6, 0, &formated_msg6);
+  const string& expected_output6 = "Attempts to create on-disk metadata \n"
+                                   "that can be used by a non-replicated master";
+  // Contains one '\n'
+  ASSERT_EQ(expected_output6, formated_msg6);
+
+  // Case 7: string length is more than 78 with one '\n' in the end.
+  const string& msg7 = "Attempts to create on-disk metadata "
+                       "that can be used by a non-replicated master\n";
+  string formated_msg7;
+  AppendHardWrapped(msg7, 0, &formated_msg7);
+  const string& expected_output7 = "Attempts to create on-disk metadata "
+                                   "that can be used by a non-replicated \nmaster\n";
+  // Contains two '\n'
+  ASSERT_EQ(expected_output7, formated_msg7);
+
+  // Case 8: 2 '\n' in the end.
+  const string& msg8 = "Attempts to create on-disk metadata "
+                       "that can be used by a non-replicated master\n\n";
+  string formated_msg8;
+  AppendHardWrapped(msg8, 0, &formated_msg8);
+  const string& expected_output8 = "Attempts to create on-disk metadata "
+                                   "that can be used by a non-replicated \nmaster\n\n";
+  // contains 3 '\n'.
+  ASSERT_EQ(expected_output8, formated_msg8);
+
+  // Case 9: string is '\n'.
+  const string& msg9 = "\n";
+  string formated_msg9;
+  AppendHardWrapped(msg9, 0, &formated_msg9);
+  ASSERT_EQ("\n", formated_msg9);
+
+  // Case 10: string length is more than 78,
+  // dst is not null and does not contain '\n'.
+  // The old string in dst will be a new line.
+  const string& msg10 = "New line to create on-disk metadata";
+  string formated_msg10 = "Old line to create on-disk metadata. "
+                          "that can be used by a non-replicated master";
+  AppendHardWrapped(msg10, 0, &formated_msg10);
+  const string& expected_output10 = "Old line to create on-disk metadata. "
+                                  "that can be used by a non-replicated master\n"
+                                  "New line to create on-disk metadata";
+  ASSERT_EQ(expected_output10, formated_msg10);
+
+  // Case 11: dst and to_append are all empty.
+  const string& msg11 = "";
+  string formated_msg11 = "";
+  AppendHardWrapped(msg11, 0, &formated_msg11);
+  ASSERT_EQ("", formated_msg11);
+
+  // Case 12: string length is more than 78,
+  // continue indent is 2.
+  const string& msg12 = "Old line to create on-disk metadata. "
+                        "that can be used by a non-replicated master";
+  string formated_msg12;
+  AppendHardWrapped(msg12, 2, &formated_msg12);
+  const string& expected_output12 = "Old line to create on-disk metadata. "
+                "that can be used by a non-replicated \n  master";
+  ASSERT_EQ(expected_output12, formated_msg12);
+}
 } // namespace tools
 } // namespace kudu
