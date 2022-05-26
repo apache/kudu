@@ -571,8 +571,10 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   std::stringstream ss;
 
   int batch_size;
-  if (batch_size>=10000){
+  if (FLAGS_export_batch_size>=10000){
     batch_size=FLAGS_export_batch_size;
+  }else{
+    batch_size=10000;
   }
   ss << currentThreadId;
   std::string currentThreadIdStr = ss.str();
