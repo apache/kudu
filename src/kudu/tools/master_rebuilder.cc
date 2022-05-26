@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -62,6 +64,7 @@ DEFINE_uint32(default_schema_version, 0, "The table schema version assigned to t
               "'kudu pbc dump tablet-meta/<tablet-id>' on each server and taking the max value "
               "found across all tablets. In tablet server versions >= 1.16, Kudu will determine "
               "the proper value for each tablet automatically.");
+DECLARE_string(tables);
 
 using kudu::master::Master;
 using kudu::master::MasterOptions;
@@ -69,11 +72,15 @@ using kudu::master::SysCatalogTable;
 using kudu::master::SysTablesEntryPB;
 using kudu::master::SysTabletsEntryPB;
 using kudu::master::TableInfo;
+using kudu::master::TableInfoLoader;
 using kudu::master::TableMetadataLock;
 using kudu::master::TabletInfo;
+using kudu::master::TabletInfoLoader;
 using kudu::master::TabletMetadataGroupLock;
 using kudu::master::TabletMetadataLock;
 using kudu::tserver::ListTabletsResponsePB;
+using std::map;
+using std::set;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -86,6 +93,58 @@ Status NoOpCb() {
   return Status::OK();
 }
 } // anonymous namespace
+
+static Status DoWrite(SysCatalogTable* sys_catalog,
+                      const map<string, scoped_refptr<master::TableInfo>>& table_by_name,
+                      SysCatalogTable::SysCatalogOperation operation,
+                      map<string, vector<scoped_refptr<TabletInfo>>>* tablet_by_name = nullptr) {
+  if (table_by_name.empty()) return Status::OK();
+  const auto kLeaderTimeout = MonoDelta::FromSeconds(10);
+  RETURN_NOT_OK(sys_catalog->tablet_replica()->consensus()->WaitUntilLeader(kLeaderTimeout));
+  for (const auto& table_entry : table_by_name) {
+    const auto& table = table_entry.second;
+    vector<scoped_refptr<TabletInfo>> tablets;
+    if (tablet_by_name == nullptr ||
+        tablet_by_name->empty()) {
+      table->GetAllTablets(&tablets);
+    } else {
+      if (ContainsKey(*tablet_by_name, table_entry.first))
+        tablets = (*tablet_by_name)[table_entry.first];
+    }
+    TableMetadataLock l_table(table.get(), LockMode::WRITE);
+    TabletMetadataGroupLock l_tablets(LockMode::RELEASED);
+    l_tablets.AddMutableInfos(tablets);
+    l_tablets.Lock(LockMode::WRITE);
+    SysCatalogTable::Actions actions;
+    switch (operation) {
+      case SysCatalogTable::SysCatalogOperation::ADD:
+      {
+        actions.table_to_add = table;
+        actions.tablets_to_add = tablets;
+        break;
+      }
+      case SysCatalogTable::SysCatalogOperation::UPDATE:
+      {
+        actions.table_to_update = table;
+        actions.tablets_to_update = tablets;
+        break;
+      }
+      case SysCatalogTable::SysCatalogOperation::DELETE:
+      {
+        actions.table_to_delete = table;
+        actions.tablets_to_delete = tablets;
+        break;
+      }
+      default:
+        return Status::InvalidArgument(Substitute("Operation:$ is not supported.",
+                                                  operation));
+    }
+    RETURN_NOT_OK_PREPEND(sys_catalog->Write(actions),
+                          Substitute("unable to write metadata for table $0 to sys_catalog",
+                                     table_entry.first));
+  }
+  return Status::OK();
+}
 
 MasterRebuilder::MasterRebuilder(vector<string> tserver_addrs)
     : state_(State::NOT_DONE),
@@ -101,6 +160,8 @@ Status MasterRebuilder::RebuildMaster() {
   CHECK_EQ(State::NOT_DONE, state_);
 
   int bad_tservers = 0;
+  const set<string>& filter_tables = strings::Split(FLAGS_tables, ",",
+                                                    strings::SkipWhitespace());
   for (const auto& tserver_addr : tserver_addrs_) {
     std::unique_ptr<tserver::TabletServerServiceProxy> proxy;
     vector<ListTabletsResponsePB::StatusAndSchemaPB> replicas;
@@ -121,6 +182,7 @@ Status MasterRebuilder::RebuildMaster() {
       const auto& state_str = TabletStatePB_Name(state_pb);
       const auto& tablet_id = tablet_status_pb.tablet_id();
       const auto& table_name = tablet_status_pb.table_name();
+      if (!filter_tables.empty() && !ContainsKey(filter_tables, table_name)) continue;
       switch (state_pb) {
         case tablet::STOPPING:
         case tablet::STOPPED:
@@ -157,10 +219,12 @@ Status MasterRebuilder::RebuildMaster() {
   if (bad_tservers == tserver_addrs_.size()) {
     return Status::ServiceUnavailable("unable to gather any tablet server metadata");
   }
-
-  // Now that we've assembled all the metadata, we can write to a syscatalog table.
-  RETURN_NOT_OK(WriteSysCatalog());
-
+  if (!filter_tables.empty()) {
+    RETURN_NOT_OK(UpsertSysCatalog());
+  } else {
+    // Now that we've assembled all the metadata, we can write to a syscatalog table.
+    RETURN_NOT_OK(WriteSysCatalog());
+  }
   state_ = State::DONE;
   return Status::OK();
 }
@@ -188,7 +252,6 @@ void MasterRebuilder::CreateTable(const ListTabletsResponsePB::StatusAndSchemaPB
   SysTablesEntryPB* metadata = &table->mutable_metadata()->mutable_dirty()->pb;
   const string& table_name = replica.tablet_status().table_name();
   metadata->set_name(table_name);
-
   if (!replica.has_schema_version()) {
     metadata->set_version(FLAGS_default_schema_version);
   } else {
@@ -375,25 +438,68 @@ Status MasterRebuilder::WriteSysCatalog() {
   RETURN_NOT_OK(s);
 
   // Table-by-table, organize the metadata and write it to the syscatalog.
-  vector<scoped_refptr<TabletInfo>> tablets;
-  const auto kLeaderTimeout = MonoDelta::FromSeconds(10);
-  RETURN_NOT_OK(sys_catalog.tablet_replica()->consensus()->WaitUntilLeader(kLeaderTimeout));
-  for (const auto& table_entry : tables_by_name_) {
-    const auto& table = table_entry.second;
-    table->GetAllTablets(&tablets);
-    TableMetadataLock l_table(table.get(), LockMode::WRITE);
-    TabletMetadataGroupLock l_tablets(LockMode::RELEASED);
-    l_tablets.AddMutableInfos(tablets);
-    l_tablets.Lock(LockMode::WRITE);
-    SysCatalogTable::Actions actions;
-    actions.table_to_add = table;
-    actions.tablets_to_add = tablets;
-    RETURN_NOT_OK_PREPEND(sys_catalog.Write(actions),
-                          Substitute("unable to write metadata for table $0 to sys_catalog",
-                                     table_entry.first));
-  }
+  RETURN_NOT_OK(DoWrite(&sys_catalog, tables_by_name_,
+                        SysCatalogTable::SysCatalogOperation::ADD));
   return Status::OK();
 }
 
+Status MasterRebuilder::UpsertSysCatalog() {
+  MasterOptions opts;
+  Master master(opts);
+
+  RETURN_NOT_OK(master.Init());
+  SysCatalogTable sys_catalog(&master, &NoOpCb);
+  RETURN_NOT_OK(sys_catalog.Load(master.fs_manager()));
+  SCOPED_CLEANUP({
+    sys_catalog.Shutdown();
+    master.Shutdown();
+  });
+  // Get all table in syscatalog.
+  TableInfoLoader table_info_loader;
+  sys_catalog.VisitTables(&table_info_loader);
+  map<string, scoped_refptr<master::TableInfo>> table_by_name_in_syscatalog;
+  for (const auto& table : table_info_loader.tables) {
+    table->metadata().ReadLock();
+    InsertOrDie(&table_by_name_in_syscatalog, table->metadata().state().name(),
+                table);
+    table->metadata().ReadUnlock();
+  }
+  // Get all tablets in master.
+  TabletInfoLoader tablet_info_loader;
+  sys_catalog.VisitTablets(&tablet_info_loader);
+
+  string new_table_name;
+  map<string, scoped_refptr<master::TableInfo>> table_by_name_to_delete;
+  map<string, vector<scoped_refptr<TabletInfo>>> tablet_by_name_to_delete;
+  map<string, scoped_refptr<master::TableInfo>> table_by_name_to_add;
+  for (const auto& table_entry : tables_by_name_) {
+    table_entry.second->metadata().ReadLock();
+    new_table_name = table_entry.second->metadata().state().name();
+    table_entry.second->metadata().ReadUnlock();
+    if (ContainsKey(table_by_name_in_syscatalog, new_table_name)) {
+      InsertOrDie(&table_by_name_to_delete, new_table_name,
+                  table_by_name_in_syscatalog[new_table_name]);
+      // Get all tablets for this table.
+      vector<scoped_refptr<TabletInfo>> tablets;
+      for (const auto& tablet : tablet_info_loader.tablets) {
+        tablet->metadata().ReadLock();
+        if (tablet->metadata().state().pb.table_id() ==
+            table_by_name_in_syscatalog[new_table_name]->id())
+          tablets.push_back(tablet);
+        tablet->metadata().ReadUnlock();
+      }
+      InsertOrDie(&tablet_by_name_to_delete, new_table_name, tablets);
+    }
+    InsertOrDie(&table_by_name_to_add, table_entry.first, table_entry.second);
+  }
+
+  // If a table found in master, delete it then add it.
+  RETURN_NOT_OK(DoWrite(&sys_catalog, table_by_name_to_delete,
+                        SysCatalogTable::SysCatalogOperation::DELETE,
+                        &tablet_by_name_to_delete));
+  RETURN_NOT_OK(DoWrite(&sys_catalog, table_by_name_to_add,
+                        SysCatalogTable::SysCatalogOperation::ADD));
+  return Status::OK();
+}
 } // namespace tools
 } // namespace kudu

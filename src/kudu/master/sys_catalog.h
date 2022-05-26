@@ -101,6 +101,27 @@ class TServerStateVisitor {
                        const SysTServerStateEntryPB& metadata) = 0;
 };
 
+class TableInfoLoader : public TableVisitor {
+ public:
+  void Reset();
+
+  Status VisitTable(const std::string& table_id,
+                    const SysTablesEntryPB& metadata) override;
+
+  std::vector<scoped_refptr<TableInfo>> tables;
+};
+
+class TabletInfoLoader : public TabletVisitor {
+ public:
+  void Reset();
+
+  Status VisitTablet(const std::string& /*table_id*/,
+                     const std::string& tablet_id,
+                     const SysTabletsEntryPB& metadata) override;
+
+  std::vector<scoped_refptr<TabletInfo>> tablets;
+};
+
 // SysCatalogTable is a Kudu table that keeps track of the following
 // system information:
 //   * cluster id
@@ -155,6 +176,12 @@ class SysCatalogTable {
     HMS_NOTIFICATION_LOG = 5, // HMS notification log latest event ID.
     TSERVER_STATE = 6,        // TServer state.
     CLUSTER_ID = 7            // Unique Cluster ID.
+  };
+
+  enum SysCatalogOperation {
+    ADD,
+    UPDATE,
+    DELETE,
   };
 
   // 'leader_cb_' is invoked whenever this node is elected as a leader

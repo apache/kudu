@@ -95,26 +95,6 @@ class SysCatalogTest : public KuduTest {
   unique_ptr<MasterServiceProxy> proxy_;
 };
 
-class TestTableLoader : public TableVisitor {
- public:
-  void Reset() {
-    tables.clear();
-  }
-
-  Status VisitTable(const string& table_id,
-                    const SysTablesEntryPB& metadata) override {
-    // Setup the table info
-    scoped_refptr<TableInfo> table = new TableInfo(table_id);
-    TableMetadataLock l(table.get(), LockMode::WRITE);
-    l.mutable_data()->pb.CopyFrom(metadata);
-    l.Commit();
-    tables.emplace_back(std::move(table));
-    return Status::OK();
-  }
-
-  vector<scoped_refptr<TableInfo>> tables;
-};
-
 static bool PbEquals(const google::protobuf::Message& a, const google::protobuf::Message& b) {
   return pb_util::SecureDebugString(a) == pb_util::SecureDebugString(b);
 }
@@ -130,7 +110,7 @@ static bool MetadatasEqual(const scoped_refptr<C>& ti_a,
 // Test the sys-catalog tables basic operations (add, update, delete,
 // visit)
 TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
-  TestTableLoader loader;
+  TableInfoLoader loader;
   auto* sys_catalog = master_->catalog_manager()->sys_catalog();
 
   ASSERT_OK(sys_catalog->VisitTables(&loader));
@@ -226,27 +206,6 @@ TEST_F(SysCatalogTest, TestTableInfoCommit) {
   }
 }
 
-class TestTabletLoader : public TabletVisitor {
- public:
-  void Reset() {
-    tablets.clear();
-  }
-
-  Status VisitTablet(const string& /*table_id*/,
-                     const string& tablet_id,
-                     const SysTabletsEntryPB& metadata) override {
-    // Setup the tablet info
-    scoped_refptr<TabletInfo> tablet = new TabletInfo(nullptr, tablet_id);
-    TabletMetadataLock l(tablet.get(), LockMode::WRITE);
-    l.mutable_data()->pb.CopyFrom(metadata);
-    l.Commit();
-    tablets.emplace_back(std::move(tablet));
-    return Status::OK();
-  }
-
-  vector<scoped_refptr<TabletInfo>> tablets;
-};
-
 // Create a new TabletInfo. The object is in uncommitted
 // state.
 static scoped_refptr<TabletInfo> CreateTablet(
@@ -274,7 +233,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
   SysCatalogTable* sys_catalog = master_->catalog_manager()->sys_catalog();
 
-  TestTabletLoader loader;
+  TabletInfoLoader loader;
   ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
   ASSERT_EQ(0, loader.tablets.size());
 

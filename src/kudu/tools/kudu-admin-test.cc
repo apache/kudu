@@ -16,7 +16,6 @@
 // under the License.
 
 #include <algorithm>
-#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <deque>
@@ -50,8 +49,11 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
@@ -61,12 +63,17 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
+#include "kudu/master/catalog_manager.h"
+#include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/master/master_options.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/tablet_server-test-base.h"
+#include "kudu/util/cow_object.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -75,12 +82,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-
-namespace kudu {
-namespace tserver {
-class ListTabletsResponsePB;
-}  // namespace tserver
-}  // namespace kudu
 
 DECLARE_int32(num_replicas);
 DECLARE_int32(num_tablet_servers);
@@ -118,13 +119,19 @@ using kudu::itest::WAIT_FOR_LEADER;
 using kudu::itest::WaitForReplicasReportedToMaster;
 using kudu::itest::WaitForServersToAgree;
 using kudu::itest::WaitUntilCommittedConfigNumVotersIs;
-using kudu::itest::WaitUntilCommittedOpIdIndexIs;
 using kudu::itest::WaitUntilTabletInState;
 using kudu::itest::WaitUntilTabletRunning;
+using kudu::master::Master;
+using kudu::master::MasterOptions;
+using kudu::master::SysCatalogTable;
+using kudu::master::TableInfo;
+using kudu::master::TableInfoLoader;
+using kudu::master::TableMetadataLock;
+using kudu::master::TabletInfo;
+using kudu::master::TabletInfoLoader;
+using kudu::master::TabletMetadataGroupLock;
 using kudu::master::VOTER_REPLICA;
 using kudu::pb_util::SecureDebugString;
-using kudu::tserver::ListTabletsResponsePB;
-using std::atomic;
 using std::back_inserter;
 using std::copy;
 using std::deque;
@@ -142,7 +149,13 @@ namespace kudu {
 
 namespace tools {
 
-  // Helper to format info when a tool action fails.
+namespace {
+Status NoOpCb() {
+  return Status::OK();
+}
+} // anonymous namespace
+
+// Helper to format info when a tool action fails.
 static string ToolRunInfo(const Status& s, const string& out, const string& err) {
   ostringstream str;
   str << s.ToString() << endl;
@@ -3038,7 +3051,10 @@ constexpr const char* kPrincipal = "oryx";
 
 vector<string> RebuildMasterCmd(const ExternalMiniCluster& cluster,
                                 int tserver_num,
-                                bool is_secure, bool log_to_stderr = false) {
+                                bool is_secure,
+                                bool log_to_stderr = false,
+                                const string& tables = "",
+                                const int& default_replica_num = 1) {
   CHECK_GT(tserver_num, 0);
   CHECK_LE(tserver_num, cluster.num_tablet_servers());
   vector<string> command = {
@@ -3049,6 +3065,9 @@ vector<string> RebuildMasterCmd(const ExternalMiniCluster& cluster,
     "-fs_wal_dir",
     cluster.master()->wal_dir(),
   };
+  if (!tables.empty()) {
+    command.emplace_back(Substitute("-tables=$0", tables));
+  }
   if (log_to_stderr) {
     command.emplace_back("--logtostderr");
   }
@@ -3059,6 +3078,7 @@ vector<string> RebuildMasterCmd(const ExternalMiniCluster& cluster,
     auto* ts = cluster.tablet_server(i);
     command.emplace_back(ts->bound_rpc_hostport().ToString());
   }
+  command.emplace_back(Substitute("--default_num_replicas=$0", default_replica_num));
   return command;
 }
 
@@ -3104,6 +3124,118 @@ TEST_F(AdminCliTest, TestRebuildMasterWhenNonEmpty) {
   ASSERT_STR_CONTAINS(stdout,
                       "Rebuilt from 3 tablet servers, of which 0 had errors");
   ASSERT_STR_CONTAINS(stdout, "Rebuilt from 1 replicas, of which 0 had errors");
+}
+
+void delete_table_in_syscatalog(const string& wal_dir,
+                                const std::vector<std::string>& data_dirs,
+                                const string& del_table_name) {
+  MasterOptions opts;
+  opts.fs_opts.wal_root = wal_dir;
+  opts.fs_opts.data_roots = data_dirs;
+  Master master(opts);
+  ASSERT_OK(master.Init());
+  SysCatalogTable sys_catalog(&master, &NoOpCb);
+  ASSERT_OK(sys_catalog.Load(master.fs_manager()));
+  // Get table from sys_catalog.
+  const auto kLeaderTimeout = MonoDelta::FromSeconds(10);
+  ASSERT_OK(sys_catalog.tablet_replica()->consensus()->WaitUntilLeader(kLeaderTimeout));
+  TableInfoLoader table_info_loader;
+  sys_catalog.VisitTables(&table_info_loader);
+  scoped_refptr<TableInfo> table_info;
+  for (const auto& table : table_info_loader.tables) {
+    table->metadata().ReadLock();
+    string table_name = table->metadata().state().name();
+    table->metadata().ReadUnlock();
+    if (table_name == del_table_name) {
+      table_info = table;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, table_info);
+
+  // Get tablet from sys_catalog.
+  TabletInfoLoader tablet_info_loader;
+  sys_catalog.VisitTablets(&tablet_info_loader);
+  vector<scoped_refptr<TabletInfo>> tablets;
+  for (const auto& tablet : tablet_info_loader.tablets) {
+    tablet->metadata().ReadLock();
+    if (tablet->metadata().state().pb.table_id() == table_info->id())
+      tablets.push_back(tablet);
+    tablet->metadata().ReadUnlock();
+  }
+  ASSERT_GT(tablets.size(), 0);
+
+  // Delete one table and it's tablets.
+  TableMetadataLock l_table(table_info.get(), LockMode::WRITE);
+  TabletMetadataGroupLock l_tablets(LockMode::RELEASED);
+  l_tablets.AddMutableInfos(tablets);
+  l_tablets.Lock(LockMode::WRITE);
+  SysCatalogTable::Actions actions;
+  actions.table_to_delete = table_info;
+  actions.tablets_to_delete = tablets;
+  ASSERT_OK(sys_catalog.Write(actions));
+
+  NO_FATALS(sys_catalog.Shutdown());
+  NO_FATALS(master.Shutdown());
+}
+
+// Rebuild tables according to part of tables not all tables.
+TEST_F(AdminCliTest, TestRebuildTables) {
+  FLAGS_num_tablet_servers = 3;
+  NO_FATALS(BuildAndStart({}, {}, {}, /*create_table*/false));
+  // Create 3 tables.
+  constexpr const char* kTable1 = "TestTable";
+  NO_FATALS(MakeTestTable(kTable1, /*num_rows*/10, /*num_replicas*/1, cluster_.get()));
+  constexpr const char* kTable2 = "TestTable1";
+  NO_FATALS(MakeTestTable(kTable2, /*num_rows*/10, /*num_replicas*/1, cluster_.get()));
+  constexpr const char* kTable3 = "TestTable2";
+  NO_FATALS(MakeTestTable(kTable3, /*num_rows*/10, /*num_replicas*/1, cluster_.get()));
+
+  const string& part_tables = Substitute("$0,$1", kTable1, kTable2);
+  NO_FATALS(cluster_->master()->Shutdown());
+
+  string stdout1;
+  string stderr1;
+  // Rebuild 2 tables in update mode.
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, FLAGS_num_tablet_servers,
+                                         /*is_secure*/false, /*log_to_stderr*/true,
+                                         part_tables, /*default_replica_num*/1),
+                        &stdout1, &stderr1));
+  ASSERT_STR_CONTAINS(stdout1,
+                      "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout1, "Rebuilt from 2 replicas, of which 0 had errors");
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  // Restart the cluster to check cluster healthy.
+  cluster_->Restart();
+  WaitForTSAndReplicas();
+  ClusterVerifier cv1(cluster_.get());
+  NO_FATALS(cv1.CheckCluster());
+
+  NO_FATALS(cluster_->master()->Shutdown());
+  // Delete kTable1 in syscatalog.
+  delete_table_in_syscatalog(cluster_->master()->wal_dir(),
+                            cluster_->master()->data_dirs(),
+                            kTable1);
+  string stdout2;
+  string stderr2;
+  // Rebuild kTable1 in add mode.
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, FLAGS_num_tablet_servers,
+                                         /*is_secure*/false, /*log_to_stderr*/true, kTable1),
+                        &stdout2, &stderr2));
+  ASSERT_STR_NOT_CONTAINS(stderr2, "must be empty");
+  ASSERT_STR_CONTAINS(stdout2,
+                      "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout2, "Rebuilt from 1 replicas, of which 0 had errors");
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  // Restart the cluster to check cluster healthy.
+  cluster_->Restart();
+  WaitForTSAndReplicas();
+  ClusterVerifier cv2(cluster_.get());
+  NO_FATALS(cv2.CheckCluster());
 }
 
 // Test that the master rebuilder ignores tombstones.
@@ -3203,7 +3335,8 @@ TEST_F(AdminCliTest, TestAddColumnsAndRebuildMaster) {
   // The tool will firstly use schema on tserver-0 which holds an outdated schema, then
   // use the newer schema on tserver-1 to rebuild master.
   string stdout;
-  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, 2, /*is_secure*/false, /*log_to_stderr*/true),
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, 2,
+                        /*is_secure*/false, /*log_to_stderr*/true, "", 3),
                         &stdout));
   ASSERT_STR_CONTAINS(stdout, "Rebuilt from 2 tablet servers, of which 0 had errors");
   ASSERT_STR_CONTAINS(stdout, "Rebuilt from 2 replicas, of which 0 had errors");

@@ -72,6 +72,7 @@ DECLARE_int64(timeout_ms);
 DECLARE_string(columns);
 DECLARE_string(fs_wal_dir);
 DECLARE_string(fs_data_dirs);
+DECLARE_string(tables);
 
 DEFINE_string(master_uuid, "", "Permanent UUID of the master. Only needed to disambiguate in case "
                                "of multiple masters with same RPC address");
@@ -906,7 +907,7 @@ unique_ptr<Mode> BuildMasterMode() {
   }
 
   {
-    const char* rebuild_extra_description = "Attempts to create on-disk metadata "
+    const char* rebuild_extra_description = "Attempts to create or update on-disk metadata "
         "that can be used by a non-replicated master to recover a Kudu cluster "
         "that has permanently lost its masters. It has a number of limitations:\n\n"
         " - Security metadata like cryptographic keys are not rebuilt. Tablet servers "
@@ -927,6 +928,9 @@ unique_ptr<Mode> BuildMasterMode() {
         "a very large number.\n\n"
         " - Table metadata like comments, owners, and configurations are not stored on "
         "tablet servers and are thus not restored.\n\n"
+        " - Without '--tables', the tool will build a brand new syscatalog table based on "
+        "tablet data on tablet server metadata.\n\n"
+        " - With '--tables', the tool will update specific tables in current syscatalog.\n\n"
         "WARNING: This tool is potentially unsafe. Only use it when there is no "
         "possibility of recovering the original masters, and you know what you "
         "are doing.\n";
@@ -940,6 +944,7 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddOptionalParameter("fs_data_dirs")
         .AddOptionalParameter("fs_metadata_dir")
         .AddOptionalParameter("fs_wal_dir")
+        .AddOptionalParameter("tables")
         .Build();
     builder.AddAction(std::move(unsafe_rebuild));
   }
