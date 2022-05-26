@@ -534,7 +534,6 @@ Status TableScanner::ScanCSVData(const std::vector<kudu::client::KuduScanToken*>
     while (scanner->HasMoreRows()) {
       KuduScanBatch batch;
       RETURN_NOT_OK(scanner->NextBatch(&batch));
-      scanner->KeepAlive();
       count += batch.NumRows();
       total_count_.IncrementBy(batch.NumRows());
       cb(batch,scanner);
