@@ -2273,7 +2273,7 @@ class PosixEnv : public Env {
 
   bool IsEncryptionEnabled() const override { return FLAGS_encrypt_data_at_rest; }
 
-  void SetEncryptionKey(int key_size, const uint8_t* server_key) override {
+  void SetEncryptionKey(const uint8_t* server_key, size_t key_size) override {
     EncryptionHeader eh;
     switch (key_size) {
       case 128:

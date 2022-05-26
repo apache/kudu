@@ -390,7 +390,8 @@ class Env {
 
   virtual bool IsEncryptionEnabled() const = 0;
 
-  virtual void SetEncryptionKey(int key_size, const uint8_t* key) = 0;
+  // Set the raw server encryption key. The key size is in bits.
+  virtual void SetEncryptionKey(const uint8_t* key, size_t key_size) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Env);

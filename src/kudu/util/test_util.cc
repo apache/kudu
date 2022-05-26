@@ -201,7 +201,7 @@ void KuduTest::OverrideKrb5Environment() {
 void KuduTest::SetEncryptionFlags(bool enable_encryption) {
   FLAGS_encrypt_data_at_rest = enable_encryption;
   if (enable_encryption) {
-    Env::Default()->SetEncryptionKey(kEncryptionKeySize * 8, kEncryptionKey);
+    Env::Default()->SetEncryptionKey(kEncryptionKey, kEncryptionKeySize * 8);
   }
 }
 

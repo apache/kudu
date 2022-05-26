@@ -49,6 +49,8 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/server/default_key_provider.h"
+#include "kudu/server/key_provider.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
@@ -144,6 +146,7 @@ using kudu::fs::ReadableBlock;
 using kudu::fs::UpdateInstanceBehavior;
 using kudu::fs::WritableBlock;
 using kudu::pb_util::SecureDebugString;
+using kudu::security::DefaultKeyProvider;
 using std::ostream;
 using std::string;
 using std::unique_ptr;
@@ -193,6 +196,9 @@ FsManager::FsManager(Env* env, FsManagerOpts opts)
     meta_on_xfs_(false) {
   DCHECK(opts_.update_instances == UpdateInstanceBehavior::DONT_UPDATE ||
          !opts_.read_only) << "FsManager can only be for updated if not in read-only mode";
+  if (FLAGS_encrypt_data_at_rest) {
+    key_provider_.reset(new DefaultKeyProvider());
+  }
 }
 
 FsManager::~FsManager() {}
@@ -457,10 +463,14 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     read_instance_metadata_files->Stop();
   }
 
-  if (!server_key().empty()) {
-    env_->SetEncryptionKey(server_key().length() * 4,
-                           reinterpret_cast<const uint8_t*>(
-                             strings::a2b_hex(server_key()).c_str()));
+  if (!server_key().empty() && key_provider_) {
+    string server_key;
+    RETURN_NOT_OK(key_provider_->DecryptServerKey(this->server_key(), &server_key));
+    // 'server_key' is a hexadecimal string and SetEncryptionKey expects bits
+    // (hex / 2 = bytes * 8 = bits).
+    env_->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
+                             strings::a2b_hex(server_key).c_str()),
+                           server_key.length() * 4);
   }
 
   // Open the directory manager if it has not been opened already.
@@ -672,14 +682,18 @@ Status FsManager::CreateInstanceMetadata(boost::optional<string> uuid,
     metadata->set_uuid(oid_generator_.Next());
   }
   if (server_key) {
-    metadata->set_server_key(server_key.get());
+    RETURN_NOT_OK(key_provider_->EncryptServerKey(server_key.get(),
+                                                  metadata->mutable_server_key()));
   } else if (FLAGS_encrypt_data_at_rest) {
     uint8_t key_bytes[32];
     int num_bytes = FLAGS_encryption_key_length / 8;
     DCHECK(num_bytes <= sizeof(key_bytes));
     OPENSSL_RET_NOT_OK(RAND_bytes(key_bytes, num_bytes),
                        "Failed to generate random key");
-    strings::b2a_hex(key_bytes, metadata->mutable_server_key(), num_bytes);
+    string plain_server_key;
+    strings::b2a_hex(key_bytes, &plain_server_key, num_bytes);
+    RETURN_NOT_OK(key_provider_->EncryptServerKey(plain_server_key,
+                                                  metadata->mutable_server_key()));
   }
 
   string time_str;

@@ -36,6 +36,7 @@
 #include "kudu/client/master_rpc.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/server/key_provider.h"
 #if !defined(NO_CHRONY)
 #include "kudu/clock/test/mini_chronyd.h"
 #endif
@@ -56,6 +57,7 @@
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/server/default_key_provider.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -87,6 +89,7 @@ using kudu::master::MasterServiceProxy;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
+using kudu::security::DefaultKeyProvider;
 using kudu::server::ServerStatusPB;
 using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
@@ -1090,6 +1093,7 @@ Status ExternalMiniCluster::RemoveMaster(const HostPort& hp) {
 
 ExternalDaemon::ExternalDaemon(ExternalDaemonOptions opts)
     : opts_(std::move(opts)),
+      key_provider_(new DefaultKeyProvider()),
       parent_tid_(std::this_thread::get_id()) {
   CHECK(rpc_bind_address().Initialized());
 }
@@ -1278,10 +1282,11 @@ Status ExternalDaemon::SetServerKey() {
   LOG(INFO) << "Reading " << path;
   InstanceMetadataPB instance;
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env(), path, &instance, pb_util::NOT_SENSITIVE));
-  if (string key = instance.server_key();
-      !key.empty()) {
+  if (!instance.server_key().empty()) {
+    string key;
+    RETURN_NOT_OK(key_provider_->DecryptServerKey(instance.server_key(), &key));
     LOG(INFO) << "Setting key " << key;
-    env()->SetEncryptionKey(key.size() * 4, reinterpret_cast<const uint8_t*>(a2b_hex(key).c_str()));
+    env()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(a2b_hex(key).c_str()), key.size() * 4);
   }
   return Status::OK();
 }

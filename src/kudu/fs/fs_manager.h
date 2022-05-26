@@ -39,6 +39,12 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
+namespace kudu {
+namespace security {
+class KeyProvider;
+}  // namespace security
+}  // namespace kudu
+
 DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
@@ -416,6 +422,8 @@ class FsManager {
   std::unique_ptr<fs::FsErrorManager> error_manager_;
   std::unique_ptr<fs::DataDirManager> dd_manager_;
   std::unique_ptr<fs::BlockManager> block_manager_;
+
+  std::unique_ptr<security::KeyProvider> key_provider_;
 
   ObjectIdGenerator oid_generator_;
 

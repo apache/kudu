@@ -48,6 +48,9 @@ class Env;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
+namespace security {
+class KeyProvider;
+}  // namespace security
 
 namespace client {
 class KuduClient;
@@ -548,6 +551,7 @@ class ExternalMiniCluster : public MiniCluster {
   std::unique_ptr<MiniKdc> kdc_;
   std::unique_ptr<hms::MiniHms> hms_;
   std::unique_ptr<ranger::MiniRanger> ranger_;
+  std::unique_ptr<security::KeyProvider> key_provider_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
 
@@ -738,6 +742,8 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   std::unique_ptr<Subprocess> perf_record_process_;
 
   std::unique_ptr<server::ServerStatusPB> status_;
+
+  std::unique_ptr<security::KeyProvider> key_provider_;
 
   // These capture the daemons parameters and running ports and
   // are used to Restart() the daemon with the same parameters.

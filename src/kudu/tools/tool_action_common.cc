@@ -911,8 +911,8 @@ Status SetServerKey() {
 
   if (string key = instance.server_key();
       !key.empty()) {
-    Env::Default()->SetEncryptionKey(key.length() * 4,
-                                     reinterpret_cast<const uint8_t*>(a2b_hex(key).c_str()));
+    Env::Default()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(a2b_hex(key).c_str()),
+                                     key.length() * 4);
   }
 
   return Status::OK();
