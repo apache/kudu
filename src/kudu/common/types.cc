@@ -45,7 +45,7 @@ TypeInfo::TypeInfo(TypeTraitsClass /*t*/)
     max_value_(TypeTraitsClass::max_value()),
     is_virtual_(TypeTraitsClass::IsVirtual()),
     append_func_(TypeTraitsClass::AppendDebugStringForValue),
-    append_csv_func_(TypeTraitsClass::AppendDebugStringForValue),
+    append_csv_func_(TypeTraitsClass::AppendDebugCSVStringForValue),
     compare_func_(TypeTraitsClass::Compare),
     are_consecutive_func_(TypeTraitsClass::AreConsecutive) {
 }
