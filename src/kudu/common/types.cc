@@ -151,3 +151,4 @@ void DataTypeTraits<DATE>::AppendDebugCSVStringForValue(const void* val, string*
   }
 
 } // namespace kudu
+}
