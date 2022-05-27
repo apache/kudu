@@ -586,8 +586,9 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   int balance;
 
   std::string ret="";
-  ret.reserve(10000);
+  ret.reserve(batch_size/2);
   vector<std::string> row_array;
+  row_array.reserve(batch_size/2);
   char delimeter=',';
   string column_namess; 
 
