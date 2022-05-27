@@ -480,16 +480,18 @@ struct DataTypeTraits<BINARY> {
   static const char *name() {
     return "binary";
   }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->append(strings::CHexEscape(s->ToString()));
+  }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
     str->push_back('"');
     str->append(strings::CHexEscape(s->ToString()));
     str->push_back('"');
   }
-  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
-    const Slice *s = reinterpret_cast<const Slice *>(val);
-    str->append(strings::CHexEscape(s->ToString()));
-  }
+  
   static int Compare(const void *lhs, const void *rhs) {
     const Slice *lhs_slice = reinterpret_cast<const Slice *>(lhs);
     const Slice *rhs_slice = reinterpret_cast<const Slice *>(rhs);
@@ -564,7 +566,7 @@ struct DerivedTypeTraits {
     DataTypeTraits<PhysicalType>::AppendDebugStringForValue(val, str);
   }
   static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
-    DataTypeTraits<PhysicalType>::AppendDebugStringForValue(val, str);
+    DataTypeTraits<PhysicalType>::AppendDebugCSVStringForValue(val, str);
   }
 
   static int Compare(const void *lhs, const void *rhs) {
@@ -592,16 +594,18 @@ struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
   static const char* name() {
     return "string";
   }
+
+  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
+    const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->append(strings::Utf8SafeCEscape(s->ToString()));
+  }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
     str->push_back('"');
     str->append(strings::Utf8SafeCEscape(s->ToString()));
     str->push_back('"');
   }
-  static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
-    const Slice *s = reinterpret_cast<const Slice *>(val);
-    str->append(strings::Utf8SafeCEscape(s->ToString()));
-  }
+  
 };
 
 
