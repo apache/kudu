@@ -483,7 +483,9 @@ struct DataTypeTraits<BINARY> {
 
   static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
-    str->append(strings::CHexEscape(s->ToString()));
+    str->push_back('"');
+    str->append(strings::CSVCHexEscape(s->ToString()));
+    str->push_back('"');
   }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
@@ -597,7 +599,9 @@ struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
 
   static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
-    str->append(strings::Utf8SafeCEscape(s->ToString()));
+    str->push_back('"');
+    str->append(strings::CSVUtf8SafeCEscape(s->ToString()));
+    str->push_back('"');
   }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
@@ -764,7 +768,9 @@ struct DataTypeTraits<VARCHAR> : public DerivedTypeTraits<BINARY>{
   }
   static void AppendDebugCSVStringForValue(const void *val, std::string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
-    str->append(strings::Utf8SafeCEscape(s->ToString()));
+    str->push_back('"');
+    str->append(strings::CSVUtf8SafeCEscape(s->ToString()));
+    str->push_back('"');
   }
 };
 

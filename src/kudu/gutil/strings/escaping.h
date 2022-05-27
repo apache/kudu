@@ -203,6 +203,15 @@ int Utf8SafeCEscapeString(const char* src, int src_len, char* dest,
 int Utf8SafeCHexEscapeString(const char* src, int src_len, char* dest,
                              int dest_len);
 
+
+int CSVCEscapeString(const char* src, int src_len, char* dest, int dest_len);
+int CSVCHexEscapeString(const char* src, int src_len, char* dest, int dest_len);
+int CSVUtf8SafeCEscapeString(const char* src, int src_len, char* dest,
+                          int dest_len);
+int CSVUtf8SafeCHexEscapeString(const char* src, int src_len, char* dest,
+                             int dest_len);
+
+
 // ----------------------------------------------------------------------
 // CEscape()
 // CHexEscape()
@@ -217,6 +226,11 @@ std::string CEscape(const StringPiece& src);
 std::string CHexEscape(const StringPiece& src);
 std::string Utf8SafeCEscape(const StringPiece& src);
 std::string Utf8SafeCHexEscape(const StringPiece& src);
+
+std::string CSVCEscape(const StringPiece& src);
+std::string CSVCHexEscape(const StringPiece& src);
+std::string CSVUtf8SafeCEscape(const StringPiece& src);
+std::string CSVUtf8SafeCHexEscape(const StringPiece& src);
 
 // ----------------------------------------------------------------------
 // BackslashEscape()
