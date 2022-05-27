@@ -136,6 +136,18 @@ void DataTypeTraits<DATE>::AppendDebugStringForValue(const void* val, string* st
   } else {
     str->append(Substitute("value $0 out of range for DATE type", days_since_unix_epoch));
   }
+  
 }
+void DataTypeTraits<DATE>::AppendDebugCSVStringForValue(const void* val, string* str) {
+  constexpr static const char* kDateFormat = "%F"; // the ISO 8601 date format
+  static constexpr time_t kSecondsInDay = 24 * 60 * 60;
+
+  int32_t days_since_unix_epoch = *reinterpret_cast<const int32_t*>(val);
+  if (IsValidValue(days_since_unix_epoch)) {
+    time_t seconds = static_cast<time_t>(days_since_unix_epoch) * kSecondsInDay;
+    StringAppendStrftime(str, kDateFormat, seconds, false);
+  } else {
+    str->append(Substitute("value $0 out of range for DATE type", days_since_unix_epoch));
+  }
 
 } // namespace kudu
