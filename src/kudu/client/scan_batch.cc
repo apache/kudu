@@ -399,14 +399,14 @@ string KuduScanBatch::RowPtr::ToString() const {
   return ret;
 }
 
-string* KuduScanBatch::RowPtr::ToCSVRowString(std::string& ret, std::vector<std::string>& row_array, char& delimeter) const {
+string* KuduScanBatch::RowPtr::ToCSVRowString(std::string& ret) const {
   ret.clear();
   //returned ret="abc","cde","efg"
   ScopedDisableRedaction no_redaction;
   bool first = true;
   for (int i = 0; i < schema_->num_columns(); i++) {
     if (!first) {
-      ret.append(", ");
+      ret.append(",");
     }
     RowCell cell(this, i);
     schema_->column(i).DebugCSVCellAppend(cell, &ret);

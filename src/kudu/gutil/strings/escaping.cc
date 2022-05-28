@@ -567,10 +567,14 @@ int CSVCEscapeInternal(const char* src, int src_len, char* dest,
       case '\n': dest[used++] = '\\'; dest[used++] = 'n';  break;
       case '\r': dest[used++] = '\\'; dest[used++] = 'r';  break;
       case '\t': dest[used++] = '\\'; dest[used++] = 't';  break;
-      case '\"': dest[used++] = '\\'; dest[used++] = '\"\\\"'; break;
+      case '\"': dest[used++] = '\\'; dest[used++] = '\"';dest[used++] = '\"'; break;
       case '\'': dest[used++] = '\\'; dest[used++] = '\''; break;
       case '\\': dest[used++] = '\\'; dest[used++] = '\\'; break;
+      // case '"' : dest[used++] = '\"'; dest[used++] = '\"'; break;
       default:
+        if (*src=='"'){
+          dest[used++]='\"';dest[used++]='\"';
+        }
         // Note that if we emit \xNN and the src character after that is a hex
         // digit then that digit must be escaped too to prevent it being
         // interpreted as part of the character code by C.

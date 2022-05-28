@@ -926,10 +926,10 @@ string KuduSchema::ToString() const {
                  : "()";
 }
 
-void KuduSchema::ToCSVRowString(char& delimeter, std::string& output) const {
+void KuduSchema::ToCSVRowString(std::string& output) const {
   schema_->ToCSVRowString(FLAGS_show_attributes ?
                                      Schema::ToStringMode::WITH_COLUMN_ATTRIBUTES
-                                     : Schema::ToStringMode::BASE_INFO, &delimeter,&output);
+                                     : Schema::ToStringMode::BASE_INFO,&output);
 }
 
 KuduSchema KuduSchema::FromSchema(const Schema& schema) {

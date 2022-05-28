@@ -716,7 +716,7 @@ class KUDU_EXPORT KuduSchema {
   ///
   /// @return A string describing this schema.
   std::string ToString() const;
-  void ToCSVRowString(char& delimeter, std::string& output) const;
+  void ToCSVRowString(std::string& output) const;
 
   /// @cond PRIVATE_API
 
