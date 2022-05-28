@@ -600,6 +600,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
       if (!coloum_Names_added){
         const KuduSchema* coloumn_names=batch.projection_schema();
         (*coloumn_names).ToCSVRowString(column_namess);
+        row_batch.append(column_namess);
         coloum_Names_added=true;
       }
       for (const auto& row : batch) {
