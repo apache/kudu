@@ -20,6 +20,7 @@
 Simple script which performs some sanity checks on the built thirdparty/.
 """
 
+import argparse
 import os
 import subprocess
 import sys
@@ -84,13 +85,21 @@ echo All TSAN dependencies checked
 """.format(tp_dir=TP_DIR))
 
 
-def main():
+def main(argv):
+  p = argparse.ArgumentParser()
+  p.add_argument("--tsan", dest="tsan", action="store_true",
+                 help="Whether the thirdparty is built in TSAN configuration",
+                 default=False, required=False)
+  args = p.parse_args(argv)
   print("Running post-flight checks")
   print("-------------------------")
-  check_tsan_dependencies()
+  if args.tsan:
+    check_tsan_dependencies()
+  else:
+    print("Skipping the check of TSAN dependencies")
   print("-------------------------")
   print("Post-flight checks succeeded.")
   return 0
 
 if __name__ == "__main__":
-  sys.exit(main())
+  sys.exit(main(sys.argv[1:]))

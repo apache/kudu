@@ -117,7 +117,11 @@ fi
 
 finish() {
   # Run the post-flight checks.
-  $TP_DIR/postflight.py
+  local postflight_args=
+  if [ -n "$F_TSAN" ]; then
+    postflight_args="$postflight_args --tsan"
+  fi
+  $TP_DIR/postflight.py $postflight_args
 
   echo "---------------------"
   echo "Thirdparty dependencies '$ARGS_TO_PRINT' built and installed successfully"
