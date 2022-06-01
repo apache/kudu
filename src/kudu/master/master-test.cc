@@ -1049,8 +1049,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
                            range_hash_schemas);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Both 'split_rows' and 'range_hash_schemas' cannot be "
-                        "populated at the same time.");
+                        "both split rows and custom hash schema ranges "
+                        "cannot be populated at the same time");
   }
 
   // No non-range columns.

@@ -432,7 +432,7 @@ TEST_F(CompositeIntKeysTest, OneHashKeyInListHashPruning) {
   GeneratePartitionSchema(schema, { { { "a" }, 3 } }, {}, &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
   ASSERT_EQ(3, partitions.size());
 
   // Verify the splitted values can merge into original set without overlapping.
@@ -474,7 +474,7 @@ TEST_F(CompositeIntKeysTest, OneHashKeyOneRangeKeyInListHashPruning) {
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions(
-      { split1, split2 }, {}, {}, schema, &partitions));
+      { split1, split2 }, {}, schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   ASSERT_EQ("a IN () AND b IN (50, 100)",
@@ -552,7 +552,7 @@ TEST_F(CompositeIntKeysTest, OneHashKeyMultiRangeKeyInListHashPruning) {
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions(
-      { split1, split2 }, {}, {}, schema, &partitions));
+      { split1, split2 }, {}, schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   ASSERT_EQ("PK >= (int8 a=4, int8 b=0, int8 c=-128) AND "
@@ -630,7 +630,7 @@ TEST_F(CompositeIntKeysTest, DifferentHashRangeKeyInListHashPruning) {
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions(
-      { split1, split2 }, {}, {}, schema, &partitions));
+      { split1, split2 }, {}, schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   ASSERT_EQ("PK >= (int8 a=4, int8 b=0, int8 c=-128) AND "
@@ -702,7 +702,7 @@ TEST_F(CompositeIntKeysTest, HashKeyInListHashPruningEmptyDetect) {
       schema, { { { "a" }, 3 } }, {}, &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
   ASSERT_EQ(3, partitions.size());
 
   ASSERT_EQ("PK >= (int8 a=4, int8 b=50, int8 c=-128) AND "
@@ -734,7 +734,7 @@ TEST_F(CompositeIntKeysTest, MultiHashKeyOneColumnInListHashPruning) {
       schema, { { { "a" }, 3 }, { { "b" }, 3 }, }, {}, &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   // p1, p2, p3 should have the same predicate values to be pushed on hash(a).
@@ -807,7 +807,7 @@ TEST_F(CompositeIntKeysTest, MultiHashColumnsInListHashPruning) {
       schema, { { { "a", "b" }, 3 } }, {}, &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
   ASSERT_EQ(3, partitions.size());
 
   ASSERT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=-128) AND "
@@ -844,7 +844,7 @@ TEST_F(CompositeIntKeysTest, MultiHashKeyMultiHashInListHashPruning) {
       schema, { { { "a", "b" }, 3 }, { { "c" }, 3 } }, {}, &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   ASSERT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=40) AND "
@@ -922,7 +922,7 @@ TEST_F(CompositeIntKeysTest, NonKeyValuesInListHashPruning) {
       schema, { { { "a" }, 3 } }, {}, &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
   ASSERT_EQ(3, partitions.size());
 
   ASSERT_EQ("d IN (1, 2, 3, 4, 5)",

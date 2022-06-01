@@ -286,10 +286,11 @@ class PartitionSchema {
   // in each dimension of the hash schema.
   typedef std::vector<HashDimension> HashSchema;
 
+  // A structure representing a range with custom hash schema.
   struct RangeWithHashSchema {
-    std::string lower;
-    std::string upper;
-    HashSchema hash_schema;
+    std::string lower;      // encoded range key: lower boundary
+    std::string upper;      // encoded range key: upper boundary
+    HashSchema hash_schema; // hash schema for the range
   };
   typedef std::vector<RangeWithHashSchema> RangesWithHashSchemas;
 
@@ -322,14 +323,22 @@ class PartitionSchema {
   // of resulting partitions is the product of the number of hash buckets for
   // each hash bucket component, multiplied by
   // (split_rows.size() + max(1, range_bounds.size())).
-  // 'range_hash_schemas' contains each range's HashSchema,
-  // its order corresponds to the bounds in 'range_bounds'.
-  // If 'range_hash_schemas' is empty, the table wide hash schema is used per range.
-  // Size of 'range_hash_schemas' and 'range_bounds' are equal if 'range_hash_schema' isn't empty.
   Status CreatePartitions(
       const std::vector<KuduPartialRow>& split_rows,
       const std::vector<std::pair<KuduPartialRow, KuduPartialRow>>& range_bounds,
-      const std::vector<HashSchema>& range_hash_schemas,
+      const Schema& schema,
+      std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
+
+  // Similar to the method above, but uses the 'ranges_with_hash_schemas_'
+  // member field as the input to produce the result partitions.
+  Status CreatePartitions(
+      const Schema& schema,
+      std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
+
+  // Create the set of partitions for a single range with specified hash schema.
+  Status CreatePartitionsForRange(
+      const std::pair<KuduPartialRow, KuduPartialRow>& range_bound,
+      const HashSchema& range_hash_schema,
       const Schema& schema,
       std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 
@@ -512,6 +521,13 @@ class PartitionSchema {
       const HashSchema& hash_schema,
       const KeyEncoder<std::string>& hash_encoder);
 
+  // Create the set of partitions given the specified ranges with per-range
+  // hash schemas. The 'partitions' output parameter must be non-null.
+  Status CreatePartitions(
+      const RangesWithHashSchemas& ranges_with_hash_schemas,
+      const Schema& schema,
+      std::vector<Partition>* partitions) const;
+
   // PartitionKeyDebugString implementation for row types.
   template<typename Row>
   std::string PartitionKeyDebugStringImpl(const Row& row) const;
@@ -578,6 +594,20 @@ class PartitionSchema {
   // Validates that this partition schema is valid. Returns OK, or an
   // appropriate error code for an invalid partition schema.
   Status Validate(const Schema& schema) const;
+
+  // Check the range partition schema for consistency: make sure the columns
+  // used in the range partitioning are present in the table's schema and there
+  // aren't any duplicate columns.
+  Status CheckRangeSchema(const Schema& schema) const;
+
+  // Update partitions' boundaries provided with 'partitions' in-out parameter,
+  // assuming the 'partitions' are populated by calling the CreatePartitions()
+  // method. When a table has two or more hash components, there will be gaps
+  // in between partitions at the boundaries of the component ranges. This
+  // method fills in the address space to have the proper ordering of the
+  // serialized partition keys -- that's important for partition pruning and
+  // overall ordering of the serialized partition keys.
+  void UpdatePartitionBoundaries(std::vector<Partition>* partitions) const;
 
   // Validates the split rows, converts them to partition key form, and inserts
   // them into splits in sorted order.

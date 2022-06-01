@@ -1018,7 +1018,7 @@ Status GetPartitionForTxnStatusTablet(int64_t start_txn_id, int64_t end_txn_id,
   RETURN_NOT_OK(upper_bound.SetInt64(TxnStatusTablet::kTxnIdColName, end_txn_id));
   vector<Partition> ps;
   RETURN_NOT_OK(pschema.CreatePartitions(/*split_rows=*/{},
-      { std::make_pair(lower_bound, upper_bound) }, {}, schema, &ps));
+      { std::make_pair(lower_bound, upper_bound) }, schema, &ps));
   *partition = ps[0];
   *partition_schema = pschema;
   return Status::OK();

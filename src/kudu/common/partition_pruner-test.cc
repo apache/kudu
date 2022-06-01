@@ -73,8 +73,6 @@ class PartitionPrunerTest : public KuduTest {
       const vector<ColumnNameAndIntValue>& lower_int_cols,
       const vector<ColumnNameAndIntValue>& upper_int_cols,
       const vector<ColumnNamesNumBucketsAndSeed>& hash_schemas,
-      vector<pair<KuduPartialRow, KuduPartialRow>>* bounds,
-      vector<PartitionSchema::HashSchema>* range_hash_schemas,
       PartitionSchemaPB* pb);
 };
 
@@ -137,8 +135,6 @@ void PartitionPrunerTest::AddRangePartitionWithSchema(
     const vector<ColumnNameAndIntValue>& lower_int_cols,
     const vector<ColumnNameAndIntValue>& upper_int_cols,
     const vector<ColumnNamesNumBucketsAndSeed>& hash_buckets_info,
-    vector<pair<KuduPartialRow, KuduPartialRow>>* bounds,
-    vector<PartitionSchema::HashSchema>* range_hash_schemas,
     PartitionSchemaPB* pb) {
   auto* range = pb->add_custom_hash_schema_ranges();
   RowOperationsPBEncoder encoder(range->mutable_range_bounds());
@@ -172,8 +168,6 @@ void PartitionPrunerTest::AddRangePartitionWithSchema(
     hash_dimension.seed = get<2>(hash_bucket_info);
     hash_schema.emplace_back(hash_dimension);
   }
-  range_hash_schemas->emplace_back(std::move(hash_schema));
-  bounds->emplace_back(lower, upper);
 }
 
 TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
@@ -202,7 +196,7 @@ TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
   ASSERT_OK(split2.SetInt8("c", 10));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, schema, &partitions));
 
   // Creates a scan with optional lower and upper bounds, and checks that the
   // expected number of tablets are pruned.
@@ -320,7 +314,7 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
   ASSERT_OK(split2.SetStringCopy("b", "r"));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, schema, &partitions));
 
   // Applies the specified lower and upper bound primary keys against the
   // schema, and checks that the expected number of partitions are pruned.
@@ -429,7 +423,7 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
   ASSERT_OK(split.SetInt8("b", 0));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split }, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split }, {}, schema, &partitions));
 
   // Applies the specified lower and upper bound primary keys against the
   // schema, and checks that the expected number of partitions are pruned.
@@ -518,7 +512,7 @@ TEST_F(PartitionPrunerTest, TestRangePruning) {
   ASSERT_OK(split2.SetStringCopy("b", "r"));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, schema, &partitions));
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
@@ -687,7 +681,7 @@ TEST_F(PartitionPrunerTest, TestHashPruning) {
     ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
     vector<Partition> partitions;
-    ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, {},
+    ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {},
                                                        schema, &partitions));
 
 
@@ -763,7 +757,7 @@ TEST_F(PartitionPrunerTest, TestInListHashPruning) {
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, {},
+  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {},
                                                      schema, &partitions));
 
 
@@ -841,9 +835,8 @@ TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, {},
+  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {},
                                                      schema, &partitions));
-
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
@@ -940,7 +933,7 @@ TEST_F(PartitionPrunerTest, TestPruning) {
 
   vector<Partition> partitions;
   ASSERT_OK(partition_schema.CreatePartitions(
-      vector<KuduPartialRow>{ split }, {}, {}, schema, &partitions));
+      vector<KuduPartialRow>{ split }, {},  schema, &partitions));
   ASSERT_EQ(4, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -1047,7 +1040,7 @@ TEST_F(PartitionPrunerTest, TestKudu2173) {
   KuduPartialRow split1(&schema);
   ASSERT_OK(split1.SetInt8("a", 10));
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split1 }, {}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split1 }, {}, schema, &partitions));
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
@@ -1099,9 +1092,6 @@ TEST_F(PartitionPrunerTest, DISABLED_TestHashSchemasPerRangePruning) {
   PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"C"}, { {{"A"}, 2, 0}, {{"B"}, 2, 0} }, &pb);
 
-  vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  vector<PartitionSchema::HashSchema> range_hash_schemas;
-
   // Need to add per range hash schema components to the field
   // 'ranges_with_hash_schemas_' of PartitionSchema because PartitionPruner will
   // use them to construct partition key ranges. Currently,
@@ -1112,26 +1102,24 @@ TEST_F(PartitionPrunerTest, DISABLED_TestHashSchemasPerRangePruning) {
 
   // [(_, _, a), (_, _, c))
   AddRangePartitionWithSchema(schema, {{"C", "a"}}, {{"C", "c"}}, {}, {},
-                              { {{"A"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"A"}, 3, 0} }, &pb);
 
   // [(_, _, d), (_, _, f))
   AddRangePartitionWithSchema(schema, {{"C", "d"}}, {{"C", "f"}}, {}, {},
-                              { {{"A"}, 2, 0}, {{"B"}, 3, 0} },
-                              &bounds, &range_hash_schemas, &pb);
+                              { {{"A"}, 2, 0}, {{"B"}, 3, 0} }, &pb);
 
   // [(_, _, h), (_, _, j))
-  AddRangePartitionWithSchema(schema, {{"C", "h"}}, {{"C", "j"}}, {}, {},
-                              {}, &bounds, &range_hash_schemas, &pb);
+  AddRangePartitionWithSchema(schema, {{"C", "h"}}, {{"C", "j"}}, {}, {}, {}, &pb);
 
   // [(_, _, k), (_, _, m))
   AddRangePartitionWithSchema(schema, {{"C", "k"}}, {{"C", "m"}}, {}, {},
-                              { {{"B"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"B"}, 2, 0} }, &pb);
 
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(schema, &partitions));
   ASSERT_EQ(12, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -1291,26 +1279,23 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
   PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"a", "b"}, {}, &pb);
 
-  vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  vector<PartitionSchema::HashSchema> range_hash_schemas;
-
   // [(0, 0, _), (2, 2, _))
   AddRangePartitionWithSchema(schema, {}, {}, {{"a", 0}, {"b", 0}}, {{"a", 2}, {"b", 2}},
-                              { {{"c"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"c"}, 2, 0} }, &pb);
 
   // [(2, 2, _), (4, 4, _))
   AddRangePartitionWithSchema(schema, {}, {}, {{"a", 2}, {"b", 2}}, {{"a", 4}, {"b", 4}},
-                              { {{"c"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"c"}, 3, 0} }, &pb);
 
   // [(4, 4, _), (6, 6, _))
   AddRangePartitionWithSchema(schema, {}, {}, {{"a", 4}, {"b", 4}}, {{"a", 6}, {"b", 6}},
-                              { {{"c"}, 4, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"c"}, 4, 0} }, &pb);
 
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   Arena arena(1024);
@@ -1398,28 +1383,25 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
   PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"A"}, { {{"B", "C"}, 3, 0} }, &pb);
 
-  vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  vector<PartitionSchema::HashSchema> range_hash_schemas;
-
   // None of the ranges below uses the table-wide hash schema.
 
   // [(a, _, _), (c, _, _))
   AddRangePartitionWithSchema(schema, {{"A", "a"}}, {{"A", "c"}}, {}, {},
-                              { {{"B"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"B"}, 3, 0} }, &pb);
 
   // [(c, _, _), (e, _, _))
   AddRangePartitionWithSchema(schema, {{"A", "c"}}, {{"A", "e"}}, {}, {},
-                              {}, &bounds, &range_hash_schemas, &pb);
+                              {}, &pb);
 
   // [(e, _, _), (g, _, _))
   AddRangePartitionWithSchema(schema, {{"A", "e"}}, {{"A", "g"}}, {}, {},
-                              { {{"C"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"C"}, 3, 0} }, &pb);
 
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(schema, &partitions));
   ASSERT_EQ(7, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -1497,30 +1479,26 @@ TEST_F(PartitionPrunerTest, DISABLED_TestSingleRangeElementAndBoundaryCase) {
   PartitionSchemaPB pb;
   CreatePartitionSchemaPB({"A"}, {}, &pb);
 
-  vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
-  vector<PartitionSchema::HashSchema> range_hash_schemas;
-
   // [(_, _), (1, _))
   AddRangePartitionWithSchema(schema, {}, {}, {}, {{"A", 1}},
-                              {{{"B"}, 4, 0}}, &bounds, &range_hash_schemas, &pb);
+                              {{{"B"}, 4, 0}}, &pb);
 
   // [(1, _), (2, _))
   AddRangePartitionWithSchema(schema, {}, {}, {{"A", 1}}, {{"A", 2}},
-                              { {{"B"}, 2, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"B"}, 2, 0} }, &pb);
 
   // [(2, _), (3, _))
   AddRangePartitionWithSchema(schema, {}, {}, {{"A", 2}}, {{"A", 3}},
-                              { {{"B"}, 3, 0} }, &bounds, &range_hash_schemas, &pb);
+                              { {{"B"}, 3, 0} }, &pb);
 
   // [(3, _), (_, _))
-  AddRangePartitionWithSchema(schema, {}, {}, {{"A", 3}}, {},
-                              {}, &bounds, &range_hash_schemas, &pb);
+  AddRangePartitionWithSchema(schema, {}, {}, {{"A", 3}}, {}, {}, &pb);
 
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(schema, &partitions));
   ASSERT_EQ(10, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected

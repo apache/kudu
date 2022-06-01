@@ -1917,30 +1917,32 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     }
   }
 
-  // TODO(aserbin): make sure range boundaries in
-  //                req.partition_schema().custom_hash_schema_ranges()
-  //                correspond to range_bounds?
-  vector<PartitionSchema::HashSchema> range_hash_schemas;
-  if (FLAGS_enable_per_range_hash_schemas) {
-    // TODO(aserbin): the signature of CreatePartitions() require the
-    //                'range_hash_schemas' parameters: update its signature
-    //                to remove the extra parameter and rely on its
-    //                'ranges_with_hash_schemas_' member field; the path in
-    //                CatalogManager::ApplyAlterPartitioningSteps() involving
-    //                CreatePartitions() should be updated correspondingly.
-    const auto& ps = req.partition_schema();
-    for (int i = 0; i < ps.custom_hash_schema_ranges_size(); i++) {
-      PartitionSchema::HashSchema hash_schema;
-      RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
-          schema, ps.custom_hash_schema_ranges(i).hash_schema(), &hash_schema));
-      range_hash_schemas.emplace_back(std::move(hash_schema));
-    }
-  }
-
-  // Create partitions based on specified partition schema and split rows.
   vector<Partition> partitions;
-  RETURN_NOT_OK(partition_schema.CreatePartitions(
-      split_rows, range_bounds, range_hash_schemas, schema, &partitions));
+  if (const auto& ps = req.partition_schema();
+      FLAGS_enable_per_range_hash_schemas && !ps.custom_hash_schema_ranges().empty()) {
+    // TODO(aserbin): in addition, should switch to specifying range information
+    //                only via 'PartitionSchemaPB::custom_hash_schema_ranges' or
+    //                'CreateTableRequestPB::split_rows_range_bounds', don't mix
+    if (!split_rows.empty()) {
+      return Status::InvalidArgument(
+          "both split rows and custom hash schema ranges cannot be "
+          "populated at the same time");
+    }
+    if (const auto ranges_with_hash_schemas_size =
+            partition_schema.ranges_with_hash_schemas().size();
+        range_bounds.size() != ranges_with_hash_schemas_size) {
+      return Status::InvalidArgument(
+          Substitute("$0 vs $1: per range hash schemas and range bounds "
+                     "must have the same size",
+                     ranges_with_hash_schemas_size, range_bounds.size()));
+    }
+    // Create partitions based on specified ranges with custom hash schemas.
+    RETURN_NOT_OK(partition_schema.CreatePartitions(schema, &partitions));
+  } else {
+    // Create partitions based on specified partition schema and split rows.
+    RETURN_NOT_OK(partition_schema.CreatePartitions(
+        split_rows, range_bounds, schema, &partitions));
+  }
 
   // Check the restriction on the same number of hash dimensions across all the
   // ranges. Also, check that the table-wide hash schema has the same number
@@ -2628,29 +2630,15 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
   vector<PartitionSchema::HashSchema> range_hash_schemas;
   for (const auto& step : steps) {
+    CHECK(step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION ||
+          step.type() == AlterTableRequestPB::DROP_RANGE_PARTITION);
+    const auto& range_bouds =
+        step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION
+        ? step.add_range_partition().range_bounds()
+        : step.drop_range_partition().range_bounds();
+    RowOperationsPBDecoder decoder(&range_bouds, &client_schema, &schema, nullptr);
     vector<DecodedRowOperation> ops;
-    if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION) {
-      if (FLAGS_enable_per_range_hash_schemas &&
-          step.add_range_partition().custom_hash_schema_size() > 0) {
-        const Schema schema = client_schema.CopyWithColumnIds();
-        PartitionSchema::HashSchema hash_schema;
-        RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
-            schema, step.add_range_partition().custom_hash_schema(), &hash_schema));
-        if (partition_schema.hash_schema().size() != hash_schema.size()) {
-          return Status::NotSupported(
-              "varying number of hash dimensions per range is not yet supported");
-        }
-        range_hash_schemas.emplace_back(std::move(hash_schema));
-      }
-      RowOperationsPBDecoder decoder(&step.add_range_partition().range_bounds(),
-                                     &client_schema, &schema, nullptr);
-      RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
-    } else {
-      CHECK_EQ(step.type(), AlterTableRequestPB::DROP_RANGE_PARTITION);
-      RowOperationsPBDecoder decoder(&step.drop_range_partition().range_bounds(),
-                                     &client_schema, &schema, nullptr);
-      RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
-    }
+    RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
 
     if (ops.size() != 2) {
       return Status::InvalidArgument(
@@ -2677,8 +2665,26 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     }
 
     vector<Partition> partitions;
-    RETURN_NOT_OK(partition_schema.CreatePartitions(
-        {}, {{ *ops[0].split_row, *ops[1].split_row }}, range_hash_schemas, schema, &partitions));
+    const pair<KuduPartialRow, KuduPartialRow> range_bound =
+        { *ops[0].split_row, *ops[1].split_row };
+    if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION &&
+        FLAGS_enable_per_range_hash_schemas &&
+        step.add_range_partition().custom_hash_schema_size() > 0) {
+      const Schema schema = client_schema.CopyWithColumnIds();
+      PartitionSchema::HashSchema hash_schema;
+      RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
+          schema, step.add_range_partition().custom_hash_schema(), &hash_schema));
+      if (partition_schema.hash_schema().size() != hash_schema.size()) {
+        return Status::NotSupported(
+            "varying number of hash dimensions per range is not yet supported");
+      }
+      RETURN_NOT_OK(partition_schema.CreatePartitionsForRange(
+          range_bound, hash_schema, schema, &partitions));
+    } else {
+      RETURN_NOT_OK(partition_schema.CreatePartitions(
+          {}, { range_bound }, schema, &partitions));
+    }
+
     switch (step.type()) {
       case AlterTableRequestPB::ADD_RANGE_PARTITION: {
         for (const Partition& partition : partitions) {
