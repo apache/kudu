@@ -1326,6 +1326,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("export_batch_size")
       .AddOptionalParameter("timeout_millis")
       .AddOptionalParameter("keepAliveDuration")
+      .AddOptionalParameter("scan_batch_size")
       .Build();
 
   unique_ptr<Action> copy_table =

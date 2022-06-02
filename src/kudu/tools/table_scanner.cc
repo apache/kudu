@@ -131,6 +131,8 @@ DEFINE_string(target_folder, ".",
 DEFINE_int64(export_batch_size,10000,"export batch size bytes. Batch Size should be greater than 10000 ");
 DEFINE_int64(timeout_millis,3000000,"timeout milliseconds");
 DEFINE_int64(keepAliveDuration,30000,"keep alive calling to keep the scanners alive while exporting ");
+DEFINE_int64(scan_batch_size,1048576,"The size for batches of scan results (upper bound = 8388608)");
+
 
 
 static bool ValidateWriteType(const char* flag_name,
@@ -695,7 +697,7 @@ Status TableScanner::StartWork(WorkType type) {
     RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
   }
   RETURN_NOT_OK(builder.SetTimeoutMillis(FLAGS_timeout_millis));
-  RETURN_NOT_OK(builder.SetBatchSizeBytes(FLAGS_export_batch_size));
+  RETURN_NOT_OK(builder.SetBatchSizeBytes(FLAGS_scan_batch_size));
 
   // Set projection if needed.
   if (type == WorkType::kScan) {
