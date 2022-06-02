@@ -451,6 +451,8 @@ void RowSetInfo::SplitKeyRange(const RowSetTree& tree,
 RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
     : cdf_min_key_(init_cdf),
       cdf_max_key_(init_cdf),
+      value_(0.0),
+      density_(0.0),
       extra_(new ExtraData()) {
   extra_->rowset = rs;
   extra_->base_and_redos_size_bytes = rs->OnDiskBaseDataSizeWithRedos();
