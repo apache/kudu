@@ -364,6 +364,39 @@ public class AlterTableOptions {
   }
 
   /**
+   * Similar to the other addRangePartition() methods, but instead of adding a
+   * range with table-wide hash schema, this method adds a range with
+   * custom hash schema.
+   *
+   * @param range the range with custom hash schema
+   * @return this instance
+   */
+  public AlterTableOptions addRangePartition(RangePartitionWithCustomHashSchema range) {
+    Preconditions.checkNotNull(range);
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ADD_RANGE_PARTITION);
+    AlterTableRequestPB.AddRangePartition.Builder rangeBuilder =
+        AlterTableRequestPB.AddRangePartition.newBuilder();
+    rangeBuilder.setRangeBounds(
+        new Operation.OperationsEncoder().encodeLowerAndUpperBounds(
+            range.getLowerBound(), range.getUpperBound(),
+            range.getLowerBoundType(), range.getUpperBoundType()));
+    for (org.apache.kudu.Common.PartitionSchemaPB.HashBucketSchemaPB hashSchema :
+        range.toPB().getHashSchemaList()) {
+      Common.PartitionSchemaPB.HashBucketSchemaPB.Builder hbs =
+          rangeBuilder.addCustomHashSchemaBuilder();
+      hbs.mergeFrom(hashSchema);
+    }
+    step.setAddRangePartition(rangeBuilder);
+    if (!pb.hasSchema()) {
+      pb.setSchema(ProtobufHelper.schemaToPb(range.getLowerBound().getSchema(),
+          EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT,
+              SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_ID)));
+    }
+    return this;
+  }
+
+  /**
    * Drop the range partition from the table with the specified inclusive lower bound and exclusive
    * upper bound. The bounds must match exactly, and may not span multiple range partitions.
    *
