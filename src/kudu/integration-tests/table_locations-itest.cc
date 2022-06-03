@@ -162,12 +162,18 @@ class TableLocationsTest : public KuduTest {
   };
   typedef vector<HashDimension> HashSchema;
 
+  struct RangeWithHashSchema {
+    KuduPartialRow lower;
+    KuduPartialRow upper;
+    HashSchema hash_schema;
+  };
+
   Status CreateTable(
       const string& table_name,
       const Schema& schema,
       const vector<KuduPartialRow>& split_rows = {},
       const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds = {},
-      const vector<HashSchema>& range_hash_schemas = {},
+      const vector<RangeWithHashSchema>& ranges_with_hash_schemas = {},
       const HashSchema& table_hash_schema = {});
 
   void CreateTable(const string& table_name, int num_splits);
@@ -185,14 +191,8 @@ Status TableLocationsTest::CreateTable(
     const Schema& schema,
     const vector<KuduPartialRow>& split_rows,
     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
-    const vector<HashSchema>& range_hash_schemas,
+    const vector<RangeWithHashSchema>& ranges_with_hash_schemas,
     const HashSchema& table_hash_schema) {
-
-  if (!range_hash_schemas.empty() && range_hash_schemas.size() != bounds.size()) {
-    return Status::InvalidArgument(
-        "'bounds' and 'range_hash_schemas' must be of the same size");
-  }
-
   CreateTableRequestPB req;
   req.set_name(table_name);
   RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
@@ -206,14 +206,12 @@ Status TableLocationsTest::CreateTable(
   }
 
   auto* ps_pb = req.mutable_partition_schema();
-  for (size_t i = 0; i < range_hash_schemas.size(); ++i) {
-    const auto& bound = bounds[i];
-    const auto& hash_schema = range_hash_schemas[i];
+  for (const auto& range_and_hash_schema : ranges_with_hash_schemas) {
     auto* range = ps_pb->add_custom_hash_schema_ranges();
     RowOperationsPBEncoder encoder(range->mutable_range_bounds());
-    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, bound.first);
-    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
-    for (const auto& hash_dimension : hash_schema) {
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, range_and_hash_schema.lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, range_and_hash_schema.upper);
+    for (const auto& hash_dimension : range_and_hash_schema.hash_schema) {
       auto* hash_dimension_pb = range->add_hash_schema();
       for (const string& col_name : hash_dimension.columns) {
         hash_dimension_pb->add_columns()->set_name(col_name);
@@ -492,23 +490,18 @@ TEST_F(TableLocationsTest, RangeSpecificHashingSameDimensions) {
   ASSERT_OK(bounds[4].first.SetStringNoCopy(0, "g"));
   ASSERT_OK(bounds[4].second.SetStringNoCopy(0, "h"));
 
-  vector<HashSchema> range_hash_schemas;
-  HashSchema hash_schema_5 = { { { "str_0", "int_1" }, 5, 0 } };
-  range_hash_schemas.emplace_back(hash_schema_5);
-  HashSchema hash_schema_4 = { { { "str_0" }, 4, 1 } };
-  range_hash_schemas.emplace_back(hash_schema_4);
-  HashSchema hash_schema_3 = { { { "int_1" }, 3, 2 } };
-  range_hash_schemas.emplace_back(hash_schema_3);
-  HashSchema hash_schema_6 = { { { "str_2", "str_0" }, 6, 3 } };
-  range_hash_schemas.emplace_back(hash_schema_6);
+  const HashSchema table_wide_hash_schema{ { { "str_2" }, 2, 4 } };
 
-  // Use 2 bucket hash schema as the table-wide one.
-  HashSchema table_hash_schema_2 = { { { "str_2" }, 2, 4 } };
-  // Apply table-wide hash schema applied to this range.
-  range_hash_schemas.emplace_back(table_hash_schema_2);
+  const vector<RangeWithHashSchema> ranges_with_hash_schemas{
+    { bounds[0].first, bounds[0].second, { { { "str_0", "int_1" }, 5, 0 } } },
+    { bounds[1].first, bounds[1].second, { { { "str_0" }, 4, 1 } } },
+    { bounds[2].first, bounds[2].second, { { { "int_1" }, 3, 2 } } },
+    { bounds[3].first, bounds[3].second, { { { "str_2", "str_0" }, 6, 3 } } },
+    { bounds[4].first, bounds[4].second, table_wide_hash_schema },
+  };
 
-  ASSERT_OK(CreateTable(
-      table_name, schema, {}, bounds, range_hash_schemas, table_hash_schema_2));
+  ASSERT_OK(CreateTable(table_name, schema, {}, {},
+                        ranges_with_hash_schemas, table_wide_hash_schema));
   NO_FATALS(CheckMasterTableCreation(table_name, 20));
 
   // The default setting for GetTableLocationsRequestPB::max_returned_locations
@@ -573,17 +566,16 @@ TEST_F(TableLocationsTest, RangeSpecificHashingVaryingDimensions) {
   ASSERT_OK(bounds[1].first.SetStringNoCopy(0, "c"));
   ASSERT_OK(bounds[1].second.SetStringNoCopy(0, "d"));
 
-  vector<HashSchema> range_hash_schemas;
-  HashSchema hash_schema_3_by_2 = { { { "key" }, 3, 0 }, { { "val" }, 2, 1 } };
-  range_hash_schemas.emplace_back(hash_schema_3_by_2);
+  const HashSchema table_wide_hash_schema{ { { "val" }, 4, 2 } };
 
-  // Use 4 bucket hash schema as the table-wide one.
-  HashSchema table_hash_schema_4 = { { { "val" }, 4, 2 } };
-  // Apply table-wide hash schema applied to this range.
-  range_hash_schemas.emplace_back(table_hash_schema_4);
+  const vector<RangeWithHashSchema> ranges_with_hash_schemas{
+    { bounds[0].first, bounds[0].second,
+          { { { { "key" }, 3, 0 }, { { "val" }, 2, 1 } } } },
+    { bounds[1].first, bounds[1].second, table_wide_hash_schema },
+  };
 
-  const auto s = CreateTable(
-      table_name, schema, {}, bounds, range_hash_schemas, table_hash_schema_4);
+  const auto s = CreateTable(table_name, schema, {}, {},
+                             ranges_with_hash_schemas, table_wide_hash_schema);
   ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
       "varying number of hash dimensions per range is not yet supported");

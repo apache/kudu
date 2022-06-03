@@ -1874,7 +1874,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
       PartitionSchema::FromPB(req.partition_schema(), schema, &partition_schema),
       resp, MasterErrorPB::INVALID_SCHEMA));
 
-  // Decode split rows.
+  // Decode split rows and range bounds.
   vector<KuduPartialRow> split_rows;
   vector<pair<KuduPartialRow, KuduPartialRow>> range_bounds;
 
@@ -1883,7 +1883,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   vector<DecodedRowOperation> ops;
   RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
 
-  for (int i = 0; i < ops.size(); i++) {
+  for (size_t i = 0; i < ops.size(); ++i) {
     const DecodedRowOperation& op = ops[i];
     switch (op.type) {
       case RowOperationsPB::SPLIT_ROW: {
@@ -1920,21 +1920,15 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   vector<Partition> partitions;
   if (const auto& ps = req.partition_schema();
       FLAGS_enable_per_range_hash_schemas && !ps.custom_hash_schema_ranges().empty()) {
-    // TODO(aserbin): in addition, should switch to specifying range information
-    //                only via 'PartitionSchemaPB::custom_hash_schema_ranges' or
-    //                'CreateTableRequestPB::split_rows_range_bounds', don't mix
     if (!split_rows.empty()) {
       return Status::InvalidArgument(
-          "both split rows and custom hash schema ranges cannot be "
+          "both split rows and custom hash schema ranges must not be "
           "populated at the same time");
     }
-    if (const auto ranges_with_hash_schemas_size =
-            partition_schema.ranges_with_hash_schemas().size();
-        range_bounds.size() != ranges_with_hash_schemas_size) {
+    if (!range_bounds.empty()) {
       return Status::InvalidArgument(
-          Substitute("$0 vs $1: per range hash schemas and range bounds "
-                     "must have the same size",
-                     ranges_with_hash_schemas_size, range_bounds.size()));
+          "both range bounds and custom hash schema ranges must not be "
+          "populated at the same time");
     }
     // Create partitions based on specified ranges with custom hash schemas.
     RETURN_NOT_OK(partition_schema.CreatePartitions(schema, &partitions));
@@ -1949,7 +1943,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // of hash dimensions as all the partitions with custom hash schemas.
   //
   // TODO(aserbin): remove the restriction once the rest of the code is ready
-  //                to handle range partitions with arbitrary hash schemas
+  //                to handle range partitions with arbitrary number of hash
+  //                dimensions in hash schemas
   CHECK(!partitions.empty());
   const auto hash_dimensions_num = partition_schema.hash_schema().size();
   for (const auto& p : partitions) {

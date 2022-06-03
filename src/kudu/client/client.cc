@@ -971,24 +971,26 @@ Status KuduTableCreator::Create() {
       return Status::InvalidArgument("range bounds must not be null");
     }
 
-    RowOperationsPB_Type lower_bound_type =
+    const RowOperationsPB_Type lower_bound_type =
         range->lower_bound_type_ == KuduTableCreator::INCLUSIVE_BOUND
         ? RowOperationsPB::RANGE_LOWER_BOUND
         : RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
 
-    RowOperationsPB_Type upper_bound_type =
+    const RowOperationsPB_Type upper_bound_type =
         range->upper_bound_type_ == KuduTableCreator::EXCLUSIVE_BOUND
         ? RowOperationsPB::RANGE_UPPER_BOUND
         : RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
 
-    splits_encoder.Add(lower_bound_type, *range->lower_bound_);
-    splits_encoder.Add(upper_bound_type, *range->upper_bound_);
-
-    if (has_range_with_custom_hash_schema) {
+    if (!has_range_with_custom_hash_schema) {
+      splits_encoder.Add(lower_bound_type, *range->lower_bound_);
+      splits_encoder.Add(upper_bound_type, *range->upper_bound_);
+    } else {
       auto* range_pb = partition_schema->add_custom_hash_schema_ranges();
       RowOperationsPBEncoder encoder(range_pb->mutable_range_bounds());
       encoder.Add(lower_bound_type, *range->lower_bound_);
       encoder.Add(upper_bound_type, *range->upper_bound_);
+      // Now, after adding the information range bounds, add the information
+      // on hash schema for the range.
       if (range->is_table_wide_hash_schema_) {
         // With the presence of a range with custom hash schema when the
         // table-wide hash schema is used for this particular range, also add an
