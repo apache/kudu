@@ -7784,8 +7784,11 @@ TEST_F(ToolTest, ConnectionNegotiationTimeoutOption) {
     auto s = RunActionStderrString(Substitute(kPattern, rpc_addr, 10, 11), &msg);
     ASSERT_TRUE(s.IsRuntimeError());
     ASSERT_STR_CONTAINS(msg, Substitute(
-        "Timed out: Client connection negotiation failed: client connection to "
-        "$0: received 0 of 4 requested bytes", rpc_addr));
+        "Timed out: Client connection negotiation failed: "
+        "client connection to $0", rpc_addr));
+    ASSERT_STR_MATCHES(msg,
+        "(Timeout exceeded waiting to connect)|"
+        "(received|sent) 0 of .* requested bytes");
   }
 
   {
