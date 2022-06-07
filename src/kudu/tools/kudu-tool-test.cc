@@ -6951,6 +6951,12 @@ static void CreateTableWithFlushedData(const string& table_name,
   KuduSchema schema;
   ASSERT_OK(schema_builder.Build(&schema));
 
+
+#if defined(THREAD_SANITIZER)
+  constexpr auto kNumRows = 1000;
+#else
+  constexpr auto kNumRows = 10000;
+#endif
   // Create a table and write some data to it.
   TestWorkload workload(cluster);
   workload.set_schema(schema);
@@ -6960,7 +6966,7 @@ static void CreateTableWithFlushedData(const string& table_name,
   workload.Setup();
   workload.Start();
   ASSERT_EVENTUALLY([&]() {
-    ASSERT_GE(workload.rows_inserted(), 10000);
+    ASSERT_GE(workload.rows_inserted(), kNumRows);
   });
   workload.StopAndJoin();
 
