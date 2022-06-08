@@ -939,6 +939,12 @@ string KuduSchema::ToString() const {
                  : "()";
 }
 
+void KuduSchema::ToCSVRowString(std::string& output) const {
+  schema_->ToCSVRowString(FLAGS_show_attributes ?
+                                     Schema::ToStringMode::WITH_COLUMN_ATTRIBUTES
+                                     : Schema::ToStringMode::BASE_INFO,&output);
+}
+
 KuduSchema KuduSchema::FromSchema(const Schema& schema) {
   return KuduSchema(schema.CopyWithoutColumnIds());
 }

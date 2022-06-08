@@ -55,3 +55,10 @@ www/tracing.*
 python/kudu/*.so
 python/kudu/*.cpp
 *.py[ocd]
+
+#omit logs
+logs
+tablet_logs
+
+#vs code
+settings.json

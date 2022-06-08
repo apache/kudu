@@ -68,6 +68,7 @@ class TableScanner {
 
   Status StartScan();
   Status StartCopy();
+  Status StartExport();
 
   uint64_t TotalScannedCount() const {
     return total_count_;
@@ -76,6 +77,7 @@ class TableScanner {
  private:
   enum class WorkType {
     kScan,
+    kExport,
     kCopy
   };
 
@@ -94,10 +96,13 @@ class TableScanner {
   Status StartWork(WorkType type);
   Status ScanData(const std::vector<client::KuduScanToken*>& tokens,
                   const std::function<void(const client::KuduScanBatch& batch)>& cb);
+  Status ScanCSVData(const std::vector<kudu::client::KuduScanToken*>& tokens,
+                  const std::function<void(const kudu::client::KuduScanBatch& batch, const std::unique_ptr<kudu::client::KuduScanner>& scanner)>& cb);
   void ScanTask(const std::vector<client::KuduScanToken*>& tokens,
                 Status* thread_status);
   void CopyTask(const std::vector<client::KuduScanToken*>& tokens,
                 Status* thread_status);
+  void ExportTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
 
   std::atomic<uint64_t> total_count_;
   boost::optional<client::KuduScanner::ReadMode> mode_;

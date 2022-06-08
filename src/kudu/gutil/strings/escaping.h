@@ -204,6 +204,38 @@ int Utf8SafeCHexEscapeString(const char* src, int src_len, char* dest,
                              int dest_len);
 
 // ----------------------------------------------------------------------
+// CSVCEscapeString()
+// CSVCHexEscapeString()
+// CSVUtf8SafeCEscapeString()
+// CSVUtf8SafeCHexEscapeString()
+//    Copies 'src' to 'dest', escaping dangerous characters using
+//    C-style escape sequences and CSV style escape sequences. This is very useful for preparing query
+//    flags. 'src' and 'dest' should not overlap. The 'Hex' version uses
+//    hexadecimal rather than octal sequences. The 'Utf8Safe' version doesn't
+//    touch UTF-8 bytes.
+//    Returns the number of bytes written to 'dest' (not including the \0)
+//    or -1 if there was insufficient space.
+//
+//    Currently only \n, \r, \t, ", ', \ and !ascii_isprint() chars are escaped.
+// csv escaping
+// 1. currently delimeter is ,
+// 2. if any " occurs it will be doubled..
+// 3. all string covered with ""
+// eg: -
+//    original string in db - \"
+//    CSVEScapeInternal returned string - \""
+//    opened by Excel - \"
+// ----------------------------------------------------------------------
+
+int CSVCEscapeString(const char* src, int src_len, char* dest, int dest_len);
+int CSVCHexEscapeString(const char* src, int src_len, char* dest, int dest_len);
+int CSVUtf8SafeCEscapeString(const char* src, int src_len, char* dest,
+                          int dest_len);
+int CSVUtf8SafeCHexEscapeString(const char* src, int src_len, char* dest,
+                             int dest_len);
+
+
+// ----------------------------------------------------------------------
 // CEscape()
 // CHexEscape()
 // Utf8SafeCEscape()
@@ -217,6 +249,34 @@ std::string CEscape(const StringPiece& src);
 std::string CHexEscape(const StringPiece& src);
 std::string Utf8SafeCEscape(const StringPiece& src);
 std::string Utf8SafeCHexEscape(const StringPiece& src);
+
+// ----------------------------------------------------------------------
+// CSVCEscape()
+// CSVCHexEscape()
+// CSVUtf8SafeCEscape()
+// CSVUtf8SafeCHexEscape()
+//    Copies 'src' to result, escaping dangerous characters using
+//    C-style escape sequences. This is very useful for preparing query
+//    flags. 'src' and 'dest' should not overlap. The 'Hex' version
+//    hexadecimal rather than octal sequences. The 'Utf8Safe' version
+//    doesn't touch UTF-8 bytes.
+//
+//    Currently only \n, \r, \t, ", ', \ and !ascii_isprint() chars are escaped.
+//    Currently only \n, \r, \t, ", ', \ and !ascii_isprint() chars are escaped.
+// csv escaping
+// 1. currently delimeter is ,
+// 2. if any " occurs it will be doubled..
+// 3. all string covered with ""
+// eg: -
+//    original string in db - \"
+//    CSVEScapeInternal returned string - \""
+//    opened by Excel - \"
+// ----------------------------------------------------------------------
+
+std::string CSVCEscape(const StringPiece& src);
+std::string CSVCHexEscape(const StringPiece& src);
+std::string CSVUtf8SafeCEscape(const StringPiece& src);
+std::string CSVUtf8SafeCHexEscape(const StringPiece& src);
 
 // ----------------------------------------------------------------------
 // BackslashEscape()

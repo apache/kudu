@@ -186,6 +186,8 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
 
   /// @return String representation of the storage attributes.
   std::string ToString() const;
+  ///@return csv string representation of the storage attributes.
+  std::string ToCSVRowString() const;
 
   /// @param [in] encoding
   ///   String representation of the column encoding type
@@ -723,6 +725,8 @@ class KUDU_EXPORT KuduSchema {
   ///
   /// @return A string describing this schema.
   std::string ToString() const;
+  ///@return A csv string describing this schema
+  void ToCSVRowString(std::string& output) const;
 
   /// @cond PRIVATE_API
 

@@ -45,6 +45,7 @@ TypeInfo::TypeInfo(TypeTraitsClass /*t*/)
     max_value_(TypeTraitsClass::max_value()),
     is_virtual_(TypeTraitsClass::IsVirtual()),
     append_func_(TypeTraitsClass::AppendDebugStringForValue),
+    append_csv_func_(TypeTraitsClass::AppendDebugCSVStringForValue),
     compare_func_(TypeTraitsClass::Compare),
     are_consecutive_func_(TypeTraitsClass::AreConsecutive) {
 }
@@ -54,6 +55,14 @@ void TypeInfo::AppendDebugStringForValue(const void *ptr, string *str) const {
     str->append(kRedactionMessage);
   } else {
     append_func_(ptr, str);
+  }
+}
+
+void TypeInfo::AppendDebugCSVStringForValue(const void *ptr, string *str) const {
+  if (KUDU_SHOULD_REDACT()) {
+    str->append(kRedactionMessage);
+  } else {
+    append_csv_func_(ptr, str);
   }
 }
 
@@ -129,4 +138,18 @@ void DataTypeTraits<DATE>::AppendDebugStringForValue(const void* val, string* st
   }
 }
 
+void DataTypeTraits<DATE>::AppendDebugCSVStringForValue(const void* val, string* str) {
+  constexpr static const char* kDateFormat = "%F"; // the ISO 8601 date format
+  static constexpr time_t kSecondsInDay = 24 * 60 * 60;
+
+  int32_t days_since_unix_epoch = *reinterpret_cast<const int32_t*>(val);
+  if (IsValidValue(days_since_unix_epoch)) {
+    time_t seconds = static_cast<time_t>(days_since_unix_epoch) * kSecondsInDay;
+    StringAppendStrftime(str, kDateFormat, seconds, false);
+  } else {
+    str->append(Substitute("value $0 out of range for DATE type", days_since_unix_epoch));
+  }
+}
+
 } // namespace kudu
+

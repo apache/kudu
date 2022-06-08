@@ -398,5 +398,23 @@ string KuduScanBatch::RowPtr::ToString() const {
   return ret;
 }
 
+string* KuduScanBatch::RowPtr::ToCSVRowString(std::string& ret) const {
+  ret.clear();
+  //returned ret=1,2,"efg"
+  //string value will be double quatoted
+  //string value handled by c style escaping and csv escaping
+  ScopedDisableRedaction no_redaction;
+  bool first = true;
+  for (int i = 0; i < schema_->num_columns(); i++) {
+    if (!first) {
+      ret.append(",");
+    }
+    RowCell cell(this, i);
+    schema_->column(i).DebugCSVCellAppend(cell, &ret);
+    first=false;
+  }
+  return &ret;
+}
+
 } // namespace client
 } // namespace kudu

@@ -664,6 +664,25 @@ Status ScanTable(const RunnerContext &context) {
   return scanner.StartScan();
 }
 
+Status ExportTable(const RunnerContext &context) {
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+
+  if (!FLAGS_row_count_only) {
+    FLAGS_show_values = true;
+  }
+  TableScanner scanner(client, table_name);
+  scanner.SetOutput(&cout);
+  scanner.SetScanBatchSize(FLAGS_scan_batch_size);
+  const auto& replica_selection_str = FLAGS_replica_selection;
+  if (!replica_selection_str.empty()) {
+    RETURN_NOT_OK(scanner.SetReplicaSelection(replica_selection_str));
+  }
+  return scanner.StartExport();
+}
+
 Status CopyTable(const RunnerContext& context) {
   client::sp::shared_ptr<KuduClient> src_client;
   RETURN_NOT_OK(CreateKuduClient(context, &src_client));
@@ -1555,6 +1574,28 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("tablets")
       .AddOptionalParameter("replica_selection")
       .Build();
+  
+  unique_ptr<Action> export_table =
+    ClusterActionBuilder("export", &ExportTable)
+      .Description("Export rows from a table")
+      .ExtraDescription("Export rows from an existing table. See the help "
+                        "for the --predicates flag on how predicates can be specified.")
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to scan"})
+      // .AddRequiredParameter({kExportLog,"Location of the export"})
+      .AddOptionalParameter("columns")
+      .AddOptionalParameter("row_count_only")
+      .AddOptionalParameter("report_scanner_stats")
+      .AddOptionalParameter("scan_batch_size")
+      .AddOptionalParameter("fill_cache")
+      .AddOptionalParameter("num_threads")
+      .AddOptionalParameter("predicates")
+      .AddOptionalParameter("tablets")
+      .AddOptionalParameter("replica_selection")
+      .AddOptionalParameter("target_folder")
+      .AddOptionalParameter("export_batch_size")
+      .AddOptionalParameter("timeout_millis")
+      .AddOptionalParameter("keepAliveDuration")
+      .Build();
 
   unique_ptr<Action> copy_table =
       ClusterActionBuilder("copy", &CopyTable)
@@ -1765,6 +1806,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(rename_column))
       .AddAction(std::move(rename_table))
       .AddAction(std::move(scan_table))
+      .AddAction(std::move(export_table))
       .AddAction(std::move(set_comment))
       .AddAction(std::move(set_extra_config))
       .AddAction(std::move(set_replication_factor))

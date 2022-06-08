@@ -551,7 +551,6 @@ int CEscapeInternal(const char* src, int src_len, char* dest,
   dest[used] = '\0';   // doesn't count towards return value though
   return used;
 }
-
 int CEscapeString(const char* src, int src_len, char* dest, int dest_len) {
   return CEscapeInternal(src, src_len, dest, dest_len, false, false);
 }
@@ -568,6 +567,96 @@ int Utf8SafeCEscapeString(const char* src, int src_len, char* dest,
 int Utf8SafeCHexEscapeString(const char* src, int src_len, char* dest,
                              int dest_len) {
   return CEscapeInternal(src, src_len, dest, dest_len, true, true);
+}
+
+// ----------------------------------------------------------------------
+// CSVCEscapeString()
+// CSVCHexEscapeString()
+// CSVUtf8SafeCEscapeString()
+// CSVUtf8SafeCHexEscapeString()
+//    Copies 'src' to 'dest', escaping dangerous characters using
+//    C-style escape sequences and CSV style escape sequences. This is very useful for preparing query
+//    flags. 'src' and 'dest' should not overlap. The 'Hex' version uses
+//    hexadecimal rather than octal sequences. The 'Utf8Safe' version doesn't
+//    touch UTF-8 bytes.
+//    Returns the number of bytes written to 'dest' (not including the \0)
+//    or -1 if there was insufficient space.
+//
+//    Currently only \n, \r, \t, ", ', \ and !ascii_isprint() chars are escaped.
+// csv escaping
+// 1. currently delimeter is ,
+// 2. if any " occurs it will be doubled..
+// 3. all string covered with ""
+// eg: -
+//    original string in db - \"
+//    CSVEScapeInternal returned string - \""
+//    opened by Excel - \"
+// ----------------------------------------------------------------------
+
+
+int CSVCEscapeInternal(const char* src, int src_len, char* dest,
+                    int dest_len, bool use_hex, bool utf8_safe) {
+  const char* src_end = src + src_len;
+  int used = 0;
+  bool last_hex_escape = false;  // true if last output char was \xNN
+
+  for (; src < src_end; src++) {
+    if (dest_len - used < 2)   // Need space for two letter escape
+      return -1;
+
+    bool is_hex_escape = false;
+    switch (*src) {
+      case '\n': dest[used++] = '\\'; dest[used++] = 'n';  break;
+      case '\r': dest[used++] = '\\'; dest[used++] = 'r';  break;
+      case '\t': dest[used++] = '\\'; dest[used++] = 't';  break;
+      case '\"': dest[used++] = '\\'; dest[used++] = '\"';dest[used++] = '\"'; break;
+      case '\'': dest[used++] = '\\'; dest[used++] = '\''; break;
+      case '\\': dest[used++] = '\\'; dest[used++] = '\\'; break;
+      default:
+        // Note that if we emit \xNN and the src character after that is a hex
+        // digit then that digit must be escaped too to prevent it being
+        // interpreted as part of the character code by C.
+        if ((!utf8_safe || *src < 0x80) &&
+            (!ascii_isprint(*src) ||
+             (last_hex_escape && ascii_isxdigit(*src)))) {
+          if (dest_len - used < 4)  // need space for 4 letter escape
+            return -1;
+          sprintf(dest + used, (use_hex ? "\\x%02x" : "\\%03o"), *src);
+          is_hex_escape = use_hex;
+          used += 4;
+        } else {
+          dest[used++] = *src;
+          break;
+        }
+    }
+    last_hex_escape = is_hex_escape;
+  }
+
+  if (dest_len - used < 1)   // make sure that there is room for \0
+    return -1;
+
+  dest[used] = '\0';   // doesn't count towards return value though
+  return used;
+}
+
+
+
+int CSVCEscapeString(const char* src, int src_len, char* dest, int dest_len) {
+  return CSVCEscapeInternal(src, src_len, dest, dest_len, false, false);
+}
+
+int CSVCHexEscapeString(const char* src, int src_len, char* dest, int dest_len) {
+  return CSVCEscapeInternal(src, src_len, dest, dest_len, true, false);
+}
+
+int CSVUtf8SafeCEscapeString(const char* src, int src_len, char* dest,
+                          int dest_len) {
+  return CSVCEscapeInternal(src, src_len, dest, dest_len, false, true);
+}
+
+int CSVUtf8SafeCHexEscapeString(const char* src, int src_len, char* dest,
+                             int dest_len) {
+  return CSVCEscapeInternal(src, src_len, dest, dest_len, true, true);
 }
 
 // ----------------------------------------------------------------------
@@ -614,6 +703,66 @@ string Utf8SafeCHexEscape(const StringPiece& src) {
   const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
   unique_ptr<char[]> dest(new char[dest_length]);
   const int len = CEscapeInternal(src.data(), src.size(),
+                                  dest.get(), dest_length, true, true);
+  DCHECK_GE(len, 0);
+  return string(dest.get(), len);
+}
+
+// ----------------------------------------------------------------------
+
+// ----------------------------------------------------------------------
+// CSVCEscape()
+// CSVCHexEscape()
+// CSVUtf8SafeCEscape()
+// CSVUtf8SafeCHexEscape()
+//    Copies 'src' to result, escaping dangerous characters using
+//    C-style escape sequences. This is very useful for preparing query
+//    flags. 'src' and 'dest' should not overlap. The 'Hex' version
+//    hexadecimal rather than octal sequences. The 'Utf8Safe' version
+//    doesn't touch UTF-8 bytes.
+//
+//    Currently only \n, \r, \t, ", ', \ and !ascii_isprint() chars are escaped.
+//    Currently only \n, \r, \t, ", ', \ and !ascii_isprint() chars are escaped.
+// csv escaping
+// 1. currently delimeter is ,
+// 2. if any " occurs it will be doubled..
+// 3. all string covered with ""
+// eg: -
+//    original string in db - \"
+//    CSVEScapeInternal returned string - \""
+//    opened by Excel - \"
+// ----------------------------------------------------------------------
+string CSVCEscape(const StringPiece& src) {
+  const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
+  unique_ptr<char[]> dest(new char[dest_length]);
+  const int len = CSVCEscapeInternal(src.data(), src.size(),
+                                  dest.get(), dest_length, false, false);
+  DCHECK_GE(len, 0);
+  return string(dest.get(), len);
+}
+
+string CSVCHexEscape(const StringPiece& src) {
+  const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
+  unique_ptr<char[]> dest(new char[dest_length]);
+  const int len = CSVCEscapeInternal(src.data(), src.size(),
+                                  dest.get(), dest_length, true, false);
+  DCHECK_GE(len, 0);
+  return string(dest.get(), len);
+}
+
+string CSVUtf8SafeCEscape(const StringPiece& src) {
+  const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
+  unique_ptr<char[]> dest(new char[dest_length]);
+  const int len = CSVCEscapeInternal(src.data(), src.size(),
+                                  dest.get(), dest_length, false, true);
+  DCHECK_GE(len, 0);
+  return string(dest.get(), len);
+}
+
+string CSVUtf8SafeCHexEscape(const StringPiece& src) {
+  const int dest_length = src.size() * 4 + 1;  // Maximum possible expansion
+  unique_ptr<char[]> dest(new char[dest_length]);
+  const int len = CSVCEscapeInternal(src.data(), src.size(),
                                   dest.get(), dest_length, true, true);
   DCHECK_GE(len, 0);
   return string(dest.get(), len);
