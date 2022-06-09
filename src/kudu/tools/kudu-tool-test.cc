@@ -522,6 +522,7 @@ class ToolTest : public KuduTest {
     string columns;
     TableCopyMode mode;
     int32_t create_table_replication_factor;
+    string create_table_hash_bucket_nums;
   };
 
   void RunCopyTableCheck(const RunCopyTableCheckArgs& args) {
@@ -569,9 +570,11 @@ class ToolTest : public KuduTest {
 
     // Execute copy command.
     string stdout;
-    NO_FATALS(RunActionStdoutString(
+    string stderr;
+    Status s = RunActionStdoutStderrString(
                 Substitute("table copy $0 $1 $2 -dst_table=$3 -predicates=$4 -write_type=$5 "
-                           "-create_table=$6 -create_table_replication_factor=$7",
+                           "-create_table=$6 -create_table_replication_factor=$7 "
+                           "-create_table_hash_bucket_nums=$8",
                            cluster_->master()->bound_rpc_addr().ToString(),
                            args.src_table_name,
                            cluster_->master()->bound_rpc_addr().ToString(),
@@ -579,8 +582,36 @@ class ToolTest : public KuduTest {
                            args.predicates_json,
                            write_type,
                            create_table,
-                           args.create_table_replication_factor),
-                &stdout));
+                           args.create_table_replication_factor,
+                           args.create_table_hash_bucket_nums),
+                &stdout, &stderr);
+    if (args.create_table_hash_bucket_nums == "10,aa") {
+      ASSERT_STR_CONTAINS(stderr, "cannot parse the number of hash buckets.");
+      return;
+    }
+    if (args.create_table_hash_bucket_nums == "10,20,30") {
+      ASSERT_STR_CONTAINS(stderr, "The count of hash bucket numbers must be equal to the "
+                                  "number of hash schema dimensions.");
+      return;
+    }
+    if (args.create_table_hash_bucket_nums == "10") {
+      ASSERT_STR_CONTAINS(stderr, "The count of hash bucket numbers must be equal to the "
+                                  "number of hash schema dimensions.");
+      return;
+    }
+    if (args.create_table_hash_bucket_nums == "10,1") {
+      ASSERT_STR_CONTAINS(stderr, "The number of hash buckets must not be less than 2.");
+      return;
+    }
+    if (args.create_table_hash_bucket_nums == "10,1") {
+      ASSERT_STR_CONTAINS(stderr, "The number of hash buckets must not be less than 2.");
+      return;
+    }
+    if (args.create_table_hash_bucket_nums == "10,50") {
+      ASSERT_STR_CONTAINS(stderr, "There are no hash partitions defined in this table.");
+      return;
+    }
+    ASSERT_TRUE(s.ok());
 
     // Check total count.
     int64_t total = max<int64_t>(args.max_value - args.min_value + 1, 0);
@@ -612,6 +643,32 @@ class ToolTest : public KuduTest {
         // Replication factor is different when explicitly set it to 3 (default 1).
         if (args.create_table_replication_factor == 3 &&
             HasPrefixString(src_schema[i], "REPLICAS ")) continue;
+        vector<string> hash_bucket_nums = Split(args.create_table_hash_bucket_nums,
+                                            ",", strings::SkipEmpty());
+        if (args.create_table_hash_bucket_nums == "10,20" &&
+            HasPrefixString(src_schema[i], "HASH (key_hash0)")) {
+          ASSERT_STR_CONTAINS(dst_schema[i], Substitute("PARTITIONS $0",
+                                                        hash_bucket_nums[0]));
+          continue;
+        }
+        if (args.create_table_hash_bucket_nums == "10,20" &&
+            HasPrefixString(src_schema[i], "HASH (key_hash1, key_hash2)")) {
+          ASSERT_STR_CONTAINS(dst_schema[i], Substitute("PARTITIONS $0",
+                                                        hash_bucket_nums[1]));
+          continue;
+        }
+        if (args.create_table_hash_bucket_nums == "10,2" &&
+            HasPrefixString(src_schema[i], "HASH (key_hash0)")) {
+          ASSERT_STR_CONTAINS(dst_schema[i], Substitute("PARTITIONS $0",
+                                                        hash_bucket_nums[0]));
+          continue;
+        }
+        if (args.create_table_hash_bucket_nums == "10,2" &&
+            HasPrefixString(src_schema[i], "HASH (key_hash1, key_hash2)")) {
+          ASSERT_STR_CONTAINS(dst_schema[i], Substitute("PARTITIONS $0",
+                                                        hash_bucket_nums[1]));
+          continue;
+        }
         ASSERT_EQ(src_schema[i], dst_schema[i]);
       }
     }
@@ -804,13 +861,57 @@ class ToolTestCopyTableParameterized :
         }
         return multi_args;
       }
-      case kTestCopyTableComplexSchema:
+      case kTestCopyTableComplexSchema: {
         args.columns = kComplexSchemaColumns;
         args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
-        return { args };
-      case kTestCopyUnpartitionedTable:
+        vector<RunCopyTableCheckArgs> multi_args;
+        {
+          auto args_temp = args;
+          args.create_table_hash_bucket_nums = "10,20";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.create_table_hash_bucket_nums = "10,aa";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.create_table_hash_bucket_nums = "10,20,30";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.create_table_hash_bucket_nums = "10";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.create_table_hash_bucket_nums = "10,1";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.create_table_hash_bucket_nums = "10,2";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.create_table_hash_bucket_nums = "";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        return multi_args;
+      }
+      case kTestCopyUnpartitionedTable: {
         args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
-        return {args};
+        vector<RunCopyTableCheckArgs> multi_args;
+        {
+          auto args_temp = args;
+          args.create_table_hash_bucket_nums = "10,50";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        return multi_args;
+      }
       case kTestCopyTablePredicates: {
         auto mid = total_rows_ / 2;
         vector<RunCopyTableCheckArgs> multi_args;

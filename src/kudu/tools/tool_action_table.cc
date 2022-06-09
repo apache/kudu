@@ -1567,6 +1567,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kTableNameArg, "Name of the source table" })
       .AddRequiredParameter({ kDestMasterAddressesArg, kDestMasterAddressesArgDesc })
       .AddOptionalParameter("create_table")
+      .AddOptionalParameter("create_table_hash_bucket_nums")
       .AddOptionalParameter("create_table_replication_factor")
       .AddOptionalParameter("dst_table")
       .AddOptionalParameter("num_threads")
