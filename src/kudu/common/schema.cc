@@ -163,7 +163,7 @@ string ColumnSchema::ToString(ToStringMode mode) const {
                     mode == ToStringMode::WITH_ATTRIBUTES ? " " + AttrToString() : "");
 }
 
-string ColumnSchema::ToCSVRowString(ToStringMode mode) const {
+string ColumnSchema::ToCSVRowString() const {
   return Substitute("$0",
                     name_);
 }
@@ -502,11 +502,11 @@ void Schema::ToCSVRowString(ToStringMode mode,std::string* output) const {
   vector<string> col_strs;
   if (has_column_ids() && (mode & ToStringMode::WITH_COLUMN_IDS)) {
     for (int i = 0; i < cols_.size(); ++i) {
-      col_strs.push_back(Substitute("$0:$1", col_ids_[i], cols_[i].ToCSVRowString(col_mode)));
+      col_strs.push_back(Substitute("$0:$1", col_ids_[i], cols_[i].ToCSVRowString()));
     }
   } else {
     for (const ColumnSchema &col : cols_) {
-      col_strs.push_back(col.ToCSVRowString(col_mode));
+      col_strs.push_back(col.ToCSVRowString());
     }
   }
 

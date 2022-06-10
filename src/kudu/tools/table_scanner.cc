@@ -34,8 +34,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
@@ -94,7 +92,6 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
-using std::basic_fstream;
 
 DEFINE_bool(create_table, true,
             "Whether to create the destination table if it doesn't exist.");
@@ -145,7 +142,7 @@ DEFINE_string(target_folder, ".",
 
 DEFINE_int64(export_batch_size,10000,"export batch size bytes. Batch Size should be greater than 10000 ");
 DEFINE_int64(timeout_millis,3000000,"timeout milliseconds");
-DEFINE_int64(keepAliveDuration,30000,"keep alive calling to keep the scanners alive while exporting ");
+DEFINE_int64(keep_alive_millis,30000,"keep alive calling to keep the scanners alive");
 
 
 namespace {
@@ -615,7 +612,7 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   std::thread::id currentThreadId = std::this_thread::get_id();
   std::stringstream ss;
 
-  int batch_size;
+  long batch_size;
   if (FLAGS_export_batch_size>=10000){
     batch_size=FLAGS_export_batch_size;
   }else{
@@ -626,10 +623,9 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
   FilePath=FLAGS_target_folder+"//"+currentThreadIdStr+".csv";
   bool coloum_Names_added=false;
   string row_batch="";
-  string* row_batch_ptr=&row_batch;
   row_batch.reserve(batch_size);
 
-  int balance;
+  long balance;
 
   std::string ret="";
   ret.reserve(batch_size/2);
@@ -650,8 +646,8 @@ void TableScanner::ExportTask(const vector<KuduScanToken *>& tokens, Status* thr
         coloum_Names_added=true;
       }
       for (const auto& row : batch) {
-        if ((sw2.elapsed().wall_millis()>FLAGS_keepAliveDuration) &&(FLAGS_keepAliveDuration!=-1)){
-          std::cout<<"Keep Alive called because exceeding "<<time;
+        if ((sw2.elapsed().wall_millis()>FLAGS_keep_alive_millis) &&(FLAGS_keep_alive_millis!=-1)){
+          std::cout<<"Resetting Scanner timeout  ";
           scanner->KeepAlive();
           sw2.stop();
           sw2.start();

@@ -271,7 +271,7 @@ class ColumnSchema {
 
  // Return a csv string identifying this column, including its
  //name
-  std::string ToCSVRowString(ToStringMode mode = ToStringMode::WITHOUT_ATTRIBUTES) const;
+  std::string ToCSVRowString() const;
 
   // Same as above, but only including the type information.
   // For example, "STRING NOT NULL".
@@ -810,7 +810,7 @@ class Schema {
   // so should only be used when necessary for output.
   std::string ToString(ToStringMode mode = ToStringMode::WITH_COLUMN_IDS) const;
 
-  void ToCSVRowString(ToStringMode mode = ToStringMode::WITH_COLUMN_IDS,std::string* output=NULL) const;
+  void ToCSVRowString(ToStringMode mode = ToStringMode::WITH_COLUMN_IDS,std::string* output=nullptr) const;
 
   bool operator==(const Schema& other) const {
     if (this == &other) {
