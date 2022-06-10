@@ -141,6 +141,7 @@ DECLARE_int64(live_row_count_for_testing);
 DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
 DECLARE_string(log_filename);
+DECLARE_string(webserver_doc_root);
 
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
 
@@ -390,50 +391,6 @@ TEST_F(MasterTest, TestResetBlockCacheMetricsInSameProcess) {
       // non-zero metrics for the block cache.
       ASSERT_STR_MATCHES(raw, ".*\"value\": [1-9].*");
   });
-}
-
-TEST_F(MasterTest, TestStartupWebPage) {
-  EasyCurl c;
-  faststring buf;
-  string addr = mini_master_->bound_http_addr().ToString();
-  mini_master_->Shutdown();
-  std::atomic<bool> run_status_reader = false;
-  thread read_startup_page([&] {
-    EasyCurl thread_c;
-    faststring thread_buf;
-    while (!run_status_reader) {
-      SleepFor(MonoDelta::FromMilliseconds(10));
-      if (!(thread_c.FetchURL(strings::Substitute("http://$0/startup", addr), &thread_buf)).ok()) {
-        continue;
-      }
-      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"init_status\":(100|0)( |,)");
-      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"read_filesystem_status\":(100|0)( |,)");
-      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"read_instance_metadatafiles_status\""
-                                                    ":(100|0)( |,)");
-      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"read_data_directories_status\":"
-                                                    "([0-9]|[1-9][0-9]|100)( |,)");
-      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"initialize_master_catalog_status\":"
-                                                    "([0-9]|[1-9][0-9]|100)( |,)");
-      ASSERT_STR_MATCHES(thread_buf.ToString(), "\"start_rpc_server_status\":(100|0)( |,)");
-    }
-  });
-  SCOPED_CLEANUP({
-    run_status_reader = true;
-    read_startup_page.join();
-  });
-
-  ASSERT_OK(mini_master_->Restart());
-  ASSERT_OK(mini_master_->WaitForCatalogManagerInit());
-  run_status_reader = true;
-
-  // After all the steps have been completed, ensure every startup step has 100 percent status
-  ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/startup", addr), &buf));
-  ASSERT_STR_CONTAINS(buf.ToString(), "\"init_status\":100");
-  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_filesystem_status\":100");
-  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_instance_metadatafiles_status\":100");
-  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_data_directories_status\":100");
-  ASSERT_STR_CONTAINS(buf.ToString(), "\"initialize_master_catalog_status\":100");
-  ASSERT_STR_CONTAINS(buf.ToString(), "\"start_rpc_server_status\":100");
 }
 
 TEST_F(MasterTest, TestRegisterAndHeartbeat) {
@@ -2819,8 +2776,79 @@ TEST_P(AuthzTokenMasterTest, TestGenerateAuthzTokens) {
     ASSERT_EQ(supports_authz, resp.has_authz_token());
   }
 }
-
 INSTANTIATE_TEST_SUITE_P(SupportsAuthzTokens, AuthzTokenMasterTest, ::testing::Bool());
+
+class MasterStartupTest : public KuduTest {
+ protected:
+  void SetUp() override {
+    KuduTest::SetUp();
+
+    // The embedded webserver renders the contents of the generated pages
+    // according to mustache's mappings found under the directory pointed to by
+    // the --webserver_doc_root flag, which is set to $KUDU_HOME/www by default.
+    // Since this test assumes to fetch the pre-rendered output for the startup
+    // page, it would fail if the KUDU_HOME environment variable were set and
+    // pointed to the location where 'www' subdirectory contained the required
+    // mustache mappings. Let's explicitly point the document root to nowhere,
+    // so no mustache-based rendering is done.
+    FLAGS_webserver_doc_root = "";
+
+    mini_master_.reset(new MiniMaster(GetTestPath("Master"), HostPort("127.0.0.1", 0)));
+    ASSERT_OK(mini_master_->Start());
+  }
+
+  void TearDown() override {
+    mini_master_->Shutdown();
+    KuduTest::TearDown();
+  }
+
+  unique_ptr<MiniMaster> mini_master_;
+};
+
+TEST_F(MasterStartupTest, StartupWebPage) {
+  const string addr = mini_master_->bound_http_addr().ToString();
+  mini_master_->Shutdown();
+
+  std::atomic<bool> run_status_reader = true;
+  thread status_reader([&] {
+    EasyCurl c;
+    faststring buf;
+    while (run_status_reader) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+      if (!c.FetchURL(strings::Substitute("http://$0/startup", addr), &buf).ok()) {
+        continue;
+      }
+      ASSERT_STR_MATCHES(buf.ToString(), "\"init_status\":(100|0)( |,)");
+      ASSERT_STR_MATCHES(buf.ToString(), "\"read_filesystem_status\":(100|0)( |,)");
+      ASSERT_STR_MATCHES(buf.ToString(), "\"read_instance_metadatafiles_status\""
+                                             ":(100|0)( |,)");
+      ASSERT_STR_MATCHES(buf.ToString(), "\"read_data_directories_status\":"
+                                             "([0-9]|[1-9][0-9]|100)( |,)");
+      ASSERT_STR_MATCHES(buf.ToString(), "\"initialize_master_catalog_status\":"
+                                             "([0-9]|[1-9][0-9]|100)( |,)");
+      ASSERT_STR_MATCHES(buf.ToString(), "\"start_rpc_server_status\":(100|0)( |,)");
+    }
+  });
+  SCOPED_CLEANUP({
+    run_status_reader = false;
+    status_reader.join();
+  });
+
+  ASSERT_OK(mini_master_->Restart());
+  ASSERT_OK(mini_master_->WaitForCatalogManagerInit());
+  run_status_reader = false;
+
+  // After all the steps have been completed, ensure every startup step has 100 percent status
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/startup", addr), &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"init_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_filesystem_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_instance_metadatafiles_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"read_data_directories_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"initialize_master_catalog_status\":100");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"start_rpc_server_status\":100");
+}
 
 } // namespace master
 } // namespace kudu

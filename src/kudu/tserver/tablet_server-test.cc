@@ -206,6 +206,7 @@ DECLARE_int32(workload_stats_metric_collection_interval_ms);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(env_inject_full_globs);
+DECLARE_string(webserver_doc_root);
 DECLARE_uint32(tablet_apply_pool_overload_threshold_ms);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
@@ -771,6 +772,16 @@ enum class ErrorType {
 class TabletServerStartupWebPageTest : public TabletServerTestBase {
  public:
   void SetUp() override {
+    // The embedded webserver renders the contents of the generated pages
+    // according to mustache's mappings found under the directory pointed to by
+    // the --webserver_doc_root flag, which is set to $KUDU_HOME/www by default.
+    // Since this test assumes to fetch the pre-rendered output for the startup
+    // page, it would fail if the KUDU_HOME environment variable were set and
+    // pointed to the location where 'www' subdirectory contained the required
+    // mustache mappings. Let's explicitly point the document root to nowhere,
+    // so no mustache-based rendering is done.
+    FLAGS_webserver_doc_root = "";
+
     NO_FATALS(TabletServerTestBase::SetUp());
     NO_FATALS(StartTabletServer(kNumDirs));
     // Create a bunch of tablets with a bunch of rowsets.
@@ -824,12 +835,13 @@ class TabletServerStartupWebPageTest : public TabletServerTestBase {
 };
 
 TEST_F(TabletServerStartupWebPageTest, TestStartupWebPage) {
-  EasyCurl c;
-  faststring buf;
   const string url = Substitute("http://$0/startup", mini_server_->bound_http_addr().ToString());
 
   // Verify if the startup status is complete.
   mini_server_->WaitStarted();
+
+  EasyCurl c;
+  faststring buf;
   ASSERT_OK(c.FetchURL(url, &buf));
   NO_FATALS(IsStatusComplete(buf.ToString()));
 
@@ -841,13 +853,13 @@ TEST_F(TabletServerStartupWebPageTest, TestStartupWebPage) {
   // Restart the tablet server and monitor the startup page contents.
   tablet_replica_.reset();
   mini_server_->Shutdown();
-  std::atomic<bool> run_status_reader = false;
+  std::atomic<bool> run_status_reader = true;
 
   // Hammer the webpage and validate the status percentages.
-  thread read_startup_page([&] {
+  thread status_reader([&] {
     EasyCurl thread_c;
     faststring thread_buf;
-    while (!run_status_reader) {
+    while (run_status_reader) {
       if (!thread_c.FetchURL(url, &thread_buf).ok()) {
         continue;
       }
@@ -855,13 +867,13 @@ TEST_F(TabletServerStartupWebPageTest, TestStartupWebPage) {
     }
   });
   SCOPED_CLEANUP({
-    run_status_reader = true;
-    read_startup_page.join();
+    run_status_reader = false;
+    status_reader.join();
   });
 
   mini_server_->Start();
   mini_server_->WaitStarted();
-  run_status_reader = true;
+  run_status_reader = false;
 
   // After the server has startup up, ensure every startup step has 100 percent status.
   ASSERT_OK(c.FetchURL(url, &buf));
