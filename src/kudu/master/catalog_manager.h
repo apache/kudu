@@ -1070,17 +1070,19 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // container must not be empty.
   Status DeleteTskEntries(const std::set<std::string>& entry_ids);
 
-  Status ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
-                               std::vector<AlterTableRequestPB::Step> steps,
-                               Schema* new_schema,
-                               ColumnId* next_col_id);
+  Status ApplyAlterSchemaSteps(
+      const SysTablesEntryPB& current_pb,
+      const std::vector<AlterTableRequestPB::Step>& steps,
+      Schema* new_schema,
+      ColumnId* next_col_id);
 
-  Status ApplyAlterPartitioningSteps(const TableMetadataLock& l,
-                                     const scoped_refptr<TableInfo>& table,
-                                     const Schema& client_schema,
-                                     std::vector<AlterTableRequestPB::Step> steps,
-                                     std::vector<scoped_refptr<TabletInfo>>* tablets_to_add,
-                                     std::vector<scoped_refptr<TabletInfo>>* tablets_to_drop);
+  Status ApplyAlterPartitioningSteps(
+      const scoped_refptr<TableInfo>& table,
+      const Schema& client_schema,
+      const std::vector<AlterTableRequestPB::Step>& steps,
+      TableMetadataLock* l,
+      std::vector<scoped_refptr<TabletInfo>>* tablets_to_add,
+      std::vector<scoped_refptr<TabletInfo>>* tablets_to_drop);
 
   // Task that takes care of the tablet assignments/creations.
   // Loops through the "not created" tablets and sends a CreateTablet() request.
