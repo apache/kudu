@@ -70,6 +70,10 @@ struct BlockManagerMetrics;
 // The file-backed block manager.
 class FileBlockManager : public BlockManager {
  public:
+  static std::string name() {
+    return "file";
+  }
+
   // Note: all objects passed as pointers should remain alive for the lifetime
   // of the block manager.
   FileBlockManager(Env* env,

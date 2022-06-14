@@ -64,6 +64,7 @@
 DECLARE_bool(cache_force_single_shard);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
+DECLARE_string(block_manager);
 DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_preallocate_bytes);
 
@@ -131,6 +132,7 @@ class BlockManagerStressTest : public KuduTest {
       total_blocks_read_(0),
       total_bytes_read_(0),
       total_blocks_deleted_(0) {
+    FLAGS_block_manager = T::name();
 
     // Increase the number of containers created.
     FLAGS_log_container_max_size = 1 * 1024 * 1024;
@@ -229,6 +231,14 @@ class BlockManagerStressTest : public KuduTest {
 
   int GetMaxFdCount() const;
 
+  int GetMaxFdCountForLogBlockManager() const {
+    return FLAGS_max_open_files +
+           // If all containers are full, each open block could theoretically
+           // result in a new container, which is two files briefly outside the
+           // cache (before they are inserted and evict other cached files).
+           (FLAGS_num_writer_threads * FLAGS_block_group_size * FLAGS_block_group_number * 2);
+  }
+
   // Adds FLAGS_num_inconsistencies randomly chosen inconsistencies to the
   // block manager's on-disk representation, assuming the block manager in
   // question supports inconsistency detection and repair.
@@ -236,6 +246,15 @@ class BlockManagerStressTest : public KuduTest {
   // The block manager should be idle while this is called, and it should be
   // restarted afterwards so that detection and repair have a chance to run.
   void InjectNonFatalInconsistencies();
+
+  void InjectNonFatalInconsistenciesForLogBlockManager() {
+    LBMCorruptor corruptor(env_, dd_manager_.get(), rand_seed_);
+    ASSERT_OK(corruptor.Init());
+
+    for (int i = 0; i < FLAGS_num_inconsistencies; i++) {
+      ASSERT_OK(corruptor.InjectRandomNonFatalInconsistency());
+    }
+  }
 
  protected:
   // Used to generate random data. All PRNG instances are seeded with this
@@ -482,11 +501,12 @@ int BlockManagerStressTest<FileBlockManager>::GetMaxFdCount() const {
 
 template <>
 int BlockManagerStressTest<LogBlockManagerNativeMeta>::GetMaxFdCount() const {
-  return FLAGS_max_open_files +
-      // If all containers are full, each open block could theoretically
-      // result in a new container, which is two files briefly outside the
-      // cache (before they are inserted and evict other cached files).
-      (FLAGS_num_writer_threads * FLAGS_block_group_size * FLAGS_block_group_number * 2);
+  return GetMaxFdCountForLogBlockManager();
+}
+
+template <>
+int BlockManagerStressTest<LogrBlockManager>::GetMaxFdCount() const {
+  return GetMaxFdCountForLogBlockManager();
 }
 
 template <>
@@ -496,17 +516,17 @@ void BlockManagerStressTest<FileBlockManager>::InjectNonFatalInconsistencies() {
 
 template <>
 void BlockManagerStressTest<LogBlockManagerNativeMeta>::InjectNonFatalInconsistencies() {
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), rand_seed_);
-  ASSERT_OK(corruptor.Init());
+  InjectNonFatalInconsistenciesForLogBlockManager();
+}
 
-  for (int i = 0; i < FLAGS_num_inconsistencies; i++) {
-    ASSERT_OK(corruptor.InjectRandomNonFatalInconsistency());
-  }
+template <>
+void BlockManagerStressTest<LogrBlockManager>::InjectNonFatalInconsistencies() {
+  InjectNonFatalInconsistenciesForLogBlockManager();
 }
 
 // What kinds of BlockManagers are supported?
 #if defined(__linux__)
-typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta> BlockManagers;
+typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta, LogrBlockManager> BlockManagers;
 #else
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif

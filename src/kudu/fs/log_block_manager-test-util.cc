@@ -28,19 +28,28 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <rocksdb/db.h>
+#include <rocksdb/iterator.h>
+#include <rocksdb/options.h>
+#include <rocksdb/slice.h>
+#include <rocksdb/status.h>
 
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+DECLARE_string(block_manager);
 DECLARE_uint64(log_container_max_size);
 
 namespace kudu {
@@ -52,49 +61,53 @@ using std::string;
 using std::vector;
 using std::unique_ptr;
 using std::unordered_map;
+using strings::Substitute;
 
-LBMCorruptor::LBMCorruptor(Env* env, vector<string> data_dirs, uint32_t rand_seed)
+LBMCorruptor::LBMCorruptor(Env* env, DataDirManager* dd_manager, uint32_t rand_seed)
     : env_(env),
-      data_dirs_(std::move(data_dirs)),
+      dd_manager_(dd_manager),
       rand_(rand_seed) {
-  CHECK_GT(data_dirs_.size(), 0);
+  CHECK_GT(dd_manager_->dirs().size(), 0);
 }
 
 Status LBMCorruptor::Init() {
   vector<Container> all_containers;
   vector<Container> full_containers;
 
-  for (const auto& dd : data_dirs_) {
+  for (const auto& dd : dd_manager_->dirs()) {
     vector<string> dd_files;
     unordered_map<string, Container> containers_by_name;
-    RETURN_NOT_OK(env_->GetChildren(dd, &dd_files));
+    RETURN_NOT_OK(env_->GetChildren(dd->dir(), &dd_files));
     for (const auto& f : dd_files) {
       // As we iterate over each file in the data directory, keep track of data
       // and metadata files, so that only containers with both will be included.
       string stripped;
       if (TryStripSuffixString(
           f, LogBlockManager::kContainerDataFileSuffix, &stripped)) {
+        containers_by_name[stripped].dir = dd->dir();
         containers_by_name[stripped].name = stripped;
-        containers_by_name[stripped].data_filename = JoinPathSegments(dd, f);
+        containers_by_name[stripped].data_filename = JoinPathSegments(dd->dir(), f);
       } else if (TryStripSuffixString(
           f, LogBlockManager::kContainerMetadataFileSuffix, &stripped)) {
+        containers_by_name[stripped].dir = dd->dir();
         containers_by_name[stripped].name = stripped;
-        containers_by_name[stripped].metadata_filename = JoinPathSegments(dd, f);
+        containers_by_name[stripped].metadata_filename = JoinPathSegments(dd->dir(), f);
       }
     }
 
     for (const auto& e : containers_by_name) {
       // Only include the container if both of its files were present.
-      if (!e.second.data_filename.empty() &&
-          !e.second.metadata_filename.empty()) {
-        all_containers.push_back(e.second);
+      if (!e.second.data_filename.empty()) {
+        if (FLAGS_block_manager == "logr" || !e.second.metadata_filename.empty()) {
+          all_containers.push_back(e.second);
 
-        // File size is an imprecise proxy for whether a container is full, but
-        // it should be good enough.
-        uint64_t data_file_size;
-        RETURN_NOT_OK(env_->GetFileSize(e.second.data_filename, &data_file_size));
-        if (data_file_size >= FLAGS_log_container_max_size) {
-          full_containers.push_back(e.second);
+          // File size is an imprecise proxy for whether a container is full, but
+          // it should be good enough.
+          uint64_t data_file_size;
+          RETURN_NOT_OK(env_->GetFileSize(e.second.data_filename, &data_file_size));
+          if (data_file_size >= FLAGS_log_container_max_size) {
+            full_containers.push_back(e.second);
+          }
         }
       }
     }
@@ -164,15 +177,29 @@ Status LBMCorruptor::AddUnpunchedBlockToFullContainer() {
 
   // Having written out the block, write both CREATE and DELETE metadata
   // records for it.
-  unique_ptr<WritablePBContainerFile> metadata_writer;
-  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
   BlockId block_id(rand_.Next64());
-  RETURN_NOT_OK(AppendCreateRecord(metadata_writer.get(), block_id,
-                                   initial_data_size, block_length));
-  RETURN_NOT_OK(AppendDeleteRecord(metadata_writer.get(), block_id));
-
+  if (FLAGS_block_manager == "log") {
+    unique_ptr<WritablePBContainerFile> metadata_writer;
+    RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+    RETURN_NOT_OK(
+        AppendCreateRecord(metadata_writer.get(), block_id, initial_data_size, block_length));
+      RETURN_NOT_OK(AppendDeleteRecord(metadata_writer.get(), block_id));
+      RETURN_NOT_OK(metadata_writer->Close());
+  } else {
+    Dir* pdir = nullptr;
+    for (const auto& dir : dd_manager_->dirs()) {
+      if (dir->dir() == c->dir) {
+        pdir = dir.get();
+        break;
+      }
+    }
+    CHECK(pdir);
+    RETURN_NOT_OK(AppendCreateRecord(pdir, c->name, block_id, initial_data_size, block_length));
+    RETURN_NOT_OK(AppendDeleteRecord(pdir, c->name, block_id));
+  }
   LOG(INFO) << "Added unpunched block to full container " << c->name;
-  return metadata_writer->Close();
+
+  return Status::OK();
 }
 
 Status LBMCorruptor::CreateIncompleteContainer() {
@@ -190,17 +217,18 @@ Status LBMCorruptor::CreateIncompleteContainer() {
   // 1. Empty data file but no metadata file.
   // 2. No data file but metadata file exists (and is up to a certain size).
   // 3. Empty data file and metadata file exists (and is up to a certain size).
-  int r = rand_.Uniform(3);
+  int max = (FLAGS_block_manager == "logr") ? 2 : 3;
+  int r = rand_.Uniform(max);
   RWFileOptions opts;
   opts.is_sensitive = true;
   if (r == 0) {
     RETURN_NOT_OK(env_->NewRWFile(opts, data_fname, &data_file));
   } else if (r == 1) {
-    RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &data_file));
+    RETURN_NOT_OK(env_->NewRWFile(opts, data_fname, &data_file));
+    RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &metadata_file));
   } else {
     CHECK_EQ(r, 2);
-    RETURN_NOT_OK(env_->NewRWFile(opts, data_fname, &data_file));
-    RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &data_file));
+    RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &metadata_file));
   }
 
   if (data_file) {
@@ -247,8 +275,19 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
   record.set_length(kBlockSize);
   record.set_timestamp_us(0);
 
+  Dir* pdir = nullptr;
   unique_ptr<WritablePBContainerFile> metadata_writer;
-  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+  if (FLAGS_block_manager == "logr") {
+    for (const auto& dir : dd_manager_->dirs()) {
+      if (dir->dir() == c->dir) {
+        pdir = dir.get();
+        break;
+      }
+    }
+    CHECK(pdir);
+  } else {
+    RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+  }
 
   // Corrupt the record in some way. Kinds of malformed records (as per the
   // malformed record checking code in log_block_manager.cc):
@@ -258,10 +297,11 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
   // 2. Negative block offset.
   // 3. Negative block length.
   // 4. Offset + length > data file size.
-  // 5. Two CREATEs for same block ID.
+  // 5. log: Two CREATEs for same block ID.
   // 6. DELETE without first matching CREATE.
   // 7. Unrecognized op type.
-  int r = rand_.Uniform(8);
+  int max = (FLAGS_block_manager == "logr") ? 7 : 8;
+  int r = rand_.Uniform(max);
   if (r == 0) {
     record.clear_offset();
   } else if (r == 1) {
@@ -273,18 +313,30 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
   } else if (r == 4) {
     record.set_offset(kint64max / 2);
   } else if (r == 5) {
-    RETURN_NOT_OK(metadata_writer->Append(record));
-  } else if (r == 6) {
     record.clear_offset();
     record.clear_length();
     record.set_op_type(DELETE);
+  } else if (r == 6) {
+    record.set_op_type(UNKNOWN);
   } else {
     CHECK_EQ(r, 7);
-    record.set_op_type(UNKNOWN);
+    RETURN_NOT_OK(metadata_writer->Append(record));
+  }
+
+  if (FLAGS_block_manager == "logr") {
+    string buf;
+    record.SerializeToString(&buf);
+    rocksdb::WriteOptions options;
+    string tmp(c->name + "." + block_id.ToString());
+    rocksdb::Slice key(tmp);
+    rocksdb::Status s = pdir->rdb()->Put(options, key, rocksdb::Slice(buf));
+    CHECK_OK(FromRdbStatus(s));
+  } else {
+    RETURN_NOT_OK(metadata_writer->Append(record));
   }
 
   LOG(INFO) << "Added malformed record to container " << c->name;
-  return metadata_writer->Append(record);
+  return Status::OK();
 }
 
 Status LBMCorruptor::AddMisalignedBlockToContainer() {
@@ -341,13 +393,29 @@ Status LBMCorruptor::AddMisalignedBlockToContainer() {
   RETURN_NOT_OK(data_file->Close());
 
   // Having written out the block, write a corresponding metadata record.
-  unique_ptr<WritablePBContainerFile> metadata_writer;
-  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
-  RETURN_NOT_OK(AppendCreateRecord(metadata_writer.get(), block_id,
-                                   block_offset, block_length));
+  if (FLAGS_block_manager == "logr") {
+    Dir* pdir = nullptr;
+    for (const auto& dir : dd_manager_->dirs()) {
+      if (dir->dir() == c->dir) {
+        pdir = dir.get();
+        break;
+      }
+    }
+    CHECK(pdir);
 
-  LOG(INFO) << "Added misaligned block to container " << c->name;
-  return metadata_writer->Close();
+    RETURN_NOT_OK(AppendCreateRecord(pdir, c->name, block_id,
+                                     block_offset, block_length));
+  } else {
+    unique_ptr<WritablePBContainerFile> metadata_writer;
+    RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+    RETURN_NOT_OK(AppendCreateRecord(metadata_writer.get(), block_id,
+                                     block_offset, block_length));
+    RETURN_NOT_OK(metadata_writer->Close());
+  }
+
+  LOG(INFO) << Substitute("Added misaligned block $0 to container $1",
+                          block_id.ToString(), c->name);
+  return Status::OK();
 }
 
 Status LBMCorruptor::AddPartialRecordToContainer() {
@@ -355,15 +423,58 @@ Status LBMCorruptor::AddPartialRecordToContainer() {
   RETURN_NOT_OK(GetRandomContainer(ANY, &c));
 
   unique_ptr<WritablePBContainerFile> metadata_writer;
-  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+  Dir* pdir = nullptr;
+  if (FLAGS_block_manager == "logr") {
+    for (const auto& dir : dd_manager_->dirs()) {
+      if (dir->dir() == c->dir) {
+        pdir = dir.get();
+        break;
+      }
+    }
+    CHECK(pdir);
+    // Add a new good record to the container.
+    RETURN_NOT_OK(AppendCreateRecord(pdir, c->name, BlockId(rand_.Next64()),
+                                     0, 0));
+    // Corrupt the record by truncating one byte off the end of it.
+    bool has_metadata = false;
+    BlockRecordPB record;
+    rocksdb::Slice begin_key = c->name;
+    rocksdb::ReadOptions options;
+    std::unique_ptr<rocksdb::Iterator> it(
+        pdir->rdb()->NewIterator(options, pdir->rdb()->DefaultColumnFamily()));
+    it->Seek(begin_key);
+    if (it->Valid() && it->key().starts_with(begin_key)) {
+      if (!record.ParseFromArray(it->value().data(), it->value().size())) {
+        LOG(FATAL) << it->status().ToString();
+      }
+      has_metadata = true;
+    }
+    if (!it->status().ok()) {
+      LOG(FATAL) << it->status().ToString();
+    }
+    CHECK(has_metadata);
 
-  // Add a new good record to the container.
-  RETURN_NOT_OK(AppendCreateRecord(metadata_writer.get(),
-                                   BlockId(rand_.Next64()),
-                                   0, 0));
+    string tmp_key = c->name + "." + BlockId::FromPB(record.block_id()).ToString();
+    rocksdb::Slice key(tmp_key);
+    string value;
+    rocksdb::ReadOptions ropt;
+    rocksdb::Status s = pdir->rdb()->Get(ropt, key, &value);
+    if (!s.ok()) {
+      LOG(FATAL) << s.ToString();
+    }
 
-  // Corrupt the record by truncating one byte off the end of it.
-  {
+    value.substr(value.size() - 1);
+
+    rocksdb::WriteOptions wopt;
+    s = pdir->rdb()->Put(wopt, key, rocksdb::Slice(value));
+    CHECK_OK(FromRdbStatus(s));
+  } else {
+    RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+    // Add a new good record to the container.
+    RETURN_NOT_OK(AppendCreateRecord(metadata_writer.get(),
+                                     BlockId(rand_.Next64()),
+                                     0, 0));
+    // Corrupt the record by truncating one byte off the end of it.
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
     opts.is_sensitive = true;
@@ -455,6 +566,32 @@ Status LBMCorruptor::AppendCreateRecord(WritablePBContainerFile* writer,
   return writer->Append(record);
 }
 
+Status LBMCorruptor::AppendCreateRecord(Dir* dir,
+                                        const string& id,
+                                        BlockId block_id,
+                                        int64_t block_offset,
+                                        int64_t block_length) {
+  BlockRecordPB record;
+  block_id.CopyToPB(record.mutable_block_id());
+  record.set_op_type(CREATE);
+  record.set_offset(block_offset);
+  record.set_length(block_length);
+  record.set_timestamp_us(0); // has no effect
+
+  string buf;
+  record.SerializeToString(&buf);
+  rocksdb::WriteOptions options;
+  string tmp(id + "." + block_id.ToString());
+  rocksdb::Slice key(tmp);
+//  LOG(INFO) << "Put: " << id << " " << key.ToString() << " " << key.size();
+  rocksdb::Status s = dir->rdb()->Put(options, key, rocksdb::Slice(buf));
+  if (!s.ok()) {
+    LOG(FATAL) << s.ToString();
+  }
+
+  return Status::OK();
+}
+
 Status LBMCorruptor::AppendDeleteRecord(WritablePBContainerFile* writer,
                                         BlockId block_id) {
   BlockRecordPB record;
@@ -462,6 +599,21 @@ Status LBMCorruptor::AppendDeleteRecord(WritablePBContainerFile* writer,
   record.set_op_type(DELETE);
   record.set_timestamp_us(0); // has no effect
   return writer->Append(record);
+}
+
+Status LBMCorruptor::AppendDeleteRecord(Dir* dir,
+                                        const std::string& id,
+                                        BlockId block_id) {
+  rocksdb::WriteOptions options;
+  string tmp(id + "." + block_id.ToString());
+  rocksdb::Slice key(tmp);
+//  LOG(INFO) << "Delete: " << id << " " << key.ToString() << " " << key.size();
+  rocksdb::Status s = dir->rdb()->Delete(options, key);
+  if (!s.ok()) {
+    LOG(FATAL) << s.ToString();
+  }
+
+  return Status::OK();
 }
 
 Status LBMCorruptor::PreallocateForBlock(RWFile* data_file,
@@ -494,8 +646,8 @@ Status LBMCorruptor::GetRandomContainer(FindContainerMode mode,
   return Status::OK();
 }
 
-const string& LBMCorruptor::GetRandomDataDir() const {
-  return data_dirs_[rand_.Uniform(data_dirs_.size())];
+string LBMCorruptor::GetRandomDataDir() const {
+  return dd_manager_->GetDirs()[rand_.Uniform(dd_manager_->GetDirs().size())];
 }
 
 } // namespace fs

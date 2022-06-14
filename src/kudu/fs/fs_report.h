@@ -173,6 +173,27 @@ struct LBMPartialRecordCheck {
   std::vector<Entry> entries;
 };
 
+// Checks for partial LBM metadata records in RocksDB.
+//
+// TODO: check wether fatal and repairable
+// Error type: fatal and repairable (by removing the entries from RocksDB).
+struct LBMPartialRdbRecordCheck {
+
+  // Merges the contents of another check into this one.
+  void MergeFrom(const LBMPartialRdbRecordCheck& other);
+
+  // Returns a multi-line string representation of this check.
+  std::string ToString() const;
+
+  struct Entry {
+    Entry(std::string c, std::string b);
+    std::string container;
+    std::string block_id;;
+    bool repaired;
+  };
+  std::vector<Entry> entries;
+};
+
 // Results of a Kudu filesystem-wide check. The report contains general
 // statistics about the filesystem as well as a series of "checks" that
 // describe possible on-disk inconsistencies.
@@ -268,6 +289,7 @@ struct FsReport {
   std::optional<LBMMalformedRecordCheck> malformed_record_check;
   std::optional<LBMMisalignedBlockCheck> misaligned_block_check;
   std::optional<LBMPartialRecordCheck> partial_record_check;
+  std::optional<LBMPartialRdbRecordCheck> partial_rdb_record_check;
 };
 
 } // namespace fs

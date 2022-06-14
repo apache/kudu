@@ -607,12 +607,14 @@ endif()
 #######################################
 # util/compression tests
 #######################################
-ADD_KUDU_TEST(compression/compression-test)
 if(NOT NO_TESTS)
-  target_link_libraries(compression-test
-    cfile
-    kudu_util_compression)
+  SET_KUDU_TEST_LINK_LIBS(
+          cfile
+          kudu_util_compression
+          rocksdb
+          lz4)
 endif()
+ADD_KUDU_TEST(compression/compression-test)
 
 #######################################
 # curl_util-test

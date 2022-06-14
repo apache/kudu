@@ -33,12 +33,14 @@ target_link_libraries(tpch
 add_executable(tpch1 tpch/tpch1.cc)
 target_link_libraries(tpch1
   ${KUDU_MIN_TEST_LIBS}
+  rocksdb
   tpch)
 
 # tpch_real_world
 add_executable(tpch_real_world tpch/tpch_real_world.cc)
 target_link_libraries(tpch_real_world
   ${KUDU_MIN_TEST_LIBS}
+  rocksdb
   tpch)
 
 # rle
@@ -56,5 +58,5 @@ if(NOT APPLE)
 endif()
 
 # Tests
-SET_KUDU_TEST_LINK_LIBS(tpch)
+SET_KUDU_TEST_LINK_LIBS(tpch rocksdb)
 ADD_KUDU_TEST(tpch/rpc_line_item_dao-test)

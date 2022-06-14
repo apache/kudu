@@ -31,6 +31,13 @@
 #include <vector>
 
 #include <glog/logging.h>
+#include <rocksdb/cache.h>
+#include <rocksdb/db.h>
+#include <rocksdb/filter_policy.h>
+#include <rocksdb/options.h>
+#include <rocksdb/slice_transform.h>
+#include <rocksdb/status.h>
+#include <rocksdb/table.h>
 
 #include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
@@ -49,6 +56,7 @@
 #include "kudu/util/threadpool.h"
 
 using std::set;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -57,6 +65,29 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+Status FromRdbStatus(const rocksdb::Status& s) {
+  switch (s.code()) {
+    case rocksdb::Status::kOk:
+      return Status::OK();
+    case rocksdb::Status::kNotFound:
+      return Status::NotFound(s.ToString());
+    case rocksdb::Status::kCorruption:
+      return Status::Corruption(s.ToString());
+    case rocksdb::Status::kNotSupported:
+      return Status::NotSupported(s.ToString());
+    case rocksdb::Status::kInvalidArgument:
+      return Status::InvalidArgument(s.ToString());
+    case rocksdb::Status::kIOError:
+      return Status::IOError(s.ToString());
+    case rocksdb::Status::kIncomplete:
+      return Status::Incomplete(s.ToString());
+    case rocksdb::Status::kAborted:
+      return Status::Aborted(s.ToString());
+    default:
+      return Status::RuntimeError(s.ToString());
+  }
+}
 
 namespace {
 
@@ -71,6 +102,8 @@ void DeleteTmpFilesRecursively(Env* env, const string& path) {
 } // anonymous namespace
 namespace fs {
 
+shared_ptr<rocksdb::Cache> Dir::s_block_cache_;
+
 Dir::Dir(Env* env,
          DirMetrics* metrics,
          FsType fs_type,
@@ -83,13 +116,53 @@ Dir::Dir(Env* env,
       dir_(std::move(dir)),
       metadata_file_(std::move(metadata_file)),
       pool_(std::move(pool)),
+      is_init_(false),
       is_shutdown_(false),
       is_full_(false),
-      available_bytes_(0) {
+      available_bytes_(0),
+      db_(nullptr) {
 }
 
 Dir::~Dir() {
   Shutdown();
+}
+
+Status Dir::InitRdb() {
+  if (is_init_) {
+    return Status::OK();
+  }
+  rocksdb::Options opts;
+  opts.create_if_missing = true;
+  // TODO(yingchun): issue a Flush when batch commit instead.
+//  opts.use_fsync = FLAGS_enable_data_block_fsync;
+//  opts.error_if_exists = true;  TODO(yingchun): open
+//  opts.db_log_dir = ;  TODO(yingchun): consider put it into FLAGS_log_dir
+//  opts.wal_dir = ;  TODO(yingchun): consider put it into FLAGS_fs_wal_dir
+  opts.max_log_file_size = 1 << 30;
+  opts.keep_log_file_num = 5;
+  opts.max_manifest_file_size = 100 << 20;
+  opts.max_background_jobs = 4;
+  opts.write_buffer_size = 64 << 20;  // TODO(yingchun): this is default value, try to use gflag
+  opts.level0_file_num_compaction_trigger = 8;
+  opts.max_write_buffer_number = 8;
+
+  rocksdb::BlockBasedTableOptions tbl_opts;
+  static std::once_flag flag;
+  std::call_once(flag, [&]() {
+    s_block_cache_ = rocksdb::NewLRUCache(1 << 30);  // TODO(yingchun): use gflag
+  });
+  tbl_opts.block_cache = s_block_cache_;
+  tbl_opts.whole_key_filtering = false;
+  tbl_opts.filter_policy.reset(rocksdb::NewBloomFilterPolicy(9.9));
+  opts.table_factory.reset(NewBlockBasedTableFactory(tbl_opts));
+  opts.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(ObjectIdGenerator::IdLength()));
+  opts.memtable_prefix_bloom_size_ratio = 0.1;
+  rocksdb::Status s = rocksdb::DB::Open(opts, JoinPathSegments(dir_, "rdb"), &db_);
+  if (!s.ok()) {
+    return Status::IOError(Substitute("$0, open RocksDB failed, path: $0", s.ToString(), dir_));
+  }
+  is_init_ = true;
+  return Status::OK();
 }
 
 void Dir::Shutdown() {
@@ -99,6 +172,20 @@ void Dir::Shutdown() {
 
   WaitOnClosures();
   pool_->Shutdown();
+
+  if (is_init_) {
+    CHECK(db_);
+    {
+      rocksdb::FlushOptions options;
+      options.wait = true;
+      rocksdb::Status s = db_->Flush(options);
+      CHECK_OK(FromRdbStatus(s));
+    }
+
+    delete db_;
+    db_ = nullptr;
+  }
+
   is_shutdown_ = true;
 }
 
@@ -614,6 +701,15 @@ Status DirManager::Open() {
 Dir* DirManager::FindDirByUuidIndex(int uuid_idx) const {
   DCHECK_LT(uuid_idx, dirs_.size());
   return FindPtrOrNull(dir_by_uuid_idx_, uuid_idx);
+}
+
+Dir* DirManager::FindDirByRoot(const std::string& root) const {
+  for (const auto& d : dirs_) {
+    if (d->dir() == root) {
+      return d.get();
+    }
+  }
+  return nullptr;
 }
 
 bool DirManager::FindUuidIndexByDir(Dir* dir, int* uuid_idx) const {

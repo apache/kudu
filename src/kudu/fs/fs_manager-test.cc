@@ -1056,7 +1056,7 @@ TEST_P(FsManagerTestBase, TestAddRemoveSpeculative) {
 }
 
 TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
-  const int kNumAttempts = AllowSlowTests() ? 1000 : 100;
+  const int kNumAttempts = AllowSlowTests() ? 500 : 100;
 
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "Skipping test, file block manager not supported";

@@ -25,6 +25,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -559,16 +560,16 @@ class FileBlockCreationTransaction : public BlockCreationTransaction {
 
   virtual ~FileBlockCreationTransaction() = default;
 
-  virtual void AddCreatedBlock(std::unique_ptr<WritableBlock> block) override;
+  virtual void AddCreatedBlock(unique_ptr<WritableBlock> block) override;
 
   virtual Status CommitCreatedBlocks() override;
 
  private:
-  std::vector<std::unique_ptr<FileWritableBlock>> created_blocks_;
+  vector<unique_ptr<FileWritableBlock>> created_blocks_;
 };
 
 void FileBlockCreationTransaction::AddCreatedBlock(
-    std::unique_ptr<WritableBlock> block) {
+    unique_ptr<WritableBlock> block) {
   FileWritableBlock* fwb =
       down_cast<FileWritableBlock*>(block.release());
   created_blocks_.emplace_back(unique_ptr<FileWritableBlock>(fwb));
@@ -611,12 +612,12 @@ class FileBlockDeletionTransaction : public BlockDeletionTransaction {
 
   virtual void AddDeletedBlock(BlockId block) override;
 
-  virtual Status CommitDeletedBlocks(std::vector<BlockId>* deleted) override;
+  virtual Status CommitDeletedBlocks(vector<BlockId>* deleted) override;
 
  private:
   // The owning FileBlockManager. Must outlive the FileBlockDeletionTransaction.
   FileBlockManager* fbm_;
-  std::vector<BlockId> deleted_blocks_;
+  vector<BlockId> deleted_blocks_;
   DISALLOW_COPY_AND_ASSIGN(FileBlockDeletionTransaction);
 };
 
@@ -624,8 +625,10 @@ void FileBlockDeletionTransaction::AddDeletedBlock(BlockId block) {
   deleted_blocks_.emplace_back(block);
 }
 
-Status FileBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* deleted) {
-  deleted->clear();
+Status FileBlockDeletionTransaction::CommitDeletedBlocks(vector<BlockId>* deleted) {
+  if (deleted) {
+    deleted->clear();
+  }
   Status first_failure;
   for (BlockId block : deleted_blocks_) {
     Status s = fbm_->DeleteBlock(block);
@@ -633,7 +636,9 @@ Status FileBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* d
     if (!s.ok() && !s.IsNotFound()) {
       if (first_failure.ok()) first_failure = s;
     } else {
-      deleted->emplace_back(block);
+      if (deleted) {
+        deleted->emplace_back(block);
+      }
       if (s.ok() && fbm_->metrics_) {
         fbm_->metrics_->total_blocks_deleted->Increment();
       }
@@ -641,9 +646,9 @@ Status FileBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* d
   }
 
   if (!first_failure.ok()) {
-    first_failure = first_failure.CloneAndPrepend(strings::Substitute("only deleted $0 blocks, "
-                                                                      "first failure",
-                                                                      deleted->size()));
+    first_failure = first_failure.CloneAndPrepend(
+        Substitute("only deleted $0 blocks, first failure",
+                   deleted ? std::to_string(deleted->size()) : "partial"));
   }
   deleted_blocks_.clear();
   return first_failure;

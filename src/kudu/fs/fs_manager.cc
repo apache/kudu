@@ -79,7 +79,8 @@ TAG_FLAG(enable_data_block_fsync, unsafe);
 
 #if defined(__linux__)
 DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
-              "Valid options are 'file' and 'log'. The file block manager is not suitable for "
+              "Valid options are 'file', 'log' and 'logr'. "
+              "The file block manager is not suitable for "
               "production use due to scaling limitations.");
 #else
 DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
@@ -173,6 +174,7 @@ using kudu::fs::FsErrorManager;
 using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
 using kudu::fs::LogBlockManagerNativeMeta;
+using kudu::fs::LogrBlockManager;
 using kudu::fs::ReadableBlock;
 using kudu::fs::UpdateInstanceBehavior;
 using kudu::fs::WritableBlock;
@@ -383,6 +385,9 @@ void FsManager::InitBlockManager() {
   } else if (opts_.block_manager_type == "log") {
     block_manager_.reset(new LogBlockManagerNativeMeta(
         env_, dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
+  } else if (opts_.block_manager_type == "logr") {
+    block_manager_.reset(new LogrBlockManager(
+        env_, dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
   } else {
     LOG(FATAL) << "Unknown block_manager_type: " << opts_.block_manager_type;
   }
@@ -559,7 +564,8 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     }
     if (read_data_directories) {
       read_data_directories->Stop();
-      if (opts_.metric_entity && opts_.block_manager_type == "log") {
+      if (opts_.metric_entity && (opts_.block_manager_type == "log" ||
+                                  opts_.block_manager_type == "logr")) {
         METRIC_log_block_manager_containers_processing_time_startup.Instantiate(opts_.metric_entity,
             (read_data_directories->TimeElapsed()).ToMilliseconds());
       }

@@ -52,10 +52,11 @@ target_link_libraries(itest_util
   security_test_util)
 add_dependencies(itest_util
   kudu-master
-  kudu-tserver)
+  kudu-tserver
+  kudu)
 
 # Tests
-SET_KUDU_TEST_LINK_LIBS(itest_util gumbo-parser gumbo-query)
+SET_KUDU_TEST_LINK_LIBS(itest_util gumbo-parser gumbo-query rocksdb)
 ADD_KUDU_TEST(all_types-itest
   PROCESSORS 4
   NUM_SHARDS 8)

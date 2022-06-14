@@ -253,6 +253,34 @@ LBMPartialRecordCheck::Entry::Entry(string c, int64_t o)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// LBMPartialRdbRecordCheck
+///////////////////////////////////////////////////////////////////////////////
+
+void LBMPartialRdbRecordCheck::MergeFrom(
+    const LBMPartialRdbRecordCheck& other) {
+  MERGE_ENTRIES_FROM(other);
+}
+
+string LBMPartialRdbRecordCheck::ToString() const {
+  // Aggregate interesting stats from all of the entries.
+  int64_t partial_records_repaired = 0;
+  for (const auto& pr : entries) {
+    if (pr.repaired) {
+      partial_records_repaired++;
+    }
+  }
+
+  return Substitute("Total LBM partial rdb records: $0 ($1 repaired)\n",
+                    entries.size(), partial_records_repaired);
+}
+
+LBMPartialRdbRecordCheck::Entry::Entry(string c, string b)
+    : container(std::move(c)),
+      block_id(std::move(b)),
+      repaired(false) {
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // FsReport::Stats
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -301,6 +329,7 @@ void FsReport::MergeFrom(const FsReport& other) {
   MERGE_ONE_CHECK(malformed_record_check);
   MERGE_ONE_CHECK(misaligned_block_check);
   MERGE_ONE_CHECK(partial_record_check);
+  MERGE_ONE_CHECK(partial_rdb_record_check);
 
 #undef MERGE_ONE_CHECK
 }
@@ -329,6 +358,7 @@ string FsReport::ToString() const {
   TOSTRING_ONE_CHECK(malformed_record_check, "malformed LBM records");
   TOSTRING_ONE_CHECK(misaligned_block_check, "misaligned LBM blocks");
   TOSTRING_ONE_CHECK(partial_record_check, "partial LBM records");
+  TOSTRING_ONE_CHECK(partial_rdb_record_check, "partial LBM rdb records");
 
 #undef TOSTRING_ONE_CHECK
   return s;

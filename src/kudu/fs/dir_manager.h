@@ -35,7 +35,15 @@
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
+namespace rocksdb {
+class Cache;
+class DB;
+class Status;
+} // namespace rocksdb
+
 namespace kudu {
+
+Status FromRdbStatus(const rocksdb::Status& s);
 
 class Env;
 class ThreadPool;
@@ -101,6 +109,8 @@ class Dir {
       std::unique_ptr<ThreadPool> pool);
   virtual ~Dir();
 
+  Status InitRdb();
+
   // Shuts down this dir's thread pool, waiting for any closures submitted via
   // ExecClosure() to finish first.
   void Shutdown();
@@ -156,6 +166,8 @@ class Dir {
   // value of -1 means 1% of the disk space in a directory will be reserved.
   virtual int reserved_bytes() const = 0;
 
+  rocksdb::DB* rdb() const { return db_; }
+
  private:
   Env* env_;
   DirMetrics* metrics_;
@@ -164,6 +176,8 @@ class Dir {
   const std::unique_ptr<DirInstanceMetadataFile> metadata_file_;
   const std::unique_ptr<ThreadPool> pool_;
 
+  // TODO(yingchun): use 1 variable
+  bool is_init_;
   bool is_shutdown_;
 
   // Protects 'last_space_check_', 'is_full_' and 'available_bytes_'.
@@ -173,6 +187,9 @@ class Dir {
 
   // The available bytes of this dir, updated by RefreshAvailableSpace.
   int64_t available_bytes_;
+
+  rocksdb::DB* db_;
+  static std::shared_ptr<rocksdb::Cache> s_block_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(Dir);
 };
@@ -267,6 +284,8 @@ class DirManager {
   // More information on uuid indexes and their relation to directories
   // can be found next to DirSetPB in fs.proto.
   Dir* FindDirByUuidIndex(int uuid_idx) const;
+
+  Dir* FindDirByRoot(const std::string& root) const;
 
   // Finds a uuid index by directory, returning false if it can't be found.
   bool FindUuidIndexByDir(Dir* dir, int* uuid_idx) const;

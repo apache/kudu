@@ -122,6 +122,7 @@ SET_KUDU_TEST_LINK_LIBS(
   consensus
   tserver_proto
   cfile
+  rocksdb
   tablet
   kudu_util)
 

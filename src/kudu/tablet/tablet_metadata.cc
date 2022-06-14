@@ -574,8 +574,7 @@ void TabletMetadata::DeleteOrphanedBlocks(const BlockIdContainer& blocks) {
   for (const BlockId& b : blocks) {
     transaction->AddDeletedBlock(b);
   }
-  vector<BlockId> deleted;
-  WARN_NOT_OK(transaction->CommitDeletedBlocks(&deleted),
+  WARN_NOT_OK(transaction->CommitDeletedBlocks(nullptr),
               "not all orphaned blocks were deleted");
 
   // Regardless of whether we deleted all the blocks or not, remove them from

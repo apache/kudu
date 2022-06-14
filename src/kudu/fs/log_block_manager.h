@@ -57,6 +57,8 @@ struct FsReport;
 namespace internal {
 class LogBlock;
 class LogBlockContainer;
+class LogfBlockContainer;
+class LogrBlockContainer;
 class LogBlockDeletionTransaction;
 class LogWritableBlock;
 struct LogBlockContainerLoadResult;
@@ -65,6 +67,8 @@ struct LogBlockManagerMetrics;
 
 typedef scoped_refptr<internal::LogBlock> LogBlockRefPtr;
 typedef scoped_refptr<internal::LogBlockContainer> LogBlockContainerRefPtr;
+typedef scoped_refptr<internal::LogfBlockContainer> LogfBlockContainerRefPtr;
+typedef scoped_refptr<internal::LogrBlockContainer> LogrBlockContainerRefPtr;
 
 // A log-backed (i.e. sequentially allocated file) block storage
 // implementation.
@@ -197,15 +201,6 @@ class LogBlockManager : public BlockManager {
   FsErrorManager* error_manager() override { return error_manager_; }
 
  protected:
-  // Note: all objects passed as pointers should remain alive for the lifetime
-  // of the block manager.
-  LogBlockManager(Env* env,
-                  DataDirManager* dd_manager,
-                  FsErrorManager* error_manager,
-                  FileCache* file_cache,
-                  BlockManagerOptions opts);
-
- private:
   FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup);
@@ -218,8 +213,11 @@ class LogBlockManager : public BlockManager {
   FRIEND_TEST(LogBlockManagerTest, TestBumpBlockIds);
   FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
   FRIEND_TEST(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer);
+  FRIEND_TEST(LogBlockManagerTest, TestRdb);
 
   friend class internal::LogBlockContainer;
+  friend class internal::LogfBlockContainer;
+  friend class internal::LogrBlockContainer;
   friend class internal::LogBlockDeletionTransaction;
   friend class internal::LogWritableBlock;
   friend class LogBlockManagerTest;
@@ -252,6 +250,14 @@ class LogBlockManager : public BlockManager {
       BlockRecordPB,
       BlockIdHash,
       BlockIdEqual> BlockRecordMap;
+
+  // Note: all objects passed as pointers should remain alive for the lifetime
+  // of the block manager.
+  LogBlockManager(Env* env,
+                  DataDirManager* dd_manager,
+                  FsErrorManager* error_manager,
+                  FileCache* file_cache,
+                  BlockManagerOptions opts);
 
   // Adds an as of yet unseen container to this block manager.
   //
@@ -310,10 +316,11 @@ class LogBlockManager : public BlockManager {
   // adds the block deletion metadata to record the on-disk deletion.
   // The 'log_blocks' out parameter will be set with the LogBlocks that were
   // successfully removed. The 'deleted' out parameter will be set with the
-  // blocks were already deleted, e.g encountered 'NotFound' error during removal.
+  // blocks were already deleted if it's not nullptr, e.g encountered 'NotFound'
+  // error during removal.
   //
   // Returns the first deletion failure that was seen, if any.
-  Status RemoveLogBlocks(std::vector<BlockId> block_ids,
+  Status RemoveLogBlocks(const std::vector<BlockId>& block_ids,
                          std::vector<LogBlockRefPtr>* log_blocks,
                          std::vector<BlockId>* deleted);
 
@@ -470,6 +477,12 @@ class LogBlockManager : public BlockManager {
   // For generating block IDs.
   AtomicInt<uint64_t> next_block_id_;
 
+  enum LogBlockManagerType {
+    kFile = 0,
+    kRdb
+  };
+  LogBlockManagerType type_;
+
   // Metrics for the block manager.
   //
   // May be null if instantiated without metrics.
@@ -491,12 +504,33 @@ class LogBlockManager : public BlockManager {
 // metadata is simple and performant at open time.
 class LogBlockManagerNativeMeta : public LogBlockManager {
  public:
+  static std::string name() {
+    return "log";
+  }
+
   LogBlockManagerNativeMeta(Env* env,
                             DataDirManager* dd_manager,
                             FsErrorManager* error_manager,
                             FileCache* file_cache,
                             BlockManagerOptions opts)
       : LogBlockManager(env, dd_manager, error_manager, file_cache, std::move(opts)) {
+    type_ = LogBlockManagerType::kFile;
+  }
+};
+
+class LogrBlockManager : public LogBlockManager {
+ public:
+  static std::string name() {
+    return "logr";
+  }
+
+  LogrBlockManager(Env* env,
+                   DataDirManager* dd_manager,
+                   FsErrorManager* error_manager,
+                   FileCache* file_cache,
+                   BlockManagerOptions opts)
+      : LogBlockManager(env, dd_manager, error_manager, file_cache, std::move(opts)) {
+    type_ = LogBlockManagerType::kRdb;
   }
 };
 

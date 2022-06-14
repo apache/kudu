@@ -938,7 +938,8 @@ TEST_F(TabletServerStartupWebPageTest, TestLogBlockContainerMetrics) {
   // Validate populated metrics in case of zero containers during startup.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics", addr), &buf));
   string raw = buf.ToString();
-  if (mini_server_->options()->fs_opts.block_manager_type == "log") {
+  if (mini_server_->options()->fs_opts.block_manager_type == "log" ||
+      mini_server_->options()->fs_opts.block_manager_type == "logr") {
     ASSERT_STR_MATCHES(raw, "log_block_manager_total_containers_startup\",\n[ ]+\"value\": 0");
     ASSERT_STR_MATCHES(raw, "log_block_manager_processed_containers_startup\",\n[ ]+\"value\": 0");
     // Since we open each directory and read all the contents, the time taken might not be
@@ -3929,7 +3930,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
     METRIC_log_block_manager_blocks_under_management.Instantiate(
         mini_server_->server()->metric_entity(), 0);
   const int block_count_before_flush = ondisk->value();
-  if (FLAGS_block_manager == "log") {
+  if (FLAGS_block_manager == "log" || FLAGS_block_manager == "logr") {
     ASSERT_EQ(block_count_before_flush, 0);
   }
 
@@ -3940,7 +3941,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   NO_FATALS(InsertTestRowsRemote(2, 1));
 
   const int block_count_after_flush = ondisk->value();
-  if (FLAGS_block_manager == "log") {
+  if (FLAGS_block_manager == "log" || FLAGS_block_manager == "logr") {
     ASSERT_GT(block_count_after_flush, block_count_before_flush);
   }
 
@@ -3979,7 +3980,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
 
   // Verify data was actually removed.
   const int block_count_after_delete = ondisk->value();
-  if (FLAGS_block_manager == "log") {
+  if (FLAGS_block_manager == "log" || FLAGS_block_manager == "logr") {
     ASSERT_EQ(block_count_after_delete, 0);
   }
 

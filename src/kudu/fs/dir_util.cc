@@ -163,7 +163,7 @@ Status DirInstanceMetadataFile::Create(const set<string>& all_uuids,
 
   // If we're initializing the log block manager, check that we support
   // hole-punching.
-  if (dir_type_ == "log") {
+  if (dir_type_ == "log" || dir_type_ == "logr") {
     RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(CheckHolePunch(env_, dir_name),
                                         kHolePunchErrorMsg);
   }

@@ -236,7 +236,7 @@ TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
 // Test for KUDU-2202 that ensures that blocks not found in the FS layer but
 // that are referenced by a tablet will not be reused.
 TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
-  if (GetParam() != "log") {
+  if (GetParam() != "log" && GetParam() != "logr") {
     LOG(INFO) << "Missing blocks is currently only supported by the log "
                  "block manager. Exiting early!";
     return;
@@ -309,7 +309,8 @@ TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
     vector<string> children;
     ASSERT_OK(env_->GetChildren(data_dir, &children));
     for (const string& child : children) {
-      if (child != "." && child != ".." && child != fs::kInstanceMetadataFileName) {
+      if (child != "." && child != ".." &&
+          child != fs::kInstanceMetadataFileName && child != "rdb") {
         ASSERT_OK(env_->DeleteFile(JoinPathSegments(data_dir, child)));
       }
     }

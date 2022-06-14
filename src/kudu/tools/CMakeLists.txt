@@ -137,6 +137,7 @@ target_link_libraries(kudu
   log
   master
   mini_cluster
+  rocksdb
   tablet
   tool_proto
   transactions
@@ -193,7 +194,8 @@ ADD_KUDU_TEST(kudu-tool-test
   DATA_FILES testdata/sample-diagnostics-log.txt testdata/bad-diagnostics-log.txt
   DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
-  kudu)
+  kudu
+  rocksdb)
 ADD_KUDU_TEST(kudu-ts-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
   kudu)

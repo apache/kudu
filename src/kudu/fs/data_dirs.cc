@@ -287,7 +287,7 @@ int DataDirManager::max_dirs() const {
 }
 
 Status DataDirManager::PopulateDirectoryMaps(const vector<unique_ptr<Dir>>& dirs) {
-  if (opts_.dir_type == "log") {
+  if (opts_.dir_type == "log" || opts_.dir_type == "logr") {
     return DirManager::PopulateDirectoryMaps(dirs);
   }
   DCHECK_EQ("file", opts_.dir_type);

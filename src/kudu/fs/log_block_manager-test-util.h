@@ -36,11 +36,13 @@ class WritablePBContainerFile;
 } // namespace pb_util
 
 namespace fs {
+class DataDirManager;
+class Dir;
 
 // Corrupts various log block manager on-disk data structures.
 class LBMCorruptor {
  public:
-  LBMCorruptor(Env* env, std::vector<std::string> data_dirs, uint32_t rand_seed);
+  LBMCorruptor(Env* env, DataDirManager* dd_manager, uint32_t rand_seed);
 
   // Initializes a the corruptor, parsing all data directories for containers.
   //
@@ -90,9 +92,14 @@ class LBMCorruptor {
   // Injects one of the above non-fatal inconsistencies (chosen at random).
   Status InjectRandomNonFatalInconsistency();
 
+  void ResetDataDirManager(DataDirManager* dd_manager) {
+    dd_manager_ = dd_manager;
+  }
+
  private:
   // Describes an on-disk LBM container.
   struct Container {
+    std::string dir;
     std::string name;
     std::string data_filename;
     std::string metadata_filename;
@@ -108,9 +115,18 @@ class LBMCorruptor {
                                    BlockId block_id,
                                    int64_t block_offset,
                                    int64_t block_length);
+  static Status AppendCreateRecord(Dir* dir,
+                                   const std::string& id,
+                                   BlockId block_id,
+                                   int64_t block_offset,
+                                   int64_t block_length);
 
   // Appends a DELETE record to 'writer'.
   static Status AppendDeleteRecord(pb_util::WritablePBContainerFile* writer,
+                                   BlockId block_id);
+
+  static Status AppendDeleteRecord(Dir* dir,
+                                   const std::string& id,
                                    BlockId block_id);
 
   // Preallocates space at the end of a container's data file for a new block.
@@ -132,11 +148,11 @@ class LBMCorruptor {
                             const Container** container) const;
 
   // Gets a data directory chosen at random.
-  const std::string& GetRandomDataDir() const;
+  std::string GetRandomDataDir() const;
 
   // Initialized in the constructor.
   Env* env_;
-  const std::vector<std::string> data_dirs_;
+  DataDirManager* dd_manager_;
   mutable Random rand_;
   ObjectIdGenerator oid_generator_;
 

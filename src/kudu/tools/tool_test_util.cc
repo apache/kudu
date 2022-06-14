@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/split.h"
@@ -36,6 +37,8 @@ using std::string;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
+
+DECLARE_string(block_manager);
 
 namespace kudu {
 namespace tools {
@@ -67,6 +70,8 @@ Status RunKuduTool(const vector<string>& args, string* out, string* err,
   // level higher than 0, so it's necessary to override it on the client
   // side as well to allow clients to accept and verify TLS certificates.
   total_args.emplace_back("--openssl_security_level_override=0");
+
+  total_args.emplace_back(Substitute("--block_manager=$0", FLAGS_block_manager));
 
   total_args.insert(total_args.end(), args.begin(), args.end());
   return Subprocess::Call(total_args, in, out, err, std::move(env_vars));
