@@ -591,11 +591,20 @@ message ListTablesRequestPB {
   // interpreted as if it were set to [TableTypePB::DEFAULT_TABLE], meaning
   // to include only user-defined tables.
   repeated TableTypePB type_filter = 2;
+
+  // Set this field 'true' to include information on the partition backed by
+  // each tablet in the result list.
+  optional bool list_tablet_with_partition = 3 [default = false];
 }
 
 message ListTablesResponsePB {
   // The error, if an error occurred with this request.
   optional MasterErrorPB error = 1;
+
+  message TabletWithPartition {
+    optional string tablet_id = 1;
+    optional PartitionPB partition = 2;
+  }
 
   message TableInfo {
     required bytes id = 1;
@@ -603,6 +612,7 @@ message ListTablesResponsePB {
     optional uint64 live_row_count = 3;
     optional int32 num_tablets = 4;
     optional int32 num_replicas = 5;
+    repeated TabletWithPartition tablet_with_partition = 6;
   }
 
   repeated TableInfo tables = 2;

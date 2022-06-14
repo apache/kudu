@@ -109,6 +109,20 @@ DEFINE_bool(list_tablets, false,
 DEFINE_bool(show_table_info, false,
             "Include extra information such as number of tablets, replicas, "
             "and live row count for a table in the output");
+DEFINE_bool(show_tablet_partition_info, false,
+            "Include partition keys information corresponding to tablet in the output.");
+
+bool ValidateShowTabletPartitionInfo() {
+  if (!FLAGS_list_tablets && FLAGS_show_tablet_partition_info) {
+    LOG(ERROR) << Substitute("--show_tablet_partition_info is meaningless "
+                             "when --list_tablets=false");
+    return false;
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(show_tablet_partition_info, ValidateShowTabletPartitionInfo);
+
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
@@ -167,14 +181,35 @@ namespace tools {
 // KuduReplica, KuduReplica::Data, and KuduClientBuilder.
 class TableLister {
  public:
+  static string SearchPartitionInfo(const KuduClient::Data::TableInfo& table_info,
+                                    const client::sp::shared_ptr<KuduTable>& table,
+                                    const string& tablet_id) {
+    string pinfo;
+    const auto& partition_with_tablet_info = table_info.partition_with_tablet_info;
+    for (const auto& pt : partition_with_tablet_info) {
+      if (tablet_id != pt.tablet_id) {
+        continue;
+      }
+
+      const auto& schema_internal = KuduSchema::ToSchema(table->schema());
+      const auto& partition_schema = table->partition_schema();
+      pinfo = partition_schema.PartitionDebugString(pt.partition, schema_internal);
+      break;
+    }
+    return pinfo;
+  }
+
   static Status ListTablets(const vector<string>& master_addresses) {
     client::sp::shared_ptr<KuduClient> client;
     RETURN_NOT_OK(CreateKuduClient(master_addresses,
                                    &client,
-                                   true /* can_see_all_replicas */));
+                                   true/* can_see_all_replicas */));
     vector<kudu::client::KuduClient::Data::TableInfo> tables_info;
     RETURN_NOT_OK(client->data_->ListTablesWithInfo(
-        client.get(), &tables_info, "" /* filter */));
+                                          client.get(),
+                                          &tables_info,
+                                          "" /* filter */,
+                                          FLAGS_show_tablet_partition_info));
 
     vector<string> table_filters = Split(FLAGS_tables, ",", strings::SkipEmpty());
     for (const auto& tinfo : tables_info) {
@@ -187,9 +222,11 @@ class TableLister {
       } else {
         cout << tname << endl;
       }
+
       if (!FLAGS_list_tablets) {
         continue;
       }
+
       client::sp::shared_ptr<KuduTable> client_table;
       RETURN_NOT_OK(client->OpenTable(tname, &client_table));
       vector<KuduScanToken*> tokens;
@@ -198,7 +235,12 @@ class TableLister {
       RETURN_NOT_OK(builder.Build(&tokens));
 
       for (const auto* token : tokens) {
-        cout << "  T " << token->tablet().id() << endl;
+        string partition_info;
+        string tablet_id = token->tablet().id();
+        if (FLAGS_show_tablet_partition_info) {
+          partition_info = " : " + SearchPartitionInfo(tinfo, client_table, tablet_id);
+        }
+        cout << "  T " << tablet_id << partition_info << endl;
         for (const auto* replica : token->tablet().replicas()) {
           const bool is_voter = ReplicaController::is_voter(*replica);
           const bool is_leader = replica->is_leader();
@@ -210,6 +252,7 @@ class TableLister {
       }
       cout << endl;
     }
+
     return Status::OK();
   }
 };
@@ -1504,6 +1547,7 @@ unique_ptr<Mode> BuildTableMode() {
       .Description("List tables")
       .AddOptionalParameter("tables")
       .AddOptionalParameter("list_tablets")
+      .AddOptionalParameter("show_tablet_partition_info")
       .AddOptionalParameter("show_table_info")
       .Build();
 

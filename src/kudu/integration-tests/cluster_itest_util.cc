@@ -972,6 +972,24 @@ Status GetTabletLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
   return Status::OK();
 }
 
+Status ListTablesWithInfo(const shared_ptr<MasterServiceProxy>& master_proxy,
+                          const string& filter,
+                          const MonoDelta& timeout,
+                          master::ListTablesResponsePB* tables_info) {
+  master::ListTablesRequestPB req;
+  if (!filter.empty()) {
+    req.set_name_filter(filter);
+  }
+  req.set_list_tablet_with_partition(true);
+  rpc::RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(master_proxy->ListTables(req, tables_info, &rpc));
+  if (tables_info->has_error()) {
+    return StatusFromPB(tables_info->error().status());
+  }
+  return Status::OK();
+}
+
 Status GetTableLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
                          const string& table_name,
                          const MonoDelta& timeout,

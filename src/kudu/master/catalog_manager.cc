@@ -3641,12 +3641,8 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
       if (table_name != ltm.data().name()) {
         continue;
       }
-      ListTablesResponsePB::TableInfo* table = resp->add_tables();
-      table->set_id(table_info->id());
-      table->set_name(table_name);
-      table->set_live_row_count(table_info->GetMetrics()->live_row_count->value());
-      table->set_num_tablets(table_info->num_tablets());
-      table->set_num_replicas(ltm.data().pb.num_replicas());
+      FillListTablesResponse(table_name, table_info, ltm.data().pb.num_replicas(),
+                             req->list_tablet_with_partition(), resp);
     }
   } else {
     // Otherwise, pass all tables through.
@@ -3654,17 +3650,36 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
       const auto& table_name = name_and_table_info.first;
       const auto& table_info = name_and_table_info.second;
       TableMetadataLock ltm(table_info.get(), LockMode::READ);
-      ListTablesResponsePB::TableInfo* table = resp->add_tables();
-      table->set_id(table_info->id());
-      table->set_name(table_name);
-      table->set_live_row_count(table_info->GetMetrics()->live_row_count->value());
-      table->set_num_tablets(table_info->num_tablets());
-      table->set_num_replicas(ltm.data().pb.num_replicas());
+      FillListTablesResponse(table_name, table_info, ltm.data().pb.num_replicas(),
+                             req->list_tablet_with_partition(), resp);
     }
   }
   return Status::OK();
 }
 
+void CatalogManager::FillListTablesResponse(const string& table_name,
+                                            const scoped_refptr<TableInfo>& table_info,
+                                            int replica_num,
+                                            bool list_tablet_with_partition,
+                                            ListTablesResponsePB* resp) {
+  ListTablesResponsePB::TableInfo* table = resp->add_tables();
+  table->set_id(table_info->id());
+  table->set_name(table_name);
+  table->set_live_row_count(table_info->GetMetrics()->live_row_count->value());
+  table->set_num_tablets(table_info->num_tablets());
+  table->set_num_replicas(replica_num);
+  if (list_tablet_with_partition) {
+    const auto& tablet_map = table_info->tablet_map();
+    for (const auto& tablet : tablet_map) {
+      ListTablesResponsePB::TabletWithPartition* tablet_with_partition =
+          table->add_tablet_with_partition();
+      TabletMetadataLock t(tablet.second.get(), LockMode::READ);
+      tablet_with_partition->set_tablet_id(tablet.second->id());
+      tablet_with_partition->mutable_partition()->CopyFrom(
+          tablet.second->metadata().state().pb.partition());
+    }
+  }
+}
 Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req,
                                           GetTableStatisticsResponsePB* resp,
                                           const optional<string>& user) {

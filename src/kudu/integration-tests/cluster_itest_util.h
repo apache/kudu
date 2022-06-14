@@ -342,6 +342,13 @@ Status GetTabletLocations(const std::shared_ptr<master::MasterServiceProxy>& mas
                           master::ReplicaTypeFilter filter,
                           master::GetTabletLocationsResponsePB* tablet_locations);
 
+// Get information on the specified tables from master.
+// When @filter is not empty, only returns tables that satisfy a substring match on filter.
+Status ListTablesWithInfo(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+                          const std::string& filter,
+                          const MonoDelta& timeout,
+                          master::ListTablesResponsePB* tables_info);
+
 // Get the list of tablet locations for all tablets in the specified table via the given
 // table name (and table ID if provided) from the Master.
 Status GetTableLocations(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,

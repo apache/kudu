@@ -24,8 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include <gtest/gtest_prod.h>
-
 #include "kudu/common/schema.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/slice.h"

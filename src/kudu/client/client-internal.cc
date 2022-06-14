@@ -444,11 +444,14 @@ Status KuduClient::Data::WaitForAlterTableToFinish(
 
 Status KuduClient::Data::ListTablesWithInfo(KuduClient* client,
                                             vector<TableInfo>* tables_info,
-                                            const string& filter) {
+                                            const string& filter,
+                                            bool list_tablet_with_partition) {
   ListTablesRequestPB req;
   if (!filter.empty()) {
     req.set_name_filter(filter);
   }
+
+  req.set_list_tablet_with_partition(list_tablet_with_partition);
 
   auto deadline = MonoTime::Now() + client->default_admin_operation_timeout();
   Synchronizer sync;
@@ -468,8 +471,26 @@ Status KuduClient::Data::ListTablesWithInfo(KuduClient* client,
     info.live_row_count = table.has_live_row_count() ? table.live_row_count() : 0;
     info.num_tablets = table.has_num_tablets() ? table.num_tablets() : 0;
     info.num_replicas = table.has_num_replicas() ? table.num_replicas() : 0;
+    if (list_tablet_with_partition) {
+      for (const auto& pt : table.tablet_with_partition()) {
+        Partition partition;
+        Partition::FromPB(pt.partition(), &partition);
+        PartitionWithTabletId partition_with_tablet_id = {pt.tablet_id(), std::move(partition)};
+        info.partition_with_tablet_info.emplace_back(std::move(partition_with_tablet_id));
+      }
+    }
+
+    // sort by range key
+    // Different range partitions of the same table do not intersect.
+    // So we just compare the start/begin key of two ranges.
+    std::sort(info.partition_with_tablet_info.begin(), info.partition_with_tablet_info.end(),
+              [] (const PartitionWithTabletId& lhs, const PartitionWithTabletId& rhs) {
+      return lhs.partition.begin().range_key() < rhs.partition.begin().range_key();
+    });
+
     tables_info->emplace_back(std::move(info));
   }
+
   return Status::OK();
 }
 

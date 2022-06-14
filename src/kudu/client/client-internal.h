@@ -28,6 +28,7 @@
 
 #include "kudu/client/authz_token_cache.h"
 #include "kudu/client/client.h"
+#include "kudu/common/partition.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -42,7 +43,6 @@
 namespace kudu {
 
 class DnsResolver;
-class PartitionSchema;
 class Sockaddr;
 
 namespace security {
@@ -138,15 +138,23 @@ class KuduClient::Data {
                                           master::TableIdentifierPB table,
                                           const MonoTime& deadline);
 
+  struct PartitionWithTabletId {
+    std::string tablet_id;
+    Partition partition;
+  };
+
   struct TableInfo {
     std::string table_name;
     uint64_t live_row_count;
     int num_tablets;
     int num_replicas;
+    std::vector<PartitionWithTabletId> partition_with_tablet_info;
   };
+
   static Status ListTablesWithInfo(KuduClient* client,
                                    std::vector<TableInfo>* tables_info,
-                                   const std::string& filter);
+                                   const std::string& filter,
+                                   bool list_tablet_with_partition = false);
 
   // Open the table identified by 'table_identifier'.
   Status OpenTable(KuduClient* client,

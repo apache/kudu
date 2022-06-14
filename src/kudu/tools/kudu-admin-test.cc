@@ -44,6 +44,8 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -112,6 +114,7 @@ using kudu::consensus::OpId;
 using kudu::itest::FindTabletFollowers;
 using kudu::itest::FindTabletLeader;
 using kudu::itest::GetConsensusState;
+using kudu::itest::ListTablesWithInfo;
 using kudu::itest::StartElection;
 using kudu::itest::WaitUntilLeader;
 using kudu::itest::TabletServerMap;
@@ -2081,6 +2084,103 @@ TEST_F(AdminCliTest, TestDescribeTableNoOwner) {
       },
       &stdout));
   ASSERT_STR_CONTAINS(stdout, "OWNER \n");
+}
+
+TEST_F(AdminCliTest, TestListTabletWithPartition) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  vector<TServerDetails*> tservers;
+  vector<string> base_tablet_ids;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ListRunningTabletIds(tservers.front(),
+                       MonoDelta::FromSeconds(30), &base_tablet_ids);
+
+  // Test a table with all types in its schema, multiple hash partitioning
+  // levels, multiple range partitions, and non-covered ranges.
+  const string kTableId = "TestTableListPartition";
+  KuduSchema schema;
+
+  // Build the schema.
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key_hash0")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_hash1")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_hash2")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_range")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.SetPrimaryKey({ "key_hash0", "key_hash1", "key_hash2", "key_range" });
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Set up partitioning and create the table.
+  {
+    unique_ptr<KuduPartialRow> lower_bound0(schema.NewRow());
+    ASSERT_OK(lower_bound0->SetInt32("key_range", 0));
+    unique_ptr<KuduPartialRow> upper_bound0(schema.NewRow());
+    ASSERT_OK(upper_bound0->SetInt32("key_range", 1));
+    unique_ptr<KuduPartialRow> lower_bound1(schema.NewRow());
+    ASSERT_OK(lower_bound1->SetInt32("key_range", 2));
+    unique_ptr<KuduPartialRow> upper_bound1(schema.NewRow());
+    ASSERT_OK(upper_bound1->SetInt32("key_range", 3));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableId)
+        .schema(&schema)
+        .add_hash_partitions({"key_hash0"}, 2)
+        .add_hash_partitions({"key_hash1", "key_hash2"}, 3)
+        .set_range_partition_columns({"key_range"})
+        .add_range_partition(lower_bound0.release(), upper_bound0.release())
+        .add_range_partition(lower_bound1.release(), upper_bound1.release())
+        .num_replicas(FLAGS_num_replicas)
+        .Create());
+  }
+
+  vector<string> new_tablet_ids;
+  ListRunningTabletIds(tservers.front(),
+                       MonoDelta::FromSeconds(30), &new_tablet_ids);
+  vector<string> delta_tablet_ids;
+  for (auto& tablet_id : base_tablet_ids) {
+    if (std::find(new_tablet_ids.begin(), new_tablet_ids.end(), tablet_id) ==
+        new_tablet_ids.end()) {
+      delta_tablet_ids.push_back(tablet_id);
+    }
+  }
+
+  // Test the list tablet with partition output.
+  string stdout;
+  string stderr;
+  Status s = RunKuduTool({
+    "table",
+    "list",
+    "--list_tablets",
+    "--show_tablet_partition_info",
+    "--tables",
+    kTableId,
+    cluster_->master()->bound_rpc_addr().ToString(),
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  client::sp::shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableId, &table));
+  const auto& partition_schema = table->partition_schema();
+  const auto& schema_internal = KuduSchema::ToSchema(table->schema());
+
+  // make sure table name correct
+  ASSERT_STR_CONTAINS(stdout, kTableId);
+
+  master::ListTablesResponsePB tables_info;
+  ASSERT_OK(ListTablesWithInfo(cluster_->master_proxy(), kTableId,
+                               MonoDelta::FromSeconds(30), &tables_info));
+  for (const auto& table : tables_info.tables()) {
+    for (const auto& pt : table.tablet_with_partition()) {
+      Partition partition;
+      Partition::FromPB(pt.partition(), &partition);
+      string partition_str = partition_schema.PartitionDebugString(partition, schema_internal);
+      string tablet_with_partition = pt.tablet_id() + " : " + partition_str;
+      ASSERT_STR_CONTAINS(stdout, tablet_with_partition);
+    }
+  }
 }
 
 TEST_F(AdminCliTest, TestLocateRow) {

@@ -1146,6 +1146,13 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
   void ResetTableLocationsCache();
 
+  // Fill in the reply of ListTables request.
+  static void FillListTablesResponse(const std::string& table_name,
+                                     const scoped_refptr<TableInfo>& table_info,
+                                     int replica_num,
+                                     bool list_tablet_with_partition,
+                                     ListTablesResponsePB* resp);
+
   // Task that takes care of deleted tables, is called in a backgroud thread.
   // Clean up the metadata of tables if the time since they were deleted has passed
   // 'FLAGS_metadata_for_deleted_table_and_tablet_reserved_secs'.
