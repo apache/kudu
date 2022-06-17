@@ -18,6 +18,7 @@
 #include "kudu/client/txn_manager_proxy_rpc.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <ostream>
@@ -28,6 +29,7 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/txn_manager.pb.h"
 #include "kudu/rpc/response_callback.h"
@@ -58,6 +60,7 @@ using kudu::transactions::KeepTransactionAliveRequestPB;
 using kudu::transactions::KeepTransactionAliveResponsePB;
 using kudu::transactions::TxnManagerServiceProxy;
 using kudu::transactions::TxnManagerErrorPB;
+using kudu::transactions::TxnManagerFeatures_Name;
 using std::string;
 using strings::Substitute;
 
@@ -207,13 +210,14 @@ bool AsyncRandomTxnManagerRpc<ReqClass, RespClass>::RetryIfNecessary(
       }
       return true;
     }
-    // TODO(aserbin): report unsupported features in the error message if it
-    //                starts making sense: of course this code is forward
-    //                looking, but it's not clear how the detailed information
-    //                on missing features could help in making this error
-    //                message more actionable
     if (err->unsupported_feature_flags_size() > 0) {
-      s = Status::NotSupported("TxnManager is missing required features");
+      const auto required_features_str = JoinMapped(
+          err->unsupported_feature_flags(),
+          [](uint32_t feature) {
+            return TxnManagerFeatures_Name(feature);
+          }, ",");
+      s = Status::NotSupported("TxnManager is missing required feature(s): $0",
+                               required_features_str);
     }
   }
 

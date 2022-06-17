@@ -28,6 +28,7 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/response_callback.h"
@@ -77,6 +78,7 @@ using master::ListTabletServersRequestPB;
 using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
 using master::MasterErrorPB;
+using master::MasterFeatures_Name;
 using master::RemoveMasterRequestPB;
 using master::RemoveMasterResponsePB;
 using master::ReplaceTabletRequestPB;
@@ -259,8 +261,13 @@ bool AsyncLeaderMasterRpc<ReqClass, RespClass>::RetryOrReconnectIfNecessary(
       return true;
     }
     if (err->unsupported_feature_flags_size() > 0) {
-      s = Status::NotSupported(Substitute("Cluster does not support $0",
-                                          rpc_name_));
+      const auto features_str = JoinMapped(err->unsupported_feature_flags(),
+                                           [](uint32_t feature) {
+                                             return MasterFeatures_Name(feature);
+                                           }, ",");
+      s = Status::NotSupported(
+          Substitute("cluster does not support $0 with feature(s) $1",
+                     rpc_name_, features_str));
     }
   }
 

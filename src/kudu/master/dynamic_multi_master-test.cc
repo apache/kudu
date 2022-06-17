@@ -1165,7 +1165,8 @@ TEST_F(DynamicMultiMasterTest, TestAddMasterFeatureFlagNotSpecified) {
   ASSERT_OK(BuildMasterOpts(orig_num_masters_, reserved_hp_, &opts));
   Status actual = AddMasterToClusterUsingCLITool(opts, &err);
   ASSERT_TRUE(actual.IsRuntimeError()) << actual.ToString();
-  ASSERT_STR_MATCHES(err, "Cluster does not support AddMaster");
+  ASSERT_STR_CONTAINS(err, "cluster does not support AddMaster "
+                           "with feature(s) DYNAMIC_MULTI_MASTER");
 
   // Verify no change in number of masters.
   NO_FATALS(VerifyVoterMasters(orig_num_masters_));
@@ -1189,7 +1190,8 @@ TEST_F(DynamicMultiMasterTest, TestRemoveMasterFeatureFlagNotSpecified) {
     string err;
     Status s = RemoveMasterFromClusterUsingCLITool(master_to_remove, &err);
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
-    ASSERT_STR_MATCHES(err, "Cluster does not support RemoveMaster");
+    ASSERT_STR_CONTAINS(err, "cluster does not support RemoveMaster "
+                             "with feature(s) DYNAMIC_MULTI_MASTER");
   }
 
   // Try removing leader master
@@ -1200,7 +1202,8 @@ TEST_F(DynamicMultiMasterTest, TestRemoveMasterFeatureFlagNotSpecified) {
     string err;
     Status s = RemoveMasterFromClusterUsingCLITool(master_to_remove, &err);
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
-    ASSERT_STR_MATCHES(err, "Cluster does not support RemoveMaster");
+    ASSERT_STR_CONTAINS(err, "cluster does not support RemoveMaster "
+                             "with feature(s) DYNAMIC_MULTI_MASTER");
   }
 
   // Verify no change in number of masters.

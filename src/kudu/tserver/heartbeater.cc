@@ -42,6 +42,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -106,6 +107,7 @@ TAG_FLAG(heartbeat_inject_required_feature_flag, unsafe);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::master::MasterFeatures_Name;
 using kudu::master::MasterErrorPB;
 using kudu::master::MasterFeatures;
 using kudu::master::MasterServiceProxy;
@@ -615,7 +617,13 @@ void Heartbeater::Thread::RunThread() {
         msg = Substitute("master detected incompatibility: $0", err_msg);
       }
       if (s.IsRemoteError() && error_status.unsupported_feature_flags_size() > 0) {
-        msg = Substitute("master does not support required feature flags: $0", err_msg);
+        const auto required_features_str = JoinMapped(
+            error_status.unsupported_feature_flags(),
+            [](uint32_t feature) {
+              return MasterFeatures_Name(feature);
+            }, ",");
+        msg = Substitute("master does not support required feature flag(s) $0: $1",
+                         required_features_str, err_msg);
       }
       if (!msg.empty()) {
         if (FLAGS_heartbeat_incompatible_replica_management_is_fatal) {
