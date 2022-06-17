@@ -316,10 +316,14 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
                                      const CreateTableRequestPB& req,
                                      CreateTableResponsePB* resp,
                                      const MonoTime& deadline,
-                                     bool has_range_partition_bounds) {
+                                     bool has_range_partition_bounds,
+                                     bool has_range_specific_hash_schema) {
   vector<uint32_t> features;
   if (has_range_partition_bounds) {
     features.push_back(MasterFeatures::RANGE_PARTITION_BOUNDS);
+  }
+  if (has_range_specific_hash_schema) {
+    features.push_back(MasterFeatures::RANGE_SPECIFIC_HASH_SCHEMA);
   }
   Synchronizer sync;
   AsyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB> rpc(
@@ -387,10 +391,14 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
                                     const AlterTableRequestPB& req,
                                     AlterTableResponsePB* resp,
                                     const MonoTime& deadline,
-                                    bool has_add_drop_partition) {
+                                    bool has_add_drop_partition,
+                                    bool adding_range_with_custom_hash_schema) {
   vector<uint32_t> required_feature_flags;
   if (has_add_drop_partition) {
     required_feature_flags.push_back(MasterFeatures::ADD_DROP_RANGE_PARTITIONS);
+  }
+  if (adding_range_with_custom_hash_schema) {
+    required_feature_flags.push_back(MasterFeatures::RANGE_SPECIFIC_HASH_SCHEMA);
   }
   Synchronizer sync;
   AsyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB> rpc(

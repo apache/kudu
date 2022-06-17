@@ -81,6 +81,9 @@ class KuduTableAlterer::Data {
   // Set to true if there are alter partition steps.
   bool has_alter_partitioning_steps = false;
 
+  // Set to true if a new range with custom hash schema is being added.
+  bool adding_range_with_custom_hash_schema = false;
+
   // Schema of add/drop range partition bound rows.
   const Schema* schema_;
 

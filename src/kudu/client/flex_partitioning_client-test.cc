@@ -1063,6 +1063,43 @@ TEST_F(FlexPartitioningCreateTableTest, Negatives) {
   }
 }
 
+// When working with a cluster that doesn't support range-specific hash schemas
+// for tables, the client should receive proper error while trying to create
+// a table with custom hash schema for at least one of its ranges.
+TEST_F(FlexPartitioningCreateTableTest, UnsupportedRangeSpecificHashSchema) {
+  // Turn off the support for range-specific hash schemas, emulating the
+  // situation when a Kudu cluster is running an older version released prior
+  // to the introduction of the feature.
+  FLAGS_enable_per_range_hash_schemas = false;
+
+  constexpr const char* const kTableName =
+      "UnsupportedRangeSpecificHashSchemaCreateTable";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(1)
+      .add_hash_partitions({ kKeyColumn }, 3)
+      .set_range_partition_columns({ kKeyColumn });
+
+  // Add a range partition with the table-wide hash partitioning rules.
+  unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32(kKeyColumn, 0));
+  unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32(kKeyColumn, 111));
+  table_creator->add_range_partition(lower.release(), upper.release());
+
+  // Add a range partition with custom hash schema.
+  auto p = CreateRangePartition(111, 222);
+  ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 5, 0));
+  table_creator->add_custom_range_partition(p.release());
+
+  const auto s = table_creator->Create();
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "cluster does not support CreateTable with "
+                                    "feature(s) RANGE_SPECIFIC_HASH_SCHEMA");
+}
+
 // Test for scenarios covering range partitioning with custom hash schemas
 // specified when adding a new custom hash schema partition to a table.
 class FlexPartitioningAlterTableTest : public FlexPartitioningTest {};
@@ -1241,5 +1278,106 @@ TEST_F(FlexPartitioningAlterTableTest, ReadAndWriteToCustomRangePartition) {
     }
   }
 }
+
+// When working with a cluster that doesn't support range-specific hash schemas
+// for tables, the client should receive proper error while trying to add
+// a range with custom hash schema.
+TEST_F(FlexPartitioningAlterTableTest, UnsupportedRangeSpecificHashSchema) {
+  // Turn off the support for range-specific hash schemas, emulating the
+  // situation when a Kudu cluster is running an older version released prior
+  // to the introduction of the feature.
+  FLAGS_enable_per_range_hash_schemas = false;
+
+  constexpr const char* const kTableName =
+      "UnsupportedRangeSpecificHashSchemaAlterTable";
+  constexpr const char* const kErrMsg = "cluster does not support AlterTable "
+      "with feature(s) RANGE_SPECIFIC_HASH_SCHEMA";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(1)
+      .add_hash_partitions({ kKeyColumn }, 2)
+      .set_range_partition_columns({ kKeyColumn });
+
+  // Add a range partition with the table-wide hash partitioning rules.
+  unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+  ASSERT_OK(lower->SetInt32(kKeyColumn, 0));
+  unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+  ASSERT_OK(upper->SetInt32(kKeyColumn, 111));
+  table_creator->add_range_partition(lower.release(), upper.release());
+
+  ASSERT_OK(table_creator->Create());
+
+  // Try to add a single range with custom hash schema.
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    auto p = CreateRangePartition(111, 222);
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 5, 0));
+    alterer->AddRangePartition(p.release());
+
+    const auto s = alterer->Alter();
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+  }
+
+  // Try to add a mix of ranges: with the table-wide and custom hash schemas.
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    ASSERT_OK(lower->SetInt32(kKeyColumn, 111));
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, 222));
+    alterer->AddRangePartition(lower.release(), upper.release());
+
+    auto p = CreateRangePartition(222, 333);
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 8, 0));
+    alterer->AddRangePartition(p.release());
+
+    const auto s = alterer->Alter();
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+  }
+
+  // Temporary enable support for the RANGE_SPECIFIC_HASH_SCHEMA feature to add
+  // a new range with custom hash schema to be dropped later.
+  FLAGS_enable_per_range_hash_schemas = true;
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+
+    auto p0 = CreateRangePartition(111, 222);
+    ASSERT_OK(p0->add_hash_partitions({ kKeyColumn }, 5, 0));
+    alterer->AddRangePartition(p0.release());
+
+    auto p1 = CreateRangePartition(222, 333);
+    ASSERT_OK(p1->add_hash_partitions({ kKeyColumn }, 8, 0));
+    alterer->AddRangePartition(p1.release());
+
+    ASSERT_OK(alterer->Alter());
+  }
+  // Disable the support for the RANGE_SPECIFIC_HASH_SCHEMA.
+  FLAGS_enable_per_range_hash_schemas = false;
+
+  // Dropping ranges with the table-wide or custom hash schemas should be fine
+  // even if the cluster doesn't support the RANGE_SPECIFIC_HASH_SCHEMA schema
+  // It's rather a hypothetical situation unless they toggle the flag after
+  // adding ranges with custom hash schemas or running older Kudu binaries with
+  // new data.
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    ASSERT_OK(lower->SetInt32(kKeyColumn, 111));
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, 222));
+    alterer->DropRangePartition(lower.release(), upper.release());
+    ASSERT_OK(alterer->Alter());
+  }
+
+  // Dropping tables having ranges with custom hash schema should be fine
+  // even if the server side has no RANGE_SPECIFIC_HASH_SCHEMA feature.
+  ASSERT_OK(client_->DeleteTable(kTableName));
+}
+
 } // namespace client
 } // namespace kudu

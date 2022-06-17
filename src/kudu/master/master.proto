@@ -1116,6 +1116,8 @@ enum MasterFeatures {
   // Though this is technically a tserver feature, it's unreasonable to check if every
   // tablet server supports this feature. Instead we use the master as a proxy.
   IGNORE_OPERATIONS = 7;
+  // Whether master supports tables with range-specific hash schemas.
+  RANGE_SPECIFIC_HASH_SCHEMA = 8;
 }
 
 service MasterService {

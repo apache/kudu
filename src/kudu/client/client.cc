@@ -1029,10 +1029,14 @@ Status KuduTableCreator::Create() {
   }
 
   CreateTableResponsePB resp;
-  RETURN_NOT_OK_PREPEND(data_->client_->data_->CreateTable(
-      data_->client_, req, &resp, deadline, !data_->range_partitions_.empty()),
-                        Substitute("Error creating table $0 on the master",
-                                   data_->table_name_));
+  RETURN_NOT_OK_PREPEND(
+      data_->client_->data_->CreateTable(data_->client_,
+                                         req,
+                                         &resp,
+                                         deadline,
+                                         !data_->range_partitions_.empty(),
+                                         has_range_with_custom_hash_schema),
+      Substitute("Error creating table $0 on the master", data_->table_name_));
   // Spin until the table is fully created, if requested.
   if (data_->wait_) {
     TableIdentifierPB table;
@@ -1572,6 +1576,9 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartition(
                  nullopt };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
+  if (!data_->steps_.back().range_partition->data_->is_table_wide_hash_schema_) {
+    data_->adding_range_with_custom_hash_schema = true;
+  }
   return this;
 }
 
@@ -1645,8 +1652,10 @@ Status KuduTableAlterer::Alter() {
     data_->timeout_ :
     data_->client_->default_admin_operation_timeout();
   MonoTime deadline = MonoTime::Now() + timeout;
-  RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, req, &resp, deadline,
-                                                  data_->has_alter_partitioning_steps));
+  RETURN_NOT_OK(data_->client_->data_->AlterTable(
+      data_->client_, req, &resp, deadline,
+      data_->has_alter_partitioning_steps,
+      data_->adding_range_with_custom_hash_schema));
 
   if (data_->has_alter_partitioning_steps) {
     // If the table partitions change, clear the local meta cache so that the

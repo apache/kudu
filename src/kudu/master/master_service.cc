@@ -61,6 +61,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
+DECLARE_bool(enable_per_range_hash_schemas);
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_string(hive_metastore_uris);
@@ -883,6 +884,8 @@ bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
       return FLAGS_master_support_change_config;
     case MasterFeatures::IGNORE_OPERATIONS:
       return FLAGS_master_support_ignore_operations;
+    case MasterFeatures::RANGE_SPECIFIC_HASH_SCHEMA:
+      return FLAGS_enable_per_range_hash_schemas;
     default:
       return false;
   }
