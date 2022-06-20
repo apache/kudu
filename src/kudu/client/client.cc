@@ -1783,30 +1783,33 @@ Status KuduScanner::AddExclusiveUpperBoundRaw(const Slice& key) {
 }
 
 Status KuduScanner::AddLowerBoundPartitionKeyRaw(const Slice& partition_key) {
-  // TODO(aserbin): use move semantics to pass PartitionKey arguments
-  if (const auto& table = GetKuduTable();
-      table->data_->partition_schema_.HasCustomHashSchemas()) {
-    return Status::InvalidArgument(Substitute(
-        "$0: cannot use AddLowerBoundPartitionKeyRaw() because "
-        "the table has custom per-range hash schemas", table->name()));
-  }
+  // The number of hash dimensions in all hash schemas of a table is an
+  // invariant and checked throughout the code. With that, the table-wide hash
+  // schema is used as a proxy to find the number of hash dimensions to separate
+  // the hash-related prefix from the rest of the encoded partition key in the
+  // code below.
+  //
+  // TODO(KUDU-2671) update this code if allowing for different number of
+  //                 dimensions in range-specific hash schemas
   const auto& hash_schema = GetKuduTable()->partition_schema().hash_schema();
-  auto pkey = Partition::StringToPartitionKey(partition_key.ToString(),
-                                              hash_schema.size());
-  return data_->mutable_configuration()->AddLowerBoundPartitionKeyRaw(pkey);
+  return data_->mutable_configuration()->AddLowerBoundPartitionKeyRaw(
+      Partition::StringToPartitionKey(partition_key.ToString(),
+                                      hash_schema.size()));
 }
 
 Status KuduScanner::AddExclusiveUpperBoundPartitionKeyRaw(const Slice& partition_key) {
-  if (const auto& table = GetKuduTable();
-      table->data_->partition_schema_.HasCustomHashSchemas()) {
-    return Status::InvalidArgument(Substitute(
-        "$0: cannot use AddExclusiveUpperBoundPartitionKeyRaw() because "
-        "the table has custom per-range hash schemas", table->name()));
-  }
+  // The number of hash dimensions in all hash schemas of a table is an
+  // invariant and checked throughout the code. With that, the table-wide hash
+  // schema is used as a proxy to find the number of hash dimensions to separate
+  // the hash-related prefix from the rest of the encoded partition key in the
+  // code below.
+  //
+  // TODO(KUDU-2671) update this code if allowing for different number of
+  //                 dimensions in range-specific hash schemas
   const auto& hash_schema = GetKuduTable()->partition_schema().hash_schema();
-  auto pkey = Partition::StringToPartitionKey(partition_key.ToString(),
-                                              hash_schema.size());
-  return data_->mutable_configuration()->AddUpperBoundPartitionKeyRaw(pkey);
+  return data_->mutable_configuration()->AddUpperBoundPartitionKeyRaw(
+      Partition::StringToPartitionKey(partition_key.ToString(),
+                                      hash_schema.size()));
 }
 
 Status KuduScanner::SetCacheBlocks(bool cache_blocks) {
