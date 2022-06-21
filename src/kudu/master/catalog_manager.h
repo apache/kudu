@@ -871,6 +871,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   static bool IsTableWriteDisabled(const scoped_refptr<TableInfo>& table,
                                    const std::string& table_name);
 
+  static Status ApplyAlterSchemaSteps(
+      const SysTablesEntryPB& current_pb,
+      const std::vector<AlterTableRequestPB::Step>& steps,
+      Schema* new_schema,
+      ColumnId* next_col_id);
+
   // Delete the specified table in the catalog. If 'user' is provided,
   // checks that the user is authorized to delete the table. Otherwise,
   // it indicates its an internal operation (originates from catalog
@@ -1070,19 +1076,14 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // container must not be empty.
   Status DeleteTskEntries(const std::set<std::string>& entry_ids);
 
-  Status ApplyAlterSchemaSteps(
-      const SysTablesEntryPB& current_pb,
-      const std::vector<AlterTableRequestPB::Step>& steps,
-      Schema* new_schema,
-      ColumnId* next_col_id);
-
   Status ApplyAlterPartitioningSteps(
       const scoped_refptr<TableInfo>& table,
       const Schema& client_schema,
       const std::vector<AlterTableRequestPB::Step>& steps,
       TableMetadataLock* l,
       std::vector<scoped_refptr<TabletInfo>>* tablets_to_add,
-      std::vector<scoped_refptr<TabletInfo>>* tablets_to_drop);
+      std::vector<scoped_refptr<TabletInfo>>* tablets_to_drop,
+      bool* partition_schema_updated);
 
   // Task that takes care of the tablet assignments/creations.
   // Loops through the "not created" tablets and sends a CreateTablet() request.

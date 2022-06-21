@@ -1001,7 +1001,7 @@ TEST_P(AlterTableWithRangeSpecificHashSchema, TestAlterTableWithDifferentHashDim
 INSTANTIATE_TEST_SUITE_P(AlterTableWithCustomHashSchema,
                          AlterTableWithRangeSpecificHashSchema, ::testing::Bool());
 
-TEST_F(MasterTest, AlterTableAddRangeWithSpecificHashSchema) {
+TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
   constexpr const char* const kTableName = "alter_table_custom_hash_schema";
   constexpr const char* const kCol0 = "c_int32";
   constexpr const char* const kCol1 = "c_int64";
@@ -1010,7 +1010,24 @@ TEST_F(MasterTest, AlterTableAddRangeWithSpecificHashSchema) {
   FLAGS_enable_per_range_hash_schemas = true;
   FLAGS_default_num_replicas = 1;
 
-  // Create a table with one range partition based in the table-wide hash schema.
+  const auto partition_schema_retriever = [this](PartitionSchemaPB* ps_pb) {
+    GetTableSchemaRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+
+    RpcController ctl;
+    GetTableSchemaResponsePB resp;
+    RETURN_NOT_OK(proxy_->GetTableSchema(req, &resp, &ctl));
+    if (resp.has_error()) {
+      return StatusFromPB(resp.error().status());
+    }
+    if (!resp.has_partition_schema()) {
+      return Status::IllegalState("partition schema information is missing");
+    }
+    *ps_pb = resp.partition_schema();
+    return Status::OK();
+  };
+
+  // Create a table with one range partition based on the table-wide hash schema.
   CreateTableResponsePB create_table_resp;
   {
     KuduPartialRow lower(&kTableSchema);
@@ -1073,6 +1090,11 @@ TEST_F(MasterTest, AlterTableAddRangeWithSpecificHashSchema) {
       ASSERT_EQ(1, tables.size());
       // 2 tablets (because of 2 hash buckets) for already existing range.
       ASSERT_EQ(2, tables.front()->num_tablets());
+
+      // Check the partition schema stored in the system catalog.
+      PartitionSchemaPB ps_pb;
+      ASSERT_OK(partition_schema_retriever(&ps_pb));
+      ASSERT_EQ(0, ps_pb.custom_hash_schema_ranges_size());
     }
 
     RpcController ctl;
@@ -1088,6 +1110,11 @@ TEST_F(MasterTest, AlterTableAddRangeWithSpecificHashSchema) {
       ASSERT_EQ(1, tables.size());
       // Extra 5 tablets (because of 5 hash buckets) for newly added range.
       ASSERT_EQ(7, tables.front()->num_tablets());
+
+      // Check the partition schema stored in the system catalog.
+      PartitionSchemaPB ps_pb;
+      ASSERT_OK(partition_schema_retriever(&ps_pb));
+      ASSERT_EQ(1, ps_pb.custom_hash_schema_ranges_size());
     }
   }
 
@@ -1125,12 +1152,80 @@ TEST_F(MasterTest, AlterTableAddRangeWithSpecificHashSchema) {
     ASSERT_EQ(1, table_wide_hash_schema.size());
     ASSERT_EQ(2, table_wide_hash_schema.front().num_buckets);
 
-    const auto& ranges_with_hash_schemas = ps.ranges_with_hash_schemas();
-    ASSERT_EQ(ranges_with_hash_schemas.size(), 1);
+    const auto& ranges_with_hash_schemas = ps.ranges_with_custom_hash_schemas();
+    ASSERT_EQ(1, ranges_with_hash_schemas.size());
     const auto& custom_hash_schema = ranges_with_hash_schemas.front().hash_schema;
     ASSERT_EQ(1, custom_hash_schema.size());
     ASSERT_EQ(5, custom_hash_schema.front().num_buckets);
     ASSERT_EQ(1, custom_hash_schema.front().seed);
+  }
+
+  // Now verify that everything works as expected when dropping a range
+  // partition with custom hash schema.
+  {
+    AlterTableRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+    req.mutable_table()->set_table_id(table_id);
+
+    // Add the required information on the table's schema:
+    // key and non-null columns must be present in the request.
+    {
+      ColumnSchemaPB* col0 = req.mutable_schema()->add_columns();
+      col0->set_name(kCol0);
+      col0->set_type(INT32);
+      col0->set_is_key(true);
+
+      ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
+      col1->set_name(kCol1);
+      col1->set_type(INT64);
+    }
+
+    AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
+    step->set_type(AlterTableRequestPB::DROP_RANGE_PARTITION);
+    KuduPartialRow lower(&kTableSchema);
+    ASSERT_OK(lower.SetInt32(kCol0, 100));
+    KuduPartialRow upper(&kTableSchema);
+    ASSERT_OK(upper.SetInt32(kCol0, 200));
+    RowOperationsPBEncoder enc(
+        step->mutable_drop_range_partition()->mutable_range_bounds());
+    enc.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    enc.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    // Check the number of tablets in the table before ALTER TABLE.
+    {
+      CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+      std::vector<scoped_refptr<TableInfo>> tables;
+      master_->catalog_manager()->GetAllTables(&tables);
+      ASSERT_EQ(1, tables.size());
+      // Extra 5 tablets (because of 5 hash buckets) for newly added range.
+      ASSERT_EQ(7, tables.front()->num_tablets());
+
+      // Check the partition schema stored in the system catalog.
+      PartitionSchemaPB ps_pb;
+      ASSERT_OK(partition_schema_retriever(&ps_pb));
+      ASSERT_EQ(1, ps_pb.custom_hash_schema_ranges_size());
+    }
+
+    RpcController ctl;
+    AlterTableResponsePB resp;
+    ASSERT_OK(proxy_->AlterTable(req, &resp, &ctl));
+    ASSERT_FALSE(resp.has_error())
+        << StatusFromPB(resp.error().status()).ToString();
+
+    // Check the number of tablets in the table after ALTER TABLE.
+    {
+      CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+      std::vector<scoped_refptr<TableInfo>> tables;
+      master_->catalog_manager()->GetAllTables(&tables);
+      ASSERT_EQ(1, tables.size());
+      // 2 tablets (because of 2 hash buckets) for already existing range.
+      ASSERT_EQ(2, tables.front()->num_tablets());
+
+      // Check the partition schema stored in the system catalog.
+      PartitionSchemaPB ps_pb;
+      ASSERT_OK(partition_schema_retriever(&ps_pb));
+      ASSERT_EQ(0, ps_pb.custom_hash_schema_ranges_size());
+    }
   }
 }
 

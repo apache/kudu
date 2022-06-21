@@ -39,6 +39,10 @@ template <typename T> class RepeatedPtrField;
 
 namespace kudu {
 
+namespace master {
+class MasterTest_AlterTableAddAndDropRangeWithSpecificHashSchema_Test;
+}
+
 class Arena;
 class ConstContiguousRow;
 class KuduPartialRow;
@@ -301,10 +305,14 @@ class PartitionSchema {
           hash_schema_pb,
       HashSchema* hash_schema);
 
-  // Deserializes a protobuf message into a partition schema.
-  static Status FromPB(const PartitionSchemaPB& pb,
-                       const Schema& schema,
-                       PartitionSchema* partition_schema) WARN_UNUSED_RESULT;
+  // Deserializes a protobuf message into a partition schema. If not nullptr,
+  // the optional output parameter 'ranges_with_hash_schemas' is populated
+  // with the information on table's ranges with their hash schemas.
+  static Status FromPB(
+      const PartitionSchemaPB& pb,
+      const Schema& schema,
+      PartitionSchema* partition_schema,
+      RangesWithHashSchemas* ranges_with_hash_schemas = nullptr) WARN_UNUSED_RESULT;
 
   // Serializes a partition schema into a protobuf message.
   // Requires a schema to encode the range bounds.
@@ -329,9 +337,10 @@ class PartitionSchema {
       const Schema& schema,
       std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 
-  // Similar to the method above, but uses the 'ranges_with_hash_schemas_'
-  // member field as the input to produce the result partitions.
+  // Create the set of partitions given the specified ranges with per-range
+  // hash schemas. The 'partitions' output parameter must be non-null.
   Status CreatePartitions(
+      const RangesWithHashSchemas& ranges_with_hash_schemas,
       const Schema& schema,
       std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 
@@ -453,12 +462,12 @@ class PartitionSchema {
     return hash_schema_;
   }
 
-  const RangesWithHashSchemas& ranges_with_hash_schemas() const {
-    return ranges_with_hash_schemas_;
+  const RangesWithHashSchemas& ranges_with_custom_hash_schemas() const {
+    return ranges_with_custom_hash_schemas_;
   }
 
   bool HasCustomHashSchemas() const {
-    return !ranges_with_hash_schemas_.empty();
+    return !ranges_with_custom_hash_schemas_.empty();
   }
 
   // Given the specified table schema, populate the 'range_column_indexes'
@@ -469,8 +478,25 @@ class PartitionSchema {
       const Schema& schema,
       std::vector<int>* range_column_indexes) const;
 
+  Status GetHashSchemaForRange(const KuduPartialRow& lower,
+                               const Schema& schema,
+                               HashSchema* hash_schema) const;
+
+  // Drop range partition with the specified lower and upper bounds. The
+  // method updates member fields of this class, so that PartitionSchema::ToPB()
+  // generates PartitionSchemaPB::custom_hash_schema_ranges field accordingly.
+  Status DropRange(const KuduPartialRow& lower,
+                   const KuduPartialRow& upper,
+                   const Schema& schema);
+
  private:
   friend class PartitionPruner;
+  friend class PartitionPrunerTest;
+  FRIEND_TEST(master::MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema);
+  FRIEND_TEST(PartitionTest, CustomHashSchemaRangesToPB);
+  FRIEND_TEST(PartitionTest, DropRange);
+  FRIEND_TEST(PartitionTest, HasCustomHashSchemasWhenAddingAndDroppingRanges);
+  FRIEND_TEST(PartitionTest, TestPartitionSchemaPB);
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionBounds);
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionStringBounds);
   FRIEND_TEST(PartitionTest, TestVarcharRangePartitions);
@@ -520,13 +546,6 @@ class PartitionSchema {
   static std::vector<Partition> GenerateHashPartitions(
       const HashSchema& hash_schema,
       const KeyEncoder<std::string>& hash_encoder);
-
-  // Create the set of partitions given the specified ranges with per-range
-  // hash schemas. The 'partitions' output parameter must be non-null.
-  Status CreatePartitions(
-      const RangesWithHashSchemas& ranges_with_hash_schemas,
-      const Schema& schema,
-      std::vector<Partition>* partitions) const;
 
   // PartitionKeyDebugString implementation for row types.
   template<typename Row>
@@ -645,13 +664,16 @@ class PartitionSchema {
 
   RangeSchema range_schema_;
   HashSchema hash_schema_;
-  RangesWithHashSchemas ranges_with_hash_schemas_;
+
+  // This contains only ranges with range-specific (i.e. different from
+  // the table-wide) hash schemas.
+  RangesWithHashSchemas ranges_with_custom_hash_schemas_;
 
   // Encoded start of the range --> index of the hash bucket schemas for the
-  // range in the 'ranges_with_hash_schemas_' array container.
-  // NOTE: the contents of this map and 'ranges_with_hash_schemas_' are tightly
-  //       coupled -- it's necessary to clear/set this map along with
-  //       'ranges_with_hash_schemas_'.
+  // range in the 'ranges_with_custom_hash_schemas_' array container.
+  // NOTE: the contents of this map and 'ranges_with_custom_hash_schemas_'
+  //       are tightly coupled -- it's necessary to clear/set this map
+  //       along with 'ranges_with_custom_hash_schemas_'.
   typedef std::map<std::string, size_t> HashSchemasByEncodedLowerRange;
   HashSchemasByEncodedLowerRange hash_schema_idx_by_encoded_range_start_;
 };

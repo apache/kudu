@@ -209,9 +209,11 @@ Status PartitionSchema::ExtractHashSchemaFromPB(
   return Status::OK();
 }
 
-Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
-                               const Schema& schema,
-                               PartitionSchema* partition_schema) {
+Status PartitionSchema::FromPB(
+    const PartitionSchemaPB& pb,
+    const Schema& schema,
+    PartitionSchema* partition_schema,
+    RangesWithHashSchemas* ranges_with_hash_schemas) {
   partition_schema->Clear();
   RETURN_NOT_OK(ExtractHashSchemaFromPB(
       schema, pb.hash_schema(), &partition_schema->hash_schema_));
@@ -220,7 +222,7 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
   vector<HashSchema> range_hash_schemas;
   range_hash_schemas.resize(custom_ranges_num);
   vector<pair<KuduPartialRow, KuduPartialRow>> range_bounds;
-  for (int i = 0; i < custom_ranges_num; i++) {
+  for (auto i = 0; i < custom_ranges_num; ++i) {
     const auto& range = pb.custom_hash_schema_ranges(i);
     RETURN_NOT_OK(ExtractHashSchemaFromPB(
         schema, range.hash_schema(), &range_hash_schemas[i]));
@@ -276,24 +278,43 @@ Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
     }
   }
 
-  auto* ranges_ptr = &partition_schema->ranges_with_hash_schemas_;
+  RangesWithHashSchemas result_ranges_with_hash_schemas;
   if (!range_bounds.empty()) {
     RETURN_NOT_OK(partition_schema->EncodeRangeBounds(
-        range_bounds, range_hash_schemas, schema, ranges_ptr));
-  }
-  if (ranges_ptr != nullptr) {
-    auto& dict = partition_schema->hash_schema_idx_by_encoded_range_start_;
-    for (auto it = ranges_ptr->cbegin(); it != ranges_ptr->cend(); ++it) {
-      InsertOrDie(&dict, it->lower, std::distance(ranges_ptr->cbegin(), it));
-    }
-  }
-  if (range_bounds.size() != ranges_ptr->size()) {
-    return Status::InvalidArgument(Substitute("the number of range bounds "
-        "($0) differs from the number ranges with hash schemas ($1)",
-        range_bounds.size(), ranges_ptr->size()));
+        range_bounds, range_hash_schemas, schema,
+        &result_ranges_with_hash_schemas));
   }
 
-  return partition_schema->Validate(schema);
+  if (range_bounds.size() != result_ranges_with_hash_schemas.size()) {
+    return Status::InvalidArgument(Substitute("the number of range bounds "
+        "($0) differs from the number ranges with hash schemas ($1)",
+        range_bounds.size(), result_ranges_with_hash_schemas.size()));
+  }
+
+  auto& ranges_with_custom_hash_schemas =
+      partition_schema->ranges_with_custom_hash_schemas_;
+  const auto& table_wide_hash_schema = partition_schema->hash_schema_;
+  ranges_with_custom_hash_schemas.reserve(result_ranges_with_hash_schemas.size());
+  for (const auto& elem : result_ranges_with_hash_schemas) {
+    if (elem.hash_schema != table_wide_hash_schema) {
+      ranges_with_custom_hash_schemas.emplace_back(elem);
+    }
+  }
+
+  auto& dict = partition_schema->hash_schema_idx_by_encoded_range_start_;
+  for (auto it = ranges_with_custom_hash_schemas.cbegin();
+       it != ranges_with_custom_hash_schemas.cend(); ++it) {
+    InsertOrDie(&dict, it->lower, std::distance(
+        ranges_with_custom_hash_schemas.cbegin(), it));
+  }
+  DCHECK_EQ(ranges_with_custom_hash_schemas.size(), dict.size());
+
+  RETURN_NOT_OK(partition_schema->Validate(schema));
+  if (ranges_with_hash_schemas) {
+    *ranges_with_hash_schemas = std::move(result_ranges_with_hash_schemas);
+  }
+
+  return Status::OK();
 }
 
 Status PartitionSchema::ToPB(const Schema& schema, PartitionSchemaPB* pb) const {
@@ -307,11 +328,17 @@ Status PartitionSchema::ToPB(const Schema& schema, PartitionSchemaPB* pb) const 
     hash_dimension_pb->set_seed(hash_dimension.seed);
   }
 
-  if (!ranges_with_hash_schemas_.empty()) {
+  if (!ranges_with_custom_hash_schemas_.empty()) {
+    // Consumers of this method does not expect the information
+    // on ranges with the table-wide hash schema persisted into the
+    // 'custom_hash_schema_ranges' field.
     pb->mutable_custom_hash_schema_ranges()->Reserve(
-        ranges_with_hash_schemas_.size());
+        ranges_with_custom_hash_schemas_.size());
     Arena arena(256);
-    for (const auto& range_hash_schema : ranges_with_hash_schemas_) {
+    for (const auto& range_hash_schema : ranges_with_custom_hash_schemas_) {
+      if (range_hash_schema.hash_schema == hash_schema_) {
+        continue;
+      }
       auto* range_pb = pb->add_custom_hash_schema_ranges();
 
       arena.Reset();
@@ -451,8 +478,8 @@ Status PartitionSchema::EncodeRangeBounds(
   size_t j = 0;
   for (const auto& bound : range_bounds) {
     string lower;
-    string upper;
     RETURN_NOT_OK(EncodeRangeKey(bound.first, schema, &lower));
+    string upper;
     RETURN_NOT_OK(EncodeRangeKey(bound.second, schema, &upper));
 
     if (!lower.empty() && !upper.empty() && lower >= upper) {
@@ -621,11 +648,6 @@ Status PartitionSchema::CreatePartitions(
   *partitions = std::move(result_partitions);
 
   return Status::OK();
-}
-
-Status PartitionSchema::CreatePartitions(const Schema& schema,
-                                         vector<Partition>* partitions) const {
-  return CreatePartitions(ranges_with_hash_schemas_, schema, partitions);
 }
 
 Status PartitionSchema::CreatePartitionsForRange(
@@ -1122,6 +1144,7 @@ string PartitionSchema::PartitionTableEntry(const Schema& schema,
 }
 
 bool PartitionSchema::operator==(const PartitionSchema& rhs) const {
+  // TODO(aserbin): what about ranges_with_custom_hash_schemas_?
   if (this == &rhs) {
     return true;
   }
@@ -1131,8 +1154,10 @@ bool PartitionSchema::operator==(const PartitionSchema& rhs) const {
     return false;
   }
 
+  const auto& lhs_ranges = ranges_with_custom_hash_schemas_;
+  const auto& rhs_ranges = rhs.ranges_with_custom_hash_schemas_;
   if (hash_schema_.size() != rhs.hash_schema_.size() ||
-      ranges_with_hash_schemas_.size() != rhs.ranges_with_hash_schemas_.size()) {
+      lhs_ranges.size() != rhs_ranges.size()) {
     return false;
   }
 
@@ -1144,13 +1169,13 @@ bool PartitionSchema::operator==(const PartitionSchema& rhs) const {
   }
 
   // Compare range bounds and per range hash bucket schemas.
-  for (size_t i = 0; i < ranges_with_hash_schemas_.size(); ++i) {
-    if (ranges_with_hash_schemas_[i].lower != rhs.ranges_with_hash_schemas_[i].lower ||
-        ranges_with_hash_schemas_[i].upper != rhs.ranges_with_hash_schemas_[i].upper) {
+  for (size_t i = 0; i < lhs_ranges.size(); ++i) {
+    if (lhs_ranges[i].lower != rhs_ranges[i].lower ||
+        lhs_ranges[i].upper != rhs_ranges[i].upper) {
       return false;
     }
-    const auto& lhs_hash_schema = ranges_with_hash_schemas_[i].hash_schema;
-    const auto& rhs_hash_schema = rhs.ranges_with_hash_schemas_[i].hash_schema;
+    const auto& lhs_hash_schema = lhs_ranges[i].hash_schema;
+    const auto& rhs_hash_schema = rhs_ranges[i].hash_schema;
     if (lhs_hash_schema.size() != rhs_hash_schema.size()) {
       return false;
     }
@@ -1290,7 +1315,7 @@ uint32_t PartitionSchema::HashValueForRow(const ConstContiguousRow& row,
 
 void PartitionSchema::Clear() {
   hash_schema_idx_by_encoded_range_start_.clear();
-  ranges_with_hash_schemas_.clear();
+  ranges_with_custom_hash_schemas_.clear();
   hash_schema_.clear();
   range_schema_.column_ids.clear();
 }
@@ -1298,7 +1323,7 @@ void PartitionSchema::Clear() {
 Status PartitionSchema::Validate(const Schema& schema) const {
   RETURN_NOT_OK(ValidateHashSchema(schema, hash_schema_));
 
-  for (const auto& range_with_hash_schema : ranges_with_hash_schemas_) {
+  for (const auto& range_with_hash_schema : ranges_with_custom_hash_schemas_) {
     RETURN_NOT_OK(ValidateHashSchema(schema, range_with_hash_schema.hash_schema));
   }
 
@@ -1587,17 +1612,14 @@ const PartitionSchema::HashSchema& PartitionSchema::GetHashSchemaForRange(
   const auto* idx = FindFloorOrNull(
       hash_schema_idx_by_encoded_range_start_, range_key);
   bool has_custom_range = (idx != nullptr);
-  // Check for the case of a non-covered range between two covered ranges.
-  // TODO(aserbin): maybe, it's better to build ranges_with_hash_schemas_ not
-  //                having any range gaps?
   if (has_custom_range) {
-    DCHECK_LT(*idx, ranges_with_hash_schemas_.size());
-    const auto& upper = ranges_with_hash_schemas_[*idx].upper;
+    DCHECK_LT(*idx, ranges_with_custom_hash_schemas_.size());
+    const auto& upper = ranges_with_custom_hash_schemas_[*idx].upper;
     if (!upper.empty() && upper <= range_key) {
       has_custom_range = false;
     }
   }
-  return has_custom_range ? ranges_with_hash_schemas_[*idx].hash_schema
+  return has_custom_range ? ranges_with_custom_hash_schemas_[*idx].hash_schema
                           : hash_schema_;
 }
 
@@ -1691,6 +1713,69 @@ Status PartitionSchema::GetRangeSchemaColumnIndexes(
     }
     range_column_indexes->push_back(idx);
   }
+  return Status::OK();
+}
+
+Status PartitionSchema::GetHashSchemaForRange(const KuduPartialRow& lower,
+                                              const Schema& schema,
+                                              HashSchema* hash_schema) const {
+  string lower_enc;
+  RETURN_NOT_OK(EncodeRangeKey(lower, schema, &lower_enc));
+  *hash_schema = GetHashSchemaForRange(lower_enc);
+  return Status::OK();
+}
+
+Status PartitionSchema::DropRange(const KuduPartialRow& lower,
+                                  const KuduPartialRow& upper,
+                                  const Schema& schema) {
+  string lower_enc;
+  RETURN_NOT_OK(EncodeRangeKey(lower, schema, &lower_enc));
+  const auto* idx_ptr = FindOrNull(
+      hash_schema_idx_by_encoded_range_start_, lower_enc);
+  if (!idx_ptr) {
+    return Status::NotFound(Substitute(
+        "'$0': range with specified lower bound not found",
+        RangeKeyDebugString(lower_enc, schema)));
+  }
+  const auto dropped_range_idx = *idx_ptr;
+
+  // Check for the upper range match.
+  string upper_enc;
+  RETURN_NOT_OK(EncodeRangeKey(upper, schema, &upper_enc));
+  const auto& dropped_range_upper_enc =
+      ranges_with_custom_hash_schemas_[dropped_range_idx].upper;
+  if (dropped_range_upper_enc != upper_enc) {
+    // Using Status::InvalidArgument() to distinguish between an absent record
+    // for the range's lower bound and non-matching upper bound.
+    return Status::InvalidArgument(Substitute(
+        "range ['$0', '$1'): '$2' vs '$3': upper bound does not match",
+        RangeKeyDebugString(lower_enc, schema),
+        RangeKeyDebugString(upper_enc, schema),
+        RangeKeyDebugString(dropped_range_upper_enc, schema),
+        RangeKeyDebugString(upper_enc, schema)));
+  }
+
+  // Update the 'ranges_with_custom_hash_schemas_' array and the
+  // 'hash_schema_idx_by_encoded_range_start_' helper map.
+  const auto size = ranges_with_custom_hash_schemas_.size();
+  DCHECK_GE(size, 1);
+  decltype(hash_schema_idx_by_encoded_range_start_) updated_mapping;
+  decltype(ranges_with_custom_hash_schemas_) updated_array;
+  updated_array.reserve(size - 1);
+  for (size_t idx = 0; idx < size; ++idx) {
+    if (idx == dropped_range_idx) {
+      continue;
+    }
+    updated_array.emplace_back(std::move(ranges_with_custom_hash_schemas_[idx]));
+    const auto cur_idx = updated_array.size() - 1;
+    InsertOrDie(&updated_mapping, updated_array[cur_idx].lower, cur_idx);
+  }
+  DCHECK_EQ(updated_array.size() + 1, size);
+  DCHECK_EQ(updated_array.size(), updated_mapping.size());
+
+  ranges_with_custom_hash_schemas_.swap(updated_array);
+  hash_schema_idx_by_encoded_range_start_.swap(updated_mapping);
+
   return Status::OK();
 }
 

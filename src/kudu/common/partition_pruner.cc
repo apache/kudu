@@ -428,7 +428,7 @@ void PartitionPruner::Init(const Schema& schema,
 
   // Store ranges and their corresponding hash schemas if they fall within
   // the range bounds specified by the scan.
-  if (partition_schema.ranges_with_hash_schemas_.empty()) {
+  if (partition_schema.ranges_with_custom_hash_schemas().empty()) {
     auto partition_key_ranges = ConstructPartitionKeyRanges(
         schema, scan_spec, partition_schema.hash_schema_,
         {scan_range_lower_bound, scan_range_upper_bound});
@@ -442,7 +442,7 @@ void PartitionPruner::Init(const Schema& schema,
   } else {
     vector<RangeBounds> range_bounds;
     vector<PartitionSchema::HashSchema> hash_schemas_per_range;
-    for (const auto& range : partition_schema.ranges_with_hash_schemas_) {
+    for (const auto& range : partition_schema.ranges_with_custom_hash_schemas()) {
       const auto& hash_schema = range.hash_schema;
       // Both lower and upper bounds of the scan are unbounded.
       if (scan_range_lower_bound.empty() && scan_range_upper_bound.empty()) {

@@ -1872,8 +1872,12 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // the default partition schema (no hash bucket components and a range
   // partitioned on the primary key columns) will be used.
   PartitionSchema partition_schema;
+  PartitionSchema::RangesWithHashSchemas ranges_with_hash_schemas;
   RETURN_NOT_OK(SetupError(
-      PartitionSchema::FromPB(req.partition_schema(), schema, &partition_schema),
+      PartitionSchema::FromPB(req.partition_schema(),
+                              schema,
+                              &partition_schema,
+                              &ranges_with_hash_schemas),
       resp, MasterErrorPB::INVALID_SCHEMA));
 
   // Decode split rows and range bounds.
@@ -1932,8 +1936,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
           "both range bounds and custom hash schema ranges must not be "
           "populated at the same time");
     }
-    // Create partitions based on specified ranges with custom hash schemas.
-    RETURN_NOT_OK(partition_schema.CreatePartitions(schema, &partitions));
+    // Create partitions based on the specified ranges and their hash schemas.
+    RETURN_NOT_OK(partition_schema.CreatePartitions(
+        ranges_with_hash_schemas, schema, &partitions));
   } else {
     // Create partitions based on specified partition schema and split rows.
     RETURN_NOT_OK(partition_schema.CreatePartitions(
@@ -2609,7 +2614,12 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     const vector<AlterTableRequestPB::Step>& steps,
     TableMetadataLock* l,
     vector<scoped_refptr<TabletInfo>>* tablets_to_add,
-    vector<scoped_refptr<TabletInfo>>* tablets_to_drop) {
+    vector<scoped_refptr<TabletInfo>>* tablets_to_drop,
+    bool* partition_schema_updated) {
+  DCHECK(l);
+  DCHECK(tablets_to_add);
+  DCHECK(tablets_to_drop);
+  DCHECK(partition_schema_updated);
 
   // Get the table's schema as it's known to the catalog manager.
   Schema schema;
@@ -2627,6 +2637,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
   });
 
   vector<PartitionSchema::HashSchema> range_hash_schemas;
+  size_t partition_schema_updates = 0;
   for (const auto& step : steps) {
     CHECK(step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION ||
           step.type() == AlterTableRequestPB::DROP_RANGE_PARTITION);
@@ -2665,39 +2676,64 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     vector<Partition> partitions;
     const pair<KuduPartialRow, KuduPartialRow> range_bound =
         { *ops[0].split_row, *ops[1].split_row };
-    if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION &&
-        FLAGS_enable_per_range_hash_schemas &&
-        step.add_range_partition().custom_hash_schema_size() > 0) {
-      const Schema schema = client_schema.CopyWithColumnIds();
-      PartitionSchema::HashSchema hash_schema;
-      RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
-          schema, step.add_range_partition().custom_hash_schema(), &hash_schema));
-      if (partition_schema.hash_schema().size() != hash_schema.size()) {
-        return Status::NotSupported(
-            "varying number of hash dimensions per range is not yet supported");
-      }
-      RETURN_NOT_OK(partition_schema.CreatePartitionsForRange(
-          range_bound, hash_schema, schema, &partitions));
-
-      // Add information on the new range with custom hash schema into the
-      // PartitionSchema for the table stored in the system catalog.
-      auto* p = l->mutable_data()->pb.mutable_partition_schema();
-      auto* range = p->add_custom_hash_schema_ranges();
-      RowOperationsPBEncoder encoder(range->mutable_range_bounds());
-      encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, *ops[0].split_row);
-      encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, *ops[1].split_row);
-      for (const auto& hash_dimension : hash_schema) {
-        auto* hash_dimension_pb = range->add_hash_schema();
-        hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
-        hash_dimension_pb->set_seed(hash_dimension.seed);
-        auto* columns = hash_dimension_pb->add_columns();
-        for (const auto& column_id : hash_dimension.column_ids) {
-          columns->set_id(column_id);
-        }
-      }
-    } else {
+    if (!FLAGS_enable_per_range_hash_schemas) {
       RETURN_NOT_OK(partition_schema.CreatePartitions(
           {}, { range_bound }, schema, &partitions));
+    } else {
+      const Schema schema = client_schema.CopyWithColumnIds();
+      if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION &&
+          step.add_range_partition().custom_hash_schema_size() > 0) {
+        PartitionSchema::HashSchema hash_schema;
+        RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
+            schema, step.add_range_partition().custom_hash_schema(), &hash_schema));
+        if (partition_schema.hash_schema().size() != hash_schema.size()) {
+          return Status::NotSupported(
+              "varying number of hash dimensions per range is not yet supported");
+        }
+        RETURN_NOT_OK(partition_schema.CreatePartitionsForRange(
+            range_bound, hash_schema, schema, &partitions));
+
+        // Add information on the new range with custom hash schema into the
+        // PartitionSchema for the table stored in the system catalog.
+        auto* p = l->mutable_data()->pb.mutable_partition_schema();
+        auto* range = p->add_custom_hash_schema_ranges();
+        RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+        encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, range_bound.first);
+        encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, range_bound.second);
+        for (const auto& hash_dimension : hash_schema) {
+          auto* hash_dimension_pb = range->add_hash_schema();
+          hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
+          hash_dimension_pb->set_seed(hash_dimension.seed);
+          auto* columns = hash_dimension_pb->add_columns();
+          for (const auto& column_id : hash_dimension.column_ids) {
+            columns->set_id(column_id);
+          }
+        }
+        ++partition_schema_updates;
+      } else if (step.type() == AlterTableRequestPB::DROP_RANGE_PARTITION) {
+        PartitionSchema::HashSchema range_hash_schema;
+        RETURN_NOT_OK(partition_schema.GetHashSchemaForRange(
+            range_bound.first, schema, &range_hash_schema));
+        RETURN_NOT_OK(partition_schema.CreatePartitionsForRange(
+            range_bound, range_hash_schema, schema, &partitions));
+
+        // Update the partition schema information to be stored in the system
+        // catalog table. The information on a range with the table-wide hash
+        // schema must not be present in the PartitionSchemaPB that the system
+        // catalog stores, so this is necessary only if the range has custom
+        // (i.e. other than the table-wide) hash schema.
+        if (range_hash_schema != partition_schema.hash_schema()) {
+          RETURN_NOT_OK(partition_schema.DropRange(
+              range_bound.first, range_bound.second, schema));
+          PartitionSchemaPB ps_pb;
+          partition_schema.ToPB(schema, &ps_pb);
+          // Make sure exactly one range is gone.
+          DCHECK_EQ(ps_pb.custom_hash_schema_ranges_size() + 1,
+                    l->data().pb.partition_schema().custom_hash_schema_ranges_size());
+          *(l->mutable_data()->pb.mutable_partition_schema()) = std::move(ps_pb);
+          ++partition_schema_updates;
+        }
+      }
     }
 
     switch (step.type()) {
@@ -2860,6 +2896,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     tablets_to_add->emplace_back(std::move(tablet.second));
   }
   abort_mutations.cancel();
+  *partition_schema_updated = partition_schema_updates > 0;
   return Status::OK();
 }
 
@@ -3218,6 +3255,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   // 7. Alter table partitioning.
   vector<scoped_refptr<TabletInfo>> tablets_to_add;
   vector<scoped_refptr<TabletInfo>> tablets_to_drop;
+  bool partition_schema_updated = false;
   if (!alter_partitioning_steps.empty()) {
     TRACE("Apply alter partitioning");
     Schema client_schema;
@@ -3225,7 +3263,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
         resp, MasterErrorPB::UNKNOWN_ERROR));
     RETURN_NOT_OK(SetupError(ApplyAlterPartitioningSteps(
         table, client_schema, alter_partitioning_steps, &l,
-        &tablets_to_add, &tablets_to_drop),
+        &tablets_to_add, &tablets_to_drop, &partition_schema_updated),
                              resp, MasterErrorPB::UNKNOWN_ERROR));
   }
 
@@ -3257,18 +3295,19 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   }
 
   // Set to true if columns are altered, added or dropped.
-  bool has_schema_changes = !alter_schema_steps.empty();
+  const bool has_schema_changes = !alter_schema_steps.empty();
   // Set to true if there are schema changes, the table is renamed,
   // or if any other table properties changed.
-  bool has_metadata_changes = has_schema_changes ||
+  const bool has_metadata_changes = has_schema_changes ||
       req.has_new_table_name() || req.has_new_table_owner() ||
       !req.new_extra_configs().empty() || req.has_disk_size_limit() ||
       req.has_row_count_limit() || req.has_new_table_comment() ||
       num_replicas_changed;
   // Set to true if there are partitioning changes.
-  bool has_partitioning_changes = !alter_partitioning_steps.empty();
+  const bool has_partitioning_changes = !alter_partitioning_steps.empty() ||
+      partition_schema_updated;
   // Set to true if metadata changes need to be applied to existing tablets.
-  bool has_metadata_changes_for_existing_tablets =
+  const bool has_metadata_changes_for_existing_tablets =
     has_metadata_changes &&
     (table->num_tablets() > tablets_to_drop.size() || num_replicas_changed);
 
@@ -3414,7 +3453,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     }
   }
 
-  if (!tablets_to_add.empty() || has_metadata_changes) {
+  if (!tablets_to_add.empty() || has_metadata_changes || partition_schema_updated) {
     l.Commit();
   } else {
     l.Unlock();
@@ -3516,9 +3555,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   resp->set_owner(l.data().pb.owner());
   resp->set_comment(l.data().pb.comment());
 
-  RETURN_NOT_OK(ExtraConfigPBToPBMap(l.data().pb.extra_config(), resp->mutable_extra_configs()));
-
-  return Status::OK();
+  return ExtraConfigPBToPBMap(l.data().pb.extra_config(), resp->mutable_extra_configs());
 }
 
 Status CatalogManager::ListTables(const ListTablesRequestPB* req,

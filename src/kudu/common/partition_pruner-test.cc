@@ -75,41 +75,14 @@ class PartitionPrunerTest : public KuduTest {
       const vector<ColumnNameAndIntValue>& upper_int_cols,
       const vector<ColumnNamesNumBucketsAndSeed>& hash_schemas,
       PartitionSchemaPB* pb);
+
+  static void CheckPrunedPartitions(const Schema& schema,
+                                    const PartitionSchema& partition_schema,
+                                    const vector<Partition>& partitions,
+                                    const ScanSpec& spec,
+                                    size_t remaining_tablets,
+                                    size_t pruner_ranges);
 };
-
-void CheckPrunedPartitions(const Schema& schema,
-                           const PartitionSchema& partition_schema,
-                           const vector<Partition>& partitions,
-                           const ScanSpec& spec,
-                           size_t remaining_tablets,
-                           size_t pruner_ranges) {
-
-  ScanSpec opt_spec(spec);
-  Arena arena(256);
-  opt_spec.OptimizeScan(schema, &arena, false);
-
-  PartitionPruner pruner;
-  pruner.Init(schema, partition_schema, opt_spec);
-
-  SCOPED_TRACE(strings::Substitute("schema: $0", schema.ToString()));
-  SCOPED_TRACE(strings::Substitute("partition schema: $0", partition_schema.DebugString(schema)));
-  // TODO(mreddy): Remove if check once PartitionSchema::PartitionKeyDebugString is modified.
-  if (partition_schema.ranges_with_hash_schemas().empty()) {
-    SCOPED_TRACE(strings::Substitute("partition pruner: $0",
-                                     pruner.ToString(schema, partition_schema)));
-  }
-  SCOPED_TRACE(strings::Substitute("optimized scan spec: $0", opt_spec.ToString(schema)));
-  SCOPED_TRACE(strings::Substitute("original  scan spec: $0", spec.ToString(schema)));
-
-  int pruned_partitions = count_if(partitions.begin(), partitions.end(),
-                                   [&] (const Partition& partition) {
-                                     return pruner.ShouldPrune(partition);
-                                   });
-
-  ASSERT_EQ(remaining_tablets, partitions.size() - pruned_partitions);
-  ASSERT_EQ(pruner_ranges, pruner.NumRangesRemaining());
-}
-
 
 void PartitionPrunerTest::CreatePartitionSchemaPB(
     const vector<string>& range_columns,
@@ -169,6 +142,37 @@ void PartitionPrunerTest::AddRangePartitionWithSchema(
     hash_dimension.seed = get<2>(hash_bucket_info);
     hash_schema.emplace_back(hash_dimension);
   }
+}
+
+void PartitionPrunerTest::CheckPrunedPartitions(
+    const Schema& schema,
+    const PartitionSchema& partition_schema,
+    const vector<Partition>& partitions,
+    const ScanSpec& spec,
+    size_t remaining_tablets,
+    size_t pruner_ranges) {
+
+  ScanSpec opt_spec(spec);
+  Arena arena(256);
+  opt_spec.OptimizeScan(schema, &arena, false);
+
+  PartitionPruner pruner;
+  pruner.Init(schema, partition_schema, opt_spec);
+
+  SCOPED_TRACE(strings::Substitute("schema: $0", schema.ToString()));
+  SCOPED_TRACE(strings::Substitute("partition schema: $0", partition_schema.DebugString(schema)));
+  SCOPED_TRACE(strings::Substitute("partition pruner: $0",
+                                   pruner.ToString(schema, partition_schema)));
+  SCOPED_TRACE(strings::Substitute("optimized scan spec: $0", opt_spec.ToString(schema)));
+  SCOPED_TRACE(strings::Substitute("original  scan spec: $0", spec.ToString(schema)));
+
+  int pruned_partitions = count_if(partitions.begin(), partitions.end(),
+                                   [&] (const Partition& partition) {
+                                     return pruner.ShouldPrune(partition);
+                                   });
+
+  ASSERT_EQ(remaining_tablets, partitions.size() - pruned_partitions);
+  ASSERT_EQ(pruner_ranges, pruner.NumRangesRemaining());
 }
 
 TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
@@ -1117,10 +1121,11 @@ TEST_F(PartitionPrunerTest, DISABLED_TestHashSchemasPerRangePruning) {
                               { {{"B"}, 2, 0} }, &pb);
 
   PartitionSchema partition_schema;
-  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema, &ranges));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(ranges, schema, &partitions));
   ASSERT_EQ(12, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -1293,10 +1298,11 @@ TEST_F(PartitionPrunerTest, TestHashSchemasPerRangeWithPartialPrimaryKeyRangePru
                               { {{"c"}, 4, 0} }, &pb);
 
   PartitionSchema partition_schema;
-  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema, &ranges));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(ranges, schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   Arena arena(1024);
@@ -1399,10 +1405,11 @@ TEST_F(PartitionPrunerTest, TestInListHashPruningPerRange) {
                               { {{"C"}, 3, 0} }, &pb);
 
   PartitionSchema partition_schema;
-  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema, &ranges));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(ranges, schema, &partitions));
   ASSERT_EQ(7, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -1496,10 +1503,11 @@ TEST_F(PartitionPrunerTest, DISABLED_TestSingleRangeElementAndBoundaryCase) {
   AddRangePartitionWithSchema(schema, {}, {}, {{"A", 3}}, {}, {}, &pb);
 
   PartitionSchema partition_schema;
-  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema, &ranges));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(ranges, schema, &partitions));
   ASSERT_EQ(10, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected

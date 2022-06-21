@@ -968,7 +968,9 @@ TEST_F(PartitionTest, VaryingHashSchemasPerRange) {
     ASSERT_OK(upper.SetStringCopy("a", "a4"));
     ASSERT_OK(upper.SetStringCopy("b", "b4"));
     AddRangePartitionWithSchema(
-        schema, lower, upper, table_wide_hash_schema, &ps_pb);
+        schema, lower, upper,
+        { { { ColumnId(0), ColumnId(2) }, 3, 1 }, { { ColumnId(1) }, 2, 10 } },
+        &ps_pb);
   }
 
   { // [(a5, b5, _), (a6, _, c6))
@@ -984,14 +986,15 @@ TEST_F(PartitionTest, VaryingHashSchemasPerRange) {
   }
 
   PartitionSchema ps;
-  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
   CheckSerializationFunctions(ps_pb, ps, schema);
 
   ASSERT_EQ("HASH (a, c) PARTITIONS 3, HASH (b) PARTITIONS 2, RANGE (a, b, c)",
             ps.DebugString(schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(ps.CreatePartitions(schema, &partitions));
+  ASSERT_OK(ps.CreatePartitions(ranges, schema, &partitions));
 
   ASSERT_EQ(16, partitions.size());
 
@@ -1175,13 +1178,14 @@ TEST_F(PartitionTest, CustomHashSchemasPerRangeOnly) {
   }
 
   PartitionSchema ps;
-  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
   CheckSerializationFunctions(ps_pb, ps, schema);
 
   ASSERT_EQ("RANGE (a, b)", ps.DebugString(schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(ps.CreatePartitions(schema, &partitions));
+  ASSERT_OK(ps.CreatePartitions(ranges, schema, &partitions));
   ASSERT_EQ(2, partitions.size());
 
   {
@@ -1237,23 +1241,20 @@ TEST_F(PartitionTest, VaryingHashSchemasPerUnboundedRanges) {
     KuduPartialRow upper(&schema);
     ASSERT_OK(lower.SetStringCopy("a", "a4"));
     ASSERT_OK(lower.SetStringCopy("b", "b4"));
-    PartitionSchema::HashSchema hash_schema_2_buckets_by_3 = {
-        {{ColumnId(0)}, 2, 0},
-        {{ColumnId(2)}, 3, 0}
-    };
     AddRangePartitionWithSchema(
         schema, lower, upper,
         {{{ColumnId(0)}, 2, 0}, {{ColumnId(2)}, 3, 0}}, &ps_pb);
   }
 
   PartitionSchema ps;
-  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
   CheckSerializationFunctions(ps_pb, ps, schema);
 
   ASSERT_EQ("HASH (b) PARTITIONS 2, RANGE (a, b, c)", ps.DebugString(schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(ps.CreatePartitions(schema, &partitions));
+  ASSERT_OK(ps.CreatePartitions(ranges, schema, &partitions));
   ASSERT_EQ(11, partitions.size());
   // Partitions below sorted by range, can verify that the partition keyspace is filled by checking
   // that the start key of the first partition and the end key of the last partition is cleared.
@@ -1381,13 +1382,14 @@ TEST_F(PartitionTest, NoHashSchemasForLastUnboundedRange) {
   }
 
   PartitionSchema ps;
-  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
   CheckSerializationFunctions(ps_pb, ps, schema);
 
   ASSERT_EQ("HASH (b) PARTITIONS 2, RANGE (a, b)", ps.DebugString(schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(ps.CreatePartitions(schema, &partitions));
+  ASSERT_OK(ps.CreatePartitions(ranges, schema, &partitions));
   ASSERT_EQ(10, partitions.size());
 
   {
@@ -1487,6 +1489,102 @@ TEST_F(PartitionTest, NoHashSchemasForLastUnboundedRange) {
   }
 }
 
+// This test scenario verifies that when converting to PartitionSchemaPB,
+// the 'custom_hash_schema_ranges' field is populated only with ranges
+// that have different from the table-wide hash schema.
+// The rationale is the following: Kudu server side accepts input from the
+// client side that specify ranges with table-wide hash schema as elements
+// of the 'PartitionSchemaPB::custom_hash_schema_ranges' field, but when storing
+// the information in the system catalog, unnecessary parts are omitted.
+TEST_F(PartitionTest, CustomHashSchemaRangesToPB) {
+  const Schema schema({ ColumnSchema("a", STRING),
+                        ColumnSchema("b", STRING),
+                        ColumnSchema("c", STRING) },
+                      { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  PartitionSchemaPB ps_pb;
+  // Table-wide hash schema.
+  AddHashDimension(&ps_pb, { "b" }, 2, 0);
+
+  {
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a1"));
+    ASSERT_OK(upper.SetStringCopy("c", "c1"));
+    AddRangePartitionWithSchema(
+        schema, lower, upper, {{{ColumnId(0)}, 4, 1}}, &ps_pb);
+  }
+  {
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a2.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b2.0"));
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a2.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b2.1"));
+    // This hash schema is actually the table-wide one.
+    AddRangePartitionWithSchema(
+        schema, lower, upper, {{{ColumnId(1)}, 2, 0}}, &ps_pb);
+  }
+  {
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a3.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b3.0"));
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a3.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b3.1"));
+    AddRangePartitionWithSchema(
+        schema, lower, upper, {{{ColumnId(2)}, 3, 10}}, &ps_pb);
+  }
+  {
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a4.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b4.0"));
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a4.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b4.1"));
+    // This hash schema is not the table-wide one: the seed is different.
+    AddRangePartitionWithSchema(
+        schema, lower, upper, {{{ColumnId(1)}, 2, 5}}, &ps_pb);
+  }
+
+  PartitionSchema ps;
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
+  ASSERT_TRUE(ps.HasCustomHashSchemas());
+  // All the ranges are transcoded from the original PartitionSchemaPB.
+  ASSERT_EQ(4, ranges.size());
+  // There are only 3 ranges with range-specific hash schema.
+  ASSERT_EQ(3, ps.ranges_with_custom_hash_schemas().size());
+
+  PartitionSchemaPB ps_pb_other;
+  ASSERT_OK(ps.ToPB(schema, &ps_pb_other));
+  ASSERT_EQ(1, ps_pb_other.hash_schema_size());
+  // The range with the table-wide schema shouldn't be there.
+  ASSERT_EQ(3, ps_pb_other.custom_hash_schema_ranges_size());
+  for (const auto& range : ps_pb_other.custom_hash_schema_ranges()) {
+    // All the table's hash schemas have a single dimension.
+    ASSERT_EQ(1, range.hash_schema_size());
+    const auto& hash_dimension = range.hash_schema(0);
+    ASSERT_TRUE(hash_dimension.has_seed());
+    const auto seed = hash_dimension.seed();
+    ASSERT_NE(0, seed);
+    // In this scenario, only the table-wide hash schema has zero seed.
+    ASSERT_TRUE(seed == 1 || seed == 5 || seed == 10);
+    ASSERT_TRUE(hash_dimension.has_num_buckets());
+    const auto num_buckets = hash_dimension.num_buckets();
+    ASSERT_TRUE(num_buckets == 4 || num_buckets == 2 || num_buckets == 3);
+  }
+
+  PartitionSchema ps_other;
+  PartitionSchema::RangesWithHashSchemas ranges_other;
+  ASSERT_OK(PartitionSchema::FromPB(ps_pb_other, schema, &ps_other, &ranges_other));
+  ASSERT_TRUE(ps_other.HasCustomHashSchemas());
+  // The information on the ranges with custom hash schemas isn't persisted
+  // anywhere else but in the 'RangeSchemaPB::custom_hash_schema_ranges' field.
+  ASSERT_EQ(3, ps_other.ranges_with_custom_hash_schemas_.size());
+  ASSERT_EQ(3, ranges_other.size());
+}
+
 TEST_F(PartitionTest, TestPartitionSchemaPB) {
   // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
   // PARTITION BY [HASH BUCKET (b), RANGE (a, b, c)];
@@ -1560,11 +1658,13 @@ TEST_F(PartitionTest, TestPartitionSchemaPB) {
   }
 
   PartitionSchema partition_schema;
-  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+  PartitionSchema::RangesWithHashSchemas ranges;
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema, &ranges));
 
   // Check fields of 'partition_schema' to verify decoder function.
   ASSERT_EQ(1, partition_schema.hash_schema().size());
-  const auto& ranges_with_hash_schemas = partition_schema.ranges_with_hash_schemas();
+  const auto& ranges_with_hash_schemas =
+      partition_schema.ranges_with_custom_hash_schemas_;
   ASSERT_EQ(3, ranges_with_hash_schemas.size());
 
   EXPECT_EQ(string("a0\0\0\0\0c0", 8), ranges_with_hash_schemas[0].lower);
@@ -1842,6 +1942,341 @@ TEST_F(PartitionTest, HasCustomHashSchemasMethod) {
     ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
     ASSERT_TRUE(partition_schema.HasCustomHashSchemas());
   }
+}
+
+// A test scenario to verify functionality of the
+// PartitionSchema::DropRange() method.
+TEST_F(PartitionTest, DropRange) {
+  const Schema schema({ ColumnSchema("a", STRING),
+                        ColumnSchema("b", STRING),
+                        ColumnSchema("c", STRING) },
+                      { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  // Try to drop non-existing range.
+  {
+    PartitionSchemaPB pb;
+    PartitionSchema ps;
+    ASSERT_OK(PartitionSchema::FromPB(pb, schema, &ps));
+
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0"));
+    ASSERT_OK(lower.SetStringCopy("c", "c0"));
+
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a0"));
+    ASSERT_OK(upper.SetStringCopy("c", "c1"));
+
+    const auto s = ps.DropRange(lower, upper, schema);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "range with specified lower bound not found");
+  }
+
+  // Single range with custom hash schema.
+  {
+    PartitionSchemaPB pb;
+    auto* range = pb.add_custom_hash_schema_ranges();
+
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0"));
+    ASSERT_OK(lower.SetStringCopy("c", "c0"));
+
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a0"));
+    ASSERT_OK(upper.SetStringCopy("c", "c1"));
+
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("a");
+    hash_dimension->set_num_buckets(2);
+
+    PartitionSchema ps;
+    PartitionSchema::RangesWithHashSchemas ranges;
+    ASSERT_OK(PartitionSchema::FromPB(pb, schema, &ps, &ranges));
+    ASSERT_EQ(1, ranges.size());
+    ASSERT_EQ(1, ps.ranges_with_custom_hash_schemas_.size());
+    ASSERT_EQ(1, ps.hash_schema_idx_by_encoded_range_start_.size());
+    ASSERT_TRUE(ps.HasCustomHashSchemas());
+    ASSERT_OK(ps.DropRange(lower, upper, schema));
+    ASSERT_EQ(0, ps.ranges_with_custom_hash_schemas_.size());
+    ASSERT_EQ(0, ps.hash_schema_idx_by_encoded_range_start_.size());
+    ASSERT_FALSE(ps.HasCustomHashSchemas());
+
+    // Doing that one more time should not work.
+    const auto s = ps.DropRange(lower, upper, schema);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "range with specified lower bound not found");
+    ASSERT_EQ(0, ps.ranges_with_custom_hash_schemas_.size());
+    ASSERT_EQ(0, ps.hash_schema_idx_by_encoded_range_start_.size());
+    ASSERT_FALSE(ps.HasCustomHashSchemas());
+  }
+
+  // Two ranges with range-specific hash schemas.
+  {
+    PartitionSchemaPB pb;
+
+    KuduPartialRow lower_0(&schema);
+    ASSERT_OK(lower_0.SetStringCopy("a", "a0"));
+    ASSERT_OK(lower_0.SetStringCopy("c", "c0"));
+
+    KuduPartialRow upper_0(&schema);
+    ASSERT_OK(upper_0.SetStringCopy("a", "a0"));
+    ASSERT_OK(upper_0.SetStringCopy("c", "c1"));
+
+    {
+      auto* range = pb.add_custom_hash_schema_ranges();
+      RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+      encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower_0);
+      encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper_0);
+
+      auto* hash_dimension = range->add_hash_schema();
+      hash_dimension->add_columns()->set_name("a");
+      hash_dimension->set_num_buckets(5);
+    }
+
+    KuduPartialRow lower_1(&schema);
+    ASSERT_OK(lower_1.SetStringCopy("a", "a1"));
+    ASSERT_OK(lower_1.SetStringCopy("c", "c1"));
+
+    KuduPartialRow upper_1(&schema);
+    ASSERT_OK(upper_1.SetStringCopy("a", "a1"));
+    ASSERT_OK(upper_1.SetStringCopy("c", "c2"));
+    {
+      auto* range = pb.add_custom_hash_schema_ranges();
+
+      RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+      encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower_1);
+      encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper_1);
+
+      auto* hash_dimension = range->add_hash_schema();
+      hash_dimension->add_columns()->set_name("a");
+      hash_dimension->set_num_buckets(3);
+    }
+
+    PartitionSchema ps;
+    PartitionSchema::RangesWithHashSchemas ranges;
+    ASSERT_OK(PartitionSchema::FromPB(pb, schema, &ps, &ranges));
+    ASSERT_EQ(2, ranges.size());
+    ASSERT_EQ(2, ps.ranges_with_custom_hash_schemas_.size());
+    ASSERT_EQ(2, ps.hash_schema_idx_by_encoded_range_start_.size());
+    ASSERT_TRUE(ps.HasCustomHashSchemas());
+
+    // Try to drop a range with non-matching lower range.
+    {
+      KuduPartialRow lower_x(&schema);
+      ASSERT_OK(lower_x.SetStringCopy("a", "a0_x"));
+      ASSERT_OK(lower_x.SetStringCopy("c", "c0_x"));
+      const auto s = ps.DropRange(lower_x, upper_0, schema);
+      ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(),
+                          "range with specified lower bound not found");
+      ASSERT_EQ(2, ps.ranges_with_custom_hash_schemas_.size());
+      ASSERT_EQ(2, ps.hash_schema_idx_by_encoded_range_start_.size());
+    }
+
+    // Try to drop a range with non-matching upper range.
+    {
+      KuduPartialRow upper_x(&schema);
+      ASSERT_OK(upper_x.SetStringCopy("a", "a0_x"));
+      ASSERT_OK(upper_x.SetStringCopy("c", "c1_x"));
+
+      const auto s = ps.DropRange(lower_0, upper_x, schema);
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "upper bound does not match");
+      ASSERT_EQ(2, ps.ranges_with_custom_hash_schemas_.size());
+      ASSERT_EQ(2, ps.hash_schema_idx_by_encoded_range_start_.size());
+    }
+
+    // Try dropping a range with mix-and-match range boundaries.
+    {
+      const auto s = ps.DropRange(lower_0, upper_1, schema);
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "upper bound does not match");
+      ASSERT_EQ(2, ps.ranges_with_custom_hash_schemas_.size());
+      ASSERT_EQ(2, ps.hash_schema_idx_by_encoded_range_start_.size());
+    }
+    {
+      const auto s = ps.DropRange(lower_1, upper_0, schema);
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "upper bound does not match");
+      ASSERT_EQ(2, ps.ranges_with_custom_hash_schemas_.size());
+      ASSERT_EQ(2, ps.hash_schema_idx_by_encoded_range_start_.size());
+    }
+  }
+}
+
+TEST_F(PartitionTest, HasCustomHashSchemasWhenAddingAndDroppingRanges) {
+  const Schema schema({ ColumnSchema("a", STRING),
+                        ColumnSchema("b", STRING) },
+                      { ColumnId(0), ColumnId(1) }, 2);
+
+  PartitionSchemaPB ps_pb;
+  // Add the information on the table-wide hash schema.
+  AddHashDimension(&ps_pb, { "b" }, 2, 0);
+
+  // No ranges defined yet, so there isn't any range with range-specific
+  // hash schema.
+  {
+    PartitionSchema ps;
+    PartitionSchema::RangesWithHashSchemas ranges;
+    ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
+    ASSERT_FALSE(ps.HasCustomHashSchemas());
+    ASSERT_EQ(0, ranges.size());
+    ASSERT_EQ(0, ps.ranges_with_custom_hash_schemas_.size());
+    ASSERT_EQ(0, ps.hash_schema_idx_by_encoded_range_start_.size());
+  }
+
+  // Add a range with table-wide hash schema into the
+  // PartitionSchemaPB::custom_hash_schema_ranges.
+  {
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b0.0"));
+
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a0.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b0.1"));
+
+    auto* range = ps_pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("b");
+    hash_dimension->set_num_buckets(2);
+    hash_dimension->set_seed(0);
+
+    PartitionSchema ps;
+    PartitionSchema::RangesWithHashSchemas ranges;
+    ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
+    ASSERT_FALSE(ps.HasCustomHashSchemas());
+    ASSERT_EQ(1, ranges.size());
+    ASSERT_EQ(0, ps.ranges_with_custom_hash_schemas_.size());
+    ASSERT_EQ(0, ps.hash_schema_idx_by_encoded_range_start_.size());
+  }
+
+  // Add a range with a custom hash schema.
+  {
+    auto* range = ps_pb.add_custom_hash_schema_ranges();
+
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a1.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b1.0"));
+
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a1.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b1.1"));
+
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("a");
+    hash_dimension->set_num_buckets(3);
+
+    PartitionSchema ps;
+    PartitionSchema::RangesWithHashSchemas ranges;
+    ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
+    ASSERT_TRUE(ps.HasCustomHashSchemas());
+    ASSERT_EQ(2, ranges.size());
+    ASSERT_EQ(1, ps.ranges_with_custom_hash_schemas_.size());
+    ASSERT_EQ(1, ps.hash_schema_idx_by_encoded_range_start_.size());
+  }
+
+  // Add one more range with table-wide hash schema into the
+  // 'custom_hash_schema_ranges'.
+  {
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a2.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b2.0"));
+
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a2.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b2.1"));
+
+    auto* range = ps_pb.add_custom_hash_schema_ranges();
+    RowOperationsPBEncoder encoder(range->mutable_range_bounds());
+    encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+
+    auto* hash_dimension = range->add_hash_schema();
+    hash_dimension->add_columns()->set_name("b");
+    hash_dimension->set_num_buckets(2);
+    hash_dimension->set_seed(0);
+
+    PartitionSchema ps;
+    PartitionSchema::RangesWithHashSchemas ranges;
+    ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps, &ranges));
+    ASSERT_TRUE(ps.HasCustomHashSchemas());
+    ASSERT_EQ(3, ranges.size());
+    ASSERT_EQ(1, ps.ranges_with_custom_hash_schemas_.size());
+    ASSERT_EQ(1, ps.hash_schema_idx_by_encoded_range_start_.size());
+  }
+
+  // Now check how HasCustomHashSchema() works when dropping ranges.
+  PartitionSchema ps;
+  ASSERT_OK(PartitionSchema::FromPB(ps_pb, schema, &ps));
+
+  // Drop the first range that has the table-wide hash schema.
+  {
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a0.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b0.0"));
+
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a0.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b0.1"));
+
+    const auto s = ps.DropRange(lower, upper, schema);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "range with specified lower bound not found");
+  }
+  // The range with custom hash schema is still there.
+  ASSERT_TRUE(ps.HasCustomHashSchemas());
+  ASSERT_EQ(1, ps.ranges_with_custom_hash_schemas_.size());
+  ASSERT_EQ(1, ps.hash_schema_idx_by_encoded_range_start_.size());
+
+  // Drop the range with range-specific hash schema.
+  {
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a1.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b1.0"));
+
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a1.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b1.1"));
+
+    ASSERT_OK(ps.DropRange(lower, upper, schema));
+  }
+  ASSERT_FALSE(ps.HasCustomHashSchemas());
+  ASSERT_EQ(0, ps.ranges_with_custom_hash_schemas_.size());
+  ASSERT_EQ(0, ps.hash_schema_idx_by_encoded_range_start_.size());
+
+  // Drop the remaining range that has the table-wide hash schema.
+  {
+    KuduPartialRow lower(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a2.0"));
+    ASSERT_OK(lower.SetStringCopy("b", "b2.0"));
+
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(upper.SetStringCopy("a", "a2.1"));
+    ASSERT_OK(upper.SetStringCopy("b", "b2.1"));
+
+    const auto s = ps.DropRange(lower, upper, schema);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "range with specified lower bound not found");
+  }
+  ASSERT_FALSE(ps.HasCustomHashSchemas());
+  ASSERT_EQ(0, ps.ranges_with_custom_hash_schemas_.size());
+  ASSERT_EQ(0, ps.hash_schema_idx_by_encoded_range_start_.size());
 }
 
 } // namespace kudu
