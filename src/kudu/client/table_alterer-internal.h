@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "kudu/client/client.h"
-#include "kudu/common/partial_row.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/util/monotime.h"
@@ -56,12 +55,9 @@ class KuduTableAlterer::Data {
     // [ADD|DROP|RENAME|ALTER]_COLUMN.
     KuduColumnSpec *spec;
 
-    // Lower and upper bound partition keys. Only set when the StepType is
+    // The Kudu range partition to add or drop. Only set when the StepType is
     // [ADD|DROP]_RANGE_PARTITION.
-    std::unique_ptr<KuduPartialRow> lower_bound;
-    std::unique_ptr<KuduPartialRow> upper_bound;
-    KuduTableCreator::RangePartitionBound lower_bound_type;
-    KuduTableCreator::RangePartitionBound upper_bound_type;
+    std::unique_ptr<KuduTableCreator::KuduRangePartition> range_partition;
 
     // The dimension label for tablet. Only set when the StepType is ADD_RANGE_PARTITION.
     std::optional<std::string> dimension_label;

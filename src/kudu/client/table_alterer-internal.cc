@@ -17,6 +17,7 @@
 
 #include "kudu/client/table_alterer-internal.h"
 
+#include <memory>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -27,6 +28,8 @@
 
 #include "kudu/client/schema-internal.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/table_creator-internal.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
@@ -164,18 +167,29 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
       {
         RowOperationsPBEncoder encoder(pb_step->mutable_add_range_partition()
                                               ->mutable_range_bounds());
+        auto* partition_data = s.range_partition->data_;
         RowOperationsPB_Type lower_bound_type =
-          s.lower_bound_type == KuduTableCreator::INCLUSIVE_BOUND ?
-          RowOperationsPB::RANGE_LOWER_BOUND :
-          RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
+            partition_data->lower_bound_type_ == KuduTableCreator::INCLUSIVE_BOUND ?
+            RowOperationsPB::RANGE_LOWER_BOUND :
+            RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
 
         RowOperationsPB_Type upper_bound_type =
-          s.upper_bound_type == KuduTableCreator::EXCLUSIVE_BOUND ?
-          RowOperationsPB::RANGE_UPPER_BOUND :
-          RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
+            partition_data->upper_bound_type_ == KuduTableCreator::EXCLUSIVE_BOUND ?
+            RowOperationsPB::RANGE_UPPER_BOUND :
+            RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
 
-        encoder.Add(lower_bound_type, *s.lower_bound);
-        encoder.Add(upper_bound_type, *s.upper_bound);
+        encoder.Add(lower_bound_type, *partition_data->lower_bound_);
+        encoder.Add(upper_bound_type, *partition_data->upper_bound_);
+
+        for (const auto& hash_dimension : partition_data->hash_schema_) {
+          auto* custom_hash_schema_pb = pb_step->mutable_add_range_partition()->
+              add_custom_hash_schema();
+          for (const auto& column_name : hash_dimension.column_names) {
+            custom_hash_schema_pb->add_columns()->set_name(column_name);
+          }
+          custom_hash_schema_pb->set_num_buckets(hash_dimension.num_buckets);
+          custom_hash_schema_pb->set_seed(hash_dimension.seed);
+        }
 
         if (s.dimension_label) {
           pb_step->mutable_add_range_partition()->set_dimension_label(
@@ -187,18 +201,19 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
       {
         RowOperationsPBEncoder encoder(pb_step->mutable_drop_range_partition()
                                               ->mutable_range_bounds());
+        auto* partition_data = s.range_partition->data_;
         RowOperationsPB_Type lower_bound_type =
-          s.lower_bound_type == KuduTableCreator::INCLUSIVE_BOUND ?
+            partition_data->lower_bound_type_ == KuduTableCreator::INCLUSIVE_BOUND ?
           RowOperationsPB::RANGE_LOWER_BOUND :
           RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND;
 
         RowOperationsPB_Type upper_bound_type =
-          s.upper_bound_type == KuduTableCreator::EXCLUSIVE_BOUND ?
+            partition_data->upper_bound_type_ == KuduTableCreator::EXCLUSIVE_BOUND ?
           RowOperationsPB::RANGE_UPPER_BOUND :
           RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND;
 
-        encoder.Add(lower_bound_type, *s.lower_bound);
-        encoder.Add(upper_bound_type, *s.upper_bound);
+        encoder.Add(lower_bound_type, *partition_data->lower_bound_);
+        encoder.Add(upper_bound_type, *partition_data->upper_bound_);
         break;
       }
       default:

@@ -1485,7 +1485,7 @@ KuduTableAlterer* KuduTableAlterer::SetComment(const string& new_comment) {
 
 KuduColumnSpec* KuduTableAlterer::AddColumn(const string& name) {
   Data::Step s = { AlterTableRequestPB::ADD_COLUMN,
-                   new KuduColumnSpec(name), nullptr, nullptr };
+                   new KuduColumnSpec(name), nullptr };
   auto* spec = s.spec;
   data_->steps_.emplace_back(std::move(s));
   return spec;
@@ -1493,7 +1493,7 @@ KuduColumnSpec* KuduTableAlterer::AddColumn(const string& name) {
 
 KuduColumnSpec* KuduTableAlterer::AlterColumn(const string& name) {
   Data::Step s = { AlterTableRequestPB::ALTER_COLUMN,
-                   new KuduColumnSpec(name), nullptr, nullptr };
+                   new KuduColumnSpec(name), nullptr };
   auto* spec = s.spec;
   data_->steps_.emplace_back(std::move(s));
   return spec;
@@ -1501,7 +1501,7 @@ KuduColumnSpec* KuduTableAlterer::AlterColumn(const string& name) {
 
 KuduTableAlterer* KuduTableAlterer::DropColumn(const string& name) {
   Data::Step s = { AlterTableRequestPB::DROP_COLUMN,
-                   new KuduColumnSpec(name), nullptr, nullptr };
+                   new KuduColumnSpec(name), nullptr };
   data_->steps_.emplace_back(std::move(s));
   return this;
 }
@@ -1539,11 +1539,37 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartitionWithDimension(
 
   Data::Step s { AlterTableRequestPB::ADD_RANGE_PARTITION,
                  nullptr,
-                 unique_ptr<KuduPartialRow>(lower_bound),
-                 unique_ptr<KuduPartialRow>(upper_bound),
-                 lower_bound_type,
-                 upper_bound_type,
+                 std::unique_ptr<KuduTableCreator::KuduRangePartition>(
+                     new KuduTableCreator::KuduRangePartition(
+                         lower_bound, upper_bound, lower_bound_type, upper_bound_type)),
                  dimension_label.empty() ? nullopt : make_optional(dimension_label) };
+  data_->steps_.emplace_back(std::move(s));
+  data_->has_alter_partitioning_steps = true;
+  return this;
+}
+
+KuduTableAlterer* KuduTableAlterer::AddRangePartition(
+    KuduTableCreator::KuduRangePartition* partition) {
+  CHECK(partition);
+  if (partition->data_->lower_bound_ == nullptr || partition->data_->upper_bound_  == nullptr) {
+    data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
+    return this;
+  }
+  if (partition->data_->lower_bound_->schema() != partition->data_->upper_bound_->schema()) {
+    data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+    return this;
+  }
+  if (data_->schema_ == nullptr) {
+    data_->schema_ = partition->data_->lower_bound_->schema();
+  } else if (partition->data_->lower_bound_->schema() != data_->schema_) {
+    data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+    return this;
+  }
+
+  Data::Step s { AlterTableRequestPB::ADD_RANGE_PARTITION,
+                 nullptr,
+                 std::unique_ptr<KuduTableCreator::KuduRangePartition>(partition),
+                 nullopt };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
   return this;
@@ -1571,10 +1597,9 @@ KuduTableAlterer* KuduTableAlterer::DropRangePartition(
 
   Data::Step s { AlterTableRequestPB::DROP_RANGE_PARTITION,
                  nullptr,
-                 unique_ptr<KuduPartialRow>(lower_bound),
-                 unique_ptr<KuduPartialRow>(upper_bound),
-                 lower_bound_type,
-                 upper_bound_type };
+                 std::unique_ptr<KuduTableCreator::KuduRangePartition>(
+                     new KuduTableCreator::KuduRangePartition(
+                         lower_bound, upper_bound, lower_bound_type, upper_bound_type)) };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
   return this;
