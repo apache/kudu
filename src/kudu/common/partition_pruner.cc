@@ -329,6 +329,118 @@ vector<PartitionPruner::PartitionKeyRange> PartitionPruner::ConstructPartitionKe
   return partition_key_ranges;
 }
 
+// NOTE: the lower ranges are inclusive, the upper ranges are exclusive.
+void PartitionPruner::PrepareRangeSet(
+    const string& scan_lower_bound,
+    const string& scan_upper_bound,
+    const PartitionSchema::HashSchema& table_wide_hash_schema,
+    const PartitionSchema::RangesWithHashSchemas& ranges,
+    PartitionSchema::RangesWithHashSchemas* result_ranges) {
+  DCHECK(result_ranges);
+  CHECK(scan_upper_bound.empty() || scan_lower_bound < scan_upper_bound);
+
+  // If there aren't any ranges with custom hash schemas or there isn't an
+  // intersection between the set of ranges with custom hash schemas and the
+  // scan range, the result is trivial: the whole scan range is attributed
+  // to the table-wide hash schema.
+  if (ranges.empty() ||
+      (!scan_upper_bound.empty() && scan_upper_bound < ranges.front().lower) ||
+      (!scan_lower_bound.empty() && !ranges.back().upper.empty() &&
+           ranges.back().upper <= scan_lower_bound)) {
+    *result_ranges =
+        { { scan_lower_bound, scan_upper_bound, table_wide_hash_schema } };
+    return;
+  }
+
+  // Find the first range that is at or after the specified bounds.
+  const auto range_it = std::lower_bound(ranges.cbegin(), ranges.cend(),
+      RangeBounds{scan_lower_bound, scan_upper_bound},
+      [] (const PartitionSchema::RangeWithHashSchema& range,
+          const RangeBounds& bounds) {
+        // return true if range < bounds
+        return !range.upper.empty() && range.upper <= bounds.lower;
+      });
+  CHECK(range_it != ranges.cend());
+
+  // Current position of the iterator.
+  string cur_point = scan_lower_bound;
+  // Index of the known range with custom hash schema that the iterator is
+  // currently pointing at or about to point if the iterator is currently
+  // at the scan boundary.
+  size_t cur_idx = distance(ranges.begin(), range_it);
+
+  CHECK_LT(cur_idx, ranges.size());
+
+  // Iterate over the scan range from one known boundary to the next one,
+  // enumerating the resulting consecutive sub-ranges and attributing each
+  // sub-range to a proper hash schema. If that's a known range with custom hash
+  // schema, it's attributed to its range-specific hash schema; otherwise,
+  // a sub-range is attributed to the table-wide hash schema.
+  PartitionSchema::RangesWithHashSchemas result;
+  while (cur_idx < ranges.size() &&
+         (cur_point < scan_upper_bound || scan_upper_bound.empty())) {
+    // Check the disposition of cur_point related to the lower boundary
+    // of the range pointed to by 'cur_idx'.
+    const auto& cur_range = ranges[cur_idx];
+    if (cur_point < cur_range.lower) {
+      // The iterator is before the current range:
+      //     |---|
+      //   ^
+      // The next known bound is either the upper bound of the current range
+      // or the upper bound of the scan.
+      auto upper_bound = scan_upper_bound.empty()
+          ? cur_range.lower : std::min(cur_range.lower, scan_upper_bound);
+      result.emplace_back(PartitionSchema::RangeWithHashSchema{
+          cur_point, upper_bound, table_wide_hash_schema});
+      // Not advancing the 'cur_idx' since cur_point is either at the beginning
+      // of the range or before it at the upper bound of the scan.
+    } else if (cur_point == cur_range.lower) {
+      // The iterator is at the lower boundary of the current range:
+      //   |---|
+      //   ^
+      if ((!cur_range.upper.empty() && cur_range.upper <= scan_upper_bound) ||
+          scan_upper_bound.empty()) {
+        // The current range is within the scan boundaries.
+        result.emplace_back(cur_range);
+      } else {
+        // The current range spans over the upper bound of the scan.
+        result.emplace_back(PartitionSchema::RangeWithHashSchema{
+            cur_point, scan_upper_bound, cur_range.hash_schema});
+      }
+      // Done with the current range, advance to the next one, if any.
+      ++cur_idx;
+    } else {
+      // The iterator is ahead of the current range's lower boundary:
+      //   |---|
+      //     ^
+      if ((!scan_upper_bound.empty() && scan_upper_bound <= cur_range.upper) ||
+          cur_range.upper.empty()) {
+        result.emplace_back(PartitionSchema::RangeWithHashSchema{
+            cur_point, scan_upper_bound, cur_range.hash_schema});
+      } else {
+        result.emplace_back(PartitionSchema::RangeWithHashSchema{
+            cur_point, cur_range.upper, cur_range.hash_schema});
+      }
+      // Done with the current range, advance to the next one, if any.
+      ++cur_idx;
+    }
+    // Advance the iterator.
+    cur_point = result.back().upper;
+  }
+
+  // If exiting from the cycle above by the 'cur_idx < ranges.size()' condition,
+  // check if the upper bound of the scan is beyond the upper bound of the last
+  // range with custom hash schema. If so, add an extra range that spans from
+  // the upper bound of the last range to the upper bound of the scan.
+  if (result.back().upper != scan_upper_bound) {
+    DCHECK_EQ(cur_point, result.back().upper);
+    result.emplace_back(PartitionSchema::RangeWithHashSchema{
+        cur_point, scan_upper_bound, table_wide_hash_schema});
+  }
+
+  *result_ranges = std::move(result);
+}
+
 void PartitionPruner::Init(const Schema& schema,
                            const PartitionSchema& partition_schema,
                            const ScanSpec& scan_spec) {
@@ -440,52 +552,28 @@ void PartitionPruner::Init(const Schema& schema,
     move(partition_key_ranges.rbegin(), partition_key_ranges.rend(),
          first_range.partition_key_ranges.begin());
   } else {
-    vector<RangeBounds> range_bounds;
-    vector<PartitionSchema::HashSchema> hash_schemas_per_range;
-    for (const auto& range : partition_schema.ranges_with_custom_hash_schemas()) {
-      const auto& hash_schema = range.hash_schema;
-      // Both lower and upper bounds of the scan are unbounded.
-      if (scan_range_lower_bound.empty() && scan_range_upper_bound.empty()) {
-        range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
-        hash_schemas_per_range.emplace_back(hash_schema);
-        continue;
-      }
-      // Only one of the lower/upper bounds of the scan is unbounded.
-      if (scan_range_lower_bound.empty()) {
-        if (scan_range_upper_bound > range.lower) {
-          range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
-          hash_schemas_per_range.emplace_back(hash_schema);
-        }
-        continue;
-      }
-      if (scan_range_upper_bound.empty()) {
-        if (range.upper.empty() || scan_range_lower_bound < range.upper) {
-          range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
-          hash_schemas_per_range.emplace_back(hash_schema);
-        }
-        continue;
-      }
-      // Both lower and upper ranges of the scan are bounded.
-      if ((range.upper.empty() || scan_range_lower_bound < range.upper) &&
-          scan_range_upper_bound > range.lower) {
-        range_bounds.emplace_back(RangeBounds{range.lower, range.upper});
-        hash_schemas_per_range.emplace_back(hash_schema);
-      }
-    }
-    DCHECK_EQ(range_bounds.size(), hash_schemas_per_range.size());
-    range_bounds_to_partition_key_ranges_.resize(hash_schemas_per_range.size());
-    // Construct partition key ranges from the ranges and their respective hash schemas
-    // that falls within the scan's bounds.
-    for (size_t i = 0; i < hash_schemas_per_range.size(); ++i) {
-      const auto& hash_schema = hash_schemas_per_range[i];
-      const auto bounds =
-          scan_range_lower_bound.empty() && scan_range_upper_bound.empty()
-          ? RangeBounds{range_bounds[i].lower, range_bounds[i].upper}
-          : RangeBounds{scan_range_lower_bound, scan_range_upper_bound};
+    // Build the preliminary set or ranges: that's to convey information on
+    // range-specific hash schemas since some ranges in the table can have
+    // custom (i.e. different from the table-wide) hash schemas.
+    PartitionSchema::RangesWithHashSchemas preliminary_ranges;
+    PartitionPruner::PrepareRangeSet(
+        scan_range_lower_bound,
+        scan_range_upper_bound,
+        partition_schema.hash_schema(),
+        partition_schema.ranges_with_custom_hash_schemas(),
+        &preliminary_ranges);
+
+    range_bounds_to_partition_key_ranges_.resize(preliminary_ranges.size());
+    // Construct partition key ranges from the ranges and their respective hash
+    // schemas that falls within the scan's bounds.
+    for (size_t i = 0; i < preliminary_ranges.size(); ++i) {
+      const auto& hash_schema = preliminary_ranges[i].hash_schema;
+      RangeBounds range_bounds{
+          preliminary_ranges[i].lower, preliminary_ranges[i].upper};
       auto partition_key_ranges = ConstructPartitionKeyRanges(
-          schema, scan_spec, hash_schema, bounds);
+          schema, scan_spec, hash_schema, range_bounds);
       auto& current_range = range_bounds_to_partition_key_ranges_[i];
-      current_range.range_bounds = range_bounds[i];
+      current_range.range_bounds = std::move(range_bounds);
       current_range.partition_key_ranges.resize(partition_key_ranges.size());
       move(partition_key_ranges.rbegin(), partition_key_ranges.rend(),
            current_range.partition_key_ranges.begin());

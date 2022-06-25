@@ -301,6 +301,17 @@ Status PartitionSchema::FromPB(
     }
   }
 
+  // Sort the ranges.
+  constexpr struct {
+    bool operator()(const PartitionSchema::RangeWithHashSchema& lhs,
+                    const PartitionSchema::RangeWithHashSchema& rhs) const {
+      return lhs.lower < rhs.lower;
+    }
+  } rangeLess;
+  sort(ranges_with_custom_hash_schemas.begin(),
+       ranges_with_custom_hash_schemas.end(),
+       rangeLess);
+
   auto& dict = partition_schema->hash_schema_idx_by_encoded_range_start_;
   for (auto it = ranges_with_custom_hash_schemas.cbegin();
        it != ranges_with_custom_hash_schemas.cend(); ++it) {

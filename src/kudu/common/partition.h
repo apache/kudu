@@ -462,6 +462,8 @@ class PartitionSchema {
     return hash_schema_;
   }
 
+  // Return all the known ranges that have custom hash schemas. The ranges are
+  // sorted by the lower bound in ascending order; the ranges do not intersect.
   const RangesWithHashSchemas& ranges_with_custom_hash_schemas() const {
     return ranges_with_custom_hash_schemas_;
   }
@@ -666,7 +668,8 @@ class PartitionSchema {
   HashSchema hash_schema_;
 
   // This contains only ranges with range-specific (i.e. different from
-  // the table-wide) hash schemas.
+  // the table-wide) hash schemas. This array is sorted by a range's lower bound
+  // in ascending order; the ranges do not intersect.
   RangesWithHashSchemas ranges_with_custom_hash_schemas_;
 
   // Encoded start of the range --> index of the hash bucket schemas for the

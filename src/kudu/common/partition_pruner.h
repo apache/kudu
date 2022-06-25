@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/common/partition.h"
 #include "kudu/gutil/macros.h"
 
@@ -72,6 +74,9 @@ class PartitionPruner {
   std::string ToString(const Schema& schema, const PartitionSchema& partition_schema) const;
 
  private:
+  friend class PartitionPrunerRangeSetTest;
+  FRIEND_TEST(PartitionPrunerRangeSetTest, PrepareRangeSet);
+
   struct RangeBounds {
     std::string lower;
     std::string upper;
@@ -101,6 +106,25 @@ class PartitionPruner {
       const ScanSpec& scan_spec,
       const PartitionSchema::HashSchema& hash_schema,
       const RangeBounds& range_bounds);
+
+  // Produce the preliminary set of scanner ranges with proper hash schemas
+  // per each range for the scan range defined by 'scan_lower_bound' and
+  // 'scan_upper_bound'. The method uses the information on the table-wide hash
+  // schema and the range-specific hash schemas provided with
+  // 'table_wide_hash_schema' and 'ranges_with_custom_hash_schemas'
+  // correspondingly.
+  //
+  // The predicate-based range is split into sub-ranges that are assigned
+  // corresponding hash schemas to them.  In essence, the hash schemas for the
+  // ranges with custom hash schemas are known from the
+  // 'ranges_with_custom_hash_schemas' parameter, and the rest of the sub-ranges
+  // have the table-wide hash schema.
+  static void PrepareRangeSet(
+    const std::string& scan_lower_bound,
+    const std::string& scan_upper_bound,
+    const PartitionSchema::HashSchema& table_wide_hash_schema,
+    const PartitionSchema::RangesWithHashSchemas& ranges_with_custom_hash_schemas,
+    PartitionSchema::RangesWithHashSchemas* ranges);
 
   // A vector of a pair of lower and upper range bounds mapped to a reverse
   // sorted set of partition key ranges. Each partition key range within the set
