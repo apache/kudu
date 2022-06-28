@@ -142,16 +142,32 @@ void SchedulerThread::RunLoop() {
     vector<SchedulerTask> pending_tasks;
     {
       MutexLock auto_lock(mutex_);
-      auto upper_it = tasks_.upper_bound(now);
-      for (auto it = tasks_.begin(); it != upper_it; it++) {
+      auto upper_it = future_tasks_.upper_bound(now);
+      for (auto it = future_tasks_.begin(); it != upper_it; it++) {
         pending_tasks.emplace_back(std::move(it->second));
       }
-      tasks_.erase(tasks_.begin(), upper_it);
+      future_tasks_.erase(future_tasks_.begin(), upper_it);
     }
 
     for (const auto& task : pending_tasks) {
-      ThreadPoolToken* token = task.thread_pool_token_;
-      CHECK_OK(token->Submit(task.f));
+      ThreadPoolToken* token = task.thread_pool_token;
+      while (token != nullptr) {
+        Status s = token->Submit(task.f);
+        if (s.ok()) {
+          break;
+        }
+        DCHECK(s.IsServiceUnavailable())
+            << Substitute("threadpool token Submit status: $0", s.ToString());
+
+        if (!token->MaySubmitNewTasks()) {
+          // threadpool token is Shutdown, skip the task.
+          break;
+        }
+        // If developers use ThreadPoolToken::Schedule(...) too frequent, blocking queue's
+        // capacity will be full, then retry submit the task again.
+        VLOG(1) << Substitute("threadpool token Submit status: $0, retry the task", s.ToString());
+        SleepFor(MonoDelta::FromMilliseconds(1));
+      }
     }
   }
 }
@@ -401,14 +417,14 @@ Status ThreadPool::Init() {
 }
 
 void ThreadPool::Shutdown() {
-  MutexLock unique_lock(lock_);
-  CheckNotPoolThreadUnlocked();
-
   if (scheduler_) {
     scheduler_->Shutdown();
     delete scheduler_;
     scheduler_ = nullptr;
   }
+
+  MutexLock unique_lock(lock_);
+  CheckNotPoolThreadUnlocked();
   // Note: this is the same error seen at submission if the pool is at
   // capacity, so clients can't tell them apart. This isn't really a practical
   // concern though because shutting down a pool typically requires clients to

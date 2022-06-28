@@ -190,8 +190,21 @@ TEST_F(ThreadPoolTest, TestSubmitAfterShutdown) {
 
   ASSERT_OK(RebuildPoolWithScheduler(1, 1));
   unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
+  ASSERT_OK(token->Schedule(&IssueTraceStatement, 200));
+  token->Shutdown();
+  SleepFor(MonoDelta::FromMilliseconds(500));
   pool_->Shutdown();
   ASSERT_TRUE(token->Schedule(&IssueTraceStatement, 1000).IsServiceUnavailable());
+}
+
+TEST_F(ThreadPoolTest, TokenShutdownBeforeSchedulerExecute) {
+  ASSERT_OK(RebuildPoolWithScheduler(1, 1));
+  unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
+  ASSERT_OK(token->Schedule(&IssueTraceStatement, 200));
+  token->Shutdown();
+  SleepFor(MonoDelta::FromMilliseconds(500));
+  ASSERT_TRUE(token->Schedule(&IssueTraceStatement, 1000).IsServiceUnavailable());
+  pool_->Shutdown();
 }
 
 TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
@@ -255,7 +268,6 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithSchedulerAndNoMinimum) {
   unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
   ASSERT_OK(token->Submit([&latch]() { latch.Wait(); }));
   ASSERT_EQ(4, pool_->num_threads());
-
   ASSERT_OK(token->Schedule([&latch]() { latch.Wait(); }, kDelayMs));
   ASSERT_OK(token->Schedule([&latch]() { latch.Wait(); }, static_cast<int>(kDelayMs * 1.2)));
   ASSERT_EQ(4, pool_->num_threads());
@@ -1052,8 +1064,9 @@ TEST_P(ThreadPoolTestTokenTypes, TestTokenWaitForAll) {
   const int kNumSubmissions = 20;
   Random r(SeedRandom());
   vector<unique_ptr<ThreadPoolToken>> tokens;
+  tokens.resize(kNumTokens);
   for (int i = 0; i < kNumTokens; i++) {
-    tokens.emplace_back(pool_->NewToken(GetParam()));
+    tokens[i] = pool_->NewToken(GetParam());
   }
 
   atomic<int32_t> v(0);
