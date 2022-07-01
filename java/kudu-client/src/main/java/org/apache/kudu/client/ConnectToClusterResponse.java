@@ -34,6 +34,12 @@ class ConnectToClusterResponse {
   private static final ByteString FAKE_TABLET_ID = ByteString.copyFromUtf8(
       AsyncKuduClient.MASTER_TABLE_NAME_PLACEHOLDER);
 
+  /**
+   * If the client caches master locations, the entries should not live longer
+   * than this timeout. Defaults to one hour.
+   */
+  private static final int CACHE_TTL_MS = 60 * 60 * 1000;
+
   /** The host and port of the master that is currently leader */
   private final HostAndPort leaderHostAndPort;
   /** The response from that master */
@@ -73,6 +79,7 @@ class ConnectToClusterResponse {
         .addTsInfos(TSInfoPB.newBuilder()
             .addRpcAddresses(ProtobufHelper.hostAndPortToPB(leaderHostAndPort))
             .setPermanentUuid(ByteString.copyFromUtf8(fakeUuid)))
+        .setTtlMillis(CACHE_TTL_MS)
         .build();
   }
 }

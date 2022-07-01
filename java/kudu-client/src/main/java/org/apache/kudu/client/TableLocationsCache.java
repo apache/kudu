@@ -62,7 +62,11 @@ class TableLocationsCache {
       rwl.readLock().lock();
       try {
         Preconditions.checkState(entries.size() <= 1);
-        return entries.get(AsyncKuduClient.EMPTY_ARRAY);
+        TableLocationsCache.Entry entry = entries.get(AsyncKuduClient.EMPTY_ARRAY);
+        if (entry.isStale()) {
+          return null;
+        }
+        return entry;
       } finally {
         rwl.readLock().unlock();
       }
@@ -105,7 +109,7 @@ class TableLocationsCache {
     if (requestPartitionKey == null) {
       // Master lookup.
       Preconditions.checkArgument(tablets.size() == 1);
-      Entry entry = Entry.tablet(tablets.get(0), TimeUnit.DAYS.toMillis(1));
+      Entry entry = Entry.tablet(tablets.get(0), deadline);
 
       rwl.writeLock().lock();
       try {

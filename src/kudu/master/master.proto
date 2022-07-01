@@ -692,7 +692,7 @@ message GetTableLocationsResponsePB {
 
   // If the client caches table locations, the entries should not live longer
   // than this timeout. Defaults to one hour.
-  optional uint32 ttl_millis = 3 [default = 36000000];
+  optional uint32 ttl_millis = 3 [default = 3600000];
 }
 
 message AlterTableRequestPB {

@@ -98,4 +98,31 @@ public class TestTableLocationsCache {
     cache.cacheTabletLocations(tablets, AsyncKuduClient.EMPTY_ARRAY, 1, 100);
     assertNotNull(cache.get(AsyncKuduClient.EMPTY_ARRAY));
   }
+
+  // Test for checking client will not get expired tablet locations.
+  @Test(timeout = 30000)
+  public void testTTLForTableLocationsCache() {
+    final int TTL_MS = 100;
+    byte[] partitionKey = "start_key".getBytes(StandardCharsets.UTF_8);
+    List<RemoteTablet> tablets = ImmutableList.of(
+        TestRemoteTablet.getTablet(0, 1, -1, partitionKey, AsyncKuduClient.EMPTY_ARRAY));
+    cache.cacheTabletLocations(tablets, partitionKey, 1, TTL_MS);
+    assertNotNull(cache.get(partitionKey));
+    // Mock as if the time increased by 100ms.
+    Mockito.when(TableLocationsCache.ticker.read()).thenReturn(TTL_MS * 1000000L);
+    assertNull(cache.get(partitionKey));
+  }
+
+  // Test for checking client will not get expired master locations.
+  @Test(timeout = 30000)
+  public void testTTLForMasterLocationsCache() {
+    final int TTL_MS = 100;
+    List<RemoteTablet> masterTablets =
+        ImmutableList.of(TestRemoteTablet.getTablet(0, 1, -1));
+    cache.cacheTabletLocations(masterTablets, null, 1, TTL_MS);
+    assertNotNull(cache.get(null));
+    // Mock as if the time increased by 100ms.
+    Mockito.when(TableLocationsCache.ticker.read()).thenReturn(TTL_MS * 1000000L);
+    assertNull(cache.get(null));
+  }
 }
