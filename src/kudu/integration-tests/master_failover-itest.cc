@@ -38,6 +38,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/sys_catalog.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h" // IWYU pragma: keep
@@ -369,6 +370,10 @@ TEST_P(MasterFailoverTest, TestMasterUUIDResolution) {
 TEST_P(MasterFailoverTest, TestMasterPermanentFailure) {
   const string kBinPath = cluster_->GetBinaryPath("kudu");
   Random r(SeedRandom());
+  string encryption_args;
+  if (Env::Default()->IsEncryptionEnabled()) {
+    encryption_args = "--encrypt_data_at_rest=1";
+  }
 
   // Repeat the test for each master.
   for (int i = 0; i < cluster_->num_masters(); i++) {
@@ -398,6 +403,10 @@ TEST_P(MasterFailoverTest, TestMasterPermanentFailure) {
           "--fs_data_dirs=" + other_master->data_dir(),
           master::SysCatalogTable::kSysCatalogTabletId
       };
+      if (!encryption_args.empty()) {
+        args.emplace_back(encryption_args);
+      }
+
       string output;
       ASSERT_OK(Subprocess::Call(args, "", &output));
       StripWhiteSpace(&output);
@@ -426,6 +435,9 @@ TEST_P(MasterFailoverTest, TestMasterPermanentFailure) {
           "--fs_data_dirs=" + failed_master->data_dir(),
           "--uuid=" + uuid
       };
+      if (!encryption_args.empty()) {
+        args.emplace_back(encryption_args);
+      }
       ASSERT_OK(Subprocess::Call(args));
     }
 
@@ -440,6 +452,9 @@ TEST_P(MasterFailoverTest, TestMasterPermanentFailure) {
           master::SysCatalogTable::kSysCatalogTabletId,
           other_master->bound_rpc_hostport().ToString()
       };
+      if (!encryption_args.empty()) {
+        args.emplace_back(encryption_args);
+      }
       ASSERT_OK(Subprocess::Call(args));
     }
 

@@ -332,10 +332,16 @@ Status MiniRanger::AddPolicy(AuthorizationPolicy policy) {
   return Status::OK();
 }
 
-Status MiniRanger::PostToRanger(string url, EasyJson payload) {
+Status MiniRanger::PostToRanger(const string& url, const EasyJson& payload, bool secure) {
+  EasyCurl curl;
+  if (secure) {
+    curl.set_auth(CurlAuthType::SPNEGO);
+  } else {
+    curl.set_auth(CurlAuthType::BASIC, "admin", "admin");
+  }
   faststring result;
-  RETURN_NOT_OK_PREPEND(curl_.PostToURL(JoinPathSegments(ranger_admin_url_, std::move(url)),
-                                        std::move(payload.ToString()), &result,
+  RETURN_NOT_OK_PREPEND(curl.PostToURL(JoinPathSegments(ranger_admin_url_, url),
+                                        payload.ToString(), &result,
                                         {"Content-Type: application/json"}),
                         Substitute("Error received from Ranger: $0", result.ToString()));
   return Status::OK();

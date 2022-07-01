@@ -36,12 +36,14 @@ add_library(kudu_fs
   file_block_manager.cc
   fs_manager.cc
   fs_report.cc
-  log_block_manager.cc)
+  log_block_manager.cc
+  ranger_kms_key_provider.cc)
 
 target_link_libraries(kudu_fs
   fs_proto
   kudu_util
-  gutil)
+  gutil
+  ranger_kms_client)
 
 add_library(kudu_fs_test_util
   log_block_manager-test-util.cc)
@@ -57,6 +59,7 @@ SET_KUDU_TEST_LINK_LIBS(kudu_fs kudu_fs_test_util)
 ADD_KUDU_TEST(block_manager-test)
 ADD_KUDU_TEST(block_manager-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(data_dirs-test)
+ADD_KUDU_TEST(default_key_provider-test)
 ADD_KUDU_TEST(dir_util-test)
 ADD_KUDU_TEST(error_manager-test)
 ADD_KUDU_TEST(fs_manager-test)

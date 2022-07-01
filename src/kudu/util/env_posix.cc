@@ -205,9 +205,9 @@ TAG_FLAG(env_inject_lock_failure_globs, hidden);
 
 DEFINE_bool(encrypt_data_at_rest, false,
             "Whether sensitive files should be encrypted on the file system.");
-TAG_FLAG(encrypt_data_at_rest, hidden);
 DEFINE_int32(encryption_key_length, 128, "Encryption key length.");
-TAG_FLAG(encryption_key_length, hidden);
+TAG_FLAG(encryption_key_length, advanced);
+
 DEFINE_validator(encryption_key_length,
                  [](const char* /*n*/, int32 v) { return v == 128 || v == 192 || v == 256; });
 
@@ -2286,7 +2286,7 @@ class PosixEnv : public Env {
         eh.algorithm = EncryptionAlgorithm::AES256ECB;
         break;
       default:
-        LOG(FATAL) << "Illegal key size";
+        LOG(FATAL) << "Illegal key size: " << key_size;
     }
     memcpy(eh.key, server_key, key_size / 8);
     server_key_ = eh;

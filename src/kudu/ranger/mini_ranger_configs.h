@@ -294,6 +294,10 @@ inline std::string GetRangerAdminDefaultSiteXml(const std::string& pg_driver,
     <value>rangerlogger</value>
     <description/>
   </property>
+  <property>
+    <name>ranger.users.roles.list</name>
+    <value>ROLE_SYS_ADMIN, ROLE_USER, ROLE_OTHER, ROLE_ANON, ROLE_KEY_ADMIN, ROLE_ADMIN_AUDITOR, ROLE_KEY_ADMIN_AUDITOR</value>
+  </property>
 </configuration>
 )";
   return strings::Substitute(kRangerAdminDefaultSiteTemplate, pg_driver,
@@ -384,6 +388,15 @@ inline std::string GetRangerCoreSiteXml(bool secure) {
   <property>
     <name>hadoop.security.group.mapping</name>
     <value>org.apache.hadoop.security.NullGroupsMapping</value>
+  </property>
+  <property>
+    <name>hadoop.security.auth_to_local</name>
+    <value>RULE:[2:$$1@$$0](rangeradmin@KRBTEST.COM)s/(.*)@KRBTEST.COM/ranger/
+RULE:[2:$$1@$$0](rangertagsync@KRBTEST.COM)s/(.*)@KRBTEST.COM/rangertagsync/
+RULE:[2:$$1@$$0](rangerusersync@KRBTEST.COM)s/(.*)@KRBTEST.COM/rangerusersync/
+RULE:[2:$$1@$$0](rangerkms@KRBTEST.COM)s/(.*)@KRBTEST.COM/keyadmin/
+RULE:[2:$$1@$$0](atlas@KRBTEST.COM)s/(.*)@KRBTEST.COM/atlas/
+DEFAULT</value>
   </property>
 </configuration>
 )";

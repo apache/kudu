@@ -47,6 +47,19 @@ DEFINE_string(test_server_key, "",
               "consecutive startups. It should only be used in tests.");
 TAG_FLAG(test_server_key, hidden);
 
+
+DEFINE_string(test_server_key_iv, "",
+              "Server key IV in plain-text to be persisted into the instance file. "
+              "It is only used when creating the file system, it's disregarded on "
+              "consecutive startups. It should only be used in tests.");
+TAG_FLAG(test_server_key_iv, hidden);
+
+
+DEFINE_string(test_server_key_version, "",
+              "Server key version in plain-text to be persisted into the instance file. "
+              "It is only used when creating the file system, it's disregarded on "
+              "consecutive startups. It should only be used in tests.");
+TAG_FLAG(test_server_key_version, hidden);
 namespace kudu {
 namespace server {
 
@@ -55,7 +68,9 @@ ServerBaseOptions::ServerBaseOptions()
     dump_info_path(FLAGS_server_dump_info_path),
     dump_info_format(FLAGS_server_dump_info_format),
     metrics_log_interval_ms(FLAGS_metrics_log_interval_ms),
-    server_key(FLAGS_test_server_key) {
+    server_key(FLAGS_test_server_key),
+    server_key_iv(FLAGS_test_server_key_iv),
+    server_key_version(FLAGS_test_server_key_version) {
 }
 
 } // namespace server

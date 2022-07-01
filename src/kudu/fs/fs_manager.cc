@@ -22,7 +22,6 @@
 #include <functional>
 #include <initializer_list>
 #include <iostream>
-#include <openssl/rand.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -32,11 +31,14 @@
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/default_key_provider.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/fs/ranger_kms_key_provider.h"
+#include "kudu/fs/key_provider.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -48,15 +50,13 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/server/default_key_provider.h"
-#include "kudu/server/key_provider.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
-#include "kudu/util/openssl_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -128,6 +128,35 @@ METRIC_DEFINE_gauge_int64(server, log_block_manager_containers_processing_time_s
                           "files during the startup",
                           kudu::MetricLevel::kDebug);
 
+DEFINE_string(encryption_key_provider, "default",
+              "Key provider implementation to generate and decrypt server keys. "
+              "Valid values are: 'default' (not for production usage), and 'ranger-kms'.");
+
+DEFINE_validator(encryption_key_provider, [](const char* /*n*/, const std::string& value) {
+  return value == "default" || value == "ranger-kms";
+});
+
+DEFINE_string(ranger_kms_url, "",
+              "URL of the Ranger KMS server. Must be set when 'encryption_key_provider' "
+              "is set to 'ranger-kms'.");
+
+DEFINE_string(encryption_cluster_key_name, "kudu_cluster_key",
+              "Name of the cluster key that is used to encrypt server encryption keys as "
+              "stored in Ranger KMS.");
+
+bool ValidateRangerKMSFlags() {
+  if (FLAGS_encryption_key_provider == "ranger-kms") {
+    if (FLAGS_ranger_kms_url.empty() || FLAGS_encryption_cluster_key_name.empty()) {
+      LOG(ERROR) << "If 'encryption_key_provider' is set to 'ranger-kms', then "
+                    "'ranger_kms_url' and 'encryption_cluster_key_name' must also be set.";
+      return false;
+    }
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(validate_ranger_kms_flags, ValidateRangerKMSFlags);
+
 DECLARE_bool(encrypt_data_at_rest);
 DECLARE_int32(encryption_key_length);
 
@@ -146,6 +175,7 @@ using kudu::fs::UpdateInstanceBehavior;
 using kudu::fs::WritableBlock;
 using kudu::pb_util::SecureDebugString;
 using kudu::security::DefaultKeyProvider;
+using kudu::security::RangerKMSKeyProvider;
 using std::optional;
 using std::ostream;
 using std::string;
@@ -153,6 +183,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+using strings::a2b_hex;
 using strings::Substitute;
 
 namespace kudu {
@@ -197,7 +228,12 @@ FsManager::FsManager(Env* env, FsManagerOpts opts)
   DCHECK(opts_.update_instances == UpdateInstanceBehavior::DONT_UPDATE ||
          !opts_.read_only) << "FsManager can only be for updated if not in read-only mode";
   if (FLAGS_encrypt_data_at_rest) {
-    key_provider_.reset(new DefaultKeyProvider());
+    if (FLAGS_encryption_key_provider == "ranger-kms") {
+      key_provider_.reset(new RangerKMSKeyProvider(FLAGS_ranger_kms_url,
+                                                   FLAGS_encryption_cluster_key_name));
+    } else {
+      key_provider_.reset(new DefaultKeyProvider());
+    }
   }
 }
 
@@ -465,11 +501,14 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
 
   if (!server_key().empty() && key_provider_) {
     string server_key;
-    RETURN_NOT_OK(key_provider_->DecryptServerKey(this->server_key(), &server_key));
+    RETURN_NOT_OK(key_provider_->DecryptServerKey(this->server_key(),
+                                                  this->server_key_iv(),
+                                                  this->server_key_version(),
+                                                  &server_key));
     // 'server_key' is a hexadecimal string and SetEncryptionKey expects bits
     // (hex / 2 = bytes * 8 = bits).
     env_->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
-                             strings::a2b_hex(server_key).c_str()),
+                             a2b_hex(server_key).c_str()),
                            server_key.length() * 4);
   }
 
@@ -553,7 +592,9 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
 }
 
 Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
-                                                optional<string> server_key) {
+                                                optional<string> server_key,
+                                                optional<string> server_key_iv,
+                                                optional<string> server_key_version) {
   CHECK(!opts_.read_only);
 
   RETURN_NOT_OK(Init());
@@ -577,7 +618,11 @@ Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
   //
   // Files/directories created will NOT be synchronized to disk.
   InstanceMetadataPB metadata;
-  RETURN_NOT_OK_PREPEND(CreateInstanceMetadata(std::move(uuid), std::move(server_key), &metadata),
+  RETURN_NOT_OK_PREPEND(CreateInstanceMetadata(std::move(uuid),
+                                               std::move(server_key),
+                                               std::move(server_key_iv),
+                                               std::move(server_key_version),
+                                               &metadata),
                         "unable to create instance metadata");
   RETURN_NOT_OK_PREPEND(FsManager::CreateFileSystemRoots(
       canonicalized_all_fs_roots_, metadata, &created_dirs, &created_files),
@@ -673,6 +718,8 @@ Status FsManager::CreateFileSystemRoots(
 
 Status FsManager::CreateInstanceMetadata(optional<string> uuid,
                                          optional<string> server_key,
+                                         optional<string> server_key_iv,
+                                         optional<string> server_key_version,
                                          InstanceMetadataPB* metadata) {
   if (uuid) {
     string canonicalized_uuid;
@@ -681,19 +728,22 @@ Status FsManager::CreateInstanceMetadata(optional<string> uuid,
   } else {
     metadata->set_uuid(oid_generator_.Next());
   }
-  if (server_key) {
-    RETURN_NOT_OK(key_provider_->EncryptServerKey(*server_key,
-                                                  metadata->mutable_server_key()));
+  if (server_key && server_key_iv && server_key_version) {
+    metadata->set_server_key(*server_key);
+    metadata->set_server_key_iv(*server_key_iv);
+    metadata->set_server_key_version(*server_key_version);
+  } else if (server_key || server_key_iv || server_key_version) {
+    return Status::InvalidArgument(
+        "'server_key', 'server_key_iv', and 'server_key_version' must be specified "
+        "together (either all of them must be specified, or none of them).");
   } else if (FLAGS_encrypt_data_at_rest) {
-    uint8_t key_bytes[32];
-    int num_bytes = FLAGS_encryption_key_length / 8;
-    DCHECK(num_bytes <= sizeof(key_bytes));
-    OPENSSL_RET_NOT_OK(RAND_bytes(key_bytes, num_bytes),
-                       "Failed to generate random key");
-    string plain_server_key;
-    strings::b2a_hex(key_bytes, &plain_server_key, num_bytes);
-    RETURN_NOT_OK(key_provider_->EncryptServerKey(plain_server_key,
-                                                  metadata->mutable_server_key()));
+    string key_version;
+    RETURN_NOT_OK_PREPEND(
+        key_provider_->GenerateEncryptedServerKey(metadata->mutable_server_key(),
+                                                  metadata->mutable_server_key_iv(),
+                                                  &key_version),
+        "failed to generate encrypted server key");
+    metadata->set_server_key_version(key_version);
   }
 
   string time_str;
@@ -728,6 +778,14 @@ const string& FsManager::uuid() const {
 
 const string& FsManager::server_key() const {
   return CHECK_NOTNULL(metadata_.get())->server_key();
+}
+
+const string& FsManager::server_key_iv() const {
+  return CHECK_NOTNULL(metadata_.get())->server_key_iv();
+}
+
+const string& FsManager::server_key_version() const {
+  return CHECK_NOTNULL(metadata_.get())->server_key_version();
 }
 
 vector<string> FsManager::GetDataRootDirs() const {

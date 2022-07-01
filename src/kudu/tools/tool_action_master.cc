@@ -353,20 +353,27 @@ Status CopyRemoteSystemCatalog(const string& kudu_abs_path,
     return Status::RuntimeError("Failed to find source master to copy system catalog");
   }
 
-  LOG(INFO) << Substitute("Deleting system catalog on $0", dst_master_str);
-  RETURN_NOT_OK_PREPEND(
-      Subprocess::Call(
-          { kudu_abs_path, "local_replica", "delete", master::SysCatalogTable::kSysCatalogTabletId,
-            "--fs_wal_dir=" + FLAGS_fs_wal_dir, "--fs_data_dirs=" + FLAGS_fs_data_dirs,
-            "-clean_unsafe" }),
-      "Failed to delete system catalog");
-
-  LOG(INFO) << Substitute("Copying system catalog from master $0", src_master);
-  RETURN_NOT_OK_PREPEND(
-      Subprocess::Call(
+  vector<string> delete_args =
+      { kudu_abs_path, "local_replica", "delete", master::SysCatalogTable::kSysCatalogTabletId,
+        "--fs_wal_dir=" + FLAGS_fs_wal_dir, "--fs_data_dirs=" + FLAGS_fs_data_dirs,
+        "-clean_unsafe" };
+  vector<string> copy_args =
       { kudu_abs_path, "local_replica", "copy_from_remote",
         master::SysCatalogTable::kSysCatalogTabletId, src_master,
-        "--fs_wal_dir=" + FLAGS_fs_wal_dir, "--fs_data_dirs=" + FLAGS_fs_data_dirs }),
+        "--fs_wal_dir=" + FLAGS_fs_wal_dir, "--fs_data_dirs=" + FLAGS_fs_data_dirs };
+
+  if (Env::Default()->IsEncryptionEnabled()) {
+    delete_args.emplace_back("--encrypt_data_at_rest=true");
+    copy_args.emplace_back("--encrypt_data_at_rest=true");
+  }
+
+  LOG(INFO) << Substitute("Deleting system catalog on $0", dst_master_str);
+  RETURN_NOT_OK_PREPEND(
+      Subprocess::Call(delete_args),
+      "Failed to delete system catalog");
+  LOG(INFO) << Substitute("Copying system catalog from master $0", src_master);
+  RETURN_NOT_OK_PREPEND(
+      Subprocess::Call(copy_args),
       "Failed to copy system catalog");
 
   return Status::OK();

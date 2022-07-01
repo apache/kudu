@@ -131,13 +131,33 @@ inline std::string GetRangerKMSSiteXml(const std::string& kms_host,
     <name>kms.config.dir</name>
     <value>$3</value>
   </property>
+  <property>
+    <name>hadoop.kms.proxyuser.ranger.groups</name>
+    <value>*</value>
+  </property>
+  <property>
+    <name>hadoop.kms.proxyuser.ranger.hosts</name>
+    <value>*</value>
+  </property>
+  <property>
+    <name>hadoop.kms.authentication.kerberos.name.rules</name>
+    <value>RULE:[2:$$1@$$0](rangeradmin@KRBTEST.COM)s/(.*)@KRBTEST.COM/ranger/
+RULE:[2:$$1@$$0](rangertagsync@KRBTEST.COM)s/(.*)@KRBTEST.COM/rangertagsync/
+RULE:[2:$$1@$$0](rangerusersync@KRBTEST.COM)s/(.*)@KRBTEST.COM/rangerusersync/
+RULE:[2:$$1@$$0](rangerkms@KRBTEST.COM)s/(.*)@KRBTEST.COM/keyadmin/
+RULE:[2:$$1@$$0](atlas@KRBTEST.COM)s/(.*)@KRBTEST.COM/atlas/
+DEFAULT</value>
+  </property>
+
 </configuration>)";
   return strings::Substitute(kRangerKMSSiteXmlTemplate, kms_host, kms_port, webapp_dir, conf_dir);
 }
 
 inline std::string GetRangerKMSDbksSiteXml(const std::string& pg_host,
                                            const uint16_t pg_port,
-                                           const std::string& pg_driver) {
+                                           const std::string& pg_driver,
+                                           const std::string& host,
+                                           const std::string& keytab) {
   constexpr const char* const kRangerKMSDbksSiteXmlTemplate = R"(
 <configuration>
   <property>
@@ -269,11 +289,11 @@ inline std::string GetRangerKMSDbksSiteXml(const std::string& pg_host,
   </property>
   <property>
     <name>ranger.ks.kerberos.principal</name>
-    <value>rangerkms/_HOST@KRBTEST.COM</value>
+    <value>rangerkms/$3@KRBTEST.COM</value>
   </property>
   <property>
     <name>ranger.ks.kerberos.keytab</name>
-    <value />
+    <value>$4</value>
   </property>
   <property>
     <name>ranger.kms.keysecure.enabled</name>
@@ -343,7 +363,8 @@ inline std::string GetRangerKMSDbksSiteXml(const std::string& pg_host,
   </property>
 </configuration>
 )";
-  return strings::Substitute(kRangerKMSDbksSiteXmlTemplate, pg_host, pg_port, pg_driver);
+  return strings::Substitute(kRangerKMSDbksSiteXmlTemplate, pg_host, pg_port,
+                             pg_driver, host, keytab);
 }
 
 inline std::string GetRangerKMSLog4jProperties(const std::string& log_level) {
@@ -447,7 +468,8 @@ inline std::string GetRangerKMSSecurityXml(const std::string& ranger_url,
   return strings::Substitute(kRangerKmsSecurityXmlTemplate, ranger_url, kms_home, kms_home);
 }
 
-inline std::string GetKMSSiteXml(bool secure, const std::string& keytab) {
+inline std::string GetKMSSiteXml(bool secure, const std::string& keytab, const std::string& host) {
+
   constexpr const char* const kmsSiteXml = R"(
   <configuration>
 
@@ -535,7 +557,7 @@ inline std::string GetKMSSiteXml(bool secure, const std::string& keytab) {
 
   <property>
     <name>hadoop.kms.authentication.kerberos.principal</name>
-    <value>HTTP/localhost</value>
+    <value>HTTP/$2@KRBTEST.COM</value>
     <description>
       The Kerberos principal to use for the HTTP endpoint.
       The principal must start with 'HTTP/' as per the Kerberos HTTP SPNEGO specification.
@@ -629,9 +651,9 @@ inline std::string GetKMSSiteXml(bool secure, const std::string& keytab) {
 </configuration>
 )";
   if (secure) {
-    return strings::Substitute(kmsSiteXml, "kerberos", keytab);
+    return strings::Substitute(kmsSiteXml, "kerberos", keytab, host);
   }
-  return strings::Substitute(kmsSiteXml, "simple", keytab);
+  return strings::Substitute(kmsSiteXml, "simple", keytab, host);
 }
 
 inline std::string GetRangerKMSAuditXml() {
@@ -678,6 +700,39 @@ inline std::string GetRangerKMSAuditXml() {
 </configuration>
 )";
   return kRangerKMSAuditXml;
+}
+
+// Gets the core-site.xml that configures authentication.
+inline std::string GetRangerKMSCoreSiteXml(bool secure) {
+  // core-site.xml containing authentication method.
+  //
+  // $0: authn method (simple or kerberos)
+  const char* kCoreSiteTemplate = R"(
+<configuration>
+  <property>
+    <name>hadoop.security.authentication</name>
+    <value>$0</value>
+  </property>
+  <property>
+    <name>hadoop.security.group.mapping</name>
+    <value>org.apache.hadoop.security.NullGroupsMapping</value>
+  </property>
+  <property>
+    <name>hadoop.security.auth_to_local</name>
+    <value>RULE:[2:$$1@$$0](rangeradmin@KRBTEST.COM)s/(.*)@KRBTEST.COM/ranger/
+RULE:[2:$$1@$$0](rangertagsync@KRBTEST.COM)s/(.*)@KRBTEST.COM/rangertagsync/
+RULE:[2:$$1@$$0](rangerusersync@KRBTEST.COM)s/(.*)@KRBTEST.COM/rangerusersync/
+RULE:[2:$$1@$$0](rangerkms@KRBTEST.COM)s/(.*)@KRBTEST.COM/keyadmin/
+RULE:[2:$$1@$$0](atlas@KRBTEST.COM)s/(.*)@KRBTEST.COM/atlas/
+DEFAULT</value>
+  </property>
+</configuration>
+)";
+  if (secure) {
+    return strings::Substitute(kCoreSiteTemplate, "kerberos", "true");
+  }
+
+  return strings::Substitute(kCoreSiteTemplate, "simple", "false");
 }
 
 inline std::string GetRangerKMSPolicymgrSSLXml() {

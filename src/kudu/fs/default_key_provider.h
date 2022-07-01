@@ -18,8 +18,11 @@
 #pragma once
 
 #include <string>
+#include <openssl/rand.h>
 
-#include "kudu/server/key_provider.h"
+#include "kudu/fs/key_provider.h"
+#include "kudu/gutil/strings/escaping.h"
+#include "kudu/util/openssl_util.h"
 
 namespace kudu {
 namespace security {
@@ -28,24 +31,40 @@ class DefaultKeyProvider : public KeyProvider {
 public:
   ~DefaultKeyProvider() override {}
   Status DecryptServerKey(const std::string& encrypted_server_key,
+                          const std::string& /*iv*/,
+                          const std::string& /*key_version*/,
                           std::string* server_key) override {
-    return EncryptServerKey(encrypted_server_key, server_key);
-  }
-
-  Status EncryptServerKey(const std::string& server_key,
-                          std::string* encrypted_server_key) override {
-    *encrypted_server_key = server_key;
+    *server_key = strings::a2b_hex(encrypted_server_key);
 #ifdef __linux__
-    memfrob(encrypted_server_key->data(), server_key.length());
+    memfrob(server_key->data(), server_key->length());
 #else
     // On Linux, memfrob() bitwise XORs the data with the magic number that is
     // the answer to the ultimate question of life, the universe, and
     // everything. On Mac, we do this manually.
     const uint8_t kMagic = 42;
-    for (auto i = 0; i < server_key.length(); ++i) {
-      encrypted_server_key->data()[i] ^= kMagic;
+    for (auto i = 0; i < server_key->length(); ++i) {
+      server_key->data()[i] ^= kMagic;
     }
 #endif
+    *server_key = strings::b2a_hex(*server_key);
+    return Status::OK();
+  }
+
+  Status GenerateEncryptedServerKey(std::string* server_key,
+                                    std::string* iv,
+                                    std::string* key_version) override {
+    uint8_t key_bytes[32];
+    uint8_t iv_bytes[32];
+    int num_bytes = 16;
+    std::string dek;
+    OPENSSL_RET_NOT_OK(RAND_bytes(key_bytes, num_bytes),
+                       "Failed to generate random key");
+    strings::b2a_hex(key_bytes, &dek, num_bytes);
+    OPENSSL_RET_NOT_OK(RAND_bytes(iv_bytes, num_bytes),
+                       "Failed to generate random key");
+    strings::b2a_hex(iv_bytes, iv, num_bytes);
+    DecryptServerKey(dek, *iv, *key_version, server_key);
+    *key_version = "clusterkey@0";
     return Status::OK();
   }
 };

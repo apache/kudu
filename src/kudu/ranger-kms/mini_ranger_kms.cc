@@ -18,7 +18,7 @@
 #include "kudu/ranger-kms/mini_ranger_kms.h"
 
 #include <csignal>
-
+#include <initializer_list>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -32,6 +32,7 @@
 #include "kudu/util/easy_json.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/jsonreader.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
@@ -91,41 +92,58 @@ Status MiniRangerKMS::CreateConfigs(const std::string& conf_dir) {
   ranger_kms_url_ = Substitute("http://$0:$1", host_, port_);
 
   // Write config files
-  RETURN_NOT_OK(WriteStringToFile(env_,
-                                  GetRangerKMSInstallProperties(bin_dir(),
-                                                                host_,
-                                                                mini_pg_->bound_port(),
-                                                                mini_ranger_->admin_url()),
-                                  JoinPathSegments(kms_home, "install.properties")));
+  RETURN_NOT_OK(WriteStringToFile(
+    env_, GetRangerKMSInstallProperties(
+            bin_dir(),
+            host_,
+            mini_pg_->bound_port(),
+            mini_ranger_->admin_url()),
+    JoinPathSegments(kms_home, "install.properties")));
 
-  RETURN_NOT_OK(WriteStringToFile(env_,
-                                  GetRangerKMSSiteXml(host_,
-                                                      port_,
-                                                      JoinPathSegments(kms_home, "ews/webapp"),
-                                                      conf_dir),
-                                  JoinPathSegments(kms_home, "ranger-kms-site.xml")));
+  RETURN_NOT_OK(WriteStringToFile(
+          env_,
+          GetRangerKMSSiteXml(host_,
+                              port_,
+                              JoinPathSegments(kms_home, "ews/webapp"),
+                              conf_dir),
+          JoinPathSegments(kms_home, "ranger-kms-site.xml")));
 
-  RETURN_NOT_OK(WriteStringToFile(env_,
-                                  GetRangerKMSDbksSiteXml(host_,
-                                                          mini_pg_->bound_port(),
-                                                          "postgresql.jar"),
-                                  JoinPathSegments(kms_home, "dbks-site.xml")));
+  RETURN_NOT_OK(WriteStringToFile(
+          env_, GetRangerKMSDbksSiteXml(mini_pg_->host(),
+                                        mini_pg_->bound_port(),
+                                        "postgresql.jar",
+                                        host_,
+                                        ktpath_),
+          JoinPathSegments(kms_home, "dbks-site.xml")));
 
-  RETURN_NOT_OK(WriteStringToFile(env_,
-                                  GetRangerKMSLog4jProperties("info"),
-                                  JoinPathSegments(kms_home, "log4j.properties")));
+  RETURN_NOT_OK(WriteStringToFile(
+          env_, GetRangerKMSLog4jProperties("info"),
+          JoinPathSegments(kms_home, "log4j.properties")
+          ));
 
-  RETURN_NOT_OK(WriteStringToFile(env_,
-                                  GetRangerKMSSecurityXml(mini_ranger_->admin_url(), kms_home),
-                                  JoinPathSegments(kms_home, "ranger-kms-security.xml")));
+  RETURN_NOT_OK(WriteStringToFile(
+          env_, GetRangerKMSSecurityXml(mini_ranger_->admin_url(), kms_home),
+          JoinPathSegments(kms_home, "ranger-kms-security.xml")
+          ));
 
-  RETURN_NOT_OK(WriteStringToFile(env_,
-                                  GetKMSSiteXml(kerberos_, ktpath_),
-                                  JoinPathSegments(kms_home, "kms-site.xml")));
+  RETURN_NOT_OK(WriteStringToFile(
+          env_, GetKMSSiteXml(kerberos_, spnego_ktpath_, host_),
+          JoinPathSegments(kms_home, "kms-site.xml")
+          ));
 
-  RETURN_NOT_OK(WriteStringToFile(env_,
-                                  GetRangerKMSPolicymgrSSLXml(),
-                                  JoinPathSegments(kms_home, "ranger-kms-policymgr-ssl.xml")));
+  RETURN_NOT_OK(WriteStringToFile(
+          env_, GetRangerKMSPolicymgrSSLXml(),
+          JoinPathSegments(kms_home, "ranger-kms-policymgr-ssl.xml")
+          ));
+
+  RETURN_NOT_OK(env_util::CopyFile(
+        env_, JoinPathSegments(mini_ranger_->ranger_admin_home(), "ranger-admin-site.xml"),
+        JoinPathSegments(kms_home, "ranger-admin-site.xml"), WritableFileOptions()));
+
+  RETURN_NOT_OK(WriteStringToFile(
+        env_, GetRangerKMSCoreSiteXml(/*secure=*/true),
+        JoinPathSegments(kms_home, "core-site.xml")
+        ));
 
   return Status::OK();
 }
@@ -147,11 +165,12 @@ Status MiniRangerKMS::DbSetup(const std::string &kms_home, const std::string &ew
 
   static const vector<string> files_to_copy = {
     "dbks-site.xml",
-    "install.properties"
-    "kms-site.xml"
+    "install.properties",
+    "kms-site.xml",
     "log4j.properties",
     "ranger-kms-policymgr-ssl.xml",
-    "ranger-kms-security.xml"
+    "ranger-kms-security.xml",
+    "ranger-kms-site.xml"
   };
 
   for (const auto& file : files_to_copy) {
@@ -194,17 +213,11 @@ Status MiniRangerKMS::StartRangerKMS() {
     RETURN_NOT_OK(FindHomeDir("java", bin_dir, &java_home_));
 
     const string kKMSHome = ranger_kms_home();
-    // kms_home/ews
     const string kEwsDir = JoinPathSegments(kKMSHome, "ews");
-    // kms_home/ews/webapp
     const string kWebAppDir = JoinPathSegments(kEwsDir, "webapp");
-    // kms_home/ews/webapp/WEB-INF
     const string kWebInfDir = JoinPathSegments(kWebAppDir, "WEB-INF");
-    // kms_home/ews/webapp/WEB-INF/classes
     const string kClassesDir = JoinPathSegments(kWebInfDir, "classes");
-    // kms_home/ews/webapp/WEB-INF/classes/conf
     const string kConfDir = JoinPathSegments(kClassesDir, "conf");
-    // kms_home/ews/webapp/WEB-INF/classes/lib
     const string kLibDir = JoinPathSegments(kClassesDir, "lib");
 
     RETURN_NOT_OK(InitRangerKMS(kKMSHome, &fresh_install));
@@ -242,7 +255,6 @@ Status MiniRangerKMS::StartRangerKMS() {
     if (kerberos_) {
       args.emplace_back(Substitute("-Djava.security.krb5.conf=$0", krb5_config_));
     }
-
     args.emplace_back("-cp");
     args.emplace_back(classpath);
     args.emplace_back("org.apache.ranger.server.tomcat.EmbeddedServer");
@@ -272,21 +284,123 @@ Status MiniRangerKMS::StartRangerKMS() {
 }
 
 Status MiniRangerKMS::CreateKMSService() {
-  string service_name = "kms";
+  // Create the actual service.
+  const string kServiceName = "kms";
   EasyJson service;
-  service.Set("name", service_name);
-  service.Set("type", service_name);
+  service.Set("name", kServiceName);
+  service.Set("type", "kms");
 
   EasyJson configs = service.Set("configs", EasyJson::kObject);
-  configs.Set("policy.download.auth.users", service_name);
-  configs.Set("tag.download.auth.users", service_name);
-  configs.Set("provider", ranger_kms_url_);
-  configs.Set("username", "rangerkms");
-  configs.Set("password", "rangerkms");
+  configs.Set("policy.download.auth.users", "keyadmin,rangerkms");
+  configs.Set("provider", Substitute("kms://http@$0:$1/kms", host_, port_));
+  configs.Set("username", "keyadmin");
+  configs.Set("password", "keyadmin");
 
   RETURN_NOT_OK_PREPEND(mini_ranger_->PostToRanger("service/plugins/services", service),
-                        Substitute("Failed to create $0 service", service_name));
-  LOG(INFO) << Substitute("Created $0 service", service_name);
+                        Substitute("Failed to create $0 service", kServiceName));
+  LOG(INFO) << Substitute("Created $0 service", kServiceName);
+
+  {
+    // Create kudu user
+    EasyJson user;
+    user.Set("groupList", EasyJson::kArray);
+    user.Set("status", 1);
+    auto roleList = user.Set("userRoleList", EasyJson::kArray);
+    roleList.PushBack("ROLE_USER");
+    user.Set("name", "kudu");
+    user.Set("password", "KuduPass123");
+    user.Set("firstName", "kudu");
+    user.Set("lastName", "kudu");
+    user.Set("emailAddress", "");
+    RETURN_NOT_OK_PREPEND(mini_ranger_->PostToRanger("service/xusers/secure/users", user),
+                          "Failed to create kudu user");
+    LOG(INFO) << "Created kudu user";
+  }
+
+  {
+    // Create rangerkms user
+    EasyJson user;
+    user.Set("groupList", EasyJson::kArray);
+    user.Set("status", 1);
+    auto roleList = user.Set("userRoleList", EasyJson::kArray);
+    roleList.PushBack("ROLE_USER");
+    user.Set("name", "rangerkms");
+    user.Set("password", "rangerkmsPass123");
+    user.Set("firstName", "rangerkms");
+    user.Set("lastName", "rangerkms");
+    user.Set("emailAddress", "");
+    RETURN_NOT_OK_PREPEND(mini_ranger_->PostToRanger("service/xusers/secure/users", user),
+                          "Failed to create rangerkms user");
+    LOG(INFO) << "Created rangerkms user";
+  }
+
+  {
+    // Create policy allowing Kudu to create keys, generate and decrypt EEKs.
+    EasyJson policy;
+    policy.Set("service", kServiceName);
+    policy.Set("name", "all");
+    policy.Set("keyname", "*");
+    policy.Set("isEnabled", true);
+    EasyJson resources = policy.Set("resources", EasyJson::kObject);
+    resources.Set("keyname", "*");
+    EasyJson policy_items = policy.Set("policyItems", EasyJson::kArray);
+    {
+      EasyJson item = policy_items.PushBack(EasyJson::kObject);
+      EasyJson users = item.Set("users", EasyJson::kArray);
+      users.PushBack("kudu");
+      EasyJson accesses = item.Set("accesses", EasyJson::kArray);
+      for (auto a : {"getmetadata", "generateeek", "create", "decrypteek"}) {
+        EasyJson access = accesses.PushBack(EasyJson::kObject);
+        access.Set("type", a);
+        access.Set("isAllowed", true);
+      }
+    }
+    {
+      EasyJson item = policy_items.PushBack(EasyJson::kObject);
+      item.Set("delegateAdmin", true);
+      EasyJson users = item.Set("users", EasyJson::kArray);
+      users.PushBack("keyadmin");
+      users.PushBack("rangerkms");
+      EasyJson accesses = item.Set("accesses", EasyJson::kArray);
+      for (auto a : {"getmetadata", "generateeek", "create", "decrypteek", "getkeys", "get"}) {
+        EasyJson access = accesses.PushBack(EasyJson::kObject);
+        access.Set("type", a);
+        access.Set("isAllowed", true);
+      }
+    }
+
+    RETURN_NOT_OK_PREPEND(mini_ranger_->PostToRanger(
+        "service/plugins/policies?deleteIfExists=true", policy, /*secure=*/true),
+      "Failed to add policy");
+    LOG(INFO) << "Added ranger policy";
+  }
+
+  return Status::OK();
+}
+
+Status MiniRangerKMS::CreateClusterKey(const string& name, string* version) {
+
+  EasyJson payload;
+  payload.Set("name", name);
+  payload.Set("cipher", "AES/CTR/NoPadding");
+  payload.Set("length", 128);
+  payload.Set("description", name);
+  LOG(INFO) << payload.ToString();
+  EasyCurl curl;
+  curl.set_auth(CurlAuthType::SPNEGO);
+  string url = Substitute("$0:$1/kms/v1/keys", host_, port_);
+  LOG(INFO) << url;
+  faststring resp;
+  string tmp;
+  Status s = curl.PostToURL(url, payload.ToString(), &resp, {"Content-Type: application/json"});
+  if (!s.ok()) {
+    LOG(ERROR) << resp.ToString();
+    return s;
+  }
+  JsonReader r(resp.ToString());
+  RETURN_NOT_OK(r.Init());
+  RETURN_NOT_OK(r.ExtractString(r.root(), "versionName", version));
+
   return Status::OK();
 }
 

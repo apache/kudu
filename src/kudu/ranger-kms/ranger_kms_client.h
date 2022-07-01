@@ -18,24 +18,31 @@
 #pragma once
 
 #include <string>
+#include <utility>
 
 #include "kudu/util/status.h"
 
 namespace kudu {
 namespace security {
-
-// An interface for encrypting and decrypting Kudu's server keys.
-class KeyProvider {
+class RangerKMSClient {
  public:
-  virtual ~KeyProvider() = default;
+  RangerKMSClient(std::string kms_url, std::string cluster_key_name)
+    : kms_url_(std::move(kms_url)),
+      cluster_key_name_(std::move(cluster_key_name)) {}
 
-  // Decrypts the server key.
-  virtual Status DecryptServerKey(const std::string& encrypted_server_key,
-                                  std::string* server_key) = 0;
+  Status DecryptKey(const std::string& encrypted_key,
+                    const std::string& iv,
+                    const std::string& key_version,
+                    std::string* decrypted_key);
 
-  // Encrypts the server key.
-  virtual Status EncryptServerKey(const std::string& server_key,
-                                  std::string* encrypted_server_key) = 0;
+  Status GenerateEncryptedServerKey(std::string* encrypted_key,
+                                    std::string* iv,
+                                    std::string* key_version);
+
+ private:
+  std::string kms_url_;
+  std::string cluster_key_name_;
+
 };
 } // namespace security
 } // namespace kudu

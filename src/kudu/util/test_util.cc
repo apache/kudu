@@ -86,6 +86,9 @@ static const char* const kEncryptDataInTests = "KUDU_ENCRYPT_DATA_IN_TESTS";
 static const int kEncryptionKeySize = 16;
 static const uint8_t kEncryptionKey[kEncryptionKeySize] =
   {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 42};
+static const uint8_t kEncryptionKeyIv[kEncryptionKeySize] =
+  {42, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+static const char* const kEncryptionKeyVersion = "kuduclusterkey@0";
 
 static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 
@@ -205,13 +208,16 @@ void KuduTest::SetEncryptionFlags(bool enable_encryption) {
   }
 }
 
-const string KuduTest::GetEncryptionKey() {
+void KuduTest::GetEncryptionKey(string* key, string* iv, string* version) {
   if (FLAGS_encrypt_data_at_rest) {
-    string key;
-    strings::b2a_hex(kEncryptionKey, &key, kEncryptionKeySize);
-    return key;
+    strings::b2a_hex(kEncryptionKey, key, kEncryptionKeySize);
+    strings::b2a_hex(kEncryptionKeyIv, iv, kEncryptionKeySize);
+    *version = kEncryptionKeyVersion;
+  } else {
+    *key = "";
+    *iv = "";
+    *version = "";
   }
-  return "";
 }
 
 ///////////////////////////////////////////////////

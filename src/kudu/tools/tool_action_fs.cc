@@ -70,6 +70,7 @@
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
@@ -87,6 +88,23 @@ DEFINE_string(uuid, "",
               "If not provided, one is generated");
 DEFINE_string(server_key, "",
               "The encrypted server key to use in the filesystem.");
+DEFINE_string(server_key_iv, "",
+              "The server key IV to use in the filesystem.");
+DEFINE_string(server_key_version, "",
+              "The server key version to use in the filesystem.");
+
+bool ServerKeySetTogether() {
+  if (FLAGS_server_key.empty() != FLAGS_server_key_iv.empty()
+      || FLAGS_server_key.empty() != FLAGS_server_key_version.empty()) {
+    LOG(ERROR) << "'server_key', 'server_key_iv', and 'server_key_version' must "
+                  "either all be set, or none of them must be set.";
+    return false;
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(server_key_set_together, ServerKeySetTogether);
+
 DEFINE_bool(repair, false,
             "Repair any inconsistencies in the filesystem.");
 
@@ -230,13 +248,20 @@ Status Format(const RunnerContext& /*context*/) {
   FsManager fs_manager(Env::Default(), FsManagerOpts());
   optional<string> uuid;
   optional<string> server_key;
+  optional<string> server_key_iv;
+  optional<string> server_key_version;
   if (!FLAGS_uuid.empty()) {
     uuid = FLAGS_uuid;
   }
-  if (!FLAGS_server_key.empty()) {
+  if (!FLAGS_server_key.empty()
+      && !FLAGS_server_key_iv.empty()
+      && !FLAGS_server_key_version.empty()) {
     server_key = FLAGS_server_key;
+    server_key_iv = FLAGS_server_key_iv;
+    server_key_version = FLAGS_server_key_version;
   }
-  return fs_manager.CreateInitialFileSystemLayout(uuid, server_key);
+  return fs_manager.CreateInitialFileSystemLayout(uuid, server_key,
+                                                  server_key_iv, server_key_version);
 }
 
 Status DumpUuid(const RunnerContext& /*context*/) {

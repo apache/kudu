@@ -112,6 +112,7 @@ DEPS_FOR_ALL = \
      "build/latest/bin/postgres-lib",
      "build/latest/bin/postgres-share",
      "build/latest/bin/postgresql.jar",
+     "build/latest/bin/ranger_kms-home",
      "build/latest/bin/ranger-home",
 
      # Add the Kudu HMS plugin.

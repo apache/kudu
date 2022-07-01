@@ -1633,10 +1633,12 @@ TEST_F(ToolTest, TestFsCheck) {
 }
 
 TEST_F(ToolTest, TestFsCheckLiveServer) {
+  string encryption_args = env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "";
   NO_FATALS(StartExternalMiniCluster());
-  string args = Substitute("fs check --fs_wal_dir $0 --fs_data_dirs $1",
+  string args = Substitute("fs check --fs_wal_dir $0 --fs_data_dirs $1 $2",
                            cluster_->GetWalPath("master-0"),
-                           JoinStrings(cluster_->GetDataPaths("master-0"), ","));
+                           JoinStrings(cluster_->GetDataPaths("master-0"), ","),
+                           encryption_args);
   NO_FATALS(RunFsCheck(args, 0, "", {}, 0));
   args += " --repair";
   string stdout;
@@ -1674,6 +1676,29 @@ TEST_F(ToolTest, TestFsFormatWithUuid) {
   ASSERT_OK(generator.Canonicalize(fs.uuid(), &canonicalized_uuid));
   ASSERT_EQ(fs.uuid(), canonicalized_uuid);
   ASSERT_EQ(fs.uuid(), original_uuid);
+}
+
+TEST_F(ToolTest, TestFsFormatWithServerKey) {
+  const string kTestDir = GetTestPath("test");
+  ObjectIdGenerator generator;
+  string original_uuid = generator.Next();
+  string server_key = "00010203040506070809101112131442";
+  string server_key_iv = "42141312111009080706050403020100";
+  string server_key_version = "kuduclusterkey@0";
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs format --fs_wal_dir=$0 --uuid=$1 --server_key=$2 "
+      "--server_key_iv=$3 --server_key_version=$4",
+      kTestDir, original_uuid, server_key, server_key_iv, server_key_version)));
+  FsManager fs(env_, FsManagerOpts(kTestDir));
+  ASSERT_OK(fs.Open());
+
+  string canonicalized_uuid;
+  ASSERT_OK(generator.Canonicalize(fs.uuid(), &canonicalized_uuid));
+  ASSERT_EQ(canonicalized_uuid, fs.uuid());
+  ASSERT_EQ(original_uuid, fs.uuid());
+  ASSERT_EQ(server_key, fs.server_key());
+  ASSERT_EQ(server_key_iv, fs.server_key_iv());
+  ASSERT_EQ(server_key_version, fs.server_key_version());
 }
 
 TEST_F(ToolTest, TestFsDumpUuid) {
@@ -8061,6 +8086,17 @@ TEST_F(UnregisterTServerTest, TestUnregisterTServerNotPresumedDead) {
 }
 
 TEST_F(ToolTest, TestLocalReplicaCopyLocal) {
+  // TODO(abukor): Rewrite the test to make sure it works with encryption
+  // enabled.
+  //
+  // Right now, this test would fail with encryption enabled, as the local
+  // replica copy shares an Env between the source and the destination and they
+  // use different instance files. This shouldn't be a problem in real life, as
+  // its meant to copy tablets between disks on the same server, which would
+  // share UUIDs and server keys.
+  if (FLAGS_encrypt_data_at_rest) {
+    GTEST_SKIP();
+  }
   // Create replicas and fill some data.
   InternalMiniClusterOptions opts;
   opts.num_data_dirs = 3;

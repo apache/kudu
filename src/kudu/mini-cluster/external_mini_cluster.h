@@ -48,6 +48,10 @@ class Env;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
+namespace ranger {
+class MiniRanger;
+}  // namespace ranger
+
 namespace rangerkms {
 class MiniRangerKMS;
 }  // namespace rangerkms
@@ -82,10 +86,6 @@ class Messenger;
 namespace postgres {
 class MiniPostgres;
 } // namespace postgres
-
-namespace ranger {
-class MiniRanger;
-} // namespace ranger
 
 namespace server {
 class ServerStatusPB;
@@ -226,6 +226,16 @@ struct ExternalMiniClusterOptions {
   //
   // Default: false.
   bool enable_ranger_kms;
+
+  // Cluster key in Ranger.
+  //
+  // Default: "".
+  std::string ranger_cluster_key;
+
+  // Cluster key version in Ranger.
+  //
+  // Default: "".
+  std::string ranger_cluster_key_version;
 
   // If true, enable data at rest encryption.
   //
@@ -586,11 +596,13 @@ class ExternalMiniCluster : public MiniCluster {
 struct ExternalDaemonOptions {
   ExternalDaemonOptions()
       : logtostderr(false),
-        enable_encryption(false) {
+        enable_encryption(false),
+        enable_ranger_kms(false) {
   }
 
   bool logtostderr;
   bool enable_encryption;
+  bool enable_ranger_kms;
   std::shared_ptr<rpc::Messenger> messenger;
   std::string block_manager_type;
   std::string exe;
@@ -601,6 +613,8 @@ struct ExternalDaemonOptions {
   std::string perf_record_filename;
   std::vector<std::string> extra_flags;
   MonoDelta start_process_timeout;
+  std::string ranger_kms_url;
+  std::string ranger_cluster_key;
 };
 
 class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {

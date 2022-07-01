@@ -120,6 +120,11 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   // List of every master UUIDs.
   vector<string> uuids = { cluster->master()->uuid() };
 
+  string encryption_flags;
+  if (Env::Default()->IsEncryptionEnabled()) {
+    encryption_flags = "--encrypt_data_at_rest=true";
+  }
+
   // Format a filesystem tree for each of the new masters and get the uuids.
   for (int i = 1; i < kNumMasters; i++) {
     string data_root = cluster->GetDataPath(Substitute("master-$0", i));
@@ -134,6 +139,9 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
           "--fs_wal_dir=" + wal_dir,
           "--fs_data_dirs=" + data_root
       };
+      if (!encryption_flags.empty()) {
+        args.emplace_back(encryption_flags);
+      }
       ASSERT_OK(Subprocess::Call(args));
     }
     {
@@ -145,6 +153,9 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
           "--fs_wal_dir=" + wal_dir,
           "--fs_data_dirs=" + data_root
       };
+      if (!encryption_flags.empty()) {
+        args.emplace_back(encryption_flags);
+      }
       string uuid;
       ASSERT_OK(Subprocess::Call(args, "", &uuid));
       StripWhiteSpace(&uuid);
@@ -164,6 +175,9 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
         "--fs_data_dirs=" + data_root,
         SysCatalogTable::kSysCatalogTabletId
     };
+    if (!encryption_flags.empty()) {
+      args.emplace_back(encryption_flags);
+    }
     for (int i = 0; i < kNumMasters; i++) {
       args.emplace_back(Substitute("$0:$1", uuids[i], master_rpc_addresses[i].ToString()));
     }
@@ -193,6 +207,9 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
         SysCatalogTable::kSysCatalogTabletId,
         cluster->master()->bound_rpc_hostport().ToString()
     };
+    if (!encryption_flags.empty()) {
+      args.emplace_back(encryption_flags);
+    }
     ASSERT_OK(Subprocess::Call(args));
   }
 

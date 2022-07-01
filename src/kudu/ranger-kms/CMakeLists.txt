@@ -34,6 +34,18 @@ add_library(mini_ranger_kms ${MINI_RANGER_KMS_SRCS})
 target_link_libraries(mini_ranger_kms ${MINI_RANGER_KMS_DEPS})
 
 #######################################
+# ranger_kms_client
+#######################################
+set(RANGER_KMS_CLIENT_SRCS
+        ranger_kms_client.cc)
+set(RANGER_KMS_CLIENT_DEPS
+        kudu_curl_util
+        kudu_util)
+
+add_library(ranger_kms_client ${RANGER_KMS_CLIENT_SRCS})
+target_link_libraries(ranger_kms_client ${RANGER_KMS_CLIENT_DEPS})
+
+#######################################
 # Unit tests
 #######################################
 

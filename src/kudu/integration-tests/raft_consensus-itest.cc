@@ -828,7 +828,13 @@ TEST_P(RaftConsensusParamEncryptionITest, TestCatchupAfterOpsEvicted) {
     // process, as both of them access encrypted files.
     SetEncryptionFlags(true);
     kTsFlags.emplace_back("--encrypt_data_at_rest=true");
-    kTsFlags.emplace_back("--test_server_key=" + GetEncryptionKey());
+    string server_key;
+    string server_key_iv;
+    string server_key_version;
+    GetEncryptionKey(&server_key, &server_key_iv, &server_key_version);
+    kTsFlags.emplace_back("--test_server_key=" + server_key);
+    kTsFlags.emplace_back("--test_server_key_iv=" + server_key_iv);
+    kTsFlags.emplace_back("--test_server_key_version=" + server_key_version);
   }
 
   NO_FATALS(BuildAndStart(kTsFlags));

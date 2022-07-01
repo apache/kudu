@@ -682,6 +682,17 @@ TEST_F(SecurityITest, TestRequireAuthenticationSecureCluster) {
   SmokeTestCluster(client, /* transactional */ false);
 }
 
+TEST_F(SecurityITest, TestEncryptionWithKMSIntegration) {
+  cluster_opts_.enable_ranger = true;
+  cluster_opts_.enable_ranger_kms = true;
+  ASSERT_OK(StartCluster());
+
+  shared_ptr<KuduClient> client;
+  KuduClientBuilder b;
+  ASSERT_OK(cluster_->CreateClient(&b, &client));
+  SmokeTestCluster(client, /* transactional */ false);
+}
+
 class EncryptionPolicyTest :
     public SecurityITest,
     public ::testing::WithParamInterface<tuple<

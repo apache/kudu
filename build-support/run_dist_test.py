@@ -150,7 +150,8 @@ def main():
   # are used in mini_hms.cc and mini_ranger.cc.
   env['HIVE_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hive-*"))[0]
   env['HADOOP_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hadoop-*"))[0]
-  env['RANGER_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*"))[0]
+  env['RANGER_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-admin"))[0]
+  env['RANGER_KMS_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-kms"))[0]
   env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 
   # Restore the symlinks to the chrony binaries and Postgres and Ranger
@@ -169,8 +170,10 @@ def main():
                os.path.join(bin_path, "postgres-share"))
     os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/postgresql-*/postgresql-*.jar"))[0],
                os.path.join(bin_path, "postgresql.jar"))
-    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*"))[0],
+    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-admin"))[0],
                os.path.join(bin_path, "ranger-home"))
+    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*-kms"))[0],
+               os.path.join(bin_path, "ranger_kms-home"))
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/hadoop"),
                os.path.join(bin_path, "hadoop-home"))
     # When building Ranger, we symlink conf.dist to conf. Overwrite the link we
@@ -178,6 +181,9 @@ def main():
     os.unlink(os.path.join(bin_path, "ranger-home/ews/webapp/WEB-INF/classes/conf"))
     os.symlink(os.path.join(bin_path, "ranger-home/ews/webapp/WEB-INF/classes/conf.dist"),
                os.path.join(bin_path, "ranger-home/ews/webapp/WEB-INF/classes/conf"))
+    os.unlink(os.path.join(bin_path, "ranger_kms-home/ews/webapp/WEB-INF/classes/conf"))
+    os.symlink(os.path.join(bin_path, "ranger_kms-home/ews/webapp/WEB-INF/classes/conf.dist"),
+               os.path.join(bin_path, "ranger_kms-home/ews/webapp/WEB-INF/classes/conf"))
 
   env['LD_LIBRARY_PATH'] = ":".join(
     [os.path.join(ROOT, "build/dist-test-system-libs/")] +

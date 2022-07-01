@@ -30,10 +30,10 @@
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/subprocess.h" // IWYU pragma: keep
 #include "kudu/util/test_util.h"
 
 namespace kudu {
-class Subprocess;
 namespace postgres {
 class MiniPostgres;
 }  // namespace postgres
@@ -76,11 +76,20 @@ class MiniRangerKMS {
 
   Status GetKeys() const;
 
+  Status CreateClusterKey(const std::string& name, std::string* version) WARN_UNUSED_RESULT;
+
+
   void EnableKerberos(std::string krb5_config,
-                      std::string ktpath) {
+                      std::string ktpath,
+                      std::string spnego_ktpath) {
     kerberos_ = true;
     krb5_config_ = std::move(krb5_config);
     ktpath_ = std::move(ktpath);
+    spnego_ktpath_ = std::move(spnego_ktpath);
+  }
+
+  std::string url() const {
+    return strings::Substitute("$0:$1/kms", host_, port_);
   }
 
  private:
@@ -103,7 +112,7 @@ class MiniRangerKMS {
 
   // Returns RangerKMS' home directory.
   std::string ranger_kms_home() const {
-    return JoinPathSegments(data_root_, "rangerkms");
+    return JoinPathSegments(data_root_, "ranger-kms");
   }
 
   std::string bin_dir() const {
@@ -152,6 +161,7 @@ class MiniRangerKMS {
   bool kerberos_;
   std::string krb5_config_;
   std::string ktpath_;
+  std::string spnego_ktpath_;
 
   Env* env_;
   EasyCurl curl_;

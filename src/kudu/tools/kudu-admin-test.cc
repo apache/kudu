@@ -74,6 +74,7 @@
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/cow_object.h"
+#include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -3067,6 +3068,9 @@ vector<string> RebuildMasterCmd(const ExternalMiniCluster& cluster,
   };
   if (!tables.empty()) {
     command.emplace_back(Substitute("-tables=$0", tables));
+  }
+  if (Env::Default()->IsEncryptionEnabled()) {
+    command.emplace_back("--encrypt_data_at_rest=true");
   }
   if (log_to_stderr) {
     command.emplace_back("--logtostderr");

@@ -614,7 +614,10 @@ Status ServerBase::Init() {
     if (options_.server_key.empty()) {
       s = fs_manager_->CreateInitialFileSystemLayout();
     } else {
-      s = fs_manager_->CreateInitialFileSystemLayout(std::nullopt, options_.server_key);
+      s = fs_manager_->CreateInitialFileSystemLayout(std::nullopt,
+                                                     options_.server_key,
+                                                     options_.server_key_iv,
+                                                     options_.server_key_version);
     }
     if (s.IsAlreadyPresent()) {
       return s.CloneAndPrepend("FS layout already exists; not overwriting existing layout");

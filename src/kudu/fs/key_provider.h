@@ -15,34 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/server/default_key_provider.h"
+#pragma once
 
 #include <string>
 
-#include <gtest/gtest.h>
-
-#include "kudu/util/test_macros.h"
-#include "kudu/util/test_util.h"
-
-using std::string;
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace security {
 
-class DefaultKeyProviderTest : public KuduTest {
- protected:
-  DefaultKeyProvider key_provider_;
+// An interface for encrypting and decrypting Kudu's server keys.
+class KeyProvider {
+ public:
+  virtual ~KeyProvider() = default;
+
+  // Decrypts the server key.
+  virtual Status DecryptServerKey(const std::string& encrypted_server_key,
+                                  const std::string& iv,
+                                  const std::string& key_version,
+                                  std::string* server_key) = 0;
+
+  // Generates an encrypted server key.
+  virtual Status GenerateEncryptedServerKey(std::string* encrypted_server_key,
+                                            std::string* iv,
+                                            std::string* key_version) = 0;
+
 };
-
-TEST_F(DefaultKeyProviderTest, TestEncryptAndDecrypt) {
-  string key = "foo";
-  string encrypted_key;
-  string decrypted_key;
-  ASSERT_OK(key_provider_.EncryptServerKey(key, &encrypted_key));
-  ASSERT_OK(key_provider_.DecryptServerKey(encrypted_key, &decrypted_key));
-  ASSERT_NE(key, encrypted_key);
-  ASSERT_EQ(key, decrypted_key);
-}
-
 } // namespace security
 } // namespace kudu

@@ -87,4 +87,3 @@ ADD_KUDU_TEST(rpc_server-test)
 ADD_KUDU_TEST(webserver-test)
 
 SET_KUDU_TEST_LINK_LIBS(server_process)
-ADD_KUDU_TEST(default_key_provider-test)

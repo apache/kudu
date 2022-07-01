@@ -30,7 +30,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/ranger/ranger.pb.h"
-#include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -39,9 +38,15 @@
 
 namespace kudu {
 class EasyJson;
+
 namespace postgres {
 class MiniPostgres;
 }  // namespace postgres
+}  // namespace kudu
+
+using kudu::postgres::MiniPostgres;
+
+namespace kudu {
 
 namespace ranger {
 
@@ -84,9 +89,7 @@ class MiniRanger {
       host_(std::move(host)),
       mini_pg_(std::move(mini_pg)),
       kerberos_(false),
-      env_(Env::Default()) {
-        curl_.set_auth(CurlAuthType::BASIC, "admin", "admin");
-      }
+      env_(Env::Default()) {}
 
   // Starts Ranger and its dependencies.
   Status Start() WARN_UNUSED_RESULT;
@@ -119,10 +122,17 @@ class MiniRanger {
     return ranger_admin_url_;
   }
 
+
+  // Returns Ranger admin's home directory.
+  std::string ranger_admin_home() const {
+    return JoinPathSegments(data_root_, "ranger-admin");
+  }
+
   bool IsRunning() const { return process_ && process_->IsStarted(); }
 
   // Sends a POST request to Ranger with 'payload'.
-  Status PostToRanger(std::string url, EasyJson payload) WARN_UNUSED_RESULT;
+  Status PostToRanger(const std::string& url, const EasyJson& payload, bool secure = false)
+    WARN_UNUSED_RESULT;
 
 private:
   // Starts the Ranger service.
@@ -143,11 +153,6 @@ private:
 
   // Creates a Kudu service in Ranger.
   Status CreateKuduService() WARN_UNUSED_RESULT;
-
-  // Returns Ranger admin's home directory.
-  std::string ranger_admin_home() const {
-    return JoinPathSegments(data_root_, "ranger-admin");
-  }
 
   std::string bin_dir() const {
     std::string exe;
@@ -188,7 +193,6 @@ private:
   std::string krb5_config_;
 
   Env* env_;
-  EasyCurl curl_;
 
   uint16_t port_ = 0;
 
