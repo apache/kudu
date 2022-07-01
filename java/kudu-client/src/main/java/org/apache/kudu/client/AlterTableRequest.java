@@ -42,7 +42,7 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
   static final String ALTER_TABLE = "AlterTable";
   private final String name;
   private final AlterTableRequestPB.Builder builder;
-  private final List<Integer> requiredFeatures;
+  private final List<Integer> featureFlags;
 
   AlterTableRequest(KuduTable masterTable,
                     String name,
@@ -52,9 +52,7 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
     super(masterTable, timer, timeoutMillis);
     this.name = name;
     this.builder = ato.getProtobuf();
-    this.requiredFeatures = ato.hasAddDropRangePartitions() ?
-        ImmutableList.of(MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE) :
-        ImmutableList.of();
+    this.featureFlags = ato.getRequiredFeatureFlags();
   }
 
   @Override
@@ -90,6 +88,6 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
 
   @Override
   Collection<Integer> getRequiredFeatures() {
-    return requiredFeatures;
+    return featureFlags;
   }
 }

@@ -22,9 +22,11 @@ import static org.apache.kudu.ColumnSchema.Encoding;
 import static org.apache.kudu.master.Master.AlterTableRequestPB;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -33,6 +35,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
+import org.apache.kudu.master.Master;
 
 /**
  * This builder must be used to alter a table. At least one change must be specified.
@@ -42,6 +45,7 @@ import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 public class AlterTableOptions {
   private final AlterTableRequestPB.Builder pb = AlterTableRequestPB.newBuilder();
   private boolean wait = true;
+  private boolean isAddingRangeWithCustomHashSchema = false;
 
   /**
    * Change a table's name.
@@ -393,6 +397,7 @@ public class AlterTableOptions {
           EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT,
               SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_ID)));
     }
+    isAddingRangeWithCustomHashSchema = true;
     return this;
   }
 
@@ -528,5 +533,17 @@ public class AlterTableOptions {
 
   boolean shouldWait() {
     return wait;
+  }
+
+  List<Integer> getRequiredFeatureFlags() {
+    if (!hasAddDropRangePartitions()) {
+      return ImmutableList.of();
+    }
+    if (!isAddingRangeWithCustomHashSchema) {
+      return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
+    }
+    return ImmutableList.of(
+        Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE,
+        Master.MasterFeatures.RANGE_SPECIFIC_HASH_SCHEMA_VALUE);
   }
 }

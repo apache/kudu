@@ -46,14 +46,14 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   CreateTableRequest(KuduTable masterTable,
                      String name,
                      Schema schema,
-                     CreateTableOptions builder,
+                     CreateTableOptions cto,
                      Timer timer,
                      long timeoutMillis) {
     super(masterTable, timer, timeoutMillis);
     this.schema = schema;
     this.name = name;
-    this.builder = builder.getBuilder();
-    featureFlags = builder.getRequiredFeatureFlags();
+    this.builder = cto.getBuilder();
+    featureFlags = cto.getRequiredFeatureFlags();
   }
 
   @Override

@@ -774,6 +774,57 @@ public class TestAlterTable {
     client.deleteTable(tableName);
   }
 
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
+      "--enable_per_range_hash_schemas=false",
+  })
+  public void testAlterTryAddRangeWithCustomHashSchema() throws Exception {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(2);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32)
+        .nullable(false)
+        .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+        .nullable(false)
+        .build());
+    final Schema schema = new Schema(columns);
+
+    CreateTableOptions createOptions =
+        new CreateTableOptions()
+            .setRangePartitionColumns(ImmutableList.of("c0"))
+            .addHashPartitions(ImmutableList.of("c0"), 2, 0)
+            .setNumReplicas(1);
+
+    client.createTable(tableName, schema, createOptions);
+
+    // Try adding a range partition with custom hash schema when server side
+    // doesn't support the RANGE_SPECIFIC_HASH_SCHEMA feature.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", 0);
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 100);
+      RangePartitionWithCustomHashSchema range =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      range.addHashPartitions(ImmutableList.of("c0"), 3, 0);
+      try {
+        client.alterTable(tableName, new AlterTableOptions().addRangePartition(range));
+        fail("shouldn't be able to add a range with custom hash schema " +
+                "in a table when server side doesn't support required " +
+                "RANGE_SPECIFIC_HASH_SCHEMA feature");
+      } catch (KuduException ex) {
+        final String errmsg = ex.getMessage();
+        assertTrue(errmsg, ex.getStatus().isRemoteError());
+        assertTrue(errmsg, errmsg.matches(
+            ".* server sent error unsupported feature flags"));
+      }
+    }
+  }
+
   @Test
   public void testAlterExtraConfigs() throws Exception {
     KuduTable table = createTable(ImmutableList.of());

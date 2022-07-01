@@ -1721,6 +1721,46 @@ public class TestKuduTable {
 
   @Test(timeout = 100000)
   @KuduTestHarness.MasterServerConfig(flags = {
+      "--enable_per_range_hash_schemas=false",
+  })
+  public void testTryCreateTableRangeWithCustomHashSchema() throws Exception {
+    final List<ColumnSchema> columns = ImmutableList.of(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("value", Type.STRING).build());
+    final Schema schema = new Schema(columns);
+
+    CreateTableOptions options = getBasicCreateTableOptions();
+    // Define the table-wide schema.
+    options.addHashPartitions(ImmutableList.of("key"), 2, 0);
+
+    PartialRow lower = schema.newPartialRow();
+    lower.addInt(0, -1);
+    PartialRow upper = schema.newPartialRow();
+    upper.addInt(0, 1);
+
+    RangePartitionWithCustomHashSchema range =
+        new RangePartitionWithCustomHashSchema(
+            lower,
+            upper,
+            RangePartitionBound.INCLUSIVE_BOUND,
+            RangePartitionBound.EXCLUSIVE_BOUND);
+    range.addHashPartitions(ImmutableList.of("key"), 3, 0);
+    options.addRangePartition(range);
+
+    try {
+      client.createTable(tableName, schema, options);
+      fail("shouldn't be able to create a table with range-specific hash schema " +
+          "when server side doesn't support required RANGE_SPECIFIC_HASH_SCHEMA feature");
+    } catch (KuduException ex) {
+      final String errmsg = ex.getMessage();
+      assertTrue(errmsg, ex.getStatus().isRemoteError());
+      assertTrue(errmsg, errmsg.matches(
+          ".* server sent error unsupported feature flags"));
+    }
+  }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
       "--enable_per_range_hash_schemas=true",
   })
   public void testAlterTableAddRangePartitionCustomHashSchema() throws Exception {

@@ -337,7 +337,12 @@ public class CreateTableOptions {
     if (rangePartitions.isEmpty() && customRangePartitions.isEmpty()) {
       return ImmutableList.of();
     }
-    return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
+    if (customRangePartitions.isEmpty()) {
+      return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
+    }
+    return ImmutableList.of(
+        Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE,
+        Master.MasterFeatures.RANGE_SPECIFIC_HASH_SCHEMA_VALUE);
   }
 
   boolean shouldWait() {
