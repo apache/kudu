@@ -355,7 +355,8 @@ TAG_FLAG(table_locations_cache_capacity_mb, advanced);
 
 DEFINE_bool(enable_per_range_hash_schemas, false,
             "Whether the ability to specify different hash schemas per range is enabled");
-TAG_FLAG(enable_per_range_hash_schemas, unsafe);
+TAG_FLAG(enable_per_range_hash_schemas, advanced);
+TAG_FLAG(enable_per_range_hash_schemas, runtime);
 
 DEFINE_bool(enable_table_write_limit, false,
             "Enable the table write limit. "
