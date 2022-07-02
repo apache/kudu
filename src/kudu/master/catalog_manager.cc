@@ -2705,9 +2705,8 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           auto* hash_dimension_pb = range->add_hash_schema();
           hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
           hash_dimension_pb->set_seed(hash_dimension.seed);
-          auto* columns = hash_dimension_pb->add_columns();
           for (const auto& column_id : hash_dimension.column_ids) {
-            columns->set_id(column_id);
+            hash_dimension_pb->add_columns()->set_id(column_id);
           }
         }
         ++partition_schema_updates;

@@ -1006,7 +1006,7 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
   constexpr const char* const kCol0 = "c_int32";
   constexpr const char* const kCol1 = "c_int64";
   const Schema kTableSchema({ColumnSchema(kCol0, INT32),
-                             ColumnSchema(kCol1, INT64)}, 1);
+                             ColumnSchema(kCol1, INT64)}, 2);
   FLAGS_enable_per_range_hash_schemas = true;
   FLAGS_default_num_replicas = 1;
 
@@ -1040,7 +1040,7 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
   }
 
   const auto& table_id = create_table_resp.table_id();
-  const HashSchema custom_hash_schema{{{kCol0}, 5, 1}};
+  const HashSchema custom_hash_schema{{{kCol0,kCol1}, 5, 1}};
 
   // Alter the table, adding a new range with custom hash schema.
   {
@@ -1060,6 +1060,7 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
       ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
       col1->set_name(kCol1);
       col1->set_type(INT64);
+      col0->set_is_key(true);
     }
 
     AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
@@ -1115,6 +1116,28 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
       PartitionSchemaPB ps_pb;
       ASSERT_OK(partition_schema_retriever(&ps_pb));
       ASSERT_EQ(1, ps_pb.custom_hash_schema_ranges_size());
+
+      // Check the hash schema parameters (i.e. columns and number of hash
+      // buckets) are stored and read back by the client as expected.
+      const auto& range = ps_pb.custom_hash_schema_ranges(0);
+      ASSERT_EQ(1, range.hash_schema_size());
+      const auto& hash_schema = range.hash_schema(0);
+
+      ASSERT_EQ(5, hash_schema.num_buckets());
+      ASSERT_EQ(1, hash_schema.seed());
+
+      ASSERT_EQ(2, hash_schema.columns_size());
+      const auto schema = kTableSchema.CopyWithColumnIds();
+
+      const auto ref_col_0_id = int32_t(schema.column_id(0));
+      const auto& col_0 = hash_schema.columns(0);
+      ASSERT_TRUE(col_0.has_id());
+      ASSERT_EQ(ref_col_0_id, col_0.id());
+
+      const auto ref_col_1_id = int32_t(schema.column_id(1));
+      const auto& col_1 = hash_schema.columns(1);
+      ASSERT_TRUE(col_1.has_id());
+      ASSERT_EQ(ref_col_1_id, col_1.id());
     }
   }
 
@@ -1148,6 +1171,8 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
         resp.partition_schema(), received_schema, &ps));
     ASSERT_TRUE(ps.HasCustomHashSchemas());
 
+    // Verify that PartitionSchema::FromPB() translated/retrieved the data
+    // from PartitionSchemaPB as expected.
     const auto& table_wide_hash_schema = ps.hash_schema();
     ASSERT_EQ(1, table_wide_hash_schema.size());
     ASSERT_EQ(2, table_wide_hash_schema.front().num_buckets);
@@ -1156,8 +1181,16 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
     ASSERT_EQ(1, ranges_with_hash_schemas.size());
     const auto& custom_hash_schema = ranges_with_hash_schemas.front().hash_schema;
     ASSERT_EQ(1, custom_hash_schema.size());
-    ASSERT_EQ(5, custom_hash_schema.front().num_buckets);
-    ASSERT_EQ(1, custom_hash_schema.front().seed);
+    const auto& hash_dimension = custom_hash_schema.front();
+    ASSERT_EQ(5, hash_dimension.num_buckets);
+    ASSERT_EQ(1, hash_dimension.seed);
+    ASSERT_EQ(2, hash_dimension.column_ids.size());
+    const auto& column_ids = hash_dimension.column_ids;
+    const auto schema = kTableSchema.CopyWithColumnIds();
+    const ColumnId ref_col_0_id = schema.column_id(0);
+    ASSERT_EQ(ref_col_0_id, column_ids[0]);
+    const ColumnId ref_col_1_id = schema.column_id(1);
+    ASSERT_EQ(ref_col_1_id, column_ids[1]);
   }
 
   // Now verify that everything works as expected when dropping a range
@@ -1178,6 +1211,7 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
       ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
       col1->set_name(kCol1);
       col1->set_type(INT64);
+      col0->set_is_key(true);
     }
 
     AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
