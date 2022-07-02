@@ -538,11 +538,12 @@ public class TestKuduTable {
       assertEquals(100, rangeKeyEndDecoded.getInt(0));
     }
 
-    List<String> expected = Lists.newArrayList();
-    expected.add("-100 <= VALUES < 100");
     assertEquals(
-        expected,
+        ImmutableList.of("-100 <= VALUES < 100"),
         client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of("-100 <= VALUES < 100"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
   }
 
   @Test(timeout = 100000)
@@ -574,11 +575,12 @@ public class TestKuduTable {
 
     KuduTable table = client.createTable(tableName, basicSchema, builder);
 
-    List<String> expected = Lists.newArrayList();
-    expected.add("-100 <= VALUES < 200");
     assertEquals(
-        expected,
+        ImmutableList.of("-100 <= VALUES < 200"),
         client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of("-100 <= VALUES < 200 HASH(key) PARTITIONS 2"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
 
     // Check the result: retrieve the information on tablets from master
     // and check if each partition has expected parameters.
@@ -751,12 +753,14 @@ public class TestKuduTable {
     // There should be 5 tablets: 2 for [0, 100) range and 3 for [100, 200).
     assertEquals(5, tablets.size());
 
-    List<String> expected = Lists.newArrayList();
-    expected.add("0 <= VALUES < 100");
-    expected.add("100 <= VALUES < 200");
     assertEquals(
-        expected,
+        ImmutableList.of("0 <= VALUES < 100", "100 <= VALUES < 200"),
         client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of(
+            "0 <= VALUES < 100 HASH(key) PARTITIONS 2",
+            "100 <= VALUES < 200 HASH(key) PARTITIONS 3"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
 
     // Insert data into the newly created table and read it back.
     KuduSession session = client.newSession();
@@ -938,12 +942,14 @@ public class TestKuduTable {
     // There should be 7 tablets: 2 for the [0, 100) range and 5 for [100, 200).
     assertEquals(7, tablets.size());
 
-    List<String> expected = Lists.newArrayList();
-    expected.add("0 <= VALUES < 100");
-    expected.add("100 <= VALUES < 200");
     assertEquals(
-        expected,
+        ImmutableList.of("0 <= VALUES < 100", "100 <= VALUES < 200"),
         client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of(
+            "0 <= VALUES < 100 HASH(key) PARTITIONS 2",
+            "100 <= VALUES < 200 HASH(key) PARTITIONS 5"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
 
     // Insert data into the newly created table and read it back.
     KuduSession session = client.newSession();
@@ -1787,6 +1793,9 @@ public class TestKuduTable {
     assertEquals(
         ImmutableList.of("-100 <= VALUES < 100"),
         client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of("-100 <= VALUES < 100 HASH(key) PARTITIONS 2"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
 
     {
       PartialRow lower = schema.newPartialRow();
@@ -1808,11 +1817,14 @@ public class TestKuduTable {
 
     final KuduTable table = client.openTable(tableName);
 
-    List<String> expected = ImmutableList.of(
-        "-100 <= VALUES < 100", "100 <= VALUES < 200");
     assertEquals(
-        expected,
+        ImmutableList.of("-100 <= VALUES < 100", "100 <= VALUES < 200"),
         client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of(
+            "-100 <= VALUES < 100 HASH(key) PARTITIONS 2",
+            "100 <= VALUES < 200 HASH(key) PARTITIONS 7"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
 
     final PartitionSchema ps = client.openTable(tableName).getPartitionSchema();
     assertTrue(ps.hasCustomHashSchemas());

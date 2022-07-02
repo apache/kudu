@@ -303,7 +303,27 @@ public class KuduTable {
     List<Partition> rangePartitions = getRangePartitions(timeout);
     List<String> formattedPartitions = new ArrayList<>();
     for (Partition partition : rangePartitions) {
-      formattedPartitions.add(partition.formatRangePartition(this));
+      formattedPartitions.add(partition.formatRangePartition(this, false));
+    }
+    return formattedPartitions;
+  }
+
+  /**
+   * Retrieves a formatted representation of this table's range partitions along
+   * with hash schema output for each range. The range partitions are returned
+   * in sorted order by value and contain no duplicates.
+   *
+   * @param timeout the timeout of the operation
+   * @return a list of the formatted range partitions with hash schema for each
+   */
+  @InterfaceAudience.LimitedPrivate("Impala")
+  @InterfaceStability.Unstable
+  public List<String> getFormattedRangePartitionsWithHashSchema(long timeout)
+      throws Exception {
+    List<Partition> rangePartitions = getRangePartitions(timeout);
+    List<String> formattedPartitions = new ArrayList<>();
+    for (Partition partition : rangePartitions) {
+      formattedPartitions.add(partition.formatRangePartition(this, true));
     }
     return formattedPartitions;
   }

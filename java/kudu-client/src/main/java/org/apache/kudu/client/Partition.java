@@ -220,9 +220,10 @@ public class Partition implements Comparable<Partition> {
    * Formats the range partition into a string suitable for debug printing.
    *
    * @param table that this partition belongs to
+   * @param showHashInfo whether to output hash schema info per range
    * @return a string containing a formatted representation of the range partition
    */
-  String formatRangePartition(KuduTable table) {
+  String formatRangePartition(KuduTable table, boolean showHashInfo) {
     Schema schema = table.getSchema();
     PartitionSchema partitionSchema = table.getPartitionSchema();
     PartitionSchema.RangeSchema rangeSchema = partitionSchema.getRangeSchema();
@@ -296,6 +297,30 @@ public class Partition implements Comparable<Partition> {
       }
     }
 
+    if (showHashInfo) {
+      List<PartitionSchema.HashBucketSchema> hashSchema =
+          partitionSchema.getHashSchemaForRange(rangeKeyStart);
+      boolean firstHashDimension = true;
+      for (PartitionSchema.HashBucketSchema hashDimension : hashSchema) {
+        if (firstHashDimension) {
+          firstHashDimension = false;
+        } else {
+          sb.append(',');
+        }
+        sb.append(" HASH(");
+        boolean firstId = true;
+        for (Integer id : hashDimension.getColumnIds()) {
+          if (firstId) {
+            firstId = false;
+          } else {
+            sb.append(',');
+          }
+          sb.append(schema.getColumnByIndex(schema.getColumnIndex(id)).getName());
+        }
+        sb.append(") PARTITIONS ");
+        sb.append(hashDimension.getNumBuckets());
+      }
+    }
     return sb.toString();
   }
 }
