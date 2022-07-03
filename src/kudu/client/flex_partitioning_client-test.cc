@@ -1675,5 +1675,89 @@ TEST_F(FlexPartitioningAlterTableTest, UnsupportedRangeSpecificHashSchema) {
   ASSERT_OK(client_->DeleteTable(kTableName));
 }
 
+// Make sure adding and dropping ranges with the table-wide hash schema works
+// as expected when --enable_per_range_hash_schemas=true.
+TEST_F(FlexPartitioningAlterTableTest, AddDropTableWideHashSchemaPartitions) {
+  FLAGS_enable_per_range_hash_schemas = true;
+
+  constexpr const char* const kTableName =
+      "AddDropTableWideHashSchemaPartitions";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(1)
+      .add_hash_partitions({ kKeyColumn }, 2)
+      .set_range_partition_columns({ kKeyColumn });
+
+  // Add a range partition with the table-wide hash partitioning rules.
+  {
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    ASSERT_OK(lower->SetInt32(kKeyColumn, 0));
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, 111));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+
+  ASSERT_OK(table_creator->Create());
+
+  ASSERT_OK(InsertTestRows(kTableName, 0, 111));
+  NO_FATALS(CheckTableRowsNum(kTableName, 111));
+
+  // To have mix of ranges, add a single range with custom hash schema.
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    auto p = CreateRangePartition(-111, 0);
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 5, 1));
+    alterer->AddRangePartition(p.release());
+    ASSERT_OK(alterer->Alter());
+  }
+
+  ASSERT_OK(InsertTestRows(kTableName, -111, 0));
+  NO_FATALS(CheckTableRowsNum(kTableName, 222));
+
+  // Add one more range partition with the table-wide hash schema.
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    ASSERT_OK(lower->SetInt32(kKeyColumn, 111));
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, 222));
+    alterer->AddRangePartition(lower.release(), upper.release());
+
+    ASSERT_OK(alterer->Alter());
+  }
+
+  ASSERT_OK(InsertTestRows(kTableName, 111, 222));
+  NO_FATALS(CheckTableRowsNum(kTableName, 333));
+
+  // Drop the ranges with the table-wide hash partitions.
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+
+    {
+      unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+      ASSERT_OK(lower->SetInt32(kKeyColumn, 111));
+      unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+      ASSERT_OK(upper->SetInt32(kKeyColumn, 222));
+      alterer->DropRangePartition(lower.release(), upper.release());
+    }
+    {
+      unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+      ASSERT_OK(lower->SetInt32(kKeyColumn, 0));
+      unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+      ASSERT_OK(upper->SetInt32(kKeyColumn, 111));
+      alterer->DropRangePartition(lower.release(), upper.release());
+    }
+
+    ASSERT_OK(alterer->Alter());
+  }
+
+  NO_FATALS(CheckTableRowsNum(kTableName, 111));
+
+  ASSERT_OK(client_->DeleteTable(kTableName));
+}
+
 } // namespace client
 } // namespace kudu

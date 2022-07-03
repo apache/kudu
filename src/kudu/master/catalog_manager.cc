@@ -2677,16 +2677,17 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     vector<Partition> partitions;
     const pair<KuduPartialRow, KuduPartialRow> range_bound =
         { *ops[0].split_row, *ops[1].split_row };
-    if (!FLAGS_enable_per_range_hash_schemas) {
-      RETURN_NOT_OK(partition_schema.CreatePartitions(
-          {}, { range_bound }, schema, &partitions));
-    } else {
-      const Schema schema = client_schema.CopyWithColumnIds();
-      if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION &&
-          step.add_range_partition().custom_hash_schema_size() > 0) {
+    if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION) {
+      const auto& custom_hash_schema_pb =
+          step.add_range_partition().custom_hash_schema();
+      if (!FLAGS_enable_per_range_hash_schemas || custom_hash_schema_pb.empty()) {
+        RETURN_NOT_OK(partition_schema.CreatePartitions(
+            {}, { range_bound }, schema, &partitions));
+      } else {
+        const Schema schema = client_schema.CopyWithColumnIds();
         PartitionSchema::HashSchema hash_schema;
         RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
-            schema, step.add_range_partition().custom_hash_schema(), &hash_schema));
+            schema, custom_hash_schema_pb, &hash_schema));
         if (partition_schema.hash_schema().size() != hash_schema.size()) {
           return Status::NotSupported(
               "varying number of hash dimensions per range is not yet supported");
@@ -2710,7 +2711,15 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           }
         }
         ++partition_schema_updates;
-      } else if (step.type() == AlterTableRequestPB::DROP_RANGE_PARTITION) {
+      }
+    } else {
+      DCHECK_EQ(AlterTableRequestPB::DROP_RANGE_PARTITION, step.type());
+      if (!FLAGS_enable_per_range_hash_schemas ||
+          !partition_schema.HasCustomHashSchemas()) {
+        RETURN_NOT_OK(partition_schema.CreatePartitions(
+            {}, { range_bound }, schema, &partitions));
+      } else {
+        const Schema schema = client_schema.CopyWithColumnIds();
         PartitionSchema::HashSchema range_hash_schema;
         RETURN_NOT_OK(partition_schema.GetHashSchemaForRange(
             range_bound.first, schema, &range_hash_schema));
