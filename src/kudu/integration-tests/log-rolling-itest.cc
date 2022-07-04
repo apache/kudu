@@ -53,6 +53,13 @@ static int64_t CountInfoLogs(const string& log_dir) {
 
 // Tests that logs roll on startup, and get cleaned up appropriately.
 TEST_F(LogRollingITest, TestLogCleanupOnStartup) {
+#if defined(ADDRESS_SANITIZER)
+  LOG(WARNING) << "skip asan, because thirdparty lib glog has a global variable: (static "
+                  "vector<string>* logging_directories_list;) which allocated by new "
+                  "operator, but ShutdownGoogleLoggingSafe() isn't called as needed, "
+                  "which may cause asan error.";
+  GTEST_SKIP();
+#endif
   ExternalMiniClusterOptions opts;
   opts.num_masters = 1;
   opts.num_tablet_servers = 0;
