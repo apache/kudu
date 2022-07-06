@@ -172,7 +172,7 @@ using kudu::fs::ErrorNotificationCb;
 using kudu::fs::FsErrorManager;
 using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
-using kudu::fs::LogBlockManager;
+using kudu::fs::LogBlockManagerNativeMeta;
 using kudu::fs::ReadableBlock;
 using kudu::fs::UpdateInstanceBehavior;
 using kudu::fs::WritableBlock;
@@ -380,9 +380,11 @@ void FsManager::InitBlockManager() {
   if (opts_.block_manager_type == "file") {
     block_manager_.reset(new FileBlockManager(
         env_, dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
-  } else {
-    block_manager_.reset(new LogBlockManager(
+  } else if (opts_.block_manager_type == "log") {
+    block_manager_.reset(new LogBlockManagerNativeMeta(
         env_, dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
+  } else {
+    LOG(FATAL) << "Unknown block_manager_type: " << opts_.block_manager_type;
   }
 }
 

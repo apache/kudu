@@ -434,9 +434,9 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
 
   // Opens an existing block container in 'dir'.
   //
-  // Every container is comprised of two files: "<dir>/<id>.data" and
-  // "<dir>/<id>.metadata". Together, 'dir' and 'id' fully describe both
-  // files.
+  // Every container is comprised of two parts: "<dir>/<id>.data" and
+  // metadata (e.g. "<dir>/<id>.metadata"). Together, 'dir' and 'id'
+  // fully describe both files.
   //
   // Returns Status::Aborted() in the case that the metadata and data files
   // both appear to have no data (e.g. due to a crash just after creating
@@ -3116,8 +3116,7 @@ Status LogBlockManager::Repair(
   // leftover container files.
   if (report->incomplete_container_check) {
     for (auto& ic : report->incomplete_container_check->entries) {
-      Status s = env_->DeleteFile(
-          StrCat(ic.container, kContainerMetadataFileSuffix));
+      Status s = env_->DeleteFile(StrCat(ic.container, kContainerMetadataFileSuffix));
       if (!s.ok() && !s.IsNotFound()) {
         WARN_NOT_OK_LBM_DISK_FAILURE(s, "could not delete incomplete container metadata file");
       }

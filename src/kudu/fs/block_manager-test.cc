@@ -113,7 +113,7 @@ template<>
 string block_manager_type<FileBlockManager>() { return "file"; }
 
 template<>
-string block_manager_type<LogBlockManager>() { return "log"; }
+string block_manager_type<LogBlockManagerNativeMeta>() { return "log"; }
 
 template <typename T>
 class BlockManagerTest : public KuduTest {
@@ -230,6 +230,10 @@ class BlockManagerTest : public KuduTest {
         });
   }
 
+  ~BlockManagerTest() override {
+    dd_manager_->WaitOnClosures();
+  }
+
   // Keep an internal copy of the data dir group to act as metadata.
   DataDirGroupPB test_group_pb_;
   string test_tablet_name_;
@@ -241,7 +245,7 @@ class BlockManagerTest : public KuduTest {
 };
 
 template <>
-void BlockManagerTest<LogBlockManager>::SetUp() {
+void BlockManagerTest<LogBlockManagerNativeMeta>::SetUp() {
   RETURN_NOT_LOG_BLOCK_MANAGER();
   // Pass in a report to prevent the block manager from logging unnecessarily.
   FsReport report;
@@ -285,7 +289,8 @@ void BlockManagerTest<FileBlockManager>::RunBlockDistributionTest(const vector<s
 }
 
 template <>
-void BlockManagerTest<LogBlockManager>::RunBlockDistributionTest(const vector<string>& paths) {
+void BlockManagerTest<LogBlockManagerNativeMeta>::RunBlockDistributionTest(
+    const vector<string>& paths) {
   vector<int> files_in_each_path(paths.size());
   int num_blocks_per_dir = 30;
   // Spread across 1, then 3, then 5 data directories.
@@ -364,7 +369,7 @@ void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& 
 }
 
 template <>
-void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& paths) {
+void BlockManagerTest<LogBlockManagerNativeMeta>::RunMultipathTest(const vector<string>& paths) {
   // Write (3 * numPaths * 2) blocks, in groups of (numPaths * 2). That should
   // yield two containers per path.
   CreateBlockOptions opts({ "multipath_test" });
@@ -414,7 +419,7 @@ void BlockManagerTest<FileBlockManager>::RunMemTrackerTest() {
 }
 
 template <>
-void BlockManagerTest<LogBlockManager>::RunMemTrackerTest() {
+void BlockManagerTest<LogBlockManagerNativeMeta>::RunMemTrackerTest() {
   shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test tracker");
   ASSERT_OK(ReopenBlockManager(scoped_refptr<MetricEntity>(),
                                tracker,
@@ -434,7 +439,7 @@ void BlockManagerTest<LogBlockManager>::RunMemTrackerTest() {
 
 // What kinds of BlockManagers are supported?
 #if defined(__linux__)
-typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
+typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta> BlockManagers;
 #else
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif

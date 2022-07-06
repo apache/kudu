@@ -78,20 +78,18 @@ typedef scoped_refptr<internal::LogBlockContainer> LogBlockContainerRefPtr;
 // Implementation details
 // ----------------------
 //
-// A container is comprised of two files, one for metadata and one for
-// data. Both are written to sequentially. During a write, the block's data
-// is written as-is to the data file. After the block has been
-// synchronized, a small record is written to the metadata file containing
-// the block's ID and its location within the data file.
+// A container is comprised of two parts, one for metadata and one for
+// data. During a write, the block's data is written as-is to the data file.
+// After the block has been synchronized, a small record is written to the
+// metadata part containing the block's ID and its location within the data
+// file.
 //
 // Block deletions are handled similarly. When a block is deleted, a record
 // is written describing the deletion, orphaning the old block data. The
 // orphaned data can be reclaimed instantaneously via hole punching, or
 // later via garbage collection. The latter is used when hole punching is
 // not supported on the filesystem, or on next boot if there's a crash
-// after deletion but before hole punching. The metadata file itself is not
-// compacted, as it is expected to remain quite small even after a great
-// many create/delete cycles.
+// after deletion but before hole punching.
 //
 // Data and metadata operations are carefully ordered to ensure the
 // correctness of the persistent representation at all times. During the
@@ -150,15 +148,7 @@ typedef scoped_refptr<internal::LogBlockContainer> LogBlockContainerRefPtr;
 // collected every now and then, though newer systems can take advantage of
 // filesystem hole punching (as described above) to reclaim space.
 //
-// The on-disk container metadata design favors simplicity and contiguous
-// access over space consumption and scalability to a very large number of
-// blocks. To be more specific, the separation of metadata from data allows
-// for high performance sustained reads at block manager open time at a
-// manageability cost: a container is not a single file, and needs multiple
-// open fds to be of use. Moreover, the log-structured nature of the
-// metadata is simple and performant at open time.
-//
-// Likewise, the default container placement policy favors simplicity over
+// The default container placement policy favors simplicity over
 // performance. In the future, locality hints will ensure that blocks
 // pertaining to similar data are colocated, improving scan performance.
 //
@@ -185,14 +175,6 @@ class LogBlockManager : public BlockManager {
   static const char* kContainerMetadataFileSuffix;
   static const char* kContainerDataFileSuffix;
 
-  // Note: all objects passed as pointers should remain alive for the lifetime
-  // of the block manager.
-  LogBlockManager(Env* env,
-                  DataDirManager* dd_manager,
-                  FsErrorManager* error_manager,
-                  FileCache* file_cache,
-                  BlockManagerOptions opts);
-
   ~LogBlockManager() override;
 
   Status Open(FsReport* report, std::atomic<int>* containers_processed,
@@ -214,6 +196,15 @@ class LogBlockManager : public BlockManager {
 
   FsErrorManager* error_manager() override { return error_manager_; }
 
+ protected:
+  // Note: all objects passed as pointers should remain alive for the lifetime
+  // of the block manager.
+  LogBlockManager(Env* env,
+                  DataDirManager* dd_manager,
+                  FsErrorManager* error_manager,
+                  FileCache* file_cache,
+                  BlockManagerOptions opts);
+
  private:
   FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
@@ -222,6 +213,7 @@ class LogBlockManager : public BlockManager {
   FRIEND_TEST(LogBlockManagerTest, TestLIFOContainerSelection);
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
   FRIEND_TEST(LogBlockManagerTest, TestMetadataTruncation);
+  FRIEND_TEST(LogBlockManagerTest, TestMisalignedBlocksFuzz);
   FRIEND_TEST(LogBlockManagerTest, TestParseKernelRelease);
   FRIEND_TEST(LogBlockManagerTest, TestBumpBlockIds);
   FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
@@ -230,6 +222,7 @@ class LogBlockManager : public BlockManager {
   friend class internal::LogBlockContainer;
   friend class internal::LogBlockDeletionTransaction;
   friend class internal::LogWritableBlock;
+  friend class LogBlockManagerTest;
 
   // Type for the actual block map used to store all live blocks.
   // We use sparse_hash_map<> here to reduce memory overhead.
@@ -314,7 +307,7 @@ class LogBlockManager : public BlockManager {
   bool AddLogBlock(LogBlockRefPtr lb);
 
   // Removes the given set of LogBlocks from in-memory data structures, and
-  // appends the block deletion metadata to record the on-disk deletion.
+  // adds the block deletion metadata to record the on-disk deletion.
   // The 'log_blocks' out parameter will be set with the LogBlocks that were
   // successfully removed. The 'deleted' out parameter will be set with the
   // blocks were already deleted, e.g encountered 'NotFound' error during removal.
@@ -351,7 +344,7 @@ class LogBlockManager : public BlockManager {
                     std::string,
                     std::vector<BlockRecordPB>> low_live_block_containers);
 
-  // Rewrites a container metadata file, appending all entries in 'records'.
+  // Rewrites a container metadata file, adding all entries in 'records'.
   // The new metadata file is created as a temporary file and renamed over the
   // existing file after it is fully written.
   //
@@ -483,6 +476,28 @@ class LogBlockManager : public BlockManager {
   std::unique_ptr<internal::LogBlockManagerMetrics> metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(LogBlockManager);
+};
+
+// The metadata part of a container is written to a native metadata file.
+// The metadata file itself is not compacted, as it is expected to remain quite
+// small even after many create/delete cycles.
+//
+// The on-disk container metadata design favors simplicity and contiguous
+// access over space consumption and scalability to a very large number of
+// blocks. To be more specific, the separation of metadata from data allows
+// for high performance sustained reads at block manager open time at a
+// manageability cost: a container is not a single file, and needs multiple
+// open fds to be of use. Moreover, the log-structured nature of the
+// metadata is simple and performant at open time.
+class LogBlockManagerNativeMeta : public LogBlockManager {
+ public:
+  LogBlockManagerNativeMeta(Env* env,
+                            DataDirManager* dd_manager,
+                            FsErrorManager* error_manager,
+                            FileCache* file_cache,
+                            BlockManagerOptions opts)
+      : LogBlockManager(env, dd_manager, error_manager, file_cache, std::move(opts)) {
+  }
 };
 
 } // namespace fs
