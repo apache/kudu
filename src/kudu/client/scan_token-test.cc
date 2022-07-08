@@ -137,13 +137,12 @@ class ScanTokenTest : public KuduTest {
   // Similar to CountRows() above, but use the specified client handle
   // and run all the scanners sequentially, one by one.
   static Status CountRowsSeq(KuduClient* client,
-                      const vector<KuduScanToken*>& tokens,
-                      int64_t* row_count) {
+                             const vector<KuduScanToken*>& tokens,
+                             int64_t* row_count) {
     int64_t count = 0;
     for (auto* t : tokens) {
-      unique_ptr<KuduScanToken> token(t);
       unique_ptr<KuduScanner> scanner;
-      RETURN_NOT_OK(IntoUniqueScanner(client, *token, &scanner));
+      RETURN_NOT_OK(IntoUniqueScanner(client, *t, &scanner));
       RETURN_NOT_OK(scanner->Open());
       while (scanner->HasMoreRows()) {
         KuduScanBatch batch;
@@ -583,9 +582,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
   }
 }
 
-// TODO(mreddy) : Enable test once there is support for scan tokens with
-// custom hash schema per range.
-TEST_F(ScanTokenTest, DISABLED_TestScanTokensWithCustomHashSchemasPerRange) {
+TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
   FLAGS_enable_per_range_hash_schemas = true;
   KuduSchema schema;
   // Create schema
@@ -610,8 +607,9 @@ TEST_F(ScanTokenTest, DISABLED_TestScanTokensWithCustomHashSchemasPerRange) {
     {
       ASSERT_OK(lower_bound->SetInt64("col", 0));
       ASSERT_OK(upper_bound->SetInt64("col", 100));
-      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition
-        (new KuduTableCreator::KuduRangePartition(lower_bound.release(), upper_bound.release()));
+      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
+          new KuduTableCreator::KuduRangePartition(lower_bound.release(),
+                                                   upper_bound.release()));
       range_partition->add_hash_partitions({ "col" }, 4);
       table_creator->add_custom_range_partition(range_partition.release());
     }
@@ -621,8 +619,9 @@ TEST_F(ScanTokenTest, DISABLED_TestScanTokensWithCustomHashSchemasPerRange) {
       upper_bound.reset(schema.NewRow());
       ASSERT_OK(lower_bound->SetInt64("col", 100));
       ASSERT_OK(upper_bound->SetInt64("col", 200));
-      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition
-        (new KuduTableCreator::KuduRangePartition(lower_bound.release(), upper_bound.release()));
+      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
+          new KuduTableCreator::KuduRangePartition(lower_bound.release(),
+                                                   upper_bound.release()));
       range_partition->add_hash_partitions({ "col"}, 2);
       table_creator->add_custom_range_partition(range_partition.release());
     }
@@ -1116,6 +1115,7 @@ TEST_P(StaleScanTokensParamTest, DroppingFirstRange) {
 
   // Prepare two sets of scan tokens.
   vector<KuduScanToken*> tokens_a;
+  ElementDeleter deleter_a(&tokens_a);
   {
     KuduScanTokenBuilder builder(table.get());
     ASSERT_OK(builder.IncludeTableMetadata(true));
@@ -1125,6 +1125,7 @@ TEST_P(StaleScanTokensParamTest, DroppingFirstRange) {
   ASSERT_EQ(2, tokens_a.size());
 
   vector<KuduScanToken*> tokens_b;
+  ElementDeleter deleter_b(&tokens_b);
   {
     KuduScanTokenBuilder builder(table.get());
     ASSERT_OK(builder.IncludeTableMetadata(true));
