@@ -385,12 +385,8 @@ public class AlterTableOptions {
         new Operation.OperationsEncoder().encodeLowerAndUpperBounds(
             range.getLowerBound(), range.getUpperBound(),
             range.getLowerBoundType(), range.getUpperBoundType()));
-    for (org.apache.kudu.Common.PartitionSchemaPB.HashBucketSchemaPB hashSchema :
-        range.toPB().getHashSchemaList()) {
-      Common.PartitionSchemaPB.HashBucketSchemaPB.Builder hbs =
-          rangeBuilder.addCustomHashSchemaBuilder();
-      hbs.mergeFrom(hashSchema);
-    }
+    rangeBuilder.getCustomHashSchemaBuilder().addAllHashSchema(
+        range.toPB().getHashSchemaList());
     step.setAddRangePartition(rangeBuilder);
     if (!pb.hasSchema()) {
       pb.setSchema(ProtobufHelper.schemaToPb(range.getLowerBound().getSchema(),

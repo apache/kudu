@@ -183,7 +183,7 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
 
         for (const auto& hash_dimension : partition_data->hash_schema_) {
           auto* custom_hash_schema_pb = pb_step->mutable_add_range_partition()->
-              add_custom_hash_schema();
+              mutable_custom_hash_schema()->add_hash_schema();
           for (const auto& column_name : hash_dimension.column_names) {
             custom_hash_schema_pb->add_columns()->set_name(column_name);
           }

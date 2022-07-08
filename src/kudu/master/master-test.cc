@@ -976,7 +976,9 @@ TEST_P(AlterTableWithRangeSpecificHashSchema, TestAlterTableWithDifferentHashDim
   splits_encoder.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
   splits_encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
   for (const auto& hash_dimension: custom_range_hash_schema) {
-    auto* hash_dimension_pb = step->mutable_add_range_partition()->add_custom_hash_schema();
+    auto* hash_dimension_pb =
+        step->mutable_add_range_partition()->mutable_custom_hash_schema()->
+        add_hash_schema();
     for (const string& col_name: hash_dimension.columns) {
       hash_dimension_pb->add_columns()->set_name(col_name);
     }
@@ -1078,8 +1080,8 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
     enc.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
     enc.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
     for (const auto& hash_dimension: custom_hash_schema) {
-      auto* hash_dimension_pb =
-          step->mutable_add_range_partition()->add_custom_hash_schema();
+      auto* hash_dimension_pb = step->mutable_add_range_partition()->
+          mutable_custom_hash_schema()->add_hash_schema();
       for (const auto& col_name: hash_dimension.columns) {
         hash_dimension_pb->add_columns()->set_name(col_name);
       }

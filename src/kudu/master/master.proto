@@ -725,6 +725,15 @@ message AlterTableRequestPB {
     optional ColumnSchemaDeltaPB delta = 1;
   }
   message AddRangePartition {
+    // A structure to define range-specific hash schema. This separate type
+    // exists to distinguish from an empty hash schema (i.e. no hash bucketing)
+    // and the absence of range-specific hash schema when a range partition
+    // uses the table-wide hash schema instead. Otherwise, using a field of
+    // repeated HashBucketSchemaPB wouldn't allow to tell between those cases.
+    message CustomHashSchema {
+      repeated PartitionSchemaPB.HashBucketSchemaPB hash_schema = 1;
+    }
+
     // A set of row operations containing the lower and upper range bound for
     // the range partition to add or drop.
     optional RowOperationsPB range_bounds = 1;
@@ -733,8 +742,9 @@ message AlterTableRequestPB {
     // of the tablet's replicas.
     optional string dimension_label = 2;
 
-    // The custom hash partition schema for the range if specified.
-    repeated PartitionSchemaPB.HashBucketSchemaPB custom_hash_schema = 3;
+    // The custom hash partition schema for the range, if specified. If absent,
+    // the range uses table-wide hash schema.
+    optional CustomHashSchema custom_hash_schema = 3;
   }
   message DropRangePartition {
     // A set of row operations containing the lower and upper range bound for

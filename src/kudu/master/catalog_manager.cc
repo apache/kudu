@@ -2678,12 +2678,13 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     const pair<KuduPartialRow, KuduPartialRow> range_bound =
         { *ops[0].split_row, *ops[1].split_row };
     if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION) {
-      const auto& custom_hash_schema_pb =
-          step.add_range_partition().custom_hash_schema();
-      if (!FLAGS_enable_per_range_hash_schemas || custom_hash_schema_pb.empty()) {
+      if (!FLAGS_enable_per_range_hash_schemas ||
+          !step.add_range_partition().has_custom_hash_schema()) {
         RETURN_NOT_OK(partition_schema.CreatePartitions(
             {}, { range_bound }, schema, &partitions));
       } else {
+        const auto& custom_hash_schema_pb =
+            step.add_range_partition().custom_hash_schema().hash_schema();
         const Schema schema = client_schema.CopyWithColumnIds();
         PartitionSchema::HashSchema hash_schema;
         RETURN_NOT_OK(PartitionSchema::ExtractHashSchemaFromPB(
