@@ -401,6 +401,14 @@ class PartitionSchema {
                                         Slice upper_bound,
                                         const Schema& schema) const;
 
+  // Returns a text description of the partition with the provided inclusive
+  // lower bound and exclusive upper bound along with custom hash schema for
+  // the partition if present. The custom hash schema is a space separated
+  // descriptions of hash dimensions.
+  std::string RangeWithCustomHashPartitionDebugString(Slice lower_bound,
+                                                      Slice upper_bound,
+                                                      const Schema& schema) const;
+
   // Returns a text description of this partition schema suitable for debug printing.
   //
   // The partition schema is considered metadata, so partition bound information

@@ -472,9 +472,9 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
                     partition.hash_buckets().end(),
                     [] (const int32_t& bucket) { return bucket == 0; })) {
       range_partitions.emplace_back(
-          partition_schema.RangePartitionDebugString(partition.begin().range_key(),
-                                                     partition.end().range_key(),
-                                                     schema));
+          partition_schema.RangeWithCustomHashPartitionDebugString(partition.begin().range_key(),
+                                                                   partition.end().range_key(),
+                                                                   schema));
     }
 
     // Combine the tablet details and partition info for each tablet.

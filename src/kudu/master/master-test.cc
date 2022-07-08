@@ -157,6 +157,10 @@ class MasterTest : public KuduTest {
     // but we have no tablet servers. Typically this would be disallowed.
     FLAGS_catalog_manager_check_ts_count_for_create_table = false;
 
+    // Ensure the static pages are not available as tests are written based
+    // on this value of the flag
+    FLAGS_webserver_doc_root = "";
+
     // Start master
     mini_master_.reset(new MiniMaster(GetTestPath("Master"), HostPort("127.0.0.1", 0)));
     ASSERT_OK(mini_master_->Start());
@@ -956,7 +960,7 @@ TEST_P(AlterTableWithRangeSpecificHashSchema, TestAlterTableWithDifferentHashDim
     custom_range_hash_schema = {{{"key"}, 3, 0}};
   }
 
-  //Create AlterTableRequestPB and populate it for the alter table operation
+  // Create AlterTableRequestPB and populate it for the alter table operation
   AlterTableRequestPB req;
   AlterTableResponsePB resp;
   RpcController controller;
@@ -1433,6 +1437,196 @@ TEST_F(MasterTest, AlterTableAddDropRangeWithTableWideHashSchema) {
     ASSERT_EQ(1, tables.size());
     // There should be just 3 tablets left since the range has been dropped.
     ASSERT_EQ(3, tables.front()->num_tablets());
+  }
+}
+
+TEST_F(MasterTest, MasterWebUIWithCustomHashPartitioning) {
+  constexpr const char* const kTableName = "master_webui_custom_hash_ps";
+  constexpr const char* const kCol0 = "c_int32";
+  constexpr const char* const kCol1 = "c_int64";
+  const Schema kTableSchema({ColumnSchema(kCol0, INT32),
+                             ColumnSchema(kCol1, INT64)}, 2);
+  FLAGS_default_num_replicas = 1;
+
+  // Create a table with one range partition based on the table-wide hash schema.
+  CreateTableResponsePB create_table_resp;
+  {
+    KuduPartialRow lower(&kTableSchema);
+    ASSERT_OK(lower.SetInt32(kCol0, 0));
+    ASSERT_OK(lower.SetInt64(kCol1, 0));
+    KuduPartialRow upper(&kTableSchema);
+    ASSERT_OK(upper.SetInt32(kCol0, 100));
+    ASSERT_OK(upper.SetInt64(kCol1, 100));
+    ASSERT_OK(CreateTable(
+        kTableName, kTableSchema, nullopt, nullopt, nullopt, {}, {{lower, upper}},
+        {}, {{{kCol0}, 2, 0}, {{kCol1}, 2, 0}}, &create_table_resp));
+  }
+
+  // Get all the tablets of this table
+  std::vector<scoped_refptr<TableInfo>> tables;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    master_->catalog_manager()->GetAllTables(&tables);
+  }
+  ASSERT_EQ(1, tables.size());
+
+  vector<scoped_refptr<TabletInfo>> tablets;
+  tables.front()->GetAllTablets(&tablets);
+  ASSERT_EQ(4, tablets.size());
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/table?id=$1",
+                                  mini_master_->bound_http_addr().ToString(),
+                                  create_table_resp.table_id()),
+                       &buf));
+  string raw = buf.ToString();
+
+  // Check the "Partition Schema" section
+  ASSERT_STR_CONTAINS(raw,
+                      "\"partition_schema\":\""
+                      "HASH (c_int32) PARTITIONS 2,\\n"
+                      "HASH (c_int64) PARTITIONS 2,\\n"
+                      "RANGE (c_int32, c_int64) (\\n"
+                      "    PARTITION (0, 0) <= VALUES < (100, 100)\\n"
+                      ")\"");
+
+  // Check the "Detail" table section
+  {
+    int k = 0;
+    for (int i = 0; i < 2; i++) {
+      for (int j = 0; j < 2; j++) {
+        ASSERT_STR_CONTAINS(raw,
+                            Substitute(
+                                "\"id\":\"$0\",\"partition_cols\":\"<td>Table Wide</td>"
+                                "<td>HASH (c_int32) PARTITIONS 2<br>"
+                                "HASH (c_int64) PARTITIONS 2<br></td>"
+                                "<td>HASH (c_int32) PARTITION: $1<br>"
+                                "HASH (c_int64) PARTITION: $2<br></td>"
+                                "<td>(0, 0) &lt;= VALUES &lt; (100, 100)</td>\"",
+                                tablets[k++]->id(), i, j));
+      }
+    }
+  }
+
+  const auto& table_id = create_table_resp.table_id();
+  const HashSchema custom_hash_schema{{{kCol0}, 2, 0}, {{kCol1}, 3, 0}};
+
+  // Alter the table, adding a new range with custom hash schema.
+  {
+    AlterTableRequestPB req;
+    AlterTableResponsePB resp;
+    req.mutable_table()->set_table_name(kTableName);
+    req.mutable_table()->set_table_id(table_id);
+
+    // Add the required information on the table's schema:
+    // key and non-null columns must be present in the request.
+    {
+      ColumnSchemaPB* col0 = req.mutable_schema()->add_columns();
+      col0->set_name(kCol0);
+      col0->set_type(INT32);
+      col0->set_is_key(true);
+
+      ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
+      col1->set_name(kCol1);
+      col1->set_type(INT64);
+      col1->set_is_key(true);
+    }
+
+    AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
+    step->set_type(AlterTableRequestPB::ADD_RANGE_PARTITION);
+    KuduPartialRow lower(&kTableSchema);
+    ASSERT_OK(lower.SetInt32(kCol0, 100));
+    ASSERT_OK(lower.SetInt64(kCol1, 100));
+    KuduPartialRow upper(&kTableSchema);
+    ASSERT_OK(upper.SetInt32(kCol0, 200));
+    ASSERT_OK(upper.SetInt64(kCol1, 200));
+    RowOperationsPBEncoder enc(
+        step->mutable_add_range_partition()->mutable_range_bounds());
+    enc.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    enc.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+    for (const auto& hash_dimension: custom_hash_schema) {
+      auto* hash_dimension_pb = step->mutable_add_range_partition()->
+          mutable_custom_hash_schema()->add_hash_schema();
+      for (const auto& col_name: hash_dimension.columns) {
+        hash_dimension_pb->add_columns()->set_name(col_name);
+      }
+      hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
+      hash_dimension_pb->set_seed(hash_dimension.seed);
+    }
+
+    RpcController ctl;
+    ASSERT_OK(proxy_->AlterTable(req, &resp, &ctl));
+    ASSERT_FALSE(resp.has_error())
+                  << StatusFromPB(resp.error().status()).ToString();
+  }
+
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/table?id=$1",
+                                  mini_master_->bound_http_addr().ToString(),
+                                  create_table_resp.table_id()),
+                       &buf));
+  raw = buf.ToString();
+
+  // Check the "Partition Schema" section
+  ASSERT_STR_CONTAINS(raw, "\"partition_schema\":\""
+                           "HASH (c_int32) PARTITIONS 2,\\n"
+                           "HASH (c_int64) PARTITIONS 2,\\n"
+                           "RANGE (c_int32, c_int64) (\\n"
+                           "    PARTITION (0, 0) <= VALUES < (100, 100),\\n"
+                           "    PARTITION (100, 100) <= VALUES < (200, 200) "
+                           "HASH(c_int32) PARTITIONS 2 HASH(c_int64) PARTITIONS 3\\n)");
+
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    master_->catalog_manager()->GetAllTables(&tables);
+  }
+  ASSERT_EQ(1, tables.size());
+
+  tables.front()->GetAllTablets(&tablets);
+  // At this point we have the previously created 4 tables and now added 6 tablets
+  ASSERT_EQ(10, tablets.size());
+
+  // Check the "Detail" table section of all the 10 tablets present
+  for (int i = 0; i < 2; i++) {
+    ASSERT_STR_CONTAINS(raw,Substitute(
+        "\"id\":\"$0\",\"partition_cols\":\"<td>Table Wide</td>"
+        "<td>HASH (c_int32) PARTITIONS 2<br>"
+        "HASH (c_int64) PARTITIONS 2<br></td>"
+        "<td>HASH (c_int32) PARTITION: $1<br>"
+        "HASH (c_int64) PARTITION: 0<br></td>"
+        "<td>(0, 0) &lt;= VALUES &lt; (100, 100)</td>\"",
+        tablets[i*5+0]->id(), i));
+    ASSERT_STR_CONTAINS(raw,Substitute(
+        "\"id\":\"$0\",\"partition_cols\":\"<td>Range Specific</td>"
+        "<td>HASH (c_int32) PARTITIONS 2<br>"
+        "HASH (c_int64) PARTITIONS 3<br></td>"
+        "<td>HASH (c_int32) PARTITION: $1<br>"
+        "HASH (c_int64) PARTITION: 0<br></td>"
+        "<td>(100, 100) &lt;= VALUES &lt; (200, 200)</td>\"",
+        tablets[i*5+1]->id(), i));
+    ASSERT_STR_CONTAINS(raw,Substitute(
+        "\"id\":\"$0\",\"partition_cols\":\"<td>Table Wide</td>"
+        "<td>HASH (c_int32) PARTITIONS 2<br>"
+        "HASH (c_int64) PARTITIONS 2<br></td>"
+        "<td>HASH (c_int32) PARTITION: $1<br>"
+        "HASH (c_int64) PARTITION: 1<br></td>"
+        "<td>(0, 0) &lt;= VALUES &lt; (100, 100)</td>\"",
+        tablets[i*5+2]->id(), i));
+    ASSERT_STR_CONTAINS(raw,Substitute(
+        "\"id\":\"$0\",\"partition_cols\":\"<td>Range Specific</td>"
+        "<td>HASH (c_int32) PARTITIONS 2<br>"
+        "HASH (c_int64) PARTITIONS 3<br></td>"
+        "<td>HASH (c_int32) PARTITION: $1<br>"
+        "HASH (c_int64) PARTITION: 1<br></td>"
+        "<td>(100, 100) &lt;= VALUES &lt; (200, 200)</td>\"",
+        tablets[i*5+3]->id(), i));
+    ASSERT_STR_CONTAINS(raw,Substitute(
+        "\"id\":\"$0\",\"partition_cols\":\"<td>Range Specific</td>"
+        "<td>HASH (c_int32) PARTITIONS 2<br>"
+        "HASH (c_int64) PARTITIONS 3<br></td>"
+        "<td>HASH (c_int32) PARTITION: $1<br>"
+        "HASH (c_int64) PARTITION: 2<br></td>"
+        "<td>(100, 100) &lt;= VALUES &lt; (200, 200)</td>\"",
+        tablets[i*5+4]->id(), i));
   }
 }
 

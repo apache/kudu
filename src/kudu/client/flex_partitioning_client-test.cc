@@ -37,6 +37,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
@@ -47,6 +48,8 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/curl_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -55,6 +58,7 @@
 
 DECLARE_bool(enable_per_range_hash_schemas);
 DECLARE_int32(heartbeat_interval_ms);
+DECLARE_string(webserver_doc_root);
 
 METRIC_DECLARE_counter(scans_started);
 
@@ -63,9 +67,13 @@ using kudu::client::KuduValue;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using kudu::master::CatalogManager;
+using kudu::master::TableInfo;
+using kudu::master::TabletInfo;
+using kudu::tablet::TabletReplica;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 static constexpr const char* const kKeyColumn = "key";
 static constexpr const char* const kIntValColumn = "int_val";
@@ -96,6 +104,10 @@ class FlexPartitioningTest : public KuduTest {
 
     // Reduce the TS<->Master heartbeat interval to speed up testing.
     FLAGS_heartbeat_interval_ms = 10;
+
+    // Ensure the static pages are not available as tests are written based
+    // on this value of the flag
+    FLAGS_webserver_doc_root = "";
 
     // Start minicluster and wait for tablet servers to connect to master.
     cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
@@ -544,6 +556,102 @@ TEST_F(FlexPartitioningCreateTableTest, DefaultAndCustomHashSchemas) {
                           "No tablet covering the requested range partition");
     }
   }
+}
+
+TEST_F(FlexPartitioningCreateTableTest, TabletServerWebUI) {
+  // Create a table with the following partitions:
+  //
+  //            hash bucket
+  //   key    0           1           2               3
+  //         -----------------------------------------------------------
+  //  <111    x:{key}     x:{key}     -               -
+  // 111-222  x:{key}     x:{key}     x:{key}         -
+  // 222-333  x:{key}     x:{key}     x:{key}     x:{key}
+  constexpr const char* const kTableName = "TabletServerWebUI";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(1)
+      .add_hash_partitions({ kKeyColumn }, 2)
+      .set_range_partition_columns({ kKeyColumn });
+
+  // Add a range partition with the table-wide hash partitioning rules.
+  {
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    ASSERT_OK(lower->SetInt32(kKeyColumn, INT32_MIN));
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, 111));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+
+  // Add a range partition with custom hash sub-partitioning rules:
+  // 3 buckets with hash based on the "key" column with hash seed 1.
+  {
+    auto p = CreateRangePartition(111, 222);
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 1));
+    table_creator->add_custom_range_partition(p.release());
+  }
+
+  // Add a range partition with custom hash sub-partitioning rules:
+  // 4 buckets with hash based on the "key" column with hash seed 2.
+  {
+    auto p = CreateRangePartition(222, 333);
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 4, 2));
+    table_creator->add_custom_range_partition(p.release());
+  }
+
+  ASSERT_OK(table_creator->Create());
+  NO_FATALS(CheckTabletCount(kTableName, 9));
+
+  // Obtain the web page contents
+  EasyCurl c;
+  faststring buf;
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets",
+                                  cluster_->mini_tablet_server(0)->bound_http_addr().ToString()),
+                       &buf));
+  string raw = buf.ToString();
+
+  // Get the list of tablets present in this table
+  std::vector<scoped_refptr<TableInfo>> tables;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(
+        cluster_->mini_master(0)->master()->catalog_manager());
+    cluster_->mini_master(0)->master()->catalog_manager()->GetAllTables(&tables);
+  }
+  ASSERT_EQ(1, tables.size());
+  vector<scoped_refptr<TabletInfo>> tablets;
+  tables.front()->GetAllTablets(&tablets);
+
+  ASSERT_EQ(9, tablets.size());
+  // Validate the partition information rendered in the page
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 0, "
+                                      "RANGE (key) PARTITION -2147483648 <= VALUES < 111",
+                                      tablets[0]->id()));
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 0, "
+                                      "RANGE (key) PARTITION 111 <= VALUES < 222",
+                                      tablets[1]->id()));
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 0, "
+                                      "RANGE (key) PARTITION 222 <= VALUES < 333",
+                                      tablets[2]->id()));
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 1, "
+                                      "RANGE (key) PARTITION -2147483648 <= VALUES < 111",
+                                      tablets[3]->id()));
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 1, "
+                                      "RANGE (key) PARTITION 111 <= VALUES < 222",
+                                      tablets[4]->id()));
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 1, "
+                                      "RANGE (key) PARTITION 222 <= VALUES < 333",
+                                      tablets[5]->id()));
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 2, "
+                                      "RANGE (key) PARTITION 111 <= VALUES < 222",
+                                      tablets[6]->id()));
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 2, "
+                                      "RANGE (key) PARTITION 222 <= VALUES < 333",
+                                      tablets[7]->id()));
+  ASSERT_STR_CONTAINS(raw, Substitute("id=$0\"},\"partition\":\"HASH (key) PARTITION 3, "
+                                      "RANGE (key) PARTITION 222 <= VALUES < 333",
+                                      tablets[8]->id()));
 }
 
 // Parameters for a single hash dimension.

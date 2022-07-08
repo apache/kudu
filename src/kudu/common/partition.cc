@@ -997,7 +997,7 @@ string PartitionSchema::RangePartitionDebugString(const KuduPartialRow& lower_bo
     return Substitute("VALUES < $0", RangeKeyDebugString(upper_bound));
   }
   if (upper_unbounded) {
-    return Substitute("VALUES >= $0", RangeKeyDebugString(lower_bound));
+    return Substitute("$0 <= VALUES", RangeKeyDebugString(lower_bound));
   }
   // TODO(dan): recognize when a simplified 'VALUE =' form can be used (see
   // org.apache.kudu.client.Partition#formatRangePartition).
@@ -1026,6 +1026,54 @@ string PartitionSchema::RangePartitionDebugString(Slice lower_bound,
   }
 
   return RangePartitionDebugString(lower, upper);
+}
+
+string PartitionSchema::RangeWithCustomHashPartitionDebugString(Slice lower_bound,
+                                                                Slice upper_bound,
+                                                                const Schema& schema) const {
+  // Partitions are considered metadata, so don't redact them.
+  ScopedDisableRedaction no_redaction;
+  HashSchema hash_schema = GetHashSchemaForRange(lower_bound.ToString());
+  KuduPartialRow lower(&schema);
+  Arena arena(256);
+
+  // Decode the lower and upper bounds
+  Status s = DecodeRangeKey(&lower_bound, &lower, &arena);
+  if (!s.ok()) {
+    return Substitute("<range-key-decode-error: $0>", s.ToString());
+  }
+
+  KuduPartialRow upper(&schema);
+  s = DecodeRangeKey(&upper_bound, &upper, &arena);
+  if (!s.ok()) {
+    return Substitute("<range-key-decode-error: $0>", s.ToString());
+  }
+
+  // Get the range bounds information for the partition
+  bool lower_unbounded = IsRangePartitionKeyEmpty(lower);
+  bool upper_unbounded = IsRangePartitionKeyEmpty(upper);
+  string partition;
+  if (lower_unbounded && upper_unbounded) {
+    partition = "UNBOUNDED";
+  } else if (lower_unbounded) {
+    partition = Substitute("VALUES < $0", RangeKeyDebugString(upper));
+  } else if (upper_unbounded) {
+    partition = Substitute("$0 <= VALUES", RangeKeyDebugString(lower));
+  } else {
+    partition = Substitute("$0 <= VALUES < $1",
+                           RangeKeyDebugString(lower),
+                           RangeKeyDebugString(upper));
+  }
+
+  // Get the hash schema information for the partition
+  if (hash_schema != hash_schema_) {
+    for (const auto& hash_dimension: hash_schema) {
+      partition.append(Substitute(" HASH($0) PARTITIONS $1",
+                                  ColumnIdsToColumnNames(schema, hash_dimension.column_ids),
+                                  hash_dimension.num_buckets));
+    }
+  }
+  return partition;
 }
 
 string PartitionSchema::RangeKeyDebugString(Slice range_key, const Schema& schema) const {
@@ -1124,11 +1172,12 @@ string PartitionSchema::DisplayString(const Schema& schema,
 
 string PartitionSchema::PartitionTableHeader(const Schema& schema) const {
   string header;
-  for (const auto& hash_schema : hash_schema_) {
-    SubstituteAndAppend(&header, "<th>HASH ($0) PARTITION</th>",
-                        EscapeForHtmlToString(ColumnIdsToColumnNames(
-                            schema, hash_schema.column_ids)));
+  if (!hash_schema_.empty()) {
+    header.append("<th>Hash Schema Type</th>");
+    header.append("<th>Hash Schema</th>");
+    header.append("<th>Hash Partition</th>");
   }
+
   if (!range_schema_.column_ids.empty()) {
     SubstituteAndAppend(&header, "<th>RANGE ($0) PARTITION</th>",
                         EscapeForHtmlToString(
@@ -1140,8 +1189,46 @@ string PartitionSchema::PartitionTableHeader(const Schema& schema) const {
 string PartitionSchema::PartitionTableEntry(const Schema& schema,
                                             const Partition& partition) const {
   string entry;
-  for (int32_t bucket : partition.hash_buckets_) {
-    SubstituteAndAppend(&entry, "<td>$0</td>", bucket);
+  const auto* idx_ptr = FindOrNull(
+      hash_schema_idx_by_encoded_range_start_, partition.begin_.range_key());
+
+  if (idx_ptr) {
+    const auto& range = ranges_with_custom_hash_schemas_[*idx_ptr];
+    entry.append("<td>Range Specific</td>");
+    entry.append("<td>");
+    for (size_t i = 0; i < range.hash_schema.size(); i++) {
+      SubstituteAndAppend(&entry, "HASH ($0) PARTITIONS $1<br>",
+                          EscapeForHtmlToString(ColumnIdsToColumnNames(
+                              schema, range.hash_schema[i].column_ids)),
+                          range.hash_schema[i].num_buckets);
+    }
+    entry.append("</td>");
+    entry.append("<td>");
+    for (size_t i = 0; i < range.hash_schema.size(); i++) {
+      SubstituteAndAppend(&entry, "HASH ($0) PARTITION: $1<br>",
+                          EscapeForHtmlToString(ColumnIdsToColumnNames(
+                              schema, range.hash_schema[i].column_ids)),
+                          partition.hash_buckets_[i]);
+    }
+    entry.append("</td>");
+  } else {
+    entry.append("<td>Table Wide</td>");
+    entry.append("<td>");
+    for (size_t i = 0; i < hash_schema_.size(); i++) {
+        SubstituteAndAppend(&entry, "HASH ($0) PARTITIONS $1<br>",
+                            EscapeForHtmlToString(ColumnIdsToColumnNames(
+                                schema, hash_schema_[i].column_ids)),
+                                hash_schema_[i].num_buckets);
+    }
+    entry.append("</td>");
+    entry.append("<td>");
+    for (size_t i = 0; i < hash_schema_.size(); i++) {
+      SubstituteAndAppend(&entry, "HASH ($0) PARTITION: $1<br>",
+                          EscapeForHtmlToString(ColumnIdsToColumnNames(
+                              schema, hash_schema_[i].column_ids)),
+                          partition.hash_buckets_[i]);
+    }
+    entry.append("</td>");
   }
 
   if (!range_schema_.column_ids.empty()) {
