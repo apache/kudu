@@ -511,6 +511,7 @@ Status KuduScanner::Data::OpenTablet(const PartitionKey& partition_key,
     if (s.IsNotFound()) {
       // No more tablets in the table.
       partition_pruner_.RemovePartitionKeyRange({});
+      DCHECK(!partition_pruner_.HasMorePartitionKeyRanges());
       return Status::OK();
     }
     RETURN_NOT_OK(s);

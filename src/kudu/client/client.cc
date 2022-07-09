@@ -2027,7 +2027,6 @@ Status KuduScanner::NextBatch(internal::ScanBatchDataInterface* batch_data) {
   // need to do some swapping of the response objects around to avoid
   // stomping on the memory the user is looking at.
   CHECK(data_->open_);
-  CHECK(data_->proxy_);
 
   batch_data->Clear();
 
@@ -2037,6 +2036,7 @@ Status KuduScanner::NextBatch(internal::ScanBatchDataInterface* batch_data) {
 
   if (data_->data_in_open_) {
     // We have data from a previous scan.
+    CHECK(data_->proxy_);
     VLOG(2) << "Extracting data from " << data_->DebugString();
     data_->data_in_open_ = false;
     return batch_data->Reset(&data_->controller_,
@@ -2048,6 +2048,7 @@ Status KuduScanner::NextBatch(internal::ScanBatchDataInterface* batch_data) {
 
   if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
+    CHECK(data_->proxy_);
     VLOG(2) << "Continuing " << data_->DebugString();
 
     MonoTime batch_deadline = MonoTime::Now() + data_->configuration().timeout();
