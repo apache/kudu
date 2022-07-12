@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Rule;
@@ -57,6 +58,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.ClientTestUtil;
 import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.Pair;
 
 public class TestKuduTable {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduTable.class);
@@ -1989,6 +1991,238 @@ public class TestKuduTable {
       rowStrings = scanTableToStrings(table,
           KuduPredicate.newComparisonPredicate(schema.getColumn("key"), GREATER_EQUAL, 50),
           KuduPredicate.newComparisonPredicate(schema.getColumn("key"), LESS, 150));
+      assertEquals(100, rowStrings.size());
+    }
+  }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
+      "--enable_per_range_hash_schemas=true",
+  })
+  public void testAlterTableAddRangePartitionCustomHashSchemaMultiDimensional()
+      throws Exception {
+    final List<ColumnSchema> columns = ImmutableList.of(
+        new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32).key(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT64).key(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("value", Type.STRING).nullable(true).build());
+    final Schema schema = new Schema(columns);
+
+    CreateTableOptions opt = new CreateTableOptions();
+    opt.setRangePartitionColumns(ImmutableList.of("c0"));
+    // Define table-wide schema for the table.
+    opt.addHashPartitions(ImmutableList.of("c0"), 2, 0);
+    opt.addHashPartitions(ImmutableList.of("c1"), 3, 0);
+
+    // Add a range partition with table-wide hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt(0, -100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt(0, 100);
+      opt.addRangePartition(lower, upper);
+    }
+
+    client.createTable(tableName, schema, opt);
+
+    assertEquals(
+        ImmutableList.of("-100 <= VALUES < 100"),
+        client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of("-100 <= VALUES < 100 HASH(c0) PARTITIONS 2 HASH(c1) PARTITIONS 3"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
+
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt(0, 100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt(0, 200);
+
+      RangePartitionWithCustomHashSchema range =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      range.addHashPartitions(ImmutableList.of("c0"), 5, 0);
+      range.addHashPartitions(ImmutableList.of("c1"), 3, 0);
+
+      client.alterTable(
+          tableName, new AlterTableOptions().addRangePartition(range));
+    }
+
+    assertEquals(
+        ImmutableList.of("-100 <= VALUES < 100", "100 <= VALUES < 200"),
+        client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of(
+            "-100 <= VALUES < 100 HASH(c0) PARTITIONS 2 HASH(c1) PARTITIONS 3",
+            "100 <= VALUES < 200 HASH(c0) PARTITIONS 5 HASH(c1) PARTITIONS 3"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
+
+    final PartitionSchema ps = client.openTable(tableName).getPartitionSchema();
+    assertTrue(ps.hasCustomHashSchemas());
+
+    final KuduTable table = client.openTable(tableName);
+    {
+      // NOTE: use schema from server since ColumnIDs are needed for row encoding
+      // NOTE: setting both 'c0' and 'c1' columns since they are used in
+      //       the hash bucketing schema
+      final PartialRow rowLower = table.getSchema().newPartialRow();
+      rowLower.addInt(0, -100);
+      rowLower.addLong(1, -100);
+
+      final PartialRow rowUpper = table.getSchema().newPartialRow();
+      rowUpper.addInt(0, 100);
+      rowUpper.addLong(1, 100);
+
+      // There should be 6 tablets for the range with the table-wide hash schema
+      // adding during table creation of the table.
+      {
+        final List<PartitionSchema.HashBucketSchema> s = ps.getHashSchemaForRange(
+            KeyEncoder.encodeRangePartitionKey(rowLower, ps.getRangeSchema()));
+        // There should be just two dimension: one with 2 buckets and another
+        // with 3 buckets.
+        assertEquals(2, s.size());
+        assertEquals(2, s.get(0).getNumBuckets());
+        assertEquals(3, s.get(1).getNumBuckets());
+      }
+      {
+        final byte[] rowLowerEnc = ps.encodePartitionKey(rowLower);
+        final byte[] rowUpperEnc = ps.encodePartitionKey(rowUpper);
+
+        // The range part comes after the hash part in an encoded partition key.
+        // The hash part contains 4 * number_of_hash_dimensions bytes.
+        byte[] rangeLower = Arrays.copyOfRange(rowLowerEnc, 4 * 2, rowLowerEnc.length);
+        byte[] rangeUpper = Arrays.copyOfRange(rowUpperEnc, 4 * 2, rowUpperEnc.length);
+
+        Set<Pair<Integer, Integer>> buckets = new HashSet();
+        for (KuduScanToken token : new KuduScanToken.KuduScanTokenBuilder(asyncClient, table)
+            .addPredicate(KuduPredicate.newComparisonPredicate(
+                columns.get(0), KuduPredicate.ComparisonOp.GREATER_EQUAL, -100))
+            .addPredicate(KuduPredicate.newComparisonPredicate(
+                columns.get(0), KuduPredicate.ComparisonOp.LESS, 100))
+            .setTimeout(client.getDefaultOperationTimeoutMs()).build()) {
+          final Partition p = token.getTablet().getPartition();
+          assertEquals(0, Bytes.memcmp(p.getRangeKeyStart(), rangeLower));
+          assertEquals(0, Bytes.memcmp(p.getRangeKeyEnd(), rangeUpper));
+          assertEquals(2, p.getHashBuckets().size());
+          buckets.add(new Pair(p.getHashBuckets().get(0), p.getHashBuckets().get(1)));
+        }
+
+        // Check that the generated scan tokens cover all the tablets for the range:
+        // all hash bucket indices should be present.
+        final Set<Pair<Integer, Integer>> refBuckets = ImmutableSet.of(
+            new Pair(0, 0), new Pair(0, 1), new Pair(0, 2),
+            new Pair(1, 0), new Pair(1, 1), new Pair(1, 2));
+        assertEquals(refBuckets, buckets);
+      }
+    }
+
+    {
+      // NOTE: use schema from server since ColumnIDs are needed for row encoding
+      // NOTE: setting both 'c0' and 'c1' columns since they are used in
+      //       the hash bucketing schema
+      final PartialRow rowLower = table.getSchema().newPartialRow();
+      rowLower.addInt(0, 100);
+      rowLower.addLong(1, 100);
+
+      final PartialRow rowUpper = table.getSchema().newPartialRow();
+      rowUpper.addInt(0, 200);
+      rowUpper.addLong(1, 200);
+
+      // There should be 15 tablets for the newly added range.
+      {
+        final List<PartitionSchema.HashBucketSchema> s = ps.getHashSchemaForRange(
+            KeyEncoder.encodeRangePartitionKey(rowLower, ps.getRangeSchema()));
+        // There should be just two dimensions with 5 * 3 = 15 buckets.
+        assertEquals(2, s.size());
+        assertEquals(5, s.get(0).getNumBuckets());
+        assertEquals(3, s.get(1).getNumBuckets());
+      }
+      {
+        final byte[] rowLowerEnc = ps.encodePartitionKey(rowLower);
+        final byte[] rowUpperEnc = ps.encodePartitionKey(rowUpper);
+
+        // The range part comes after the hash part in an encoded partition key.
+        // The hash part contains 4 * number_of_hash_dimensions bytes.
+        byte[] hashLower = Arrays.copyOfRange(rowLowerEnc, 4 * 2, rowLowerEnc.length);
+        byte[] hashUpper = Arrays.copyOfRange(rowUpperEnc, 4 * 2, rowUpperEnc.length);
+
+        Set<Pair<Integer, Integer>> buckets = new HashSet();
+        for (KuduScanToken token : new KuduScanToken.KuduScanTokenBuilder(asyncClient, table)
+            .addPredicate(KuduPredicate.newComparisonPredicate(
+                columns.get(0), KuduPredicate.ComparisonOp.GREATER_EQUAL, 100))
+            .addPredicate(KuduPredicate.newComparisonPredicate(
+                columns.get(0), KuduPredicate.ComparisonOp.LESS, 200))
+            .setTimeout(client.getDefaultOperationTimeoutMs()).build()) {
+          final Partition p = token.getTablet().getPartition();
+          assertEquals(0, Bytes.memcmp(p.getRangeKeyStart(), hashLower));
+          assertEquals(0, Bytes.memcmp(p.getRangeKeyEnd(), hashUpper));
+          assertEquals(2, p.getHashBuckets().size());
+          buckets.add(new Pair(p.getHashBuckets().get(0), p.getHashBuckets().get(1)));
+        }
+
+        // Check that the generated scan tokens cover all the tablets for the range:
+        // all hash bucket indices should be present.
+        final Set<Pair<Integer, Integer>> refBuckets = ImmutableSet.of(
+            new Pair(0, 0), new Pair(0, 1), new Pair(0, 2),
+            new Pair(1, 0), new Pair(1, 1), new Pair(1, 2),
+            new Pair(2, 0), new Pair(2, 1), new Pair(2, 2),
+            new Pair(3, 0), new Pair(3, 1), new Pair(3, 2),
+            new Pair(4, 0), new Pair(4, 1), new Pair(4, 2));
+        assertEquals(refBuckets, buckets);
+      }
+    }
+
+    // Make sure it's possible to insert into the newly added range.
+    KuduSession session = client.newSession();
+
+    // Insert rows: those should go into both ranges -- the range with
+    // the table-wide and the newly added range with custom hash schema.
+    {
+      for (int key = 0; key < 200; ++key) {
+        Insert insert = table.newInsert();
+        PartialRow row = insert.getRow();
+        row.addInt("c0", key);
+        row.addLong("c1", key);
+        session.apply(insert);
+      }
+      session.flush();
+
+      List<String> rowStrings = scanTableToStrings(table);
+      assertEquals(200, rowStrings.size());
+      rowStrings = scanTableToStrings(table,
+          KuduPredicate.newComparisonPredicate(schema.getColumn("c0"), GREATER_EQUAL, 100));
+      assertEquals(100, rowStrings.size());
+
+      rowStrings = scanTableToStrings(table,
+          KuduPredicate.newComparisonPredicate(schema.getColumn("c0"), GREATER_EQUAL, 180));
+      assertEquals(20, rowStrings.size());
+    }
+
+    // Insert more rows into the range with table-wide hash schema.
+    {
+      for (int key = -100; key < 0; ++key) {
+        Insert insert = table.newInsert();
+        PartialRow row = insert.getRow();
+        row.addInt("c0", key);
+        row.addLong("c1", key);
+        session.apply(insert);
+      }
+      session.flush();
+
+      List<String> rowStrings = scanTableToStrings(table);
+      assertEquals(300, rowStrings.size());
+
+      rowStrings = scanTableToStrings(table,
+          KuduPredicate.newComparisonPredicate(schema.getColumn("c0"), LESS, 0));
+      assertEquals(100, rowStrings.size());
+
+      // Predicate to have one part of the rows in the range with table-wide hash
+      // schema, and the other part from the range with custom hash schema.
+      rowStrings = scanTableToStrings(table,
+          KuduPredicate.newComparisonPredicate(schema.getColumn("c0"), GREATER_EQUAL, 50),
+          KuduPredicate.newComparisonPredicate(schema.getColumn("c0"), LESS, 150));
       assertEquals(100, rowStrings.size());
     }
   }

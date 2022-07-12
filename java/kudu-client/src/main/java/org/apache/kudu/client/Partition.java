@@ -300,13 +300,7 @@ public class Partition implements Comparable<Partition> {
     if (showHashInfo) {
       List<PartitionSchema.HashBucketSchema> hashSchema =
           partitionSchema.getHashSchemaForRange(rangeKeyStart);
-      boolean firstHashDimension = true;
       for (PartitionSchema.HashBucketSchema hashDimension : hashSchema) {
-        if (firstHashDimension) {
-          firstHashDimension = false;
-        } else {
-          sb.append(',');
-        }
         sb.append(" HASH(");
         boolean firstId = true;
         for (Integer id : hashDimension.getColumnIds()) {
