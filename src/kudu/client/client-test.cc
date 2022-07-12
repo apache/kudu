@@ -8695,7 +8695,7 @@ TEST_F(ReplicationFactorLimitsTest, MinReplicationFactor) {
     const vector<pair<int, string>> cases = {
       {2, "illegal replication factor 2: replication factor must be odd"},
       {3, "not enough live tablet servers to create a table with the requested "
-          "replication factor 3; 1 tablet servers are alive"},
+          "replication factor 3"},
     };
 
     for (auto i = 1; i < cluster_->num_tablet_servers(); ++i) {
