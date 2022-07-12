@@ -3114,10 +3114,6 @@ class KUDU_EXPORT KuduScanner {
 ///
 /// Scan token locality information can be inspected using the
 /// KuduScanToken::tablet() function.
-///
-/// Scan tokens are not yet compatible for tables that contain range-specific
-/// hash schemas. To be clear, the existing use case of tables with all ranges
-/// using the table wide hash schema is functional as expected.
 class KUDU_EXPORT KuduScanToken {
  public:
 

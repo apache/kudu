@@ -595,16 +595,15 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
   // Create table
   shared_ptr<KuduTable> table;
   {
-    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
-    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
     unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     table_creator->table_name("table");
     table_creator->num_replicas(1);
     table_creator->schema(&schema);
-
     table_creator->add_hash_partitions({ "col" }, 2);
 
     {
+      unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+      unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
       ASSERT_OK(lower_bound->SetInt64("col", 0));
       ASSERT_OK(upper_bound->SetInt64("col", 100));
       unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
@@ -615,14 +614,14 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
     }
 
     {
-      lower_bound.reset(schema.NewRow());
-      upper_bound.reset(schema.NewRow());
+      unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+      unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
       ASSERT_OK(lower_bound->SetInt64("col", 100));
       ASSERT_OK(upper_bound->SetInt64("col", 200));
       unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
           new KuduTableCreator::KuduRangePartition(lower_bound.release(),
                                                    upper_bound.release()));
-      range_partition->add_hash_partitions({ "col"}, 2);
+      range_partition->add_hash_partitions({ "col" }, 2);
       table_creator->add_custom_range_partition(range_partition.release());
     }
 
@@ -682,6 +681,209 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
     KuduScanTokenBuilder builder(table.get());
     unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
         "col", KuduPredicate::EQUAL, KuduValue::FromInt(42)));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(1, tokens.size());
+    ASSERT_EQ(1, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // IS NOT NULL predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewIsNotNullPredicate("col"));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(6, tokens.size());
+    ASSERT_EQ(200, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // IS NULL predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewIsNullPredicate("col"));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_GE(0, tokens.size());
+    ASSERT_EQ(0, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // primary key bound
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+    ASSERT_OK(upper_bound->SetInt64("col", 40));
+
+    ASSERT_OK(builder.AddUpperBound(*upper_bound));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(4, tokens.size());
+    ASSERT_EQ(40, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+}
+
+TEST_F(ScanTokenTest, TestScanTokensWithCustomHashSchemasPerNonCoveringRange) {
+  FLAGS_enable_per_range_hash_schemas = true;
+  KuduSchema schema;
+  // Create schema
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("col")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Create table
+  shared_ptr<KuduTable> table;
+  {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    table_creator->table_name("table");
+    table_creator->num_replicas(1);
+    table_creator->schema(&schema);
+    table_creator->add_hash_partitions({ "col" }, 2);
+
+    {
+      unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+      unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+      ASSERT_OK(lower_bound->SetInt64("col", 0));
+      ASSERT_OK(upper_bound->SetInt64("col", 100));
+      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
+          new KuduTableCreator::KuduRangePartition(lower_bound.release(), upper_bound.release()));
+      range_partition->add_hash_partitions({ "col" }, 4);
+      table_creator->add_custom_range_partition(range_partition.release());
+    }
+
+    {
+      unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+      unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+      ASSERT_OK(lower_bound->SetInt64("col", 200));
+      ASSERT_OK(upper_bound->SetInt64("col", 300));
+      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
+          new KuduTableCreator::KuduRangePartition(lower_bound.release(), upper_bound.release()));
+      range_partition->add_hash_partitions({ "col" }, 2);
+      table_creator->add_custom_range_partition(range_partition.release());
+    }
+
+    ASSERT_OK(table_creator->Create());
+    ASSERT_OK(client_->OpenTable("table", &table));
+  }
+
+  // Create session
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(10000);
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+
+  // Insert rows
+  for (int i = 0; i < 100; i++) {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
+    ASSERT_OK(session->Apply(insert.release()));
+  }
+  for (int i = 200; i < 300; i++) {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
+    ASSERT_OK(session->Apply(insert.release()));
+  }
+  ASSERT_OK(session->Flush());
+
+  uint64_t expected_count = 0;
+  CheckLiveRowCount("table", &expected_count);
+  ASSERT_EQ(expected_count, 200);
+
+  { // no predicates
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+
+    ASSERT_EQ(6, tokens.size());
+    ASSERT_EQ(200, CountRows(tokens));
+    shared_ptr<KuduClient> new_client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &new_client));
+    int64_t row_count = 0;
+    ASSERT_OK(CountRowsSeq(new_client.get(), tokens, &row_count));
+    ASSERT_EQ(200, row_count);
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // range predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(150)));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(2, tokens.size());
+    ASSERT_EQ(100, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // range predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(100)));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    unique_ptr<KuduPredicate> predicate1(table->NewComparisonPredicate(
+        "col", KuduPredicate::LESS, KuduValue::FromInt(200)));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate1.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(0, tokens.size());
+    ASSERT_EQ(0, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // range predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(50)));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    unique_ptr<KuduPredicate> predicate1(table->NewComparisonPredicate(
+        "col", KuduPredicate::LESS, KuduValue::FromInt(250)));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate1.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(6, tokens.size());
+    ASSERT_EQ(100, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // range predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(-50)));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
+    unique_ptr<KuduPredicate> predicate1(table->NewComparisonPredicate(
+        "col", KuduPredicate::LESS, KuduValue::FromInt(350)));
+    ASSERT_OK(builder.AddConjunctPredicate(predicate1.release()));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(6, tokens.size());
+    ASSERT_EQ(200, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // equality predicate
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    unique_ptr<KuduPredicate> predicate(table->NewComparisonPredicate(
+        "col", KuduPredicate::EQUAL, KuduValue::FromInt(242)));
     ASSERT_OK(builder.AddConjunctPredicate(predicate.release()));
     ASSERT_OK(builder.Build(&tokens));
 
