@@ -233,13 +233,13 @@ TEST_P(ParameterizedSchemaTest, TestCopyAndMove) {
 TEST_F(TestSchema, TestSchemaWithDecimal) {
   ColumnSchema col1("key", STRING);
   ColumnSchema col2("decimal32val", DECIMAL32, false,
-                    NULL, NULL, ColumnStorageAttributes(),
+                    nullptr, nullptr, ColumnStorageAttributes(),
                     ColumnTypeAttributes(9, 4));
   ColumnSchema col3("decimal64val", DECIMAL64, true,
-                    NULL, NULL, ColumnStorageAttributes(),
+                    nullptr, nullptr, ColumnStorageAttributes(),
                     ColumnTypeAttributes(18, 10));
   ColumnSchema col4("decimal128val", DECIMAL128, true,
-                    NULL, NULL, ColumnStorageAttributes(),
+                    nullptr, nullptr, ColumnStorageAttributes(),
                     ColumnTypeAttributes(38, 2));
 
   vector<ColumnSchema> cols = { col1, col2, col3, col4 };
@@ -267,16 +267,16 @@ TEST_F(TestSchema, TestSchemaWithDecimal) {
 TEST_F(TestSchema, TestSchemaEqualsWithDecimal) {
   ColumnSchema col1("key", STRING);
   ColumnSchema col_18_10("decimal64val", DECIMAL64, true,
-                         NULL, NULL, ColumnStorageAttributes(),
+                         nullptr, nullptr, ColumnStorageAttributes(),
                          ColumnTypeAttributes(18, 10));
   ColumnSchema col_18_9("decimal64val", DECIMAL64, true,
-                        NULL, NULL, ColumnStorageAttributes(),
+                        nullptr, nullptr, ColumnStorageAttributes(),
                         ColumnTypeAttributes(18, 9));
   ColumnSchema col_17_10("decimal64val", DECIMAL64, true,
-                         NULL, NULL, ColumnStorageAttributes(),
+                         nullptr, nullptr, ColumnStorageAttributes(),
                          ColumnTypeAttributes(17, 10));
   ColumnSchema col_17_9("decimal64val", DECIMAL64, true,
-                        NULL, NULL, ColumnStorageAttributes(),
+                        nullptr, nullptr, ColumnStorageAttributes(),
                         ColumnTypeAttributes(17, 9));
 
   Schema schema_18_10({ col1, col_18_10 }, 1);

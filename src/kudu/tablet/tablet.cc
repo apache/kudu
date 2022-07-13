@@ -701,7 +701,7 @@ Status Tablet::ValidateInsertOrUpsertUnlocked(const RowOp& op) {
 Status Tablet::ValidateMutateUnlocked(const RowOp& op) {
   RowChangeListDecoder rcl_decoder(op.decoded_op.changelist);
   RETURN_NOT_OK(rcl_decoder.Init());
-  if (rcl_decoder.is_reinsert()) {
+  if (PREDICT_FALSE(rcl_decoder.is_reinsert())) {
     // REINSERT mutations are the byproduct of an INSERT on top of a ghost
     // row, not something the user is allowed to specify on their own.
     return Status::InvalidArgument("User may not specify REINSERT mutations");
@@ -748,6 +748,7 @@ Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
     }
   }
 
+  DCHECK(!op->present_in_rowset);
   Timestamp ts = op_state->timestamp();
   ConstContiguousRow row(schema().get(), op->decoded_op.row_data);
 
@@ -828,9 +829,7 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
   ConstContiguousRow row(schema, upsert->decoded_op.row_data);
   faststring buf;
   RowChangeListEncoder enc(&buf);
-  for (int i = 0; i < schema->num_columns(); i++) {
-    if (schema->is_key_column(i)) continue;
-
+  for (int i = schema->num_key_columns(); i < schema->num_columns(); i++) {
     // If the user didn't explicitly set this column in the UPSERT, then we should
     // not turn it into an UPDATE. This prevents the UPSERT from updating
     // values back to their defaults when unset.

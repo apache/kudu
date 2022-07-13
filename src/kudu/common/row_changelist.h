@@ -251,9 +251,7 @@ void RowChangeListEncoder::SetToReinsert(const RowType& src_row) {
   DCHECK_EQ(RowChangeList::kUninitialized, type_);
   SetType(RowChangeList::kReinsert);
   const Schema* schema = src_row.schema();
-  for (int i = 0; i < schema->num_columns(); ++i) {
-    // Reinserts don't need to store the keys.
-    if (schema->is_key_column(i)) continue;
+  for (int i = schema->num_key_columns(); i < schema->num_columns(); ++i) {
     ColumnId col_id = schema->column_id(i);
     const ColumnSchema& col_schema = schema->column(i);
     if (col_schema.is_nullable() && src_row.is_null(i)) {

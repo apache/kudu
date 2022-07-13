@@ -302,7 +302,7 @@ Status DMSIterator::FilterColumnIdsAndCollectDeltas(const vector<ColumnId>& col_
   return preparer_.FilterColumnIdsAndCollectDeltas(col_ids, out, arena);
 }
 
-bool DMSIterator::HasNext() {
+bool DMSIterator::HasNext() const {
   return iter_->IsValid();
 }
 

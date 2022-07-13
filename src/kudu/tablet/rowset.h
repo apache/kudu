@@ -33,7 +33,6 @@
 #include "kudu/common/rowid.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/status.h"
@@ -41,6 +40,7 @@
 
 namespace kudu {
 
+class Arena;
 class MonoTime; // IWYU pragma: keep
 class RowChangeList;
 class RowwiseIterator;

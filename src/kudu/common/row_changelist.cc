@@ -263,11 +263,9 @@ Status RowChangeListDecoder::MutateRowAndCaptureChanges(RowBlockRow* dst_row,
   return Status::OK();
 }
 
-
-
 Status RowChangeListDecoder::ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_col,
                                               const Schema& dst_schema,
-                                              int col_idx, Arena *arena) {
+                                              int col_idx, Arena* arena) {
   DCHECK(is_reinsert() || is_update());
 
   const ColumnSchema& col_schema = dst_schema.column(col_idx);
@@ -281,14 +279,14 @@ Status RowChangeListDecoder::ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_c
     }
 
     int junk_col_idx;
-    const void* new_val;
+    const void* new_val = nullptr;
     RETURN_NOT_OK(dec.Validate(dst_schema, &junk_col_idx, &new_val));
     DCHECK_EQ(junk_col_idx, col_idx);
 
     SimpleConstCell src(&col_schema, new_val);
     ColumnBlock::Cell dst_cell = dst_col->cell(row_idx);
     RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
-    // TODO: could potentially break; here if we're guaranteed to only have one update
+    // TODO(unknown): could potentially break; here if we're guaranteed to only have one update
     // per column in a RowChangeList (which would make sense!)
   }
   return Status::OK();

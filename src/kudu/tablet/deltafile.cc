@@ -733,7 +733,7 @@ Status DeltaFileIterator<Type>::CollectMutations(vector<Mutation*>* dst, Arena* 
 }
 
 template<DeltaType Type>
-bool DeltaFileIterator<Type>::HasNext() {
+bool DeltaFileIterator<Type>::HasNext() const {
   return !exhausted_ || !delta_blocks_.empty();
 }
 

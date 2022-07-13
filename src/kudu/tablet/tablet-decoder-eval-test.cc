@@ -75,10 +75,12 @@ class TabletDecoderEvalTest : public KuduTabletTest,
 public:
   TabletDecoderEvalTest()
           : KuduTabletTest(Schema({ColumnSchema("key", INT32),
-                                   ColumnSchema("string_val_a", STRING, true, NULL, NULL,
+                                   ColumnSchema("string_val_a", STRING, true,
+                                                nullptr, nullptr,
                                                 ColumnStorageAttributes(DICT_ENCODING,
                                                                         DEFAULT_COMPRESSION)),
-                                   ColumnSchema("string_val_b", STRING, true, NULL, NULL,
+                                   ColumnSchema("string_val_b", STRING, true,
+                                                nullptr, nullptr,
                                                 ColumnStorageAttributes(DICT_ENCODING,
                                                                         DEFAULT_COMPRESSION))}, 1))
   {}

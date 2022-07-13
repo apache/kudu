@@ -340,7 +340,7 @@ class DeltaIterator : public PreparedDeltas {
     // Prepare a batch of deltas for applying. All deltas in the batch will be
     // decoded. Operations affecting row data (i.e. UPDATEs and REINSERTs) will
     // be coalesced into a column-major data structure suitable for
-    // ApplyUpdates. Operations affecting row lifecycle (i.e. DELETES and
+    // ApplyUpdates. Operations affecting row lifecycle (i.e. DELETEs and
     // REINSERTs) will be coalesced into a row-major data structure suitable for ApplyDeletes.
     //
     // On success, ApplyUpdates and ApplyDeltas will be callable.
@@ -362,7 +362,7 @@ class DeltaIterator : public PreparedDeltas {
   virtual Status PrepareBatch(size_t nrows, int prepare_flags) = 0;
 
   // Returns true if there are any more rows left in this iterator.
-  virtual bool HasNext() = 0;
+  virtual bool HasNext() const = 0;
 
   // Return a string representation suitable for debug printouts.
   virtual std::string ToString() const = 0;
@@ -558,7 +558,7 @@ class DeltaPreparer : public PreparedDeltas {
 
   // Used for PREPARED_FOR_APPLY mode.
   //
-  // Set to true in all of the spots where deleted, reinserted_, and updates_by_col_
+  // Set to true in all of the spots where deleted_, reinserted_, and updates_by_col_
   // are modified.
   bool may_have_deltas_;
 

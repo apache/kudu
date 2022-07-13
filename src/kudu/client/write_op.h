@@ -30,7 +30,6 @@
 
 #ifdef KUDU_HEADERS_NO_STUBS
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #else
 #include "kudu/client/stubs.h"
 #endif
@@ -141,16 +140,16 @@ class KUDU_EXPORT KuduWriteOperation {
 ///   columns which do not have default values.
 class KUDU_EXPORT KuduInsert : public KuduWriteOperation {
  public:
-  virtual ~KuduInsert();
+  ~KuduInsert() override;
 
   /// @copydoc KuduWriteOperation::ToString()
-  virtual std::string ToString() const OVERRIDE { return "INSERT " + row_.ToString(); }
+  std::string ToString() const override { return "INSERT " + row_.ToString(); }
 
  protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
   /// @copydoc KuduWriteOperation::type()
-  virtual Type type() const OVERRIDE {
+  Type type() const override {
     return INSERT;
   }
 
@@ -168,16 +167,16 @@ class KUDU_EXPORT KuduInsert : public KuduWriteOperation {
 ///   columns which do not have default values.
 class KUDU_EXPORT KuduInsertIgnore : public KuduWriteOperation {
  public:
-  virtual ~KuduInsertIgnore();
+  ~KuduInsertIgnore() override;
 
   /// @copydoc KuduWriteOperation::ToString()
-  virtual std::string ToString() const OVERRIDE { return "INSERT IGNORE " + row_.ToString(); }
+  std::string ToString() const override { return "INSERT IGNORE " + row_.ToString(); }
 
  protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
   /// @copydoc KuduWriteOperation::type()
-  virtual Type type() const OVERRIDE {
+  Type type() const override {
     return INSERT_IGNORE;
   }
 
@@ -194,16 +193,16 @@ class KUDU_EXPORT KuduInsertIgnore : public KuduWriteOperation {
 /// See KuduInsert for more details.
 class KUDU_EXPORT KuduUpsert : public KuduWriteOperation {
  public:
-  virtual ~KuduUpsert();
+  ~KuduUpsert() override;
 
   /// @copydoc KuduWriteOperation::ToString()
-  virtual std::string ToString() const OVERRIDE { return "UPSERT " + row_.ToString(); }
+  std::string ToString() const override { return "UPSERT " + row_.ToString(); }
 
  protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
   /// @copydoc KuduWriteOperation::type()
-  virtual Type type() const OVERRIDE {
+  Type type() const override {
     return UPSERT;
   }
 
@@ -221,16 +220,16 @@ class KUDU_EXPORT KuduUpsert : public KuduWriteOperation {
 ///   in the schema to be set in the embedded KuduPartialRow object.
 class KUDU_EXPORT KuduUpdate : public KuduWriteOperation {
  public:
-  virtual ~KuduUpdate();
+  ~KuduUpdate() override;
 
   /// @copydoc KuduWriteOperation::ToString()
-  virtual std::string ToString() const OVERRIDE { return "UPDATE " + row_.ToString(); }
+  std::string ToString() const override { return "UPDATE " + row_.ToString(); }
 
  protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
   /// @copydoc KuduWriteOperation::type()
-  virtual Type type() const OVERRIDE {
+  Type type() const override {
     return UPDATE;
   }
 
@@ -247,16 +246,16 @@ class KUDU_EXPORT KuduUpdate : public KuduWriteOperation {
 ///   in the schema to be set in the embedded KuduPartialRow object.
 class KUDU_EXPORT KuduUpdateIgnore : public KuduWriteOperation {
 public:
-  virtual ~KuduUpdateIgnore();
+  ~KuduUpdateIgnore() override;
 
   /// @copydoc KuduWriteOperation::ToString()
-  virtual std::string ToString() const OVERRIDE { return "UPDATE IGNORE " + row_.ToString(); }
+  std::string ToString() const override { return "UPDATE IGNORE " + row_.ToString(); }
 
 protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
   /// @copydoc KuduWriteOperation::type()
-  virtual Type type() const OVERRIDE {
+  Type type() const override {
     return UPDATE_IGNORE;
   }
 
@@ -273,16 +272,16 @@ private:
 ///   KuduPartialRow object.
 class KUDU_EXPORT KuduDelete : public KuduWriteOperation {
  public:
-  virtual ~KuduDelete();
+  ~KuduDelete() override;
 
   /// @copydoc KuduWriteOperation::ToString()
-  virtual std::string ToString() const OVERRIDE { return "DELETE " + row_.ToString(); }
+  std::string ToString() const override { return "DELETE " + row_.ToString(); }
 
  protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
   /// @copydoc KuduWriteOperation::type()
-  virtual Type type() const OVERRIDE {
+  Type type() const override {
     return DELETE;
   }
 
@@ -299,16 +298,16 @@ class KUDU_EXPORT KuduDelete : public KuduWriteOperation {
 ///   KuduPartialRow object.
 class KUDU_EXPORT KuduDeleteIgnore : public KuduWriteOperation {
 public:
-  virtual ~KuduDeleteIgnore();
+  ~KuduDeleteIgnore() override;
 
   /// @copydoc KuduWriteOperation::ToString()
-  virtual std::string ToString() const OVERRIDE { return "DELETE IGNORE " + row_.ToString(); }
+  std::string ToString() const override { return "DELETE IGNORE " + row_.ToString(); }
 
 protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
   /// @copydoc KuduWriteOperation::type()
-  virtual Type type() const OVERRIDE {
+  Type type() const override {
     return DELETE_IGNORE;
   }
 

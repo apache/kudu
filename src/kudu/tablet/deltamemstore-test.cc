@@ -597,7 +597,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   opts.projection = &schema_;
   opts.snap_to_include = MvccSnapshot(mvcc_);
   unique_ptr<DeltaIterator> iter;
-  Status s =  dms_->NewDeltaIterator(opts, &iter);
+  Status s = dms_->NewDeltaIterator(opts, &iter);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of the snapshot";
   }
@@ -636,7 +636,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   }
 }
 
-// Generates a series of random deltas,  writes them to a DMS, reads them back
+// Generates a series of random deltas, writes them to a DMS, reads them back
 // using a DMSIterator, and verifies the results.
 TEST_F(TestDeltaMemStore, TestFuzz) {
   // Arbitrary constants to control the running time and coverage of the test.

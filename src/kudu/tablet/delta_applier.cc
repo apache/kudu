@@ -43,7 +43,7 @@ struct IteratorStats;
 
 namespace tablet {
 
-  // Construct. The base_iter and delta_iter should not be Initted.
+// Construct. The base_iter and delta_iter should not be Initted.
 DeltaApplier::DeltaApplier(RowIteratorOptions opts,
                            shared_ptr<CFileSet::Iterator> base_iter,
                            unique_ptr<DeltaIterator> delta_iter)
@@ -55,7 +55,7 @@ DeltaApplier::DeltaApplier(RowIteratorOptions opts,
 DeltaApplier::~DeltaApplier() {
 }
 
-Status DeltaApplier::Init(ScanSpec *spec) {
+Status DeltaApplier::Init(ScanSpec* spec) {
   RETURN_NOT_OK(base_iter_->Init(spec));
   RETURN_NOT_OK(delta_iter_->Init(spec));
   return Status::OK();
@@ -72,7 +72,7 @@ string DeltaApplier::ToString() const {
   return s;
 }
 
-const Schema &DeltaApplier::schema() const {
+const Schema& DeltaApplier::schema() const {
   return base_iter_->schema();
 }
 
@@ -84,7 +84,7 @@ bool DeltaApplier::HasNext() const {
   return base_iter_->HasNext();
 }
 
-Status DeltaApplier::PrepareBatch(size_t *nrows) {
+Status DeltaApplier::PrepareBatch(size_t* nrows) {
   // The initial seek is deferred from Init() into the first PrepareBatch()
   // because it requires a loaded delta file, and we don't want to require
   // that at Init() time.
@@ -106,7 +106,7 @@ Status DeltaApplier::FinishBatch() {
   return base_iter_->FinishBatch();
 }
 
-Status DeltaApplier::InitializeSelectionVector(SelectionVector *sel_vec) {
+Status DeltaApplier::InitializeSelectionVector(SelectionVector* sel_vec) {
   DCHECK(!first_prepare_) << "PrepareBatch() must be called at least once";
 
   // A diff scan will set both 'snap_to_exclude' and 'include_deleted_rows'.
@@ -129,7 +129,7 @@ Status DeltaApplier::InitializeSelectionVector(SelectionVector *sel_vec) {
   return Status::OK();
 }
 
-Status DeltaApplier::MaterializeColumn(ColumnMaterializationContext *ctx) {
+Status DeltaApplier::MaterializeColumn(ColumnMaterializationContext* ctx) {
   DCHECK(!first_prepare_) << "PrepareBatch() must be called at least once";
   // Data with updates cannot be evaluated at the decoder-level.
   if (delta_iter_->MayHaveDeltas()) {

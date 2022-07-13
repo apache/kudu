@@ -251,6 +251,7 @@ class RowProjector {
  private:
   DISALLOW_COPY_AND_ASSIGN(RowProjector);
 
+  // projection_ column index -> base_schema_ index
   std::vector<ProjectionIdxMapping> base_cols_mapping_;
   std::vector<size_t> projection_defaults_;
 

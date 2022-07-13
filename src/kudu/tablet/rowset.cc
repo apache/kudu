@@ -143,7 +143,6 @@ Status DuplicatingRowSet::NewCompactionInput(const Schema* /*projection*/,
   return Status::OK();
 }
 
-
 Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
                                     const RowSetKeyProbe &probe,
                                     const RowChangeList &update,
