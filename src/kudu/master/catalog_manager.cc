@@ -353,8 +353,8 @@ DEFINE_uint32(table_locations_cache_capacity_mb, 0,
               "of 0 means table locations are not be cached");
 TAG_FLAG(table_locations_cache_capacity_mb, advanced);
 
-DEFINE_bool(enable_per_range_hash_schemas, false,
-            "Whether the ability to specify different hash schemas per range is enabled");
+DEFINE_bool(enable_per_range_hash_schemas, true,
+            "Whether to support range-specific hash schemas for tables");
 TAG_FLAG(enable_per_range_hash_schemas, advanced);
 TAG_FLAG(enable_per_range_hash_schemas, runtime);
 

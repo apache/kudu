@@ -62,7 +62,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(enable_per_range_hash_schemas);
 DECLARE_bool(tserver_enforce_access_control);
 
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
@@ -583,7 +582,6 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
 }
 
 TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
-  FLAGS_enable_per_range_hash_schemas = true;
   KuduSchema schema;
   // Create schema
   {
@@ -732,7 +730,6 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
 }
 
 TEST_F(ScanTokenTest, TestScanTokensWithCustomHashSchemasPerNonCoveringRange) {
-  FLAGS_enable_per_range_hash_schemas = true;
   KuduSchema schema;
   // Create schema
   {

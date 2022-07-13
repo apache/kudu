@@ -122,7 +122,6 @@ using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
 DECLARE_bool(enable_metadata_cleanup_for_deleted_tables_and_tablets);
-DECLARE_bool(enable_per_range_hash_schemas);
 DECLARE_bool(master_client_location_assignment_enabled);
 DECLARE_bool(master_support_authz_tokens);
 DECLARE_bool(mock_table_metrics_for_testing);
@@ -934,7 +933,6 @@ TEST_P(AlterTableWithRangeSpecificHashSchema, TestAlterTableWithDifferentHashDim
   constexpr const char* const kTableName = "testtb";
   const Schema kTableSchema({ColumnSchema("key", INT32),
                              ColumnSchema("val", INT32)}, 2);
-  FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
   FLAGS_default_num_replicas = 1;
 
   // Create a table with one partition
@@ -1030,7 +1028,6 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
   constexpr const char* const kCol1 = "c_int64";
   const Schema kTableSchema({ColumnSchema(kCol0, INT32),
                              ColumnSchema(kCol1, INT64)}, 2);
-  FLAGS_enable_per_range_hash_schemas = true;
   FLAGS_default_num_replicas = 1;
 
   // Create a table with one range partition based on the table-wide hash schema.
@@ -1280,7 +1277,6 @@ TEST_F(MasterTest, AlterTableAddDropRangeWithTableWideHashSchema) {
   const Schema kTableSchema({ColumnSchema(kCol0, INT32),
                              ColumnSchema(kCol1, INT64),
                              ColumnSchema(kCol2, STRING)}, 2);
-  FLAGS_enable_per_range_hash_schemas = true;
   FLAGS_default_num_replicas = 1;
 
   // Create a table with one range partition based on the table-wide hash schema.
@@ -1471,7 +1467,6 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
   // on split rows.
   {
     google::FlagSaver flag_saver;
-    FLAGS_enable_per_range_hash_schemas = true;
     KuduPartialRow split1(&kTableSchema);
     ASSERT_OK(split1.SetInt32("key", 1));
     KuduPartialRow a_lower(&kTableSchema);
@@ -1495,7 +1490,6 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
   // CreateTableRequestPB::partition_schema::custom_hash_schema_ranges fields.
   {
     google::FlagSaver flag_saver;
-    FLAGS_enable_per_range_hash_schemas = true;
     KuduPartialRow a_lower(&kTableSchema);
     KuduPartialRow a_upper(&kTableSchema);
     ASSERT_OK(a_lower.SetInt32("key", 0));
@@ -1743,9 +1737,6 @@ TEST_F(MasterTest, NonPrimaryKeyColumnsForPerRangeCustomHashSchema) {
   constexpr const char* const kTableName = "nicetry";
   const Schema kTableSchema(
       { ColumnSchema("key", INT32), ColumnSchema("int32_val", INT32) }, 1);
-
-  // Explicitly enable support for per-range custom hash bucket schemas.
-  FLAGS_enable_per_range_hash_schemas = true;
 
   // For simplicity, a single tablet replica is enough.
   FLAGS_default_num_replicas = 1;

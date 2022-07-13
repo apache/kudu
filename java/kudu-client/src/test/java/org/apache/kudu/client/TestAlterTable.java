@@ -517,9 +517,6 @@ public class TestAlterTable {
    * per range.
    */
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testAlterAddRangeWithCustomHashSchema() throws Exception {
     ArrayList<ColumnSchema> columns = new ArrayList<>(2);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32)
@@ -608,9 +605,6 @@ public class TestAlterTable {
    * ranges between partition with the table-wide and custom hash schemas.
    */
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testAlterAddRangeWithCustomHashSchemaNonCoveredRange() throws Exception {
     ArrayList<ColumnSchema> columns = new ArrayList<>(2);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32)

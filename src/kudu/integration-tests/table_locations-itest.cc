@@ -94,7 +94,6 @@ DEFINE_int32(benchmark_runtime_secs, 5, "Number of seconds to run the benchmark"
 DEFINE_int32(benchmark_num_threads, 16, "Number of threads to run the benchmark");
 DEFINE_int32(benchmark_num_tablets, 60, "Number of tablets to create");
 
-DECLARE_bool(enable_per_range_hash_schemas);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
 DECLARE_int32(heartbeat_interval_ms);
@@ -475,8 +474,6 @@ TEST_F(TableLocationsTest, RangeSpecificHashingSameDimensions) {
                 }, 3);
   KuduPartialRow row(&schema);
 
-  FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
-
   // Use back-to-back and sparse range placement.
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds(5, { row, row });
   ASSERT_OK(bounds[0].first.SetStringNoCopy(0, "a"));
@@ -557,8 +554,6 @@ TEST_F(TableLocationsTest, RangeSpecificHashingVaryingDimensions) {
   const string table_name = "test";
   Schema schema({ ColumnSchema("key", STRING), ColumnSchema("val", STRING) }, 2);
   KuduPartialRow row(&schema);
-
-  FLAGS_enable_per_range_hash_schemas = true; // enable for testing.
 
   vector<pair<KuduPartialRow, KuduPartialRow>> bounds(2, { row, row });
   ASSERT_OK(bounds[0].first.SetStringNoCopy(0, "a"));

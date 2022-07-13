@@ -879,9 +879,6 @@ public class TestPartitionPruner {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testPruningWithCustomHashSchemas() throws Exception {
     // CREATE TABLE timeseries
     //   (host STRING, metric STRING, timestamp UNIXTIME_MICROS, value DOUBLE)

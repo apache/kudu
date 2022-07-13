@@ -495,9 +495,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testCreateTablePartitionWithEmptyCustomHashSchema() throws Exception {
     PartialRow lower = basicSchema.newPartialRow();
     lower.addInt(0, -100);
@@ -549,9 +546,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testCreateTablePartitionWithCustomHashSchema() throws Exception {
     PartialRow lower = basicSchema.newPartialRow();
     lower.addInt(0, -100);
@@ -617,9 +611,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testRangePartitionWithCustomHashSchemaBasic() throws Exception {
     final int valLower = 10;
     final int valUpper = 20;
@@ -704,9 +695,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testCreateTableCustomHashSchemasTwoRanges() throws Exception {
     CreateTableOptions builder = getBasicCreateTableOptions();
 
@@ -901,9 +889,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testCreateTableCustomHashSchemasTwoMixedRanges() throws Exception {
     CreateTableOptions builder = getBasicCreateTableOptions();
 
@@ -1090,9 +1075,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testCreateTableCustomHashSchemaDifferentDimensions() throws Exception {
     // Have the table-wide hash schema different from custom hash schema per
     // various ranges: it should not be possible to create a table.
@@ -1171,9 +1153,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testGetHashSchemaForRange() throws Exception {
     final int valLower = 100;
     final int valUpper = 200;
@@ -1260,9 +1239,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testGetHashSchemaForRangeUnbounded() throws Exception {
     // The test table is created with the following ranges:
     //   (-inf, -100) [-100, 0) [0, 100), [100, +inf)
@@ -1684,9 +1660,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testAlterTableAddRangePartitionCustomHashSchemaOverlapped() throws Exception {
     final List<ColumnSchema> columns = ImmutableList.of(
         new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
@@ -1768,9 +1741,6 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testAlterTableAddRangePartitionCustomHashSchema() throws Exception {
     final List<ColumnSchema> columns = ImmutableList.of(
         new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build(),

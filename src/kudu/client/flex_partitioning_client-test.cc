@@ -97,9 +97,6 @@ class FlexPartitioningTest : public KuduTest {
     // Reduce the TS<->Master heartbeat interval to speed up testing.
     FLAGS_heartbeat_interval_ms = 10;
 
-    // Explicitly enable support for custom hash schemas per range partition.
-    FLAGS_enable_per_range_hash_schemas = true;
-
     // Start minicluster and wait for tablet servers to connect to master.
     cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
@@ -1667,10 +1664,8 @@ TEST_F(FlexPartitioningAlterTableTest, UnsupportedRangeSpecificHashSchema) {
 }
 
 // Make sure adding and dropping ranges with the table-wide hash schema works
-// as expected when --enable_per_range_hash_schemas=true.
+// as expected.
 TEST_F(FlexPartitioningAlterTableTest, AddDropTableWideHashSchemaPartitions) {
-  FLAGS_enable_per_range_hash_schemas = true;
-
   constexpr const char* const kTableName =
       "AddDropTableWideHashSchemaPartitions";
 

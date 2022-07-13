@@ -746,9 +746,6 @@ public class TestKuduClient {
    * with custom hash schema.
    */
   @Test(timeout = 100000)
-  @KuduTestHarness.MasterServerConfig(flags = {
-      "--enable_per_range_hash_schemas=true",
-  })
   public void testRangeWithCustomHashSchema() throws Exception {
     List<ColumnSchema> cols = new ArrayList<>();
     cols.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT64).key(true).build());
