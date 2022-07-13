@@ -285,7 +285,7 @@ Status MasterTest::CreateTable(
       hash_schema->add_columns()->set_name(col_name);
     }
     hash_schema->set_num_buckets(hash_dimension.num_buckets);
-    hash_schema->set_seed(hash_dimension.num_buckets);
+    hash_schema->set_seed(hash_dimension.seed);
   }
 
   for (const auto& range_and_hs : ranges_with_hash_schemas) {
