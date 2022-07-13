@@ -1315,7 +1315,7 @@ class KUDU_EXPORT KuduTableCreator {
                                         RangePartitionBound lower_bound_type = INCLUSIVE_BOUND,
                                         RangePartitionBound upper_bound_type = EXCLUSIVE_BOUND);
 
-  /// Add a range partition with a custom hash bucket schema.
+  /// Add a range partition with a custom hash schema.
   ///
   /// This method allows adding a range partition which has hash partitioning
   /// schema different from the table-wide one.
@@ -1326,11 +1326,9 @@ class KUDU_EXPORT KuduTableCreator {
   /// @li To create a range with the table-wide hash schema, use
   ///   @c KuduTableCreator::add_range_partition() instead.
   ///
-  /// @warning This functionality isn't fully implemented yet.
-  ///
   /// @param [in] partition
-  ///   Range partition with custom hash bucket schema.
-  ///   The KuduTableCreator object takes ownership of the parameter.
+  ///   Range partition with range-specific hash schema.
+  ///   The KuduTableCreator object takes ownership of the partition object.
   /// @return Reference to the modified table creator.
   KuduTableCreator& add_custom_range_partition(
       KuduRangePartition* partition);
@@ -1906,8 +1904,7 @@ class KUDU_EXPORT KuduTableAlterer {
   ///   defaults to 5 minutes.
   ///
   /// @param [in] partition
-  ///   The Kudu Range partition to be created. This Kudu Range partition can
-  ///   have a custom hash schema defined.
+  ///   The range partition to be created: it can have a custom hash schema.
   /// @return Raw pointer to this alterer object.
   KuduTableAlterer* AddRangePartition(
       KuduTableCreator::KuduRangePartition* partition);
