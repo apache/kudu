@@ -2693,6 +2693,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
           return Status::NotSupported(
               "varying number of hash dimensions per range is not yet supported");
         }
+        RETURN_NOT_OK(PartitionSchema::ValidateHashSchema(schema, hash_schema));
         RETURN_NOT_OK(partition_schema.CreatePartitionsForRange(
             range_bound, hash_schema, schema, &partitions));
 

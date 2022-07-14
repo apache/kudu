@@ -819,6 +819,68 @@ public class TestAlterTable {
     }
   }
 
+  @Test(timeout = 100000)
+  public void testAlterTryAddRangeWithCustomHashSchemaDuplicateColumns()
+      throws Exception {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(2);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32)
+        .nullable(false)
+        .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+        .nullable(false)
+        .key(true)
+        .build());
+    final Schema schema = new Schema(columns);
+
+    CreateTableOptions createOptions =
+        new CreateTableOptions()
+            .setRangePartitionColumns(ImmutableList.of("c0"))
+            .addHashPartitions(ImmutableList.of("c0"), 2, 0)
+            .addHashPartitions(ImmutableList.of("c1"), 3, 0)
+            .setNumReplicas(1);
+
+    // Add range partition with table-wide hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", -100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 0);
+      createOptions.addRangePartition(lower, upper);
+    }
+
+    client.createTable(tableName, schema, createOptions);
+
+    // Try adding a range partition with custom hash schema having multiple
+    // hash dimensions and conflicting on columns used for hash function:
+    // different dimensions should not intersect on the set of columns
+    // used for hashing.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", 0);
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 100);
+      RangePartitionWithCustomHashSchema range =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      range.addHashPartitions(ImmutableList.of("c0"), 3, 0);
+      range.addHashPartitions(ImmutableList.of("c0"), 3, 0);
+      try {
+        client.alterTable(tableName, new AlterTableOptions().addRangePartition(range));
+        fail("shouldn't be able to add a range with custom hash schema " +
+            "having duplicate hash columns across different dimensions");
+      } catch (KuduException ex) {
+        final String errmsg = ex.getMessage();
+        assertTrue(errmsg, ex.getStatus().isInvalidArgument());
+        assertTrue(errmsg, errmsg.matches(
+            "hash bucket schema components must not contain columns in common"));
+      }
+    }
+  }
+
   @Test
   public void testAlterExtraConfigs() throws Exception {
     KuduTable table = createTable(ImmutableList.of());

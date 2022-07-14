@@ -314,6 +314,10 @@ class PartitionSchema {
       PartitionSchema* partition_schema,
       RangesWithHashSchemas* ranges_with_hash_schemas = nullptr) WARN_UNUSED_RESULT;
 
+  // Helper function that validates the hash schemas.
+  static Status ValidateHashSchema(const Schema& schema,
+                                   const HashSchema& hash_schema);
+
   // Serializes a partition schema into a protobuf message.
   // Requires a schema to encode the range bounds.
   Status ToPB(const Schema& schema, PartitionSchemaPB* pb) const;
@@ -547,10 +551,6 @@ class PartitionSchema {
   template<typename Row>
   static uint32_t HashValueForRow(const Row& row,
                                   const HashDimension& hash_dimension);
-
-  // Helper function that validates the hash schemas.
-  static Status ValidateHashSchema(const Schema& schema,
-                                   const HashSchema& hash_schema);
 
   // Generates hash partitions for each combination of hash buckets in hash_schemas.
   static std::vector<Partition> GenerateHashPartitions(

@@ -195,15 +195,22 @@ class FlexPartitioningTest : public KuduTest {
     return table_creator->Create();
   }
 
-  RangePartition CreateRangePartition(int32_t lower_bound = 0,
-                                      int32_t upper_bound = 100) {
-    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
-    CHECK_OK(lower->SetInt32(kKeyColumn, lower_bound));
-    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
-    CHECK_OK(upper->SetInt32(kKeyColumn, upper_bound));
+  static RangePartition CreateRangePartition(const KuduSchema& schema,
+                                             const string& key_column,
+                                             int32_t lower_bound,
+                                             int32_t upper_bound) {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    CHECK_OK(lower->SetInt32(key_column, lower_bound));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    CHECK_OK(upper->SetInt32(key_column, upper_bound));
     return unique_ptr<KuduTableCreator::KuduRangePartition>(
         new KuduTableCreator::KuduRangePartition(lower.release(),
                                                  upper.release()));
+  }
+
+  RangePartition CreateRangePartition(int32_t lower_bound = 0,
+                                      int32_t upper_bound = 100) {
+    return CreateRangePartition(schema_, kKeyColumn, lower_bound, upper_bound);
   }
 
   RangePartition CreateRangePartitionNoUpperBound(int32_t lower_bound) {
@@ -1851,6 +1858,93 @@ TEST_F(FlexPartitioningAlterTableTest, AddDropTableWideHashSchemaPartitions) {
   NO_FATALS(CheckTableRowsNum(kTableName, 111));
 
   ASSERT_OK(client_->DeleteTable(kTableName));
+}
+
+// Try adding range partition with custom hash schema where hash columns are
+// duplicated across different dimensions. That should not be possible and the
+// client should receive a proper error in response.
+TEST_F(FlexPartitioningAlterTableTest, AddRangeWithDuplicateHashColumns) {
+  constexpr const char* const kCol0 = "c0";
+  constexpr const char* const kCol1 = "c1";
+  constexpr const char* const kCol2 = "c2";
+  constexpr const char* const kErrMsg =
+      "hash bucket schema components must not contain columns in common";
+  constexpr const char* const kTableName = "AddRangeWithDuplicateHashColumns";
+
+
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder b;
+    b.AddColumn(kCol0)->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn(kCol1)->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn(kCol2)->Type(KuduColumnSchema::STRING)->Nullable();
+    b.SetPrimaryKey({kCol0, kCol1});
+    ASSERT_OK(b.Build(&schema));
+  }
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema)
+      .num_replicas(1)
+      .add_hash_partitions({ kCol0 }, 2)
+      .add_hash_partitions({ kCol1 }, 3)
+      .set_range_partition_columns({ kCol0 });
+
+  // Add a range partition with the table-wide hash schema.
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetInt32(kCol0, 0));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetInt32(kCol0, 111));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+  ASSERT_OK(table_creator->Create());
+
+  // Try to add hash partitions with duplicate hash columns across dimensions.
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    auto p = CreateRangePartition(schema, kCol0, -111, 0);
+    ASSERT_OK(p->add_hash_partitions({ kCol0 }, 3, 1));
+    ASSERT_OK(p->add_hash_partitions({ kCol0 }, 5, 2));
+    alterer->AddRangePartition(p.release());
+    const auto s = alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+  }
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    auto p = CreateRangePartition(schema, kCol0, -111, 0);
+    ASSERT_OK(p->add_hash_partitions({ kCol0, kCol1 }, 3, 3));
+    ASSERT_OK(p->add_hash_partitions({ kCol0 }, 2, 4));
+    alterer->AddRangePartition(p.release());
+    const auto s = alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+  }
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    auto p = CreateRangePartition(schema, kCol0, -111, 0);
+    ASSERT_OK(p->add_hash_partitions({ kCol1 }, 5, 6));
+    ASSERT_OK(p->add_hash_partitions({ kCol0, kCol1 }, 7, 5));
+    alterer->AddRangePartition(p.release());
+    const auto s = alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+  }
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    auto p = CreateRangePartition(schema, kCol0, -111, 0);
+    ASSERT_OK(p->add_hash_partitions({ kCol0, kCol1 }, 3, 7));
+    ASSERT_OK(p->add_hash_partitions({ kCol1, kCol0 }, 7, 8));
+    alterer->AddRangePartition(p.release());
+    const auto s = alterer->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+  }
 }
 
 } // namespace client

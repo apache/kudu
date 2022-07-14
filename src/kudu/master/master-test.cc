@@ -988,15 +988,18 @@ TEST_P(AlterTableWithRangeSpecificHashSchema, TestAlterTableWithDifferentHashDim
     hash_dimension_pb->set_seed(hash_dimension.seed);
   }
 
-  ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
-  col1->set_name("key");
-  col1->set_type(INT32);
-  col1->set_is_key(true);
-
-  ColumnSchemaPB* col2 = req.mutable_schema()->add_columns();
-  col2->set_name("val");
-  col2->set_type(INT32);
-  col2->set_is_key(true);
+  {
+    auto* col = req.mutable_schema()->add_columns();
+    col->set_name("key");
+    col->set_type(INT32);
+    col->set_is_key(true);
+  }
+  {
+    auto* col = req.mutable_schema()->add_columns();
+    col->set_name("val");
+    col->set_type(INT32);
+    col->set_is_key(true);
+  }
 
   // Check the number of tablets in the table
   std::vector<scoped_refptr<TableInfo>> tables;
@@ -1046,6 +1049,21 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
         {}, {{{kCol0}, 2, 0}}, &create_table_resp));
   }
 
+  // Check the number of tablets in the table before ALTER TABLE.
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    std::vector<scoped_refptr<TableInfo>> tables;
+    master_->catalog_manager()->GetAllTables(&tables);
+    ASSERT_EQ(1, tables.size());
+    // 2 tablets (because of 2 hash buckets) for already existing range.
+    ASSERT_EQ(2, tables.front()->num_tablets());
+
+    // Check the partition schema stored in the system catalog.
+    PartitionSchemaPB ps_pb;
+    ASSERT_OK(GetTablePartitionSchema(kTableName, &ps_pb));
+    ASSERT_EQ(0, ps_pb.custom_hash_schema_ranges_size());
+  }
+
   const auto& table_id = create_table_resp.table_id();
   const HashSchema custom_hash_schema{{{kCol0,kCol1}, 5, 1}};
 
@@ -1059,15 +1077,16 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
     // Add the required information on the table's schema:
     // key and non-null columns must be present in the request.
     {
-      ColumnSchemaPB* col0 = req.mutable_schema()->add_columns();
-      col0->set_name(kCol0);
-      col0->set_type(INT32);
-      col0->set_is_key(true);
-
-      ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
-      col1->set_name(kCol1);
-      col1->set_type(INT64);
-      col0->set_is_key(true);
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol0);
+      col->set_type(INT32);
+      col->set_is_key(true);
+    }
+    {
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol1);
+      col->set_type(INT64);
+      col->set_is_key(true);
     }
 
     AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
@@ -1090,65 +1109,50 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
       hash_dimension_pb->set_seed(hash_dimension.seed);
     }
 
-    // Check the number of tablets in the table before ALTER TABLE.
-    {
-      CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
-      std::vector<scoped_refptr<TableInfo>> tables;
-      master_->catalog_manager()->GetAllTables(&tables);
-      ASSERT_EQ(1, tables.size());
-      // 2 tablets (because of 2 hash buckets) for already existing range.
-      ASSERT_EQ(2, tables.front()->num_tablets());
-
-      // Check the partition schema stored in the system catalog.
-      PartitionSchemaPB ps_pb;
-      ASSERT_OK(GetTablePartitionSchema(kTableName, &ps_pb));
-      ASSERT_EQ(0, ps_pb.custom_hash_schema_ranges_size());
-    }
-
     RpcController ctl;
     ASSERT_OK(proxy_->AlterTable(req, &resp, &ctl));
     ASSERT_FALSE(resp.has_error())
         << StatusFromPB(resp.error().status()).ToString();
-
-    // Check the number of tablets in the table after ALTER TABLE.
-    {
-      CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
-      std::vector<scoped_refptr<TableInfo>> tables;
-      master_->catalog_manager()->GetAllTables(&tables);
-      ASSERT_EQ(1, tables.size());
-      // Extra 5 tablets (because of 5 hash buckets) for newly added range.
-      ASSERT_EQ(7, tables.front()->num_tablets());
-
-      // Check the partition schema stored in the system catalog.
-      PartitionSchemaPB ps_pb;
-      ASSERT_OK(GetTablePartitionSchema(kTableName, &ps_pb));
-      ASSERT_EQ(1, ps_pb.custom_hash_schema_ranges_size());
-
-      // Check the hash schema parameters (i.e. columns and number of hash
-      // buckets) are stored and read back by the client as expected.
-      const auto& range = ps_pb.custom_hash_schema_ranges(0);
-      ASSERT_EQ(1, range.hash_schema_size());
-      const auto& hash_schema = range.hash_schema(0);
-
-      ASSERT_EQ(5, hash_schema.num_buckets());
-      ASSERT_EQ(1, hash_schema.seed());
-
-      ASSERT_EQ(2, hash_schema.columns_size());
-      const auto schema = kTableSchema.CopyWithColumnIds();
-
-      const auto ref_col_0_id = int32_t(schema.column_id(0));
-      const auto& col_0 = hash_schema.columns(0);
-      ASSERT_TRUE(col_0.has_id());
-      ASSERT_EQ(ref_col_0_id, col_0.id());
-
-      const auto ref_col_1_id = int32_t(schema.column_id(1));
-      const auto& col_1 = hash_schema.columns(1);
-      ASSERT_TRUE(col_1.has_id());
-      ASSERT_EQ(ref_col_1_id, col_1.id());
-    }
   }
 
-  // Now verify the table's schema: fetch the information on the altered
+  // Check the number of tablets in the table after ALTER TABLE.
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    std::vector<scoped_refptr<TableInfo>> tables;
+    master_->catalog_manager()->GetAllTables(&tables);
+    ASSERT_EQ(1, tables.size());
+    // Extra 5 tablets (because of 5 hash buckets) for newly added range.
+    ASSERT_EQ(7, tables.front()->num_tablets());
+
+    // Check the partition schema stored in the system catalog.
+    PartitionSchemaPB ps_pb;
+    ASSERT_OK(GetTablePartitionSchema(kTableName, &ps_pb));
+    ASSERT_EQ(1, ps_pb.custom_hash_schema_ranges_size());
+
+    // Check the hash schema parameters (i.e. columns and number of hash
+    // buckets) are stored and read back by the client as expected.
+    const auto& range = ps_pb.custom_hash_schema_ranges(0);
+    ASSERT_EQ(1, range.hash_schema_size());
+    const auto& hash_schema = range.hash_schema(0);
+
+    ASSERT_EQ(5, hash_schema.num_buckets());
+    ASSERT_EQ(1, hash_schema.seed());
+
+    ASSERT_EQ(2, hash_schema.columns_size());
+    const auto schema = kTableSchema.CopyWithColumnIds();
+
+    const auto ref_col_0_id = int32_t(schema.column_id(0));
+    const auto& col_0 = hash_schema.columns(0);
+    ASSERT_TRUE(col_0.has_id());
+    ASSERT_EQ(ref_col_0_id, col_0.id());
+
+    const auto ref_col_1_id = int32_t(schema.column_id(1));
+    const auto& col_1 = hash_schema.columns(1);
+    ASSERT_TRUE(col_1.has_id());
+    ASSERT_EQ(ref_col_1_id, col_1.id());
+  }
+
+  // Verify the table's schema: fetch the information on the altered
   // table and make sure the schema contains information on the newly added
   // range partition with the custom hash schema.
   {
@@ -1200,7 +1204,7 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
     ASSERT_EQ(ref_col_1_id, column_ids[1]);
   }
 
-  // Now verify that everything works as expected when dropping a range
+  // Verify that everything works as expected when dropping a range
   // partition with custom hash schema.
   {
     AlterTableRequestPB req;
@@ -1210,15 +1214,16 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
     // Add the required information on the table's schema:
     // key and non-null columns must be present in the request.
     {
-      ColumnSchemaPB* col0 = req.mutable_schema()->add_columns();
-      col0->set_name(kCol0);
-      col0->set_type(INT32);
-      col0->set_is_key(true);
-
-      ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
-      col1->set_name(kCol1);
-      col1->set_type(INT64);
-      col0->set_is_key(true);
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol0);
+      col->set_type(INT32);
+      col->set_is_key(true);
+    }
+    {
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol1);
+      col->set_type(INT64);
+      col->set_is_key(true);
     }
 
     AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
@@ -1321,19 +1326,21 @@ TEST_F(MasterTest, AlterTableAddDropRangeWithTableWideHashSchema) {
     // Add the required information on the table's schema:
     // key and non-null columns must be present in the request.
     {
-      ColumnSchemaPB* col0 = req.mutable_schema()->add_columns();
-      col0->set_name(kCol0);
-      col0->set_type(INT32);
-      col0->set_is_key(true);
-
-      ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
-      col1->set_name(kCol1);
-      col1->set_type(INT64);
-      col0->set_is_key(true);
-
-      ColumnSchemaPB* col2 = req.mutable_schema()->add_columns();
-      col2->set_name(kCol2);
-      col2->set_type(STRING);
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol0);
+      col->set_type(INT32);
+      col->set_is_key(true);
+    }
+    {
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol1);
+      col->set_type(INT64);
+      col->set_is_key(true);
+    }
+    {
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol2);
+      col->set_type(STRING);
     }
 
     AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
@@ -1397,19 +1404,21 @@ TEST_F(MasterTest, AlterTableAddDropRangeWithTableWideHashSchema) {
     // Add the required information on the table's schema:
     // key and non-null columns must be present in the request.
     {
-      ColumnSchemaPB* col0 = req.mutable_schema()->add_columns();
-      col0->set_name(kCol0);
-      col0->set_type(INT32);
-      col0->set_is_key(true);
-
-      ColumnSchemaPB* col1 = req.mutable_schema()->add_columns();
-      col1->set_name(kCol1);
-      col1->set_type(INT64);
-      col0->set_is_key(true);
-
-      ColumnSchemaPB* col2 = req.mutable_schema()->add_columns();
-      col2->set_name(kCol2);
-      col2->set_type(STRING);
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol0);
+      col->set_type(INT32);
+      col->set_is_key(true);
+    }
+    {
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol1);
+      col->set_type(INT64);
+      col->set_is_key(true);
+    }
+    {
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol2);
+      col->set_type(STRING);
     }
 
     AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
