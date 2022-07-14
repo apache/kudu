@@ -213,6 +213,7 @@ using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::WriteRequestPB;
 using std::back_inserter;
 using std::copy;
+using std::find;
 using std::make_pair;
 using std::map;
 using std::max;
@@ -1237,7 +1238,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "cmeta.*Operate on a local tablet replica's consensus",
         "data_size.*Summarize the data size",
         "dump.*Dump a Kudu filesystem",
-        "copy_from_remote.*Copy a tablet replica from a remote server",
+        "copy_from_remote.*Copy tablet replicas from a remote server",
         "copy_from_local.*Copy tablet replicas from local filesystem",
         "delete.*Delete tablet replicas from the local filesystem",
         "list.*Show list of tablet replicas",
@@ -1266,7 +1267,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kLocalReplicaCopyFromRemoteRegexes = {
-        "Copy a tablet replica from a remote server",
+        "Copy tablet replicas from a remote server",
     };
     NO_FATALS(RunTestHelp("local_replica copy_from_remote --help",
                           kLocalReplicaCopyFromRemoteRegexes));
@@ -8177,6 +8178,40 @@ TEST_F(ToolTest, TestLocalReplicaCopyLocal) {
   SCOPED_TRACE(dst_stdout);
 
   ASSERT_EQ(src_stdout, dst_stdout);
+}
+
+TEST_F(ToolTest, TestLocalReplicaCopyRemote) {
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 2;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+  NO_FATALS(CreateTableWithFlushedData("table1", mini_cluster_.get(), 3, 1));
+  NO_FATALS(CreateTableWithFlushedData("table2", mini_cluster_.get(), 3, 1));
+  int source_tserver_tablet_count = mini_cluster_->mini_tablet_server(0)->ListTablets().size();
+  int target_tserver_tablet_count_before = mini_cluster_->mini_tablet_server(1)
+                                                        ->ListTablets().size();
+  string tablet_ids_str = JoinStrings(mini_cluster_->mini_tablet_server(0)->ListTablets(), ",");
+  string source_tserver_rpc_addr = mini_cluster_->mini_tablet_server(0)
+                                                ->bound_rpc_addr().ToString();
+  string wal_dir = mini_cluster_->mini_tablet_server(1)->options()->fs_opts.wal_root;
+  string data_dirs = JoinStrings(mini_cluster_->mini_tablet_server(1)
+                                              ->options()->fs_opts.data_roots, ",");
+  NO_FATALS(mini_cluster_->mini_tablet_server(1)->Shutdown());
+  // Copy tablet replicas from tserver0 to tserver1.
+  NO_FATALS(RunActionStdoutNone(
+      Substitute("local_replica copy_from_remote $0 $1 "
+                 "-fs_data_dirs=$2 -fs_wal_dir=$3 -num_threads=3",
+                 tablet_ids_str,
+                 source_tserver_rpc_addr,
+                 data_dirs,
+                 wal_dir)));
+  NO_FATALS(mini_cluster_->mini_tablet_server(1)->Start());
+  const vector<string>& target_tablet_ids = mini_cluster_->mini_tablet_server(1)->ListTablets();
+  ASSERT_EQ(source_tserver_tablet_count + target_tserver_tablet_count_before,
+            target_tablet_ids.size());
+  for (string tablet_id : mini_cluster_->mini_tablet_server(0)->ListTablets()) {
+    ASSERT_TRUE(find(target_tablet_ids.begin(), target_tablet_ids.end(), tablet_id)
+                != target_tablet_ids.end());
+  }
 }
 
 TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {

@@ -83,8 +83,7 @@ class ResultTracker;
 } // namespace rpc
 
 namespace tools {
-struct RunnerContext;
-Status CopyFromLocal(const RunnerContext& context);
+class TabletCopier;
 } // namespace tools
 
 namespace tablet {
@@ -395,7 +394,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   void BeginTxnParticipantOp(int64_t txn_id, RegisteredTxnCallback began_txn_cb);
 
  private:
-  friend Status kudu::tools::CopyFromLocal(const kudu::tools::RunnerContext& context);
+  friend class kudu::tools::TabletCopier;
   friend class kudu::AlterTableTest;
   friend class RefCountedThreadSafe<TabletReplica>;
   friend class TabletReplicaTest;
