@@ -777,7 +777,8 @@ enum RunCopyTableCheckArgsType {
   kTestCopyTableSchemaOnly,
   kTestCopyTableComplexSchema,
   kTestCopyUnpartitionedTable,
-  kTestCopyTablePredicates
+  kTestCopyTablePredicates,
+  kTestCopyTableWithStringBounds
 };
 // Subclass of ToolTest that allows running individual test cases with different parameters to run
 // 'kudu table copy' CLI tool.
@@ -810,6 +811,13 @@ class ToolTestCopyTableParameterized :
       KuduSchema schema;
       ASSERT_OK(CreateUnpartitionedTable(&schema));
       ww.set_schema(schema);
+    } else if (test_case_ == kTestCopyTableWithStringBounds) {
+      // Regression for KUDU-3306, verify copying a table with string columns in its range key.
+      KuduSchema schema;
+      ASSERT_OK(CreateTableWithStringBounds(&schema));
+      ww.set_schema(schema);
+      ww.Setup();
+      return;
     }
     ww.Setup();
     ww.Start();
@@ -977,6 +985,10 @@ class ToolTestCopyTableParameterized :
         }
         return multi_args;
       }
+      case kTestCopyTableWithStringBounds:
+        args.mode = TableCopyMode::COPY_SCHEMA_ONLY;
+        args.columns = "";
+        return {args};
       default:
         LOG(FATAL) << "Unknown type " << test_case_;
     }
@@ -1064,6 +1076,35 @@ class ToolTestCopyTableParameterized :
     return Status::OK();
   }
 
+  Status CreateTableWithStringBounds(KuduSchema* schema) {
+    shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(cluster_->CreateClient(nullptr, &client));
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    *schema = KuduSchema::FromSchema(
+        Schema({ColumnSchema("int_key", INT32), ColumnSchema("string_key", STRING)}, 2));
+
+    unique_ptr<KuduPartialRow> first_lower_bound(schema->NewRow());
+    unique_ptr<KuduPartialRow> first_upper_bound(schema->NewRow());
+    RETURN_NOT_OK(first_lower_bound->SetStringNoCopy("string_key", "2020-01-01"));
+    RETURN_NOT_OK(first_upper_bound->SetStringNoCopy("string_key", "2020-01-01"));
+
+    unique_ptr<KuduPartialRow> second_lower_bound(schema->NewRow());
+    unique_ptr<KuduPartialRow> second_upper_bound(schema->NewRow());
+    RETURN_NOT_OK(second_lower_bound->SetStringNoCopy("string_key", "2021-01-01"));
+    RETURN_NOT_OK(second_upper_bound->SetStringNoCopy("string_key", "2021-01-01"));
+    KuduTableCreator::RangePartitionBound bound_type = KuduTableCreator::INCLUSIVE_BOUND;
+
+    return table_creator->table_name(kTableName)
+        .schema(schema)
+        .set_range_partition_columns({"string_key"})
+        .add_range_partition(
+            first_lower_bound.release(), first_upper_bound.release(), bound_type, bound_type)
+        .add_range_partition(
+            second_lower_bound.release(), second_upper_bound.release(), bound_type, bound_type)
+        .num_replicas(1)
+        .Create();
+  }
+
   void InsertOneRowWithNullCell() {
     shared_ptr<KuduClient> client;
     ASSERT_OK(cluster_->CreateClient(nullptr, &client));
@@ -1099,7 +1140,8 @@ INSTANTIATE_TEST_SUITE_P(CopyTableParameterized,
                                            kTestCopyTableSchemaOnly,
                                            kTestCopyTableComplexSchema,
                                            kTestCopyUnpartitionedTable,
-                                           kTestCopyTablePredicates));
+                                           kTestCopyTablePredicates,
+                                           kTestCopyTableWithStringBounds));
 
 void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));

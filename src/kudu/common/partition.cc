@@ -825,6 +825,12 @@ Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
                                      column.name()));
     // Mark the column as set.
     BitmapSet(partial_row->isset_bitmap_, column_idx);
+
+    if (column.type_info()->physical_type() == BINARY) {
+      // Copy cell value into the 'partial_row', because in the decoding process above, we just make
+      // row data a pointer to the memory allocated by arena.
+      partial_row->Set(column_idx, cont_row.cell_ptr(column_idx));
+    }
   }
   if (!encoded_key->empty()) {
     return Status::InvalidArgument("unable to fully decode range key",
