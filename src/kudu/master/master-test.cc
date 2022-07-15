@@ -1275,6 +1275,101 @@ TEST_F(MasterTest, AlterTableAddAndDropRangeWithSpecificHashSchema) {
   }
 }
 
+TEST_F(MasterTest, AlterTableAddRangeWithSpecificHashSchemaWrongBucketNumber) {
+  constexpr const char* const kTableName = "wrong_bucket_number_in_hash_schema";
+  constexpr const char* const kCol0 = "c_int32";
+  constexpr const char* const kCol1 = "c_int64";
+  const Schema kTableSchema({ColumnSchema(kCol0, INT32),
+                             ColumnSchema(kCol1, INT64)}, 1);
+  FLAGS_default_num_replicas = 1;
+
+  // Create a table with one range partition based on the table-wide hash schema.
+  CreateTableResponsePB create_table_resp;
+  {
+    KuduPartialRow lower(&kTableSchema);
+    ASSERT_OK(lower.SetInt32(kCol0, 0));
+    KuduPartialRow upper(&kTableSchema);
+    ASSERT_OK(upper.SetInt32(kCol0, 100));
+    ASSERT_OK(CreateTable(
+        kTableName, kTableSchema, nullopt, nullopt, nullopt, {}, {{lower, upper}},
+        {}, {{{kCol0}, 2, 0}}, &create_table_resp));
+  }
+
+  // Check the number of tablets in the table before ALTER TABLE.
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    std::vector<scoped_refptr<TableInfo>> tables;
+    master_->catalog_manager()->GetAllTables(&tables);
+    ASSERT_EQ(1, tables.size());
+    ASSERT_EQ(2, tables.front()->num_tablets());
+  }
+
+  const auto& table_id = create_table_resp.table_id();
+
+  // Try altering the table, adding a new range with custom hash schema where
+  // the number of hash buckets is incorrect.
+  for (auto bucket_num = -1; bucket_num < 2; ++bucket_num) {
+    SCOPED_TRACE(Substitute("number of hash buckets: $0", bucket_num));
+    const HashSchema custom_hash_schema{{{kCol0}, bucket_num, 222}};
+
+    AlterTableRequestPB req;
+    AlterTableResponsePB resp;
+    req.mutable_table()->set_table_name(kTableName);
+    req.mutable_table()->set_table_id(table_id);
+
+    // Add the required information on the table's schema:
+    // key and non-null columns must be present in the request.
+    {
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol0);
+      col->set_type(INT32);
+      col->set_is_key(true);
+    }
+    {
+      auto* col = req.mutable_schema()->add_columns();
+      col->set_name(kCol1);
+      col->set_type(INT64);
+    }
+
+    AlterTableRequestPB::Step* step = req.add_alter_schema_steps();
+    step->set_type(AlterTableRequestPB::ADD_RANGE_PARTITION);
+    KuduPartialRow lower(&kTableSchema);
+    ASSERT_OK(lower.SetInt32(kCol0, 100));
+    KuduPartialRow upper(&kTableSchema);
+    ASSERT_OK(upper.SetInt32(kCol0, 200));
+    RowOperationsPBEncoder enc(
+        step->mutable_add_range_partition()->mutable_range_bounds());
+    enc.Add(RowOperationsPB::RANGE_LOWER_BOUND, lower);
+    enc.Add(RowOperationsPB::RANGE_UPPER_BOUND, upper);
+    for (const auto& hash_dimension: custom_hash_schema) {
+      auto* hash_dimension_pb = step->mutable_add_range_partition()->
+          mutable_custom_hash_schema()->add_hash_schema();
+      for (const auto& col_name: hash_dimension.columns) {
+        hash_dimension_pb->add_columns()->set_name(col_name);
+      }
+      hash_dimension_pb->set_num_buckets(hash_dimension.num_buckets);
+      hash_dimension_pb->set_seed(hash_dimension.seed);
+    }
+
+    RpcController ctl;
+    ASSERT_OK(proxy_->AlterTable(req, &resp, &ctl));
+    ASSERT_TRUE(resp.has_error());
+    const auto s = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "must have at least two hash buckets");
+  }
+
+  // One more sanity check: the number of tablets in the table after
+  // attempted, but failed ALTER TABLE should stay the same as before.
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    std::vector<scoped_refptr<TableInfo>> tables;
+    master_->catalog_manager()->GetAllTables(&tables);
+    ASSERT_EQ(1, tables.size());
+    ASSERT_EQ(2, tables.front()->num_tablets());
+  }
+}
+
 // This scenario verifies that when the support for range-specific hash schemas
 // is enabled, adding and dropping range partitions with table-wide hash schemas
 // works as expected.

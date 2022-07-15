@@ -1701,6 +1701,55 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
+  public void testAlterTableAddRangeCustomHashSchemaWrongBucketsNumber() throws Exception {
+    final List<ColumnSchema> columns = ImmutableList.of(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("value", Type.STRING).build());
+    final Schema schema = new Schema(columns);
+
+    CreateTableOptions options = getBasicCreateTableOptions();
+    // Add table-wide schema for the table.
+    options.addHashPartitions(ImmutableList.of("key"), 2, 0);
+    // Add a range partition with table-wide hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt(0, -100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt(0, 0);
+      options.addRangePartition(lower, upper);
+    }
+
+    client.createTable(tableName, schema, options);
+
+    PartialRow lower = schema.newPartialRow();
+    lower.addInt(0, 0);
+    PartialRow upper = schema.newPartialRow();
+    upper.addInt(0, 100);
+
+    // Try to add range with a single hash bucket -- it should not be possible.
+    for (int hashBucketNum = -1; hashBucketNum < 2; ++hashBucketNum) {
+      try {
+        RangePartitionWithCustomHashSchema range =
+            new RangePartitionWithCustomHashSchema(
+                lower,
+                upper,
+                RangePartitionBound.INCLUSIVE_BOUND,
+                RangePartitionBound.EXCLUSIVE_BOUND);
+        range.addHashPartitions(ImmutableList.of("key"), hashBucketNum, 0);
+
+        client.alterTable(tableName, new AlterTableOptions().addRangePartition(range));
+        fail(String.format("should not be able to add a partition with " +
+            "invalid range-specific hash schema of %d hash buckets", hashBucketNum));
+      } catch (KuduException ex) {
+        final String errmsg = ex.getMessage();
+        assertTrue(errmsg, ex.getStatus().isInvalidArgument());
+        assertTrue(String.format("%d hash buckets: %s", hashBucketNum, errmsg),
+            errmsg.matches("must have at least two hash buckets"));
+      }
+    }
+  }
+
+  @Test(timeout = 100000)
   @KuduTestHarness.MasterServerConfig(flags = {
       "--enable_per_range_hash_schemas=false",
   })

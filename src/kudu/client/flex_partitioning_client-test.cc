@@ -2036,5 +2036,52 @@ TEST_F(FlexPartitioningScanTest, MaxKeyValue) {
   }
 }
 
+// Try adding range partition with custom hash schema where the number of
+// hash buckets is invalid.
+TEST_F(FlexPartitioningAlterTableTest, AddRangeWithWrongHashBucketsNumber) {
+  constexpr const char* const kCol0 = "c0";
+  constexpr const char* const kCol1 = "c1";
+  constexpr const char* const kErrMsg =
+      "at least two buckets are required to establish hash partitioning";
+  constexpr const char* const kTableName = "AddRangeWithWrongHashBucketsNumber";
+
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder b;
+    b.AddColumn(kCol0)->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn(kCol1)->Type(KuduColumnSchema::STRING)->Nullable();
+    ASSERT_OK(b.Build(&schema));
+  }
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema)
+      .num_replicas(1)
+      .add_hash_partitions({ kCol0 }, 2)
+      .set_range_partition_columns({ kCol0 });
+
+  // Add a range partition with the table-wide hash schema.
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    ASSERT_OK(lower->SetInt32(kCol0, -100));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(upper->SetInt32(kCol0, 0));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+  ASSERT_OK(table_creator->Create());
+
+  // Try to add hash partitions with wrong number of buckets in the
+  // range-specific hash schema. In Kudu C++ client, such mistakes are caught
+  // at the client side.
+  for (auto hash_bucket_num = -1; hash_bucket_num < 2; ++hash_bucket_num) {
+    SCOPED_TRACE(Substitute("hash schema with $0 buckets", hash_bucket_num));
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    auto p = CreateRangePartition(schema, kCol0, 0, 100);
+    const auto s = p->add_hash_partitions({ kCol0 }, hash_bucket_num, 0);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+  }
+}
+
 } // namespace client
 } // namespace kudu
