@@ -428,6 +428,8 @@ message ResourceMetricsPB {
   optional int64 delete_ignore_errors = 14;
   // Total observed commit wait duration in microseconds.
   optional int64 commit_wait_duration_usec = 15;
+  // Total number of UPSERT_IGNORE operations with error.
+  optional int64 upsert_ignore_errors = 16;
 }
 
 message ScanResponsePB {

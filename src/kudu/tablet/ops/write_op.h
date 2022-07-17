@@ -23,10 +23,10 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/row_operations.h"
 #include "kudu/common/row_operations.pb.h"

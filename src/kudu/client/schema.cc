@@ -746,6 +746,7 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
   type_attr_private.length = type_attributes.length();
   col_ = new ColumnSchema(name, ToInternalDataType(type, type_attributes),
                           is_nullable,
+                          false,   // TODO(yingchun): set according to a new added parameter later
                           default_value, default_value, attr_private,
                           type_attr_private, comment);
 }

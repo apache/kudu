@@ -41,6 +41,7 @@ RowOp::RowOp(google::protobuf::Arena* pb_arena, DecodedRowOperation op)
   if (!decoded_op.result.ok()) {
     SetFailed(decoded_op.result);
   }
+  error_ignored = op.error_ignored;
 }
 
 void RowOp::SetFailed(const Status& s) {

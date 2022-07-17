@@ -356,6 +356,7 @@ public class TestKuduSession {
     assertEquals(successfulInserts, metrics.getMetric("successful_inserts"));
     assertEquals(insertIgnoreErrors, metrics.getMetric("insert_ignore_errors"));
     assertEquals(successfulUpserts, metrics.getMetric("successful_upserts"));
+    // TODO(yingchun): should test upsert_ignore_errors
     assertEquals(successfulUpdates, metrics.getMetric("successful_updates"));
     assertEquals(updateIgnoreErrors, metrics.getMetric("update_ignore_errors"));
     assertEquals(successfulDeletes, metrics.getMetric("successful_deletes"));

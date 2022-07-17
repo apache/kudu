@@ -20,6 +20,7 @@
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include <gflags/gflags.h>
@@ -69,6 +70,8 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
       return "INSERT IGNORE " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
     case RowOperationsPB::UPSERT:
       return "UPSERT " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
+    case RowOperationsPB::UPSERT_IGNORE:
+      return "UPSERT IGNORE " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::UPDATE_IGNORE:
     case RowOperationsPB::DELETE:
@@ -564,6 +567,18 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
       const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
       if (BitmapTest(client_isset_map, client_col_idx)) {
+        if (col.is_immutable()) {
+          if (op->type == RowOperationsPB::UPDATE) {
+            op->SetFailureStatusOnce(
+                Status::Immutable("UPDATE not allowed for immutable column", col.ToString()));
+          } else {
+            DCHECK_EQ(RowOperationsPB::UPDATE_IGNORE, op->type);
+            op->error_ignored = true;
+          }
+          RETURN_NOT_OK(ReadColumnAndDiscard(col));
+          // Use 'continue' not 'break' to consume the rest row data.
+          continue;
+        }
         bool client_set_to_null = client_schema_->has_nullables() &&
           BitmapTest(client_null_map, client_col_idx);
         uint8_t scratch[kLargestTypeSize];
@@ -711,6 +726,7 @@ Status RowOperationsPBDecoder::DecodeOp<DecoderMode::WRITE_OPS>(
     case RowOperationsPB::INSERT:
     case RowOperationsPB::INSERT_IGNORE:
     case RowOperationsPB::UPSERT:
+    case RowOperationsPB::UPSERT_IGNORE:
       RETURN_NOT_OK(DecodeInsertOrUpsert(prototype_row_storage, mapping, op));
       break;
     case RowOperationsPB::UPDATE:

@@ -67,7 +67,6 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -3022,14 +3021,14 @@ void ToolTest::RunLoadgen(int num_tservers,
         ColumnSchema("int64_val", INT64),
         ColumnSchema("float_val", FLOAT),
         ColumnSchema("double_val", DOUBLE),
-        ColumnSchema("decimal32_val", DECIMAL32, false,
-                     NULL, NULL, ColumnStorageAttributes(),
+        ColumnSchema("decimal32_val", DECIMAL32, false, false,
+                     nullptr, nullptr, ColumnStorageAttributes(),
                      ColumnTypeAttributes(9, 9)),
-        ColumnSchema("decimal64_val", DECIMAL64, false,
-                     NULL, NULL, ColumnStorageAttributes(),
+        ColumnSchema("decimal64_val", DECIMAL64, false, false,
+                     nullptr, nullptr, ColumnStorageAttributes(),
                      ColumnTypeAttributes(18, 2)),
-        ColumnSchema("decimal128_val", DECIMAL128, false,
-                     NULL, NULL, ColumnStorageAttributes(),
+        ColumnSchema("decimal128_val", DECIMAL128, false, false,
+                     nullptr, nullptr, ColumnStorageAttributes(),
                      ColumnTypeAttributes(38, 0)),
         ColumnSchema("unixtime_micros_val", UNIXTIME_MICROS),
         ColumnSchema("string_val", STRING),

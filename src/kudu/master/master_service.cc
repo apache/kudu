@@ -21,6 +21,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -102,9 +103,15 @@ TAG_FLAG(master_support_change_config, advanced);
 TAG_FLAG(master_support_change_config, runtime);
 
 DEFINE_bool(master_support_ignore_operations, true,
-            "Whether the cluster supports support ignore operations.");
+            "Whether the cluster supports ignore operations, including "
+            "INSERT_IGNORE, DELETE_IGNORE and UPDATE_IGNORE).");
 TAG_FLAG(master_support_ignore_operations, hidden);
 TAG_FLAG(master_support_ignore_operations, runtime);
+
+DEFINE_bool(master_support_upsert_ignore_operations, true,
+            "Whether the cluster supports UPSERT_IGNORE operations.");
+TAG_FLAG(master_support_upsert_ignore_operations, hidden);
+TAG_FLAG(master_support_upsert_ignore_operations, runtime);
 
 
 using google::protobuf::Message;
@@ -886,6 +893,8 @@ bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
       return FLAGS_master_support_ignore_operations;
     case MasterFeatures::RANGE_SPECIFIC_HASH_SCHEMA:
       return FLAGS_enable_per_range_hash_schemas;
+    case MasterFeatures::UPSERT_IGNORE:
+      return FLAGS_master_support_upsert_ignore_operations;
     default:
       return false;
   }

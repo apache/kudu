@@ -876,9 +876,9 @@ TEST_F(PartitionTest, TestIncrementRangePartitionStringBounds) {
 }
 
 TEST_F(PartitionTest, TestVarcharRangePartitions) {
-  Schema schema({ ColumnSchema("c1", VARCHAR, false, nullptr, nullptr,
+  Schema schema({ ColumnSchema("c1", VARCHAR, false, false, nullptr, nullptr,
                                ColumnStorageAttributes(), ColumnTypeAttributes(10)),
-                  ColumnSchema("c2", VARCHAR, false, nullptr, nullptr,
+                  ColumnSchema("c2", VARCHAR, false, false, nullptr, nullptr,
                                ColumnStorageAttributes(), ColumnTypeAttributes(10)) },
                   { ColumnId(0), ColumnId(1) }, 2);
 

@@ -137,6 +137,8 @@ message ColumnSchemaPB {
 
   // The comment for the column.
   optional string comment = 12;
+
+  optional bool immutable = 13 [default = false];
 }
 
 message ColumnSchemaDeltaPB {

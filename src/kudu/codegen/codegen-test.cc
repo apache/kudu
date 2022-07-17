@@ -23,10 +23,12 @@
 #include <string>
 #include <vector>
 
+// IWYU pragma: no_include "testing/base/public/gunit.h"
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h> // IWYU pragma: keep
 #include <gmock/gmock-matchers.h>
+#include <gtest/gtest-matchers.h>
 #include <gtest/gtest.h>
 
 #include "kudu/codegen/code_generator.h"
@@ -80,10 +82,10 @@ class CodegenTest : public KuduTest {
     base_ = SchemaBuilder(base_).Build(); // add IDs
 
     // Create an extended default schema
-    cols.emplace_back("int32-R ",  INT32, false, kI32R,  nullptr);
-    cols.emplace_back("int32-RW",  INT32, false, kI32R, kI32W);
-    cols.emplace_back("str32-R ", STRING, false, kStrR,  nullptr);
-    cols.emplace_back("str32-RW", STRING, false, kStrR, kStrW);
+    cols.emplace_back("int32-R ",  INT32, false, false, kI32R, nullptr);
+    cols.emplace_back("int32-RW",  INT32, false, false, kI32R, kI32W);
+    cols.emplace_back("str32-R ", STRING, false, false, kStrR, nullptr);
+    cols.emplace_back("str32-RW", STRING, false, false, kStrR, kStrW);
     defaults_.Reset(cols, 1);
     defaults_ = SchemaBuilder(defaults_).Build(); // add IDs
 

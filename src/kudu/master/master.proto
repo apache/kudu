@@ -1138,6 +1138,8 @@ enum MasterFeatures {
   IGNORE_OPERATIONS = 7;
   // Whether master supports tables with range-specific hash schemas.
   RANGE_SPECIFIC_HASH_SCHEMA = 8;
+  // Similar to IGNORE_OPERATIONS, but this is for UPSERT_IGNORE specifically.
+  UPSERT_IGNORE = 9;
 }
 
 service MasterService {

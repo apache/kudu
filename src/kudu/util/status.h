@@ -311,6 +311,10 @@ class KUDU_EXPORT Status {
                           int64_t posix_code = -1) {
     return Status(kEndOfFile, msg, msg2, posix_code);
   }
+  static Status Immutable(const Slice& msg, const Slice& msg2 = Slice(),
+                          int64_t posix_code = -1) {
+    return Status(kImmutable, msg, msg2, posix_code);
+  }
   ///@}
 
   /// @return @c true iff the status indicates success.
@@ -369,6 +373,9 @@ class KUDU_EXPORT Status {
 
   /// @return @c true iff the status indicates end of file.
   bool IsEndOfFile() const { return code() == kEndOfFile; }
+
+  /// @return @c true iff the status indicates immutable.
+  bool IsImmutable() const { return code() == kImmutable; }
 
   /// @return @c true iff the status indicates a disk failure.
   bool IsDiskFailure() const {
@@ -461,6 +468,9 @@ class KUDU_EXPORT Status {
     kConfigurationError = 16,
     kIncomplete = 17,
     kEndOfFile = 18,
+    // kCancelled stems from AppStatusPB, although it seems nobody use it now, we still reserve it.
+    // kCancelled = 19,
+    kImmutable = 20,
     // NOTE: Remember to duplicate these constants into wire_protocol.proto and
     // and to add StatusTo/FromPB ser/deser cases in wire_protocol.cc !
     // Also remember to make the same changes to the java client in Status.java.

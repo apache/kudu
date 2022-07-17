@@ -25,13 +25,13 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <google/protobuf/stubs/port.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -63,6 +63,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/openssl_util.h"
@@ -474,8 +475,9 @@ string GenerateEncodedKey(int32_t val, const Schema& schema) {
 // Returns a column schema PB that matches 'col', but has a different name.
 void MisnamedColumnSchemaToPB(const ColumnSchema& col, ColumnSchemaPB* pb) {
   ColumnSchemaToPB(ColumnSchema(kDummyColumn, col.type_info()->physical_type(), col.is_nullable(),
-                   col.read_default_value(), col.write_default_value(), col.attributes(),
-                   col.type_attributes()), pb);
+                                col.is_immutable(), col.read_default_value(),
+                                col.write_default_value(), col.attributes(),
+                                col.type_attributes()), pb);
 }
 
 } // anonymous namespace
@@ -593,6 +595,7 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
       auto* projected_column = pb.add_projected_columns();
       bool default_bool = false;
       ColumnSchemaToPB(ColumnSchema("is_deleted", DataType::IS_DELETED, /*is_nullable=*/false,
+                                    /*is_immutable=*/false,
                                     /*read_default=*/&default_bool, nullptr), projected_column);
     }
     CHECK_OK(GenerateScanAuthzToken(privilege, pb.mutable_authz_token()));

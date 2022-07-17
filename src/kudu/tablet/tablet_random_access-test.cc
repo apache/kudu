@@ -121,7 +121,7 @@ class TestRandomAccess : public KuduTabletTest {
       if (!cur_val) {
         // If there is no row, then randomly insert, insert ignore,
         // update ignore, delete ignore, or upsert.
-        switch (rand() % 5) {
+        switch (rand() % 6) {
           case 1:
             cur_val = InsertRow(key, new_val, &pending);
             break;
@@ -133,6 +133,9 @@ class TestRandomAccess : public KuduTabletTest {
             break;
           case 4:
             DeleteIgnoreRow(key, &pending); // won't change current value
+            break;
+          case 5:
+            cur_val = UpsertIgnoreRow(key, new_val, cur_val, &pending);
             break;
           default:
             cur_val = UpsertRow(key, new_val, cur_val, &pending);
@@ -148,7 +151,7 @@ class TestRandomAccess : public KuduTabletTest {
         } else {
           // If row already exists, randomly choose between an update,
           // update ignore, insert ignore, and upsert.
-          switch (rand() % 4) {
+          switch (rand() % 5) {
             case 1:
               cur_val = UpdateRow(key, new_val, cur_val, &pending);
               break;
@@ -157,6 +160,9 @@ class TestRandomAccess : public KuduTabletTest {
               break;
             case 3:
               InsertIgnoreRow(key, new_val, &pending); // won't change current value
+              break;
+            case 4:
+              cur_val = UpsertIgnoreRow(key, new_val, cur_val, &pending);
               break;
             default:
               cur_val = UpsertRow(key, new_val, cur_val, &pending);
@@ -227,6 +233,13 @@ class TestRandomAccess : public KuduTabletTest {
     return DoRowOp(RowOperationsPB::UPSERT, key, val, old_row, ops);
   }
 
+  optional<ExpectedKeyValueRow> UpsertIgnoreRow(int key,
+                                                int val,
+                                                const optional<ExpectedKeyValueRow>& old_row,
+                                                vector<LocalTabletWriter::RowOp>* ops) {
+    return DoRowOp(RowOperationsPB::UPSERT_IGNORE, key, val, old_row, ops);
+  }
+
   // Adds an update of the given key/value pair to 'ops', returning the expected value
   optional<ExpectedKeyValueRow> UpdateRow(int key,
                                           uint32_t new_val,
@@ -256,6 +269,7 @@ class TestRandomAccess : public KuduTabletTest {
 
     switch (type) {
       case RowOperationsPB::UPSERT:
+      case RowOperationsPB::UPSERT_IGNORE:
       case RowOperationsPB::UPDATE:
       case RowOperationsPB::UPDATE_IGNORE:
       case RowOperationsPB::INSERT:

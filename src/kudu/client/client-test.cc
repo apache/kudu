@@ -2948,6 +2948,7 @@ static void DoVerifyMetrics(const KuduSession* session,
   ASSERT_EQ(successful_inserts, metrics["successful_inserts"]);
   ASSERT_EQ(insert_ignore_errors, metrics["insert_ignore_errors"]);
   ASSERT_EQ(successful_upserts, metrics["successful_upserts"]);
+  // TODO(yingchun): should test upsert_ignore_errors
   ASSERT_EQ(successful_updates, metrics["successful_updates"]);
   ASSERT_EQ(update_ignore_errors, metrics["update_ignore_errors"]);
   ASSERT_EQ(successful_deletes, metrics["successful_deletes"]);

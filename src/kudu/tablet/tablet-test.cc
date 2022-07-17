@@ -25,6 +25,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -57,7 +58,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
-#include "kudu/tablet/rowset_tree.h"
+#include "kudu/tablet/rowset_tree.h" // IWYU pragma: keep
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -337,12 +338,12 @@ TYPED_TEST(TestTablet, TestReinserts) {
                                          << snaps[0].ToString();
   ASSERT_EQ(expected_rows[1]->size(), 1) << "Got the wrong result from snap: "
                                          << snaps[1].ToString();
-  ASSERT_STR_CONTAINS((*expected_rows[1])[0], "int32 key_idx=1, int32 val=0)");
+  ASSERT_STR_CONTAINS((*expected_rows[1])[0], "int32 key_idx=1, int32 val=0");
   ASSERT_EQ(expected_rows[2]->size(), 0) << "Got the wrong result from snap: "
                                          << snaps[2].ToString();
   ASSERT_EQ(expected_rows[3]->size(), 1) << "Got the wrong result from snap: "
                                          << snaps[3].ToString();
-  ASSERT_STR_CONTAINS((*expected_rows[3])[0], "int32 key_idx=1, int32 val=1)");
+  ASSERT_STR_CONTAINS((*expected_rows[3])[0], "int32 key_idx=1, int32 val=1");
   ASSERT_EQ(expected_rows[4]->size(), 0) << "Got the wrong result from snap: "
                                          << snaps[4].ToString();
   NO_FATALS(this->CheckLiveRowsCount(0));
@@ -890,6 +891,90 @@ TYPED_TEST(TestTablet, TestUpsert) {
   ASSERT_OK(this->IterateToStringList(&rows));
   EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1002, false) }, rows);
   NO_FATALS(this->CheckLiveRowsCount(1));
+}
+
+TYPED_TEST(TestTablet, TestUpsertIgnore) {
+  vector<string> rows;
+  const auto& upserts_as_updates = this->tablet()->metrics()->upserts_as_updates;
+
+  // Upsert a new row.
+  this->UpsertIgnoreTestRows(0, 1, 1000);
+  EXPECT_EQ(0, upserts_as_updates->value());
+
+  // Upsert a row that is in the MRS.
+  this->UpsertIgnoreTestRows(0, 1, 1001);
+  EXPECT_EQ(1, upserts_as_updates->value());
+
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1001, false) }, rows);
+
+  // Flush it.
+  ASSERT_OK(this->tablet()->Flush());
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1001, false) }, rows);
+
+  // Upsert a row that is in the DRS.
+  this->UpsertIgnoreTestRows(0, 1, 1002);
+  EXPECT_EQ(2, upserts_as_updates->value());
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1002, false) }, rows);
+  NO_FATALS(this->CheckLiveRowsCount(1));
+}
+
+template<class SETUP>
+class TestImmutableColumn : public TabletTestBase<SETUP> {
+  typedef SETUP Type;
+
+ public:
+  // Verify that iteration doesn't fail
+  void CheckCanIterate() {
+    vector<string> out_rows;
+    ASSERT_OK(this->IterateToStringList(&out_rows));
+  }
+
+  void CheckLiveRowsCount(int64_t expect) {
+    uint64_t count = 0;
+    ASSERT_OK(this->tablet()->CountLiveRows(&count));
+    ASSERT_EQ(expect, count);
+  }
+};
+TYPED_TEST_SUITE(TestImmutableColumn, TestImmutableColumnHelperTypes);
+
+TYPED_TEST(TestImmutableColumn, TestUpsert) {
+  vector<string> rows;
+  LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
+  const auto& upserts_as_updates = this->tablet()->metrics()->upserts_as_updates;
+
+  // Upsert a new row with immutable column.
+  KuduPartialRow row(&this->client_schema_);
+  this->setup_.BuildRow(&row, 0, 1000, true /* set_immutable_column */);
+  CHECK_OK(writer.Upsert(row));
+  EXPECT_EQ(0, upserts_as_updates->value());
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{this->setup_.FormatDebugRow(0, 1000, false, 1000) }, rows);
+
+  // Upsert the same row without immutable columns.
+  this->setup_.BuildRow(&row, 0, 1001, false /* set_immutable_column */);
+  CHECK_OK(writer.Upsert(row));
+  EXPECT_EQ(1, upserts_as_updates->value());
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{this->setup_.FormatDebugRow(0, 1001, false, 1000) }, rows);
+
+  // Upsert the same row with immutable columns.
+  this->setup_.BuildRow(&row, 0, 1002, true /* set_immutable_column */);
+  Status s = writer.Upsert(row);
+  EXPECT_TRUE(s.IsImmutable());
+  ASSERT_STR_CONTAINS(s.ToString(), "UPDATE not allowed for immutable column: imm_val");
+  EXPECT_EQ(1, upserts_as_updates->value());
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{this->setup_.FormatDebugRow(0, 1001, false, 1000) }, rows);
+
+  // UpsertIgnore the same row with immutable columns.
+  this->setup_.BuildRow(&row, 0, 1003, true /* set_immutable_column */);
+  CHECK_OK(writer.UpsertIgnore(row));
+  EXPECT_EQ(2, upserts_as_updates->value());
+  ASSERT_OK(this->IterateToStringList(&rows));
+  EXPECT_EQ(vector<string>{this->setup_.FormatDebugRow(0, 1003, false, 1000) }, rows);
 }
 
 // Test that when a row has been updated many times, it always yields
@@ -1622,7 +1707,7 @@ TYPED_TEST(TestTablet, TestDiffScanUnobservableOperations) {
     vector<ColumnSchema> col_schemas(this->client_schema().columns());
     bool read_default = false;
     col_schemas.emplace_back("is_deleted", IS_DELETED, /*is_nullable=*/ false,
-                             &read_default);
+                             /*is_immutable=*/ false, &read_default);
     Schema projection(col_schemas, this->client_schema().num_key_columns());
 
     // Do the diff scan.

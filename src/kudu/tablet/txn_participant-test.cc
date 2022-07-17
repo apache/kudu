@@ -1085,6 +1085,8 @@ TEST_F(TxnParticipantTest, TestUnsupportedOps) {
   ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
   Status s = Write(0, kTxnId, RowOperationsPB::UPSERT);
   ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  s = Write(0, kTxnId, RowOperationsPB::UPSERT_IGNORE);
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
   s = Write(0, kTxnId, RowOperationsPB::UPDATE);
   ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
   s = Write(0, kTxnId, RowOperationsPB::UPDATE_IGNORE);

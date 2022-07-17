@@ -114,6 +114,7 @@ void AddWritePrivilegesForRowOperations(const RowOperationsPB::Type& op_type,
       InsertIfNotPresent(privileges, WritePrivilegeType::INSERT);
       break;
     case RowOperationsPB::UPSERT:
+    case RowOperationsPB::UPSERT_IGNORE:
       InsertIfNotPresent(privileges, WritePrivilegeType::INSERT);
       InsertIfNotPresent(privileges, WritePrivilegeType::UPDATE);
       break;
@@ -317,6 +318,7 @@ void WriteOp::Finish(OpResult result) {
     metrics->rows_inserted->IncrementBy(op_m.successful_inserts);
     metrics->insert_ignore_errors->IncrementBy(op_m.insert_ignore_errors);
     metrics->rows_upserted->IncrementBy(op_m.successful_upserts);
+    metrics->upsert_ignore_errors->IncrementBy(op_m.upsert_ignore_errors);
     metrics->rows_updated->IncrementBy(op_m.successful_updates);
     metrics->update_ignore_errors->IncrementBy(op_m.update_ignore_errors);
     metrics->rows_deleted->IncrementBy(op_m.successful_deletes);
@@ -504,6 +506,13 @@ void WriteOpState::UpdateMetricsForOp(const RowOp& op) {
       DCHECK(!op.error_ignored);
       op_metrics_.successful_upserts++;
       break;
+    case RowOperationsPB::UPSERT_IGNORE:
+      if (op.error_ignored) {
+        op_metrics_.upsert_ignore_errors++;
+      } else {
+        op_metrics_.successful_upserts++;
+      }
+      break;
     case RowOperationsPB::UPDATE:
       DCHECK(!op.error_ignored);
       op_metrics_.successful_updates++;
@@ -669,6 +678,7 @@ void WriteOpState::FillResponseMetrics(consensus::DriverType type) {
   resp_metrics->set_successful_inserts(op_m.successful_inserts);
   resp_metrics->set_insert_ignore_errors(op_m.insert_ignore_errors);
   resp_metrics->set_successful_upserts(op_m.successful_upserts);
+  resp_metrics->set_upsert_ignore_errors(op_m.upsert_ignore_errors);
   resp_metrics->set_successful_updates(op_m.successful_updates);
   resp_metrics->set_update_ignore_errors(op_m.update_ignore_errors);
   resp_metrics->set_successful_deletes(op_m.successful_deletes);

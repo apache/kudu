@@ -75,6 +75,10 @@ class LocalTabletWriter {
     return Write(RowOperationsPB::UPSERT, row);
   }
 
+  Status UpsertIgnore(const KuduPartialRow& row) {
+    return Write(RowOperationsPB::UPSERT_IGNORE, row);
+  }
+
   Status Delete(const KuduPartialRow& row) {
     return Write(RowOperationsPB::DELETE, row);
   }

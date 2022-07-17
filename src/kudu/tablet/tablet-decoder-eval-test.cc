@@ -22,6 +22,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 
 #include <gflags/gflags.h>
@@ -41,7 +42,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
@@ -75,11 +75,11 @@ class TabletDecoderEvalTest : public KuduTabletTest,
 public:
   TabletDecoderEvalTest()
           : KuduTabletTest(Schema({ColumnSchema("key", INT32),
-                                   ColumnSchema("string_val_a", STRING, true,
+                                   ColumnSchema("string_val_a", STRING, true, false,
                                                 nullptr, nullptr,
                                                 ColumnStorageAttributes(DICT_ENCODING,
                                                                         DEFAULT_COMPRESSION)),
-                                   ColumnSchema("string_val_b", STRING, true,
+                                   ColumnSchema("string_val_b", STRING, true, false,
                                                 nullptr, nullptr,
                                                 ColumnStorageAttributes(DICT_ENCODING,
                                                                         DEFAULT_COMPRESSION))}, 1))

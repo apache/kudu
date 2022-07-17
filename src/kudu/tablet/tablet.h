@@ -617,7 +617,7 @@ class Tablet {
   // Validate the given update/delete operation.
   static Status ValidateMutateUnlocked(const RowOp& op);
 
-  // Perform an INSERT, INSERT_IGNORE, or UPSERT operation, assuming that the op is
+  // Perform an INSERT, INSERT_IGNORE, UPSERT, or UPSERT_IGNORE operation, assuming that the op is
   // already in a prepared state. This state ensures that:
   // - the row lock is acquired
   // - the tablet components have been acquired

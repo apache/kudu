@@ -27,6 +27,7 @@
 #include <ostream>
 #include <random>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -55,9 +56,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/txn_manager.proxy.h"
 #include "kudu/rpc/connection.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/cert.h"
@@ -312,6 +311,7 @@ Status KuduClient::Data::GetTabletServer(KuduClient* client,
   return Status::OK();
 }
 
+// TODO(yingchun): Add has_immutable_column_schema
 Status KuduClient::Data::CreateTable(KuduClient* client,
                                      const CreateTableRequestPB& req,
                                      CreateTableResponsePB* resp,

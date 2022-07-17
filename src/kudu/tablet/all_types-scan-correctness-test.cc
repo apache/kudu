@@ -79,9 +79,9 @@ static const int kStrlen = 10;
 struct RowOpsBase {
   RowOpsBase(DataType type, EncodingType encoding) : type_(type), encoding_(encoding) {
     schema_ = Schema({ColumnSchema("key", INT32),
-                     ColumnSchema("val_a", type, true, nullptr, nullptr,
+                     ColumnSchema("val_a", type, true, false, nullptr, nullptr,
                          ColumnStorageAttributes(encoding, DEFAULT_COMPRESSION)),
-                     ColumnSchema("val_b", type, true, nullptr, nullptr,
+                     ColumnSchema("val_b", type, true, false, nullptr, nullptr,
                          ColumnStorageAttributes(encoding, DEFAULT_COMPRESSION))}, 1);
 
   }
@@ -368,11 +368,11 @@ public:
     ASSERT_OK(builder.AddColumn("val_c", rowops_.type_, true, default_ptr, nullptr));
     AlterSchema(builder.Build());
     altered_schema_ = Schema({ColumnSchema("key", INT32),
-                     ColumnSchema("val_a", rowops_.type_, true, nullptr, nullptr,
+                     ColumnSchema("val_a", rowops_.type_, true, false, nullptr, nullptr,
                          ColumnStorageAttributes(rowops_.encoding_, DEFAULT_COMPRESSION)),
-                     ColumnSchema("val_b", rowops_.type_, true, nullptr, nullptr,
+                     ColumnSchema("val_b", rowops_.type_, true, false, nullptr, nullptr,
                          ColumnStorageAttributes(rowops_.encoding_, DEFAULT_COMPRESSION)),
-                     ColumnSchema("val_c", rowops_.type_, true, default_ptr, nullptr,
+                     ColumnSchema("val_c", rowops_.type_, true, false, default_ptr, nullptr,
                          ColumnStorageAttributes(rowops_.encoding_, DEFAULT_COMPRESSION))}, 1);
   }
 

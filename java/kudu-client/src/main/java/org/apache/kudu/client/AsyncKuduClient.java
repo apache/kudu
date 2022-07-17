@@ -2717,6 +2717,8 @@ public class AsyncKuduClient implements AutoCloseable {
     return AsyncUtil.addBoth(response, new PingSupportsFeatureCallback());
   }
 
+  // TODO(yingchun): also need add 'public Deferred<Boolean> supportsUpsertIgnoreOperations()'
+
   private static final class PingSupportsFeatureCallback implements Callback<Boolean, Object> {
     @Override
     public Boolean call(final Object resp) {

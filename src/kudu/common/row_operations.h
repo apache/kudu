@@ -75,7 +75,7 @@ class RowOperationsPBEncoder {
 struct DecodedRowOperation {
   RowOperationsPB::Type type;
 
-  // For INSERT, INSERT_IGNORE, or UPSERT, the whole projected row.
+  // For INSERT, INSERT_IGNORE, UPSERT, or UPSERT_IGNORE, the whole projected row.
   // For UPDATE, UPDATE_IGNORE, DELETE, or DELETE_IGNORE, the row key.
   const uint8_t* row_data;
 
@@ -92,6 +92,11 @@ struct DecodedRowOperation {
 
   // Per-row result status.
   Status result;
+
+  // True if an ignore op was ignored due to an error.
+  // As of now, the error could be one of the following:
+  // - UPDATE_IGNORE op on a row to update an immutable column.
+  bool error_ignored = false;
 
   // Stringifies, including redaction when appropriate.
   std::string ToString(const Schema& schema) const;

@@ -106,6 +106,9 @@ std::string Status::CodeAsString() const {
     case kEndOfFile:
       type = "End of file";
       break;
+    case kImmutable:
+      type = "Immutable";
+      break;
     default:
       LOG(FATAL) << "unreachable";
   }

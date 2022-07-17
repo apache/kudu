@@ -62,6 +62,7 @@ struct OpMetrics {
   int successful_inserts;
   int insert_ignore_errors;
   int successful_upserts;
+  int upsert_ignore_errors;
   int successful_updates;
   int update_ignore_errors;
   int successful_deletes;

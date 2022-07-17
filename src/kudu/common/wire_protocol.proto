@@ -57,6 +57,7 @@ message AppStatusPB {
     INCOMPLETE = 17;
     END_OF_FILE = 18;
     CANCELLED = 19;
+    IMMUTABLE = 20;
   }
 
   required ErrorCode code = 1;

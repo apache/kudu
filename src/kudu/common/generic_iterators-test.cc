@@ -87,6 +87,7 @@ static const bool kIsDeletedReadDefault = false;
 static const Schema kIntSchemaWithVCol({ ColumnSchema("val", INT64),
                                          ColumnSchema("is_deleted", IS_DELETED,
                                                       /*is_nullable=*/false,
+                                                      /*is_immutable=*/false,
                                                       /*read_default=*/&kIsDeletedReadDefault) },
                                        /*key_columns=*/1);
 

@@ -48,6 +48,7 @@
 
 namespace kudu {
 class Schema;
+
 typedef std::shared_ptr<Schema> SchemaPtr;
 }  // namespace kudu
 
@@ -66,7 +67,6 @@ typedef std::shared_ptr<Schema> SchemaPtr;
                                  << (s2).ToString(); \
   } while (0)
 
-template <class X> struct GoodFastHash;
 
 namespace kudu {
 
@@ -208,6 +208,8 @@ class ColumnSchema {
   // name: column name
   // type: column type (e.g. UINT8, INT32, STRING, ...)
   // is_nullable: true if a row value can be null
+  // is_immutable: true if the column is immutable.
+  //    Immutable column means the cell value can not be updated after the first insert.
   // read_default: default value used on read if the column was not present before alter.
   //    The value will be copied and released on ColumnSchema destruction.
   // write_default: default value added to the row if the column value was
@@ -218,13 +220,15 @@ class ColumnSchema {
   // Example:
   //   ColumnSchema col_a("a", UINT32)
   //   ColumnSchema col_b("b", STRING, true);
+  //   ColumnSchema col_b("b", STRING, false, true);
   //   uint32_t default_i32 = -15;
-  //   ColumnSchema col_c("c", INT32, false, &default_i32);
+  //   ColumnSchema col_c("c", INT32, false, false, &default_i32);
   //   Slice default_str("Hello");
-  //   ColumnSchema col_d("d", STRING, false, &default_str);
+  //   ColumnSchema col_d("d", STRING, false, false, &default_str);
   ColumnSchema(std::string name,
                DataType type,
                bool is_nullable = false,
+               bool is_immutable = false,
                const void* read_default = nullptr,
                const void* write_default = nullptr,
                ColumnStorageAttributes attributes = ColumnStorageAttributes(),
@@ -233,6 +237,7 @@ class ColumnSchema {
       : name_(std::move(name)),
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
+        is_immutable_(is_immutable),
         read_default_(read_default ? std::make_shared<Variant>(type, read_default) : nullptr),
         attributes_(attributes),
         type_attributes_(type_attributes),
@@ -250,6 +255,10 @@ class ColumnSchema {
 
   bool is_nullable() const {
     return is_nullable_;
+  }
+
+  bool is_immutable() const {
+    return is_immutable_;
   }
 
   const std::string& name() const {
@@ -327,6 +336,7 @@ class ColumnSchema {
   bool EqualsType(const ColumnSchema& other) const {
     if (this == &other) return true;
     return is_nullable_ == other.is_nullable_ &&
+           is_immutable_ == other.is_immutable_ &&
            type_info()->type() == other.type_info()->type() &&
            type_attributes().EqualsForType(other.type_attributes(), type_info()->type());
   }
@@ -436,6 +446,7 @@ class ColumnSchema {
   std::string name_;
   const TypeInfo* type_info_;
   bool is_nullable_;
+  bool is_immutable_;
   // use shared_ptr since the ColumnSchema is always copied around.
   std::shared_ptr<Variant> read_default_;
   std::shared_ptr<Variant> write_default_;
@@ -1044,16 +1055,23 @@ class SchemaBuilder {
   Status AddColumn(const ColumnSchema& column, bool is_key);
 
   Status AddColumn(const std::string& name, DataType type) {
-    return AddColumn(name, type, false, nullptr, nullptr);
+    return AddColumn(name, type, false, false, nullptr, nullptr);
   }
 
   Status AddNullableColumn(const std::string& name, DataType type) {
-    return AddColumn(name, type, true, nullptr, nullptr);
+    return AddColumn(name, type, true, false, nullptr, nullptr);
   }
 
   Status AddColumn(const std::string& name,
                    DataType type,
                    bool is_nullable,
+                   const void* read_default,
+                   const void* write_default);
+
+  Status AddColumn(const std::string& name,
+                   DataType type,
+                   bool is_nullable,
+                   bool is_immutable,
                    const void* read_default,
                    const void* write_default);
 
