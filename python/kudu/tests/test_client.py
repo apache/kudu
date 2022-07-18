@@ -18,7 +18,10 @@
 
 from kudu.compat import unittest, long
 from kudu.tests.common import KuduTestBase
-from kudu.client import (Partitioning, ENCRYPTION_OPTIONAL, ENCRYPTION_REQUIRED,
+from kudu.client import (Partitioning,
+                         RangePartition,
+                         ENCRYPTION_OPTIONAL,
+                         ENCRYPTION_REQUIRED,
                          ENCRYPTION_REQUIRED_REMOTE)
 import kudu
 import datetime
@@ -152,6 +155,44 @@ class TestClient(KuduTestBase, unittest.TestCase):
         finally:
             try:
                 self.client.delete_table(name)
+            except:
+                pass
+
+    def test_create_table_with_range_specific_hash_schemas(self):
+        table_name = 'create_table_range_specific_hash_schemas'
+        try:
+            # define range with custom hash schema
+            p = RangePartition({'key': 0}, {'key': 100})
+            p.add_hash_partitions(['key'], 5)
+
+            self.client.create_table(
+                table_name, self.schema,
+                partitioning=Partitioning()
+                    .set_range_partition_columns(['key'])
+                    .add_hash_partitions(['key'], 2)
+                    .add_range_partition(
+                        lower_bound={'key': -100},
+                        upper_bound={'key': 0})
+                    .add_custom_range_partition(p)
+            )
+
+            # rely on 1-1 mapping between tokens and tablets for full table scan
+            table = self.client.table(table_name)
+            builder = table.scan_token_builder()
+            builder.set_fault_tolerant()
+            tokens = builder.build()
+            self.assertEqual(7, len(tokens))
+
+            session = self.client.new_session()
+            for i in range(-100, 100):
+                op = table.new_insert((i, i))
+                session.apply(op)
+            session.flush()
+
+            self.client.delete_table(table_name)
+        finally:
+            try:
+                self.client.delete_table(table_name)
             except:
                 pass
 
@@ -499,6 +540,72 @@ class TestClient(KuduTestBase, unittest.TestCase):
         # Add back the unbounded range partition
         alterer.add_range_partition()
         table = alterer.alter()
+
+    def test_alter_table_add_partition_with_custom_hash_schema(self):
+        table_name = 'add_partition_with_custom_hash_schema'
+        try:
+            # create table with [-100, 0) range having table-wide hash schema
+            self.client.create_table(
+                table_name, self.schema,
+                partitioning=Partitioning()
+                    .set_range_partition_columns(['key'])
+                    .add_hash_partitions(['key'], 3)
+                    .add_range_partition(
+                    lower_bound={'key': -100},
+                    upper_bound={'key': 0})
+            )
+
+            # open the newly created table
+            table = self.client.table(table_name)
+
+            # define range with custom hash schema
+            p = RangePartition({'key': 0}, {'key': 100})
+            p.add_hash_partitions(['key'], 2, 8)
+
+            alterer = self.client.new_table_alterer(table)
+            alterer.add_custom_range_partition(p)
+            table = alterer.alter()
+
+            # rely on 1-1 mapping between tokens and tablets for full table scan
+            builder = table.scan_token_builder()
+            builder.set_fault_tolerant()
+            tokens = builder.build()
+            self.assertEqual(5, len(tokens))
+
+            session = self.client.new_session()
+            for i in range(-100, 100):
+                op = table.new_insert((i, i))
+                session.apply(op)
+            session.flush()
+
+            # drop the new custom range partition that hash just been added
+            alterer = self.client.new_table_alterer(table)
+            alterer.drop_range_partition({'key': 0}, {'key': 100})
+            table = alterer.alter()
+
+            # rely on 1-1 mapping between tokens and tablets for full table scan
+            builder = table.scan_token_builder()
+            builder.set_fault_tolerant()
+            tokens = builder.build()
+            self.assertEqual(3, len(tokens))
+
+            # drop the range partition that have table-wide hash schema
+            alterer = self.client.new_table_alterer(table)
+            alterer.drop_range_partition({'key': -100}, {'key': 0})
+            table = alterer.alter()
+
+            # rely on 1-1 mapping between tokens and tablets for full table scan
+            builder = table.scan_token_builder()
+            builder.set_fault_tolerant()
+            tokens = builder.build()
+            self.assertEqual(0, len(tokens))
+
+            self.client.delete_table(table_name)
+        finally:
+            try:
+                self.client.delete_table(table_name)
+            except:
+                pass
 
     def test_require_encryption(self):
         client = kudu.connect(self.master_hosts, self.master_ports,

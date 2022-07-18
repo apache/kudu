@@ -596,7 +596,17 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         string& hostname()
         uint16_t port()
 
+    cdef cppclass KuduRangePartition:
+        KuduRangePartition(KuduPartialRow* lower_bound,
+                           KuduPartialRow* upper_bound,
+                           RangePartitionBound lower_bound_type,
+                           RangePartitionBound upper_bound_type)
+        Status add_hash_partitions(vector[string]& columns,
+                                   int num_buckets,
+                                   int seed)
+
     cdef cppclass KuduTableCreator:
+
         KuduTableCreator& table_name(string& name)
         KuduTableCreator& schema(KuduSchema* schema)
         KuduTableCreator& add_hash_partitions(vector[string]& columns,
@@ -609,6 +619,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
                                               KuduPartialRow* upper_bound,
                                               RangePartitionBound lower_bound_type,
                                               RangePartitionBound upper_bound_type)
+        KuduTableCreator& add_custom_range_partition(KuduRangePartition* p)
         KuduTableCreator& add_range_partition_split(KuduPartialRow* split_row)
         KuduTableCreator& split_rows(vector[const KuduPartialRow*]& split_rows)
         KuduTableCreator& num_replicas(int n_replicas)
@@ -627,6 +638,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
                                             KuduPartialRow* upper_bound,
                                             RangePartitionBound lower_bound_type,
                                             RangePartitionBound upper_bound_type)
+        KuduTableAlterer& AddRangePartition(KuduRangePartition* p)
         KuduTableAlterer& DropRangePartition(KuduPartialRow* lower_bound,
                                              KuduPartialRow* upper_bound,
                                              RangePartitionBound lower_bound_type,

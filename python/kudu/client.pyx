@@ -419,6 +419,7 @@ cdef class Client:
             PartialRow lower_bound
             PartialRow upper_bound
             PartialRow split_row
+            KuduRangePartition* range_partition
 
         # Apply hash partitioning.
         for col_names, num_buckets, seed in part._hash_partitions:
@@ -429,12 +430,36 @@ cdef class Client:
                 c.add_hash_partitions(v, num_buckets, seed)
             else:
                 c.add_hash_partitions(v, num_buckets)
+
         # Apply range partitioning
         if part._range_partition_cols is not None:
             v.clear()
             for n in part._range_partition_cols:
                 v.push_back(tobytes(n))
             c.set_range_partition_columns(v)
+            if part._range_partitions_with_custom_hash_schemas:
+                for p in part._range_partitions_with_custom_hash_schemas:
+                    if not isinstance(p.lower_bound, PartialRow):
+                        lower_bound = schema.new_row(p.lower_bound)
+                    else:
+                        lower_bound = p.lower_bound
+                    lower_bound._own = 0
+                    if not isinstance(p.upper_bound, PartialRow):
+                        upper_bound = schema.new_row(p.upper_bound)
+                    else:
+                        upper_bound = p.upper_bound
+                    upper_bound._own = 0
+                    range_partition = new KuduRangePartition(
+                        lower_bound.row,
+                        upper_bound.row,
+                        p.lower_bound_type,
+                        p.upper_bound_type)
+                    for col_names, num_buckets, seed in p.hash_dimensions:
+                        v.clear()
+                        for n in col_names:
+                            v.push_back(tobytes(n))
+                        range_partition.add_hash_partitions(v, num_buckets, seed if seed else 0)
+                    c.add_custom_range_partition(range_partition)
             if part._range_partitions:
                 for partition in part._range_partitions:
                     if not isinstance(partition[0], PartialRow):
@@ -1208,6 +1233,53 @@ cdef class Column:
 
         return result
 
+
+class RangePartition(object):
+    """
+    Argument to Client.add_custom_range_partition(...) to contain information
+    on the range bounds and range-specific hash schema.
+    """
+    def __init__(self,
+                 lower_bound=None,
+                 upper_bound=None,
+                 lower_bound_type='inclusive',
+                 upper_bound_type='exclusive'):
+        """
+        Parameters
+        ----------
+        lower_bound : PartialRow/list/tuple/dict
+        upper_bound : PartialRow/list/tuple/dict
+        lower_bound_type : {'inclusive', 'exclusive'} or constants
+          kudu.EXCLUSIVE_BOUND and kudu.INCLUSIVE_BOUND
+        upper_bound_type : {'inclusive', 'exclusive'} or constants
+          kudu.EXCLUSIVE_BOUND and kudu.INCLUSIVE_BOUND
+        """
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.lower_bound_type = _check_convert_range_bound_type(lower_bound_type)
+        self.upper_bound_type = _check_convert_range_bound_type(upper_bound_type)
+        self.hash_dimensions = []
+
+    def add_hash_partitions(self, column_names, num_buckets, seed=None):
+        """
+        Adds a dimension with the specified parameters to the custom hash schema
+        for this range partition.
+
+        Parameters
+        ----------
+        column_names : list of string column names on which to compute hash function
+        num_buckets : the number of buckets for the hash function
+        seed : int - optional; the seed for the hash function mapping rows to buckets
+
+        Returns
+        -------
+        self: this object
+        """
+        if isinstance(column_names, str):
+            column_names = [column_names]
+        self.hash_dimensions.append( (column_names, num_buckets, seed) )
+        return self
+
 class Partitioning(object):
     """ Argument to Client.create_table(...) to describe table partitioning. """
 
@@ -1215,6 +1287,7 @@ class Partitioning(object):
         self._hash_partitions = []
         self._range_partition_cols = None
         self._range_partitions = []
+        self._range_partitions_with_custom_hash_schemas = []
         self._range_partition_splits = []
 
     def add_hash_partitions(self, column_names, num_buckets, seed=None):
@@ -1302,8 +1375,26 @@ class Partitioning(object):
         else:
             raise ValueError("Range Partition Columns must be set before " +
                              "adding a range partition.")
-
         return self
+
+
+    def add_custom_range_partition(self, range_partition):
+        """
+        Parameters
+        ----------
+        range_partition : range partition with custom hash schema to add
+
+        Returns
+        -------
+        self : Partitioning
+        """
+        if self._range_partition_cols is None:
+            raise ValueError("Range Partition Columns must be set before " +
+                             "adding a range partition.")
+
+        self._range_partitions_with_custom_hash_schemas.append(range_partition)
+        return self
+
 
     def add_range_partition_split(self, split_row):
         """
@@ -3218,6 +3309,54 @@ cdef class TableAlterer:
             _check_convert_range_bound_type(lower_bound_type),
             _check_convert_range_bound_type(upper_bound_type)
         )
+
+
+    def add_custom_range_partition(self, range_partition):
+        """
+        Add a range partition with custom hash schema.
+
+        Multiple range partitions may be added as part of a single alter table
+        transaction by calling this method multiple times on the table alterer.
+
+        This client may immediately write and scan the new tablets when Alter()
+        returns success, however other existing clients may have to wait for a
+        timeout period to elapse before the tablets become visible. This period
+        is configured by the master's 'table_locations_ttl_ms' flag, and
+        defaults to 5 minutes.
+
+        Parameters
+        ----------
+        range_partition : RangePartition
+
+        Returns
+        -------
+        self : TableAlterer
+        """
+        cdef:
+            vector[string] v
+            KuduRangePartition* p
+            PartialRow lower_bound
+            PartialRow upper_bound
+
+        if not isinstance(range_partition.lower_bound, PartialRow):
+            lower_bound = self._table.schema.new_row(range_partition.lower_bound)
+        else:
+            lower_bound = range_partition.lower_bound
+        lower_bound._own = 0
+        if not isinstance(range_partition.upper_bound, PartialRow):
+            upper_bound = self._table.schema.new_row(range_partition.upper_bound)
+        else:
+            upper_bound = range_partition.upper_bound
+        upper_bound._own = 0
+        p = new KuduRangePartition(
+            lower_bound.row, upper_bound.row,
+            range_partition.lower_bound_type, range_partition.upper_bound_type)
+        for col_names, num_buckets, seed in range_partition.hash_dimensions:
+            v.clear()
+            for n in col_names:
+                v.push_back(tobytes(n))
+            p.add_hash_partitions(v, num_buckets, seed if seed else 0)
+        self._alterer.AddRangePartition(p)
 
     def drop_range_partition(self, lower_bound=None,
                              upper_bound=None,
