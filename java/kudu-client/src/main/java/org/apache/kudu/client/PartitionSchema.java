@@ -177,7 +177,7 @@ public class PartitionSchema {
     return hashBucketSchemas;
   }
 
-  List<RangeWithHashSchema> getRangesWithHashSchemas() {
+  public List<RangeWithHashSchema> getRangesWithHashSchemas() {
     return rangesWithHashSchemas;
   }
 

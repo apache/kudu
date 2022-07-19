@@ -20,7 +20,6 @@ package org.apache.kudu.spark.kudu
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.Date
-
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import org.apache.spark.SparkConf
@@ -29,6 +28,8 @@ import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduClient
 import org.apache.kudu.client.KuduTable
+import org.apache.kudu.client.RangePartitionBound
+import org.apache.kudu.client.RangePartitionWithCustomHashSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.test.KuduTestHarness
@@ -116,6 +117,37 @@ trait KuduTestSuite {
       .setRangePartitionColumns(List("key").asJava)
       .addRangePartition(bottom, middle)
       .addRangePartition(middle, top)
+      .setOwner(owner)
+      .setNumReplicas(1)
+  }
+
+  val tableOptionsWithCustomHashSchema: CreateTableOptions = {
+    val bottom = schema.newPartialRow()
+    bottom.addInt("key", 0)
+    val middle = schema.newPartialRow()
+    middle.addInt("key", 50)
+    val top = schema.newPartialRow()
+    top.addInt("key", 200)
+
+    val columns = List("key").asJava
+    val partitionFirst = new RangePartitionWithCustomHashSchema(
+      bottom,
+      middle,
+      RangePartitionBound.INCLUSIVE_BOUND,
+      RangePartitionBound.EXCLUSIVE_BOUND)
+    partitionFirst.addHashPartitions(columns, 2, 0)
+    val partitionSecond = new RangePartitionWithCustomHashSchema(
+      middle,
+      top,
+      RangePartitionBound.INCLUSIVE_BOUND,
+      RangePartitionBound.EXCLUSIVE_BOUND)
+    partitionSecond.addHashPartitions(columns, 3, 0)
+
+    new CreateTableOptions()
+      .setRangePartitionColumns(columns)
+      .addRangePartition(partitionFirst)
+      .addRangePartition(partitionSecond)
+      .addHashPartitions(columns, 4, 0)
       .setOwner(owner)
       .setNumReplicas(1)
   }

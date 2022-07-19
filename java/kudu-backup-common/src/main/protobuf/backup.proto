@@ -89,11 +89,19 @@ message HashPartitionMetadataPB {
   int32 seed = 3;
 }
 
+// Maps to RangeWithHashSchema class.
+// The fields are effectively 1 to 1 mappings of those in RangeWithHashSchema.
+message RangeAndHashPartitionMetadataPB {
+  RangeBoundsMetadataPB bounds = 1;
+  repeated HashPartitionMetadataPB hash_partitions = 2;
+}
+
 // Maps to PartitionSchema class.
 // The fields are effectively 1 to 1 mappings of those in PartitionSchema.
 message PartitionSchemaMetadataPB {
   repeated HashPartitionMetadataPB hash_partitions = 1;
   RangePartitionMetadataPB range_partitions = 2;
+  repeated RangeAndHashPartitionMetadataPB range_and_hash_partitions = 3;
 }
 
 // Maps to Partition class.

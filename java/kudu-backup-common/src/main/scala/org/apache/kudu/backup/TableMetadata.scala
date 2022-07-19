@@ -39,6 +39,7 @@ import org.apache.kudu.Type
 import org.apache.kudu.client.KuduPartitioner.KuduPartitionerBuilder
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema
 import org.apache.kudu.client.PartitionSchema.RangeSchema
+import org.apache.kudu.client.PartitionSchema.RangeWithHashSchema
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 
@@ -121,11 +122,47 @@ object TableMetadata {
   private def getPartitionSchemaMetadata(table: KuduTable): PartitionSchemaMetadataPB = {
     val hashPartitions = getHashPartitionsMetadata(table)
     val rangePartitions = getRangePartitionMetadata(table)
+    val rangeAndHashPartitions = getRangeAndHashPartitionsMetadata(table)
     PartitionSchemaMetadataPB
       .newBuilder()
       .addAllHashPartitions(hashPartitions.asJava)
       .setRangePartitions(rangePartitions)
+      .addAllRangeAndHashPartitions(rangeAndHashPartitions.asJava)
       .build()
+  }
+
+  private def getRangeAndHashPartitionsMetadata(
+      table: KuduTable): Seq[RangeAndHashPartitionMetadataPB] = {
+    val tableSchema = table.getSchema
+    val partitionSchema = table.getPartitionSchema
+    val rangeColumnNames = partitionSchema.getRangeSchema.getColumnIds.asScala.map { id =>
+      getColumnById(tableSchema, id).getName
+    }
+    partitionSchema.getRangesWithHashSchemas.asScala.map { rhs =>
+      val hashSchemas = rhs.hashSchemas.asScala.map { hs =>
+        val hashColumnNames = hs.getColumnIds.asScala.map { id =>
+          getColumnById(tableSchema, id).getName
+        }
+        HashPartitionMetadataPB
+          .newBuilder()
+          .addAllColumnNames(hashColumnNames.asJava)
+          .setNumBuckets(hs.getNumBuckets)
+          .setSeed(hs.getSeed)
+          .build()
+      }
+      val upperValues = getBoundValues(rhs.upperBound, rangeColumnNames, tableSchema)
+      val lowerValues = getBoundValues(rhs.lowerBound, rangeColumnNames, tableSchema)
+      val bounds = RangeBoundsMetadataPB
+        .newBuilder()
+        .addAllUpperBounds(upperValues.asJava)
+        .addAllLowerBounds(lowerValues.asJava)
+        .build()
+      RangeAndHashPartitionMetadataPB
+        .newBuilder()
+        .setBounds(bounds)
+        .addAllHashPartitions(hashSchemas.asJava)
+        .build()
+    }
   }
 
   private def getHashPartitionsMetadata(table: KuduTable): Seq[HashPartitionMetadataPB] = {
@@ -365,6 +402,16 @@ object TableMetadata {
       val colIds = hp.getColumnNamesList.asScala.map(colNameToId)
       new HashBucketSchema(colIds.asJava, hp.getNumBuckets, hp.getSeed)
     }
-    new PartitionSchema(rangeSchema, hashSchemas.asJava, schema)
+    val rangesWithHashSchemas =
+      metadata.getPartitions.getRangeAndHashPartitionsList.asScala.map { rhp =>
+        val rangeHashSchemas = rhp.getHashPartitionsList.asScala.map { hp =>
+          val colIds = hp.getColumnNamesList.asScala.map(colNameToId)
+          new HashBucketSchema(colIds.asJava, hp.getNumBuckets, hp.getSeed)
+        }
+        val lower = getPartialRow(rhp.getBounds.getLowerBoundsList.asScala, schema)
+        val upper = getPartialRow(rhp.getBounds.getUpperBoundsList.asScala, schema)
+        new RangeWithHashSchema(lower, upper, rangeHashSchemas.asJava)
+      }
+    new PartitionSchema(rangeSchema, hashSchemas.asJava, rangesWithHashSchemas.asJava, schema)
   }
 }

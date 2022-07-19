@@ -19,7 +19,6 @@ package org.apache.kudu.backup
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util
-
 import com.google.common.base.Objects
 import org.apache.commons.io.FileUtils
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema
@@ -591,6 +590,38 @@ class TestKuduBackup extends KuduTestSuite {
   }
 
   @Test
+  def testTableWithCustomHashSchemas(): Unit = {
+    // Create the initial table and load it with data.
+    val tableName = "testTableWithCustomHashSchemas"
+    var table = kuduClient.createTable(tableName, schema, tableOptionsWithCustomHashSchema)
+    insertRows(table, 100)
+
+    // Run and validate initial backup.
+    backupAndValidateTable(tableName, 100, false)
+
+    // Rename the table and insert more rows
+    val newTableName = "impala::default.testTableWithCustomHashSchemas"
+    kuduClient.alterTable(tableName, new AlterTableOptions().renameTable(newTableName))
+    table = kuduClient.openTable(newTableName)
+    insertRows(table, 100, 100)
+
+    // Run and validate an incremental backup.
+    backupAndValidateTable(newTableName, 100, true)
+
+    // Create a new table with the old name.
+    val tableWithOldName =
+      kuduClient.createTable(tableName, schema, tableOptionsWithCustomHashSchema)
+    insertRows(tableWithOldName, 50)
+
+    // Backup the table with the old name.
+    backupAndValidateTable(tableName, 50, false)
+
+    // Restore the tables and check the row counts.
+    restoreAndValidateTable(newTableName, 200)
+    restoreAndValidateTable(tableName, 50)
+  }
+
+  @Test
   def testTableNameChangeFlags() {
     // Create four tables and load data
     val rowCount = 100
@@ -892,6 +923,21 @@ class TestKuduBackup extends KuduTestSuite {
     if (beforeBuckets.size != afterBuckets.size) return false
     val hashBucketsMatch = (0 until beforeBuckets.size).forall { i =>
       HashBucketSchemasMatch(beforeBuckets(i), afterBuckets(i))
+    }
+    val beforeRangeHashSchemas = before.getRangesWithHashSchemas.asScala
+    val afterRangeHashSchemas = after.getRangesWithHashSchemas.asScala
+    if (beforeRangeHashSchemas.size != afterRangeHashSchemas.size) return false
+    for (i <- 0 until beforeRangeHashSchemas.size) {
+      val beforeHashSchemas = beforeRangeHashSchemas(i).hashSchemas.asScala
+      val afterHashSchemas = afterRangeHashSchemas(i).hashSchemas.asScala
+      if (beforeHashSchemas.size != afterHashSchemas.size) return false
+      for (j <- 0 until beforeHashSchemas.size) {
+        if (!HashBucketSchemasMatch(beforeHashSchemas(j), afterHashSchemas(j))) return false
+      }
+      if (!Objects.equal(beforeRangeHashSchemas(i).lowerBound, afterRangeHashSchemas(i).lowerBound)
+        || !Objects
+          .equal(beforeRangeHashSchemas(i).upperBound, afterRangeHashSchemas(i).upperBound))
+        return false
     }
     hashBucketsMatch &&
     Objects.equal(before.getRangeSchema.getColumnIds, after.getRangeSchema.getColumnIds)
