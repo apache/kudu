@@ -28,6 +28,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
@@ -57,6 +58,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_per_range_hash_schemas);
+DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_string(webserver_doc_root);
 
@@ -99,6 +101,10 @@ class FlexPartitioningTest : public KuduTest {
     CHECK_OK(b.Build(&schema_));
   }
 
+  virtual int num_tablet_servers() const {
+    return 1;
+  }
+
   void SetUp() override {
     KuduTest::SetUp();
 
@@ -109,8 +115,10 @@ class FlexPartitioningTest : public KuduTest {
     // on this value of the flag
     FLAGS_webserver_doc_root = "";
 
+    InternalMiniClusterOptions opt;
+    opt.num_tablet_servers = num_tablet_servers();
     // Start minicluster and wait for tablet servers to connect to master.
-    cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, std::move(opt)));
     ASSERT_OK(cluster_->Start());
 
     // Connect to the cluster.
@@ -1944,6 +1952,91 @@ TEST_F(FlexPartitioningAlterTableTest, AddRangeWithDuplicateHashColumns) {
     const auto s = alterer->Alter();
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+  }
+}
+
+class FlexPartitioningScanTest : public FlexPartitioningTest {
+ public:
+  int num_tablet_servers() const override {
+    return 3;
+  }
+
+  void SetUp() override {
+    // This is necessary to make accumulated updates flush to the disk,
+    // so the DRS-level logic for optimizing the scan can kick in as expected.
+    FLAGS_flush_threshold_secs = 1;
+    FlexPartitioningTest::SetUp();
+  }
+};
+
+// This scenario is to reproduce the issue described in KUDU-3384.
+//
+// TODO(aserbin): enable the scenario once KUDU-3384 is fixed
+TEST_F(FlexPartitioningScanTest, DISABLED_MaxKeyValue) {
+  static constexpr const char* const kTableName = "max_key_value";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(3)
+      .set_range_partition_columns({ kKeyColumn });
+  {
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, 0));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+  {
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    ASSERT_OK(lower->SetInt32(kKeyColumn, 0));
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+  ASSERT_OK(table_creator->Create());
+
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+  // Not using InsertTestRows() since need to insert a row with key value
+  // of INT32_MAX.
+  for (int32_t i = INT32_MIN; i < INT32_MIN + 10; ++i) {
+    std::unique_ptr<client::KuduInsert> insert(table->NewInsert());
+    KuduPartialRow* row = insert->mutable_row();
+    ASSERT_OK(row->SetInt32(0, i));
+    ASSERT_OK(row->SetInt32(1, i));
+    ASSERT_OK(session->Apply(insert.release()));
+  }
+
+  for (int32_t i = INT32_MAX; i > INT32_MAX - 10; --i) {
+    std::unique_ptr<client::KuduInsert> insert(table->NewInsert());
+    KuduPartialRow* row = insert->mutable_row();
+    ASSERT_OK(row->SetInt32(0, i));
+    ASSERT_OK(row->SetInt32(1, i));
+    ASSERT_OK(session->Apply(insert.release()));
+  }
+
+  ASSERT_OK(session->Flush());
+
+  for (auto i = 0; i < 25; ++i) {
+    SCOPED_TRACE(Substitute("iteration $0", i));
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.SetTimeoutMillis(60000));
+
+    vector<KuduScanToken*> tokens;
+    ElementDeleter DeleteTable(&tokens);
+    ASSERT_OK(builder.Build(&tokens));
+
+    vector<string> rows;
+    for (auto token : tokens) {
+      KuduScanner* scanner_ptr;
+      ASSERT_OK(token->IntoKuduScanner(&scanner_ptr));
+      ASSERT_OK(scanner_ptr->SetReadMode(KuduScanner::ReadMode::READ_AT_SNAPSHOT));
+      unique_ptr<KuduScanner> scanner(scanner_ptr);
+      ASSERT_OK(ScanToStrings(scanner.get(), &rows));
+    }
   }
 }
 
