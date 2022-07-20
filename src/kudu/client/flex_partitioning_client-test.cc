@@ -1970,9 +1970,7 @@ class FlexPartitioningScanTest : public FlexPartitioningTest {
 };
 
 // This scenario is to reproduce the issue described in KUDU-3384.
-//
-// TODO(aserbin): enable the scenario once KUDU-3384 is fixed
-TEST_F(FlexPartitioningScanTest, DISABLED_MaxKeyValue) {
+TEST_F(FlexPartitioningScanTest, MaxKeyValue) {
   static constexpr const char* const kTableName = "max_key_value";
 
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());

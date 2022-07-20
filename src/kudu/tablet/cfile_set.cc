@@ -442,8 +442,12 @@ Status CFileSet::Iterator::OptimizePKPredicates(ScanSpec* spec) {
 
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
       tablet_schema, &arena_, base_data_->max_encoded_key_, &implicit_ub_key));
-  RETURN_NOT_OK(EncodedKey::IncrementEncodedKey(tablet_schema, &implicit_ub_key, &arena_));
-  if (!ub_key || ub_key->encoded_key() > implicit_ub_key->encoded_key()) {
+  Status s = EncodedKey::IncrementEncodedKey(tablet_schema, &implicit_ub_key, &arena_);
+  // Reset the exclusive_upper_bound_key only when we can get a valid and smaller upper bound key.
+  // In the case IncrementEncodedKey return ERROR status due to allocation fails or no
+  // lexicographically greater key exists, we fall back to scan the rowset without optimizing the
+  // upper bound PK, we may scan more rows but we will still get the right result.
+  if (s.ok() && (!ub_key || ub_key->encoded_key() > implicit_ub_key->encoded_key())) {
     spec->SetExclusiveUpperBoundKey(implicit_ub_key);
     modify_upper_bound_key = true;
   }

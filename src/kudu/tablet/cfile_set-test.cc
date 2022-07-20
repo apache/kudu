@@ -100,7 +100,7 @@ class TestCFileSet : public KuduRowSetTest {
     FLAGS_cfile_default_block_size = 512;
   }
 
-  // Write out a test rowset with two int columns.
+  // Write out a test rowset with three int columns.
   // The first column contains the row index * 2.
   // The second contains the row index * 10.
   // The third column contains index * 100, but is never read.
@@ -118,6 +118,30 @@ class TestCFileSet : public KuduRowSetTest {
       rb.AddInt32(i * kRatio[2]);
       ASSERT_OK_FAST(WriteRow(rb.data(), &rsw));
     }
+    ASSERT_OK(rsw.Finish());
+  }
+
+  void WriteTestRowSetWithMaxValue(int nrows) {
+    DiskRowSetWriter rsw(
+        rowset_meta_.get(), &schema_, BloomFilterSizing::BySizeAndFPRate(32 * 1024, 0.01F));
+
+    ASSERT_OK(rsw.Open());
+
+    RowBuilder rb(&schema_);
+    int i = INT32_MAX - nrows + 1;
+    while (i != INT32_MAX) {
+      rb.Reset();
+      rb.AddInt32(i);
+      rb.AddInt32(i);
+      rb.AddInt32(i);
+      ASSERT_OK_FAST(WriteRow(rb.data(), &rsw));
+      i++;
+    }
+    rb.Reset();
+    rb.AddInt32(i);
+    rb.AddInt32(i);
+    rb.AddInt32(i);
+    ASSERT_OK_FAST(WriteRow(rb.data(), &rsw));
     ASSERT_OK(rsw.Finish());
   }
 
@@ -626,6 +650,35 @@ TEST_F(TestCFileSet, TestInListPredicates) {
   DoTestInListScan(fileset, 10, 1);
   DoTestInListScan(fileset, 100, 5);
   DoTestInListScan(fileset, 1000, 10);
+}
+
+// Regression test for KUDU-3384
+TEST_F(TestCFileSet, TestKUDU3384) {
+  constexpr int kNumRows = 10;
+  WriteTestRowSetWithMaxValue(kNumRows);
+
+  shared_ptr<CFileSet> fileset;
+  ASSERT_OK(CFileSet::Open(
+      rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(), nullptr, &fileset));
+
+  // Create iterator.
+  unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+  unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
+
+  // Check a full scan is successful.
+  ScanSpec spec;
+  ASSERT_OK(iter->Init(&spec));
+  RowBlockMemory mem(1024);
+  RowBlock block(&schema_, 100, &mem);
+  int selected_size = 0;
+  while (iter->HasNext()) {
+    mem.Reset();
+    ASSERT_OK_FAST(iter->NextBlock(&block));
+    selected_size += block.selection_vector()->CountSelected();
+  }
+  ASSERT_EQ(kNumRows, selected_size);
+  // Check a range scan is successful.
+  DoTestRangeScan(fileset, INT32_MAX - kNumRows, INT32_MAX);
 }
 
 class InListPredicateBenchmark : public KuduRowSetTest {
