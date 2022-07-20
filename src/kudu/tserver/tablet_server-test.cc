@@ -3483,6 +3483,26 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_UnknownOrderMode) {
                                      "Unknown order mode specified"));
 }
 
+TEST_F(TabletServerTest, InvalidScanRequestNoGreaterKey) {
+  const int32_t key_val = INT32_MAX;
+  Arena arena(64);
+  EncodedKeyBuilder ekb(&schema_, &arena);
+  ekb.AddColumnKey(&key_val);
+  EncodedKey* key_encoded = ekb.BuildEncodedKey();
+
+  ScanRequestPB req;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  scan->set_order_mode(OrderMode::ORDERED);
+  scan->set_read_mode(ReadMode::READ_AT_SNAPSHOT);
+  scan->set_last_primary_key(key_encoded->encoded_key().ToString());
+  ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  NO_FATALS(VerifyScanRequestFailure(req,
+                                     TabletServerErrorPB::INVALID_SCAN_SPEC,
+                                     "No lexicographically greater key exists"));
+}
+
 // Test that passing a projection with Column IDs throws an exception.
 // Column IDs are assigned to the user request schema on the tablet server
 // based on the latest schema.

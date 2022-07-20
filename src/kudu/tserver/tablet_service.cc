@@ -2191,8 +2191,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
     }
   }
 
-  size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
-  ScanResultCopier collector(batch_size_bytes);
+  ScanResultCopier collector(GetMaxBatchSizeBytesHint(req));
 
   bool has_more_results = false;
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
@@ -2950,8 +2949,9 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   TRACE("Iterator init: $0", s.ToString());
 
   if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << Substitute("Error setting up scanner with request: $0: $1",
-                               s.ToString(), SecureShortDebugString(*req));
+    LOG(WARNING) << Substitute(
+        "error setting up scanner $0 with request: $1: $2",
+        scanner->id(), s.ToString(), SecureShortDebugString(*req));
     // If the replica has been stopped, e.g. due to disk failure, return
     // TABLET_FAILED so the scan can be handled appropriately (fail over to
     // another tablet server if fault-tolerant).
@@ -3005,8 +3005,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
 
   VLOG(1) << "Started scanner " << scanner->id() << ": " << scanner->iter()->ToString();
 
-  size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
-  if (batch_size_bytes > 0) {
+  if (GetMaxBatchSizeBytesHint(req) > 0) {
     TRACE("Continuing scan request");
     // TODO(wdberkeley): Instead of copying the pb, instead split
     // HandleContinueScanRequest and call the second half directly. Once that's
@@ -3016,13 +3015,13 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     ScanRequestPB continue_req(*req);
     continue_req.set_scanner_id(scanner->id());
     scanner_lock.Unlock();
-    RETURN_NOT_OK(HandleContinueScanRequest(&continue_req, rpc_context, result_collector,
-                                            has_more_results, error_code));
-  } else {
-    // Increment the scanner call sequence ID. HandleContinueScanRequest handles
-    // this in the non-empty scan case.
-    scanner->IncrementCallSeqId();
+    return HandleContinueScanRequest(
+        &continue_req, rpc_context, result_collector, has_more_results, error_code);
   }
+
+  // Increment the scanner call sequence ID. HandleContinueScanRequest handles
+  // this in the non-empty scan case.
+  scanner->IncrementCallSeqId();
   return Status::OK();
 }
 
