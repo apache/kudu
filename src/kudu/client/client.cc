@@ -1048,28 +1048,26 @@ Status KuduTableCreator::Create() {
   return Status::OK();
 }
 
-KuduTableCreator::KuduRangePartition::KuduRangePartition(
+KuduRangePartition::KuduRangePartition(
     KuduPartialRow* lower_bound,
     KuduPartialRow* upper_bound,
-    RangePartitionBound lower_bound_type,
-    RangePartitionBound upper_bound_type)
+    KuduTableCreator::RangePartitionBound lower_bound_type,
+    KuduTableCreator::RangePartitionBound upper_bound_type)
     : data_(new Data(lower_bound, upper_bound, lower_bound_type, upper_bound_type)) {
 }
 
-KuduTableCreator::KuduRangePartition::~KuduRangePartition() {
+KuduRangePartition::~KuduRangePartition() {
   delete data_;
 }
 
-Status KuduTableCreator::KuduRangePartition::add_hash_partitions(
+Status KuduRangePartition::add_hash_partitions(
     const vector<string>& columns,
     int32_t num_buckets,
     int32_t seed) {
   if (seed < 0) {
-    // TODO(aserbin): change the signature of
-    //                KuduRangePartition::add_hash_partitions() to use uint32_t
-    //                for the 'seed' parameter while it's still possible since
-    //                the client API hasn't been released yet
-    return Status::InvalidArgument("hash seed must non-negative");
+    // int32_t, not uint32_t for seed is used to be "compatible" with the type
+    // of the 'seed' parameter for KuduTableCreator::add_hash_partitions().
+    return Status::InvalidArgument("hash seed must be non-negative");
   }
   return data_->add_hash_partitions(columns, num_buckets, seed);
 }
@@ -1543,9 +1541,8 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartitionWithDimension(
 
   Data::Step s { AlterTableRequestPB::ADD_RANGE_PARTITION,
                  nullptr,
-                 std::unique_ptr<KuduTableCreator::KuduRangePartition>(
-                     new KuduTableCreator::KuduRangePartition(
-                         lower_bound, upper_bound, lower_bound_type, upper_bound_type)),
+                 std::unique_ptr<KuduRangePartition>(new KuduRangePartition(
+                     lower_bound, upper_bound, lower_bound_type, upper_bound_type)),
                  dimension_label.empty() ? nullopt : make_optional(dimension_label) };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
@@ -1553,7 +1550,7 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartitionWithDimension(
 }
 
 KuduTableAlterer* KuduTableAlterer::AddRangePartition(
-    KuduTableCreator::KuduRangePartition* partition) {
+    KuduRangePartition* partition) {
   CHECK(partition);
   if (partition->data_->lower_bound_ == nullptr || partition->data_->upper_bound_  == nullptr) {
     data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
@@ -1572,7 +1569,7 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartition(
 
   Data::Step s { AlterTableRequestPB::ADD_RANGE_PARTITION,
                  nullptr,
-                 std::unique_ptr<KuduTableCreator::KuduRangePartition>(partition),
+                 std::unique_ptr<KuduRangePartition>(partition),
                  nullopt };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
@@ -1604,9 +1601,8 @@ KuduTableAlterer* KuduTableAlterer::DropRangePartition(
 
   Data::Step s { AlterTableRequestPB::DROP_RANGE_PARTITION,
                  nullptr,
-                 std::unique_ptr<KuduTableCreator::KuduRangePartition>(
-                     new KuduTableCreator::KuduRangePartition(
-                         lower_bound, upper_bound, lower_bound_type, upper_bound_type)) };
+                 std::unique_ptr<KuduRangePartition>(new KuduRangePartition(
+                     lower_bound, upper_bound, lower_bound_type, upper_bound_type)) };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
   return this;

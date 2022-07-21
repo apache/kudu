@@ -57,7 +57,7 @@ class KuduTableAlterer::Data {
 
     // The Kudu range partition to add or drop. Only set when the StepType is
     // [ADD|DROP]_RANGE_PARTITION.
-    std::unique_ptr<KuduTableCreator::KuduRangePartition> range_partition;
+    std::unique_ptr<KuduRangePartition> range_partition;
 
     // The dimension label for tablet. Only set when the StepType is ADD_RANGE_PARTITION.
     std::optional<std::string> dimension_label;

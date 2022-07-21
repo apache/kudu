@@ -604,9 +604,8 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
       unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
       ASSERT_OK(lower_bound->SetInt64("col", 0));
       ASSERT_OK(upper_bound->SetInt64("col", 100));
-      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
-          new KuduTableCreator::KuduRangePartition(lower_bound.release(),
-                                                   upper_bound.release()));
+      unique_ptr<KuduRangePartition> range_partition(
+          new KuduRangePartition(lower_bound.release(), upper_bound.release()));
       range_partition->add_hash_partitions({ "col" }, 4);
       table_creator->add_custom_range_partition(range_partition.release());
     }
@@ -616,9 +615,8 @@ TEST_F(ScanTokenTest, ScanTokensWithCustomHashSchemasPerRange) {
       unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
       ASSERT_OK(lower_bound->SetInt64("col", 100));
       ASSERT_OK(upper_bound->SetInt64("col", 200));
-      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
-          new KuduTableCreator::KuduRangePartition(lower_bound.release(),
-                                                   upper_bound.release()));
+      unique_ptr<KuduRangePartition> range_partition(
+          new KuduRangePartition(lower_bound.release(), upper_bound.release()));
       range_partition->add_hash_partitions({ "col" }, 2);
       table_creator->add_custom_range_partition(range_partition.release());
     }
@@ -752,8 +750,8 @@ TEST_F(ScanTokenTest, TestScanTokensWithCustomHashSchemasPerNonCoveringRange) {
       unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
       ASSERT_OK(lower_bound->SetInt64("col", 0));
       ASSERT_OK(upper_bound->SetInt64("col", 100));
-      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
-          new KuduTableCreator::KuduRangePartition(lower_bound.release(), upper_bound.release()));
+      unique_ptr<KuduRangePartition> range_partition(
+          new KuduRangePartition(lower_bound.release(), upper_bound.release()));
       range_partition->add_hash_partitions({ "col" }, 4);
       table_creator->add_custom_range_partition(range_partition.release());
     }
@@ -763,8 +761,8 @@ TEST_F(ScanTokenTest, TestScanTokensWithCustomHashSchemasPerNonCoveringRange) {
       unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
       ASSERT_OK(lower_bound->SetInt64("col", 200));
       ASSERT_OK(upper_bound->SetInt64("col", 300));
-      unique_ptr<KuduTableCreator::KuduRangePartition> range_partition(
-          new KuduTableCreator::KuduRangePartition(lower_bound.release(), upper_bound.release()));
+      unique_ptr<KuduRangePartition> range_partition(
+          new KuduRangePartition(lower_bound.release(), upper_bound.release()));
       range_partition->add_hash_partitions({ "col" }, 2);
       table_creator->add_custom_range_partition(range_partition.release());
     }

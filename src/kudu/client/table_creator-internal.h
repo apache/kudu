@@ -91,20 +91,20 @@ class KuduTableCreator::Data {
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
 
-class KuduTableCreator::KuduRangePartition::Data {
+class KuduRangePartition::Data {
  public:
   Data(KuduPartialRow* lower_bound,
        KuduPartialRow* upper_bound,
-       RangePartitionBound lower_bound_type,
-       RangePartitionBound upper_bound_type);
+       KuduTableCreator::RangePartitionBound lower_bound_type,
+       KuduTableCreator::RangePartitionBound upper_bound_type);
   ~Data() = default;
 
   Status add_hash_partitions(const std::vector<std::string>& column_names,
                              int32_t num_buckets,
                              uint32_t seed);
 
-  const RangePartitionBound lower_bound_type_;
-  const RangePartitionBound upper_bound_type_;
+  const KuduTableCreator::RangePartitionBound lower_bound_type_;
+  const KuduTableCreator::RangePartitionBound upper_bound_type_;
 
   std::unique_ptr<KuduPartialRow> lower_bound_;
   std::unique_ptr<KuduPartialRow> upper_bound_;

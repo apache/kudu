@@ -129,7 +129,7 @@ class FlexPartitioningTest : public KuduTest {
   }
 
  protected:
-  typedef unique_ptr<KuduTableCreator::KuduRangePartition> RangePartition;
+  typedef unique_ptr<KuduRangePartition> RangePartition;
   typedef vector<RangePartition> RangePartitions;
 
   static Status ApplyInsert(KuduSession* session,
@@ -211,9 +211,8 @@ class FlexPartitioningTest : public KuduTest {
     CHECK_OK(lower->SetInt32(key_column, lower_bound));
     unique_ptr<KuduPartialRow> upper(schema.NewRow());
     CHECK_OK(upper->SetInt32(key_column, upper_bound));
-    return unique_ptr<KuduTableCreator::KuduRangePartition>(
-        new KuduTableCreator::KuduRangePartition(lower.release(),
-                                                 upper.release()));
+    return unique_ptr<KuduRangePartition>(
+        new KuduRangePartition(lower.release(), upper.release()));
   }
 
   RangePartition CreateRangePartition(int32_t lower_bound = 0,
@@ -224,9 +223,8 @@ class FlexPartitioningTest : public KuduTest {
   RangePartition CreateRangePartitionNoUpperBound(int32_t lower_bound) {
     unique_ptr<KuduPartialRow> lower(schema_.NewRow());
     CHECK_OK(lower->SetInt32(kKeyColumn, lower_bound));
-    return unique_ptr<KuduTableCreator::KuduRangePartition>(
-        new KuduTableCreator::KuduRangePartition(lower.release(),
-                                                 schema_.NewRow()));
+    return unique_ptr<KuduRangePartition>(
+        new KuduRangePartition(lower.release(), schema_.NewRow()));
   }
 
   void CheckTabletCount(const char* table_name, int expected_count) {

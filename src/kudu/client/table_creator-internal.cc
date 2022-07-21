@@ -32,11 +32,11 @@ KuduTableCreator::Data::Data(KuduClient* client)
       wait_(true) {
 }
 
-KuduTableCreator::KuduRangePartition::Data::Data(
+KuduRangePartition::Data::Data(
     KuduPartialRow* lower_bound,
     KuduPartialRow* upper_bound,
-    RangePartitionBound lower_bound_type,
-    RangePartitionBound upper_bound_type)
+    KuduTableCreator::RangePartitionBound lower_bound_type,
+    KuduTableCreator::RangePartitionBound upper_bound_type)
     : lower_bound_type_(lower_bound_type),
       upper_bound_type_(upper_bound_type),
       lower_bound_(lower_bound),
@@ -44,7 +44,7 @@ KuduTableCreator::KuduRangePartition::Data::Data(
       is_table_wide_hash_schema_(false) {
 }
 
-Status KuduTableCreator::KuduRangePartition::Data::add_hash_partitions(
+Status KuduRangePartition::Data::add_hash_partitions(
     const vector<string>& column_names,
     int32_t num_buckets,
     uint32_t seed) {
