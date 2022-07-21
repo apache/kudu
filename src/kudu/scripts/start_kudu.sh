@@ -24,6 +24,7 @@
 set -e
 set -o pipefail
 ulimit -n 2048
+set -m
 
 function usage() {
 cat << EOF
@@ -39,7 +40,8 @@ start_kudu.sh [flags]
 --time_source       Time source for Kudu Masters and Tablet Servers
                     (default: system_unsync)
 -b, --builddir      Path to the Kudu build directory
--c  --clusterdir    Path to place the Kudu masters and tablet servers.
+-c, --clusterdir    Path to place the Kudu masters and tablet servers.
+-e, --enable-tde    Enable transparent data encryption.
 -H, --host          RPC address host (default: 127.0.0.1)
 -T, --tserver-flags Extra flags to be used on the tablet servers. Multiple
                     flags can be specified if wrapped in ""s.
@@ -57,6 +59,7 @@ BUILDDIR=""
 CLUSTER_DIR="$PWD"
 EXTRA_TSERVER_FLAGS=""
 EXTRA_MASTER_FLAGS=""
+ENABLE_TDE=""
 IP="127.0.0.1"
 
 while (( "$#" )); do
@@ -100,6 +103,10 @@ while (( "$#" )); do
     -M|--master-flags)
       EXTRA_MASTER_FLAGS=$2
       shift 2
+      ;;
+    -e|--enable-tde)
+      ENABLE_TDE=1
+      shift 1
       ;;
     -H|--host)
       IP=$2
@@ -219,6 +226,9 @@ function start_master() {
   if [ -d "$WEBSERVER_DOC_ROOT" ]; then
     ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
   fi
+  if [ -n "$ENABLE_TDE" ]; then
+    ARGS="$ARGS --encrypt_data_at_rest=true"
+  fi
   # NOTE: a kudu-master process doesn't usually consume a lot of memory,
   #       so the memory hard limit isn't set for them; if kudu-master memory
   #       consumption becomes an issue, provide the necessary flags for
@@ -227,6 +237,7 @@ function start_master() {
   ARGS="$ARGS $EXTRA_MASTER_FLAGS"
   $ARGS &
   pids+=($!)
+  echo "  PID $!"
 }
 
 # Start kudu-tserver process.
@@ -245,6 +256,9 @@ function start_tserver() {
   if [ -d "$WEBSERVER_DOC_ROOT" ]; then
     ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
   fi
+  if [ -n "$ENABLE_TDE" ]; then
+    ARGS="$ARGS --encrypt_data_at_rest=true"
+  fi
 
   # If applicable, set the memory hard limit.
   local mem_limit_flag=$(get_memory_limit_hard_bytes_flag $NUM_TSERVERS)
@@ -254,6 +268,7 @@ function start_tserver() {
   ARGS="$ARGS $EXTRA_TSERVER_FLAGS"
   $ARGS &
   pids+=($!)
+  echo "  PID $!"
 }
 
 # Precompute the comma-separated list of master addresses.
