@@ -600,6 +600,116 @@ public class TestAlterTable {
   }
 
   /**
+   * Test altering a table, adding unbounded range partitions
+   * with custom hash schema.
+   */
+  @Test(timeout = 100000)
+  public void testAlterAddUnboundedRangeWithCustomHashSchema() throws Exception {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(2);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", Type.INT32)
+        .nullable(false)
+        .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+        .nullable(false)
+        .build());
+    final Schema schema = new Schema(columns);
+
+    CreateTableOptions createOptions =
+        new CreateTableOptions()
+            .setRangePartitionColumns(ImmutableList.of("c0"))
+            .addHashPartitions(ImmutableList.of("c0"), 2, 0)
+            .setNumReplicas(1);
+    // Add range partition [-100, 100) with the table-wide hash schema
+    // (to be added upon creating the new table below).
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", -100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 100);
+      createOptions.addRangePartition(lower, upper);
+    }
+    // Add unbounded range partition [100, +inf) with custom hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", 100);
+      PartialRow upper = schema.newPartialRow();
+      RangePartitionWithCustomHashSchema range =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      range.addHashPartitions(ImmutableList.of("c0"), 5, 0);
+      createOptions.addRangePartition(range);
+    }
+
+    client.createTable(tableName, schema, createOptions);
+
+    // Alter the table: add unbounded range partition [-inf, -100) with custom hash schema.
+    {
+      PartialRow lower = schema.newPartialRow();
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", -100);
+      RangePartitionWithCustomHashSchema range =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      range.addHashPartitions(ImmutableList.of("c0"), 3, 0);
+      client.alterTable(tableName, new AlterTableOptions().addRangePartition(range));
+    }
+
+    KuduTable table = client.openTable(tableName);
+
+    // Insert some rows and then drop partitions, ensuring the row count comes
+    // out as expected.
+    insertRows(table, -250, -200);
+    assertEquals(50, countRowsInTable(table));
+    insertRows(table, -200, -50);
+    assertEquals(200, countRowsInTable(table));
+    insertRows(table, -50, 50);
+    assertEquals(300, countRowsInTable(table));
+    insertRows(table, 50, 200);
+    assertEquals(450, countRowsInTable(table));
+    insertRows(table, 200, 250);
+    assertEquals(500, countRowsInTable(table));
+
+    {
+      AlterTableOptions alter = new AlterTableOptions();
+      alter.setWait(true);
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", -100);
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", 100);
+      alter.dropRangePartition(lower, upper);
+      client.alterTable(tableName, alter);
+      assertEquals(300, countRowsInTable(table));
+    }
+    {
+      AlterTableOptions alter = new AlterTableOptions();
+      PartialRow lower = schema.newPartialRow();
+      PartialRow upper = schema.newPartialRow();
+      upper.addInt("c0", -100);
+      alter.dropRangePartition(lower, upper);
+      client.alterTable(tableName, alter);
+      assertEquals(150, countRowsInTable(table));
+    }
+    {
+      AlterTableOptions alter = new AlterTableOptions();
+      PartialRow lower = schema.newPartialRow();
+      lower.addInt("c0", 100);
+      PartialRow upper = schema.newPartialRow();
+      alter.dropRangePartition(lower, upper);
+      client.alterTable(tableName, alter);
+      assertEquals(0, countRowsInTable(table));
+    }
+
+    client.deleteTable(tableName);
+  }
+
+  /**
    * Test altering a table, adding range partitions with custom hash schema
    * per range and dropping partition in the middle, resulting in non-covered
    * ranges between partition with the table-wide and custom hash schemas.

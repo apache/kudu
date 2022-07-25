@@ -205,7 +205,8 @@ public class PartitionSchema {
   /**
    * Find hash schema for the given encoded range key. Depending on the
    * partition schema and the key, it might be either table-wide or a custom
-   * hash schema for a particular range.
+   * hash schema for a particular range. Just as a convention, this method
+   * returns the table-wide hash schema for keys in non-covered ranges.
    *
    * @return hash bucket schema for the encoded range key
    */
@@ -221,10 +222,12 @@ public class PartitionSchema {
     if (entry == null) {
       return hashBucketSchemas;
     }
-    // Check if 'rangeKey' is in the range (null upper boundary means unbounded
-    // range partition).
+    // Check if 'rangeKey' is in the range.
+    // NOTE: the right boundary is exclusive; an empty array for upper boundary
+    //       means that the range partition is unbounded.
     final byte[] upper = entry.upper;
-    if (upper == null || Bytes.memcmp(rangeKey, upper) < 0) {
+    Preconditions.checkNotNull(upper);
+    if (upper.length == 0 || Bytes.memcmp(rangeKey, upper) < 0) {
       return entry.hashSchemas;
     }
     return hashBucketSchemas;

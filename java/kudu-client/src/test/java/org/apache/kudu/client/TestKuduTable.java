@@ -889,6 +889,95 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
+  public void testCreateTableCustomHashSchemasTwoUnboundedRanges() throws Exception {
+    CreateTableOptions builder = getBasicCreateTableOptions();
+
+    {
+      PartialRow lower = basicSchema.newPartialRow();
+      PartialRow upper = basicSchema.newPartialRow();
+      upper.addInt(0, 0);
+
+      RangePartitionWithCustomHashSchema rangePartition =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      rangePartition.addHashPartitions(ImmutableList.of("key"), 2, 0);
+      builder.addRangePartition(rangePartition);
+    }
+    {
+      PartialRow lower = basicSchema.newPartialRow();
+      lower.addInt(0, 0);
+      PartialRow upper = basicSchema.newPartialRow();
+
+      RangePartitionWithCustomHashSchema rangePartition =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      rangePartition.addHashPartitions(ImmutableList.of("key"), 3, 0);
+      builder.addRangePartition(rangePartition);
+    }
+
+    // Add table-wide schema as well -- that's to satisfy the constraint on
+    // the number of hash dimensions in table's hash schemas. However, this
+    // scenario isn't going to create a range with table-wide hash schema.
+    builder.addHashPartitions(ImmutableList.of("key"), 5, 0);
+
+    KuduTable table = client.createTable(tableName, basicSchema, builder);
+
+    // There should be 5 tablets: 2 for [-inf, 0) range and 3 for [0, +inf).
+    List<LocatedTablet> tablets = table.getTabletsLocations(10000);
+    assertEquals(5, tablets.size());
+
+    assertEquals(
+        ImmutableList.of("VALUES < 0", "VALUES >= 0"),
+        client.openTable(tableName).getFormattedRangePartitions(10000));
+    assertEquals(
+        ImmutableList.of(
+            "VALUES < 0 HASH(key) PARTITIONS 2",
+            "VALUES >= 0 HASH(key) PARTITIONS 3"),
+        client.openTable(tableName).getFormattedRangePartitionsWithHashSchema(10000));
+
+    // Insert data into the newly created table and read it back.
+    KuduSession session = client.newSession();
+    for (int key = -250; key < 250; ++key) {
+      Insert insert = createBasicSchemaInsert(table, key);
+      session.apply(insert);
+    }
+    session.flush();
+
+    // Do full table scan.
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(500, rowStrings.size());
+
+    rowStrings = scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(basicSchema.getColumn("key"), GREATER_EQUAL, 0));
+    assertEquals(250, rowStrings.size());
+
+    rowStrings = scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(basicSchema.getColumn("key"), LESS, 0));
+    assertEquals(250, rowStrings.size());
+
+    // Predicate to have one part of the rows in the range with table-wide hash
+    // schema, and the other part from the range with custom hash schema.
+    rowStrings = scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(basicSchema.getColumn("key"), GREATER_EQUAL, -150),
+        KuduPredicate.newComparisonPredicate(basicSchema.getColumn("key"), LESS, 150));
+    assertEquals(300, rowStrings.size());
+
+    rowStrings = scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(basicSchema.getColumn("key"), EQUAL, -250));
+    assertEquals(1, rowStrings.size());
+
+    rowStrings = scanTableToStrings(table,
+        KuduPredicate.newComparisonPredicate(basicSchema.getColumn("key"), EQUAL, 250));
+    assertEquals(0, rowStrings.size());
+  }
+
+  @Test(timeout = 100000)
   public void testCreateTableCustomHashSchemasTwoMixedRanges() throws Exception {
     CreateTableOptions builder = getBasicCreateTableOptions();
 
