@@ -622,7 +622,7 @@ Status PartitionSchema::CreatePartitions(
     }
   }
 
-  UpdatePartitionBoundaries(&new_partitions);
+  UpdatePartitionBoundaries(hash_encoder, &new_partitions);
   *partitions = std::move(new_partitions);
 
   return Status::OK();
@@ -655,7 +655,7 @@ Status PartitionSchema::CreatePartitions(
                              std::make_move_iterator(current_bound_hash_partitions.end()));
   }
 
-  UpdatePartitionBoundaries(&result_partitions);
+  UpdatePartitionBoundaries(hash_encoder, &result_partitions);
   *partitions = std::move(result_partitions);
 
   return Status::OK();
@@ -666,11 +666,28 @@ Status PartitionSchema::CreatePartitionsForRange(
     const HashSchema& range_hash_schema,
     const Schema& schema,
     std::vector<Partition>* partitions) const {
+  RETURN_NOT_OK(CheckRangeSchema(schema));
+
   RangesWithHashSchemas ranges_with_hash_schemas;
   RETURN_NOT_OK(EncodeRangeBounds(
       {range_bound}, {range_hash_schema}, schema, &ranges_with_hash_schemas));
+  DCHECK_EQ(1, ranges_with_hash_schemas.size());
 
-  return CreatePartitions(ranges_with_hash_schemas, schema, partitions);
+  const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
+  const auto& range = ranges_with_hash_schemas.front();
+  vector<Partition> result_partitions = GenerateHashPartitions(
+      range.hash_schema, hash_encoder);
+  // Add range information to the partition key.
+  for (Partition& p : result_partitions) {
+    DCHECK(p.begin_.range_key().empty()) << p.begin_.DebugString();
+    p.begin_.mutable_range_key()->assign(range.lower);
+    DCHECK(p.end().range_key().empty());
+    p.end_.mutable_range_key()->assign(range.upper);
+    UpdatePartitionBoundaries(hash_encoder, range_hash_schema, &p);
+  }
+  *partitions = std::move(result_partitions);
+
+  return Status::OK();
 }
 
 template<typename Row>
@@ -1455,7 +1472,20 @@ Status PartitionSchema::CheckRangeSchema(const Schema& schema) const {
   return Status::OK();
 }
 
-void PartitionSchema::UpdatePartitionBoundaries(vector<Partition>* partitions) const {
+void PartitionSchema::UpdatePartitionBoundaries(
+    const KeyEncoder<string>& hash_encoder,
+    vector<Partition>* partitions) const {
+  for (size_t idx = 0; idx < partitions->size(); ++idx) {
+    auto& p = (*partitions)[idx];
+    UpdatePartitionBoundaries(
+        hash_encoder, GetHashSchemaForRange(p.begin().range_key()), &p);
+  }
+}
+
+void PartitionSchema::UpdatePartitionBoundaries(
+    const KeyEncoder<string>& hash_encoder,
+    const HashSchema& partition_hash_schema,
+    Partition* partition) {
   // Note: the following discussion and logic only takes effect when the table's
   // partition schema includes at least one hash bucket component, and the
   // absolute upper and/or absolute lower range bound is unbounded.
@@ -1474,43 +1504,38 @@ void PartitionSchema::UpdatePartitionBoundaries(vector<Partition>* partitions) c
   // the absolute start and end case, these holes are filled by clearing the
   // partition key beginning at the hash component. For a concrete example,
   // see PartitionTest::TestCreatePartitions.
-  const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
-  for (size_t partition_idx = 0; partition_idx < partitions->size(); ++partition_idx) {
-    auto& p = (*partitions)[partition_idx];
-    const auto& hash_schema = GetHashSchemaForRange(p.begin().range_key());
-    CHECK_EQ(hash_schema.size(), p.hash_buckets().size());
-    const auto hash_buckets_num = static_cast<int>(p.hash_buckets().size());
-    // Find the first nonzero-valued bucket from the end and truncate the
-    // partition key starting from that bucket onwards for zero-valued buckets.
-    //
-    // TODO(aserbin): is this really necessary -- zeros in hash key are the
-    //                minimum possible values, and the range part is already
-    //                empty?
-    if (p.begin().range_key().empty()) {
-      for (int i = hash_buckets_num - 1; i >= 0; --i) {
-        if (p.hash_buckets()[i] != 0) {
-          break;
-        }
-        p.begin_.mutable_hash_key()->erase(kEncodedBucketSize * i);
+  DCHECK(partition);
+  auto& p = *partition; // just a handy shortcut
+  CHECK_EQ(partition_hash_schema.size(), p.hash_buckets().size());
+  const auto hash_buckets_num = static_cast<int>(p.hash_buckets().size());
+  // Find the first nonzero-valued bucket from the end and truncate the
+  // partition key starting from that bucket onwards for zero-valued buckets.
+  // This is necessary to complement the truncation performed below for the
+  // hash part of the partition's end key below.
+  if (p.begin().range_key().empty()) {
+    for (int i = hash_buckets_num - 1; i >= 0; --i) {
+      if (p.hash_buckets()[i] != 0) {
+        break;
       }
+      p.begin_.mutable_hash_key()->erase(kEncodedBucketSize * i);
     }
-    // Starting from the last hash bucket, truncate the partition key until we hit the first
-    // non-max-valued bucket, at which point, replace the encoding with the next-incremented
-    // bucket value. For example, the following range end partition keys should be transformed,
-    // where the key is (hash_comp1, hash_comp2, range_comp):
-    //
-    // [ (0, 0, "") -> (0, 1, "") ]
-    // [ (0, 1, "") -> (1, _, "") ]
-    // [ (1, 0, "") -> (1, 1, "") ]
-    // [ (1, 1, "") -> (_, _, "") ]
-    if (p.end().range_key().empty()) {
-      for (int i = hash_buckets_num - 1; i >= 0; --i) {
-        p.end_.mutable_hash_key()->erase(kEncodedBucketSize * i);
-        const int32_t hash_bucket = p.hash_buckets()[i] + 1;
-        if (hash_bucket != hash_schema[i].num_buckets) {
-          hash_encoder.Encode(&hash_bucket, p.end_.mutable_hash_key());
-          break;
-        }
+  }
+  // Starting from the last hash bucket, truncate the partition key until we hit the first
+  // non-max-valued bucket, at which point, replace the encoding with the next-incremented
+  // bucket value. For example, the following range end partition keys should be transformed,
+  // where the key is (hash_comp1, hash_comp2, range_comp):
+  //
+  // [ (0, 0, "") -> (0, 1, "") ]
+  // [ (0, 1, "") -> (1, _, "") ]
+  // [ (1, 0, "") -> (1, 1, "") ]
+  // [ (1, 1, "") -> (_, _, "") ]
+  if (p.end().range_key().empty()) {
+    for (int i = hash_buckets_num - 1; i >= 0; --i) {
+      p.end_.mutable_hash_key()->erase(kEncodedBucketSize * i);
+      const int32_t hash_bucket = p.hash_buckets()[i] + 1;
+      if (hash_bucket != partition_hash_schema[i].num_buckets) {
+        hash_encoder.Encode(&hash_bucket, p.end_.mutable_hash_key());
+        break;
       }
     }
   }

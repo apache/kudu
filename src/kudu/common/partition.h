@@ -24,6 +24,8 @@
 #include <utility>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/common/schema.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/slice.h"
@@ -634,7 +636,14 @@ class PartitionSchema {
   // method fills in the address space to have the proper ordering of the
   // serialized partition keys -- that's important for partition pruning and
   // overall ordering of the serialized partition keys.
-  void UpdatePartitionBoundaries(std::vector<Partition>* partitions) const;
+  void UpdatePartitionBoundaries(const KeyEncoder<std::string>& hash_encoder,
+                                 std::vector<Partition>* partitions) const;
+  // Similar to the above, but update the boundaries for just a single partition
+  // specified along with its hash schema.
+  static void UpdatePartitionBoundaries(
+      const KeyEncoder<std::string>& hash_encoder,
+      const HashSchema& partition_hash_schema,
+      Partition* partition);
 
   // Validates the split rows, converts them to partition key form, and inserts
   // them into splits in sorted order.
