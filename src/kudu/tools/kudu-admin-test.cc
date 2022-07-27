@@ -2086,6 +2086,64 @@ TEST_F(AdminCliTest, TestDescribeTableNoOwner) {
   ASSERT_STR_CONTAINS(stdout, "OWNER \n");
 }
 
+TEST_F(AdminCliTest, TestDescribeTableCustomHashSchema) {
+  NO_FATALS(BuildAndStart({}, {}, {}, /*create_table*/false));
+  KuduSchema schema;
+
+  // Build the schema
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key_range")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_hash0")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_hash1")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.SetPrimaryKey({"key_range", "key_hash0", "key_hash1"});
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  constexpr const char* const kTableName = "table_with_custom_hash_schema";
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema)
+      .add_hash_partitions({"key_hash0"}, 2)
+      .set_range_partition_columns({"key_range"})
+      .num_replicas(1);
+
+  // Create a KuduRangePartition with custom hash schema
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    CHECK_OK(lower->SetInt32("key_range", 0));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    CHECK_OK(upper->SetInt32("key_range", 100));
+    unique_ptr<client::KuduRangePartition> partition(
+        new client::KuduRangePartition(lower.release(), upper.release()));
+    partition->add_hash_partitions({"key_hash1"}, 3);
+    table_creator->add_custom_range_partition(partition.release());
+  }
+
+  // Create a partition with table wide hash schema
+  {
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    CHECK_OK(lower->SetInt32("key_range", 100));
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    CHECK_OK(upper->SetInt32("key_range", 200));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+
+  // Create the table and run the tool
+  ASSERT_OK(table_creator->Create());
+  string stdout;
+  ASSERT_OK(RunKuduTool(
+      {
+          "table",
+          "describe",
+          cluster_->master()->bound_rpc_addr().ToString(),
+          kTableName,
+      },
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, "PARTITION 0 <= VALUES < 100 HASH(key_hash1) PARTITIONS 3,\n"
+                              "    PARTITION 100 <= VALUES < 200");
+}
+
 TEST_F(AdminCliTest, TestListTabletWithPartition) {
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;

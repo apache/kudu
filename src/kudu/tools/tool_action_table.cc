@@ -435,9 +435,9 @@ Status DescribeTable(const RunnerContext& context) {
       continue;
     }
     auto range_partition_str =
-        partition_schema.RangePartitionDebugString(partition.begin().range_key(),
-                                                   partition.end().range_key(),
-                                                   schema_internal);
+        partition_schema.RangeWithCustomHashPartitionDebugString(partition.begin().range_key(),
+                                                                 partition.end().range_key(),
+                                                                 schema_internal);
     partition_strs.emplace_back(std::move(range_partition_str));
   }
   cout << partition_schema.DisplayString(schema_internal, partition_strs)
