@@ -21,6 +21,8 @@ import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.client.AlterTableOptions
 import org.apache.kudu.client.KuduPartitioner
 import org.apache.kudu.client.Partition
+import org.apache.kudu.client.RangePartitionBound
+import org.apache.kudu.client.RangePartitionWithCustomHashSchema
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.kudu.spark.kudu.RowConverter
@@ -263,20 +265,79 @@ object KuduRestore {
     // Create the table with the first range partition (or none if there are none).
     val schema = TableMetadata.getKuduSchema(metadata)
     val options = TableMetadata.getCreateTableOptionsWithoutRangePartitions(metadata, restoreOwner)
-    val bounds = TableMetadata.getRangeBoundPartialRows(metadata)
-    bounds.headOption.foreach(bound => {
-      val (lower, upper) = bound
-      options.addRangePartition(lower, upper)
-    })
-    context.createTable(restoreName, schema, options)
+    // Returns the range bounds of the ranges that contain the table wide hash schema.
+    val boundsWithoutHashSchema = TableMetadata.getRangeBoundPartialRows(metadata)
+    // Returns the range bounds and hash schema of the ranges that contain a custom hash schema.
+    val boundsWithCustomHashSchema =
+      TableMetadata.getRangeBoundsPartialRowsWithHashSchemas(metadata)
+    if (boundsWithoutHashSchema.nonEmpty) {
+      // Adds the first range partition with table wide hash schema through create.
+      boundsWithoutHashSchema.headOption.foreach(bound => {
+        val (lower, upper) = bound
+        options.addRangePartition(lower, upper)
+      })
+      context.createTable(restoreName, schema, options)
 
-    // Add the rest of the range partitions through alters.
-    bounds.tail.foreach(bound => {
-      val (lower, upper) = bound
-      val options = new AlterTableOptions()
-      options.addRangePartition(lower, upper)
-      context.syncClient.alterTable(restoreName, options)
-    })
+      // Add the rest of the range partitions with table wide hash schema through alters.
+      boundsWithoutHashSchema.tail.foreach(bound => {
+        val (lower, upper) = bound
+        val options = new AlterTableOptions()
+        options.addRangePartition(lower, upper)
+        context.syncClient.alterTable(restoreName, options)
+      })
+
+      // Adds range partitions with custom hash schema through alters.
+      boundsWithCustomHashSchema.foreach(bound => {
+        val rangePartition = new RangePartitionWithCustomHashSchema(
+          bound.lowerBound,
+          bound.upperBound,
+          RangePartitionBound.INCLUSIVE_BOUND,
+          RangePartitionBound.EXCLUSIVE_BOUND)
+        bound.hashSchemas.asScala.foreach { hp =>
+          val columnNames = hp.getColumnIds.asScala.map { id =>
+            schema.getColumnByIndex(id).getName
+          }
+          rangePartition.addHashPartitions(columnNames.asJava, hp.getNumBuckets, hp.getSeed)
+        }
+        val options = new AlterTableOptions()
+        options.addRangePartition(rangePartition)
+        context.syncClient.alterTable(restoreName, options)
+      })
+    } else if (boundsWithCustomHashSchema.nonEmpty) {
+      // Adds first range partition with custom hash schema through create.
+      boundsWithCustomHashSchema.headOption.foreach(bound => {
+        val rangePartition = new RangePartitionWithCustomHashSchema(
+          bound.lowerBound,
+          bound.upperBound,
+          RangePartitionBound.INCLUSIVE_BOUND,
+          RangePartitionBound.EXCLUSIVE_BOUND)
+        bound.hashSchemas.asScala.foreach { hp =>
+          val columnNames = hp.getColumnIds.asScala.map { id =>
+            schema.getColumnByIndex(id).getName
+          }
+          rangePartition.addHashPartitions(columnNames.asJava, hp.getNumBuckets, hp.getSeed)
+        }
+        options.addRangePartition(rangePartition)
+      })
+      context.createTable(restoreName, schema, options)
+      // Adds rest of range partitions with custom hash schema through alters.
+      boundsWithCustomHashSchema.tail.foreach(bound => {
+        val rangePartition = new RangePartitionWithCustomHashSchema(
+          bound.lowerBound,
+          bound.upperBound,
+          RangePartitionBound.INCLUSIVE_BOUND,
+          RangePartitionBound.EXCLUSIVE_BOUND)
+        bound.hashSchemas.asScala.foreach { hp =>
+          val columnNames = hp.getColumnIds.asScala.map { id =>
+            schema.getColumnByIndex(id).getName
+          }
+          rangePartition.addHashPartitions(columnNames.asJava, hp.getNumBuckets, hp.getSeed)
+        }
+        val options = new AlterTableOptions()
+        options.addRangePartition(rangePartition)
+        context.syncClient.alterTable(restoreName, options)
+      })
+    }
   }
 
   /**

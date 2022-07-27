@@ -125,7 +125,7 @@ trait KuduTestSuite {
     val bottom = schema.newPartialRow()
     bottom.addInt("key", 0)
     val middle = schema.newPartialRow()
-    middle.addInt("key", 50)
+    middle.addInt("key", 100)
     val top = schema.newPartialRow()
     top.addInt("key", 200)
 
@@ -147,6 +147,40 @@ trait KuduTestSuite {
       .setRangePartitionColumns(columns)
       .addRangePartition(partitionFirst)
       .addRangePartition(partitionSecond)
+      .addHashPartitions(columns, 4, 0)
+      .setOwner(owner)
+      .setNumReplicas(1)
+  }
+
+  val tableOptionsWithTableAndCustomHashSchema: CreateTableOptions = {
+    val lowest = schema.newPartialRow()
+    lowest.addInt("key", 0)
+    val low = schema.newPartialRow()
+    low.addInt("key", 100)
+    val high = schema.newPartialRow()
+    high.addInt("key", 200)
+    val highest = schema.newPartialRow()
+    highest.addInt("key", 300)
+
+    val columns = List("key").asJava
+    val partitionFirst = new RangePartitionWithCustomHashSchema(
+      lowest,
+      low,
+      RangePartitionBound.INCLUSIVE_BOUND,
+      RangePartitionBound.EXCLUSIVE_BOUND)
+    partitionFirst.addHashPartitions(columns, 2, 0)
+    val partitionSecond = new RangePartitionWithCustomHashSchema(
+      low,
+      high,
+      RangePartitionBound.INCLUSIVE_BOUND,
+      RangePartitionBound.EXCLUSIVE_BOUND)
+    partitionSecond.addHashPartitions(columns, 3, 0)
+
+    new CreateTableOptions()
+      .setRangePartitionColumns(columns)
+      .addRangePartition(partitionFirst)
+      .addRangePartition(partitionSecond)
+      .addRangePartition(high, highest)
       .addHashPartitions(columns, 4, 0)
       .setOwner(owner)
       .setNumReplicas(1)

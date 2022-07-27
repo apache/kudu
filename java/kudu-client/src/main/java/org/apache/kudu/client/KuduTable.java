@@ -340,6 +340,32 @@ public class KuduTable {
   public List<Partition> getRangePartitions(long timeout) throws Exception {
     // TODO: This could be moved into the RangeSchemaPB returned from server
     // to avoid an extra call to get the range partitions.
+    return getRangePartitionsHelper(timeout, false);
+  }
+
+  /**
+   * Only retrieves this table's range partitions that contain the table wide hash schema. The
+   * range partitions will be returned in sorted order by value, and will contain no duplicates.
+   *
+   * @param timeout the timeout of the operation
+   * @return a list of the formatted range partitions
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public List<Partition> getRangePartitionsWithTableHashSchema(long timeout) throws Exception {
+    return getRangePartitionsHelper(timeout, true);
+  }
+
+  /**
+   * Helper method that retrieves the table's range partitions. If onlyTableHashSchema is evaluated
+   * to true, then only range partitions that have the table wide hash schema will be returned. The
+   * range partitions will be returned in sorted order by value and will contain no duplicates.
+   * @param timeout the timeout of the operation
+   * @param onlyTableHashSchema whether to filter out the partitions with custom hash schema
+   * @return a list of the formatted range partitions
+   */
+  private List<Partition> getRangePartitionsHelper(long timeout,
+                                                   boolean onlyTableHashSchema) throws Exception {
     List<Partition> rangePartitions = new ArrayList<>();
     List<KuduScanToken> scanTokens = new KuduScanToken.KuduScanTokenBuilder(client, this)
         .setTimeout(timeout)
@@ -349,6 +375,12 @@ public class KuduTable {
       // Filter duplicate range partitions by taking only the tablets whose hash
       // partitions are all 0s.
       if (!Iterators.all(partition.getHashBuckets().iterator(), Predicates.equalTo(0))) {
+        continue;
+      }
+      // If onlyTableHashSchema is true, filter out any partitions
+      // that are part of a range that contains a custom hash schema.
+      if (onlyTableHashSchema && partitionSchema.getHashSchemaForRange(partition.rangeKeyStart) !=
+          partitionSchema.getHashBucketSchemas()) {
         continue;
       }
       rangePartitions.add(partition);

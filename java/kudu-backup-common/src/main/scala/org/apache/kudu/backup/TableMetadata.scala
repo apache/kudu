@@ -189,7 +189,7 @@ object TableMetadata {
     }
 
     val bounds = table
-      .getRangePartitions(table.getAsyncClient.getDefaultOperationTimeoutMs)
+      .getRangePartitionsWithTableHashSchema(table.getAsyncClient.getDefaultOperationTimeoutMs)
       .asScala
       .map { p =>
         val lowerValues = getBoundValues(p.getDecodedRangeKeyStart(table), columnNames, tableSchema)
@@ -389,6 +389,22 @@ object TableMetadata {
       val lower = getPartialRow(b.getLowerBoundsList.asScala, schema)
       val upper = getPartialRow(b.getUpperBoundsList.asScala, schema)
       (lower, upper)
+    }
+  }
+
+  def getRangeBoundsPartialRowsWithHashSchemas(
+      metadata: TableMetadataPB): Seq[RangeWithHashSchema] = {
+    val schema = getKuduSchema(metadata)
+    metadata.getPartitions.getRangeAndHashPartitionsList.asScala.map { rhp =>
+      val hashSchemas = rhp.getHashPartitionsList.asScala.map { hp =>
+        val colIds = hp.getColumnNamesList.asScala.map { name =>
+          new Integer(schema.getColumnIndex(schema.getColumnId(name)))
+        }
+        new HashBucketSchema(colIds.asJava, hp.getNumBuckets, hp.getSeed)
+      }
+      val lower = getPartialRow(rhp.getBounds.getLowerBoundsList.asScala, schema)
+      val upper = getPartialRow(rhp.getBounds.getUpperBoundsList.asScala, schema)
+      new RangeWithHashSchema(lower, upper, hashSchemas.asJava)
     }
   }
 

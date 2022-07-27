@@ -590,35 +590,116 @@ class TestKuduBackup extends KuduTestSuite {
   }
 
   @Test
-  def testTableWithCustomHashSchemas(): Unit = {
+  def testTableWithOnlyCustomHashSchemas(): Unit = {
     // Create the initial table and load it with data.
-    val tableName = "testTableWithCustomHashSchemas"
-    var table = kuduClient.createTable(tableName, schema, tableOptionsWithCustomHashSchema)
+    val tableName = "testTableWithOnlyCustomHashSchemas"
+    val table = kuduClient.createTable(tableName, schema, tableOptionsWithCustomHashSchema)
     insertRows(table, 100)
 
     // Run and validate initial backup.
     backupAndValidateTable(tableName, 100, false)
 
-    // Rename the table and insert more rows
-    val newTableName = "impala::default.testTableWithCustomHashSchemas"
-    kuduClient.alterTable(tableName, new AlterTableOptions().renameTable(newTableName))
-    table = kuduClient.openTable(newTableName)
+    // Insert rows then run and validate an incremental backup.
     insertRows(table, 100, 100)
+    backupAndValidateTable(tableName, 100, true)
 
-    // Run and validate an incremental backup.
-    backupAndValidateTable(newTableName, 100, true)
+    // Restore the table and check the row count.
+    restoreAndValidateTable(tableName, 200)
 
-    // Create a new table with the old name.
-    val tableWithOldName =
-      kuduClient.createTable(tableName, schema, tableOptionsWithCustomHashSchema)
-    insertRows(tableWithOldName, 50)
+    // Check the range bounds and the hash schema of each range of the restored table.
+    val restoredTable = kuduClient.openTable(s"$tableName-restore")
+    assertEquals(
+        "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
+        "100 <= VALUES < 200 HASH(key) PARTITIONS 3]",
+      restoredTable.getFormattedRangePartitionsWithHashSchema(10000).toString
+    )
+  }
 
-    // Backup the table with the old name.
-    backupAndValidateTable(tableName, 50, false)
+  @Test
+  def testTableWithTableAndCustomHashSchemas(): Unit = {
+    // Create the initial table and load it with data.
+    val tableName = "testTableWithTableAndCustomHashSchemas"
+    val table = kuduClient.createTable(tableName, schema, tableOptionsWithTableAndCustomHashSchema)
+    insertRows(table, 100)
 
-    // Restore the tables and check the row counts.
-    restoreAndValidateTable(newTableName, 200)
-    restoreAndValidateTable(tableName, 50)
+    // Run and validate initial backup.
+    backupAndValidateTable(tableName, 100, false)
+
+    // Insert rows then run and validate an incremental backup.
+    insertRows(table, 200, 100)
+    backupAndValidateTable(tableName, 200, true)
+
+    // Restore the table and check the row count.
+    restoreAndValidateTable(tableName, 300)
+
+    // Check the range bounds and the hash schema of each range of the restored table.
+    val restoredTable = kuduClient.openTable(s"$tableName-restore")
+    assertEquals(
+        "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
+        "100 <= VALUES < 200 HASH(key) PARTITIONS 3, " +
+        "200 <= VALUES < 300 HASH(key) PARTITIONS 4]",
+      restoredTable.getFormattedRangePartitionsWithHashSchema(10000).toString
+    )
+  }
+
+  @Test
+  def testTableAlterWithTableAndCustomHashSchemas(): Unit = {
+    // Create the initial table and load it with data.
+    val tableName = "testTableAlterWithTableAndCustomHashSchemas"
+    var table = kuduClient.createTable(tableName, schema, tableOptionsWithTableAndCustomHashSchema)
+    insertRows(table, 100)
+
+    // Run and validate initial backup.
+    backupAndValidateTable(tableName, 100, false)
+
+    // Insert rows then run and validate an incremental backup.
+    insertRows(table, 200, 100)
+    backupAndValidateTable(tableName, 200, true)
+
+    // Drops range partition with table wide hash schema and re-adds same range partition with
+    // custom hash schema, also adds another range partition with custom hash schema through alter.
+    val twoHundred = createPartitionRow(200)
+    val threeHundred = createPartitionRow(300)
+    val fourHundred = createPartitionRow(400)
+    val newPartition = new RangePartitionWithCustomHashSchema(
+      twoHundred,
+      threeHundred,
+      RangePartitionBound.INCLUSIVE_BOUND,
+      RangePartitionBound.EXCLUSIVE_BOUND)
+    newPartition.addHashPartitions(List("key").asJava, 5, 0)
+    val newPartition1 = new RangePartitionWithCustomHashSchema(
+      threeHundred,
+      fourHundred,
+      RangePartitionBound.INCLUSIVE_BOUND,
+      RangePartitionBound.EXCLUSIVE_BOUND)
+    newPartition1.addHashPartitions(List("key").asJava, 6, 0)
+    kuduClient.alterTable(
+      tableName,
+      new AlterTableOptions()
+        .dropRangePartition(twoHundred, threeHundred)
+        .addRangePartition(newPartition)
+        .addRangePartition(newPartition1))
+
+    // TODO: Avoid this table refresh by updating partition schema after alter table calls.
+    // See https://issues.apache.org/jira/browse/KUDU-3388 for more details.
+    table = kuduClient.openTable(tableName)
+
+    // Insert rows then run and validate an incremental backup.
+    insertRows(table, 100, 300)
+    backupAndValidateTable(tableName, 100, true)
+
+    // Restore the table and validate.
+    assertTrue(runRestore(createRestoreOptions(Seq(tableName))))
+
+    // Check the range bounds and the hash schema of each range of the restored table.
+    val restoredTable = kuduClient.openTable(s"$tableName-restore")
+    assertEquals(
+        "[0 <= VALUES < 100 HASH(key) PARTITIONS 2, " +
+        "100 <= VALUES < 200 HASH(key) PARTITIONS 3, " +
+        "200 <= VALUES < 300 HASH(key) PARTITIONS 5, " +
+        "300 <= VALUES < 400 HASH(key) PARTITIONS 6]",
+      restoredTable.getFormattedRangePartitionsWithHashSchema(10000).toString
+    )
   }
 
   @Test

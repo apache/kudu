@@ -1641,6 +1641,89 @@ public class TestKuduTable {
   }
 
   @Test(timeout = 100000)
+  public void testGetRangePartitionsWithTableHashSchema() throws Exception {
+    // The test table is created with the following ranges:
+    //   (-inf, -100) [-100, 0) [0, 100), [100, +inf)
+
+    CreateTableOptions builder = getBasicCreateTableOptions();
+    // Add table-wide schema with one dimensions and two buckets.
+    builder.addHashPartitions(ImmutableList.of("key"), 2, 0);
+
+    // Add range partition with custom hash schema: (-inf, -100)
+    {
+      PartialRow lower = basicSchema.newPartialRow();
+      PartialRow upper = basicSchema.newPartialRow();
+      upper.addInt(0, -100);
+
+      RangePartitionWithCustomHashSchema rangePartition =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      rangePartition.addHashPartitions(ImmutableList.of("key"), 2, 1);
+
+      builder.addRangePartition(rangePartition);
+    }
+
+    // Add range partition with table-wide hash schema: [-100, 0)
+    {
+      PartialRow lower = basicSchema.newPartialRow();
+      lower.addInt(0, -100);
+      PartialRow upper = basicSchema.newPartialRow();
+      upper.addInt(0, 0);
+
+      builder.addRangePartition(lower, upper);
+    }
+
+    // Add range partition with custom hash schema: [0, 100)
+    {
+      PartialRow lower = basicSchema.newPartialRow();
+      lower.addInt(0, 0);
+      PartialRow upper = basicSchema.newPartialRow();
+      upper.addInt(0, 100);
+
+      RangePartitionWithCustomHashSchema rangePartition =
+          new RangePartitionWithCustomHashSchema(
+              lower,
+              upper,
+              RangePartitionBound.INCLUSIVE_BOUND,
+              RangePartitionBound.EXCLUSIVE_BOUND);
+      rangePartition.addHashPartitions(ImmutableList.of("key"), 5, 0);
+
+      builder.addRangePartition(rangePartition);
+    }
+
+    // Add range partition with table-wide hash schema: [100, +inf)
+    {
+      PartialRow lower = basicSchema.newPartialRow();
+      lower.addInt(0, 100);
+      PartialRow upper = basicSchema.newPartialRow();
+
+      builder.addRangePartition(lower, upper);
+    }
+
+    final KuduTable table = client.createTable(tableName, basicSchema, builder);
+    List<Partition> rangePartitions =
+        table.getRangePartitionsWithTableHashSchema(client.getDefaultOperationTimeoutMs());
+    assertEquals(rangePartitions.size(), 2);
+
+    Partition lowerPartition = rangePartitions.get(0);
+    assertTrue(lowerPartition.getRangeKeyStart().length > 0);
+    assertTrue(lowerPartition.getRangeKeyEnd().length > 0);
+    PartialRow decodedLower = lowerPartition.getDecodedRangeKeyStart(table);
+    assertEquals(-100, decodedLower.getInt("key"));
+    PartialRow decodedUpper = lowerPartition.getDecodedRangeKeyEnd(table);
+    assertEquals(0, decodedUpper.getInt("key"));
+
+    Partition upperPartition = rangePartitions.get(1);
+    assertTrue(upperPartition.getRangeKeyStart().length > 0);
+    assertEquals(0, upperPartition.getRangeKeyEnd().length);
+    PartialRow decodedLowerKey = upperPartition.getDecodedRangeKeyStart(table);
+    assertEquals(100, decodedLowerKey.getInt("key"));
+  }
+
+  @Test(timeout = 100000)
   public void testAlterNoWait() throws Exception {
     client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
 

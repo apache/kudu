@@ -26,9 +26,9 @@ import org.apache.yetus.audience.InterfaceStability;
  *
  * See also RangePartitionWithCustomHashSchema.
  */
-@InterfaceAudience.Private
+@InterfaceAudience.LimitedPrivate({"kudu-backup", "Test"})
 @InterfaceStability.Evolving
-class RangePartition {
+public class RangePartition {
   final PartialRow lowerBound;
   final PartialRow upperBound;
   final RangePartitionBound lowerBoundType;
