@@ -426,9 +426,9 @@ message PartitionPB {
     // Column names of columns included in the range. All columns must be
     // a component of the primary key.
     repeated string columns = 1;
-    // Range bound.
+    // Range bounds.
     repeated RangeBoundPB range_bounds = 2;
-    // Range split.
+    // Range splits.
     repeated SplitValuePB range_splits = 3;
   }
 
@@ -467,17 +467,22 @@ message SchemaPB {
 // is converted to the PB. Used for creating a new table by kudu tool.
 message CreateTablePB {
   optional string table_name = 1;
-  // Representation of a table's schema, include columns's message and
-  // primary keys.
+  // Representation of a table's schema.
   optional SchemaPB schema = 2;
-  // The table partition message, include hash partition and range partition.
+  // Information on the table partitioning.
   optional PartitionPB partition = 3;
-  //Number of tablet replica
+  // Number of replicas for table's tablets.
   optional int32 num_replicas = 4;
   // The table's extra configuration properties.
   optional ExtraConfigPB extra_configs = 5;
-  // The dimension label for tablets that were created during table creation. Used for
-  // dimension-specific placement of tablet replicas corresponding to the partitions of
-  // the newly created table.
+  // The dimension label for tablets that were created during table creation.
+  // Used for dimension-specific placement of tablet replicas corresponding
+  // to the partitions of the newly created table.
   optional string dimension_label = 6;
+  // The owner for the newly created table. If not specified, the owner is
+  // automatically set to the effective OS user name that the kudu CLI tool is
+  // run with.
+  optional string owner = 7;
+  // Table's comment.
+  optional string comment = 8;
 }

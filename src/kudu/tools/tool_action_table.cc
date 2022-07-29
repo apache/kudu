@@ -273,23 +273,71 @@ class TableAlter {
 
 namespace {
 
-const char* const kNewTableNameArg = "new_table_name";
-const char* const kColumnNameArg = "column_name";
-const char* const kNewColumnNameArg = "new_column_name";
-const char* const kKeyArg = "primary_key";
-const char* const kConfigNameArg = "config_name";
-const char* const kConfigValueArg = "config_value";
-const char* const kErrorMsgArg = "unable to parse value $0 for column $1 of type $2";
-const char* const kTableRangeLowerBoundArg = "table_range_lower_bound";
-const char* const kTableRangeUpperBoundArg = "table_range_upper_bound";
-const char* const kDefaultValueArg = "default_value";
-const char* const kCompressionTypeArg = "compression_type";
-const char* const kEncodingTypeArg = "encoding_type";
-const char* const kBlockSizeArg = "block_size";
-const char* const kColumnCommentArg = "column_comment";
-const char* const kCreateTableJSONArg = "create_table_json";
-const char* const kReplicationFactorArg = "replication_factor";
-const char* const kDataTypeArg = "data_type";
+constexpr const char* const kBlockSizeArg = "block_size";
+constexpr const char* const kColumnCommentArg = "column_comment";
+constexpr const char* const kColumnNameArg = "column_name";
+constexpr const char* const kCompressionTypeArg = "compression_type";
+constexpr const char* const kConfigNameArg = "config_name";
+constexpr const char* const kConfigValueArg = "config_value";
+constexpr const char* const kCreateTableExtraDescription =
+    R"*(provide parameters for the table to create as a JSON object, e.g.
+'{
+  "table_name": "test",
+  "schema": {
+    "columns": [
+      {
+        "column_name": "id",
+        "column_type": "INT32",
+        "default_value": "1"
+      },
+      {
+        "column_name": "key",
+        "column_type": "INT64",
+        "is_nullable": false,
+        "comment": "range partition column"
+      },
+      {
+        "column_name": "name",
+        "column_type": "STRING",
+        "is_nullable": false,
+        "comment": "user name"
+      }
+    ],
+    "key_column_names": ["id", "key"]
+  },
+  "partition": {
+    "hash_partitions": [{"columns": ["id"], "num_buckets": 2, "seed": 8}],
+    "range_partition": {
+      "columns": ["key"],
+      "range_bounds": [
+        {
+          "lower_bound": {"bound_type": "inclusive", "bound_values": ["2"]},
+          "upper_bound": {"bound_type": "exclusive", "bound_values": ["3"]}
+        },
+        {
+          "lower_bound": {"bound_type": "inclusive", "bound_values": ["3"]}
+        }
+      ]
+    }
+  },
+  "extra_configs": {
+    "configs": { "kudu.table.history_max_age_sec": "3600" }
+  },
+  "comment": "a test table",
+  "num_replicas": 3
+}')*";
+constexpr const char* const kCreateTableJSONArg = "create_table_json";
+constexpr const char* const kDataTypeArg = "data_type";
+constexpr const char* const kDefaultValueArg = "default_value";
+constexpr const char* const kEncodingTypeArg = "encoding_type";
+constexpr const char* const kErrorMsgArg =
+    "unable to parse value $0 for column $1 of type $2";
+constexpr const char* const kKeyArg = "primary_key";
+constexpr const char* const kNewColumnNameArg = "new_column_name";
+constexpr const char* const kNewTableNameArg = "new_table_name";
+constexpr const char* const kReplicationFactorArg = "replication_factor";
+constexpr const char* const kTableRangeLowerBoundArg = "table_range_lower_bound";
+constexpr const char* const kTableRangeUpperBoundArg = "table_range_upper_bound";
 
 enum PartitionAction {
   ADD,
@@ -1483,22 +1531,30 @@ Status CreateTable(const RunnerContext& context) {
   RETURN_NOT_OK(CreateKuduClient(context, &client));
   KuduSchema kudu_schema;
   RETURN_NOT_OK(ParseTableSchema(table_req.schema(), &kudu_schema));
-  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
-  table_creator->table_name(table_req.table_name())
-                                     .schema(&kudu_schema);
-  RETURN_NOT_OK(ParseTablePartition(table_req.partition(), kudu_schema, table_creator.get()));
+  unique_ptr<KuduTableCreator> tc(client->NewTableCreator());
+  auto& table_creator = *tc;
+  table_creator
+      .table_name(table_req.table_name())
+      .schema(&kudu_schema);
+  RETURN_NOT_OK(ParseTablePartition(table_req.partition(), kudu_schema, &table_creator));
   if (table_req.has_num_replicas()) {
-    table_creator->num_replicas(table_req.num_replicas());
+    table_creator.num_replicas(table_req.num_replicas());
   }
   if (table_req.has_extra_configs()) {
     map<string, string> extra_configs(table_req.extra_configs().configs().begin(),
                                       table_req.extra_configs().configs().end());
-    table_creator->extra_configs(extra_configs);
+    table_creator.extra_configs(extra_configs);
   }
   if (table_req.has_dimension_label()) {
-    table_creator->dimension_label(table_req.dimension_label());
+    table_creator.dimension_label(table_req.dimension_label());
   }
-  return table_creator->Create();
+  if (table_req.has_owner()) {
+    table_creator.set_owner(table_req.owner());
+  }
+  if (table_req.has_comment()) {
+    table_creator.set_comment(table_req.comment());
+  }
+  return table_creator.Create();
 }
 
 
@@ -1769,21 +1825,9 @@ unique_ptr<Mode> BuildTableMode() {
   unique_ptr<Action> create_table =
       ClusterActionBuilder("create", &CreateTable)
       .Description("Create a new table")
-      .ExtraDescription("Provide the  table-build statements as a JSON object, e.g."
-                        "'{\"table_name\":\"test\",\"schema\":{\"columns\":[{\"column_name"
-                        "\":\"id\",\"column_type\":\"INT32\",\"default_value\":\"1\"},{"
-                        "\"column_name\":\"key\",\"column_type\":\"INT64\",\"is_nullable\""
-                        ":false,\"comment\":\"range key\"},{\"column_name\":\"name\",\""
-                        "column_type\":\"STRING\",\"is_nullable\":false,\"comment\":\""
-                        "user name\"}],\"key_column_names\":[\"id\", \"key\"]},\"partition\""
-                        ":{\"hash_partitions\":[{\"columns\":[\"id\"],\"num_buckets\":2,\"seed"
-                        "\":100}],\"range_partition\":{\"columns\":[\"key\"],\"range_bounds\":"
-                        "[{\"upper_bound\":{\"bound_type\":\"inclusive\",\"bound_values\":[\"2"
-                        "\"]}},{\"lower_bound\": {\"bound_type\":\"exclusive\",\"bound_values"
-                        "\": [\"2\"]},\"upper_bound\":{\"bound_type\":\"inclusive\",\""
-                        "bound_values\":[\"3\"]}}]}},\"extra_configs\":{\"configs\":{\""
-                        "kudu.table.history_max_age_sec\":\"3600\"}},\"num_replicas\":3}'.")
-      .AddRequiredParameter({ kCreateTableJSONArg, "JSON object for creating table" })
+      .ExtraDescription(kCreateTableExtraDescription)
+      .AddRequiredParameter({ kCreateTableJSONArg,
+                              "JSON object for creating table" })
       .Build();
 
   return ModeBuilder("table")
