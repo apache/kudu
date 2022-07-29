@@ -15,13 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -99,28 +100,32 @@ TEST_F(CreateTableToolTest, TestCreateTable) {
 
   // Test a few good cases.
   const auto check_good_input = [&](const string& json_str,
-                                    const string& master,
+                                    const string& master_rpc_addr,
                                     const string& table_name,
-                                    const string& schema,
-                                    const string& partition,
+                                    const string& schema_str,
+                                    const string& partition_str,
                                     const map<string, string>& extra_configs,
-                                    KuduClient* client) {
+                                    KuduClient* client,
+                                    shared_ptr<KuduTable>* table_out = nullptr) {
     const vector<string> table_args = {
-        "table", "create", master, json_str
+        "table", "create", master_rpc_addr, json_str
     };
     bool table_exists = false;
     ASSERT_OK(RunKuduTool(table_args));
     ASSERT_EVENTUALLY([&] {
-        ASSERT_OK(client->TableExists(table_name, &table_exists));
-        ASSERT_TRUE(table_exists);
+      ASSERT_OK(client->TableExists(table_name, &table_exists));
+      ASSERT_TRUE(table_exists);
     });
     shared_ptr<KuduTable> table;
     ASSERT_OK(client->OpenTable(table_name, &table));
-    ASSERT_EQ(table->name(), table_name);
-    ASSERT_EQ(table->schema().ToString(), schema);
-    ASSERT_EQ(table->partition_schema().DebugString(KuduSchema::ToSchema(
-        table->schema())), partition);
-    ASSERT_EQ(table->extra_configs(), extra_configs);
+    ASSERT_EQ(table_name, table->name());
+    ASSERT_EQ(schema_str, table->schema().ToString());
+    ASSERT_EQ(partition_str, table->partition_schema().DebugString(
+                KuduSchema::ToSchema(table->schema())));
+    ASSERT_EQ(extra_configs, table->extra_configs());
+    if (table_out) {
+      *table_out = std::move(table);
+    }
   };
 
   // Create a simple table.
@@ -612,6 +617,105 @@ TEST_F(CreateTableToolTest, TestCreateTable) {
   partition = "";
   NO_FATALS(check_good_input(encoding_type_unknown, master_addr,
       "encoding_type_unknown", schema, partition, {}, client.get()));
+
+  // Create a table with a range having custom hash schema.
+  const string range_with_custom_hash_schema = R"(
+      {
+          "table_name": "range_with_custom_hash_schema",
+          "schema": {
+              "columns": [
+                  {
+                      "column_name": "id",
+                      "column_type": "INT32",
+                      "is_nullable": false,
+                  },
+                  {
+                      "column_name": "name",
+                      "column_type": "STRING",
+                      "is_nullable": true,
+                  }
+              ],
+              "key_column_names": [
+                  "id"
+              ]
+          },
+          "partition": {
+              "hash_partitions": [
+                  {
+                      "columns": ["id"],
+                      "num_buckets": 2,
+                      "seed": 1
+                  }
+              ],
+              "range_partition": {
+                  "columns": ["id"],
+                  "range_bounds": [
+                      {
+                          "upper_bound": {
+                              "bound_values": ["-100"],
+                              "bound_type": "EXCLUSIVE"
+                          }
+                      },
+                      {
+                          "lower_bound": {
+                              "bound_values": ["100"],
+                              "bound_type": "INCLUSIVE"
+                          }
+                      }
+                  ],
+                  "custom_hash_schema_ranges": [
+                      {
+                          "range_bounds": {
+                              "lower_bound": {
+                                  "bound_values": ["-100"],
+                                  "bound_type": "INCLUSIVE"
+                              },
+                              "upper_bound": {
+                                  "bound_values": ["100"],
+                                  "bound_type": "EXCLUSIVE"
+                              }
+                          },
+                          "hash_schema": {
+                              "columns": ["id"],
+                              "num_buckets": 5,
+                              "seed": 8
+                          }
+                      }
+                  ]
+              }
+          }
+      }
+  )";
+  {
+    constexpr const char* const kRefSchema =
+        "(\n"
+        "    id INT32 NOT NULL,\n"
+        "    name STRING NULLABLE,\n"
+        "    PRIMARY KEY (id)\n)";
+    constexpr const char* const kRefPartitionInfo =
+        "HASH (id) PARTITIONS 2 SEED 1, RANGE (id)";
+    shared_ptr<KuduTable> table;
+    NO_FATALS(check_good_input(range_with_custom_hash_schema,
+                               master_addr,
+                               "range_with_custom_hash_schema",
+                               kRefSchema,
+                               kRefPartitionInfo,
+                               {},
+                               client.get(),
+                               &table));
+    vector<Partition> partitions;
+    ASSERT_OK(table->ListPartitions(&partitions));
+    ASSERT_EQ(9, partitions.size());
+    vector<int32_t> bucket_nums;
+    for (const auto& p : partitions) {
+      // All hash schemas in this table are one-dimensional.
+      ASSERT_EQ(1, p.hash_buckets().size());
+      bucket_nums.emplace_back(p.hash_buckets().front());
+    }
+    std::sort(bucket_nums.begin(), bucket_nums.end());
+    const vector<int32_t> ref_bucket_nums{0, 0, 0, 1, 1, 1, 2, 3, 4};
+    ASSERT_EQ(ref_bucket_nums, bucket_nums);
+  }
 
   // Test a few error cases.
   const auto check_bad_input = [&](const string& json_str,

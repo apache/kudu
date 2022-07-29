@@ -72,6 +72,7 @@ using kudu::client::KuduColumnSchema;
 using kudu::client::KuduColumnSpec;
 using kudu::client::KuduColumnStorageAttributes;
 using kudu::client::KuduPredicate;
+using kudu::client::KuduRangePartition;
 using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduScanner;
@@ -1491,11 +1492,8 @@ Status ParseTablePartition(const PartitionPB& partition,
   string bound_partial_row_json;
   for (const auto& bound : partition.range_partition().range_bounds()) {
     unique_ptr<KuduPartialRow> lower_bound(kudu_schema.NewRow());
-    unique_ptr<KuduPartialRow> upper_bound(kudu_schema.NewRow());
     KuduTableCreator::RangePartitionBound lower_bound_type =
         KuduTableCreator::INCLUSIVE_BOUND;
-    KuduTableCreator::RangePartitionBound upper_bound_type =
-        KuduTableCreator::EXCLUSIVE_BOUND;
     if (bound.has_lower_bound()) {
       RETURN_NOT_OK(ToJsonPartialRow(bound.lower_bound().bound_values(),
                                      range_col_names_and_types,
@@ -1503,9 +1501,13 @@ Status ParseTablePartition(const PartitionPB& partition,
       RETURN_NOT_OK(ConvertToKuduPartialRow(range_col_names_and_types,
                                             bound_partial_row_json,
                                             lower_bound.get()));
-      RETURN_NOT_OK(ToClientRangePartitionBound(bound.lower_bound().bound_type(),
-                                                &lower_bound_type));
+      RETURN_NOT_OK(ToClientRangePartitionBound(
+          bound.lower_bound().bound_type(), &lower_bound_type));
     }
+
+    unique_ptr<KuduPartialRow> upper_bound(kudu_schema.NewRow());
+    KuduTableCreator::RangePartitionBound upper_bound_type =
+        KuduTableCreator::EXCLUSIVE_BOUND;
     if (bound.has_upper_bound()) {
       RETURN_NOT_OK(ToJsonPartialRow(bound.upper_bound().bound_values(),
                                      range_col_names_and_types,
@@ -1513,11 +1515,59 @@ Status ParseTablePartition(const PartitionPB& partition,
       RETURN_NOT_OK(ConvertToKuduPartialRow(range_col_names_and_types,
                                             bound_partial_row_json,
                                             upper_bound.get()));
-      RETURN_NOT_OK(ToClientRangePartitionBound(bound.upper_bound().bound_type(),
-                                                &upper_bound_type));
+      RETURN_NOT_OK(ToClientRangePartitionBound(
+          bound.upper_bound().bound_type(), &upper_bound_type));
     }
+
     table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
         lower_bound_type, upper_bound_type);
+  }
+
+  for (const auto& range : partition.range_partition().custom_hash_schema_ranges()) {
+    const auto& bounds = range.range_bounds();
+
+    unique_ptr<KuduPartialRow> lower_bound(kudu_schema.NewRow());
+    KuduTableCreator::RangePartitionBound lower_bound_type =
+        KuduTableCreator::INCLUSIVE_BOUND;
+    if (bounds.has_lower_bound()) {
+      RETURN_NOT_OK(ToJsonPartialRow(bounds.lower_bound().bound_values(),
+                                     range_col_names_and_types,
+                                     &bound_partial_row_json));
+      RETURN_NOT_OK(ConvertToKuduPartialRow(range_col_names_and_types,
+                                            bound_partial_row_json,
+                                            lower_bound.get()));
+      RETURN_NOT_OK(ToClientRangePartitionBound(
+          bounds.lower_bound().bound_type(), &lower_bound_type));
+    }
+
+    unique_ptr<KuduPartialRow> upper_bound(kudu_schema.NewRow());
+    KuduTableCreator::RangePartitionBound upper_bound_type =
+        KuduTableCreator::EXCLUSIVE_BOUND;
+    if (bounds.has_upper_bound()) {
+      RETURN_NOT_OK(ToJsonPartialRow(bounds.upper_bound().bound_values(),
+                                     range_col_names_and_types,
+                                     &bound_partial_row_json));
+      RETURN_NOT_OK(ConvertToKuduPartialRow(range_col_names_and_types,
+                                            bound_partial_row_json,
+                                            upper_bound.get()));
+      RETURN_NOT_OK(ToClientRangePartitionBound(
+          bounds.upper_bound().bound_type(), &upper_bound_type));
+    }
+
+    unique_ptr<KuduRangePartition> partition(
+        new KuduRangePartition(lower_bound.release(), upper_bound.release(),
+                               lower_bound_type, upper_bound_type));
+    for (const auto& hash_dimension : range.hash_schema()) {
+      vector<string> hash_columns;
+      for (const auto& c : hash_dimension.columns()) {
+        hash_columns.emplace_back(c);
+      }
+      const int32_t seed = hash_dimension.has_seed() ? hash_dimension.seed() : 0;
+      partition->add_hash_partitions(
+          hash_columns, hash_dimension.num_buckets(), seed);
+    }
+
+    table_creator->add_custom_range_partition(partition.release());
   }
   for (const auto& split_pb : partition.range_partition().range_splits()) {
     RETURN_NOT_OK(ToJsonPartialRow(split_pb.split_values(),

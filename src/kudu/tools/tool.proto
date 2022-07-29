@@ -398,6 +398,20 @@ message ColumnPB {
 }
 
 message PartitionPB {
+  message HashPartitionPB {
+    // Column names of columns included in the hash. Every column must be
+    // a component of the primary key.
+    repeated string columns = 1;
+    // Number of buckets into which columns will be hashed. Must be at least 2.
+    optional int32 num_buckets = 2;
+    // Seed value for hash calculation. Administrators may set a seed value
+    // on a per-table basis in order to randomize the mapping of rows to
+    // buckets. Setting a seed provides some amount of protection against denial
+    // of service attacks when the hash bucket columns contain user provided
+    // input.
+    optional uint32 seed = 3;
+  }
+
   message RangePartitionPB {
     message BoundPB {
       enum Type {
@@ -422,6 +436,12 @@ message PartitionPB {
       // exact string value for the bound.
       repeated string split_values = 1;
     }
+    message RangeWithHashSchemaPB {
+      // The bounds of this range.
+      optional RangeBoundPB range_bounds = 1;
+      // Hash schema for this range.
+      repeated HashPartitionPB hash_schema = 2;
+    }
 
     // Column names of columns included in the range. All columns must be
     // a component of the primary key.
@@ -430,25 +450,13 @@ message PartitionPB {
     repeated RangeBoundPB range_bounds = 2;
     // Range splits.
     repeated SplitValuePB range_splits = 3;
+    // Ranges with custom hash schemas.
+    repeated RangeWithHashSchemaPB custom_hash_schema_ranges = 4;
   }
 
-  message HashPartitionPB {
-    // Column names of columns included in the hash. Every column must be
-    // a component of the primary key.
-    repeated string columns = 1;
-    // Number of buckets into which columns will be hashed. Must be at least 2.
-    optional int32 num_buckets = 2;
-    // Seed value for hash calculation. Administrators may set a seed value
-    // on a per-table basis in order to randomize the mapping of rows to
-    // buckets. Setting a seed provides some amount of protection against denial
-    // of service attacks when the hash bucket columns contain user provided
-    // input.
-    optional uint32 seed = 3;
-  }
-
-  // Hash partition message. Support zero or more hash partition levels .
+  // Table-wide hash schema.
   repeated HashPartitionPB hash_partitions = 1;
-  // range partition message.
+  // Range partitioning information.
   optional RangePartitionPB range_partition = 2;
 }
 
