@@ -901,7 +901,8 @@ string ColumnIdsToColumnNames(const Schema& schema,
 } // namespace
 
 string PartitionSchema::PartitionDebugString(const Partition& partition,
-                                             const Schema& schema) const {
+                                             const Schema& schema,
+                                             HashPartitionInfo hp) const {
   // Partitions are considered metadata, so don't redact them.
   ScopedDisableRedaction no_redaction;
 
@@ -912,11 +913,13 @@ string PartitionSchema::PartitionDebugString(const Partition& partition,
   }
 
   vector<string> components;
-  for (size_t i = 0; i < hash_schema.size(); ++i) {
-    string s = Substitute("HASH ($0) PARTITION $1",
-                          ColumnIdsToColumnNames(schema, hash_schema[i].column_ids),
-                          partition.hash_buckets_[i]);
-    components.emplace_back(std::move(s));
+  if (hp == HashPartitionInfo::SHOW) {
+    for (size_t i = 0; i < hash_schema.size(); ++i) {
+      string s = Substitute("HASH ($0) PARTITION $1",
+                            ColumnIdsToColumnNames(schema, hash_schema[i].column_ids),
+                            partition.hash_buckets_[i]);
+      components.emplace_back(std::move(s));
+    }
   }
 
   if (!range_schema_.column_ids.empty()) {

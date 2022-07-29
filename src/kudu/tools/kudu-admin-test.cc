@@ -2144,7 +2144,14 @@ TEST_F(AdminCliTest, TestDescribeTableCustomHashSchema) {
                               "    PARTITION 100 <= VALUES < 200");
 }
 
-TEST_F(AdminCliTest, TestListTabletWithPartition) {
+class ListTableCliParamTest : public AdminCliTest,
+                              public ::testing::WithParamInterface<bool> {
+};
+
+// Basic test that the kudu tool works in the list tablets case.
+TEST_P(ListTableCliParamTest, TestListTabletWithPartition) {
+  auto show_hp = GetParam() ? PartitionSchema::HashPartitionInfo::SHOW :
+      PartitionSchema::HashPartitionInfo::HIDE;
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;
 
@@ -2212,7 +2219,7 @@ TEST_F(AdminCliTest, TestListTabletWithPartition) {
     "table",
     "list",
     "--list_tablets",
-    "--show_tablet_partition_info",
+    GetParam() ? "--show_tablet_partition_info" : "",
     "--tables",
     kTableId,
     cluster_->master()->bound_rpc_addr().ToString(),
@@ -2229,12 +2236,14 @@ TEST_F(AdminCliTest, TestListTabletWithPartition) {
 
   master::ListTablesResponsePB tables_info;
   ASSERT_OK(ListTablesWithInfo(cluster_->master_proxy(), kTableId,
-                               MonoDelta::FromSeconds(30), &tables_info));
+      MonoDelta::FromSeconds(30), &tables_info));
   for (const auto& table : tables_info.tables()) {
     for (const auto& pt : table.tablet_with_partition()) {
       Partition partition;
       Partition::FromPB(pt.partition(), &partition);
-      string partition_str = partition_schema.PartitionDebugString(partition, schema_internal);
+      string partition_str = partition_schema.PartitionDebugString(partition,
+                                                                   schema_internal,
+                                                                   show_hp);
       string tablet_with_partition = pt.tablet_id() + " : " + partition_str;
       ASSERT_STR_CONTAINS(stdout, tablet_with_partition);
     }

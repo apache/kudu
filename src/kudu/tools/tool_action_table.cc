@@ -123,6 +123,20 @@ bool ValidateShowTabletPartitionInfo() {
 
 GROUP_FLAG_VALIDATOR(show_tablet_partition_info, ValidateShowTabletPartitionInfo);
 
+DEFINE_bool(show_hash_partition_info, false,
+            "Include hash partition keys information corresponding to tablet in the output.");
+
+bool ValidateShowHashPartitionInfo() {
+  if (!FLAGS_show_tablet_partition_info && FLAGS_show_tablet_partition_info) {
+    LOG(ERROR) << Substitute("--show_hash_partition_info is meaningless "
+                             "when --show_tablet_partition_info=false");
+    return false;
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(show_hash_partition_info, ValidateShowHashPartitionInfo);
+
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
@@ -193,7 +207,10 @@ class TableLister {
 
       const auto& schema_internal = KuduSchema::ToSchema(table->schema());
       const auto& partition_schema = table->partition_schema();
-      pinfo = partition_schema.PartitionDebugString(pt.partition, schema_internal);
+      auto show_hp = FLAGS_show_hash_partition_info ? PartitionSchema::HashPartitionInfo::SHOW :
+          PartitionSchema::HashPartitionInfo::HIDE;
+      pinfo = partition_schema.PartitionDebugString(pt.partition, schema_internal,
+                                                    show_hp);
       break;
     }
     return pinfo;
@@ -1604,6 +1621,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("tables")
       .AddOptionalParameter("list_tablets")
       .AddOptionalParameter("show_tablet_partition_info")
+      .AddOptionalParameter("show_hash_partition_info")
       .AddOptionalParameter("show_table_info")
       .Build();
 

@@ -577,7 +577,6 @@ TEST_F(PartitionTest, TestCreatePartitions) {
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[0], schema));
 
-
   EXPECT_EQ(0, partitions[1].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[1].hash_buckets()[1]);
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[1].begin().range_key());
@@ -589,6 +588,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[1], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
+            partition_schema.PartitionDebugString(partitions[1], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 
   EXPECT_EQ(0, partitions[2].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[2].hash_buckets()[1]);
@@ -599,6 +601,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
             partition_schema.PartitionDebugString(partitions[2], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
+            partition_schema.PartitionDebugString(partitions[2], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 
   EXPECT_EQ(0, partitions[3].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[3].hash_buckets()[1]);
@@ -609,6 +614,10 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[3], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
+            partition_schema.PartitionDebugString(partitions[3], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
+
 
   EXPECT_EQ(0, partitions[4].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[4].hash_buckets()[1]);
@@ -620,6 +629,10 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[4], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
+            partition_schema.PartitionDebugString(partitions[4], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
+
 
   EXPECT_EQ(0, partitions[5].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[5].hash_buckets()[1]);
@@ -630,6 +643,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
             partition_schema.PartitionDebugString(partitions[5], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
+            partition_schema.PartitionDebugString(partitions[5], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 
   EXPECT_EQ(1, partitions[6].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[6].hash_buckets()[1]);
@@ -640,6 +656,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[6], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
+            partition_schema.PartitionDebugString(partitions[6], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 
   EXPECT_EQ(1, partitions[7].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[7].hash_buckets()[1]);
@@ -651,6 +670,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[7], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
+            partition_schema.PartitionDebugString(partitions[7], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 
   EXPECT_EQ(1, partitions[8].hash_buckets()[0]);
   EXPECT_EQ(0, partitions[8].hash_buckets()[1]);
@@ -661,6 +683,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
             partition_schema.PartitionDebugString(partitions[8], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
+            partition_schema.PartitionDebugString(partitions[8], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 
   EXPECT_EQ(1, partitions[9].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[9].hash_buckets()[1]);
@@ -671,6 +696,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
             partition_schema.PartitionDebugString(partitions[9], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
+            partition_schema.PartitionDebugString(partitions[9], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 
   EXPECT_EQ(1, partitions[10].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[10].hash_buckets()[1]);
@@ -682,6 +710,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
             partition_schema.PartitionDebugString(partitions[10], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION ("a1", "b1", "c1") <= VALUES < ("a2", "b2", ""))",
+            partition_schema.PartitionDebugString(partitions[10], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 
   EXPECT_EQ(1, partitions[11].hash_buckets()[0]);
   EXPECT_EQ(1, partitions[11].hash_buckets()[1]);
@@ -692,6 +723,9 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
             partition_schema.PartitionDebugString(partitions[11], schema));
+  EXPECT_EQ(R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
+            partition_schema.PartitionDebugString(partitions[11], schema,
+            PartitionSchema::HashPartitionInfo::HIDE));
 }
 
 TEST_F(PartitionTest, TestIncrementRangePartitionBounds) {
