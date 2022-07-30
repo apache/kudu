@@ -468,9 +468,9 @@ TEST_F(PartitionTest, TestCreateHashPartitions) {
 
   // Encoded Partition Keys:
   //
-  // [ (_), (1) )
+  // [ (0), (1) )
   // [ (1), (2) )
-  // [ (2), (_) )
+  // [ (2), (3) )
 
   vector<Partition> partitions;
   ASSERT_OK(
@@ -480,7 +480,7 @@ TEST_F(PartitionTest, TestCreateHashPartitions) {
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
   EXPECT_TRUE(partitions[0].begin().range_key().empty());
   EXPECT_TRUE(partitions[0].end().range_key().empty());
-  EXPECT_TRUE(partitions[0].begin().empty());
+  EXPECT_EQ(string("\0\0\0\0", 4), partitions[0].begin().ToString());
   EXPECT_EQ(string("\0\0\0\1", 4), partitions[0].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0",
             partition_schema.PartitionDebugString(partitions[0], schema));
@@ -497,7 +497,7 @@ TEST_F(PartitionTest, TestCreateHashPartitions) {
   EXPECT_TRUE(partitions[2].begin().range_key().empty());
   EXPECT_TRUE(partitions[2].end().range_key().empty());
   EXPECT_EQ(string("\0\0\0\2", 4), partitions[2].begin().ToString());
-  EXPECT_EQ("", partitions[2].end().ToString());
+  EXPECT_EQ(string("\0\0\0\3", 4), partitions[2].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 2",
             partition_schema.PartitionDebugString(partitions[2], schema));
 }
@@ -533,21 +533,21 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   //
   // Encoded Partition Keys:
   //
-  // [ (_, _,        _), (0, 0, "a1b1c1") )
+  // [ (0, 0,        _), (0, 0, "a1b1c1") )
   // [ (0, 0, "a1b1c1"), (0, 0,   "a2b2") )
   // [ (0, 0,   "a2b2"), (0, 1,        _) )
   //
   // [ (0, 1,        _), (0, 1, "a1b1c1") )
   // [ (0, 1, "a1b1c1"), (0, 1,   "a2b2") )
-  // [ (0, 1,   "a2b2"), (1, _,        _) )
+  // [ (0, 1,   "a2b2"), (0, 2,        _) )
   //
-  // [ (1, _,        _), (1, 0, "a1b1c1") )
+  // [ (1, 0,        _), (1, 0, "a1b1c1") )
   // [ (1, 0, "a1b1c1"), (1, 0,   "a2b2") )
   // [ (1, 0,   "a2b2"), (1, 1,        _) )
   //
   // [ (1, 1,        _), (1, 1, "a1b1c1") )
   // [ (1, 1, "a1b1c1"), (1, 1,   "a2b2") )
-  // [ (1, 1,   "a2b2"), (_, _,        _) )
+  // [ (1, 1,   "a2b2"), (1, 2,        _) )
   //
   // _ signifies that the value is omitted from the encoded partition key.
 
@@ -570,7 +570,7 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(0, partitions[0].hash_buckets()[1]);
   EXPECT_EQ("", partitions[0].begin().range_key());
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[0].end().range_key());
-  EXPECT_EQ("", partitions[0].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0", 8), partitions[0].begin().ToString());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a1\0\0b1\0\0c1", 18),
             partitions[0].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 0, "
@@ -639,7 +639,7 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[5].begin().range_key());
   EXPECT_EQ("", partitions[5].end().range_key());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[5].begin().ToString());
-  EXPECT_EQ(string("\0\0\0\1", 4), partitions[5].end().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2", 8), partitions[5].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 0, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
             partition_schema.PartitionDebugString(partitions[5], schema));
@@ -651,7 +651,7 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(0, partitions[6].hash_buckets()[1]);
   EXPECT_EQ("", partitions[6].begin().range_key());
   EXPECT_EQ(string("a1\0\0b1\0\0c1", 10), partitions[6].end().range_key());
-  EXPECT_EQ(string("\0\0\0\1", 4), partitions[6].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0", 8), partitions[6].begin().ToString());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a1\0\0b1\0\0c1", 18), partitions[6].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 0, "
             R"(RANGE (a, b, c) PARTITION VALUES < ("a1", "b1", "c1"))",
@@ -719,7 +719,7 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   EXPECT_EQ(string("a2\0\0b2\0\0", 8), partitions[11].begin().range_key());
   EXPECT_EQ("", partitions[11].end().range_key());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a2\0\0b2\0\0", 16), partitions[11].begin().ToString());
-  EXPECT_EQ("", partitions[11].end().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2", 8), partitions[11].end().ToString());
   EXPECT_EQ("HASH (a) PARTITION 1, HASH (b) PARTITION 1, "
             R"(RANGE (a, b, c) PARTITION ("a2", "b2", "") <= VALUES)",
             partition_schema.PartitionDebugString(partitions[11], schema));
@@ -1297,7 +1297,7 @@ TEST_F(PartitionTest, VaryingHashSchemasPerUnboundedRanges) {
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
   EXPECT_EQ("", partitions[0].begin().range_key());
   EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[0].end().range_key());
-  EXPECT_EQ("", partitions[0].begin().ToString());
+  EXPECT_EQ(string("\0\0\0\0", 4), partitions[0].begin().ToString());
   EXPECT_EQ(string("\0\0\0\0" "a1\0\0\0\0c1", 12), partitions[0].end().ToString());
 
   ASSERT_EQ(1, partitions[1].hash_buckets().size());
@@ -1349,7 +1349,7 @@ TEST_F(PartitionTest, VaryingHashSchemasPerUnboundedRanges) {
   EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[7].begin().range_key());
   EXPECT_EQ("", partitions[7].end().range_key());
   EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[7].begin().ToString());
-  EXPECT_EQ(string("\0\0\0\1", 4), partitions[7].end().ToString());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\3", 8), partitions[7].end().ToString());
 
   ASSERT_EQ(2, partitions[8].hash_buckets().size());
   EXPECT_EQ(1, partitions[8].hash_buckets()[0]);
@@ -1373,7 +1373,7 @@ TEST_F(PartitionTest, VaryingHashSchemasPerUnboundedRanges) {
   EXPECT_EQ(string("a4\0\0b4\0\0", 8), partitions[10].begin().range_key());
   EXPECT_EQ("", partitions[10].end().range_key());
   EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a4\0\0b4\0\0", 16), partitions[10].begin().ToString());
-  EXPECT_EQ("", partitions[10].end().ToString());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\3", 8), partitions[10].end().ToString());
 }
 
 TEST_F(PartitionTest, NoHashSchemasForLastUnboundedRange) {
@@ -1432,7 +1432,7 @@ TEST_F(PartitionTest, NoHashSchemasForLastUnboundedRange) {
     EXPECT_EQ(0, p.hash_buckets()[0]);
     EXPECT_EQ("", p.begin().range_key());
     EXPECT_EQ(string("a1\0\0", 4), p.end().range_key());
-    EXPECT_EQ("", p.begin().ToString());
+    EXPECT_EQ(string("\0\0\0\0", 4), p.begin().ToString());
     EXPECT_EQ(string("\0\0\0\0" "a1\0\0c1", 8), p.end().ToString());
   }
   {

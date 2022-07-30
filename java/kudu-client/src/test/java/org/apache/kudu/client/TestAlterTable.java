@@ -253,12 +253,16 @@ public class TestAlterTable {
 
     KuduScanner scanner = client.newScannerBuilder(table)
             .setProjectedColumnNames(Lists.newArrayList("c0Key", "c1")).build();
+    int rowCount = 0;
     while (scanner.hasMoreRows()) {
       RowResultIterator it = scanner.nextRows();
-      assertTrue(it.hasNext());
-      RowResult rr = it.next();
-      assertEquals(rr.getInt(0), rr.getInt(1));
+      while (it.hasNext()) {
+        RowResult rr = it.next();
+        assertEquals(rr.getInt(0), rr.getInt(1));
+        ++rowCount;
+      }
     }
+    assertEquals(101, rowCount);
   }
 
   @Test

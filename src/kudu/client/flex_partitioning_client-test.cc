@@ -27,14 +27,15 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -43,14 +44,14 @@
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -1559,6 +1560,183 @@ TEST_F(FlexPartitioningCreateTableTest, Negatives) {
     ASSERT_STR_CONTAINS(s.ToString(),
                         "must specify only primary key columns for hash "
                         "bucket partition components");
+  }
+}
+
+// This test scenario verifies that ListPartitions() returns correct number
+// of partitions for tables with unbounded ranges with custom hash schemas.
+// Essentially, this scenario makes sure the logic used by the code to iterate
+// over range partitions by employing PartitionPruner's  NextPartitionKey() and
+// RemovePartitionKeyRange() methods works as expected.
+TEST_F(FlexPartitioningCreateTableTest, UnboundedRangesOneDimensionHash) {
+  constexpr const char* const kTableName = "UnboundedRangesOneDimensionHash";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(1)
+      .add_hash_partitions({ kKeyColumn }, 2)
+      .set_range_partition_columns({ kKeyColumn });
+
+  // Add a range partition with the table-wide hash schema.
+  {
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(upper->SetInt32(kKeyColumn, -10));
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+
+  // Add two range partitions with custom hash schemas.
+  {
+    auto p = CreateRangePartition(-10, 10);
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 5, 1));
+    table_creator->add_custom_range_partition(p.release());
+  }
+  {
+    auto p = CreateRangePartitionNoUpperBound(10);
+    ASSERT_OK(p->add_hash_partitions({ kKeyColumn }, 3, 2));
+    table_creator->add_custom_range_partition(p.release());
+  }
+
+  ASSERT_OK(table_creator->Create());
+  NO_FATALS(CheckTabletCount(kTableName, 10));  // 2 + 5 + 3 = 10
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+  vector<Partition> partitions;
+  ASSERT_OK(table->ListPartitions(&partitions));
+  ASSERT_EQ(10, partitions.size());
+
+  // Make sure it's possible to insert rows into the table for all the existing
+  // partitions.
+  ASSERT_OK(InsertTestRows(kTableName, -50, 50));
+  NO_FATALS(CheckTableRowsNum(kTableName, 100));
+}
+
+// Similar to FlexPartitioningCreateTableTest.UnboundedRangesOneDimensionHash
+// abobe, but with two hash dimensions.
+TEST_F(FlexPartitioningCreateTableTest, UnboundedRangesTwoDimensionHash) {
+  constexpr const char* const kTableName = "UnboundedRangesTwoDimensionHash";
+  constexpr const char* const kC0 = "c0";
+  constexpr const char* const kC1 = "c1";
+  constexpr const char* const kC2 = "c2";
+
+  KuduSchemaBuilder b;
+  b.AddColumn(kC0)->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn(kC1)->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn(kC2)->Type(KuduColumnSchema::STRING)->Nullable();
+  b.SetPrimaryKey({ kC0, kC1 });
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+
+  auto rows_inserter = [&](int32_t key_beg, int32_t key_end) {
+    vector<KuduError*> errors;
+    CHECK_LE(key_beg, key_end);
+    shared_ptr<KuduTable> table;
+    RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
+    shared_ptr<KuduSession> session = client_->NewSession();
+    RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    session->SetTimeoutMillis(60000);
+    for (int32_t key_val = key_beg; key_val < key_end; ++key_val) {
+      unique_ptr<KuduInsert> insert(table->NewInsert());
+      RETURN_NOT_OK(insert->mutable_row()->SetInt32(kC0, key_val));
+      RETURN_NOT_OK(insert->mutable_row()->SetInt32(kC1, key_val));
+      RETURN_NOT_OK(insert->mutable_row()->SetStringCopy(kC2, std::to_string(rand())));
+      RETURN_NOT_OK(session->Apply(insert.release()));
+    }
+    return session->Flush();
+  };
+
+  // Two range partitions: [-inf, 0)  [0, +inf)
+  {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    table_creator->table_name(kTableName)
+        .schema(&schema)
+        .num_replicas(1)
+        .add_hash_partitions({ kC0 }, 3)
+        .add_hash_partitions({ kC1 }, 3)
+        .set_range_partition_columns({ kC0 });
+
+    // Add a range partition with the table-wide hash schema.
+    {
+      unique_ptr<KuduPartialRow> lower(schema.NewRow());
+      unique_ptr<KuduPartialRow> upper(schema.NewRow());
+      ASSERT_OK(upper->SetInt32(kC0, 0));
+      table_creator->add_range_partition(lower.release(), upper.release());
+    }
+
+    // Add a range partition with custom hash schema.
+    {
+      unique_ptr<KuduPartialRow> lower(schema.NewRow());
+      ASSERT_OK(lower->SetInt32(kC0, 0));
+      unique_ptr<KuduRangePartition> p(
+          new KuduRangePartition(lower.release(), schema.NewRow()));
+      ASSERT_OK(p->add_hash_partitions({ kC0 }, 2, 0));
+      ASSERT_OK(p->add_hash_partitions({ kC1 }, 2, 1));
+      table_creator->add_custom_range_partition(p.release());
+    }
+
+    ASSERT_OK(table_creator->Create());
+    NO_FATALS(CheckTabletCount(kTableName, 13));
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+    vector<Partition> partitions;
+    ASSERT_OK(table->ListPartitions(&partitions));
+    ASSERT_EQ(13, partitions.size());
+
+    ASSERT_OK(rows_inserter(-100, 100));
+    NO_FATALS(CheckTableRowsNum(kTableName, 200));
+    ASSERT_OK(client_->DeleteTable(kTableName));
+  }
+
+  // Three range partitions: [-inf, -10)  [-10, 10)  [10, +inf)
+  {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    table_creator->table_name(kTableName)
+        .schema(&schema)
+        .num_replicas(1)
+        .add_hash_partitions({ kC0 }, 2)
+        .add_hash_partitions({ kC1 }, 2)
+        .set_range_partition_columns({ kC0 });
+
+    // Add a range partition with the table-wide hash schema.
+    {
+      unique_ptr<KuduPartialRow> lower(schema.NewRow());
+      unique_ptr<KuduPartialRow> upper(schema.NewRow());
+      ASSERT_OK(upper->SetInt32(kC0, -10));
+      table_creator->add_range_partition(lower.release(), upper.release());
+    }
+
+    // Add two range partitions with custom hash schemas.
+    {
+      auto p = CreateRangePartition(schema, kC0, -10, 10);
+      ASSERT_OK(p->add_hash_partitions({ kC0 }, 4, 0));
+      ASSERT_OK(p->add_hash_partitions({ kC1 }, 5, 1));
+      table_creator->add_custom_range_partition(p.release());
+    }
+    {
+      unique_ptr<KuduPartialRow> lower(schema.NewRow());
+      ASSERT_OK(lower->SetInt32(kC0, 10));
+      unique_ptr<KuduRangePartition> p(
+          new KuduRangePartition(lower.release(), schema.NewRow()));
+      ASSERT_OK(p->add_hash_partitions({ kC0 }, 3, 2));
+      ASSERT_OK(p->add_hash_partitions({ kC1 }, 4, 3));
+      table_creator->add_custom_range_partition(p.release());
+    }
+
+    ASSERT_OK(table_creator->Create());
+    NO_FATALS(CheckTabletCount(kTableName, 36));  // 4 + 20 + 12 = 36
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+    vector<Partition> partitions;
+    ASSERT_OK(table->ListPartitions(&partitions));
+    ASSERT_EQ(36, partitions.size());
+
+    ASSERT_OK(rows_inserter(-250, 250));
+    NO_FATALS(CheckTableRowsNum(kTableName, 500));
+    ASSERT_OK(client_->DeleteTable(kTableName));
   }
 }
 
