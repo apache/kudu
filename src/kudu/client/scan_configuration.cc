@@ -168,6 +168,8 @@ Status ScanConfiguration::SetReadMode(KuduScanner::ReadMode read_mode) {
 
 Status ScanConfiguration::SetFaultTolerant(bool fault_tolerant) {
   if (fault_tolerant) {
+    // TODO(yingchun): this will overwrite the user set read mode, maybe it
+    // should return error if there is any conflict.
     RETURN_NOT_OK(SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
   }
   is_fault_tolerant_ = fault_tolerant;

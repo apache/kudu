@@ -3694,6 +3694,28 @@ TEST_F(ToolTest, PerfTableScanReplicaSelection) {
   }
 }
 
+TEST_F(ToolTest, PerfTableScanFaultTolerant) {
+  constexpr const char* const kTableName = "perf.table_scan.fault_tolerant";
+  NO_FATALS(RunLoadgen(1,
+                       {
+                           "--num_threads=8",
+                           "--num_rows_per_thread=111",
+                       },
+                       kTableName));
+  for (const auto& flag : {"true", "false"}) {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("perf table_scan $0 $1 --fault_tolerant=$2",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName, flag),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_EQ(1, out_lines.size()) << out;
+    ASSERT_STR_CONTAINS(out, "Total count 888 ");
+  }
+}
+
 TEST_F(ToolTest, PerfTableScanBatchSize) {
   constexpr const char* const kTableName = "perf.table_scan.batch_size";
   NO_FATALS(RunLoadgen(1,
@@ -5027,6 +5049,51 @@ TEST_F(ToolTest, TableScanCustomBatchSize) {
         &out, &err, &out_lines);
     ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
     ASSERT_STR_CONTAINS(out, "Total count 10000 ");
+  }
+}
+
+TEST_F(ToolTest, TableScanFaultTolerant) {
+  constexpr const char* const kTableName = "kudu.table.scan.fault_tolerant";
+  NO_FATALS(RunLoadgen(1,
+                       {
+                           "--num_threads=8",
+                           "--num_rows_per_thread=111",
+                       },
+                       kTableName));
+  for (const auto& flag : {"true", "false"}) {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("table scan $0 $1 --fault_tolerant=$2",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName, flag),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_STR_CONTAINS(out, "Total count 888 ");
+  }
+}
+
+TEST_F(ToolTest, TableCopyFaultTolerant) {
+  constexpr const char* const kTableName = "kudu.table.copy.fault_tolerant.from";
+  constexpr const char* const kNewTableName = "kudu.table.copy.fault_tolerant.to";
+  NO_FATALS(RunLoadgen(1,
+                       {
+                           "--num_threads=8",
+                           "--num_rows_per_thread=111",
+                       },
+                       kTableName));
+  for (const auto& flag : {"true", "false"}) {
+    string out;
+    string err;
+    vector<string> out_lines;
+    const auto s = RunTool(
+        Substitute("table copy $0 $1 $2 --dst_table=$3 --write_type=upsert --fault_tolerant=$4",
+                   cluster_->master()->bound_rpc_addr().ToString(), kTableName,
+                   cluster_->master()->bound_rpc_addr().ToString(), kNewTableName,
+                   flag),
+        &out, &err, &out_lines);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
+    ASSERT_STR_CONTAINS(out, "Total count 888 ");
   }
 }
 

@@ -175,6 +175,7 @@ DEFINE_uint32(reserve_seconds, 604800,
               "Reserve seconds before purging a soft-deleted table.");
 
 DECLARE_bool(create_table);
+DECLARE_bool(fault_tolerant);
 DECLARE_int32(create_table_replication_factor);
 DECLARE_bool(row_count_only);
 DECLARE_bool(show_scanner_stats);
@@ -813,6 +814,7 @@ Status CopyTable(const RunnerContext& context) {
 
   TableScanner scanner(src_client, src_table_name, dst_client, dst_table_name);
   scanner.SetOutput(&cout);
+  scanner.SetScanBatchSize(FLAGS_scan_batch_size);
   return scanner.StartCopy();
 }
 
@@ -1784,6 +1786,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("row_count_only")
       .AddOptionalParameter("report_scanner_stats")
       .AddOptionalParameter("scan_batch_size")
+      .AddOptionalParameter("fault_tolerant")
       .AddOptionalParameter("fill_cache")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")
@@ -1805,8 +1808,11 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("create_table_hash_bucket_nums")
       .AddOptionalParameter("create_table_replication_factor")
       .AddOptionalParameter("dst_table")
+      .AddOptionalParameter("fault_tolerant")
+      .AddOptionalParameter("fill_cache")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")
+      .AddOptionalParameter("scan_batch_size")
       .AddOptionalParameter("tablets")
       .AddOptionalParameter("write_type")
       .Build();

@@ -24,10 +24,11 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
-#include <optional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
+#include <type_traits>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -98,6 +99,10 @@ DEFINE_string(create_table_hash_bucket_nums, "",
               "The number of hash buckets in each hash dimension seperated by comma");
 DEFINE_bool(fill_cache, true,
             "Whether to fill block cache when scanning.");
+DEFINE_bool(fault_tolerant, false,
+            "Whether to make scans resumable at another tablet server if current server fails. "
+            "Fault-tolerant scans typically have lower throughput than non fault-tolerant scans, "
+            "but the results are returned in primary key order for a single tablet.");
 DEFINE_string(predicates, "",
               "Query predicates on columns. Unlike traditional SQL syntax, "
               "the scan tool's simple query predicates are represented in a "
@@ -668,6 +673,14 @@ Status TableScanner::StartWork(WorkType type) {
   }
   RETURN_NOT_OK(builder.SetSelection(replica_selection_));
   RETURN_NOT_OK(builder.SetTimeoutMillis(FLAGS_timeout_ms));
+  if (FLAGS_fault_tolerant) {
+    // TODO(yingchun): push down this judgement to ScanConfiguration::SetFaultTolerant
+    if (mode_ && *mode_ != KuduScanner::READ_AT_SNAPSHOT) {
+      return Status::InvalidArgument(Substitute("--fault_tolerant conflicts with "
+          "the non-READ_AT_SNAPSHOT read mode"));
+    }
+    RETURN_NOT_OK(builder.SetFaultTolerant());
+  }
 
   // Set projection if needed.
   if (type == WorkType::kScan) {

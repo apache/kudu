@@ -175,6 +175,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -207,7 +208,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -223,6 +223,12 @@
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+
+namespace kudu {
+namespace tablet {
+class Tablet;
+}  // namespace tablet
+}  // namespace kudu
 
 using kudu::ColumnSchema;
 using kudu::KuduPartialRow;
@@ -1073,6 +1079,7 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("row_count_only")
       .AddOptionalParameter("report_scanner_stats")
       .AddOptionalParameter("scan_batch_size")
+      .AddOptionalParameter("fault_tolerant")
       .AddOptionalParameter("fill_cache")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("predicates")
