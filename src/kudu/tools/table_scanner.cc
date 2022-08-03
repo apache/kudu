@@ -98,6 +98,10 @@ DEFINE_string(create_table_hash_bucket_nums, "",
               "The number of hash buckets in each hash dimension seperated by comma");
 DEFINE_bool(fill_cache, true,
             "Whether to fill block cache when scanning.");
+DEFINE_bool(fault_tolerant, false,
+            "Whether the results are returned in primary key order, make the scanner "
+            "fault-tolerant. This also means the scanner can recover if the server it "
+            "is scanning fails in the middle of a scan.");
 DEFINE_string(predicates, "",
               "Query predicates on columns. Unlike traditional SQL syntax, "
               "the scan tool's simple query predicates are represented in a "
@@ -668,6 +672,14 @@ Status TableScanner::StartWork(WorkType type) {
   }
   RETURN_NOT_OK(builder.SetSelection(replica_selection_));
   RETURN_NOT_OK(builder.SetTimeoutMillis(FLAGS_timeout_ms));
+  if (FLAGS_fault_tolerant) {
+    // TODO(yingchun): push down this judgement to ScanConfiguration::SetFaultTolerant
+    if (mode_ && *mode_ != KuduScanner::READ_AT_SNAPSHOT) {
+      return Status::InvalidArgument(Substitute("--fault_tolerant is conflict with "
+          "the non-READ_AT_SNAPSHOT read mode"));
+    }
+    RETURN_NOT_OK(builder.SetFaultTolerant());
+  }
 
   // Set projection if needed.
   if (type == WorkType::kScan) {
