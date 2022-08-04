@@ -454,6 +454,11 @@ message PartitionPB {
     repeated RangeWithHashSchemaPB custom_hash_schema_ranges = 4;
   }
 
+  // A standalone message representing a hash schema.
+  message HashSchemaPB {
+    repeated HashPartitionPB hash_schema = 1;
+  }
+
   // Table-wide hash schema.
   repeated HashPartitionPB hash_partitions = 1;
   // Range partitioning information.

@@ -84,9 +84,11 @@ using kudu::client::KuduTableCreator;
 using kudu::client::KuduTableStatistics;
 using kudu::client::KuduValue;
 using kudu::client::internal::ReplicaController;
+using kudu::tools::PartitionPB;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::make_unique;
 using std::map;
 using std::pair;
 using std::set;
@@ -150,6 +152,10 @@ DEFINE_string(lower_bound_type, "INCLUSIVE_BOUND",
 DEFINE_string(upper_bound_type, "EXCLUSIVE_BOUND",
               "The type of the upper bound, either inclusive or exclusive. "
               "Defaults to exclusive. This flag is case-insensitive.");
+DEFINE_string(hash_schema, "",
+              "String representation of range-specific hash schema as a JSON "
+              "object, e.g. "
+              "{\"hash_schema\": [{\"columns\": [\"c0\"], \"num_buckets\": 5}]}");
 DEFINE_int32(scan_batch_size, -1,
              "The size for scan results batches, in bytes. A negative value "
              "means the server-side default is used, where the server-side "
@@ -1000,18 +1006,52 @@ Status ModifyRangePartition(const RunnerContext& context, PartitionAction action
                                         upper_bound.get()));
 
   KuduTableCreator::RangePartitionBound lower_bound_type;
-  KuduTableCreator::RangePartitionBound upper_bound_type;
+  RETURN_NOT_OK(convert_bounds_type(
+      "lower bound", FLAGS_lower_bound_type, &lower_bound_type));
 
-  RETURN_NOT_OK(convert_bounds_type("lower bound", FLAGS_lower_bound_type, &lower_bound_type));
-  RETURN_NOT_OK(convert_bounds_type("upper bound", FLAGS_upper_bound_type, &upper_bound_type));
+  KuduTableCreator::RangePartitionBound upper_bound_type;
+  RETURN_NOT_OK(convert_bounds_type(
+      "upper bound", FLAGS_upper_bound_type, &upper_bound_type));
+
+  const auto& hash_schema_str = FLAGS_hash_schema;
+  PartitionPB::HashSchemaPB hash_schema;
+  if (!hash_schema_str.empty()) {
+    JsonParseOptions opts;
+    opts.case_insensitive_enum_parsing = true;
+    if (const auto& s = JsonStringToMessage(
+          hash_schema_str, &hash_schema, opts); !s.ok()) {
+      return Status::InvalidArgument(
+          Substitute("unable to parse JSON: $0", hash_schema_str),
+                     s.error_message().ToString());
+    }
+  }
 
   unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
   if (action == PartitionAction::ADD) {
-    return alterer->AddRangePartition(lower_bound.release(),
-                                      upper_bound.release(),
-                                      lower_bound_type,
-                                      upper_bound_type)->Alter();
+    if (hash_schema_str.empty()) {
+      // Add range partition with table-wide hash schema.
+      return alterer->AddRangePartition(lower_bound.release(),
+                                        upper_bound.release(),
+                                        lower_bound_type,
+                                        upper_bound_type)->Alter();
+    }
+
+    // Add range partition with custom hash schema.
+    auto p = make_unique<KuduRangePartition>(lower_bound.release(),
+                                             upper_bound.release(),
+                                             lower_bound_type,
+                                             upper_bound_type);
+    for (const auto& dimension_pb : hash_schema.hash_schema()) {
+      vector<string> columns;
+      for (const auto& column : dimension_pb.columns()) {
+        columns.emplace_back(column);
+      }
+      p->add_hash_partitions(
+          columns, dimension_pb.num_buckets(), dimension_pb.seed());
+    }
+    return alterer->AddRangePartition(p.release())->Alter();
   }
+
   DCHECK_EQ(PartitionAction::DROP, action);
   return alterer->DropRangePartition(lower_bound.release(),
                                      upper_bound.release(),
@@ -1790,6 +1830,7 @@ unique_ptr<Mode> BuildTableMode() {
                               "the upper range partition will be unbounded" })
       .AddOptionalParameter("lower_bound_type")
       .AddOptionalParameter("upper_bound_type")
+      .AddOptionalParameter("hash_schema")
       .Build();
 
   unique_ptr<Action> column_set_default =
