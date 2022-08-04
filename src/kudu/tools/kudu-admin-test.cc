@@ -1914,7 +1914,8 @@ TEST_F(AdminCliTest, TestDescribeTable) {
     builder.AddColumn("date_val")->Type(KuduColumnSchema::DATE);
     builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING)
       ->Encoding(KuduColumnStorageAttributes::EncodingType::PREFIX_ENCODING)
-      ->Default(KuduValue::CopyString(Slice("hello")));
+      ->Default(KuduValue::CopyString(Slice("hello")))
+      ->Comment("comment for hello");
     builder.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL)
       ->Default(KuduValue::FromBool(false));
     builder.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);
@@ -2002,7 +2003,8 @@ TEST_F(AdminCliTest, TestDescribeTable) {
     "describe",
     cluster_->master()->bound_rpc_addr().ToString(),
     kAnotherTableId,
-    "-show_attributes=true"
+    "-show_attributes=true",
+    "-show_column_comment=true"
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
@@ -2019,7 +2021,8 @@ TEST_F(AdminCliTest, TestDescribeTable) {
       "    int64_val INT64 NULLABLE AUTO_ENCODING ZLIB 123 123,\n"
       "    timestamp_val UNIXTIME_MICROS NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
       "    date_val DATE NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
-      "    string_val STRING NULLABLE PREFIX_ENCODING DEFAULT_COMPRESSION \"hello\" \"hello\",\n"
+      "    string_val STRING NULLABLE PREFIX_ENCODING DEFAULT_COMPRESSION \"hello\" \"hello\" "
+      "comment for hello,\n"
       "    bool_val BOOL NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION false false,\n"
       "    float_val FLOAT NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
       "    double_val DOUBLE NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION 123.4 123.4,\n"
@@ -2167,6 +2170,77 @@ TEST_F(AdminCliTest, TestDescribeTable) {
           "}\n",
       client_->cluster_id())
   );
+}
+
+// Simple tests to check whether the column describing flags
+// work, alone and together as well.
+TEST_F(AdminCliTest, TestDescribeTableColumnFlags) {
+
+  NO_FATALS(BuildAndStart());
+  string stdout;
+  const string kTableName = "TestAnotherTable";
+
+  {
+    // Build the schema
+    KuduSchema schema;
+    KuduSchemaBuilder builder;
+    builder.AddColumn("foo")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("bar")->Type(KuduColumnSchema::INT32)->NotNull()
+        ->Comment("comment for bar");
+    builder.SetPrimaryKey({"foo"});
+    ASSERT_OK(builder.Build(&schema));
+
+    // Create the table
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+                  .schema(&schema)
+                  .set_range_partition_columns({"foo"})
+                  .Create());
+  }
+
+  // Test the describe output with flags
+  ASSERT_OK(RunKuduTool({"table",
+                         "describe",
+                         cluster_->master()->bound_rpc_addr().ToString(),
+                         kTableName,
+                         "-show_column_comment"},
+                        &stdout));
+  ASSERT_STR_CONTAINS(stdout,
+                      "(\n"
+                      "    foo INT32 NOT NULL,\n"
+                      "    bar INT32 NOT NULL comment for bar,\n"
+                      "    PRIMARY KEY (foo)\n"
+                      ")\n");
+  stdout.clear();
+
+  ASSERT_OK(RunKuduTool({"table",
+                         "describe",
+                         cluster_->master()->bound_rpc_addr().ToString(),
+                         kTableName,
+                         "-show_attributes"},
+                        &stdout));
+  ASSERT_STR_CONTAINS(stdout,
+                      "(\n"
+                      "    foo INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                      "    bar INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+                      "    PRIMARY KEY (foo)\n"
+                      ")\n");
+  stdout.clear();
+
+  ASSERT_OK(RunKuduTool({"table",
+                         "describe",
+                         cluster_->master()->bound_rpc_addr().ToString(),
+                         kTableName,
+                         "-show_attributes",
+                         "-show_column_comment"},
+                        &stdout));
+  ASSERT_STR_CONTAINS(
+      stdout,
+      "(\n"
+      "    foo INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    bar INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - - comment for bar,\n"
+      "    PRIMARY KEY (foo)\n"
+      ")\n");
 }
 
 TEST_F(AdminCliTest, TestDescribeTableNoOwner) {

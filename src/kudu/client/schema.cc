@@ -47,6 +47,9 @@ DEFINE_bool(show_attributes, false,
             "Whether to show column attributes, including column encoding type, "
             "compression type, and default read/write value.");
 
+DEFINE_bool(show_column_comment, false,
+            "Whether to show column comment.");
+
 MAKE_ENUM_LIMITS(kudu::client::KuduColumnStorageAttributes::EncodingType,
                  kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING,
                  kudu::client::KuduColumnStorageAttributes::RLE);
@@ -951,10 +954,17 @@ void KuduSchema::GetPrimaryKeyColumnIndexes(vector<int>* indexes) const {
 }
 
 string KuduSchema::ToString() const {
-  return schema_ ? schema_->ToString(FLAGS_show_attributes ?
-                                     Schema::ToStringMode::WITH_COLUMN_ATTRIBUTES
-                                     : Schema::ToStringMode::BASE_INFO)
-                 : "()";
+  if (!schema_) {
+    return "()";
+  }
+  uint8_t mode = Schema::ToStringMode::BASE_INFO;
+  if (FLAGS_show_attributes) {
+    mode |= Schema::ToStringMode::WITH_COLUMN_ATTRIBUTES;
+  }
+  if (FLAGS_show_column_comment) {
+    mode |= Schema::ToStringMode::WITH_COLUMN_COMMENTS;
+  }
+  return schema_->ToString(mode);
 }
 
 KuduSchema KuduSchema::FromSchema(const Schema& schema) {

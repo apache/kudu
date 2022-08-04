@@ -1802,6 +1802,7 @@ unique_ptr<Mode> BuildTableMode() {
       .Description("Describe a table")
       .AddRequiredParameter({ kTableNameArg, "Name of the table to describe" })
       .AddOptionalParameter("show_attributes")
+      .AddOptionalParameter("show_column_comment")
       .AddOptionalParameter("show_avro_format_schema")
       .Build();
 

@@ -266,16 +266,18 @@ class ColumnSchema {
   }
 
   // Enum to configure how a ColumnSchema is stringified.
-  enum class ToStringMode {
+  enum ToStringMode : uint8_t {
+    // Do not include below attributes.
+    WITHOUT_ATTRIBUTES = 0,
     // Include encoding type, compression type, and default read/write value.
-    WITH_ATTRIBUTES,
-    // Do not include above attributes.
-    WITHOUT_ATTRIBUTES,
+    WITH_ATTRIBUTES = 1 << 0,
+    // Include comments
+    WITH_COMMENTS = 1 << 1
   };
 
   // Return a string identifying this column, including its
   // name.
-  std::string ToString(ToStringMode mode = ToStringMode::WITHOUT_ATTRIBUTES) const;
+  std::string ToString(uint8_t mode = ToStringMode::WITHOUT_ATTRIBUTES) const;
 
   // Same as above, but only including the type information.
   // For example, "STRING NOT NULL".
@@ -794,16 +796,19 @@ class Schema {
   }
 
   // Enum to configure how a Schema is stringified.
-  enum ToStringMode {
+  enum ToStringMode : uint8_t {
     BASE_INFO = 0,
     // Include column ids if this instance has them.
     WITH_COLUMN_IDS = 1 << 0,
     // Include column attributes.
     WITH_COLUMN_ATTRIBUTES = 1 << 1,
+    // Include column comments.
+    WITH_COLUMN_COMMENTS = 1 << 2
   };
+
   // Stringify this Schema. This is not particularly efficient,
   // so should only be used when necessary for output.
-  std::string ToString(ToStringMode mode = ToStringMode::WITH_COLUMN_IDS) const;
+  std::string ToString(uint8_t mode = ToStringMode::WITH_COLUMN_IDS) const;
 
   bool operator==(const Schema& other) const {
     if (this == &other) {
