@@ -60,7 +60,9 @@ Linux::
       link:troubleshooting.html#slow_dns_nscd[troubleshooting slow DNS lookups]
       for more information.
 macOS::
-    - macOS 10.13 (High Sierra), macOS 10.14 (Mojave), macOS 10.15 (Catalina)
+    - macOS 10.13 (High Sierra), macOS 10.14 (Mojave), macOS 10.15 (Catalina),
+      macOS 11 (Big Sur), macOS 12 (Monterey)
+
 Windows::
     - Microsoft Windows is unsupported.
 
@@ -547,9 +549,28 @@ make -j4
 
 [[osx_from_source]]
 === macOS
+Kudu works on both Intel and ARM based Macs (Apple M chips).
+Kudu support for macOS is experimental, and should only be used for development.
+
+[WARNING]
+.macOS Known Issues
+====
+See link:https://issues.apache.org/jira/browse/KUDU-1219[macOS Limitations & Known Issues]
+for more information. For any test related issues please first check whether it's already tracked:
+link:https://issues.apache.org/jira/browse/KUDU-2715[Get all tests passing on macOS].
+====
+
 The link:https://developer.apple.com/xcode/[Xcode] package is necessary for
 compiling Kudu. Some of the instructions below use link:http://brew.sh/[Homebrew]
 to install dependencies, but manual dependency installation is possible.
+
+[NOTE]
+.ARM Macs
+====
+Apple introduced support for Apple silicon in Xcode version
+link:https://developer.apple.com/documentation/xcode-release-notes/xcode-12_2-release-notes[12.2].
+To build Kudu on ARM-based Macs (Apple M chips), use Xcode of version 12.2 or above.
+====
 
 After installing Xcode, don't forget to accept the license and install command-line
 tools, if it's not done yet:
@@ -558,18 +579,18 @@ $ sudo xcodebuild -license
 $ sudo xcode-select --install
 ----
 
-[WARNING]
-.macOS Known Issues
-====
-Kudu support for macOS is experimental, and should only be used for development.
-See link:https://issues.apache.org/jira/browse/KUDU-1219[macOS Limitations & Known Issues]
-for more information.
-====
 
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree
+$ brew install autoconf automake cmake git krb5 libtool openssl@1.1 pkg-config pstree
+----
+
+. Add OpenSSL to the pkg-config path. Kudu and thirdparty JWT fail to build without proper
+OPENSSL_ROOT_DIR. If one sets the following environment variable, it takes care of both cases.
++
+----
+$ export PKG_CONFIG_PATH="$(brew --prefix openssl@1.1)/lib/pkgconfig:$PKG_CONFIG_PATH"
 ----
 
 . Optional: Install some additional packages, including ruby, if you plan to build documentation.
@@ -645,7 +666,6 @@ mkdir -p build/release
 cd build/release
 ../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl \
   ../..
 make -j4
 ----
@@ -661,6 +681,7 @@ are installed.
 
 brew tap homebrew/dupes
 brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree
+export PKG_CONFIG_PATH="$(brew --prefix openssl@1.1)/lib/pkgconfig:$PKG_CONFIG_PATH"
 git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
@@ -668,7 +689,6 @@ mkdir -p build/release
 cd build/release
 ../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=release \
-  -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl \
   ../..
 make -j4
 ----
