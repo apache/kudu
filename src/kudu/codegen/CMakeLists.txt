@@ -65,11 +65,47 @@ foreach(noprefix ${IR_INCLUDES})
 endforeach()
 
 if (APPLE)
-  # OS X keeps the libc++ headers in a non-standard location that the thirdparty
-  # Clang does not know about by default.
-  set(PREFIXED_IR_INCLUDES
-    ${PREFIXED_IR_INCLUDES}
-    -cxx-isystem "${CMAKE_OSX_SYSROOT}")
+  # The macOS keeps the libc++ headers in a non-standard location so
+  # that the thirdparty CLANG does not know about by default.
+  #
+  # Xcode starting with version 12.5 has the libc++ headers under
+  # Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk,
+  # which corresponds to CMAKE_OSX_SYSROOT, so it's enough to add -isysroot
+  # pointing to CMAKE_OSX_SYSROOT.
+  #
+  # Xcode prior to version 12.5 (12.4 and earlier, inclusive) doesn't have the
+  # libc++ headers under CMAKE_OSX_SYSROOT, but instead keeps those under
+  # Contents/Developer/Toolchains/XcodeDefault.xctoolchain: with that,
+  # it's easy to deduce the path to the libc++ headers from the output
+  # produced by `clang++ --version`.
+  #
+  # For non-clang compilers, assume the libc++ include directory provided
+  # with the Xcode command line tools.
+  if (NOT "${COMPILER_FAMILY}" STREQUAL "clang")
+    set(PREFIXED_IR_INCLUDES
+      ${PREFIXED_IR_INCLUDES}
+      -cxx-isystem "/Library/Developer/CommandLineTools/usr/include/c++/v1")
+  elseif (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 12.0.5)
+    execute_process(
+      COMMAND ${CMAKE_CXX_COMPILER} --version
+      COMMAND grep -E "^InstalledDir: "
+      COMMAND sed "s/^InstalledDir: \\(.*\\)$/\\1/"
+      RESULT_VARIABLE CXX_INSTALLED_DIR_CMD_EXIT_CODE
+      OUTPUT_VARIABLE CXX_INSTALLED_DIR_CMD_OUT
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if (${CXX_INSTALLED_DIR_CMD_EXIT_CODE} EQUAL 0 AND
+        NOT ${CXX_INSTALLED_DIR_CMD_OUT} STREQUAL "")
+      set(PREFIXED_IR_INCLUDES
+        ${PREFIXED_IR_INCLUDES}
+        -cxx-isystem "${CXX_INSTALLED_DIR_CMD_OUT}/../include/c++/v1")
+    else()
+      message(FATAL_ERROR "failed to deduce path to libc++ headers")
+    endif()
+  else()
+    set(PREFIXED_IR_INCLUDES
+      ${PREFIXED_IR_INCLUDES}
+      -isysroot "${CMAKE_OSX_SYSROOT}")
+  endif()
 endif()
 
 # Get preprocessing definitions, which enable directives for glog and gtest.
