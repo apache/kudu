@@ -170,11 +170,14 @@ bool ValidateWriteType(const char* flag_name,
 }
 
 constexpr const char* const kReplicaSelectionClosest = "closest";
+constexpr const char* const kReplicaSelectionFirst = "first";
 constexpr const char* const kReplicaSelectionLeader = "leader";
+
 bool ValidateReplicaSelection(const char* flag_name,
                               const string& flag_value) {
   static const vector<string> kReplicaSelections = {
     kReplicaSelectionClosest,
+    kReplicaSelectionFirst,
     kReplicaSelectionLeader,
   };
   return IsFlagValueAcceptable(flag_name, flag_value, kReplicaSelections);
@@ -637,7 +640,7 @@ void TableScanner::SetReadMode(KuduScanner::ReadMode mode) {
 }
 
 Status TableScanner::SetReplicaSelection(const string& selection_str) {
-  KuduClient::ReplicaSelection selection;
+  KuduClient::ReplicaSelection selection = KuduClient::ReplicaSelection::CLOSEST_REPLICA;
   RETURN_NOT_OK(ParseReplicaSelection(selection_str, &selection));
   replica_selection_ = selection;
   return Status::OK();
@@ -799,6 +802,8 @@ Status TableScanner::ParseReplicaSelection(
     *selection = KuduClient::ReplicaSelection::CLOSEST_REPLICA;
   } else if (iequals(kReplicaSelectionLeader, selection_str)) {
     *selection = KuduClient::ReplicaSelection::LEADER_ONLY;
+  } else if (iequals(kReplicaSelectionFirst, selection_str)) {
+    *selection = KuduClient::ReplicaSelection::FIRST_REPLICA;
   } else {
     return Status::InvalidArgument("invalid replica selection", selection_str);
   }

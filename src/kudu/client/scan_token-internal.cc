@@ -237,6 +237,23 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     configuration->AddConjunctPredicate(std::move(*predicate));
   }
 
+  switch (message.replica_selection()) {
+    case kudu::ReplicaSelection::LEADER_ONLY:
+      RETURN_NOT_OK_LOG(configuration->SetSelection(KuduClient::ReplicaSelection::LEADER_ONLY),
+                        ERROR, "set replica selection LEADER_ONLY failed");
+      break;
+    case kudu::ReplicaSelection::CLOSEST_REPLICA:
+      RETURN_NOT_OK_LOG(configuration->SetSelection(KuduClient::ReplicaSelection::CLOSEST_REPLICA),
+                        ERROR, "set replica selection CLOSEST_REPLICA failed");
+      break;
+    case kudu::ReplicaSelection::FIRST_REPLICA:
+      RETURN_NOT_OK_LOG(configuration->SetSelection(KuduClient::ReplicaSelection::FIRST_REPLICA),
+                        ERROR, "set replica selection FIRST_REPLICA failed");
+      break;
+    default:
+      return Status::NotSupported("unsupported ReplicaSelection policy");
+  }
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   if (message.has_lower_bound_primary_key()) {
@@ -394,6 +411,19 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
     ColumnPredicateToPB(predicate_pair.second, pb.add_column_predicates());
   }
 
+  switch (configuration_.selection_) {
+    case KuduClient::ReplicaSelection::LEADER_ONLY:
+      pb.set_replica_selection(kudu::ReplicaSelection::LEADER_ONLY);
+      break;
+    case KuduClient::ReplicaSelection::CLOSEST_REPLICA:
+      pb.set_replica_selection(kudu::ReplicaSelection::CLOSEST_REPLICA);
+      break;
+    case KuduClient::ReplicaSelection::FIRST_REPLICA:
+      pb.set_replica_selection(kudu::ReplicaSelection::FIRST_REPLICA);
+      break;
+    default:
+      return Status::InvalidArgument("replica_selection is invalid.");
+  }
   const KuduScanner::ReadMode read_mode = configuration_.read_mode();
   switch (read_mode) {
     case KuduScanner::READ_LATEST:

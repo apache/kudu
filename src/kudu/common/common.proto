@@ -312,6 +312,8 @@ enum ReplicaSelection {
   //   - Replicas whose tablet server has the same location as the client
   //   - All other replicas
   CLOSEST_REPLICA = 2;
+  // Select the first replica in the list.
+  FIRST_REPLICA = 3;
 }
 
 // The serialized format of a Kudu table partition schema.

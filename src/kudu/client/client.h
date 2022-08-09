@@ -1063,6 +1063,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class tools::LeaderMasterProxy;
   friend class tools::RemoteKsckCluster;
   friend class tools::TableLister;
+  friend class ScanTokenTest;
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
   FRIEND_TEST(kudu::MetaCacheLookupStressTest, PerfSynthetic);
