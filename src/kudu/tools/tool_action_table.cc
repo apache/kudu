@@ -24,6 +24,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -130,7 +131,7 @@ DEFINE_bool(show_hash_partition_info, false,
             "Include hash partition keys information corresponding to tablet in the output.");
 
 bool ValidateShowHashPartitionInfo() {
-  if (!FLAGS_show_tablet_partition_info && FLAGS_show_tablet_partition_info) {
+  if (!FLAGS_show_tablet_partition_info && FLAGS_show_hash_partition_info) {
     LOG(ERROR) << Substitute("--show_hash_partition_info is meaningless "
                              "when --show_tablet_partition_info=false");
     return false;
