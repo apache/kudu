@@ -27,6 +27,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -1003,15 +1004,17 @@ TEST_F(TabletCopyITest, TestTabletCopyEncryptedServers) {
   ExternalTabletServer* replica_ets = cluster_->tablet_server(2);
   TServerDetails* replica_ts = ts_map_[replica_ets->uuid()];
   ASSERT_OK(WaitForNumTabletsOnTS(replica_ts, 1, timeout, &tablets));
-  string tablet_id = tablets[0].tablet_status().tablet_id();
+  const auto& tablet_id = tablets[0].tablet_status().tablet_id();
 
   // Tombstone the follower.
   LOG(INFO) << "Tombstoning follower tablet " << tablet_id << " on TS " << replica_ts->uuid();
   ASSERT_OK(DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 
-  // Wait for tablet copy to start.
-  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(2, tablet_id,
-                                                 { tablet::TABLET_DATA_COPYING }, timeout));
+  // Wait for tablet copy to start. The copying might complete fast or there
+  // might be some scheduler anomalies, so here it's necessary to count in
+  // TABLET_DATA_COPYING --> TABLET_DATA_READY transitions as well.
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
+      2, tablet_id, { tablet::TABLET_DATA_COPYING, tablet::TABLET_DATA_READY }, timeout));
 
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
