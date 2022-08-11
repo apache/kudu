@@ -3280,6 +3280,7 @@ TEST_F(ToolTest, TestLoadgenKeepAutoTableAndData) {
   NO_FATALS(RunLoadgen(1, { "--keep_auto_table=true",
                             "--table_num_hash_partitions=1",
                             "--table_num_range_partitions=1" }));
+
   string auto_table_name;
   NO_FATALS(RunActionStdoutString(Substitute("table list $0",
       HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())), &auto_table_name));
@@ -4732,12 +4733,14 @@ TEST_F(ToolTest, TestListTables) {
     if (kNumTables != num) {
       filter = Substitute("--tables=$0", JoinStrings(expected, ","));
     }
+
     vector<string> lines;
     NO_FATALS(RunActionStdoutLines(
         Substitute("table list $0 $1", master_addr, filter), &lines));
 
-    std::sort(lines.begin(), lines.end());
-    ASSERT_EQ(expected, lines);
+    for (auto& e : expected) {
+      ASSERT_STRINGS_ANY_MATCH(lines, e);
+    }
   };
 
   const auto ProcessTablets = [&] (const int num) {
@@ -4758,6 +4761,10 @@ TEST_F(ToolTest, TestListTables) {
       if (lines[i].empty()) {
         continue;
       }
+      if (MatchPattern(lines[i], "kudu.table_")) {
+        continue;
+      }
+      lines[i].erase(0, lines[i].find_first_not_of(' '));
       ASSERT_LE(i + 2, lines.size());
       output[lines[i]] = pair<string, string>(lines[i + 1], lines[i + 2]);
       i += 2;
@@ -4801,8 +4808,9 @@ TEST_F(ToolTest, TestListTables) {
     NO_FATALS(RunActionStdoutLines(
         Substitute("table list $0 $1 --show_table_info", master_addr, filter), &lines));
 
-    std::sort(lines.begin(), lines.end());
-    ASSERT_EQ(expected, lines);
+    for (auto& e : expected) {
+      ASSERT_STRINGS_ANY_MATCH(lines, e);
+    }
   };
 
   // List the tables and tablets.

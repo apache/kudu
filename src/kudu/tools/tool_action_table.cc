@@ -85,12 +85,15 @@ using kudu::client::KuduTableCreator;
 using kudu::client::KuduTableStatistics;
 using kudu::client::KuduValue;
 using kudu::client::internal::ReplicaController;
+using kudu::iequals;
 using kudu::tools::PartitionPB;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::find_if;
 using std::make_unique;
 using std::map;
+using std::ostringstream;
 using std::pair;
 using std::set;
 using std::string;
@@ -146,6 +149,30 @@ DEFINE_bool(soft_deleted_only, false,
 DEFINE_string(new_table_name, "",
               "The new name for the recalled table. "
               "Leave empty to recall the table under its original name.");
+DEFINE_string(list_table_output_format, "pretty",
+              "One of 'json', 'json_compact' or 'pretty'. Pretty output flattens "
+              "the table list hierarchy.");
+
+static bool ValidateListTableOutput(const char* flag_name,
+                                    const string& flag_value) {
+  const vector<string> allowed_values = { "pretty", "json", "json_compact" };
+  if (find_if(allowed_values.begin(), allowed_values.end(),
+                   [&](const string& allowed_value) {
+                     return iequals(allowed_value, flag_value);
+                   }) != allowed_values.end()) {
+    return true;
+  }
+
+  LOG(ERROR) << Substitute("'$0' : unsupported value for -- $1 flag; "
+                           "should be one of $2.",
+                           flag_value, flag_name,
+                           JoinStrings(allowed_values, " "));
+
+  return false;
+}
+
+DEFINE_validator(list_table_output_format, ValidateListTableOutput);
+
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
@@ -233,6 +260,38 @@ class TableLister {
     return pinfo;
   }
 
+  static string ToPrettyFormat(const TablesInfoPB& tables_info) {
+    string output;
+    for (const auto& table_info : tables_info.tables()) {
+      if (!output.empty()) {
+        output.append("\n");
+      }
+
+      output += table_info.name();
+      if (table_info.has_num_tablets()) {
+        output += Substitute(" num_tablets:$0 num_replicas:$1 live_row_count:$2",
+                             table_info.num_tablets(),
+                             table_info.num_replicas(),
+                             table_info.live_row_count());
+      }
+
+      for (const auto& tablet_info : table_info.tablet_with_partition()) {
+        output += string("\n") + string("  T ") + tablet_info.tablet_id();
+        if (tablet_info.has_partition_info()) {
+          output += tablet_info.partition_info();
+        }
+
+        for (const auto& replica_info : tablet_info.replica_info()) {
+          output += Substitute("\n    $0 $1 $2",
+                               replica_info.role(),
+                               replica_info.uuid(),
+                               replica_info.host_port());
+        }
+      }
+    }
+    return output;
+  }
+
   static Status ListTablets(const vector<string>& master_addresses) {
     client::sp::shared_ptr<KuduClient> client;
     RETURN_NOT_OK(CreateKuduClient(master_addresses,
@@ -246,15 +305,17 @@ class TableLister {
                                           FLAGS_show_tablet_partition_info,
                                           FLAGS_soft_deleted_only));
     vector<string> table_filters = Split(FLAGS_tables, ",", strings::SkipEmpty());
+    TablesInfoPB tables_info_pb;
     for (const auto& tinfo : tables_info) {
       const auto& tname = tinfo.table_name;
       if (!MatchesAnyPattern(table_filters, tname)) continue;
+
+      TablesInfoPB::TableInfoPB* table_info_pb = tables_info_pb.add_tables();
+      table_info_pb->set_name(tname);
       if (FLAGS_show_table_info) {
-        cout << tname << " " << "num_tablets:" << tinfo.num_tablets
-             << " num_replicas:" << tinfo.num_replicas
-             << " live_row_count:" << tinfo.live_row_count << endl;
-      } else {
-        cout << tname << endl;
+        table_info_pb->set_num_tablets(tinfo.num_tablets);
+        table_info_pb->set_num_replicas(tinfo.num_replicas);
+        table_info_pb->set_live_row_count(tinfo.live_row_count);
       }
 
       if (!FLAGS_list_tablets) {
@@ -272,19 +333,37 @@ class TableLister {
         string partition_info;
         string tablet_id = token->tablet().id();
         if (FLAGS_show_tablet_partition_info) {
-          partition_info = " : " + SearchPartitionInfo(tinfo, client_table, tablet_id);
+          if (iequals(FLAGS_list_table_output_format, "pretty")) {
+            partition_info = " : " + SearchPartitionInfo(tinfo, client_table, tablet_id);
+          } else {
+            partition_info = SearchPartitionInfo(tinfo, client_table, tablet_id);
+          }
         }
-        cout << "  T " << tablet_id << partition_info << endl;
+
+        TablesInfoPB::TabletWithPartitionPB* tpinfo = table_info_pb->add_tablet_with_partition();
+        tpinfo->set_tablet_id(tablet_id);
+        tpinfo->set_partition_info(partition_info);
+
         for (const auto* replica : token->tablet().replicas()) {
           const bool is_voter = ReplicaController::is_voter(*replica);
           const bool is_leader = replica->is_leader();
-          cout << Substitute("    $0 $1 $2:$3",
-              is_leader ? "L" : (is_voter ? "V" : "N"), replica->ts().uuid(),
-              replica->ts().hostname(), replica->ts().port()) << endl;
+          TablesInfoPB::ReplicaInfoPB* rinfo = tpinfo->add_replica_info();
+          rinfo->set_role(is_leader ? "L" : (is_voter ? "V" : "N"));
+          rinfo->set_uuid(replica->ts().uuid());
+          rinfo->set_host_port(replica->ts().hostname() + ":" +
+              std::to_string(replica->ts().port()));
         }
-        cout << endl;
       }
-      cout << endl;
+    }
+
+    if (iequals(FLAGS_list_table_output_format, "pretty")) {
+      cout << ToPrettyFormat(tables_info_pb) << endl;
+    } else {
+      DCHECK(iequals(FLAGS_list_table_output_format, "json") ||
+          iequals(FLAGS_list_table_output_format, "json_compact"));
+      auto mode = iequals(FLAGS_list_table_output_format, "json") ?
+          JsonWriter::Mode::PRETTY : JsonWriter::Mode::COMPACT;
+      cout << JsonWriter::ToJson(tables_info_pb, mode) << endl;
     }
 
     return Status::OK();
@@ -414,7 +493,7 @@ Status AddPrimitiveType(const ColumnSchema& col_schema, const string& type, Json
 Status PopulateAvroSchema(const string& table_name,
                           const string& cluster_id,
                           const KuduSchema& kudu_schema) {
-  std::ostringstream out;
+  ostringstream out;
   JsonWriter writer(&out, JsonWriter::Mode::PRETTY);
   // Start writing in Json format
   writer.StartObject();
@@ -1735,6 +1814,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("show_tablet_partition_info")
       .AddOptionalParameter("show_hash_partition_info")
       .AddOptionalParameter("show_table_info")
+      .AddOptionalParameter("list_table_output_format")
       .Build();
 
   unique_ptr<Action> locate_row =

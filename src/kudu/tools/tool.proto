@@ -499,3 +499,27 @@ message CreateTablePB {
   // Table's comment.
   optional string comment = 8;
 }
+
+message TablesInfoPB {
+  message ReplicaInfoPB {
+    optional string role = 1;
+    optional string uuid = 2;
+    optional string host_port = 3;
+  }
+
+  message TabletWithPartitionPB {
+    optional string tablet_id = 1;
+    optional string partition_info = 2;
+    repeated ReplicaInfoPB replica_info = 3;
+  }
+
+  message TableInfoPB {
+    optional string name = 1;
+    optional int32 num_tablets = 2;
+    optional int32 num_replicas = 3;
+    optional uint64 live_row_count = 4;
+    repeated TabletWithPartitionPB tablet_with_partition = 5;
+  }
+
+  repeated TableInfoPB tables = 1;
+}
