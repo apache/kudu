@@ -738,18 +738,8 @@ Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
   if (op->present_in_rowset) {
     switch (op_type) {
       case RowOperationsPB::UPSERT:
-      case RowOperationsPB::UPSERT_IGNORE: {
-        Status s = ApplyUpsertAsUpdate(io_context, op_state, op, op->present_in_rowset, stats);
-        if (s.ok()) {
-          return Status::OK();
-        }
-        if (s.IsImmutable() && op_type == RowOperationsPB::UPSERT_IGNORE) {
-          op->SetErrorIgnored();
-          return Status::OK();
-        }
-        op->SetFailed(s);
-        return s;
-      }
+      case RowOperationsPB::UPSERT_IGNORE:
+        return ApplyUpsertAsUpdate(io_context, op_state, op, op->present_in_rowset, stats);
       case RowOperationsPB::INSERT_IGNORE:
         op->SetErrorIgnored();
         return Status::OK();
@@ -820,18 +810,8 @@ Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
     if (s.IsAlreadyPresent()) {
       switch (op_type) {
         case RowOperationsPB::UPSERT:
-        case RowOperationsPB::UPSERT_IGNORE: {
-          Status s = ApplyUpsertAsUpdate(io_context, op_state, op, comps->memrowset.get(), stats);
-          if (s.ok()) {
-            return Status::OK();
-          }
-          if (s.IsImmutable() && op_type == RowOperationsPB::UPSERT_IGNORE) {
-            op->SetErrorIgnored();
-            return Status::OK();
-          }
-          op->SetFailed(s);
-          return s;
-        }
+        case RowOperationsPB::UPSERT_IGNORE:
+          return ApplyUpsertAsUpdate(io_context, op_state, op, comps->memrowset.get(), stats);
         case RowOperationsPB::INSERT_IGNORE:
           op->SetErrorIgnored();
           return Status::OK();
@@ -855,7 +835,6 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
                                    RowSet* rowset,
                                    ProbeStats* stats) {
   const auto op_type = upsert->decoded_op.type;
-  bool error_ignored = false;
   const auto* schema = this->schema().get();
   ConstContiguousRow row(schema, upsert->decoded_op.row_data);
   faststring buf;
@@ -868,10 +847,16 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
     const auto& c = schema->column(i);
     if (c.is_immutable()) {
       if (op_type == RowOperationsPB::UPSERT) {
-        return Status::Immutable("UPDATE not allowed for immutable column", c.ToString());
+        Status s = Status::Immutable("UPDATE not allowed for immutable column", c.ToString());
+        upsert->SetFailed(s);
+        return s;
       }
       DCHECK_EQ(op_type, RowOperationsPB::UPSERT_IGNORE);
-      error_ignored = true;
+      // Only set upsert->error_ignored flag instead of calling SetErrorIgnored() to avoid setting
+      // upsert->result which can be set only once. Then the upsert operation can be continued to
+      // mutate the other cells even if the current cell has been skipped, the upsert->result can be
+      // set normally in the next steps.
+      upsert->error_ignored = true;
       continue;
     }
 
@@ -887,9 +872,6 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
       op_state->pb_arena());
   if (enc.is_empty()) {
     upsert->SetMutateSucceeded(result);
-    if (error_ignored) {
-      upsert->error_ignored = true;
-    }
     return Status::OK();
   }
 

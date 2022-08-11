@@ -509,7 +509,11 @@ void WriteOpState::UpdateMetricsForOp(const RowOp& op) {
     case RowOperationsPB::UPSERT_IGNORE:
       if (op.error_ignored) {
         op_metrics_.upsert_ignore_errors++;
-      } else {
+      }
+      // This op may be completed even if it's error_ignored. It make sense
+      // when attempting to update immutable cells, the rest of cells may be updated
+      // except the immutable cells.
+      if (!op.failed) {
         op_metrics_.successful_upserts++;
       }
       break;
@@ -520,7 +524,11 @@ void WriteOpState::UpdateMetricsForOp(const RowOp& op) {
     case RowOperationsPB::UPDATE_IGNORE:
       if (op.error_ignored) {
         op_metrics_.update_ignore_errors++;
-      } else {
+      }
+      // This op may be completed even if it's error_ignored. It make sense
+      // when attempting to update immutable cells, the rest of cells may be updated
+      // except the immutable cells.
+      if (!op.failed) {
         op_metrics_.successful_updates++;
       }
       break;

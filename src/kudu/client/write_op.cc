@@ -18,16 +18,17 @@
 #include "kudu/client/write_op.h"
 
 #include <ostream>
+#include <type_traits>
 
 #include <glog/logging.h>
 
-#include "kudu/client/client.h"
+#include "kudu/client/client.h" // IWYU pragma: keep
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/slice.h"
 
@@ -46,6 +47,7 @@ RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
     case KuduWriteOperation::INSERT_IGNORE: return RowOperationsPB_Type_INSERT_IGNORE;
     case KuduWriteOperation::UPDATE_IGNORE: return RowOperationsPB_Type_UPDATE_IGNORE;
     case KuduWriteOperation::DELETE_IGNORE: return RowOperationsPB_Type_DELETE_IGNORE;
+    case KuduWriteOperation::UPSERT_IGNORE: return RowOperationsPB_Type_UPSERT_IGNORE;
     default: LOG(FATAL) << "Unexpected write operation type: " << type;
   }
 }
@@ -144,6 +146,13 @@ KuduUpsert::KuduUpsert(const shared_ptr<KuduTable>& table)
 
 KuduUpsert::~KuduUpsert() {}
 
+// UpsertIgnore -----------------------------------------------------------------
+
+KuduUpsertIgnore::KuduUpsertIgnore(const shared_ptr<KuduTable>& table)
+    : KuduWriteOperation(table) {
+}
+
+KuduUpsertIgnore::~KuduUpsertIgnore() {}
 
 } // namespace client
 } // namespace kudu

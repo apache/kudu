@@ -45,9 +45,10 @@ METRIC_DEFINE_counter(tablet, upsert_ignore_errors, "Upsert Ignore Errors",
                       "Number of upsert ignore operations for this tablet which were "
                       "ignored due to an error since service start. This metric counts "
                       "the number of attempts to update a present row by changing the "
-                      "value of any of its immutable cells.  Note that the rest of the "
+                      "value of any of its immutable cells. Note that the rest of the "
                       "cells (i.e. the mutable ones) in such case are updated accordingly "
-                      "to the operation's data.",
+                      "to the operation's data，and rows_upserted will be counted too if "
+                      "upsert successfully.",
                       kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(tablet, rows_updated, "Rows Updated",
     kudu::MetricUnit::kRows,
@@ -56,7 +57,11 @@ METRIC_DEFINE_counter(tablet, rows_updated, "Rows Updated",
 METRIC_DEFINE_counter(tablet, update_ignore_errors, "Update Ignore Errors",
                       kudu::MetricUnit::kRows,
                       "Number of update ignore operations for this tablet which were "
-                      "ignored due to an error since service start",
+                      "ignored due to an error since service start. Note that when "
+                      "ignoring to update the immutable cells, the rest of the cells "
+                      "(i.e. the mutable ones) in such case are updated accordingly to "
+                      "the operation's data，and rows_updated will be counted too if "
+                      "update successfully.",
                       kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(tablet, rows_deleted, "Rows Deleted",
     kudu::MetricUnit::kRows,

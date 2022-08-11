@@ -313,19 +313,22 @@ Status KuduClient::Data::GetTabletServer(KuduClient* client,
   return Status::OK();
 }
 
-// TODO(yingchun): Add has_immutable_column_schema
 Status KuduClient::Data::CreateTable(KuduClient* client,
                                      const CreateTableRequestPB& req,
                                      CreateTableResponsePB* resp,
                                      const MonoTime& deadline,
                                      bool has_range_partition_bounds,
-                                     bool has_range_specific_hash_schema) {
+                                     bool has_range_specific_hash_schema,
+                                     bool has_immutable_column_schema) {
   vector<uint32_t> features;
   if (has_range_partition_bounds) {
     features.push_back(MasterFeatures::RANGE_PARTITION_BOUNDS);
   }
   if (has_range_specific_hash_schema) {
     features.push_back(MasterFeatures::RANGE_SPECIFIC_HASH_SCHEMA);
+  }
+  if (has_immutable_column_schema) {
+    features.push_back(MasterFeatures::IMMUTABLE_COLUMN_ATTRIBUTE);
   }
   Synchronizer sync;
   AsyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB> rpc(
@@ -416,13 +419,17 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
                                     AlterTableResponsePB* resp,
                                     const MonoTime& deadline,
                                     bool has_add_drop_partition,
-                                    bool adding_range_with_custom_hash_schema) {
+                                    bool adding_range_with_custom_hash_schema,
+                                    bool has_immutable_column_schema) {
   vector<uint32_t> required_feature_flags;
   if (has_add_drop_partition) {
     required_feature_flags.push_back(MasterFeatures::ADD_DROP_RANGE_PARTITIONS);
   }
   if (adding_range_with_custom_hash_schema) {
     required_feature_flags.push_back(MasterFeatures::RANGE_SPECIFIC_HASH_SCHEMA);
+  }
+  if (has_immutable_column_schema) {
+    required_feature_flags.push_back(MasterFeatures::IMMUTABLE_COLUMN_ATTRIBUTE);
   }
   Synchronizer sync;
   AsyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB> rpc(

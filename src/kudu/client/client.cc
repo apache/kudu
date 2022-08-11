@@ -51,6 +51,7 @@
 #include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/scan_token-internal.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/client/schema-internal.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/table-internal.h"
 #include "kudu/client/table_alterer-internal.h"
@@ -1040,6 +1041,15 @@ Status KuduTableCreator::Create() {
     }
   }
 
+  bool has_immutable_column_schema = false;
+  for (size_t i = 0; i < data_->schema_->num_columns(); i++) {
+    const auto& col_schema = data_->schema_->Column(i);
+    if (col_schema.is_immutable()) {
+      has_immutable_column_schema = true;
+      break;
+    }
+  }
+
   if (data_->table_type_) {
     req.set_table_type(*data_->table_type_);
   }
@@ -1058,7 +1068,8 @@ Status KuduTableCreator::Create() {
                                          &resp,
                                          deadline,
                                          !data_->range_partitions_.empty(),
-                                         has_range_with_custom_hash_schema),
+                                         has_range_with_custom_hash_schema,
+                                         has_immutable_column_schema),
       Substitute("Error creating table $0 on the master", data_->table_name_));
   // Spin until the table is fully created, if requested.
   if (data_->wait_) {
@@ -1181,6 +1192,10 @@ KuduInsertIgnore* KuduTable::NewInsertIgnore() {
 
 KuduUpsert* KuduTable::NewUpsert() {
   return new KuduUpsert(shared_from_this());
+}
+
+KuduUpsertIgnore* KuduTable::NewUpsertIgnore() {
+  return new KuduUpsertIgnore(shared_from_this());
 }
 
 KuduUpdate* KuduTable::NewUpdate() {
@@ -1667,6 +1682,14 @@ Status KuduTableAlterer::Alter() {
   AlterTableResponsePB resp;
   RETURN_NOT_OK(data_->ToRequest(&req));
 
+  bool has_immutable_column_schema = false;
+  for (const auto& step : data_->steps_) {
+    if (step.step_type == AlterTableRequestPB::ADD_COLUMN && step.spec->data_->immutable) {
+      has_immutable_column_schema = true;
+      break;
+    }
+  }
+
   MonoDelta timeout = data_->timeout_.Initialized() ?
     data_->timeout_ :
     data_->client_->default_admin_operation_timeout();
@@ -1674,7 +1697,8 @@ Status KuduTableAlterer::Alter() {
   RETURN_NOT_OK(data_->client_->data_->AlterTable(
       data_->client_, req, &resp, deadline,
       data_->has_alter_partitioning_steps,
-      data_->adding_range_with_custom_hash_schema));
+      data_->adding_range_with_custom_hash_schema,
+      has_immutable_column_schema));
 
   if (data_->has_alter_partitioning_steps) {
     // If the table partitions change, clear the local meta cache so that the

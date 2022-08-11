@@ -562,11 +562,15 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
     RowChangeListEncoder rcl_encoder(&buf);
 
     // Now process the rest of columns as updates.
+    DCHECK_EQ(client_schema_->num_key_columns(), client_col_idx);
     for (; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
       size_t tablet_col_idx = GetTabletColIdx(mapping, client_col_idx);
       const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
       if (BitmapTest(client_isset_map, client_col_idx)) {
+        bool client_set_to_null = client_schema_->has_nullables() &&
+          BitmapTest(client_null_map, client_col_idx);
+
         if (col.is_immutable()) {
           if (op->type == RowOperationsPB::UPDATE) {
             op->SetFailureStatusOnce(
@@ -575,12 +579,13 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
             DCHECK_EQ(RowOperationsPB::UPDATE_IGNORE, op->type);
             op->error_ignored = true;
           }
-          RETURN_NOT_OK(ReadColumnAndDiscard(col));
+          if (!client_set_to_null) {
+            RETURN_NOT_OK(ReadColumnAndDiscard(col));
+          }
           // Use 'continue' not 'break' to consume the rest row data.
           continue;
         }
-        bool client_set_to_null = client_schema_->has_nullables() &&
-          BitmapTest(client_null_map, client_col_idx);
+
         uint8_t scratch[kLargestTypeSize];
         uint8_t* val_to_add = nullptr;
         if (!client_set_to_null) {
@@ -593,6 +598,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
           RETURN_NOT_OK(ReadColumnAndDiscard(col));
           continue;
         }
+
         rcl_encoder.AddColumnUpdate(col, tablet_schema_->column_id(tablet_col_idx), val_to_add);
       }
     }

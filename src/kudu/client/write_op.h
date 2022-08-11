@@ -73,7 +73,8 @@ class KUDU_EXPORT KuduWriteOperation {
     UPSERT = 4,
     INSERT_IGNORE = 5,
     UPDATE_IGNORE = 6,
-    DELETE_IGNORE = 7
+    DELETE_IGNORE = 7,
+    UPSERT_IGNORE = 8
   };
   virtual ~KuduWriteOperation();
 
@@ -215,6 +216,33 @@ class KUDU_EXPORT KuduUpsert : public KuduWriteOperation {
 };
 
 
+/// @brief A single row upsert ignore to be sent to the cluster, errors on updating immutable
+///   cells are ignored.
+///
+/// See KuduUpsert for more details.
+class KUDU_EXPORT KuduUpsertIgnore : public KuduWriteOperation {
+ public:
+  ~KuduUpsertIgnore() override;
+
+  /// @copydoc KuduWriteOperation::ToString()
+  std::string ToString() const override { return "UPSERT IGNORE " + row_.ToString(); }
+
+ protected:
+  /// @cond PROTECTED_MEMBERS_DOCUMENTED
+
+  /// @copydoc KuduWriteOperation::type()
+  Type type() const override {
+    return UPSERT_IGNORE;
+  }
+
+  /// @endcond
+
+ private:
+  friend class KuduTable;
+  explicit KuduUpsertIgnore(const sp::shared_ptr<KuduTable>& table);
+};
+
+
 /// @brief A single row update to be sent to the cluster.
 ///
 /// @pre An update requires the key columns and at least one other column
@@ -241,7 +269,8 @@ class KUDU_EXPORT KuduUpdate : public KuduWriteOperation {
   explicit KuduUpdate(const sp::shared_ptr<KuduTable>& table);
 };
 
-/// @brief A single row update ignore to be sent to the cluster, missing row errors are ignored.
+/// @brief A single row update ignore to be sent to the cluster, missing row errors and
+///   errors on updating immutable cells are ignored.
 ///
 /// @pre An update ignore requires the key columns and at least one other column
 ///   in the schema to be set in the embedded KuduPartialRow object.

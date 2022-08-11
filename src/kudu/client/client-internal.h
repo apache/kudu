@@ -108,7 +108,8 @@ class KuduClient::Data {
                             master::CreateTableResponsePB* resp,
                             const MonoTime& deadline,
                             bool has_range_partition_bounds,
-                            bool has_range_specific_hash_schema);
+                            bool has_range_specific_hash_schema,
+                            bool has_immutable_column_schema);
 
   static Status IsCreateTableInProgress(KuduClient* client,
                                         master::TableIdentifierPB table,
@@ -135,7 +136,8 @@ class KuduClient::Data {
                            master::AlterTableResponsePB* resp,
                            const MonoTime& deadline,
                            bool has_add_drop_partition,
-                           bool adding_range_with_custom_hash_schema);
+                           bool adding_range_with_custom_hash_schema,
+                           bool has_immutable_column_schema);
 
   static Status IsAlterTableInProgress(KuduClient* client,
                                        master::TableIdentifierPB table,

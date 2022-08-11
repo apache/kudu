@@ -1169,6 +1169,8 @@ enum MasterFeatures {
   RANGE_SPECIFIC_HASH_SCHEMA = 8;
   // Similar to IGNORE_OPERATIONS, but this is for UPSERT_IGNORE specifically.
   UPSERT_IGNORE = 9;
+  // Whether master supports immutable attribute on column schema.
+  IMMUTABLE_COLUMN_ATTRIBUTE = 10;
 }
 
 service MasterService {

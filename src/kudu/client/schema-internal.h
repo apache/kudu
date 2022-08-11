@@ -80,6 +80,7 @@ class KuduColumnSpec::Data {
   std::optional<KuduColumnStorageAttributes::CompressionType> compression;
   std::optional<int32_t> block_size;
   std::optional<bool> nullable;
+  std::optional<bool> immutable;
   bool primary_key;
   std::optional<KuduValue*> default_val;  // Owned.
   bool remove_default;                      // For ALTER

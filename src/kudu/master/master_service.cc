@@ -113,6 +113,11 @@ DEFINE_bool(master_support_upsert_ignore_operations, true,
 TAG_FLAG(master_support_upsert_ignore_operations, hidden);
 TAG_FLAG(master_support_upsert_ignore_operations, runtime);
 
+DEFINE_bool(master_support_immutable_column_attribute, true,
+            "Whether the cluster supports immutable attribute on column schema.");
+TAG_FLAG(master_support_immutable_column_attribute, hidden);
+TAG_FLAG(master_support_immutable_column_attribute, runtime);
+
 
 using google::protobuf::Message;
 using kudu::consensus::ReplicaManagementInfoPB;
@@ -918,6 +923,8 @@ bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
       return FLAGS_enable_per_range_hash_schemas;
     case MasterFeatures::UPSERT_IGNORE:
       return FLAGS_master_support_upsert_ignore_operations;
+    case MasterFeatures::IMMUTABLE_COLUMN_ATTRIBUTE:
+      return FLAGS_master_support_immutable_column_attribute;
     default:
       return false;
   }

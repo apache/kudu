@@ -138,7 +138,8 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
             !s.spec->data_->encoding &&
             !s.spec->data_->compression &&
             !s.spec->data_->block_size &&
-            !s.spec->data_->comment) {
+            !s.spec->data_->comment &&
+            !s.spec->data_->immutable) {
           return Status::InvalidArgument("no alter operation specified",
                                          s.spec->data_->name);
         }
@@ -150,7 +151,8 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
             !s.spec->data_->encoding &&
             !s.spec->data_->compression &&
             !s.spec->data_->block_size &&
-            !s.spec->data_->comment) {
+            !s.spec->data_->comment &&
+            !s.spec->data_->immutable) {
           pb_step->set_type(AlterTableRequestPB::RENAME_COLUMN);
           pb_step->mutable_rename_column()->set_old_name(s.spec->data_->name);
           pb_step->mutable_rename_column()->set_new_name(*(s.spec->data_->rename_to));

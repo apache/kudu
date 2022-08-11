@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -2543,6 +2544,47 @@ TEST_F(AlterTableTest, TestDisableCompactAlter) {
   Status s = table_alterer->AlterExtraConfig(
                            {{"kudu.table.disable_compaction", "ok"}})->Alter();
   ASSERT_TRUE(s.IsInvalidArgument());
+}
+
+TEST_F(AlterTableTest, AddAndRemoveImmutableAttribute) {
+  InsertRows(0, 1);
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+
+  vector<string> rows;
+  ScanToStrings(&rows);
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ("(int32 c0=0, int32 c1=0)", rows[0]);
+
+  {
+    // Add immutable attribute to a column.
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("c1")->Immutable();
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  InsertRows(1, 1);
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+
+  ScanToStrings(&rows);
+  ASSERT_EQ(2, rows.size());
+  EXPECT_EQ("(int32 c0=0, int32 c1=0)", rows[0]);
+  EXPECT_EQ("(int32 c0=16777216, int32 c1=1)", rows[1]);
+
+  {
+    // Remove immutable attribute from a column.
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("c1")->Mutable();
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  InsertRows(2, 1);
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+
+  ScanToStrings(&rows);
+  ASSERT_EQ(3, rows.size());
+  EXPECT_EQ("(int32 c0=0, int32 c1=0)", rows[0]);
+  EXPECT_EQ("(int32 c0=16777216, int32 c1=1)", rows[1]);
+  EXPECT_EQ("(int32 c0=33554432, int32 c1=2)", rows[2]);
 }
 
 } // namespace kudu

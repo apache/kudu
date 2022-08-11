@@ -102,6 +102,9 @@ struct RowOp {
   // True if an ignore op was ignored due to an error.
   bool error_ignored = false;
 
+  // True if this op has any error occured and failed to compelte this op.
+  bool failed = false;
+
   // The RowSet in which this op's key has been found present and alive.
   // This will be null if 'checked_present' is false, or if it has been
   // checked and found not to be alive in any RowSet.

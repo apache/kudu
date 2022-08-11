@@ -48,6 +48,7 @@ void RowOp::SetFailed(const Status& s) {
   DCHECK(!result) << SecureDebugString(*result);
   result = google::protobuf::Arena::CreateMessage<OperationResultPB>(pb_arena_);
   StatusToPB(s, result->mutable_failed_status());
+  failed = true;
 }
 
 void RowOp::SetInsertSucceeded(int mrs_id) {
@@ -68,6 +69,7 @@ void RowOp::SetErrorIgnored() {
   DCHECK(!result) << SecureDebugString(*result);
   result = google::protobuf::Arena::CreateMessage<OperationResultPB>(pb_arena_);
   error_ignored = true;
+  failed = true;
 }
 
 void RowOp::SetMutateSucceeded(OperationResultPB* result) {
