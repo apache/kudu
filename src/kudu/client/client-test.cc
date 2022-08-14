@@ -707,7 +707,7 @@ class ClientTest : public KuduTest {
     }
   }
 
-  void DoTestScanWithStringPredicate() {
+  void DoTestScanWithStringPredicate(string query_id = "") {
     KuduScanner scanner(client_table_.get());
     ASSERT_OK(scanner.AddConjunctPredicate(
                   client_table_->NewComparisonPredicate("string_val", KuduPredicate::GREATER_EQUAL,
@@ -715,7 +715,9 @@ class ClientTest : public KuduTest {
     ASSERT_OK(scanner.AddConjunctPredicate(
                   client_table_->NewComparisonPredicate("string_val", KuduPredicate::LESS_EQUAL,
                                                         KuduValue::CopyString("hello 3"))));
-
+    if (!query_id.empty()) {
+      scanner.SetQueryId(query_id);
+    }
     LOG_TIMING(INFO, "Scanning with string predicate") {
       ASSERT_OK(scanner.Open());
 
@@ -1265,6 +1267,16 @@ TEST_F(ClientTest, TestScan) {
   // Scan after re-insert
   InsertTestRows(client_table_.get(), 1);
   DoTestScanWithKeyPredicate();
+}
+
+TEST_F(ClientTest, TestScanWithQueryId) {
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+  ASSERT_EQ(FLAGS_test_scan_num_rows, CountRowsFromClient(client_table_.get()));
+
+  // Scan with the specified query id.
+  DoTestScanWithStringPredicate("test_query_id");
+  // Scan with default query id.
+  DoTestScanWithStringPredicate();
 }
 
 TEST_F(ClientTest, TestScanAtSnapshot) {

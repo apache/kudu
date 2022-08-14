@@ -197,6 +197,12 @@ message ScanTokenPB {
 
   // An authorization token with which to authorize the scan requests.
   optional security.SignedTokenPB authz_token = 24;
+
+  // Identifier of a top-level query which this scan requests is a part of.
+  // Query id allows to associate the scanner built out of this token with
+  // the top-level query; it is useful for tracing the execution of the
+  // top-level query through various parts of the data pipeline.
+  optional string query_id = 25;
 }
 
 // All of the data necessary to authenticate to a cluster from a client with

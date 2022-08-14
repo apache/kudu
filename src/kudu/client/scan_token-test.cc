@@ -697,6 +697,75 @@ TEST_F(ScanTokenTest, TestScanTokens_NonUniquePrimaryKey) {
   }
 }
 
+TEST_F(ScanTokenTest, TestScanTokensWithQueryId) {
+  int64_t insert_rows_num = 0;
+  {
+    // Create a table with 2 partitions, 1 replication factor.
+    TestWorkload workload(cluster_.get(), TestWorkload::PartitioningType::HASH);
+    workload.set_table_name("test_table");
+    workload.set_num_tablets(2);
+    workload.set_num_replicas(1);
+    workload.Setup();
+    workload.Start();
+    ASSERT_EVENTUALLY([&]() { ASSERT_GE(workload.rows_inserted(), kRecordCount); });
+    workload.StopAndJoin();
+    insert_rows_num = workload.rows_inserted();
+  }
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+  ASSERT_OK(client_->OpenTable("test_table", &table));
+  ASSERT_NE(nullptr, table.get());
+
+  // Scan with query id.
+  {
+    vector<KuduScanToken*> tokens;
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.SetQueryId("query-id-for-test"));
+    ASSERT_OK(builder.Build(&tokens));
+
+    int64_t count = 0;
+    ASSERT_EQ(2, tokens.size());
+    for (const auto& token : tokens) {
+      unique_ptr<KuduScanner> scanner;
+      ASSERT_OK(IntoUniqueScanner(client_.get(), *token, &scanner));
+      ASSERT_OK(scanner->Open());
+      ASSERT_EQ("query-id-for-test", scanner->data_->next_req_.query_id());
+      KuduScanBatch batch;
+      ASSERT_TRUE(scanner->HasMoreRows());
+
+      while (scanner->HasMoreRows()) {
+        ASSERT_OK(scanner->NextBatch(&batch));
+        count += batch.NumRows();
+      }
+    }
+    ASSERT_EQ(insert_rows_num, count);
+  }
+
+  // Scan without query id.
+  {
+    vector<KuduScanToken*> tokens;
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.Build(&tokens));
+
+    int64_t count = 0;
+    ASSERT_EQ(2, tokens.size());
+    for (const auto& token : tokens) {
+      unique_ptr<KuduScanner> scanner;
+      ASSERT_OK(IntoUniqueScanner(client_.get(), *token, &scanner));
+      ASSERT_OK(scanner->Open());
+      ASSERT_FALSE(scanner->data_->next_req_.query_id().empty());
+      KuduScanBatch batch;
+      ASSERT_TRUE(scanner->HasMoreRows());
+
+      while (scanner->HasMoreRows()) {
+        ASSERT_OK(scanner->NextBatch(&batch));
+        count += batch.NumRows();
+      }
+    }
+    ASSERT_EQ(insert_rows_num, count);
+  }
+}
+
 TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
   // Create schema
   KuduSchema schema;

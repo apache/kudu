@@ -2762,6 +2762,7 @@ class KUDU_EXPORT KuduScanner {
   ///   The table to perfrom scan. The given object must remain valid
   ///   for the lifetime of this scanner object.
   explicit KuduScanner(KuduTable* table);
+
   ~KuduScanner();
 
   /// Set the projection for the scanner using column names.
@@ -2796,6 +2797,27 @@ class KUDU_EXPORT KuduScanner {
   Status SetProjectedColumns(const std::vector<std::string>& col_names)
       WARN_UNUSED_RESULT
       ATTRIBUTE_DEPRECATED("use SetProjectedColumnNames() instead");
+
+  /// Set a query id for the scan to trace the whole scanning process.
+  /// Query id is posted by the user or generated automatically by the
+  /// client library code. It is used to trace the whole query process
+  /// for debugging.
+  ///
+  /// Example usage:
+  /// @code
+  ///   KuduScanner scanner(...);
+  ///   scanner.SetQueryId(query_id);
+  ///   scanner.Open();
+  ///   while (scanner.HasMoreRows()) {
+  ///     KuduScanBatch batch;
+  ///     scanner.NextBatch(&batch);
+  ///   }
+  /// @endcode
+  ///
+  /// @param [in] query_id
+  ///   A query id to identify a query.
+  /// @return Operation result status.
+  Status SetQueryId(const std::string& query_id);
 
   /// Add a predicate for the scan.
   ///
@@ -3153,10 +3175,12 @@ class KUDU_EXPORT KuduScanner {
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);
   FRIEND_TEST(ClientTest, TestScanNoBlockCaching);
   FRIEND_TEST(ClientTest, TestScanTimeout);
+  FRIEND_TEST(ClientTest, TestScanWithQueryId);
   FRIEND_TEST(ClientTest, TestReadAtSnapshotNoTimestampSet);
   FRIEND_TEST(ConsistencyITest, TestSnapshotScanTimestampReuse);
   FRIEND_TEST(ScanTokenTest, TestScanTokens);
   FRIEND_TEST(ScanTokenTest, TestScanTokens_NonUniquePrimaryKey);
+  FRIEND_TEST(ScanTokenTest, TestScanTokensWithQueryId);
 
   // Owned.
   Data* data_;
@@ -3349,6 +3373,15 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   ///   true, if table metadata should be included.
   /// @return Operation result status.
   Status IncludeTabletMetadata(bool include_metadata) WARN_UNUSED_RESULT;
+
+  /// Set a query id for the scan to trace the whole process.
+  /// Query id is set by the user or generated automatically.
+  /// It is used to trace the whole query process for for troubleshooting and debugging.
+  ///
+  /// @param [in] query_id
+  ///   A query id to identify a query.
+  /// @return Operation result status.
+  Status SetQueryId(const std::string& query_id);
 
   /// Build the set of scan tokens.
   ///

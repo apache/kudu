@@ -86,11 +86,16 @@ class KuduScanTokenBuilder::Data {
     split_size_bytes_ = split_size_bytes;
   }
 
+  void SetQueryId(const std::string& query_id) {
+    query_id_ = query_id;
+  }
+
 private:
   ScanConfiguration configuration_;
   bool include_table_metadata_ = true;
   bool include_tablet_metadata_ = true;
   uint64_t split_size_bytes_ = 0;
+  std::string query_id_;
 };
 
 } // namespace client

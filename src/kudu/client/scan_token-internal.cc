@@ -330,6 +330,10 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     scan_builder->SetTimeoutMillis(message.scan_request_timeout_ms());
   }
 
+  if (message.has_query_id()) {
+    scan_builder->SetQueryId(message.query_id());
+  }
+
   *scanner = scan_builder.release();
   return Status::OK();
 }
@@ -465,6 +469,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
     pb.set_batch_size_bytes(configuration_.batch_size_bytes());
   }
 
+  pb.set_query_id(query_id_);
   PartitionPruner pruner;
   vector<MetaCache::RangeWithRemoteTablet> range_tablets;
   pruner.Init(*table->schema().schema_, table->partition_schema(), configuration_.spec());

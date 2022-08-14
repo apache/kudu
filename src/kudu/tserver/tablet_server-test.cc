@@ -2882,6 +2882,31 @@ TEST_F(TabletServerTest, TestConcurrentAccessToOneScanner) {
   ASSERT_EQ(total_rows, kNumRows);
 }
 
+// Test for a scan with query id in server side.
+TEST_F(TabletServerTest, TestScanWithQueryId) {
+  InsertTestRowsDirect(0, 100);
+
+  ScanRequestPB req;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0); // so it won't return data right away
+  ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+  req.set_query_id("query_id_for_test");
+
+  ScanResponsePB resp;
+  RpcController rpc;
+  // Send the call
+  {
+    SCOPED_TRACE(SecureDebugString(req));
+    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error());
+  }
+  vector<string> results;
+  NO_FATALS(
+    DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+  ASSERT_EQ(100, results.size());
+}
 
 TEST_F(TabletServerTest, TestScanWithStringPredicates) {
   InsertTestRowsDirect(0, 100);

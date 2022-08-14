@@ -32,7 +32,6 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/common/column_predicate.h"
@@ -67,6 +66,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/template_util.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
@@ -2751,15 +2751,16 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   DCHECK(error_code != nullptr);
   DCHECK(req->has_new_scan_request());
   const NewScanRequestPB& scan_pb = req->new_scan_request();
-  TRACE_EVENT1("tserver", "TabletServiceImpl::HandleNewScanRequest",
-               "tablet_id", scan_pb.tablet_id());
-
+  TRACE_EVENT2("tserver", "TabletServiceImpl::HandleNewScanRequest",
+               "tablet_id", scan_pb.tablet_id(),
+               "query_id", req->query_id());
   SharedScanner scanner;
   server_->scanner_manager()->NewScanner(replica,
                                          rpc_context->remote_user(),
                                          scan_pb.row_format_flags(),
                                          &scanner);
-  TRACE("Created scanner $0 for tablet $1", scanner->id(), scanner->tablet_id());
+  TRACE("Created scanner $0 for tablet $1, query id is $2",
+        scanner->id(), scanner->tablet_id(), req->query_id());
   auto scanner_lock = scanner->LockForAccess();
 
   // If we early-exit out of this function, automatically unregister
@@ -3032,9 +3033,9 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
                                                     bool* has_more_results,
                                                     TabletServerErrorPB::Code* error_code) {
   DCHECK(req->has_scanner_id());
-  TRACE_EVENT1("tserver", "TabletServiceImpl::HandleContinueScanRequest",
-               "scanner_id", req->scanner_id());
-
+  TRACE_EVENT2("tserver", "TabletServiceImpl::HandleContinueScanRequest",
+               "scanner_id", req->scanner_id(),
+               "query_id", req->query_id());
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
 
   SharedScanner scanner;
@@ -3069,7 +3070,8 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   VLOG(2) << "Found existing scanner " << scanner->id() << " for request: "
           << SecureShortDebugString(*req);
-  TRACE("Found scanner $0 for tablet $1", scanner->id(), scanner->tablet_id());
+  TRACE("Found scanner $0 for tablet $1, query id is $2",
+        scanner->id(), scanner->tablet_id(), req->query_id());
 
   if (batch_size_bytes == 0 && req->close_scanner()) {
     *has_more_results = false;

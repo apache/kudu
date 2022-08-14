@@ -1765,6 +1765,17 @@ Status KuduScanner::SetProjectedColumns(const vector<string>& col_names) {
   return SetProjectedColumnNames(col_names);
 }
 
+Status KuduScanner::SetQueryId(const string& query_id) {
+  if (data_->open_) {
+    return Status::IllegalState("Query id must be set before Open()");
+  }
+  if (query_id.empty()) {
+    return Status::InvalidArgument("Query id should not be empty");
+  }
+  data_->next_req_.set_query_id(query_id);
+  return Status::OK();
+}
+
 Status KuduScanner::SetProjectedColumnNames(const vector<string>& col_names) {
   if (data_->open_) {
     return Status::IllegalState("Projection must be set before Open()");
@@ -2011,6 +2022,11 @@ Status KuduScanner::Open() {
 
   MonoTime deadline = MonoTime::Now() + data_->configuration().timeout();
   set<string> blacklist;
+
+  if (data_->next_req_.query_id().empty()) {
+    static ObjectIdGenerator oid_generator;
+    data_->next_req_.set_query_id(oid_generator.Next());
+  }
 
   RETURN_NOT_OK(data_->OpenNextTablet(deadline, &blacklist));
 
@@ -2307,6 +2323,14 @@ Status KuduScanTokenBuilder::AddUpperBound(const KuduPartialRow& key) {
 
 Status KuduScanTokenBuilder::SetCacheBlocks(bool cache_blocks) {
   return data_->mutable_configuration()->SetCacheBlocks(cache_blocks);
+}
+
+Status KuduScanTokenBuilder::SetQueryId(const string& query_id) {
+  if (query_id.empty()) {
+    return Status::InvalidArgument("Query id should not be empty");
+  }
+  data_->SetQueryId(query_id);
+  return Status::OK();
 }
 
 Status KuduScanTokenBuilder::Build(vector<KuduScanToken*>* tokens) {

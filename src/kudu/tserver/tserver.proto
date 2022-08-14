@@ -400,6 +400,9 @@ message ScanRequestPB {
   // In order to simply close a scanner without selecting any rows, you
   // may set batch_size_bytes to 0 in conjunction with setting this flag.
   optional bool close_scanner = 5;
+
+  // Query id is used to trace the whole process of reading tablets.
+  optional bytes query_id = 6;
 }
 
 // RPC's resource metrics.
