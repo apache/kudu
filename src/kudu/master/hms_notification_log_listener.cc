@@ -237,6 +237,22 @@ Status HmsNotificationLogListenerTask::Poll() {
         processed_event_id, batch_size, &events),
                           "failed to retrieve notification log events");
 
+    // If we do not receive any new events it could be because the HMS event ID in the Kudu
+    // master is higher than what is in the HMS database which causes Drop/Alter table
+    // commands to fail on Kudu side.
+    if (events.empty()) {
+      int64_t event_id;
+          RETURN_NOT_OK_PREPEND(catalog_manager_->hms_catalog()->
+          GetCurrentNotificationEventId(&event_id),
+                                "failed to retrieve latest notification log event");
+      if (event_id < processed_event_id) {
+        LOG(ERROR) << Substitute("The event ID $0 last seen by Kudu master is greater "
+                                 "than $1 currently reported by HMS. Has the HMS database "
+                                 "been reset (backup&restore, etc.)?",
+                                 processed_event_id, event_id);
+      }
+    }
+
     for (const auto& event : events) {
       VLOG(1) << "Processing notification log event: " << EventDebugString(event);
 

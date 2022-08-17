@@ -184,6 +184,10 @@ Status MiniHms::Start() {
   return wait;
 }
 
+Status MiniHms::DeleteDatabaseDir() {
+  return Env::Default()->DeleteRecursively(JoinPathSegments(data_root_, metadb_subdir_));
+}
+
 Status MiniHms::Stop() {
   if (hms_process_) {
     VLOG(1) << "Stopping HMS";

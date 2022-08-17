@@ -1475,8 +1475,8 @@ void CatalogManager::PrepareForLeadershipTask() {
           "Loading latest processed Hive Metastore notification log event ID";
       LOG(INFO) << kNotificationLogEventIdDescription << "...";
       LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kNotificationLogEventIdDescription) {
-      if (!check([this]() { return this->InitLatestNotificationLogEventId(); },
-                 *consensus, term, kNotificationLogEventIdDescription).ok()) {
+        if (!check([this]() { return this->InitLatestNotificationLogEventId(); },
+                   *consensus, term, kNotificationLogEventIdDescription).ok()) {
           return;
         }
       }
@@ -5508,6 +5508,8 @@ Status CatalogManager::InitLatestNotificationLogEventId() {
   int64_t hms_notification_log_event_id;
   RETURN_NOT_OK(sys_catalog_->GetLatestNotificationLogEventId(&hms_notification_log_event_id));
   hms_notification_log_event_id_ = hms_notification_log_event_id;
+  LOG(INFO) << "Last processed Hive Metastore notification event ID: "
+            << hms_notification_log_event_id_;
   return Status::OK();
 }
 

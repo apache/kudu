@@ -72,6 +72,9 @@ class MiniHms {
   // Unpause the Hive metastore process.
   Status Resume() WARN_UNUSED_RESULT;
 
+  // Delete the HMS database directory.
+  Status DeleteDatabaseDir() WARN_UNUSED_RESULT;
+
   // Returns the address of the Hive metastore. Should only be called after the
   // metastore is started.
   HostPort address() const {

@@ -143,6 +143,9 @@ class HmsCatalog {
   Status GetNotificationEvents(int64_t last_event_id, int max_events,
                                std::vector<hive::NotificationEvent>* events) WARN_UNUSED_RESULT;
 
+  // Retrieves the latest notification event id from the HMS.
+  Status GetCurrentNotificationEventId(int64_t* event_id) WARN_UNUSED_RESULT;
+
   // Get the UUID associated with the remote HMS instance. This is an identifier
   // stored in the HMS's backing database which does not change even if the
   // HMS itself changes hostnames, etc.

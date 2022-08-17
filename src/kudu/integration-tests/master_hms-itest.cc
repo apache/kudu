@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <fstream>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -84,8 +85,8 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     opts.principal = Principal();
     // Tune down the notification log poll period in order to speed up catalog convergence.
     opts.extra_master_flags.emplace_back("--hive_metastore_notification_log_poll_period_seconds=1");
+    SetFlags(&opts);
     StartClusterWithOpts(std::move(opts));
-
     thrift::ClientOptions hms_opts;
     hms_opts.enable_kerberos = EnableKerberos();
     hms_opts.service_principal = "hive";
@@ -181,6 +182,8 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
   virtual string Principal() {
     return "kudu";
   }
+
+  virtual void SetFlags(ExternalMiniClusterOptions* opts) const {}
 };
 
 TEST_F(MasterHmsTest, TestCreateTable) {
@@ -877,5 +880,47 @@ TEST_F(MasterHmsKerberizedTest, TestTableOwnership) {
   hive::Table table;
   ASSERT_OK(harness_.hms_client()->GetTable("default", "my_table", &table));
   ASSERT_EQ("test-user", table.owner);
+}
+
+class MasterHmsDBTest : public MasterHmsTest {
+ public:
+  void SetFlags(ExternalMiniClusterOptions* opts) const override {
+    opts->extra_master_flags.emplace_back("--logtostderr=false");
+  }
+};
+
+// TODO(achennaka): Skip test until server timeouts seen in ASAN builds are resolved.
+TEST_F(MasterHmsDBTest, DISABLED_TestHMSDBErase) {
+  // Generate 2 HMS events. With just one event created the published
+  // event id is not 0 after the database drop.
+  ASSERT_OK(CreateKuduTable("default", "a"));
+  unique_ptr<KuduTableAlterer> table_alterer;
+  table_alterer.reset(client_->NewTableAlterer("default.a")->RenameTo("default.b"));
+  ASSERT_OK(table_alterer->Alter());
+
+  // Ensure the table is present in HMS database.
+  NO_FATALS(CheckTable("default", "b", /*user=*/ nullopt));
+
+  // Simulate accidental HMS database loss.
+  ASSERT_OK(StopHms());
+  ASSERT_OK(cluster_->hms()->DeleteDatabaseDir());
+  ASSERT_OK(StartHms());
+
+  // Now everytime we poll HMS for new events, we should be logging an error message.
+  constexpr const char* const str = "The event ID 2 last seen by Kudu master is greater "
+                                    "than 0 currently reported by HMS. Has the HMS database "
+                                    "been reset (backup&restore, etc.)?";
+  ASSERT_EVENTUALLY([&] {
+    string line;
+    bool log_found = false;
+    std::ifstream in(strings::Substitute("$0/kudu-master.ERROR", cluster_->master()->log_dir()));
+    while (std::getline(in, line)) {
+      if (line.find(str) != std::string::npos) {
+        log_found = true;
+        break;
+      }
+    }
+    ASSERT_TRUE(log_found);
+  });
 }
 } // namespace kudu

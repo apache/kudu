@@ -311,6 +311,12 @@ Status HmsCatalog::GetNotificationEvents(int64_t last_event_id, int max_events,
   });
 }
 
+Status HmsCatalog::GetCurrentNotificationEventId(int64_t* event_id) {
+  return ha_client_.Execute([&] (HmsClient* client) {
+    return client->GetCurrentNotificationEventId(event_id);
+  });
+}
+
 Status HmsCatalog::GetUuid(string* uuid) {
   std::lock_guard<simple_spinlock> l(uuid_lock_);
   if (!uuid_) {
