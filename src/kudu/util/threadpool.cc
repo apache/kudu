@@ -33,6 +33,7 @@
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/trace.h"
@@ -150,9 +151,9 @@ void SchedulerThread::RunLoop() {
     }
 
     for (const auto& task : pending_tasks) {
-      ThreadPoolToken* token = task.thread_pool_token;
+      ThreadPoolToken* token = task.thread_pool_token();
       while (token != nullptr) {
-        Status s = token->Submit(task.f);
+        Status s = token->Submit(task.func());
         if (s.ok()) {
           break;
         }
@@ -258,14 +259,10 @@ void ThreadPoolToken::Shutdown() {
 
 // Submit a task, running after delay_ms delay some time
 Status ThreadPoolToken::Schedule(std::function<void()> f, int64_t delay_ms) {
-  if (PREDICT_FALSE(!MaySubmitNewTasks())) {
-    return Status::ServiceUnavailable("Thread pool token was shut down");
-  }
   CHECK(mode() == ThreadPool::ExecutionMode::SERIAL);
-  MonoTime excute_time = MonoTime::Now();
-  excute_time.AddDelta(MonoDelta::FromMilliseconds(delay_ms));
-  pool_->scheduler()->Schedule(this, std::move(f), excute_time);
-  return Status::OK();
+  MonoTime execute_time = MonoTime::Now();
+  execute_time.AddDelta(MonoDelta::FromMilliseconds(delay_ms));
+  return pool_->Schedule(this, std::move(f), execute_time);
 }
 
 void ThreadPoolToken::Wait() {
@@ -417,10 +414,12 @@ Status ThreadPool::Init() {
 }
 
 void ThreadPool::Shutdown() {
-  if (scheduler_) {
-    scheduler_->Shutdown();
-    delete scheduler_;
-    scheduler_ = nullptr;
+  {
+    MutexLock l(scheduler_lock_);
+    if (scheduler_) {
+      delete scheduler_;
+      scheduler_ = nullptr;
+    }
   }
 
   MutexLock unique_lock(lock_);
@@ -523,6 +522,17 @@ void ThreadPool::ReleaseToken(ThreadPoolToken* t) {
 
 Status ThreadPool::Submit(std::function<void()> f) {
   return DoSubmit(std::move(f), tokenless_.get());
+}
+
+Status ThreadPool::Schedule(ThreadPoolToken* token,
+                            std::function<void()> f,
+                            MonoTime execute_time) {
+  MutexLock l(scheduler_lock_);
+  if (!scheduler_) {
+    return Status::IllegalState("scheduler thread has been shutdown");
+  }
+  scheduler_->Schedule(token, std::move(f), execute_time);
+  return Status::OK();
 }
 
 Status ThreadPool::DoSubmit(std::function<void()> f, ThreadPoolToken* token) {
@@ -651,18 +661,6 @@ void ThreadPool::Wait() {
   MutexLock unique_lock(lock_);
   CheckNotPoolThreadUnlocked();
   while (total_queued_tasks_ > 0 || active_threads_ > 0) {
-    idle_cond_.Wait();
-  }
-}
-
-void ThreadPool::WaitForScheduler() {
-  MutexLock unique_lock(lock_);
-  CheckNotPoolThreadUnlocked();
-  // Generally, ignore scheduler's pending tasks, but
-  // set ScheduledTaskWaitType::WAIT at unit tests.
-  bool wait_scheduler = (scheduler_ != nullptr);
-  while (total_queued_tasks_ > 0 || active_threads_ > 0 ||
-        (wait_scheduler && !scheduler_->empty())) {
     idle_cond_.Wait();
   }
 }

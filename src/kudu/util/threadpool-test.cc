@@ -30,6 +30,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <boost/smart_ptr/shared_ptr.hpp>
@@ -90,12 +91,12 @@ class ThreadPoolTest : public KuduTest {
         .Build(&pool_);
   }
 
-  Status RebuildPoolWithScheduler(int min_threads, int max_threads) {
+  Status RebuildPoolWithScheduler(int min_threads, int max_threads, int period_ms = 100) {
     return ThreadPoolBuilder(kDefaultPoolName)
         .set_min_threads(min_threads)
         .set_max_threads(max_threads)
         .set_enable_scheduler()
-        .set_schedule_period_ms(100)
+        .set_schedule_period_ms(period_ms)
         .Build(&pool_);
   }
 
@@ -133,7 +134,7 @@ class SimpleTask {
 };
 
 TEST_F(ThreadPoolTest, TestSimpleTasks) {
-  constexpr int kDelayMs = 1000;
+  constexpr int kDelayMs = 500;
 
   ASSERT_OK(RebuildPoolWithMinMax(4, 4));
 
@@ -150,17 +151,16 @@ TEST_F(ThreadPoolTest, TestSimpleTasks) {
 
   ASSERT_OK(RebuildPoolWithScheduler(4, 4));
   unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
-  MonoTime start = MonoTime::Now();
   ASSERT_OK(token->Schedule([&counter]() {
     SimpleTaskMethod(13, &counter);
   }, kDelayMs));
 
-  pool_->WaitForScheduler();
+  // make sure the tasks scheduled and executed in SchedulerThread.
+  SleepFor(MonoDelta::FromMilliseconds(2 * kDelayMs));
+  // make sure all tasks executed in thread pool.
+  pool_->Wait();
+  // check the results.
   ASSERT_EQ(10 + 15 + 20 + 15 + 123 + 13, base::subtle::NoBarrier_Load(&counter));
-  MonoDelta delta = MonoTime::Now() - start;
-  MonoDelta expect_upper_limit = MonoDelta::FromMilliseconds(static_cast<int>(kDelayMs * 1.2));
-  MonoDelta expect_lower_limit = MonoDelta::FromMilliseconds(static_cast<int>(kDelayMs * 0.9));
-  ASSERT_TRUE(delta.MoreThan(expect_lower_limit) && delta.LessThan(expect_upper_limit));
 }
 
 static void IssueTraceStatement() {
@@ -181,6 +181,32 @@ TEST_F(ThreadPoolTest, TestTracePropagation) {
   ASSERT_STR_CONTAINS(t->DumpToString(), "hello from task");
 }
 
+static void ContinuousIssueTraceStatement(ThreadPoolToken* token) {
+  Random r(SeedRandom());
+  // delay_ms is a random time: 1ms or 2ms or 3ms.
+  int delay_ms = 1 + static_cast<int>(r.Uniform(3));
+  Status status = token->Schedule(std::bind(&ContinuousIssueTraceStatement, token), delay_ms);
+  // At the case, 'pool_->Shutdown();' would shutdown its SchedulerThread firstly, after that
+  // 'token->Scheduler(...)' would return a IllegalState.
+  LOG_IF(WARNING, !status.ok()) << "ContinuousIssueTraceStatement: " << status.ToString();
+  ASSERT_TRUE(status.ok() || status.IsIllegalState());
+}
+
+TEST_F(ThreadPoolTest, TestExtremeScheduler) {
+  // The case is for the scenario:
+  //   1. There are many tasks in SchedulerThread need to be scheduled.
+  //   2. Every periodic schedule of SchedulerThread, many tasks can be scheduled.
+  //   3. At 1, 2 conditions, SchedulerThread's shutdown happened
+  //      and program should work well(no threads data race and core dump).
+  ASSERT_OK(RebuildPoolWithScheduler(1, 1, 1));
+  unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
+  for (int i = 0; i < 2048; i++) {
+    ContinuousIssueTraceStatement(token.get());
+  }
+  SleepFor(MonoDelta::FromMilliseconds(5));
+  pool_->Shutdown();
+}
+
 TEST_F(ThreadPoolTest, TestSubmitAfterShutdown) {
   ASSERT_OK(RebuildPoolWithMinMax(1, 1));
   pool_->Shutdown();
@@ -190,21 +216,71 @@ TEST_F(ThreadPoolTest, TestSubmitAfterShutdown) {
 
   ASSERT_OK(RebuildPoolWithScheduler(1, 1));
   unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
-  ASSERT_OK(token->Schedule(&IssueTraceStatement, 200));
+  Atomic32 counter(0);
+  constexpr const int delay_ms = 100;
+  ASSERT_OK(token->Schedule([&counter]() { SimpleTaskMethod(10, &counter); }, delay_ms));
+  SleepFor(MonoDelta::FromMilliseconds(2 * delay_ms));
+  ASSERT_EQ(10, base::subtle::NoBarrier_Load(&counter));
   token->Shutdown();
-  SleepFor(MonoDelta::FromMilliseconds(500));
+  ASSERT_OK(token->Schedule([&counter]() { SimpleTaskMethod(3, &counter); }, delay_ms));
+  SleepFor(MonoDelta::FromMilliseconds(2 * delay_ms));
+  // The result does not change.
+  ASSERT_EQ(10, base::subtle::NoBarrier_Load(&counter));
   pool_->Shutdown();
-  ASSERT_TRUE(token->Schedule(&IssueTraceStatement, 1000).IsServiceUnavailable());
+  // Submit a delayed task, but it will not really executed.
+  ASSERT_TRUE(
+      token->Schedule([&counter]() { SimpleTaskMethod(5, &counter); }, delay_ms).IsIllegalState());
+  // The result does not change.
+  ASSERT_EQ(10, base::subtle::NoBarrier_Load(&counter));
 }
 
 TEST_F(ThreadPoolTest, TokenShutdownBeforeSchedulerExecute) {
   ASSERT_OK(RebuildPoolWithScheduler(1, 1));
   unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
-  ASSERT_OK(token->Schedule(&IssueTraceStatement, 200));
+  Atomic32 counter(0);
+  constexpr const int delay_ms = 200;
+  ASSERT_OK(token->Schedule([&counter]() { SimpleTaskMethod(10, &counter); }, delay_ms));
   token->Shutdown();
-  SleepFor(MonoDelta::FromMilliseconds(500));
-  ASSERT_TRUE(token->Schedule(&IssueTraceStatement, 1000).IsServiceUnavailable());
+  ASSERT_EQ(0, base::subtle::NoBarrier_Load(&counter));
+  SleepFor(MonoDelta::FromMilliseconds(2 * delay_ms));
+  ASSERT_OK(token->Schedule([&counter]() { SimpleTaskMethod(3, &counter); }, delay_ms));
+  SleepFor(MonoDelta::FromMilliseconds(2 * delay_ms));
+  ASSERT_EQ(0, base::subtle::NoBarrier_Load(&counter));
   pool_->Shutdown();
+  ASSERT_TRUE(
+      token->Schedule([&counter]() { SimpleTaskMethod(3, &counter); }, delay_ms).IsIllegalState());
+  SleepFor(MonoDelta::FromMilliseconds(2 * delay_ms));
+  ASSERT_EQ(0, base::subtle::NoBarrier_Load(&counter));
+}
+
+TEST_F(ThreadPoolTest, SchedulerShutdownBeforeTokenShutdown) {
+  ASSERT_OK(RebuildPoolWithScheduler(1, 1));
+  unique_ptr<ThreadPoolToken> token = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
+  ASSERT_OK(token->Schedule(&IssueTraceStatement, 200));
+  SleepFor(MonoDelta::FromMilliseconds(500));
+  pool_->Shutdown();
+  Status status = token->Schedule(&IssueTraceStatement, 200);
+  ASSERT_TRUE(status.IsIllegalState() || status.IsServiceUnavailable());
+  token->Shutdown();
+}
+
+TEST_F(ThreadPoolTest, SchedulerWithNullToken) {
+  ASSERT_OK(RebuildPoolWithScheduler(1, 1));
+  ASSERT_OK(pool_->Schedule(nullptr, &IssueTraceStatement, MonoTime::Now()));
+
+  Atomic32 counter(0);
+  SimpleTask task(2, &counter);
+
+  ASSERT_OK(pool_->Submit([&counter]() { SimpleTaskMethod(1, &counter); }));
+  ASSERT_OK(pool_->Submit([&task]() { task.Run(); }));
+  // token is null is ok, but the task will ignore.
+  ASSERT_OK(pool_->Schedule(
+      nullptr, [&counter]() { SimpleTaskMethod(3, &counter); }, MonoTime::Now()));
+  // make sure the delayed task execute, the task would be ignored.
+  SleepFor(MonoDelta::FromMilliseconds(200));
+  // make sure all tasks executed in thread pool.
+  pool_->Wait();
+  ASSERT_EQ(1 + 2, base::subtle::NoBarrier_Load(&counter));
 }
 
 TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
@@ -286,7 +362,7 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithSchedulerAndNoMinimum) {
   ASSERT_EQ(0, pool_->num_threads());
   ASSERT_EQ(0, pool_->num_active_threads());
   pool_->Shutdown();
-  ASSERT_EQ(nullptr, pool_->scheduler());
+  ASSERT_EQ(nullptr, pool_->scheduler_);
 }
 
 TEST_F(ThreadPoolTest, TestThreadPoolWithNoMaxThreads) {

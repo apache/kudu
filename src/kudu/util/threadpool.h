@@ -184,11 +184,19 @@ public:
   // Shutdown the thread and clear the pending tasks.
   Status Shutdown();
 
-  struct SchedulerTask {
-    ThreadPoolToken* thread_pool_token;
-    std::function<void()> f;
+  class SchedulerTask {
+   public:
+    SchedulerTask(ThreadPoolToken* thread_pool_token, std::function<void()> func)
+        : thread_pool_token_(thread_pool_token), func_(std::move(func)) {}
+    ThreadPoolToken* thread_pool_token() const { return thread_pool_token_; }
+    const std::function<void()>& func() const { return func_; }
+
+   private:
+    ThreadPoolToken* thread_pool_token_;
+    std::function<void()> func_;
   };
 
+  // Submit a task to 'token', execute the task at execute_time.
   void Schedule(ThreadPoolToken* token,
                 std::function<void()> f,
                 const MonoTime& execute_time) {
@@ -272,6 +280,9 @@ class ThreadPool {
 
   // Submits a new task.
   Status Submit(std::function<void()> f) WARN_UNUSED_RESULT;
+
+  // Submit a task to 'token', execute the task at execute_time.
+  Status Schedule(ThreadPoolToken* token, std::function<void()> f, MonoTime execute_time);
 
   // Waits until all the tasks are completed.
   void Wait();
@@ -500,13 +511,6 @@ class ThreadPool {
   //  * a new task has been scheduled (i.e. added into the queue)
   void NotifyLoadMeterUnlocked(const MonoDelta& queue_time = MonoDelta());
 
-  SchedulerThread* scheduler() {
-    return scheduler_;
-  }
-
-  // Waits until all the tasks and scheduler's tasks completed.
-  void WaitForScheduler();
-
   // Return the number of threads currently running for this thread pool.
   // Used by tests to avoid tsan test case down.
   int num_active_threads() {
@@ -607,8 +611,12 @@ class ThreadPool {
   // Metrics for the entire thread pool.
   const ThreadPoolMetrics metrics_;
 
+  // Protect 'scheduler_'.
+  mutable Mutex scheduler_lock_;
+
   // TimerThread is used for some scenarios, such as
   // make a task delay execution.
+  // It would shut down and be deleted firstly when 'Shutdown'.
   SchedulerThread* scheduler_;
   uint32_t schedule_period_ms_;
 
