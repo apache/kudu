@@ -187,6 +187,7 @@ DECLARE_uint32(txn_keepalive_interval_ms);
 DECLARE_uint32(txn_staleness_tracker_interval_ms);
 DECLARE_uint32(txn_manager_status_table_num_replicas);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
+DECLARE_uint32(default_deleted_table_reserve_seconds);
 
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
 METRIC_DECLARE_counter(location_mapping_cache_hits);
@@ -5236,6 +5237,131 @@ TEST_F(ClientTest, TestSoftDeleteAndRecallAfterReserveTimeTable) {
   ASSERT_TRUE(s.IsNotFound());
 
   ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_TRUE(tables.empty());
+}
+
+TEST_F(ClientTest, TestDeleteWithDeletedTableReserveSeconds) {
+  // Open the table before deleting it.
+  ASSERT_OK(client_->OpenTable(kTableName, &client_table_));
+
+  // Insert a few rows, and scan them back. This is to populate the MetaCache.
+  NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
+  vector<string> rows;
+  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(10, rows.size());
+
+  ASSERT_EQ(0, FLAGS_default_deleted_table_reserve_seconds);
+  FLAGS_default_deleted_table_reserve_seconds = 60;
+
+  // Delete the table, the table won't be purged immediately if
+  // FLAGS_default_deleted_table_reserve_seconds set to anything greater than 0.
+  ASSERT_OK(client_->DeleteTable(kTableName));
+  CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
+  {
+    CatalogManager::ScopedLeaderSharedLock l(catalog_manager);
+    ASSERT_OK(l.first_failed_status());
+    bool exists;
+    ASSERT_OK(catalog_manager->TableNameExists(kTableName, &exists));
+    ASSERT_TRUE(exists);
+  }
+
+  // The table is in soft-deleted state.
+  vector<string> tables;
+  ASSERT_OK(client_->ListSoftDeletedTables(&tables));
+  ASSERT_EQ(1, tables.size());
+  ASSERT_EQ(kTableName, tables[0]);
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_EQ(0, tables.size());
+
+  // Try to recall the table.
+  ASSERT_OK(client_->RecallTable(client_table_->id()));
+
+  // Check the data in the table.
+  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(10, rows.size());
+
+  // Force to delete the table with FLAGS_default_deleted_table_reserve_seconds set to 0.
+  FLAGS_default_deleted_table_reserve_seconds = 0;
+  ASSERT_OK(client_->DeleteTable(kTableName));
+
+  // No tables left.
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_TRUE(tables.empty());
+  ASSERT_OK(client_->ListSoftDeletedTables(&tables));
+  ASSERT_TRUE(tables.empty());
+}
+
+TEST_F(ClientTest, TestDeleteWithDeletedTableReserveSecondsWorks) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  // Open the table before deleting it.
+  ASSERT_OK(client_->OpenTable(kTableName, &client_table_));
+
+  ASSERT_EQ(0, FLAGS_default_deleted_table_reserve_seconds);
+  FLAGS_default_deleted_table_reserve_seconds = 5;
+
+  // Delete the table, the table won't be purged immediately if
+  // FLAGS_default_deleted_table_reserve_seconds set to anything greater than 0.
+  ASSERT_OK(client_->DeleteTable(kTableName));
+  CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
+  {
+    CatalogManager::ScopedLeaderSharedLock l(catalog_manager);
+    ASSERT_OK(l.first_failed_status());
+    bool exists;
+    ASSERT_OK(catalog_manager->TableNameExists(kTableName, &exists));
+    ASSERT_TRUE(exists);
+  }
+
+  // The table is in soft-deleted state.
+  vector<string> tables;
+  ASSERT_OK(client_->ListSoftDeletedTables(&tables));
+  ASSERT_EQ(1, tables.size());
+  ASSERT_EQ(kTableName, tables[0]);
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_TRUE(tables.empty());
+
+  // Test FLAGS_table_reserve_seconds.
+  SleepFor(MonoDelta::FromMilliseconds(5 * 1000));
+
+  // No tables left.
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_TRUE(tables.empty());
+  ASSERT_OK(client_->ListSoftDeletedTables(&tables));
+  ASSERT_TRUE(tables.empty());
+}
+
+TEST_F(ClientTest, TestDeleteSoftDeleteStatusFromDeletedTableReserveSeconds) {
+  // Open the table before deleting it.
+  ASSERT_OK(client_->OpenTable(kTableName, &client_table_));
+
+  ASSERT_EQ(0, FLAGS_default_deleted_table_reserve_seconds);
+  FLAGS_default_deleted_table_reserve_seconds = 600;
+
+  // Get a soft-deleted table.
+  ASSERT_OK(client_->SoftDeleteTable(kTableName, 60));
+  CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
+  {
+    CatalogManager::ScopedLeaderSharedLock l(catalog_manager);
+    ASSERT_OK(l.first_failed_status());
+    bool exists;
+    ASSERT_OK(catalog_manager->TableNameExists(kTableName, &exists));
+    ASSERT_TRUE(exists);
+  }
+
+  // The table is in soft-deleted state.
+  vector<string> tables;
+  ASSERT_OK(client_->ListSoftDeletedTables(&tables));
+  ASSERT_EQ(1, tables.size());
+  ASSERT_EQ(kTableName, tables[0]);
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_TRUE(tables.empty());
+
+  // purge the soft-deleted table
+  ASSERT_OK(client_->DeleteTable(kTableName));
+
+  // No tables left.
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_TRUE(tables.empty());
+  ASSERT_OK(client_->ListSoftDeletedTables(&tables));
   ASSERT_TRUE(tables.empty());
 }
 

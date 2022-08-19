@@ -407,6 +407,32 @@ DEFINE_bool(require_new_spec_for_custom_hash_schema_range_bound, false,
 TAG_FLAG(require_new_spec_for_custom_hash_schema_range_bound, experimental);
 TAG_FLAG(require_new_spec_for_custom_hash_schema_range_bound, runtime);
 
+DEFINE_uint32(default_deleted_table_reserve_seconds, 0,
+              "Time in seconds to be reserved before purging a deleted table for the table "
+              "from DeleteTable request. Value 0 means DeleteTable() works the regular way, "
+              "i.e. dropping the table and purging its data immediately. If it's set to "
+              "anything greater than 0, then all DeleteTable() RPCs are turned into "
+              "SoftDeleteTable(..., FLAGS_default_deleted_table_reserve_seconds). "
+              "NOTE : this flag make no sense for soft-delete function because the "
+              "reserve_seconds has been specified by user while calling SoftDeleteTable.");
+TAG_FLAG(default_deleted_table_reserve_seconds, advanced);
+TAG_FLAG(default_deleted_table_reserve_seconds, runtime);
+
+DECLARE_string(hive_metastore_uris);
+
+bool ValidateDeletedTableReserveSeconds()  {
+  if (FLAGS_default_deleted_table_reserve_seconds > 0 &&
+      !FLAGS_hive_metastore_uris.empty()) {
+    LOG(ERROR) << "If enabling HMS, FLAGS_default_deleted_table_reserve_seconds "
+                  "makes no sense.";
+    return false;
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(default_deleted_table_reserve_seconds,
+                     ValidateDeletedTableReserveSeconds);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int64(tsk_rotation_seconds);
 DECLARE_string(ranger_config_path);
@@ -2391,8 +2417,11 @@ Status CatalogManager::SoftDeleteTableRpc(const DeleteTableRequestPB& req,
         resp, MasterErrorPB::TABLE_SOFT_DELETED);
   }
 
-  // Reserve seconds equal 0 means delete it directly.
-  if (req.reserve_seconds() == 0) {
+  // Reserve seconds equal 0 means delete it directly if default_deleted_table_reserve_seconds
+  // set to 0, which means the cluster-wide behavior of the DeleteTable() RPC is keep default,
+  // or the table is in soft-deleted status.
+  if (req.reserve_seconds() == 0 &&
+      (FLAGS_default_deleted_table_reserve_seconds == 0 || is_soft_deleted_table)) {
     return DeleteTableRpc(req, resp, rpc);
   }
 
@@ -2401,8 +2430,8 @@ Status CatalogManager::SoftDeleteTableRpc(const DeleteTableRequestPB& req,
 }
 
 Status CatalogManager::SoftDeleteTable(const DeleteTableRequestPB& req,
-                                      DeleteTableResponsePB* resp,
-                                      rpc::RpcContext* rpc) {
+                                       DeleteTableResponsePB* resp,
+                                       rpc::RpcContext* rpc) {
   leader_lock_.AssertAcquiredForReading();
 
   // TODO(kedeng) : soft_deleted state need sync to HMS.
@@ -2437,7 +2466,9 @@ Status CatalogManager::SoftDeleteTable(const DeleteTableRequestPB& req,
   // soft delete state change
   l.mutable_data()->set_state(SysTablesEntryPB::SOFT_DELETED, deletion_msg);
   l.mutable_data()->set_delete_timestamp(WallTime_Now());
-  l.mutable_data()->set_soft_deleted_reserved_seconds(req.reserve_seconds());
+  uint32_t reserve_seconds = req.reserve_seconds() == 0 ?
+      FLAGS_default_deleted_table_reserve_seconds : req.reserve_seconds();
+  l.mutable_data()->set_soft_deleted_reserved_seconds(reserve_seconds);
 
   // 2. Look up the tablets, lock them, and mark them as soft deleted.
   {
