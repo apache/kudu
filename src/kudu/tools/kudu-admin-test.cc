@@ -1695,6 +1695,7 @@ TEST_F(AdminCliTest, TestListTables) {
     ASSERT_OK(RunKuduTool({
       "table",
       "delete",
+      "--reserve_seconds=300",
       cluster_->master()->bound_rpc_addr().ToString(),
       kTableId
     }, &stdout));

@@ -4624,10 +4624,10 @@ TEST_F(ToolTest, TestRecallTable) {
   ASSERT_OK(client->OpenTable(kTableName, &table));
   string table_id = table->id();
 
-  // Delete the table.
+  // Soft-delete the table.
   string out;
-  NO_FATALS(RunActionStdoutNone(Substitute("table delete $0 $1",
-                                           master_addr, kTableName)));
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "table delete $0 $1 --reserve_seconds=300", master_addr, kTableName)));
 
   // List soft_deleted table.
   vector<string> kudu_tables;
@@ -6491,6 +6491,25 @@ TEST_F(ToolTest, TestHmsIgnoresDifferentMasters) {
       Substitute("hms fix $0 --noignore-other-clusters", master_addrs_str)));
   NO_FATALS(RunActionStdoutNone(
       Substitute("hms check $0 --noignore-other-clusters", master_addrs_str)));
+}
+
+// Make sure that `kudu table delete` works as expected when HMS integration
+// is enabled, keeping the behavior of the tool backward-compatible even after
+// introducing the "table soft-delete" feature.
+TEST_F(ToolTest, DropTableHmsEnabled) {
+  ExternalMiniClusterOptions opts;
+  opts.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  const auto& master_rpc_addr =
+      HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs());
+  string out;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("perf loadgen --keep_auto_table $0", master_rpc_addr), &out));
+  NO_FATALS(RunActionStdoutString(
+      Substitute("table list $0", master_rpc_addr), &out));
+  const auto table_name = out;
+  NO_FATALS(RunActionStdoutNone(
+      Substitute("table delete $0 $1", master_rpc_addr, table_name)));
 }
 
 TEST_F(ToolTest, TestHmsPrecheck) {

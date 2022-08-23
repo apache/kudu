@@ -171,8 +171,9 @@ DEFINE_bool(show_avro_format_schema, false,
             "Display the table schema in avro format. When enabled it only outputs the "
             "table schema in Avro format without any other information like "
             "partition/owner/comments. It cannot be used in conjunction with other flags");
-DEFINE_uint32(reserve_seconds, 604800,
-              "Reserve seconds before purging a soft-deleted table.");
+DEFINE_uint32(reserve_seconds, 0,
+              "Grace period before purging a soft-deleted table, in seconds. "
+              "If set to 0, table is purged once it dropped/deleted.");
 
 DECLARE_bool(create_table);
 DECLARE_bool(fault_tolerant);
