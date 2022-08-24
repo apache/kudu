@@ -26,11 +26,18 @@ namespace security {
 // This is TLSv1.2-related section from the "intermediate compatibility" cipher
 // list of the Mozilla Security Server Side TLS recommendations without the
 // DH AES ciphers: they are not included since we are not configured to use
-// the DH key agreement.
+// the DH key agreement. In addition, for compatibility with certain
+// FIPS 140-2 environments where AES-GCM ciphers are not available at the
+// client side (e.g. due to custom JSSE providers lacking AES-GCM ciphers),
+// the AES-CCM and AES-CBC ciphers are added to be the ciphers of the least
+// priority (with CCM prefered over CBC).
 const char* const SecurityDefaults::SecurityDefaults::kDefaultTlsCiphers =
     "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
     "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
-    "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305";
+    "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+    "ECDHE-ECDSA-AES128-CCM:ECDHE-ECDSA-AES256-CCM:"
+    "ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:"
+    "ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384";
 
 // This is the "modern compatibility" TLSv1.3 cipher list of the Mozilla
 // Security Server Side TLS recommendations, accessed March 2021.
