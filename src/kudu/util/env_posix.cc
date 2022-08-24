@@ -22,14 +22,12 @@
 #include <algorithm>
 #include <cerrno>
 #include <climits>
-#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <functional>
-#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -269,15 +267,6 @@ enum class EncryptionAlgorithm {
 struct EncryptionHeader {
   EncryptionAlgorithm algorithm;
   uint8_t key[32];
-};
-
-// KUDU-3316: This is the key temporarily used for all encrypion. Obviously,
-// this is not secure and MUST be removed and replaced with real keys once the
-// key infra is in place.
-// TODO(abukor): delete this.
-const struct EncryptionHeader kDummyEncryptionKey = {
-  EncryptionAlgorithm::AES128ECB,
-  {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 42},
 };
 
 const EVP_CIPHER* GetEVPCipher(EncryptionAlgorithm algorithm) {
