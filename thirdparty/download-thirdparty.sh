@@ -183,7 +183,7 @@ fetch_and_patch \
  googletest-release-${GMOCK_VERSION}.tar.gz \
  $GMOCK_SOURCE \
  $GMOCK_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/gmock-remove-unused-gunit-iwyu-pragma.patch"
+ "patch -p0 < $TP_DIR/patches/gmock-update-iwyu-pragma.patch"
 
 GFLAGS_PATCHLEVEL=0
 fetch_and_patch \

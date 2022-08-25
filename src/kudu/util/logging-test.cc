@@ -28,8 +28,7 @@
 #include <vector>
 
 #include <glog/logging.h>
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest-matchers.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"

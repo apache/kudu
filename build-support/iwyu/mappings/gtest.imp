@@ -15,12 +15,20 @@
 # specific language governing permissions and limitations
 # under the License.
 [
-  { include: [ "<gtest/internal/gtest-internal.h>", private, "<gtest/gtest.h>", public ] },
-  { include: [ "<gtest/internal/gtest-string.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/gtest-assertion-result.h>", private, "<gtest/gtest.h>", public ] },
   { include: [ "<gtest/gtest-death-test.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/gtest-matchers.h>", private, "<gtest/gtest.h>", public ] },
   { include: [ "<gtest/gtest-message.h>", private, "<gtest/gtest.h>", public ] },
   { include: [ "<gtest/gtest-param-test.h>", private, "<gtest/gtest.h>", public ] },
   { include: [ "<gtest/gtest-printers.h>", private, "<gtest/gtest.h>", public ] },
   { include: [ "<gtest/gtest-test-part.h>", private, "<gtest/gtest.h>", public ] },
-  { include: [ "<gtest/gtest-typed-test.h>", private, "<gtest/gtest.h>", public ] }
+  { include: [ "<gtest/gtest-typed-test.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/gtest_pred_impl.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/internal/gtest-death-test-internal.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/internal/gtest-filepath.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/internal/gtest-internal.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/internal/gtest-param-util.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/internal/gtest-port.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/internal/gtest-string.h>", private, "<gtest/gtest.h>", public ] },
+  { include: [ "<gtest/internal/gtest-type-util.h>", private, "<gtest/gtest.h>", public ] }
 ]

@@ -510,9 +510,17 @@ build_gmock_gtest() {
   # Install gmock/gtest libraries and headers manually instead of using make
   # install. Make install results in libraries with a malformed lib name on
   # macOS.
+  if [ -n "$OS_LINUX" ]; then
+    local ver_suffix=${DYLIB_SUFFIX}.${GMOCK_VERSION}
+  else
+    # on macOS the naming of versioned libraries differ from what it's on Linux
+    local ver_suffix=${GMOCK_VERSION}.${DYLIB_SUFFIX}
+  fi
   echo Installing gmock and gtest...
+  cp -a $GMOCK_SHARED_BDIR/lib/libgmock.$ver_suffix $PREFIX/lib/
   cp -a $GMOCK_SHARED_BDIR/lib/libgmock.$DYLIB_SUFFIX $PREFIX/lib/
   cp -a $GMOCK_STATIC_BDIR/lib/libgmock.a $PREFIX/lib/
+  cp -a $GMOCK_SHARED_BDIR/lib/libgtest.$ver_suffix $PREFIX/lib/
   cp -a $GMOCK_SHARED_BDIR/lib/libgtest.$DYLIB_SUFFIX $PREFIX/lib/
   cp -a $GMOCK_STATIC_BDIR/lib/libgtest.a $PREFIX/lib/
   rsync -av $GMOCK_SOURCE/googlemock/include/ $PREFIX/include/

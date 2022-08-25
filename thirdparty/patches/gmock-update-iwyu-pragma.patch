@@ -1,0 +1,287 @@
+--- googletest/include/gtest/gtest-printers.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest-printers.h	2022-08-30 18:11:09.000000000 -0700
+@@ -94,7 +94,6 @@
+ // being defined as many user-defined container types don't have
+ // value_type.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/gtest-test-part.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest-test-part.h	2022-08-30 18:11:13.000000000 -0700
+@@ -27,7 +27,6 @@
+ // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/gtest-death-test.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest-death-test.h	2022-08-30 18:10:59.000000000 -0700
+@@ -33,7 +33,6 @@
+ // #included by gtest.h so a user doesn't need to include this
+ // directly.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/internal/gtest-port.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/internal/gtest-port.h	2022-08-30 18:11:31.000000000 -0700
+@@ -38,7 +38,6 @@
+ // files are expected to #include this.  Therefore, it cannot #include
+ // any other Google Test header.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/internal/gtest-type-util.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/internal/gtest-type-util.h	2022-08-30 18:11:39.000000000 -0700
+@@ -30,7 +30,6 @@
+ // Type utilities needed for implementing typed and type-parameterized
+ // tests.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/internal/gtest-internal.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/internal/gtest-internal.h	2022-08-30 18:11:26.000000000 -0700
+@@ -32,7 +32,6 @@
+ // This header file declares functions and macros used internally by
+ // Google Test.  They are subject to change without notice.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/internal/gtest-death-test-internal.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/internal/gtest-death-test-internal.h	2022-08-30 18:11:21.000000000 -0700
+@@ -32,7 +32,6 @@
+ // This header file defines internal utilities needed for implementing
+ // death tests.  They are subject to change without notice.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/internal/gtest-filepath.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/internal/gtest-filepath.h	2022-08-30 18:11:23.000000000 -0700
+@@ -35,7 +35,6 @@
+ // This file is #included in gtest/internal/gtest-internal.h.
+ // Do not include this header file separately!
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/internal/gtest-string.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/internal/gtest-string.h	2022-08-30 18:11:33.000000000 -0700
+@@ -36,7 +36,6 @@
+ // This header file is #included by gtest-internal.h.
+ // It should not be #included by other files.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/internal/gtest-param-util.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/internal/gtest-param-util.h	2022-08-30 18:11:28.000000000 -0700
+@@ -29,7 +29,6 @@
+ 
+ // Type and function utilities for implementing parameterized tests.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/gtest-message.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest-message.h	2022-08-30 18:11:04.000000000 -0700
+@@ -41,7 +41,6 @@
+ // to CHANGE WITHOUT NOTICE.  Therefore DO NOT DEPEND ON IT in a user
+ // program!
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/gtest-matchers.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest-matchers.h	2022-08-30 18:11:01.000000000 -0700
+@@ -32,7 +32,6 @@
+ // This file implements just enough of the matcher interface to allow
+ // EXPECT_DEATH and friends to accept a matcher argument.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/gtest_pred_impl.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest_pred_impl.h	2022-08-30 18:11:18.000000000 -0700
+@@ -29,7 +29,6 @@
+ //
+ // Implements a family of generic predicate assertion macros.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/gtest-assertion-result.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest-assertion-result.h	2022-08-30 18:10:55.000000000 -0700
+@@ -31,7 +31,6 @@
+ //
+ // This file implements the AssertionResult type.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/gtest-typed-test.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest-typed-test.h	2022-08-30 18:11:15.000000000 -0700
+@@ -27,7 +27,6 @@
+ // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googletest/include/gtest/gtest-param-test.h.orig	2022-08-30 18:09:54.000000000 -0700
++++ googletest/include/gtest/gtest-param-test.h	2022-08-30 18:11:06.000000000 -0700
+@@ -30,7 +30,6 @@
+ // Macros and functions for implementing parameterized tests
+ // in Google C++ Testing and Mocking Framework (Google Test)
+ 
+-// IWYU pragma: private, include "gtest/gtest.h"
+ // IWYU pragma: friend gtest/.*
+ // IWYU pragma: friend gmock/.*
+ 
+--- googlemock/include/gmock/gmock-actions.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/gmock-actions.h	2022-08-30 22:01:17.000000000 -0700
+@@ -124,7 +124,6 @@
+ // To learn more about using these macros, please search for 'ACTION' on
+ // https://github.com/google/googletest/blob/master/docs/gmock_cook_book.md
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_GMOCK_ACTIONS_H_
+--- googlemock/include/gmock/gmock-spec-builders.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/gmock-spec-builders.h	2022-08-30 22:01:37.000000000 -0700
+@@ -55,7 +55,6 @@
+ // where all clauses are optional, and .InSequence()/.After()/
+ // .WillOnce() can appear any number of times.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_GMOCK_SPEC_BUILDERS_H_
+--- googlemock/include/gmock/gmock-function-mocker.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/gmock-function-mocker.h	2022-08-30 22:01:21.000000000 -0700
+@@ -31,7 +31,6 @@
+ //
+ // This file implements MOCK_METHOD.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_GMOCK_FUNCTION_MOCKER_H_  // NOLINT
+--- googlemock/include/gmock/gmock-more-matchers.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/gmock-more-matchers.h	2022-08-30 22:01:29.000000000 -0700
+@@ -34,7 +34,6 @@
+ // Note that tests are implemented in gmock-matchers_test.cc rather than
+ // gmock-more-matchers-test.cc.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_GMOCK_MORE_MATCHERS_H_
+--- googlemock/include/gmock/gmock-nice-strict.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/gmock-nice-strict.h	2022-08-30 22:01:31.000000000 -0700
+@@ -57,7 +57,6 @@
+ // In particular, nesting NiceMock, NaggyMock, and StrictMock is NOT
+ // supported.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_GMOCK_NICE_STRICT_H_
+--- googlemock/include/gmock/internal/gmock-internal-utils.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/internal/gmock-internal-utils.h	2022-08-30 22:01:52.000000000 -0700
+@@ -33,7 +33,6 @@
+ // Mock.  They are subject to change without notice, so please DO NOT
+ // USE THEM IN USER CODE.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_GMOCK_INTERNAL_UTILS_H_
+--- googlemock/include/gmock/internal/gmock-port.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/internal/gmock-port.h	2022-08-30 22:01:58.000000000 -0700
+@@ -34,7 +34,6 @@
+ // end with _ are part of Google Mock's public API and can be used by
+ // code outside Google Mock.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_GMOCK_PORT_H_
+--- googlemock/include/gmock/internal/custom/gmock-generated-actions.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/internal/custom/gmock-generated-actions.h	2022-08-30 22:01:45.000000000 -0700
+@@ -1,4 +1,3 @@
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_GENERATED_ACTIONS_H_
+--- googlemock/include/gmock/internal/custom/gmock-port.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/internal/custom/gmock-port.h	2022-08-30 22:01:49.000000000 -0700
+@@ -31,7 +31,6 @@
+ //
+ // ** Custom implementation starts here **
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_PORT_H_
+--- googlemock/include/gmock/internal/custom/gmock-matchers.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/internal/custom/gmock-matchers.h	2022-08-30 22:01:47.000000000 -0700
+@@ -29,7 +29,6 @@
+ 
+ // Injection point for custom user configurations. See README for details
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_MATCHERS_H_
+--- googlemock/include/gmock/gmock-more-actions.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/gmock-more-actions.h	2022-08-30 22:01:26.000000000 -0700
+@@ -31,7 +31,6 @@
+ //
+ // This file implements some commonly used variadic actions.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_GMOCK_MORE_ACTIONS_H_
+--- googlemock/include/gmock/gmock-cardinalities.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/gmock-cardinalities.h	2022-08-30 22:01:19.000000000 -0700
+@@ -33,7 +33,6 @@
+ // cardinalities can be defined by the user implementing the
+ // CardinalityInterface interface if necessary.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_GMOCK_CARDINALITIES_H_
+--- googlemock/include/gmock/gmock-matchers.h.orig	2022-08-30 21:59:24.000000000 -0700
++++ googlemock/include/gmock/gmock-matchers.h	2022-08-30 22:01:23.000000000 -0700
+@@ -249,7 +249,6 @@
+ // See googletest/include/gtest/gtest-matchers.h for the definition of class
+ // Matcher, class MatcherInterface, and others.
+ 
+-// IWYU pragma: private, include "gmock/gmock.h"
+ // IWYU pragma: friend gmock/.*
+ 
+ #ifndef GOOGLEMOCK_INCLUDE_GMOCK_GMOCK_MATCHERS_H_
