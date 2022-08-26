@@ -2185,9 +2185,10 @@ class ListTableCliParamTest : public AdminCliTest,
 };
 
 // Basic test that the kudu tool works in the list tablets case.
-TEST_P(ListTableCliParamTest, TestListTabletWithPartition) {
-  auto show_hp = GetParam() ? PartitionSchema::HashPartitionInfo::SHOW :
-      PartitionSchema::HashPartitionInfo::HIDE;
+TEST_P(ListTableCliParamTest, ListTabletWithPartitionInfo) {
+  const auto show_hp = GetParam() ? PartitionSchema::HashPartitionInfo::SHOW
+                                  : PartitionSchema::HashPartitionInfo::HIDE;
+  const auto kTimeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;
 
@@ -2196,12 +2197,11 @@ TEST_P(ListTableCliParamTest, TestListTabletWithPartition) {
   vector<TServerDetails*> tservers;
   vector<string> base_tablet_ids;
   AppendValuesFromMap(tablet_servers_, &tservers);
-  ListRunningTabletIds(tservers.front(),
-                       MonoDelta::FromSeconds(30), &base_tablet_ids);
+  ListRunningTabletIds(tservers.front(), kTimeout, &base_tablet_ids);
 
   // Test a table with all types in its schema, multiple hash partitioning
   // levels, multiple range partitions, and non-covered ranges.
-  const string kTableId = "TestTableListPartition";
+  constexpr const char* const kTableName = "TestTableListPartition";
   KuduSchema schema;
 
   // Build the schema.
@@ -2226,7 +2226,7 @@ TEST_P(ListTableCliParamTest, TestListTabletWithPartition) {
     unique_ptr<KuduPartialRow> upper_bound1(schema.NewRow());
     ASSERT_OK(upper_bound1->SetInt32("key_range", 3));
     unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-    ASSERT_OK(table_creator->table_name(kTableId)
+    ASSERT_OK(table_creator->table_name(kTableName)
         .schema(&schema)
         .add_hash_partitions({"key_hash0"}, 2)
         .add_hash_partitions({"key_hash1", "key_hash2"}, 3)
@@ -2238,8 +2238,7 @@ TEST_P(ListTableCliParamTest, TestListTabletWithPartition) {
   }
 
   vector<string> new_tablet_ids;
-  ListRunningTabletIds(tservers.front(),
-                       MonoDelta::FromSeconds(30), &new_tablet_ids);
+  ListRunningTabletIds(tservers.front(), kTimeout, &new_tablet_ids);
   vector<string> delta_tablet_ids;
   for (auto& tablet_id : base_tablet_ids) {
     if (std::find(new_tablet_ids.begin(), new_tablet_ids.end(), tablet_id) ==
@@ -2255,36 +2254,38 @@ TEST_P(ListTableCliParamTest, TestListTabletWithPartition) {
     "table",
     "list",
     "--list_tablets",
-    GetParam() ? "--show_tablet_partition_info" : "",
+    "--show_tablet_partition_info",
+    Substitute("--show_hash_partition_info=$0", GetParam()),
     "--tables",
-    kTableId,
+    kTableName,
     cluster_->master()->bound_rpc_addr().ToString(),
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
   client::sp::shared_ptr<KuduTable> table;
-  ASSERT_OK(client_->OpenTable(kTableId, &table));
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
   const auto& partition_schema = table->partition_schema();
   const auto& schema_internal = KuduSchema::ToSchema(table->schema());
 
   // make sure table name correct
-  ASSERT_STR_CONTAINS(stdout, kTableId);
+  ASSERT_STR_CONTAINS(stdout, kTableName);
 
   master::ListTablesResponsePB tables_info;
-  ASSERT_OK(ListTablesWithInfo(cluster_->master_proxy(), kTableId,
-      MonoDelta::FromSeconds(30), &tables_info));
+  ASSERT_OK(ListTablesWithInfo(
+      cluster_->master_proxy(), kTableName, kTimeout, &tables_info));
   for (const auto& table : tables_info.tables()) {
     for (const auto& pt : table.tablet_with_partition()) {
       Partition partition;
       Partition::FromPB(pt.partition(), &partition);
-      string partition_str = partition_schema.PartitionDebugString(partition,
-                                                                   schema_internal,
-                                                                   show_hp);
-      string tablet_with_partition = pt.tablet_id() + " : " + partition_str;
+      const auto partition_str = partition_schema.PartitionDebugString(
+          partition, schema_internal, show_hp);
+      const auto tablet_with_partition = pt.tablet_id() + " : " + partition_str;
       ASSERT_STR_CONTAINS(stdout, tablet_with_partition);
     }
   }
 }
+INSTANTIATE_TEST_SUITE_P(IsHashPartitionInfoShown, ListTableCliParamTest,
+                         ::testing::Bool());
 
 TEST_F(AdminCliTest, TestLocateRow) {
   FLAGS_num_tablet_servers = 1;
