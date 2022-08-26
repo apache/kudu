@@ -467,6 +467,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   ReplicateMsg* repl = log_entry->mutable_replicate();
   repl->mutable_id()->CopyFrom(op_id);
   repl->set_op_type(NO_OP);
+  repl->mutable_noop_request();
   repl->set_timestamp(0L);
 
   // Entries are prefixed with a header.
@@ -1074,7 +1075,7 @@ TEST_F(LogTest, TestGetGCableDataSize) {
 
   const int kNumTotalSegments = 5;
   const int kNumOpsPerSegment = 5;
-  const int64_t kSegmentSizeBytes = 337 + env_->GetEncryptionHeaderSize();
+  const int64_t kSegmentSizeBytes = 352 + env_->GetEncryptionHeaderSize();
   OpId op_id = MakeOpId(1, 10);
   // Create 5 segments, starting from log index 10, with 5 ops per segment.
   // [10-14], [15-19], [20-24], [25-29], [30-34]

@@ -23,6 +23,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -552,12 +553,14 @@ TEST_P(TsRecoveryITest, TestChangeMaxCellSize) {
 // test scenario isn't present for TSAN builds.
 class TsRecoveryITestDeathTest : public TsRecoveryITest {
 };
+INSTANTIATE_TEST_SUITE_P(BlockManagerType, TsRecoveryITestDeathTest,
+                         ::testing::ValuesIn(BlockManager::block_manager_types()));
 
 // Test that tablet bootstrap can automatically repair itself if it finds an
 // overflowed OpId index written to the log caused by KUDU-1933.
 // Also serves as a regression itest for KUDU-1933 by writing ops with a high
 // term and index.
-TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
+TEST_P(TsRecoveryITestDeathTest, RecoverFromOpIdOverflow) {
   // Create the initial tablet files on disk, then shut down the cluster so we
   // can meddle with the WAL.
   NO_FATALS(StartClusterOneTs());
@@ -584,6 +587,7 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
     FsManagerOpts opts;
     opts.wal_root = ets->wal_dir();
     opts.data_roots = ets->data_dirs();
+    opts.block_manager_type = GetParam();
     unique_ptr<FsManager> fs_manager(new FsManager(env_, opts));
     ASSERT_OK(fs_manager->Open());
     scoped_refptr<ConsensusMetadataManager> cmeta_manager(

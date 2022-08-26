@@ -80,6 +80,7 @@ inline Status AppendNoOpsToLogSync(clock::Clock* clock,
 
     repl->mutable_id()->CopyFrom(*op_id);
     repl->set_op_type(consensus::NO_OP);
+    repl->mutable_noop_request(); // add a no-op request field
     repl->set_timestamp(clock->Now().ToUint64());
 
     // Increment op_id.
