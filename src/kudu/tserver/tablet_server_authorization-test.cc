@@ -974,6 +974,15 @@ TEST_P(ScanPrivilegeVirtualColumnsTest, TestNoProjection) {
     NO_FATALS(CheckPrivileges(req_func, scan, privileges, ExpectedAuthz::DENIED));
   }
 }
+INSTANTIATE_TEST_SUITE_P(RequestorFuncs, ScanPrivilegeVirtualColumnsTest,
+                         ::testing::Combine(
+        ::testing::ValuesIn(vector<ScanFunc>({
+            &ScanRequestor<DeprecatedField::DONT_USE, SpecialColumn::VIRTUAL>,
+            &ScanRequestor<DeprecatedField::USE, SpecialColumn::VIRTUAL>,
+            &ChecksumRequestor<DeprecatedField::DONT_USE, SpecialColumn::VIRTUAL>,
+            &ChecksumRequestor<DeprecatedField::USE, SpecialColumn::VIRTUAL>,
+        })),
+        ::testing::Bool()));
 
 class ScanPrivilegeWithBadNamesTest: public ScanPrivilegeAuthzTest {};
 
