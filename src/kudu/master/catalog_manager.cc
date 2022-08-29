@@ -346,6 +346,7 @@ DEFINE_bool(auto_rebalancing_enabled, false,
             "Whether auto-rebalancing is enabled.");
 TAG_FLAG(auto_rebalancing_enabled, advanced);
 TAG_FLAG(auto_rebalancing_enabled, experimental);
+TAG_FLAG(auto_rebalancing_enabled, runtime);
 
 DEFINE_uint32(table_locations_cache_capacity_mb, 0,
               "Capacity for the table locations cache (in MiB); a value "
@@ -1021,12 +1022,9 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
 
-  if (FLAGS_auto_rebalancing_enabled) {
-    unique_ptr<AutoRebalancerTask> task(
-        new AutoRebalancerTask(this, master_->ts_manager()));
-    RETURN_NOT_OK_PREPEND(task->Init(), "failed to initialize auto-rebalancing task");
-    auto_rebalancer_ = std::move(task);
-  }
+  unique_ptr<AutoRebalancerTask> task(new AutoRebalancerTask(this, master_->ts_manager()));
+  RETURN_NOT_OK_PREPEND(task->Init(), "failed to initialize auto-rebalancing task");
+  auto_rebalancer_ = std::move(task);
 
   vector<HostPort> master_addresses;
   RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addresses));

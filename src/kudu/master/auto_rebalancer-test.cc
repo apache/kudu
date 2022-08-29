@@ -22,6 +22,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -30,7 +31,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
@@ -280,6 +280,33 @@ TEST_F(AutoRebalancerTest, OnlyLeaderDoesAutoRebalancing) {
       });
     }
   }
+}
+
+// Make sure the auto-rebalancing can be toggled on/off in runtime.
+TEST_F(AutoRebalancerTest, AutoRebalancingTurnOffAndOn) {
+  cluster_opts_.num_masters = 1;
+  cluster_opts_.num_tablet_servers = 3;
+  ASSERT_OK(CreateAndStartCluster());
+  NO_FATALS(CheckAutoRebalancerStarted());
+
+  CreateWorkloadTable(8, /*num_replicas*/ 3);
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  ASSERT_EQ(0, leader_idx);
+
+  FLAGS_auto_rebalancing_enabled = false;
+  ASSERT_OK(cluster_->AddTabletServer());
+  for (int i = 0; i < 3; i++) {
+    // Wait a schedule period, 1s.
+    SleepFor(MonoDelta::FromSeconds(FLAGS_auto_rebalancing_interval_seconds));
+    ASSERT_EQ(0, NumMovesScheduled(leader_idx));
+  }
+  int num_iterations = NumLoopIterations(leader_idx);
+  SleepFor(MonoDelta::FromSeconds(FLAGS_auto_rebalancing_interval_seconds * 2));
+  ASSERT_EQ(num_iterations, NumLoopIterations(leader_idx));
+
+  FLAGS_auto_rebalancing_enabled = true;
+  CheckSomeMovesScheduled();
 }
 
 // If the leader master goes down, the next elected master should perform

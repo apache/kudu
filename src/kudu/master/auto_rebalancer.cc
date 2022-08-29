@@ -24,6 +24,7 @@
 #include <ostream>
 #include <random>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -135,6 +136,8 @@ DEFINE_uint32(auto_rebalancing_wait_for_replica_moves_seconds, 1,
               "How long to wait before checking to see if the scheduled replica movement "
               "in this iteration of auto-rebalancing has completed.");
 
+DECLARE_bool(auto_rebalancing_enabled);
+
 namespace kudu {
 
 namespace master {
@@ -190,7 +193,12 @@ void AutoRebalancerTask::RunLoop() {
   vector<Rebalancer::ReplicaMove> replica_moves;
   while (!shutdown_.WaitFor(
       MonoDelta::FromSeconds(FLAGS_auto_rebalancing_interval_seconds))) {
-
+    if (!FLAGS_auto_rebalancing_enabled) {
+      // Toggling the auto-rebalancer on/off by changing FLAGS_auto_rebalancing_enabled,
+      // will take effect in the next loop. Already scheduled/running replica moves will
+      // be unaffected.
+      continue;
+    }
     // If catalog manager isn't initialized or isn't the leader, don't do rebalancing.
     // Putting the auto-rebalancer to sleep shouldn't affect the master's ability
     // to become the leader. When the thread wakes up and discovers it is now
