@@ -218,7 +218,7 @@ void handler(int /* signal */) {}
 // contain the address of the remote.
 TEST_F(TlsSocketTest, TestRecvFailure) {
   EchoServer server;
-  server.Start();
+  NO_FATALS(server.Start());
   unique_ptr<Socket> client_sock;
   NO_FATALS(ConnectClient(server.listen_addr(), &client_sock));
   unique_ptr<uint8_t[]> buf(new uint8_t[kEchoChunkSize]);

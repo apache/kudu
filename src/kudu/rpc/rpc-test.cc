@@ -29,6 +29,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -42,7 +43,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/outbound_call.h"
@@ -72,6 +72,12 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+namespace kudu {
+namespace rpc {
+class AcceptorPool;
+}  // namespace rpc
+}  // namespace kudu
 
 METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
@@ -201,7 +207,7 @@ TEST_P(TestRpc, TestNegotiationDeadlock) {
   if (enable_ssl()) mb.enable_inbound_tls();
 
   shared_ptr<Messenger> messenger;
-  CHECK_OK(mb.Build(&messenger));
+  ASSERT_OK(mb.Build(&messenger));
 
   Sockaddr server_addr = bind_addr();
   ASSERT_OK(StartTestServerWithCustomMessenger(&server_addr, messenger, enable_ssl()));
@@ -439,7 +445,7 @@ TEST_P(TestRpc, TestHighFDs) {
   ElementDeleter d(&fake_files);
   for (int i = 0; i < kNumFakeFiles; i++) {
     unique_ptr<RandomAccessFile> f;
-    CHECK_OK(Env::Default()->NewRandomAccessFile("/dev/zero", &f));
+    ASSERT_OK(Env::Default()->NewRandomAccessFile("/dev/zero", &f));
     fake_files.push_back(f.release());
   }
 
@@ -576,7 +582,7 @@ TEST_P(TestRpc, TestClientConnectionMetrics) {
       // Attach a big sidecar so that we are less likely to be able to send the
       // whole RPC in a single write() call without queueing it.
       int junk;
-      CHECK_OK(rpc->AddOutboundSidecar(RpcSidecar::FromSlice(big_string), &junk));
+      ASSERT_OK(rpc->AddOutboundSidecar(RpcSidecar::FromSlice(big_string), &junk));
       controllers.emplace_back(std::move(rpc));
       p.AsyncRequest(GenericCalculatorService::kAddMethodName, add_req, &add_resp,
                      controllers.back().get(), [&latch]() { latch.CountDown(); });
@@ -1464,7 +1470,7 @@ TEST_P(TestRpc, TestCancellationAsync) {
 
     int idx;
     Slice s(payload.get(), TEST_PAYLOAD_SIZE);
-    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(s), &idx));
+    ASSERT_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(s), &idx));
     req.set_sidecar_idx(idx);
 
     CountDownLatch latch(1);
