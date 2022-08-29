@@ -23,6 +23,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -226,7 +227,9 @@ class RowSetMetadata {
 
   void ToProtobuf(RowSetDataPB *pb);
 
-  BlockIdContainer GetAllBlocks();
+  BlockIdContainer GetAllBlocks() const;
+
+  BlockId GetMaxLiveBlockId() const;
 
   // Increase the row count.
   // Note:

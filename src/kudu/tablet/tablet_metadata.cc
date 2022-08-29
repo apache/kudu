@@ -28,7 +28,6 @@
 #include <utility>
 
 #include <gflags/gflags.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
@@ -214,7 +213,7 @@ vector<BlockIdPB> TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& su
   return block_ids;
 }
 
-BlockIdContainer TabletMetadata::CollectBlockIds() {
+BlockIdContainer TabletMetadata::CollectBlockIds() const {
   BlockIdContainer block_ids;
   for (const auto& r : rowsets_) {
     BlockIdContainer rowset_block_ids = r->GetAllBlocks();
@@ -223,6 +222,14 @@ BlockIdContainer TabletMetadata::CollectBlockIds() {
                      rowset_block_ids.end());
   }
   return block_ids;
+}
+
+BlockId TabletMetadata::GetMaxLiveBlockId() const {
+  BlockId max_block_id;
+  for (const auto& r : rowsets_) {
+    max_block_id = std::max(max_block_id, r->GetMaxLiveBlockId());
+  }
+  return max_block_id;
 }
 
 Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
@@ -448,11 +455,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     // Determine the largest block ID known to the tablet metadata so we can
     // notify the block manager of blocks it may have missed (e.g. if a data
     // directory failed and the blocks on it were not read).
-    BlockId max_block_id;
-    const auto& block_ids = CollectBlockIds();
-    for (BlockId block_id : block_ids) {
-      max_block_id = std::max(max_block_id, block_id);
-    }
+    BlockId max_block_id = GetMaxLiveBlockId();
 
     for (const BlockIdPB& block_pb : superblock.orphaned_blocks()) {
       BlockId orphaned_block_id = BlockId::FromPB(block_pb);

@@ -17,12 +17,14 @@
 
 #include "kudu/tablet/tablet_metadata.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -45,7 +47,6 @@
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/txn_metadata.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -213,7 +214,7 @@ TEST_F(TestTabletMetadata, BenchmarkCollectBlockIds) {
 
     map<ColumnId, BlockId> block_by_column;
     for (int j = 0; j < FLAGS_test_block_count_per_rs; ++j) {
-      block_by_column[ColumnId(j)] = BlockId(j);
+      block_by_column[ColumnId(j)] = BlockId(FLAGS_test_block_count_per_rs * i + j);
     }
     meta->SetColumnDataBlocks(block_by_column);
     rs_metas.emplace_back(shared_ptr<RowSetMetadata>(meta.release()));
@@ -227,6 +228,30 @@ TEST_F(TestTabletMetadata, BenchmarkCollectBlockIds) {
     }
     LOG(INFO) << "block_ids size: " << block_ids.size();
   }
+}
+
+TEST_F(TestTabletMetadata, GetMaxLiveBlockId) {
+  auto* tablet_meta = harness_->tablet()->metadata();
+  RowSetMetadataVector rs_metas;
+  for (int i = 0; i < FLAGS_test_row_set_count; ++i) {
+    unique_ptr<RowSetMetadata> meta;
+    ASSERT_OK(RowSetMetadata::CreateNew(tablet_meta, i, &meta));
+
+    map<ColumnId, BlockId> block_by_column;
+    for (int j = 0; j < FLAGS_test_block_count_per_rs; ++j) {
+      block_by_column[ColumnId(j)] = BlockId(FLAGS_test_block_count_per_rs * i + j);
+    }
+    meta->SetColumnDataBlocks(block_by_column);
+    rs_metas.emplace_back(shared_ptr<RowSetMetadata>(meta.release()));
+  }
+  ASSERT_OK(tablet_meta->UpdateAndFlush(RowSetMetadataIds(), rs_metas,
+                                        TabletMetadata::kNoMrsFlushed));
+
+  BlockIdContainer block_ids = tablet_meta->CollectBlockIds();
+  BlockId max_block_id = tablet_meta->GetMaxLiveBlockId();
+  ASSERT_FALSE(max_block_id.IsNull());
+  const auto expected_max_block_id = std::max_element(block_ids.begin(), block_ids.end());
+  ASSERT_EQ(*expected_max_block_id, max_block_id);
 }
 
 TEST_F(TestTabletMetadata, TestTxnMetadata) {

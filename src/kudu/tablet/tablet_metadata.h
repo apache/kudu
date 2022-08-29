@@ -31,6 +31,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
@@ -46,10 +47,6 @@ namespace kudu {
 class BlockIdPB;
 class FsManager;
 class Timestamp;
-
-namespace consensus {
-class OpId;
-} // namespace consensus
 
 namespace log {
 class MinLogIndexAnchorer;
@@ -129,7 +126,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   static std::vector<BlockIdPB> CollectBlockIdPBs(
       const TabletSuperBlockPB& superblock);
 
-  BlockIdContainer CollectBlockIds();
+  BlockIdContainer CollectBlockIds() const;
+
+  BlockId GetMaxLiveBlockId() const;
 
   const std::string& tablet_id() const {
     DCHECK_NE(state_, kNotLoadedYet);

@@ -298,8 +298,12 @@ int64_t RowSetMetadata::live_row_count() const {
   return live_row_count_;
 }
 
-BlockIdContainer RowSetMetadata::GetAllBlocks() {
+BlockIdContainer RowSetMetadata::GetAllBlocks() const {
   BlockIdContainer blocks;
+  blocks.reserve(blocks_by_col_id_.size() +
+                 undo_delta_blocks_.size() +
+                 redo_delta_blocks_.size() +
+                 2);  // '2' is reserved for 'adhoc_index_block_' and 'bloom_block_'
   std::lock_guard<LockType> l(lock_);
   if (!adhoc_index_block_.IsNull()) {
     blocks.push_back(adhoc_index_block_);
@@ -314,6 +318,27 @@ BlockIdContainer RowSetMetadata::GetAllBlocks() {
   blocks.insert(blocks.end(),
                 redo_delta_blocks_.begin(), redo_delta_blocks_.end());
   return blocks;
+}
+
+BlockId RowSetMetadata::GetMaxLiveBlockId() const {
+  BlockId max_block_id;
+  std::lock_guard<LockType> l(lock_);
+  if (!adhoc_index_block_.IsNull()) {
+    max_block_id = std::max(max_block_id, adhoc_index_block_);
+  }
+  if (!bloom_block_.IsNull()) {
+    max_block_id = std::max(max_block_id, bloom_block_);
+  }
+  for (const auto& e : blocks_by_col_id_) {
+    max_block_id = std::max(max_block_id, e.second);
+  }
+  for (const auto& block_id : undo_delta_blocks_) {
+    max_block_id = std::max(max_block_id, block_id);
+  }
+  for (const auto& block_id : redo_delta_blocks_) {
+    max_block_id = std::max(max_block_id, block_id);
+  }
+  return max_block_id;
 }
 
 RowSetMetadataUpdate::RowSetMetadataUpdate() {
