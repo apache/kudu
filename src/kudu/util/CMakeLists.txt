@@ -506,6 +506,7 @@ ADD_KUDU_TEST(once-test)
 ADD_KUDU_TEST(os-util-test)
 ADD_KUDU_TEST(path_util-test)
 ADD_KUDU_TEST(process_memory-test RUN_SERIAL true)
+ADD_KUDU_TEST(pstack_watcher-test)
 ADD_KUDU_TEST(random-test)
 ADD_KUDU_TEST(random_util-test)
 ADD_KUDU_TEST(rle-test)
@@ -535,7 +536,6 @@ ADD_KUDU_TEST(yamlreader-test)
 
 if (NOT APPLE)
   ADD_KUDU_TEST(minidump-test)
-  ADD_KUDU_TEST(pstack_watcher-test)
 endif()
 
 #######################################

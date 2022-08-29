@@ -83,6 +83,14 @@ class PstackWatcher {
   // Get a stack dump using the pstack or gstack program.
   static Status RunPstack(const std::string& progname, pid_t pid);
 
+#if defined(__APPLE__)
+  // Check whether the system path has 'sample'
+  static Status HasGoodSample();
+
+  // Get a stack dump using sample directly.
+  static Status RunSampleStackDump(pid_t pid);
+#endif
+
   // Invoke and wait for the stack dump program.
   static Status RunStackDump(const std::vector<std::string>& argv);
 

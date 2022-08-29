@@ -163,7 +163,6 @@ Status PstackWatcher::DumpStacks(int flags) {
 }
 
 Status PstackWatcher::DumpPidStacks(pid_t pid, int flags) {
-
   // Prefer GDB if available; it gives us line numbers and thread names.
   Status s = HasGoodGdb();
   if (s.ok()) {
@@ -180,7 +179,15 @@ Status PstackWatcher::DumpPidStacks(pid_t pid, int flags) {
     WARN_NOT_OK(s, Substitute("$0 not available", p));
   }
 
-  return Status::ServiceUnavailable("Neither gdb, pstack, nor gstack appear to be installed.");
+#if defined(__APPLE__)
+  s = HasGoodSample();
+  if (s.ok()) {
+    return RunSampleStackDump(pid);
+  }
+#endif
+
+  return Status::ServiceUnavailable(
+      "Neither gdb, pstack, gstack, nor sample (OSX) appear to be installed.");
 }
 
 Status PstackWatcher::RunGdbStackDump(pid_t pid, int flags) {
@@ -218,6 +225,23 @@ Status PstackWatcher::RunPstack(const std::string& progname, pid_t pid) {
   argv.push_back(pid_string);
   return RunStackDump(argv);
 }
+
+#if defined(__APPLE__)
+Status PstackWatcher::HasGoodSample() {
+  // Check for the existence of sample.
+  RETURN_NOT_OK(HasProgram("sample"));
+  return Status::OK();
+}
+
+Status PstackWatcher::RunSampleStackDump(pid_t pid) {
+  // Command: sample $PID 0
+  vector<string> argv;
+  argv.emplace_back("sample");
+  argv.emplace_back(Substitute("$0", pid));
+  argv.emplace_back("0");
+  return RunStackDump(argv);
+}
+#endif
 
 Status PstackWatcher::RunStackDump(const vector<string>& argv) {
   printf("************************ BEGIN STACKS **************************\n");
