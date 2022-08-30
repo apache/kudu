@@ -57,8 +57,10 @@
 
 DECLARE_bool(inject_unsync_time_errors);
 DECLARE_string(builtin_ntp_servers);
+DECLARE_string(cloud_curl_dns_servers_for_testing);
 DECLARE_string(time_source);
 DECLARE_uint32(cloud_metadata_server_request_timeout_ms);
+
 METRIC_DECLARE_entity(server);
 
 using kudu::cloud::InstanceDetector;
@@ -513,6 +515,10 @@ TEST_F(HybridClockTest, TimeSourceAutoSelection) {
 TEST_F(HybridClockTest, AutoTimeSourceNoDedicatedNtpServer) {
   // Set very short interval for the instance detection timeout.
   FLAGS_cloud_metadata_server_request_timeout_ms = 1;
+
+  // Configure a bad DNS server to ensure a timeout,
+  // even when run on fast cloud instances.
+  FLAGS_cloud_curl_dns_servers_for_testing = "192.0.2.0";
 
   {
     // Check for the pre-condition: the auto-detection fails as expected due
