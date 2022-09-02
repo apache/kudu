@@ -18,10 +18,12 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -44,15 +46,18 @@
 #include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/ranger/mini_ranger.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/tablet/ops/write_op.h"
+#include "kudu/tools/tool_test_util.h"
 #include "kudu/util/barrier.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -88,6 +93,7 @@ using kudu::ranger::MiniRanger;
 using kudu::rpc::RpcController;
 using kudu::tablet::WritePrivileges;
 using kudu::tablet::WritePrivilegeType;
+using kudu::tools::RunKuduTool;
 using std::pair;
 using std::string;
 using std::thread;
@@ -665,6 +671,79 @@ TEST_P(TSAuthzITest, TestAlters) {
   }
   ASSERT_OK(user_client->OpenTable(new_table_ident, &table));
   ASSERT_OK(PerformScan({ another_column }, nullptr, table.get()));
+}
+
+TEST_P(TSAuthzITest, TableScanCLI) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  static const string kTableName = "table";
+  const string table_ident = Substitute("$0.$1", kDb, kTableName);
+  const string user = "user0";
+  ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(user));
+  ASSERT_OK(cluster_->kdc()->Kinit(user));
+
+  ASSERT_OK(CreateTable(table_ident, user));
+
+  // Note: we only need privileges on the metadata for OpenTable() calls.
+  ASSERT_OK(harness_->GrantTablePrivilege(
+      kDb, kTableName, user, "METADATA", /*admin=*/false, cluster_));
+  ASSERT_OK(harness_->GrantColumnPrivilege(
+      kDb, kTableName, "col0", user, "SELECT", /*admin=*/false, cluster_));
+
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  const auto master_addrs_str = JoinStrings(master_addrs, ",");
+
+  // Should successfully scan data in column 'col0' since granted privileged
+  // explicitly.
+  {
+    string out;
+    string err;
+    const vector<string> args{ "table",
+                               "scan",
+                               master_addrs_str,
+                               table_ident,
+                               "--columns=col0"
+                             };
+    const auto s = RunKuduTool(args, &out, &err);
+    ASSERT_TRUE(s.ok()) << s.ToString() << " stderr: " << err;
+  }
+
+  // Should not be able to scan data in other columns than column 'col0' since
+  // no privilege has been granted on those.
+  for (const auto& columns : { "col1", "col0,col1", "col1,col0",
+                               "col2", "col0,col2", "col2,col0",
+                               "col1,col2", "col0,col1,col2", "*" }) {
+    string out;
+    string err;
+    const vector<string> args{ "table",
+                               "scan",
+                               master_addrs_str,
+                               table_ident,
+                               Substitute("--columns=$0", columns),
+                             };
+    const auto s = RunKuduTool(args, &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString() << " stderr: " << err;
+    ASSERT_STR_CONTAINS(s.ToString(), "process exited with non-zero status");
+    ASSERT_STR_CONTAINS(err, "Not authorized: not authorized to Scan");
+  }
+
+  // Should not be able to scan data if trying to access all the columns.
+  {
+    string out;
+    string err;
+    const vector<string> args{ "table",
+                               "scan",
+                               master_addrs_str,
+                               table_ident,
+                             };
+    const auto s = RunKuduTool(args, &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString() << " stderr: " << err;
+    ASSERT_STR_CONTAINS(s.ToString(), "process exited with non-zero status");
+    ASSERT_STR_CONTAINS(err, "Not authorized: not authorized to Scan");
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(AuthzProviders, TSAuthzITest,
