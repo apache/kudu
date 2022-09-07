@@ -3358,6 +3358,11 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   /// @return Operation result status.
   Status Build(std::vector<KuduScanToken*>* tokens) WARN_UNUSED_RESULT;
 
+  /// Set the size of the data in each key range.
+  /// The default value is 0 without set and tokens build by meta cache.
+  /// It's corresponding to 'setSplitSizeBytes' in Java client.
+  void SetSplitSizeBytes(uint64_t split_size_bytes);
+
  private:
   class KUDU_NO_EXPORT Data;
 

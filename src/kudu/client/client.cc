@@ -2306,6 +2306,10 @@ Status KuduScanTokenBuilder::Build(vector<KuduScanToken*>* tokens) {
   return data_->Build(tokens);
 }
 
+void KuduScanTokenBuilder::SetSplitSizeBytes(uint64_t split_size_bytes) {
+  return data_->SplitSizeBytes(split_size_bytes);
+}
+
 ////////////////////////////////////////////////////////////
 // KuduReplica
 ////////////////////////////////////////////////////////////

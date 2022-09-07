@@ -24,6 +24,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -36,6 +37,7 @@
 #include "kudu/client/master_proxy_rpc.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/key_range.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
@@ -44,11 +46,13 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/security/token.pb.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -70,6 +74,8 @@ using kudu::master::TSInfoPB;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::BackoffType;
 using kudu::rpc::CredentialsPolicy;
+using kudu::rpc::RpcController;
+using kudu::security::SignedTokenPB;
 using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
 using std::set;
@@ -1309,6 +1315,83 @@ void MetaCache::ClearCache() {
   tablets_by_id_.clear();
   tablets_by_table_and_key_.clear();
   entry_by_tablet_id_.clear();
+}
+
+Status MetaCache::GetTableKeyRanges(const KuduTable* table,
+                                    const PartitionKey& partition_key,
+                                    LookupType lookup_type,
+                                    uint64_t split_size_bytes,
+                                    const MonoDelta& timeout,
+                                    vector<RangeWithRemoteTablet>* range_tablets) {
+  scoped_refptr<internal::RemoteTablet> tablet;
+  Synchronizer sync;
+  MonoTime deadline = MonoTime::Now() + timeout;
+  LookupTabletByKey(table,
+                    partition_key,
+                    deadline,
+                    lookup_type,
+                    &tablet,
+                    sync.AsStatusCallback());
+  RETURN_NOT_OK(sync.Wait());
+
+  if (split_size_bytes == 0) {
+    KeyRange key_range(
+        tablet->partition().begin().ToString(),
+        tablet->partition().end().ToString(),
+        split_size_bytes);
+    range_tablets->emplace_back(key_range, tablet);
+    return Status::OK();
+  }
+  DCHECK_GT(split_size_bytes, 0);
+
+  RemoteTabletServer *ts;
+  vector<RemoteTabletServer*> candidates;
+  set<string> blacklist;
+  RETURN_NOT_OK(table->client()->data_->GetTabletServer(table->client(),
+                                                        tablet,
+                                                        KuduClient::LEADER_ONLY,
+                                                        blacklist,
+                                                        &candidates,
+                                                        &ts));
+  CHECK(ts);
+  CHECK(ts->proxy());
+  auto proxy = ts->proxy();
+
+  tserver::SplitKeyRangeRequestPB req;
+  tserver::SplitKeyRangeResponsePB resp;
+  req.set_tablet_id(tablet->tablet_id());
+  if (!tablet->partition().begin().ToString().empty()) {
+    req.set_start_primary_key(tablet->partition().begin().ToString());
+  }
+  if (!tablet->partition().end().ToString().empty()) {
+    req.set_stop_primary_key(tablet->partition().end().ToString());
+  }
+  req.set_target_chunk_size_bytes(split_size_bytes);
+  SignedTokenPB authz_token;
+  if (table->client()->data_->FetchCachedAuthzToken(table->id(), &authz_token)) {
+    *req.mutable_authz_token() = std::move(authz_token);
+  } else {
+    // Note: this is expected if attempting to connect to a cluster that does
+    // not support fine-grained access control.
+    VLOG(1) << "no authz token for table " << table->id();
+  }
+
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(proxy->SplitKeyRange(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  for (const auto& range : resp.ranges()) {
+    KeyRange key_range(
+        range.has_start_primary_key() ? range.start_primary_key() : "",
+        range.has_stop_primary_key() ? range.stop_primary_key() : "",
+        range.size_bytes_estimates());
+    range_tablets->emplace_back(key_range, tablet);
+  }
+
+  return Status::OK();
 }
 
 void MetaCache::LookupTabletByKey(const KuduTable* table,

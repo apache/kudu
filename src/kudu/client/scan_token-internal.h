@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -80,10 +82,15 @@ class KuduScanTokenBuilder::Data {
     include_tablet_metadata_ = include_metadata;
   }
 
+  void SplitSizeBytes(uint64_t split_size_bytes) {
+    split_size_bytes_ = split_size_bytes;
+  }
+
 private:
   ScanConfiguration configuration_;
   bool include_table_metadata_ = true;
   bool include_tablet_metadata_ = true;
+  uint64_t split_size_bytes_ = 0;
 };
 
 } // namespace client

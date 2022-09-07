@@ -18,6 +18,8 @@
 // This module is internal to the client and not a public API.
 #pragma once
 
+#include <cstdint>
+
 #include <atomic>
 #include <map>
 #include <memory>
@@ -32,6 +34,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/client/replica_controller-internal.h"
+#include "kudu/common/key_range.h"
 #include "kudu/common/partition.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
@@ -406,6 +409,18 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
     kLowerBound
   };
 
+  struct RangeWithRemoteTablet {
+    RangeWithRemoteTablet(KeyRange krange,
+                          const scoped_refptr<internal::RemoteTablet>& rtablet)
+        : key_range(std::move(krange)),
+          remote_tablet(rtablet) {}
+
+    KeyRange key_range;
+    scoped_refptr<internal::RemoteTablet> remote_tablet;
+  };
+
+  typedef std::map<PartitionKey, MetaCacheEntry> TabletMap;
+
   // Look up which tablet hosts the given partition key for a table. When it is
   // available, the tablet is stored in 'remote_tablet' (if not NULL) and the
   // callback is fired. Only tablets with non-failed LEADERs are considered.
@@ -421,6 +436,17 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                          LookupType lookup_type,
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
+
+  // Look up which tablet hosts the given partition key for a table.
+  // If @split_size_bytes set nonzero, send SplitKeyRangeRPC to remote tserver,
+  // otherwise search only occurs locally.
+  // The result stored in 'range_tablets'.
+  Status GetTableKeyRanges(const KuduTable* table,
+                           const PartitionKey& partition_key,
+                           LookupType lookup_type,
+                           uint64_t split_size_bytes,
+                           const MonoDelta& timeout,
+                           std::vector<RangeWithRemoteTablet>* range_tablets);
 
   // Look up the locations of the given tablet, storing the result in
   // 'remote_tablet' if not null, and calling 'lookup_complete_cb' once the
@@ -551,7 +577,6 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // for key-based lookups.
   //
   // Protected by lock_.
-  typedef std::map<PartitionKey, MetaCacheEntry> TabletMap;
   std::unordered_map<std::string, TabletMap> tablets_by_table_and_key_;
 
   // Cache entries for tablets, keyed by tablet ID, used for ID-based lookups.

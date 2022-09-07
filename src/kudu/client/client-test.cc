@@ -141,6 +141,7 @@ DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(catalog_manager_support_live_row_count);
 DECLARE_bool(catalog_manager_support_on_disk_size);
 DECLARE_bool(client_use_unix_domain_sockets);
+DECLARE_bool(enable_rowset_compaction);
 DECLARE_bool(enable_txn_system_client_init);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(location_mapping_by_uuid);
@@ -217,6 +218,7 @@ using kudu::client::sp::shared_ptr;
 using kudu::tablet::TabletReplica;
 using kudu::transactions::TxnTokenPB;
 using kudu::tserver::MiniTabletServer;
+using std::atomic;
 using std::function;
 using std::map;
 using std::nullopt;
@@ -398,6 +400,68 @@ class ClientTest : public KuduTest {
                   RpcsQueueOverflowMetric()->value());
       }
     }
+  }
+
+  void CheckTokensInfo(const vector<KuduScanToken*>& tokens,
+                       int replica_num = 1) {
+    for (const auto* t : tokens) {
+      const KuduTablet& tablet = t->tablet();
+      ASSERT_EQ(replica_num, tablet.replicas().size());
+      const KuduReplica* replica = tablet.replicas()[0];
+      ASSERT_TRUE(replica->is_leader());
+      const MiniTabletServer* ts = cluster_->mini_tablet_server(0);
+      ASSERT_EQ(ts->server()->instance_pb().permanent_uuid(),
+          replica->ts().uuid());
+      ASSERT_EQ(ts->bound_rpc_addr().host(), replica->ts().hostname());
+      ASSERT_EQ(ts->bound_rpc_addr().port(), replica->ts().port());
+
+      unique_ptr<KuduTablet> tablet_copy;
+      {
+        KuduTablet* ptr;
+        ASSERT_OK(client_->GetTablet(tablet.id(), &ptr));
+        tablet_copy.reset(ptr);
+      }
+      ASSERT_EQ(tablet.id(), tablet_copy->id());
+      ASSERT_EQ(1, tablet_copy->replicas().size());
+      const KuduReplica* replica_copy = tablet_copy->replicas()[0];
+
+      ASSERT_EQ(replica->is_leader(), replica_copy->is_leader());
+      ASSERT_EQ(replica->ts().uuid(), replica_copy->ts().uuid());
+      ASSERT_EQ(replica->ts().hostname(), replica_copy->ts().hostname());
+      ASSERT_EQ(replica->ts().port(), replica_copy->ts().port());
+    }
+  }
+
+  int CountRows(const vector<KuduScanToken*>& tokens) {
+    atomic<uint32_t> rows(0);
+    vector<thread> threads;
+    for (KuduScanToken* token : tokens) {
+      string buf;
+      CHECK_OK(token->Serialize(&buf));
+
+      threads.emplace_back([this, &rows] (const string& serialized_token) {
+        shared_ptr<KuduClient> client;
+        ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+        KuduScanner* scanner_ptr;
+        ASSERT_OK(KuduScanToken::DeserializeIntoScanner(
+            client.get(), serialized_token, &scanner_ptr));
+        unique_ptr<KuduScanner> scanner(scanner_ptr);
+        ASSERT_OK(scanner->Open());
+
+        while (scanner->HasMoreRows()) {
+          KuduScanBatch batch;
+          ASSERT_OK(scanner->NextBatch(&batch));
+          rows += batch.NumRows();
+        }
+        scanner->Close();
+      }, std::move(buf));
+    }
+
+    for (thread& thread : threads) {
+      thread.join();
+    }
+
+    return rows;
   }
 
   // Return the number of lookup-related RPCs which have been serviced by the master.
@@ -8539,6 +8603,171 @@ TEST_F(ClientTest, NoTxnManager) {
   }
 }
 
+class TableKeyRangeTest : public ClientTest {
+ public:
+   Status BuildSchema() override {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
+    return b.Build(&schema_);
+  }
+
+  void SetUp() override {
+    ClientTest::SetUp();
+
+    // Set a low flush threshold so we can scan a mix of flushed data in
+    // in-memory data.
+    FLAGS_flush_threshold_mb = 0;
+    FLAGS_flush_threshold_secs = 1;
+
+    // Disable rowset compact to prevent DRSs being merged because they are too small.
+    FLAGS_enable_rowset_compaction = false;
+
+    ASSERT_OK(CreateTable(kTableName, 1, {}, GeneratePartialRows(), &client_table_));
+  }
+
+  typedef vector<pair<unique_ptr<KuduPartialRow>, unique_ptr<KuduPartialRow>>> KuduPartialRowsVec;
+  KuduPartialRowsVec GeneratePartialRows() const {
+    KuduPartialRowsVec rows;
+    vector<int> keys = { 0, 250, 500, 750 };
+    for (int i = 0; i < keys.size(); i++) {
+      unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+      CHECK_OK(lower_bound->SetInt32("key", keys[i]));
+      unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+      CHECK_OK(upper_bound->SetInt32("key", keys[i] + 250));
+      rows.emplace_back(lower_bound.release(), upper_bound.release());
+    }
+
+    return rows;
+  }
+
+  static void InsertTestRowsWithStrings(KuduTable* table, KuduSession* session, int num_rows) {
+    vector<int> keys = { 0, 250, 500, 750 };
+    string str_val = "*";
+    int diff_value = 120; // use to create discontinuous data in a tablet
+    for (int k = 0; k < keys.size(); k++) {
+      for (int i = keys[k]; i < keys[k] + num_rows; i++) {
+        unique_ptr<KuduInsert> insert(table->NewInsert());
+        ASSERT_OK(insert->mutable_row()->SetInt32("key", i));
+        ASSERT_OK(insert->mutable_row()->SetInt32("int_val", i * 2));
+        ASSERT_OK(insert->mutable_row()->SetString("string_val", str_val));
+        ASSERT_OK(session->Apply(insert.release()));
+        ASSERT_OK(session->Flush());
+      }
+      for (int i = keys[k] + diff_value; i < keys[k] + diff_value + num_rows; i++) {
+        unique_ptr<KuduInsert> insert(table->NewInsert());
+        ASSERT_OK(insert->mutable_row()->SetInt32("key", i));
+        ASSERT_OK(insert->mutable_row()->SetInt32("int_val", i * 2));
+        ASSERT_OK(insert->mutable_row()->SetString("string_val", str_val));
+        ASSERT_OK(session->Apply(insert.release()));
+        ASSERT_OK(session->Flush());
+      }
+    }
+  }
+
+ protected:
+  static constexpr const char* const kTableName = "client-testrange";
+
+  shared_ptr<KuduTable> range_table_;
+};
+
+TEST_F(TableKeyRangeTest, TestGetTableKeyRange) {
+  client::sp::shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  {
+    // Create session
+    shared_ptr<KuduSession> session = client_->NewSession();
+    session->SetTimeoutMillis(10000);
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+    // Should have no rows to begin with.
+    ASSERT_EQ(0, CountRowsFromClient(table.get()));
+    // Insert rows
+    NO_FATALS(InsertTestRowsWithStrings(client_table_.get(), session.get(), 100));
+    NO_FATALS(CheckNoRpcOverflow());
+  }
+
+  {
+    // search meta cache by default
+    //
+    // There are tablet information in the meta cache.
+    // We give priority to the data in the cache by default.
+    KuduScanTokenBuilder builder(table.get());
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    ASSERT_OK(builder.Build(&tokens));
+    ASSERT_EQ(4, tokens.size());
+
+    NO_FATALS(CheckTokensInfo(tokens));
+    ASSERT_EQ(800, CountRows(tokens));
+  }
+
+  {
+    // search meta cache by local
+    //
+    // If the splitSizeBytes set to 0 , we search the meta cache.
+    KuduScanTokenBuilder builder(table.get());
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    // set splitSizeBytes to 0
+    builder.SetSplitSizeBytes(0);
+    ASSERT_OK(builder.Build(&tokens));
+    ASSERT_EQ(4, tokens.size());
+
+    NO_FATALS(CheckTokensInfo(tokens));
+    ASSERT_EQ(800, CountRows(tokens));
+  }
+
+  uint32_t token_size_a = 0;
+  {
+    // search from tserver
+    KuduScanTokenBuilder builder(table.get());
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    // set splitSizeBytes < tablet's size
+    builder.SetSplitSizeBytes(700);
+    ASSERT_OK(builder.Build(&tokens));
+    token_size_a = tokens.size();
+    ASSERT_LT(4, token_size_a);
+
+    NO_FATALS(CheckTokensInfo(tokens));
+    ASSERT_EQ(800, CountRows(tokens));
+  }
+
+  uint32_t token_size_b = 0;
+  {
+    // search from tserver
+    KuduScanTokenBuilder builder(table.get());
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    // set splitSizeBytes < tablet's size
+    builder.SetSplitSizeBytes(20);
+    ASSERT_OK(builder.Build(&tokens));
+    token_size_b = tokens.size();
+    ASSERT_LT(4, token_size_b);
+
+    NO_FATALS(CheckTokensInfo(tokens));
+    ASSERT_EQ(800, CountRows(tokens));
+  }
+
+  // diffferent splitSizeBytes leads to different token
+  ASSERT_NE(token_size_a, token_size_b);
+
+  {
+    // search from tserver
+    KuduScanTokenBuilder builder(table.get());
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    // set splitSizeBytes > tablet's size
+    builder.SetSplitSizeBytes(1024 * 1024 * 1024);
+    ASSERT_OK(builder.Build(&tokens));
+    ASSERT_EQ(tokens.size(), 4);
+
+    NO_FATALS(CheckTokensInfo(tokens));
+    ASSERT_EQ(800, CountRows(tokens));
+  }
+}
 class ClientTxnManagerProxyTest : public ClientTest {
  public:
   void SetUp() override {
