@@ -26,30 +26,6 @@ set -o pipefail
 ulimit -n 2048
 set -m
 
-function usage() {
-cat << EOF
-Usage:
-start_kudu.sh [flags]
--h, --help          Print help
--m, --num-masters   Number of Kudu Masters to start (default: 1)
--t, --num-tservers  Number of Kudu Tablet Servers to start (default: 3)
---rpc-master        RPC port of first Kudu Master; HTTP port is the next number.
-                    Subsequent Masters will have following numbers
---rpc-tserver       RPC port of first Kudu Tablet Server; HTTP port is the next
-                    number. Subsequent Tablet Servers will have following numbers
---time_source       Time source for Kudu Masters and Tablet Servers
-                    (default: system_unsync)
--b, --builddir      Path to the Kudu build directory
--c, --clusterdir    Path to place the Kudu masters and tablet servers.
--e, --enable-tde    Enable transparent data encryption.
--H, --host          RPC address host (default: 127.0.0.1)
--T, --tserver-flags Extra flags to be used on the tablet servers. Multiple
-                    flags can be specified if wrapped in ""s.
--M, --master-flags  Extra flags to be used on the master servers. Multiple
-                    flags can be specified if wrapped in ""s.
-EOF
-}
-
 NUM_MASTERS=1
 NUM_TSERVERS=3
 MASTER_RPC_PORT_BASE=8764
@@ -60,7 +36,44 @@ CLUSTER_DIR="$PWD"
 EXTRA_TSERVER_FLAGS=""
 EXTRA_MASTER_FLAGS=""
 ENABLE_TDE=""
-IP="127.0.0.1"
+RPC_IP="127.0.0.1"
+HTTP_IP="127.0.0.1"
+
+function usage() {
+cat << EOF
+Usage:
+start_kudu.sh [flags]
+-h, --help          Print help
+-m, --num-masters   Number of Kudu Masters to start
+                    (default: $NUM_MASTERS)
+-t, --num-tservers  Number of Kudu Tablet Servers to start
+                    (default: $NUM_TSERVERS)
+--rpc-port-master   RPC port of first Kudu Master;
+                    HTTP port is the next number
+                    (default: $MASTER_RPC_PORT_BASE)
+--rpc-port-tserver  RPC port of first Kudu Tablet Server;
+                    HTTP port is the next number
+                    (default: $TSERVER_RPC_PORT_BASE)
+--time_source       Time source for Kudu Masters and Tablet Servers
+                    (default: $TIME_SOURCE)
+-b, --builddir      Path to the Kudu build directory
+                    (default: "$BUILDDIR")
+-c, --clusterdir    Path to place Masters' and Tablet Servers' data and logs
+                    (default: "$CLUSTER_DIR")
+-e, --enable-tde    Enable transparent data encryption
+                    (default: "$ENABLE_TDE")
+-H, --host          IP address for RPC server endpoint
+                    (default: $RPC_IP)
+-W, --webhost       IP address for HTTP server endpoint
+                    (default: $HTTP_IP)
+-T, --tserver-flags Extra flags to be used on the tablet servers;
+                    multiple flags can be specified if wrapped in ""s
+                    (default: "$EXTRA_TSERVER_FLAGS")
+-M, --master-flags  Extra flags to be used on the master servers;
+                    multiple flags can be specified if wrapped in ""s
+                    (default: "$EXTRA_MASTER_FLAGS")
+EOF
+}
 
 while (( "$#" )); do
   case "$1" in
@@ -76,11 +89,11 @@ while (( "$#" )); do
       NUM_TSERVERS=$2
       shift 2
       ;;
-    --rpc-master)
+    --rpc-port-master|--rpc-master)
       MASTER_RPC_PORT_BASE=$2
       shift 2
       ;;
-    --rpc-tserver)
+    --rpc-port-tserver|--rpc-tserver)
       TSERVER_RPC_PORT_BASE=$2
       shift 2
       ;;
@@ -109,7 +122,11 @@ while (( "$#" )); do
       shift 1
       ;;
     -H|--host)
-      IP=$2
+      RPC_IP=$2
+      shift 2
+      ;;
+    -W|--webhost)
+      HTTP_IP=$2
       shift 2
       ;;
     --) # end argument parsing
@@ -219,9 +236,10 @@ function start_master() {
   ARGS="$ARGS --fs_data_dirs=$dir_data"
   ARGS="$ARGS --fs_wal_dir=$dir_wal"
   ARGS="$ARGS --log_dir=$dir_log"
-  ARGS="$ARGS --rpc_bind_addresses=$IP:$RPC_PORT"
+  ARGS="$ARGS --rpc_bind_addresses=$RPC_IP:$RPC_PORT"
   ARGS="$ARGS --time_source=$TIME_SOURCE"
   ARGS="$ARGS --unlock_unsafe_flags"
+  ARGS="$ARGS --webserver_interface=$HTTP_IP"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   if [ -d "$WEBSERVER_DOC_ROOT" ]; then
     ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
@@ -248,9 +266,10 @@ function start_tserver() {
   ARGS="$ARGS --fs_data_dirs=$dir_data"
   ARGS="$ARGS --fs_wal_dir=$dir_wal"
   ARGS="$ARGS --log_dir=$dir_log"
-  ARGS="$ARGS --rpc_bind_addresses=$IP:$RPC_PORT"
+  ARGS="$ARGS --rpc_bind_addresses=$RPC_IP:$RPC_PORT"
   ARGS="$ARGS --time_source=$TIME_SOURCE"
   ARGS="$ARGS --unlock_unsafe_flags"
+  ARGS="$ARGS --webserver_interface=$HTTP_IP"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --tserver_master_addrs=$4"
   if [ -d "$WEBSERVER_DOC_ROOT" ]; then
@@ -275,7 +294,7 @@ function start_tserver() {
 MASTER_ADDRESSES=
 for i in $(seq 0 $((NUM_MASTERS - 1))); do
   MASTER_RPC_PORT=$((MASTER_RPC_PORT_BASE + $i * 2))
-  ADDR=$IP:$MASTER_RPC_PORT
+  ADDR=$RPC_IP:$MASTER_RPC_PORT
   if [ $i -ne 0 ]; then
     MASTER_ADDRESSES="${MASTER_ADDRESSES},"
   fi
