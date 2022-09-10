@@ -176,18 +176,14 @@ class CFileReader {
     return BlockPointer(footer().validx_info().root_block());
   }
 
-  // Returns true if the file has checksums on the header, footer, and data blocks.
-  bool has_checksums() const;
-
   // Can be called before Init().
   std::string ToString() const { return block_->id().ToString(); }
 
-  // Handles a corruption error. Functions that may return due to a CFile
-  // corruption should call this method before returning.
-  void HandleCorruption(const fs::IOContext* io_context) const;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileReader);
+
+  static Status VerifyChecksum(ArrayView<const Slice> data,
+                               const Slice& checksum);
 
   CFileReader(ReaderOptions options,
               uint64_t file_size,
@@ -198,10 +194,20 @@ class CFileReader {
 
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
-  Status VerifyChecksum(ArrayView<const Slice> data, const Slice& checksum) const;
+
+  // Return true if the file has checksum on the header, footer, and data blocks.
+  bool has_checksum() const;
+
+  // Return true if has_checksum() returns true and the checksum verification
+  // is requested.
+  bool do_verify_checksum() const;
 
   // Returns the memory usage of the object including the object itself.
   size_t memory_footprint() const;
+
+  // Handles a corruption error. Functions that may return due to a CFile
+  // corruption should call this method before returning.
+  void HandleCorruption(const fs::IOContext* io_context) const;
 
   const std::unique_ptr<fs::ReadableBlock> block_;
   const uint64_t file_size_;
@@ -213,6 +219,8 @@ class CFileReader {
   const CompressionCodec* codec_;
   const TypeInfo* type_info_;
   const TypeEncodingInfo* type_encoding_info_;
+
+  bool do_verify_checksum_;
 
   KuduOnceLambda init_once_;
 
@@ -282,7 +290,7 @@ class ColumnIterator {
 // Example:
 //    DefaultColumnValueIterator iter;
 //    iter.Scan(&column_block);
-class DefaultColumnValueIterator : public ColumnIterator {
+class DefaultColumnValueIterator final : public ColumnIterator {
  public:
   DefaultColumnValueIterator(const TypeInfo* typeinfo, const void* value)
       : typeinfo_(typeinfo),
@@ -312,7 +320,7 @@ class DefaultColumnValueIterator : public ColumnIterator {
 };
 
 
-class CFileIterator : public ColumnIterator {
+class CFileIterator final : public ColumnIterator {
  public:
   CFileIterator(CFileReader* reader,
                 CFileReader::CacheControl cache_control,
