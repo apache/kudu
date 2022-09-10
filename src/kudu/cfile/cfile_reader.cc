@@ -47,6 +47,7 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -71,7 +72,7 @@
 #include "kudu/util/trace.h"
 
 DEFINE_bool(cfile_lazy_open, true,
-            "Allow lazily opening of cfiles");
+            "Allow lazily opening of CFiles");
 TAG_FLAG(cfile_lazy_open, hidden);
 
 DEFINE_bool(cfile_verify_checksums, true,
@@ -88,8 +89,8 @@ using kudu::fs::ErrorHandlerType;
 using kudu::fs::IOContext;
 using kudu::fs::ReadableBlock;
 using kudu::pb_util::SecureDebugString;
-using std::shared_ptr;
 using std::string;
+using std::to_string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -104,9 +105,9 @@ const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME = "cfile_cache_hit_bytes";
 static const size_t kMagicAndLengthSize = 12;
 static const size_t kMaxHeaderFooterPBSize = 64*1024;
 
-static Status ParseMagicAndLength(const Slice &data,
+static Status ParseMagicAndLength(const Slice& data,
                                   uint8_t* cfile_version,
-                                  uint32_t *parsed_len) {
+                                  uint32_t* parsed_len) {
   if (data.size() != kMagicAndLengthSize) {
     return Status::Corruption("Bad size data");
   }
@@ -122,8 +123,7 @@ static Status ParseMagicAndLength(const Slice &data,
 
   uint32_t len = DecodeFixed32(data.data() + kMagicLength);
   if (len > kMaxHeaderFooterPBSize) {
-    return Status::Corruption("invalid data size for header",
-                              std::to_string(len));
+    return Status::Corruption("invalid data size for header", to_string(len));
   }
 
   *cfile_version = version;
@@ -178,12 +178,11 @@ Status CFileReader::InitOnce(const IOContext* io_context) {
 
   // Parse Footer first to find unsupported features.
   RETURN_NOT_OK_HANDLE_CORRUPTION(ReadAndParseFooter(), HandleCorruption(io_context));
-
   RETURN_NOT_OK_HANDLE_CORRUPTION(ReadAndParseHeader(), HandleCorruption(io_context));
 
   if (PREDICT_FALSE(footer_->incompatible_features() & ~IncompatibleFeatures::SUPPORTED)) {
     return Status::NotSupported(Substitute(
-        "cfile uses features from an incompatible bitset value $0 vs supported $1 ",
+        "CFile uses features from an incompatible bitset value $0 vs supported $1",
         footer_->incompatible_features(),
         IncompatibleFeatures::SUPPORTED));
   }
@@ -230,7 +229,7 @@ Status CFileReader::ReadAndParseHeader() {
 
   // Quick check to ensure the header size is reasonable.
   if (header_size >= file_size_ - kMagicAndLengthSize) {
-    return Status::Corruption("invalid CFile header size", std::to_string(header_size));
+    return Status::Corruption("invalid CFile header size", to_string(header_size));
   }
 
   // Setup the data slices.
@@ -255,7 +254,7 @@ Status CFileReader::ReadAndParseHeader() {
   // Parse the protobuf header.
   header_.reset(new CFileHeaderPB());
   if (!header_->ParseFromArray(header.data(), header.size())) {
-    return Status::Corruption("invalid cfile pb header",
+    return Status::Corruption("invalid CFile pb header",
                               header.ToDebugString());
   }
 
@@ -268,8 +267,7 @@ Status CFileReader::ReadAndParseFooter() {
   TRACE_EVENT1("io", "CFileReader::ReadAndParseFooter",
                "cfile", ToString());
   DCHECK(!init_once_.init_succeeded());
-  CHECK_GT(file_size_, kMagicAndLengthSize) <<
-    "file too short: " << file_size_;
+  CHECK_GT(file_size_, kMagicAndLengthSize) << "file too short: " << file_size_;
 
   // First read and parse the "post-footer", which has magic
   // and the length of the actual protobuf footer.
@@ -304,7 +302,7 @@ Status CFileReader::ReadAndParseFooter() {
   // incompatible_features flag tells us if a checksum exists at all.
   footer_.reset(new CFileFooterPB());
   if (!footer_->ParseFromArray(footer.data(), footer.size())) {
-    return Status::Corruption("invalid cfile pb footer", footer.ToDebugString());
+    return Status::Corruption("invalid CFile pb footer", footer.ToDebugString());
   }
 
   // Verify the footer checksum if needed.
@@ -436,10 +434,8 @@ Status CFileReader::ReadBlock(const IOContext* io_context,
                               CacheControl cache_control,
                               scoped_refptr<BlockHandle>* ret) const {
   DCHECK(init_once_.init_succeeded());
-  CHECK(ptr.offset() > 0 &&
-        ptr.offset() + ptr.size() < file_size_) <<
-    "bad offset " << ptr.ToString() << " in file of size "
-                  << file_size_;
+  CHECK(ptr.offset() > 0 && ptr.offset() + ptr.size() < file_size_)
+      << Substitute("bad offset $0 in file of size $1", ptr.ToString(), file_size_);
   BlockCacheHandle bc_handle;
   Cache::CacheBehavior cache_behavior = cache_control == CACHE_BLOCK ?
       Cache::EXPECT_IN_CACHE : Cache::NO_EXPECT_IN_CACHE;
@@ -565,19 +561,19 @@ Status CFileReader::ReadBlock(const IOContext* io_context,
   return Status::OK();
 }
 
-Status CFileReader::CountRows(rowid_t *count) const {
+Status CFileReader::CountRows(rowid_t* count) const {
   *count = footer().num_values();
   return Status::OK();
 }
 
-bool CFileReader::GetMetadataEntry(const string &key, string *val) const {
-  for (const FileMetadataPairPB &pair : header().metadata()) {
+bool CFileReader::GetMetadataEntry(const string& key, string* val) const {
+  for (const auto& pair : header().metadata()) {
     if (pair.key() == key) {
       *val = pair.value();
       return true;
     }
   }
-  for (const FileMetadataPairPB &pair : footer().metadata()) {
+  for (const auto& pair : footer().metadata()) {
     if (pair.key() == key) {
       *val = pair.value();
       return true;
@@ -626,7 +622,7 @@ Status DefaultColumnValueIterator::SeekToOrdinal(rowid_t ord_idx) {
   return Status::OK();
 }
 
-Status DefaultColumnValueIterator::PrepareBatch(size_t *n) {
+Status DefaultColumnValueIterator::PrepareBatch(size_t* n) {
   batch_ = *n;
   return Status::OK();
 }
@@ -648,7 +644,7 @@ Status DefaultColumnValueIterator::Scan(ColumnMaterializationContext* ctx) {
       return Status::OK();
     }
     if (typeinfo_->physical_type() == BINARY) {
-      const Slice *src_slice = reinterpret_cast<const Slice *>(value_);
+      const Slice* src_slice = reinterpret_cast<const Slice*>(value_);
       Slice dst_slice;
       if (PREDICT_FALSE(!dst->arena()->RelocateSlice(*src_slice, &dst_slice))) {
         return Status::IOError("out of memory copying slice", src_slice->ToString());
@@ -753,7 +749,7 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
   return Status::OK();
 }
 
-void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, uint32_t idx_in_block) {
+void CFileIterator::SeekToPositionInBlock(PreparedBlock* pb, uint32_t idx_in_block) {
   // Since the data block only holds the non-null values,
   // we need to translate from 'ord_idx' (the absolute row id)
   // to the index within the non-null entries.
@@ -781,7 +777,7 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, uint32_t idx_in_blo
 
 Status CFileIterator::SeekToFirst() {
   RETURN_NOT_OK(PrepareForNewSeek());
-  IndexTreeIterator *idx_iter;
+  IndexTreeIterator* idx_iter = nullptr;
   if (PREDICT_TRUE(posidx_iter_ != nullptr)) {
     RETURN_NOT_OK(posidx_iter_->SeekToFirst());
     idx_iter = posidx_iter_.get();
@@ -793,7 +789,7 @@ Status CFileIterator::SeekToFirst() {
   }
 
   pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
-    prepared_block_pool_.Construct());
+      prepared_block_pool_.Construct());
   RETURN_NOT_OK(ReadCurrentDataBlock(*idx_iter, b.get()));
   b->dblk_->SeekToPositionInBlock(0);
   last_prepare_idx_ = 0;
@@ -805,8 +801,7 @@ Status CFileIterator::SeekToFirst() {
   return Status::OK();
 }
 
-Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
-                                    bool *exact_match) {
+Status CFileIterator::SeekAtOrAfter(const EncodedKey& key, bool* exact_match) {
   RETURN_NOT_OK(PrepareForNewSeek());
   DCHECK_EQ(reader_->is_nullable(), false);
 
@@ -826,7 +821,7 @@ Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
   RETURN_NOT_OK(s);
 
   pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
-    prepared_block_pool_.Construct());
+      prepared_block_pool_.Construct());
   RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_, b.get()));
 
   Status dblk_seek_status;
@@ -902,7 +897,7 @@ Status CFileIterator::PrepareForNewSeek() {
   }
 
   seeked_ = nullptr;
-  for (PreparedBlock *pb : prepared_blocks_) {
+  for (PreparedBlock* pb : prepared_blocks_) {
     prepared_block_pool_.Destroy(pb);
   }
   prepared_blocks_.clear();
@@ -946,8 +941,8 @@ Status DecodeNullInfo(scoped_refptr<BlockHandle>* data_block_handle,
   return Status::OK();
 }
 
-Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
-                                           PreparedBlock *prep_block) {
+Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator& idx_iter,
+                                           PreparedBlock* prep_block) {
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
   RETURN_NOT_OK(reader_->ReadBlock(
       io_context_, prep_block->dblk_ptr_, cache_control_, &prep_block->dblk_handle_));
@@ -989,7 +984,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   return Status::OK();
 }
 
-Status CFileIterator::QueueCurrentDataBlock(const IndexTreeIterator &idx_iter) {
+Status CFileIterator::QueueCurrentDataBlock(const IndexTreeIterator& idx_iter) {
   pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
     prepared_block_pool_.Construct());
   RETURN_NOT_OK(ReadCurrentDataBlock(idx_iter, b.get()));
@@ -1004,7 +999,7 @@ bool CFileIterator::HasNext() const {
   return !prepared_blocks_.empty() || seeked_->HasNext();
 }
 
-Status CFileIterator::PrepareBatch(size_t *n) {
+Status CFileIterator::PrepareBatch(size_t* n) {
   CHECK(!prepared_) << "Should call FinishBatch() first";
   CHECK(seeked_ != nullptr) << "must be seeked";
 
@@ -1029,7 +1024,7 @@ Status CFileIterator::PrepareBatch(size_t *n) {
   // Seek the first block in the queue such that the first value to be read
   // corresponds to start_idx
   {
-    PreparedBlock *front = prepared_blocks_.front();
+    PreparedBlock* front = prepared_blocks_.front();
     front->rewind_idx_ = start_idx - front->first_row_idx();
     front->needs_rewind_ = true;
   }
@@ -1046,7 +1041,7 @@ Status CFileIterator::PrepareBatch(size_t *n) {
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     VLOG(1) << "Prepared for " << (*n) << " rows"
             << " (" << start_idx << "-" << (start_idx + *n - 1) << ")";
-    for (PreparedBlock *b : prepared_blocks_) {
+    for (PreparedBlock* b : prepared_blocks_) {
       VLOG(1) << "  " << b->ToString();
     }
     VLOG(1) << "-------------";
@@ -1065,11 +1060,11 @@ Status CFileIterator::FinishBatch() {
   // Release all blocks except for the last one, which may still contain
   // relevent data for the next batch.
   for (int i = 0; i < prepared_blocks_.size() - 1; i++) {
-    PreparedBlock *b = prepared_blocks_[i];
+    PreparedBlock* b = prepared_blocks_[i];
     prepared_block_pool_.Destroy(b);
   }
 
-  PreparedBlock *back = prepared_blocks_.back();
+  PreparedBlock* back = prepared_blocks_.back();
   DVLOG(1) << "checking last block " << back->ToString() << " vs "
            << last_prepare_idx_ << " + " << last_prepare_count_
            << " (" << (last_prepare_idx_ + last_prepare_count_) << ")";
@@ -1082,15 +1077,15 @@ Status CFileIterator::FinishBatch() {
     prepared_blocks_.resize(1);
   }
 
-  #ifndef NDEBUG
+#ifndef NDEBUG
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "Left around following blocks:";
-    for (PreparedBlock *b : prepared_blocks_) {
+    for (PreparedBlock* b : prepared_blocks_) {
       VLOG(1) << "  " << b->ToString();
     }
     VLOG(1) << "-------------";
   }
-  #endif
+#endif
 
   last_prepare_idx_ += last_prepare_count_;
   last_prepare_count_ = 0;
@@ -1115,13 +1110,13 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
       codewords_matching_pred_->SetAllFalse();
       for (size_t i = 0; i < nwords; i++) {
         Slice cur_string = dict_decoder_->string_at_index(i);
-        if (ctx->pred()->EvaluateCell<BINARY>(static_cast<const void *>(&cur_string))) {
+        if (ctx->pred()->EvaluateCell<BINARY>(static_cast<const void*>(&cur_string))) {
           BitmapSet(codewords_matching_pred_->mutable_bitmap(), i);
         }
       }
     }
   }
-  for (PreparedBlock *pb : prepared_blocks_) {
+  for (PreparedBlock* pb : prepared_blocks_) {
     if (pb->needs_rewind_) {
       // Seek back to the saved position.
       SeekToPositionInBlock(pb, pb->rewind_idx_);
@@ -1140,9 +1135,9 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
         size_t nblock = pb->rle_decoder_.GetNextRun(&not_null, count);
         DCHECK_LE(nblock, count);
         if (PREDICT_FALSE(nblock == 0)) {
-          return Status::Corruption(
-            Substitute("Unexpected EOF on NULL bitmap read. Expected at least $0 more rows",
-                       count));
+          return Status::Corruption(Substitute(
+              "unexpected EOF on NULL bitmap read; "
+              "expected at least $0 more rows", count));
         }
         size_t this_batch = nblock;
         if (not_null) {
@@ -1158,7 +1153,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
           pb->needs_rewind_ = true;
         } else {
 #ifndef NDEBUG
-          kudu::OverwriteWithPattern(reinterpret_cast<char *>(remaining_dst.data()),
+          kudu::OverwriteWithPattern(reinterpret_cast<char*>(remaining_dst.data()),
                                      remaining_dst.stride() * nblock,
                                      "NULLNULLNULLNULLNULL");
 #endif
@@ -1216,8 +1211,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
 Status CFileIterator::CopyNextValues(size_t* n, ColumnMaterializationContext* ctx) {
   RETURN_NOT_OK(PrepareBatch(n));
   RETURN_NOT_OK(Scan(ctx));
-  RETURN_NOT_OK(FinishBatch());
-  return Status::OK();
+  return FinishBatch();
 }
 
 } // namespace cfile
