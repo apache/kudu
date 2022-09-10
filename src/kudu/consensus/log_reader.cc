@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <type_traits>
 
 #include <glog/logging.h>
 
@@ -51,7 +52,7 @@ METRIC_DEFINE_counter(tablet, log_reader_entries_read, "Entries Read From Log",
                       kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_histogram(tablet, log_reader_read_batch_latency, "Log Read Latency",
-                        kudu::MetricUnit::kBytes,
+                        kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent reading log entry batches",
                         kudu::MetricLevel::kInfo,
                         60000000LU, 2);
