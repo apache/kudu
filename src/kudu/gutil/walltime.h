@@ -16,10 +16,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef GUTIL_WALLTIME_H_
-#define GUTIL_WALLTIME_H_
-
-#include <sys/time.h>
+#pragma once
 
 #include <ctime>
 #include <string>
@@ -51,16 +48,6 @@ std::string TimestampAsString(time_t timestamp_secs);
 
 // Return the local time as a string suitable for user display.
 std::string LocalTimeAsString();
-
-// Similar to the WallTime_Parse, but it takes a boolean flag local as
-// argument specifying if the time_spec is in local time or UTC
-// time. If local is set to true, the same exact result as
-// WallTime_Parse is returned.
-bool WallTime_Parse_Timezone(const char* time_spec,
-                             const char* format,
-                             const struct tm* default_time,
-                             bool local,
-                             WallTime* result);
 
 // Return current time in seconds as a WallTime.
 WallTime WallTime_Now();
@@ -213,4 +200,3 @@ class CycleClock {
 
 // inline method bodies
 #include "kudu/gutil/cycleclock-inl.h"  // IWYU pragma: export
-#endif  // GUTIL_WALLTIME_H_
