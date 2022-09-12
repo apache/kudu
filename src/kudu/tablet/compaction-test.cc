@@ -27,6 +27,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -61,7 +62,6 @@
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
@@ -92,23 +92,24 @@ DEFINE_int32(merge_benchmark_num_rows_per_rowset, 500000,
 
 DECLARE_string(block_manager);
 
+using kudu::consensus::OpId;
+using kudu::log::LogAnchorRegistry;
 using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
 
-using consensus::OpId;
-using log::LogAnchorRegistry;
-using strings::Substitute;
+class RowSetMetadata;
 
-static const char *kRowKeyFormat = "hello %08d";
-static const size_t kLargeRollThreshold = 1024 * 1024 * 1024; // 1GB
-static const size_t kSmallRollThreshold = 1024; // 1KB
+constexpr const char* const kRowKeyFormat = "hello %08d";
+constexpr const size_t kLargeRollThreshold = 1024 * 1024 * 1024; // 1GB
+constexpr const size_t kSmallRollThreshold = 1024; // 1KB
 
 class TestCompaction : public KuduRowSetTest {
  public:
@@ -131,7 +132,7 @@ class TestCompaction : public KuduRowSetTest {
 
   // Insert n_rows rows of data.
   // Each row is the tuple: (string key=hello <n*10 + delta>, val=<n>)
-  void InsertRows(MemRowSet *mrs, int n_rows, int delta) {
+  void InsertRows(MemRowSet* mrs, int n_rows, int delta) {
     for (int32_t i = 0; i < n_rows; i++) {
       InsertRow(mrs, i * 10 + delta, i);
     }
@@ -140,7 +141,7 @@ class TestCompaction : public KuduRowSetTest {
   // Inserts a row.
   // The 'nullable_val' column is set to either NULL (when val is odd)
   // or 'val' (when val is even).
-  void InsertRow(MemRowSet *mrs, int row_key, int32_t val) {
+  void InsertRow(MemRowSet* mrs, int row_key, int32_t val) {
     ScopedOp op(&mvcc_, clock_.Now());
     op.StartApplying();
     InsertRowInOp(mrs, op, row_key, val);
@@ -179,7 +180,7 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
-  void InsertRowInOp(MemRowSet *mrs,
+  void InsertRowInOp(MemRowSet* mrs,
                      const ScopedOp& op,
                      int row_key,
                      int32_t val) {
@@ -204,21 +205,21 @@ class TestCompaction : public KuduRowSetTest {
   // If 'val' is even, 'nullable_val' is set to NULL. Otherwise, set to 'val'.
   // Note that this is the opposite of InsertRow() above, so that the updates
   // flop NULL to non-NULL and vice versa.
-  void UpdateRows(RowSet *rowset, int n_rows, int delta, int32_t new_val) {
+  void UpdateRows(RowSet* rowset, int n_rows, int delta, int32_t new_val) {
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
       UpdateRow(rowset, i * 10 + delta, new_val);
     }
   }
 
-  void UpdateRow(RowSet *rowset, int row_key, int32_t new_val) {
+  void UpdateRow(RowSet* rowset, int row_key, int32_t new_val) {
     ScopedOp op(&mvcc_, clock_.Now());
     op.StartApplying();
     UpdateRowInOp(rowset, op, row_key, new_val);
     op.FinishApplying();
   }
 
-  void UpdateRowInOp(RowSet *rowset,
+  void UpdateRowInOp(RowSet* rowset,
                      const ScopedOp& op,
                      int row_key,
                      int32_t new_val) {
@@ -274,7 +275,7 @@ class TestCompaction : public KuduRowSetTest {
     op.FinishApplying();
   }
 
-  void DeleteRowInOp(RowSet *rowset, const ScopedOp& op, int row_key) {
+  void DeleteRowInOp(RowSet* rowset, const ScopedOp& op, int row_key) {
     char keybuf[256];
     faststring update_buf;
     snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, row_key);
@@ -300,7 +301,7 @@ class TestCompaction : public KuduRowSetTest {
 
   // Iterate over the given compaction input, stringifying and dumping each
   // yielded row to *out
-  void IterateInput(CompactionInput *input, vector<string> *out) {
+  void IterateInput(CompactionInput* input, vector<string>* out) {
     ASSERT_OK(DebugDumpCompactionInput(input, out));
   }
 
@@ -308,8 +309,8 @@ class TestCompaction : public KuduRowSetTest {
   // If 'result_rowsets' is not NULL, reopens the resulting rowset(s) and appends
   // them to the vector.
   void DoFlushAndReopen(
-      CompactionInput *input, const Schema& projection, const MvccSnapshot &snap,
-      int64_t roll_threshold, vector<shared_ptr<DiskRowSet> >* result_rowsets) {
+      CompactionInput* input, const Schema& projection, const MvccSnapshot& snap,
+      int64_t roll_threshold, vector<shared_ptr<DiskRowSet>>* result_rowsets) {
     // Flush with a large roll threshold so we only write a single file.
     // This simplifies the test so we always need to reopen only a single rowset.
     RollingDiskRowSetWriter rsw(tablet()->metadata(), projection,
@@ -321,14 +322,14 @@ class TestCompaction : public KuduRowSetTest {
                                    input, snap, HistoryGcOpts::Disabled(), &rsw));
     ASSERT_OK(rsw.Finish());
 
-    vector<shared_ptr<RowSetMetadata> > metas;
+    vector<shared_ptr<RowSetMetadata>> metas;
     rsw.GetWrittenRowSetMetadata(&metas);
-    for (const shared_ptr<RowSetMetadata>& meta : metas) {
+    for (const auto& meta : metas) {
       ASSERT_TRUE(meta->HasBloomDataBlockForTests());
     }
     if (result_rowsets) {
       // Re-open the outputs
-      for (const shared_ptr<RowSetMetadata>& meta : metas) {
+      for (const auto& meta : metas) {
         shared_ptr<DiskRowSet> rs;
         ASSERT_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(),
                                    mem_trackers_, nullptr, &rs));
@@ -338,11 +339,11 @@ class TestCompaction : public KuduRowSetTest {
   }
 
   static Status BuildCompactionInput(const MvccSnapshot& merge_snap,
-                                     const vector<shared_ptr<DiskRowSet> >& rowsets,
+                                     const vector<shared_ptr<DiskRowSet>>& rowsets,
                                      const Schema& projection,
                                      unique_ptr<CompactionInput>* out) {
-    vector<shared_ptr<CompactionInput> > merge_inputs;
-    for (const shared_ptr<DiskRowSet> &rs : rowsets) {
+    vector<shared_ptr<CompactionInput>> merge_inputs;
+    for (const auto& rs : rowsets) {
       unique_ptr<CompactionInput> input;
       RETURN_NOT_OK(CompactionInput::Create(*rs, &projection, merge_snap, nullptr, &input));
       merge_inputs.push_back(shared_ptr<CompactionInput>(input.release()));
@@ -354,9 +355,9 @@ class TestCompaction : public KuduRowSetTest {
   // Compacts a set of DRSs.
   // If 'result_rowsets' is not NULL, reopens the resulting rowset(s) and appends
   // them to the vector.
-  Status CompactAndReopen(const vector<shared_ptr<DiskRowSet> >& rowsets,
+  Status CompactAndReopen(const vector<shared_ptr<DiskRowSet>>& rowsets,
                           const Schema& projection, int64_t roll_threshold,
-                          vector<shared_ptr<DiskRowSet> >* result_rowsets) {
+                          vector<shared_ptr<DiskRowSet>>* result_rowsets) {
     MvccSnapshot merge_snap(mvcc_);
     unique_ptr<CompactionInput> compact_input;
     RETURN_NOT_OK(BuildCompactionInput(merge_snap, rowsets, projection, &compact_input));
@@ -366,10 +367,10 @@ class TestCompaction : public KuduRowSetTest {
   }
 
   // Same as above, but sets a high roll threshold so it only produces a single output.
-  void CompactAndReopenNoRoll(const vector<shared_ptr<DiskRowSet> >& input_rowsets,
+  void CompactAndReopenNoRoll(const vector<shared_ptr<DiskRowSet>>& input_rowsets,
                               const Schema& projection,
                               shared_ptr<DiskRowSet>* result_rs) {
-    vector<shared_ptr<DiskRowSet> > result_rowsets;
+    vector<shared_ptr<DiskRowSet>> result_rowsets;
     CompactAndReopen(input_rowsets, projection, kLargeRollThreshold, &result_rowsets);
     ASSERT_EQ(1, result_rowsets.size());
     *result_rs = result_rowsets[0];
@@ -380,9 +381,9 @@ class TestCompaction : public KuduRowSetTest {
   // them to the vector.
   void FlushMRSAndReopen(const MemRowSet& mrs, const Schema& projection,
                          int64_t roll_threshold,
-                         vector<shared_ptr<DiskRowSet> >* result_rowsets) {
+                         vector<shared_ptr<DiskRowSet>>* result_rowsets) {
     MvccSnapshot snap(mvcc_);
-    vector<shared_ptr<RowSetMetadata> > rowset_metas;
+    vector<shared_ptr<RowSetMetadata>> rowset_metas;
     unique_ptr<CompactionInput> input(CompactionInput::Create(mrs, &projection, snap));
     DoFlushAndReopen(input.get(), projection, snap, roll_threshold, result_rowsets);
   }
@@ -390,7 +391,7 @@ class TestCompaction : public KuduRowSetTest {
   // Same as above, but sets a high roll threshold so it only produces a single output.
   void FlushMRSAndReopenNoRoll(const MemRowSet& mrs, const Schema& projection,
                             shared_ptr<DiskRowSet>* result_rs) {
-    vector<shared_ptr<DiskRowSet> > rowsets;
+    vector<shared_ptr<DiskRowSet>> rowsets;
     FlushMRSAndReopen(mrs, projection, kLargeRollThreshold, &rowsets);
     ASSERT_EQ(1, rowsets.size());
     *result_rs = rowsets[0];
@@ -421,11 +422,11 @@ class TestCompaction : public KuduRowSetTest {
   // each of the input schemas. The output rowset will
   // have the 'projection' schema.
   void DoMerge(const Schema& projection, const vector<Schema>& schemas) {
-    vector<shared_ptr<DiskRowSet> > rowsets;
+    vector<shared_ptr<DiskRowSet>> rowsets;
 
     // Create one input rowset for each of the input schemas
     int delta = 0;
-    for (const Schema& schema : schemas) {
+    for (const auto& schema : schemas) {
       // Create a memrowset with a bunch of rows and updates.
       shared_ptr<MemRowSet> mrs;
       CHECK_OK(MemRowSet::Create(delta, schema, log_anchor_registry_.get(),
@@ -457,7 +458,7 @@ class TestCompaction : public KuduRowSetTest {
 
   template<bool OVERLAP_INPUTS>
   void DoBenchmark() {
-    vector<shared_ptr<DiskRowSet> > rowsets;
+    vector<shared_ptr<DiskRowSet>> rowsets;
 
     if (FLAGS_merge_benchmark_input_dir.empty()) {
       // Create inputs.
@@ -494,7 +495,7 @@ class TestCompaction : public KuduRowSetTest {
       scoped_refptr<TabletMetadata> input_meta;
       ASSERT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &input_meta));
 
-      for (const shared_ptr<RowSetMetadata>& meta : input_meta->rowsets()) {
+      for (const auto& meta : input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;
         CHECK_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(),
                                   mem_trackers_, nullptr, &rs));
@@ -576,7 +577,7 @@ TEST_F(TestCompaction, TestFlushMRSWithRolling) {
                               mem_trackers_.tablet_tracker, &mrs));
   InsertRows(mrs.get(), 30000, 0);
 
-  vector<shared_ptr<DiskRowSet> > rowsets;
+  vector<shared_ptr<DiskRowSet>> rowsets;
   FlushMRSAndReopen(*mrs, schema_, kSmallRollThreshold, &rowsets);
   ASSERT_GT(rowsets.size(), 1);
 
@@ -676,7 +677,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   }
 
   shared_ptr<DiskRowSet> result;
-  vector<shared_ptr<DiskRowSet> > all_rss;
+  vector<shared_ptr<DiskRowSet>> all_rss;
   all_rss.push_back(rs3);
   all_rss.push_back(rs1);
   all_rss.push_back(rs2);
@@ -857,7 +858,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
   }
 
   vector<shared_ptr<CompactionInput>> inputs;
-  for (auto& row_set : row_sets) {
+  for (const auto& row_set : row_sets) {
     unique_ptr<CompactionInput> ci;
     CHECK_OK(row_set->NewCompactionInput(&schema_, all_snap, nullptr, &ci));
     inputs.push_back(shared_ptr<CompactionInput>(ci.release()));
@@ -1030,7 +1031,7 @@ TEST_F(TestCompaction, TestKUDU102) {
   // Catch the updates that came in after the snapshot flush was made.
   // Note that we are merging two MRS, it's a hack
   MvccSnapshot snap2(mvcc_);
-  vector<shared_ptr<CompactionInput> > merge_inputs;
+  vector<shared_ptr<CompactionInput>> merge_inputs;
   merge_inputs.push_back(
         shared_ptr<CompactionInput>(CompactionInput::Create(*mrs, &schema_, snap2)));
   merge_inputs.push_back(
@@ -1093,7 +1094,7 @@ TEST_F(TestCompaction, TestMergeMRS) {
   InsertRows(mrs_a.get(), 5, 1);
 
   MvccSnapshot snap(mvcc_);
-  vector<shared_ptr<CompactionInput> > merge_inputs {
+  vector<shared_ptr<CompactionInput>> merge_inputs {
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
   };
@@ -1113,7 +1114,7 @@ TEST_F(TestCompaction, TestMergeMRSWithInvisibleRows) {
                               mem_trackers_.tablet_tracker, &mrs_b));
   InsertRows(mrs_b.get(), 10, 0);
   MvccSnapshot snap(mvcc_);
-  vector<shared_ptr<CompactionInput> > merge_inputs {
+  vector<shared_ptr<CompactionInput>> merge_inputs {
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
   };
@@ -1238,7 +1239,7 @@ TEST_F(TestCompaction, TestRowHistoryJumpsBetweenRowsets) {
   // Despite the overlapping time ranges across these inputs, the compaction
   // should go off without a hitch.
   MvccSnapshot snap(mvcc_);
-  vector<shared_ptr<CompactionInput> > merge_inputs {
+  vector<shared_ptr<CompactionInput>> merge_inputs {
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap)),
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_c, &schema_, snap)),
@@ -1255,7 +1256,7 @@ TEST_F(TestCompaction, TestMergeMRSWithAllInvisibleRows) {
   shared_ptr<MemRowSet> mrs_a = CreateInvisibleMRS();
   shared_ptr<MemRowSet> mrs_b = CreateInvisibleMRS();
   MvccSnapshot snap(mvcc_);
-  vector<shared_ptr<CompactionInput> > merge_inputs {
+  vector<shared_ptr<CompactionInput>> merge_inputs {
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
     shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
   };

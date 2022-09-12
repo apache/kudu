@@ -104,25 +104,25 @@ class CompactionInput {
   // need to call snap.IsApplied() on each mutation.
   //
   // TODO: can we make the above less messy?
-  static Status Create(const DiskRowSet &rowset,
+  static Status Create(const DiskRowSet& rowset,
                        const Schema* projection,
-                       const MvccSnapshot &snap,
+                       const MvccSnapshot& snap,
                        const fs::IOContext* io_context,
                        std::unique_ptr<CompactionInput>* out);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
   // prior to the given snapshot.
-  static CompactionInput *Create(const MemRowSet &memrowset,
+  static CompactionInput* Create(const MemRowSet& memrowset,
                                  const Schema* projection,
-                                 const MvccSnapshot &snap);
+                                 const MvccSnapshot& snap);
 
   // Create an input which merges several other compaction inputs. The inputs are merged
   // in key-order according to the given schema. All inputs must have matching schemas.
-  static CompactionInput *Merge(const std::vector<std::shared_ptr<CompactionInput> > &inputs,
-                                const Schema *schema);
+  static CompactionInput* Merge(const std::vector<std::shared_ptr<CompactionInput>>& inputs,
+                                const Schema* schema);
 
   virtual Status Init() = 0;
-  virtual Status PrepareBlock(std::vector<CompactionInputRow> *block) = 0;
+  virtual Status PrepareBlock(std::vector<CompactionInputRow>* block) = 0;
 
   // Returns the arena for this compaction input corresponding to the last
   // prepared block. This must be called *after* PrepareBlock() as if this
@@ -132,7 +132,7 @@ class CompactionInput {
   virtual Status FinishBlock() = 0;
 
   virtual bool HasMoreBlocks() = 0;
-  virtual const Schema &schema() const = 0;
+  virtual const Schema& schema() const = 0;
 
   virtual ~CompactionInput() {}
 };
@@ -140,7 +140,7 @@ class CompactionInput {
 // The set of rowsets which are taking part in a given compaction.
 class RowSetsInCompaction {
  public:
-  void AddRowSet(const std::shared_ptr<RowSet> &rowset,
+  void AddRowSet(const std::shared_ptr<RowSet>& rowset,
                  std::unique_lock<std::mutex> lock) {
     CHECK(lock.owns_lock());
 
@@ -153,15 +153,15 @@ class RowSetsInCompaction {
   //
   // 'schema' is the schema for the output of the compaction, and must remain valid
   // for the lifetime of the returned CompactionInput.
-  Status CreateCompactionInput(const MvccSnapshot &snap,
+  Status CreateCompactionInput(const MvccSnapshot& snap,
                                const Schema* schema,
                                const fs::IOContext* io_context,
-                               std::shared_ptr<CompactionInput> *out) const;
+                               std::shared_ptr<CompactionInput>* out) const;
 
   // Dump a log message indicating the chosen rowsets.
   void DumpToLog() const;
 
-  const RowSetVector &rowsets() const { return rowsets_; }
+  const RowSetVector& rowsets() const { return rowsets_; }
 
   size_t num_rowsets() const {
     return rowsets_.size();
@@ -230,9 +230,9 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 Status FlushCompactionInput(const std::string& tablet_id,
                             const fs::FsErrorManager* error_manager,
                             CompactionInput* input,
-                            const MvccSnapshot &snap,
+                            const MvccSnapshot& snap,
                             const HistoryGcOpts& history_gc_opts,
-                            RollingDiskRowSetWriter *out);
+                            RollingDiskRowSetWriter* out);
 
 // Iterate through this compaction input, finding any mutations which came
 // between snap_to_exclude and snap_to_include (ie those ops that were not yet
@@ -245,15 +245,15 @@ Status FlushCompactionInput(const std::string& tablet_id,
 // After return of this function, this CompactionInput object is "used up" and will
 // yield no further rows.
 Status ReupdateMissedDeltas(const fs::IOContext* io_context,
-                            CompactionInput *input,
+                            CompactionInput* input,
                             const HistoryGcOpts& history_gc_opts,
-                            const MvccSnapshot &snap_to_exclude,
-                            const MvccSnapshot &snap_to_include,
-                            const RowSetVector &output_rowsets);
+                            const MvccSnapshot& snap_to_exclude,
+                            const MvccSnapshot& snap_to_include,
+                            const RowSetVector& output_rowsets);
 
 // Dump the given compaction input to 'lines' or LOG(INFO) if it is NULL.
 // This consumes all of the input in the compaction input.
-Status DebugDumpCompactionInput(CompactionInput *input, std::vector<std::string> *lines);
+Status DebugDumpCompactionInput(CompactionInput* input, std::vector<std::string>* lines);
 
 // Helper methods to print a row with full history.
 std::string RowToString(const RowBlockRow& row,
