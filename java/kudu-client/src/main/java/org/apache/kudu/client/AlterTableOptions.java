@@ -21,6 +21,7 @@ import static org.apache.kudu.ColumnSchema.CompressionAlgorithm;
 import static org.apache.kudu.ColumnSchema.Encoding;
 import static org.apache.kudu.master.Master.AlterTableRequestPB;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -478,6 +479,24 @@ public class AlterTableOptions {
   }
 
   /**
+   * Change the immutable attribute for the column.
+   *
+   * @param name name of the column
+   * @param immutable the new immutable attribute for the column.
+   * @return this instance
+   */
+  public AlterTableOptions changeImmutable(String name, boolean immutable) {
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
+    AlterTableRequestPB.AlterColumn.Builder alterBuilder =
+            AlterTableRequestPB.AlterColumn.newBuilder();
+    alterBuilder.setDelta(
+            Common.ColumnSchemaDeltaPB.newBuilder().setName(name).setImmutable(immutable));
+    step.setAlterColumn(alterBuilder);
+    return this;
+  }
+
+  /**
    * Change the table's extra configuration properties.
    * These configuration properties will be merged into existing configuration properties.
    *
@@ -532,14 +551,30 @@ public class AlterTableOptions {
   }
 
   List<Integer> getRequiredFeatureFlags() {
-    if (!hasAddDropRangePartitions()) {
-      return ImmutableList.of();
+    boolean hasImmutables = false;
+    for (AlterTableRequestPB.Step.Builder step : pb.getAlterSchemaStepsBuilderList()) {
+      if ((step.getType() == AlterTableRequestPB.StepType.ADD_COLUMN &&
+           step.getAddColumn().getSchema().hasImmutable()) ||
+          (step.getType() == AlterTableRequestPB.StepType.ALTER_COLUMN &&
+           step.getAlterColumn().getDelta().hasImmutable())) {
+        hasImmutables = true;
+        break;
+      }
     }
-    if (!isAddingRangeWithCustomHashSchema) {
-      return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
+
+    List<Integer> requiredFeatureFlags = new ArrayList<>();
+    if (hasImmutables) {
+      requiredFeatureFlags.add(
+              Integer.valueOf(Master.MasterFeatures.IMMUTABLE_COLUMN_ATTRIBUTE_VALUE));
     }
-    return ImmutableList.of(
-        Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE,
-        Master.MasterFeatures.RANGE_SPECIFIC_HASH_SCHEMA_VALUE);
+
+    if (hasAddDropRangePartitions()) {
+      requiredFeatureFlags.add(Integer.valueOf(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE));
+      if (isAddingRangeWithCustomHashSchema) {
+        requiredFeatureFlags.add(
+                Integer.valueOf(Master.MasterFeatures.RANGE_SPECIFIC_HASH_SCHEMA_VALUE));
+      }
+    }
+    return requiredFeatureFlags;
   }
 }

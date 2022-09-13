@@ -53,7 +53,7 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
     this.schema = schema;
     this.name = name;
     this.builder = cto.getBuilder();
-    featureFlags = cto.getRequiredFeatureFlags();
+    featureFlags = cto.getRequiredFeatureFlags(schema);
   }
 
   @Override

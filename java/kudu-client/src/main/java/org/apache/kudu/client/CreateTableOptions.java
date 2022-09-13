@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +28,7 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
 import org.apache.kudu.master.Master;
 
 /**
@@ -333,16 +335,21 @@ public class CreateTableOptions {
     return pb;
   }
 
-  List<Integer> getRequiredFeatureFlags() {
-    if (rangePartitions.isEmpty() && customRangePartitions.isEmpty()) {
-      return ImmutableList.of();
+  List<Integer> getRequiredFeatureFlags(Schema schema) {
+    List<Integer> requiredFeatureFlags = new ArrayList<>();
+    if (schema.hasImmutableColumns()) {
+      requiredFeatureFlags.add(
+              Integer.valueOf(Master.MasterFeatures.IMMUTABLE_COLUMN_ATTRIBUTE_VALUE));
     }
-    if (customRangePartitions.isEmpty()) {
-      return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
+    if (!rangePartitions.isEmpty() || !customRangePartitions.isEmpty()) {
+      requiredFeatureFlags.add(Integer.valueOf(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE));
     }
-    return ImmutableList.of(
-        Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE,
-        Master.MasterFeatures.RANGE_SPECIFIC_HASH_SCHEMA_VALUE);
+    if (!customRangePartitions.isEmpty()) {
+      requiredFeatureFlags.add(
+              Integer.valueOf(Master.MasterFeatures.RANGE_SPECIFIC_HASH_SCHEMA_VALUE));
+    }
+
+    return requiredFeatureFlags;
   }
 
   boolean shouldWait() {

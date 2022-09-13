@@ -107,6 +107,7 @@ public class ProtobufHelper {
         .setType(column.getWireType())
         .setIsKey(column.isKey())
         .setIsNullable(column.isNullable())
+        .setImmutable(column.isImmutable())
         .setCfileBlockSize(column.getDesiredBlockSize());
 
     if (!flags.contains(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_ID) && colId >= 0) {
@@ -161,6 +162,7 @@ public class ProtobufHelper {
     return new ColumnSchema.ColumnSchemaBuilder(pb.getName(), type)
                            .key(pb.getIsKey())
                            .nullable(pb.getIsNullable())
+                           .immutable(pb.getImmutable())
                            .defaultValue(defaultValue)
                            .encoding(encoding)
                            .compressionAlgorithm(compressionAlgorithm)

@@ -21,20 +21,20 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 /**
- * Represents a single row update ignoring missing rows errors and
- * errors on updating immutable cells.
+ * Represents a single row upsert ignoring errors on updating
+ * immutable cells.
  * Instances of this class should not be reused.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class UpdateIgnore extends Operation {
+public class UpsertIgnore extends Operation {
 
-  UpdateIgnore(KuduTable table) {
+  UpsertIgnore(KuduTable table) {
     super(table);
   }
 
   @Override
   ChangeType getChangeType() {
-    return ChangeType.UPDATE_IGNORE;
+    return ChangeType.UPSERT_IGNORE;
   }
 }

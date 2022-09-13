@@ -2771,7 +2771,8 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Sends a request to the master to check if the cluster supports ignore operations.
+   * Sends a request to the master to check if the cluster supports ignore operations, including
+   * InsertIgnore, UpdateIgnore and DeleteIgnore operations.
    * @return true if the cluster supports ignore operations
    */
   @InterfaceAudience.Private
@@ -2782,8 +2783,6 @@ public class AsyncKuduClient implements AutoCloseable {
     Deferred<PingResponse> response = sendRpcToTablet(ping);
     return AsyncUtil.addBoth(response, new PingSupportsFeatureCallback());
   }
-
-  // TODO(yingchun): also need add 'public Deferred<Boolean> supportsUpsertIgnoreOperations()'
 
   private static final class PingSupportsFeatureCallback implements Callback<Boolean, Object> {
     @Override

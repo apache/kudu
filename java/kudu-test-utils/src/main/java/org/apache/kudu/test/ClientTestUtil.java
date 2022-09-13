@@ -490,4 +490,11 @@ public abstract class ClientTestUtil {
         ).build());
     return new Schema(columns);
   }
+
+  public static Schema createSchemaWithImmutableColumns() {
+    List<ColumnSchema> columns = new ArrayList<>(ClientTestUtil.getBasicSchema().getColumns());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column5_i", Type.INT32)
+            .nullable(true).immutable(true).build());
+    return new Schema(columns);
+  }
 }

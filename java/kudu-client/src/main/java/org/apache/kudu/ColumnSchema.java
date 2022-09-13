@@ -40,6 +40,7 @@ public class ColumnSchema {
   private final Type type;
   private final boolean key;
   private final boolean nullable;
+  private final boolean immutable;
   private final Object defaultValue;
   private final int desiredBlockSize;
   private final Encoding encoding;
@@ -103,7 +104,7 @@ public class ColumnSchema {
     }
   }
 
-  private ColumnSchema(String name, Type type, boolean key, boolean nullable,
+  private ColumnSchema(String name, Type type, boolean key, boolean nullable, boolean immutable,
                        Object defaultValue, int desiredBlockSize, Encoding encoding,
                        CompressionAlgorithm compressionAlgorithm,
                        ColumnTypeAttributes typeAttributes, Common.DataType wireType,
@@ -112,6 +113,7 @@ public class ColumnSchema {
     this.type = type;
     this.key = key;
     this.nullable = nullable;
+    this.immutable = immutable;
     this.defaultValue = defaultValue;
     this.desiredBlockSize = desiredBlockSize;
     this.encoding = encoding;
@@ -152,6 +154,14 @@ public class ColumnSchema {
    */
   public boolean isNullable() {
     return nullable;
+  }
+
+  /**
+   * Answers if the column is immutable
+   * @return true if it is immutable, else false
+   */
+  public boolean isImmutable() {
+    return immutable;
   }
 
   /**
@@ -267,6 +277,7 @@ public class ColumnSchema {
     private final Type type;
     private boolean key = false;
     private boolean nullable = false;
+    private boolean immutable = false;
     private Object defaultValue = null;
     private int desiredBlockSize = 0;
     private Encoding encoding = null;
@@ -294,6 +305,7 @@ public class ColumnSchema {
       this.type = that.type;
       this.key = that.key;
       this.nullable = that.nullable;
+      this.immutable = that.immutable;
       this.defaultValue = that.defaultValue;
       this.desiredBlockSize = that.desiredBlockSize;
       this.encoding = that.encoding;
@@ -327,6 +339,17 @@ public class ColumnSchema {
      */
     public ColumnSchemaBuilder nullable(boolean nullable) {
       this.nullable = nullable;
+      return this;
+    }
+
+    /**
+     * Marks the column as immutable or not. False by default.
+     *
+     * @param immutable a boolean that indicates if the column is immutable
+     * @return this instance
+     */
+    public ColumnSchemaBuilder immutable(boolean immutable) {
+      this.immutable = immutable;
       return this;
     }
 
@@ -432,8 +455,9 @@ public class ColumnSchema {
                           CharUtil.MIN_VARCHAR_LENGTH, CharUtil.MAX_VARCHAR_LENGTH));
         }
       }
+
       return new ColumnSchema(name, type,
-                              key, nullable, defaultValue,
+                              key, nullable, immutable, defaultValue,
                               desiredBlockSize, encoding, compressionAlgorithm,
                               typeAttributes, wireType, comment);
     }

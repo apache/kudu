@@ -191,6 +191,16 @@ public class KuduTable {
   }
 
   /**
+   * Get a new upsert ignore configured with this table's schema. The operation ignores errors of
+   * updating immutable cells in a row. This is useful when upserting rows in a table with immutable
+   * columns.
+   * @return an upsert with this table's schema
+   */
+  public UpsertIgnore newUpsertIgnore() {
+    return new UpsertIgnore(this);
+  }
+
+  /**
    * Get a new insert ignore configured with this table's schema. An insert ignore will
    * ignore duplicate row errors. This is useful when the same insert may be sent multiple times.
    * The returned object should not be reused.
@@ -202,7 +212,8 @@ public class KuduTable {
 
   /**
    * Get a new update ignore configured with this table's schema. An update ignore will
-   * ignore missing row errors. This is useful to update a row only if it exists.
+   * ignore missing row errors and updating on immutable columns errors. This is useful to
+   * update a row only if it exists, or update a row with immutable columns.
    * The returned object should not be reused.
    * @return an update ignore with this table's schema
    */

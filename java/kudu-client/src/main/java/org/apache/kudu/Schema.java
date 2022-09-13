@@ -72,6 +72,7 @@ public class Schema {
   private final int varLengthColumnCount;
   private final int rowSize;
   private final boolean hasNullableColumns;
+  private final boolean hasImmutableColumns;
 
   private final int isDeletedIndex;
   private static final int NO_IS_DELETED_INDEX = -1;
@@ -113,6 +114,7 @@ public class Schema {
     this.columnIdByName = hasColumnIds ? new HashMap<>(columnIds.size()) : null;
     int offset = 0;
     boolean hasNulls = false;
+    boolean hasImmutables = false;
     int isDeletedIndex = NO_IS_DELETED_INDEX;
     // pre-compute a few counts and offsets
     for (int index = 0; index < columns.size(); index++) {
@@ -122,6 +124,7 @@ public class Schema {
       }
 
       hasNulls |= column.isNullable();
+      hasImmutables |= column.isImmutable();
       columnOffsets[index] = offset;
       offset += column.getTypeSize();
       if (this.columnsByName.put(column.getName(), index) != null) {
@@ -152,6 +155,7 @@ public class Schema {
     this.varLengthColumnCount = varLenCnt;
     this.rowSize = getRowSize(this.columnsByIndex);
     this.hasNullableColumns = hasNulls;
+    this.hasImmutableColumns = hasImmutables;
     this.isDeletedIndex = isDeletedIndex;
   }
 
@@ -304,6 +308,14 @@ public class Schema {
    */
   public boolean hasNullableColumns() {
     return this.hasNullableColumns;
+  }
+
+  /**
+   * Tells if there's at least one immutable column
+   * @return true if at least one column is immutable, else false.
+   */
+  public boolean hasImmutableColumns() {
+    return this.hasImmutableColumns;
   }
 
   /**

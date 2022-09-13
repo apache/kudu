@@ -1092,4 +1092,36 @@ public class TestAlterTable {
     table = client.openTable(table.getName());
     assertEquals(newComment, table.getComment());
   }
+
+  @Test
+  public void testAlterAddAndRemoveImmutableAttribute() throws Exception {
+    KuduTable table = createTable(ImmutableList.of());
+    insertRows(table, 0, 100);
+    assertEquals(100, countRowsInTable(table));
+
+    client.alterTable(tableName, new AlterTableOptions()
+            .changeImmutable("c1", true));
+    table = client.openTable(table.getName());
+    assertTrue(table.getSchema().getColumn("c1").isImmutable());
+
+    insertRows(table, 100, 200);
+    assertEquals(200, countRowsInTable(table));
+
+    client.alterTable(tableName, new AlterTableOptions()
+            .changeImmutable("c1", false));
+    table = client.openTable(table.getName());
+    assertFalse(table.getSchema().getColumn("c1").isImmutable());
+
+    insertRows(table, 200, 300);
+    assertEquals(300, countRowsInTable(table));
+
+    final ColumnSchema immu_col = new ColumnSchema.ColumnSchemaBuilder("immu_col", Type.INT32)
+        .nullable(true).immutable(true).build();
+    client.alterTable(tableName, new AlterTableOptions().addColumn(immu_col));
+    table = client.openTable(table.getName());
+    assertTrue(table.getSchema().getColumn("immu_col").isImmutable());
+
+    insertRows(table, 300, 400);
+    assertEquals(400, countRowsInTable(table));
+  }
 }

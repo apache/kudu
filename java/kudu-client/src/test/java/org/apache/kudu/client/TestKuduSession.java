@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.createSchemaWithImmutableColumns;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
 import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
@@ -33,6 +34,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
+import org.hamcrest.CoreMatchers;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -348,6 +351,7 @@ public class TestKuduSession {
                               long successfulInserts,
                               long insertIgnoreErrors,
                               long successfulUpserts,
+                              long upsertIgnoreErrors,
                               long successfulUpdates,
                               long updateIgnoreErrors,
                               long successfulDeletes,
@@ -356,7 +360,7 @@ public class TestKuduSession {
     assertEquals(successfulInserts, metrics.getMetric("successful_inserts"));
     assertEquals(insertIgnoreErrors, metrics.getMetric("insert_ignore_errors"));
     assertEquals(successfulUpserts, metrics.getMetric("successful_upserts"));
-    // TODO(yingchun): should test upsert_ignore_errors
+    assertEquals(upsertIgnoreErrors, metrics.getMetric("upsert_ignore_errors"));
     assertEquals(successfulUpdates, metrics.getMetric("successful_updates"));
     assertEquals(updateIgnoreErrors, metrics.getMetric("update_ignore_errors"));
     assertEquals(successfulDeletes, metrics.getMetric("successful_deletes"));
@@ -377,7 +381,7 @@ public class TestKuduSession {
         "INT32 key=1, INT32 column1_i=1, INT32 column2_i=3, " +
             "STRING column3_s=a string, BOOL column4_b=true",
         rowStrings.get(0));
-    doVerifyMetrics(session, 0, 0, 1, 0, 0, 0, 0);
+    doVerifyMetrics(session, 0, 0, 1, 0, 0, 0, 0, 0);
 
     // Test an Upsert that acts as an Update.
     assertFalse(session.apply(createUpsert(table, 1, 2, false)).hasRowError());
@@ -386,7 +390,7 @@ public class TestKuduSession {
         "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
             "STRING column3_s=a string, BOOL column4_b=true",
         rowStrings.get(0));
-    doVerifyMetrics(session, 0, 0, 2, 0, 0, 0, 0);
+    doVerifyMetrics(session, 0, 0, 2, 0, 0, 0, 0, 0);
   }
 
   @Test(timeout = 10000)
@@ -399,7 +403,7 @@ public class TestKuduSession {
     session.apply(createUpsert(table, 1, 1, false));
     session.apply(createInsertIgnore(table, 1));
     List<OperationResponse> results = session.flush();
-    doVerifyMetrics(session, 1, 1, 1, 0, 0, 0, 0);
+    doVerifyMetrics(session, 1, 1, 1, 0, 0, 0, 0, 0);
     for (OperationResponse result : results) {
       assertFalse(result.toString(), result.hasRowError());
     }
@@ -420,7 +424,7 @@ public class TestKuduSession {
     session.apply(createInsertIgnore(table, 1));
     session.apply(createInsert(table, 1));
     List<OperationResponse> results = session.flush();
-    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0);
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0, 0);
     assertFalse(results.get(0).toString(), results.get(0).hasRowError());
     assertTrue(results.get(1).toString(), results.get(1).hasRowError());
     assertTrue(results.get(1).getRowError().getErrorStatus().isAlreadyPresent());
@@ -444,7 +448,7 @@ public class TestKuduSession {
             "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
                     "STRING column3_s=a string, BOOL column4_b=true",
             rowStrings.get(0));
-    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0);
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0, 0);
 
     // Test insert ignore does not return a row error.
     assertFalse(session.apply(createInsertIgnore(table, 1)).hasRowError());
@@ -453,7 +457,7 @@ public class TestKuduSession {
             "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
                     "STRING column3_s=a string, BOOL column4_b=true",
             rowStrings.get(0));
-    doVerifyMetrics(session, 1, 1, 0, 0, 0, 0, 0);
+    doVerifyMetrics(session, 1, 1, 0, 0, 0, 0, 0, 0);
 
   }
 
@@ -465,11 +469,11 @@ public class TestKuduSession {
     // Test update ignore does not return a row error.
     assertFalse(session.apply(createUpdateIgnore(table, 1, 1, false)).hasRowError());
     assertEquals(0, scanTableToStrings(table).size());
-    doVerifyMetrics(session, 0, 0, 0, 0, 1, 0, 0);
+    doVerifyMetrics(session, 0, 0, 0, 0, 0, 1, 0, 0);
 
     assertFalse(session.apply(createInsert(table, 1)).hasRowError());
     assertEquals(1, scanTableToStrings(table).size());
-    doVerifyMetrics(session, 1, 0, 0, 0, 1, 0, 0);
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 1, 0, 0);
 
     // Test update ignore implements normal update.
     assertFalse(session.apply(createUpdateIgnore(table, 1, 2, false)).hasRowError());
@@ -479,7 +483,7 @@ public class TestKuduSession {
         "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
             "STRING column3_s=a string, BOOL column4_b=true",
         rowStrings.get(0));
-    doVerifyMetrics(session, 1, 0, 0, 1, 1, 0, 0);
+    doVerifyMetrics(session, 1, 0, 0, 0, 1, 1, 0, 0);
   }
 
   @Test(timeout = 10000)
@@ -489,16 +493,16 @@ public class TestKuduSession {
 
     // Test delete ignore does not return a row error.
     assertFalse(session.apply(createDeleteIgnore(table, 1)).hasRowError());
-    doVerifyMetrics(session, 0, 0, 0, 0, 0, 0, 1);
+    doVerifyMetrics(session, 0, 0, 0, 0, 0, 0, 0, 1);
 
     assertFalse(session.apply(createInsert(table, 1)).hasRowError());
     assertEquals(1, scanTableToStrings(table).size());
-    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 1);
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0, 1);
 
     // Test delete ignore implements normal delete.
     assertFalse(session.apply(createDeleteIgnore(table, 1)).hasRowError());
     assertEquals(0, scanTableToStrings(table).size());
-    doVerifyMetrics(session, 1, 0, 0, 0, 0, 1, 1);
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 1, 1);
   }
 
   @Test(timeout = 10000)
@@ -660,8 +664,218 @@ public class TestKuduSession {
     }
   }
 
+  @Test(timeout = 10000)
+  public void testUpdateOnTableWithImmutableColumn() throws Exception {
+    // Create a table with an immutable column.
+    KuduTable table = client.createTable(
+            tableName, createSchemaWithImmutableColumns(), getBasicCreateTableOptions());
+    KuduSession session = client.newSession();
+
+    // Insert some data and verify it.
+    assertFalse(session.apply(createInsertOnTableWithImmutableColumn(table, 1)).hasRowError());
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(1, rowStrings.size());
+    assertEquals("INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
+                    "STRING column3_s=a string, BOOL column4_b=true, INT32 column5_i=6",
+            rowStrings.get(0));
+    // successfulInserts++
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0, 0);
+
+    // Test an Update can update row without immutable column set.
+    final String expectRow = "INT32 key=1, INT32 column1_i=3, INT32 column2_i=3, " +
+        "STRING column3_s=NULL, BOOL column4_b=true, INT32 column5_i=6";
+    assertFalse(session.apply(createUpdateOnTableWithImmutableColumn(
+            table, 1, false)).hasRowError());
+    rowStrings = scanTableToStrings(table);
+    assertEquals(expectRow, rowStrings.get(0));
+    // successfulUpdates++
+    doVerifyMetrics(session, 1, 0, 0, 0, 1, 0, 0, 0);
+
+    // Test an Update results in an error when attempting to update row having at least
+    // one column with the immutable attribute set.
+    OperationResponse resp = session.apply(createUpdateOnTableWithImmutableColumn(
+            table, 1, true));
+    assertTrue(resp.hasRowError());
+    assertTrue(resp.getRowError().getErrorStatus().isImmutable());
+    Assert.assertThat(resp.getRowError().getErrorStatus().toString(),
+            CoreMatchers.containsString("Immutable: UPDATE not allowed for " +
+                    "immutable column: column5_i INT32 NULLABLE IMMUTABLE"));
+
+    // nothing changed
+    rowStrings = scanTableToStrings(table);
+    assertEquals(expectRow, rowStrings.get(0));
+    doVerifyMetrics(session, 1, 0, 0, 0, 1, 0, 0, 0);
+  }
+
+  @Test(timeout = 10000)
+  public void testUpdateIgnoreOnTableWithImmutableColumn() throws Exception {
+    // Create a table with an immutable column.
+    KuduTable table = client.createTable(
+            tableName, createSchemaWithImmutableColumns(), getBasicCreateTableOptions());
+    KuduSession session = client.newSession();
+
+    // Insert some data and verify it.
+    assertFalse(session.apply(createInsertOnTableWithImmutableColumn(table, 1)).hasRowError());
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(1, rowStrings.size());
+    assertEquals("INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
+                    "STRING column3_s=a string, BOOL column4_b=true, INT32 column5_i=6",
+            rowStrings.get(0));
+    // successfulInserts++
+    doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0, 0);
+
+    final String expectRow = "INT32 key=1, INT32 column1_i=3, INT32 column2_i=3, " +
+            "STRING column3_s=NULL, BOOL column4_b=true, INT32 column5_i=6";
+
+    // Test an UpdateIgnore can update a row without changing the immutable column cell,
+    // the error of updating the immutable column will be ignored.
+    assertFalse(session.apply(createUpdateIgnoreOnTableWithImmutableColumn(
+            table, 1, true)).hasRowError());
+    rowStrings = scanTableToStrings(table);
+    assertEquals(expectRow, rowStrings.get(0));
+    // successfulUpdates++, updateIgnoreErrors++
+    doVerifyMetrics(session, 1, 0, 0, 0, 1, 1, 0, 0);
+
+    // Test an UpdateIgnore only on immutable column. Note that this will result in
+    // a 'Invalid argument: No fields updated' error.
+    OperationResponse resp = session.apply(createUpdateIgnoreOnTableWithImmutableColumn(
+            table, 1, false));
+    assertTrue(resp.hasRowError());
+    assertTrue(resp.getRowError().getErrorStatus().isInvalidArgument());
+    Assert.assertThat(resp.getRowError().getErrorStatus().toString(),
+        CoreMatchers.containsString("Invalid argument: No fields updated, " +
+                "key is: (int32 key=<redacted>)"));
+
+    // nothing changed
+    rowStrings = scanTableToStrings(table);
+    assertEquals(expectRow, rowStrings.get(0));
+    doVerifyMetrics(session, 1, 0, 0, 0, 1, 1, 0, 0);
+  }
+
+  @Test(timeout = 10000)
+  public void testUpsertIgnoreOnTableWithImmutableColumn() throws Exception {
+    // Create a table with an immutable column.
+    KuduTable table = client.createTable(
+            tableName, createSchemaWithImmutableColumns(), getBasicCreateTableOptions());
+    KuduSession session = client.newSession();
+
+    // Insert some data and verify it.
+    assertFalse(session.apply(createUpsertIgnoreOnTableWithImmutableColumn(
+            table, 1, 2, true)).hasRowError());
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(1, rowStrings.size());
+    assertEquals("INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
+                    "STRING column3_s=NULL, BOOL column4_b=true, INT32 column5_i=4",
+            rowStrings.get(0));
+    // successfulUpserts++
+    doVerifyMetrics(session, 0, 0, 1, 0, 0, 0, 0, 0);
+
+    // Test an UpsertIgnore can update row without immutable column set.
+    assertFalse(session.apply(createUpsertIgnoreOnTableWithImmutableColumn(
+            table, 1, 3, false)).hasRowError());
+    rowStrings = scanTableToStrings(table);
+    assertEquals("INT32 key=1, INT32 column1_i=3, INT32 column2_i=3, " +
+            "STRING column3_s=NULL, BOOL column4_b=true, INT32 column5_i=4", rowStrings.get(0));
+    // successfulUpserts++
+    doVerifyMetrics(session, 0, 0, 2, 0, 0, 0, 0, 0);
+
+    // Test an UpsertIgnore can update row with immutable column set.
+    assertFalse(session.apply(createUpsertIgnoreOnTableWithImmutableColumn(
+            table, 1, 4, true)).hasRowError());
+    rowStrings = scanTableToStrings(table);
+    assertEquals("INT32 key=1, INT32 column1_i=4, INT32 column2_i=3, " +
+            "STRING column3_s=NULL, BOOL column4_b=true, INT32 column5_i=4", rowStrings.get(0));
+    // successfulUpserts++, upsertIgnoreErrors++
+    doVerifyMetrics(session, 0, 0, 3, 1, 0, 0, 0, 0);
+  }
+
+  @Test(timeout = 10000)
+  public void testUpsertOnTableWithImmutableColumn() throws Exception {
+    // Create a table with an immutable column.
+    KuduTable table = client.createTable(
+            tableName, createSchemaWithImmutableColumns(), getBasicCreateTableOptions());
+    KuduSession session = client.newSession();
+
+    final String expectRow = "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
+        "STRING column3_s=NULL, BOOL column4_b=true, INT32 column5_i=4";
+    // Insert some data and verify it.
+    assertFalse(session.apply(createUpsertOnTableWithImmutableColumn(
+            table, 1, 2, true)).hasRowError());
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(1, rowStrings.size());
+    assertEquals(expectRow, rowStrings.get(0));
+    // successfulUpserts++
+    doVerifyMetrics(session, 0, 0, 1, 0, 0, 0, 0, 0);
+
+    // Test an Upsert attemp to update an immutable column, which will result an error.
+    OperationResponse resp = session.apply(createUpsertOnTableWithImmutableColumn(
+            table, 1, 3, true));
+    assertTrue(resp.hasRowError());
+    assertTrue(resp.getRowError().getErrorStatus().isImmutable());
+    Assert.assertThat(resp.getRowError().getErrorStatus().toString(),
+        CoreMatchers.containsString("Immutable: UPDATE not allowed for " +
+                "immutable column: column5_i INT32 NULLABLE IMMUTABLE"));
+
+    // nothing changed
+    rowStrings = scanTableToStrings(table);
+    assertEquals(expectRow, rowStrings.get(0));
+    doVerifyMetrics(session, 0, 0, 1, 0, 0, 0, 0, 0);
+  }
+
   private Insert createInsert(KuduTable table, int key) {
     return createBasicSchemaInsert(table, key);
+  }
+
+  private Insert createInsertOnTableWithImmutableColumn(KuduTable table, int key) {
+    Insert insert = createBasicSchemaInsert(table, key);
+    insert.getRow().addInt(5, 6);
+    return insert;
+  }
+
+  private Update createUpdateOnTableWithImmutableColumn(KuduTable table, int key,
+                                                        boolean updateImmutableColumn) {
+    Update update = table.newUpdate();
+    populateUpdateRow(update.getRow(), key, key * 3, true);
+    if (updateImmutableColumn) {
+      update.getRow().addInt(5, 6);
+    }
+
+    return update;
+  }
+
+  private UpdateIgnore createUpdateIgnoreOnTableWithImmutableColumn(
+          KuduTable table, int key, boolean updateNonImmutableColumns) {
+    UpdateIgnore updateIgnore = table.newUpdateIgnore();
+    if (updateNonImmutableColumns) {
+      populateUpdateRow(updateIgnore.getRow(), key, key * 3, true);
+    } else {
+      updateIgnore.getRow().addInt(0, key);
+    }
+    updateIgnore.getRow().addInt(5, 6);
+
+    return updateIgnore;
+  }
+
+  private UpsertIgnore createUpsertIgnoreOnTableWithImmutableColumn(
+          KuduTable table, int key, int times, boolean updateImmutableColumn) {
+    UpsertIgnore upsertIgnore = table.newUpsertIgnore();
+    populateUpdateRow(upsertIgnore.getRow(), key, key * times, true);
+    if (updateImmutableColumn) {
+      upsertIgnore.getRow().addInt(5, key * times * 2);
+    }
+
+    return upsertIgnore;
+  }
+
+  private Upsert createUpsertOnTableWithImmutableColumn(
+          KuduTable table, int key, int times, boolean updateImmutableColumn) {
+    Upsert upsert = table.newUpsert();
+    populateUpdateRow(upsert.getRow(), key, key * times, true);
+    if (updateImmutableColumn) {
+      upsert.getRow().addInt(5, key * times * 2);
+    }
+
+    return upsert;
   }
 
   private Upsert createUpsert(KuduTable table, int key, int secondVal, boolean hasNull) {

@@ -242,6 +242,13 @@ public class Status {
   public static Status EndOfFile(String msg, int posixCode) {
     return new Status(WireProtocol.AppStatusPB.ErrorCode.END_OF_FILE, msg, posixCode);
   }
+
+  public static Status Immutable(String msg) {
+    return new Status(WireProtocol.AppStatusPB.ErrorCode.IMMUTABLE, msg);
+  }
+  public static Status Immutable(String msg, int posixCode) {
+    return new Status(WireProtocol.AppStatusPB.ErrorCode.IMMUTABLE, msg, posixCode);
+  }
   // CHECKSTYLE:ON
   // Boolean status checks.
 
@@ -321,6 +328,10 @@ public class Status {
     return code == WireProtocol.AppStatusPB.ErrorCode.END_OF_FILE;
   }
 
+  public boolean isImmutable() {
+    return code == WireProtocol.AppStatusPB.ErrorCode.IMMUTABLE;
+  }
+
   /**
    * Return a human-readable version of the status code.
    * See also status.cc in the C++ codebase.
@@ -365,6 +376,8 @@ public class Status {
         return "Incomplete";
       case WireProtocol.AppStatusPB.ErrorCode.END_OF_FILE_VALUE:
         return "End of file";
+      case WireProtocol.AppStatusPB.ErrorCode.IMMUTABLE_VALUE:
+        return "Immutable";
       default:
         return "Unknown error (" + code.getNumber() + ")";
     }

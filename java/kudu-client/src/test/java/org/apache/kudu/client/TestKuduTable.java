@@ -23,6 +23,7 @@ import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.createSchemaWithImmutableColumns;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
@@ -2486,5 +2487,77 @@ public class TestKuduTable {
     assertTrue(currentStatistics.getOnDiskSize() >= prevStatistics.getOnDiskSize());
     assertTrue(currentStatistics.getLiveRowCount() >= prevStatistics.getLiveRowCount());
     assertEquals(num, currentStatistics.getLiveRowCount());
+  }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
+      "--master_support_immutable_column_attribute=false"
+  })
+  public void testCreateTableWithImmuColsWhenMasterNotSupport() throws Exception {
+    try {
+      CreateTableOptions builder = getBasicCreateTableOptions();
+      client.createTable(tableName, createSchemaWithImmutableColumns(), builder);
+      fail("shouldn't be able to create a table with immutable columns " +
+          "when server side doesn't support required IMMUTABLE_COLUMN_ATTRIBUTE feature");
+    } catch (KuduException ex) {
+      final String errmsg = ex.getMessage();
+      assertTrue(errmsg, ex.getStatus().isRemoteError());
+      assertTrue(errmsg, errmsg.matches(
+          ".* server sent error unsupported feature flags"));
+    }
+  }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
+      "--master_support_immutable_column_attribute=false"
+  })
+  public void testAlterTableAddImmuColsWhenMasterNotSupport() throws Exception {
+    CreateTableOptions builder = getBasicCreateTableOptions();
+    client.createTable(tableName, BASIC_SCHEMA, builder);
+    final ColumnSchema immu_col = new ColumnSchema.ColumnSchemaBuilder("immu_col", Type.INT32)
+        .nullable(true).immutable(true).build();
+    try {
+      client.alterTable(tableName, new AlterTableOptions().addColumn(immu_col));
+      fail("shouldn't be able to alter a table to add a column with immutable attribute " +
+          "when server side doesn't support required IMMUTABLE_COLUMN_ATTRIBUTE feature");
+    } catch (KuduException ex) {
+      final String errmsg = ex.getMessage();
+      assertTrue(errmsg, ex.getStatus().isRemoteError());
+      assertTrue(errmsg, errmsg.matches(
+          ".* server sent error unsupported feature flags"));
+    }
+  }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
+      "--master_support_immutable_column_attribute=false"
+  })
+  public void testAlterTableAlterImmuColsWhenMasterNotSupport() throws Exception {
+    CreateTableOptions builder = getBasicCreateTableOptions();
+    client.createTable(tableName, BASIC_SCHEMA, builder);
+    try {
+      client.alterTable(tableName, new AlterTableOptions().changeImmutable("column1_i", true));
+      fail("shouldn't be able to alter a table to change the immutable attribute on a column " +
+          "when server side doesn't support required IMMUTABLE_COLUMN_ATTRIBUTE feature");
+    } catch (KuduException ex) {
+      final String errmsg = ex.getMessage();
+      assertTrue(errmsg, ex.getStatus().isRemoteError());
+      assertTrue(errmsg, errmsg.matches(
+          ".* server sent error unsupported feature flags"));
+    }
+
+    // No matter if the table has an immutable attribute column or not, we can test the function
+    // on the client side, the request will be processed by the generic RPC code and throw an
+    // exception before reaching particular application code.
+    try {
+      client.alterTable(tableName, new AlterTableOptions().changeImmutable("column1_i", false));
+      fail("shouldn't be able to alter a table to change the immutable attribute on a column " +
+          "when server side doesn't support required IMMUTABLE_COLUMN_ATTRIBUTE feature");
+    } catch (KuduException ex) {
+      final String errmsg = ex.getMessage();
+      assertTrue(errmsg, ex.getStatus().isRemoteError());
+      assertTrue(errmsg, errmsg.matches(
+          ".* server sent error unsupported feature flags"));
+    }
   }
 }
