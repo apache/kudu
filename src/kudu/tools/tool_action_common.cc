@@ -262,6 +262,7 @@ namespace kudu {
 namespace tools {
 
 const char* const kMasterAddressesArg = "master_addresses";
+const char* const kCurrentLeaderUUIDArg = "current_leader_uuid";
 const char* const kMasterAddressesArgDesc = "Either comma-separated list of Kudu "
     "master addresses where each address is of form 'hostname:port', or a cluster name if it has "
     "been configured in ${KUDU_CONFIG}/kudurc";

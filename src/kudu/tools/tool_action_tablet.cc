@@ -21,13 +21,14 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 
-#include "kudu/client/client.h"
+#include "kudu/client/client.h" // IWYU pragma: keep
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -37,7 +38,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
@@ -59,6 +59,8 @@ DEFINE_string(new_leader_uuid, "",
               "transfer will not occur. If blank, the leader chooses its own "
               "successor, attempting to transfer leadership as soon as "
               "possible. This cannot be set if --abrupt is set.");
+DEFINE_string(current_leader_uuid, "",
+              "UUID of the server that currently hosts leader replica of the tablet.");
 DEFINE_int64(move_copy_timeout_sec, 600,
              "Number of seconds to wait for tablet copy to complete when relocating a tablet");
 DEFINE_int64(move_leader_timeout_sec, 30,
@@ -154,37 +156,50 @@ Status LeaderStepDown(const RunnerContext& context) {
     return Status::InvalidArgument("cannot specify both --new_leader_uuid and --abrupt");
   }
 
+  const optional<string> current_leader_uuid = FLAGS_current_leader_uuid.empty()
+      ? nullopt
+      : make_optional(FLAGS_current_leader_uuid);
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
-
   string leader_uuid;
   HostPort leader_hp;
-  bool no_leader = false;
-  Status s = GetTabletLeader(client, tablet_id,
-                             &leader_uuid, &leader_hp, &no_leader);
-  if (s.IsNotFound() && no_leader) {
-    // If leadership should be transferred to a specific node, exit with an
-    // error if there's no leader since we can't orchestrate the transfer.
-    if (new_leader_uuid) {
+  Status s;
+
+  if (current_leader_uuid) {
+    s = GetTabletReplicaHostInfo(client, tablet_id, *current_leader_uuid,
+                                 &leader_hp);
+    if (s.IsNotFound()) {
+      return s.CloneAndPrepend(
+          Substitute("unable to transfer leadership, current leader $0 not found",
+                     *current_leader_uuid));
+    }
+  } else {
+    bool no_leader = false;
+    s = GetTabletLeader(client, tablet_id,
+                        &leader_uuid, &leader_hp, &no_leader);
+    if (s.IsNotFound() && no_leader) {
+      // If leadership should be transferred to a specific node, exit with an
+      // error if there's no leader since we can't orchestrate the transfer.
+      if (new_leader_uuid) {
         return s.CloneAndPrepend(
             Substitute("unable to transfer leadership to $0", *new_leader_uuid));
+      }
+      // Otherwise, a new election should happen soon, which will achieve
+      // something like what the client wanted, so we'll exit gracefully.
+      cout << s.ToString() << endl;
+      return Status::OK();
     }
-    // Otherwise, a new election should happen soon, which will achieve
-    // something like what the client wanted, so we'll exit gracefully.
-    cout << s.ToString() << endl;
-    return Status::OK();
   }
   RETURN_NOT_OK(s);
 
   // If the requested new leader is the leader, the command can short-circuit.
-  if (new_leader_uuid && (leader_uuid == *new_leader_uuid)) {
+  if (new_leader_uuid && (leader_uuid == *new_leader_uuid || leader_uuid == *current_leader_uuid)) {
     cout << Substitute("Requested new leader $0 is already the leader",
                        leader_uuid) << endl;
     return Status::OK();
   }
-
-  return DoLeaderStepDown(tablet_id, leader_uuid, leader_hp,
-                          mode, new_leader_uuid,
+  return DoLeaderStepDown(tablet_id, current_leader_uuid ? *current_leader_uuid : leader_uuid,
+                          leader_hp, mode, new_leader_uuid,
                           client->default_admin_operation_timeout());
 }
 
@@ -315,6 +330,7 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("abrupt")
       .AddOptionalParameter("new_leader_uuid")
+      .AddOptionalParameter("current_leader_uuid")
       .Build();
 
   unique_ptr<Mode> change_config =

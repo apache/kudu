@@ -1357,6 +1357,81 @@ TEST_F(AdminCliTest, TestGracefulLeaderStepDown) {
   });
 }
 
+// Test current_leader_uuid flag used to transfer leadership from current node
+// 1. Elect a leader and transfer leadership to a new node.
+// 2. Input new node uuid as an argument to flag current_leader_uuid.
+// 3. Transfer the leadership from current leader to another node.
+// 4. Verify the new leader chosen is one of the two non-leader nodes.
+TEST_F(AdminCliTest, TestGracefulSpecificLeaderStepDown) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  const vector<string> kMasterFlags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+  };
+
+  // For deterministic control over manual leader selection
+  const vector<string> kTserverFlags = {
+    "--enable_leader_failure_detection=false",
+  };
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+
+  // Wait for the tablet to be running.
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+  for (auto& ts : tservers) {
+    ASSERT_OK(WaitUntilTabletRunning(ts, tablet_id_, kTimeout));
+  }
+
+  // Elect the leader and wait for the tservers and master to see the leader.
+  const auto* leader = tservers[0];
+  ASSERT_OK(StartElection(leader, tablet_id_, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_,
+                                  tablet_id_, /*minimum_index=*/1));
+  TServerDetails* master_observed_leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
+  ASSERT_EQ(leader->uuid(), master_observed_leader->uuid());
+
+  const auto leader_uuid = leader->uuid();
+  string stderr;
+
+  // Ask the leader to transfer leadership and specify the current leader uuid.
+  // Use the leader elected above as current leader input, instead of relying on
+  // master configuration. This is to check whether user specified current
+  // leader uuid is ok to be used as input parameter for new leader election.
+  // Generally, we rely on master configuration to find that out. But for cases
+  // where master configuration is out of sync, user input parameter for
+  // current leader should work just as well.
+  Status s = RunKuduTool({
+    "tablet",
+    "leader_step_down",
+    Substitute("--current_leader_uuid=$0", leader_uuid),
+    cluster_->master()->bound_rpc_addr().ToString(),
+    tablet_id_
+  }, nullptr, &stderr);
+  ASSERT_OK(s);
+
+  // Eventually, a replica at other node should become a leader.
+  const std::unordered_set<string> possible_new_leaders = { tservers[1]->uuid(),
+                                                            tservers[2]->uuid() };
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
+    ASSERT_TRUE(ContainsKey(possible_new_leaders, master_observed_leader->uuid()));
+  });
+
+  // Negative case: When current_leader_uuid belongs to a tablet server
+  // where a follower (and not a leader) replica is running.
+  s = RunKuduTool({
+    "tablet",
+    "leader_step_down",
+    Substitute("--current_leader_uuid=$0", leader_uuid),
+    cluster_->master()->bound_rpc_addr().ToString(),
+    tablet_id_
+  }, nullptr, &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+}
+
 // Leader should reject requests to transfer leadership to a non-member of the
 // config.
 TEST_F(AdminCliTest, TestLeaderTransferToEvictedPeer) {

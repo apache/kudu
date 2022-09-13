@@ -21,10 +21,10 @@
 #include <fstream>  // IWYU pragma: keep
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
@@ -188,6 +188,26 @@ Status GetTabletLeader(const client::sp::shared_ptr<KuduClient>& client,
 
   return Status::NotFound(Substitute("No leader replica found for tablet $0",
                                      tablet_id));
+}
+
+Status GetTabletReplicaHostInfo(const client::sp::shared_ptr<KuduClient>& client,
+                                const string& tablet_id,
+                                const std::string& uuid,
+                                HostPort* hp) {
+  KuduTablet* tablet_raw = nullptr;
+  RETURN_NOT_OK(client->GetTablet(tablet_id, &tablet_raw));
+  unique_ptr<KuduTablet> tablet(tablet_raw);
+
+  for (const auto* r : tablet->replicas()) {
+    if (uuid == r->ts().uuid()) {
+      hp->set_host(r->ts().hostname());
+      hp->set_port(r->ts().port());
+      return Status::OK();
+    }
+  }
+
+  return Status::NotFound(Substitute("no replica of tablet $0 is hosted by "
+                                     "tablet server $1", tablet_id, uuid));
 }
 
 // For the target (i.e. newly added replica) we have the following options:

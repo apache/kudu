@@ -92,6 +92,17 @@ Status GetTabletLeader(
     HostPort* leader_hp,
     bool* is_no_leader = nullptr);
 
+// Get host/port information of the tablet server with the specified UUID 'uuid'
+// that hosts a replica of the tablet identified by 'tablet_id'.
+// The 'uuid' is input parameter and 'hp' is output parameter
+// and cannot be null. The function returns Status::NotFound() if no host
+// info is found for given uuid.
+Status GetTabletReplicaHostInfo(
+    const client::sp::shared_ptr<client::KuduClient>& client,
+    const std::string& tablet_id,
+    const std::string& uuid,
+    HostPort* hp);
+
 // Whether the replica move operation from 'from_ts_uuid' to 'to_ts_uuid'
 // server is complete (i.e. succeeded or failed) for the tablet identified by
 // 'tablet_id'. Neither 'is_complete' nor 'completion_status' output parameter
