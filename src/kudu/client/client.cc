@@ -1684,7 +1684,9 @@ Status KuduTableAlterer::Alter() {
 
   bool has_immutable_column_schema = false;
   for (const auto& step : data_->steps_) {
-    if (step.step_type == AlterTableRequestPB::ADD_COLUMN && step.spec->data_->immutable) {
+    if ((step.step_type == AlterTableRequestPB::ADD_COLUMN ||
+         step.step_type == AlterTableRequestPB::ALTER_COLUMN) &&
+        step.spec->data_->immutable) {
       has_immutable_column_schema = true;
       break;
     }

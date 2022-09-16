@@ -153,6 +153,9 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
   if (col_delta.new_comment) {
     comment_ = col_delta.new_comment.value();
   }
+  if (col_delta.immutable) {
+    is_immutable_ = col_delta.immutable.value();
+  }
   return Status::OK();
 }
 

@@ -197,6 +197,8 @@ public:
   std::optional<int32_t> cfile_block_size;
 
   std::optional<std::string> new_comment;
+
+  std::optional<bool> immutable;
 };
 
 // The schema for a given column.
@@ -338,7 +340,6 @@ class ColumnSchema {
   bool EqualsType(const ColumnSchema& other) const {
     if (this == &other) return true;
     return is_nullable_ == other.is_nullable_ &&
-           is_immutable_ == other.is_immutable_ &&
            type_info()->type() == other.type_info()->type() &&
            type_attributes().EqualsForType(other.type_attributes(), type_info()->type());
   }
@@ -380,6 +381,10 @@ class ColumnSchema {
         return false;
 
       if (comment_ != other.comment_) {
+        return false;
+      }
+
+      if (is_immutable_ != other.is_immutable_) {
         return false;
       }
     }

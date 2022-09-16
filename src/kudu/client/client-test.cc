@@ -9226,7 +9226,7 @@ TEST_P(ClientTestImmutableColumn, TestUpsert) {
   }
 }
 
-class ClientTestImmutableColumnCompatablity : public ClientTest {
+class ClientTestImmutableColumnCompatibility : public ClientTest {
  public:
   void SetUp() override {
     // Disable the immutable column attribute feature in master for testing.
@@ -9243,7 +9243,7 @@ class ClientTestImmutableColumnCompatablity : public ClientTest {
   }
 };
 
-TEST_F(ClientTestImmutableColumnCompatablity, CreateTable) {
+TEST_F(ClientTestImmutableColumnCompatibility, CreateTable) {
   const string kTableName = "create_table_with_immutable_attribute_column";
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
@@ -9263,8 +9263,8 @@ TEST_F(ClientTestImmutableColumnCompatablity, CreateTable) {
                  "CreateTable with feature(s) IMMUTABLE_COLUMN_ATTRIBUTE", kTableName));
 }
 
-TEST_F(ClientTestImmutableColumnCompatablity, AlterTable) {
-  const string kTableName = "alter_table_with_immutable_attribute_column";
+TEST_F(ClientTestImmutableColumnCompatibility, AlterTableAddColumn) {
+  const string kTableName = "alter_table_adding_column_with_immutable_attribute";
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
   b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->Nullable();
@@ -9279,6 +9279,29 @@ TEST_F(ClientTestImmutableColumnCompatablity, AlterTable) {
 
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
   table_alterer->AddColumn("imm_val")->Type(KuduColumnSchema::INT32)->Immutable()->Nullable();
+  Status s = table_alterer->Alter();
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  ASSERT_STR_CONTAINS(
+      s.ToString(),
+      "cluster does not support AlterTable with feature(s) IMMUTABLE_COLUMN_ATTRIBUTE");
+}
+
+TEST_F(ClientTestImmutableColumnCompatibility, AlterTableAlterColumn) {
+  const string kTableName = "alter_table_altering_column_with_immutable_attribute";
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->Nullable();
+  ASSERT_OK(b.Build(&schema_));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+                .schema(&schema_)
+                .add_hash_partitions({"key"}, 2)
+                .num_replicas(1)
+                .Create());
+
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  table_alterer->AlterColumn("int_val")->Immutable();
   Status s = table_alterer->Alter();
   ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
   ASSERT_STR_CONTAINS(

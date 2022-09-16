@@ -153,6 +153,7 @@ message ColumnSchemaDeltaPB {
   optional int32 block_size = 8;
 
   optional string new_comment = 9;
+  optional bool immutable = 10 [default = false];
 }
 
 message SchemaPB {

@@ -528,6 +528,10 @@ Status KuduColumnSpec::ToColumnSchemaDelta(ColumnSchemaDelta* col_delta) const {
     col_delta->compression = ToInternalCompressionType(data_->compression.value());
   }
 
+  if (data_->immutable) {
+    col_delta->immutable = data_->immutable.value();
+  }
+
   col_delta->new_name = std::move(data_->rename_to);
   col_delta->cfile_block_size = std::move(data_->block_size);
   col_delta->new_comment = std::move(data_->comment);

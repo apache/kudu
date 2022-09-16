@@ -367,6 +367,9 @@ void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDelta
   if (col_delta.new_comment) {
     pb->set_new_comment(*col_delta.new_comment);
   }
+  if (col_delta.immutable) {
+    pb->set_immutable(*col_delta.immutable);
+  }
 }
 
 ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb) {
@@ -391,6 +394,9 @@ ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb) {
   }
   if (pb.has_new_comment()) {
     col_delta.new_comment = pb.new_comment();
+  }
+  if (pb.has_immutable()) {
+    col_delta.immutable = pb.immutable();
   }
   return col_delta;
 }
