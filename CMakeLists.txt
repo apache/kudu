@@ -189,7 +189,7 @@ if("${ARCH_NAME}" MATCHES "aarch64")
   set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -fsigned-char")
   # Turn off fp-contract on aarch64 to avoid multiply-add operation result difference.
   set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -ffp-contract=off")
-else()
+elseif( NOT ( "${ARCH_NAME}" MATCHES "ppc64le" ))
   # -msse4.2: Enable sse4.2 compiler intrinsics.
   set(CXX_COMMON_FLAGS "-msse4.2")
 endif()
