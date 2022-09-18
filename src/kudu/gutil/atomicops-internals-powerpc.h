@@ -39,7 +39,7 @@ typedef int32_t Atomic32;
 #define ATOMICOPS_COMPILER_BARRIER() __asm__ __volatile__("" : : : "memory")
 
 // 32-bit PowerPC is not supported yet.
-#ifndef ARCH_POWERPC64
+#ifndef __powerpc64__ 
 #error "Only PowerPC64 is supported"
 #endif
 
