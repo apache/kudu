@@ -33,6 +33,7 @@
 #define GUTIL_ATOMICOPS_INTERNALS_POWERPC_H_
 
 typedef int32_t Atomic32;
+typedef int64_t Atomic64;
 #define BASE_HAS_ATOMIC64 1  // Use only in tests and base/atomic*
 
 
@@ -46,6 +47,7 @@ typedef int32_t Atomic32;
 namespace base {
 namespace subtle {
 
+typedef int32_t Atomic32;
 typedef int64_t Atomic64;
 
 // sync vs. lwsync:
