@@ -49,6 +49,8 @@ namespace subtle {
 
 typedef int32_t Atomic32;
 typedef int64_t Atomic64;
+inline void PauseCPU() {
+}
 
 // sync vs. lwsync:
 // 1. lwsync only works in cache enabled memory (system memory).  lwsync is
