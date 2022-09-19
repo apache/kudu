@@ -279,6 +279,15 @@ void CPU::Initialize() {
 #elif defined(__aarch64__)
   cpu_brand_.assign("ARM64");
   has_broken_neon_ = false;
+#elif defined (__powerpc__)
+  has_popcnt_ = 1;
+  has_mmx_ = 1;
+  has_sse_ = 1;
+  has_sse2_ = 1;
+  has_sse3_ = 1;
+  has_ssse3_ = 1;
+  has_sse41_ = 1;
+  has_sse42_ = 1;
 #else
   #error unknown architecture
 #endif
