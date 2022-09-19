@@ -180,7 +180,15 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm, std::ostream* out, int max_in
       // http://llvm.org/docs/Packaging.html#c-features).
       string opname = printer->getOpcodeName(inst.getOpcode()).str();
       std::transform(opname.begin(), opname.end(), opname.begin(), ::toupper);
-      if (opname.find("RET") != string::npos) return i + 1;
+#if defined(__powerpc64__)
+      if (opname.find("BLR") != string::npos) {
+        return i + 1;
+      }
+#else
+      if (opname.find("RET") != string::npos) {
+        return i + 1;
+      }
+#endif  // #if defined(__powerpc64__) ... #else ...
     }
     addr += size;
   }
