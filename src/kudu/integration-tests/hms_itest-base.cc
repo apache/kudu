@@ -20,6 +20,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -239,6 +240,9 @@ void HmsITestHarness::CheckTable(const string& database_name,
             hms_table.parameters[hms::HmsClient::kKuduMasterAddrsKey]);
   ASSERT_EQ(hms::HmsClient::kKuduStorageHandler,
             hms_table.parameters[hms::HmsClient::kStorageHandlerKey]);
+  ASSERT_EQ(hms::HmsClient::kKuduInputFormat, hms_table.sd.inputFormat);
+  ASSERT_EQ(hms::HmsClient::kKuduOutputFormat, hms_table.sd.outputFormat);
+  ASSERT_EQ(hms::HmsClient::kKuduSerDeLib, hms_table.sd.serdeInfo.serializationLib);
 }
 
 void HmsITestHarness::CheckTableDoesNotExist(const string& database_name,

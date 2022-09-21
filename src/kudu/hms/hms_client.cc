@@ -23,6 +23,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -30,9 +31,9 @@
 #include <thrift/TApplicationException.h>
 #include <thrift/Thrift.h>
 #include <thrift/protocol/TJSONProtocol.h>
-#include <thrift/protocol/TProtocol.h>
+#include <thrift/protocol/TProtocol.h> // IWYU pragma: keep
 #include <thrift/transport/TBufferTransports.h>
-#include <thrift/transport/TTransport.h>
+#include <thrift/transport/TTransport.h> // IWYU pragma: keep
 #include <thrift/transport/TTransportException.h>
 
 #include "kudu/gutil/macros.h"
@@ -143,6 +144,9 @@ const char* const HmsClient::kKuduMetastorePlugin =
 const char* const HmsClient::kHiveFilterFieldParams = "hive_filter_field_params__";
 const char* const HmsClient::kNotificationAddThriftObjects =
   "hive.metastore.notifications.add.thrift.objects";
+const char* const HmsClient::kKuduInputFormat ="org.apache.hadoop.hive.kudu.KuduInputFormat";
+const char* const HmsClient::kKuduOutputFormat ="org.apache.hadoop.hive.kudu.KuduOutputFormat";
+const char* const HmsClient::kKuduSerDeLib = "org.apache.hadoop.hive.kudu.KuduSerDe";
 
 const char* const HmsClient::kManagedTable = "MANAGED_TABLE";
 const char* const HmsClient::kExternalTable = "EXTERNAL_TABLE";

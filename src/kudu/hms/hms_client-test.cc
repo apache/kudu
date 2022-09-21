@@ -72,6 +72,9 @@ class HmsClientTest : public KuduTest,
         make_pair(HmsClient::kKuduMasterAddrsKey, string("TODO")),
         make_pair(HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler)
     });
+    table.sd.inputFormat = HmsClient::kKuduInputFormat;
+    table.sd.outputFormat = HmsClient::kKuduOutputFormat;
+    table.sd.serdeInfo.serializationLib = HmsClient::kKuduSerDeLib;
 
     hive::EnvironmentContext env_ctx;
     env_ctx.__set_properties({ make_pair(HmsClient::kKuduMasterEventKey, "true") });
@@ -181,6 +184,9 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(cluster_id, my_table.parameters[HmsClient::kKuduClusterIdKey]);
   EXPECT_EQ(HmsClient::kKuduStorageHandler, my_table.parameters[HmsClient::kStorageHandlerKey]);
   EXPECT_EQ(HmsClient::kManagedTable, my_table.tableType);
+  EXPECT_EQ(HmsClient::kKuduInputFormat, my_table.sd.inputFormat);
+  EXPECT_EQ(HmsClient::kKuduOutputFormat, my_table.sd.outputFormat);
+  EXPECT_EQ(HmsClient::kKuduSerDeLib, my_table.sd.serdeInfo.serializationLib);
 
   string new_table_name = "my_altered_table";
 
@@ -206,6 +212,9 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(HmsClient::kKuduStorageHandler,
             renamed_table.parameters[HmsClient::kStorageHandlerKey]);
   EXPECT_EQ(HmsClient::kManagedTable, renamed_table.tableType);
+  EXPECT_EQ(HmsClient::kKuduInputFormat, renamed_table.sd.inputFormat);
+  EXPECT_EQ(HmsClient::kKuduOutputFormat, renamed_table.sd.outputFormat);
+  EXPECT_EQ(HmsClient::kKuduSerDeLib, renamed_table.sd.serdeInfo.serializationLib);
 
   // Create a table with an uppercase name.
   string uppercase_table_name = "my_UPPERCASE_Table";
@@ -333,6 +342,9 @@ TEST_P(HmsClientTest, TestLargeObjects) {
   partition_key.name = "c1";
   partition_key.type = "int";
   table.partitionKeys.emplace_back(std::move(partition_key));
+  table.sd.inputFormat = HmsClient::kKuduInputFormat;
+  table.sd.outputFormat = HmsClient::kKuduOutputFormat;
+  table.sd.serdeInfo.serializationLib = HmsClient::kKuduSerDeLib;
 
   ASSERT_OK(client.CreateTable(table));
 

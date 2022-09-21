@@ -422,6 +422,9 @@ Status HmsCatalog::PopulateTable(const string& id,
     fields.emplace_back(column_to_field(column));
   }
   table->sd.cols = std::move(fields);
+  table->sd.inputFormat = HmsClient::kKuduInputFormat;
+  table->sd.outputFormat = HmsClient::kKuduOutputFormat;
+  table->sd.serdeInfo.serializationLib = HmsClient::kKuduSerDeLib;
 
   return Status::OK();
 }

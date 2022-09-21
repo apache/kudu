@@ -240,6 +240,9 @@ class HmsCatalogTest : public KuduTest {
     for (int column_idx = 0; column_idx < schema.num_columns(); column_idx++) {
       EXPECT_EQ(table.sd.cols[column_idx].name, schema.columns()[column_idx].name());
     }
+    EXPECT_EQ(table.sd.inputFormat, HmsClient::kKuduInputFormat);
+    EXPECT_EQ(table.sd.outputFormat, HmsClient::kKuduOutputFormat);
+    EXPECT_EQ(table.sd.serdeInfo.serializationLib, HmsClient::kKuduSerDeLib);
   }
 
   Status CreateLegacyTable(const string& database_name,

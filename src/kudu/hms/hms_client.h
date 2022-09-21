@@ -85,6 +85,10 @@ class HmsClient {
 
   static const char* const kServiceName;
 
+  static const char* const kKuduInputFormat;
+  static const char* const kKuduOutputFormat;
+  static const char* const kKuduSerDeLib;
+
   // Create an HmsClient connection to the provided HMS Thrift RPC address.
   HmsClient(const HostPort& address, const thrift::ClientOptions& options);
   ~HmsClient();
