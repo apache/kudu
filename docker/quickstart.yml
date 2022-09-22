@@ -37,6 +37,8 @@ services:
         --webserver_doc_root=/opt/kudu/www
         --stderrthreshold=0
         --use_hybrid_clock=false
+        --unlock_unsafe_flags=true
+
   kudu-master-2:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
     ports:
@@ -56,6 +58,7 @@ services:
         --webserver_doc_root=/opt/kudu/www
         --stderrthreshold=0
         --use_hybrid_clock=false
+        --unlock_unsafe_flags=true
   kudu-master-3:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
     ports:
@@ -75,6 +78,7 @@ services:
         --webserver_doc_root=/opt/kudu/www
         --stderrthreshold=0
         --use_hybrid_clock=false
+        --unlock_unsafe_flags=true
   kudu-tserver-1:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
     depends_on:
@@ -98,6 +102,7 @@ services:
         --webserver_doc_root=/opt/kudu/www
         --stderrthreshold=0
         --use_hybrid_clock=false
+        --unlock_unsafe_flags=true
   kudu-tserver-2:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
     depends_on:
@@ -121,6 +126,7 @@ services:
         --webserver_doc_root=/opt/kudu/www
         --stderrthreshold=0
         --use_hybrid_clock=false
+        --unlock_unsafe_flags=true
   kudu-tserver-3:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
     depends_on:
@@ -144,6 +150,7 @@ services:
         --webserver_doc_root=/opt/kudu/www
         --stderrthreshold=0
         --use_hybrid_clock=false
+        --unlock_unsafe_flags=true
   kudu-tserver-4:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
     depends_on:
@@ -167,6 +174,7 @@ services:
         --webserver_doc_root=/opt/kudu/www
         --stderrthreshold=0
         --use_hybrid_clock=false
+        --unlock_unsafe_flags=true
   kudu-tserver-5:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
     depends_on:
@@ -190,6 +198,7 @@ services:
         --webserver_doc_root=/opt/kudu/www
         --stderrthreshold=0
         --use_hybrid_clock=false
+        --unlock_unsafe_flags=true
 volumes:
   kudu-master-1:
   kudu-master-2:
