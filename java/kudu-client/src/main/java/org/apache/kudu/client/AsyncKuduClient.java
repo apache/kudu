@@ -923,7 +923,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * specified, it only returns tables that satisfy a substring match.
    * @param nameFilter an optional table name filter
    * @param showSoftDeleted whether to display only regular (i.e. not soft deleted)
-   * tables or all tables（i.e. soft deleted tables and regular tables）
+   * tables or all tables (i.e. soft deleted tables and regular tables)
    * @return a deferred that yields the list of table names
    */
   public Deferred<ListTablesResponse> getTablesList(String nameFilter, boolean showSoftDeleted) {
