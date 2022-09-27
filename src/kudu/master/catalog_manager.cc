@@ -2410,18 +2410,36 @@ Status CatalogManager::SoftDeleteTableRpc(const DeleteTableRequestPB& req,
   bool is_soft_deleted_table = false;
   bool is_expired_table = false;
   Status s = GetTableStates(req.table(), kAllTableType, &is_soft_deleted_table, &is_expired_table);
-  if (s.ok() && is_soft_deleted_table && req.reserve_seconds() != 0) {
+  // The only error is NotFound, deal it after authorize by DeleteTableRpc(...) function.
+  if (s.IsNotFound()) {
+    return DeleteTableRpc(req, resp, rpc);
+  }
+
+  DCHECK(s.ok());
+
+  // The 'reserve_seconds' is specified by the client, means the request coming from a newer
+  // Kudu client with the precise value for 'reserve_seconds', and the field's value from the
+  // request should be taken as-is regardless of the current setting of the
+  // '--default_deleted_table_reserve_seconds' flag at the server side.
+  //
+  // If the 'reserve_seconds' is not specified by the client, means the behavior of DeleteRPC is
+  // controlled by the '--default_deleted_table_reserve_seconds' flag.
+  bool enable_soft_delete_on_client = req.has_reserve_seconds() && req.reserve_seconds() != 0;
+  bool enable_soft_delete_on_master = FLAGS_default_deleted_table_reserve_seconds != 0;
+  bool delete_without_reserving = (req.has_reserve_seconds() && req.reserve_seconds() == 0) ||
+                                (!req.has_reserve_seconds() && !enable_soft_delete_on_master);
+  // Soft-delete a soft-deleted table is not allowed.
+  if (is_soft_deleted_table &&
+      // soft-delete has enabled
+      (enable_soft_delete_on_client || enable_soft_delete_on_master) &&
+      !delete_without_reserving) {
     return SetupError(
-        Status::InvalidArgument(Substitute("soft_deleted table $0 should not be deleted",
+        Status::InvalidArgument(Substitute("soft_deleted table $0 should not be soft deleted again",
                                             req.table().table_name())),
         resp, MasterErrorPB::TABLE_SOFT_DELETED);
   }
 
-  // Reserve seconds equal 0 means delete it directly if default_deleted_table_reserve_seconds
-  // set to 0, which means the cluster-wide behavior of the DeleteTable() RPC is keep default,
-  // or the table is in soft-deleted status.
-  if (req.reserve_seconds() == 0 &&
-      (FLAGS_default_deleted_table_reserve_seconds == 0 || is_soft_deleted_table)) {
+  if (delete_without_reserving) {
     return DeleteTableRpc(req, resp, rpc);
   }
 

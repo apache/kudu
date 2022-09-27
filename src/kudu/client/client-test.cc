@@ -5102,8 +5102,8 @@ TEST_F(ClientTest, TestSoftDeleteAndReserveTable) {
     // Not allowed to delete the soft_deleted table with new reserve_seconds value.
     s = client_->SoftDeleteTable(kTableName, 600);
     ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), Substitute("soft_deleted table $0 should not be deleted",
-                                                 kTableName));
+    ASSERT_STR_CONTAINS(s.ToString(),
+        Substitute("soft_deleted table $0 should not be soft deleted again", kTableName));
   }
 
   {
@@ -5355,8 +5355,14 @@ TEST_F(ClientTest, TestDeleteSoftDeleteStatusFromDeletedTableReserveSeconds) {
   ASSERT_OK(client_->ListTables(&tables));
   ASSERT_TRUE(tables.empty());
 
+  // The behavior of DeleteTable turn to soft-delete
+  // soft-deleted table should not be soft deleted
+  Status s = client_->DeleteTable(kTableName);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+      Substitute("soft_deleted table $0 should not be soft deleted again", kTableName));
   // purge the soft-deleted table
-  ASSERT_OK(client_->DeleteTable(kTableName));
+  ASSERT_OK(client_->SoftDeleteTable(kTableName, 0));
 
   // No tables left.
   ASSERT_OK(client_->ListTables(&tables));

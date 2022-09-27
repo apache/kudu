@@ -697,15 +697,6 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Delete a table with the specified name. The table is purged immediately.
-   * @param name the table's name
-   * @return a deferred object to track the progress of the deleteTable command
-   */
-  public Deferred<DeleteTableResponse> deleteTable(String name) {
-    return deleteTable(name, NO_SOFT_DELETED_STATE_RESERVED_SECONDS);
-  }
-
-  /**
    * Delete a table with the specified name.
    * @param name the table's name
    * @param reserveSeconds the soft deleted table to be alive time
@@ -719,6 +710,22 @@ public class AsyncKuduClient implements AutoCloseable {
                                                        timer,
                                                        defaultAdminOperationTimeoutMs,
                                                        reserveSeconds);
+    return sendRpcToTablet(delete);
+  }
+
+  /**
+   * Delete a table with the specified name.
+   * The behavior of DeleteRPC is controlled by the
+   * '--default_deleted_table_reserve_seconds' flag on master.
+   * @param name the table's name
+   * @return a deferred object to track the progress of the deleteTable command
+   */
+  public Deferred<DeleteTableResponse> deleteTable(String name) {
+    checkIsClosed();
+    DeleteTableRequest delete = new DeleteTableRequest(this.masterTable,
+                                                       name,
+                                                       timer,
+                                                       defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(delete);
   }
 

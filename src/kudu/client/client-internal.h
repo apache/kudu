@@ -20,6 +20,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -83,8 +84,6 @@ class RemoteTabletServer;
 
 class KuduClient::Data {
  public:
-  static const uint32_t kSoftDeletedTableReservationSeconds = 60 * 60 * 24 * 7;
-
   Data();
   ~Data();
 
@@ -124,7 +123,7 @@ class KuduClient::Data {
                             const std::string& table_name,
                             const MonoTime& deadline,
                             bool modify_external_catalogs = true,
-                            uint32_t reserve_seconds = kSoftDeletedTableReservationSeconds);
+                            std::optional<uint32_t> reserve_seconds = std::nullopt);
 
   static Status RecallTable(KuduClient* client,
                             const std::string& table_id,

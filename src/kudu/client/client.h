@@ -56,9 +56,9 @@ namespace kudu {
 class AlterTableTest;
 class AuthzTokenTest;
 class ClientStressTest_TestUniqueClientIds_Test;
-class MetaCacheLookupStressTest_PerfSynthetic_Test;
 class DisableWriteWhenExceedingQuotaTest;
 class KuduPartialRow;
+class MetaCacheLookupStressTest_PerfSynthetic_Test;
 class MonoDelta;
 class Partition;
 class PartitionSchema;
@@ -683,6 +683,8 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
                                  bool* create_in_progress);
 
   /// Delete/drop a table without reserving.
+  /// The deleted table may turn to soft-deleted status with the flag
+  /// --default_deleted_table_reserve_seconds set to nonzero on the master side.
   ///
   /// The delete operation or drop operation means that the service will directly
   /// delete the table after receiving the instruction. Which means that once we
@@ -736,10 +738,12 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   ///   which the Kudu master has been configured to integrate with.
   /// @param [in] reserve_seconds
   ///   Reserve seconds after being deleted.
+  ///   Default value '-1' means not specified and the server will use master side config.
+  ///   '0' means purge immediately and other values means reserve some seconds.
   /// @return Operation status.
   Status DeleteTableInCatalogs(const std::string& table_name,
                                bool modify_external_catalogs,
-                               uint32_t reserve_seconds = 0) KUDU_NO_EXPORT;
+                               int32_t reserve_seconds = -1) KUDU_NO_EXPORT;
 
   /// Recall a deleted but still reserved table.
   ///

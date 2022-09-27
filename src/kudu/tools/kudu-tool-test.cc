@@ -4576,7 +4576,7 @@ TEST_F(ToolTest, TestDeleteTable) {
 
   // Delete the table.
   NO_FATALS(RunActionStdoutNone(Substitute(
-      "table delete $0 $1 --nomodify_external_catalogs -reserve_seconds=0",
+      "table delete $0 $1 --nomodify_external_catalogs",
       master_addr, kTableName)));
 
   // Check that the table does not exist.
@@ -4633,7 +4633,8 @@ TEST_F(ToolTest, TestRecallTable) {
   // Soft-delete the table.
   string out;
   NO_FATALS(RunActionStdoutNone(Substitute(
-      "table delete $0 $1 --reserve_seconds=300", master_addr, kTableName)));
+      "table delete $0 $1 --reserve_seconds=300",
+      master_addr, kTableName)));
 
   // List soft_deleted table.
   vector<string> kudu_tables;

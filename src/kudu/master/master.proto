@@ -586,6 +586,11 @@ message DeleteTableRequestPB {
   optional bool modify_external_catalogs = 2 [default = true];
 
   // Reserve seconds after the table has been deleted.
+  // If this field is specified by the client, means the request coming from a newer Kudu
+  // client with the precise value for 'reserve_seconds', and the field's value from the request
+  // should be taken as-is regardless of the current setting of the '--default_deleted_table_reserve_seconds'
+  // flag at the server side.
+  // Otherwise, the behavior of DeleteRPC is controlled by the '--default_deleted_table_reserve_seconds' flag.
   optional uint32 reserve_seconds = 3;
 }
 

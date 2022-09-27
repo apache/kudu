@@ -379,13 +379,15 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
                                      const string& table_name,
                                      const MonoTime& deadline,
                                      bool modify_external_catalogs,
-                                     uint32_t reserve_seconds) {
+                                     std::optional<uint32_t> reserve_seconds) {
   DeleteTableRequestPB req;
   DeleteTableResponsePB resp;
 
   req.mutable_table()->set_table_name(table_name);
   req.set_modify_external_catalogs(modify_external_catalogs);
-  req.set_reserve_seconds(reserve_seconds);
+  if (reserve_seconds) {
+    req.set_reserve_seconds(*reserve_seconds);
+  }
   Synchronizer sync;
   AsyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB> rpc(
       deadline, client, BackoffType::EXPONENTIAL, req, &resp,

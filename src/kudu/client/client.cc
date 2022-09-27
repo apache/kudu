@@ -510,7 +510,9 @@ Status KuduClient::IsCreateTableInProgress(const string& table_name,
 }
 
 Status KuduClient::DeleteTable(const string& table_name) {
-  return SoftDeleteTable(table_name);
+  // The default param 'reserve_seconds' not be set means the behavior of DeleteRPC is
+  // controlled by the 'default_deleted_table_reserve_seconds' flag.
+  return DeleteTableInCatalogs(table_name, true);
 }
 
 Status KuduClient::SoftDeleteTable(const string& table_name,
@@ -520,10 +522,12 @@ Status KuduClient::SoftDeleteTable(const string& table_name,
 
 Status KuduClient::DeleteTableInCatalogs(const string& table_name,
                                          bool modify_external_catalogs,
-                                         uint32_t reserve_seconds) {
+                                         int32_t reserve_seconds) {
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
+  std::optional<uint32_t> reserve_time = reserve_seconds >= 0 ?
+      std::make_optional(reserve_seconds) : std::nullopt;
   return  KuduClient::Data::DeleteTable(this, table_name, deadline, modify_external_catalogs,
-                                        reserve_seconds);
+                                        reserve_time);
 }
 
 Status KuduClient::RecallTable(const string& table_id, const string& new_table_name) {

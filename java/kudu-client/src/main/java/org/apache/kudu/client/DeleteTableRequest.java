@@ -34,7 +34,7 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
 
   private final String name;
 
-  private final int reserveSeconds;
+  private int reserveSeconds = -1;
 
   DeleteTableRequest(KuduTable table,
                      String name,
@@ -46,13 +46,23 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
     this.reserveSeconds = reserveSeconds;
   }
 
+  DeleteTableRequest(KuduTable table,
+                     String name,
+                     Timer timer,
+                     long timeoutMillis) {
+    super(table, timer, timeoutMillis);
+    this.name = name;
+  }
+
   @Override
   Message createRequestPB() {
     final Master.DeleteTableRequestPB.Builder builder = Master.DeleteTableRequestPB.newBuilder();
     Master.TableIdentifierPB tableID =
         Master.TableIdentifierPB.newBuilder().setTableName(name).build();
     builder.setTable(tableID);
-    builder.setReserveSeconds(reserveSeconds);
+    if (reserveSeconds >= 0) {
+      builder.setReserveSeconds(reserveSeconds);
+    }
     return builder.build();
   }
 
