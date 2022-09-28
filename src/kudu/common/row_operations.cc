@@ -421,7 +421,8 @@ size_t RowOperationsPBDecoder::GetTabletColIdx(const ClientServerMapping& mappin
 
 Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
                                                     const ClientServerMapping& mapping,
-                                                    DecodedRowOperation* op) {
+                                                    DecodedRowOperation* op,
+                                                    int64_t* auto_incrementing_counter) {
   const uint8_t* client_isset_map = nullptr;
   const uint8_t* client_null_map = nullptr;
 
@@ -451,6 +452,7 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
   // Now handle each of the columns passed by the user, replacing the defaults
   // from the prototype.
   Status row_status;
+  const auto auto_incrementing_col_idx = tablet_schema_->auto_incrementing_col_idx();
   for (size_t client_col_idx = 0;
        client_col_idx < client_schema_->num_columns();
        client_col_idx++) {
@@ -458,6 +460,7 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
     // ColumnSchema object since it has the most up-to-date default, nullability,
     // etc.
     size_t tablet_col_idx = GetTabletColIdx(mapping, client_col_idx);
+    DCHECK_NE(tablet_col_idx, Schema::kColumnNotFound);
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
     bool isset = BitmapTest(client_isset_map, client_col_idx);
@@ -480,10 +483,31 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
             "NULL values not allowed for non-nullable column", col.ToString()));
         RETURN_NOT_OK(ReadColumnAndDiscard(col));
       }
+      if (PREDICT_FALSE(tablet_col_idx == auto_incrementing_col_idx)) {
+        static const Status err_field_incorrectly_set = Status::InvalidArgument(
+            "auto-incrementing column is incorrectly set");
+        op->SetFailureStatusOnce(err_field_incorrectly_set);
+        return err_field_incorrectly_set;
+      }
     } else {
-      // If the client didn't provide a value, then the column must either be nullable or
-      // have a default (which was already set in the prototype row).
-      if (PREDICT_FALSE(!(col.is_nullable() || col.has_write_default()))) {
+      // If the client didn't provide a value, check if it's an auto-incrementing
+      // field. If so, populate the field as appropriate.
+      if (tablet_col_idx == auto_incrementing_col_idx) {
+        if (*DCHECK_NOTNULL(auto_incrementing_counter) == INT64_MAX) {
+          static const Status err_max_value = Status::IllegalState("max auto-incrementing column "
+                                                                   "value reached");
+          op->SetFailureStatusOnce(err_max_value);
+          return err_max_value;
+        }
+        // We increment the auto incrementing counter at this point regardless of future failures
+        // in the op for simplicity. The auto-incrementing column key space is large enough to
+        // not run of values for any realistic workloads.
+        (*auto_incrementing_counter)++;
+        memcpy(tablet_row.mutable_cell_ptr(tablet_col_idx), auto_incrementing_counter, 8);
+        BitmapChange(tablet_isset_bitmap, client_col_idx, true);
+      } else if (PREDICT_FALSE(!(col.is_nullable() || col.has_write_default()))) {
+        // Otherwise, the column must either be nullable or have a default (which
+        // was already set in the prototype row).
         op->SetFailureStatusOnce(Status::InvalidArgument("No value provided for required column",
                                                          col.ToString()));
       }
@@ -685,7 +709,8 @@ Status RowOperationsPBDecoder::DecodeSplitRow(const ClientServerMapping& mapping
 }
 
 template <DecoderMode mode>
-Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops) {
+Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops,
+                                                int64_t* auto_incrementing_counter) {
   // TODO(todd): there's a bug here, in that if a client passes some column in
   // its schema that has been deleted on the server, it will fail even if the
   // client never actually specified any values for it.  For example, a DBA
@@ -715,7 +740,8 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
     DecodedRowOperation op;
     op.type = type;
 
-    RETURN_NOT_OK(DecodeOp<mode>(type, prototype_row_storage, mapping, &op));
+    RETURN_NOT_OK(DecodeOp<mode>(type, prototype_row_storage, mapping, &op,
+                                 auto_incrementing_counter));
     ops->push_back(op);
   }
 
@@ -725,15 +751,25 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
 template<>
 Status RowOperationsPBDecoder::DecodeOp<DecoderMode::WRITE_OPS>(
     RowOperationsPB::Type type, const uint8_t* prototype_row_storage,
-    const ClientServerMapping& mapping, DecodedRowOperation* op) {
+    const ClientServerMapping& mapping, DecodedRowOperation* op,
+    int64_t* auto_incrementing_counter) {
   switch (type) {
     case RowOperationsPB::UNKNOWN:
       return Status::NotSupported("Unknown row operation type");
+    case RowOperationsPB::UPSERT:
+      if (tablet_schema_->has_auto_incrementing()) {
+        return Status::NotSupported("Tables with auto-incrementing column do not support "
+                                    "UPSERT operations");
+      }
+    case RowOperationsPB::UPSERT_IGNORE:
+      if (tablet_schema_->has_auto_incrementing()) {
+        return Status::NotSupported("Tables with auto-incrementing column do not support "
+                                    "UPSERT_IGNORE operations");
+      }
     case RowOperationsPB::INSERT:
     case RowOperationsPB::INSERT_IGNORE:
-    case RowOperationsPB::UPSERT:
-    case RowOperationsPB::UPSERT_IGNORE:
-      RETURN_NOT_OK(DecodeInsertOrUpsert(prototype_row_storage, mapping, op));
+      RETURN_NOT_OK(DecodeInsertOrUpsert(prototype_row_storage, mapping, op,
+                                         auto_incrementing_counter));
       break;
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::UPDATE_IGNORE:
@@ -751,7 +787,8 @@ Status RowOperationsPBDecoder::DecodeOp<DecoderMode::WRITE_OPS>(
 template<>
 Status RowOperationsPBDecoder::DecodeOp<DecoderMode::SPLIT_ROWS>(
     RowOperationsPB::Type type, const uint8_t* /*prototype_row_storage*/,
-    const ClientServerMapping& mapping, DecodedRowOperation* op) {
+    const ClientServerMapping& mapping, DecodedRowOperation* op,
+    int64_t* /*auto_incrementing_counter*/) {
   switch (type) {
     case RowOperationsPB::UNKNOWN:
       return Status::NotSupported("Unknown row operation type");
@@ -771,9 +808,9 @@ Status RowOperationsPBDecoder::DecodeOp<DecoderMode::SPLIT_ROWS>(
 
 template
 Status RowOperationsPBDecoder::DecodeOperations<DecoderMode::SPLIT_ROWS>(
-    vector<DecodedRowOperation>* ops);
+    vector<DecodedRowOperation>* ops, int64_t* auto_incrementing_counter);
 template
 Status RowOperationsPBDecoder::DecodeOperations<DecoderMode::WRITE_OPS>(
-    vector<DecodedRowOperation>* ops);
+    vector<DecodedRowOperation>* ops, int64_t* auto_incrementing_counter);
 
 } // namespace kudu

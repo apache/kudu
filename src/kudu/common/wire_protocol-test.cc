@@ -722,7 +722,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
   ASSERT_FALSE(col1fpb->has_write_default());
   ASSERT_TRUE(col1fpb->read_default_value() == nullptr);
 
-  ColumnSchema col2("col2", STRING, false, false, &read_default_str);
+  ColumnSchema col2("col2", STRING, false, false, false, &read_default_str);
   ColumnSchemaToPB(col2, &pb);
   optional<ColumnSchema> col2fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col2fpb));
@@ -731,7 +731,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
   ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col2fpb->read_default_value()));
   ASSERT_EQ(nullptr, static_cast<const Slice *>(col2fpb->write_default_value()));
 
-  ColumnSchema col3("col3", STRING, false, false, &read_default_str, &write_default_str);
+  ColumnSchema col3("col3", STRING, false, false, false, &read_default_str, &write_default_str);
   ColumnSchemaToPB(col3, &pb);
   optional<ColumnSchema> col3fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col3fpb));
@@ -740,7 +740,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
   ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col3fpb->read_default_value()));
   ASSERT_EQ(write_default_str, *static_cast<const Slice *>(col3fpb->write_default_value()));
 
-  ColumnSchema col4("col4", UINT32, false, false, &read_default_u32);
+  ColumnSchema col4("col4", UINT32, false, false, false, &read_default_u32);
   ColumnSchemaToPB(col4, &pb);
   optional<ColumnSchema> col4fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col4fpb));
@@ -749,7 +749,7 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
   ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col4fpb->read_default_value()));
   ASSERT_EQ(nullptr, static_cast<const uint32_t *>(col4fpb->write_default_value()));
 
-  ColumnSchema col5("col5", UINT32, false, false, &read_default_u32, &write_default_u32);
+  ColumnSchema col5("col5", UINT32, false, false, false, &read_default_u32, &write_default_u32);
   ColumnSchemaToPB(col5, &pb);
   optional<ColumnSchema> col5fpb;
   ASSERT_OK(ColumnSchemaFromPB(pb, &col5fpb));

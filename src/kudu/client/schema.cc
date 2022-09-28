@@ -338,6 +338,11 @@ KuduColumnSpec* KuduColumnSpec::PrimaryKey() {
   return this;
 }
 
+KuduColumnSpec* KuduColumnSpec::AutoIncrementing() {
+  data_->auto_incrementing = true;
+  return this;
+}
+
 KuduColumnSpec* KuduColumnSpec::NotNull() {
   data_->nullable = false;
   return this;
@@ -468,6 +473,27 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   bool nullable = data_->nullable ? data_->nullable.value() : true;
   bool immutable = data_->immutable ? data_->immutable.value() : false;
 
+  if (data_->auto_incrementing) {
+    if (internal_type != kudu::INT64) {
+      return Status::InvalidArgument("auto-incrementing column should be of type INT64");
+    }
+    if (nullable) {
+      return Status::InvalidArgument("auto-incrementing column should not be nullable");
+    }
+    if (immutable) {
+      return Status::InvalidArgument("auto-incrementing column should not be immutable");
+    }
+    if (data_->default_val) {
+      return Status::InvalidArgument("auto-incrementing column cannot have a "
+                                     "default value");
+    }
+    // TODO(Marton): Uncomment once the client patch promotes the
+    // auto increment column to primary key
+    //if (!data_->primary_key) {
+    //   return Status::InvalidArgument("auto-incrementing column is not set as primary key "
+    //                                  "column");
+    //}
+  }
   void* default_val = nullptr;
   // TODO(unknown): distinguish between DEFAULT NULL and no default?
   if (data_->default_val) {
@@ -488,7 +514,7 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   *col = KuduColumnSchema(data_->name, data_->type.value(), nullable,
-                          immutable, default_val,
+                          immutable, data_->auto_incrementing, default_val,
                           KuduColumnStorageAttributes(encoding, compression, block_size),
                           type_attrs,
                           data_->comment ? data_->comment.value() : "");
@@ -754,6 +780,7 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
                                    DataType type,
                                    bool is_nullable,
                                    bool is_immutable,
+                                   bool is_auto_incrementing,
                                    const void* default_value,
                                    const KuduColumnStorageAttributes& storage_attributes,
                                    const KuduColumnTypeAttributes& type_attributes,
@@ -769,6 +796,7 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
   col_ = new ColumnSchema(name, ToInternalDataType(type, type_attributes),
                           is_nullable,
                           is_immutable,
+                          is_auto_incrementing,
                           default_value, default_value, attr_private,
                           type_attr_private, comment);
 }
@@ -930,8 +958,8 @@ KuduColumnSchema KuduSchema::Column(size_t idx) const {
   KuduColumnTypeAttributes type_attrs(col.type_attributes().precision, col.type_attributes().scale,
                                       col.type_attributes().length);
   return KuduColumnSchema(col.name(), FromInternalDataType(col.type_info()->type()),
-                          col.is_nullable(), col.is_immutable(), col.read_default_value(),
-                          attrs, type_attrs, col.comment());
+                          col.is_nullable(), col.is_immutable(), col.is_auto_incrementing(),
+                          col.read_default_value(), attrs, type_attrs, col.comment());
 }
 
 bool KuduSchema::HasColumn(const std::string& col_name, KuduColumnSchema* col_schema) const {

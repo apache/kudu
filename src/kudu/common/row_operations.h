@@ -122,7 +122,8 @@ class RowOperationsPBDecoder {
   ~RowOperationsPBDecoder();
 
   template <DecoderMode mode>
-  Status DecodeOperations(std::vector<DecodedRowOperation>* ops);
+  Status DecodeOperations(std::vector<DecodedRowOperation>* ops,
+                          int64_t* auto_incrementing_counter = nullptr);
 
  private:
   Status ReadOpType(RowOperationsPB::Type* type);
@@ -148,7 +149,8 @@ class RowOperationsPBDecoder {
 
   Status DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
                               const ClientServerMapping& mapping,
-                              DecodedRowOperation* op);
+                              DecodedRowOperation* op,
+                              int64_t* auto_incrementing_counter);
   //------------------------------------------------------------
   // Serialization/deserialization support
   //------------------------------------------------------------
@@ -165,7 +167,8 @@ class RowOperationsPBDecoder {
   // Returns an error if the type isn't allowed by the decoder mode.
   template <DecoderMode mode>
   Status DecodeOp(RowOperationsPB::Type type, const uint8_t* prototype_row_storage,
-                  const ClientServerMapping& mapping, DecodedRowOperation* op);
+                  const ClientServerMapping& mapping, DecodedRowOperation* op,
+                  int64_t* auto_incrementing_counter);
 
   const RowOperationsPB* const pb_;
   // If 'client_schema_' and 'tablet_schema_' are the same object, the mapping

@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <mutex>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -36,7 +37,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/messenger.h" // IWYU pragma: keep
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/logging.h"
 
@@ -351,7 +352,7 @@ Status CheckForNonNullableColumns(const KuduWriteOperation& op) {
   for (auto idx = 0; idx < num_columns; ++idx) {
     const ColumnSchema& col = schema->column(idx);
     if (!col.is_nullable() && !col.has_write_default() &&
-        !row.IsColumnSet(idx)) {
+        !row.IsColumnSet(idx) && !col.is_auto_incrementing()) {
       return Status::IllegalState(Substitute(
           "non-nullable column '$0' is not set", schema->column(idx).name()),
           KUDU_REDACT(op.ToString()));

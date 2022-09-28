@@ -156,7 +156,8 @@ class Tablet {
   // Decode the Write (insert/mutate) operations from within a user's
   // request.
   Status DecodeWriteOperations(const Schema* client_schema,
-                               WriteOpState* op_state);
+                               WriteOpState* op_state,
+                               bool is_leader = false);
 
   // Acquire locks for each of the operations in the given write op.
   // This also sets the row op's RowSetKeyProbe.
@@ -538,6 +539,13 @@ class Tablet {
                                              int64_t* replay_size = nullptr,
                                              MonoTime* earliest_dms_time = nullptr) const;
 
+  int64_t GetAutoIncrementingCounter() const {
+    return auto_incrementing_counter_;
+  }
+
+  void SetAutoIncrementingCounter(int64_t auto_incrementing_counter) {
+    auto_incrementing_counter_ = auto_incrementing_counter;
+  }
  private:
   friend class kudu::AlterTableTest;
   friend class Iterator;
@@ -795,6 +803,10 @@ class Tablet {
   std::unique_ptr<Throttler> throttler_;
 
   int64_t next_mrs_id_;
+
+  // Counter for an auto-incrementing column. It is expected that this is only
+  // updated by the prepare thread.
+  int64_t auto_incrementing_counter_;
 
   // A pointer to the server's clock.
   clock::Clock* clock_;

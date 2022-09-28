@@ -845,7 +845,8 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
     if (add_vc_is_deleted) {
       bool read_default = false;
       col_schemas.emplace_back("is_deleted", IS_DELETED, /*is_nullable=*/ false,
-                               /*is_immutable=*/ false, &read_default);
+                               /*is_immutable=*/ false, /*is_auto_incrementing=*/ false,
+                               &read_default);
       col_ids.emplace_back(schema_.max_col_id() + 1);
     }
     Schema projection(col_schemas, col_ids, 1);

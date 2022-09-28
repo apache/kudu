@@ -136,6 +136,11 @@ message PingRequestPB {
 message PingResponsePB {
 }
 
+message AutoIncrementingColumnPB {
+  // Value of the auto-incrementing counter
+  optional int64 auto_incrementing_counter = 1;
+}
+
 // A batched set of insert/mutate requests.
 message WriteRequestPB {
   required bytes tablet_id = 1;
@@ -161,6 +166,9 @@ message WriteRequestPB {
 
   // The transaction ID associated with this write request, if any.
   optional int64 txn_id = 7;
+
+  // The auto-incrementing column information
+  optional AutoIncrementingColumnPB auto_incrementing_column = 8;
 }
 
 message WriteResponsePB {

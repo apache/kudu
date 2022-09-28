@@ -43,9 +43,9 @@ class PartialRowTest : public KuduTest {
                 ColumnSchema("uint64_val", UINT64),
                 ColumnSchema("string_val", STRING, true),
                 ColumnSchema("binary_val", BINARY, true),
-                ColumnSchema("decimal_val", DECIMAL32, true, false, nullptr, nullptr,
+                ColumnSchema("decimal_val", DECIMAL32, true, false, false, nullptr, nullptr,
                              ColumnStorageAttributes(), ColumnTypeAttributes(6, 2)),
-                ColumnSchema("varchar_val", VARCHAR, true, false, nullptr, nullptr,
+                ColumnSchema("varchar_val", VARCHAR, true, false, false, nullptr, nullptr,
                              ColumnStorageAttributes(), ColumnTypeAttributes(10)) },
               1) {
     SeedRandom();

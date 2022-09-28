@@ -270,6 +270,9 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
   if (!col_schema.comment().empty() && !(flags & SCHEMA_PB_WITHOUT_COMMENT)) {
     pb->set_comment(col_schema.comment());
   }
+  if (col_schema.is_auto_incrementing()) {
+    pb->set_is_auto_incrementing(true);
+  }
 }
 
 Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, optional<ColumnSchema>* col_schema) {
@@ -335,8 +338,9 @@ Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, optional<ColumnSchema>* col_
   // regardless of whether has_comment() is true or false.
   // https://developers.google.com/protocol-buffers/docs/proto#optional
   bool immutable = pb.has_immutable() ? pb.immutable() : false;
+  bool auto_incrementing = pb.has_is_auto_incrementing() ? pb.is_auto_incrementing() : false;
   *col_schema = ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
-                             immutable,
+                             immutable, auto_incrementing,
                              read_default_ptr, write_default_ptr,
                              attributes, type_attributes, pb.comment());
   return Status::OK();

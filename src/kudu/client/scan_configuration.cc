@@ -245,6 +245,7 @@ Status ScanConfiguration::AddIsDeletedColumn() {
                           IS_DELETED,
                           /*is_nullable=*/false,
                           /*is_immutable=*/false,
+                          /*is_auto_incrementing=*/false,
                           &read_default);
   cols.emplace_back(std::move(is_deleted));
 

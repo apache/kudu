@@ -155,7 +155,8 @@ WriteOp::WriteOp(unique_ptr<WriteOpState> state, DriverType type)
 void WriteOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(consensus::OperationType::WRITE_OP);
-  (*replicate_msg)->mutable_write_request()->CopyFrom(*state()->request());
+  auto* write_req = (*replicate_msg)->mutable_write_request();
+  write_req->CopyFrom(*state()->request());
   if (state()->are_results_tracked()) {
     (*replicate_msg)->mutable_request_id()->CopyFrom(state()->request_id());
   }
@@ -188,8 +189,22 @@ Status WriteOp::Prepare() {
       return s;
     }
   }
-
-  s = tablet->DecodeWriteOperations(&client_schema, state());
+  // In case of leader replica, set the auto-incrementing column value in the raft consensus
+  // replicate message and in case of follower replica update the auto increment counter to
+  // the value present in the raft consensus replicate message.
+  bool is_leader = type() == consensus::LEADER;
+  if (state_->consensus_round() &&
+      state_->tablet_replica()->tablet()->schema()->has_auto_incrementing()) {
+    if (is_leader) {
+      auto* write_req = state_->consensus_round()->replicate_msg()->mutable_write_request();
+      write_req->mutable_auto_incrementing_column()->set_auto_incrementing_counter(
+          tablet->GetAutoIncrementingCounter());
+    } else {
+      tablet->SetAutoIncrementingCounter(state_->consensus_round()->
+          replicate_msg()->write_request().auto_incrementing_column().auto_incrementing_counter());
+    }
+  }
+  s = tablet->DecodeWriteOperations(&client_schema, state(), is_leader);
   if (!s.ok()) {
     // TODO(unknown): is MISMATCHED_SCHEMA always right here? probably not.
     state()->completion_callback()->set_error(s, TabletServerErrorPB::MISMATCHED_SCHEMA);

@@ -139,6 +139,9 @@ message ColumnSchemaPB {
   optional string comment = 12;
 
   optional bool immutable = 13 [default = false];
+
+  // Whether the column is auto-incrementing.
+  optional bool is_auto_incrementing = 14 [default = false];
 }
 
 message ColumnSchemaDeltaPB {

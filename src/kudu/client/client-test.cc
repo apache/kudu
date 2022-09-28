@@ -9837,5 +9837,209 @@ TEST_F(ReplicationFactorLimitsTest, MaxReplicationFactor) {
   }
 }
 
+class ClientTestAutoIncrementingColumn : public ClientTest {
+ public:
+  void SetUp() override {
+    // TODO:achennaka Enable Feature flag here once implemented
+
+    KuduTest::SetUp();
+
+    // Start minicluster and wait for tablet servers to connect to master.
+    InternalMiniClusterOptions options;
+    options.num_tablet_servers = 3;
+    cluster_.reset(new InternalMiniCluster(env_, std::move(options)));
+    ASSERT_OK(cluster_->StartSync());
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+  }
+};
+
+TEST_F(ClientTestAutoIncrementingColumn, ReadAndWrite) {
+  const string kTableName = "table_with_auto_incrementing_column";
+  KuduSchemaBuilder b;
+  // TODO(Marton): Once the NonUnique column Spec is in place
+  // update the column specs below to match the implementation
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
+      ->NotNull()->AutoIncrementing();
+  ASSERT_OK(b.Build(&schema_));
+
+  // Create a table with a couple of range partitions
+  int lower_bound = 0;
+  int mid_bound = 10;
+  int upper_bound = 20;
+  unique_ptr<KuduPartialRow> lower0(schema_.NewRow());
+  unique_ptr<KuduPartialRow> upper0(schema_.NewRow());
+  unique_ptr<KuduPartialRow> lower1(schema_.NewRow());
+  unique_ptr<KuduPartialRow> upper1(schema_.NewRow());
+
+  ASSERT_OK(lower0->SetInt32("key", lower_bound));
+  ASSERT_OK(upper0->SetInt32("key", mid_bound));
+  ASSERT_OK(lower1->SetInt32("key", mid_bound));
+  ASSERT_OK(upper1->SetInt32("key", upper_bound));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema_)
+            .set_range_partition_columns({"key"})
+            .add_range_partition(lower0.release(), upper0.release())
+            .add_range_partition(lower1.release(), upper1.release())
+            .num_replicas(3)
+            .Create());
+
+  // Write into these two partitions without specifying values for
+  // auto-incrementing column.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  static constexpr auto kNumRows = 20;
+  for (int i = 0; i < kNumRows; i++) {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    KuduPartialRow* row = insert->mutable_row();
+    ASSERT_OK(row->SetInt32("key", i));
+    ASSERT_OK(session->Apply(insert.release()));
+  }
+  FlushSessionOrDie(session);
+
+  // Read back the rows and confirm the values of auto-incrementing column set
+  // correctly for each of the partitions in different scan modes.
+  for (const auto mode: {KuduClient::LEADER_ONLY, KuduClient::CLOSEST_REPLICA,
+                         KuduClient::FIRST_REPLICA}) {
+    vector<string> rows;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetSelection(mode));
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(kNumRows, rows.size());
+    for (int i = 0; i < rows.size(); i++) {
+      ASSERT_EQ(Substitute("(int32 key=$0, int64 auto_incrementing_id=$1)", i,
+                           (i % 10) + 1), rows[i]);
+    }
+  }
+}
+
+
+TEST_F(ClientTestAutoIncrementingColumn, ConcurrentWrites) {
+  const string kTableName = "concurrent_writes_auto_incrementing_column";
+  KuduSchemaBuilder b;
+  // TODO(Marton): Once the NonUnique column Spec is in place
+  // update the column specs below to match the implementation
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
+      ->NotNull()->AutoIncrementing();
+  ASSERT_OK(b.Build(&schema_));
+
+  static constexpr int num_clients = 8;
+  static constexpr int num_rows_per_client = 1000;
+
+  // Create a table with a single range partition
+  static constexpr int lower_bound = 0;
+  static constexpr int upper_bound = num_clients * num_rows_per_client;
+  unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+  unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+
+  ASSERT_OK(lower->SetInt32("key", lower_bound));
+  ASSERT_OK(upper->SetInt32("key", upper_bound));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema_)
+            .set_range_partition_columns({"key"})
+            .add_range_partition(lower.release(), upper.release())
+            .num_replicas(3)
+            .Create());
+
+  // Write into the table with eight clients concurrently without specifying values
+  // for the auto-incrementing column.
+  vector<shared_ptr<KuduClient>> clients;
+  CountDownLatch client_latch(num_clients);
+  vector<thread> threads;
+  for (int i = 0; i < num_clients; i++) {
+    threads.emplace_back([&, i] {
+      shared_ptr<KuduClient> client;
+      ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+                .Build(&client));
+      clients.emplace_back(client);
+      shared_ptr<KuduSession> session = client->NewSession();
+      shared_ptr<KuduTable> table;
+      ASSERT_OK(client->OpenTable(kTableName, &table));
+      for (int j = num_rows_per_client * i; j < num_rows_per_client * (i + 1); j++) {
+        unique_ptr<KuduInsert> insert(table->NewInsert());
+        KuduPartialRow *row = insert->mutable_row();
+        ASSERT_OK(row->SetInt32("key", j));
+        ASSERT_OK(session->Apply(insert.release()));
+      }
+      FlushSessionOrDie(session);
+      client_latch.CountDown();
+    });
+  }
+  client_latch.Wait();
+  for (int i = 0; i < threads.size(); i++) {
+    threads[i].join();
+  }
+  // Read back the rows and confirm the values of auto-incrementing column set
+  // correctly for each of the partitions in different scan modes.
+  static constexpr auto kNumRows = num_clients * num_rows_per_client;
+  vector<vector<string>> rows;
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  for (const auto mode: {KuduClient::LEADER_ONLY, KuduClient::CLOSEST_REPLICA,
+                         KuduClient::FIRST_REPLICA}) {
+    vector<string> row;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetSelection(mode));
+    ASSERT_OK(ScanToStrings(&scanner, &row));
+    ASSERT_EQ(kNumRows, row.size());
+    rows.push_back(row);
+  }
+  for (int i = 0; i < 2; i++) {
+    SCOPED_TRACE(i);
+    ASSERT_TRUE(rows[i] == rows[i + 1]);
+  }
+}
+
+TEST_F(ClientTestAutoIncrementingColumn, Negatives) {
+  // TODO(Marton): Once the NonUnique column Spec is in place
+  // update the column specs below to match the implementation
+  {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT32)
+        ->NotNull()->AutoIncrementing();
+    Status s = b.Build(&schema_);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_EQ("Invalid argument: auto-incrementing column should be of type INT64", s.ToString());
+  }
+
+  {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
+        ->Nullable()->AutoIncrementing();
+    Status s = b.Build(&schema_);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_EQ("Invalid argument: auto-incrementing column should not be nullable", s.ToString());
+  }
+
+  {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
+        ->NotNull()->Default(KuduValue::FromInt(20))->AutoIncrementing();
+    Status s = b.Build(&schema_);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_EQ("Invalid argument: auto-incrementing column cannot have a "
+                            "default value", s.ToString());
+  }
+
+  {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
+        ->NotNull()->Immutable()->AutoIncrementing();
+    Status s = b.Build(&schema_);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_EQ("Invalid argument: auto-incrementing column should not be immutable", s.ToString());
+  }
+}
 } // namespace client
 } // namespace kudu

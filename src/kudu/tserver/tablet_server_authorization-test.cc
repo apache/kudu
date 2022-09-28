@@ -475,9 +475,9 @@ string GenerateEncodedKey(int32_t val, const Schema& schema) {
 // Returns a column schema PB that matches 'col', but has a different name.
 void MisnamedColumnSchemaToPB(const ColumnSchema& col, ColumnSchemaPB* pb) {
   ColumnSchemaToPB(ColumnSchema(kDummyColumn, col.type_info()->physical_type(), col.is_nullable(),
-                                col.is_immutable(), col.read_default_value(),
-                                col.write_default_value(), col.attributes(),
-                                col.type_attributes()), pb);
+                                col.is_immutable(), col.is_auto_incrementing(),
+                                col.read_default_value(), col.write_default_value(),
+                                col.attributes(), col.type_attributes()), pb);
 }
 
 } // anonymous namespace
@@ -596,6 +596,7 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
       bool default_bool = false;
       ColumnSchemaToPB(ColumnSchema("is_deleted", DataType::IS_DELETED, /*is_nullable=*/false,
                                     /*is_immutable=*/false,
+                                    /*is_auto_incrementing=*/false,
                                     /*read_default=*/&default_bool, nullptr), projected_column);
     }
     CHECK_OK(GenerateScanAuthzToken(privilege, pb.mutable_authz_token()));

@@ -228,6 +228,7 @@ void Schema::CopyFrom(const Schema& other) {
 
   first_is_deleted_virtual_column_idx_ = other.first_is_deleted_virtual_column_idx_;
   has_nullables_ = other.has_nullables_;
+  auto_incrementing_col_idx_ = other.auto_incrementing_col_idx_;
 }
 
 Schema::Schema(Schema&& other) noexcept
@@ -239,7 +240,8 @@ Schema::Schema(Schema&& other) noexcept
       name_to_index_(std::move(other.name_to_index_)),
       id_to_index_(std::move(other.id_to_index_)),
       first_is_deleted_virtual_column_idx_(other.first_is_deleted_virtual_column_idx_),
-      has_nullables_(other.has_nullables_) {
+      has_nullables_(other.has_nullables_),
+      auto_incrementing_col_idx_(other.auto_incrementing_col_idx_) {
 }
 
 Schema& Schema::operator=(Schema&& other) noexcept {
@@ -253,6 +255,7 @@ Schema& Schema::operator=(Schema&& other) noexcept {
     first_is_deleted_virtual_column_idx_ = other.first_is_deleted_virtual_column_idx_;
     has_nullables_ = other.has_nullables_;
     name_to_index_ = std::move(other.name_to_index_);
+    auto_incrementing_col_idx_ = other.auto_incrementing_col_idx_;
   }
   return *this;
 }
@@ -279,14 +282,43 @@ Status Schema::Reset(vector<ColumnSchema> cols,
   }
 
   // Verify that the key columns are not nullable
+  int auto_incrementing_col_idx = kColumnNotFound;
   for (int i = 0; i < key_columns; ++i) {
     if (PREDICT_FALSE(cols_[i].is_nullable())) {
       return Status::InvalidArgument(
         "Bad schema", Substitute("Nullable key columns are not supported: $0",
                                  cols_[i].name()));
     }
+    if (cols_[i].is_auto_incrementing()) {
+      if (auto_incrementing_col_idx != kColumnNotFound) {
+        return Status::InvalidArgument(
+            "Bad schema", "Schemas can have at most one auto-incrementing column");
+      }
+      if (cols_[i].type_info()->type() != INT64) {
+        return Status::InvalidArgument(
+            "Bad schema", "auto-incrementing column should be of type int64");
+      }
+      if (cols_[i].is_immutable()) {
+        return Status::InvalidArgument(
+            "Bad schema", "auto-incrementing column should be immutable");
+      }
+      auto_incrementing_col_idx = i;
+    }
   }
 
+  // TODO:(achennaka) Remove the below section once auto_increment cols are key cols
+  for (int i = 0; i < cols_.size(); i++) {
+    if (cols_[i].is_auto_incrementing()) {
+      auto_incrementing_col_idx = i;
+      if (cols_[i].type_info()->type() != INT64) {
+        return Status::InvalidArgument(
+            "Bad schema", "auto-incrementing column should be of type int64");
+      }
+      break;
+    }
+  }
+
+  auto_incrementing_col_idx_ = auto_incrementing_col_idx;
   // Calculate the offset of each column in the row format.
   col_offsets_.clear();
   col_offsets_.reserve(cols_.size() + 1);  // Include space for total byte size at the end.
@@ -612,12 +644,34 @@ Status SchemaBuilder::AddColumn(const std::string& name,
                                 bool is_immutable,
                                 const void* read_default,
                                 const void* write_default) {
+  return AddColumn(name, type, is_nullable, is_immutable, false, read_default, write_default);
+}
+
+Status SchemaBuilder::AddColumn(const std::string& name,
+                                DataType type,
+                                bool is_nullable,
+                                bool is_immutable,
+                                bool is_auto_incrementing,
+                                const void* read_default,
+                                const void* write_default) {
   if (name.empty()) {
     return Status::InvalidArgument("column name must be non-empty");
   }
 
+  if (is_auto_incrementing) {
+    if (is_nullable || is_immutable) {
+      return Status::InvalidArgument("auto-incrementing column cannot be nullable or immutable");
+    }
+    if (read_default != nullptr || write_default != nullptr) {
+      return Status::InvalidArgument("auto-incrementing column cannot have read/write "
+                                     "defaults set");
+    }
+    if (type != kudu::INT64) {
+      return Status::InvalidArgument("auto-incrementing column should be of type INT64");
+    }
+  }
   return AddColumn(ColumnSchema(name, type, is_nullable, is_immutable,
-                                read_default, write_default), false);
+                                is_auto_incrementing, read_default, write_default), false);
 }
 
 Status SchemaBuilder::RemoveColumn(const string& name) {

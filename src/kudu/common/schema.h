@@ -212,6 +212,10 @@ class ColumnSchema {
   // is_nullable: true if a row value can be null
   // is_immutable: true if the column is immutable.
   //    Immutable column means the cell value can not be updated after the first insert.
+  // is_auto_incrementing: true if the column is auto-incrementing column.
+  //    Auto-incrementing column cannot be updated but written to by a client and is auto
+  //    filled in by Kudu by incrementing the previous highest written value to the tablet.
+  //    There can only be a single auto-incrementing column per table.
   // read_default: default value used on read if the column was not present before alter.
   //    The value will be copied and released on ColumnSchema destruction.
   // write_default: default value added to the row if the column value was
@@ -224,13 +228,15 @@ class ColumnSchema {
   //   ColumnSchema col_b("b", STRING, true);
   //   ColumnSchema col_b("b", STRING, false, true);
   //   uint32_t default_i32 = -15;
-  //   ColumnSchema col_c("c", INT32, false, false, &default_i32);
+  //   ColumnSchema col_c("c", INT32, false, false, false, &default_i32);
   //   Slice default_str("Hello");
-  //   ColumnSchema col_d("d", STRING, false, false, &default_str);
+  //   ColumnSchema col_d("d", STRING, false, false, false, &default_str);
+  //   ColumnSchema col_e("e", STRING, false, false, true, &default_str);
   ColumnSchema(std::string name,
                DataType type,
                bool is_nullable = false,
                bool is_immutable = false,
+               bool is_auto_incrementing = false,
                const void* read_default = nullptr,
                const void* write_default = nullptr,
                ColumnStorageAttributes attributes = ColumnStorageAttributes(),
@@ -240,6 +246,7 @@ class ColumnSchema {
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
         is_immutable_(is_immutable),
+        is_auto_incrementing_(is_auto_incrementing),
         read_default_(read_default ? std::make_shared<Variant>(type, read_default) : nullptr),
         attributes_(attributes),
         type_attributes_(type_attributes),
@@ -261,6 +268,10 @@ class ColumnSchema {
 
   bool is_immutable() const {
     return is_immutable_;
+  }
+
+  bool is_auto_incrementing() const {
+    return is_auto_incrementing_;
   }
 
   const std::string& name() const {
@@ -387,6 +398,10 @@ class ColumnSchema {
       if (is_immutable_ != other.is_immutable_) {
         return false;
       }
+
+      if (is_auto_incrementing_ != other.is_auto_incrementing_) {
+        return false;
+      }
     }
     return true;
   }
@@ -454,6 +469,7 @@ class ColumnSchema {
   const TypeInfo* type_info_;
   bool is_nullable_;
   bool is_immutable_;
+  bool is_auto_incrementing_;
   // use shared_ptr since the ColumnSchema is always copied around.
   std::shared_ptr<Variant> read_default_;
   std::shared_ptr<Variant> write_default_;
@@ -482,7 +498,8 @@ class Schema {
       // the default (32).
       name_to_index_(1),
       first_is_deleted_virtual_column_idx_(kColumnNotFound),
-      has_nullables_(false) {
+      has_nullables_(false),
+      auto_incrementing_col_idx_(kColumnNotFound) {
     name_to_index_.set_empty_key(StringPiece());
   }
 
@@ -622,6 +639,14 @@ class Schema {
       return kColumnNotFound;
     }
     return iter->second;
+  }
+
+  int auto_incrementing_col_idx() const {
+    return auto_incrementing_col_idx_;
+  }
+
+  bool has_auto_incrementing() const {
+    return auto_incrementing_col_idx_ != kColumnNotFound;
   }
 
   // Returns true if the schema contains nullable columns
@@ -1011,6 +1036,10 @@ class Schema {
   // Cached indicator whether any columns are nullable.
   bool has_nullables_;
 
+  // Cached index of the auto-incrementing column, or kColumnNotFound if no
+  // such column exists in the schema.
+  int auto_incrementing_col_idx_;
+
   // NOTE: if you add more members, make sure to add the appropriate code to
   // CopyFrom() and the move constructor and assignment operator as well, to
   // prevent subtle bugs.
@@ -1082,6 +1111,14 @@ class SchemaBuilder {
                    DataType type,
                    bool is_nullable,
                    bool is_immutable,
+                   const void* read_default,
+                   const void* write_default);
+
+  Status AddColumn(const std::string& name,
+                   DataType type,
+                   bool is_nullable,
+                   bool is_immutable,
+                   bool is_auto_incrementing,
                    const void* read_default,
                    const void* write_default);
 

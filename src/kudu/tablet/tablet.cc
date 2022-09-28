@@ -333,6 +333,7 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
       log_anchor_registry_(std::move(log_anchor_registry)),
       mem_trackers_(tablet_id(), std::move(parent_mem_tracker)),
       next_mrs_id_(0),
+      auto_incrementing_counter_(0),
       clock_(clock),
       txn_participant_(metadata_),
       rowsets_flush_sem_(1),
@@ -596,7 +597,8 @@ Status Tablet::NewRowIterator(RowIteratorOptions opts,
 }
 
 Status Tablet::DecodeWriteOperations(const Schema* client_schema,
-                                     WriteOpState* op_state) {
+                                     WriteOpState* op_state,
+                                     bool is_leader) {
   TRACE_EVENT0("tablet", "Tablet::DecodeWriteOperations");
 
   DCHECK(op_state->row_ops().empty());
@@ -616,7 +618,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
                              client_schema,
                              schema_ptr.get(),
                              op_state->arena());
-  RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
+  RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops, &auto_incrementing_counter_));
   TRACE_COUNTER_INCREMENT("num_ops", ops.size());
 
   // Important to set the schema before the ops -- we need the

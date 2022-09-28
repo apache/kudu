@@ -372,7 +372,8 @@ TEST(KuduColumnSchemaTest, TestEquals) {
 
   const int kDefaultOf7 = 7;
   KuduColumnSchema a32_dflt("a", KuduColumnSchema::INT32, /*is_nullable=*/false,
-                            /*is_immutable=*/false, /*default_value=*/&kDefaultOf7);
+                            /*is_immutable=*/false, /*is_auto_incrementing=*/false,
+                            /*default_value=*/&kDefaultOf7);
   ASSERT_NE(a32, a32_dflt);
 }
 

@@ -345,6 +345,7 @@ class KUDU_EXPORT KuduColumnSchema {
       DataType type,
       bool is_nullable = false,
       bool is_immutable = false,
+      bool is_auto_incrementing = false,
       const void* default_value = NULL, //NOLINT(modernize-use-nullptr)
       const KuduColumnStorageAttributes& storage_attributes = KuduColumnStorageAttributes(),
       const KuduColumnTypeAttributes& type_attributes = KuduColumnTypeAttributes(),
@@ -487,6 +488,19 @@ class KUDU_EXPORT KuduColumnSpec {
   ///
   /// @return Pointer to the modified object.
   KuduColumnSpec* PrimaryKey();
+
+  ///@{
+  /// Set the column to be auto-incrementing.
+  ///
+  /// Upon inserting rows to a table with an auto-incrementing column, values are
+  /// automatically assigned to field that are unique to the partition. This
+  /// makes such columns good candidates to include in a table's primary key.
+  ///
+  /// @note Column auto-incrementing may not be changed once a table is
+  /// created.
+  ///
+  /// @return Pointer to the modified object.
+  KuduColumnSpec* AutoIncrementing();
 
   /// Set the column to be not nullable.
   ///
