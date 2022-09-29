@@ -356,19 +356,24 @@ target_link_libraries(kudu_curl_util
 #######################################
 # mini_oidc
 #######################################
-set (MINI_OIDC_SRCS mini_oidc.cc jwt_test_certs.cc)
-add_library(mini_oidc ${MINI_OIDC_SRCS})
+add_library(mini_oidc mini_oidc.cc)
 target_link_libraries(mini_oidc
   server_process
   gutil
   kudu_test_util
-  kudu_util)
+  kudu_util
+  jwt_test_certs)
+
+#######################################
+# jwt_test_certs
+#######################################
+add_library(jwt_test_certs jwt_test_certs.cc)
+target_link_libraries(jwt_test_certs)
 
 #######################################
 # kudu_jwt_util
 #######################################
-add_library(kudu_jwt_util
-  jwt-util.cc)
+add_library(kudu_jwt_util jwt-util.cc)
 target_link_libraries(kudu_jwt_util
   gutil
   security
@@ -640,9 +645,9 @@ endif()
 ADD_KUDU_TEST(jwt-util-test)
 if(NOT NO_TESTS)
   target_link_libraries(jwt-util-test
-    kudu_jwt_util
     mini_oidc
-    server_process)
+    server_process
+    jwt_test_certs)
 endif()
 
 #######################################

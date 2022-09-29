@@ -206,7 +206,6 @@ Status ServerNegotiation::Negotiate() {
 
   // Wait until starting negotiation to check that the socket, tls_context, and
   // token_verifier are not null, since they do not need to be set for
-  // PreflightCheckGSSAPI.
   DCHECK(socket_);
   DCHECK(tls_context_);
   DCHECK(token_verifier_);

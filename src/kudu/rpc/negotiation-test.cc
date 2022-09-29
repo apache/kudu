@@ -59,15 +59,22 @@
 #include "kudu/security/token_signing_key.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/util/env.h"
+#include "kudu/util/jwt-util.h"
+#include "kudu/util/jwt_test_certs.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/user.h"
+
+namespace kudu {
+class JwtVerifier;
+}  // namespace kudu
 
 // HACK: MIT Kerberos doesn't have any way of determining its version number,
 // but the error messages in krb5-1.10 and earlier are broken due to
@@ -121,6 +128,9 @@ struct EndpointConfig {
   // For the client, whether the client has the token.
   // For the server, whether the server has the TSK.
   bool token;
+  // For the client, whether the client has the JWT.
+  // For the server, whether the server has a JWTVerifier
+  bool jwt;
   RpcEncryption encryption;
 };
 std::ostream& operator<<(std::ostream& o, EndpointConfig config) {
@@ -128,6 +138,7 @@ std::ostream& operator<<(std::ostream& o, EndpointConfig config) {
   o << "{pki: " << config.pki
     << ", sasl-mechs: [" << JoinMapped(config.sasl_mechs, SaslMechanism::name_of, ", ")
     << "], token: " << bool_string(config.token)
+    << ", jwt: " << bool_string(config.jwt)
     << ", encryption: ";
 
   switch (config.encryption) {
@@ -232,6 +243,24 @@ TEST_P(TestNegotiation, TestNegotiation) {
     ASSERT_OK(token_verifier.ImportKeys(token_signer.verifier().ExportKeys()));
   }
 
+  // Create JWT token
+  // Create jwt_verifier
+  const string jwks_file_name = "keys.jwks";
+  const string jwt_test_dir = GetTestPath("jwt");
+  const string jwt_data = kudu::CreateTestJWT(true);
+  ASSERT_OK(kudu::CreateTestJWKSFile(jwt_test_dir, jwks_file_name));
+  std::shared_ptr<JwtVerifier> jwt_verifier;
+  if (desc.server.jwt) {
+    jwt_verifier = std::make_shared<kudu::KeyBasedJwtVerifier>(
+        JoinPathSegments(jwt_test_dir, jwks_file_name), /* is_local_file */ true);
+    ASSERT_OK(jwt_verifier-> Init());
+  }
+  optional<security::JwtRawPB> jwt_token;
+  if (desc.client.jwt) {
+    jwt_token = security::JwtRawPB();
+    jwt_token->set_jwt_data(jwt_data);
+  }
+
   // Create the listening socket, client socket, and server socket.
   Socket listening_socket;
   Sockaddr server_addr = Sockaddr::Wildcard();
@@ -254,14 +283,14 @@ TEST_P(TestNegotiation, TestNegotiation) {
   ClientNegotiation client_negotiation(std::move(client_socket),
                                        &client_tls_context,
                                        authn_token,
-                                       std::nullopt,
+                                       jwt_token,
                                        desc.client.encryption,
                                        desc.rpc_encrypt_loopback,
                                        "kudu");
   ServerNegotiation server_negotiation(std::move(server_socket),
                                        &server_tls_context,
                                        &token_verifier,
-                                       nullptr,
+                                       jwt_verifier.get(),
                                        desc.server.encryption,
                                        desc.rpc_encrypt_loopback,
                                        "kudu");
@@ -416,11 +445,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             {},
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::NONE,
             {},
+            false,
             false,
             RpcEncryption::OPTIONAL,
           },
@@ -440,11 +471,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::NONE,
             {},
+            false,
             false,
             RpcEncryption::OPTIONAL,
           },
@@ -464,11 +497,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::OPTIONAL
           },
           EndpointConfig {
             PkiConfig::NONE,
             { SaslMechanism::PLAIN },
+            false,
             false,
             RpcEncryption::DISABLED,
           },
@@ -488,11 +523,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::DISABLED,
           },
@@ -512,11 +549,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI, SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI, SaslMechanism::PLAIN },
+            false,
             false,
             RpcEncryption::DISABLED,
           },
@@ -536,11 +575,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI, SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::DISABLED,
           },
@@ -560,11 +601,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::DISABLED,
           },
@@ -585,11 +628,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::SELF_SIGNED,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::OPTIONAL,
           },
@@ -611,11 +656,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::SIGNED,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::SELF_SIGNED,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::OPTIONAL,
           },
@@ -635,11 +682,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::SELF_SIGNED,
             { SaslMechanism::PLAIN },
+            false,
             false,
             RpcEncryption::OPTIONAL,
           },
@@ -659,11 +708,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::SIGNED,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::SIGNED,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::OPTIONAL,
           },
@@ -683,12 +734,14 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::TRUSTED,
             { },
             true,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::SIGNED,
             { SaslMechanism::PLAIN },
             true,
+            false,
             RpcEncryption::OPTIONAL,
           },
           false,
@@ -710,12 +763,14 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::PLAIN },
             true,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::SIGNED,
             { SaslMechanism::PLAIN },
             true,
+            false,
             RpcEncryption::OPTIONAL,
           },
           false,
@@ -734,12 +789,14 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::SIGNED,
             { SaslMechanism::PLAIN, SaslMechanism::GSSAPI },
             true,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::SIGNED,
             { SaslMechanism::PLAIN, SaslMechanism::GSSAPI },
             true,
+            false,
             RpcEncryption::OPTIONAL,
           },
           false,
@@ -758,11 +815,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::DISABLED,
           },
           EndpointConfig {
             PkiConfig::SIGNED,
             { SaslMechanism::PLAIN },
+            false,
             false,
             RpcEncryption::REQUIRED,
           },
@@ -782,11 +841,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::REQUIRED,
           },
           EndpointConfig {
             PkiConfig::SIGNED,
             { SaslMechanism::PLAIN },
+            false,
             false,
             RpcEncryption::DISABLED,
           },
@@ -806,11 +867,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::EXTERNALLY_SIGNED,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::REQUIRED,
           },
           EndpointConfig {
             PkiConfig::EXTERNALLY_SIGNED,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::REQUIRED,
           },
@@ -830,11 +893,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::EXTERNALLY_SIGNED,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::OPTIONAL,
           },
           EndpointConfig {
             PkiConfig::SIGNED,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::REQUIRED,
           },
@@ -854,11 +919,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::NONE,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::REQUIRED,
           },
           EndpointConfig {
             PkiConfig::EXTERNALLY_SIGNED,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::REQUIRED,
           },
@@ -878,11 +945,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::EXTERNALLY_SIGNED,
             { SaslMechanism::GSSAPI, SaslMechanism::PLAIN },
             false,
+            false,
             RpcEncryption::REQUIRED,
           },
           EndpointConfig {
             PkiConfig::EXTERNALLY_SIGNED,
             { SaslMechanism::PLAIN },
+            false,
             false,
             RpcEncryption::REQUIRED,
           },
@@ -902,11 +971,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::SIGNED,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::DISABLED,
           },
           EndpointConfig {
             PkiConfig::EXTERNALLY_SIGNED,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::REQUIRED,
           },
@@ -926,11 +997,13 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
             PkiConfig::SIGNED,
             { SaslMechanism::GSSAPI },
             false,
+            false,
             RpcEncryption::REQUIRED,
           },
           EndpointConfig {
             PkiConfig::EXTERNALLY_SIGNED,
             { SaslMechanism::GSSAPI },
+            false,
             false,
             RpcEncryption::REQUIRED,
           },
@@ -948,16 +1021,18 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
         // connection from public routable IP
         NegotiationDescriptor {
             EndpointConfig {
-                PkiConfig::NONE,
-                { SaslMechanism::PLAIN },
-                false,
-                RpcEncryption::OPTIONAL
+              PkiConfig::NONE,
+              { SaslMechanism::PLAIN },
+              false,
+              false,
+              RpcEncryption::OPTIONAL
             },
             EndpointConfig {
-                PkiConfig::NONE,
-                { SaslMechanism::PLAIN },
-                false,
-                RpcEncryption::OPTIONAL
+              PkiConfig::NONE,
+              { SaslMechanism::PLAIN },
+              false,
+              false,
+              RpcEncryption::OPTIONAL
             },
             true,
             false,
@@ -972,27 +1047,274 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
         // server: GSSAPI, TLS required, externally-signed cert
         // connection from public routable IP
         NegotiationDescriptor {
-            EndpointConfig {
-                PkiConfig::EXTERNALLY_SIGNED,
-                { SaslMechanism::GSSAPI },
-                false,
-                RpcEncryption::REQUIRED,
-            },
-            EndpointConfig {
-                PkiConfig::EXTERNALLY_SIGNED,
-                { SaslMechanism::GSSAPI },
-                false,
-                RpcEncryption::REQUIRED,
-            },
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { SaslMechanism::GSSAPI },
+            false,
+            false,
+            RpcEncryption::REQUIRED,
+          },
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { SaslMechanism::GSSAPI },
+            false,
+            false,
+            RpcEncryption::REQUIRED,
+          },
+          true,
+          // true as no longer a loopback connection.
+          true,
+          Status::OK(),
+          Status::OK(),
+          AuthenticationType::SASL,
+          SaslMechanism::GSSAPI,
+          true,
+        },
+
+
+        // client: JWT, TLS required
+        // server: JWT, TLS required
+        // connecting with JWT only
+        NegotiationDescriptor {
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { },
+            false,
             true,
-            // true as no longer a loopback connection.
+            RpcEncryption::REQUIRED
+          },
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { },
+            false,
             true,
-            Status::OK(),
-            Status::OK(),
-            AuthenticationType::SASL,
-            SaslMechanism::GSSAPI,
+            RpcEncryption::REQUIRED
+          },
+          true,
+          true,
+          Status::OK(),
+          Status::OK(),
+          AuthenticationType::JWT,
+          SaslMechanism::INVALID,
+          true,
+        },
+
+
+        // client: JWT, TLS required, self-signed cert
+        // server: JWT, TLS required, self-signed cert
+        NegotiationDescriptor {
+          EndpointConfig {
+            PkiConfig::SELF_SIGNED,
+            { },
+            false,
             true,
-        }
+            RpcEncryption::REQUIRED
+          },
+          EndpointConfig {
+            PkiConfig::SELF_SIGNED,
+            {  },
+            false,
+            true,
+            RpcEncryption::REQUIRED
+          },
+          true,
+          true,
+          Status::OK(),
+          Status::OK(),
+          AuthenticationType::JWT,
+          SaslMechanism::INVALID,
+          true,
+        },
+
+
+        // client: GSSAPI, JWT, TLS required
+        // server: JWT, TLS required
+        NegotiationDescriptor {
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { SaslMechanism::GSSAPI },
+            false,
+            true,
+            RpcEncryption::REQUIRED
+          },
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { SaslMechanism::PLAIN },
+            false,
+            true,
+            RpcEncryption::REQUIRED
+          },
+          true,
+          true,
+          Status::OK(),
+          Status::OK(),
+          AuthenticationType::JWT,
+          SaslMechanism::INVALID,
+          true,
+        },
+
+
+        // client: JWT, TLS disabled
+        // server: JWT, TLS required
+        NegotiationDescriptor {
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { },
+            false,
+            true,
+            RpcEncryption::DISABLED
+          },
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { },
+            false,
+            true,
+            RpcEncryption::REQUIRED
+          },
+          true,
+          true,
+          Status::NotAuthorized(".*client does not support required TLS encryption"),
+          Status::NotAuthorized(""),
+          AuthenticationType::JWT,
+          SaslMechanism::INVALID,
+          true,
+        },
+
+
+        // client: GSSAPI, JWT, TLS required
+        // server: JWT, TLS disabled
+        NegotiationDescriptor {
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { SaslMechanism::GSSAPI },
+            false,
+            true,
+            RpcEncryption::REQUIRED
+          },
+          EndpointConfig {
+            PkiConfig::EXTERNALLY_SIGNED,
+            { SaslMechanism::PLAIN },
+            false,
+            true,
+            RpcEncryption::DISABLED
+          },
+          true,
+          true,
+          Status::NotAuthorized(".*server does not support required TLS encryption"),
+          Status::NetworkError(""),
+          AuthenticationType::JWT,
+          SaslMechanism::INVALID,
+          true,
+       },
+
+
+       // client: JWT, TLS required
+       // server: JWT, TLS optional
+       NegotiationDescriptor {
+           EndpointConfig {
+               PkiConfig::EXTERNALLY_SIGNED,
+               { },
+               false,
+               true,
+               RpcEncryption::REQUIRED
+           },
+           EndpointConfig {
+               PkiConfig::EXTERNALLY_SIGNED,
+               { },
+               false,
+               true,
+               RpcEncryption::OPTIONAL
+           },
+           true,
+           true,
+           Status::OK(),
+           Status::OK(),
+           AuthenticationType::JWT,
+           SaslMechanism::INVALID,
+           true,
+       },
+
+
+       // client: GSSAPI, JWT, TLS optional
+       // server: JWT, TLS required
+       NegotiationDescriptor {
+           EndpointConfig {
+               PkiConfig::EXTERNALLY_SIGNED,
+               { SaslMechanism::GSSAPI },
+               false,
+               true,
+               RpcEncryption::OPTIONAL
+           },
+           EndpointConfig {
+               PkiConfig::EXTERNALLY_SIGNED,
+               { SaslMechanism::PLAIN },
+               false,
+               true,
+               RpcEncryption::REQUIRED
+           },
+           true,
+           true,
+           Status::OK(),
+           Status::OK(),
+           AuthenticationType::JWT,
+           SaslMechanism::INVALID,
+           true,
+       },
+
+
+       // client: GSSAPI, TLS required
+       // server: GSSAPI, JWT, TLS required
+       NegotiationDescriptor {
+           EndpointConfig {
+               PkiConfig::EXTERNALLY_SIGNED,
+               { SaslMechanism::GSSAPI },
+               false,
+               false,
+               RpcEncryption::REQUIRED
+           },
+           EndpointConfig {
+               PkiConfig::EXTERNALLY_SIGNED,
+               { SaslMechanism::GSSAPI },
+               false,
+               true,
+               RpcEncryption::OPTIONAL
+           },
+           true,
+           true,
+           Status::OK(),
+           Status::OK(),
+               AuthenticationType::SASL,
+               SaslMechanism::GSSAPI,
+           true,
+       },
+
+
+       // client: GSSAPI, JWT, TLS required
+       // server: GSSAPI, TLS required
+       NegotiationDescriptor {
+           EndpointConfig {
+               PkiConfig::EXTERNALLY_SIGNED,
+               { SaslMechanism::GSSAPI },
+               false,
+               true,
+               RpcEncryption::REQUIRED
+           },
+           EndpointConfig {
+               PkiConfig::EXTERNALLY_SIGNED,
+               { SaslMechanism::GSSAPI },
+               false,
+               false,
+               RpcEncryption::REQUIRED
+           },
+           true,
+           true,
+           Status::OK(),
+           Status::OK(),
+           AuthenticationType::SASL,
+           SaslMechanism::GSSAPI,
+           true,
+       }
+
 ));
 
 // A "Callable" that takes a socket for use with starting a thread.
@@ -1220,8 +1542,15 @@ static void RunTimeoutExpectingServer(unique_ptr<Socket> socket) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
+  string jwks_file_name = "keys.jwks";
+  string jwt_test_dir = JoinPathSegments(kudu::GetTestDataDirectory(), "jwt");
+  string jwt_data = kudu::CreateTestJWT(true);
+  ASSERT_OK(kudu::CreateTestJWKSFile(jwt_test_dir, jwks_file_name));
+  kudu::KeyBasedJwtVerifier jwt_verifier(
+      JoinPathSegments(jwt_test_dir, jwks_file_name), true);
+  CHECK_OK(jwt_verifier.Init());
   ServerNegotiation server_negotiation(std::move(socket), &tls_context,
-                                       &token_verifier, nullptr, RpcEncryption::OPTIONAL,
+                                       &token_verifier, &jwt_verifier, RpcEncryption::OPTIONAL,
                                        /* encrypt_loopback */ false, "kudu");
   CHECK_OK(server_negotiation.EnablePlain());
   Status s = server_negotiation.Negotiate();
@@ -1254,8 +1583,15 @@ static void RunTimeoutNegotiationServer(unique_ptr<Socket> socket) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
+  string jwks_file_name = "keys.jwks";
+  string jwt_test_dir = JoinPathSegments(kudu::GetTestDataDirectory(), "jwt");
+  string jwt_data = kudu::CreateTestJWT(true);
+  ASSERT_OK(kudu::CreateTestJWKSFile(jwt_test_dir, jwks_file_name));
+  kudu::KeyBasedJwtVerifier jwt_verifier(
+      JoinPathSegments(jwt_test_dir, jwks_file_name), true);
+  CHECK_OK(jwt_verifier.Init());
   ServerNegotiation server_negotiation(std::move(socket), &tls_context,
-                                       &token_verifier, nullptr, RpcEncryption::OPTIONAL,
+                                       &token_verifier, &jwt_verifier, RpcEncryption::OPTIONAL,
                                        /* encrypt_loopback */ false, "kudu");
   CHECK_OK(server_negotiation.EnablePlain());
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);

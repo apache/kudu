@@ -797,7 +797,7 @@ Status ServerBase::Init() {
 
   // Create the Messenger.
   rpc::MessengerBuilder builder(name_);
-  std::shared_ptr<JwtVerifier> jwt_verifier;
+  shared_ptr<JwtVerifier> jwt_verifier = nullptr;
   if (FLAGS_enable_jwt_token_auth) {
     if (!FLAGS_jwks_url.empty()) {
       jwt_verifier = std::make_shared<PerAccountKeyBasedJwtVerifier>(FLAGS_jwks_url);

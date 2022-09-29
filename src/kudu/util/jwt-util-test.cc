@@ -952,18 +952,18 @@ TEST(JwtUtilTest, VerifyOIDCDiscoveryEndpoint) {
   // Create and verify a token on the happy path.
   const string kSubject = "kudu";
   auto valid_user_token =
-      MiniOidc::CreateJwt(kValidAccount, kSubject, /*is_valid*/true);
+      oidc.CreateJwt(kValidAccount, kSubject, /*is_valid*/true);
   string subject;
   ASSERT_OK(jwt_verifier.VerifyToken(valid_user_token, &subject));
   ASSERT_EQ(kSubject, subject);
 
   // Verify some expected failure scenarios.
   const unordered_map<string, string> invalid_jwts {
-    { MiniOidc::CreateJwt(kInvalidAccount, kSubject, false), "invalid issuer with invalid "
+    { oidc.CreateJwt(kInvalidAccount, kSubject, false), "invalid issuer with invalid "
        "subject" },
-    { MiniOidc::CreateJwt(kInvalidAccount, kSubject, true), "invalid issuer with valid subject" },
-    { MiniOidc::CreateJwt(kValidAccount, kSubject, false), "valid issuer with invalid key id" },
-    { MiniOidc::CreateJwt(kMissingAccount, kSubject, true), "missing account" },
+    { oidc.CreateJwt(kInvalidAccount, kSubject, true), "invalid issuer with valid subject" },
+    { oidc.CreateJwt(kValidAccount, kSubject, false), "valid issuer with invalid key id" },
+    { oidc.CreateJwt(kMissingAccount, kSubject, true), "missing account" },
   };
 
   for (const auto& [jwt, msg] : invalid_jwts) {
@@ -985,7 +985,7 @@ TEST(JwtUtilTest, VerifyJWKSDiscoveryEndpointMultipleClients) {
   {
     const string kSubject = "kudu";
     auto valid_user_token =
-        MiniOidc::CreateJwt(kValidAccount, kSubject, /*is_valid*/true);
+        oidc.CreateJwt(kValidAccount, kSubject, /*is_valid*/true);
     string subject;
     ASSERT_OK(jwt_verifier.VerifyToken(valid_user_token, &subject));
     ASSERT_EQ(kSubject, subject);
