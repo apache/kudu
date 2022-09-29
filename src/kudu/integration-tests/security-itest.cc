@@ -513,27 +513,33 @@ void GetFullBinaryPath(string* binary) {
 }
 
 TEST_F(SecurityITest, TestJwtMiniCluster) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   cluster_opts_.enable_kerberos = false;
   cluster_opts_.num_tablet_servers = 0;
   cluster_opts_.enable_client_jwt = true;
   MiniOidcOptions oidc_opts;
   const auto* const kValidAccount = "valid";
   const auto* const kInvalidAccount = "invalid";
+  const uint64_t kLifetimeMs = 1000;
   oidc_opts.account_ids = {
     { kValidAccount, true },
     { kInvalidAccount, false },
   };
-
+  oidc_opts.lifetime_ms = kLifetimeMs;
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
   const auto* const kSubject = "kudu-user";
-  const auto configure_builder_for = [&] (const string& account_id, KuduClientBuilder* b) {
+  const auto configure_builder_for =
+      [&] (const string& account_id, KuduClientBuilder* b, const uint64_t delay_ms) {
     client::AuthenticationCredentialsPB pb;
     security::JwtRawPB jwt = security::JwtRawPB();
-    *jwt.mutable_jwt_data() = MiniOidc::CreateJwt(account_id, kSubject, true);
+    *jwt.mutable_jwt_data() = cluster_->oidc()->CreateJwt(account_id, kSubject, true);
     *pb.mutable_jwt() = std::move(jwt);
     string creds;
     CHECK(pb.SerializeToString(&creds));
+
+    SleepFor(MonoDelta::FromMilliseconds(delay_ms));
 
     for (auto i = 0; i < cluster_->num_masters(); ++i) {
       b->add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
@@ -545,7 +551,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
   {
     KuduClientBuilder valid_builder;
     shared_ptr<KuduClient> client;
-    configure_builder_for(kValidAccount, &valid_builder);
+    configure_builder_for(kValidAccount, &valid_builder, 0);
     ASSERT_OK(valid_builder.Build(&client));
     vector<string> tables;
     ASSERT_OK(client->ListTables(&tables));
@@ -553,10 +559,18 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
   {
     KuduClientBuilder invalid_builder;
     shared_ptr<KuduClient> client;
-    configure_builder_for(kInvalidAccount, &invalid_builder);
+    configure_builder_for(kInvalidAccount, &invalid_builder, 0);
     Status s = invalid_builder.Build(&client);
-    ASSERT_FALSE(s.ok()) << s.ToString();
+    ASSERT_TRUE(s.IsRuntimeError());
     ASSERT_STR_CONTAINS(s.ToString(), "FATAL_INVALID_JWT");
+  }
+  {
+    KuduClientBuilder timeout_builder;
+    shared_ptr<KuduClient> client;
+    configure_builder_for(kValidAccount, &timeout_builder, 3 * kLifetimeMs);
+    Status s = timeout_builder.Build(&client);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(s.ToString(), "token expired");
   }
   {
     KuduClientBuilder no_jwt_builder;
@@ -566,7 +580,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     }
     no_jwt_builder.require_authentication(true);
     Status s = no_jwt_builder.Build(&client);
-    ASSERT_FALSE(s.ok()) << s.ToString();
+    ASSERT_TRUE(s. IsNotAuthorized());
     ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
   }
 }

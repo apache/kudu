@@ -42,6 +42,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/jwt.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"

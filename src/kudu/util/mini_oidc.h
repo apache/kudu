@@ -74,9 +74,9 @@ class MiniOidc {
 
   // Creates a JWT with the given `account_id` and `subject`. If `is_valid` is set to false, the
   // created token will be invalid.
-  static std::string CreateJwt(const std::string& account_id,
-                               const std::string& subject,
-                               bool is_valid);
+  std::string CreateJwt(const std::string& account_id,
+                        const std::string& subject,
+                        bool is_valid);
   const std::string& url() const {
     return oidc_url_;
   }

@@ -16,6 +16,12 @@
 // under the License.
 #pragma once
 
+#include <string>
+
+#include "kudu/util/status.h"
+
+namespace kudu {
+
 extern const char* kRsaPrivKeyPem;
 extern const char* kRsaPubKeyPem;
 // The public keys in JWK format were converted from PEM formatted crypto keys with
@@ -66,3 +72,8 @@ extern const char* kKid2;
 extern const char* kJwksHsFileFormat;
 extern const char* kJwksRsaFileFormat;
 extern const char* kJwksEcFileFormat;
+
+std::string CreateTestJWT(bool is_valid);
+Status CreateTestJWKSFile(const std::string& dir, const std::string& file_name);
+
+}  // namespace kudu

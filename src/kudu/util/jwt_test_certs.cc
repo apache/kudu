@@ -16,6 +16,22 @@
 // under the License.
 #include "kudu/util/jwt_test_certs.h"
 
+#include <string>
+
+#include <jwt-cpp/jwt.h>
+#include <jwt-cpp/traits/kazuho-picojson/defaults.h>
+#include <jwt-cpp/traits/kazuho-picojson/traits.h>
+
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/env.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+
+using strings::Substitute;
+
+namespace kudu {
+
 const char* kRsaPrivKeyPem = R"(-----BEGIN PRIVATE KEY-----
 MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC4ZtdaIrd1BPIJ
 tfnF0TjIK5inQAXZ3XlCrUlJdP+XHwIRxdv1FsN12XyMYO/6ymLmo9ryoQeIrsXB
@@ -329,3 +345,33 @@ const char* kJwksEcFileFormat = R"(
   ]
 })";
 
+std::string CreateTestJWT(bool is_valid) {
+  return jwt::create()
+      .set_issuer(Substitute("auth0/$0", "test_account_id"))
+      .set_type("JWT")
+      .set_algorithm("RS256")
+      .set_key_id(is_valid ? kKid1 : kKid2)
+      .set_subject("test_subject")
+      .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
+}
+
+Status CreateTestJWKSFile(const std::string& dir, const std::string& file_name) {
+  //"keys": [
+  //    { "kty": "RSA", "kid": "$0", "alg": "$1", "n": "$2", "e": "$3" },
+  //    { "kty": "RSA", "kid": "$4", "alg": "$5", "n": "$6", "e": "$7" }
+  //  ]
+  const std::string jwks_content = Substitute(kJwksRsaFileFormat,
+                                              /* kid */ kKid1,
+                                              /* alg */ "RS256",
+                                              /* n */ kRsaPubKeyJwkN,
+                                              /* e */ kRsaPubKeyJwkE,
+                                              /* kid */ kKid2,
+                                              /* alg */ "RS512",
+                                              /* n */ kRsa512PubKeyJwkN,
+                                              /* e */ kRsa512PubKeyJwkE);
+  RETURN_NOT_OK(Env::Default()->CreateDir(dir));
+
+  return WriteStringToFile(Env::Default(), jwks_content,
+                           JoinPathSegments(dir, file_name));
+}
+}  // namespace kudu

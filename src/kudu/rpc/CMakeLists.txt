@@ -124,7 +124,9 @@ SET_KUDU_TEST_LINK_LIBS(
   mini_kdc
   rpc_header_proto
   rtest_krpc
-  security_test_util)
+  security_test_util
+  kudu_jwt_util
+  jwt_test_certs)
 ADD_KUDU_TEST(exactly_once_rpc-test PROCESSORS 10)
 ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
 ADD_KUDU_TEST(negotiation-test)
