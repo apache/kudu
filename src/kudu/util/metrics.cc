@@ -48,6 +48,7 @@ using std::string;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 template<typename Collection>
 void WriteMetricsToJson(JsonWriter* writer,
@@ -66,6 +67,16 @@ void WriteMetricsToJson(JsonWriter* writer,
     }
   }
   writer->EndArray();
+}
+
+template<typename Collection>
+void WriteMetricsToPrometheus(PrometheusWriter* writer,
+                              const Collection& metrics,
+                              const std::string& prefix) {
+  for (const auto& [name, val] : metrics) {
+    WARN_NOT_OK(val->WriteAsPrometheus(writer, prefix),
+                Substitute("Failed to write $0 as Prometheus", name));
+  }
 }
 
 void WriteToJson(JsonWriter* writer,
@@ -392,6 +403,40 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& op
   return Status::OK();
 }
 
+Status MetricEntity::WriteAsPrometheus(PrometheusWriter* writer) const {
+  MetricMap metrics;
+  AttributeMap attrs;
+  MetricFilters filters;
+  filters.entity_level = "debug";
+  const string master_prefix = "kudu_master_";
+  const string tserver_prefix = "kudu_tserver_";
+  const string master_server = "kudu.master";
+  const string tablet_server = "kudu.tabletserver";
+  // Empty filters results in getting all the metrics for this MetricEntity.
+  const auto s = GetMetricsAndAttrs(filters, &metrics, &attrs);
+  if (s.IsNotFound()) {
+    // Status::NotFound is returned when this entity has been filtered, treat it
+    // as OK, and skip printing it.
+    return Status::OK();
+  }
+  RETURN_NOT_OK(s);
+  // Only emit server level metrics
+  if (strcmp(prototype_->name(), "server") == 0) {
+    if (id_ == master_server) {
+      // attach kudu_master_ as prefix to metrics
+      WriteMetricsToPrometheus(writer, metrics, master_prefix);
+      return Status::OK();
+    }
+    if (id_ == tablet_server) {
+      // attach kudu_tserver_ as prefix to metrics
+      WriteMetricsToPrometheus(writer, metrics, tserver_prefix);
+      return Status::OK();
+    }
+  }
+
+  return Status::NotFound("Entity is not relevant to Prometheus");
+}
+
 Status MetricEntity::CollectTo(MergedEntityMetrics* collections,
                                const MetricFilters& filters,
                                const MetricMergeRules& merge_rules) const {
@@ -540,6 +585,22 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& 
   return Status::OK();
 }
 
+Status MetricRegistry::WriteAsPrometheus(PrometheusWriter* writer) const {
+  EntityMap entities;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    entities = entities_;
+  }
+  for (const auto& e : entities) {
+    WARN_NOT_OK(e.second->WriteAsPrometheus(writer),
+                Substitute("Failed to write entity $0 as Prometheus", e.second->id()));
+  }
+
+  entities.clear(); // necessary to deref metrics we just dumped before doing retirement scan.
+  const_cast<MetricRegistry*>(this)->RetireOldMetrics();
+  return Status::OK();
+}
+
 void MetricRegistry::RetireOldMetrics() {
   std::lock_guard<simple_spinlock> l(lock_);
   for (auto it = entities_.begin(); it != entities_.end();) {
@@ -674,6 +735,12 @@ void MetricPrototype::WriteFields(JsonWriter* writer,
   }
 }
 
+void MetricPrototype::WriteFields(PrometheusWriter* writer, const string &prefix) const {
+  writer->WriteEntry(Substitute("# HELP $0$1 $2\n# TYPE $3$4 $5\n",
+                                prefix, name(), description(),
+                                prefix, name(), MetricType::Name(type())));
+}
+
 //
 // FunctionGaugeDetacher
 //
@@ -751,6 +818,14 @@ Status Gauge::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
+Status Gauge::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
+  prototype_->WriteFields(writer, prefix);
+
+  WriteValue(writer, prefix);
+
+  return Status::OK();
+}
+
 //
 // StringGauge
 //
@@ -822,6 +897,24 @@ void StringGauge::WriteValue(JsonWriter* writer) const {
   writer->String(value());
 }
 
+// A string gauge's value can be anything, but Prometheus does not support
+// non-numeric values for gauges with exception of {+,-}Inf and NaN
+// (see https://prometheus.io/docs/instrumenting/exposition_formats/).
+// DCHECK() is added to make sure this method is not called from anywhere,
+// but overriding it is necessary since Gauge::WriteValue() is a pure virtual one.
+// An alternative could be defining a empty implementation for Gauge::WriteValue()
+// virtual method and not adding this empty override here.
+void StringGauge::WriteValue(PrometheusWriter* writer, const std::string& prefix) const {
+  DCHECK(false);
+}
+
+Status StringGauge::WriteAsPrometheus(PrometheusWriter* /*writer*/,
+                                      const std::string& /*prefix*/) const {
+  // Prometheus doesn't support string gauges.
+  // This function ensures that output written to Prometheus is empty.
+  return Status::OK();
+}
+
 //
 // MeanGauge
 //
@@ -883,6 +976,21 @@ void MeanGauge::WriteValue(JsonWriter* writer) const {
   writer->Double(total_count());
 }
 
+void MeanGauge::WriteValue(PrometheusWriter* writer, const std::string& prefix) const {
+  auto output = Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
+                           MetricUnit::Name(prototype_->unit()), value());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\"} $4\n",
+                       prefix, prototype_->name(), "_count",
+                       MetricUnit::Name(prototype_->unit()), total_count());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\"} $4\n",
+                       prefix, prototype_->name(), "_sum",
+                       MetricUnit::Name(prototype_->unit()), total_sum());
+
+  writer->WriteEntry(output);
+}
+
 //
 // Counter
 //
@@ -918,6 +1026,15 @@ Status Counter::WriteAsJson(JsonWriter* writer,
   writer->Int64(value());
 
   writer->EndObject();
+  return Status::OK();
+}
+
+Status Counter::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
+  prototype_->WriteFields(writer, prefix);
+
+  writer->WriteEntry(Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
+                                MetricUnit::Name(prototype_->unit()), value()));
+
   return Status::OK();
 }
 
@@ -974,6 +1091,61 @@ Status Histogram::WriteAsJson(JsonWriter* writer,
   HistogramSnapshotPB snapshot;
   RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, opts));
   writer->Protobuf(snapshot);
+  return Status::OK();
+}
+
+Status Histogram::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
+  prototype_->WriteFields(writer, prefix);
+  std::string output = "";
+  MetricJsonOptions opts;
+  // Snapshot is taken to preserve the consistency across metrics and
+  // requirements given by Prometheus. The value for the _bucket in +Inf
+  // quantile needs to be equal to the total _count
+  HistogramSnapshotPB snapshot;
+  RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, opts));
+
+  output = Substitute("$0$1$2{unit_type=\"$3\", le=\"0.75\"} $4\n",
+                       prefix, prototype_->name(), "_bucket",
+                       MetricUnit::Name(prototype_->unit()),
+                       snapshot.percentile_75());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.95\"} $4\n",
+                       prefix, prototype_->name(), "_bucket",
+                       MetricUnit::Name(prototype_->unit()),
+                       snapshot.percentile_95());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.99\"} $4\n",
+                       prefix, prototype_->name(), "_bucket",
+                       MetricUnit::Name(prototype_->unit()),
+                       snapshot.percentile_99());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.999\"} $4\n",
+                       prefix, prototype_->name(), "_bucket",
+                       MetricUnit::Name(prototype_->unit()),
+                       snapshot.percentile_99_9());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.9999\"} $4\n",
+                       prefix, prototype_->name(), "_bucket",
+                       MetricUnit::Name(prototype_->unit()),
+                       snapshot.percentile_99_99());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"+Inf\"} $4\n",
+                       prefix, prototype_->name(), "_bucket",
+                       MetricUnit::Name(prototype_->unit()),
+                       snapshot.total_count());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\"} $4\n",
+                       prefix, prototype_->name(), "_sum",
+                       MetricUnit::Name(prototype_->unit()),
+                       snapshot.total_sum());
+
+  SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\"} $4\n",
+                       prefix, prototype_->name(), "_count",
+                       MetricUnit::Name(prototype_->unit()),
+                       snapshot.total_count());
+
+  writer->WriteEntry(output);
+
   return Status::OK();
 }
 

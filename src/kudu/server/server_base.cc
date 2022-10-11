@@ -969,6 +969,7 @@ Status ServerBase::Start() {
     AddPostInitializedDefaultPathHandlers(web_server_.get());
     AddRpczPathHandlers(messenger_, web_server_.get());
     RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
+    RegisterMetricsPrometheusHandler(web_server_.get(), metric_registry_.get());
     TracingPathHandlers::RegisterHandlers(web_server_.get());
     web_server_->set_footer_html(FooterHtml());
     web_server_->SetStartupComplete(true);

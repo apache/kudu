@@ -25,11 +25,13 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include "kudu/util/prometheus_writer.h"
 #include "kudu/util/version_info.h"
 #include "kudu/util/version_info.pb.h"
 
@@ -510,6 +512,13 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
   }
 }
 
+static void WriteMetricsAsPrometheus(const MetricRegistry* const metrics,
+                                     const Webserver::WebRequest& /*req*/,
+                                     Webserver::PrerenderedWebResponse* resp) {
+  PrometheusWriter writer(&resp->output);
+  WARN_NOT_OK(metrics->WriteAsPrometheus(&writer), "Couldn't write Prometheus metrics over HTTP");
+}
+
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {
   auto callback = [metrics](const Webserver::WebRequest& req,
                             Webserver::PrerenderedWebResponse* resp) {
@@ -518,13 +527,24 @@ void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* cons
   bool not_styled = false;
   bool not_on_nav_bar = false;
   bool is_on_nav_bar = true;
-  webserver->RegisterPrerenderedPathHandler("/metrics", "Metrics", callback,
+  webserver->RegisterPrerenderedPathHandler("/metrics", "JSON Metrics", callback,
                                             not_styled, is_on_nav_bar);
 
   // The old name -- this is preserved for compatibility with older releases of
   // monitoring software which expects the old name.
   webserver->RegisterPrerenderedPathHandler("/jsonmetricz", "Metrics", callback,
                                             not_styled, not_on_nav_bar);
+}
+
+void RegisterMetricsPrometheusHandler(Webserver* webserver, const MetricRegistry* const metrics) {
+  auto callback = [metrics](const Webserver::WebRequest& req,
+                            Webserver::PrerenderedWebResponse* resp) {
+    WriteMetricsAsPrometheus(metrics, req, resp);
+  };
+  constexpr bool not_styled = false;
+  constexpr bool is_on_nav_bar = true;
+  webserver->RegisterPrerenderedPathHandler("/metrics_prometheus", "Prometheus Metrics", callback,
+                                            not_styled, is_on_nav_bar);
 }
 
 } // namespace kudu

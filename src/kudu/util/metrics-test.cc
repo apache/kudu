@@ -41,6 +41,7 @@
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
+#include "kudu/util/prometheus_writer.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -131,6 +132,22 @@ TEST_F(MetricsTest, ResetCounter) {
   ASSERT_EQ(0, c->value());
 }
 
+TEST_F(MetricsTest, CounterPrometheusTest) {
+  scoped_refptr<Counter> requests =
+    new Counter(&METRIC_test_counter);
+
+  std::ostringstream output;
+  string prefix;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(requests->WriteAsPrometheus(&writer, prefix));
+
+  const string expected_output = "# HELP test_counter Description of test counter\n"
+                                 "# TYPE test_counter counter\n"
+                                 "test_counter{unit_type=\"requests\"} 0\n";
+
+  ASSERT_EQ(expected_output, output.str());
+}
+
 METRIC_DEFINE_gauge_string(test_entity, test_string_gauge, "Test string Gauge",
                            MetricUnit::kState, "Description of string Gauge",
                            kudu::MetricLevel::kInfo);
@@ -184,6 +201,18 @@ TEST_F(MetricsTest, SimpleStringGaugeForMergeTest) {
   state_for_merge->MergeFrom(state_for_merge);
   ASSERT_EQ(unordered_set<string>({"Unavailable", "Under-replicated", "Healthy", "Recovering"}),
             state_for_merge->unique_values());
+}
+
+TEST_F(MetricsTest, StringGaugePrometheusTest) {
+  scoped_refptr<StringGauge> state =
+    new StringGauge(&METRIC_test_string_gauge, "Healthy");
+
+  std::ostringstream output;
+  string prefix;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(state->WriteAsPrometheus(&writer, prefix));
+  // String Gauges are not representable in Prometheus, empty output is expected
+  ASSERT_EQ("", output.str());
 }
 
 METRIC_DEFINE_gauge_double(test_entity, test_mean_gauge, "Test mean Gauge",
@@ -260,8 +289,31 @@ TEST_F(MetricsTest, TestMeanGaugeJsonPrint) {
   ASSERT_EQ(value, kTotalSum/kTotalCount);
 }
 
+
+TEST_F(MetricsTest, MeanGaugePrometheusTest) {
+  scoped_refptr<MeanGauge> average_usage =
+    METRIC_test_mean_gauge.InstantiateMeanGauge(entity_);
+
+  std::ostringstream output;
+  string prefix;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(average_usage->WriteAsPrometheus(&writer, prefix));
+
+  const string expected_output = "# HELP test_mean_gauge Description of mean Gauge\n"
+                                 "# TYPE test_mean_gauge gauge\n"
+                                 "test_mean_gauge{unit_type=\"units\"} 0\n"
+                                 "test_mean_gauge_count{unit_type=\"units\"} 0\n"
+                                 "test_mean_gauge_sum{unit_type=\"units\"} 0\n";
+
+  ASSERT_EQ(expected_output, output.str());
+}
+
 METRIC_DEFINE_gauge_uint64(test_entity, test_gauge, "Test uint64 Gauge",
                            MetricUnit::kBytes, "Description of Test Gauge",
+                           kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_gauge_bool(test_entity, test_gauge_bool, "Test boolean Gauge",
+                           MetricUnit::kState, "Description of Test boolean Gauge",
                            kudu::MetricLevel::kInfo);
 
 TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
@@ -321,6 +373,38 @@ TEST_F(MetricsTest, SimpleAtomicGaugeMinTypeMergeTest) {
   ASSERT_EQ(1, start_time_for_merge->value());
   start_time_for_merge->MergeFrom(start_time_for_merge);
   ASSERT_EQ(1, start_time_for_merge->value());
+}
+
+TEST_F(MetricsTest, AtomicGaugePrometheusTest) {
+  scoped_refptr<AtomicGauge<uint64_t> > mem_usage =
+    METRIC_test_gauge.Instantiate(entity_, 0);
+
+  std::ostringstream output;
+  string prefix;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(mem_usage->WriteAsPrometheus(&writer, prefix));
+
+  const string expected_output = "# HELP test_gauge Description of Test Gauge\n"
+                                 "# TYPE test_gauge gauge\n"
+                                 "test_gauge{unit_type=\"bytes\"} 0\n";
+
+  ASSERT_EQ(expected_output, output.str());
+}
+
+TEST_F(MetricsTest, AtomicGaugeBooleanPrometheusTest) {
+  scoped_refptr<AtomicGauge<bool> > clock_extrapolating =
+    METRIC_test_gauge_bool.Instantiate(entity_, false);
+
+  std::ostringstream output;
+  string prefix;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(clock_extrapolating->WriteAsPrometheus(&writer, prefix));
+
+  const string expected_output = "# HELP test_gauge_bool Description of Test boolean Gauge\n"
+                                 "# TYPE test_gauge_bool gauge\n"
+                                 "test_gauge_bool{unit_type=\"state\"} 0\n";
+
+  ASSERT_EQ(expected_output, output.str());
 }
 
 METRIC_DEFINE_gauge_int64(test_entity, test_func_gauge, "Test Function Gauge",
@@ -462,6 +546,24 @@ TEST_F(MetricsTest, AutoDetachToConstant) {
   ASSERT_EQ(12345, gauge->value());
 }
 
+TEST_F(MetricsTest, FunctionGaugePrometheusTest) {
+  int metric_val = 1000;
+  scoped_refptr<FunctionGauge<int64_t> > gauge =
+    METRIC_test_func_gauge.InstantiateFunctionGauge(
+        entity_, [&metric_val]() { return MyFunction(&metric_val); });
+
+  std::ostringstream output;
+  string prefix;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(gauge->WriteAsPrometheus(&writer, prefix));
+
+  const string expected_output = "# HELP test_func_gauge Test Gauge 2\n"
+                                 "# TYPE test_func_gauge gauge\n"
+                                 "test_func_gauge{unit_type=\"bytes\"} 1000\n";
+
+  ASSERT_EQ(expected_output, output.str());
+}
+
 METRIC_DEFINE_gauge_uint64(test_entity, counter_as_gauge, "Gauge exposed as Counter",
                            MetricUnit::kBytes, "Gauge exposed as Counter",
                            kudu::MetricLevel::kInfo,
@@ -513,6 +615,28 @@ TEST_F(MetricsTest, SimpleHistogramMergeTest) {
   hist_for_merge->MergeFrom(hist_for_merge);
   ASSERT_EQ(6, hist_for_merge->histogram()->TotalCount());
   ASSERT_EQ(18, hist_for_merge->histogram()->TotalSum());
+}
+
+TEST_F(MetricsTest, HistogramPrometheusTest) {
+  scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(entity_);
+
+  std::ostringstream output;
+  PrometheusWriter writer(&output);
+  string prefix;
+  ASSERT_OK(hist->WriteAsPrometheus(&writer, prefix));
+
+  const string expected_output = "# HELP test_hist foo\n"
+                                 "# TYPE test_hist histogram\n"
+                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.75\"} 0\n"
+                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.95\"} 0\n"
+                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.99\"} 0\n"
+                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.999\"} 0\n"
+                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"0.9999\"} 0\n"
+                                 "test_hist_bucket{unit_type=\"milliseconds\", le=\"+Inf\"} 0\n"
+                                 "test_hist_sum{unit_type=\"milliseconds\"} 0\n"
+                                 "test_hist_count{unit_type=\"milliseconds\"} 0\n";
+
+  ASSERT_EQ(expected_output, output.str());
 }
 
 TEST_F(MetricsTest, JsonPrintTest) {

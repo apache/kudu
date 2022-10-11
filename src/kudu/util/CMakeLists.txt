@@ -221,6 +221,7 @@ set(UTIL_SRCS
   pb_util.cc
   pb_util-internal.cc
   process_memory.cc
+  prometheus_writer.cc
   random_util.cc
   rolling_log.cc
   rw_mutex.cc
