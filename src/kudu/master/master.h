@@ -28,6 +28,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/kserver/kserver.h"
 #include "kudu/master/master_options.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/status.h"
 
@@ -37,6 +38,7 @@ class HostPort;
 class MaintenanceManager;
 class MonoDelta;
 class MonoTime;
+class Sockaddr;
 class Thread;
 class ThreadPool;
 
@@ -102,7 +104,9 @@ class Master : public kserver::KuduServer {
   LocationCache* location_cache() { return location_cache_.get(); }
 
   // Get the RPC and HTTP addresses for this master instance.
-  Status GetMasterRegistration(ServerRegistrationPB* registration) const;
+  // Whether to use external/proxied address for master registration.
+  Status GetMasterRegistration(ServerRegistrationPB* registration,
+                               bool use_external_addr) const;
 
   // Get node instance, Raft role, RPC and HTTP addresses for all
   // masters.
@@ -114,7 +118,8 @@ class Master : public kserver::KuduServer {
   // client; cache this information with a TTL (possibly in another
   // SysTable), so that we don't have to perform an RPC call on every
   // request.
-  Status ListMasters(std::vector<ServerEntryPB>* masters) const;
+  Status ListMasters(std::vector<ServerEntryPB>* masters,
+                     bool use_external_addr) const;
 
   enum MasterType {
     ALL,
@@ -142,6 +147,12 @@ class Master : public kserver::KuduServer {
 
   MaintenanceManager* maintenance_manager() {
     return maintenance_manager_.get();
+  }
+
+  // A shortcut to get addresses this master server is configured with
+  // for processing RPCs proxied from an external network.
+  const std::vector<Sockaddr>& rpc_proxied_addresses() const {
+    return rpc_server()->GetRpcProxiedAddresses();
   }
 
  private:

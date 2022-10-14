@@ -22,6 +22,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -41,7 +42,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
-#include "kudu/master/ts_descriptor.h"
+#include "kudu/master/ts_descriptor.h"  // IWYU pragma: keep
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/tls_context.h"
@@ -203,6 +204,7 @@ class RegistrationTest : public KuduTest {
         RETURN_NOT_OK(ls);
         s = catalog->GetTabletLocations(tablet_id,
                                         master::VOTER_REPLICA,
+                                        /*use_external_addr=*/false,
                                         &loc,
                                         &infos_dict,
                                         /*user=*/nullopt);
@@ -232,7 +234,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 
   // Verify that the registration is sane.
   ServerRegistrationPB reg;
-  descs[0]->GetRegistration(&reg);
+  ASSERT_OK(descs[0]->GetRegistration(&reg));
   {
     SCOPED_TRACE(SecureShortDebugString(reg));
     ASSERT_EQ(string::npos, SecureShortDebugString(reg).find("0.0.0.0"))
@@ -266,12 +268,12 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
   // Verify that the master's software version exists.
   ServerRegistrationPB reg;
-  cluster_->mini_master()->master()->GetMasterRegistration(&reg);
+  cluster_->mini_master()->master()->GetMasterRegistration(
+      &reg, /*use_external_addr=*/false);
   {
     SCOPED_TRACE(SecureShortDebugString(reg));
     ASSERT_TRUE(reg.has_software_version());
-    ASSERT_STR_CONTAINS(reg.software_version(),
-                        VersionInfo::GetVersionInfo());
+    ASSERT_STR_CONTAINS(reg.software_version(), VersionInfo::GetVersionInfo());
     ASSERT_LE(setup_time_, reg.start_time());
     ASSERT_LE(reg.start_time(), WallTime_Now());
   }
@@ -279,7 +281,8 @@ TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
 
 TEST_F(RegistrationTest, TestServerStartWallTime) {
   ServerRegistrationPB reg;
-  cluster_->mini_master()->master()->GetMasterRegistration(&reg);
+  cluster_->mini_master()->master()->GetMasterRegistration(
+      &reg, /*use_external_addr=*/false);
   ASSERT_LE(setup_time_, reg.start_time());
   ASSERT_LE(reg.start_time(), WallTime_Now());
 

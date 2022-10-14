@@ -28,13 +28,13 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 template <class T> class scoped_refptr;
 
 namespace kudu {
-class HostPort;
 
 namespace rpc {
 class AcceptorPool;
@@ -48,6 +48,10 @@ struct RpcServerOptions {
 
   std::string rpc_bind_addresses;
   std::string rpc_advertised_addresses;
+
+  std::string rpc_proxied_addresses;
+  std::string rpc_proxy_advertised_addresses;
+
   uint32_t num_acceptors_per_address;
   uint32_t num_service_threads;
   uint16_t default_port;
@@ -94,6 +98,14 @@ class RpcServer {
   Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
   Status GetAdvertisedHostPorts(std::vector<HostPort>* hostports) const WARN_UNUSED_RESULT;
 
+  // Return addresses advertised at a TCP proxy for clients connecting from
+  // an external network.
+  const std::vector<HostPort>& GetProxyAdvertisedHostPorts() const;
+
+  // Return addresses this RPC server is configured with for processing RPCs
+  // proxied from an external network (might be wildcard addresses).
+  const std::vector<Sockaddr>& GetRpcProxiedAddresses() const;
+
   const rpc::ServicePool* service_pool(const std::string& service_name) const;
 
   // Return all of the currently-registered service pools.
@@ -123,6 +135,16 @@ class RpcServer {
   // Parsed addresses to advertise. Set by Init(). Empty if rpc_bind_addresses_
   // should be advertised.
   std::vector<Sockaddr> rpc_advertised_addresses_;
+
+  // Endpoints for forwarded/proxied RPCs from external network(s).
+  std::vector<Sockaddr> rpc_proxied_addresses_;
+
+  // RPC endpoints in external network that are proxied/forwarded to RPC
+  // endpoints this server is bound to in the local/internal network.
+  // External endpoints are not being resolved into Sockaddr since the DNS
+  // resolver in the internal network might have no idea of the external
+  // network's DNS records.
+  std::vector<HostPort> rpc_proxy_advertised_hostports_;
 
   std::vector<std::shared_ptr<rpc::AcceptorPool> > acceptor_pools_;
 

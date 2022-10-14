@@ -527,14 +527,17 @@ Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr) {
 }
 
 bool IsAddrOneOf(const Sockaddr& addr, const vector<Sockaddr>& ref_addresses) {
-  DCHECK(addr.is_ip());
-  DCHECK(!addr.IsWildcard());
+  if (!addr.is_ip()) {
+    return false;
+  }
   DCHECK_NE(0, addr.port());
   const bool have_match = std::any_of(
       ref_addresses.begin(),
       ref_addresses.end(),
       [&addr](const Sockaddr& s) {
-        DCHECK(s.is_ip());
+        if (!s.is_ip()) {
+          return false;
+        }
         const bool is_same_or_wildcard_port = s.port() == addr.port() ||
             s.port() == 0;
         if (s.IsWildcard()) {

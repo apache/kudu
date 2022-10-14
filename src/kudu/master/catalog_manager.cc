@@ -5037,7 +5037,7 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
     peer->mutable_attrs()->set_promote(true);
   }
   ServerRegistrationPB peer_reg;
-  extra_replica->GetRegistration(&peer_reg);
+  DCHECK_OK(extra_replica->GetRegistration(&peer_reg));
   CHECK_GT(peer_reg.rpc_addresses_size(), 0);
   *peer->mutable_last_known_addr() = peer_reg.rpc_addresses(0);
   peer->set_member_type(member_type_);
@@ -6023,7 +6023,7 @@ Status CatalogManager::SelectReplicasForTablet(const PlacementPolicy& policy,
                                    tablet->id(), table_guard.data().name()));
   for (const auto& desc : descriptors) {
     ServerRegistrationPB reg;
-    desc->GetRegistration(&reg);
+    RETURN_NOT_OK(desc->GetRegistration(&reg));
 
     RaftPeerPB* peer = config->add_peers();
     peer->set_member_type(RaftPeerPB::VOTER);
@@ -6119,6 +6119,7 @@ Status CatalogManager::ProcessDeletedTables(const vector<scoped_refptr<TableInfo
 Status CatalogManager::BuildLocationsForTablet(
     const scoped_refptr<TabletInfo>& tablet,
     ReplicaTypeFilter filter,
+    bool use_external_addr,
     TabletLocationsPB* locs_pb,
     TSInfosDict* ts_infos_dict) {
   TabletMetadataLock l_tablet(tablet.get(), LockMode::READ);
@@ -6163,37 +6164,57 @@ Status CatalogManager::BuildLocationsForTablet(
     }
 
     // Helper function to create a TSInfoPB.
-    auto fill_tsinfo_pb = [this, &peer](TSInfoPB* tsinfo_pb) {
+    auto fill_tsinfo_pb = [this, &peer, use_external_addr](TSInfoPB* tsinfo_pb) {
       tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());
       shared_ptr<TSDescriptor> ts_desc;
       if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
-        ts_desc->GetTSInfoPB(tsinfo_pb);
-      } else {
-        // If we've never received a heartbeat from the tserver, we'll fall back
-        // to the last known RPC address in the RaftPeerPB.
-        //
-        // TODO(wdberkeley): We should track these RPC addresses in the master table itself.
-        tsinfo_pb->add_rpc_addresses()->CopyFrom(peer.last_known_addr());
+        ts_desc->GetTSInfoPB(tsinfo_pb, use_external_addr);
+        return true;
       }
+      // If we've never received a heartbeat from the tserver, we'll fall back
+      // to the last known RPC address in the RaftPeerPB.
+      //
+      // TODO(wdberkeley): We should track these RPC addresses in the master table itself.
+      //
+      if (!use_external_addr) {
+        tsinfo_pb->add_rpc_addresses()->CopyFrom(peer.last_known_addr());
+        return true;
+      }
+      return false;
     };
 
     const auto role = GetParticipantRole(peer, cstate);
     const optional<string> dimension = l_tablet.data().pb.has_dimension_label()
         ? make_optional(l_tablet.data().pb.dimension_label()) : nullopt;
+
+    // Don't even add a TSInfo entry when using external addresses if
+    // proxy-advertised address for the peer isn't yet known at this point.
+    // That's to avoid exposing internal addresses to clients running outside
+    // of the cluster since they cannot make requests to internal addresses
+    // anyways, so from their standpoint a replica without such address
+    // doesn't even exist.
     if (ts_infos_dict) {
       const auto idx = ts_infos_dict->LookupOrAdd(peer.permanent_uuid(), fill_tsinfo_pb);
-      auto* interned_replica_pb = locs_pb->add_interned_replicas();
-      interned_replica_pb->set_ts_info_idx(idx);
-      interned_replica_pb->set_role(role);
-      if (dimension) {
-        interned_replica_pb->set_dimension_label(*dimension);
+      if (idx >= 0) {
+        auto* interned_replica_pb = locs_pb->add_interned_replicas();
+        interned_replica_pb->set_ts_info_idx(idx);
+        interned_replica_pb->set_role(role);
+        if (dimension) {
+          interned_replica_pb->set_dimension_label(*dimension);
+        }
       }
     } else {
-      TabletLocationsPB_DEPRECATED_ReplicaPB* replica_pb = locs_pb->add_deprecated_replicas();
-      TSInfoPB* tsi = google::protobuf::Arena::CreateMessage<TSInfoPB>(locs_pb->GetArena());
-      fill_tsinfo_pb(tsi);
-      replica_pb->set_allocated_ts_info(tsi);
-      replica_pb->set_role(role);
+      auto* replica_pb = locs_pb->add_deprecated_replicas();
+      auto* arena = locs_pb->GetArena();
+      TSInfoPB* tsi = google::protobuf::Arena::CreateMessage<TSInfoPB>(arena);
+      if (fill_tsinfo_pb(tsi)) {
+        replica_pb->set_allocated_ts_info(tsi);
+        replica_pb->set_role(role);
+      } else {
+        if (!arena) {
+          delete tsi;
+        }
+      }
     }
   }
 
@@ -6208,6 +6229,7 @@ Status CatalogManager::BuildLocationsForTablet(
 
 Status CatalogManager::GetTabletLocations(const string& tablet_id,
                                           ReplicaTypeFilter filter,
+                                          bool use_external_addr,
                                           TabletLocationsPB* locs_pb,
                                           TSInfosDict* ts_infos_dict,
                                           const optional<string>& user) {
@@ -6234,7 +6256,8 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
         NormalizeTableName(table_lock.data().name()), *user, *user == table_lock.data().owner()));
   }
 
-  return BuildLocationsForTablet(tablet_info, filter, locs_pb, ts_infos_dict);
+  return BuildLocationsForTablet(
+      tablet_info, filter, use_external_addr, locs_pb, ts_infos_dict);
 }
 
 Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletResponsePB* resp) {
@@ -6328,6 +6351,7 @@ Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletRespo
 
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
                                          GetTableLocationsResponsePB* resp,
+                                         bool use_external_addr,
                                          const optional<string>& user) {
   // If start-key is > end-key report an error instead of swapping the two
   // since probably there is something wrong app-side.
@@ -6383,7 +6407,10 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   bool consistent_locations = true;
   for (const auto& tablet : tablets_in_range) {
     const auto s = BuildLocationsForTablet(
-        tablet, req->replica_type_filter(), resp->add_tablet_locations(),
+        tablet,
+        req->replica_type_filter(),
+        use_external_addr,
+        resp->add_tablet_locations(),
         req->intern_ts_infos_in_response() ? &infos_dict : nullptr);
     if (PREDICT_TRUE(s.ok())) {
       continue;
@@ -6736,14 +6763,19 @@ CatalogManager::TSInfosDict::~TSInfosDict() {
 }
 
 int CatalogManager::TSInfosDict::LookupOrAdd(const string& uuid,
-                                             const std::function<void(TSInfoPB*)>& creator) {
+                                             const std::function<bool(TSInfoPB*)>& creator) {
   return *ComputePairIfAbsent(&uuid_to_idx_, uuid, [&]() -> pair<StringPiece, int> {
-    auto idx = ts_info_pbs_.size();
     auto* pb = google::protobuf::Arena::CreateMessage<TSInfoPB>(arena_);
-    ts_info_pbs_.push_back(pb);
-    creator(pb);
-    DCHECK_EQ(pb->permanent_uuid(), uuid);
-    return {pb->permanent_uuid(), idx};
+    if (creator(pb)) {
+      DCHECK_EQ(pb->permanent_uuid(), uuid);
+      auto idx = ts_info_pbs_.size();
+      ts_info_pbs_.push_back(pb);
+      return {pb->permanent_uuid(), idx};
+    }
+    if (!arena_) {
+      delete pb;
+    }
+    return {"", -1};
   });
 }
 

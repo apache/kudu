@@ -28,6 +28,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -339,12 +340,32 @@ void Heartbeater::Thread::SetupCommonField(master::TSToMasterCommonPB* common) {
 Status Heartbeater::Thread::SetupRegistration(ServerRegistrationPB* reg) {
   reg->Clear();
 
-  vector<HostPort> hps;
-  RETURN_NOT_OK(server_->rpc_server()->GetAdvertisedHostPorts(&hps));
-  for (const auto& hp : hps) {
-    auto* pb = reg->add_rpc_addresses();
-    pb->set_host(hp.host());
-    pb->set_port(hp.port());
+  // Populate the RPC addresses for communicating within the internal network.
+  {
+    vector<HostPort> hps;
+    RETURN_NOT_OK(server_->rpc_server()->GetAdvertisedHostPorts(&hps));
+    for (const auto& hp : hps) {
+      auto* pb = reg->add_rpc_addresses();
+      pb->set_host(hp.host());
+      pb->set_port(hp.port());
+    }
+  }
+
+  // Populate the RPC addresses for communicating with clients from
+  // external networks.
+  {
+    const auto* srv = server_->rpc_server();
+    const auto& hps = srv->GetProxyAdvertisedHostPorts();
+    for (const auto& hp : hps) {
+      auto* pb = reg->add_rpc_proxy_addresses();
+      pb->set_host(hp.host());
+      pb->set_port(hp.port());
+    }
+    // The RPC proxy-advertised addresses and the proxied RPC addresses should
+    // be either both empty or both non-empty. However, the number addresses
+    // a server uses to process proxied RPCs might differ from the number of
+    // advertised RPC addresses at proxy.
+    DCHECK_EQ(hps.empty(), srv->GetRpcProxiedAddresses().empty());
   }
   // Now fetch any UNIX domain sockets.
   vector<Sockaddr> addrs;

@@ -147,6 +147,12 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*
   }
   // Process the registered tservers.
   for (const auto& desc : descs) {
+    ServerRegistrationPB reg;
+    if (auto s = desc->GetRegistration(&reg); PREDICT_FALSE(!s.ok())) {
+      LOG(WARNING) << s.ToString();
+      continue;
+    }
+
     const string& ts_uuid = desc->permanent_uuid();
     string ts_key;
     auto* ts_state_info = FindOrNull(ts_state_infos, ts_uuid);
@@ -164,8 +170,6 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*
     }
     EasyJson ts_json = (*output)[ts_key].PushBack(EasyJson::kObject);
 
-    ServerRegistrationPB reg;
-    desc->GetRegistration(&reg);
     ts_json["uuid"] = ts_uuid;
     if (!reg.http_addresses().empty()) {
       string webserver = Substitute("$0://$1:$2",
@@ -556,9 +560,10 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
 void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
                                        Webserver::WebResponse* resp) {
+  // TODO(aserbin): update this to work with proxied RPCs
   EasyJson* output = &resp->output;
   vector<ServerEntryPB> masters;
-  Status s = master_->ListMasters(&masters);
+  Status s = master_->ListMasters(&masters, /*use_external_addr=*/false);
   if (!s.ok()) {
     string msg = s.CloneAndPrepend("Unable to list Masters").ToString();
     LOG(WARNING) << msg;
@@ -737,13 +742,16 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
   vector<shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
   for (const auto& desc : descs) {
+    ServerRegistrationPB reg;
+    if (auto s = desc->GetRegistration(&reg); PREDICT_FALSE(!s.ok())) {
+      LOG(WARNING) << s.ToString();
+      continue;
+    }
+
     jw.StartObject();
 
     jw.String("uuid");
     jw.String(desc->permanent_uuid());
-
-    ServerRegistrationPB reg;
-    desc->GetRegistration(&reg);
 
     jw.String("rpc_addrs");
     jw.StartArray();
@@ -819,8 +827,10 @@ Status MasterPathHandlers::Register(Webserver* server) {
 pair<string, string> MasterPathHandlers::TSDescToLinkPair(const TSDescriptor& desc,
                                                           const string& tablet_id) const {
   ServerRegistrationPB reg;
-  desc.GetRegistration(&reg);
-  if (reg.http_addresses().empty()) {
+  if (auto s = desc.GetRegistration(&reg); !s.ok() || reg.http_addresses().empty()) {
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG(WARNING) << s.ToString();
+    }
     return std::make_pair(desc.permanent_uuid(), "");
   }
   string text = Substitute("$0:$1", reg.http_addresses(0).host(), reg.http_addresses(0).port());
@@ -857,8 +867,11 @@ string MasterPathHandlers::MasterAddrsToCsv() const {
 }
 
 Status MasterPathHandlers::GetLeaderMasterHttpAddr(string* leader_http_addr) const {
+  // TODO(aserbin): update this to work with proxied RPCs
   vector<ServerEntryPB> masters;
-  RETURN_NOT_OK_PREPEND(master_->ListMasters(&masters), "unable to list masters");
+  RETURN_NOT_OK_PREPEND(master_->ListMasters(&masters,
+                                             /*use_external_addr=*/false),
+                        "unable to list masters");
   for (const auto& master : masters) {
     if (master.has_error()) {
       continue;

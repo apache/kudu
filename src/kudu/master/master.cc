@@ -235,6 +235,7 @@ Status Master::Init() {
       FLAGS_authz_token_validity_seconds,
       FLAGS_tsk_rotation_seconds,
       messenger_->shared_token_verifier()));
+
   state_ = kInitialized;
   return Status::OK();
 }
@@ -392,11 +393,27 @@ Status Master::WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& 
                           s.ToString());
 }
 
-Status Master::GetMasterRegistration(ServerRegistrationPB* reg) const {
+Status Master::GetMasterRegistration(ServerRegistrationPB* reg,
+                                     bool use_external_addr) const {
   if (!registration_initialized_.load(std::memory_order_acquire)) {
     return Status::ServiceUnavailable("Master startup not complete");
   }
   reg->CopyFrom(registration_);
+  if (use_external_addr) {
+    DCHECK_GT(reg->rpc_proxy_addresses_size(), 0);
+    if (reg->rpc_proxy_addresses_size() > 0) {
+      reg->clear_rpc_addresses();
+      reg->mutable_rpc_addresses()->CopyFrom(reg->rpc_proxy_addresses());
+    }
+
+    // TODO(aserbin): uncomment once the webserver proxy advertised addresses
+    //                are properly propagated in the code
+    //DCHECK_GT(reg->proxy_http_addresses_size(), 0);
+    if (reg->http_proxy_addresses_size() > 0) {
+      reg->clear_http_addresses();
+      reg->mutable_http_addresses()->CopyFrom(reg->http_proxy_addresses());
+    }
+  }
   return Status::OK();
 }
 
@@ -503,7 +520,8 @@ Status Master::DeleteExpiredReservedTables() {
   return Status::OK();
 }
 
-Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
+Status Master::ListMasters(vector<ServerEntryPB>* masters,
+                           bool use_external_addr) const {
   auto consensus = catalog_manager_->master_consensus();
   if (!consensus) {
     return Status::IllegalState("consensus not running");
@@ -516,7 +534,8 @@ Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
   if (config.peers_size() == 1) {
     ServerEntryPB local_entry;
     local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
-    RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
+    RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration(),
+                                        use_external_addr));
     local_entry.set_role(RaftPeerPB::LEADER);
     local_entry.set_cluster_id(catalog_manager_->GetClusterId());
     local_entry.set_member_type(RaftPeerPB::VOTER);
@@ -525,6 +544,7 @@ Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
   }
 
   // For distributed master configuration.
+  // TODO(aserbin): update this to work with proxied RPCs
   for (const auto& peer : config.peers()) {
     HostPort hp = HostPortFromPB(peer.last_known_addr());
     ServerEntryPB peer_entry;

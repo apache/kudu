@@ -87,6 +87,21 @@ message NodeInstancePB {
 message ServerRegistrationPB {
   repeated HostPortPB rpc_addresses = 1;
   repeated HostPortPB http_addresses = 2;
+
+  // Addresses of this server's RPC endpoints advertised at a TCP proxy.
+  // It's assumed the proxy forwards RPC requests from the specified addresses
+  // to a dedicated RPC endpoint so that the server knows that requests came
+  // from the outside, and it can process it accordingly (e.g., transforming
+  // the internal addresses to be reachable from the outside via the proxied
+  // endpoints, etc.).
+  repeated HostPortPB rpc_proxy_addresses = 7;
+
+  // Addresses of this server's embedded web server HTTP/HTTPS endpoints
+  // advertised at a TCP (HTTP?) proxy. It's assumed the proxy forwards HTTP
+  // requests from the specified addresses to the addresses specified in the
+  // 'http_addresses' field.
+  repeated HostPortPB http_proxy_addresses = 8;
+
   optional string software_version = 3;
 
   // True if HTTPS has been enabled for the web interface.

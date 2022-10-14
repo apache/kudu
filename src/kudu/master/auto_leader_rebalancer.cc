@@ -155,7 +155,12 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
       // This will only return tablet replicas in the RUNNING state, and
       // filter to only retrieve voter replicas.
       RETURN_NOT_OK(catalog_manager_->GetTabletLocations(
-          tablet->id(), ReplicaTypeFilter::VOTER_REPLICA, &locs_pb, &ts_infos_dict, nullopt));
+          tablet->id(),
+          ReplicaTypeFilter::VOTER_REPLICA,
+          /*use_external_addr=*/false,
+          &locs_pb,
+          &ts_infos_dict,
+          nullopt));
     }
 
     // Build a summary for each replica of the tablet.

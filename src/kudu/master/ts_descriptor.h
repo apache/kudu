@@ -104,9 +104,16 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Copy the current registration info into the given PB object.
   // A safe copy is returned because the internal Registration object
   // may be mutated at any point if the tablet server re-registers.
-  void GetRegistration(ServerRegistrationPB* reg) const;
+  // If 'use_external_addr' is 'true', return information targeted to clients
+  // in the external networks from where RPCs are proxied into the cluster's
+  // internal network.
+  // Return Status::OK() if the registration has been successfully filled in,
+  // non-OK if misconfiguration related to the usage of external addresses
+  // has been detected.
+  Status GetRegistration(ServerRegistrationPB* reg,
+                         bool use_external_addr = false) const;
 
-  void GetTSInfoPB(TSInfoPB* tsinfo_pb) const;
+  void GetTSInfoPB(TSInfoPB* tsinfo_pb, bool use_external_addr) const;
 
   void GetNodeInstancePB(NodeInstancePB* instance_pb) const;
 

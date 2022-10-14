@@ -737,6 +737,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Returns an error if any of the tablets are not running.
   Status GetTableLocations(const GetTableLocationsRequestPB* req,
                            GetTableLocationsResponsePB* resp,
+                           bool use_external_addr,
                            const std::optional<std::string>& user);
 
   // Dictionary mapping tablet servers to indexes, so that when a GetTableLocations
@@ -755,7 +756,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
     // Lookup the index for the given tablet server UUID. If that UUID has not been
     // added yet, allocates a new TSInfoPB and calls 'creator(pb)' to fill it in,
     // returning the index of the newly-added TS.
-    int LookupOrAdd(const std::string& uuid, const std::function<void(TSInfoPB*)>& creator);
+    int LookupOrAdd(const std::string& uuid,
+                    const std::function<bool(TSInfoPB*)>& creator);
 
     const std::vector<TSInfoPB*>& ts_info_pbs() const { return ts_info_pbs_; }
 
@@ -781,6 +783,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // This only returns tablets which are in RUNNING state.
   Status GetTabletLocations(const std::string& tablet_id,
                             master::ReplicaTypeFilter filter,
+                            bool use_external_addr,
                             TabletLocationsPB* locs_pb,
                             TSInfosDict* ts_infos_dict,
                             const std::optional<std::string>& user);
@@ -1122,6 +1125,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Returns Status::ServiceUnavailable if tablet is not running.
   Status BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
                                  master::ReplicaTypeFilter filter,
+                                 bool use_external_addr,
                                  TabletLocationsPB* locs_pb,
                                  TSInfosDict* ts_infos_dict);
 

@@ -21,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -40,7 +41,6 @@
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
-#include "kudu/clock/time_service.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
@@ -248,7 +248,8 @@ class ConsistencyITest : public MiniClusterITestBase {
     GetTableLocationsResponsePB resp;
     CatalogManager::ScopedLeaderSharedLock l(catalog);
     RETURN_NOT_OK(l.first_failed_status());
-    RETURN_NOT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/std::nullopt));
+    RETURN_NOT_OK(catalog->GetTableLocations(
+        &req, &resp, /*use_external_addr=*/false, /*user=*/std::nullopt));
     if (resp.tablet_locations_size() < 1) {
       return Status::NotFound(Substitute("$0: no tablets for key", key_value));
     }

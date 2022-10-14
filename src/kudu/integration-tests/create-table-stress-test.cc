@@ -21,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -256,7 +257,8 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(0);
-    Status s = catalog->GetTableLocations(&req, &resp, /*user=*/nullopt);
+    Status s = catalog->GetTableLocations(
+        &req, &resp, /*use_external_addr=*/false, /*user=*/nullopt);
     ASSERT_STR_CONTAINS(
         s.ToString(),
         "max_returned_locations must be greater than 0 if specified");
@@ -269,7 +271,8 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(1);
-    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
+    ASSERT_OK(catalog->GetTableLocations(
+        &req, &resp, /*use_external_addr=*/false, /*user=*/nullopt));
     ASSERT_EQ(resp.tablet_locations_size(), 1);
     // empty since it's the first
     ASSERT_EQ(resp.tablet_locations(0).partition().partition_key_start(), "");
@@ -284,7 +287,8 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(half_tablets);
-    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
+    ASSERT_OK(catalog->GetTableLocations(
+        &req, &resp, /*use_external_addr=*/false, /*user=*/nullopt));
     ASSERT_EQ(half_tablets, resp.tablet_locations_size());
   }
 
@@ -295,7 +299,8 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(FLAGS_num_test_tablets);
-    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
+    ASSERT_OK(catalog->GetTableLocations(
+        &req, &resp, /*use_external_addr=*/false, /*user=*/nullopt));
     ASSERT_EQ(FLAGS_num_test_tablets, resp.tablet_locations_size());
   }
 
@@ -339,7 +344,8 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(1);
     req.set_partition_key_start(start_key_middle);
-    ASSERT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/nullopt));
+    ASSERT_OK(catalog->GetTableLocations(
+        &req, &resp, /*use_external_addr=*/false, /*user=*/nullopt));
     ASSERT_EQ(1, resp.tablet_locations_size())
         << "Response: [" << pb_util::SecureDebugString(resp) << "]";
     ASSERT_EQ(start_key_middle, resp.tablet_locations(0).partition().partition_key_start());

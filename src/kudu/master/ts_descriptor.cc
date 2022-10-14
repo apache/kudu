@@ -32,6 +32,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
@@ -210,17 +211,44 @@ double TSDescriptor::RecentReplicaCreations() {
   return recent_replica_creations_;
 }
 
-void TSDescriptor::GetRegistration(ServerRegistrationPB* reg) const {
+Status TSDescriptor::GetRegistration(ServerRegistrationPB* reg,
+                                     bool use_external_addr) const {
   shared_lock<rw_spinlock> l(lock_);
   CHECK(registration_) << "No registration";
   CHECK_NOTNULL(reg)->CopyFrom(*registration_);
+
+  if (use_external_addr) {
+    // For a tablet server to be reachable from the outside, its registration
+    // should have at least one address in rpc_proxy_addresses and one element
+    // in proxy_http_addresses, otherwise it might be a misconfiguration.
+    //
+    // The internal addresses are not exposed to the outside, and addresses
+    // advertised by a proxy to outside clients are reported as the only
+    // available ones for a tablet server.
+    // TODO(aserbin): add condition on reg->http_proxy_addresses_size()
+    //                once http_proxy_addresses flag is introduced
+    if (PREDICT_FALSE(reg->rpc_proxy_addresses_size() <= 0)) {
+      const auto msg = Substitute(
+          "server $0 lacks proxy advertised addresses", ToString());
+      DCHECK(false) << msg;
+      return Status::IllegalState(msg);
+    }
+    reg->mutable_rpc_addresses()->Swap(reg->mutable_rpc_proxy_addresses());
+    reg->clear_rpc_proxy_addresses();
+
+    // TODO(aserbin): uncomment once http_proxy_addresses flag is introduced
+    //reg->mutable_http_addresses()->Swap(reg->mutable_http_proxy_addresses());
+    //reg->clear_http_proxy_addresses();
+  }
+  return Status::OK();
 }
 
-void TSDescriptor::GetTSInfoPB(TSInfoPB* tsinfo_pb) const {
+void TSDescriptor::GetTSInfoPB(TSInfoPB* tsinfo_pb, bool use_external_addr) const {
   shared_lock<rw_spinlock> l(lock_);
   CHECK(registration_);
   const auto& reg = *registration_;
-  tsinfo_pb->mutable_rpc_addresses()->CopyFrom(reg.rpc_addresses());
+  tsinfo_pb->mutable_rpc_addresses()->CopyFrom(
+      use_external_addr ? reg.rpc_proxy_addresses() : reg.rpc_addresses());
   if (reg.has_unix_domain_socket_path()) {
     tsinfo_pb->set_unix_domain_socket_path(reg.unix_domain_socket_path());
   }

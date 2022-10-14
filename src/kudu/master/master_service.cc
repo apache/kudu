@@ -51,6 +51,7 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
@@ -517,12 +518,17 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
   }
 
+  const auto use_external_addr = IsAddrOneOf(
+      rpc->local_address(), server_->rpc_proxied_addresses());
+
   CatalogManager::TSInfosDict infos_dict(resp->GetArena());
   for (const string& tablet_id : req->tablet_ids()) {
     // TODO(todd): once we have catalog data. ACL checks would also go here, probably.
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
     Status s = server_->catalog_manager()->GetTabletLocations(
-        tablet_id, req->replica_type_filter(),
+        tablet_id,
+        req->replica_type_filter(),
+        use_external_addr,
         locs_pb,
         req->intern_ts_infos_in_response() ? &infos_dict : nullptr,
         rpc->remote_user().username());
@@ -675,8 +681,11 @@ void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
     if (PREDICT_FALSE(FLAGS_master_inject_latency_on_tablet_lookups_ms > 0)) {
       SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
     }
+
+    const auto use_external_addr = IsAddrOneOf(
+        rpc->local_address(), server_->rpc_proxied_addresses());
     s = server_->catalog_manager()->GetTableLocations(
-        req, resp, rpc->remote_user().username());
+        req, resp, use_external_addr, rpc->remote_user().username());
   }
 
   CheckRespErrorOrSetUnknown(s, resp);
@@ -705,6 +714,9 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
 void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
                                           ListTabletServersResponsePB* resp,
                                           rpc::RpcContext* rpc) {
+  const auto use_external_addr = IsAddrOneOf(
+      rpc->local_address(), server_->rpc_proxied_addresses());
+
   TSManager* ts_manager = server_->ts_manager();
   TServerStateMap states = req->include_states() ?
       ts_manager->GetTServerStates() : TServerStateMap();
@@ -712,8 +724,13 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
   server_->ts_manager()->GetAllDescriptors(&descs);
   for (const std::shared_ptr<TSDescriptor>& desc : descs) {
     ListTabletServersResponsePB::Entry* entry = resp->add_servers();
+    if (auto s = desc->GetRegistration(entry->mutable_registration(),
+                                       use_external_addr); !s.ok()) {
+      LOG(WARNING) << s.ToString();
+      resp->mutable_servers()->RemoveLast();
+      continue;
+    }
     desc->GetNodeInstancePB(entry->mutable_instance_id());
-    desc->GetRegistration(entry->mutable_registration());
     entry->set_millis_since_heartbeat(desc->TimeSinceHeartbeat().ToMilliseconds());
     if (desc->location()) {
       entry->set_location(*desc->location());
@@ -742,12 +759,13 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
   rpc->RespondSuccess();
 }
 
-void MasterServiceImpl::ListMasters(const ListMastersRequestPB* req,
+void MasterServiceImpl::ListMasters(const ListMastersRequestPB* /*req*/,
                                     ListMastersResponsePB* resp,
                                     rpc::RpcContext* rpc) {
+  const auto use_external_addr = IsAddrOneOf(
+      rpc->local_address(), server_->rpc_proxied_addresses());
   vector<ServerEntryPB> masters;
-  Status s = server_->ListMasters(&masters);
-  if (!s.ok()) {
+  if (const auto s = server_->ListMasters(&masters, use_external_addr); !s.ok()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
     resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
 
@@ -761,9 +779,10 @@ void MasterServiceImpl::ListMasters(const ListMastersRequestPB* req,
   rpc->RespondSuccess();
 }
 
-void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequestPB* req,
-                                              GetMasterRegistrationResponsePB* resp,
-                                              rpc::RpcContext* rpc) {
+void MasterServiceImpl::GetMasterRegistration(
+    const GetMasterRegistrationRequestPB* /*req*/,
+    GetMasterRegistrationResponsePB* resp,
+    rpc::RpcContext* rpc) {
   // instance_id must always be set in order for status pages to be useful.
   resp->mutable_instance_id()->CopyFrom(server_->instance_pb());
 
@@ -772,7 +791,10 @@ void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequest
     return;
   }
 
-  Status s = server_->GetMasterRegistration(resp->mutable_registration());
+  const auto use_external_addr = IsAddrOneOf(
+      rpc->local_address(), server_->rpc_proxied_addresses());
+  const auto s = server_->GetMasterRegistration(
+      resp->mutable_registration(), use_external_addr);
   CheckRespErrorOrSetUnknown(s, resp);
   const auto& role_and_member = server_->catalog_manager()->GetRoleAndMemberType();
   resp->set_role(role_and_member.first);
@@ -791,17 +813,28 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
 
   // Set the info about the other masters, so that the client can verify
   // it has the full set of info.
-  vector<HostPort> addresses;
-  Status s = server_->GetMasterHostPorts(&addresses);
-  if (!s.ok()) {
-    StatusToPB(s, resp->mutable_error()->mutable_status());
-    resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
-    rpc->RespondSuccess();
-    return;
-  }
-  resp->mutable_master_addrs()->Reserve(addresses.size());
-  for (const auto& hp : addresses) {
-    *resp->add_master_addrs() = HostPortToPB(hp);
+  {
+    // Check if the request came to the dedicated RPC endpoint meaning
+    // it's been proxied from the outside network.
+    if (IsAddrOneOf(rpc->local_address(), server_->rpc_proxied_addresses())) {
+      // TODO(aserbin): adapt this to multi-master configuration
+      for (const auto& hp : server_->rpc_server()->GetProxyAdvertisedHostPorts()) {
+        *resp->add_master_addrs() = HostPortToPB(hp);
+      }
+    } else {
+      vector<HostPort> addresses;
+      if (const auto s = server_->GetMasterHostPorts(&addresses);
+          PREDICT_FALSE(!s.ok())) {
+        StatusToPB(s, resp->mutable_error()->mutable_status());
+        resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
+        rpc->RespondSuccess();
+        return;
+      }
+      resp->mutable_master_addrs()->Reserve(addresses.size());
+      for (const auto& hp : addresses) {
+        *resp->add_master_addrs() = HostPortToPB(hp);
+      }
+    }
   }
 
   const bool is_leader = l.leader_status().ok();

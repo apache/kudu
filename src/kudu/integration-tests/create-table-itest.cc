@@ -26,6 +26,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -53,14 +54,12 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-
-namespace kudu {
-class HostPort;
-}  // namespace kudu
 
 using std::multimap;
 using std::set;
@@ -68,6 +67,7 @@ using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 METRIC_DECLARE_entity(server);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_CreateTablet);
@@ -162,7 +162,7 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
         tablet_num_replica_map[tablet_id]++;
       }
     }
-    LOG(INFO) << strings::Substitute(
+    LOG(INFO) << Substitute(
         "Waiting for only one tablet to be left with $0 replicas. Currently have: $1 tablet(s)",
         kNumReplicas, tablet_num_replica_map.size());
     ASSERT_EQ(1, tablet_num_replica_map.size());
@@ -499,6 +499,130 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
     ASSERT_TRUE(cluster_->master()->IsProcessAlive()) << "Master crashed!";
     SleepFor(MonoDelta::FromMilliseconds(100));
   }
+}
+
+// Make sure it's possible to create a table when using proxied RPC addresses,
+// and the result table locations point to the addresses set to be advertised
+// by a TCP proxy correspondingly.
+TEST_F(CreateTableITest, ProxyAdvertisedAddresses) {
+  constexpr const char* const kIpAddr = "127.0.0.1";
+  constexpr int kNumServers = 1;
+  constexpr int kNumTablets = 2;
+  const MonoDelta timeout = MonoDelta::FromSeconds(10);
+
+  uint16_t m_port = 0;
+  ASSERT_OK(GetRandomPort(kIpAddr, &m_port));
+  const HostPort m_proxied_addr(kIpAddr, m_port);
+
+  uint16_t t_port = 0;
+  ASSERT_OK(GetRandomPort(kIpAddr, &t_port));
+  const HostPort t_proxied_addr(kIpAddr, t_port);
+
+  const string m_proxy_advertised_address = "kudu.proxy.io:333";
+
+  const uint16_t t_proxy_advertised_port = 888;
+  const string t_proxy_advertised_host = "kudu.proxy.io";
+  const string t_proxy_advertised_addr = Substitute(
+      "$0:$1", t_proxy_advertised_host, t_proxy_advertised_port);
+
+  uint16_t t_bind_port = 0;
+  ASSERT_OK(GetRandomPort(kIpAddr, &t_bind_port));
+  const HostPort t_bind_addr(kIpAddr, t_bind_port);
+
+  const vector<string> master_flags = {
+    Substitute("--rpc_proxy_advertised_addresses=$0", m_proxy_advertised_address),
+    Substitute("--rpc_proxied_addresses=$0", m_proxied_addr.ToString()),
+  };
+  const vector<string> ts_flags = {
+    Substitute("--rpc_proxy_advertised_addresses=$0", t_proxy_advertised_addr),
+    Substitute("--rpc_proxied_addresses=$0", t_proxied_addr.ToString()),
+    Substitute("--rpc_bind_addresses=$0", t_bind_addr.ToString()),
+  };
+  NO_FATALS(StartCluster(ts_flags, master_flags, kNumServers));
+
+  // Build a client to send requests via the proxied RPC endpoint.
+  client::KuduClientBuilder builder;
+  builder.add_master_server_addr(m_proxied_addr.ToString());
+  client::sp::shared_ptr<client::KuduClient> c_ext;
+  ASSERT_OK(builder.Build(&c_ext));
+
+  // Create table using Kudu client sending requests as if they were proxied
+  // from outside.
+  unique_ptr<client::KuduTableCreator> table_creator(c_ext->NewTableCreator());
+  auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&client_schema)
+            .set_range_partition_columns({ "key" })
+            .num_replicas(1)
+            .add_hash_partitions({ "key" }, kNumTablets)
+            .Create());
+
+  // Make sure the client receives proxy advertised addresses since the request
+  // came to the proxied RPC address.
+  const auto& master_addresses = c_ext->GetMasterAddresses();
+  ASSERT_EQ(m_proxy_advertised_address, master_addresses);
+
+  // Get information on table's locations via standard RPC endpoint.
+  {
+    master::GetTableLocationsRequestPB req;
+    req.set_intern_ts_infos_in_response(true);
+    req.mutable_table()->set_table_name(kTableName);
+
+    rpc::RpcController rpc;
+    rpc.set_timeout(timeout);
+    master::GetTableLocationsResponsePB resp;
+    auto mp = cluster_->master_proxy();
+    ASSERT_OK(mp->GetTableLocations(req, &resp, &rpc));
+
+    ASSERT_EQ(kNumTablets, resp.tablet_locations().size());
+    for (const auto& loc : resp.tablet_locations()) {
+      ASSERT_EQ(kNumServers, loc.interned_replicas_size());
+    }
+
+    ASSERT_EQ(1, resp.ts_infos_size());
+    const auto& ts_info = resp.ts_infos(0);
+    ASSERT_EQ(1, ts_info.rpc_addresses_size());
+    const auto& hp = ts_info.rpc_addresses(0);
+    ASSERT_TRUE(hp.has_host());
+    ASSERT_EQ(t_bind_addr.host(), hp.host());
+    ASSERT_TRUE(hp.has_port());
+    ASSERT_EQ(t_bind_addr.port(), hp.port());
+  }
+
+  // Get information on table's locations via endpoint for proxied RPCs.
+  {
+    Sockaddr ma;
+    ma.ParseFromNumericHostPort(m_proxied_addr);
+    auto mp = std::make_shared<master::MasterServiceProxy>(
+        cluster_->messenger(), ma, ma.host());
+
+    master::GetTableLocationsRequestPB req;
+    req.set_intern_ts_infos_in_response(true);
+    req.mutable_table()->set_table_name(kTableName);
+
+    rpc::RpcController rpc;
+    rpc.set_timeout(timeout);
+    master::GetTableLocationsResponsePB resp;
+    ASSERT_OK(mp->GetTableLocations(req, &resp, &rpc));
+
+    ASSERT_EQ(kNumTablets, resp.tablet_locations().size());
+    for (const auto& loc : resp.tablet_locations()) {
+      ASSERT_EQ(kNumServers, loc.interned_replicas_size());
+    }
+
+    ASSERT_EQ(1, resp.ts_infos_size());
+    const auto& ts_info = resp.ts_infos(0);
+    ASSERT_EQ(1, ts_info.rpc_addresses_size());
+    const auto& hp = ts_info.rpc_addresses(0);
+    ASSERT_TRUE(hp.has_host());
+    ASSERT_EQ(t_proxy_advertised_host, hp.host());
+    ASSERT_TRUE(hp.has_port());
+    ASSERT_EQ(t_proxy_advertised_port, hp.port());
+  }
+
+  // Delete the created table using the client instance communicating with
+  // the cluster through regular RPC endpoints.
+  ASSERT_OK(client_->DeleteTable(kTableName));
 }
 
 } // namespace kudu

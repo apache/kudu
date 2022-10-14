@@ -386,6 +386,7 @@ Status AutoRebalancerTask::GetTabletLeader(
     RETURN_NOT_OK(catalog_manager_->GetTabletLocations(
         tablet_id,
         ReplicaTypeFilter::VOTER_REPLICA,
+        /*use_external_addr=*/false,
         &locs_pb,
         &ts_infos_dict,
         nullopt));
@@ -434,7 +435,7 @@ Status AutoRebalancerTask::ExecuteMoves(
         return Status::NotFound("Could not find destination tserver");
       }
       ServerRegistrationPB dest_reg;
-      dest_desc->GetRegistration(&dest_reg);
+      RETURN_NOT_OK(dest_desc->GetRegistration(&dest_reg));
 
       auto* add_peer_change = req.add_config_changes();
       add_peer_change->set_type(ADD_PEER);
@@ -541,6 +542,7 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
         RETURN_NOT_OK(catalog_manager_->GetTabletLocations(
             tablet_summary.id,
             ReplicaTypeFilter::VOTER_REPLICA,
+            /*use_external_addr=*/false,
             &locs_pb,
             &ts_infos_dict,
             nullopt));

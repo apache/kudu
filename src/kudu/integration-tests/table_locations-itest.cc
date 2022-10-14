@@ -27,6 +27,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -717,7 +718,8 @@ TEST_F(TableLocationsTest, GetTableLocationsBenchmarkFunctionCall) {
         ++req_counters[idx];
         {
           CatalogManager::ScopedLeaderSharedLock l(cm);
-          auto s = cm->GetTableLocations(&req, resp, username);
+          auto s = cm->GetTableLocations(
+              &req, resp, /*use_external_addr=*/false, username);
           if (!s.ok()) {
             ++err_counters[idx];
           }

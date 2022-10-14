@@ -52,7 +52,8 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
     {
       CatalogManager::ScopedLeaderSharedLock l(catalog);
       RETURN_NOT_OK(l.first_failed_status());
-      RETURN_NOT_OK(catalog->GetTableLocations(&req, resp, /*user=*/std::nullopt));
+      RETURN_NOT_OK(catalog->GetTableLocations(
+          &req, resp, /*use_external_addr=*/false, /*user=*/std::nullopt));
     }
     if (resp->tablet_locations_size() >= expected_count) {
       return Status::OK();

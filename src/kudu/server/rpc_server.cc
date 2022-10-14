@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -32,12 +33,13 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/acceptor_pool.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/acceptor_pool.h" // IWYU pragma: keep
+#include "kudu/rpc/messenger.h"     // IWYU pragma: keep
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -64,6 +66,25 @@ DEFINE_string(rpc_advertised_addresses, "",
               "for example, if Kudu is deployed in a container.");
 TAG_FLAG(rpc_advertised_addresses, advanced);
 
+DEFINE_string(rpc_proxied_addresses, "",
+              "Comma-separated list of addresses to accept RPC requests "
+              "forwarded from external networks (possibly, via a TCP proxy). "
+              "These are RPC endpoints in the inner network to handle RPC "
+              "requests forwarded/proxied from outside networks; "
+              "they are orthogonal to --rpc_advertised_addresses, so these "
+              "can be used in containerized environments behind a firewall.");
+TAG_FLAG(rpc_proxied_addresses, advanced);
+TAG_FLAG(rpc_proxied_addresses, experimental);
+
+DEFINE_string(rpc_proxy_advertised_addresses, "",
+              "This server's RPC endpoints exposed to the external network via "
+              "a TCP proxy. It's assumed that RPCs sent by a Kudu client from "
+              "the external network are forwarded/proxied to the RPC endpoint "
+              "in the inner cluster's network, where the latter is specified "
+              "by the --rpc_proxied_addresses flag.");
+TAG_FLAG(rpc_proxy_advertised_addresses, advanced);
+TAG_FLAG(rpc_proxy_advertised_addresses, experimental);
+
 DEFINE_int32(rpc_num_acceptors_per_address, 1,
              "Number of RPC acceptor threads for each bound address");
 TAG_FLAG(rpc_num_acceptors_per_address, advanced);
@@ -85,16 +106,37 @@ DEFINE_bool(rpc_reuseport, false,
             "Whether to set the SO_REUSEPORT option on listening RPC sockets.");
 TAG_FLAG(rpc_reuseport, experimental);
 
+namespace {
+
+bool ValidateProxyAddresses()  {
+  if ((FLAGS_rpc_proxied_addresses.empty() &&
+       !FLAGS_rpc_proxy_advertised_addresses.empty()) ||
+      (!FLAGS_rpc_proxied_addresses.empty() &&
+       FLAGS_rpc_proxy_advertised_addresses.empty())) {
+    LOG(ERROR) << Substitute(
+        "--rpc_proxy_advertised_addresses and --rpc_proxied_addresses should "
+        "be either both set or both unset");
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(proxy_addresses, ValidateProxyAddresses);
+
+} // anonymous namespace
+
+
 namespace kudu {
 
 RpcServerOptions::RpcServerOptions()
-  : rpc_bind_addresses(FLAGS_rpc_bind_addresses),
-    rpc_advertised_addresses(FLAGS_rpc_advertised_addresses),
-    num_acceptors_per_address(FLAGS_rpc_num_acceptors_per_address),
-    num_service_threads(FLAGS_rpc_num_service_threads),
-    default_port(0),
-    service_queue_length(FLAGS_rpc_service_queue_length),
-    rpc_reuseport(FLAGS_rpc_reuseport) {
+    : rpc_bind_addresses(FLAGS_rpc_bind_addresses),
+      rpc_advertised_addresses(FLAGS_rpc_advertised_addresses),
+      rpc_proxied_addresses(FLAGS_rpc_proxied_addresses),
+      rpc_proxy_advertised_addresses(FLAGS_rpc_proxy_advertised_addresses),
+      num_acceptors_per_address(FLAGS_rpc_num_acceptors_per_address),
+      num_service_threads(FLAGS_rpc_num_service_threads),
+      default_port(0),
+      service_queue_length(FLAGS_rpc_service_queue_length),
+      rpc_reuseport(FLAGS_rpc_reuseport) {
 }
 
 RpcServer::RpcServer(RpcServerOptions opts)
@@ -118,26 +160,35 @@ Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
   CHECK_EQ(server_state_, UNINITIALIZED);
   messenger_ = messenger;
 
+  constexpr auto addr_check_fn = [] (const vector<Sockaddr>& addresses,
+                                     bool allow_ephemeral_ports) {
+    for (const Sockaddr& addr : addresses) {
+      if (!addr.is_ip()) {
+        continue;
+      }
+
+      if (IsPrivilegedPort(addr.port())) {
+        LOG(WARNING) << Substitute(
+            "may be unable to bind to privileged port for address $0",
+            addr.ToString());
+      }
+
+      // Currently, we can't support binding to ephemeral ports outside of
+      // unit tests, because consensus caches RPC ports of other servers
+      // across restarts. See KUDU-334.
+      if (addr.port() == 0 && !allow_ephemeral_ports) {
+        LOG(FATAL) << Substitute(
+            "binding to ephemeral ports not supported "
+            "(RPC address configured to $0)", addr.ToString());
+      }
+    }
+  };
+
+  const bool allow_ephemeral_ports = FLAGS_rpc_server_allow_ephemeral_ports;
   RETURN_NOT_OK(ParseAddressList(options_.rpc_bind_addresses,
                                  options_.default_port,
                                  &rpc_bind_addresses_));
-
-  for (const Sockaddr& addr : rpc_bind_addresses_) {
-    if (!addr.is_ip()) continue;
-
-    if (IsPrivilegedPort(addr.port())) {
-      LOG(WARNING) << "May be unable to bind to privileged port for address "
-                   << addr.ToString();
-    }
-
-    // Currently, we can't support binding to ephemeral ports outside of
-    // unit tests, because consensus caches RPC ports of other servers
-    // across restarts. See KUDU-334.
-    if (addr.port() == 0 && !FLAGS_rpc_server_allow_ephemeral_ports) {
-      LOG(FATAL) << "Binding to ephemeral ports not supported (RPC address "
-                 << "configured to " << addr.ToString() << ")";
-    }
-  }
+  addr_check_fn(rpc_bind_addresses_, allow_ephemeral_ports);
 
   if (!options_.rpc_advertised_addresses.empty()) {
     RETURN_NOT_OK(ParseAddressList(options_.rpc_advertised_addresses,
@@ -150,6 +201,23 @@ Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
                    << "configured to " << addr.ToString() << ")";
       }
     }
+  }
+
+  if (!options_.rpc_proxied_addresses.empty()) {
+    RETURN_NOT_OK(ParseAddressList(options_.rpc_proxied_addresses,
+                                   options_.default_port,
+                                   &rpc_proxied_addresses_));
+    addr_check_fn(rpc_proxied_addresses_, allow_ephemeral_ports);
+  }
+
+  if (!options_.rpc_proxy_advertised_addresses.empty()) {
+    vector<HostPort> host_ports;
+    RETURN_NOT_OK(HostPort::ParseStrings(
+        options_.rpc_proxy_advertised_addresses, options_.default_port, &host_ports));
+    if (host_ports.empty()) {
+      return Status::InvalidArgument("no proxy advertised address specified");
+    }
+    rpc_proxy_advertised_hostports_ = std::move(host_ports);
   }
 
   server_state_ = INITIALIZED;
@@ -186,10 +254,25 @@ Status RpcServer::Bind() {
   // Create the AcceptorPool for each bind address.
   for (const Sockaddr& bind_addr : rpc_bind_addresses_) {
     shared_ptr<rpc::AcceptorPool> pool;
-    RETURN_NOT_OK(messenger_->AddAcceptorPool(
-                    bind_addr,
-                    &pool));
+    RETURN_NOT_OK(messenger_->AddAcceptorPool(bind_addr, &pool));
     new_acceptor_pools.emplace_back(std::move(pool));
+  }
+
+  // Create the AcceptorPool for each address for proxied RPCs.
+  {
+    vector<Sockaddr> bound_rpc_proxied_addresses;
+    bound_rpc_proxied_addresses.reserve(rpc_proxied_addresses_.size());
+    for (const Sockaddr& bind_addr : rpc_proxied_addresses_) {
+      shared_ptr<rpc::AcceptorPool> pool;
+      RETURN_NOT_OK(messenger_->AddAcceptorPool(bind_addr, &pool));
+      new_acceptor_pools.emplace_back(std::move(pool));
+      Sockaddr bound_addr;
+      RETURN_NOT_OK(new_acceptor_pools.back()->GetBoundAddress(&bound_addr));
+      bound_rpc_proxied_addresses.emplace_back(std::move(bound_addr));
+    }
+    // The proxied addresses might be specified with a wildcard port,
+    // so here the bound addresses with actually bound ports are stored.
+    rpc_proxied_addresses_ = std::move(bound_rpc_proxied_addresses);
   }
 
   acceptor_pools_.swap(new_acceptor_pools);
@@ -242,7 +325,7 @@ Status RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
     Sockaddr bound_addr;
     RETURN_NOT_OK_PREPEND(pool->GetBoundAddress(&bound_addr),
                           "Unable to get bound address from AcceptorPool");
-    addresses->push_back(bound_addr);
+    addresses->emplace_back(std::move(bound_addr));
   }
   return Status::OK();
 }
@@ -258,10 +341,23 @@ Status RpcServer::GetAdvertisedAddresses(vector<Sockaddr>* addresses) const {
       server_state_ != STARTED) {
     return Status::ServiceUnavailable(Substitute("bad state: $0", server_state_));
   }
-  if (rpc_advertised_addresses_.empty()) {
-    return GetBoundAddresses(addresses);
+
+  if (!rpc_advertised_addresses_.empty()) {
+    *addresses = rpc_advertised_addresses_;
+    return Status::OK();
   }
-  *addresses = rpc_advertised_addresses_;
+
+  vector<Sockaddr> tmp;
+  RETURN_NOT_OK(GetBoundAddresses(&tmp));
+  // Remove addresses that are dedicated to serve proxied RPCs. Those should
+  // not be advertised to clients: a client isn't supposed to send RPCs to
+  // those endpoints directly, but that's where the requests are proxied to.
+  addresses->reserve(tmp.size());
+  for (auto& addr : tmp) {
+    if (!IsAddrOneOf(addr, rpc_proxied_addresses_)) {
+      addresses->emplace_back(std::move(addr));
+    }
+  }
   return Status::OK();
 }
 
@@ -269,6 +365,16 @@ Status RpcServer::GetAdvertisedHostPorts(vector<HostPort>* hostports) const {
   vector<Sockaddr> addrs;
   RETURN_NOT_OK_PREPEND(GetAdvertisedAddresses(&addrs), "could not get bound RPC addresses");
   return HostPortsFromAddrs(addrs, hostports);
+}
+
+const vector<HostPort>& RpcServer::GetProxyAdvertisedHostPorts() const {
+  DCHECK_NE(UNINITIALIZED, server_state_);
+  return rpc_proxy_advertised_hostports_;
+}
+
+const vector<Sockaddr>& RpcServer::GetRpcProxiedAddresses() const {
+  DCHECK_NE(UNINITIALIZED, server_state_);
+  return rpc_proxied_addresses_;
 }
 
 const rpc::ServicePool* RpcServer::service_pool(const string& service_name) const {

@@ -505,7 +505,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should have registered the TS";
   ServerRegistrationPB reg;
-  descs[0]->GetRegistration(&reg);
+  ASSERT_OK(descs[0]->GetRegistration(&reg));
   ASSERT_EQ(SecureDebugString(fake_reg), SecureDebugString(reg))
       << "Master got different registration";
 
@@ -3232,7 +3232,7 @@ TEST_F(MasterTest, TestDuplicateRequest) {
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should have registered the TS";
   ServerRegistrationPB reg;
-  descs[0]->GetRegistration(&reg);
+  ASSERT_OK(descs[0]->GetRegistration(&reg));
   ASSERT_EQ(SecureDebugString(fake_reg), SecureDebugString(reg))
       << "Master got different registration";
   shared_ptr<TSDescriptor> ts_desc;
