@@ -77,6 +77,8 @@ InboundCall::~InboundCall() {}
 
 Status InboundCall::ParseFrom(unique_ptr<InboundTransfer> transfer) {
   TRACE_EVENT_FLOW_BEGIN0("rpc", "InboundCall", this);
+  RETURN_NOT_OK(conn_->GetLocalAddress(&local_addr_));
+
   TRACE_EVENT0("rpc", "InboundCall::ParseFrom");
   RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_, &serialized_request_));
 
@@ -271,6 +273,11 @@ const RemoteUser& InboundCall::remote_user() const {
 
 const Sockaddr& InboundCall::remote_address() const {
   return conn_->remote();
+}
+
+const Sockaddr& InboundCall::local_address() const {
+  DCHECK(local_addr_.is_initialized());
+  return local_addr_;
 }
 
 const scoped_refptr<Connection>& InboundCall::connection() const {

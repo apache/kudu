@@ -192,6 +192,10 @@ class RpcContext {
   // Return the remote IP address and port which sent the current RPC call.
   const Sockaddr& remote_address() const;
 
+  // Return the local IP address and port of the connection which is used
+  // to receive the current RPC call.
+  const Sockaddr& local_address() const;
+
   // A string identifying the requestor -- both the user info and the IP address.
   // Suitable for use in log messages.
   std::string requestor_string() const;

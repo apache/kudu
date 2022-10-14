@@ -416,6 +416,12 @@ void Connection::CancelOutboundCall(const shared_ptr<OutboundCall> &call) {
   }
 }
 
+Status Connection::GetLocalAddress(Sockaddr* addr) const {
+  DCHECK(socket_);
+  DCHECK(addr);
+  return socket_->GetSocketAddress(addr);
+}
+
 // Inject a cancellation when 'call' is in state 'FLAGS_rpc_inject_cancellation_state'.
 void inline Connection::MaybeInjectCancellation(const shared_ptr<OutboundCall> &call) {
   if (PREDICT_FALSE(call->ShouldInjectCancellation())) {

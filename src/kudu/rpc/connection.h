@@ -141,7 +141,10 @@ class Connection : public RefCountedThreadSafe<Connection> {
   void CancelOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
   // The address of the remote end of the connection.
-  const Sockaddr &remote() const { return remote_; }
+  const Sockaddr& remote() const { return remote_; }
+
+  // The address of the local end of the connection.
+  Status GetLocalAddress(Sockaddr* addr) const;
 
   // Set the user credentials for an outbound connection.
   void set_outbound_connection_id(ConnectionId conn_id) {

@@ -36,6 +36,7 @@
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -48,7 +49,6 @@ class MessageLite;
 namespace kudu {
 
 class Histogram;
-class Sockaddr;
 class Trace;
 
 namespace rpc {
@@ -147,6 +147,8 @@ class InboundCall {
 
   const Sockaddr& remote_address() const;
 
+  const Sockaddr& local_address() const;
+
   const scoped_refptr<Connection>& connection() const;
 
   Trace* trace();
@@ -242,6 +244,10 @@ class InboundCall {
 
   // The connection on which this inbound call arrived.
   scoped_refptr<Connection> conn_;
+
+  // Local address of the connection above. This field caches the result of the
+  // Connection::GetLocalAddress() call. Set by ParseFrom().
+  Sockaddr local_addr_;
 
   // The header of the incoming call. Set by ParseFrom()
   RequestHeader header_;
