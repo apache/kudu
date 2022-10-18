@@ -23,6 +23,7 @@
 #include <mutex>
 #include <numeric>
 #include <ostream>
+#include <type_traits>
 
 #include <gflags/gflags.h>
 
@@ -37,11 +38,11 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/remote_user.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
@@ -50,7 +51,7 @@
 #include "kudu/util/thread.h"
 
 DEFINE_int32(scanner_ttl_ms, 60000,
-             "Number of milliseconds of inactivity allowed for a scanner"
+             "Number of milliseconds of inactivity allowed for a scanner "
              "before it may be expired");
 TAG_FLAG(scanner_ttl_ms, advanced);
 TAG_FLAG(scanner_ttl_ms, runtime);
@@ -64,23 +65,44 @@ DEFINE_int32(scan_history_count, 20,
              "scans will be shown on the tablet server's scans dashboard.");
 TAG_FLAG(scan_history_count, experimental);
 
+DECLARE_int32(rpc_default_keepalive_time_ms);
+
 METRIC_DEFINE_gauge_size(server, active_scanners,
                          "Active Scanners",
                          kudu::MetricUnit::kScanners,
                          "Number of scanners that are currently active",
                          kudu::MetricLevel::kInfo);
 
+using kudu::rpc::RemoteUser;
+using kudu::tablet::TabletReplica;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
+namespace {
+
+// Issue a warning if --rpc_default_keepalive_time_ms and --scanner_ttl_ms flags
+// are set improperly. That's just a warning, not an error: the client should be
+// able to re-establish the connection even if it's been closed by the server.
+// However, it takes extra roundtrips and adds extra latency to the scan time.
+bool ValidateScannerAndRpcConnectionIdleTimes() {
+  if (FLAGS_rpc_default_keepalive_time_ms >= 0 &&
+      FLAGS_rpc_default_keepalive_time_ms < FLAGS_scanner_ttl_ms) {
+    LOG(WARNING) << Substitute(
+        "--rpc_default_keepalive_time_ms (currently $0) should be set at least "
+        "as high as --scanner_ttl_ms (currently $1) to prevent servers closing "
+        "idle client connections to not-yet-expired scanners",
+        FLAGS_rpc_default_keepalive_time_ms, FLAGS_scanner_ttl_ms);
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(idle_intervals, ValidateScannerAndRpcConnectionIdleTimes);
+} // anonymous namespace
+
 namespace kudu {
-
-using rpc::RemoteUser;
-using tablet::TabletReplica;
-
 namespace tserver {
 
 ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
