@@ -654,10 +654,15 @@ Status ServerNegotiation::AuthenticateBySasl(faststring* recv_buf) {
   RETURN_NOT_OK(s);
 
   const char* c_username = nullptr;
-  int rc = sasl_getprop(sasl_conn_.get(), SASL_USERNAME,
-                        reinterpret_cast<const void**>(&c_username));
+  const int rc = sasl_getprop(sasl_conn_.get(), SASL_USERNAME,
+                              reinterpret_cast<const void**>(&c_username));
   // We expect that SASL_USERNAME will always get set.
-  CHECK(rc == SASL_OK && c_username != nullptr) << "No username on authenticated connection";
+  if (PREDICT_FALSE(rc != SASL_OK || c_username == nullptr)) {
+    constexpr const char* const kErrMsg =
+        "no username on authenticated connection";
+    LOG(DFATAL) << kErrMsg;
+    return Status::IllegalState(kErrMsg);
+  }
   if (negotiated_mech_ == SaslMechanism::GSSAPI) {
     // The SASL library doesn't include the user's realm in the username if it's the
     // same realm as the default realm of the server. So, we pass it back through the
@@ -683,7 +688,12 @@ Status ServerNegotiation::AuthenticateBySasl(faststring* recv_buf) {
 Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
   // Sanity check that TLS has been negotiated. Receiving the token on an
   // unencrypted channel is a big no-no.
-  CHECK(tls_negotiated_);
+  if (PREDICT_FALSE(!tls_negotiated_)) {
+    constexpr const char* const kErrMsg =
+        "received authn token over an unencrypted channel";
+    LOG(DFATAL) << kErrMsg;
+    return Status::IllegalState(kErrMsg);
+  }
 
   // Receive the token from the client.
   NegotiatePB pb;
@@ -765,7 +775,12 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
 Status ServerNegotiation::AuthenticateByCertificate() {
   // Sanity check that TLS has been negotiated. Cert-based authentication is
   // only possible with TLS.
-  CHECK(tls_negotiated_);
+  if (PREDICT_FALSE(!tls_negotiated_)) {
+    constexpr const char* const kErrMsg =
+        "received client certificate over an unencrypted channel";
+    LOG(DFATAL) << kErrMsg;
+    return Status::IllegalState(kErrMsg);
+  }
 
   // Grab the subject from the client's cert.
   security::Cert cert;
@@ -1012,7 +1027,10 @@ int ServerNegotiation::PlainAuthCb(sasl_conn_t* /*conn*/,
 }
 
 bool ServerNegotiation::IsTrustedConnection(const Sockaddr& addr) {
-  if (addr.family() == AF_UNIX) return true;
+  if (addr.family() == AF_UNIX) {
+    return true;
+  }
+
   static std::once_flag once;
   std::call_once(once, [] {
     g_trusted_subnets = new vector<Network>();

@@ -545,7 +545,12 @@ Status ClientNegotiation::AuthenticateByToken(faststring* recv_buf,
                                               unique_ptr<ErrorStatusPB>* rpc_error) {
   // Sanity check that TLS has been negotiated. Sending the token on an
   // unencrypted channel is a big no-no.
-  CHECK(tls_negotiated_);
+  if (PREDICT_FALSE(!tls_negotiated_)) {
+    constexpr const char* const kErrMsg =
+        "received authn token over an unencrypted channel";
+    LOG(DFATAL) << kErrMsg;
+    return Status::IllegalState(kErrMsg);
+  }
 
   // Send the token to the server.
   NegotiatePB pb;

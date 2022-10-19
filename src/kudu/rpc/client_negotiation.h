@@ -36,6 +36,7 @@
 #include "kudu/rpc/sasl_helper.h"
 #include "kudu/security/security_flags.h"
 #include "kudu/security/tls_handshake.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
@@ -46,7 +47,6 @@ class Slice;
 class faststring;
 
 namespace security {
-class SignedTokenPB;
 class TlsContext;
 }
 
