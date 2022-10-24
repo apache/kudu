@@ -26,6 +26,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -91,6 +92,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
+// IWYU pragma: no_include <boost/container/vector.hpp>
 
 namespace kudu {
 namespace rpc {
@@ -239,10 +241,10 @@ class TabletCopier {
   Status CopyTablets() {
     // Prepare to check copy progress.
     int total_tablet_count = tablet_ids_to_copy_.size();
-    // 'lock' is used for protecting 'copying_replicas', 'failed_tablet_ids'
+    // 'lock' is used for protecting 'copying_replicas_by_tablet_id', 'failed_tablet_ids'
     // and 'succeed_tablet_count'.
     simple_spinlock lock;
-    set<TabletReplica*> copying_replicas;
+    map<string, TabletReplica*> copying_replicas_by_tablet_id;
     set<string> failed_tablet_ids;
     int succeed_tablet_count = 0;
     if (copy_type_ == CopyType::FROM_LOCAL) {
@@ -266,10 +268,10 @@ class TabletCopier {
         [&] () {
           while (!latch.WaitFor(MonoDelta::FromSeconds(10))) {
             std::lock_guard<simple_spinlock> l(lock);
-            for (const auto& copying_replica : copying_replicas) {
+            for (const auto& entry : copying_replicas_by_tablet_id) {
               LOG(INFO) << Substitute("Tablet $0 copy status: $1",
-                                      copying_replica->tablet_id(),
-                                      copying_replica->last_status());
+                                      entry.first,
+                                      entry.second->last_status());
             }
           }
         }, &check_thread));
@@ -297,7 +299,7 @@ class TabletCopier {
         {
           std::lock_guard<simple_spinlock> l(lock);
           LOG(WARNING) << "Start to copy tablet " << tablet_id;
-          InsertOrDie(&copying_replicas, fake_replica.get());
+          copying_replicas_by_tablet_id[tablet_id] = fake_replica.get();
         }
         Status s;
         unique_ptr<TabletCopyClient> client;
@@ -327,7 +329,7 @@ class TabletCopier {
             succeed_tablet_count++;
             LOG(INFO) << Substitute("Tablet $0 copy succeed.", tablet_id);
           }
-          copying_replicas.erase(fake_replica.get());
+          copying_replicas_by_tablet_id.erase(tablet_id);
 
           LOG(INFO) << Substitute("$0/$1 tablets, $2 bytes copied, include $3 failed tablets.",
                                   succeed_tablet_count + failed_tablet_ids.size(),
