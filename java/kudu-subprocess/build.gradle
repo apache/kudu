@@ -23,6 +23,10 @@ shadowIncludeSlf4j = true
 dependencies {
   compile project(path: ":kudu-proto")
   compile(libs.hadoopCommon) {
+    // Exclude io.netty to ensure we use our own versions.
+    // The dependency on io.netty is a transitive one through the chain
+    // hadoop-common --> hadoop-auth --> zookeeper --> io.netty.netty-xxx
+    exclude group: "io.netty"
     // hadoopCommon and rangerPlugin use different versions of jersey.
     exclude group: "com.sun.jersey"
     // Exclude log4j and slf4j to ensure we use our own versions.
@@ -44,6 +48,17 @@ dependencies {
   compile libs.log4jCore
   compile libs.log4jCompat
   compile libs.log4jSlf4jImpl
+
+  // Compiling exact modules from the io.netty group for hadoop-common:
+  // for some reason, if compiling just the libs.netty umbrella package
+  // (i.e. io.netty:netty-all), hadoop-common still depends on its own
+  // version of io.netty:netty-transport-native-epoll.
+  compile libs.nettyBuffer
+  compile libs.nettyCommon
+  compile libs.nettyHandler
+  compile libs.nettyTransport
+  compile libs.nettyTransportEpoll
+  compile libs.nettyTransportUnix
 
   optional libs.jsr305
   optional libs.yetusAnnotations
