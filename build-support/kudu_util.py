@@ -118,4 +118,4 @@ def get_my_email():
 
 def get_thirdparty_dir():
   env = os.environ.copy()
-  return env['THIRDPARTY_DIR'] if env.has_key('THIRDPARTY_DIR') else os.path.join(ROOT, "thirdparty")
+  return env['THIRDPARTY_DIR'] if 'THIRDPARTY_DIR' in env else os.path.join(ROOT, "thirdparty")

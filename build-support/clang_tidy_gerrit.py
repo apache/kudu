@@ -75,8 +75,8 @@ def run_tidy(sha="HEAD", is_rev_range=False):
                    "-extra-arg=-DCLANG_TIDY"]
         return subprocess.check_output(
             cmdline,
-            stdin=file(patch_file.name),
-            cwd=ROOT)
+            stdin=open(patch_file.name),
+            cwd=ROOT).decode()
     pool = ThreadPool(multiprocessing.cpu_count())
     try:
         return "".join(pool.imap(tidy_on_path, changed_paths))
