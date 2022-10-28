@@ -970,6 +970,51 @@ class ClientTest : public KuduTest {
   shared_ptr<KuduTable> client_table_;
 };
 
+// The goal of this test is to check a scenario where RPC timeout occurred, but session timeout
+// didn't. It verifies that by creating an artificial latency in tablet lookup that makes the RPC
+// call timeout and the client retries. After some time, the latency is set back to zero and client
+// has a successful operation without session timeout, even though the RPC timed out at least once.
+// This is the implementation for KUDU-1698.
+TEST_F(ClientTest, TestDefaultRPCTimeoutSessionTimeoutDifferent) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(CreateTable("rpctimeouttest", 1, {}, {}, &table));
+  constexpr int rpcTimeoutMs = 3000;
+  // Tablet lookup will trigger timeout.
+  FLAGS_master_inject_latency_on_tablet_lookups_ms = rpcTimeoutMs * 2;
+
+  CountDownLatch latch(1);
+
+  thread set_timeout_back_to_zero([&]() {
+    const auto sleep_interval = MonoDelta::FromMilliseconds(rpcTimeoutMs * 2L);
+    latch.WaitFor(sleep_interval);
+    // After some time, tablet lookup will be fast enough to be successful.
+    FLAGS_master_inject_latency_on_tablet_lookups_ms = 0;
+  });
+  SCOPED_CLEANUP({
+    latch.CountDown();
+    set_timeout_back_to_zero.join();
+  });
+
+  KuduClientBuilder builder;
+  builder.connection_negotiation_timeout(MonoDelta::FromMilliseconds(rpcTimeoutMs / 2));
+  builder.default_rpc_timeout(MonoDelta::FromMilliseconds(rpcTimeoutMs));
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+  const shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(rpcTimeoutMs * 3);
+
+  auto ent = cluster_->mini_master()->master()->metric_entity();
+  auto tablelocation_request_count =
+      METRIC_handler_latency_kudu_master_MasterService_GetTableLocations.Instantiate(ent)
+          ->TotalCount();
+  ASSERT_OK(session->Apply(BuildTestInsert(table.get(), 2).release()));
+  // Check that there were more than one tries which indicates RPC timeout and retry.
+  ASSERT_LT(1,
+            METRIC_handler_latency_kudu_master_MasterService_GetTableLocations.Instantiate(ent)
+                    ->TotalCount() -
+                tablelocation_request_count);
+}
+
 TEST_F(ClientTest, TestClusterId) {
   int leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
