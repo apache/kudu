@@ -29,6 +29,13 @@
 
 using std::string;
 
+#if defined(__APPLE__)
+// Almost all functions in the krb5 API are marked as deprecated in favor
+// of GSS.framework in macOS.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif // #if defined(__APPLE__)
+
 namespace kudu {
 namespace gssapi {
 
@@ -162,3 +169,7 @@ Status SpnegoStep(const string& in_token_b64,
 
 } // namespace gssapi
 } // namespace kudu
+
+#if defined(__APPLE__)
+#pragma GCC diagnostic pop
+#endif // #if defined(__APPLE__)

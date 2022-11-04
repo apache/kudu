@@ -251,9 +251,12 @@ template<class T, bool THREADSAFE> class ArenaAllocator {
 
   ~ArenaAllocator() { }
 
-  pointer allocate(size_type n, std::allocator<void>::const_pointer /*hint*/ = 0) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  pointer allocate(size_type n, std::allocator<void>::const_pointer /*hint*/ = nullptr) {
     return reinterpret_cast<T*>(arena_->AllocateBytes(n * sizeof(T)));
   }
+#pragma GCC diagnostic pop
 
   void deallocate(pointer p, size_type n) {}
 

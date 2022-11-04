@@ -228,7 +228,6 @@ uint16_t KuduColumnTypeAttributes::length() const {
 Status KuduColumnStorageAttributes::StringToEncodingType(
     const string& encoding,
     KuduColumnStorageAttributes::EncodingType* type) {
-  Status s;
   string encoding_uc;
   ToUpperCase(encoding, &encoding_uc);
   if (encoding_uc == "AUTO_ENCODING") {
@@ -246,16 +245,15 @@ Status KuduColumnStorageAttributes::StringToEncodingType(
   } else if (encoding_uc == "GROUP_VARINT") {
     *type = KuduColumnStorageAttributes::GROUP_VARINT;
   } else {
-    s = Status::InvalidArgument(Substitute(
+    return Status::InvalidArgument(Substitute(
         "encoding type $0 is not supported", encoding));
   }
-  return s;
+  return Status::OK();
 }
 
 Status KuduColumnStorageAttributes::StringToCompressionType(
     const string& compression,
     KuduColumnStorageAttributes::CompressionType* type) {
-  Status s;
   string compression_uc;
   ToUpperCase(compression, &compression_uc);
   if (compression_uc == "DEFAULT_COMPRESSION") {
@@ -269,10 +267,10 @@ Status KuduColumnStorageAttributes::StringToCompressionType(
   } else if (compression_uc == "ZLIB") {
     *type = KuduColumnStorageAttributes::ZLIB;
   } else {
-    s = Status::InvalidArgument(Substitute(
+    return Status::InvalidArgument(Substitute(
         "compression type $0 is not supported", compression));
   }
-  return s;
+  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////
@@ -711,7 +709,6 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
 
  Status KuduColumnSchema::StringToDataType(
       const string& type_str, KuduColumnSchema::DataType* type) {
-  Status s;
   string type_uc;
   ToUpperCase(type_str, &type_uc);
   if (type_uc == "INT8") {
@@ -741,10 +738,10 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
   } else if (type_uc == "DATE") {
     *type = DATE;
   } else {
-    s = Status::InvalidArgument(Substitute(
+    return Status::InvalidArgument(Substitute(
         "data type $0 is not supported", type_str));
   }
-  return s;
+  return Status::OK();
 }
 
 KuduColumnSchema::KuduColumnSchema(const string &name,
@@ -843,8 +840,11 @@ KuduColumnStorageAttributes KuduColumnSchema::storage_attributes() const {
   KuduColumnStorageAttributes::StringToCompressionType(
       kudu::CompressionType_Name(storage_attributes.compression),
       &compression_type);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   return KuduColumnStorageAttributes(encoding_type, compression_type,
                                      storage_attributes.cfile_block_size);
+#pragma GCC diagnostic pop
 }
 
 const string& KuduColumnSchema::comment() const {

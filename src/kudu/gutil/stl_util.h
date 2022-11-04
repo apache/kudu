@@ -25,13 +25,12 @@
 // and Google friendly API.
 //
 
-#ifndef UTIL_GTL_STL_UTIL_H_
-#define UTIL_GTL_STL_UTIL_H_
+#pragma once
 
-#include <stddef.h>
-#include <string.h>  // for memcpy
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <cstring>  // for memcpy
 #include <deque>
 #include <functional>
 #include <iterator>
@@ -309,7 +308,7 @@ inline T* vector_as_array(std::vector<T, Allocator>* v) {
 # ifdef NDEBUG
   return &*v->begin();
 # else
-  return v->empty() ? NULL : &*v->begin();
+  return v->empty() ? nullptr : &*v->begin();
 # endif
 }
 
@@ -318,7 +317,7 @@ inline const T* vector_as_array(const std::vector<T, Allocator>* v) {
 # ifdef NDEBUG
   return &*v->begin();
 # else
-  return v->empty() ? NULL : &*v->begin();
+  return v->empty() ? nullptr : &*v->begin();
 # endif
 }
 
@@ -336,7 +335,7 @@ inline const T* vector_as_array(const std::vector<T, Allocator>* v) {
 // implementations.
 inline char* string_as_array(std::string* str) {
   // DO NOT USE const_cast<char*>(str->data())! See the unittest for why.
-  return str->empty() ? NULL : &*str->begin();
+  return str->empty() ? nullptr : &*str->begin();
 }
 
 // These are methods that test two hash maps/sets for equality.  These exist
@@ -379,7 +378,7 @@ HashMapEquality(const HashMap& map_a,
 // hash_set, or any other STL container which defines sensible begin(), end(),
 // and clear() methods.
 //
-// If container is NULL, this function is a no-op.
+// If container is nullptr, this function is a no-op.
 //
 // As an alternative to calling STLDeleteElements() directly, consider
 // ElementDeleter (defined below), which ensures that your container's elements
@@ -393,7 +392,7 @@ void STLDeleteElements(T *container) {
 
 // Given an STL container consisting of (key, value) pairs, STLDeleteValues
 // deletes all the "value" components and clears the container.  Does nothing
-// in the case it's given a NULL pointer.
+// in the case it's given a null pointer.
 template <class T>
 void STLDeleteValues(T *v) {
   if (!v) return;
@@ -829,8 +828,8 @@ class STLCountingAllocator : public Alloc {
   typedef typename Alloc::pointer pointer;
   typedef typename Alloc::size_type size_type;
 
-  STLCountingAllocator() : bytes_used_(NULL) { }
-  STLCountingAllocator(int64* b) : bytes_used_(b) {}  // TODO(user): explicit?
+  STLCountingAllocator() : bytes_used_(nullptr) { }
+  explicit STLCountingAllocator(int64* b) : bytes_used_(b) {}
 
   // Constructor used for rebinding
   template <class U>
@@ -839,15 +838,18 @@ class STLCountingAllocator : public Alloc {
         bytes_used_(x.bytes_used()) {
   }
 
-  pointer allocate(size_type n, std::allocator<void>::const_pointer hint = 0) {
-    assert(bytes_used_ != NULL);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  pointer allocate(size_type n, std::allocator<void>::const_pointer hint = nullptr) {
+    assert(bytes_used_ != nullptr);
     *bytes_used_ += n * sizeof(T);
     return Alloc::allocate(n, hint);
   }
+#pragma GCC diagnostic pop
 
   void deallocate(pointer p, size_type n) {
     Alloc::deallocate(p, n);
-    assert(bytes_used_ != NULL);
+    assert(bytes_used_ != nullptr);
     *bytes_used_ -= n * sizeof(T);
   }
 
@@ -933,5 +935,3 @@ bool SortedRangesHaveIntersection(InputIterator1 begin1, InputIterator1 end1,
   }
   return false;
 }
-
-#endif  // UTIL_GTL_STL_UTIL_H_

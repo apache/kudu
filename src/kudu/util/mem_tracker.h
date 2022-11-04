@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_MEM_TRACKER_H
-#define KUDU_UTIL_MEM_TRACKER_H
+#pragma once
 
 #include <cstdint>
 #include <list>
@@ -223,6 +222,8 @@ class MemTrackerAllocator : public Alloc {
   ~MemTrackerAllocator() {
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   pointer allocate(size_type n, const_pointer hint = 0) {
     // Ideally we'd use TryConsume() here to enforce the tracker's limit.
     // However, that means throwing bad_alloc if the limit is exceeded, and
@@ -241,6 +242,7 @@ class MemTrackerAllocator : public Alloc {
   struct rebind {
     typedef MemTrackerAllocator<U, typename Alloc::template rebind<U>::other> other;
   };
+#pragma GCC diagnostic pop
 
   const std::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
 
@@ -277,5 +279,3 @@ class ScopedTrackedConsumption {
 };
 
 } // namespace kudu
-
-#endif // KUDU_UTIL_MEM_TRACKER_H
