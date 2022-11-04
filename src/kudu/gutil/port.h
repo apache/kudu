@@ -233,8 +233,11 @@ inline size_t strnlen(const char *s, size_t maxlen) {
   return maxlen;
 }
 
-// Doesn't exist on OSX; used in google.cc for send() to mean "no flags".
+// MSG_NOSIGNAL doesn't exist on earlier versions of Darwin/OSX;
+// it's used in google.cc for send() to mean "no flags".
+#if !defined(MSG_NOSIGNAL)
 #define MSG_NOSIGNAL 0
+#endif
 
 // No SIGPWR on MacOSX.  SIGINFO seems suitably obscure.
 #undef GOOGLE_OBSCURE_SIGNAL
