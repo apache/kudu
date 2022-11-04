@@ -54,7 +54,6 @@
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/tablet/metadata.pb.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -75,6 +74,12 @@
 #include "kudu/util/threadpool.h"
 #include "kudu/util/timer.h"
 #include "kudu/util/trace.h"
+
+namespace kudu {
+namespace tablet {
+class Tablet;
+}  // namespace tablet
+}  // namespace kudu
 
 DEFINE_int32(num_tablets_to_copy_simultaneously, 10,
              "Number of threads available to copy tablets from remote servers.");
@@ -412,6 +417,7 @@ protected:
 };
 
 TSTabletManager::~TSTabletManager() {
+  Shutdown();
 }
 
 Status TSTabletManager::Init(Timer* start_tablets,
@@ -544,7 +550,7 @@ Status TSTabletManager::Init(Timer* start_tablets,
     }
     open_tablet_pool_->Wait();
     if (seen_error) {
-      LOG_AND_RETURN(WARNING, first_error);
+      LOG_AND_RETURN(ERROR, first_error);
     }
 
     LOG(INFO) << Substitute("Loaded tablet metadata ($0 total tablets, $1 live tablets)",
@@ -1470,27 +1476,37 @@ void TSTabletManager::Shutdown() {
 
   // Stop copying tablets.
   // TODO(mpercy): Cancel all outstanding tablet copy tasks (KUDU-1795).
-  tablet_copy_pool_->Shutdown();
+  if (tablet_copy_pool_ != nullptr) {
+    tablet_copy_pool_->Shutdown();
+  }
 
   // Shut down the bootstrap pool, so no new tablets are registered after this point.
-  open_tablet_pool_->Shutdown();
+  if (open_tablet_pool_ != nullptr) {
+    open_tablet_pool_->Shutdown();
+  }
 
   // Shut down the delete pool, so no new tablets are deleted after this point.
-  delete_tablet_pool_->Shutdown();
+  if (delete_tablet_pool_ != nullptr) {
+    delete_tablet_pool_->Shutdown();
+  }
 
   // Shut down the transaction participant registration pool.
-  txn_participant_registration_pool_->Shutdown();
+  if (txn_participant_registration_pool_ != nullptr) {
+    txn_participant_registration_pool_->Shutdown();
+  }
 
-  // Signal the only task running on the txn_status_manager_pool_ to wrap up.
-  shutdown_latch_.CountDown();
-  // Shut down the pool running the dedicated TxnStatusManager-related task.
-  txn_status_manager_pool_->Shutdown();
+  if (txn_status_manager_pool_ != nullptr) {
+    // Signal the only task running on the txn_status_manager_pool_ to wrap up.
+    shutdown_latch_.CountDown();
+    // Shut down the pool running the dedicated TxnStatusManager-related task.
+    txn_status_manager_pool_->Shutdown();
+  }
 
   // Take a snapshot of the replicas list -- that way we don't have to hold
   // on to the lock while shutting them down, which might cause a lock
   // inversion. (see KUDU-308 for example).
   vector<scoped_refptr<TabletReplica>> replicas_to_shutdown;
-  GetTabletReplicas(&replicas_to_shutdown);
+  GetTabletReplicasImpl(&replicas_to_shutdown);
 
   for (const scoped_refptr<TabletReplica>& replica : replicas_to_shutdown) {
     replica->Shutdown();
@@ -1500,11 +1516,15 @@ void TSTabletManager::Shutdown() {
   // The shutdown takes place after the replicas are fully shutdown, to ensure
   // on-going reloading metadata tasks of the transaction status managers are
   // properly executed to unblock the shutdown process of replicas.
-  reload_txn_status_tablet_pool_->Shutdown();
+  if (reload_txn_status_tablet_pool_ != nullptr) {
+    reload_txn_status_tablet_pool_->Shutdown();
+  }
 
   // Now that our TxnStatusManagers have shut down, clean up the threadpool
   // used for commit tasks.
-  txn_commit_pool_->Shutdown();
+  if (txn_commit_pool_ != nullptr) {
+    txn_commit_pool_->Shutdown();
+  }
 
   {
     std::lock_guard<RWMutex> l(lock_);
@@ -1563,9 +1583,14 @@ const NodeInstancePB& TSTabletManager::NodeInstance() const {
   return server_->instance_pb();
 }
 
-void TSTabletManager::GetTabletReplicas(vector<scoped_refptr<TabletReplica> >* replicas) const {
+void TSTabletManager::GetTabletReplicasImpl(
+    vector<scoped_refptr<TabletReplica>>* replicas) const {
   shared_lock<RWMutex> l(lock_);
   AppendValuesFromMap(tablet_map_, replicas);
+}
+
+void TSTabletManager::GetTabletReplicas(vector<scoped_refptr<TabletReplica>>* replicas) const {
+  GetTabletReplicasImpl(replicas);
 }
 
 void TSTabletManager::MarkTabletDirty(const string& tablet_id, const string& reason) {
