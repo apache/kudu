@@ -930,7 +930,8 @@ Status DumpTabletMeta(FsManager* fs_manager,
 
 Status ListLocalReplicas(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
-  RETURN_NOT_OK(FsInit(/*skip_block_manager*/true, &fs_manager));
+  bool skip_block_manager = !FLAGS_list_detail;
+  RETURN_NOT_OK(FsInit(skip_block_manager, &fs_manager));
 
   vector<string> tablets;
   RETURN_NOT_OK(fs_manager->ListTabletIds(&tablets));

@@ -2957,6 +2957,16 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     ASSERT_STR_MATCHES(stdout, kTestTablet);
   }
 
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("local_replica list $0 $1 --list_detail=true",
+                   fs_paths, encryption_args), &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_STR_MATCHES(stdout, kTestTablet);
+  }
+
   // Test 'kudu fs list' tablet group.
   {
     string stdout;
