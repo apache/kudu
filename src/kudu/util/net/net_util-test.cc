@@ -317,4 +317,126 @@ TEST_F(NetUtilTest, TestUnixSockaddr) {
   ASSERT_FALSE(Sockaddr() == addr);
 }
 
+TEST_F(NetUtilTest, IsAddrOneOfBasic) {
+  // The address should match itself.
+  Sockaddr a;
+  ASSERT_OK(a.ParseString("10.0.23.1:123", 0));
+
+  // The address should not match an empty set of pattern addresses.
+  ASSERT_FALSE(IsAddrOneOf(a, {}));
+
+  ASSERT_TRUE(IsAddrOneOf(a, { a }));
+  ASSERT_TRUE(IsAddrOneOf(a, { a, a }));
+
+  Sockaddr a0;
+  ASSERT_OK(a0.ParseString("10.0.23.1:123", 0));
+  ASSERT_TRUE(IsAddrOneOf(a, { a0 }));
+  ASSERT_TRUE(IsAddrOneOf(a0, { a }));
+
+  // Make a copy of Sockaddr and make sure it behaves as expected.
+  Sockaddr b = a;
+  ASSERT_TRUE(IsAddrOneOf(b, { a }));
+  ASSERT_TRUE(IsAddrOneOf(a, { b }));
+
+  Sockaddr n;
+  ASSERT_OK(n.ParseString("10.0.23.100:234", 0));
+  ASSERT_TRUE(IsAddrOneOf(a, { b, n }));
+  ASSERT_FALSE(IsAddrOneOf(n, { a, b }));
+
+  // Same IP address, different port.
+  Sockaddr c;
+  ASSERT_OK(c.ParseString("10.0.23.1:1234", 0));
+  ASSERT_FALSE(IsAddrOneOf(c, { a }));
+  ASSERT_FALSE(IsAddrOneOf(a, { c }));
+  ASSERT_FALSE(IsAddrOneOf(a, { c, c }));
+  ASSERT_TRUE(IsAddrOneOf(a, { c, a, c }));
+  ASSERT_TRUE(IsAddrOneOf(a, { c, c, a }));
+
+  // Different IP addresses, same port.
+  Sockaddr d;
+  ASSERT_OK(d.ParseString("1.23.0.10:1234", 0));
+  ASSERT_FALSE(IsAddrOneOf(d, { c }));
+  ASSERT_FALSE(IsAddrOneOf(c, { d }));
+  ASSERT_FALSE(IsAddrOneOf(c, { d, d }));
+  ASSERT_TRUE(IsAddrOneOf(c, { d, d, c }));
+
+  // Different IP addresses and ports.
+  ASSERT_FALSE(IsAddrOneOf(a, { c }));
+  ASSERT_FALSE(IsAddrOneOf(c, { a }));
+  ASSERT_FALSE(IsAddrOneOf(a, { c, c }));
+  ASSERT_TRUE(IsAddrOneOf(a, { c, c, a }));
+}
+
+TEST_F(NetUtilTest, IsAddrOneOfWildcardPort) {
+  // The address should match itself.
+  Sockaddr ap0;
+  ASSERT_OK(ap0.ParseString("10.0.23.1", 0));
+  ASSERT_EQ(0, ap0.port());
+
+  Sockaddr a0;
+  ASSERT_OK(a0.ParseString("10.0.23.1:0", 0));
+  // Sanity check.
+  ASSERT_EQ(0, a0.port());
+  ASSERT_EQ(a0, ap0);
+
+  Sockaddr ap123;
+  ASSERT_OK(ap123.ParseString("10.0.23.1:123", 0));
+  ASSERT_EQ(123, ap123.port());
+  ASSERT_TRUE(IsAddrOneOf(ap123, { ap0 }));
+  ASSERT_TRUE(IsAddrOneOf(ap123, { a0 }));
+  ASSERT_TRUE(IsAddrOneOf(ap123, { ap0, a0 }));
+  ASSERT_TRUE(IsAddrOneOf(ap123, { ap0, ap123 }));
+  ASSERT_TRUE(IsAddrOneOf(ap123, { a0, ap123 }));
+
+  // The port is wildcard, but the address is different.
+  Sockaddr bp0;
+  ASSERT_OK(bp0.ParseString("1.13.0.10", 0));
+  ASSERT_EQ(0, bp0.port());
+  ASSERT_FALSE(IsAddrOneOf(ap123, { bp0 }));
+  ASSERT_FALSE(IsAddrOneOf(ap123, { bp0, bp0 }));
+  ASSERT_TRUE(IsAddrOneOf(ap123, { bp0, ap123 }));
+  ASSERT_TRUE(IsAddrOneOf(ap123, { bp0, ap0 }));
+}
+
+TEST_F(NetUtilTest, IsAddrOneOfWildcardAddr) {
+  // Wildcards with particular port numbers.
+  auto wp123 = Sockaddr::Wildcard();
+  wp123.set_port(123);
+
+  auto wp234 = Sockaddr::Wildcard();
+  wp234.set_port(234);
+
+  // The same port as in the wildcard.
+  Sockaddr a123;
+  ASSERT_OK(a123.ParseString("10.0.23.1:123", 0));
+  ASSERT_TRUE(IsAddrOneOf(a123, { wp123 }));
+  ASSERT_TRUE(IsAddrOneOf(a123, { wp123, wp234 }));
+  ASSERT_TRUE(IsAddrOneOf(a123, { wp234, wp123 }));
+
+  // Different port from the wildcard.
+  Sockaddr a234;
+  ASSERT_OK(a234.ParseString("10.0.23.1:234", 0));
+  ASSERT_FALSE(IsAddrOneOf(a234, { wp123 }));
+  ASSERT_FALSE(IsAddrOneOf(a123, { wp234 }));
+  ASSERT_FALSE(IsAddrOneOf(a234, { wp123, a123 }));
+  ASSERT_FALSE(IsAddrOneOf(a123, { wp234, a234 }));
+
+  // A mix of matching wildcard address and non-matching address.
+  ASSERT_TRUE(IsAddrOneOf(a234, { wp234, a123 }));
+  ASSERT_TRUE(IsAddrOneOf(a234, { wp123, a234 }));
+  ASSERT_TRUE(IsAddrOneOf(a234, { wp123, wp234, a234 }));
+
+  const auto wpn = Sockaddr::Wildcard();
+  auto wp0 = Sockaddr::Wildcard();
+  wp0.set_port(0);
+  // Sanity check.
+  ASSERT_EQ(wpn, wp0);
+
+  // Wildcard with no port number set (i.e. port number 0) matches any address.
+  ASSERT_TRUE(IsAddrOneOf(a123, { wpn }));
+  ASSERT_TRUE(IsAddrOneOf(a234, { wpn }));
+  ASSERT_TRUE(IsAddrOneOf(a123, { wp234, wpn }));
+  ASSERT_TRUE(IsAddrOneOf(a234, { wp123, wpn }));
+}
+
 } // namespace kudu

@@ -19,13 +19,15 @@
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
-#include <limits.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+// IWYU pragma: no_include <bits/local_lim.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <climits>  // IWYU pragma: keep
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -522,6 +524,33 @@ Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr) {
             << "Using address: " << addr->ToString();
   }
   return Status::OK();
+}
+
+bool IsAddrOneOf(const Sockaddr& addr, const vector<Sockaddr>& ref_addresses) {
+  DCHECK(addr.is_ip());
+  DCHECK(!addr.IsWildcard());
+  DCHECK_NE(0, addr.port());
+  const bool have_match = std::any_of(
+      ref_addresses.begin(),
+      ref_addresses.end(),
+      [&addr](const Sockaddr& s) {
+        DCHECK(s.is_ip());
+        const bool is_same_or_wildcard_port = s.port() == addr.port() ||
+            s.port() == 0;
+        if (s.IsWildcard()) {
+          return is_same_or_wildcard_port;
+        }
+        const auto& lhs = s.ipv4_addr().sin_addr;
+        const auto& rhs = addr.ipv4_addr().sin_addr;
+        return is_same_or_wildcard_port &&
+            memcmp(&lhs.s_addr, &rhs.s_addr, sizeof(decltype(lhs))) == 0;
+  });
+  VLOG(2) << Substitute("found IP address match for $0 among $1",
+                        addr.ToString(),
+                        JoinMapped(ref_addresses, [](const Sockaddr& addr) {
+                          return addr.ToString();
+                        }, ","));
+  return have_match;
 }
 
 Status HostPortsFromAddrs(const vector<Sockaddr>& addrs, vector<HostPort>* hps) {
