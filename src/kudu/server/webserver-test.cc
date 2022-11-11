@@ -66,6 +66,12 @@ TAG_FLAG(test_sensitive_flag, sensitive);
 
 DECLARE_bool(webserver_enable_csp);
 
+// FIPS_mode is removed from OpenSSL3 for test purposes, a fake one is created and
+// set to disabled.
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+int FIPS_mode() { return 0; }
+#endif
+
 namespace kudu {
 
 namespace {

@@ -291,7 +291,11 @@ Status Webserver::Start() {
   }
 
   if (!opts_.password_file.empty()) {
-    if (FIPS_mode()) {
+    int fips_mode = 0;
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+    fips_mode = FIPS_mode();
+#endif
+    if (fips_mode) {
       return Status::IllegalState(
           "Webserver cannot be started with Digest authentication in FIPS approved mode");
     }
