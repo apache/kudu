@@ -60,6 +60,7 @@ static bool ValidateMaxMessageSize(const char* flagname, int64_t value) {
   if (value > std::numeric_limits<int32_t>::max()) {
     LOG(ERROR) << flagname << " must be less than "
                << std::numeric_limits<int32_t>::max() << " bytes.";
+    return false;
   }
 
   return true;
