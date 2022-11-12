@@ -77,6 +77,8 @@ message SetFlagRequestPB {
   // at runtime. This can cause crashes or other bad behavior, so should
   // only be used as a last resort.
   optional bool force = 3 [default = false];
+  // Check all flags for consistency upon setting a new value for a flag.
+  optional bool run_consistency_check = 4 [default = false];
 }
 
 message SetFlagResponsePB {

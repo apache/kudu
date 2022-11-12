@@ -4374,6 +4374,104 @@ TEST_F(ToolTest, TestLocalReplicaCMetaOps) {
   }
 }
 
+TEST_F(ToolTest, TestServerSetFlag) {
+  NO_FATALS(StartExternalMiniCluster());
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  { // Test set unsafe flag.
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 unlock_unsafe_flags true --force",
+                   master_addr)));
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 enable_data_block_fsync true --force",
+                   master_addr)));
+    // Test invalid unsafe flag.
+    string err;
+    RunActionStderrString(
+        Substitute("master set_flag $0 unlock_unsafe_flags false --force",
+                   master_addr), &err);
+    ASSERT_STR_CONTAINS(err,
+        "Detected inconsistency in command-line flags");
+    // Flag value will not be changed.
+    string out;
+    RunActionStdoutString(
+        Substitute("master get_flags $0 --flags=unlock_unsafe_flags --format=json",
+                   master_addr), &out);
+    rapidjson::Document doc;
+    doc.Parse<0>(out.c_str());
+    const string flag_value = "true";
+    for (int i = 0; i < doc.Size(); i++) {
+      const rapidjson::Value& item = doc[i];
+      ASSERT_TRUE(item["value"].GetString() == flag_value);
+    }
+  }
+  { // Test set experimental flag.
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 unlock_experimental_flags true --force",
+                   master_addr)));
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 auto_rebalancing_enabled true --force",
+                   master_addr)));
+    // Test invalid experimental flag.
+    string err;
+    RunActionStderrString(
+        Substitute("master set_flag $0 unlock_experimental_flags false --force",
+                   master_addr), &err);
+    ASSERT_STR_CONTAINS(err,
+        "Detected inconsistency in command-line flags");
+    // Flag value will not be changed.
+    string out;
+    RunActionStdoutString(
+        Substitute("master get_flags $0 --flags=unlock_experimental_flags --format=json",
+                   master_addr), &out);
+    rapidjson::Document doc;
+    doc.Parse<0>(out.c_str());
+    const string flag_value = "true";
+    for (int i = 0; i < doc.Size(); i++) {
+      const rapidjson::Value& item = doc[i];
+      ASSERT_TRUE(item["value"].GetString() == flag_value);
+    }
+  }
+  { // Test set flag using group flag validator.
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 unlock_experimental_flags true --force",
+                   master_addr)));
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 raft_prepare_replacement_before_eviction true --force",
+                  master_addr)));
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 auto_rebalancing_enabled true --force",
+                   master_addr)));
+    // Test set flag violating group validator.
+    string err;
+    RunActionStderrString(
+        Substitute("master set_flag $0 raft_prepare_replacement_before_eviction false --force",
+                   master_addr), &err);
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 auto_rebalancing_enabled true --force",
+                   master_addr)));
+    ASSERT_STR_CONTAINS(err, "Detected inconsistency in command-line flags");
+    // Flag value will not be changed.
+    string out;
+    RunActionStdoutString(
+        Substitute("master get_flags $0 --flags=raft_prepare_replacement_before_eviction"
+                   " --format=json",
+                   master_addr), &out);
+    rapidjson::Document doc;
+    doc.Parse<0>(out.c_str());
+    const string flag_value = "true";
+    for (int i = 0; i < doc.Size(); i++) {
+      const rapidjson::Value& item = doc[i];
+      ASSERT_TRUE(item["value"].GetString() == flag_value);
+    }
+  }
+  { // Test set flag using parameter: --run_consistency_check.
+    NO_FATALS(RunActionStdoutNone(
+        Substitute("master set_flag $0 rpc_certificate_file test "
+                   "--force --run_consistency_check=false",
+                   master_addr)));
+  }
+}
+
 TEST_F(ToolTest, TestTserverList) {
   NO_FATALS(StartExternalMiniCluster());
 

@@ -422,6 +422,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
       .AddRequiredParameter({ kValueArg, "New value for the gflag" })
       .AddOptionalParameter("force")
+      .AddOptionalParameter("run_consistency_check")
       .Build();
 
   unique_ptr<Action> set_flag_for_all =

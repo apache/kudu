@@ -57,6 +57,11 @@ void HandleCommonFlags();
 // logging will write to stderr.
 void ValidateFlags();
 
+// Check for unsafe and experimental flags, and run all group flag validators.
+// Returns 'true' if all checks pass and no inconsistencies are detected,
+// 'false' otherwise.
+bool AreFlagsConsistent();
+
 enum class EscapeMode {
   HTML,
   NONE

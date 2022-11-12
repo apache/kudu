@@ -101,6 +101,9 @@ DEFINE_bool(force, false, "If true, allows the set_flag command to set a flag "
             "which is not explicitly marked as runtime-settable. Such flag "
             "changes may be simply ignored on the server, or may cause the "
             "server to crash.");
+DEFINE_bool(run_consistency_check, true, "If true, Kudu server checks all flags for consistency "
+            "upon setting a flag. In this mode, the server rolls the flag back to its previous "
+            "value and sends corresponding error response if an inconsistency is detected.");
 DEFINE_bool(print_meta, true, "Include metadata in output");
 DEFINE_string(print_entries, "decoded",
               "How to print entries:\n"
@@ -628,6 +631,7 @@ Status SetServerFlag(const string& address, uint16_t default_port,
   req.set_flag(flag);
   req.set_value(value);
   req.set_force(FLAGS_force);
+  req.set_run_consistency_check(FLAGS_run_consistency_check);
 
   RETURN_NOT_OK(proxy->SetFlag(req, &resp, &rpc));
   switch (resp.result()) {

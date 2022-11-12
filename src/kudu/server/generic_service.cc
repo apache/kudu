@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_set>
 #include <utility>
+// IWYU pragma: no_include <unordered_map>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -28,7 +29,6 @@
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
-#include "kudu/clock/time_service.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/casts.h"
@@ -49,6 +49,7 @@ DECLARE_bool(use_hybrid_clock);
 
 using std::string;
 using std::unordered_set;
+using strings::Substitute;
 
 namespace kudu {
 namespace server {
@@ -150,14 +151,28 @@ void GenericServiceImpl::SetFlag(const SetFlagRequestPB* req,
   if (ret.empty()) {
     resp->set_result(SetFlagResponsePB::BAD_VALUE);
     resp->set_msg("Unable to set flag: bad value");
-  } else {
-    LOG(INFO) << rpc->requestor_string() << " changed flags via RPC: "
-              << req->flag() << " from '" << old_val << "' to '"
-              << req->value() << "'";
-    resp->set_result(SetFlagResponsePB::SUCCESS);
-    resp->set_msg(ret);
+    rpc->RespondSuccess();
+    return;
   }
-
+  // Validate all flags.
+  if (req->run_consistency_check() && !AreFlagsConsistent()) {
+    string res = google::SetCommandLineOption(
+      req->flag().c_str(),
+      old_val.c_str());
+    if (ret.empty()) {
+      LOG(WARNING) << Substitute("Failed to roll back flag '$0' to previous value '$1'",
+                                 req->flag(), old_val);
+    }
+    resp->set_result(SetFlagResponsePB::BAD_VALUE);
+    resp->set_msg("Detected inconsistency in command-line flags");
+    rpc->RespondSuccess();
+    return;
+  }
+  LOG(INFO) << rpc->requestor_string() << " changed flags via RPC: "
+            << req->flag() << " from '" << old_val << "' to '"
+            << req->value() << "'";
+  resp->set_result(SetFlagResponsePB::SUCCESS);
+  resp->set_msg(ret);
   rpc->RespondSuccess();
 }
 

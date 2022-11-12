@@ -49,7 +49,6 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_runner.h"
 #include "kudu/master/sys_catalog.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
@@ -824,6 +823,7 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
         .AddRequiredParameter({ kValueArg, "New value for the gflag" })
         .AddOptionalParameter("force")
+        .AddOptionalParameter("run_consistency_check")
         .Build();
     builder.AddAction(std::move(set_flag));
   }

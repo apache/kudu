@@ -437,6 +437,16 @@ void CheckFlagsAllowed() {
   }
 }
 
+bool CheckCustomValidators() {
+  const auto& validators(GetFlagValidators());
+  for (const auto& e : validators) {
+    if (!e.second()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Run 'late phase' custom validators: these can be run only when all flags are
 // already parsed and individually validated.
 void RunCustomValidators() {
@@ -541,6 +551,19 @@ void HandleCommonFlags() {
 void ValidateFlags() {
   CheckFlagsAllowed();
   RunCustomValidators();
+}
+
+bool AreFlagsConsistent() {
+  if (CheckFlagsAndWarn("unsafe", FLAGS_unlock_unsafe_flags)) {
+    return false;
+  }
+  if (CheckFlagsAndWarn("experimental", FLAGS_unlock_experimental_flags)) {
+    return false;
+  }
+  if (CheckCustomValidators()) {
+    return false;
+  }
+  return true;
 }
 
 string CommandlineFlagsIntoString(EscapeMode mode) {
