@@ -29,7 +29,7 @@ set -o pipefail
 MVN_VERSION="3.6.3"
 MVN_CHECKSUM="c35a1803a6e70a126e80b2b3ae33eed961f83ed74d18fcd16909b2d44d7dada3203f1ffe726c17ef8dcca2dcaa9fca676987befeadc9b9f759967a8cb77181c0"
 wget -nv \
-  https://www-us.apache.org/dist/maven/maven-3/$MVN_VERSION/binaries/apache-maven-$MVN_VERSION-bin.tar.gz
+  https://downloads.apache.org/maven/maven-3/$MVN_VERSION/binaries/apache-maven-$MVN_VERSION-bin.tar.gz
 sha512sum -c - <<< "$MVN_CHECKSUM apache-maven-$MVN_VERSION-bin.tar.gz"
 tar -C /usr/local/ -xf apache-maven-$MVN_VERSION-bin.tar.gz
 ln -s /usr/local/apache-maven-$MVN_VERSION/bin/mvn /usr/local/bin
