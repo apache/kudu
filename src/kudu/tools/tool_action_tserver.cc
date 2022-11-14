@@ -37,7 +37,6 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
@@ -430,6 +429,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .Description("Change a gflag value for all Kudu Tablet Servers in the cluster")
       .AddRequiredParameter({ kFlagArg, "Name of the gflag" })
       .AddRequiredParameter({ kValueArg, "New value for the gflag" })
+      .AddOptionalParameter("force")
       .Build();
 
   unique_ptr<Action> status =
