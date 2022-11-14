@@ -151,24 +151,30 @@ void DnsResolver::DoResolutionCb(const HostPort& hostport,
 
 bool DnsResolver::GetCachedAddresses(const HostPort& hostport,
                                      vector<Sockaddr>* addresses) {
-  if (PREDICT_TRUE(cache_)) {
-    auto handle = cache_->Get(hostport.host());
-    if (handle) {
-      if (addresses) {
-        // Copy the cached records and set the result port number as necessary:
-        // a cached port number is not relevant and stored in the cache as a
-        // by-product: HostRecordCache stores not just IPs address, but Sockaddr
-        // structures.
-        vector<Sockaddr> result_addresses(handle.value());
-        for (auto& addr : result_addresses) {
-          addr.set_port(hostport.port());
-        }
-        *addresses = std::move(result_addresses);
-      }
-      return true;
-    }
+  if (PREDICT_FALSE(!cache_)) {
+    // Cache is disabled.
+    return false;
   }
-  return false;
+
+  auto handle = cache_->Get(hostport.host());
+  if (!handle) {
+    // The key is not found.
+    return false;
+  }
+
+  if (addresses) {
+    // Copy the cached records and set the result port number as necessary:
+    // a cached port number is not relevant and stored in the cache as a
+    // by-product: HostRecordCache stores not just IPs address, but Sockaddr
+    // structures.
+    vector<Sockaddr> result_addresses(handle.value());
+    for (auto& addr : result_addresses) {
+      addr.set_port(hostport.port());
+    }
+    *addresses = std::move(result_addresses);
+  }
+
+  return true;
 }
 
 } // namespace kudu
