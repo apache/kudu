@@ -2819,8 +2819,8 @@ void LogBlockManager::OpenDataDir(
         // especially for the kudu cli tool.
         continue;
       }
-      *result_status = s.CloneAndPrepend(Substitute(
-          "Could not open container $0", container_name));
+      *result_status = s.CloneAndPrepend(
+          Substitute("Could not open container $0, directory: $1", container_name, dir->dir()));
       return;
     }
 
