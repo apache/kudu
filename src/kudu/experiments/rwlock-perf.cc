@@ -215,6 +215,8 @@ void test_shared_lock(int num_threads, TestMethod method, const char *name) {
 int main(int argc, char **argv) {
   kudu::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
+    std::cerr << argv[0] << " accepts only flag arguments: " << argv[1] << " is not a flag argument"
+              << std::endl;
     std::cerr << "usage: " << argv[0] << std::endl;
     return 1;
   }
