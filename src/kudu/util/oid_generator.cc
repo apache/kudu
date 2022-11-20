@@ -23,6 +23,7 @@
 #include <string>
 
 #include <boost/uuid/uuid.hpp>
+#include <glog/logging.h>
 
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -60,6 +61,13 @@ Status ObjectIdGenerator::Canonicalize(const string& input,
     return Status::InvalidArgument(Substitute("invalid uuid $0: $1",
                                               input, e.what()));
   }
+}
+
+string ObjectIdGenerator::NextOf(const string& id) {
+  DCHECK(!id.empty());
+  string next(id);
+  next[next.size() - 1] += 1;
+  return next;
 }
 
 } // namespace kudu

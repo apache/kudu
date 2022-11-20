@@ -49,4 +49,15 @@ TEST(ObjectIdGeneratorTest, TestCanoicalizeUuid) {
   ASSERT_EQ(kExpectedCanonicalized, canonicalized);
 }
 
+TEST(ObjectIdGeneratorTest, TestNextOf) {
+  const string uuid_prefix_31_bits = "0123456789abcdef0123456789abcde";
+  const string single_postfix = "0123456789abcdef";
+  for (char ch : single_postfix) {
+    string uuid = uuid_prefix_31_bits + ch;
+    ASSERT_LT(uuid, ObjectIdGenerator::NextOf(uuid));
+    ASSERT_EQ(uuid_prefix_31_bits + static_cast<char>(ch + 1),
+              ObjectIdGenerator::NextOf(uuid));
+  }
+}
+
 } // namespace kudu
