@@ -1247,6 +1247,13 @@ ADD_THIRDPARTY_LIB(boost_date_time
     STATIC_LIB "${BOOST_DATE_TIME_STATIC_LIB}"
     SHARED_LIB "${BOOST_DATE_TIME_SHARED_LIB}")
 
+## rocksdb
+find_package(Rocksdb REQUIRED)
+include_directories(SYSTEM ${ROCKSDB_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(rocksdb
+        STATIC_LIB "${ROCKSDB_STATIC_LIB}"
+        SHARED_LIB "${ROCKSDB_SHARED_LIB}")
+
 ############################################################
 # Enable sized deallocation where supported.
 # This happens down here instead of up with the rest of the

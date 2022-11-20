@@ -1154,3 +1154,30 @@ build_jwt_cpp() {
   make -j$PARALLEL install
   popd
 }
+
+build_rocksdb() {
+  ROCKSDB_BUILD_DIR=$TP_BUILD_DIR/$ROCKSDB_NAME$MODE_SUFFIX
+  mkdir -p $ROCKSDB_BUILD_DIR
+  pushd $ROCKSDB_BUILD_DIR
+  rm -Rf CMakeCache.txt CMakeFiles/
+  CFLAGS="$EXTRA_CFLAGS -fPIC" \
+    CXXFLAGS="$EXTRA_CXXFLAGS -fPIC" \
+    cmake \
+    -ROCKSDB_BUILD_SHARED=ON \
+    -DFAIL_ON_WARNINGS=OFF \
+    -DWITH_BENCHMARK_TOOLS=OFF \
+    -DWITH_TOOLS=OFF \
+    -DWITH_CORE_TOOLS=OFF \
+    -DWITH_LZ4=ON \
+    -DWITH_ZSTD=OFF \
+    -DWITH_SNAPPY=ON \
+    -DWITH_BZ2=OFF \
+    -DWITH_TESTS=OFF \
+    -DWITH_GFLAGS=OFF \
+    -DCMAKE_BUILD_TYPE=release \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DCMAKE_SHARED_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
+    $ROCKSDB_SOURCE
+  make -j$PARALLEL install
+  popd
+}
