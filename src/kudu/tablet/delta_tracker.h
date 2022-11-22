@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -33,7 +34,6 @@
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
@@ -139,10 +139,10 @@ class DeltaTracker {
   // Update the given row in the database.
   // Copies the data, as well as any referenced values into a local arena.
   // "result" tracks the status of the update as well as which data
-  // structure(s) it ended up at.
+  // structure(s) it ended up at (optional, might be passed as nullptr).
   Status Update(Timestamp timestamp,
                 rowid_t row_idx,
-                const RowChangeList &update,
+                const RowChangeList& update,
                 const consensus::OpId& op_id,
                 OperationResultPB* result);
 
@@ -151,7 +151,7 @@ class DeltaTracker {
   //
   // Sets *deleted to true if so; otherwise sets it to false.
   Status CheckRowDeleted(rowid_t row_idx, const fs::IOContext* io_context,
-                         bool *deleted, ProbeStats* stats) const;
+                         bool* deleted, ProbeStats* stats) const;
 
   // Compacts all REDO delta files.
   Status Compact(const fs::IOContext* io_context);
@@ -248,7 +248,7 @@ class DeltaTracker {
 
   // Returns true if the DMS doesn't exist. This doesn't rely on the size.
   bool DeltaMemStoreEmpty() const {
-    return !dms_exists_.Load();
+    return !dms_exists_;
   }
 
   // Get the minimum log index for this tracker's DMS, -1 if it wasn't set.
@@ -336,7 +336,7 @@ class DeltaTracker {
                                          size_t start_idx, size_t end_idx, const Schema* projection,
                                          std::vector<std::shared_ptr<DeltaStore>>* target_stores,
                                          std::vector<BlockId>* target_blocks,
-                                         std::unique_ptr<DeltaIterator>* out);
+                                         std::unique_ptr<DeltaIterator>* out) const;
 
   std::string LogPrefix() const;
 
@@ -369,7 +369,7 @@ class DeltaTracker {
   // The maintenance scheduler calls DeltaMemStoreEmpty() a lot.
   // We use an atomic variable to indicate whether DMS exists or not and
   // to avoid having to take component_lock_ in order to satisfy this call.
-  AtomicBool dms_exists_;
+  std::atomic<bool> dms_exists_;
 
   // read-write lock protecting dms_ and {redo,undo}_delta_stores_.
   // - Readers take this lock in shared mode.

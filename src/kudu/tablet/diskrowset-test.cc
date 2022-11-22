@@ -543,18 +543,18 @@ TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
   ASSERT_OK(OpenTestRowSet(&rs));
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
   ASSERT_OK(rs->FlushDeltas(nullptr));
-  DeltaTracker *dt = rs->delta_tracker();
-  int num_stores = dt->redo_delta_stores_.size();
+  const DeltaTracker& dt = rs->delta_tracker();
+  size_t num_stores = dt.redo_delta_stores_.size();
+  ASSERT_GT(num_stores, 0);
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
   unique_ptr<DeltaIterator> merge_iter;
-  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(nullptr, 0, num_stores - 1, &schema_,
-                                                &compacted_stores,
-                                                &compacted_blocks, &merge_iter));
+  ASSERT_OK(dt.MakeDeltaIteratorMergerUnlocked(nullptr, 0, num_stores - 1, &schema_,
+                                               &compacted_stores,
+                                               &compacted_blocks, &merge_iter));
   vector<string> results;
   ASSERT_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
-                                          ITERATE_OVER_ALL_ROWS,
-                                          &results));
+                                   ITERATE_OVER_ALL_ROWS, &results));
   for (const string &str : results) {
     VLOG(1) << str;
   }
@@ -611,10 +611,10 @@ TEST_F(TestRowSet, TestCompactStores) {
       RowSet::MAJOR_DELTA_COMPACTION)));
 
   // Compact the deltafiles
-  DeltaTracker *dt = rs->delta_tracker();
+  auto* dt = rs->mutable_delta_tracker();
   int num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores before compaction: " << num_stores;
-  ASSERT_EQ(num_stores, 3);
+  ASSERT_EQ(3, num_stores);
   ASSERT_OK(dt->CompactStores(nullptr, 0, num_stores - 1));
   num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores after compaction: " << num_stores;
@@ -650,7 +650,7 @@ TEST_F(TestRowSet, TestGCAncientStores) {
   WriteTestRowSet();
   shared_ptr<DiskRowSet> rs;
   ASSERT_OK(OpenTestRowSet(&rs));
-  DeltaTracker *dt = rs->delta_tracker();
+  DeltaTracker* dt = rs->mutable_delta_tracker();
   ASSERT_EQ(0, dt->CountUndoDeltaStores());
   ASSERT_EQ(0, dt->CountRedoDeltaStores());
 

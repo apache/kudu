@@ -2600,7 +2600,8 @@ Status Tablet::MajorCompactAllDeltaStoresForTests() {
   for (const auto& rs : comps->rowsets->all_rowsets()) {
     if (!rs->IsAvailableForCompaction()) continue;
     DiskRowSet* drs = down_cast<DiskRowSet*>(rs.get());
-    RETURN_NOT_OK(drs->delta_tracker()->InitAllDeltaStoresForTests(DeltaTracker::REDOS_ONLY));
+    RETURN_NOT_OK(drs->mutable_delta_tracker()->InitAllDeltaStoresForTests(
+        DeltaTracker::REDOS_ONLY));
     RETURN_NOT_OK_PREPEND(drs->MajorCompactDeltaStores(&io_context, GetHistoryGcOpts()),
                           "Failed major delta compaction on " + rs->ToString());
   }

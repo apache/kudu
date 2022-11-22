@@ -50,6 +50,7 @@
 #include "kudu/tablet/multi_column_writer.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
@@ -573,8 +574,8 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
                                                         HistoryGcOpts history_gc_opts) {
   VLOG_WITH_PREFIX(1) << "Major compacting REDO delta stores (cols: " << col_ids << ")";
   TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStoresWithColumnIds");
-  std::lock_guard<Mutex> l(*delta_tracker()->compact_flush_lock());
-  RETURN_NOT_OK(delta_tracker()->CheckWritableUnlocked());
+  std::lock_guard<Mutex> l(*mutable_delta_tracker()->compact_flush_lock());
+  RETURN_NOT_OK(mutable_delta_tracker()->CheckWritableUnlocked());
 
   // TODO(todd): do we need to lock schema or anything here?
   unique_ptr<MajorDeltaCompaction> compaction;
@@ -704,9 +705,7 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
     return Status::NotFound("row not found");
   }
 
-  RETURN_NOT_OK(delta_tracker_->Update(timestamp, *row_idx, update, op_id, result));
-
-  return Status::OK();
+  return delta_tracker_->Update(timestamp, *row_idx, update, op_id, result);
 }
 
 Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,

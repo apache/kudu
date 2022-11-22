@@ -120,11 +120,11 @@ class RowSetMetadata {
 
   // Atomically commit the new redo delta block to RowSetMetadata.
   // This atomic operation includes updates to last_durable_redo_dms_id_ and live_row_count_.
-  Status CommitRedoDeltaDataBlock(int64_t dms_id,
-                                  int64_t num_deleted_rows,
-                                  const BlockId& block_id);
+  void CommitRedoDeltaDataBlock(int64_t dms_id,
+                                int64_t num_deleted_rows,
+                                const BlockId& block_id);
 
-  Status CommitUndoDeltaDataBlock(const BlockId& block_id);
+  void CommitUndoDeltaDataBlock(const BlockId& block_id);
 
   bool has_encoded_keys_unlocked() const {
     return min_encoded_key_ && max_encoded_key_;

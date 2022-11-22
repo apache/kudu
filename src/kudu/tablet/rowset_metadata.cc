@@ -186,20 +186,18 @@ void RowSetMetadata::SetColumnDataBlocks(const std::map<ColumnId, BlockId>& bloc
   blocks_by_col_id_ = std::move(new_map);
 }
 
-Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t dms_id,
-                                                int64_t num_deleted_rows,
-                                                const BlockId& block_id) {
+void RowSetMetadata::CommitRedoDeltaDataBlock(int64_t dms_id,
+                                              int64_t num_deleted_rows,
+                                              const BlockId& block_id) {
   std::lock_guard<LockType> l(lock_);
   last_durable_redo_dms_id_ = dms_id;
   redo_delta_blocks_.push_back(block_id);
   IncrementLiveRowsUnlocked(-num_deleted_rows);
-  return Status::OK();
 }
 
-Status RowSetMetadata::CommitUndoDeltaDataBlock(const BlockId& block_id) {
+void RowSetMetadata::CommitUndoDeltaDataBlock(const BlockId& block_id) {
   std::lock_guard<LockType> l(lock_);
   undo_delta_blocks_.push_back(block_id);
-  return Status::OK();
 }
 
 void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,

@@ -366,6 +366,7 @@ Status CFileWriter::FinishCurDataBlock() {
     return Status::OK();
   }
 
+  DCHECK_GE(value_count_, num_elems_in_block);
   rowid_t first_elem_ord = value_count_ - num_elems_in_block;
   VLOG(1) << "Appending data block for values " <<
     first_elem_ord << "-" << value_count_;

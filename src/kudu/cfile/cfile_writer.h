@@ -160,7 +160,7 @@ class CFileWriter {
   // Return the number of values written to the file.
   // This includes NULL cells, but does not include any "raw" blocks
   // appended.
-  int written_value_count() const {
+  uint32_t written_value_count() const {
     return value_count_;
   }
 

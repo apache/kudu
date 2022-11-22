@@ -340,7 +340,7 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
     PreparedDelta d;
     d.key = key;
     d.val = val;
-    prepared_deltas_.emplace_back(d);
+    prepared_deltas_.emplace_back(std::move(d));
   }
 
   if (finished_row_for_apply_or_collect &&
@@ -437,9 +437,10 @@ template<class Traits>
 Status DeltaPreparer<Traits>::CollectMutations(vector<Mutation*>* dst, Arena* arena) {
   DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_COLLECT);
   DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, dst->size());
-  for (const PreparedDelta& src : prepared_deltas_) {
-    DeltaKey key = src.key;
+  for (const auto& src : prepared_deltas_) {
+    const auto& key = src.key;
     RowChangeList changelist(src.val);
+    DCHECK_GE(key.row_idx(), prev_prepared_idx_);
     uint32_t rel_idx = key.row_idx() - prev_prepared_idx_;
 
     Mutation *mutation = Mutation::CreateInArena(arena, key.timestamp(), changelist);

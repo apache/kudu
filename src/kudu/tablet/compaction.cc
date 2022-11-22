@@ -54,7 +54,6 @@
 #include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
-#include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
@@ -1552,17 +1551,16 @@ Status ReupdateMissedDeltas(const IOContext* io_context,
           RETURN_NOT_OK(cur_drs->CountRows(io_context, &num_rows));
         }
 
-        DeltaTracker* cur_tracker = cur_drs->delta_tracker();
-        unique_ptr<OperationResultPB> result(new OperationResultPB);
+        DeltaTracker* cur_tracker = cur_drs->mutable_delta_tracker();
         DCHECK_LT(idx_in_delta_tracker, num_rows);
-        Status s = cur_tracker->Update(mut->timestamp(),
-                                       idx_in_delta_tracker,
-                                       mut->changelist(),
-                                       max_op_id,
-                                       result.get());
+        const auto s = cur_tracker->Update(mut->timestamp(),
+                                           idx_in_delta_tracker,
+                                           mut->changelist(),
+                                           max_op_id,
+                                           nullptr);
         DCHECK(s.ok()) << "Failed update on compaction for row " << output_row_offset
             << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
-        if (s.ok()) {
+        if (PREDICT_TRUE(s.ok())) {
           // Update the set of delta trackers with the one we've just updated.
           InsertIfNotPresent(&updated_trackers, cur_tracker);
         }

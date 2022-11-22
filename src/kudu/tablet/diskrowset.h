@@ -26,6 +26,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -40,7 +41,6 @@
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_tracker.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/bloom_filter.h"
@@ -86,6 +86,7 @@ class MultiColumnWriter;
 class Mutation;
 class MvccSnapshot;
 class OperationResultPB;
+class RowSetMetadata;
 
 class DiskRowSetWriter {
  public:
@@ -430,8 +431,14 @@ class DiskRowSet :
     has_been_compacted_.store(true);
   }
 
-  DeltaTracker *delta_tracker() {
-    return DCHECK_NOTNULL(delta_tracker_.get());
+  DeltaTracker* mutable_delta_tracker() {
+    DCHECK(delta_tracker_);
+    return delta_tracker_.get();
+  }
+
+  const DeltaTracker& delta_tracker() const {
+    DCHECK(delta_tracker_);
+    return *delta_tracker_;
   }
 
   std::shared_ptr<RowSetMetadata> metadata() override {
