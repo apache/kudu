@@ -121,6 +121,21 @@ kudu cluster ksck localhost:7051,localhost:7151,localhost:7251
 NOTE: Setting `KUDU_USER_NAME=kudu` simplifies using Kudu from various user
 accounts in a non-secure environment.
 
+NOTE: Remembering master addresses each time when using the `kudu` command
+line tool can be unwieldy. As an alternative to this,
+<<administration.adoc#using_cluster_names_in_kudu_tool,the command line tool
+can identify clusters by name.>>
+
+NOTE: Setting environment variables in the current shell session in order to Master
+addresses and substituting them later on can also simplify the calls to Kudu CLI
+greatly.
+
+[source,bash]
+----
+export KUDU_MASTER_ADDRESSES=localhost:7051,localhost:7151,localhost:7251
+kudu table list $KUDU_MASTER_ADDRESSES
+----
+
 == Running a Brief Example
 
 Now that a Kudu cluster is up and running, examples and integrations can be
