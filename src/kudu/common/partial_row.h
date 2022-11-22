@@ -106,6 +106,7 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetInt16(const Slice& col_name, int16_t val) WARN_UNUSED_RESULT;
   Status SetInt32(const Slice& col_name, int32_t val) WARN_UNUSED_RESULT;
   Status SetInt64(const Slice& col_name, int64_t val) WARN_UNUSED_RESULT;
+  Status SetSerial(const Slice& col_name, uint64_t val) WARN_UNUSED_RESULT;
   /// Set value for a column by name.
   ///
   /// @param [in] col_name
@@ -149,6 +150,7 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetInt16(int col_idx, int16_t val) WARN_UNUSED_RESULT;
   Status SetInt32(int col_idx, int32_t val) WARN_UNUSED_RESULT;
   Status SetInt64(int col_idx, int64_t val) WARN_UNUSED_RESULT;
+  Status SetSerial(int col_idx, uint64_t val) WARN_UNUSED_RESULT;
 
   /// @param [in] col_idx
   ///   The index of the target column.
@@ -460,6 +462,7 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetInt16(const Slice& col_name, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(const Slice& col_name, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(const Slice& col_name, int64_t* val) const WARN_UNUSED_RESULT;
+  Status GetSerial(const Slice& col_name, uint64_t* val) const WARN_UNUSED_RESULT;
 
   /// @param [in] col_name
   ///   The name of the column.
@@ -516,6 +519,7 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetInt16(int col_idx, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(int col_idx, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(int col_idx, int64_t* val) const WARN_UNUSED_RESULT;
+  Status GetSerial(int col_idx, uint64_t* val) const WARN_UNUSED_RESULT;
 
   /// @param [in] col_idx
   ///   The index of the target column.

@@ -128,6 +128,7 @@ kudu::DataType ToInternalDataType(KuduColumnSchema::DataType type,
     case KuduColumnSchema::INT16: return kudu::INT16;
     case KuduColumnSchema::INT32: return kudu::INT32;
     case KuduColumnSchema::INT64: return kudu::INT64;
+    case KuduColumnSchema::SERIAL: return kudu::UINT64;
     case KuduColumnSchema::UNIXTIME_MICROS: return kudu::UNIXTIME_MICROS;
     case KuduColumnSchema::DATE: return kudu::DATE;
     case KuduColumnSchema::FLOAT: return kudu::FLOAT;
@@ -156,6 +157,7 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
     case kudu::INT16: return KuduColumnSchema::INT16;
     case kudu::INT32: return KuduColumnSchema::INT32;
     case kudu::INT64: return KuduColumnSchema::INT64;
+    case kudu::UINT64: return KuduColumnSchema::SERIAL;
     case kudu::UNIXTIME_MICROS: return KuduColumnSchema::UNIXTIME_MICROS;
     case kudu::DATE: return KuduColumnSchema::DATE;
     case kudu::FLOAT: return KuduColumnSchema::FLOAT;
@@ -703,6 +705,8 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
       return "DECIMAL";
     case VARCHAR:
       return "VARCHAR";
+    case SERIAL:
+      return "SERIAL";
   }
   LOG(FATAL) << "Unhandled type " << type;
 }
@@ -737,6 +741,8 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
     *type = VARCHAR;
   } else if (type_uc == "DATE") {
     *type = DATE;
+  } else if (type_uc == "SERIAL") {
+    *type = SERIAL;
   } else {
     return Status::InvalidArgument(Substitute(
         "data type $0 is not supported", type_str));

@@ -283,6 +283,9 @@ Status KuduPartialRow::SetInt32(const Slice& col_name, int32_t val) {
 Status KuduPartialRow::SetInt64(const Slice& col_name, int64_t val) {
   return Set<TypeTraits<INT64> >(col_name, val);
 }
+Status KuduPartialRow::SetSerial(const Slice& col_name, uint64_t val) {
+  return Set<TypeTraits<UINT64> >(col_name, val);
+}
 Status KuduPartialRow::SetUnixTimeMicros(const Slice& col_name, int64_t micros_since_utc_epoch) {
   return Set<TypeTraits<UNIXTIME_MICROS> >(col_name, micros_since_utc_epoch);
 }
@@ -314,6 +317,9 @@ Status KuduPartialRow::SetInt32(int col_idx, int32_t val) {
 }
 Status KuduPartialRow::SetInt64(int col_idx, int64_t val) {
   return Set<TypeTraits<INT64> >(col_idx, val);
+}
+Status KuduPartialRow::SetSerial(int col_idx, uint64_t val) {
+  return Set<TypeTraits<UINT64> >(col_idx, val);
 }
 Status KuduPartialRow::SetUnixTimeMicros(int col_idx, int64_t micros_since_utc_epoch) {
   return Set<TypeTraits<UNIXTIME_MICROS> >(col_idx, micros_since_utc_epoch);
@@ -707,6 +713,9 @@ Status KuduPartialRow::GetInt32(const Slice& col_name, int32_t* val) const {
 Status KuduPartialRow::GetInt64(const Slice& col_name, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_name, val);
 }
+Status KuduPartialRow::GetSerial(const Slice& col_name, uint64_t* val) const {
+  return Get<TypeTraits<UINT64> >(col_name, val);
+}
 Status KuduPartialRow::GetUnixTimeMicros(const Slice& col_name,
                                          int64_t* micros_since_utc_epoch) const {
   return Get<TypeTraits<UNIXTIME_MICROS> >(col_name, micros_since_utc_epoch);
@@ -756,6 +765,9 @@ Status KuduPartialRow::GetInt32(int col_idx, int32_t* val) const {
 }
 Status KuduPartialRow::GetInt64(int col_idx, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_idx, val);
+}
+Status KuduPartialRow::GetSerial(int col_idx, uint64_t* val) const {
+  return Get<TypeTraits<UINT64> >(col_idx, val);
 }
 Status KuduPartialRow::GetUnixTimeMicros(int col_idx, int64_t* micros_since_utc_epoch) const {
   return Get<TypeTraits<UNIXTIME_MICROS> >(col_idx, micros_since_utc_epoch);

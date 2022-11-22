@@ -40,6 +40,7 @@ class PartialRowTest : public KuduTest {
   PartialRowTest()
     : schema_({ ColumnSchema("key", INT32),
                 ColumnSchema("int_val", INT32),
+                ColumnSchema("uint64_val", UINT64),
                 ColumnSchema("string_val", STRING, true),
                 ColumnSchema("binary_val", BINARY, true),
                 ColumnSchema("decimal_val", DECIMAL32, true, false, nullptr, nullptr,
@@ -134,6 +135,7 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_FALSE(row.IsColumnSet(3));
   EXPECT_FALSE(row.IsColumnSet(4));
   EXPECT_FALSE(row.IsColumnSet(5));
+  EXPECT_FALSE(row.IsColumnSet(6));
   EXPECT_FALSE(row.IsKeySet());
   EXPECT_EQ("", row.ToString());
 
@@ -158,19 +160,29 @@ TEST_F(PartialRowTest, UnitTest) {
 
   // Fill in the other columns.
   EXPECT_OK(row.SetInt32("int_val", 54321));
+  EXPECT_OK(row.GetInt32("int_val", &x));
+  EXPECT_EQ(54321, x);
+  EXPECT_OK(row.SetSerial("uint64_val", 7654321));
+  uint64_t y;
+  EXPECT_OK(row.GetSerial("uint64_val", &y));
+  EXPECT_EQ(7654321, y);
   EXPECT_OK(row.SetStringCopy("string_val", "hello world"));
+  Slice slice;
+  EXPECT_OK(row.GetString("string_val", &slice));
+  EXPECT_EQ("hello world", slice.ToString());
   EXPECT_TRUE(row.IsColumnSet(1));
   EXPECT_TRUE(row.IsColumnSet(2));
-  EXPECT_EQ(R"(int32 key=12345, int32 int_val=54321, string string_val="hello world")",
-            row.ToString());
-  Slice slice;
+  EXPECT_TRUE(row.IsColumnSet(3));
+  EXPECT_EQ(R"(int32 key=12345, int32 int_val=54321, uint64 uint64_val=7654321, )"
+            R"(string string_val="hello world")",row.ToString());
   EXPECT_OK(row.GetString("string_val", &slice));
   EXPECT_EQ("hello world", slice.ToString());
   EXPECT_FALSE(row.IsNull("key"));
 
   // Set a nullable entry to NULL
   EXPECT_OK(row.SetNull("string_val"));
-  EXPECT_EQ("int32 key=12345, int32 int_val=54321, string string_val=NULL",
+  EXPECT_EQ("int32 key=12345, int32 int_val=54321, uint64 uint64_val=7654321, "
+            "string string_val=NULL",
             row.ToString());
   EXPECT_TRUE(row.IsNull("string_val"));
 
@@ -190,14 +202,17 @@ TEST_F(PartialRowTest, UnitTest) {
 
   // Set the NULL string back to non-NULL
   EXPECT_OK(row.SetStringCopy("string_val", "goodbye world"));
-  EXPECT_EQ(R"(int32 key=12345, int32 int_val=54321, string string_val="goodbye world")",
-            row.ToString());
+  EXPECT_EQ(R"(int32 key=12345, int32 int_val=54321, uint64 uint64_val=7654321, )"
+            R"(string string_val="goodbye world")",row.ToString());
 
   // Unset some columns.
   EXPECT_OK(row.Unset("string_val"));
-  EXPECT_EQ("int32 key=12345, int32 int_val=54321", row.ToString());
+  EXPECT_EQ("int32 key=12345, int32 int_val=54321, uint64 uint64_val=7654321", row.ToString());
 
   EXPECT_OK(row.Unset("key"));
+  EXPECT_EQ("int32 int_val=54321, uint64 uint64_val=7654321", row.ToString());
+
+  EXPECT_OK(row.Unset("uint64_val"));
   EXPECT_EQ("int32 int_val=54321", row.ToString());
 
   // Set the column by index
@@ -218,7 +233,7 @@ TEST_F(PartialRowTest, UnitTest) {
 
   // Set a decimal column
   EXPECT_OK(row.SetUnscaledDecimal("decimal_val", 123456));
-  EXPECT_TRUE(row.IsColumnSet(4));
+  EXPECT_TRUE(row.IsColumnSet(5));
   EXPECT_EQ("decimal decimal_val=123456_D32", row.ToString());
 
   // Get a decimal value using the const version of the function.
@@ -261,10 +276,10 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_FALSE(row.SetBinaryCopy("string_val", "oops").ok());
   EXPECT_FALSE(row.SetStringCopy("binary_val", "oops").ok());
 
-  EXPECT_OK(row.Unset(4));
+  EXPECT_OK(row.Unset(5));
 
   s = row.SetVarchar("varchar_val", "shortval");
-  EXPECT_TRUE(row.IsColumnSet(5));
+  EXPECT_TRUE(row.IsColumnSet(6));
   EXPECT_EQ("varchar varchar_val=\"shortval\"", row.ToString());
 
   s = row.SetVarchar("varchar_val", "shortval  value ");
@@ -311,12 +326,15 @@ TEST_F(PartialRowTest, TestCopy) {
   EXPECT_FALSE(copy.IsColumnSet(0));
   EXPECT_FALSE(copy.IsColumnSet(1));
   EXPECT_FALSE(copy.IsColumnSet(2));
+  EXPECT_FALSE(copy.IsColumnSet(3));
 
   ASSERT_OK(row.SetInt32(0, 42));
   ASSERT_OK(row.SetInt32(1, 99));
-  ASSERT_OK(row.SetStringCopy(2, "copied-string"));
+  ASSERT_OK(row.SetSerial(2, 9999));
+  ASSERT_OK(row.SetStringCopy(3, "copied-string"));
 
   int32_t int_val;
+  uint64_t uint64_val;
   Slice string_val;
   Slice binary_val;
 
@@ -326,31 +344,33 @@ TEST_F(PartialRowTest, TestCopy) {
   EXPECT_EQ(42, int_val);
   ASSERT_OK(copy.GetInt32(1, &int_val));
   EXPECT_EQ(99, int_val);
-  ASSERT_OK(copy.GetString(2, &string_val));
+  ASSERT_OK(copy.GetSerial(2, &uint64_val));
+  EXPECT_EQ(9999, uint64_val);
+  ASSERT_OK(copy.GetString(3, &string_val));
   EXPECT_EQ("copied-string", string_val.ToString());
 
   // Check a copy with a null value.
-  ASSERT_OK(row.SetNull(2));
+  ASSERT_OK(row.SetNull(3));
   copy = row;
-  EXPECT_TRUE(copy.IsNull(2));
+  EXPECT_TRUE(copy.IsNull(3));
 
   // Check a copy with a borrowed value.
   string borrowed_string = "borrowed-string";
   string borrowed_binary = "borrowed-binary";
-  ASSERT_OK(row.SetStringNoCopy(2, borrowed_string));
-  ASSERT_OK(row.SetBinaryNoCopy(3, borrowed_binary));
+  ASSERT_OK(row.SetStringNoCopy(3, borrowed_string));
+  ASSERT_OK(row.SetBinaryNoCopy(4, borrowed_binary));
 
   copy = row;
-  ASSERT_OK(copy.GetString(2, &string_val));
+  ASSERT_OK(copy.GetString(3, &string_val));
   EXPECT_EQ("borrowed-string", string_val.ToString());
-  ASSERT_OK(copy.GetBinary(3, &binary_val));
+  ASSERT_OK(copy.GetBinary(4, &binary_val));
   EXPECT_EQ("borrowed-binary", binary_val.ToString());
 
   borrowed_string.replace(0, 8, "mutated-");
   borrowed_binary.replace(0, 8, "mutated-");
-  ASSERT_OK(copy.GetString(2, &string_val));
+  ASSERT_OK(copy.GetString(3, &string_val));
   EXPECT_EQ("mutated--string", string_val.ToString());
-  ASSERT_OK(copy.GetBinary(3, &string_val));
+  ASSERT_OK(copy.GetBinary(4, &string_val));
   EXPECT_EQ("mutated--binary", string_val.ToString());
 }
 
@@ -359,7 +379,7 @@ TEST_F(PartialRowTest, TestSetBinaryCopy) {
   BinaryDataSetterTest(
       static_cast<BinaryGetter>(&KuduPartialRow::GetBinary),
       static_cast<BinarySetter>(&KuduPartialRow::SetBinaryCopy),
-      3, COPY);
+      4, COPY);
 }
 
 // Check that PartialRow::SetStringCopy() copies the input data.
@@ -367,7 +387,7 @@ TEST_F(PartialRowTest, TestSetStringCopy) {
   BinaryDataSetterTest(
       static_cast<BinaryGetter>(&KuduPartialRow::GetString),
       static_cast<BinarySetter>(&KuduPartialRow::SetStringCopy),
-      2, COPY);
+      3, COPY);
 }
 
 // Check that PartialRow::SetBinaryNoCopy() does not copy the input data.
@@ -375,7 +395,7 @@ TEST_F(PartialRowTest, TestSetBinaryNoCopy) {
   BinaryDataSetterTest(
       static_cast<BinaryGetter>(&KuduPartialRow::GetBinary),
       static_cast<BinarySetter>(&KuduPartialRow::SetBinaryNoCopy),
-      3, NO_COPY);
+      4, NO_COPY);
 }
 
 // Check that PartialRow::SetStringNoCopy() does not copy the input data.
@@ -383,7 +403,7 @@ TEST_F(PartialRowTest, TestSetStringNoCopy) {
   BinaryDataSetterTest(
       static_cast<BinaryGetter>(&KuduPartialRow::GetString),
       static_cast<BinarySetter>(&KuduPartialRow::SetStringNoCopy),
-      2, NO_COPY);
+      3, NO_COPY);
 }
 
 // Check that PartialRow::SetBinary() copies the input data.
@@ -391,7 +411,7 @@ TEST_F(PartialRowTest, TestSetBinary) {
   BinaryDataSetterTest(
       static_cast<BinaryGetter>(&KuduPartialRow::GetBinary),
       static_cast<BinarySetter>(&KuduPartialRow::SetBinary),
-      3, COPY);
+      4, COPY);
 }
 
 // Check that PartialRow::SetString() copies the input data.
@@ -399,7 +419,7 @@ TEST_F(PartialRowTest, TestSetString) {
   BinaryDataSetterTest(
       static_cast<BinaryGetter>(&KuduPartialRow::GetString),
       static_cast<BinarySetter>(&KuduPartialRow::SetString),
-      2, COPY);
+      3, COPY);
 }
 
 } // namespace kudu
