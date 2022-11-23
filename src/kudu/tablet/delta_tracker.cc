@@ -105,7 +105,7 @@ DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
 
 Status DeltaTracker::OpenDeltaReaders(vector<DeltaBlockIdAndStats> blocks,
                                       const IOContext* io_context,
-                                      vector<shared_ptr<DeltaStore> >* stores,
+                                      vector<shared_ptr<DeltaStore>>* stores,
                                       DeltaType type) {
   FsManager* fs = rowset_metadata_->fs_manager();
   for (auto& block_and_stats : blocks) {
@@ -138,7 +138,7 @@ Status DeltaTracker::OpenDeltaReaders(vector<DeltaBlockIdAndStats> blocks,
 
     VLOG_WITH_PREFIX(1) << "Successfully opened " << DeltaType_Name(type)
                         << " delta file " << block_id.ToString();
-    stores->push_back(dfr);
+    stores->emplace_back(std::move(dfr));
   }
   return Status::OK();
 }
@@ -150,17 +150,22 @@ Status DeltaTracker::DoOpen(const IOContext* io_context) {
   CHECK(undo_delta_stores_.empty()) << "should call before opening any readers";
   CHECK(!open_);
 
+  auto rdb = rowset_metadata_->redo_delta_blocks();
   vector<DeltaBlockIdAndStats> redos;
-  for (auto block_id : rowset_metadata_->redo_delta_blocks()) {
-    redos.emplace_back(std::make_pair(block_id, nullptr));
+  redos.reserve(rdb.size());
+  for (const auto& block_id : rdb) {
+    redos.emplace_back(block_id, nullptr);
   }
   RETURN_NOT_OK(OpenDeltaReaders(std::move(redos),
                                  io_context,
                                  &redo_delta_stores_,
                                  REDO));
+
+  auto udb = rowset_metadata_->undo_delta_blocks();
   vector<DeltaBlockIdAndStats> undos;
-  for (auto block_id : rowset_metadata_->undo_delta_blocks()) {
-    undos.emplace_back(std::make_pair(block_id, nullptr));
+  undos.reserve(udb.size());
+  for (const auto& block_id : udb) {
+    undos.emplace_back(block_id, nullptr);
   }
   RETURN_NOT_OK(OpenDeltaReaders(std::move(undos),
                                  io_context,
@@ -457,7 +462,7 @@ Status DeltaTracker::CompactStores(const IOContext* io_context, int start_idx, i
                                     BlockId::JoinStrings(compacted_blocks),
                                     new_block_id.ToString());
   vector<DeltaBlockIdAndStats> new_block_and_stats;
-  new_block_and_stats.emplace_back(std::make_pair(new_block_id, std::move(stats)));
+  new_block_and_stats.emplace_back(new_block_id, std::move(stats));
   RETURN_NOT_OK_PREPEND(CommitDeltaStoreMetadataUpdate(update, compacted_stores,
                                                        std::move(new_block_and_stats),
                                                        io_context, REDO, FLUSH_METADATA),

@@ -23,15 +23,20 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 
+#include "kudu/cfile/binary_plain_block.h"
+#include "kudu/cfile/block_handle.h"
+#include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/rowid.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
@@ -55,7 +60,6 @@ class SelectionVector;
 struct ColumnId;
 
 namespace cfile {
-class BinaryPlainBlockDecoder;
 class IndexTreeIterator;
 struct ReaderOptions;
 } // namespace cfile
@@ -234,8 +238,6 @@ class DeltaFileReader : public DeltaStore,
   KuduOnceLambda init_once_;
 };
 
-struct PreparedDeltaBlock;
-
 // Iterator over the deltas contained in a delta file.
 //
 // See DeltaIterator for details.
@@ -282,7 +284,43 @@ class DeltaFileIterator : public DeltaIterator {
  private:
   friend class DeltaFileReader;
 
-  DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
+  struct PreparedDeltaBlock {
+    PreparedDeltaBlock(const cfile::BlockPointer& block_ptr_in,
+                       scoped_refptr<cfile::BlockHandle> block_in,
+                       rowid_t start_idx_in)
+        : block_ptr(block_ptr_in),
+          block(std::move(block_in)),
+          decoder(block),
+          prepared_block_start_idx(start_idx_in) {
+    }
+
+    // The pointer from which this block was read. This is only used for
+    // logging, etc.
+    cfile::BlockPointer block_ptr;
+
+    // Handle to the block, so it doesn't get freed from underneath us.
+    scoped_refptr<cfile::BlockHandle> block;
+
+    // The block decoder, to avoid having to re-parse the block header
+    // on every ApplyUpdates() call
+    cfile::BinaryPlainBlockDecoder decoder;
+
+    // The first row index for which there is an update in this delta block.
+    rowid_t first_updated_idx;
+
+    // The last row index for which there is an update in this delta block.
+    rowid_t last_updated_idx;
+
+    // Within this block, the index of the update which is the first one that
+    // needs to be consulted. This allows deltas to be skipped at the beginning
+    // of the block when the row block starts towards the end of the delta block.
+    // For example:
+    // <-- delta block ---->
+    //                   <--- prepared row block --->
+    // Here, we can skip a bunch of deltas at the beginning of the delta block
+    // which we know don't apply to the prepared row block.
+    rowid_t prepared_block_start_idx;
+  };
 
   // The pointers in 'opts' and 'dfr' must remain valid for the lifetime of the iterator.
   DeltaFileIterator(std::shared_ptr<DeltaFileReader> dfr,
@@ -318,12 +356,14 @@ class DeltaFileIterator : public DeltaIterator {
 
   // After PrepareBatch(), the set of delta blocks in the delta file
   // which correspond to prepared_block_.
-  std::deque<std::unique_ptr<PreparedDeltaBlock>> delta_blocks_;
+  std::deque<PreparedDeltaBlock> delta_blocks_;
 
   // Temporary buffer used in seeking.
   faststring tmp_buf_;
 
   cfile::CFileReader::CacheControl cache_blocks_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
 };
 
 

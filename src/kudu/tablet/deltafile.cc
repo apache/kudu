@@ -27,7 +27,6 @@
 
 #include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/block_handle.h"
-#include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
@@ -44,7 +43,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_relevancy.h"
 #include "kudu/tablet/mvcc.h"
@@ -65,6 +63,17 @@ DEFINE_string(deltafile_default_compression_codec, "lz4",
               "The compression codec used when writing deltafiles.");
 TAG_FLAG(deltafile_default_compression_codec, experimental);
 
+
+using kudu::cfile::BinaryPlainBlockDecoder;
+using kudu::cfile::BlockPointer;
+using kudu::cfile::CFileReader;
+using kudu::cfile::IndexTreeIterator;
+using kudu::cfile::ReaderOptions;
+using kudu::fs::BlockCreationTransaction;
+using kudu::fs::BlockManager;
+using kudu::fs::IOContext;
+using kudu::fs::ReadableBlock;
+using kudu::fs::WritableBlock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -75,24 +84,13 @@ namespace kudu {
 
 class MemTracker;
 
-using cfile::BinaryPlainBlockDecoder;
-using cfile::BlockPointer;
-using cfile::CFileReader;
-using cfile::IndexTreeIterator;
-using cfile::ReaderOptions;
-using fs::BlockCreationTransaction;
-using fs::BlockManager;
-using fs::IOContext;
-using fs::ReadableBlock;
-using fs::WritableBlock;
-
 namespace tablet {
 
-const char * const DeltaFileReader::kDeltaStatsEntryName = "deltafilestats";
+const char* const DeltaFileReader::kDeltaStatsEntryName = "deltafilestats";
 
 DeltaFileWriter::DeltaFileWriter(unique_ptr<WritableBlock> block)
 #ifndef NDEBUG
- : has_appended_(false)
+   : has_appended_(false)
 #endif
 { // NOLINT(*)
   cfile::WriterOptions opts;
@@ -488,71 +486,33 @@ Status DeltaFileIterator<Type>::SeekToOrdinal(rowid_t idx) {
   return Status::OK();
 }
 
-struct PreparedDeltaBlock {
-  // The pointer from which this block was read. This is only used for
-  // logging, etc.
-  cfile::BlockPointer block_ptr_;
-
-  // Handle to the block, so it doesn't get freed from underneath us.
-  scoped_refptr<cfile::BlockHandle> block_;
-
-  // The block decoder, to avoid having to re-parse the block header
-  // on every ApplyUpdates() call
-  std::unique_ptr<cfile::BinaryPlainBlockDecoder> decoder_;
-
-  // The first row index for which there is an update in this delta block.
-  rowid_t first_updated_idx_;
-
-  // The last row index for which there is an update in this delta block.
-  rowid_t last_updated_idx_;
-
-  // Within this block, the index of the update which is the first one that
-  // needs to be consulted. This allows deltas to be skipped at the beginning
-  // of the block when the row block starts towards the end of the delta block.
-  // For example:
-  // <-- delta block ---->
-  //                   <--- prepared row block --->
-  // Here, we can skip a bunch of deltas at the beginning of the delta block
-  // which we know don't apply to the prepared row block.
-  rowid_t prepared_block_start_idx_;
-
-  // Return a string description of this prepared block, for logging.
-  std::string ToString() const {
-    return StringPrintf("%d-%d (%s)", first_updated_idx_, last_updated_idx_,
-                        block_ptr_.ToString().c_str());
-  }
-};
-
-
 template<DeltaType Type>
 Status DeltaFileIterator<Type>::ReadCurrentBlockOntoQueue() {
   DCHECK(initted_) << "Must call Init()";
   DCHECK(index_iter_) << "Must call SeekToOrdinal()";
 
-  unique_ptr<PreparedDeltaBlock> pdb(new PreparedDeltaBlock());
-  BlockPointer dblk_ptr = index_iter_->GetCurrentBlockPointer();
+  const BlockPointer& dblk_ptr = index_iter_->GetCurrentBlockPointer();
   shared_ptr<CFileReader> reader = dfr_->cfile_reader();
+  scoped_refptr<cfile::BlockHandle> block;
   RETURN_NOT_OK(reader->ReadBlock(preparer_.opts().io_context,
-                                  dblk_ptr, cache_blocks_, &pdb->block_));
+                                  dblk_ptr, cache_blocks_, &block));
 
   // The data has been successfully read. Finish creating the decoder.
-  pdb->prepared_block_start_idx_ = 0;
-  pdb->block_ptr_ = dblk_ptr;
+  PreparedDeltaBlock pdb(dblk_ptr, std::move(block),  0);
 
   // Decode the block.
-  pdb->decoder_.reset(new BinaryPlainBlockDecoder(pdb->block_));
-  RETURN_NOT_OK_PREPEND(pdb->decoder_->ParseHeader(),
+  RETURN_NOT_OK_PREPEND(pdb.decoder.ParseHeader(),
                         Substitute("unable to decode data block header in delta block $0 ($1)",
                                    dfr_->cfile_reader()->block_id().ToString(),
-                                   dblk_ptr.ToString()));
+                                   pdb.block_ptr.ToString()));
 
-  RETURN_NOT_OK(GetFirstRowIndexInCurrentBlock(&pdb->first_updated_idx_));
-  RETURN_NOT_OK(GetLastRowIndexInDecodedBlock(*pdb->decoder_, &pdb->last_updated_idx_));
+  RETURN_NOT_OK(GetFirstRowIndexInCurrentBlock(&pdb.first_updated_idx));
+  RETURN_NOT_OK(GetLastRowIndexInDecodedBlock(pdb.decoder, &pdb.last_updated_idx));
 
   #ifndef NDEBUG
   VLOG(2) << "Read delta block which updates " <<
-    pdb->first_updated_idx_ << " through " <<
-    pdb->last_updated_idx_;
+    pdb.first_updated_idx << " through " <<
+    pdb.last_updated_idx;
   #endif
 
   delta_blocks_.emplace_back(std::move(pdb));
@@ -571,8 +531,9 @@ Status DeltaFileIterator<Type>::GetFirstRowIndexInCurrentBlock(rowid_t *idx) {
 }
 
 template<DeltaType Type>
-Status DeltaFileIterator<Type>::GetLastRowIndexInDecodedBlock(const BinaryPlainBlockDecoder &dec,
-                                                              rowid_t *idx) {
+Status DeltaFileIterator<Type>::GetLastRowIndexInDecodedBlock(
+    const BinaryPlainBlockDecoder& dec,
+    rowid_t* idx) {
   DCHECK_GT(dec.Count(), 0);
   Slice s(dec.string_at_index(dec.Count() - 1));
   DeltaKey k;
@@ -595,7 +556,7 @@ Status DeltaFileIterator<Type>::PrepareBatch(size_t nrows, int prepare_flags) {
   // Remove blocks from our list which are no longer relevant to the range
   // being prepared.
   while (!delta_blocks_.empty() &&
-         delta_blocks_.front()->last_updated_idx_ < start_row) {
+         delta_blocks_.front().last_updated_idx < start_row) {
     delta_blocks_.pop_front();
   }
 
@@ -619,17 +580,18 @@ Status DeltaFileIterator<Type>::PrepareBatch(size_t nrows, int prepare_flags) {
   }
 
   if (!delta_blocks_.empty()) {
-    PreparedDeltaBlock& block = *delta_blocks_.front();
-    int i = 0;
-    for (i = block.prepared_block_start_idx_;
-         i < block.decoder_->Count();
-         i++) {
-      Slice s(block.decoder_->string_at_index(i));
+    PreparedDeltaBlock& block = delta_blocks_.front();
+    rowid_t idx = block.prepared_block_start_idx;
+    const size_t end_idx = block.decoder.Count();
+    for (; idx < end_idx; ++idx) {
+      Slice s(block.decoder.string_at_index(idx));
       DeltaKey key;
       RETURN_NOT_OK(key.DecodeFrom(&s));
-      if (key.row_idx() >= start_row) break;
+      if (key.row_idx() >= start_row) {
+        break;
+      }
     }
-    block.prepared_block_start_idx_ = i;
+    block.prepared_block_start_idx = idx;
   }
 
   #ifndef NDEBUG
@@ -649,11 +611,11 @@ Status DeltaFileIterator<Type>::AddDeltas(rowid_t start_row, rowid_t stop_row) {
   DCHECK(prepared_) << "must Prepare";
 
   for (auto& block : delta_blocks_) {
-    const BinaryPlainBlockDecoder& bpd = *block->decoder_;
-    DVLOG(2) << "Adding deltas from delta block " << block->first_updated_idx_ << "-"
-             << block->last_updated_idx_ << " for row block starting at " << start_row;
+    const BinaryPlainBlockDecoder& bpd = block.decoder;
+    DVLOG(2) << "Adding deltas from delta block " << block.first_updated_idx << "-"
+             << block.last_updated_idx << " for row block starting at " << start_row;
 
-    if (PREDICT_FALSE(start_row > block->last_updated_idx_)) {
+    if (PREDICT_FALSE(start_row > block.last_updated_idx)) {
       // The block to be updated completely falls after this delta block:
       //  <-- delta block -->      <-- delta block -->
       //                      <-- block to update     -->
@@ -664,7 +626,7 @@ Status DeltaFileIterator<Type>::AddDeltas(rowid_t start_row, rowid_t stop_row) {
     }
 
     bool finished_row = false;
-    for (int i = block->prepared_block_start_idx_; i < bpd.Count(); i++) {
+    for (int i = block.prepared_block_start_idx; i < bpd.Count(); i++) {
       Slice slice = bpd.string_at_index(i);
 
       // Decode and check the ID of the row we're going to update.

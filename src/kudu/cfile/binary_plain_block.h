@@ -105,7 +105,22 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
 class BinaryPlainBlockDecoder final : public BlockDecoder {
  public:
   explicit BinaryPlainBlockDecoder(scoped_refptr<BlockHandle> block);
+  BinaryPlainBlockDecoder(BinaryPlainBlockDecoder&& other) noexcept {
+    *this = std::move(other);
+  }
   virtual ~BinaryPlainBlockDecoder();
+
+  BinaryPlainBlockDecoder& operator=(BinaryPlainBlockDecoder&& other) noexcept {
+    block_ = std::move(other.block_);
+    data_ = other.data_;
+    parsed_ = other.parsed_;
+    offsets_buf_ = std::move(other.offsets_buf_);
+    num_elems_ = other.num_elems_;
+    ordinal_pos_base_ = other.ordinal_pos_base_;
+    cur_idx_ = other.cur_idx_;
+
+    return *this;
+  }
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;

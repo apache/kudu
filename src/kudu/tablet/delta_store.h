@@ -546,7 +546,7 @@ class DeltaPreparer : public PreparedDeltas {
     DeltaKey key;
     Slice val;
   };
-  std::vector<PreparedDelta> prepared_deltas_;
+  std::deque<PreparedDelta> prepared_deltas_;
 
   // State when prepared_for_ & PREPARED_FOR_SELECT
   // ------------------------------------------------------------
