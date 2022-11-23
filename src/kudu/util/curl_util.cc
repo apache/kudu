@@ -107,11 +107,39 @@ Status EasyCurl::FetchURL(const string& url, faststring* dst,
   return DoRequest(url, nullptr, dst, headers);
 }
 
+Status EasyCurl::FetchURL(const vector<string>& urls, faststring* dst,
+                          const vector<string>& headers) {
+  return DoRequest(urls, nullptr, dst, headers);
+}
+
 Status EasyCurl::PostToURL(const string& url,
                            const string& post_data,
                            faststring* dst,
                            const vector<string>& headers) {
   return DoRequest(url, &post_data, dst, headers);
+}
+
+Status EasyCurl::PostToURL(const vector<string>& urls,
+                           const string& post_data,
+                           faststring* dst,
+                           const vector<string>& headers) {
+  return DoRequest(urls, &post_data, dst, headers);
+}
+
+Status EasyCurl::DoRequest(const vector<string>& urls,
+                           const string* post_data,
+                           faststring* dst,
+                           const vector<string>& headers) {
+  DCHECK(!urls.empty());
+  Status s;
+  for (const auto& url : urls) {
+    s = DoRequest(url, post_data, dst, headers);
+    if (s.IsNetworkError() || s.IsTimedOut()) {
+      continue;
+    }
+    break;
+  }
+  return s;
 }
 
 Status EasyCurl::DoRequest(const string& url,

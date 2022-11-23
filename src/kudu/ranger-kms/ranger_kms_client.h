@@ -19,15 +19,17 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "kudu/util/status.h"
+#include "kudu/gutil/strings/split.h"
 
 namespace kudu {
 namespace security {
 class RangerKMSClient {
  public:
-  RangerKMSClient(std::string kms_url, std::string cluster_key_name)
-    : kms_url_(std::move(kms_url)),
+  RangerKMSClient(const std::string& kms_url, std::string cluster_key_name)
+    : kms_urls_(strings::Split(kms_url, ",", strings::SkipEmpty())),
       cluster_key_name_(std::move(cluster_key_name)) {}
 
   Status DecryptKey(const std::string& encrypted_key,
@@ -40,7 +42,7 @@ class RangerKMSClient {
                                     std::string* key_version);
 
  private:
-  std::string kms_url_;
+  std::vector<std::string> kms_urls_;
   std::string cluster_key_name_;
 
 };

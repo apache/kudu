@@ -56,11 +56,28 @@ class EasyCurl {
                   faststring* dst,
                   const std::vector<std::string>& headers = {});
 
+  // Same as above, but with failover support. If the connection to the first
+  // URL in the vector fails or times out, it attempts to connect to the next
+  // one in the list. It stops at the first successful attempt and returns the
+  // result.
+  Status FetchURL(const std::vector<std::string>& urls,
+                  faststring* dst,
+                  const std::vector<std::string>& headers = {});
+
   // Issue an HTTP POST to the given URL with the given data.
   // Returns results in 'dst' as above.
   // The optional param 'headers' holds additional headers.
   // e.g. {"Accept-Encoding: gzip"}
   Status PostToURL(const std::string& url,
+                   const std::string& post_data,
+                   faststring* dst,
+                   const std::vector<std::string>& headers = {});
+
+  // Same as above, but with failover support. If the connection to the first
+  // URL in the vector fails or times out, it attempts to connect to the next
+  // one in the list. It stops at the first successful attempt and returns the
+  // result.
+  Status PostToURL(const std::vector<std::string>& urls,
                    const std::string& post_data,
                    faststring* dst,
                    const std::vector<std::string>& headers = {});
@@ -137,6 +154,15 @@ class EasyCurl {
   // Do a request. If 'post_data' is non-NULL, does a POST.
   // Otherwise, does a GET.
   Status DoRequest(const std::string& url,
+                   const std::string* post_data,
+                   faststring* dst,
+                   const std::vector<std::string>& headers = {});
+
+  // Same as above, but with failover support. If the connection to the first
+  // URL in the vector fails or times out, it attempts to connect to the next
+  // one in the list. It stops at the first successful attempt and returns the
+  // result.
+  Status DoRequest(const std::vector<std::string>& url,
                    const std::string* post_data,
                    faststring* dst,
                    const std::vector<std::string>& headers = {});

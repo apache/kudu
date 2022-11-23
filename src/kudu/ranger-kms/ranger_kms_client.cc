@@ -58,11 +58,15 @@ Status RangerKMSClient::DecryptKey(const string& encrypted_key,
   payload.Set("material", eek_b64);
   EasyCurl curl;
   curl.set_auth(CurlAuthType::SPNEGO);
-  string url = Substitute("$0/v1/keyversion/$1/_eek?eek_op=decrypt",
-                          kms_url_, key_version);
+  vector<string> urls;
+  urls.reserve(kms_urls_.size());
+  for (const auto& url : kms_urls_) {
+    urls.emplace_back(Substitute("$0/v1/keyversion/$1/_eek?eek_op=decrypt",
+                                 url, key_version));
+  }
   faststring resp;
   RETURN_NOT_OK_PREPEND(
-      curl.PostToURL(url, payload.ToString(), &resp, {"Content-Type: application/json"}),
+      curl.PostToURL(urls, payload.ToString(), &resp, {"Content-Type: application/json"}),
       "failed to decrypt server key");
   JsonReader r(resp.ToString());
   RETURN_NOT_OK(r.Init());
@@ -79,10 +83,14 @@ Status RangerKMSClient::GenerateEncryptedServerKey(string* encrypted_key,
                                                    string* key_version) {
   EasyCurl curl;
   curl.set_auth(CurlAuthType::SPNEGO);
-  string url = Substitute("$0/v1/key/$1/_eek?eek_op=generate&num_keys=1",
-                          kms_url_, cluster_key_name_);
+  vector<string> urls;
+  urls.reserve(kms_urls_.size());
+  for (const auto& url : kms_urls_) {
+    urls.emplace_back(Substitute("$0/v1/key/$1/_eek?eek_op=generate&num_keys=1",
+                      url, cluster_key_name_));
+  }
   faststring resp;
-  RETURN_NOT_OK_PREPEND(curl.FetchURL(url, &resp), "failed to generate server key");
+  RETURN_NOT_OK_PREPEND(curl.FetchURL(urls, &resp), "failed to generate server key");
   JsonReader r(resp.ToString());
   RETURN_NOT_OK(r.Init());
   vector<const Value*> keys;

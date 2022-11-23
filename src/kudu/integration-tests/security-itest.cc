@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -49,6 +50,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/ranger-kms/mini_ranger_kms.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/kinit_context.h"
@@ -691,6 +693,29 @@ TEST_F(SecurityITest, TestEncryptionWithKMSIntegration) {
   KuduClientBuilder b;
   ASSERT_OK(cluster_->CreateClient(&b, &client));
   SmokeTestCluster(client, /* transactional */ false);
+}
+
+TEST_F(SecurityITest, TestEncryptionWithKMSIntegrationMultipleServers) {
+  cluster_opts_.enable_ranger = true;
+  cluster_opts_.enable_ranger_kms = true;
+  ASSERT_OK(StartCluster());
+  cluster_->Shutdown();
+
+  const string& url = cluster_->ranger_kms()->url();
+  for (int i = 0; i < cluster_->num_masters(); ++i) {
+    cluster_->master(i)->mutable_flags()
+        ->emplace_back("--ranger_kms_url=invalid.host:1234/kms," + url);
+  }
+  for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
+    cluster_->tablet_server(i)->mutable_flags()
+        ->emplace_back("--ranger_kms_url=invalid.host:1234/kms," + url);
+  }
+  ASSERT_OK(cluster_->Restart());
+
+  shared_ptr<KuduClient> client;
+  KuduClientBuilder b;
+  ASSERT_OK(cluster_->CreateClient(&b, &client));
+  SmokeTestCluster(client, /*transactional=*/false);
 }
 
 class EncryptionPolicyTest :
