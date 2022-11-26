@@ -522,9 +522,7 @@ class Tablet {
                      std::vector<KeyRange>* ranges);
 
   // Update the last read operation timestamp.
-  // NOTE: It's a const function, because we have to call it in Iterator, where Tablet is a const
-  // variable there.
-  void UpdateLastReadTime() const;
+  void UpdateLastReadTime();
 
   // Collect and update recent workload statistics for the tablet.
   // Return the current workload score of the tablet.
@@ -847,8 +845,8 @@ class Tablet {
 
   // Lock protecting access to 'last_write_time_' and 'last_read_time_'.
   mutable rw_spinlock last_rw_time_lock_;
+  MonoTime last_read_time_;
   MonoTime last_write_time_;
-  mutable MonoTime last_read_time_;
 
   // NOTE: it's important that this is the first member to be destructed. This
   // ensures we do not attempt to collect metrics while calling the destructor.
