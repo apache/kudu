@@ -504,8 +504,8 @@ bool DeltaTracker::EstimateAllRedosAreAncient(Timestamp ancient_history_mark) {
       newest_redo->delta_stats().max_timestamp() < ancient_history_mark;
 }
 
-Status DeltaTracker::EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
-                                                                 int64_t* bytes) {
+Status DeltaTracker::EstimateBytesInPotentiallyAncientUndoDeltas(
+    Timestamp ancient_history_mark, int64_t* bytes) const {
   DCHECK_NE(Timestamp::kInvalidTimestamp, ancient_history_mark);
   DCHECK(bytes);
   SharedDeltaStoreVector undos_newest_first;

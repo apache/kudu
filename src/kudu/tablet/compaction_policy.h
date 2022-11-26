@@ -32,6 +32,7 @@ namespace tablet {
 class RowSet;
 class RowSetInfo;
 class RowSetTree;
+struct TabletMetrics;
 
 // A set of rowsets selected for compaction.
 typedef std::unordered_set<const RowSet*> CompactionSelection;
@@ -77,7 +78,8 @@ class CompactionPolicy {
 // See docs/design-docs/compaction-policy.md for details.
 class BudgetedCompactionPolicy : public CompactionPolicy {
  public:
-  explicit BudgetedCompactionPolicy(int size_budget_mb);
+  explicit BudgetedCompactionPolicy(int size_budget_mb,
+                                    const TabletMetrics* metrics = nullptr);
 
   Status PickRowSets(const RowSetTree &tree,
                      CompactionSelection* picked,
@@ -125,6 +127,7 @@ class BudgetedCompactionPolicy : public CompactionPolicy {
                 SolutionAndValue* best_solution) const;
 
   const size_t size_budget_mb_;
+  const TabletMetrics* metrics_;
 };
 
 } // namespace tablet

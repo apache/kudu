@@ -281,6 +281,10 @@ class DeltaFileIterator : public DeltaIterator {
     preparer_.set_deltas_selected(deltas_selected);
   }
 
+  size_t memory_footprint() override {
+    return delta_blocks_mem_size_;
+  }
+
  private:
   friend class DeltaFileReader;
 
@@ -362,6 +366,12 @@ class DeltaFileIterator : public DeltaIterator {
   faststring tmp_buf_;
 
   cfile::CFileReader::CacheControl cache_blocks_;
+
+  // The amount of memory allocated for the data stored in delta_blocks_ (in
+  // bytes). That corresponds to the amount of memory necessary to store the
+  // uncompressed (but not yet decoded) deltas in memory. The memory might
+  // be allocated in a block cache, an arena, or heap.
+  size_t delta_blocks_mem_size_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
 };

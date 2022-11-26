@@ -18,9 +18,12 @@
 #include "kudu/tablet/compaction_policy.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -28,14 +31,23 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_info.h"
 #include "kudu/tablet/svg_dump.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/hdr_histogram.h"
 #include "kudu/util/knapsack_solver.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/status.h"
 
+using std::make_optional;
 using std::vector;
 using strings::Substitute;
 
@@ -57,6 +69,53 @@ DEFINE_double(compaction_minimum_improvement, 0.01f,
               "improve the average height of DiskRowSets by at least this amount, the "
               "compaction will be considered ineligible.");
 TAG_FLAG(compaction_minimum_improvement, advanced);
+
+DEFINE_bool(rowset_compaction_memory_estimate_enabled, false,
+            "Whether to check for available memory necessary to run "
+            "CompactRowSetsOp maintenance operations. If the difference "
+            "between the hard memory limit and current usage is less than the "
+            "estimated amount necessary to perform the operation, postpone "
+            "running the operation until there is enough memory available. "
+            "Use the --rowset_compaction_delta_memory_factor flag to tune the "
+            "initial factor to estimate the amount of required memory based "
+            "on the on-disk size of deltas when relevant statistics have not "
+            "yet accumulated or the --rowset_compaction_enforce_preset_factor "
+            "flag is set to 'true'.");
+TAG_FLAG(rowset_compaction_memory_estimate_enabled, experimental);
+TAG_FLAG(rowset_compaction_memory_estimate_enabled, runtime);
+
+DEFINE_uint32(rowset_compaction_estimate_min_deltas_size_mb, 64,
+              "Minimum size (in MBytes) of on-disk delta sizes to apply memory "
+              "budgeting constraints for rowset merge compaction if "
+              "--rowset_compaction_memory_estimate_enabled set to 'true'. "
+              "This threshold is also used to decide whether to collect "
+              "the stats for the compact_rs_mem_usage_to_deltas_size_ratio "
+              "tablet metric.");
+TAG_FLAG(rowset_compaction_estimate_min_deltas_size_mb, experimental);
+TAG_FLAG(rowset_compaction_estimate_min_deltas_size_mb, runtime);
+
+DEFINE_double(rowset_compaction_delta_memory_factor, 5.0,
+              "The initial memory-to-disk size factor to estimate the amount "
+              "of memory necessary to load a rowset's deltas into memory to "
+              "perform CompactRowSetsOp. The estimate is obtained by "
+              "multiplying this factor by the total size of deltas across all "
+              "rowsets selected for rowset merge compaction. This flag is used "
+              "when there isn't enough statistics accumulated for the tablet "
+              "during the runtime of a tablet server (e.g., upon the very "
+              "first run of CompactRowSetsOp for a tablet after starting the "
+              "tablet server) or --rowset_compaction_enforce_preset_factor "
+              "is set. The factor depends on tablet's column types, encoding, "
+              "compression, workload pattern, etc.");
+TAG_FLAG(rowset_compaction_delta_memory_factor, experimental);
+TAG_FLAG(rowset_compaction_delta_memory_factor, runtime);
+
+DEFINE_bool(rowset_compaction_enforce_preset_factor, false,
+            "Whether to use the preset factor defined by the "
+            "--rowset_compaction_delta_memory_factor flag even when enough "
+            "runtime stats have accumulated by the "
+            "compact_rs_mem_usage_to_deltas_size_ratio metric");
+TAG_FLAG(rowset_compaction_enforce_preset_factor, experimental);
+TAG_FLAG(rowset_compaction_enforce_preset_factor, runtime);
 
 namespace kudu {
 namespace tablet {
@@ -91,9 +150,11 @@ static const double kSupportAdjust = 1.003;
 // BudgetedCompactionPolicy
 ////////////////////////////////////////////////////////////
 
-BudgetedCompactionPolicy::BudgetedCompactionPolicy(int budget)
-  : size_budget_mb_(budget) {
-  CHECK_GT(budget, 0);
+BudgetedCompactionPolicy::BudgetedCompactionPolicy(int size_budget_mb,
+                                                   const TabletMetrics* metrics)
+    : size_budget_mb_(size_budget_mb),
+      metrics_(metrics) {
+  CHECK_GT(size_budget_mb, 0);
 }
 
 uint64_t BudgetedCompactionPolicy::target_rowset_size() const {
@@ -105,7 +166,49 @@ void BudgetedCompactionPolicy::SetupKnapsackInput(
     const RowSetTree& tree,
     vector<RowSetInfo>* asc_min_key,
     vector<RowSetInfo>* asc_max_key) const {
+  const auto is_on_memory_budget = [&] (const RowSet* rs) {
+    // The memory budgeting applies only when configured so.
+    if (!FLAGS_rowset_compaction_memory_estimate_enabled) {
+      return true;
+    }
+    const DiskRowSet* drs = down_cast<const DiskRowSet*>(rs);
+    DiskRowSetSpace drss;
+    drs->GetDiskRowSetSpaceUsage(&drss);
+    const uint64_t deltas_on_disk_size = drss.redo_deltas_size + drss.undo_deltas_size;
+
+    if (FLAGS_rowset_compaction_estimate_min_deltas_size_mb < deltas_on_disk_size) {
+      const auto* h = metrics_->compact_rs_mem_usage_to_deltas_size_ratio->histogram();
+      const bool use_metrics = !FLAGS_rowset_compaction_enforce_preset_factor &&
+          h->TotalCount() > 0 && h->MeanValue() > 0;
+      const double mem_size_factor = use_metrics
+          ? h->MeanValue() : FLAGS_rowset_compaction_delta_memory_factor;
+      // An estimate for the amount of memory necessary to load all rowset's
+      // deltas into memory. As of now, compaction operations such as
+      // CompactRowSetsOp (i.e. rowset merge compaction) are implemented in
+      // such a way that they load all the deltas into the memory at once.
+      // With that, let's check if there is enough memory to do so.
+      const int64_t estimated_mem_size = static_cast<int64_t>(
+          mem_size_factor * static_cast<double>(deltas_on_disk_size));
+      const int64_t available_mem_size =
+          process_memory::HardLimit() - process_memory::CurrentConsumption();
+      if (available_mem_size < estimated_mem_size) {
+        VLOG(2) << Substitute(
+            "rowset '$0' is not on memory budget for compaction: "
+            "$1 bytes needed, $2 bytes available",
+            rs->ToString(), estimated_mem_size, available_mem_size);
+        return false;
+      }
+      VLOG(3) << Substitute(
+          "compaction memory budgeting for rowset '$0': "
+          "$1 bytes needed, $2 bytes available",
+          rs->ToString(), estimated_mem_size, available_mem_size);
+    }
+
+    return true;
+  };
+
   RowSetInfo::ComputeCdfAndCollectOrdered(tree,
+                                          make_optional(is_on_memory_budget),
                                           /*rowset_total_height=*/nullptr,
                                           /*rowset_total_width=*/nullptr,
                                           asc_min_key,

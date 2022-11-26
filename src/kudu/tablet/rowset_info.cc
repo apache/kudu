@@ -21,8 +21,10 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
@@ -36,6 +38,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/template_util.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/util/flag_tags.h"
@@ -45,9 +48,11 @@
 #include "kudu/util/status.h"
 
 using std::shared_ptr;
+using std::optional;
 using std::string;
 using std::unordered_map;
 using std::vector;
+using strings::Substitute;
 
 DECLARE_double(compaction_minimum_improvement);
 DECLARE_int64(budgeted_compaction_target_rowset_size);
@@ -87,7 +92,7 @@ bool ValidateSmallRowSetTradeoffVsMinScore() {
   const auto tradeoff = FLAGS_compaction_small_rowset_tradeoff;
   const auto min_score = FLAGS_compaction_minimum_improvement;
   if (tradeoff >= min_score) {
-    LOG(ERROR) << strings::Substitute(
+    LOG(ERROR) << Substitute(
         "-compaction_small_rowset_tradeoff=$0 must be less than "
         "-compaction_minimum_improvement=$1 in order to prevent pointless "
         "compactions; if you know what you are doing, pass "
@@ -251,11 +256,13 @@ void RowSetInfo::Collect(const RowSetTree& tree, vector<RowSetInfo>* rsvec) {
   }
 }
 
-void RowSetInfo::ComputeCdfAndCollectOrdered(const RowSetTree& tree,
-                                             double* rowset_total_height,
-                                             double* rowset_total_width,
-                                             vector<RowSetInfo>* info_by_min_key,
-                                             vector<RowSetInfo>* info_by_max_key) {
+void RowSetInfo::ComputeCdfAndCollectOrdered(
+    const RowSetTree& tree,
+    optional<MemoryBudgetingFunc> is_on_memory_budget,
+    double* rowset_total_height,
+    double* rowset_total_width,
+    vector<RowSetInfo>* info_by_min_key,
+    vector<RowSetInfo>* info_by_max_key) {
   DCHECK((info_by_min_key && info_by_max_key) ||
          (!info_by_min_key && !info_by_max_key))
       << "'info_by_min_key' and 'info_by_max_key' must both be non-null or both be null";
@@ -289,6 +296,13 @@ void RowSetInfo::ComputeCdfAndCollectOrdered(const RowSetTree& tree,
   RowSetVector available_rowsets;
   for (const auto& rs : tree.all_rowsets()) {
     if (rs->IsAvailableForCompaction()) {
+      if (is_on_memory_budget && !(*is_on_memory_budget)(rs.get())) {
+        // Skip rowsets filtered out by the memory budgeting.
+        KLOG_EVERY_N_SECS(INFO, 600) << Substitute(
+            "$0 removed from compaction input due to memory constraints",
+            rs->ToString());
+        continue;
+      }
       available_rowsets.push_back(rs);
     }
   }

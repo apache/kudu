@@ -18,6 +18,8 @@
 #define KUDU_TABLET_ROWSET_INFO_H_
 
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -41,24 +43,28 @@ class RowSetTree;
 // Class is immutable.
 class RowSetInfo {
  public:
+  typedef std::function<bool(const RowSet*)> MemoryBudgetingFunc;
 
   // Appends the rowsets in no order without the cdf values set.
   static void Collect(const RowSetTree& tree, std::vector<RowSetInfo>* rsvec);
 
   // From the rowset tree 'tree', computes the keyspace cdf and collects rowset
   // information in min-key- and max-key-sorted order into 'info_by_min_key'
-  // and 'info_by_max_key', respectively.
+  // and 'info_by_max_key', respectively. The memory budgeting function
+  // 'is_on_memory_budget' is used for OS resource assessment, if present.
   // The total weighted height and the total width of the rowset tree is set into
   // 'rowset_total_height' and 'rowset_total_width', if they are not nullptr.
   // If one of 'info_by_min_key' and 'info_by_max_key' is nullptr, the other
   // must be.
   // Requires holding the compact_select_lock_ for the tablet that the
   // rowsets in 'tree' references.
-  static void ComputeCdfAndCollectOrdered(const RowSetTree& tree,
-                                          double* rowset_total_height,
-                                          double* rowset_total_width,
-                                          std::vector<RowSetInfo>* info_by_min_key,
-                                          std::vector<RowSetInfo>* info_by_max_key);
+  static void ComputeCdfAndCollectOrdered(
+      const RowSetTree& tree,
+      std::optional<MemoryBudgetingFunc> is_on_memory_budget,
+      double* rowset_total_height,
+      double* rowset_total_width,
+      std::vector<RowSetInfo>* info_by_min_key,
+      std::vector<RowSetInfo>* info_by_max_key);
 
   // Split [start_key, stop_key) into primary key ranges by chunk size.
   //
@@ -71,6 +77,16 @@ class RowSetInfo {
                             const std::vector<ColumnId>& col_ids,
                             uint64 target_chunk_size,
                             std::vector<KeyRange>* ranges);
+
+  // Current implementation of CompactRowSetsOp loads all the rowset's delta
+  // data into the memory. Doing so, it unpacks and decodes the data that
+  // is stored on disk. The information on how much memory each delta requires
+  // when unpacked and decoded isn't available beforehand, but it's possible
+  // to provide an estimate based on the size of the delta as stored on disk and
+  // the stats on the memory/disk ratio for rowsets that have gone through
+  // the merge compaction for a particular tablet.
+  static void FitsIntoMemory(const RowSet& rs,
+                             double mem_to_disk_ratio);
 
   uint64_t size_bytes(const ColumnId& col_id) const;
   uint64_t base_and_redos_size_bytes() const {

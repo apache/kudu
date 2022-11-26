@@ -251,6 +251,12 @@ class DMSIterator : public DeltaIterator {
     preparer_.set_deltas_selected(deltas_selected);
   }
 
+  size_t memory_footprint() override {
+    // TODO(aserbin): implement this if it's necessary to track peak memory
+    //                usage for objects of this type during their lifecycle
+    return 0;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(DMSIterator);
   friend class DeltaMemStore;

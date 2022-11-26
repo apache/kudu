@@ -106,6 +106,10 @@ struct TabletMetrics {
   scoped_refptr<Histogram> undo_delta_block_gc_delete_duration;
   scoped_refptr<Histogram> undo_delta_block_gc_perform_duration;
 
+  // Metrics specific to rowset merge compaction.
+  scoped_refptr<Histogram> compact_rs_mem_usage;
+  scoped_refptr<Histogram> compact_rs_mem_usage_to_deltas_size_ratio;
+
   scoped_refptr<Counter> leader_memory_pressure_rejections;
 
   // Compaction metrics.

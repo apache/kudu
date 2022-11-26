@@ -384,6 +384,10 @@ class DeltaIterator : public PreparedDeltas {
   // See SelectedDeltas::Delta for more details.
   virtual void set_deltas_selected(int64_t deltas_selected) = 0;
 
+  // Return an estimate on the maximum amount of memory a DeltaIterator object
+  // uses during its lifecycle while initializing, preparing next batch, etc.
+  virtual size_t memory_footprint() = 0;
+
   virtual ~DeltaIterator() {}
 };
 

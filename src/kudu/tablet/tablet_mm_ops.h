@@ -76,6 +76,7 @@ class CompactRowSetsOp : public TabletOpBase {
   MaintenanceOpStats prev_stats_;
   uint64_t last_num_mrs_flushed_;
   uint64_t last_num_rs_compacted_;
+  uint64_t last_num_undo_deltas_gced_;
 };
 
 // MaintenanceOp to run minor compaction on delta stores.

@@ -95,6 +95,8 @@ class DeltaIteratorMerger : public DeltaIterator {
     LOG(DFATAL) << "Not implemented";
   }
 
+  size_t memory_footprint() override;
+
  private:
   explicit DeltaIteratorMerger(std::vector<std::unique_ptr<DeltaIterator> > iters);
 

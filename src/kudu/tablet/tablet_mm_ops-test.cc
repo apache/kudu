@@ -19,6 +19,8 @@
 
 #include <memory>
 #include <optional>
+#include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -31,7 +33,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/maintenance_manager.h"
@@ -143,8 +144,10 @@ TEST_F(KuduTabletMmOpsTest, TestCompactRowSetsOpCacheStats) {
   CompactRowSetsOp op(tablet().get());
   ASSERT_FALSE(op.DisableCompaction());
   NO_FATALS(TestFirstCall(&op));
-  NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
-                                       tablet()->metrics()->compact_rs_duration }));
+  auto* m = tablet()->metrics();
+  NO_FATALS(TestAffectedMetrics(&op, { m->flush_mrs_duration,
+                                       m->compact_rs_duration,
+                                       m->undo_delta_block_gc_perform_duration }));
 }
 
 TEST_F(KuduTabletMmOpsTest, TestDisableCompactRowSetsOp) {

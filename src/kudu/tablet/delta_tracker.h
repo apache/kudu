@@ -177,7 +177,7 @@ class DeltaTracker {
 
   // See RowSet::EstimateBytesInPotentiallyAncientUndoDeltas().
   Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
-                                                     int64_t* bytes);
+                                                     int64_t* bytes) const;
 
   // Returns whether all redo (DMS and newest redo delta file) are ancient
   // (i.e. that the redo with the highest timestamp is older than the AHM).

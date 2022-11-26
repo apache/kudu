@@ -424,7 +424,9 @@ DeltaFileIterator<Type>::DeltaFileIterator(shared_ptr<DeltaFileReader> dfr,
       prepared_(false),
       exhausted_(false),
       initted_(false),
-      cache_blocks_(CFileReader::CACHE_BLOCK) {}
+      cache_blocks_(CFileReader::CACHE_BLOCK),
+      delta_blocks_mem_size_(0) {
+}
 
 template<DeltaType Type>
 Status DeltaFileIterator<Type>::Init(ScanSpec* spec) {
@@ -454,6 +456,7 @@ Status DeltaFileIterator<Type>::SeekToOrdinal(rowid_t idx) {
                                     preparer_.opts().snap_to_include)) {
     exhausted_ = true;
     delta_blocks_.clear();
+    delta_blocks_mem_size_ = 0;
     return Status::OK();
   }
 
@@ -482,6 +485,7 @@ Status DeltaFileIterator<Type>::SeekToOrdinal(rowid_t idx) {
   preparer_.Seek(idx);
   prepared_ = false;
   delta_blocks_.clear();
+  delta_blocks_mem_size_ = 0;
   exhausted_ = false;
   return Status::OK();
 }
@@ -515,6 +519,7 @@ Status DeltaFileIterator<Type>::ReadCurrentBlockOntoQueue() {
     pdb.last_updated_idx;
   #endif
 
+  delta_blocks_mem_size_ += pdb.block->data().size();
   delta_blocks_.emplace_back(std::move(pdb));
   return Status::OK();
 }

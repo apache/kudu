@@ -354,6 +354,21 @@ METRIC_DEFINE_histogram(tablet, undo_delta_block_gc_perform_duration,
   kudu::MetricLevel::kInfo,
   60000LU, 1);
 
+METRIC_DEFINE_histogram(tablet, compact_rs_mem_usage,
+  "Peak Memory Usage for CompactRowSetsOp",
+  kudu::MetricUnit::kBytes,
+  "Peak memory usage of rowset merge compaction operations (CompactRowSetsOp)",
+  kudu::MetricLevel::kInfo,
+  60000LU, 1);
+
+METRIC_DEFINE_histogram(tablet, compact_rs_mem_usage_to_deltas_size_ratio,
+  "Peak Memory Usage to On-Disk Delta Size Ratio for CompactRowSetsOp",
+  kudu::MetricUnit::kUnits,
+  "Ratio of the peak memory usage to the estimated on-disk size of all deltas "
+  "for rowsets involved in rowset merge compaction (CompactRowSetsOp)",
+  kudu::MetricLevel::kInfo,
+  60000LU, 1);
+
 METRIC_DEFINE_histogram(tablet, deleted_rowset_gc_duration,
   "Deleted Rowset GC Duration",
   kudu::MetricUnit::kMilliseconds,
@@ -434,6 +449,8 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(undo_delta_block_gc_init_duration),
     MINIT(undo_delta_block_gc_delete_duration),
     MINIT(undo_delta_block_gc_perform_duration),
+    MINIT(compact_rs_mem_usage),
+    MINIT(compact_rs_mem_usage_to_deltas_size_ratio),
     MINIT(leader_memory_pressure_rejections),
     MEANINIT(average_diskrowset_height),
     HIDEINIT(merged_entities_count_of_tablet, 1) {

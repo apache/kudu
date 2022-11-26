@@ -134,6 +134,10 @@ class CompactionInput {
   virtual bool HasMoreBlocks() = 0;
   virtual const Schema& schema() const = 0;
 
+  // Return an estimate on the maximum amount of memory used by the object
+  // during its lifecycle while initializing, reading and processing data, etc.
+  virtual size_t memory_footprint() const = 0;
+
   virtual ~CompactionInput() {}
 };
 

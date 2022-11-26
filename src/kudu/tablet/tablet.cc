@@ -85,6 +85,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
@@ -195,6 +196,33 @@ DEFINE_int32(rows_writed_per_sec_for_hot_tablets, 1000,
 TAG_FLAG(rows_writed_per_sec_for_hot_tablets, experimental);
 TAG_FLAG(rows_writed_per_sec_for_hot_tablets, runtime);
 
+DEFINE_double(rowset_compaction_ancient_delta_max_ratio, 0.2,
+              "The ratio of data in ancient UNDO deltas to the total amount "
+              "of data in all deltas across rowsets picked for rowset merge "
+              "compaction used as a threshold to determine whether to run "
+              "the operation when --rowset_compaction_ancient_delta_max_ratio "
+              "is set to 'true'. If the ratio is greater than the threshold "
+              "defined by this flag, CompactRowSetsOp operations are postponed "
+              "until UndoDeltaBlockGCOp purges enough of ancient UNDO deltas.");
+TAG_FLAG(rowset_compaction_ancient_delta_max_ratio, advanced);
+TAG_FLAG(rowset_compaction_ancient_delta_max_ratio, runtime);
+
+DEFINE_bool(rowset_compaction_ancient_delta_threshold_enabled, true,
+            "Whether to check the ratio of data in ancient UNDO deltas against "
+            "the threshold set by --rowset_compaction_ancient_delta_max_ratio "
+            "before running rowset merge compaction. If the ratio of ancient "
+            "data in UNDO deltas is greater than the threshold, postpone "
+            "running CompactRowSetsOp until UndoDeltaBlockGCOp purges ancient "
+            "data and the ratio drops below the threshold (NOTE: regardless of "
+            "the setting, the effective "
+            "value of this flag becomes 'false' if "
+            "--enable_undo_delta_block_gc is set to 'false')");
+TAG_FLAG(rowset_compaction_ancient_delta_threshold_enabled, advanced);
+TAG_FLAG(rowset_compaction_ancient_delta_threshold_enabled, runtime);
+
+DECLARE_bool(enable_undo_delta_block_gc);
+DECLARE_uint32(rowset_compaction_estimate_min_deltas_size_mb);
+
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
                          kudu::MetricUnit::kBytes,
@@ -241,16 +269,44 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+
+namespace {
+
+bool ValidateAncientDeltaMaxRatio(const char* flag, double val) {
+  constexpr double kMinVal = 0.0;
+  constexpr double kMaxVal = 1.0;
+  if (val < kMinVal || val > kMaxVal) {
+    LOG(ERROR) << Substitute(
+        "$0: invalid value for --$1 flag, should be between $2 and $3",
+        val, flag, kMinVal, kMaxVal);
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(rowset_compaction_ancient_delta_max_ratio,
+                 &ValidateAncientDeltaMaxRatio);
+
+bool ValidateRowsetCompactionGuard() {
+  if (FLAGS_rowset_compaction_ancient_delta_threshold_enabled &&
+      !FLAGS_enable_undo_delta_block_gc) {
+    LOG(WARNING) << Substitute(
+        "rowset compaction ancient ratio threshold is enabled "
+        "but UNDO delta block GC is disabled: check current settings of "
+        "--rowset_compaction_ancient_delta_threshold_enabled and "
+        "--enable_undo_delta_block_gc flags");
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(rowset_compaction, &ValidateRowsetCompactionGuard);
+
+} // anonymous namespace
+
 namespace kudu {
 
 class RowBlock;
 struct IteratorStats;
 
 namespace tablet {
-
-static CompactionPolicy *CreateCompactionPolicy() {
-  return new BudgetedCompactionPolicy(FLAGS_tablet_compaction_budget_mb);
-}
 
 ////////////////////////////////////////////////////////////
 // TabletComponents
@@ -289,7 +345,6 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
       last_read_score_(0.0),
       last_write_score_(0.0) {
   CHECK(schema()->has_column_ids());
-  compaction_policy_.reset(CreateCompactionPolicy());
 
   if (metric_registry) {
     MetricEntity::AttributeMap attrs;
@@ -317,6 +372,9 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
         MergeType::kMin)
         ->AutoDetach(&metric_detacher_);
   }
+
+  compaction_policy_.reset(new BudgetedCompactionPolicy(
+      FLAGS_tablet_compaction_budget_mb, metrics_.get()));
 
   if (FLAGS_tablet_throttler_rpc_per_sec > 0 || FLAGS_tablet_throttler_bytes_per_sec > 0) {
     throttler_.reset(new Throttler(MonoTime::Now(),
@@ -1895,6 +1953,17 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                                     "Phase 1 snapshot: $1",
                                     op_name, flush_snap.ToString());
 
+  // Save the stats on the total on-disk size of all deltas in selected rowsets.
+  size_t deltas_on_disk_size = 0;
+  if (mrs_being_flushed == TabletMetadata::kNoMrsFlushed) {
+    for (const auto& rs : input.rowsets()) {
+      DiskRowSetSpace drss;
+      DiskRowSet* drs = down_cast<DiskRowSet*>(rs.get());
+      drs->GetDiskRowSetSpaceUsage(&drss);
+      deltas_on_disk_size += drss.redo_deltas_size + drss.undo_deltas_size;
+    }
+  }
+
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostTakeMvccSnapshot(),
                           "PostTakeMvccSnapshot hook failed");
@@ -2043,6 +2112,9 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                           "PostSwapInDuplicatingRowSet hook failed");
   }
 
+  // Store the stats on the max memory used for compaction phase 1.
+  const size_t peak_mem_usage_ph1 = merge->memory_footprint();
+
   // Phase 2. Here we re-scan the compaction input, copying those missed updates into the
   // new rowset's DeltaTracker.
   VLOG_WITH_PREFIX(1) << Substitute("$0: Phase 2: carrying over any updates "
@@ -2098,12 +2170,38 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   AtomicSwapRowSets({ inprogress_rowset }, new_disk_rowsets);
   UpdateAverageRowsetHeight();
 
+  const size_t peak_mem_usage = std::max(peak_mem_usage_ph1,
+                                         merge->memory_footprint());
+  // For rowset merge compactions, update the stats on the max peak memory used
+  // and ratio of the amount of memory used to the size of all deltas on disk.
+  if (deltas_on_disk_size > 0) {
+    // Update the peak memory usage metric.
+    metrics_->compact_rs_mem_usage->Increment(peak_mem_usage);
+
+    // Update the ratio of the peak memory usage to the size of deltas on disk.
+    // To keep the stats relevant for larger rowsets, filter out rowsets with
+    // relatively small amount of data in deltas. Update the memory-to-disk size
+    // ratio metric only when the on-disk size of deltas crosses the configured
+    // threshold.
+    const int64_t min_deltas_size_bytes =
+        FLAGS_rowset_compaction_estimate_min_deltas_size_mb * 1024 * 1024;
+    if (deltas_on_disk_size > min_deltas_size_bytes) {
+      // Round up the ratio. Since the ratio is used to estimate the amount of
+      // memory needed to perform merge rowset compaction based on the amount of
+      // data stored in rowsets' deltas, it's safer to provide an upper rather
+      // than a lower bound estimate.
+      metrics_->compact_rs_mem_usage_to_deltas_size_ratio->Increment(
+          (peak_mem_usage + deltas_on_disk_size - 1) / deltas_on_disk_size);
+    }
+  }
+
   const auto rows_written = drsw.rows_written_count();
   const auto drs_written = drsw.drs_written_count();
   const auto bytes_written = drsw.written_size();
   TRACE_COUNTER_INCREMENT("rows_written", rows_written);
   TRACE_COUNTER_INCREMENT("drs_written", drs_written);
   TRACE_COUNTER_INCREMENT("bytes_written", bytes_written);
+  TRACE_COUNTER_INCREMENT("peak_mem_usage", peak_mem_usage);
   VLOG_WITH_PREFIX(1) << Substitute("$0 successful on $1 rows ($2 rowsets, $3 bytes)",
                                     op_name,
                                     rows_written,
@@ -2143,12 +2241,14 @@ void Tablet::UpdateAverageRowsetHeight() {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
   std::lock_guard<std::mutex> l(compact_select_lock_);
-  double rowset_total_height, rowset_total_width;
+  double rowset_total_height;
+  double rowset_total_width;
   RowSetInfo::ComputeCdfAndCollectOrdered(*comps->rowsets,
+                                          /*is_on_memory_budget=*/nullopt,
                                           &rowset_total_height,
                                           &rowset_total_width,
-                                          nullptr,
-                                          nullptr);
+                                          /*info_by_min_key=*/nullptr,
+                                          /*info_by_max_key=*/nullptr);
   metrics_->average_diskrowset_height->set_value(rowset_total_height, rowset_total_width);
 }
 
@@ -2187,7 +2287,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
   }
 
   double quality = 0;
-  unordered_set<const RowSet*> picked_set_ignored;
+  unordered_set<const RowSet*> picked;
 
   shared_ptr<RowSetTree> rowsets_copy;
   {
@@ -2197,13 +2297,64 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
   {
     std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
-    WARN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set_ignored, &quality, NULL),
+    WARN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked, &quality, nullptr),
                 Substitute("Couldn't determine compaction quality for $0", tablet_id()));
   }
 
-  VLOG_WITH_PREFIX(1) << "Best compaction for " << tablet_id() << ": " << quality;
+  // An estimate for the total amount of data stored in the UNDO deltas across
+  // all the rowsets selected for this rowset compaction.
+  uint64_t undos_total_size = 0;
 
-  stats->set_runnable(quality >= 0);
+  // An estimate for the amount of data stored in ancient UNDO deltas across
+  // all the rowsets picked for this rowset compaction.
+  int64_t ancient_undos_total_size = 0;
+
+  for (const auto* rs : picked) {
+    const auto* drs = down_cast<const DiskRowSet*>(rs);
+    const auto& dt = drs->delta_tracker();
+
+    int64_t size = 0;
+    {
+      Timestamp ancient_history_mark;
+      if (Tablet::GetTabletAncientHistoryMark(&ancient_history_mark)) {
+        WARN_NOT_OK(dt.EstimateBytesInPotentiallyAncientUndoDeltas(
+            ancient_history_mark, &size),
+            "could not estimate size of ancient UNDO deltas");
+      }
+    }
+    ancient_undos_total_size += size;
+    undos_total_size += dt.UndoDeltaOnDiskSize();
+  }
+
+  // Whether there is too much of data accumulated in ancient UNDO deltas.
+  bool much_of_ancient_data = false;
+  if (FLAGS_rowset_compaction_ancient_delta_threshold_enabled) {
+    // Check if too much of the UNDO data in the selected rowsets is ancient.
+    // If so, wait while the UNDO delta GC maintenance task does its job, if
+    // the latter is enabled. Don't waste too much of IO, memory, and CPU cycles
+    // working with the data that will be discarded later on.
+    //
+    // TODO(aserbin): instead of this workaroud, update CompactRowSetsOp
+    //                maintenance operation to avoid reading in, working with,
+    //                and discarding of ancient deltas; right now it's done
+    //                only in the very end before persisting the result
+    const auto ancient_undos_threshold = static_cast<int64_t>(
+        FLAGS_rowset_compaction_ancient_delta_max_ratio *
+        static_cast<double>(undos_total_size));
+    if (ancient_undos_threshold < ancient_undos_total_size) {
+      much_of_ancient_data = true;
+      LOG_WITH_PREFIX(INFO) << Substitute(
+          "compaction isn't runnable because of too much data in "
+          "ancient UNDO deltas: $0 out of $1 total bytes",
+          ancient_undos_total_size, undos_total_size);
+    }
+    VLOG_WITH_PREFIX(2) << Substitute(
+        "UNDO deltas estimated size: $0 ancient; $1 total",
+        ancient_undos_total_size, undos_total_size);
+  }
+  VLOG_WITH_PREFIX(1) << Substitute("compaction quality: $0", quality);
+
+  stats->set_runnable(!much_of_ancient_data && quality >= 0);
   stats->set_perf_improvement(quality);
 }
 
@@ -2955,9 +3106,12 @@ void Tablet::PrintRSLayout(ostream* o) {
     out << "</p>";
   }
 
-  double rowset_total_height, rowset_total_width;
-  vector<RowSetInfo> min, max;
+  double rowset_total_height;
+  double rowset_total_width;
+  vector<RowSetInfo> min;
+  vector<RowSetInfo> max;
   RowSetInfo::ComputeCdfAndCollectOrdered(*rowsets_copy,
+                                          /*is_on_memory_budget=*/nullopt,
                                           &rowset_total_height,
                                           &rowset_total_width,
                                           &min,

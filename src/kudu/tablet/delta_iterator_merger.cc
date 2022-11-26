@@ -18,6 +18,7 @@
 #include "kudu/tablet/delta_iterator_merger.h"
 
 #include <algorithm>
+#include <type_traits>
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -148,6 +149,13 @@ string DeltaIteratorMerger::ToString() const {
   return ret;
 }
 
+size_t DeltaIteratorMerger::memory_footprint() {
+  size_t result = 0;
+  for (const auto& it : iters_) {
+    result += it->memory_footprint();
+  }
+  return result;
+}
 
 Status DeltaIteratorMerger::Create(
     const vector<shared_ptr<DeltaStore> > &stores,

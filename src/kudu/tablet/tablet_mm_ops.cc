@@ -122,10 +122,11 @@ bool TabletOpBase::DisableCompaction() const {
 ////////////////////////////////////////////////////////////
 
 CompactRowSetsOp::CompactRowSetsOp(Tablet* tablet)
-  : TabletOpBase(Substitute("CompactRowSetsOp($0)", tablet->tablet_id()),
-                 MaintenanceOp::HIGH_IO_USAGE, tablet),
-    last_num_mrs_flushed_(0),
-    last_num_rs_compacted_(0) {
+    : TabletOpBase(Substitute("CompactRowSetsOp($0)", tablet->tablet_id()),
+                   MaintenanceOp::HIGH_IO_USAGE, tablet),
+      last_num_mrs_flushed_(0),
+      last_num_rs_compacted_(0),
+      last_num_undo_deltas_gced_(0) {
 }
 
 void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
@@ -142,21 +143,26 @@ void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
   double workload_score = FLAGS_enable_workload_score_for_perf_improvement_ops ?
                           tablet_->CollectAndUpdateWorkloadStats(MaintenanceOp::COMPACT_OP) : 0;
 
-  // Any operation that changes the on-disk row layout invalidates the
-  // cached stats.
+  // Any operation that changes the on-disk row layout invalidates the cached
+  // stats. Also, UNDO delta GC do the same since the runnable state of the
+  // CompactRowSetsOp depends on the fraction of ancient deltas in the rowsets.
   TabletMetrics* metrics = tablet_->metrics();
   if (metrics) {
     uint64_t new_num_mrs_flushed = metrics->flush_mrs_duration->TotalCount();
     uint64_t new_num_rs_compacted = metrics->compact_rs_duration->TotalCount();
+    uint64_t new_num_undo_deltas_gced =
+        metrics->undo_delta_block_gc_perform_duration->TotalCount();
     if (prev_stats_.valid() &&
         new_num_mrs_flushed == last_num_mrs_flushed_ &&
-        new_num_rs_compacted == last_num_rs_compacted_) {
+        new_num_rs_compacted == last_num_rs_compacted_ &&
+        new_num_undo_deltas_gced == last_num_undo_deltas_gced_) {
       prev_stats_.set_workload_score(workload_score);
       *stats = prev_stats_;
       return;
     }
     last_num_mrs_flushed_ = new_num_mrs_flushed;
     last_num_rs_compacted_ = new_num_rs_compacted;
+    last_num_undo_deltas_gced_ = new_num_undo_deltas_gced;
   }
 
   tablet_->UpdateCompactionStats(&prev_stats_);

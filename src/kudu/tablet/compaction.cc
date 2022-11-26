@@ -206,6 +206,12 @@ class MemRowSetCompactionInput : public CompactionInput {
     return iter_->schema();
   }
 
+  size_t memory_footprint() const override {
+    // TODO(aserbin): implement this if it's necessary to track peak memory
+    //                usage for objects of this type during compaction
+    return 0;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MemRowSetCompactionInput);
   unique_ptr<RowBlock> row_block_;
@@ -285,6 +291,11 @@ class DiskRowSetCompactionInput : public CompactionInput {
 
   const Schema& schema() const override {
     return base_iter_->schema();
+  }
+
+  size_t memory_footprint() const override {
+    return redo_delta_iter_->memory_footprint() +
+        undo_delta_iter_->memory_footprint();
   }
 
  private:
@@ -578,8 +589,9 @@ class MergeCompactionInput : public CompactionInput {
  public:
   MergeCompactionInput(const vector<shared_ptr<CompactionInput>>& inputs,
                        const Schema* schema)
-    : schema_(schema),
-      num_dup_rows_(0) {
+      : schema_(schema),
+        num_dup_rows_(0),
+        max_memory_usage_(0) {
     for (const auto& input : inputs) {
       unique_ptr<MergeState> state(new MergeState);
       state->input = input;
@@ -710,11 +722,34 @@ class MergeCompactionInput : public CompactionInput {
   Arena* PreparedBlockArena() override { return prepared_block_arena_; }
 
   Status FinishBlock() override {
-    return ProcessEmptyInputs();
+    auto s = ProcessEmptyInputs();
+
+    // Update the stats on peak memory usage.
+    size_t cur_usage = 0;
+    for (const auto* st : states_) {
+      cur_usage += st->input->memory_footprint();
+      for (const auto* st : st->dominated) {
+        cur_usage += st->input->memory_footprint();
+      }
+    }
+    if (cur_usage > max_memory_usage_) {
+      max_memory_usage_ = cur_usage;
+    }
+    VLOG(2) << Substitute("max memory usage: $0", max_memory_usage_);
+
+    return s;
   }
 
   const Schema& schema() const override {
     return *schema_;
+  }
+
+  // Return the peak amount of memory used by this compaction input.
+  // Since 'max_memory_usage_' isn't protected against concurrent access,
+  // this method should be invoked from the same thread that performs merge
+  // compaction.
+  size_t memory_footprint() const override {
+    return max_memory_usage_;
   }
 
  private:
@@ -894,6 +929,9 @@ class MergeCompactionInput : public CompactionInput {
   // by the the time the most recent version row is processed.
   vector<std::unique_ptr<RowBlock>> duplicated_rows_;
   int num_dup_rows_;
+
+  // An estimate on maximum memory usage by this compaction input.
+  size_t max_memory_usage_;
 
   enum {
     kDuplicatedRowsPerBlock = 10

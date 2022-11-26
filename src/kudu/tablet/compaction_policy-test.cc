@@ -21,8 +21,10 @@
 #include <initializer_list>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -47,6 +49,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::nullopt;
 using std::string;
 using std::vector;
 
@@ -443,8 +446,10 @@ double ComputeAverageRowsetHeight(
   RowSetTree tree;
   CHECK_OK(tree.Reset(rowsets));
 
-  double rowset_total_height, rowset_total_width;
+  double rowset_total_height;
+  double rowset_total_width;
   RowSetInfo::ComputeCdfAndCollectOrdered(tree,
+                                          nullopt,
                                           &rowset_total_height,
                                           &rowset_total_width,
                                           nullptr,
