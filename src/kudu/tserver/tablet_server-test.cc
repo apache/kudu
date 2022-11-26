@@ -1686,12 +1686,18 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 // Try sending write requests that do not contain write operations. Make sure
 // we get an error that makes sense.
 TEST_F(TabletServerTest, TestInvalidWriteRequest_WrongOpType) {
-  const vector<RowOperationsPB::Type> wrong_op_types = {
+  const RowOperationsPB::Type wrong_op_types[] = {
     RowOperationsPB::SPLIT_ROW,
     RowOperationsPB::RANGE_LOWER_BOUND,
     RowOperationsPB::RANGE_UPPER_BOUND,
     RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND,
     RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND,
+  };
+  const RowOperationsPB::Type unknown_op_types[] = {
+    RowOperationsPB::UNKNOWN,
+  };
+  const RowOperationsPB::Type unsupported_op_types[] = {
+    static_cast<RowOperationsPB::Type>(RowOperationsPB_Type_Type_MAX + 1),
   };
   const auto send_bad_write = [&] (RowOperationsPB::Type op_type) {
     WriteRequestPB req;
@@ -1706,26 +1712,35 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_WrongOpType) {
     CHECK_OK(proxy_->Write(req, &resp, &controller));
     return resp;
   };
-  // Send a bunch of op types that are inappropriate for write requests.
-  for (const auto& op_type : wrong_op_types) {
+  const auto check_op_type = [&] (RowOperationsPB::Type op_type,
+                                  AppStatusPB::ErrorCode expected_code,
+                                  const string& expected_msg_substr) {
     WriteResponsePB resp = send_bad_write(op_type);
     SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
-    ASSERT_EQ(AppStatusPB::INVALID_ARGUMENT, resp.error().status().code());
-    ASSERT_STR_CONTAINS(resp.error().status().message(),
-                        "Invalid write operation type");
+    ASSERT_EQ(expected_code, resp.error().status().code());
+    ASSERT_STR_CONTAINS(resp.error().status().message(), expected_msg_substr);
+  };
+
+  // Send a bunch of op types that are inappropriate for write requests.
+  for (const auto& op_type : wrong_op_types) {
+    NO_FATALS(check_op_type(op_type,
+                            AppStatusPB::INVALID_ARGUMENT,
+                            "Invalid write operation type"));
   }
-  {
-    // Do the same for UNKNOWN, which is an unexpected operation type in all
-    // cases, and thus results in a different error message.
-    WriteResponsePB resp = send_bad_write(RowOperationsPB::UNKNOWN);
-    SCOPED_TRACE(SecureDebugString(resp));
-    ASSERT_TRUE(resp.has_error());
-    ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
-    ASSERT_EQ(AppStatusPB::NOT_SUPPORTED, resp.error().status().code());
-    ASSERT_STR_CONTAINS(resp.error().status().message(),
-                        "Unknown row operation type");
+  // Do the same for UNKNOWN.
+  for (const auto& op_type : unknown_op_types) {
+    NO_FATALS(check_op_type(op_type,
+                            AppStatusPB::INVALID_ARGUMENT,
+                            "Invalid write operation type"));
+  }
+  // Try one more value which isn't among the defined ones in the
+  // RowOperationsPB::Type enumeration.
+  for (const auto& op_type : unsupported_op_types) {
+    NO_FATALS(check_op_type(op_type,
+                            AppStatusPB::NOT_SUPPORTED,
+                            "Unknown operation type"));
   }
 }
 

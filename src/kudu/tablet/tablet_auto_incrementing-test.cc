@@ -99,7 +99,7 @@ TEST_F(AutoIncrementingTabletTest, TestUpsertOp) {
   ASSERT_OK(row->SetInt32(1, 1337));
   Status s = writer_->Upsert(*row);
   ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
-  ASSERT_EQ("Not implemented: Tables with auto-incrementing "
+  ASSERT_EQ("Not implemented: tables with auto-incrementing "
             "column do not support UPSERT operations", s.ToString());
 }
 
@@ -110,7 +110,7 @@ TEST_F(AutoIncrementingTabletTest, TestUpsertIgnoreOp) {
   ASSERT_OK(row->SetInt32(1, 1337));
   Status s = writer_->UpsertIgnore(*row);
   ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
-  ASSERT_EQ("Not implemented: Tables with auto-incrementing "
+  ASSERT_EQ("Not implemented: tables with auto-incrementing "
             "column do not support UPSERT_IGNORE operations", s.ToString());
 }
 
