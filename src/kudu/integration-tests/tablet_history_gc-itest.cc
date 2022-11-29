@@ -37,10 +37,8 @@
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
-#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
-#include "kudu/clock/time_service.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
@@ -139,6 +137,8 @@ TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
 
   // Create a tablet so we can scan it.
   TestWorkload workload(cluster_.get());
+  // TODO(KUDU-3424): remove the customization once the issue is fixed
+  workload.set_num_replicas(1);
   workload.Setup();
 
   auto open_scanner_func = [](KuduClient* client) {
