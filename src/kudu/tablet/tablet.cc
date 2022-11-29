@@ -154,6 +154,7 @@ DEFINE_int32(tablet_history_max_age_sec, 60 * 60 * 24 * 7,
              "initiated at a snapshot that is older than this age will be "
              "rejected. To disable history removal, set to -1.");
 TAG_FLAG(tablet_history_max_age_sec, advanced);
+TAG_FLAG(tablet_history_max_age_sec, runtime);
 TAG_FLAG(tablet_history_max_age_sec, stable);
 
 // Large encoded keys cause problems because we store the min/max encoded key in the
