@@ -1176,8 +1176,9 @@ build_rocksdb() {
     -DWITH_GFLAGS=OFF \
     -DCMAKE_BUILD_TYPE=release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
-    -DCMAKE_SHARED_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$EXTRA_LDFLAGS $EXTRA_LIBS -Wl,-rpath,$PREFIX/lib" \
+    $EXTRA_CMAKE_FLAGS \
     $ROCKSDB_SOURCE
-  make -j$PARALLEL install
+  ${NINJA:-make} -j$PARALLEL install
   popd
 }
