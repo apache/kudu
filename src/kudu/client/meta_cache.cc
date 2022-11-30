@@ -849,7 +849,7 @@ LookupRpc::LookupRpc(scoped_refptr<MetaCache> meta_cache,
                      const MonoTime& deadline,
                      MetaCache::LookupType lookup_type,
                      ReplicaController::Visibility replica_visibility)
-    : AsyncLeaderMasterRpc(deadline, table->client(), BackoffType::LINEAR, req_, &resp_,
+    : AsyncLeaderMasterRpc(deadline, meta_cache->client_, BackoffType::LINEAR, req_, &resp_,
           &MasterServiceProxy::GetTableLocationsAsync,
           "LookupRpc", std::move(user_cb), {}),
       meta_cache_(std::move(meta_cache)),
