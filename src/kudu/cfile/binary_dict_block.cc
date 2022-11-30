@@ -155,9 +155,8 @@ Status BinaryDictBlockBuilder::AppendExtraInfo(CFileWriter* c_writer, CFileFoote
   vector<Slice> dict_v;
   dict_block_.Finish(0, &dict_v);
 
-
   BlockPointer ptr;
-  Status s = c_writer->AppendDictBlock(dict_v, &ptr, "Append dictionary block");
+  Status s = c_writer->AppendDictBlock(std::move(dict_v), &ptr, "Append dictionary block");
   if (!s.ok()) {
     LOG(WARNING) << "Unable to append block to file: " << s.ToString();
     return s;
@@ -176,10 +175,9 @@ Status BinaryDictBlockBuilder::GetFirstKey(void* key_void) const {
     Slice* slice = reinterpret_cast<Slice*>(key_void);
     *slice = Slice(first_key_);
     return Status::OK();
-  } else {
-    DCHECK_EQ(mode_, kPlainBinaryMode);
-    return data_builder_->GetFirstKey(key_void);
   }
+  DCHECK_EQ(mode_, kPlainBinaryMode);
+  return data_builder_->GetFirstKey(key_void);
 }
 
 Status BinaryDictBlockBuilder::GetLastKey(void* key_void) const {

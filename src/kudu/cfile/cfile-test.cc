@@ -280,7 +280,7 @@ class TestCFile : public CFileTestBase {
       slices.emplace_back("Body");
       slices.emplace_back("Tail");
       slices.emplace_back(reinterpret_cast<uint8_t *>(&i), 4);
-      ASSERT_OK(w.AppendRawBlock(slices, i, nullptr, Slice(), "raw-data"));
+      ASSERT_OK(w.AppendRawBlock(std::move(slices), i, nullptr, Slice(), "raw-data"));
     }
     ASSERT_OK(w.Finish());
 
@@ -900,9 +900,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestDataCorruption) {
   CFileWriter w(opts, GetTypeInfo(STRING), false, std::move(sink));
   w.AddMetadataPair("header_key", "header_value");
   ASSERT_OK(w.Start());
-  vector<Slice> slices;
-  slices.emplace_back("HelloWorld");
-  ASSERT_OK(w.AppendRawBlock(slices, 1, nullptr, Slice(), "raw-data"));
+  ASSERT_OK(w.AppendRawBlock({ "HelloWorld" }, 1, nullptr, Slice(), "raw-data"));
   ASSERT_OK(w.Finish());
 
   // Get the final size of the data

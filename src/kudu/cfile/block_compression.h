@@ -73,11 +73,11 @@ class CompressedBlockBuilder {
   // modified while the elements of 'result' are still being used.
   //
   // If an error was encountered, returns a non-OK status.
-  Status Compress(const std::vector<Slice>& data_slices,
+  Status Compress(std::vector<Slice> data_slices,
                   std::vector<Slice>* result);
 
   // See format information above.
-  static const size_t kHeaderLength = 4;
+  static constexpr size_t kHeaderLength = 4;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockBuilder);
@@ -117,8 +117,8 @@ class CompressedBlockDecoder {
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockDecoder);
 
-  static const size_t kHeaderLengthV1 = 8;
-  static const size_t kHeaderLengthV2 = 4;
+  static constexpr size_t kHeaderLengthV1 = 8;
+  static constexpr size_t kHeaderLengthV2 = 4;
 
   size_t header_length() const {
     return cfile_version_ == 1 ? kHeaderLengthV1 : kHeaderLengthV2;

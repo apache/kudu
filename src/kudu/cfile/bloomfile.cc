@@ -177,14 +177,13 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
   pb_util::AppendToString(hdr, &hdr_str);
 
   // The data is the concatenation of the header and the bloom itself.
-  vector<Slice> slices;
-  slices.emplace_back(hdr_str);
-  slices.push_back(bloom_builder_.slice());
+  vector<Slice> slices { Slice(hdr_str), bloom_builder_.slice() };
 
   // Append to the file.
   Slice start_key(first_key_);
   Slice last_key(last_key_);
-  RETURN_NOT_OK(writer_->AppendRawBlock(slices, 0, &start_key, last_key, "bloom block"));
+  RETURN_NOT_OK(writer_->AppendRawBlock(
+      std::move(slices), 0, &start_key, last_key, "bloom block"));
 
   bloom_builder_.Clear();
 

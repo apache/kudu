@@ -18,9 +18,11 @@
 #include "kudu/cfile/block_compression.h"
 
 #include <cstring>
+#include <iterator>
+#include <utility>
 
-#include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -58,7 +60,8 @@ CompressedBlockBuilder::CompressedBlockBuilder(const CompressionCodec* codec)
   : codec_(DCHECK_NOTNULL(codec)) {
 }
 
-Status CompressedBlockBuilder::Compress(const vector<Slice>& data_slices, vector<Slice>* result) {
+Status CompressedBlockBuilder::Compress(vector<Slice> data_slices,
+                                        vector<Slice>* result) {
   size_t data_size = 0;
   for (const Slice& data : data_slices) {
     data_size += data.size();
@@ -95,10 +98,8 @@ Status CompressedBlockBuilder::Compress(const vector<Slice>& data_slices, vector
     InlineEncodeFixed32(&buffer_[0], data_size);
     result->clear();
     result->reserve(data_slices.size() + 1);
-    result->push_back(Slice(buffer_.data(), kHeaderLength));
-    for (const Slice& orig_data : data_slices) {
-      result->push_back(orig_data);
-    }
+    result->emplace_back(buffer_.data(), kHeaderLength);
+    std::move(data_slices.begin(), data_slices.end(), std::back_inserter(*result));
     return Status::OK();
   }
 
@@ -163,7 +164,7 @@ Status CompressedBlockDecoder::Init() {
   }
 
   // Check if uncompressed size seems to be reasonable.
-  if (uncompressed_size_ > FLAGS_max_cfile_block_size) {
+  if (PREDICT_FALSE(uncompressed_size_ > FLAGS_max_cfile_block_size)) {
     return Status::Corruption(
       Substitute("uncompressed size $0 overflows the maximum length $1, buffer",
                  uncompressed_size_, FLAGS_max_cfile_block_size),

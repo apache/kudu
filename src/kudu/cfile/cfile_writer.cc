@@ -166,8 +166,7 @@ Status CFileWriter::Start() {
   PutFixed32(&header_str, pb_size);
   pb_util::AppendToString(header, &header_str);
 
-  vector<Slice> header_slices;
-  header_slices.emplace_back(header_str);
+  vector<Slice> header_slices { header_str };
 
   // Append header checksum.
   uint8_t checksum_buf[kChecksumSize];
@@ -385,20 +384,24 @@ Status CFileWriter::FinishCurDataBlock() {
       kudu::HexDump(Slice(key_tmp_space, typeinfo_->size()));
   }
 
-  vector<Slice> v;
-  faststring null_headers;
-  if (is_nullable_) {
-    Slice non_null_bitmap = non_null_bitmap_builder_->Finish();
-    PutVarint32(&null_headers, num_elems_in_block);
-    PutVarint32(&null_headers, non_null_bitmap.size());
-    v.emplace_back(null_headers.data(), null_headers.size());
-    v.push_back(non_null_bitmap);
+  Status s;
+  {
+    vector<Slice> v;
+    v.reserve(data_slices.size() + (is_nullable_ ? 2 : 0));
+    faststring null_headers;
+    if (is_nullable_) {
+      const Slice non_null_bitmap = non_null_bitmap_builder_->Finish();
+      PutVarint32(&null_headers, num_elems_in_block);
+      PutVarint32(&null_headers, non_null_bitmap.size());
+      v.emplace_back(null_headers.data(), null_headers.size());
+      v.emplace_back(non_null_bitmap);
+    }
+    std::move(data_slices.begin(), data_slices.end(), std::back_inserter(v));
+    s = AppendRawBlock(std::move(v), first_elem_ord,
+                       reinterpret_cast<const void *>(key_tmp_space),
+                       Slice(last_key_),
+                       "data block");
   }
-  std::move(data_slices.begin(), data_slices.end(), std::back_inserter(v));
-  Status s = AppendRawBlock(v, first_elem_ord,
-                            reinterpret_cast<const void *>(key_tmp_space),
-                            Slice(last_key_),
-                            "data block");
 
   if (is_nullable_) {
     non_null_bitmap_builder_->Reset();
@@ -413,15 +416,15 @@ Status CFileWriter::FinishCurDataBlock() {
   return s;
 }
 
-Status CFileWriter::AppendRawBlock(const vector<Slice>& data_slices,
+Status CFileWriter::AppendRawBlock(vector<Slice> data_slices,
                                    size_t ordinal_pos,
-                                   const void *validx_curr,
+                                   const void* validx_curr,
                                    const Slice& validx_prev,
-                                   const char *name_for_log) {
+                                   const char* name_for_log) {
   CHECK_EQ(state_, kWriterWriting);
 
   BlockPointer ptr;
-  Status s = AddBlock(data_slices, &ptr, name_for_log);
+  Status s = AddBlock(std::move(data_slices), &ptr, name_for_log);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to append block to file: " << s.ToString();
     return s;
@@ -455,29 +458,29 @@ Status CFileWriter::AppendRawBlock(const vector<Slice>& data_slices,
   return s;
 }
 
-Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
-                             BlockPointer *block_ptr,
-                             const char *name_for_log) {
+Status CFileWriter::AddBlock(vector<Slice> data_slices,
+                             BlockPointer* block_ptr,
+                             const char* name_for_log) {
   uint64_t start_offset = off_;
   vector<Slice> out_slices;
 
   if (block_compressor_ != nullptr) {
     // Write compressed block
-    Status s = block_compressor_->Compress(data_slices, &out_slices);
+    Status s = block_compressor_->Compress(std::move(data_slices), &out_slices);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to compress block at offset " << off_
                    << ": " << s.ToString();
       return s;
     }
   } else {
-    out_slices = data_slices;
+    out_slices = std::move(data_slices);
   }
 
   // Calculate and append a data checksum.
   uint8_t checksum_buf[kChecksumSize];
   if (FLAGS_cfile_write_checksums) {
     uint32_t checksum = 0;
-    for (const Slice &data : out_slices) {
+    for (const Slice& data : out_slices) {
       checksum = crc::Crc32c(data.data(), data.size(), checksum);
     }
     InlineEncodeFixed32(checksum_buf, checksum);

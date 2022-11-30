@@ -141,11 +141,11 @@ class CFileWriter {
   //
   // validx_prev should be a Slice pointing to the last key of the previous block.
   // It will be used to optimize the value index entry for the block.
-  Status AppendRawBlock(const std::vector<Slice> &data_slices,
+  Status AppendRawBlock(std::vector<Slice> data_slices,
                         size_t ordinal_pos,
-                        const void *validx_curr,
-                        const Slice &validx_prev,
-                        const char *name_for_log);
+                        const void* validx_curr,
+                        const Slice& validx_prev,
+                        const char* name_for_log);
 
 
   // Return the amount of data written so far to this CFile.
@@ -169,10 +169,10 @@ class CFileWriter {
   fs::WritableBlock* block() const { return block_.get(); }
 
   // Wrapper for AddBlock() to append the dictionary block to the end of a Cfile.
-  Status AppendDictBlock(const std::vector<Slice> &data_slices,
-                         BlockPointer *block_ptr,
-                         const char *name_for_log) {
-    return AddBlock(data_slices, block_ptr, name_for_log);
+  Status AppendDictBlock(std::vector<Slice> data_slices,
+                         BlockPointer* block_ptr,
+                         const char* name_for_log) {
+    return AddBlock(std::move(data_slices), block_ptr, name_for_log);
   }
 
  private:
@@ -183,9 +183,9 @@ class CFileWriter {
   // Append the given block into the file.
   //
   // Sets *block_ptr to correspond to the newly inserted block.
-  Status AddBlock(const std::vector<Slice> &data_slices,
-                  BlockPointer *block_ptr,
-                  const char *name_for_log);
+  Status AddBlock(std::vector<Slice> data_slices,
+                  BlockPointer* block_ptr,
+                  const char* name_for_log);
 
   Status WriteRawData(const std::vector<Slice>& data);
 

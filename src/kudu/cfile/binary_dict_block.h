@@ -56,9 +56,6 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-template <class X>
-struct GoodFastHash;
-
 namespace kudu {
 
 class ColumnDataView;

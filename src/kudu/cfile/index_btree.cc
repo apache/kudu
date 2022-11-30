@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <memory>
 #include <ostream>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -160,11 +161,8 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
 // in 'written'.
 Status IndexTreeBuilder::FinishAndWriteBlock(size_t level, BlockPointer *written) {
   IndexBlockBuilder* idx_block = idx_blocks_[level].get();
-  Slice data = idx_block->Finish();
-
-  vector<Slice> v;
-  v.push_back(data);
-  Status s = writer_->AddBlock(v, written, "index block");
+  vector<Slice> v { idx_block->Finish() };
+  Status s = writer_->AddBlock(std::move(v), written, "index block");
   if (!s.ok()) {
     LOG(ERROR) << "Unable to append level-" << level << " index "
                << "block to file";
