@@ -406,8 +406,8 @@ bool RSAJWTPublicKeyBuilder::ConvertJwkToPem(
 
   security::c_unique_ptr<RSA> rsa { RSA_new(), &RSA_free };
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-  rsa->n = modul.get();
-  rsa->e = expon.get();
+  rsa->n = modul.release();
+  rsa->e = expon.release();
 #else
   // RSA_set0_key is a new API introduced in OpenSSL version 1.1
   RSA_set0_key(rsa.get(), modul.release(), expon.release(), nullptr);
