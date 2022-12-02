@@ -939,7 +939,9 @@ bool KuduSchema::HasColumn(const std::string& col_name, KuduColumnSchema* col_sc
   if (idx == Schema::kColumnNotFound) {
     return false;
   }
-  *col_schema = Column(idx);
+  if (col_schema != nullptr) {
+    *col_schema = Column(idx);
+  }
   return true;
 }
 

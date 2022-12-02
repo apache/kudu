@@ -708,7 +708,7 @@ class KUDU_EXPORT KuduSchema {
   /// @param [in] col_name
   ///   Column name.
   /// @param [out] col_schema
-  ///   Schema for the specified column.
+  ///   If not null pointer, then the schema for the specified column.
   /// @return @c true iff the specified column exists.
   bool HasColumn(const std::string& col_name, KuduColumnSchema* col_schema) const;
 

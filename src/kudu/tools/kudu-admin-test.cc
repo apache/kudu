@@ -3950,12 +3950,9 @@ TEST_F(AdminCliTest, TestAddColumnsAndRebuildMaster) {
     KuduSchema schema;
     ASSERT_OK(client_->GetTableSchema(kTableId, &schema));
     ASSERT_EQ(6, schema.num_columns());
-    // Here we use the first column to initialize an object of KuduColumnSchema
-    // for there is no default constructor for it.
-    KuduColumnSchema col_schema = schema.Column(0);
-    ASSERT_TRUE(schema.HasColumn("old_column_0", &col_schema));
-    ASSERT_TRUE(schema.HasColumn("old_column_1", &col_schema));
-    ASSERT_TRUE(schema.HasColumn("new_column_0", &col_schema));
+    ASSERT_TRUE(schema.HasColumn("old_column_0", nullptr));
+    ASSERT_TRUE(schema.HasColumn("old_column_1", nullptr));
+    ASSERT_TRUE(schema.HasColumn("new_column_0", nullptr));
 
     client::sp::shared_ptr<KuduTable> table;
     ASSERT_OK(client_->OpenTable(kTableId, &table));

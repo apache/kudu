@@ -3259,10 +3259,7 @@ static Status ApplyUpsertToSession(KuduSession* session,
   RETURN_NOT_OK(upsert->mutable_row()->SetInt32("key", row_key));
   RETURN_NOT_OK(upsert->mutable_row()->SetInt32("int_val", int_val));
   RETURN_NOT_OK(upsert->mutable_row()->SetStringCopy("string_val", string_val));
-  // Here we use the first column to initialize an object of KuduColumnSchema
-  // for there is no default constructor for it.
-  KuduColumnSchema col_schema = table->schema().Column(0);
-  if (table->schema().HasColumn("imm_val", &col_schema)) {
+  if (table->schema().HasColumn("imm_val", nullptr)) {
     if (imm_val) {
       RETURN_NOT_OK(upsert->mutable_row()->SetInt32("imm_val", *imm_val));
     } else {
