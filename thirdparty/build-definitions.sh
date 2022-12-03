@@ -1170,6 +1170,7 @@ build_rocksdb() {
     -DWITH_TOOLS=OFF \
     -DWITH_TRACE_TOOLS=OFF \
     -DWITH_JNI=OFF \
+    -DWITH_LIBURING=OFF \
     -DWITH_LZ4=ON \
     -DWITH_ZSTD=OFF \
     -DWITH_SNAPPY=ON \
