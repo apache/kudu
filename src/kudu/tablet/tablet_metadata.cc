@@ -60,7 +60,8 @@
 
 DEFINE_bool(enable_tablet_orphaned_block_deletion, true,
             "Whether to enable deletion of orphaned blocks from disk. "
-            "Note: This is only exposed for debugging purposes!");
+            "Note: This is only exposed for debugging purposes and used "
+            "in CLI tools.");
 TAG_FLAG(enable_tablet_orphaned_block_deletion, advanced);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, hidden);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);

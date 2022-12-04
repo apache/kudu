@@ -68,6 +68,7 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -101,6 +102,8 @@ class Messenger;
 }  // namespace rpc
 }  // namespace kudu
 
+DEFINE_bool(backup_metadata, true,
+            "Whether to backup tablet metadata file when editing it.");
 DEFINE_bool(dump_all_columns, true,
             "If true, dumped rows include all of the columns in the rowset. If "
             "false, dumped rows include just the key columns (in a comparable format).");
@@ -171,6 +174,7 @@ using kudu::rpc::Messenger;
 using kudu::tablet::DiskRowSet;
 using kudu::tablet::RowIteratorOptions;
 using kudu::tablet::RowSetMetadata;
+using kudu::tablet::RowSetMetadataIds;
 using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletMetadata;
 using kudu::tablet::TabletReplica;
@@ -194,7 +198,7 @@ using strings::Substitute;
 namespace kudu {
 namespace tools {
 
-bool ValidateDumpRowset()  {
+bool ValidateDumpRowset() {
   if (FLAGS_dump_all_columns) {
     if (FLAGS_use_readable_format) {
       LOG(ERROR) << "Flag --use_readable_format is meaningless "
@@ -601,6 +605,52 @@ Status SetRaftTerm(const RunnerContext& context) {
   // associated with the old term.
   cmeta->clear_voted_for();
   return cmeta->Flush();
+}
+
+Status DeleteRowsets(const RunnerContext& context) {
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  const string& rowset_ids_str = FindOrDie(context.required_args, kRowsetIdsCsvArg);
+  vector<string> rowset_ids_vec = strings::Split(rowset_ids_str, ",", strings::SkipEmpty());
+  if (rowset_ids_vec.empty()) {
+    return Status::InvalidArgument("no rowset identifiers provided");
+  }
+
+  RowSetMetadataIds to_remove;
+  for (const auto& rowset_id_str : rowset_ids_vec) {
+    int64_t rowset_id;
+    if (safe_strto64(rowset_id_str.c_str(), &rowset_id)) {
+      to_remove.insert(rowset_id);
+    } else {
+      return Status::InvalidArgument(Substitute("$0 is not a valid rowset id.", rowset_id_str));
+    }
+  }
+
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = false;
+  fs_opts.skip_block_manager = false;
+  fs_opts.update_instances = fs::UpdateInstanceBehavior::DONT_UPDATE;
+  FsManager fs_manager(Env::Default(), std::move(fs_opts));
+  RETURN_NOT_OK(fs_manager.Open());
+
+  scoped_refptr<TabletMetadata> meta;
+  RETURN_NOT_OK_PREPEND(TabletMetadata::Load(&fs_manager, tablet_id, &meta),
+                        Substitute("could not load tablet metadata for $0", tablet_id));
+
+  if (FLAGS_backup_metadata) {
+    // Move the old tablet metadata file to a backup location.
+    string original_path = fs_manager.GetTabletMetadataPath(tablet_id);
+    string backup_path = Substitute("$0.bak.$1", original_path, GetCurrentTimeMicros());
+    RETURN_NOT_OK_PREPEND(Env::Default()->RenameFile(original_path, backup_path),
+                          "couldn't back up original file");
+    LOG(INFO) << "Moved original file to " << backup_path;
+  }
+
+  RETURN_NOT_OK(meta->UpdateAndFlush(
+      to_remove, /* to_add */ {}, tablet::TabletMetadata::kNoMrsFlushed));
+
+  LOG(INFO) << "Successfully removed rowsets with identifiers:" << JoinElements(to_remove, ",");
+
+  return Status::OK();
 }
 
 Status CopyFromRemote(const RunnerContext& context) {
@@ -1209,6 +1259,37 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("fs_wal_dir")
       .Build();
 
+  unique_ptr<Action> delete_rowsets =
+      ActionBuilder("delete_rowsets", &DeleteRowsets)
+          .Description("Delete rowsets from a local replica.")
+          .ExtraDescription("The common usage pattern of this tool is described below.\n"
+              "That involves checking the result by a dry run of the tablet server with the "
+              "modified tablet's data after running the tool. It's crucial to customize tablet "
+              "server's --enable_tablet_orphaned_block_deletion flag for the dry run to avoid "
+              "deleting orphaned blocks, so it's possible to roll back to the original state of "
+              "the tablet's data if something goes wrong. First, run the tool with default "
+              "settings for  --backup_metadata and --enable_tablet_orphaned_block_deletion to (a) "
+              "create a backup of the original metadata file and (b) keep the orphaned blocks on "
+              "the file system. Second, start the tablet server with "
+              "--enable_tablet_orphaned_block_deletion=false to check whether the change worked as "
+              "expected and the tablet server works fine with the new state of the tablet's data. "
+              "If it doesn't work as expected, stop the tablet server (if still running), rollback "
+              "the change by replacing the updated metadata file with the backup created earlier, "
+              "and retry the  procedure again, specifying proper rowset identifiers to the tool. "
+              "If the change works as expected and the tablet server runs fine after with the "
+              "updated tablet's data, remove the customization for the "
+              "--enable_tablet_orphaned_block_deletion flag and restart the tablet server.")
+          .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+          .AddRequiredParameter({ kRowsetIdsCsvArg, kRowsetIdsCsvArgDesc })
+          .AddOptionalParameter("backup_metadata")
+          // Set --enable_tablet_orphaned_block_deletion to false to promote a safer usage
+          // of this tools.
+          .AddOptionalParameter("enable_tablet_orphaned_block_deletion", string("false"))
+          .AddOptionalParameter("fs_data_dirs")
+          .AddOptionalParameter("fs_metadata_dir")
+          .AddOptionalParameter("fs_wal_dir")
+          .Build();
+
   unique_ptr<Mode> cmeta =
       ModeBuilder("cmeta")
       .Description("Operate on a local tablet replica's consensus "
@@ -1216,6 +1297,12 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddAction(std::move(print_replica_uuids))
       .AddAction(std::move(rewrite_raft_config))
       .AddAction(std::move(set_term))
+      .Build();
+
+  unique_ptr<Mode> tmeta =
+      ModeBuilder("tmeta")
+      .Description("Edit a local tablet metadata")
+      .AddAction(std::move(delete_rowsets))
       .Build();
 
   unique_ptr<Action> copy_from_remote =
@@ -1280,6 +1367,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
   return ModeBuilder("local_replica")
       .Description("Operate on local tablet replicas via the local filesystem")
       .AddMode(std::move(cmeta))
+      .AddMode(std::move(tmeta))
       .AddAction(std::move(copy_from_local))
       .AddAction(std::move(copy_from_remote))
       .AddAction(std::move(data_size))

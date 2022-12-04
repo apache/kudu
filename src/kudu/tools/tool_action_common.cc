@@ -276,6 +276,9 @@ const char* const kTabletIdArgDesc = "Tablet Identifier";
 const char* const kTabletIdsCsvArg = "tablet_ids";
 const char* const kTabletIdsCsvArgDesc =
     "Comma-separated list of Tablet Identifiers";
+const char* const kRowsetIdsCsvArg = "rowset_ids";
+const char* const kRowsetIdsCsvArgDesc =
+    "Comma-separated list of Rowset Identifiers";
 
 const char* const kMasterAddressArg = "master_address";
 const char* const kMasterAddressDesc = "Address of a Kudu Master of form "

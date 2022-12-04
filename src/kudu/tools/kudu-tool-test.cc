@@ -123,6 +123,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/jsonreader.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -140,12 +141,15 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/url-coding.h"
 
+DECLARE_bool(enable_tablet_orphaned_block_deletion);
 DECLARE_bool(encrypt_data_at_rest);
 DECLARE_bool(fs_data_dirs_consider_available_space);
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(show_values);
 DECLARE_bool(show_attributes);
 DECLARE_int32(catalog_manager_inject_latency_load_ca_info_ms);
+DECLARE_int32(flush_threshold_mb);
+DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(tserver_unresponsive_timeout_ms);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
@@ -741,6 +745,40 @@ class ToolTest : public KuduTest {
     return JoinStrings(master_addrs, ",");
   }
 
+  Status ListTabletRowsetIds(const string& metadata_path,
+                             const string& tablet_id,
+                             const string& encryption_args,
+                             set<int64_t>* rowset_ids) {
+    string stdout;
+    RunActionStdoutString(Substitute("pbc dump $0 $1 --json",
+                                     JoinPathSegments(metadata_path, tablet_id), encryption_args),
+                          &stdout);
+
+    JsonReader r(stdout);
+    RETURN_NOT_OK(r.Init());
+    vector<const rapidjson::Value*> results;
+    Status s = r.ExtractObjectArray(r.root(), "rowsets", &results);
+
+    rowset_ids->clear();
+    if (s.IsNotFound()) {
+      return Status::OK();
+    }
+    RETURN_NOT_OK(s);
+    LOG(INFO) << "results size: " << results.size();
+    for (const auto& result : results) {
+      string rowset_id_str;
+      RETURN_NOT_OK(r.ExtractString(result, "id", &rowset_id_str));
+      LOG(INFO) << "rowset_id_str: " << rowset_id_str;
+      int64_t rowset_id;
+      if (!safe_strto64(rowset_id_str, &rowset_id)) {
+        return Status::InvalidArgument(Substitute("invalid rowset id: $0", rowset_id_str));
+      }
+      InsertOrDie(rowset_ids, rowset_id);
+    }
+
+    return Status::OK();
+  }
+
  protected:
   // Note: Each test case must have a single invocation of RunLoadgen() otherwise it leads to
   //       memory leaks.
@@ -1280,6 +1318,7 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kLocalReplicaModeRegexes = {
         "cmeta.*Operate on a local tablet replica's consensus",
+        "tmeta.*Edit a local tablet metadata",
         "data_size.*Summarize the data size",
         "dump.*Dump a Kudu filesystem",
         "copy_from_remote.*Copy tablet replicas from a remote server",
@@ -1328,6 +1367,12 @@ TEST_F(ToolTest, TestModeHelp) {
     // Try with hyphens instead of underscores.
     NO_FATALS(RunTestHelp("local-replica copy-from-local --help",
                           kLocalReplicaCopyFromRemoteRegexes));
+  }
+  {
+    const vector<string> kLocalReplicaTmetaRegexes = {
+        "delete_rowsets.*Delete rowsets from a local replica.",
+    };
+    NO_FATALS(RunTestHelp("local_replica tmeta", kLocalReplicaTmetaRegexes));
   }
   {
     const string kCmd = "master";
@@ -8751,6 +8796,116 @@ TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {
     Status s =
         RunActionStdoutStderrString(Substitute("cluster ksck $0", GetMasterAddrsStr()), &out, &err);
     ASSERT_TRUE(s.ok()) << s.ToString() << ", err:\n" << err << ", out:\n" << out;
+  });
+}
+
+// Test for 'local_replica tmeta' functionality.
+TEST_F(ToolTest, TestLocalReplicaTmeta) {
+  constexpr const char* const kTableName = "kudu.local_replica.tmeta";
+  const int kNumTablets = 4;
+  const int kNumTabletServers = 1;
+
+  FLAGS_flush_threshold_mb = 1;
+  FLAGS_flush_threshold_secs = 1;
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTabletServers;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+
+  TestWorkload workload(mini_cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_replicas(1);
+  workload.set_table_name(kTableName);
+  workload.Setup();
+  workload.Start();
+  // Make sure there are some rowsets flushed.
+  SleepFor(MonoDelta::FromSeconds(2));
+  workload.StopAndJoin();
+  int64_t total_row_count = workload.rows_inserted();
+
+  string encryption_args;
+  if (env_->IsEncryptionEnabled()) {
+    encryption_args =
+        GetEncryptionArgs() + " --instance_file=" +
+        JoinPathSegments(mini_cluster_->mini_tablet_server(0)->options()->fs_opts.wal_root,
+                         "instance");
+  }
+  const string& flags =
+      Substitute("-fs_wal_dir=$0 --fs_data_dirs=$1 $2",
+                 mini_cluster_->mini_tablet_server(0)->options()->fs_opts.wal_root,
+                 JoinStrings(mini_cluster_->mini_tablet_server(0)->options()->fs_opts.data_roots,
+                             ","),
+                 encryption_args);
+
+  // Find the tablet to edit.
+  vector<string> tablet_ids;
+  NO_FATALS(RunActionStdoutLines(Substitute("local_replica list $0", flags), &tablet_ids));
+  ASSERT_EQ(kNumTablets, tablet_ids.size());
+  const string& tablet_id = tablet_ids[0];
+  const string& metadata_path = mini_cluster_->mini_tablet_server(0)->server()
+                                    ->fs_manager()->GetTabletMetadataDir();
+  const string& original_file = JoinPathSegments(metadata_path, tablet_id);
+
+  // The server should be shutdown before editing.
+  string stdout;
+  string stderr;
+  Status s = RunActionStdoutStderrString(
+      Substitute("local_replica tmeta delete_rowsets $0 $1 $2", tablet_id, 0, flags),
+      &stdout, &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(stderr, "failed to load instance files");
+
+  // List rowsets after server shutdown, the rowsets set will not change if not edit the tablet
+  // metadata.
+  mini_cluster_->Shutdown();
+  set<int64_t> rowset_ids;
+  ASSERT_OK(ListTabletRowsetIds(metadata_path, tablet_id, encryption_args, &rowset_ids));
+  ASSERT_FALSE(rowset_ids.empty());
+  int64_t rowset_id_to_delete = *rowset_ids.begin();
+
+  // Remove one rowset from the tablet.
+  ASSERT_OK(RunActionStdoutStderrString(
+      Substitute("local_replica tmeta delete_rowsets $0 $1 $2 --backup_metadata=true "
+                 "--enable_tablet_orphaned_block_deletion=false",
+                 tablet_id, rowset_id_to_delete, flags),
+      &stdout, &stderr));
+
+  // Check the rowset has been deleted successfully.
+  set<int64_t> new_rowset_ids;
+  ASSERT_OK(ListTabletRowsetIds(metadata_path, tablet_id, encryption_args, &new_rowset_ids));
+  ASSERT_EQ(rowset_ids.size() - 1, new_rowset_ids.size());
+  ASSERT_FALSE(ContainsKey(new_rowset_ids, rowset_id_to_delete));
+
+  // The server can be started successfully.
+  // Disable orphaned blocks deletion, because we will roll back to check the original data.
+  FLAGS_enable_tablet_orphaned_block_deletion = false;
+  ASSERT_OK(mini_cluster_->Start());
+  ASSERT_EVENTUALLY([&] {
+    ClusterVerifier v(mini_cluster_.get());
+    NO_FATALS(v.CheckRowCount(kTableName, ClusterVerifier::AT_LEAST, 1));
+  });
+
+  // Roll back the metadata and restart server.
+  mini_cluster_->Shutdown();
+  string backup_file;
+  vector<string> metadata_files;
+  ASSERT_OK(env_->GetChildren(metadata_path, &metadata_files));
+  for (const auto& metadata_file : metadata_files) {
+    if (MatchPattern(metadata_file, Substitute("*$0.bak.*", tablet_id))) {
+      backup_file = metadata_file;
+      break;
+    }
+  }
+  ASSERT_FALSE(backup_file.empty());
+  ASSERT_OK(env_->RenameFile(JoinPathSegments(metadata_path, backup_file), original_file));
+  // Now it's safe to enable orphaned blocks deletion, because there is no orphaned blocks in
+  // original tablet metadata file.
+  FLAGS_enable_tablet_orphaned_block_deletion = true;
+  ASSERT_OK(mini_cluster_->Start());
+
+  // Check there isn't any data loss.
+  ASSERT_EVENTUALLY([&] {
+    ClusterVerifier v(mini_cluster_.get());
+    NO_FATALS(v.CheckRowCount(kTableName, ClusterVerifier::EXACTLY, total_row_count));
   });
 }
 
