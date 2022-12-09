@@ -193,13 +193,16 @@ Status LeaderStepDown(const RunnerContext& context) {
   RETURN_NOT_OK(s);
 
   // If the requested new leader is the leader, the command can short-circuit.
-  if (new_leader_uuid && (leader_uuid == *new_leader_uuid || leader_uuid == *current_leader_uuid)) {
+  if (new_leader_uuid && leader_uuid == *new_leader_uuid) {
     cout << Substitute("Requested new leader $0 is already the leader",
                        leader_uuid) << endl;
     return Status::OK();
   }
-  return DoLeaderStepDown(tablet_id, current_leader_uuid ? *current_leader_uuid : leader_uuid,
-                          leader_hp, mode, new_leader_uuid,
+  return DoLeaderStepDown(tablet_id,
+                          current_leader_uuid ? *current_leader_uuid : leader_uuid,
+                          leader_hp,
+                          mode,
+                          new_leader_uuid,
                           client->default_admin_operation_timeout());
 }
 
