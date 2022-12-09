@@ -701,8 +701,7 @@ bool PartitionSchema::PartitionContainsRowImpl(const Partition& partition,
       return false;
     }
   }
-
-  return RangePartitionContainsRowImpl(partition, row);
+  return RangePartitionContainsEncodedKey(partition, range_key);
 }
 
 template<typename Row>
@@ -727,12 +726,7 @@ bool PartitionSchema::RangePartitionContainsRowImpl(
   string key;
   EncodeColumns(row, range_schema_.column_ids, &key);
 
-  // When all hash buckets match, then the row is contained in the partition
-  // if the row's key is greater or equal to the lower bound, and if there is
-  // either no upper bound or the row's key is less than the upper bound.
-  return
-      (partition.begin().range_key() <= key) &&
-      (partition.end().range_key().empty() || key < partition.end().range_key());
+  return RangePartitionContainsEncodedKey(partition, key);
 }
 
 bool PartitionSchema::PartitionContainsRow(const Partition& partition,
@@ -1382,6 +1376,16 @@ vector<Partition> PartitionSchema::GenerateHashPartitions(
     hash_partitions = std::move(new_partitions);
   }
   return hash_partitions;
+}
+
+bool PartitionSchema::RangePartitionContainsEncodedKey(
+    const Partition& partition, const string& key) {
+  // When all hash buckets match, then the row is contained in the partition
+  // if the row's key is greater or equal to the lower bound, and if there is
+  // either no upper bound or the row's key is less than the upper bound.
+  return
+      (partition.begin().range_key() <= key) &&
+      (partition.end().range_key().empty() || key < partition.end().range_key());
 }
 
 Status PartitionSchema::ValidateHashSchema(const Schema& schema,

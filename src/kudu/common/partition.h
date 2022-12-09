@@ -564,6 +564,10 @@ class PartitionSchema {
       const HashSchema& hash_schema,
       const KeyEncoder<std::string>& hash_encoder);
 
+  // Helper for PartitionContainsRowImpl.
+  static bool RangePartitionContainsEncodedKey(const Partition& partition,
+                                               const std::string& key);
+
   // PartitionKeyDebugString implementation for row types.
   template<typename Row>
   std::string PartitionKeyDebugStringImpl(const Row& row) const;
