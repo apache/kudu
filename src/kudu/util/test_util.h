@@ -180,6 +180,18 @@ Status WaitForUdpBind(pid_t pid, uint16_t* port,
                       const std::vector<std::string>& addresses,
                       MonoDelta timeout) WARN_UNUSED_RESULT;
 
+// Similar to WaitForTcpBind(), but when port is known beforehand
+// and the PID doesn't matter.
+Status WaitForTcpBindAtPort(const std::vector<std::string>& addresses,
+                            uint16_t port,
+                            MonoDelta timeout) WARN_UNUSED_RESULT;
+
+// Similar to WaitForUdpBind(), but when port is known beforehand
+// and the PID doesn't matter.
+Status WaitForUdpBindAtPort(const std::vector<std::string>& addresses,
+                            uint16_t port,
+                            MonoDelta timeout) WARN_UNUSED_RESULT;
+
 // Find the home directory of a Java-style application, e.g. JAVA_HOME or
 // HADOOP_HOME.
 //

@@ -438,12 +438,12 @@ int CountOpenFds(Env* env, const string& path_pattern) {
 }
 
 namespace {
+const vector<string> kWildcard = { "0.0.0.0" };
+
 Status WaitForBind(pid_t pid, uint16_t* port,
                    const vector<string>& addresses,
                    const char* kind,
                    MonoDelta timeout) {
-  static const vector<string> kWildcard = { "0.0.0.0" };
-
   // In general, processes do not expose the port they bind to, and
   // reimplementing lsof involves parsing a lot of files in /proc/. So,
   // requiring lsof for tests and parsing its output seems more
@@ -523,6 +523,70 @@ Status WaitForBind(pid_t pid, uint16_t* port,
   LOG(FATAL) << "could not determine bound port the process";
   __builtin_unreachable();
 }
+
+Status WaitForBindAtPort(const vector<string>& addresses,
+                         uint16_t port,
+                         const char* kind,
+                         MonoDelta timeout) {
+  string lsof;
+  RETURN_NOT_OK(FindExecutable("lsof", {"/sbin", "/usr/sbin"}, &lsof));
+  const vector<string> cmd = { lsof, "-wbnP", "-Fpfn", "-a", "-i", kind };
+
+  // The '-Fpfn' flag gets lsof to output something like:
+  //   p2133
+  //   f549
+  //   n*:8038
+  //   f550
+  //   n*:8088
+  //   p5801
+  //   f548
+  //   n127.0.0.1:43954->127.0.0.1:43617
+  //   p95857
+  //   f3
+  //   n127.0.0.1:63337
+  //
+  // The first line is the pid for every process of the user. We ignore it.
+  // Subsequent lines come in pairs. In each pair, the first half of the pair
+  // is file descriptor number, we ignore it.
+  // The second half has the bind address and port.
+  const MonoTime deadline = MonoTime::Now() + timeout;
+  const auto& addresses_to_check = addresses.empty() ? kWildcard : addresses;
+  for (int64_t i = 1; ; ++i) {
+    string lsof_out;
+    RETURN_NOT_OK(Subprocess::Call(cmd, "", &lsof_out));
+    StripTrailingNewline(&lsof_out);
+    const vector<string> lines = strings::Split(lsof_out, "\n");
+
+    for (const auto& addr : addresses_to_check) {
+      const string addr_pattern = Substitute(
+          "n$0:$1", addr == "0.0.0.0" ? "*" : addr, port);
+      for (const auto& l : lines) {
+        if (l.empty()) {
+          return Status::RuntimeError("unexpected lsof output", lsof_out);
+        }
+        if (l[0] == 'p' || l[0] == 'f') {
+          continue;
+        }
+        if (l[0] == 'n') {
+          if (l == addr_pattern) {
+            return Status::OK();
+          }
+          continue;
+        }
+        return Status::RuntimeError("unexpected lsof output", lsof_out);
+      }
+    }
+
+    if (deadline < MonoTime::Now()) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(i * 10));
+  }
+
+  return Status::TimedOut(
+      Substitute("time out waiting for port $0 to be bound", port));
+}
+
 } // anonymous namespace
 
 Status WaitForTcpBind(pid_t pid, uint16_t* port,
@@ -535,6 +599,18 @@ Status WaitForUdpBind(pid_t pid, uint16_t* port,
                       const vector<string>& addresses,
                       MonoDelta timeout) {
   return WaitForBind(pid, port, addresses, "4UDP", timeout);
+}
+
+Status WaitForTcpBindAtPort(const vector<string>& addresses,
+                            uint16_t port,
+                            MonoDelta timeout) {
+  return WaitForBindAtPort(addresses, port, "4TCP", timeout);
+}
+
+Status WaitForUdpBindAtPort(const vector<string>& addresses,
+                            uint16_t port,
+                            MonoDelta timeout) {
+  return WaitForBindAtPort(addresses, port, "4UDP", timeout);
 }
 
 Status FindHomeDir(const string& name, const string& bin_dir, string* home_dir) {
