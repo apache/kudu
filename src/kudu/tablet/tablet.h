@@ -254,7 +254,6 @@ class Tablet {
   // in a new (initially empty) MemRowSet in its place.
   //
   // This doesn't flush any DeltaMemStores for any existing RowSets.
-  // To do that, call FlushBiggestDMS() for example.
   Status Flush();
 
   // Prepares the op context for the alter schema operation.
@@ -328,8 +327,8 @@ class Tablet {
   // Flushes the DMS with the highest retention.
   Status FlushBestDMS(const ReplaySizeMap &replay_size_map) const;
 
-  // Flush only the biggest DMS
-  Status FlushBiggestDMS();
+  // Flush only the biggest DMS. Only used for tests.
+  Status FlushBiggestDMSForTests();
 
   // Flush all delta memstores. Only used for tests.
   Status FlushAllDMSForTests();
@@ -841,7 +840,8 @@ class Tablet {
   std::shared_ptr<FlushFaultHooks> flush_hooks_;
   std::shared_ptr<FlushCompactCommonHooks> common_hooks_;
 
-  std::vector<MaintenanceOp*> maintenance_ops_;
+  // Tablet owns MaintenanceOp objects allocated on the heap.
+  std::vector<std::unique_ptr<MaintenanceOp>> maintenance_ops_;
 
   // Lock protecting access to 'last_write_time_' and 'last_read_time_'.
   mutable rw_spinlock last_rw_time_lock_;

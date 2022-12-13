@@ -20,6 +20,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -38,7 +39,6 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
@@ -190,7 +190,7 @@ TEST_F(TestMajorDeltaCompaction, TestKudu2656) {
   shared_ptr<RowSet> rs = all_rowsets.front();
   // Create some on-disk deltas.
   NO_FATALS(UpdateRows(kNumRows, /*even=*/false));
-  ASSERT_OK(tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet()->FlushBiggestDMSForTests());
 
   // Major compact some columns.
   vector<ColumnId> col_ids = { schema_.column_id(1),
@@ -233,12 +233,12 @@ TEST_F(TestMajorDeltaCompaction, TestCompact) {
     NO_FATALS(VerifyData());
 
     // Flush the deltas, make sure data stays the same.
-    ASSERT_OK(tablet()->FlushBiggestDMS());
+    ASSERT_OK(tablet()->FlushBiggestDMSForTests());
     NO_FATALS(VerifyData());
 
     // Update the odd rows and flush deltas
     NO_FATALS(UpdateRows(kNumRows, true));
-    ASSERT_OK(tablet()->FlushBiggestDMS());
+    ASSERT_OK(tablet()->FlushBiggestDMSForTests());
     NO_FATALS(VerifyData());
 
     // Major compact some columns.
@@ -272,7 +272,7 @@ TEST_F(TestMajorDeltaCompaction, TestUndos) {
 
   // Flush the DMS, make sure we still see the old data.
   NO_FATALS(UpdateRows(kNumRows, false));
-  ASSERT_OK(tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet()->FlushBiggestDMSForTests());
   NO_FATALS(VerifyDataWithMvccAndExpectedState(snap, old_state));
 
   // Major compact, check we still have the old data.
@@ -287,7 +287,7 @@ TEST_F(TestMajorDeltaCompaction, TestUndos) {
     for (int j = 0; j < 3; j++) {
       NO_FATALS(UpdateRows(kNumRows, false));
     }
-    ASSERT_OK(tablet()->FlushBiggestDMS());
+    ASSERT_OK(tablet()->FlushBiggestDMSForTests());
   }
 
   // To complicate things further, only major compact two columns, then verify we can read the old
@@ -310,14 +310,14 @@ TEST_F(TestMajorDeltaCompaction, TestCarryDeletesOver) {
   shared_ptr<RowSet> rs = all_rowsets.front();
 
   NO_FATALS(UpdateRows(kNumRows, false));
-  ASSERT_OK(tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet()->FlushBiggestDMSForTests());
 
   MvccSnapshot updates_snap(*tablet()->mvcc_manager());
   vector<ExpectedRow> old_state(expected_state_.size());
   std::copy(expected_state_.begin(), expected_state_.end(), old_state.begin());
 
   NO_FATALS(DeleteRows(kNumRows));
-  ASSERT_OK(tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet()->FlushBiggestDMSForTests());
 
   vector<ColumnId> col_ids_to_compact = { schema_.column_id(4) };
   ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids_to_compact, rs));
@@ -355,7 +355,7 @@ TEST_F(TestMajorDeltaCompaction, TestReinserts) {
   // the DMS with the deletes so that we can major compact them.
   NO_FATALS(DeleteRows(kNumRows)); // Delete 2nd batch.
   NO_FATALS(WriteTestTablet(kNumRows)); // 3rd batch.
-  ASSERT_OK(tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet()->FlushBiggestDMSForTests());
 
   // At this point, here's the layout (the 1st batch was discarded during the first flush):
   // MRS: 3rd batch of inserts.
@@ -391,7 +391,7 @@ TEST_F(TestMajorDeltaCompaction, TestJustDeletes) {
   NO_FATALS(WriteTestTablet(kNumRows));
   ASSERT_OK(tablet()->Flush());
   NO_FATALS(DeleteRows(kNumRows));
-  ASSERT_OK(tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet()->FlushBiggestDMSForTests());
 
   shared_ptr<RowSet> rs;
   ASSERT_EQ(0,

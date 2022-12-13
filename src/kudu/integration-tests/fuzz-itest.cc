@@ -45,7 +45,6 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
-#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
@@ -1441,7 +1440,7 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         ASSERT_OK(tablet()->Flush());
         break;
       case TEST_FLUSH_DELTAS:
-        ASSERT_OK(tablet()->FlushBiggestDMS());
+        ASSERT_OK(tablet()->FlushBiggestDMSForTests());
         break;
       case TEST_MAJOR_COMPACT_DELTAS:
         ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));

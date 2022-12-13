@@ -370,12 +370,12 @@ class AlterTableTest : public KuduTest {
                      vector<unique_ptr<KuduPartialRow>> split_rows,
                      vector<pair<unique_ptr<KuduPartialRow>, unique_ptr<KuduPartialRow>>> bounds);
 
-  void CheckMaintenancePriority(int32_t expect_priority) {
-    for (auto op : tablet_replica_->maintenance_ops_) {
-      ASSERT_EQ(op->priority(), expect_priority);
+  void CheckMaintenancePriority(int32_t expected_priority) {
+    for (auto& op : tablet_replica_->maintenance_ops_) {
+      ASSERT_EQ(expected_priority, op->priority());
     }
-    for (auto op : tablet_replica_->tablet()->maintenance_ops_) {
-      ASSERT_EQ(op->priority(), expect_priority);
+    for (auto& op : tablet_replica_->tablet()->maintenance_ops_) {
+      ASSERT_EQ(expected_priority, op->priority());
     }
   }
 
@@ -1035,7 +1035,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn) {
   UpdateRow(0, { {"c1", 54321} });
 
   // Make sure the delta is in a delta-file.
-  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMSForTests());
 
   // Drop c1.
   LOG(INFO) << "Dropping c1";
@@ -1085,7 +1085,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasIntoMissingBaseData) {
   UpdateRow(0, { {"c2", 54321} });
 
   // Make sure the delta is in a delta-file.
-  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMSForTests());
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(2, rows.size());
@@ -1135,7 +1135,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
   UpdateRow(0, { {"c2", 54321} });
 
   // Make sure the delta is in a delta-file.
-  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMSForTests());
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(1, rows.size());

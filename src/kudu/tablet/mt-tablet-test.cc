@@ -22,6 +22,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -306,7 +307,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       }
 
       if (tablet()->DeltaMemStoresSize() > FLAGS_tablet_test_flush_threshold_mb * 1024 * 1024) {
-        CHECK_OK(tablet()->FlushBiggestDMS());
+        CHECK_OK(tablet()->FlushBiggestDMSForTests());
       }
 
       // Wait, unless the inserters are all done.
@@ -317,7 +318,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
   void FlushDeltasThread(int /*tid*/) {
     while (running_insert_count_.count() > 0) {
-      CHECK_OK(tablet()->FlushBiggestDMS());
+      CHECK_OK(tablet()->FlushBiggestDMSForTests());
 
       // Wait, unless the inserters are all done.
       running_insert_count_.WaitFor(kBackgroundOpInterval);

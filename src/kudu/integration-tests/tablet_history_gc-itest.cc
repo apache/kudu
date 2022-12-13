@@ -895,7 +895,7 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
           ASSERT_OK(tablet->Flush());
         } else {
           VLOG(1) << "Flushing biggest DMS";
-          ASSERT_OK(tablet->FlushBiggestDMS());
+          ASSERT_OK(tablet->FlushBiggestDMSForTests());
         }
         break;
       }

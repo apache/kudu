@@ -58,7 +58,6 @@
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
@@ -230,6 +229,7 @@ using kudu::log::LogAnchorRegistry;
 using kudu::log::MinLogIndexAnchorer;
 using std::endl;
 using std::make_shared;
+using std::make_unique;
 using std::nullopt;
 using std::optional;
 using std::ostream;
@@ -347,8 +347,6 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
 
   next_mrs_id_ = metadata_->last_durable_mrs_id() + 1;
 
-  RowSetVector rowsets_opened;
-
   // If we persisted the state of any transaction IDs before shutting down,
   // initialize those that were in-flight here as kOpen. If there were any ops
   // applied that didn't get persisted to the tablet metadata, the bootstrap
@@ -359,6 +357,8 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
 
   fs::IOContext io_context({ tablet_id() });
   // open the tablet row-sets
+  RowSetVector rowsets_opened;
+  rowsets_opened.reserve(metadata_->rowsets().size());
   for (const shared_ptr<RowSetMetadata>& rowset_meta : metadata_->rowsets()) {
     shared_ptr<DiskRowSet> rowset;
     Status s = DiskRowSet::Open(rowset_meta,
@@ -372,12 +372,12 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
       return s;
     }
 
-    rowsets_opened.push_back(rowset);
+    rowsets_opened.emplace_back(std::move(rowset));
   }
 
   {
     auto new_rowset_tree(make_shared<RowSetTree>());
-    CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
+    RETURN_NOT_OK(new_rowset_tree->Reset(rowsets_opened));
 
     // Now that the current state is loaded, create the new MemRowSet with the next id.
     shared_ptr<MemRowSet> new_mrs;
@@ -644,17 +644,14 @@ void Tablet::AssignTimestampAndStartOpForTests(WriteOpState* op_state) {
 }
 
 void Tablet::StartOp(WriteOpState* op_state) {
-  unique_ptr<ScopedOp> mvcc_op;
   DCHECK(op_state->has_timestamp());
-  mvcc_op.reset(new ScopedOp(&mvcc_, op_state->timestamp()));
-  op_state->SetMvccOp(std::move(mvcc_op));
+  op_state->SetMvccOp(make_unique<ScopedOp>(&mvcc_, op_state->timestamp()));
 }
 
 void Tablet::StartOp(ParticipantOpState* op_state) {
   if (op_state->request()->op().type() == tserver::ParticipantOpPB::BEGIN_COMMIT) {
     DCHECK(op_state->has_timestamp());
-    unique_ptr<ScopedOp> mvcc_op(new ScopedOp(&mvcc_, op_state->timestamp()));
-    op_state->SetMvccOp(std::move(mvcc_op));
+    op_state->SetMvccOp(make_unique<ScopedOp>(&mvcc_, op_state->timestamp()));
   }
 }
 
@@ -1809,33 +1806,28 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
     DCHECK(maintenance_ops_.empty());
   }
 
-  vector<MaintenanceOp*> maintenance_ops;
-  unique_ptr<MaintenanceOp> rs_compact_op(new CompactRowSetsOp(this));
-  maint_mgr->RegisterOp(rs_compact_op.get());
-  maintenance_ops.push_back(rs_compact_op.release());
+  vector<unique_ptr<MaintenanceOp>> maintenance_ops;
+  maintenance_ops.emplace_back(new CompactRowSetsOp(this));
+  maint_mgr->RegisterOp(maintenance_ops.back().get());
 
-  unique_ptr<MaintenanceOp> minor_delta_compact_op(new MinorDeltaCompactionOp(this));
-  maint_mgr->RegisterOp(minor_delta_compact_op.get());
-  maintenance_ops.push_back(minor_delta_compact_op.release());
+  maintenance_ops.emplace_back(new MinorDeltaCompactionOp(this));
+  maint_mgr->RegisterOp(maintenance_ops.back().get());
 
-  unique_ptr<MaintenanceOp> major_delta_compact_op(new MajorDeltaCompactionOp(this));
-  maint_mgr->RegisterOp(major_delta_compact_op.get());
-  maintenance_ops.push_back(major_delta_compact_op.release());
+  maintenance_ops.emplace_back(new MajorDeltaCompactionOp(this));
+  maint_mgr->RegisterOp(maintenance_ops.back().get());
 
-  unique_ptr<MaintenanceOp> undo_delta_block_gc_op(new UndoDeltaBlockGCOp(this));
-  maint_mgr->RegisterOp(undo_delta_block_gc_op.get());
-  maintenance_ops.push_back(undo_delta_block_gc_op.release());
+  maintenance_ops.emplace_back(new UndoDeltaBlockGCOp(this));
+  maint_mgr->RegisterOp(maintenance_ops.back().get());
 
   // The deleted rowset GC operation relies on live rowset counting. If this
   // tablet doesn't support such counting, do not register the op.
   if (metadata_->supports_live_row_count()) {
-    unique_ptr<MaintenanceOp> deleted_rowset_gc_op(new DeletedRowsetGCOp(this));
-    maint_mgr->RegisterOp(deleted_rowset_gc_op.get());
-    maintenance_ops.push_back(deleted_rowset_gc_op.release());
+    maintenance_ops.emplace_back(new DeletedRowsetGCOp(this));
+    maint_mgr->RegisterOp(maintenance_ops.back().get());
   }
 
   std::lock_guard<simple_spinlock> l(state_lock_);
-  maintenance_ops_.swap(maintenance_ops);
+  maintenance_ops_ = std::move(maintenance_ops);
 }
 
 void Tablet::UnregisterMaintenanceOps() {
@@ -1847,21 +1839,24 @@ void Tablet::UnregisterMaintenanceOps() {
   // operation to finish in Unregister(), a different one can't get re-scheduled.
   CancelMaintenanceOps();
 
+  decltype(maintenance_ops_) ops;
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    ops = std::move(maintenance_ops_);
+    maintenance_ops_.clear();
+  }
+
   // We don't lock here because unregistering ops may take a long time.
   // 'maintenance_registration_fake_lock_' is sufficient to ensure nothing else
   // is updating 'maintenance_ops_'.
-  for (MaintenanceOp* op : maintenance_ops_) {
+  for (auto& op : ops) {
     op->Unregister();
   }
-
-  // Finally, delete the ops under lock.
-  std::lock_guard<simple_spinlock> l(state_lock_);
-  STLDeleteElements(&maintenance_ops_);
 }
 
 void Tablet::CancelMaintenanceOps() {
   std::lock_guard<simple_spinlock> l(state_lock_);
-  for (MaintenanceOp* op : maintenance_ops_) {
+  for (auto& op : maintenance_ops_) {
     op->CancelAndDisable();
   }
 }
@@ -1938,12 +1933,16 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
 
   // The RollingDiskRowSet writer wrote out one or more RowSets as the
   // output. Open these into 'new_rowsets'.
-  vector<shared_ptr<RowSet> > new_disk_rowsets;
   RowSetMetadataVector new_drs_metas;
   drsw.GetWrittenRowSetMetadata(&new_drs_metas);
-
-  if (metrics_.get()) metrics_->bytes_flushed->IncrementBy(drsw.written_size());
   CHECK(!new_drs_metas.empty());
+
+  if (metrics_) {
+    metrics_->bytes_flushed->IncrementBy(drsw.written_size());
+  }
+
+  vector<shared_ptr<RowSet>> new_disk_rowsets;
+  new_disk_rowsets.reserve(new_drs_metas.size());
   {
     TRACE_EVENT0("tablet", "Opening compaction results");
     for (const shared_ptr<RowSetMetadata>& meta : new_drs_metas) {
@@ -1960,7 +1959,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                                  << meta->ToString() << ": " << s.ToString();
         return s;
       }
-      new_disk_rowsets.push_back(new_rowset);
+      new_disk_rowsets.emplace_back(std::move(new_rowset));
     }
   }
 
@@ -1994,7 +1993,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                                     "duplicate updates in new rowsets)",
                                     op_name);
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
-      new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
+      make_shared<DuplicatingRowSet>(input.rowsets(), new_disk_rowsets));
 
   // The next step is to swap in the DuplicatingRowSet, and at the same time,
   // determine an MVCC snapshot which includes all of the ops that saw a
@@ -2564,21 +2563,21 @@ int64_t Tablet::GetReplaySizeForIndex(int64_t min_log_index,
   return it->second;
 }
 
-Status Tablet::FlushBiggestDMS() {
+Status Tablet::FlushBiggestDMSForTests() {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
 
-  int64_t max_size = -1;
+  size_t max_size = 0;
   shared_ptr<RowSet> biggest_drs;
-  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
-    int64_t current = rowset->DeltaMemStoreSize();
+  for (const auto& rowset : comps->rowsets->all_rowsets()) {
+    size_t current = rowset->DeltaMemStoreSize();
     if (current > max_size) {
       max_size = current;
       biggest_drs = rowset;
     }
   }
-  return max_size > 0 ? biggest_drs->FlushDeltas(nullptr) : Status::OK();
+  return biggest_drs ? biggest_drs->FlushDeltas(nullptr) : Status::OK();
 }
 
 Status Tablet::FlushAllDMSForTests() {
@@ -2657,7 +2656,7 @@ double Tablet::GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompac
   GetComponents(&comps);
   double worst_delta_perf = 0;
   shared_ptr<RowSet> worst_rs;
-  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
+  for (const auto& rowset : comps->rowsets->all_rowsets()) {
     if (!rowset->IsAvailableForCompaction()) {
       continue;
     }
@@ -2668,7 +2667,7 @@ double Tablet::GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompac
     }
   }
   if (rs && worst_delta_perf > 0) {
-    *rs = worst_rs;
+    *rs = std::move(worst_rs);
   }
   return worst_delta_perf;
 }

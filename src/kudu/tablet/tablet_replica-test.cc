@@ -40,7 +40,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
-#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_reader.h"  // IWYU pragma: keep
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
@@ -363,7 +363,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_EQ(5, segments.size());
 
   // Flush DMS to release the anchor.
-  tablet_replica_->tablet()->FlushBiggestDMS();
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMSForTests());
 
   // Verify no anchors after Flush().
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
@@ -458,7 +458,7 @@ TEST_F(TabletReplicaTest, TestActiveOpPreventsLogGC) {
   log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(5, segments.size());
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
-  tablet_replica_->tablet()->FlushBiggestDMS();
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMSForTests());
 
   ASSERT_EVENTUALLY([&]{
       AssertNoLogAnchors();
@@ -481,7 +481,7 @@ TEST_F(TabletReplicaTest, TestActiveOpPreventsLogGC) {
   rpc_latch.Wait();
   tablet_replica_->op_tracker_.WaitForAllToFinish();
   ASSERT_EQ(0, tablet_replica_->op_tracker_.GetNumPendingForTests());
-  tablet_replica_->tablet()->FlushBiggestDMS();
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMSForTests());
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   // All should be deleted except the two last segments.
@@ -682,7 +682,7 @@ TEST_F(TabletReplicaTest, TestRestartAfterGCDeletedRowsets) {
   ASSERT_EQ(0, live_row_count->value());
 
   // Now do that again but with deltafiles.
-  ASSERT_OK(tablet->FlushBiggestDMS());
+  ASSERT_OK(tablet->FlushBiggestDMSForTests());
   ASSERT_OK(RestartReplica());
   tablet = tablet_replica_->tablet();
   ASSERT_EQ(1, tablet->num_rowsets());

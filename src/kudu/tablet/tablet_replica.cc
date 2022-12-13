@@ -49,7 +49,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -58,6 +57,7 @@
 #include "kudu/tablet/ops/op_driver.h"
 #include "kudu/tablet/ops/participant_op.h"
 #include "kudu/tablet/ops/write_op.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_replica_mm_ops.h"
 #include "kudu/tablet/txn_coordinator.h"
@@ -937,19 +937,16 @@ void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
     return;
   }
 
-  vector<MaintenanceOp*> maintenance_ops;
+  vector<unique_ptr<MaintenanceOp>> maintenance_ops;
 
-  unique_ptr<MaintenanceOp> mrs_flush_op(new FlushMRSOp(this));
-  maint_mgr->RegisterOp(mrs_flush_op.get());
-  maintenance_ops.push_back(mrs_flush_op.release());
+  maintenance_ops.emplace_back(new FlushMRSOp(this));
+  maint_mgr->RegisterOp(maintenance_ops.back().get());
 
-  unique_ptr<MaintenanceOp> dms_flush_op(new FlushDeltaMemStoresOp(this));
-  maint_mgr->RegisterOp(dms_flush_op.get());
-  maintenance_ops.push_back(dms_flush_op.release());
+  maintenance_ops.emplace_back(new FlushDeltaMemStoresOp(this));
+  maint_mgr->RegisterOp(maintenance_ops.back().get());
 
-  unique_ptr<MaintenanceOp> log_gc(new LogGCOp(this));
-  maint_mgr->RegisterOp(log_gc.get());
-  maintenance_ops.push_back(log_gc.release());
+  maintenance_ops.emplace_back(new LogGCOp(this));
+  maint_mgr->RegisterOp(maintenance_ops.back().get());
 
   std::shared_ptr<Tablet> tablet;
   {
@@ -963,22 +960,22 @@ void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
 
 void TabletReplica::CancelMaintenanceOpsForTests() {
   std::lock_guard<simple_spinlock> l(lock_);
-  for (MaintenanceOp* op : maintenance_ops_) {
+  for (auto& op : maintenance_ops_) {
     op->CancelAndDisable();
   }
 }
 
 void TabletReplica::UnregisterMaintenanceOps() {
   DCHECK(state_change_lock_.is_locked());
-  vector<MaintenanceOp*> maintenance_ops;
+  decltype(maintenance_ops_) ops;
   {
     std::lock_guard<simple_spinlock> l(lock_);
-    maintenance_ops = std::move(maintenance_ops_);
+    ops = std::move(maintenance_ops_);
+    maintenance_ops_.clear();
   }
-  for (MaintenanceOp* op : maintenance_ops) {
+  for (auto& op : ops) {
     op->Unregister();
   }
-  STLDeleteElements(&maintenance_ops);
 }
 
 size_t TabletReplica::OnDiskSize() const {
@@ -1164,12 +1161,14 @@ void TabletReplica::MakeUnavailable(const Status& error) {
   {
     std::lock_guard<simple_spinlock> lock(lock_);
     tablet = tablet_;
-    for (MaintenanceOp* op : maintenance_ops_) {
+    for (auto& op : maintenance_ops_) {
       op->CancelAndDisable();
     }
   }
   // Stop the Tablet from doing further I/O.
-  if (tablet) tablet->Stop();
+  if (tablet) {
+    tablet->Stop();
+  }
 
   // Set the error; when the replica is shut down, it will end up FAILED.
   SetError(error);

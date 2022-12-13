@@ -33,6 +33,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -58,7 +59,6 @@
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
@@ -1967,7 +1967,7 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
 
   // Update it, flush deltas.
   ANFF(UpdateTestRowRemote(1, 2));
-  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMSForTests());
   ANFF(VerifyRows(schema_, { KeyValue(1, 2) }));
 
   // Major compact deltas.
@@ -2090,7 +2090,7 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
 
   // Update it, flush deltas.
   ANFF(UpdateTestRowRemote(1, 2));
-  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMSForTests());
 
   // Update it again, so this last update is in the DMS.
   ANFF(UpdateTestRowRemote(1, 3));

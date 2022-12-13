@@ -23,6 +23,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -32,7 +33,6 @@
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
-#include "kudu/clock/time_service.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
@@ -47,7 +47,6 @@
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -207,7 +206,7 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMajorDeltaCompaction) {
     }
     // We must flush the DMS before major compaction can operate on these REDOs.
     for (int i = 0; i < kNumRowsets; i++) {
-      tablet()->FlushBiggestDMS();
+      ASSERT_OK(tablet()->FlushBiggestDMSForTests());
     }
     post_update_ts[val - 1] = clock()->Now();
   }
@@ -260,7 +259,7 @@ TEST_F(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns) {
     ASSERT_OK_FAST(writer.Update(row));
   }
   for (int i = 0; i < kNumRowsets; i++) {
-    tablet()->FlushBiggestDMS();
+    ASSERT_OK(tablet()->FlushBiggestDMSForTests());
   }
 
   NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(200)));
