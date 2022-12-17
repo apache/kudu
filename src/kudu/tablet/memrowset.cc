@@ -148,10 +148,13 @@ MemRowSet::MemRowSet(int64_t id,
 MemRowSet::~MemRowSet() {
 }
 
-Status MemRowSet::DebugDump(vector<string> *lines) {
+Status MemRowSet::DebugDumpImpl(int64_t* rows_left, vector<string>* lines) {
   unique_ptr<Iterator> iter(NewIterator());
   RETURN_NOT_OK(iter->Init(nullptr));
   while (iter->HasNext()) {
+    if (rows_left && (*rows_left)-- <= 0) {
+      break;
+    }
     MRSRow row = iter->GetCurrentRow();
     LOG_STRING(INFO, lines)
       << "@" << row.insertion_timestamp()

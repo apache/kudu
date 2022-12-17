@@ -905,14 +905,14 @@ Status DiskRowSet::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
                                                  blocks_deleted, bytes_deleted);
 }
 
-Status DiskRowSet::DebugDump(vector<string> *lines) {
+Status DiskRowSet::DebugDumpImpl(int64_t* rows_left, vector<string>* lines) {
   // Using CompactionInput to dump our data is an easy way of seeing all the
   // rows and deltas.
   unique_ptr<CompactionInput> input;
   RETURN_NOT_OK(NewCompactionInput(rowset_metadata_->tablet_schema().get(),
                                    MvccSnapshot::CreateSnapshotIncludingAllOps(),
                                    nullptr, &input));
-  return DebugDumpCompactionInput(input.get(), lines);
+  return DebugDumpCompactionInput(input.get(), rows_left, lines);
 }
 
 } // namespace tablet

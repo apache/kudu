@@ -1639,14 +1639,20 @@ Status ReupdateMissedDeltas(const IOContext* io_context,
 }
 
 
-Status DebugDumpCompactionInput(CompactionInput* input, vector<string>* lines) {
+Status DebugDumpCompactionInput(CompactionInput* input, int64_t* rows_left, vector<string>* lines) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
 
   while (input->HasMoreBlocks()) {
+    if (rows_left && *rows_left <= 0) {
+      break;
+    }
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     for (const auto& input_row : rows) {
+      if (rows_left && (*rows_left)-- <= 0) {
+        break;
+      }
       LOG_STRING(INFO, lines) << CompactionInputRowToString(input_row);
     }
 

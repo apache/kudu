@@ -24,6 +24,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -377,12 +378,6 @@ class MemRowSet : public RowSet,
         reinterpret_cast<RowSetMetadata *>(NULL));
   }
 
-  // Dump the contents of the memrowset to the given vector.
-  // If 'lines' is NULL, dumps to LOG(INFO).
-  //
-  // This dumps every row, so should only be used in tests, etc.
-  virtual Status DebugDump(std::vector<std::string> *lines) override;
-
   std::string ToString() const override {
     return strings::Substitute("memrowset$0",
         txn_id_ ? strings::Substitute("(txn_id=$0)", *txn_id_) : "");
@@ -470,6 +465,8 @@ class MemRowSet : public RowSet,
   Status Reinsert(Timestamp timestamp,
                   const ConstContiguousRow& row,
                   MRSRow *ms_row);
+
+  Status DebugDumpImpl(int64_t* rows_left, std::vector<std::string>* lines) override;
 
   typedef btree::CBTree<MSBTreeTraits> MSBTree;
 

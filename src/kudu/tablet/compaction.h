@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -256,8 +257,11 @@ Status ReupdateMissedDeltas(const fs::IOContext* io_context,
                             const RowSetVector& output_rowsets);
 
 // Dump the given compaction input to 'lines' or LOG(INFO) if it is NULL.
-// This consumes all of the input in the compaction input.
-Status DebugDumpCompactionInput(CompactionInput* input, std::vector<std::string>* lines);
+// This consumes no more rows from the compaction input than specified by the 'rows_left' parameter.
+// If 'rows_left' is nullptr, there is no limit on the number of rows to dump.
+// If the content of 'rows_left' is equal to or less than 0, no rows will be dumped.
+Status DebugDumpCompactionInput(CompactionInput* input, int64_t* rows_left,
+                                std::vector<std::string>* lines);
 
 // Helper methods to print a row with full history.
 std::string RowToString(const RowBlockRow& row,

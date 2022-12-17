@@ -301,8 +301,8 @@ class TestCompaction : public KuduRowSetTest {
 
   // Iterate over the given compaction input, stringifying and dumping each
   // yielded row to *out
-  void IterateInput(CompactionInput* input, vector<string>* out) {
-    ASSERT_OK(DebugDumpCompactionInput(input, out));
+  static void IterateInput(CompactionInput* input, vector<string>* out) {
+    ASSERT_OK(DebugDumpCompactionInput(input, nullptr, out));
   }
 
   // Flush the given CompactionInput 'input' to disk with the given snapshot.

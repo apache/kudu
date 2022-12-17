@@ -2933,6 +2933,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
   {
     // Dump rowsets' primary key bounds only.
     string stdout;
+    // Unset --dump_all_columns.
     NO_FATALS(RunActionStdoutString(
         Substitute("local_replica dump rowset --nodump_all_columns "
                    "--nodump_metadata --use_readable_format "
@@ -2950,6 +2951,26 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
         ASSERT_STR_CONTAINS(stdout, row_key);
       } else {
         ASSERT_STR_NOT_CONTAINS(stdout, row_key);
+      }
+    }
+
+    // Set --dump_all_columns.
+    NO_FATALS(RunActionStdoutString(
+        Substitute("local_replica dump rowset --dump_all_columns "
+                   "--nodump_metadata --nrows=15 $0 $1 $2",
+                   kTestTablet, fs_paths, encryption_args), &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 0");
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 1");
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 2");
+    ASSERT_STR_NOT_CONTAINS(stdout, "RowSet metadata");
+    for (int row_idx = 0; row_idx < 30; row_idx++) {
+      string row_prefix = Substitute("Base: (int32 key=$0", row_idx);
+      if (row_idx < 15) {
+        ASSERT_STR_CONTAINS(stdout, row_prefix);
+      } else {
+        ASSERT_STR_NOT_CONTAINS(stdout, row_prefix);
       }
     }
   }

@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -1033,12 +1034,18 @@ Status DumpRowSetInternal(const IOContext& ctx,
                           const shared_ptr<RowSetMetadata>& rs_meta,
                           int indent,
                           int64_t* rows_left) {
-  tablet::RowSetDataPB pb;
-  rs_meta->ToProtobuf(&pb);
-
+  // When the --dump_metadata flag is set to 'true', the metadata is always printed regardless of
+  // the number of rows to print.
   if (FLAGS_dump_metadata) {
+    tablet::RowSetDataPB pb;
+    rs_meta->ToProtobuf(&pb);
     cout << Indent(indent) << "RowSet metadata: " << pb_util::SecureDebugString(pb)
          << endl << endl;
+  }
+
+  CHECK(rows_left);
+  if (*rows_left <= 0) {
+    return Status::OK();
   }
 
   scoped_refptr<log::LogAnchorRegistry> log_reg(new log::LogAnchorRegistry());
@@ -1050,7 +1057,7 @@ Status DumpRowSetInternal(const IOContext& ctx,
                                  &rs));
   vector<string> lines;
   if (FLAGS_dump_all_columns) {
-    RETURN_NOT_OK(rs->DebugDump(&lines));
+    RETURN_NOT_OK(rs->DebugDumpImpl(rows_left, &lines));
   } else {
     Schema key_proj = rs_meta->tablet_schema()->CreateKeyProjection();
     RowIteratorOptions opts;
@@ -1076,26 +1083,30 @@ Status DumpRowSetInternal(const IOContext& ctx,
         current_upper_bound = DumpRow(key_proj, block.row(block.nrows() - 1), &key);
       } else {
         for (int i = 0; i < block.nrows(); i++) {
+          if ((*rows_left)-- <= 0) {
+            break;
+          }
           lines.emplace_back(DumpRow(key_proj, block.row(i), &key));
+        }
+        if (*rows_left <= 0) {
+          // There is no need to read the next block when the row limit has been reached.
+          break;
         }
       }
     }
     if (FLAGS_dump_primary_key_bounds_only) {
+      // As long as 'rows_left' is greater than 0, lower and upper bounds are always printed in
+      // pairs.
+      (*rows_left) -= 2;
       lines.emplace_back(lower_bound);
       lines.emplace_back(current_upper_bound);
     }
   }
 
-  // Respect 'rows_left' when dumping the output.
-  int64_t limit = *rows_left >= 0 ?
-                  std::min<int64_t>(*rows_left, lines.size()) : lines.size();
-  for (int i = 0; i < limit; i++) {
-    cout << lines[i] << endl;
+  for (const auto& line : lines) {
+    cout << line << endl;
   }
 
-  if (*rows_left >= 0) {
-    *rows_left -= limit;
-  }
   return Status::OK();
 }
 
@@ -1115,7 +1126,7 @@ Status DumpRowSet(const RunnerContext& context) {
 
   IOContext ctx;
   ctx.tablet_id = meta->tablet_id();
-  int64_t rows_left = FLAGS_nrows;
+  int64_t rows_left = FLAGS_nrows < 0 ? std::numeric_limits<int64_t>::max() : FLAGS_nrows;
 
   // If rowset index is provided, only dump that rowset.
   if (FLAGS_rowset_index != -1) {
@@ -1130,9 +1141,8 @@ Status DumpRowSet(const RunnerContext& context) {
   }
 
   // Rowset index not provided, dump all rowsets
-  size_t idx = 0;
-  for (const auto& rs_meta : meta->rowsets())  {
-    cout << endl << "Dumping rowset " << idx++ << endl << kSeparatorLine;
+  for (const auto& rs_meta : meta->rowsets()) {
+    cout << endl << "Dumping rowset " << rs_meta->id() << endl << kSeparatorLine;
     RETURN_NOT_OK(DumpRowSetInternal(ctx, rs_meta, kIndent, &rows_left));
   }
   return Status::OK();
@@ -1196,11 +1206,13 @@ unique_ptr<Mode> BuildDumpMode() {
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("dump_all_columns")
       .AddOptionalParameter("dump_metadata")
+      .AddOptionalParameter("dump_primary_key_bounds_only")
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("nrows")
       .AddOptionalParameter("rowset_index")
+      .AddOptionalParameter("use_readable_format")
       .Build();
 
   unique_ptr<Action> dump_wals =

@@ -57,6 +57,10 @@ class RowChangeList;
 class RowwiseIterator;
 class Timestamp;
 
+namespace tablet {
+class RowSetMetadata;
+}  // namespace tablet
+
 namespace cfile {
 class BloomFileWriter;
 class CFileWriter;
@@ -75,6 +79,13 @@ namespace log {
 class LogAnchorRegistry;
 }
 
+namespace tools {
+Status DumpRowSetInternal(const fs::IOContext& ctx,
+                          const std::shared_ptr<tablet::RowSetMetadata>& rs_meta,
+                          int indent,
+                          int64_t* rows_left);
+}
+
 namespace tablet {
 
 class CFileSet;
@@ -86,7 +97,6 @@ class MultiColumnWriter;
 class Mutation;
 class MvccSnapshot;
 class OperationResultPB;
-class RowSetMetadata;
 
 class DiskRowSetWriter {
  public:
@@ -456,8 +466,6 @@ class DiskRowSet :
         ToString());
   }
 
-  virtual Status DebugDump(std::vector<std::string> *lines) override;
-
  protected:
   DiskRowSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
              log::LogAnchorRegistry* log_anchor_registry,
@@ -471,6 +479,11 @@ class DiskRowSet :
 
   friend class CompactionInput;
   friend class Tablet;
+  friend Status kudu::tools::DumpRowSetInternal(
+      const fs::IOContext& ctx,
+      const std::shared_ptr<tablet::RowSetMetadata>& rs_meta,
+      int indent,
+      int64_t* rows_left);
 
   Status Open(const fs::IOContext* io_context);
 
@@ -484,6 +497,8 @@ class DiskRowSet :
   Status MajorCompactDeltaStoresWithColumnIds(const std::vector<ColumnId>& col_ids,
                                               const fs::IOContext* io_context,
                                               HistoryGcOpts history_gc_opts);
+
+  Status DebugDumpImpl(int64_t* rows_left, std::vector<std::string>* lines) override;
 
   std::shared_ptr<RowSetMetadata> rowset_metadata_;
 
