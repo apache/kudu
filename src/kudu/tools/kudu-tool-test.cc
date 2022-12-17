@@ -2799,8 +2799,8 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
   {
     string stdout;
     NO_FATALS(RunActionStdoutString(
-        Substitute("local_replica dump rowset $0 $1 $2",
-                   kTestTablet, fs_paths, encryption_args), &stdout));
+        Substitute("local_replica dump rowset $0 $1 $2", kTestTablet, fs_paths, encryption_args),
+        &stdout));
 
     SCOPED_TRACE(stdout);
     ASSERT_STR_CONTAINS(stdout, "Dumping rowset 0");
@@ -2815,27 +2815,39 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     ASSERT_STR_CONTAINS(stdout, "undo_deltas {");
 
     ASSERT_STR_CONTAINS(stdout,
-                       "RowIdxInBlock: 0; Base: (int32 key=0, int32 int_val=0,"
-                       " string string_val=\"HelloWorld\"); "
-                       "Undo Mutations: [@1(DELETE)]; Redo Mutations: [];");
+                        "RowIdxInBlock: 0; Base: (int32 key=0, int32 int_val=0,"
+                        " string string_val=\"HelloWorld\"); "
+                        "Undo Mutations: [@1(DELETE)]; Redo Mutations: [];");
     ASSERT_STR_MATCHES(stdout, ".*---------------------.*");
-
+  }
+  {
     // This is expected to fail with Invalid argument for kRowId.
+    string stdout;
     string stderr;
-    Status s = RunTool(
-        Substitute("local_replica dump rowset $0 $1 --rowset_index=$2 $3",
-                   kTestTablet, fs_paths, kRowId, encryption_args),
-                   &stdout, &stderr, nullptr, nullptr);
+    Status s = RunTool(Substitute("local_replica dump rowset $0 $1 --rowset_index=$2 $3",
+                                  kTestTablet,
+                                  fs_paths,
+                                  kRowId,
+                                  encryption_args),
+                       &stdout,
+                       &stderr,
+                       nullptr,
+                       nullptr);
     ASSERT_TRUE(s.IsRuntimeError());
     SCOPED_TRACE(stderr);
-    string expected = "Could not find rowset " + SimpleItoa(kRowId) +
-        " in tablet id " + kTestTablet;
+    string expected =
+        "Could not find rowset " + SimpleItoa(kRowId) + " in tablet id " + kTestTablet;
     ASSERT_STR_CONTAINS(stderr, expected);
-
-    NO_FATALS(RunActionStdoutString(
-        Substitute("local_replica dump rowset --nodump_all_columns "
-                   "--nodump_metadata --nrows=15 $0 $1 $2",
-                   kTestTablet, fs_paths, encryption_args), &stdout));
+  }
+  {
+    // Dump rowsets' primary keys in comparable format.
+    string stdout;
+    NO_FATALS(RunActionStdoutString(Substitute("local_replica dump rowset --nodump_all_columns "
+                                               "--nodump_metadata --nrows=15 $0 $1 $2",
+                                               kTestTablet,
+                                               fs_paths,
+                                               encryption_args),
+                                    &stdout));
 
     SCOPED_TRACE(stdout);
     ASSERT_STR_CONTAINS(stdout, "Dumping rowset 0");
@@ -2845,6 +2857,50 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     for (int row_idx = 0; row_idx < 30; row_idx++) {
       string row_key = StringPrintf("800000%02x", row_idx);
       if (row_idx < 15) {
+        ASSERT_STR_CONTAINS(stdout, row_key);
+      } else {
+        ASSERT_STR_NOT_CONTAINS(stdout, row_key);
+      }
+    }
+  }
+
+  {
+    // Dump rowsets' primary keys in human readable format.
+    string stdout;
+    NO_FATALS(
+        RunActionStdoutString(Substitute("local_replica dump rowset --nodump_all_columns "
+                                         "--nodump_metadata --use_readable_format $0 $1 $2",
+                                         kTestTablet,
+                                         fs_paths,
+                                         encryption_args),
+                              &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 0");
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 1");
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 2");
+    ASSERT_STR_NOT_CONTAINS(stdout, "RowSet metadata");
+    for (int row_idx = 0; row_idx < 30; row_idx++) {
+      ASSERT_STR_CONTAINS(stdout, Substitute("(int32 key=$0)", row_idx));
+    }
+  }
+  {
+    // Dump rowsets' primary key bounds only.
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("local_replica dump rowset --nodump_all_columns "
+                   "--nodump_metadata --use_readable_format "
+                   "--dump_primary_key_bounds_only $0 $1 $2",
+                   kTestTablet, fs_paths, encryption_args), &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 0");
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 1");
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 2");
+    ASSERT_STR_NOT_CONTAINS(stdout, "RowSet metadata");
+    for (int row_idx = 0; row_idx < 30; row_idx++) {
+      string row_key = Substitute("(int32 key=$0)", row_idx);
+      if (row_idx % 10 == 0 || row_idx % 10 == 9) {
         ASSERT_STR_CONTAINS(stdout, row_key);
       } else {
         ASSERT_STR_NOT_CONTAINS(stdout, row_key);

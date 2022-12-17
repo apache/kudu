@@ -84,6 +84,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -103,6 +104,11 @@ class Messenger;
 DEFINE_bool(dump_all_columns, true,
             "If true, dumped rows include all of the columns in the rowset. If "
             "false, dumped rows include just the key columns (in a comparable format).");
+DEFINE_bool(use_readable_format, false,
+            "Whether to dump primary key in human readable format, otherwise, dump primary "
+            "key in comparable format.");
+DEFINE_bool(dump_primary_key_bounds_only, false,
+            "Whether to dump rowset primary key bounds only, otherwise, dump all rows.");
 DEFINE_bool(dump_metadata, true,
             "If true, dumps rowset metadata before dumping data. If false, "
             "only dumps the data.");
@@ -187,6 +193,24 @@ using strings::Substitute;
 
 namespace kudu {
 namespace tools {
+
+bool ValidateDumpRowset()  {
+  if (FLAGS_dump_all_columns) {
+    if (FLAGS_use_readable_format) {
+      LOG(ERROR) << "Flag --use_readable_format is meaningless "
+                    "when --dump_all_columns is enabled.";
+      return false;
+    }
+
+    if (FLAGS_dump_primary_key_bounds_only) {
+      LOG(ERROR) << "Flag --dump_primary_key_bounds_only is meaningless "
+                    "when --dump_all_columns is enabled.";
+      return false;
+    }
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(validate_dump_rowset, ValidateDumpRowset);
 
 namespace {
 
@@ -764,6 +788,15 @@ struct TabletSizeStats {
     table->AddRow({table_id, tablet_id, rowset_id, "*", HumanReadableNumBytes::ToString(total)});
   }
 };
+
+string DumpRow(const Schema& key_proj, const RowBlockRow& row, faststring* key) {
+  if (FLAGS_use_readable_format) {
+    return key_proj.DebugRowKey(row);
+  } else {
+    key_proj.EncodeComparableKey(row, key);
+    return strings::b2a_hex(key->ToString());
+  }
+}
 } // anonymous namespace
 
 Status SummarizeDataSize(const RunnerContext& context) {
@@ -980,13 +1013,26 @@ Status DumpRowSetInternal(const IOContext& ctx,
     RowBlockMemory mem(1024);
     RowBlock block(&key_proj, 100, &mem);
     faststring key;
+    string lower_bound;
+    string current_upper_bound;
     while (it->HasNext()) {
       mem.Reset();
       RETURN_NOT_OK(it->NextBlock(&block));
-      for (int i = 0; i < block.nrows(); i++) {
-        key_proj.EncodeComparableKey(block.row(i), &key);
-        lines.emplace_back(strings::b2a_hex(key.ToString()));
+      if (FLAGS_dump_primary_key_bounds_only) {
+        if (lower_bound.empty()) {
+          lower_bound = DumpRow(key_proj, block.row(0), &key);
+        }
+        CHECK_GT(block.nrows(), 0);
+        current_upper_bound = DumpRow(key_proj, block.row(block.nrows() - 1), &key);
+      } else {
+        for (int i = 0; i < block.nrows(); i++) {
+          lines.emplace_back(DumpRow(key_proj, block.row(i), &key));
+        }
       }
+    }
+    if (FLAGS_dump_primary_key_bounds_only) {
+      lines.emplace_back(lower_bound);
+      lines.emplace_back(current_upper_bound);
     }
   }
 
