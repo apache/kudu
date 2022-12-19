@@ -89,6 +89,12 @@ DEFINE_bool(enable_workload_score_for_perf_improvement_ops, false,
 TAG_FLAG(enable_workload_score_for_perf_improvement_ops, experimental);
 TAG_FLAG(enable_workload_score_for_perf_improvement_ops, runtime);
 
+DEFINE_int32(update_stats_log_throttling_interval_sec, 600,
+    "Log throttling interval for messages on disabled compaction emitted by UpdateStats "
+    "method.");
+TAG_FLAG(update_stats_log_throttling_interval_sec, runtime);
+TAG_FLAG(update_stats_log_throttling_interval_sec, experimental);
+
 using std::string;
 using strings::Substitute;
 
@@ -131,7 +137,7 @@ CompactRowSetsOp::CompactRowSetsOp(Tablet* tablet)
 
 void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
   if (PREDICT_FALSE(!FLAGS_enable_rowset_compaction || DisableCompaction())) {
-    KLOG_EVERY_N_SECS(WARNING, 300)
+    KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << Substitute("Rowset compaction is disabled (check --enable_rowset_compaction "
            "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());
     stats->set_runnable(false);
@@ -212,7 +218,7 @@ MinorDeltaCompactionOp::MinorDeltaCompactionOp(Tablet* tablet)
 
 void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
   if (PREDICT_FALSE(!FLAGS_enable_minor_delta_compaction || DisableCompaction())) {
-    KLOG_EVERY_N_SECS(WARNING, 300)
+    KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << Substitute("Minor delta compaction is disabled (check --enable_minor_delta_compaction "
            "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());
     stats->set_runnable(false);
@@ -296,7 +302,7 @@ MajorDeltaCompactionOp::MajorDeltaCompactionOp(Tablet* tablet)
 
 void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
   if (PREDICT_FALSE(!FLAGS_enable_major_delta_compaction || DisableCompaction())) {
-    KLOG_EVERY_N_SECS(WARNING, 300)
+    KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << Substitute("Major delta compaction is disabled (check --enable_major_delta_compaction "
            "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());
     stats->set_runnable(false);
@@ -379,7 +385,7 @@ UndoDeltaBlockGCOp::UndoDeltaBlockGCOp(Tablet* tablet)
 
 void UndoDeltaBlockGCOp::UpdateStats(MaintenanceOpStats* stats) {
   if (PREDICT_FALSE(!FLAGS_enable_undo_delta_block_gc)) {
-    KLOG_EVERY_N_SECS(WARNING, 300)
+    KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << "Undo delta block GC is disabled (check --enable_undo_delta_block_gc)";
     stats->set_runnable(false);
     return;

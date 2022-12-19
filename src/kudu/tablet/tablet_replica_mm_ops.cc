@@ -96,6 +96,8 @@ METRIC_DEFINE_histogram(tablet, log_gc_duration,
                         kudu::MetricLevel::kInfo,
                         60000LU, 1);
 
+DECLARE_int32(update_stats_log_throttling_interval_sec);
+
 namespace kudu {
 namespace tablet {
 
@@ -158,7 +160,7 @@ int32_t TabletReplicaOpBase::priority() const {
 
 void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   if (PREDICT_FALSE(!FLAGS_enable_flush_memrowset)) {
-    KLOG_EVERY_N_SECS(WARNING, 300)
+    KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << "Memrowset flush is disabled (check --enable_flush_memrowset)";
     stats->set_runnable(false);
     return;
@@ -235,7 +237,7 @@ scoped_refptr<AtomicGauge<uint32_t> > FlushMRSOp::RunningGauge() const {
 
 void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
   if (PREDICT_FALSE(!FLAGS_enable_flush_deltamemstores)) {
-    KLOG_EVERY_N_SECS(WARNING, 300)
+    KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << "Deltamemstore flush is disabled (check --enable_flush_deltamemstores)";
     stats->set_runnable(false);
     return;
@@ -313,7 +315,7 @@ LogGCOp::LogGCOp(TabletReplica* tablet_replica)
 
 void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
   if (PREDICT_FALSE(!FLAGS_enable_log_gc)) {
-    KLOG_EVERY_N_SECS(WARNING, 300)
+    KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << "Log GC is disabled (check --enable_log_gc)";
     stats->set_runnable(false);
     return;
