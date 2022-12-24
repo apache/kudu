@@ -271,6 +271,14 @@ METRIC_DEFINE_gauge_int64(server, data_dirs_space_available_bytes,
                           "-1 if reading any of the disks fails",
                           kudu::MetricLevel::kInfo);
 
+#ifdef TCMALLOC_ENABLED
+METRIC_DEFINE_gauge_int64(server, memory_usage,
+                          "Current Memory Usage",
+                          kudu::MetricUnit::kBytes,
+                          "Current memory usage of the server process",
+                          kudu::MetricLevel::kInfo);
+#endif // #ifdef TCMALLOC_ENABLED
+
 using kudu::security::RpcAuthentication;
 using kudu::security::RpcEncryption;
 using std::ostringstream;
@@ -939,6 +947,14 @@ Status ServerBase::Start() {
       metric_entity_,
       [this]() {return (MonoTime::Now() - this->start_time()).ToMicroseconds();})->
           AutoDetachToLastValue(&metric_detacher_);
+
+#ifdef TCMALLOC_ENABLED
+  METRIC_memory_usage.InstantiateFunctionGauge(
+      metric_entity_,
+      []() {return process_memory::CurrentConsumption();})->
+          AutoDetachToLastValue(&metric_detacher_);
+#endif // #ifdef TCMALLOC_ENABLED
+
   METRIC_data_dirs_space_available_bytes.InstantiateFunctionGauge(
       metric_entity_,
       [this]() {
