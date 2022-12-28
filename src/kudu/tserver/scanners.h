@@ -38,6 +38,7 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -62,6 +63,7 @@ struct ScanDescriptor;
 struct ScannerMetrics;
 
 typedef std::shared_ptr<Scanner> SharedScanner;
+typedef scoped_refptr<ScanDescriptor> SharedScanDescriptor;
 
 // Manages the live scanners within a Tablet Server.
 //
@@ -76,8 +78,8 @@ class ScannerManager {
   explicit ScannerManager(const scoped_refptr<MetricEntity>& metric_entity);
   ~ScannerManager();
 
-  // Starts the expired scanner removal thread.
-  Status StartRemovalThread();
+  // Starts the slow scans collect and the expired scanner removal thread.
+  Status StartCollectAndRemovalThread();
 
   // Create a new scanner with a unique ID, inserting it into the map. Further
   // lookups for the scanner must provide the username associated with
@@ -111,10 +113,20 @@ class ScannerManager {
   void ListScanners(std::vector<SharedScanner>* scanners) const;
 
   // List active and recently completed scans.
-  std::vector<ScanDescriptor> ListScans() const;
+  std::vector<SharedScanDescriptor> ListScans() const;
+
+  // List recent slow scans.
+  // A scan is 'slow' if it takes more than --slow_scanner_threshold_ms to
+  // complete.
+  // The number of elements in the result vector is limited by
+  // --slow_scan_history_count.
+  std::vector<SharedScanDescriptor> ListSlowScans() const;
 
   // Iterate through scanners and remove any which are past their TTL.
   void RemoveExpiredScanners();
+
+  // Collect slow scanners whose scan times exceed the threshold.
+  void CollectSlowScanners();
 
  private:
   FRIEND_TEST(ScannerTest, TestExpire);
@@ -132,13 +144,23 @@ class ScannerManager {
     ScannerMap scanners_by_id_;
   };
 
-  // Periodically call RemoveExpiredScanners().
-  void RunRemovalThread();
+  // Periodically call CollectSlowScanners() and RemoveExpiredScanners().
+  void RunCollectAndRemovalThread();
 
   ScannerMapStripe& GetStripeByScannerId(const std::string& scanner_id);
 
   // Adds the scan descriptor to the completed scans FIFO.
-  void RecordCompletedScanUnlocked(ScanDescriptor descriptor);
+  void RecordCompletedScanUnlocked(const SharedScanDescriptor& descriptor);
+
+  // Adds the scan descriptor to the slow scans FIFO.
+  void RecordSlowScanUnlocked(const SharedScanDescriptor& descriptor);
+
+  // Update the record in the vector with the fifo method.
+  // If the container is full when updating, update the data inserted first.
+  // The number of elements in the vector is init at the vector initialization.
+  static void CircularUpdateRecordInFifo(std::vector<SharedScanDescriptor>& scans_vec,
+                                         size_t& scans_offset,
+                                         const SharedScanDescriptor& descriptor);
 
   // (Optional) scanner metrics for this instance.
   std::unique_ptr<ScannerMetrics> metrics_;
@@ -152,9 +174,14 @@ class ScannerManager {
   std::vector<ScannerMapStripe*> scanner_maps_;
 
   // completed_scans_ is a FIFO ring buffer of completed scans.
-  mutable RWMutex completed_scans_lock_;
-  std::vector<ScanDescriptor> completed_scans_;
+  mutable percpu_rwlock completed_scans_lock_;
+  std::vector<SharedScanDescriptor> completed_scans_;
   size_t completed_scans_offset_;
+
+  // slow_scans_ is a FIFO ring buffer of slow scans.
+  mutable percpu_rwlock slow_scans_lock_;
+  std::vector<SharedScanDescriptor> slow_scans_;
+  size_t slow_scans_offset_;
 
   // Generator for scanner IDs.
   ObjectIdGenerator oid_generator_;
@@ -358,7 +385,7 @@ class Scanner {
   // Does not require the AccessLock.
   //
   // REQUIRES: is_initted() must be true.
-  ScanDescriptor Descriptor() const;
+  SharedScanDescriptor Descriptor() const;
 
   // Returns the amount of CPU time accounted to this scanner.
   // Does not require the AccessLock.
@@ -456,7 +483,10 @@ enum class ScanState {
 
 // ScanDescriptor holds information about a scan. The ScanDescriptor can outlive
 // the associated scanner without holding open any of the scanner's resources.
-struct ScanDescriptor {
+//
+// These are ref-counted so that ScanDescriptor is copyable, with this we can avoid
+// duplicating data for elements in slow_scans_ and completed_scans_ in ScannerManager.
+struct ScanDescriptor : public RefCountedThreadSafe<ScanDescriptor> {
   // The tablet ID.
   std::string tablet_id;
   // The scanner ID.

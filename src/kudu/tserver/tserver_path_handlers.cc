@@ -96,8 +96,8 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-DECLARE_int32(scan_history_count);
-
+DECLARE_int32(completed_scan_history_count);
+DECLARE_int32(slow_scan_history_count);
 namespace kudu {
 
 namespace tserver {
@@ -504,29 +504,29 @@ const char* ScanStateToString(const ScanState& scan_state) {
 }
 
 // Formats the scan descriptor's pseudo-SQL query string as HTML.
-string ScanQueryHtml(const ScanDescriptor& scan) {
+string ScanQueryHtml(const SharedScanDescriptor& scan) {
   string query = "<b>SELECT</b> ";
-  if (scan.projected_columns.empty()) {
+  if (scan->projected_columns.empty()) {
     query.append("COUNT(*)");
   } else {
-    query.append(JoinMapped(scan.projected_columns, EscapeForHtmlToString, ",<br>       "));
+    query.append(JoinMapped(scan->projected_columns, EscapeForHtmlToString, ",<br>       "));
   }
   query.append("<br>  <b>FROM</b> ");
-  if (scan.table_name.empty()) {
+  if (scan->table_name.empty()) {
     query.append("&lt;unknown&gt;");
   } else {
-    query.append(EscapeForHtmlToString(scan.table_name));
+    query.append(EscapeForHtmlToString(scan->table_name));
   }
 
-  if (!scan.predicates.empty()) {
+  if (!scan->predicates.empty()) {
     query.append("<br> <b>WHERE</b> ");
-    query.append(JoinMapped(scan.predicates, EscapeForHtmlToString, "<br>   <b>AND</b> "));
+    query.append(JoinMapped(scan->predicates, EscapeForHtmlToString, "<br>   <b>AND</b> "));
   }
 
   return query;
 }
 
-void IteratorStatsToJson(const ScanDescriptor& scan, EasyJson* json) {
+void IteratorStatsToJson(const SharedScanDescriptor& scan, EasyJson* json) {
 
   auto fill_stats = [] (EasyJson& row, const string& column, const IteratorStats& stats) {
     row["column"] = column;
@@ -541,7 +541,7 @@ void IteratorStatsToJson(const ScanDescriptor& scan, EasyJson* json) {
   };
 
   IteratorStats total_stats;
-  for (const auto& column : scan.iterator_stats) {
+  for (const auto& column : scan->iterator_stats) {
     EasyJson row = json->PushBack(EasyJson::kObject);
     fill_stats(row, column.first, column.second);
     total_stats += column.second;
@@ -551,28 +551,28 @@ void IteratorStatsToJson(const ScanDescriptor& scan, EasyJson* json) {
   fill_stats(total_row, "total", total_stats);
 }
 
-void ScanToJson(const ScanDescriptor& scan, EasyJson* json) {
+void ScanToJson(const SharedScanDescriptor& scan, EasyJson* json) {
   MonoTime now = MonoTime::Now();
   MonoDelta duration;
-  if (scan.state == ScanState::kActive) {
-    duration = now - scan.start_time;
+  if (scan->state == ScanState::kActive) {
+    duration = now - scan->start_time;
   } else {
-    duration = scan.last_access_time - scan.start_time;
+    duration = scan->last_access_time - scan->start_time;
   }
-  MonoDelta time_since_start = now - scan.start_time;
+  MonoDelta time_since_start = now - scan->start_time;
 
-  json->Set("tablet_id", scan.tablet_id);
-  json->Set("scanner_id", scan.scanner_id);
-  json->Set("state", ScanStateToString(scan.state));
+  json->Set("tablet_id", scan->tablet_id);
+  json->Set("scanner_id", scan->scanner_id);
+  json->Set("state", ScanStateToString(scan->state));
   json->Set("query", ScanQueryHtml(scan));
-  json->Set("requestor", scan.remote_user.username());
+  json->Set("requestor", scan->remote_user.username());
 
   json->Set("duration", HumanReadableElapsedTime::ToShortString(duration.ToSeconds()));
-  json->Set("num_round_trips", scan.last_call_seq_id);
+  json->Set("num_round_trips", scan->last_call_seq_id);
   json->Set("time_since_start",
             HumanReadableElapsedTime::ToShortString(time_since_start.ToSeconds()));
 
-  const auto& cpu_times = scan.cpu_times;
+  const auto& cpu_times = scan->cpu_times;
   json->Set("wall_secs",
             HumanReadableElapsedTime::ToShortString(cpu_times.wall_seconds()));
   json->Set("user_secs",
@@ -598,14 +598,24 @@ const char* kLongTimingTitle = "wall time, user cpu time, and system cpu time "
 void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& /*req*/,
                                                Webserver::WebResponse* resp) {
   EasyJson* output = &resp->output;
-  (*output)["scan_history_count"] = FLAGS_scan_history_count;
+  (*output)["completed_scan_history_count"] = FLAGS_completed_scan_history_count;
   output->Set("timing_title", kLongTimingTitle);
-  EasyJson scans = output->Set("scans", EasyJson::kArray);
-  vector<ScanDescriptor> descriptors = tserver_->scanner_manager()->ListScans();
+  EasyJson completed_scans = output->Set("completed_scans", EasyJson::kArray);
+  vector<SharedScanDescriptor> descriptors = tserver_->scanner_manager()->ListScans();
 
   for (const auto& descriptor : descriptors) {
-    EasyJson scan = scans.PushBack(EasyJson::kObject);
-    ScanToJson(descriptor, &scan);
+    EasyJson completed_scan = completed_scans.PushBack(EasyJson::kObject);
+    ScanToJson(descriptor, &completed_scan);
+  }
+
+  (*output)["slow_scan_history_count"] = FLAGS_slow_scan_history_count;
+  EasyJson slow_scans = output->Set("slow_scans", EasyJson::kArray);
+  vector<SharedScanDescriptor> slow_descriptors =
+      tserver_->scanner_manager()->ListSlowScans();
+
+  for (const auto& slow_descriptor : slow_descriptors) {
+    EasyJson slow_scan = slow_scans.PushBack(EasyJson::kObject);
+    ScanToJson(slow_descriptor, &slow_scan);
   }
 }
 

@@ -56,14 +56,27 @@ DEFINE_int32(scanner_ttl_ms, 60000,
 TAG_FLAG(scanner_ttl_ms, advanced);
 TAG_FLAG(scanner_ttl_ms, runtime);
 
-DEFINE_int32(scanner_gc_check_interval_us, 5 * 1000L *1000L, // 5 seconds
+DEFINE_int32(scanner_gc_check_interval_us, 5 * 1000L * 1000L, // 5 seconds
              "Number of microseconds in the interval at which we remove expired scanners");
 TAG_FLAG(scanner_gc_check_interval_us, hidden);
 
-DEFINE_int32(scan_history_count, 20,
-             "Number of completed scans to keep history for. Determines how many historical "
-             "scans will be shown on the tablet server's scans dashboard.");
-TAG_FLAG(scan_history_count, experimental);
+DEFINE_int32(completed_scan_history_count, 10,
+             "Number of latest scans to keep history for. Determines how many historical "
+             "latest scans will be shown on the tablet server's scans dashboard.");
+TAG_FLAG(completed_scan_history_count, experimental);
+
+// TODO(kedeng) : Add flag to control the display of slow scans, and avoid full scanning
+//                affecting normal Kudu service without perception.
+DEFINE_int32(slow_scanner_threshold_ms, 60 * 1000L, // 1 minute
+             "Number of milliseconds for the threshold of slow scan.");
+TAG_FLAG(slow_scanner_threshold_ms, advanced);
+TAG_FLAG(slow_scanner_threshold_ms, runtime);
+
+DEFINE_int32(slow_scan_history_count, 10,
+             "Number of slow scans to keep history for. Determines how many historical "
+             "slow scans will be shown on the tablet server's scans dashboard. The "
+             "threshold for a slow scan is defined with --slow_scanner_threshold_ms.");
+TAG_FLAG(slow_scan_history_count, experimental);
 
 DECLARE_int32(rpc_default_keepalive_time_ms);
 
@@ -108,7 +121,8 @@ namespace tserver {
 ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
     : shutdown_(false),
       shutdown_cv_(&shutdown_lock_),
-      completed_scans_offset_(0) {
+      completed_scans_offset_(0),
+      slow_scans_offset_(0) {
   if (metric_entity) {
     metrics_.reset(new ScannerMetrics(metric_entity));
     METRIC_active_scanners.InstantiateFunctionGauge(
@@ -119,8 +133,12 @@ ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
     scanner_maps_.push_back(new ScannerMapStripe());
   }
 
-  if (FLAGS_scan_history_count > 0) {
-    completed_scans_.reserve(FLAGS_scan_history_count);
+  if (FLAGS_completed_scan_history_count > 0) {
+    completed_scans_.reserve(FLAGS_completed_scan_history_count);
+  }
+
+  if (FLAGS_slow_scan_history_count > 0) {
+    slow_scans_.reserve(FLAGS_slow_scan_history_count);
   }
 }
 
@@ -136,14 +154,14 @@ ScannerManager::~ScannerManager() {
   STLDeleteElements(&scanner_maps_);
 }
 
-Status ScannerManager::StartRemovalThread() {
-  RETURN_NOT_OK(Thread::Create("scanners", "removal_thread",
-                               [this]() { this->RunRemovalThread(); },
+Status ScannerManager::StartCollectAndRemovalThread() {
+  RETURN_NOT_OK(Thread::Create("scanners", "collect_and_removal_thread",
+                               [this]() { this->RunCollectAndRemovalThread(); },
                                &removal_thread_));
   return Status::OK();
 }
 
-void ScannerManager::RunRemovalThread() {
+void ScannerManager::RunCollectAndRemovalThread() {
   while (true) {
     // Loop until we are shutdown.
     {
@@ -153,6 +171,7 @@ void ScannerManager::RunRemovalThread() {
       }
       shutdown_cv_.WaitFor(MonoDelta::FromMicroseconds(FLAGS_scanner_gc_check_interval_us));
     }
+    CollectSlowScanners();
     RemoveExpiredScanners();
   }
 }
@@ -205,7 +224,7 @@ Status ScannerManager::LookupScanner(const string& scanner_id,
 }
 
 bool ScannerManager::UnregisterScanner(const string& scanner_id) {
-  ScanDescriptor descriptor;
+  SharedScanDescriptor descriptor;
   ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
   {
     std::lock_guard<RWMutex> l(stripe.lock_);
@@ -217,7 +236,7 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
     bool is_initted = it->second->is_initted();
     if (is_initted) {
       descriptor = it->second->Descriptor();
-      descriptor.state = it->second->iter()->HasNext() ? ScanState::kFailed : ScanState::kComplete;
+      descriptor->state = it->second->iter()->HasNext() ? ScanState::kFailed : ScanState::kComplete;
     }
     stripe.scanners_by_id_.erase(it);
     if (!is_initted) {
@@ -225,8 +244,19 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
     }
   }
 
-  std::lock_guard<RWMutex> l(completed_scans_lock_);
-  RecordCompletedScanUnlocked(std::move(descriptor));
+  {
+    std::lock_guard<percpu_rwlock> l(completed_scans_lock_);
+    RecordCompletedScanUnlocked(descriptor);
+  }
+
+  {
+    const MonoTime start_time = descriptor->start_time;
+    if (start_time + MonoDelta::FromMilliseconds(FLAGS_slow_scanner_threshold_ms)
+        < MonoTime::Now()) {
+      std::lock_guard<percpu_rwlock> l(slow_scans_lock_);
+      RecordSlowScanUnlocked(descriptor);
+    }
+  }
   return true;
 }
 
@@ -248,46 +278,110 @@ void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) const {
   }
 }
 
-vector<ScanDescriptor> ScannerManager::ListScans() const {
-  unordered_map<string, ScanDescriptor> scans;
+vector<SharedScanDescriptor> ScannerManager::ListScans() const {
+  unordered_map<string, SharedScanDescriptor> scans;
   for (const ScannerMapStripe* stripe : scanner_maps_) {
     shared_lock<RWMutex> l(stripe->lock_);
     for (const auto& se : stripe->scanners_by_id_) {
       if (se.second->is_initted()) {
-        ScanDescriptor desc = se.second->Descriptor();
-        desc.state = ScanState::kActive;
+        SharedScanDescriptor desc = se.second->Descriptor();
+        desc->state = ScanState::kActive;
         EmplaceOrDie(&scans, se.first, std::move(desc));
       }
     }
   }
 
   {
-    shared_lock<RWMutex> l(completed_scans_lock_);
+    kudu::shared_lock<rw_spinlock> l(completed_scans_lock_.get_lock());
     // A scanner in 'scans' may have completed between the above loop and here.
     // As we'd rather have the finalized descriptor of the completed scan,
     // update over the old descriptor in this case.
     for (const auto& scan : completed_scans_) {
-      InsertOrUpdate(&scans, scan.scanner_id, scan);
+      InsertOrUpdate(&scans, scan->scanner_id, scan);
     }
   }
 
-  vector<ScanDescriptor> ret;
+  vector<SharedScanDescriptor> ret;
   ret.reserve(scans.size());
   AppendValuesFromMap(scans, &ret);
 
   // Sort oldest to newest, so that the ordering is consistent across calls.
-  std::sort(ret.begin(), ret.end(), [] (const ScanDescriptor& a, const ScanDescriptor& b) {
-      return a.start_time > b.start_time;
+  std::sort(ret.begin(), ret.end(), [] (const SharedScanDescriptor& a,
+                                        const SharedScanDescriptor& b) {
+      return a->start_time > b->start_time;
   });
 
   return ret;
+}
+
+vector<SharedScanDescriptor> ScannerManager::ListSlowScans() const {
+  // Get all the scans first.
+  unordered_map<string, SharedScanDescriptor> scans;
+  {
+    kudu::shared_lock<rw_spinlock> l(slow_scans_lock_.get_lock());
+    for (const auto& scan : slow_scans_) {
+      InsertOrUpdate(&scans, scan->scanner_id, scan);
+    }
+  }
+
+  vector<SharedScanDescriptor> ret;
+  ret.reserve(scans.size());
+  AppendValuesFromMap(scans, &ret);
+
+  // Sort oldest to newest, so that the ordering is consistent across calls.
+  std::sort(ret.begin(), ret.end(), [] (const SharedScanDescriptor& a,
+                                        const SharedScanDescriptor& b) {
+      return a->start_time > b->start_time;
+  });
+
+  return ret;
+}
+
+void ScannerManager::CollectSlowScanners() {
+  const MonoTime now = MonoTime::Now();
+
+  vector<SharedScanDescriptor> descriptors;
+  int32_t slow_scanner_threshold = FLAGS_slow_scanner_threshold_ms;
+  for (ScannerMapStripe* stripe : scanner_maps_) {
+    std::lock_guard<RWMutex> l(stripe->lock_);
+    for (auto it = stripe->scanners_by_id_.begin(); it != stripe->scanners_by_id_.end(); ++it) {
+      const SharedScanner& scanner = it->second;
+      if (!scanner->is_initted()) {
+        // Ignore uninitialized scans.
+        continue;
+      }
+      const MonoTime start_time = scanner->start_time();
+      if (start_time + MonoDelta::FromMilliseconds(slow_scanner_threshold) >= now) {
+        continue;
+      }
+
+      MonoDelta delta_time = now - start_time -
+          MonoDelta::FromMilliseconds(slow_scanner_threshold);
+      // TODO(kedeng) : Add flag to control whether to print this log.
+      LOG(INFO) << Substitute(
+          "Slow scanner id: $0, of tablet $1, "
+          "exceed the time threshold $2 ms for $3 ms.",
+          it->first,
+          scanner->tablet_id(),
+          slow_scanner_threshold,
+          delta_time.ToMilliseconds());
+      descriptors.emplace_back(scanner->Descriptor());
+    }
+  }
+
+  std::lock_guard<percpu_rwlock> l(slow_scans_lock_);
+  for (auto& descriptor : descriptors) {
+    if (std::find(slow_scans_.begin(), slow_scans_.end(), descriptor) == slow_scans_.end()) {
+      RecordSlowScanUnlocked(descriptor);
+    }
+  }
 }
 
 void ScannerManager::RemoveExpiredScanners() {
   MonoDelta scanner_ttl = MonoDelta::FromMilliseconds(FLAGS_scanner_ttl_ms);
   const MonoTime now = MonoTime::Now();
 
-  vector<ScanDescriptor> descriptors;
+  vector<SharedScanDescriptor> descriptors;
   for (ScannerMapStripe* stripe : scanner_maps_) {
     std::lock_guard<RWMutex> l(stripe->lock_);
     for (auto it = stripe->scanners_by_id_.begin(); it != stripe->scanners_by_id_.end();) {
@@ -316,26 +410,37 @@ void ScannerManager::RemoveExpiredScanners() {
     }
   }
 
-  std::lock_guard<RWMutex> l(completed_scans_lock_);
+  std::lock_guard<percpu_rwlock> l(completed_scans_lock_);
   for (auto& descriptor : descriptors) {
-    descriptor.last_access_time = now;
-    descriptor.state = ScanState::kExpired;
-    RecordCompletedScanUnlocked(std::move(descriptor));
+    descriptor->last_access_time = now;
+    descriptor->state = ScanState::kExpired;
+    RecordCompletedScanUnlocked(descriptor);
   }
 }
 
-void ScannerManager::RecordCompletedScanUnlocked(ScanDescriptor descriptor) {
-  if (completed_scans_.capacity() == 0) {
+void ScannerManager::CircularUpdateRecordInFifo(vector<SharedScanDescriptor>& scans_vec,
+                                                size_t& scans_offset,
+                                                const SharedScanDescriptor& descriptor) {
+  if (scans_vec.capacity() == 0) {
     return;
   }
-  if (completed_scans_.size() == completed_scans_.capacity()) {
-    completed_scans_[completed_scans_offset_++] = std::move(descriptor);
-    if (completed_scans_offset_ == completed_scans_.capacity()) {
-      completed_scans_offset_ = 0;
+
+  if (scans_vec.size() == scans_vec.capacity()) {
+    scans_vec[scans_offset++] = descriptor;
+    if (scans_offset == scans_vec.capacity()) {
+      scans_offset = 0;
     }
   } else {
-    completed_scans_.emplace_back(std::move(descriptor));
+    scans_vec.emplace_back(descriptor);
   }
+}
+
+void ScannerManager::RecordCompletedScanUnlocked(const SharedScanDescriptor& descriptor) {
+  return CircularUpdateRecordInFifo(completed_scans_, completed_scans_offset_, descriptor);
+}
+
+void ScannerManager::RecordSlowScanUnlocked(const SharedScanDescriptor& descriptor) {
+  return CircularUpdateRecordInFifo(slow_scans_, slow_scans_offset_, descriptor);
 }
 
 const std::string Scanner::kNullTabletId = "null tablet";
@@ -407,39 +512,39 @@ IteratorStats Scanner::UpdateStatsAndGetDelta() {
   return delta_stats;
 }
 
-ScanDescriptor Scanner::Descriptor() const {
+SharedScanDescriptor Scanner::Descriptor() const {
   // Ignore non-initialized scans. The initializing state is transient, and
   // handling it correctly is complicated. Since the scanner is initialized we
   // can assume iter_, spec_, and client_projection_schema_ are valid
   // pointers.
   CHECK(is_initted());
 
-  ScanDescriptor descriptor;
-  descriptor.tablet_id = tablet_id();
-  descriptor.scanner_id = id();
-  descriptor.remote_user = remote_user();
-  descriptor.start_time = start_time_;
+  SharedScanDescriptor descriptor(new ScanDescriptor);
+  descriptor->tablet_id = tablet_id();
+  descriptor->scanner_id = id();
+  descriptor->remote_user = remote_user();
+  descriptor->start_time = start_time_;
 
   for (const auto& column : client_projection_schema_->columns()) {
-    descriptor.projected_columns.emplace_back(column.name());
+    descriptor->projected_columns.emplace_back(column.name());
   }
 
   const auto& tablet_metadata = tablet_replica_->tablet_metadata();
-  descriptor.table_name = tablet_metadata->table_name();
+  descriptor->table_name = tablet_metadata->table_name();
   SchemaPtr schema_ptr = tablet_metadata->schema();
   if (spec().lower_bound_key()) {
-    descriptor.predicates.emplace_back(
+    descriptor->predicates.emplace_back(
         Substitute("PRIMARY KEY >= $0", KUDU_REDACT(
             spec().lower_bound_key()->Stringify(*schema_ptr))));
   }
   if (spec().exclusive_upper_bound_key()) {
-    descriptor.predicates.emplace_back(
+    descriptor->predicates.emplace_back(
         Substitute("PRIMARY KEY < $0", KUDU_REDACT(
             spec().exclusive_upper_bound_key()->Stringify(*schema_ptr))));
   }
 
   for (const auto& predicate : spec().predicates()) {
-    descriptor.predicates.emplace_back(predicate.second.ToString());
+    descriptor->predicates.emplace_back(predicate.second.ToString());
   }
 
   vector<IteratorStats> iterator_stats;
@@ -447,13 +552,13 @@ ScanDescriptor Scanner::Descriptor() const {
 
   DCHECK_EQ(iterator_stats.size(), iter_->schema().num_columns());
   for (int col_idx = 0; col_idx < iterator_stats.size(); col_idx++) {
-    descriptor.iterator_stats.emplace_back(iter_->schema().column(col_idx).name(),
-                                           iterator_stats[col_idx]);
+    descriptor->iterator_stats.emplace_back(iter_->schema().column(col_idx).name(),
+                                            iterator_stats[col_idx]);
   }
 
-  descriptor.last_call_seq_id = ANNOTATE_UNPROTECTED_READ(call_seq_id_);
-  descriptor.last_access_time = last_access_time_.load(std::memory_order_relaxed);
-  descriptor.cpu_times = cpu_times();
+  descriptor->last_call_seq_id = ANNOTATE_UNPROTECTED_READ(call_seq_id_);
+  descriptor->last_access_time = last_access_time_.load(std::memory_order_relaxed);
+  descriptor->cpu_times = cpu_times();
 
   return descriptor;
 }

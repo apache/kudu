@@ -20,6 +20,8 @@
 #include <functional>
 #include <memory>
 #include <ostream>
+#include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -117,8 +119,8 @@ Status TabletServer::Init() {
   RETURN_NOT_OK_PREPEND(tablet_manager_->Init(start_tablets, tablets_processed,
                                               total_tablets),
                         "Could not init Tablet Manager");
-  RETURN_NOT_OK_PREPEND(scanner_manager_->StartRemovalThread(),
-                        "Could not start expired Scanner removal thread");
+  RETURN_NOT_OK_PREPEND(scanner_manager_->StartCollectAndRemovalThread(),
+      "Could not start slow scans collect and expired Scanner removal thread");
 
   state_ = kInitialized;
   return Status::OK();

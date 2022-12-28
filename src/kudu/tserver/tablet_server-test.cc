@@ -3195,10 +3195,10 @@ TEST_F(TabletServerTest, TestScanWithSimplifiablePredicates) {
     auto scan_descriptors = mini_server_->server()->scanner_manager()->ListScans();
     ASSERT_EQ(1, projection.columns().size());
     ASSERT_EQ(1, scan_descriptors.size());
-    ASSERT_EQ(projection.columns().size(), scan_descriptors[0].projected_columns.size());
-    ASSERT_EQ(2, scan_descriptors[0].predicates.size());
-    ASSERT_EQ(projection.columns().size(), scan_descriptors[0].iterator_stats.size());
-    ASSERT_EQ(projection.column(0).name(), scan_descriptors[0].iterator_stats[0].first);
+    ASSERT_EQ(projection.columns().size(), scan_descriptors[0]->projected_columns.size());
+    ASSERT_EQ(2, scan_descriptors[0]->predicates.size());
+    ASSERT_EQ(projection.columns().size(), scan_descriptors[0]->iterator_stats.size());
+    ASSERT_EQ(projection.column(0).name(), scan_descriptors[0]->iterator_stats[0].first);
   }
 
   // Drain all the rows from the scanner.

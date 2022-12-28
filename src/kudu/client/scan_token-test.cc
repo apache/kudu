@@ -73,6 +73,8 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(tserver_enforce_access_control);
+DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
+DECLARE_int32(slow_scanner_threshold_ms);
 
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
@@ -85,6 +87,7 @@ using kudu::master::CatalogManager;
 using kudu::master::TabletInfo;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
+using kudu::tserver::SharedScanDescriptor;
 using std::atomic;
 using std::map;
 using std::string;
@@ -328,12 +331,26 @@ class ScanTokenTest : public KuduTest {
   void GetScannerCount(map<string, int32_t>* scanner_count_by_ts_uuid) {
     scanner_count_by_ts_uuid->clear();
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      vector<tserver::ScanDescriptor> scanners =
+      vector<SharedScanDescriptor> scanners =
           cluster_->mini_tablet_server(i)->server()->scanner_manager()->ListScans();
       scanner_count_by_ts_uuid->insert(
           {cluster_->mini_tablet_server(i)->server()->instance_pb().permanent_uuid(),
            static_cast<int32_t>(scanners.size())});
     }
+  }
+
+  uint32_t GetSlowScansCount() {
+    // Just use for the cluster with only 1 tserver.
+    vector<SharedScanDescriptor> scans =
+        cluster_->mini_tablet_server(0)->server()->scanner_manager()->ListSlowScans();
+    return scans.size();
+  }
+
+  uint32_t GetCompletedScansCount() {
+    // Just use for the cluster with only 1 tserver.
+    vector<SharedScanDescriptor> scans =
+        cluster_->mini_tablet_server(0)->server()->scanner_manager()->ListScans();
+    return scans.size();
   }
 
   KuduSchema GetTokenProjectionSchema(const KuduScanToken& token) {
@@ -348,6 +365,60 @@ class ScanTokenTest : public KuduTest {
   shared_ptr<KuduClient> client_;
   unique_ptr<InternalMiniCluster> cluster_;
 };
+
+TEST_F(ScanTokenTest, SlowScansListTest) {
+  constexpr const char* const kTableName = "slow_scans_show";
+  // Create schema
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Create table
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(CreateAndOpenTable(kTableName, schema, &table));
+
+  // Only 1 tserver is OK.
+  ASSERT_EQ(1, cluster_->num_tablet_servers());
+
+  // Create session
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(10000);
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+
+  // Insert rows
+  for (int i = 0; i < 200; i++) {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64("key", i));
+    ASSERT_OK(session->Apply(insert.release()));
+  }
+  ASSERT_OK(session->Flush());
+
+  {
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+
+    ASSERT_EQ(200, CountRows(tokens));
+    ASSERT_EQ(1, GetCompletedScansCount());
+    ASSERT_EQ(0, GetSlowScansCount());
+  }
+
+  {
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+
+    // Create a slow scan scenarios.
+    FLAGS_scanner_inject_latency_on_each_batch_ms = 50;
+    FLAGS_slow_scanner_threshold_ms = 40;
+    ASSERT_EQ(200, CountRows(tokens));
+    ASSERT_EQ(2, GetCompletedScansCount());
+    ASSERT_EQ(1, GetSlowScansCount());
+  }
+}
 
 TEST_F(ScanTokenTest, TestScanTokens) {
   // Create schema

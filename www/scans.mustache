@@ -17,9 +17,9 @@ specific language governing permissions and limitations
 under the License.
 }}{{#raw}}{{{.}}}{{/raw}}{{^raw}}
 
-<h1>Scans</h1>
-<p class="lead">This page lists all running scans and last {{scan_history_count}} completed scans.
-The number of historical scans is configurable with the <samp>--scan_history_count</samp> flag.</p>
+<h1>Completed Scans</h1>
+<p class="lead">This table lists all running scans and last {{completed_scan_history_count}} completed scans.
+The number of historical completed scans is configurable with the <samp>--completed_scan_history_count</samp> flag.</p>
 <table class="table table-striped">
   <thead>
     <tr>
@@ -36,7 +36,7 @@ The number of historical scans is configurable with the <samp>--scan_history_cou
     </tr>
   </thead>
   <tbody>
-    {{#scans}}
+    {{#completed_scans}}
     <tr>
       <td><a href="{{base_url}}/tablet?id={{tablet_id}}"><samp>{{tablet_id}}</samp></a></td>
       <td><samp>{{scanner_id}}</samp></td>
@@ -72,7 +72,66 @@ The number of historical scans is configurable with the <samp>--scan_history_cou
         </table>
       </td>
     </tr>
-    {{/scans}}
+    {{/completed_scans}}
+  </tbody>
+</table>
+
+<h1>Slow Scans</h1>
+<p class="lead">This table lists all slow scans and last {{slow_scan_history_count}} slow scans.
+The number of historical slow scans is configurable with the <samp>--slow_scan_history_count</samp> flag.</p>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Tablet id</th>
+      <th>Scanner id</th>
+      <th>State</th>
+      <th title="pseudo-SQL query description">Query</th>
+      <th>Requestor</th>
+      <th title="amount of time that the scanner was/has been open on the server">Duration</th>
+      <th title="number of round trips">Round trips</th>
+      <th title="elapsed time since the scan started">Time since start</th>
+      <th title="{{timing_title}}">Timing</th>
+      <th>Column Stats</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#slow_scans}}
+    <tr>
+      <td><a href="{{base_url}}/tablet?id={{tablet_id}}"><samp>{{tablet_id}}</samp></a></td>
+      <td><samp>{{scanner_id}}</samp></td>
+      <td>{{state}}</td>
+      {{! The query string is pre-formatted HTML, so don't escape it (triple-brace). }}
+      <td><pre>{{{query}}}</pre></td>
+      <td><samp>{{requestor}}</samp></td>
+      <td title="{{duration_title}}">{{duration}}</td>
+      <td>{{num_round_trips}}</td>
+      <td title="{{time_since_start_title}}">{{time_since_start}}</td>
+      <td>real: {{wall_secs}} user: {{user_secs}} sys: {{sys_secs}}</td>
+
+      <td>
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>column</th>
+              <th title="cells read from the column (disk or cache), exclusive of the MRS">cells read</th>
+              <th title="bytes read from the column (disk or cache), exclusive of the MRS">bytes read</th>
+              <th title="CFile data blocks read from the column (disk or cache)">blocks read</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#stats}}
+            <tr>
+              <td>{{column}}</td>
+              <td title="{{cells_read_title}}">{{cells_read}}</td>
+              <td title="{{bytes_read_title}}">{{bytes_read}}</td>
+              <td title="{{blocks_read_title}}">{{blocks_read}}</td>
+            </tr>
+            {{/stats}}
+          </tbody>
+        </table>
+      </td>
+    </tr>
+    {{/slow_scans}}
   </tbody>
 </table>
 {{/raw}}
