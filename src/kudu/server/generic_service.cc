@@ -46,6 +46,8 @@
 
 DECLARE_string(time_source);
 DECLARE_bool(use_hybrid_clock);
+DEFINE_bool(disable_gflag_filter_logic_for_testing, false,
+            "Whether to disable filter logic on the server side for test purpose.");
 
 using std::string;
 using std::unordered_set;
@@ -87,21 +89,23 @@ void GenericServiceImpl::GetFlags(const GetFlagsRequestPB* req,
     if (entry.second.is_default && !all_flags && flags.empty()) {
       continue;
     }
-
-    if (!flags.empty() && !ContainsKey(flags, entry.first)) {
-      continue;
-    }
-
     unordered_set<string> tags;
     GetFlagTags(entry.first, &tags);
-    bool matches = req->tags().empty();
-    for (const auto& tag : req->tags()) {
-      if (ContainsKey(tags, tag)) {
-        matches = true;
-        break;
+
+    if (!FLAGS_disable_gflag_filter_logic_for_testing) {
+      if (!flags.empty() && !ContainsKey(flags, entry.first)) {
+        continue;
       }
+
+      bool matches = req->tags().empty();
+      for (const auto& tag : req->tags()) {
+        if (ContainsKey(tags, tag)) {
+          matches = true;
+          break;
+        }
+      }
+      if (!matches) continue;
     }
-    if (!matches) continue;
 
     auto* flag = resp->add_flags();
     flag->set_name(entry.first);

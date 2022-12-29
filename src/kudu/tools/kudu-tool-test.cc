@@ -143,6 +143,7 @@
 
 DECLARE_bool(enable_tablet_orphaned_block_deletion);
 DECLARE_bool(encrypt_data_at_rest);
+DECLARE_bool(disable_gflag_filter_logic_for_testing);
 DECLARE_bool(fs_data_dirs_consider_available_space);
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(show_values);
@@ -7913,8 +7914,22 @@ TEST_F(ToolTest, TestReplaceTablet) {
   ASSERT_GE(workload.rows_inserted(), CountTableRows(workload_table.get()));
 }
 
-TEST_F(ToolTest, TestGetFlags) {
+class GetFlagsTest :
+    public ToolTest,
+    public ::testing::WithParamInterface<bool> {
+};
+
+INSTANTIATE_TEST_SUITE_P(DisableFlagFilterLogic, GetFlagsTest, ::testing::Bool());
+TEST_P(GetFlagsTest, TestGetFlags) {
   ExternalMiniClusterOptions opts;
+  const string disable_flag_filter_logic_on_server =
+      Substitute("--disable_gflag_filter_logic_for_testing=$0", GetParam());
+  opts.extra_master_flags = {
+    disable_flag_filter_logic_on_server,
+  };
+  opts.extra_tserver_flags = {
+    disable_flag_filter_logic_on_server,
+  };
   opts.num_tablet_servers = 1;
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
