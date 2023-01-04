@@ -44,6 +44,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/process_memory.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -79,6 +80,7 @@ DEFINE_bool(enable_maintenance_manager, true,
             "Enable the maintenance manager, which runs flush, compaction, "
             "and garbage collection operations on tablets.");
 TAG_FLAG(enable_maintenance_manager, unsafe);
+TAG_FLAG(enable_maintenance_manager, runtime);
 
 DEFINE_int64(log_target_replay_size_mb, 1024,
              "The target maximum size of logs to be replayed at startup. If a tablet "
@@ -302,15 +304,23 @@ bool MaintenanceManager::disabled_for_tests() const {
 }
 
 void MaintenanceManager::RunSchedulerThread() {
-  if (!FLAGS_enable_maintenance_manager) {
-    LOG(INFO) << "Maintenance manager is disabled. Stopping thread.";
-    return;
-  }
-
   // Set to true if the scheduler runs and finds that there is no work to do.
   bool prev_iter_found_no_work = false;
 
   while (true) {
+    if (!FLAGS_enable_maintenance_manager) {
+      {
+        std::unique_lock<Mutex> guard(lock_);
+        if (shutdown_) {
+          VLOG_AND_TRACE_WITH_PREFIX("maintenance", 1) << "Shutting down maintenance manager.";
+          return;
+        }
+      }
+      KLOG_EVERY_N_SECS(INFO, 1200)
+          << "Maintenance manager is disabled (check --enable_maintenance_manager).";
+      SleepFor(polling_interval_);
+      continue;
+    }
     MaintenanceOp* op = nullptr;
     string op_note;
     {
