@@ -566,24 +566,6 @@ bool AreFlagsConsistent() {
   return true;
 }
 
-string CommandlineFlagsIntoString(EscapeMode mode) {
-  string ret_value;
-  vector<CommandLineFlagInfo> flags;
-  GetAllFlags(&flags);
-
-  for (const auto& f : flags) {
-    ret_value += "--";
-    if (mode == EscapeMode::HTML) {
-      ret_value += EscapeForHtmlToString(f.name);
-    } else if (mode == EscapeMode::NONE) {
-      ret_value += f.name;
-    }
-    ret_value += "=";
-    ret_value += CheckFlagAndRedact(f, mode);
-    ret_value += "\n";
-  }
-  return ret_value;
-}
 
 vector<CommandLineFlagInfo> GetNonDefaultFlagsHelper() {
   vector<CommandLineFlagInfo> all_flags;
@@ -664,6 +646,32 @@ bool GetBooleanEnvironmentVariable(const char* env_var_name) {
   LOG(FATAL) << Substitute("$0: invalid value for environment variable $0",
                            e, env_var_name);
   return false;  // unreachable
+}
+
+string CommandlineFlagsIntoString(EscapeMode mode, Selection selection) {
+  string ret_value;
+  vector<CommandLineFlagInfo> flags;
+  switch (selection) {
+    case Selection::ALL:
+      GetAllFlags(&flags);
+      break;
+    case Selection::NONDEFAULT:
+      flags = GetNonDefaultFlagsHelper();
+      break;
+  }
+
+  for (const auto& f : flags) {
+    ret_value += "--";
+    if (mode == EscapeMode::HTML) {
+      ret_value += EscapeForHtmlToString(f.name);
+    } else if (mode == EscapeMode::NONE) {
+      ret_value += f.name;
+    }
+    ret_value += "=";
+    ret_value += CheckFlagAndRedact(f, mode);
+    ret_value += "\n";
+  }
+  return ret_value;
 }
 
 } // namespace kudu

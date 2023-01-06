@@ -67,11 +67,13 @@ enum class EscapeMode {
   NONE
 };
 
+enum class Selection { NONDEFAULT, ALL };
+
 // Stick the flags into a string. If redaction is enabled, the values of
 // flags tagged as sensitive will be redacted. Otherwise, the values
 // will be written to the string as-is. The values will be HTML escaped
 // if EscapeMode is HTML.
-std::string CommandlineFlagsIntoString(EscapeMode mode);
+std::string CommandlineFlagsIntoString(EscapeMode mode, Selection selection);
 
 typedef std::unordered_map<std::string, google::CommandLineFlagInfo> GFlagsMap;
 

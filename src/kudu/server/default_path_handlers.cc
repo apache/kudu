@@ -173,9 +173,16 @@ static void FlagsHandler(const Webserver::WebRequest& req,
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
 
-  (*output) << tags.header << "Command-line Flags" << tags.end_header;
+  (*output) << tags.header << "Non-default Command-line Flags" << tags.end_header;
   (*output) << tags.pre_tag
-            << CommandlineFlagsIntoString(as_text ? EscapeMode::NONE : EscapeMode::HTML)
+            << CommandlineFlagsIntoString(as_text ? EscapeMode::NONE : EscapeMode::HTML,
+                                          Selection::NONDEFAULT)
+            << tags.end_pre_tag;
+
+  (*output) << tags.header << "All Command-line Flags" << tags.end_header;
+  (*output) << tags.pre_tag
+            << CommandlineFlagsIntoString(as_text ? EscapeMode::NONE : EscapeMode::HTML,
+                                          Selection::ALL)
             << tags.end_pre_tag;
 }
 
