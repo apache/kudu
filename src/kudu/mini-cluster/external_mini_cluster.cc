@@ -26,6 +26,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 
@@ -97,6 +98,7 @@ using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
+using std::back_inserter;
 using std::copy;
 using std::map;
 using std::pair;
@@ -633,7 +635,16 @@ Status ExternalMiniCluster::AddTabletServer() {
   vector<string> extra_flags;
   RETURN_NOT_OK(AddTimeSourceFlags(idx, &extra_flags));
   auto flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
-  copy(flags.begin(), flags.end(), std::back_inserter(extra_flags));
+  copy(flags.begin(), flags.end(), back_inserter(extra_flags));
+
+  // Add custom tablet server flags, specific to this particular tablet server
+  // instance.
+  if (!opts_.t_custom_flags.empty()) {
+    CHECK_EQ(opts_.num_tablet_servers, opts_.t_custom_flags.size());
+    const auto& custom_flags = opts_.t_custom_flags[idx];
+    copy(custom_flags.begin(), custom_flags.end(), back_inserter(extra_flags));
+  }
+
   opts.extra_flags = extra_flags;
   if (!opts_.tserver_alias_prefix.empty()) {
     opts.extra_flags.emplace_back(
@@ -657,7 +668,8 @@ Status ExternalMiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
-Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addrs, int idx,
+Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addrs,
+                                         size_t idx,
                                          scoped_refptr<ExternalMaster>* master) {
   DCHECK_LT(idx, master_rpc_addrs.size());
   vector<string> flags;
@@ -720,9 +732,16 @@ Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addr
       flags.emplace_back(Substitute("--ranger_kms_url=$0", ranger_kms_->url()));
     }
   }
-  // Add custom master flags.
+  // Add extra master flags, common for all masters in the cluster.
   copy(opts_.extra_master_flags.begin(), opts_.extra_master_flags.end(),
-       std::back_inserter(flags));
+       back_inserter(flags));
+
+  // Add custom master flags, specific to this particular master instance.
+  if (!opts_.m_custom_flags.empty()) {
+    CHECK_EQ(opts_.num_masters, opts_.m_custom_flags.size());
+    const auto& custom_flags = opts_.m_custom_flags[idx];
+    copy(custom_flags.begin(), custom_flags.end(), back_inserter(flags));
+  }
 
   string daemon_id = Substitute("master-$0", idx);
 

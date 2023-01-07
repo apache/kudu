@@ -51,7 +51,6 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_verifier.h"
-#include "kudu/server/rpc_server.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
@@ -814,11 +813,10 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   // Set the info about the other masters, so that the client can verify
   // it has the full set of info.
   {
-    // Check if the request came to the dedicated RPC endpoint meaning
-    // it's been proxied from the outside network.
+    // Check if the request came through the dedicated RPC endpoint meaning
+    // it's been proxied from external network.
     if (IsAddrOneOf(rpc->local_address(), server_->rpc_proxied_addresses())) {
-      // TODO(aserbin): adapt this to multi-master configuration
-      for (const auto& hp : server_->rpc_server()->GetProxyAdvertisedHostPorts()) {
+      for (const auto& hp : server_->GetProxyAdvertisedHostPorts()) {
         *resp->add_master_addrs() = HostPortToPB(hp);
       }
     } else {

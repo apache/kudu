@@ -19,6 +19,7 @@
 
 #include <sys/types.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -48,6 +49,7 @@ class Env;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
+
 namespace ranger {
 class MiniRanger;
 }  // namespace ranger
@@ -140,6 +142,9 @@ enum class BuiltinNtpConfigMode {
 };
 #endif
 
+// TODO(aserbin): maybe, turn this struct into a class template based on number
+//                of master and tablet servers, changing std::vector to
+//                std::array for {masters,tservers}_custom_flags
 struct ExternalMiniClusterOptions {
   ExternalMiniClusterOptions();
 
@@ -191,6 +196,30 @@ struct ExternalMiniClusterOptions {
   //
   // If unset, addresses are assigned automatically.
   std::vector<HostPort> master_rpc_addresses;
+
+  // Custom flags for masters in the cluster. These are per-instance,
+  // i.e. not common across all masters in the cluster:
+  // 'm_custom_flags[i]' are the flags for master at index 'i'.
+  //
+  // If not empty, must contain the same number of elements as the number
+  // of masters in the cluster. In other words, the invariant is
+  //
+  //   m_custom_flags.empty() || m_custom_flags.size() == num_masters
+  //
+  // Default: empty
+  std::vector<std::vector<std::string>> m_custom_flags;
+
+  // Custom flags for tablet servers in the cluster. These are per-instance,
+  // i.e. not common across all tablet servers in the cluster:
+  // 't_custom_flags[i]' are the flags for tablet servers at index 'i'.
+  //
+  // If not empty, must contain the same number of elements as the number
+  // of tablet servers in the cluster. In other words, the invariant is
+  //
+  //   t_custom_flags.empty() || t_custom_flags.size() == num_tablet_servers
+  //
+  // Default: empty
+  std::vector<std::vector<std::string>> t_custom_flags;
 
   // Options to configure the MiniKdc before starting it up.
   // Only used when 'enable_kerberos' is 'true'.
@@ -559,7 +588,8 @@ class ExternalMiniCluster : public MiniCluster {
   //
   // It's expected that the port for the master at 'idx' is reserved, and that
   // the master can be run with the --rpc_reuseport flag.
-  Status CreateMaster(const std::vector<HostPort>& master_rpc_addrs, int idx,
+  Status CreateMaster(const std::vector<HostPort>& master_rpc_addrs,
+                      size_t idx,
                       scoped_refptr<ExternalMaster>* master);
 
  private:
