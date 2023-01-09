@@ -623,12 +623,14 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(
       op_pb->set_logs_retained_bytes(stats.logs_retained_bytes());
       op_pb->set_perf_improvement(stats.perf_improvement());
       op_pb->set_workload_score(stats.workload_score());
+      op_pb->set_data_retained_bytes(stats.data_retained_bytes());
     } else {
       op_pb->set_runnable(false);
       op_pb->set_ram_anchored_bytes(0);
       op_pb->set_logs_retained_bytes(0);
       op_pb->set_perf_improvement(0.0);
       op_pb->set_workload_score(0.0);
+      op_pb->set_data_retained_bytes(0);
     }
   }
 

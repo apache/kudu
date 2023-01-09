@@ -25,6 +25,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -54,7 +55,6 @@
 #include "kudu/server/webui_util.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/ops/op.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -69,6 +69,12 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/web_callback_registry.h"
+
+namespace kudu {
+namespace tablet {
+class Tablet;
+}  // namespace tablet
+}  // namespace kudu
 
 using kudu::MaintenanceManagerStatusPB;
 using kudu::consensus::ConsensusStatePB;
@@ -646,6 +652,7 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
     registered_op["logs_retained"] = HumanReadableNumBytes::ToString(op_pb.logs_retained_bytes());
     registered_op["perf"] = op_pb.perf_improvement();
     registered_op["workload_score"] = op_pb.workload_score();
+    registered_op["data_retained"] = HumanReadableNumBytes::ToString(op_pb.data_retained_bytes());
   }
 }
 

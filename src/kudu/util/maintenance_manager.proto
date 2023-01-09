@@ -30,6 +30,7 @@ message MaintenanceManagerStatusPB {
     required int64 logs_retained_bytes = 5;
     required double perf_improvement = 6;
     required double workload_score = 7;
+    required int64 data_retained_bytes = 8;
   }
 
   message OpInstancePB {
