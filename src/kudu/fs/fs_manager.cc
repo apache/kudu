@@ -547,7 +547,7 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     InitBlockManager();
     LOG_TIMING(INFO, "opening block manager") {
       if (opts_.block_manager_type == "file") {
-        RETURN_NOT_OK(block_manager_->Open(report));
+        RETURN_NOT_OK(block_manager_->Open(report, nullptr, nullptr));
       } else {
         RETURN_NOT_OK(block_manager_->Open(report, containers_processed, containers_total));
       }

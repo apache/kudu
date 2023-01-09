@@ -24,6 +24,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -148,7 +149,7 @@ class BlockManagerStressTest : public KuduTest {
     // Defer block manager creation until after the above flags are set.
     bm_.reset(CreateBlockManager());
     CHECK_OK(file_cache_.Init());
-    CHECK_OK(bm_->Open(nullptr));
+    CHECK_OK(bm_->Open(nullptr, nullptr, nullptr));
     CHECK_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
     CHECK_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
@@ -541,7 +542,7 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
     LOG(INFO) << "Running on populated block manager (restart #" << i << ")";
     this->bm_.reset(this->CreateBlockManager());
     FsReport report;
-    ASSERT_OK(this->bm_->Open(&report));
+    ASSERT_OK(this->bm_->Open(&report, nullptr, nullptr));
     ASSERT_OK(this->dd_manager_->LoadDataDirGroupFromPB(this->test_tablet_name_,
                                                         this->test_group_pb_));
     ASSERT_OK(report.LogAndCheckForFatalErrors());

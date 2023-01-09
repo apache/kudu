@@ -138,7 +138,7 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
   void SetUp() override {
     // Pass in a report to prevent the block manager from logging unnecessarily.
     FsReport report;
-    ASSERT_OK(bm_->Open(&report));
+    ASSERT_OK(bm_->Open(&report, nullptr, nullptr));
     ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
     ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
@@ -184,7 +184,7 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
     }
 
     bm_.reset(CreateBlockManager(metric_entity, test_data_dirs));
-    RETURN_NOT_OK(bm_->Open(report));
+    RETURN_NOT_OK(bm_->Open(report, nullptr, nullptr));
     return Status::OK();
   }
 
@@ -1914,7 +1914,7 @@ TEST_P(LogBlockManagerTest, TestOpenWithFailedDirectories) {
 
   // Check the report, ensuring the correct directory has failed.
   FsReport report;
-  ASSERT_OK(bm_->Open(&report));
+  ASSERT_OK(bm_->Open(&report, nullptr, nullptr));
   ASSERT_EQ(kNumDirs - 1, report.data_dirs.size());
   for (const string& data_dir : report.data_dirs) {
     ASSERT_NE(data_dir, test_dirs[failed_idx]);

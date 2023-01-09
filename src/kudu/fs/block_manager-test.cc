@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -126,10 +127,10 @@ class BlockManagerTest : public KuduTest {
     CHECK_OK(file_cache_.Init());
   }
 
-  virtual void SetUp() override {
+  void SetUp() override {
     // Pass in a report to prevent the block manager from logging unnecessarily.
     FsReport report;
-    ASSERT_OK(bm_->Open(&report));
+    ASSERT_OK(bm_->Open(&report, nullptr, nullptr));
     ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
     ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
@@ -190,7 +191,7 @@ class BlockManagerTest : public KuduTest {
           env_, paths, opts, &dd_manager_));
     }
     bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker));
-    RETURN_NOT_OK(bm_->Open(nullptr));
+    RETURN_NOT_OK(bm_->Open(nullptr, nullptr, nullptr));
 
     // Certain tests may maintain their own directory groups, in which case
     // the default test group should not be used.
@@ -244,7 +245,7 @@ void BlockManagerTest<LogBlockManager>::SetUp() {
   RETURN_NOT_LOG_BLOCK_MANAGER();
   // Pass in a report to prevent the block manager from logging unnecessarily.
   FsReport report;
-  ASSERT_OK(bm_->Open(&report));
+  ASSERT_OK(bm_->Open(&report, nullptr, nullptr));
   ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
 
   // Store the DataDirGroupPB for tests that reopen the block manager.
@@ -745,7 +746,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   unique_ptr<BlockManager> new_bm(this->CreateBlockManager(
       scoped_refptr<MetricEntity>(),
       MemTracker::CreateTracker(-1, "other tracker")));
-  ASSERT_OK(new_bm->Open(nullptr));
+  ASSERT_OK(new_bm->Open(nullptr, nullptr, nullptr));
 
   // Test that the state of all three blocks is properly reflected.
   unique_ptr<ReadableBlock> read_block;

@@ -193,10 +193,10 @@ class LogBlockManager : public BlockManager {
                   FileCache* file_cache,
                   BlockManagerOptions opts);
 
-  ~LogBlockManager();
+  ~LogBlockManager() override;
 
-  Status Open(FsReport* report, std::atomic<int>* containers_processed = nullptr,
-              std::atomic<int>* containers_total = nullptr) override;
+  Status Open(FsReport* report, std::atomic<int>* containers_processed,
+              std::atomic<int>* containers_total) override;
 
   Status CreateBlock(const CreateBlockOptions& opts,
                      std::unique_ptr<WritableBlock>* block) override;
