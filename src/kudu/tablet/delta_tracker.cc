@@ -505,7 +505,9 @@ bool DeltaTracker::EstimateAllRedosAreAncient(Timestamp ancient_history_mark) {
 }
 
 Status DeltaTracker::EstimateBytesInPotentiallyAncientUndoDeltas(
-    Timestamp ancient_history_mark, int64_t* bytes) const {
+    Timestamp ancient_history_mark,
+    RowSet::EstimateType estimate_type,
+    int64_t* bytes) const {
   DCHECK_NE(Timestamp::kInvalidTimestamp, ancient_history_mark);
   DCHECK(bytes);
   SharedDeltaStoreVector undos_newest_first;
@@ -513,12 +515,19 @@ Status DeltaTracker::EstimateBytesInPotentiallyAncientUndoDeltas(
 
   int64_t tmp_bytes = 0;
   for (const auto& undo : boost::adaptors::reverse(undos_newest_first)) {
-    // Short-circuit once we hit an initialized delta block with 'max_timestamp' > AHM.
-    if (undo->has_delta_stats() &&
-        undo->delta_stats().max_timestamp() >= ancient_history_mark) {
-      break;
+    if (undo->has_delta_stats()) {
+      if (undo->delta_stats().max_timestamp() >= ancient_history_mark) {
+        // Short-circuit once we hit an initialized delta block with
+        // 'max_timestamp' > AHM.
+        break;
+      }
+      tmp_bytes += undo->EstimateSize();
+    } else if (estimate_type == RowSet::OVERESTIMATE) {
+      // If delta stats are absent, add up the estimate to the total only when
+      // an overestimate is requested. There is no certainty whether the delta
+      // is actually ancient since no information is available in this context.
+      tmp_bytes += undo->EstimateSize();  // can be called without delta stats
     }
-    tmp_bytes += undo->EstimateSize(); // Can be called before Init().
   }
 
   *bytes = tmp_bytes;

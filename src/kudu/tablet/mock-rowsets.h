@@ -154,6 +154,7 @@ class MockRowSet : public RowSet {
   }
 
   Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                                     EstimateType /*estimate_type*/,
                                                      int64_t* /*bytes*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();

@@ -866,9 +866,12 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
   return std::min(1.0, perf_improv);
 }
 
-Status DiskRowSet::EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
-                                                               int64_t* bytes) {
-  return delta_tracker_->EstimateBytesInPotentiallyAncientUndoDeltas(ancient_history_mark, bytes);
+Status DiskRowSet::EstimateBytesInPotentiallyAncientUndoDeltas(
+    Timestamp ancient_history_mark,
+    EstimateType estimate_type,
+    int64_t* bytes) {
+  return delta_tracker_->EstimateBytesInPotentiallyAncientUndoDeltas(
+      ancient_history_mark, estimate_type, bytes);
 }
 
 Status DiskRowSet::IsDeletedAndFullyAncient(Timestamp ancient_history_mark,

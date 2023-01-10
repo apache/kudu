@@ -33,6 +33,7 @@
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/mutex.h"
@@ -67,8 +68,6 @@ class DeltaMemStore;
 class OperationResultPB;
 class RowSetMetadata;
 class RowSetMetadataUpdate;
-struct ProbeStats;
-struct RowIteratorOptions;
 
 typedef std::pair<BlockId, std::unique_ptr<DeltaStats>> DeltaBlockIdAndStats;
 
@@ -176,8 +175,10 @@ class DeltaTracker {
   Status CompactStores(const fs::IOContext* io_context, int start_idx, int end_idx);
 
   // See RowSet::EstimateBytesInPotentiallyAncientUndoDeltas().
-  Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
-                                                     int64_t* bytes) const;
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(
+      Timestamp ancient_history_mark,
+      RowSet::EstimateType estimate_type,
+      int64_t* bytes) const;
 
   // Returns whether all redo (DMS and newest redo delta file) are ancient
   // (i.e. that the redo with the highest timestamp is older than the AHM).

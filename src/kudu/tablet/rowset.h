@@ -110,6 +110,16 @@ class RowSet {
     MINOR_DELTA_COMPACTION
   };
 
+  // Estimate types used in EstimateBytesInPotentiallyAncientUndoDeltas().
+  // The information on the age of a delta might be absent in some contexts,
+  // and such a delta is treated differently depending on the requested estimate
+  // type: it's considered as ancient when an overestimate is appropriate,
+  // and not so when an underestimate is desired.
+  enum EstimateType {
+    OVERESTIMATE,
+    UNDERESTIMATE,
+  };
+
   // Check if a given row key is present in this rowset.
   // Sets *present and returns Status::OK, unless an error
   // occurs.
@@ -231,10 +241,13 @@ class RowSet {
                                           bool* deleted_and_ancient) = 0;
 
   // Estimate the number of bytes in ancient undo delta stores. This may be an
-  // overestimate. The argument 'ancient_history_mark' must be valid (it may
-  // not be equal to Timestamp::kInvalidTimestamp).
-  virtual Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
-                                                             int64_t* bytes) = 0;
+  // overestimate or an underestimate depending on 'estimate_type,. The argument
+  // 'ancient_history_mark' must be valid: it must not be equal to
+  // Timestamp::kInvalidTimestamp.
+  virtual Status EstimateBytesInPotentiallyAncientUndoDeltas(
+      Timestamp ancient_history_mark,
+      EstimateType estimate_type,
+      int64_t* bytes) = 0;
 
   // Initialize undo delta blocks until the given 'deadline' is passed, or
   // until all undo delta blocks with a max timestamp older than
@@ -476,8 +489,10 @@ class DuplicatingRowSet : public RowSet {
     return Status::OK();
   }
 
-  Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
-                                                     int64_t* bytes) override {
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(
+      Timestamp /*ancient_history_mark*/,
+      EstimateType /*estimate_type*/,
+      int64_t* bytes) override {
     DCHECK(bytes);
     *bytes = 0;
     return Status::OK();

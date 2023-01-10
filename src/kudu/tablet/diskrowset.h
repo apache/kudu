@@ -411,8 +411,10 @@ class DiskRowSet :
 
   double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const override;
 
-  Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
-                                                     int64_t* bytes) override;
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(
+      Timestamp ancient_history_mark,
+      EstimateType estimate_type,
+      int64_t* bytes) override;
 
   Status IsDeletedAndFullyAncient(Timestamp ancient_history_mark,
                                   bool* deleted_and_ancient) override;

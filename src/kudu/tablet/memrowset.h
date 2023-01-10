@@ -412,8 +412,10 @@ class MemRowSet : public RowSet,
     return 0;
   }
 
-  Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
-                                                     int64_t* bytes) override {
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(
+      Timestamp /*ancient_history_mark*/,
+      EstimateType /*estimate_type*/,
+      int64_t* bytes) override {
     DCHECK(bytes);
     *bytes = 0;
     return Status::OK();

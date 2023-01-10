@@ -2315,12 +2315,18 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
     const auto* drs = down_cast<const DiskRowSet*>(rs);
     const auto& dt = drs->delta_tracker();
 
+    // Using RowSet::UNDERESTIMATE as the estimate type in this context: it's
+    // necessary to be 100% sure the delta is ancient to apply the criterion
+    // based on the --rowset_compaction_ancient_delta_max_ratio threshold.
+    // Otherwise, the rowset merge compaction task might skip over rowsets that
+    // contain mostly recent deltas until they indeed become ancient and GC-ed
+    // by the UNDO delta GC maintenance task.
     int64_t size = 0;
     {
       Timestamp ancient_history_mark;
       if (Tablet::GetTabletAncientHistoryMark(&ancient_history_mark)) {
         WARN_NOT_OK(dt.EstimateBytesInPotentiallyAncientUndoDeltas(
-            ancient_history_mark, &size),
+            ancient_history_mark, RowSet::UNDERESTIMATE, &size),
             "could not estimate size of ancient UNDO deltas");
       }
     }
@@ -2841,8 +2847,11 @@ Status Tablet::EstimateBytesInPotentiallyAncientUndoDeltas(int64_t* bytes) {
   int64_t tablet_bytes = 0;
   for (const auto& rowset : comps->rowsets->all_rowsets()) {
     int64_t rowset_bytes;
-    RETURN_NOT_OK(rowset->EstimateBytesInPotentiallyAncientUndoDeltas(ancient_history_mark,
-                                                                      &rowset_bytes));
+    // Since the estimate is for "potentially ancient" deltas, the deltas
+    // with no information on their age should be included into the result:
+    // Row::OVERESTIMATE provides the desired type of estimate in this case.
+    RETURN_NOT_OK(rowset->EstimateBytesInPotentiallyAncientUndoDeltas(
+        ancient_history_mark, RowSet::OVERESTIMATE, &rowset_bytes));
     tablet_bytes += rowset_bytes;
   }
 
@@ -2868,14 +2877,16 @@ Status Tablet::InitAncientUndoDeltas(MonoDelta time_budget, int64_t* bytes_in_an
   RowSetVector rowsets = comps->rowsets->all_rowsets();
 
   // Estimate the size of the ancient undos in each rowset so that we can
-  // initialize them greedily.
+  // initialize them greedily. Using the RowSet::OVERESTIMATE estimate type here
+  // as in Tablet::EstimateBytesInPotentiallyAncientUndoDeltas() above
+  // for the same reason.
   vector<pair<size_t, int64_t>> rowset_ancient_undos_est_sizes; // index, bytes
   rowset_ancient_undos_est_sizes.reserve(rowsets.size());
   for (size_t i = 0; i < rowsets.size(); i++) {
     const auto& rowset = rowsets[i];
     int64_t bytes;
-    RETURN_NOT_OK(rowset->EstimateBytesInPotentiallyAncientUndoDeltas(ancient_history_mark,
-                                                                      &bytes));
+    RETURN_NOT_OK(rowset->EstimateBytesInPotentiallyAncientUndoDeltas(
+      ancient_history_mark, RowSet::OVERESTIMATE, &bytes));
     rowset_ancient_undos_est_sizes.emplace_back(i, bytes);
   }
 
