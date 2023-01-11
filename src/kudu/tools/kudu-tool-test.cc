@@ -4227,8 +4227,7 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
       tablet_id, tserver_dir, encryption_args),
       nullptr, &stderr, nullptr, nullptr);
   ASSERT_TRUE(s.IsRuntimeError());
-  ASSERT_STR_CONTAINS(stderr, "Not found: Could not load tablet metadata");
-  ASSERT_STR_CONTAINS(stderr, "No such file or directory");
+  ASSERT_STR_CONTAINS(stderr, "Not found: specified tablet id (pattern) does not exist");
 
   // Try to remove the same tablet replica again if --ignore_nonexistent
   // is specified. The tool should report success and output information on the
@@ -4238,11 +4237,7 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
                  "--fs_data_dirs=$1 --ignore_nonexistent $2",
                  tablet_id, tserver_dir, encryption_args),
       &stderr));
-  ASSERT_STR_CONTAINS(stderr, Substitute("ignoring error for tablet replica $0 "
-                                         "because of the --ignore_nonexistent flag",
-                                         tablet_id));
-  ASSERT_STR_CONTAINS(stderr, "Not found: Could not load tablet metadata");
-  ASSERT_STR_CONTAINS(stderr, "No such file or directory");
+  ASSERT_STR_CONTAINS(stderr, "ignoring some non-existent or mismatched tablet replicas");
 
   // Verify that the total size of the data on disk after 'delete' action
   // is less than before. Although this doesn't necessarily check
@@ -4303,6 +4298,157 @@ TEST_F(ToolTest, TestLocalReplicaDeleteMultiple) {
     ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
     ASSERT_EQ(0, tablet_replicas.size());
   }
+}
+
+// Test 'kudu local_replica delete' tool with --tables flag for deleting
+// tablets by table name.
+TEST_F(ToolTest, TestLocalReplicaDeleteByTableName) {
+  static constexpr int kNumTablets = 10;
+  constexpr const char* const kTableName = "test_table";
+  constexpr const char* const kDefaultTableName = "default_table";
+  NO_FATALS(StartMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(mini_cluster_->CreateClient(nullptr, &client));
+
+  // TestWorkLoad.Setup() creates a table named 'test_table' with 10 tablets.
+  TestWorkload workload(mini_cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.set_num_tablets(kNumTablets);
+  workload.Setup();
+
+  // TestWorkLoad.Setup() creates a default table with 1 tablet.
+  workload.set_table_name(kDefaultTableName);
+  workload.set_num_replicas(1);
+  workload.set_num_tablets(1);
+  workload.Setup();
+
+  MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
+  vector<string> kudu_tables;
+  ASSERT_OK(client->ListTables(&kudu_tables));
+  ASSERT_EQ(2, kudu_tables.size());
+  {
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+    ASSERT_EQ(1 + kNumTablets, tablet_replicas.size());
+  }
+
+  // Tablet server should be shutdown to release the lock and allow operating
+  // on its data.
+  ts->Shutdown();
+  const string& tserver_dir = ts->options()->fs_opts.wal_root;
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "local_replica delete * --fs_wal_dir=$0 --fs_data_dirs=$0 "
+      "--tables=$1 --clean_unsafe $2", tserver_dir, kTableName,
+      env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "")));
+
+  ASSERT_OK(ts->Start());
+  ASSERT_OK(ts->WaitStarted());
+  vector<scoped_refptr<TabletReplica>> tablet_replicas;
+  ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+  ASSERT_EQ(1, tablet_replicas.size());
+  ASSERT_EQ(kDefaultTableName, tablet_replicas[0]->tablet()->metadata()->table_name());
+}
+
+// Test 'kudu local_replica delete' tool with --tables flag for deleting
+// tablets by multiple table names.
+TEST_F(ToolTest, TestLocalReplicaDeleteByMultipleTableNames) {
+  static constexpr int kNumTables = 10;
+  static constexpr int kNumTablets = 10;
+  constexpr const char* const kTableNamePrefix = "test_table";
+  NO_FATALS(StartMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(mini_cluster_->CreateClient(nullptr, &client));
+
+  vector<string> table_names;
+  // Use TestWorkLoad.Setup() create multiple tables.
+  TestWorkload workload(mini_cluster_.get());
+  for (int i = 0; i < kNumTables; ++i) {
+    string table_name = Substitute("$0_$1", kTableNamePrefix, i);
+    workload.set_table_name(table_name);
+    workload.set_num_replicas(1);
+    workload.set_num_tablets(kNumTablets);
+    workload.Setup();
+    table_names.emplace_back(table_name);
+  }
+
+  MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
+  vector<string> kudu_tables;
+  ASSERT_OK(client->ListTables(&kudu_tables));
+  ASSERT_EQ(kNumTables, kudu_tables.size());
+  {
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+    ASSERT_EQ(kNumTables * kNumTablets, tablet_replicas.size());
+  }
+
+  // Tablet server should be shutdown to release the lock and allow operating
+  // on its data.
+  ts->Shutdown();
+  const string& tserver_dir = ts->options()->fs_opts.wal_root;
+  const string table_names_csv_str = JoinStrings(table_names, ",");
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "local_replica delete * --fs_wal_dir=$0 --fs_data_dirs=$0 "
+      "--tables=$1 --clean_unsafe $2", tserver_dir, table_names_csv_str,
+      env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "")));
+
+  ASSERT_OK(ts->Start());
+  ASSERT_OK(ts->WaitStarted());
+  vector<scoped_refptr<TabletReplica>> tablet_replicas;
+  ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+  ASSERT_EQ(0, tablet_replicas.size());
+}
+
+// Test 'kudu local_replica delete' tool with non-exist tablet id pattern.
+TEST_F(ToolTest, TestLocalReplicaDeleteWithNonExistentTabletIdPattern) {
+  constexpr const char* const kTableName = "test_table";
+  static constexpr int kNumTablets = 10;
+  NO_FATALS(StartMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(mini_cluster_->CreateClient(nullptr, &client));
+
+  // TestWorkLoad.Setup() creates a table.
+  TestWorkload workload(mini_cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.set_num_tablets(kNumTablets);
+  workload.Setup();
+
+  MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
+  vector<string> kudu_tables;
+  ASSERT_OK(client->ListTables(&kudu_tables));
+  ASSERT_EQ(1, kudu_tables.size());
+  {
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+    ASSERT_EQ(kNumTablets, tablet_replicas.size());
+  }
+
+  // Tablet server should be shutdown to release the lock and allow operating
+  // on its data.
+  ts->Shutdown();
+  const string& tserver_dir = ts->options()->fs_opts.wal_root;
+  // Try to remove tablet replicas by a non-exist tablet id pattern.
+  string stderr;
+  Status s = RunActionStderrString(
+      Substitute("local_replica delete nonexist* --fs_wal_dir=$0 --fs_data_dirs=$0 "
+                 "--clean_unsafe $1",
+                 tserver_dir,
+                 env_->IsEncryptionEnabled() ? GetEncryptionArgs() : ""),
+      &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr, "Not found: specified tablet id (pattern) does not exist");
+
+  // Try to remove tablet replicas with a non-exist tablet id again if --ignore_nonexistent
+  // is specified. The tool should report success and output information on the
+  // error ignored.
+  ASSERT_OK(RunActionStderrString(
+      Substitute("local_replica delete nonexist* --clean_unsafe --fs_wal_dir=$0 "
+                 "--fs_data_dirs=$0 --ignore_nonexistent $1",
+                 tserver_dir,
+                 env_->IsEncryptionEnabled() ? GetEncryptionArgs() : ""),
+      &stderr));
+  ASSERT_STR_CONTAINS(stderr, "ignoring some non-existent or mismatched tablet replicas");
 }
 
 // Test 'kudu local_replica delete' tool for tombstoning the tablet.

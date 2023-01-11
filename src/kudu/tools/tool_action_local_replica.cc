@@ -158,6 +158,7 @@ DEFINE_string(dst_fs_metadata_dir, "",
 
 DECLARE_int32(num_threads);
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
+DECLARE_string(tables);
 
 using kudu::consensus::ConsensusMetadata;
 using kudu::consensus::ConsensusMetadataManager;
@@ -227,6 +228,11 @@ constexpr const char* const kTermArg = "term";
 constexpr const char* const kTabletIdGlobArg = "tablet_id_pattern";
 constexpr const char* const kTabletIdGlobArgDesc = "Tablet identifier pattern. "
     "This argument supports basic glob syntax: '*' matches 0 or more wildcard "
+    "characters.";
+
+constexpr const char* const kTabletIdsGlobArg = "tablet_id_patterns";
+constexpr const char* const kTabletIdsGlobArgDesc = "Comma-separated list of Tablet identifier "
+    "patterns. This argument supports basic glob syntax: '*' matches 0 or more wildcard "
     "characters.";
 
 constexpr const char* const kRaftPeersArg = "peers";
@@ -739,21 +745,35 @@ Status DeleteLocalReplica(const string& tablet_id,
   }
 
   scoped_refptr<TabletMetadata> meta;
-  const auto s = TabletMetadata::Load(fs_manager, tablet_id, &meta).AndThen([&]{
+  return TabletMetadata::Load(fs_manager, tablet_id, &meta).AndThen([&]{
     return TSTabletManager::DeleteTabletData(
         meta, cmeta_manager, state, last_logged_opid);
   });
-  if (FLAGS_ignore_nonexistent && s.IsNotFound()) {
-    LOG(INFO) << Substitute("ignoring error for tablet replica $0 because "
-                            "of the --ignore_nonexistent flag: $1",
-                            tablet_id, s.ToString());
+}
+
+Status GetTabletIdsByTableName(FsManager* fs_manager, vector<string>* tablet_ids) {
+  tablet_ids->clear();
+  vector<string> table_filters = Split(FLAGS_tables, ",", strings::SkipEmpty());
+  vector<string> tablets;
+  RETURN_NOT_OK(fs_manager->ListTabletIds(&tablets));
+  if (table_filters.empty()) {
+    tablet_ids->swap(tablets);
     return Status::OK();
   }
-  return s;
+  tablet_ids->reserve(tablets.size());
+  for (const string& tablet_id : tablets) {
+    scoped_refptr<TabletMetadata> tablet_metadata;
+    RETURN_NOT_OK(TabletMetadata::Load(fs_manager, tablet_id, &tablet_metadata));
+    const TabletMetadata& tablet = *tablet_metadata.get();
+    if (MatchesAnyPattern(table_filters, tablet.table_name())) {
+      tablet_ids->emplace_back(tablet_id);
+    }
+  }
+  return Status::OK();
 }
 
 Status DeleteLocalReplicas(const RunnerContext& context) {
-  const string& tablet_ids_str = FindOrDie(context.required_args, kTabletIdsCsvArg);
+  const string& tablet_ids_str = FindOrDie(context.required_args, kTabletIdsGlobArg);
   vector<string> tablet_ids = strings::Split(tablet_ids_str, ",", strings::SkipEmpty());
   if (tablet_ids.empty()) {
     return Status::InvalidArgument("no tablet identifiers provided");
@@ -767,15 +787,35 @@ Status DeleteLocalReplicas(const RunnerContext& context) {
     LOG(INFO) << Substitute("removed $0 duplicate tablet identifiers",
                             orig_count - uniq_count);
   }
-  LOG(INFO) << Substitute("deleting $0 tablets replicas", uniq_count);
 
   FsManager fs_manager(Env::Default(), {});
   RETURN_NOT_OK(fs_manager.Open());
-  scoped_refptr<ConsensusMetadataManager> cmeta_manager(
-      new ConsensusMetadataManager(&fs_manager));
-  for (const auto& tablet_id : tablet_ids) {
-    RETURN_NOT_OK(DeleteLocalReplica(tablet_id, &fs_manager, cmeta_manager));
+
+  vector<string> tablets;
+  RETURN_NOT_OK(GetTabletIdsByTableName(&fs_manager, &tablets));
+
+  int num_tablets_deleted = 0;
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
+  for (const auto& tablet_id_pattern : tablet_ids) {
+    bool tablet_id_pattern_exists = false;
+    for (const auto& tablet_id : tablets) {
+      if (MatchPattern(tablet_id, tablet_id_pattern)) {
+        tablet_id_pattern_exists = true;
+        RETURN_NOT_OK(DeleteLocalReplica(tablet_id, &fs_manager, cmeta_manager));
+        num_tablets_deleted++;
+      }
+    }
+    if (!FLAGS_ignore_nonexistent && !tablet_id_pattern_exists) {
+      return Status::NotFound(
+          "specified tablet id (pattern) does not exist or does not match "
+          "table name patterns specified in --tables flag.");
+    }
+    if (!tablet_id_pattern_exists) {
+      LOG(INFO) << "ignoring some non-existent or mismatched tablet replicas because of the "
+                   "--ignore_nonexistent flag.";
+    }
   }
+  LOG(INFO) << Substitute("deleted $0 tablet replicas.", num_tablets_deleted);
   return Status::OK();
 }
 
@@ -1358,12 +1398,13 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       ActionBuilder("delete", &DeleteLocalReplicas)
       .Description("Delete tablet replicas from the local filesystem. "
           "By default, leaves a tombstone record upon replica removal.")
-      .AddRequiredParameter({ kTabletIdsCsvArg, kTabletIdsCsvArgDesc })
+      .AddRequiredParameter({ kTabletIdsGlobArg, kTabletIdsGlobArgDesc })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("clean_unsafe")
       .AddOptionalParameter("ignore_nonexistent")
+      .AddOptionalParameter("tables")
       .Build();
 
   unique_ptr<Action> data_size =
