@@ -112,6 +112,10 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
     switch (s.step_type) {
       case AlterTableRequestPB::ADD_COLUMN:
       {
+        if (s.spec->data_->name == Schema::GetAutoIncrementingColumnName()) {
+          return Status::InvalidArgument("can't add a column with reserved name",
+                                         s.spec->data_->name);
+        }
         KuduColumnSchema col;
         RETURN_NOT_OK(s.spec->ToColumnSchema(&col));
         ColumnSchemaToPB(*col.col_,
@@ -121,6 +125,9 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
       }
       case AlterTableRequestPB::DROP_COLUMN:
       {
+        if (s.spec->data_->name == Schema::GetAutoIncrementingColumnName()) {
+          return Status::InvalidArgument("can't drop column", s.spec->data_->name);
+        }
         pb_step->mutable_drop_column()->set_name(s.spec->data_->name);
         break;
       }
@@ -143,6 +150,22 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
           return Status::InvalidArgument("no alter operation specified",
                                          s.spec->data_->name);
         }
+        if (s.spec->data_->name == Schema::GetAutoIncrementingColumnName()) {
+          if (s.spec->data_->rename_to) {
+            return Status::InvalidArgument("can't change name for column",
+                                           Schema::GetAutoIncrementingColumnName());
+          } else if (s.spec->data_->remove_default) {
+            return Status::InvalidArgument("can't change remove default for column",
+                                           Schema::GetAutoIncrementingColumnName());
+          } else if (s.spec->data_->default_val) {
+            return Status::InvalidArgument("can't change default value for column",
+                                           Schema::GetAutoIncrementingColumnName());
+          } else if (s.spec->data_->immutable) {
+            return Status::InvalidArgument("can't change immutability for column",
+                                           Schema::GetAutoIncrementingColumnName());
+          }
+        }
+
         // If the alter is solely a column rename, fall back to using
         // RENAME_COLUMN, for backwards compatibility.
         // TODO(wdb) Change this when compat can be broken.

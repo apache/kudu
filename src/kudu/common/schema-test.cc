@@ -295,7 +295,7 @@ TEST_F(TestSchema, TestColumnSchemaEquals) {
   ColumnSchema col1("key", STRING);
   ColumnSchema col2("key1", STRING);
   ColumnSchema col3("key", STRING, true);
-  ColumnSchema col4("key", STRING, true, false, &default_str, &default_str);
+  ColumnSchema col4("key", STRING, true, false, false, &default_str, &default_str);
 
   ASSERT_TRUE(col1.Equals(col1));
   ASSERT_FALSE(col1.Equals(col2, ColumnSchema::COMPARE_NAME));

@@ -40,10 +40,10 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
+using kudu::client::internal::ErrorCollector;
 using std::string;
 using std::vector;
 using strings::Substitute;
-using kudu::client::internal::ErrorCollector;
 
 namespace kudu {
 namespace client {
@@ -51,7 +51,7 @@ namespace client {
 TEST(ClientUnitTest, TestSchemaBuilder_EmptySchema) {
   KuduSchema s;
   KuduSchemaBuilder b;
-  ASSERT_EQ("Invalid argument: no primary key specified",
+  ASSERT_EQ("Invalid argument: no primary key or non-unique primary key specified",
             b.Build(&s).ToString());
 }
 
@@ -60,7 +60,7 @@ TEST(ClientUnitTest, TestSchemaBuilder_KeyNotSpecified) {
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
-  ASSERT_EQ("Invalid argument: no primary key specified",
+  ASSERT_EQ("Invalid argument: no primary key or non-unique primary key specified",
             b.Build(&s).ToString());
 }
 
@@ -70,16 +70,43 @@ TEST(ClientUnitTest, TestSchemaBuilder_DuplicateColumn) {
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
   b.AddColumn("x")->Type(KuduColumnSchema::INT32);
   b.AddColumn("x")->Type(KuduColumnSchema::INT32);
-  ASSERT_EQ("Invalid argument: Duplicate column name: x",
-            b.Build(&s).ToString());
+  ASSERT_EQ("Invalid argument: Duplicate column name: x", b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_KeyAndNonUniqueKeyOnSameColumn) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey()->NonUniquePrimaryKey();
+  ASSERT_OK(b.Build(&s));
+  ASSERT_EQ(2, s.num_columns());
+  ASSERT_EQ(1, s.GetAutoIncrementingColumnIndex());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_NonUniqueKeyAndKeyOnSameColumn) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey()->PrimaryKey();
+  ASSERT_OK(b.Build(&s));
+  ASSERT_EQ(1, s.num_columns());
+  ASSERT_EQ(-1, s.GetAutoIncrementingColumnIndex());
 }
 
 TEST(ClientUnitTest, TestSchemaBuilder_KeyNotFirstColumn) {
   KuduSchema s;
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32);
-  b.AddColumn("x")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  b.AddColumn("x")->Type(KuduColumnSchema::INT32);
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32);
+  ASSERT_EQ("Invalid argument: primary key column must be the first column",
+            b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_NonUniqueKeyNotFirstColumn) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32);
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32);
   ASSERT_EQ("Invalid argument: primary key column must be the first column",
             b.Build(&s).ToString());
 }
@@ -93,15 +120,70 @@ TEST(ClientUnitTest, TestSchemaBuilder_TwoPrimaryKeys) {
             b.Build(&s).ToString());
 }
 
-TEST(ClientUnitTest, TestSchemaBuilder_PrimaryKeyOnColumnAndSet) {
+TEST(ClientUnitTest, TestSchemaBuilder_PrimaryKeyAndNonUniquePrimaryKey) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->PrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NonUniquePrimaryKey();
+  ASSERT_EQ("Invalid argument: multiple columns specified for primary key: a, b",
+            b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_TwoNonUniquePrimaryKeys) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NonUniquePrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NonUniquePrimaryKey();
+  ASSERT_EQ("Invalid argument: multiple columns specified for primary key: a, b",
+            b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_PrimaryKeyOnColumnAndSetPrimaryKey) {
   KuduSchema s;
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->PrimaryKey();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32);
-  b.SetPrimaryKey({ "a", "b" });
-  ASSERT_EQ("Invalid argument: primary key specified by both "
-            "SetPrimaryKey() and on a specific column: a",
-            b.Build(&s).ToString());
+  b.SetPrimaryKey({"a", "b"});
+  ASSERT_EQ(
+      "Invalid argument: primary key specified by both "
+      "SetPrimaryKey() and on a specific column: a",
+      b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_PrimaryKeyOnColumnAndSetNonUniquePrimaryKey) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->PrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32);
+  b.SetNonUniquePrimaryKey({"a", "b"});
+  ASSERT_EQ(
+      "Invalid argument: primary key specified by both "
+      "SetNonUniquePrimaryKey() and on a specific column: a",
+      b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_NonUniquePrimaryKeyOnColumnAndSetPrimaryKey) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NonUniquePrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32);
+  b.SetPrimaryKey({"a", "b"});
+  ASSERT_EQ(
+      "Invalid argument: primary key specified by both "
+      "SetPrimaryKey() and on a specific column: a",
+      b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_NonUniquePrimaryKeyOnColumnAndSetNonUniquePrimaryKey) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NonUniquePrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32);
+  b.SetNonUniquePrimaryKey({"a", "b"});
+  ASSERT_EQ(
+      "Invalid argument: primary key specified by both "
+      "SetNonUniquePrimaryKey() and on a specific column: a",
+      b.Build(&s).ToString());
 }
 
 TEST(ClientUnitTest, TestSchemaBuilder_SingleKey_GoodSchema) {
@@ -110,7 +192,18 @@ TEST(ClientUnitTest, TestSchemaBuilder_SingleKey_GoodSchema) {
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32);
   b.AddColumn("c")->Type(KuduColumnSchema::INT32)->NotNull();
-  ASSERT_EQ("OK", b.Build(&s).ToString());
+  ASSERT_OK(b.Build(&s));
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_SingleNonUniqueKey_GoodSchema) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32);
+  b.AddColumn("c")->Type(KuduColumnSchema::INT32)->NotNull();
+  ASSERT_OK(b.Build(&s));
+  ASSERT_EQ(4, s.num_columns());
+  ASSERT_EQ(1, s.GetAutoIncrementingColumnIndex());
 }
 
 TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_GoodSchema) {
@@ -118,32 +211,117 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_GoodSchema) {
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
-  b.SetPrimaryKey({ "a", "b" });
-  ASSERT_EQ("OK", b.Build(&s).ToString());
+  b.SetPrimaryKey({"a", "b"});
+  ASSERT_OK(b.Build(&s));
 
   vector<int> key_columns;
   s.GetPrimaryKeyColumnIndexes(&key_columns);
-  ASSERT_EQ(vector<int>({ 0, 1 }), key_columns);
+  ASSERT_EQ(vector<int>({0, 1}), key_columns);
+  ASSERT_EQ(-1, s.GetAutoIncrementingColumnIndex());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_CompoundNonUniqueKey_GoodSchema) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.SetNonUniquePrimaryKey({"a", "b"});
+  ASSERT_OK(b.Build(&s));
+
+  vector<int> key_columns;
+  s.GetPrimaryKeyColumnIndexes(&key_columns);
+  ASSERT_EQ(vector<int>({0, 1, 2}), key_columns);
+  ASSERT_EQ(2, s.GetAutoIncrementingColumnIndex());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_UniquePrimaryAndNonUniquePrimaryCompound) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.SetPrimaryKey({"a", "b"});
+  b.SetNonUniquePrimaryKey({"a", "b"});
+  ASSERT_OK(b.Build(&s));
+
+  vector<int> key_columns;
+  s.GetPrimaryKeyColumnIndexes(&key_columns);
+  ASSERT_EQ(vector<int>({0, 1, 2}), key_columns);
+  ASSERT_EQ(2, s.GetAutoIncrementingColumnIndex());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_NonUniqueAndUniquePrimaryCompound) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.SetNonUniquePrimaryKey({"a", "b"});
+  b.SetPrimaryKey({"a", "b"});
+  ASSERT_OK(b.Build(&s));
+  ASSERT_EQ(-1, s.GetAutoIncrementingColumnIndex());
+
+  vector<int> key_columns;
+  s.GetPrimaryKeyColumnIndexes(&key_columns);
+  ASSERT_EQ(vector<int>({0, 1}), key_columns);
+  ASSERT_EQ(-1, s.GetAutoIncrementingColumnIndex());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_KeyColumnWithAutoIncrementingReservedName) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn(Schema::GetAutoIncrementingColumnName())
+      ->Type(KuduColumnSchema::INT64)
+      ->NotNull()
+      ->PrimaryKey();
+  ASSERT_EQ(Substitute("Invalid argument: $0 is a reserved column name",
+                       Schema::GetAutoIncrementingColumnName()),
+            b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_NonUniqueKeyColumnWithAutoIncrementingReservedName) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn(Schema::GetAutoIncrementingColumnName())
+      ->Type(KuduColumnSchema::INT64)
+      ->NotNull()
+      ->NonUniquePrimaryKey();
+  ASSERT_EQ(Substitute("Invalid argument: $0 is a reserved column name",
+                       Schema::GetAutoIncrementingColumnName()),
+            b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_ColumnWithAutoIncrementingReservedName) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn(Schema::GetAutoIncrementingColumnName())
+      ->Type(KuduColumnSchema::INT64)
+      ->NotNull();
+  ASSERT_EQ(Substitute("Invalid argument: $0 is a reserved column name",
+                       Schema::GetAutoIncrementingColumnName()),
+            b.Build(&s).ToString());
 }
 
 TEST(ClientUnitTest, TestSchemaBuilder_DefaultValues) {
   KuduSchema s;
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull()
-    ->Default(KuduValue::FromInt(12345));
-  ASSERT_EQ("OK", b.Build(&s).ToString());
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull()->Default(KuduValue::FromInt(12345));
+  ASSERT_OK(b.Build(&s));
 }
 
 TEST(ClientUnitTest, TestSchemaBuilder_DefaultValueString) {
   KuduSchema s;
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  b.AddColumn("b")->Type(KuduColumnSchema::STRING)->NotNull()
-    ->Default(KuduValue::CopyString("abc"));
-  b.AddColumn("c")->Type(KuduColumnSchema::BINARY)->NotNull()
-    ->Default(KuduValue::CopyString("def"));
-  ASSERT_EQ("OK", b.Build(&s).ToString());
+  b.AddColumn("b")
+      ->Type(KuduColumnSchema::STRING)
+      ->NotNull()
+      ->Default(KuduValue::CopyString("abc"));
+  b.AddColumn("c")
+      ->Type(KuduColumnSchema::BINARY)
+      ->NotNull()
+      ->Default(KuduValue::CopyString("def"));
+  ASSERT_OK(b.Build(&s));
 }
 
 TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_KeyNotFirst) {
@@ -152,9 +330,21 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_KeyNotFirst) {
   b.AddColumn("x")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
-  b.SetPrimaryKey({ "a", "b" });
-  ASSERT_EQ("Invalid argument: primary key columns must be listed "
-            "first in the schema: a",
+  b.SetPrimaryKey({"a", "b"});
+  ASSERT_EQ(
+      "Invalid argument: primary key columns must be listed "
+      "first in the schema: a",
+      b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_CompoundNonUniqueKey_NonUniqueKeyNotFirst) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("x")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.SetNonUniquePrimaryKey({"a", "b"});
+  ASSERT_EQ("Invalid argument: primary key columns must be listed first in the schema: a",
             b.Build(&s).ToString());
 }
 
@@ -163,9 +353,17 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_BadColumnName) {
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
-  b.SetPrimaryKey({ "foo" });
-  ASSERT_EQ("Invalid argument: primary key column not defined: foo",
-            b.Build(&s).ToString());
+  b.SetPrimaryKey({"foo"});
+  ASSERT_EQ("Invalid argument: primary key column not defined: foo", b.Build(&s).ToString());
+}
+
+TEST(ClientUnitTest, TestSchemaBuilder_CompoundNonUniqueKey_BadColumnName) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.SetNonUniquePrimaryKey({"foo"});
+  ASSERT_EQ("Invalid argument: primary key column not defined: foo", b.Build(&s).ToString());
 }
 
 TEST(ClientUnitTest, TestDisableSslFailsIfNotInitialized) {
@@ -239,57 +437,87 @@ TEST(ClientUnitTest, TestErrorCollector) {
   }
 }
 
-TEST(KuduSchemaTest, TestToString) {
+TEST(KuduSchemaTest, TestToString_OneUniquePrimaryKey) {
   // Test on unique PK.
-  KuduSchema s1;
-  KuduSchemaBuilder b1;
-  b1.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  b1.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
-  b1.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
-  b1.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
-    ->Default(KuduValue::FromInt(12345));
-  ASSERT_OK(b1.Build(&s1));
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
+  b.AddColumn("non_null_with_default")
+      ->Type(KuduColumnSchema::INT32)
+      ->NotNull()
+      ->Default(KuduValue::FromInt(12345));
+  ASSERT_OK(b.Build(&s));
 
-  string schema_str_1 = "(\n"
-                        "    key INT32 NOT NULL,\n"
-                        "    int_val INT32 NOT NULL,\n"
-                        "    string_val STRING NULLABLE,\n"
-                        "    non_null_with_default INT32 NOT NULL,\n"
-                        "    PRIMARY KEY (key)\n"
-                        ")";
-  EXPECT_EQ(schema_str_1, s1.ToString());
+  string schema_str =
+      "(\n"
+      "    key INT32 NOT NULL,\n"
+      "    int_val INT32 NOT NULL,\n"
+      "    string_val STRING NULLABLE,\n"
+      "    non_null_with_default INT32 NOT NULL,\n"
+      "    PRIMARY KEY (key)\n"
+      ")";
+  EXPECT_EQ(schema_str, s.ToString());
+}
 
+TEST(KuduSchemaTest, TestToString_OneNonUniquePrimaryKey) {
+  // Test on non-unique PK.
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+  ASSERT_OK(b.Build(&s));
+
+  string schema_str = Substitute(
+      "(\n"
+      "    key INT32 NOT NULL,\n"
+      "    $0 INT64 NOT NULL,\n"
+      "    int_val INT32 NOT NULL,\n"
+      "    PRIMARY KEY (key, $0)\n"
+      ")",
+      KuduSchema::GetAutoIncrementingColumnName());
+  EXPECT_EQ(schema_str, s.ToString());
+}
+
+TEST(KuduSchemaTest, TestToString_EmptySchem) {
   // Test empty schema.
-  KuduSchema s2;
-  EXPECT_EQ("()", s2.ToString());
+  KuduSchema s;
+  EXPECT_EQ("()", s.ToString());
+}
 
+TEST(KuduSchemaTest, TestToString_CompositePrimaryKey) {
   // Test on composite PK.
   // Create a different schema with a multi-column PK.
-  KuduSchemaBuilder b2;
-  b2.AddColumn("k1")->Type(KuduColumnSchema::INT32)->NotNull();
-  b2.AddColumn("k2")->Type(KuduColumnSchema::UNIXTIME_MICROS)->NotNull();
-  b2.AddColumn("k3")->Type(KuduColumnSchema::INT8)->NotNull();
-  b2.AddColumn("date_val")->Type(KuduColumnSchema::DATE)->NotNull();
-  b2.AddColumn("dec_val")->Type(KuduColumnSchema::DECIMAL)->Nullable()->Precision(9)->Scale(2);
-  b2.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
-  b2.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
-  b2.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
-    ->Default(KuduValue::FromInt(12345));
-  b2.SetPrimaryKey({"k1", "k2", "k3"});
-  ASSERT_OK(b2.Build(&s2));
+  KuduSchemaBuilder b;
+  KuduSchema s;
+  b.AddColumn("k1")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("k2")->Type(KuduColumnSchema::UNIXTIME_MICROS)->NotNull();
+  b.AddColumn("k3")->Type(KuduColumnSchema::INT8)->NotNull();
+  b.AddColumn("date_val")->Type(KuduColumnSchema::DATE)->NotNull();
+  b.AddColumn("dec_val")->Type(KuduColumnSchema::DECIMAL)->Nullable()->Precision(9)->Scale(2);
+  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
+  b.AddColumn("non_null_with_default")
+      ->Type(KuduColumnSchema::INT32)
+      ->NotNull()
+      ->Default(KuduValue::FromInt(12345));
+  b.SetPrimaryKey({"k1", "k2", "k3"});
+  ASSERT_OK(b.Build(&s));
 
-  string schema_str_2 = "(\n"
-                        "    k1 INT32 NOT NULL,\n"
-                        "    k2 UNIXTIME_MICROS NOT NULL,\n"
-                        "    k3 INT8 NOT NULL,\n"
-                        "    date_val DATE NOT NULL,\n"
-                        "    dec_val DECIMAL(9, 2) NULLABLE,\n"
-                        "    int_val INT32 NOT NULL,\n"
-                        "    string_val STRING NULLABLE,\n"
-                        "    non_null_with_default INT32 NOT NULL,\n"
-                        "    PRIMARY KEY (k1, k2, k3)\n"
-                        ")";
-  EXPECT_EQ(schema_str_2, s2.ToString());
+  string schema_str =
+      "(\n"
+      "    k1 INT32 NOT NULL,\n"
+      "    k2 UNIXTIME_MICROS NOT NULL,\n"
+      "    k3 INT8 NOT NULL,\n"
+      "    date_val DATE NOT NULL,\n"
+      "    dec_val DECIMAL(9, 2) NULLABLE,\n"
+      "    int_val INT32 NOT NULL,\n"
+      "    string_val STRING NULLABLE,\n"
+      "    non_null_with_default INT32 NOT NULL,\n"
+      "    PRIMARY KEY (k1, k2, k3)\n"
+      ")";
+  EXPECT_EQ(schema_str, s.ToString());
 }
 
 TEST(KuduSchemaTest, TestEquals) {

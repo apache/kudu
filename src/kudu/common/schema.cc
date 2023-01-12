@@ -290,31 +290,12 @@ Status Schema::Reset(vector<ColumnSchema> cols,
                                  cols_[i].name()));
     }
     if (cols_[i].is_auto_incrementing()) {
-      if (auto_incrementing_col_idx != kColumnNotFound) {
-        return Status::InvalidArgument(
-            "Bad schema", "Schemas can have at most one auto-incrementing column");
-      }
-      if (cols_[i].type_info()->type() != INT64) {
-        return Status::InvalidArgument(
-            "Bad schema", "auto-incrementing column should be of type int64");
-      }
-      if (cols_[i].is_immutable()) {
-        return Status::InvalidArgument(
-            "Bad schema", "auto-incrementing column should be immutable");
-      }
+      // Schemas can have at most one auto-incrementing column
+      DCHECK_EQ(auto_incrementing_col_idx, kColumnNotFound);
+      DCHECK_EQ(cols_[i].type_info()->type(), INT64);
+      DCHECK(!cols_[i].is_nullable());
+      DCHECK(!cols_[i].is_immutable());
       auto_incrementing_col_idx = i;
-    }
-  }
-
-  // TODO:(achennaka) Remove the below section once auto_increment cols are key cols
-  for (int i = 0; i < cols_.size(); i++) {
-    if (cols_[i].is_auto_incrementing()) {
-      auto_incrementing_col_idx = i;
-      if (cols_[i].type_info()->type() != INT64) {
-        return Status::InvalidArgument(
-            "Bad schema", "auto-incrementing column should be of type int64");
-      }
-      break;
     }
   }
 
@@ -328,6 +309,11 @@ Status Schema::Reset(vector<ColumnSchema> cols,
   for (const ColumnSchema& col : cols_) {
     if (col.name().empty()) {
       return Status::InvalidArgument("column names must be non-empty");
+    }
+    if (col.name() == Schema::GetAutoIncrementingColumnName() &&
+        !col.is_auto_incrementing()) {
+      return Status::InvalidArgument(Substitute(
+          "$0 is a reserved column name", Schema::GetAutoIncrementingColumnName()));
     }
     // The map uses the 'name' string from within the ColumnSchema object.
     if (!InsertIfNotPresent(&name_to_index_, col.name(), i++)) {
@@ -659,17 +645,13 @@ Status SchemaBuilder::AddColumn(const std::string& name,
   }
 
   if (is_auto_incrementing) {
-    if (is_nullable || is_immutable) {
-      return Status::InvalidArgument("auto-incrementing column cannot be nullable or immutable");
-    }
-    if (read_default != nullptr || write_default != nullptr) {
-      return Status::InvalidArgument("auto-incrementing column cannot have read/write "
-                                     "defaults set");
-    }
-    if (type != kudu::INT64) {
-      return Status::InvalidArgument("auto-incrementing column should be of type INT64");
-    }
+    DCHECK_EQ(type, INT64);
+    DCHECK(!is_nullable);
+    DCHECK(!is_immutable);
+    DCHECK_EQ(read_default, (void *)nullptr);
+    DCHECK_EQ(write_default, (void *)nullptr);
   }
+
   return AddColumn(ColumnSchema(name, type, is_nullable, is_immutable,
                                 is_auto_incrementing, read_default, write_default), false);
 }

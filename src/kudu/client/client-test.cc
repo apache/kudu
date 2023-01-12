@@ -9856,11 +9856,7 @@ class ClientTestAutoIncrementingColumn : public ClientTest {
 TEST_F(ClientTestAutoIncrementingColumn, ReadAndWrite) {
   const string kTableName = "table_with_auto_incrementing_column";
   KuduSchemaBuilder b;
-  // TODO(Marton): Once the NonUnique column Spec is in place
-  // update the column specs below to match the implementation
-  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
-      ->NotNull()->AutoIncrementing();
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
   ASSERT_OK(b.Build(&schema_));
 
   // Create a table with a couple of range partitions
@@ -9920,11 +9916,7 @@ TEST_F(ClientTestAutoIncrementingColumn, ReadAndWrite) {
 TEST_F(ClientTestAutoIncrementingColumn, ConcurrentWrites) {
   const string kTableName = "concurrent_writes_auto_incrementing_column";
   KuduSchemaBuilder b;
-  // TODO(Marton): Once the NonUnique column Spec is in place
-  // update the column specs below to match the implementation
-  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
-      ->NotNull()->AutoIncrementing();
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
   ASSERT_OK(b.Build(&schema_));
 
   static constexpr int num_clients = 8;
@@ -9995,48 +9987,144 @@ TEST_F(ClientTestAutoIncrementingColumn, ConcurrentWrites) {
   }
 }
 
-TEST_F(ClientTestAutoIncrementingColumn, Negatives) {
-  // TODO(Marton): Once the NonUnique column Spec is in place
-  // update the column specs below to match the implementation
+TEST_F(ClientTestAutoIncrementingColumn, AlterOperationPositives) {
+  const string kTableName = "alter_operation_positives_auto_incrementing_column";
+  KuduSchemaBuilder b;
+  // Create a schema with non-unique PK, such that auto incrementing col is present.
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  ASSERT_OK(b.Build(&schema_));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema_)
+            .add_hash_partitions({"key"}, 2)
+            .num_replicas(3)
+            .Create());
+
   {
-    KuduSchemaBuilder b;
-    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-    b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT32)
-        ->NotNull()->AutoIncrementing();
-    Status s = b.Build(&schema_);
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_EQ("Invalid argument: auto-incrementing column should be of type INT64", s.ToString());
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AlterColumn(Schema::GetAutoIncrementingColumnName())->BlockSize(1);
+    ASSERT_OK(alterer->Alter());
   }
 
   {
-    KuduSchemaBuilder b;
-    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-    b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
-        ->Nullable()->AutoIncrementing();
-    Status s = b.Build(&schema_);
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_EQ("Invalid argument: auto-incrementing column should not be nullable", s.ToString());
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AlterColumn(Schema::GetAutoIncrementingColumnName())
+        ->Encoding(KuduColumnStorageAttributes::PLAIN_ENCODING);
+    ASSERT_OK(alterer->Alter());
   }
 
   {
-    KuduSchemaBuilder b;
-    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-    b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
-        ->NotNull()->Default(KuduValue::FromInt(20))->AutoIncrementing();
-    Status s = b.Build(&schema_);
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_EQ("Invalid argument: auto-incrementing column cannot have a "
-                            "default value", s.ToString());
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AlterColumn(Schema::GetAutoIncrementingColumnName())
+        ->Compression(KuduColumnStorageAttributes::NO_COMPRESSION);
+    ASSERT_OK(alterer->Alter());
   }
 
   {
-    KuduSchemaBuilder b;
-    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-    b.AddColumn("auto_incrementing_id")->Type(KuduColumnSchema::INT64)
-        ->NotNull()->Immutable()->AutoIncrementing();
-    Status s = b.Build(&schema_);
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_EQ("Invalid argument: auto-incrementing column should not be immutable", s.ToString());
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AlterColumn(Schema::GetAutoIncrementingColumnName())->Comment("new_comment");
+    ASSERT_OK(alterer->Alter());
+  }
+}
+
+TEST_F(ClientTestAutoIncrementingColumn, AlterOperationNegatives) {
+  const string kTableName = "alter_operation_negatives_auto_incrementing_column";
+  KuduSchemaBuilder b;
+  // Create a schema with non-unique PK, such that auto incrementing col is present.
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  ASSERT_OK(b.Build(&schema_));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema_)
+            .add_hash_partitions({"key"}, 2)
+            .num_replicas(3)
+            .Create());
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->DropColumn(Schema::GetAutoIncrementingColumnName());
+    ASSERT_EQ(Substitute("Invalid argument: can't drop column: $0",
+                         Schema::GetAutoIncrementingColumnName()),
+              alterer->Alter().ToString());
+  }
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AddColumn(Schema::GetAutoIncrementingColumnName())->Type(KuduColumnSchema::INT64);
+    ASSERT_EQ(Substitute("Invalid argument: can't add a column with reserved name: $0",
+                        Schema::GetAutoIncrementingColumnName()),
+              alterer->Alter().ToString());
+  }
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AlterColumn(Schema::GetAutoIncrementingColumnName())->RenameTo("new_name");
+    ASSERT_EQ(Substitute("Invalid argument: can't change name for column: $0",
+                        Schema::GetAutoIncrementingColumnName()),
+              alterer->Alter().ToString());
+  }
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AlterColumn(Schema::GetAutoIncrementingColumnName())->RemoveDefault();
+    ASSERT_EQ(Substitute("Invalid argument: can't change remove default for column: $0",
+                        Schema::GetAutoIncrementingColumnName()),
+              alterer->Alter().ToString());
+  }
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AlterColumn(Schema::GetAutoIncrementingColumnName())->Default(KuduValue::FromInt(1));
+    ASSERT_EQ(Substitute("Invalid argument: can't change default value for column: $0",
+                        Schema::GetAutoIncrementingColumnName()),
+              alterer->Alter().ToString());
+  }
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+    alterer->AlterColumn(Schema::GetAutoIncrementingColumnName())->Immutable();
+    ASSERT_EQ(Substitute("Invalid argument: can't change immutability for column: $0",
+                        Schema::GetAutoIncrementingColumnName()),
+              alterer->Alter().ToString());
+  }
+}
+
+TEST_F(ClientTestAutoIncrementingColumn, InsertOperationNegatives) {
+  const string kTableName = "insert_operation_negatives_auto_incrementing_column";
+  KuduSchemaBuilder b;
+  // Create a schema with non-unique PK, such that auto incrementing col is present.
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  ASSERT_OK(b.Build(&schema_));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema_)
+            .add_hash_partitions({"key"}, 2)
+            .num_replicas(3)
+            .Create());
+
+  shared_ptr<KuduSession> session(client_->NewSession());
+  shared_ptr<KuduTable> table;
+  client_->OpenTable(kTableName, &table);
+
+  {
+    unique_ptr<KuduUpsert> op(table->NewUpsert());
+    auto* row = op->mutable_row();
+    ASSERT_OK(row->SetInt32("key", 1));
+    ASSERT_STR_CONTAINS(session->Apply(op.release()).ToString(),
+                        "Illegal state: this type of write operation is not supported on table "
+                        "with auto-incrementing column");
+  }
+
+  {
+    unique_ptr<KuduUpsertIgnore> op(table->NewUpsertIgnore());
+    auto* row = op->mutable_row();
+    ASSERT_OK(row->SetInt32("key", 1));
+    ASSERT_STR_CONTAINS(session->Apply(op.release()).ToString(),
+                        "Illegal state: this type of write operation is not supported on table "
+                        "with auto-incrementing column");
   }
 }
 } // namespace client

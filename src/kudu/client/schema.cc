@@ -335,11 +335,13 @@ KuduColumnSpec* KuduColumnSpec::Length(uint16_t length) {
 
 KuduColumnSpec* KuduColumnSpec::PrimaryKey() {
   data_->primary_key = true;
+  data_->primary_key_unique = true;
   return this;
 }
 
-KuduColumnSpec* KuduColumnSpec::AutoIncrementing() {
-  data_->auto_incrementing = true;
+KuduColumnSpec* KuduColumnSpec::NonUniquePrimaryKey() {
+  data_->primary_key = true;
+  data_->primary_key_unique = false;
   return this;
 }
 
@@ -473,27 +475,6 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   bool nullable = data_->nullable ? data_->nullable.value() : true;
   bool immutable = data_->immutable ? data_->immutable.value() : false;
 
-  if (data_->auto_incrementing) {
-    if (internal_type != kudu::INT64) {
-      return Status::InvalidArgument("auto-incrementing column should be of type INT64");
-    }
-    if (nullable) {
-      return Status::InvalidArgument("auto-incrementing column should not be nullable");
-    }
-    if (immutable) {
-      return Status::InvalidArgument("auto-incrementing column should not be immutable");
-    }
-    if (data_->default_val) {
-      return Status::InvalidArgument("auto-incrementing column cannot have a "
-                                     "default value");
-    }
-    // TODO(Marton): Uncomment once the client patch promotes the
-    // auto increment column to primary key
-    //if (!data_->primary_key) {
-    //   return Status::InvalidArgument("auto-incrementing column is not set as primary key "
-    //                                  "column");
-    //}
-  }
   void* default_val = nullptr;
   // TODO(unknown): distinguish between DEFAULT NULL and no default?
   if (data_->default_val) {
@@ -577,7 +558,7 @@ Slice KuduColumnSpec::DefaultValueAsSlice() const {
 
 class KuduSchemaBuilder::Data {
  public:
-  Data() {
+  Data() : key_cols_unique(true) {
   }
 
   ~Data() {
@@ -586,7 +567,41 @@ class KuduSchemaBuilder::Data {
     // headers declaring friend classes with nested classes.
   }
 
+  Status AddAutoIncrementingColumn(int* num_key_cols, vector<KuduColumnSchema>* cols) {
+    KuduAutoIncrementingColumnSpecBuilder b;
+    DCHECK(specs.begin() + *num_key_cols <= specs.end());
+    specs.insert(specs.begin() + *num_key_cols, b.Build());
+    DCHECK(cols->begin() + *num_key_cols <= cols->end());
+    cols->insert(cols->begin() + *num_key_cols, KuduColumnSchema());
+    RETURN_NOT_OK(specs[*num_key_cols]->ToColumnSchema(&cols->at(*num_key_cols)));
+
+    // Make the above inserted auto-incrementing column a key column.
+    (*num_key_cols)++;
+    return Status::OK();
+  }
+
+  class KuduAutoIncrementingColumnSpecBuilder {
+   public:
+    KuduAutoIncrementingColumnSpecBuilder() {
+    }
+
+    ~KuduAutoIncrementingColumnSpecBuilder() {
+    }
+
+    KuduColumnSpec* Build() {
+      auto c = new KuduColumnSpec(name);
+      c->Type(type)->NotNull();
+      c->data_->auto_incrementing = true;
+      return c;
+    }
+
+   private:
+    static constexpr const char* const name = Schema::GetAutoIncrementingColumnName();
+    static constexpr KuduColumnSchema::DataType type = KuduColumnSchema::INT64;
+  };
+
   std::optional<vector<string>> key_col_names;
+  bool key_cols_unique;
   vector<KuduColumnSpec*> specs;
 };
 
@@ -610,9 +625,15 @@ KuduColumnSpec* KuduSchemaBuilder::AddColumn(const string& name) {
   return c;
 }
 
-KuduSchemaBuilder* KuduSchemaBuilder::SetPrimaryKey(
-    const vector<string>& key_col_names) {
+KuduSchemaBuilder* KuduSchemaBuilder::SetPrimaryKey(const vector<string>& key_col_names) {
   data_->key_col_names = key_col_names;
+  data_->key_cols_unique = true;
+  return this;
+}
+
+KuduSchemaBuilder* KuduSchemaBuilder::SetNonUniquePrimaryKey(const vector<string>& key_col_names) {
+  data_->key_col_names = key_col_names;
+  data_->key_cols_unique = false;
   return this;
 }
 
@@ -632,17 +653,16 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
     for (int i = 0; i < cols.size(); i++) {
       if (data_->specs[i]->data_->primary_key) {
         if (single_key_col_idx != -1) {
-          return Status::InvalidArgument("multiple columns specified for primary key",
-                                         Substitute("$0, $1",
-                                                    cols[single_key_col_idx].name(),
-                                                    cols[i].name()));
+          return Status::InvalidArgument(
+              "multiple columns specified for primary key",
+              Substitute("$0, $1", cols[single_key_col_idx].name(), cols[i].name()));
         }
         single_key_col_idx = i;
       }
     }
 
     if (single_key_col_idx == -1) {
-      return Status::InvalidArgument("no primary key specified");
+      return Status::InvalidArgument("no primary key or non-unique primary key specified");
     }
 
     // TODO: eventually allow primary keys which aren't the first column
@@ -651,6 +671,9 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
     }
 
     num_key_cols = 1;
+    if (!data_->specs[single_key_col_idx]->data_->primary_key_unique) {
+      data_->AddAutoIncrementingColumn(&num_key_cols, &cols);
+    }
   } else {
     // Build a map from name to index of all of the columns.
     unordered_map<string, int> name_to_idx_map;
@@ -659,8 +682,17 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
       // If they did pass the key column names, then we should not have explicitly
       // set it on any columns.
       if (spec->data_->primary_key) {
-        return Status::InvalidArgument("primary key specified by both SetPrimaryKey() and on a "
-                                       "specific column", spec->data_->name);
+        if (data_->key_cols_unique) {
+          return Status::InvalidArgument(
+              "primary key specified by both SetPrimaryKey() and on a "
+              "specific column",
+              spec->data_->name);
+        } else {
+          return Status::InvalidArgument(
+              "primary key specified by both SetNonUniquePrimaryKey() and on a "
+              "specific column",
+              spec->data_->name);
+        }
       }
       // If we have a duplicate column name, the Schema::Reset() will catch it later,
       // anyway.
@@ -676,7 +708,6 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
       }
       key_col_indexes.push_back(idx);
     }
-
     // Currently we require that the key columns be contiguous at the front
     // of the schema. We'll lift this restriction later -- hence the more
     // flexible user-facing API.
@@ -688,6 +719,10 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
     }
 
     num_key_cols = key_col_indexes.size();
+
+    if (!data_->key_cols_unique) {
+      data_->AddAutoIncrementingColumn(&num_key_cols, &cols);
+    }
   }
 
 #pragma GCC diagnostic push
@@ -991,6 +1026,14 @@ void KuduSchema::GetPrimaryKeyColumnIndexes(vector<int>* indexes) const {
   for (int i = 0; i < num_key_columns(); i++) {
     (*indexes)[i] = i;
   }
+}
+
+int KuduSchema::GetAutoIncrementingColumnIndex() const {
+  return schema_->auto_incrementing_col_idx();
+}
+
+const char* const KuduSchema::GetAutoIncrementingColumnName() {
+  return Schema::GetAutoIncrementingColumnName();
 }
 
 string KuduSchema::ToString() const {

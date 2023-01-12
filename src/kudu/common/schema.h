@@ -985,6 +985,11 @@ class Schema {
     return first_is_deleted_virtual_column_idx_;
   }
 
+  // Utility function to return the actual name of the auto incrementing column.
+  static constexpr const char* const GetAutoIncrementingColumnName() {
+    return auto_incrementing_col_name_;
+  }
+
  private:
   // Return a stringified version of the first 'num_columns' columns of the
   // row.
@@ -1039,6 +1044,8 @@ class Schema {
   // Cached index of the auto-incrementing column, or kColumnNotFound if no
   // such column exists in the schema.
   int auto_incrementing_col_idx_;
+
+  static constexpr const char* const auto_incrementing_col_name_ = "auto_incrementing_id";
 
   // NOTE: if you add more members, make sure to add the appropriate code to
   // CopyFrom() and the move constructor and assignment operator as well, to

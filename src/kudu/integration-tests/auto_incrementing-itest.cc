@@ -87,8 +87,7 @@ class AutoIncrementingItest : public tserver::TabletServerTestBase {
 
   Status CreateTableWithData() {
     KuduSchemaBuilder b;
-    b.AddColumn("c0")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-    b.AddColumn("c1")->Type(KuduColumnSchema::INT64)->NotNull()->AutoIncrementing();
+    b.AddColumn("c0")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
     RETURN_NOT_OK(b.Build(&kudu_schema_));
 
     // Create a table with a range partition
@@ -132,7 +131,8 @@ class AutoIncrementingItest : public tserver::TabletServerTestBase {
     scan->set_read_mode(READ_LATEST);
 
     Schema schema = Schema({ ColumnSchema("c0", INT32),
-                             ColumnSchema("c1",INT64, false,false, true),
+                             ColumnSchema(Schema::GetAutoIncrementingColumnName(),
+                                          INT64, false,false, true),
                            },2);
     RETURN_NOT_OK(SchemaToColumnPBs(schema, scan->mutable_projected_columns()));
     RETURN_NOT_OK(cluster_->tserver_proxy(ts)->Scan(req, &resp, &rpc));
@@ -160,7 +160,8 @@ TEST_F(AutoIncrementingItest, TestAutoIncrementingItest) {
     vector<string> results;
     ASSERT_OK(ScanTablet(j, replicas[0]->tablet_id(), &results));
     for (int i = 0; i < kNumRows; i++) {
-      ASSERT_EQ(Substitute("(int32 c0=$0, int64 c1=$1)", i, i + 1), results[i]);
+      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2)", i,
+                           Schema::GetAutoIncrementingColumnName(), i + 1), results[i]);
     }
   }
 }

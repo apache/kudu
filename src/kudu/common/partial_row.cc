@@ -896,6 +896,11 @@ bool KuduPartialRow::IsKeySet() const {
   return BitmapIsAllSet(isset_bitmap_, 0, schema_->num_key_columns());
 }
 
+bool KuduPartialRow::IsNonUniqueKeySet() const {
+  DCHECK_GE(schema_->num_key_columns(), 1);
+  DCHECK(schema_->has_auto_incrementing());
+  return BitmapIsAllSet(isset_bitmap_, 0, schema_->num_key_columns() - 1);
+}
 
 std::string KuduPartialRow::ToString() const {
   ScopedDisableRedaction no_redaction;

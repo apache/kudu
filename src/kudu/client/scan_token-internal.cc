@@ -202,6 +202,9 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
 
   unique_ptr<KuduScanner> scan_builder(new KuduScanner(table.get()));
 
+  // TODO: for statements like "create table as select *", auto_incrementing_id has to be
+  // omitted from projected columns. We could provide API to toggle the presence of
+  // the auto incrementing column.
   vector<int> column_indexes;
   if (!message.projected_column_idx().empty()) {
     for (const int column_idx : message.projected_column_idx()) {

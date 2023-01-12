@@ -47,6 +47,7 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -335,6 +336,15 @@ class ScanTokenTest : public KuduTest {
     }
   }
 
+  KuduSchema GetTokenProjectionSchema(const KuduScanToken& token) {
+    string serialized_token;
+    CHECK_OK(token.Serialize(&serialized_token));
+    KuduScanner* scanner_ptr;
+    CHECK_OK(KuduScanToken::DeserializeIntoScanner(client_.get(), serialized_token, &scanner_ptr));
+    unique_ptr<KuduScanner> scanner(scanner_ptr);
+    return scanner->GetProjectionSchema();
+  }
+
   shared_ptr<KuduClient> client_;
   unique_ptr<InternalMiniCluster> cluster_;
 };
@@ -531,6 +541,88 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     ASSERT_GE(8, tokens.size());
     ASSERT_EQ(200, CountRows(tokens));
     NO_FATALS(VerifyTabletInfo(tokens));
+  }
+}
+
+TEST_F(ScanTokenTest, TestScanTokens_NonUniquePrimaryKey) {
+  // Create schema
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("col")->NotNull()->Type(KuduColumnSchema::INT64)->NonUniquePrimaryKey();
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Create table
+  shared_ptr<KuduTable> table;
+  {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name("table")
+                  .schema(&schema)
+                  .add_hash_partitions({"col"}, 4)
+                  .num_replicas(1)
+                  .Create());
+    ASSERT_OK(client_->OpenTable("table", &table));
+  }
+
+  // Create session
+  shared_ptr<KuduSession> session = client_->NewSession();
+
+  // Insert rows
+  for (int i = 0; i < 10; i++) {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64("col", i));
+    ASSERT_OK(session->Apply(insert.release()));
+  }
+  ASSERT_OK(session->Flush());
+
+  // No projection, testing default behaviour
+  {
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.Build(&tokens));
+    ASSERT_EQ(4, tokens.size());
+
+    for (KuduScanToken* token : tokens) {
+      KuduSchema s = GetTokenProjectionSchema(*token);
+      ASSERT_TRUE(s.HasColumn("col", nullptr));
+      ASSERT_TRUE(s.HasColumn(Schema::GetAutoIncrementingColumnName(), nullptr));
+    }
+  }
+
+  // Projection including auto incrementing column
+  {
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    vector<string> column_names = { "col", Schema::GetAutoIncrementingColumnName() };
+    ASSERT_OK(builder.SetProjectedColumnNames(column_names));
+    ASSERT_OK(builder.Build(&tokens));
+    ASSERT_EQ(4, tokens.size());
+
+    for (KuduScanToken* token : tokens) {
+      KuduSchema s = GetTokenProjectionSchema(*token);
+      ASSERT_TRUE(s.HasColumn("col", nullptr));
+      ASSERT_TRUE(s.HasColumn(Schema::GetAutoIncrementingColumnName(), nullptr));
+    }
+  }
+
+  // Projection excluding auto incrementing column
+  {
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    vector<string> column_names = { "col" };
+    ASSERT_OK(builder.SetProjectedColumnNames(column_names));
+    ASSERT_OK(builder.Build(&tokens));
+    ASSERT_EQ(4, tokens.size());
+
+    for (KuduScanToken* token : tokens) {
+      KuduSchema s = GetTokenProjectionSchema(*token);
+      ASSERT_TRUE(s.HasColumn("col", nullptr));
+      ASSERT_FALSE(s.HasColumn(Schema::GetAutoIncrementingColumnName(), nullptr));
+    }
   }
 }
 

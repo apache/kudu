@@ -61,6 +61,7 @@ class KuduColumnSpec::Data {
   explicit Data(std::string name)
       : name(std::move(name)),
         primary_key(false),
+        primary_key_unique(false),
         auto_incrementing(false),
         remove_default(false) {
   }
@@ -83,6 +84,7 @@ class KuduColumnSpec::Data {
   std::optional<bool> nullable;
   std::optional<bool> immutable;
   bool primary_key;
+  bool primary_key_unique;
   std::optional<KuduValue*> default_val;  // Owned.
   bool auto_incrementing;
   bool remove_default;                      // For ALTER
