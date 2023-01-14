@@ -39,6 +39,13 @@ import org.apache.kudu.client.PartialRow;
 @InterfaceStability.Evolving
 public class Schema {
 
+  /*
+   * Column name and type of auto_incrementing_id column, which is added by Kudu engine
+   * automatically if the primary key is not unique.
+   */
+  private static final String AUTO_INCREMENTING_ID_COL_NAME = "auto_incrementing_id";
+  private static final Type AUTO_INCREMENTING_ID_COL_TYPE = Type.INT64;
+
   /**
    * Mapping of column index to column.
    */
@@ -71,8 +78,10 @@ public class Schema {
 
   private final int varLengthColumnCount;
   private final int rowSize;
+  private final boolean isKeyUnique;
   private final boolean hasNullableColumns;
   private final boolean hasImmutableColumns;
+  private final boolean hasAutoIncrementingColumn;
 
   private final int isDeletedIndex;
   private static final int NO_IS_DELETED_INDEX = -1;
@@ -104,6 +113,54 @@ public class Schema {
     if (hasColumnIds && columns.size() != columnIds.size()) {
       throw new IllegalArgumentException(
           "Schema must be constructed with all column IDs, or none.");
+    }
+
+    boolean isKeyFound = false;
+    boolean isKeyUnique = false;
+    boolean hasAutoIncrementing = false;
+    int keyColumnCount = 0;
+    int maxColumnId = Integer.MIN_VALUE;
+    // Check if auto-incrementing column should be added into the input columns list
+    for (int index = 0; index < columns.size(); index++) {
+      final ColumnSchema column = columns.get(index);
+      if (column.isKey()) {
+        keyColumnCount++;
+        if (!isKeyFound) {
+          isKeyFound = true;
+          isKeyUnique = column.isKeyUnique();
+        } else if (isKeyUnique != column.isKeyUnique()) {
+          throw new IllegalArgumentException(
+              "Mixture of unique key and non unique key in a table");
+        }
+      }
+      if (column.isAutoIncrementing()) {
+        if (!hasAutoIncrementing) {
+          hasAutoIncrementing = true;
+        } else {
+          throw new IllegalArgumentException(
+              "More than one columns are set as auto-incrementing columns");
+        }
+      }
+      if (hasColumnIds && maxColumnId < columnIds.get(index).intValue()) {
+        maxColumnId = columnIds.get(index).intValue();
+      }
+    }
+    // Add auto-incrementing column into input columns list if the primary key is not
+    // unique and auto-incrementing column has not been created.
+    if (keyColumnCount > 0 && !isKeyUnique && !hasAutoIncrementing) {
+      // Build auto-incrementing column
+      ColumnSchema autoIncrementingColumn =
+          new ColumnSchema.AutoIncrementingColumnSchemaBuilder().build();
+      // Make a copy of mutable list of columns, then add an auto-incrementing
+      // column after the columns marked as key columns.
+      columns = new ArrayList<>(columns);
+      Preconditions.checkNotNull(columns);
+      columns.add(keyColumnCount, autoIncrementingColumn);
+      if (hasColumnIds) {
+        columnIds = new ArrayList<>(columnIds);
+        columnIds.add(keyColumnCount, maxColumnId + 1);
+      }
+      hasAutoIncrementing = true;
     }
 
     this.columnsByIndex = ImmutableList.copyOf(columns);
@@ -154,8 +211,10 @@ public class Schema {
 
     this.varLengthColumnCount = varLenCnt;
     this.rowSize = getRowSize(this.columnsByIndex);
+    this.isKeyUnique = isKeyUnique;
     this.hasNullableColumns = hasNulls;
     this.hasImmutableColumns = hasImmutables;
+    this.hasAutoIncrementingColumn = hasAutoIncrementing;
     this.isDeletedIndex = isDeletedIndex;
   }
 
@@ -292,6 +351,38 @@ public class Schema {
    */
   public List<ColumnSchema> getPrimaryKeyColumns() {
     return primaryKeyColumns;
+  }
+
+  /**
+   * Answers if the primary key is unique for the table
+   * @return true if the key is unique
+   */
+  public boolean isPrimaryKeyUnique() {
+    return this.isKeyUnique;
+  }
+
+  /**
+   * Tells if there's auto-incrementing column
+   * @return true if there's auto-incrementing column, else false.
+   */
+  public boolean hasAutoIncrementingColumn() {
+    return this.hasAutoIncrementingColumn;
+  }
+
+  /**
+   * Get the name of the auto-incrementing column
+   * @return column name of the auto-incrementing column.
+   */
+  public static String getAutoIncrementingColumnName() {
+    return AUTO_INCREMENTING_ID_COL_NAME;
+  }
+
+  /**
+   * Get the type of the auto-incrementing column
+   * @return type of the auto-incrementing column.
+   */
+  public static Type getAutoIncrementingColumnType() {
+    return AUTO_INCREMENTING_ID_COL_TYPE;
   }
 
   /**

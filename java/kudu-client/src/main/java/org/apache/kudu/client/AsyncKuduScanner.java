@@ -370,6 +370,8 @@ public final class AsyncKuduScanner {
         columns.add(getStrippedColumnSchema(originalColumn));
       }
     } else {
+      // By default, a scanner is created with all columns including auto-incrementing
+      // column if projected columns are not specified.
       columns.addAll(table.getSchema().getColumns());
     }
     // This is a diff scan so add the IS_DELETED column.

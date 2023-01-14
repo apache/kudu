@@ -29,6 +29,7 @@ import static org.apache.kudu.test.ClientTestUtil.createManyVarcharsSchema;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithBinaryColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithDateColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithDecimalColumns;
+import static org.apache.kudu.test.ClientTestUtil.createSchemaWithNonUniqueKey;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithTimestampColumns;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
@@ -64,6 +65,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import com.stumbleupon.async.Deferred;
 import org.junit.Before;
 import org.junit.Rule;
@@ -780,6 +782,223 @@ public class TestKuduClient {
       }
       assertEquals(expectedRow.toString(), rowStrings.get(i));
     }
+  }
+
+  /**
+   * Test creating a table with non unique primary key in the table schema.
+   */
+  @Test(timeout = 100000)
+  public void testCreateTableWithNonUniquePrimaryKeys() throws Exception {
+    // Create a schema with non unique primary key column
+    Schema schema = createSchemaWithNonUniqueKey();
+    assertFalse(schema.isPrimaryKeyUnique());
+    // Verify auto-incrementing column is in the schema
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertEquals(3, schema.getColumnCount());
+    assertEquals(2, schema.getPrimaryKeyColumnCount());
+    assertEquals(1, schema.getColumnIndex(Schema.getAutoIncrementingColumnName()));
+    // Create a table
+    client.createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+
+    KuduSession session = client.newSession();
+    KuduTable table = client.openTable(TABLE_NAME);
+
+    // Verify that the primary key is not unique, and an auto-incrementing column is
+    // added as key column in the position after all key columns.
+    schema = table.getSchema();
+    assertFalse(schema.isPrimaryKeyUnique());
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertEquals(3, schema.getColumnCount());
+    assertEquals(2, schema.getPrimaryKeyColumnCount());
+    assertEquals(1, schema.getColumnIndex(Schema.getAutoIncrementingColumnName()));
+    assertTrue(schema.getColumn(Schema.getAutoIncrementingColumnName()).isKey());
+    assertTrue(schema.getColumn(
+        Schema.getAutoIncrementingColumnName()).isAutoIncrementing());
+
+    // Insert rows into the table without assigning values for the auto-incrementing
+    // column.
+    for (int i = 0; i < 3; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addInt("key", i);
+      row.addInt("c1", i * 10);
+      session.apply(insert);
+    }
+    session.flush();
+
+    // Scan all the rows in the table with all columns.
+    // Verify that the auto-incrementing column is included in the rows.
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(3, rowStrings.size());
+    for (int i = 0; i < rowStrings.size(); i++) {
+      StringBuilder expectedRow = new StringBuilder();
+      expectedRow.append(String.format("INT32 key=%d, INT64 %s=%d, INT32 c1=%d",
+          i, Schema.getAutoIncrementingColumnName(), i + 1, i * 10));
+      assertEquals(expectedRow.toString(), rowStrings.get(i));
+    }
+
+    // Update "c1" column of the first row with "key" and auto-incrementing columns.
+    Update update = table.newUpdate();
+    PartialRow row = update.getRow();
+    row.addInt(schema.getColumnByIndex(0).getName(), 0);
+    row.addLong(schema.getColumnByIndex(1).getName(), 1);
+    row.addInt(schema.getColumnByIndex(2).getName(), 100);
+    session.apply(update);
+    session.flush();
+
+    // Scan all the rows in the table without the auto-incrementing column.
+    // Verify that "c1" column of the first row is updated.
+    KuduScanner.KuduScannerBuilder scanBuilder = client.newScannerBuilder(table);
+    KuduScanner scanner =
+        scanBuilder.setProjectedColumnNames(Lists.newArrayList("key", "c1")).build();
+    rowStrings.clear();
+    for (RowResult r : scanner) {
+      rowStrings.add(r.rowToString());
+    }
+    Collections.sort(rowStrings);
+    assertEquals(3, rowStrings.size());
+    for (int i = 0; i < rowStrings.size(); i++) {
+      StringBuilder expectedRow = new StringBuilder();
+      if (i == 0) {
+        expectedRow.append(String.format("INT32 key=0, INT32 c1=100"));
+      } else {
+        expectedRow.append(String.format("INT32 key=%d, INT32 c1=%d", i, i * 10));
+      }
+      assertEquals(expectedRow.toString(), rowStrings.get(i));
+    }
+
+    // Delete the first row with "key" and auto-incrementing columns.
+    // Verify that number of rows is decreased by 1.
+    Delete delete = table.newDelete();
+    row = delete.getRow();
+    row.addInt(schema.getColumnByIndex(0).getName(), 0);
+    row.addLong(schema.getColumnByIndex(1).getName(), 1);
+    session.apply(delete);
+    session.flush();
+    assertEquals(2, countRowsInScan(client.newScannerBuilder(table).build()));
+
+    // Check that we can delete the table.
+    client.deleteTable(TABLE_NAME);
+  }
+
+  /**
+   * Test operations for table with auto-incrementing column.
+   */
+  @Test(timeout = 100000)
+  public void testTableWithAutoIncrementingColumn() throws Exception {
+    // Create a schema with non unique primary key column
+    Schema schema = createSchemaWithNonUniqueKey();
+    assertFalse(schema.isPrimaryKeyUnique());
+    // Verify auto-incrementing column is in the schema
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertEquals(3, schema.getColumnCount());
+    assertEquals(2, schema.getPrimaryKeyColumnCount());
+    // Create a table
+    client.createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+
+    final KuduSession session = client.newSession();
+    KuduTable table = client.openTable(TABLE_NAME);
+    schema = table.getSchema();
+    assertTrue(schema.hasAutoIncrementingColumn());
+
+    // Verify that UPSERT is not allowed for table with auto-incrementing column
+    try {
+      table.newUpsert();
+      fail("UPSERT on table with auto-incrementing column");
+    } catch (UnsupportedOperationException e) {
+      assertTrue(e.getMessage().contains(
+          "Tables with auto-incrementing column do not support UPSERT operations"));
+    }
+
+    // Verify that UPSERT_IGNORE is not allowed for table with auto-incrementing column
+    try {
+      table.newUpsertIgnore();
+      fail("UPSERT_IGNORE on table with auto-incrementing column");
+    } catch (UnsupportedOperationException e) {
+      assertTrue(e.getMessage().contains(
+          "Tables with auto-incrementing column do not support UPSERT_IGNORE operations"));
+    }
+
+    // Change desired block size for auto-incrementing column
+    client.alterTable(TABLE_NAME, new AlterTableOptions().changeDesiredBlockSize(
+        Schema.getAutoIncrementingColumnName(), 1));
+    // Change encoding for auto-incrementing column
+    client.alterTable(TABLE_NAME, new AlterTableOptions().changeEncoding(
+        Schema.getAutoIncrementingColumnName(), ColumnSchema.Encoding.PLAIN_ENCODING));
+    // Change compression algorithm for auto-incrementing column
+    client.alterTable(TABLE_NAME, new AlterTableOptions().changeCompressionAlgorithm(
+        Schema.getAutoIncrementingColumnName(), ColumnSchema.CompressionAlgorithm.NO_COMPRESSION));
+    session.flush();
+
+    // Verify that auto-incrementing column cannot be added
+    try {
+      client.alterTable(TABLE_NAME, new AlterTableOptions().addColumn(
+          Schema.getAutoIncrementingColumnName(), Schema.getAutoIncrementingColumnType(), 0));
+      fail("Add auto-incrementing column");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("Column name " +
+          Schema.getAutoIncrementingColumnName() + " is reserved by Kudu engine"));
+    }
+    try {
+      client.alterTable(TABLE_NAME, new AlterTableOptions().addColumn(
+          new ColumnSchema.AutoIncrementingColumnSchemaBuilder().build()));
+      fail("Add auto-incrementing column");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("Column name " +
+          Schema.getAutoIncrementingColumnName() + " is reserved by Kudu engine"));
+    }
+
+    // Verify that auto-incrementing column cannot be removed
+    try {
+      client.alterTable(TABLE_NAME, new AlterTableOptions().dropColumn(
+          Schema.getAutoIncrementingColumnName()));
+      fail("Drop auto-incrementing column");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("Cannot remove auto-incrementing column " +
+          Schema.getAutoIncrementingColumnName()));
+    }
+
+    // Verify that auto-incrementing column cannot be renamed
+    try {
+      client.alterTable(TABLE_NAME, new AlterTableOptions().renameColumn(
+          Schema.getAutoIncrementingColumnName(), "new_auto_incrementing"));
+      fail("Rename auto-incrementing column");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("Cannot rename auto-incrementing column " +
+          Schema.getAutoIncrementingColumnName()));
+    }
+
+    // Verify that auto-incrementing column cannot be changed by removing default
+    try {
+      client.alterTable(TABLE_NAME, new AlterTableOptions().removeDefault(
+          Schema.getAutoIncrementingColumnName()));
+      fail("Remove default value for auto-incrementing column");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("Auto-incrementing column " +
+          Schema.getAutoIncrementingColumnName() + " does not have default value"));
+    }
+
+    // Verify that auto-incrementing column cannot be changed with default value
+    try {
+      client.alterTable(TABLE_NAME, new AlterTableOptions().changeDefault(
+          Schema.getAutoIncrementingColumnName(), 0));
+      fail("Change default value for auto-incrementing column");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("Cannot set default value for " +
+          "auto-incrementing column " + Schema.getAutoIncrementingColumnName()));
+    }
+
+    // Verify that auto-incrementing column cannot be changed for its immutable
+    try {
+      client.alterTable(TABLE_NAME, new AlterTableOptions().changeImmutable(
+          Schema.getAutoIncrementingColumnName(), true));
+      fail("Change immutable for auto-incrementing column");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("Cannot change immutable for " +
+          "auto-incrementing column " + Schema.getAutoIncrementingColumnName()));
+    }
+
+    client.deleteTable(TABLE_NAME);
   }
 
   /**

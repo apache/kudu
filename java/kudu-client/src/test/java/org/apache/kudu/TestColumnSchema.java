@@ -25,6 +25,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.function.ThrowingRunnable;
 
+import org.apache.kudu.ColumnSchema.AutoIncrementingColumnSchemaBuilder;
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
 import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.util.CharUtil;
@@ -69,7 +70,16 @@ public class TestColumnSchema {
     ColumnSchema isKey = new ColumnSchemaBuilder("col1", Type.STRING)
         .key(true)
         .build();
+    Assert.assertTrue(isKey.isKey());
     assertNotEquals(stringCol1, isKey);
+
+    // Difference between key and nonUniqueKey
+    ColumnSchema isNonUniqueKey = new ColumnSchemaBuilder("col1", Type.STRING)
+        .nonUniqueKey(true)
+        .build();
+    Assert.assertTrue(isNonUniqueKey.isKey());
+    Assert.assertFalse(isNonUniqueKey.isKeyUnique());
+    assertNotEquals(isKey, isNonUniqueKey);
 
     // Different by type
     ColumnSchema isInt = new ColumnSchemaBuilder("col1", Type.INT32)
@@ -126,4 +136,27 @@ public class TestColumnSchema {
             .contains("VARCHAR's length must be set and between 1 and 65535"));
   }
 
+  @Test
+  public void testAutoIncrementing() throws Exception {
+    // Create auto-incrementing column with AutoIncrementingColumnSchemaBuilder
+    ColumnSchema autoIncrementing = new AutoIncrementingColumnSchemaBuilder().build();
+    Assert.assertTrue(autoIncrementing.isAutoIncrementing());
+    assertEquals(Schema.getAutoIncrementingColumnType(), autoIncrementing.getType());
+    Assert.assertTrue(autoIncrementing.isKey());
+    Assert.assertFalse(autoIncrementing.isKeyUnique());
+    Assert.assertFalse(autoIncrementing.isNullable());
+    Assert.assertFalse(autoIncrementing.isImmutable());
+    assertEquals(null, autoIncrementing.getDefaultValue());
+
+    // Create column with auto-incrementing column name with ColumnSchemaBuilder
+    Throwable thrown = Assert.assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        new ColumnSchemaBuilder(Schema.getAutoIncrementingColumnName(),
+            Schema.getAutoIncrementingColumnType()).build();
+      }
+    });
+    Assert.assertTrue(thrown.getMessage().contains("Column name " +
+        Schema.getAutoIncrementingColumnName() + " is reserved by Kudu engine"));
+  }
 }

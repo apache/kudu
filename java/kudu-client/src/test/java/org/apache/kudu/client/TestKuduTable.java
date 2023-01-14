@@ -2560,4 +2560,106 @@ public class TestKuduTable {
           ".* server sent error unsupported feature flags"));
     }
   }
+
+  /**
+   * Test creating table schemas with non unique primary key columns and
+   * auto-incrementing columns.
+   */
+  @Test(timeout = 100000)
+  public void testCreateSchemaWithNonUniquePrimaryKeys() throws Exception {
+    // Create a schema with two non unique primary key columns and
+    // verify the resulting table's schema.
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
+        .nonUniqueKey(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key2", Type.INT64)
+        .nonUniqueKey(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+        .nullable(true).build());
+    Schema schema = new Schema(columns);
+    assertFalse(schema.isPrimaryKeyUnique());
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertEquals(4, schema.getColumnCount());
+    assertEquals(3, schema.getPrimaryKeyColumnCount());
+    client.createTable(tableName, schema, getBasicCreateTableOptions());
+    KuduTable table = client.openTable(tableName);
+    schema = table.getSchema();
+    assertFalse(schema.isPrimaryKeyUnique());
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertEquals(4, schema.getColumnCount());
+    assertEquals(3, schema.getPrimaryKeyColumnCount());
+    client.deleteTable(tableName);
+
+    // Create a schema with non unique primary key column and unique primary key column
+    columns.clear();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
+        .nonUniqueKey(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key2", Type.INT32)
+        .key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+        .nullable(true).build());
+    try {
+      new Schema(columns);
+      fail("Schema with mixture of unique key and non unique key");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains(
+          "Mixture of unique key and non unique key in a table"));
+    }
+
+    // Create a schema with an auto-incrementing column which is marked as non unique
+    // primary key and verify the resulting table's schema.
+    columns.clear();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
+        .nonUniqueKey(true).build());
+    columns.add(new ColumnSchema.AutoIncrementingColumnSchemaBuilder().build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+        .nullable(true).build());
+    schema = new Schema(columns);
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertFalse(schema.isPrimaryKeyUnique());
+    assertEquals(3, schema.getColumnCount());
+    assertEquals(2, schema.getPrimaryKeyColumnCount());
+    client.createTable(tableName, schema, getBasicCreateTableOptions());
+    table = client.openTable(tableName);
+    schema = table.getSchema();
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertFalse(schema.isPrimaryKeyUnique());
+    assertEquals(3, schema.getColumnCount());
+    assertEquals(2, schema.getPrimaryKeyColumnCount());
+    client.deleteTable(tableName);
+
+    // Create a schema with a single auto-incrementing column which is marked as non
+    // unique primary key, and verify the resulting table's schema.
+    columns.clear();
+    columns.add(new ColumnSchema.AutoIncrementingColumnSchemaBuilder().build());
+    schema = new Schema(columns);
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertFalse(schema.isPrimaryKeyUnique());
+    assertEquals(1, schema.getColumnCount());
+    assertEquals(1, schema.getPrimaryKeyColumnCount());
+    CreateTableOptions builder = new CreateTableOptions();
+    builder.setRangePartitionColumns(ImmutableList.of(Schema.getAutoIncrementingColumnName()));
+    client.createTable(tableName, schema, builder);
+    table = client.openTable(tableName);
+    schema = table.getSchema();
+    assertTrue(schema.hasAutoIncrementingColumn());
+    assertFalse(schema.isPrimaryKeyUnique());
+    assertEquals(1, schema.getColumnCount());
+    assertEquals(1, schema.getPrimaryKeyColumnCount());
+    client.deleteTable(tableName);
+
+    // Create a schema with two auto-incrementing columns
+    columns.clear();
+    columns.add(new ColumnSchema.AutoIncrementingColumnSchemaBuilder().build());
+    columns.add(new ColumnSchema.AutoIncrementingColumnSchemaBuilder().build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+        .nullable(true).build());
+    try {
+      new Schema(columns);
+      fail("Schema with two auto-incrementing columns");
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains(
+          "More than one columns are set as auto-incrementing columns"));
+    }
+  }
 }

@@ -497,4 +497,13 @@ public abstract class ClientTestUtil {
             .nullable(true).immutable(true).build());
     return new Schema(columns);
   }
+
+  public static Schema createSchemaWithNonUniqueKey() {
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).nonUniqueKey(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32).nullable(true)
+        .build());
+    return new Schema(columns);
+  }
 }

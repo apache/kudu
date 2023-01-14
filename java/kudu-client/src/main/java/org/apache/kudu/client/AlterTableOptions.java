@@ -34,6 +34,7 @@ import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 import org.apache.kudu.master.Master;
@@ -84,6 +85,10 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions addColumn(ColumnSchema colSchema) {
+    if (colSchema.getName().equalsIgnoreCase(Schema.getAutoIncrementingColumnName())) {
+      throw new IllegalArgumentException("Column name " +
+          Schema.getAutoIncrementingColumnName() + " is reserved by Kudu engine");
+    }
     if (!colSchema.isNullable() && colSchema.getDefaultValue() == null) {
       throw new IllegalArgumentException("A new non-null column must have a default value");
     }
@@ -140,6 +145,10 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions dropColumn(String name) {
+    if (name.equalsIgnoreCase(Schema.getAutoIncrementingColumnName())) {
+      throw new IllegalArgumentException("Cannot remove auto-incrementing column " +
+          Schema.getAutoIncrementingColumnName());
+    }
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.DROP_COLUMN);
     step.setDropColumn(AlterTableRequestPB.DropColumn.newBuilder().setName(name));
@@ -153,6 +162,10 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions renameColumn(String oldName, String newName) {
+    if (oldName.equalsIgnoreCase(Schema.getAutoIncrementingColumnName())) {
+      throw new IllegalArgumentException("Cannot rename auto-incrementing column " +
+          Schema.getAutoIncrementingColumnName());
+    }
     // For backwards compatibility, this uses the RENAME_COLUMN step type.
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.RENAME_COLUMN);
@@ -167,6 +180,10 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions removeDefault(String name) {
+    if (name.equalsIgnoreCase(Schema.getAutoIncrementingColumnName())) {
+      throw new IllegalArgumentException("Auto-incrementing column " +
+          Schema.getAutoIncrementingColumnName() + " does not have default value");
+    }
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
     AlterTableRequestPB.AlterColumn.Builder alterBuilder =
@@ -185,6 +202,10 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions changeDefault(String name, Object newDefault) {
+    if (name.equalsIgnoreCase(Schema.getAutoIncrementingColumnName())) {
+      throw new IllegalArgumentException("Cannot set default value for " +
+          "auto-incrementing column " + Schema.getAutoIncrementingColumnName());
+    }
     if (newDefault == null) {
       throw new IllegalArgumentException("newDefault cannot be null: " +
           "use removeDefault to clear a default value");
@@ -486,6 +507,10 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions changeImmutable(String name, boolean immutable) {
+    if (name.equalsIgnoreCase(Schema.getAutoIncrementingColumnName())) {
+      throw new IllegalArgumentException("Cannot change immutable for " +
+          "auto-incrementing column " + Schema.getAutoIncrementingColumnName());
+    }
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
     AlterTableRequestPB.AlterColumn.Builder alterBuilder =

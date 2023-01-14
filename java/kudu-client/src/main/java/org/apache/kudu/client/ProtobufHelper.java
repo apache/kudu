@@ -108,6 +108,7 @@ public class ProtobufHelper {
         .setIsKey(column.isKey())
         .setIsNullable(column.isNullable())
         .setImmutable(column.isImmutable())
+        .setIsAutoIncrementing(column.isAutoIncrementing())
         .setCfileBlockSize(column.getDesiredBlockSize());
 
     if (!flags.contains(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_ID) && colId >= 0) {
@@ -150,26 +151,47 @@ public class ProtobufHelper {
   }
 
   public static ColumnSchema pbToColumnSchema(Common.ColumnSchemaPB pb) {
+    return pbToColumnSchema(pb, true);
+  }
+
+  public static ColumnSchema pbToColumnSchema(Common.ColumnSchemaPB pb,
+      boolean isKeyUnique) {
+    ColumnSchema.Encoding encoding = ColumnSchema.Encoding.valueOf(pb.getEncoding().name());
+    ColumnSchema.CompressionAlgorithm compressionAlgorithm =
+        ColumnSchema.CompressionAlgorithm.valueOf(pb.getCompression().name());
+    int desiredBlockSize = pb.getCfileBlockSize();
+
+    if (pb.getIsAutoIncrementing()) {
+      // Set encoding, compression algorithm, block size and comment from 'pb' parameter
+      return new ColumnSchema.AutoIncrementingColumnSchemaBuilder()
+                             .encoding(encoding)
+                             .compressionAlgorithm(compressionAlgorithm)
+                             .desiredBlockSize(desiredBlockSize)
+                             .comment(pb.getComment())
+                             .build();
+    }
+
     Type type = Type.getTypeForDataType(pb.getType());
     ColumnTypeAttributes typeAttributes = pb.hasTypeAttributes() ?
         pbToColumnTypeAttributes(pb.getTypeAttributes()) : null;
     Object defaultValue = pb.hasWriteDefaultValue() ?
         byteStringToObject(type, typeAttributes, pb.getWriteDefaultValue()) : null;
-    ColumnSchema.Encoding encoding = ColumnSchema.Encoding.valueOf(pb.getEncoding().name());
-    ColumnSchema.CompressionAlgorithm compressionAlgorithm =
-        ColumnSchema.CompressionAlgorithm.valueOf(pb.getCompression().name());
-    int desiredBlockSize = pb.getCfileBlockSize();
-    return new ColumnSchema.ColumnSchemaBuilder(pb.getName(), type)
-                           .key(pb.getIsKey())
-                           .nullable(pb.getIsNullable())
-                           .immutable(pb.getImmutable())
-                           .defaultValue(defaultValue)
-                           .encoding(encoding)
-                           .compressionAlgorithm(compressionAlgorithm)
-                           .desiredBlockSize(desiredBlockSize)
-                           .typeAttributes(typeAttributes)
-                           .comment(pb.getComment())
-                           .build();
+    ColumnSchema.ColumnSchemaBuilder csb =
+        new ColumnSchema.ColumnSchemaBuilder(pb.getName(), type);
+    if (pb.getIsKey() && isKeyUnique) {
+      csb.key(true);
+    } else {
+      csb.nonUniqueKey(pb.getIsKey());
+    }
+    return csb.nullable(pb.getIsNullable())
+              .immutable(pb.getImmutable())
+              .defaultValue(defaultValue)
+              .encoding(encoding)
+              .compressionAlgorithm(compressionAlgorithm)
+              .desiredBlockSize(desiredBlockSize)
+              .typeAttributes(typeAttributes)
+              .comment(pb.getComment())
+              .build();
   }
 
   public static ColumnTypeAttributes pbToColumnTypeAttributes(Common.ColumnTypeAttributesPB pb) {
@@ -188,10 +210,22 @@ public class ProtobufHelper {
   }
 
   public static Schema pbToSchema(Common.SchemaPB schema) {
+    // Since ColumnSchema.keyUnique in run-time structures is not persistent in Kudu
+    // server, we need to find if the table has auto-incrementing column first, and set
+    // all key columns as non unique key columns if the table has auto-incrementing
+    // column.
+    boolean hasAutoIncrementing = false;
+    for (Common.ColumnSchemaPB columnPb : schema.getColumnsList()) {
+      if (columnPb.getIsAutoIncrementing()) {
+        hasAutoIncrementing = true;
+        break;
+      }
+    }
     List<ColumnSchema> columns = new ArrayList<>(schema.getColumnsCount());
     List<Integer> columnIds = new ArrayList<>(schema.getColumnsCount());
     for (Common.ColumnSchemaPB columnPb : schema.getColumnsList()) {
-      columns.add(pbToColumnSchema(columnPb));
+      // Key is not unique if hasAutoIncrementing is true.
+      columns.add(pbToColumnSchema(columnPb, !hasAutoIncrementing));
       int id = columnPb.getId();
       if (id < 0) {
         throw new IllegalArgumentException("Illegal column ID: " + id);

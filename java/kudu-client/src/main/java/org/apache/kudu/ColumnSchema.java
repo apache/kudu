@@ -39,8 +39,10 @@ public class ColumnSchema {
   private final String name;
   private final Type type;
   private final boolean key;
+  private final boolean keyUnique;
   private final boolean nullable;
   private final boolean immutable;
+  private final boolean autoIncrementing;
   private final Object defaultValue;
   private final int desiredBlockSize;
   private final Encoding encoding;
@@ -104,7 +106,8 @@ public class ColumnSchema {
     }
   }
 
-  private ColumnSchema(String name, Type type, boolean key, boolean nullable, boolean immutable,
+  private ColumnSchema(String name, Type type, boolean key, boolean keyUnique,
+                       boolean nullable, boolean immutable, boolean autoIncrementing,
                        Object defaultValue, int desiredBlockSize, Encoding encoding,
                        CompressionAlgorithm compressionAlgorithm,
                        ColumnTypeAttributes typeAttributes, Common.DataType wireType,
@@ -112,8 +115,10 @@ public class ColumnSchema {
     this.name = name;
     this.type = type;
     this.key = key;
+    this.keyUnique = keyUnique;
     this.nullable = nullable;
     this.immutable = immutable;
+    this.autoIncrementing = autoIncrementing;
     this.defaultValue = defaultValue;
     this.desiredBlockSize = desiredBlockSize;
     this.encoding = encoding;
@@ -149,6 +154,14 @@ public class ColumnSchema {
   }
 
   /**
+   * Answers if the key is unique
+   * @return true if the key is unique
+   */
+  public boolean isKeyUnique() {
+    return keyUnique;
+  }
+
+  /**
    * Answers if the column can be set to null
    * @return true if it can be set to null, else false
    */
@@ -162,6 +175,14 @@ public class ColumnSchema {
    */
   public boolean isImmutable() {
     return immutable;
+  }
+
+  /**
+   * Answers if the column is auto-incrementing column
+   * @return true if the column value is automatically assigned with incrementing value
+   */
+  public boolean isAutoIncrementing() {
+    return autoIncrementing;
   }
 
   /**
@@ -239,6 +260,8 @@ public class ColumnSchema {
     return Objects.equals(name, that.name) &&
         Objects.equals(type, that.type) &&
         Objects.equals(key, that.key) &&
+        Objects.equals(keyUnique, that.keyUnique) &&
+        Objects.equals(autoIncrementing, that.autoIncrementing) &&
         Objects.equals(typeAttributes, that.typeAttributes) &&
         Objects.equals(comment, that.comment);
   }
@@ -276,6 +299,7 @@ public class ColumnSchema {
     private final String name;
     private final Type type;
     private boolean key = false;
+    private boolean keyUnique = false;
     private boolean nullable = false;
     private boolean immutable = false;
     private Object defaultValue = null;
@@ -290,8 +314,14 @@ public class ColumnSchema {
      * Constructor for the required parameters.
      * @param name column's name
      * @param type column's type
+     * @throws IllegalArgumentException if the column's name equals the reserved
+     * auto-incrementing column name
      */
     public ColumnSchemaBuilder(String name, Type type) {
+      if (name.equalsIgnoreCase(Schema.getAutoIncrementingColumnName())) {
+        throw new IllegalArgumentException("Column name " +
+            Schema.getAutoIncrementingColumnName() + " is reserved by Kudu engine");
+      }
       this.name = name;
       this.type = type;
     }
@@ -304,6 +334,7 @@ public class ColumnSchema {
       this.name = that.name;
       this.type = that.type;
       this.key = that.key;
+      this.keyUnique = that.keyUnique;
       this.nullable = that.nullable;
       this.immutable = that.immutable;
       this.defaultValue = that.defaultValue;
@@ -317,11 +348,25 @@ public class ColumnSchema {
 
     /**
      * Sets if the column is part of the row key. False by default.
+     * This function call overrides any previous key() and nonUniqueKey() call.
      * @param key a boolean that indicates if the column is part of the key
      * @return this instance
      */
     public ColumnSchemaBuilder key(boolean key) {
       this.key = key;
+      this.keyUnique = key ? true : false;
+      return this;
+    }
+
+    /**
+     * Sets if the column is part of the row non unique key. False by default.
+     * This function call overrides any previous key() and nonUniqueKey() call.
+     * @param key a boolean that indicates if the column is a part of the non unique key
+     * @return this instance
+     */
+    public ColumnSchemaBuilder nonUniqueKey(boolean key) {
+      this.key = key;
+      this.keyUnique = false;
       return this;
     }
 
@@ -456,10 +501,97 @@ public class ColumnSchema {
         }
       }
 
-      return new ColumnSchema(name, type,
-                              key, nullable, immutable, defaultValue,
+      return new ColumnSchema(name, type, key, keyUnique, nullable, immutable,
+                              /* autoIncrementing */false, defaultValue,
                               desiredBlockSize, encoding, compressionAlgorithm,
                               typeAttributes, wireType, comment);
+    }
+  }
+
+  /**
+   * Builder for ColumnSchema of the auto-incrementing column. It's used internally in Kudu
+   * client library.
+   */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
+  public static class AutoIncrementingColumnSchemaBuilder {
+    private final String name;
+    private final Type type;
+    private int desiredBlockSize = 0;
+    private Encoding encoding = null;
+    private CompressionAlgorithm compressionAlgorithm = null;
+    private Common.DataType wireType = null;
+    private String comment = "";
+
+    /**
+     * Constructor with default parameter values for {@link ColumnSchema}.
+     */
+    public AutoIncrementingColumnSchemaBuilder() {
+      this.name = Schema.getAutoIncrementingColumnName();
+      this.type = Schema.getAutoIncrementingColumnType();
+    }
+
+    /**
+     * Set the desired block size for this column.
+     */
+    public AutoIncrementingColumnSchemaBuilder desiredBlockSize(int desiredBlockSize) {
+      this.desiredBlockSize = desiredBlockSize;
+      return this;
+    }
+
+    /**
+     * Set the block encoding for this column. This function should be called when
+     * fetching column schema from Kudu server.
+     */
+    public AutoIncrementingColumnSchemaBuilder encoding(Encoding encoding) {
+      this.encoding = encoding;
+      return this;
+    }
+
+    /**
+     * Set the compression algorithm for this column. This function should be called
+     * when fetching column schema from Kudu server.
+     */
+    public AutoIncrementingColumnSchemaBuilder compressionAlgorithm(
+        CompressionAlgorithm compressionAlgorithm) {
+      this.compressionAlgorithm = compressionAlgorithm;
+      return this;
+    }
+
+    /**
+     * Allows an alternate {@link Common.DataType} to override the {@link Type}
+     * when serializing the ColumnSchema on the wire.
+     * This is useful for virtual columns specified by their type such as
+     * {@link Common.DataType#IS_DELETED}.
+     */
+    @InterfaceAudience.Private
+    public AutoIncrementingColumnSchemaBuilder wireType(Common.DataType wireType) {
+      this.wireType = wireType;
+      return this;
+    }
+
+    /**
+     * Set the comment for this column.
+     */
+    public AutoIncrementingColumnSchemaBuilder comment(String comment) {
+      this.comment = comment;
+      return this;
+    }
+
+    /**
+     * Builds a {@link ColumnSchema} for auto-incrementing column with passed parameters.
+     * @return a new {@link ColumnSchema}
+     */
+    public ColumnSchema build() {
+      // Set the wire type if it wasn't explicitly set.
+      if (wireType == null) {
+        this.wireType = type.getDataType(null);
+      }
+      return new ColumnSchema(name, type, /* key */true, /* keyUnique */false,
+                              /* nullable */false, /* immutable */false,
+                              /* autoIncrementing */true, /* defaultValue */null,
+                              desiredBlockSize, encoding, compressionAlgorithm,
+                              /* typeAttributes */null, wireType, comment);
     }
   }
 }
