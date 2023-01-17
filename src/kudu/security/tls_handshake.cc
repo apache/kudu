@@ -22,9 +22,10 @@
 #include <openssl/x509.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
-#include <string>
 #include <ostream>
+#include <string>
 #include <utility>
 
 #include "kudu/gutil/strings/strip.h"
@@ -179,7 +180,7 @@ bool TlsHandshake::NeedsExtraStep(const Status& continue_status,
                                   const string& token) const {
   DCHECK(has_started_);
   DCHECK(ssl_);
-  DCHECK(continue_status.ok() || continue_status.IsIncomplete());
+  DCHECK(continue_status.ok() || continue_status.IsIncomplete()) << continue_status.ToString();
 
   if (continue_status.IsIncomplete()) {
     return true;

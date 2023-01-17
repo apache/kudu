@@ -76,6 +76,7 @@
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/jwt-util.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -95,6 +96,10 @@
 #include "kudu/util/thread.h"
 #include "kudu/util/user.h"
 #include "kudu/util/version_info.h"
+
+namespace kudu {
+class JwtVerifier;
+}  // namespace kudu
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start.");
 TAG_FLAG(num_reactor_threads, advanced);
@@ -240,6 +245,33 @@ DEFINE_uint64(server_max_open_files, 0,
               "automatically calculate this value. This is a soft limit");
 TAG_FLAG(server_max_open_files, advanced);
 
+DEFINE_bool(enable_jwt_token_auth, false,
+    "This enables JWT authentication, meaning that the server expects a valid "
+    "JWT to be sent by the client which will be verified when the connection is "
+    "being established. When true, read the JWT token out of the RPC and extract "
+    "user name from the token payload.");
+TAG_FLAG(enable_jwt_token_auth, experimental);
+
+DEFINE_bool(jwt_validate_signature, true,
+    "When true, validate the signature of JWT token with pre-installed JWKS.");
+TAG_FLAG(jwt_validate_signature, experimental);
+TAG_FLAG(jwt_validate_signature, unsafe);
+
+DEFINE_bool(jwt_allow_without_tls, false,
+    "When this configuration is set to true, Kudu allows JWT authentication on "
+    "unsecure channel. This should be only enabled for testing, or development "
+    "for which TLS is handled by proxy.");
+TAG_FLAG(jwt_allow_without_tls, experimental);
+TAG_FLAG(jwt_allow_without_tls, unsafe);
+
+DEFINE_string(jwks_file_path, "",
+    "File path of the pre-installed JSON Web Key Set (JWKS) for JWT verification.");
+TAG_FLAG(jwks_file_path, experimental);
+
+DEFINE_string(jwks_url, "",
+    "URL of the JSON Web Key Set (JWKS) for JWT verification.");
+TAG_FLAG(jwks_url, experimental);
+
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
@@ -343,6 +375,27 @@ bool ValidateKeytabPermissions() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(keytab_permissions, &ValidateKeytabPermissions);
+
+bool ValidateJWKSNotEmpty() {
+  if (FLAGS_enable_jwt_token_auth && (FLAGS_jwks_file_path.empty() && FLAGS_jwks_url.empty())) {
+    LOG(ERROR) << "'jwt_token_auth' is enabled, but 'jwks_filepath' and 'jwks_url' are both empty";
+    return false;
+  }
+
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(jwk_not_empty_validator, &ValidateJWKSNotEmpty);
+
+bool ValidateEitherJWKSFilePathOrUrlSet() {
+  if (!FLAGS_jwks_url.empty() && !FLAGS_jwks_file_path.empty()) {
+    LOG(ERROR) << "only set either 'jwks_url' or 'jwks_file_path' but not both";
+    return false;
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(jwks_file_or_url_set_validator, &ValidateEitherJWKSFilePathOrUrlSet);
 
 } // namespace
 
@@ -644,6 +697,17 @@ Status ServerBase::Init() {
 
   // Create the Messenger.
   rpc::MessengerBuilder builder(name_);
+  std::shared_ptr<JwtVerifier> jwt_verifier;
+  if (FLAGS_enable_jwt_token_auth) {
+    if (!FLAGS_jwks_url.empty()) {
+      jwt_verifier = std::make_shared<KeyBasedJwtVerifier>(FLAGS_jwks_url, false);
+    } else if (!FLAGS_jwks_file_path.empty()) {
+      jwt_verifier = std::make_shared<KeyBasedJwtVerifier>(FLAGS_jwks_file_path, true);
+    } else {
+      LOG(WARNING) << Substitute("JWT authentication enabled, but neither 'jwks_url' or "
+          "'jwks_file_path' are set!");
+    }
+  }
   builder.set_num_reactors(FLAGS_num_reactor_threads)
          .set_min_negotiation_threads(FLAGS_min_negotiation_threads)
          .set_max_negotiation_threads(FLAGS_max_negotiation_threads)
@@ -659,6 +723,7 @@ Status ServerBase::Init() {
          .set_epki_cert_key_files(FLAGS_rpc_certificate_file, FLAGS_rpc_private_key_file)
          .set_epki_certificate_authority_file(FLAGS_rpc_ca_certificate_file)
          .set_epki_private_password_key_cmd(FLAGS_rpc_private_key_password_cmd)
+         .set_jwt_verifier(std::move(jwt_verifier))
          .set_keytab_file(FLAGS_keytab_file)
          .enable_inbound_tls();
 

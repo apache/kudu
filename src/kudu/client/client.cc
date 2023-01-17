@@ -350,6 +350,9 @@ Status ImportAuthnCreds(const string& authn_creds,
     }
     messenger->set_authn_token(tok);
   }
+  if (pb.has_jwt()) {
+    messenger->set_jwt(pb.jwt());
+  }
   if (pb.has_real_user()) {
     user_credentials->set_real_user(pb.real_user());
   }
@@ -773,6 +776,10 @@ Status KuduClient::ExportAuthenticationCredentials(string* authn_creds) const {
 
   if (auto tok = data_->messenger_->authn_token(); tok) {
     pb.mutable_authn_token()->CopyFrom(*tok);
+  }
+  auto jwt = data_->messenger_->jwt();
+  if (jwt) {
+    pb.mutable_jwt()->CopyFrom(*jwt);
   }
   pb.set_real_user(data_->user_credentials_.real_user());
 
