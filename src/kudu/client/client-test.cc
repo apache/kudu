@@ -9949,7 +9949,6 @@ TEST_F(ClientTestAutoIncrementingColumn, ConcurrentWrites) {
 
   // Write into the table with eight clients concurrently without specifying values
   // for the auto-incrementing column.
-  vector<shared_ptr<KuduClient>> clients;
   CountDownLatch client_latch(num_clients);
   vector<thread> threads;
   for (int i = 0; i < num_clients; i++) {
@@ -9958,7 +9957,6 @@ TEST_F(ClientTestAutoIncrementingColumn, ConcurrentWrites) {
       ASSERT_OK(KuduClientBuilder()
                 .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                 .Build(&client));
-      clients.emplace_back(client);
       shared_ptr<KuduSession> session = client->NewSession();
       shared_ptr<KuduTable> table;
       ASSERT_OK(client->OpenTable(kTableName, &table));
