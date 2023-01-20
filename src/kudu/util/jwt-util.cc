@@ -26,7 +26,6 @@
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
-
 #include <sys/stat.h>
 
 #include <cerrno>
@@ -43,6 +42,7 @@
 #include <typeinfo>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -55,8 +55,10 @@
 #include <rapidjson/rapidjson.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/escaping.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/faststring.h"
@@ -765,6 +767,9 @@ void JWKSMgr::SetJWKSSnapshot(const JWKSSnapshotPtr& new_jwks) {
 // JWTHelper member functions.
 //
 
+JWTHelper::~JWTHelper() {
+}
+
 struct JWTHelper::JWTDecodedToken {
   explicit JWTDecodedToken(DecodedJWT  decoded_jwt) : decoded_jwt_(std::move(decoded_jwt)) {}
   DecodedJWT decoded_jwt_;
@@ -932,6 +937,101 @@ Status KeyBasedJwtVerifier::Init() {
 Status KeyBasedJwtVerifier::VerifyToken(const string& bytes_raw, string* subject) const {
   JWTHelper::UniqueJWTDecodedToken decoded_token;
   RETURN_NOT_OK(JWTHelper::Decode(bytes_raw, decoded_token));
+  RETURN_NOT_OK(jwt_->Verify(decoded_token.get()));
+  if (!decoded_token->decoded_jwt_.has_subject()) {
+    return Status::InvalidArgument("token does not include subject");
+  }
+  *subject = decoded_token->decoded_jwt_.get_subject();
+  return Status::OK();
+}
+
+Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDecodedToken& token,
+                                                        JWTHelper** helper) const {
+  if (!token.decoded_jwt_.has_issuer()) {
+    return Status::InvalidArgument("Expected token to have 'issuer' field");
+  }
+
+  // Parse the account ID from the 'iss' field of the JWT. If we already have a
+  // JWTHelper for it, use it.
+  const auto& issuer = token.decoded_jwt_.get_issuer();
+  std::vector<string> issuer_pieces = strings::Split(issuer, "/");
+  CHECK(!issuer_pieces.empty());
+  const auto& account_id = issuer_pieces.back();
+
+  {
+    const std::lock_guard<simple_spinlock> l(jwt_by_account_id_map_lock_);
+    const auto* unique_helper = FindOrNull(jwt_by_account_id_, account_id);
+
+    if (unique_helper) {
+      *helper = unique_helper->get();
+      return Status::OK();
+    }
+  }
+
+  // Otherwise, use the Discovery Endpoint to determine what 'jwks_uri' to use.
+  kudu::EasyCurl curl;
+  kudu::faststring dst;
+  const auto discovery_endpoint = Substitute("$0?accountId=$1", discovery_base_, account_id);
+  curl.set_timeout(
+      kudu::MonoDelta::FromSeconds(static_cast<int64_t>(FLAGS_jwks_pulling_timeout_s)));
+  curl.set_verify_peer(false);
+  RETURN_NOT_OK_PREPEND(curl.FetchURL(discovery_endpoint, &dst),
+      Substitute("Error downloading contents of Discovery Endpoint from '$0'", discovery_endpoint));
+  string jwks_uri;
+
+  if (dst.size() <= 0) {
+    return Status::RuntimeError("Discovery Endpoint returned an empty document");
+  }
+
+  dst.push_back('\0');
+  Document endpoint_doc;
+  endpoint_doc.Parse(reinterpret_cast<char*>(dst.data()));
+#define RETURN_INVALID_IF(stmt, msg)     \
+  if (PREDICT_FALSE(stmt)) {             \
+    return Status::InvalidArgument(msg); \
+  }
+
+  RETURN_INVALID_IF(endpoint_doc.HasParseError(), GetParseError_En(endpoint_doc.GetParseError()));
+  RETURN_INVALID_IF(!endpoint_doc.IsObject(), "root element must be a JSON Object");
+  auto jwks_uri_member = endpoint_doc.FindMember("jwks_uri");
+  RETURN_INVALID_IF(jwks_uri_member == endpoint_doc.MemberEnd(), "jwks_uri is required");
+  RETURN_INVALID_IF(!jwks_uri_member->value.IsString(), "jwks_uri must be a string");
+  jwks_uri = string(jwks_uri_member->value.GetString());
+#undef RETURN_INVALID_IF
+
+  // TODO(zchovan): this implementation expects there to be a small number of
+  // accounts, as it creates a JWKS refresh thread for each account. Group the
+  // refreshes into a single thread or threadpool.
+  auto new_helper = std::make_shared<JWTHelper>();
+  RETURN_NOT_OK_PREPEND(new_helper->Init(jwks_uri, /*is_local_file*/ false),
+                        "Error initializing JWT helper");
+
+  {
+    const std::lock_guard<simple_spinlock> l(jwt_by_account_id_map_lock_);
+    LookupOrEmplace(&jwt_by_account_id_, account_id, std::move(new_helper));
+    *helper = FindPointeeOrNull(jwt_by_account_id_, account_id);
+  }
+
+  return Status::OK();
+}
+
+Status PerAccountKeyBasedJwtVerifier::Init() {
+  for (auto& [account_id, verifier] : jwt_by_account_id_) {
+    verifier->Init(Substitute("$0?accountId=$1", discovery_base_, account_id),
+                   /*is_local_file*/false);
+  }
+  return Status::OK();
+}
+
+Status PerAccountKeyBasedJwtVerifier::VerifyToken(const string& bytes_raw, string* subject) const {
+  JWTHelper::UniqueJWTDecodedToken decoded_token;
+  RETURN_NOT_OK(JWTHelper::Decode(bytes_raw, decoded_token));
+  JWTHelper* jwt;
+  RETURN_NOT_OK(JWTHelperForToken(*decoded_token, &jwt));
+  RETURN_NOT_OK(jwt->Verify(decoded_token.get()));
+  if (!decoded_token->decoded_jwt_.has_subject()) {
+    return Status::InvalidArgument("token does not include subject");
+  }
   *subject = decoded_token->decoded_jwt_.get_subject();
   return Status::OK();
 }

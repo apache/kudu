@@ -20,14 +20,17 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/util/jwt-util-internal.h"
 #include "kudu/util/jwt.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+class JWKSMgr;
+class JWKSSnapshot;
 
 // JSON Web Token (JWT) is an Internet proposed standard for creating data with optional
 // signature and/or optional encryption whose payload holds JSON that asserts some
@@ -51,6 +54,10 @@ class JWTHelper {
   // UniqueJWTDecodedToken -- a wrapper around opaque decoded token structure to
   // facilitate automatic reference counting.
   typedef std::unique_ptr<JWTDecodedToken, TokenDeleter> UniqueJWTDecodedToken;
+
+  // Define our destructor elsewhere so JWKSMgr's destructor is called from the
+  // correct compilation unit.
+  ~JWTHelper();
 
   // Return the single instance.
   static JWTHelper* GetInstance() { return jwt_helper_; }
@@ -85,7 +92,7 @@ class JWTHelper {
   bool initialized_ = false;
 
   // JWKS Manager for Json Web Token (JWT) verification.
-  // Only one instance per daemon.
+  // Only one instance per helper.
   std::unique_ptr<JWKSMgr> jwks_mgr_;
 };
 
@@ -106,6 +113,33 @@ class KeyBasedJwtVerifier : public JwtVerifier {
   bool is_local_file_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyBasedJwtVerifier);
+};
+
+class PerAccountKeyBasedJwtVerifier : public JwtVerifier {
+ public:
+  explicit PerAccountKeyBasedJwtVerifier(std::string  jwks_uri)
+      : discovery_base_(std::move(jwks_uri)) {}
+
+  ~PerAccountKeyBasedJwtVerifier() override = default;
+
+  Status Init() override;
+
+  Status VerifyToken(const std::string& bytes_raw, std::string* subject) const override;
+
+ private:
+  // Gets the appropriate JWTHelper, based on the token and source mode.
+  // Returns an error if the token doesn't contain the appropriate fields.
+  Status JWTHelperForToken(const JWTHelper::JWTDecodedToken& token, JWTHelper** helper) const;
+
+  std::string discovery_base_;
+  // Marked as mutable so that PerAccountKeyBasedJwtVerifier::JWTHelperForToken is able to emplace
+  // new JWTHelpers in it.
+  mutable std::unordered_map<std::string, std::shared_ptr<JWTHelper>> jwt_by_account_id_;
+
+  // Protects jwt_by_account_id_map
+  mutable simple_spinlock jwt_by_account_id_map_lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(PerAccountKeyBasedJwtVerifier);
 };
 
 } // namespace kudu

@@ -24,21 +24,28 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <type_traits>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <jwt-cpp/jwt.h>
 #include <jwt-cpp/traits/kazuho-picojson/defaults.h>
 #include <jwt-cpp/traits/kazuho-picojson/traits.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/webserver.h"
 #include "kudu/server/webserver_options.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/jwt-util-internal.h"
 #include "kudu/util/jwt_test_certs.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -48,6 +55,7 @@ namespace kudu {
 
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -828,8 +836,10 @@ TEST(JwtUtilTest, VerifyJwtFailExpiredToken) {
 
 namespace {
 
-void JWKSHandler(const Webserver::WebRequest& /*req*/,
-                 Webserver::PrerenderedWebResponse* resp) {
+// Returns a simple JWKS to be used by tokens signed by 'rsa_pub_key_pem' and
+// 'rsa_priv_key_pem'.
+void SimpleJWKSHandler(const Webserver::WebRequest& /*req*/,
+                       Webserver::PrerenderedWebResponse* resp) {
   resp->output <<
       Substitute(kJwksRsaFileFormat, kKid1, "RS256",
           kRsaPubKeyJwkN, kRsaPubKeyJwkE, kKid2, "RS256", kRsaInvalidPubKeyJwkN,
@@ -839,13 +849,41 @@ void JWKSHandler(const Webserver::WebRequest& /*req*/,
 
 class JWKSMockServer {
  public:
+  // Registers a path handler for a single JWKS to be used by tokens signed by
+  // 'rsa_pub_key_pem' and 'rsa_priv_key_pem'.
   Status Start() {
     WebserverOptions opts;
     opts.port = 0;
     opts.bind_interface = "127.0.0.1";
     webserver_.reset(new Webserver(opts));
-    webserver_->RegisterPrerenderedPathHandler("/jwks", "JWKS", JWKSHandler,
+    webserver_->RegisterPrerenderedPathHandler("/jwks", "JWKS", SimpleJWKSHandler,
                                                /*is_styled*/false, /*is_on_nav_bar*/false);
+    RETURN_NOT_OK(webserver_->Start());
+    vector<Sockaddr> addrs;
+    RETURN_NOT_OK(webserver_->GetBoundAddresses(&addrs));
+    url_ = Substitute("http://$0/jwks", addrs[0].ToString());
+    return Status::OK();
+  }
+
+  // Register a path handler for every account ID in 'account_id_to_resp' that
+  // returns the correspodning HTTP response.
+  Status StartWithAccounts(const unordered_map<string, string>& account_id_to_resp) {
+    DCHECK(!webserver_);
+    WebserverOptions opts;
+    opts.port = 0;
+    opts.bind_interface = "127.0.0.1";
+    webserver_.reset(new Webserver(opts));
+    for (const auto& ar : account_id_to_resp) {
+      const auto& account_id = ar.first;
+      const auto& jwks = ar.second;
+      webserver_->RegisterPrerenderedPathHandler(Substitute("/jwks/$0", account_id), account_id,
+          [account_id, jwks] (const Webserver::WebRequest& /*req*/,
+                              Webserver::PrerenderedWebResponse* resp) {
+            resp->output << jwks;
+            resp->status_code = HttpStatusCode::Ok;
+          },
+          /*is_styled*/false, /*is_on_nav_bar*/false);
+    }
     RETURN_NOT_OK(webserver_->Start());
     vector<Sockaddr> addrs;
     RETURN_NOT_OK(webserver_->GetBoundAddresses(&addrs));
@@ -855,6 +893,10 @@ class JWKSMockServer {
 
   const string& url() const {
     return url_;
+  }
+
+  string url_for_account(const string& account_id) const {
+    return Substitute("$0/$1", url_, account_id);
   }
  private:
   unique_ptr<Webserver> webserver_;
@@ -884,9 +926,187 @@ TEST(JwtUtilTest, VerifyJWKSUrl) {
       "klbfyYn_ghqjL7ihY2ECaZzZ0Utw",
       encoded_token);
   KeyBasedJwtVerifier jwt_verifier(jwks_server.url(), /*is_local_file*/false);
+  ASSERT_OK(jwt_verifier.Init());
   string subject;
   ASSERT_OK(jwt_verifier.VerifyToken(encoded_token, &subject));
   ASSERT_EQ("kudu", subject);
+}
+
+namespace {
+
+// $0: account_id
+// $1: jwks_uri
+const char kDiscoveryFormat[] = R"({
+    "issuer": "auth0/$0",
+    "token_endpoint": "dummy.endpoint.com",
+    "response_types_supported": [
+        "id_token"
+    ],
+    "claims_supported": [
+        "sub",
+        "aud",
+        "iss",
+        "exp"
+    ],
+    "subject_types_supported": [
+        "public"
+    ],
+    "id_token_signing_alg_values_supported": [
+        "RS256"
+    ],
+    "jwks_uri": "$1"
+})";
+
+void JWKSDiscoveryHandler(const Webserver::WebRequest& req,
+                          Webserver::PrerenderedWebResponse* resp,
+                          const JWKSMockServer& jwks_server) {
+  const auto* account_id = FindOrNull(req.parsed_args, "accountid");
+  if (!account_id) {
+    resp->output << "expected 'accountId' query";
+    resp->status_code = HttpStatusCode::BadRequest;
+    return;
+  }
+  resp->output << Substitute(kDiscoveryFormat, *account_id,
+                             jwks_server.url_for_account(*account_id));
+  resp->status_code = HttpStatusCode::Ok;
+}
+
+const char kValidAccount[] = "new-phone";
+const char kInvalidAccount[] = "who-is-this";
+const char kMissingAccount[] = "no-where";
+
+class JWKSDiscoveryEndpointMockServer {
+ public:
+  Status Start() {
+    unordered_map<string, string> account_id_to_resp({
+        {
+          // Create an account that has valid keys.
+          kValidAccount,
+          Substitute(kJwksRsaFileFormat, kKid1, "RS256",
+              kRsaPubKeyJwkN, kRsaPubKeyJwkE, kKid2, "RS256", kRsaInvalidPubKeyJwkN,
+              kRsaPubKeyJwkE),
+        },
+        {
+          // The keys associated with this account are invalid.
+          kInvalidAccount,
+          Substitute(kJwksRsaFileFormat, kKid1, "RS256",
+              kRsaInvalidPubKeyJwkN, kRsaPubKeyJwkE, kKid2, "RS256",
+              kRsaInvalidPubKeyJwkN, kRsaPubKeyJwkE),
+        },
+    });
+    RETURN_NOT_OK(jwks_server_.StartWithAccounts(account_id_to_resp));
+
+    WebserverOptions opts;
+    opts.port = 0;
+    webserver_.reset(new Webserver(opts));
+    webserver_->RegisterPrerenderedPathHandler(
+        "/.well-known/openid-configuration'", "openid-configuration",
+        // Pass the 'accountId' query arguments to return a response that
+        // points to the JWKS endpoint for the account.
+        [this] (const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
+          JWKSDiscoveryHandler(req, resp, jwks_server_);
+        },
+        /*is_styled*/false, /*is_on_nav_bar*/false);
+    RETURN_NOT_OK(webserver_->Start());
+    vector<Sockaddr> addrs;
+    RETURN_NOT_OK(webserver_->GetBoundAddresses(&addrs));
+    RETURN_NOT_OK(addr_.ParseString("127.0.0.1", addrs[0].port()));
+    url_ = Substitute("http://$0/.well-known/openid-configuration'", addr_.ToString());
+    return Status::OK();
+  }
+
+  const string& url() const {
+    return url_;
+  }
+ private:
+  unique_ptr<Webserver> webserver_;
+  JWKSMockServer jwks_server_;
+  string url_;
+  Sockaddr addr_;
+};
+
+} // anonymous namespace
+
+TEST(JwtUtilTest, VerifyJWKSDiscoveryEndpoint) {
+  JWKSDiscoveryEndpointMockServer discovery_endpoint;
+  ASSERT_OK(discovery_endpoint.Start());
+  PerAccountKeyBasedJwtVerifier jwt_verifier(discovery_endpoint.url());
+  {
+    auto valid_user_token =
+        jwt::create()
+            .set_issuer(Substitute("auth0/$0", kValidAccount))
+            .set_type("JWT")
+            .set_algorithm("RS256")
+            .set_key_id(kKid1)
+            .set_subject(kValidAccount)
+            .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
+    string subject;
+    ASSERT_OK(jwt_verifier.VerifyToken(valid_user_token, &subject));
+    ASSERT_EQ(kValidAccount, subject);
+  }
+  {
+    auto invalid_user_token =
+        jwt::create()
+            .set_issuer(Substitute("auth0/$0", kInvalidAccount))
+            .set_type("JWT")
+            .set_algorithm("RS256")
+            .set_key_id(kKid1)
+            .set_subject(kInvalidAccount)
+            .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
+    string subject;
+    Status s = jwt_verifier.VerifyToken(invalid_user_token, &subject);
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  }
+  {
+    auto missing_user_token =
+        jwt::create()
+            .set_issuer(Substitute("auth0/$0", kMissingAccount))
+            .set_type("JWT")
+            .set_algorithm("RS256")
+            .set_key_id(kKid1)
+            .set_subject(kMissingAccount)
+            .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
+    string subject;
+    Status s = jwt_verifier.VerifyToken(missing_user_token, &subject);
+    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+  }
+}
+
+TEST(JwtUtilTest, VerifyJWKSDiscoveryEndpointMultipleClients) {
+  JWKSDiscoveryEndpointMockServer discovery_endpoint;
+  ASSERT_OK(discovery_endpoint.Start());
+  PerAccountKeyBasedJwtVerifier jwt_verifier(discovery_endpoint.url());
+  {
+    auto valid_user_token =
+        jwt::create()
+            .set_issuer(Substitute("auth0/$0", kValidAccount))
+            .set_type("JWT")
+            .set_algorithm("RS256")
+            .set_key_id(kKid1)
+            .set_subject(kValidAccount)
+            .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
+
+    int constexpr n = 8;
+    std::vector<std::thread> threads;
+    threads.reserve(n);
+    CountDownLatch latch(n);
+
+    for (int i = 0; i < n; i++) {
+      threads.emplace_back([&](){
+        string subject;
+        CHECK_OK(jwt_verifier.VerifyToken(valid_user_token, &subject));
+        CHECK_EQ(kValidAccount, subject);
+        latch.CountDown();
+      });
+    }
+
+    latch.Wait();
+    SCOPED_CLEANUP({
+      for (auto& t : threads) {
+        t.join();
+      }
+    });
+  }
 }
 
 } // namespace kudu

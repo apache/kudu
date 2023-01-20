@@ -243,7 +243,7 @@ static Status DoServerNegotiation(Connection* conn,
                                   RpcEncryption encryption,
                                   bool encrypt_loopback,
                                   const MonoTime& deadline) {
-  const auto* messenger = conn->reactor_thread()->reactor()->messenger();
+  auto* messenger = conn->reactor_thread()->reactor()->messenger();
   if (authentication == RpcAuthentication::REQUIRED &&
       messenger->keytab_file().empty() &&
       !messenger->tls_context().is_external_cert()) {
@@ -262,7 +262,7 @@ static Status DoServerNegotiation(Connection* conn,
   ServerNegotiation server_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
                                        &messenger->token_verifier(),
-                                       messenger->jwt_verifier(),
+                                       messenger->mutable_jwt_verifier(),
                                        encryption,
                                        encrypt_loopback,
                                        messenger->sasl_proto_name());

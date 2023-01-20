@@ -66,7 +66,7 @@ class ServerNegotiation {
   ServerNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
                     const security::TokenVerifier* token_verifier,
-                    const JwtVerifier* jwt_verifier,
+                    JwtVerifier* jwt_verifier,
                     security::RpcEncryption encryption,
                     bool encrypt_loopback,
                     std::string sasl_proto_name);
@@ -238,7 +238,7 @@ class ServerNegotiation {
 
   // TSK state.
   const security::TokenVerifier* token_verifier_;
-  const JwtVerifier* jwt_verifier_;
+  JwtVerifier* jwt_verifier_;
 
   // The set of features supported by the client and server. Filled in during negotiation.
   std::set<RpcFeatureFlag> client_features_;
