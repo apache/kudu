@@ -37,4 +37,4 @@ def convert_ts(ts_match):
   return "%s.%06d L=%d" % (f, phys_micros, logical)
 
 for l in sys.stdin.readlines():
-  print(re.sub(r"\d{10,19}", convert_ts, l))
+  print(re.sub(r"\d{10,20}", convert_ts, l))
