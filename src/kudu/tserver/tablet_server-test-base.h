@@ -101,10 +101,10 @@ class TabletServerTestBase : public KuduTest {
                              TabletServerServiceProxy* proxy = nullptr,
                              uint32_t call_seq_id = 1);
 
-  void StringifyRowsFromResponse(const Schema& projection,
-                                 const rpc::RpcController& rpc,
-                                 ScanResponsePB* resp,
-                                 std::vector<std::string>* results);
+  static void StringifyRowsFromResponse(const Schema& projection,
+                                        const rpc::RpcController& rpc,
+                                        ScanResponsePB* resp,
+                                        std::vector<std::string>* results);
 
   void ShutdownTablet();
 
