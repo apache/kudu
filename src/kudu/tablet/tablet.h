@@ -130,6 +130,10 @@ class Tablet {
   Status Open(const std::unordered_set<int64_t>& in_flight_txn_ids = std::unordered_set<int64_t>{},
               const std::unordered_set<int64_t>& txn_ids_with_mrs = std::unordered_set<int64_t>{});
 
+  // Update the auto incrementing counter of the tablet
+  // if the tablet has the auto incrementing column in the schema.
+  Status UpdateAutoIncrementingCounter(const RowSetVector& rowsets_opened);
+
   // Mark that the tablet has finished bootstrapping.
   // This transitions from kBootstrapping to kOpen state.
   // Returns an error if tablet has been stopped.

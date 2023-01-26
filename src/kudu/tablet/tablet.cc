@@ -47,6 +47,8 @@
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/row_operations.pb.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
@@ -94,6 +96,7 @@
 #include "kudu/util/process_memory.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status_callback.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/throttler.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
@@ -303,7 +306,6 @@ GROUP_FLAG_VALIDATOR(rowset_compaction, &ValidateRowsetCompactionGuard);
 
 namespace kudu {
 
-class RowBlock;
 struct IteratorStats;
 
 namespace tablet {
@@ -430,8 +432,16 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
                              << s.ToString();
       return s;
     }
-
     rowsets_opened.emplace_back(std::move(rowset));
+  }
+
+  // Update the auto incrementing counter of the tablet from the data directories
+  if (schema()->has_auto_incrementing()) {
+    Status s = UpdateAutoIncrementingCounter(rowsets_opened);
+    if (!s.ok()) {
+      LOG_WITH_PREFIX(ERROR) << "Failed to update auto incrementing counter" << s.ToString();
+      return s;
+    }
   }
 
   {
@@ -478,6 +488,39 @@ Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids,
       return Status::IllegalState("Expected the Tablet to be initialized");
     }
     set_state_unlocked(kBootstrapping);
+  }
+  return Status::OK();
+}
+
+Status Tablet::UpdateAutoIncrementingCounter(const RowSetVector& rowsets_opened) {
+  LOG_TIMING(INFO, "fetching auto increment counter") {
+    for (const shared_ptr<RowSet>& rowset: rowsets_opened) {
+      RowIteratorOptions opts;
+      opts.projection = schema().get();
+      opts.include_deleted_rows = false;
+      // TODO(achennaka): Materialize only the auto incrementing column for better performance
+      unique_ptr<RowwiseIterator> iter;
+      RETURN_NOT_OK(rowset->NewRowIterator(opts, &iter));
+      RETURN_NOT_OK(iter->Init(nullptr));
+      // The default size of 32K should be a good start as it would be increased if needed.
+      RowBlockMemory mem;
+      RowBlock block(&iter->schema(), 512, &mem);
+      while (iter->HasNext()) {
+        mem.Reset();
+        RETURN_NOT_OK(iter->NextBlock(&block));
+        const size_t nrows = block.nrows();
+        for (size_t i = 0; i < nrows; ++i) {
+          if (!block.selection_vector()->IsRowSelected(i)) {
+            continue;
+          }
+          int64 counter = *reinterpret_cast<const int64 *>(block.row(i).cell_ptr(
+              schema()->auto_incrementing_col_idx()));
+          if (counter > auto_incrementing_counter_) {
+            auto_incrementing_counter_ = counter;
+          }
+        }
+      }
+    }
   }
   return Status::OK();
 }
