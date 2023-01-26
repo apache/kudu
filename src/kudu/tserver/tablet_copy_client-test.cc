@@ -26,6 +26,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -38,7 +39,7 @@
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
-#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_reader.h" // IWYU pragma: keep
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
@@ -595,7 +596,7 @@ class TabletCopyClientAbortTest : public TabletCopyClientTest,
   }
 
   void SetUp() override {
-    TabletCopyClientTest::SetUp();
+    NO_FATALS(TabletCopyClientTest::SetUp());
     ASSERT_OK(StartCopy());
   }
  protected:
