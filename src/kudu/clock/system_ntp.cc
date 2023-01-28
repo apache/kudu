@@ -121,7 +121,9 @@ SystemNtp::SystemNtp()
 Status SystemNtp::Init() {
   timex t;
   t.modes = 0; // set mode to 0 for read-only query
-  RETURN_NOT_OK(CheckForNtpAdjtimeError(ntp_adjtime(&t)));
+  const int rc = ntp_adjtime(&t);
+  RETURN_NOT_OK(CheckForNtpAdjtimeError(rc));
+  RETURN_NOT_OK(NtpStateToStatus(rc));
 
   // The unit of the reported tolerance is ppm with 16-bit fractional part:
   // 65536 is 1 ppm (see http://man7.org/linux/man-pages/man3/ntp_adjtime.3.html
