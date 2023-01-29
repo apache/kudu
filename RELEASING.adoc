@@ -55,8 +55,8 @@ change. Of course, there will be contributors who are less active and maybe not
 even monitoring the dev@ list, so you'll still have to write release notes for
 their changes.
 
-Use git shortlog -s <prev-version>..HEAD to get a list of contributions and
-add it to the doc as a summary of all commits. Note the commit hash at HEAD, as
+Use `git shortlog <prev-version>..HEAD` to get a list of contributions and
+add it to the doc as a summary of all commits. Note the commit hash at `HEAD`, as
 you'll need to generate another list between this commit and the tip when
 finally branching.
 
@@ -99,7 +99,7 @@ Example doc: https://s.apache.org/kudu1.16rn
   2. From behind the firewall, `ssh gerrit@gerrit.cloudera.org` to log in.
   3. Back up the existing replication configuration file by executing
      `cp ~/etc/replication.config ~/etc/replication.config.bak.`date '+%Y%m%d.%H%M%S'``
-  4. Edit `etc/replication.config` to add a line for the new branch, such as
+  4. Edit `~/etc/replication.config` to add a line for the new branch, such as
      `branch-1.x.y`
   5. Send email to the dev lists for Kudu and Impala (dev@kudu.apache.org and
      dev@impala.apache.org) indicating that you are going to restart Gerrit
@@ -132,7 +132,7 @@ Example doc: https://s.apache.org/kudu1.16rn
     | grep -E "^>" | sed 's/>/*/'
 ----
 +
-. Commit the release notes to the newly created branch and submit it to gerit.
+. Commit the release notes to the newly created branch and submit it to Gerrit.
   Use `git shortlog -sn $PREV..` to list the contributors and add them to
   the reviewers to give everyone a chance to comment on the release notes of
   their changes.
@@ -156,7 +156,7 @@ Example doc: https://s.apache.org/kudu1.16rn
 . Before building a release candidate, make sure you have followed the
   Apache committer guide for
   link:https://www.apache.org/dev/new-committers-guide.html#set-up-security-and-pgp-keys[
-  setting up your GPG keys]. In addition to the link:http://pgp.mit.edu/[MIT
+  setting up your PGP keys]. In addition to the link:http://pgp.mit.edu/[MIT
   PGP public key server] referenced in the committer guide, consider adding
   your keys to one of link:http://pool.sks-keyservers.net:11371[SKS OpenPGP
   keyservers] or link:http://keyserver.ubuntu.com:11371[Ubuntu OpenPGP
@@ -230,7 +230,7 @@ Example doc: https://s.apache.org/kudu1.16rn
   git push apache 1.x.y-RC1
 ----
 
-. Build a source tarball against the RC branch.
+. Build a source tarball against the RC tag.
 
 . Out of the Kudu git workspace, checkout the
   link:https://dist.apache.org/repos/dist/dev/kudu/[dev Subversion (SVN) repository].
@@ -320,7 +320,7 @@ in its summary tab
 == Initiating a Vote for an RC
 
 . Send an email to dev@kudu.apache.org to start the RC process, using this
-  link:http://mail-archives.apache.org/mod_mbox/kudu-dev/201606.mbox/%3CCAGpTDNduoQM0ktuZc1eW1XeXCcXhvPGftJ%3DLRB8Er5c2dZptvw%40mail.gmail.com%3E[example]
+  link:https://lists.apache.org/thread/bl22kdwl0ybgty4p427p3vfm08vxqpqw[example]
   as a template.
 
 . Reminder that voting on a release requires a
@@ -330,7 +330,7 @@ in its summary tab
 . Cycle through as many RCs as required.
 
 . Always send an email with a different subject to indicate the result. For
-  link:http://mail-archives.apache.org/mod_mbox/kudu-dev/201606.mbox/%3CCAGpTDNeJdU%2BoUF4ZJneZt%3DCfFHY-HoqKgORwVuWWUMHq5jBNzA%40mail.gmail.com%3E[example].
+  link:https://lists.apache.org/thread/w4ztrk821vhr3g2y2ko8yxv2f9dbndvh[example].
 
 . After the vote passes, send an email to dev@kudu.apache.org indicating the
   result.
