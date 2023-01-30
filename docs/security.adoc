@@ -486,29 +486,66 @@ schema, rather than showing only authorized columns.
 == Encryption
 
 Kudu allows all communications among servers and between clients and servers
-to be encrypted with TLS.
+to be encrypted with TLS, and the data to be encrypted at rest with AES.
 
-Encryption can be configured on Kudu servers using the `--rpc_encryption` flag,
-which can be set to `required`, `optional`, or `disabled`. By default, the flag
-is set to `optional`. When `required`, Kudu will reject unencrypted connections.
-When `optional`, Kudu will attempt to use encryption. Same as authentication,
-when `disabled` or encryption fails for `optional`, Kudu will only allow
-unencrypted connections from trusted subnets and reject any unencrypted connections
-from publicly routable IPs. To secure a cluster, use `--rpc_encryption=required`.
+=== Data in Transit
+Encryption in transit can be configured on Kudu servers using the
+`--rpc_encryption` flag, which can be set to `required`, `optional`, or
+`disabled`. By default, the flag is set to `optional`. When `required`, Kudu
+will reject unencrypted connections.  When `optional`, Kudu will attempt to use
+encryption. Same as authentication, when `disabled` or encryption fails for
+`optional`, Kudu will only allow unencrypted connections from trusted subnets
+and reject any unencrypted connections from publicly routable IPs. To secure a
+cluster, use `--rpc_encryption=required`.
 
 NOTE: Kudu will automatically turn off encryption on local loopback connections,
 since traffic from these connections is never exposed externally. This allows
 locality-aware compute frameworks like Spark and Impala to avoid encryption
 overhead, while still ensuring data confidentiality.
 
+=== Data at Rest
+It's also possible to encrypt data at rest. Kudu supports *AES-128-CTR*,
+*AES-192-CTR*, and *AES-256-CTR* ciphers to encrypt data. Each physical file is
+encrypted with a unique key (_File Key_), which in turn is encrypted with the
+server's own key (_Server Key_), which is encrypted by the _Cluster Key_ stored
+in a third-party _Key Management Service (KMS)_. Kudu supports _Apache Ranger
+KMS_ and _Apache Hadoop KMS_ (they are API-compatible).
+
+Encryption at rest can be enabled with the `--encrypt_data_at_rest=true` flag.
+As the default key provider is *NOT* secure (it stores the Server Keys in
+cleartext and a Cluster Key is not used), the key provider should be set to
+`ranger-kms` using the `encryption_key_provider` flag and its URL set with
+`ranger_kms_url`. Before starting the server, a key must exist in the key
+provider with the same name as passed to Kudu with the
+`--encryption_cluster_key_name` flag.
+
+When data is encrypted, CLI tools accessing the file system directly need to be
+provided with the same flags and the instance file from a data, WAL, or metadata
+directory must also be set with the `--instance_file` flag, for example:
+
+[source,bash]
+----
+$ kudu wal dump --encrypt_data_at_rest=true --encryption_key_provider=ranger-kms \
+  --ranger_kms_url=https://ranger-kms.example.com:9292/kms \
+  --instance_file=/path/to/wal/instance \
+  /path/to/wal/wals/ffffffffffffffffffffffffffffffff/wal-000000001
+----
+
+WARNING: Enabling data at rest encryption is supported only on fresh
+installations. When encryption is enabled and there are pre-existing Kudu
+directories, Kudu will fail to start. Disabling it on an existing cluster is
+also unsupported. Existing Kudu clusters can be migrated in-place by re-adding
+the existing servers as encrypted one by one, and waiting for the data to be
+fully replicated after each step to make sure there is no data loss.
+
 [[web-ui]]
-== Web UI Encryption
+=== Web UI Encryption
 
 The Kudu web UI can be configured to use secure HTTPS encryption by providing
 each server with TLS certificates. See <<configuration>> for more information on
 web UI HTTPS configuration.
 
-== Web UI Redaction
+=== Web UI Redaction
 
 To prevent sensitive data from being exposed in the web UI, all row data is
 redacted. Table metadata, such as table names, column names, and partitioning
@@ -535,13 +572,13 @@ tablet server) in order to ensure that a Kudu cluster is secure:
 
 ```
 # Connection Security
-#--------------------
+# -------------------
 --rpc_authentication=required
 --rpc_encryption=required
 --keytab_file=<path-to-kerberos-keytab>
 
 # Web UI Security
-#--------------------
+# ---------------
 --webserver_certificate_file=<path-to-cert-pem>
 --webserver_private_key_file=<path-to-key-pem>
 # optional
@@ -551,7 +588,7 @@ tablet server) in order to ensure that a Kudu cluster is secure:
 --webserver_enabled=false
 
 # Coarse-grained authorization
-#--------------------------------
+# ----------------------------
 
 # This example ACL setup allows the 'impala' user as well as the
 # 'nightly_etl_service_account' principal access to all data in the
@@ -561,6 +598,18 @@ tablet server) in order to ensure that a Kudu cluster is secure:
 # authorization rules.
 --user_acl=impala,nightly_etl_service_account
 --superuser_acl=hadoopadmin
+
+# Data at rest encryption
+# -----------------------
+
+# This example data at rest encryption setup enables data at rest encryption for
+# Kudu using Ranger KMS as the Cluster Key provider. The
+# encryption_cluster_key_name is the default one, and if a key is created with
+# this name in Ranger KMS, it can be omitted.
+--encrypt_data_at_rest=true
+--encryption_key_provider=ranger-kms
+--encryption_cluster_key_name=kudu_cluster_key # optional
+--ranger_kms_url=https://ranger-kms.example.com:9292/kms
 ```
 
 See <<ranger-configuration>> to see an example of how to enable fine-grained
