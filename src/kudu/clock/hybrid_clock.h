@@ -28,6 +28,7 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -43,8 +44,15 @@ namespace clock {
 class HybridClock : public Clock {
  public:
   // Create an instance, registering HybridClock's metrics with the specified
-  // metric entity.
-  explicit HybridClock(const scoped_refptr<MetricEntity>& metric_entity);
+  // metric entity. If 'wall_clock_jump_jump_threshold_usec' is greater than 0,
+  // enable the logic to detect sudden jumps of the wall clock with the
+  // corresponding threshold in microseconds. When InstanceMetadata is already
+  // available from a prior run of InstanceDetector, pass it with the 'im'
+  // parameter for deducing the effective time source during Init() instead of
+  // running instance detection one more time there.
+  explicit HybridClock(const scoped_refptr<MetricEntity>& metric_entity,
+                       uint64_t wall_clock_jump_threshold_usec = 0,
+                       std::unique_ptr<cloud::InstanceMetadata> im = {});
 
   // Should be called only once.
   Status Init() override;
@@ -203,8 +211,12 @@ class HybridClock : public Clock {
   // determines particular time service to use. If the 'builtin' time source is
   // selected, the --builtin_ntp_servers flag's value is used to build the set
   // of reference servers for the built-in NTP client.
-  static Status SelectTimeSource(const std::string& time_source_str,
-                                 TimeSource* time_source);
+  // If non-null, the optional 'instance_metadata' is used for selecting the
+  // effective time source.
+  static Status SelectTimeSource(
+      const std::string& time_source_str,
+      TimeSource* time_source,
+      const cloud::InstanceMetadata* instance_metadata = nullptr);
 
   // Initialize hybrid clock with the specified time source.
   // If 'time_source' is TimeSource::BUILTIN_NTP_SYNC, the set of reference
@@ -230,17 +242,38 @@ class HybridClock : public Clock {
   // Used to get the current error, for metrics.
   uint64_t ErrorForMetrics();
 
+  // If non-null, this instance metadata is used to detect effective time source
+  // during Init().
+  std::unique_ptr<cloud::InstanceMetadata> instance_metadata_;
+
+  // Whether to run a sanity check on the wall clock readings used for the
+  // physical part of the hybrid timestamp.
+  const bool is_wall_clock_jump_check_enabled_;
+
+  // The threshold for the difference of deltas in the wall clock's and the
+  // CLOCK_MONOTONIC_RAW clock's timestamps captured almost at the same time.
+  // The --wall_clock_jump_threshold_sec flag's value is used as the source
+  // for this constant.
+  const uint64_t wall_clock_jump_threshold_usec_;
+
   // Used to fetch the current time and error bound from the system or NTP
   // service.
   std::unique_ptr<clock::TimeService> time_service_;
 
-  // Guards access to 'state_' and 'next_timestamp_'.
+  // Guards access to 'state_', 'next_timestamp_', 'prev_{mono,wall}_time_usec_'.
   simple_spinlock lock_;
 
   // The next timestamp to be generated from this clock, assuming that
   // the physical clock hasn't advanced beyond the value stored here.
   // Protected by 'lock_'.
   uint64_t next_timestamp_;
+
+  // Prior value of the CLOCK_MONOTONIC_RAW captured almost the same moment
+  // when next_timestamp_'s physical part was captured.
+  int64_t prev_mono_time_usec_;
+
+  // Prior value of the physical part of 'next_timestamp_'.
+  int64_t prev_wall_time_usec_;
 
   // The last valid clock reading we got from the time source, along
   // with the monotime that we took that reading. The 'is_extrapolating' field

@@ -18,6 +18,7 @@
 #include "kudu/clock/hybrid_clock.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -36,6 +37,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/cloud/instance_detector.h"
 #include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/debug/trace_event.h"
@@ -151,6 +153,8 @@ TAG_FLAG(ntp_initial_sync_wait_secs, evolving);
 
 DECLARE_bool(unlock_unsafe_flags);
 
+namespace {
+
 // This group flag validator is a guardrail to help using proper time source
 // in production.
 //
@@ -170,6 +174,8 @@ bool ValidateTimeSource() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(time_source_guardrail, ValidateTimeSource);
+
+} // anonymous namespace
 
 METRIC_DEFINE_gauge_bool(server, hybrid_clock_extrapolating,
                          "Hybrid Clock Is Being Extrapolated",
@@ -197,7 +203,7 @@ METRIC_DEFINE_histogram(server, hybrid_clock_max_errors,
                         kudu::MetricUnit::kMicroseconds,
                         "The statistics on the maximum error of the underlying "
                         "clock",
-                         kudu::MetricLevel::kDebug,
+                        kudu::MetricLevel::kDebug,
                         10000000, 1);
 
 METRIC_DEFINE_histogram(server, hybrid_clock_extrapolation_intervals,
@@ -230,8 +236,15 @@ Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_u
 
 }  // anonymous namespace
 
-HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity)
-    : next_timestamp_(0),
+HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity,
+                         uint64_t wall_clock_jump_threshold_usec,
+                         std::unique_ptr<InstanceMetadata> im)
+    : instance_metadata_(std::move(im)),
+      is_wall_clock_jump_check_enabled_(wall_clock_jump_threshold_usec > 0),
+      wall_clock_jump_threshold_usec_(wall_clock_jump_threshold_usec),
+      next_timestamp_(0),
+      prev_mono_time_usec_(0),
+      prev_wall_time_usec_(0),
       state_(kNotInitialized),
       metric_entity_(metric_entity) {
   DCHECK(metric_entity);
@@ -245,7 +258,8 @@ HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity)
 
 Status HybridClock::Init() {
   TimeSource time_source = TimeSource::UNKNOWN;
-  RETURN_NOT_OK(SelectTimeSource(FLAGS_time_source, &time_source));
+  RETURN_NOT_OK(SelectTimeSource(
+      FLAGS_time_source, &time_source, instance_metadata_.get()));
   LOG(INFO) << Substitute("auto-selected time source: $0",
                           TimeSourceToString(time_source));
   return InitWithTimeSource(time_source);
@@ -260,7 +274,7 @@ Timestamp HybridClock::Now() {
 
 Timestamp HybridClock::NowLatest() {
   Timestamp now;
-  uint64_t error;
+  uint64_t error = 0;
   NowWithErrorOrDie(&now, &error);
 
   uint64_t now_latest = GetPhysicalValueMicros(now) + error;
@@ -323,7 +337,7 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then,
                                    const MonoTime& deadline) {
   TRACE_EVENT0("clock", "HybridClock::WaitUntilAfter");
   Timestamp now;
-  uint64_t error;
+  uint64_t error = 0;
   RETURN_NOT_OK(NowWithError(&now, &error));
 
   // "unshift" the timestamps so that we can measure actual time
@@ -394,8 +408,8 @@ bool HybridClock::IsAfter(Timestamp t) {
   return t.value() < now.value();
 }
 
-Status HybridClock::NowWithErrorUnlocked(Timestamp *timestamp,
-                                         uint64_t *max_error_usec) {
+Status HybridClock::NowWithErrorUnlocked(Timestamp* timestamp,
+                                         uint64_t* max_error_usec) {
   DCHECK(lock_.is_locked());
   DCHECK_EQ(state_, kInitialized) << "Clock not initialized. Must call Init() first.";
 
@@ -405,8 +419,33 @@ Status HybridClock::NowWithErrorUnlocked(Timestamp *timestamp,
 
   // If the physical time from the system clock is higher than our last-returned
   // time, we should use the physical timestamp.
-  uint64_t candidate_phys_timestamp = now_usec << kBitsToShift;
+  const uint64_t candidate_phys_timestamp = now_usec << kBitsToShift;
   if (PREDICT_TRUE(candidate_phys_timestamp > next_timestamp_)) {
+    // If enabled, perform an extra sanity check to make sure wall clock time
+    // hasn't jumped too far compared with monotonic clock time.
+    if (is_wall_clock_jump_check_enabled_) {
+      const int64_t now_mono_time_usec = GetMonoTimeMicrosRaw();
+      if (PREDICT_TRUE(prev_mono_time_usec_ != 0)) {
+        DCHECK_GE(now_mono_time_usec, prev_mono_time_usec_);
+        const int64_t mono_delta_usec = now_mono_time_usec - prev_mono_time_usec_;
+        const int64_t wall_delta_usec =
+            static_cast<int64_t>(now_usec) - prev_wall_time_usec_;
+        // Check if the wall clock timestamp has jumped too far compared
+        // with CLOCK_MONOTONIC_RAW timestamp read almost at the same moment.
+        if (PREDICT_FALSE(abs(wall_delta_usec - mono_delta_usec) >
+                          wall_clock_jump_threshold_usec_)) {
+          const auto msg = Substitute(
+              "wall ($0 us) and monotonic ($1 us) clock deltas diverged too much "
+              "(threshold $2 us)",
+              wall_delta_usec, mono_delta_usec, wall_clock_jump_threshold_usec_);
+          time_service_->DumpDiagnostics(/*log=*/nullptr);
+          return Status::ServiceUnavailable(msg);
+        }
+      }
+      prev_mono_time_usec_ = now_mono_time_usec;
+      prev_wall_time_usec_ = static_cast<int64_t>(now_usec);
+    }
+
     next_timestamp_ = candidate_phys_timestamp;
     *timestamp = Timestamp(next_timestamp_++);
     *max_error_usec = error_usec;
@@ -454,14 +493,20 @@ void HybridClock::NowWithErrorOrDie(Timestamp* timestamp,
 }
 
 Status HybridClock::SelectTimeSource(const string& time_source_str,
-                                     TimeSource* time_source) {
+                                     TimeSource* time_source,
+                                     const InstanceMetadata* instance_metadata) {
   constexpr const char* const BUILTIN_NTP_SERVERS = "builtin_ntp_servers";
 
   TimeSource result_time_source = TimeSource::UNKNOWN;
   if (iequals(time_source_str, TIME_SOURCE_AUTO)) {
-    InstanceDetector detector;
-    unique_ptr<InstanceMetadata> md;
-    const auto s = detector.Detect(&md);
+    auto s = Status::OK();
+    const auto* md = instance_metadata;
+    unique_ptr<InstanceMetadata> im;
+    if (!md) {
+      InstanceDetector detector;
+      s = detector.Detect(&im);
+      md = im.get();
+    }
     string ntp_server;
     if (s.ok() && md->GetNtpServer(&ntp_server).ok()) {
       // Select the built-in NTP client. If the auto-configuration of the
@@ -719,9 +764,8 @@ uint64_t HybridClock::NowForMetrics() {
 // Used to get the current error, for metrics.
 uint64_t HybridClock::ErrorForMetrics() {
   Timestamp now_unused;
-  uint64_t error;
-  auto s = NowWithError(&now_unused, &error);
-  if (PREDICT_FALSE(!s.ok())) {
+  uint64_t error = 0;
+  if (auto s = NowWithError(&now_unused, &error); PREDICT_FALSE(!s.ok())) {
     return std::numeric_limits<uint64_t>::max();
   }
   return error;

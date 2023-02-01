@@ -35,6 +35,7 @@
 #include "kudu/clock/time_service.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -52,6 +53,7 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -69,6 +71,7 @@ using kudu::cluster::ExternalMiniClusterOptions;
 using std::string;
 using std::thread;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace clock {
@@ -394,8 +397,14 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
 TEST_F(HybridClockTest, SlowClockInitialisation) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
-  const vector<string> kExtraFlags =
-      { "--hybrid_clock_inject_init_delay_ms=100" };
+  const vector<string> kExtraFlags = {
+    // Inject delay to emulate slow initialization of the hybrid clock.
+    "--hybrid_clock_inject_init_delay_ms=100",
+
+    // Switching from the default "auto" to "enabled" for faster startup times:
+    // this test scenario is sensitive to start up timing.
+    "--wall_clock_jump_detection=enabled",
+  };
 
   ExternalMiniClusterOptions opts;
   opts.num_masters = 3;
@@ -455,7 +464,7 @@ TEST_F(HybridClockTest, SlowClockInitialisation) {
   EasyCurl c;
   for (const auto& addr : addresses) {
     faststring buf;
-    ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/metrics", addr), &buf));
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics", addr), &buf));
     const auto str = buf.ToString();
     ASSERT_STR_CONTAINS(str, "builtin_ntp_error");
     ASSERT_STR_CONTAINS(str, "builtin_ntp_local_clock_delta");
@@ -557,6 +566,57 @@ TEST_F(HybridClockTest, AutoTimeSourceNoDedicatedNtpServer) {
   }
 }
 
+// Imitate the clock jumping well other the threshold.
+TEST_F(HybridClockTest, ClockJumpDetection) {
+  static constexpr uint64_t kThresholdSeconds = 100;
+  FLAGS_time_source = "mock";
+  HybridClock clock(metric_entity_, kThresholdSeconds * 1000 * 1000);
+
+  ASSERT_OK(clock.Init());
+
+  const auto time_setter = [&](MonoDelta delta) {
+    uint64_t now = HybridClock::GetPhysicalValueMicros(clock.Now());
+    uint64_t to_update = now + delta.ToMicroseconds();
+    auto* hybrid_clock = down_cast<HybridClock*>(&clock);
+    auto* mock_ntp = down_cast<clock::MockNtp*>(hybrid_clock->time_service());
+    mock_ntp->SetMockClockWallTimeForTests(to_update);
+  };
+
+  // Move the 'now' timestamp of the mock clock to make sure the proper 'if'
+  // branch is taken in HybridClock::NowWithErrorUnlocked().
+  time_setter(MonoDelta::FromMicroseconds(1));
+  {
+    Timestamp ts;
+    uint64_t max_error_usec;
+    ASSERT_OK(clock.NowWithError(&ts, &max_error_usec));
+    ASSERT_EQ(1, HybridClock::GetPhysicalValueMicros(ts));
+  }
+
+  // Get closer to the threshold. It should still work since the threshold
+  // isn't crossed yet.
+  time_setter(MonoDelta::FromSeconds(kThresholdSeconds));
+  {
+    Timestamp ts;
+    uint64_t max_error_usec;
+    ASSERT_OK(clock.NowWithError(&ts, &max_error_usec));
+    ASSERT_EQ(kThresholdSeconds * 1000 * 1000 + 1,
+              HybridClock::GetPhysicalValueMicros(ts));
+  }
+
+  // Now make the clock jumping well over the threshold: with previous jump
+  // it should be about two times over the threshold.
+  time_setter(MonoDelta::FromSeconds(2 * kThresholdSeconds));
+  {
+    Timestamp ts;
+    uint64_t max_error_usec;
+    const auto s = clock.NowWithError(&ts, &max_error_usec);
+    ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
+    ASSERT_STR_MATCHES(s.ToString(),
+        "wall \\(200000000 us\\) and monotonic \\([0-9]+ us\\) "
+        "clock deltas diverged too much \\(threshold 100000000 us\\)");
+  }
+}
+
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
 TEST_F(HybridClockTest, TestNtpDiagnostics) {
   FLAGS_time_source = "system";
@@ -592,6 +652,44 @@ TEST_F(HybridClockTest, TestNtpDiagnostics) {
   ASSERT_STR_CONTAINS(s, "hybrid_clock_extrapolation_intervals");
 }
 #endif // #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE) ...
+
+// The boolean parameter is to specify whether the wall clock protection is
+// enabled or not ('true' -- enabled, 'false' -- disabled).
+class HybridClockJumpProtectionTest : public ClockTest,
+                            public ::testing::WithParamInterface<bool> {
+};
+INSTANTIATE_TEST_SUITE_P(Perf, HybridClockJumpProtectionTest, ::testing::Bool());
+
+// This is a scenario for basic peformance assessment of the
+// HybridClock::NowWithError() method with clock jump check enabled/disabled.
+TEST_P(HybridClockJumpProtectionTest, BasicPerf) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  constexpr const int kNumIterations = 1000000;
+  FLAGS_time_source = "system_unsync";
+  const auto enable_protection = GetParam();
+  HybridClock clock(metric_entity_, enable_protection ? 10000000UL : 0UL);
+  ASSERT_OK(clock.Init());
+
+  Stopwatch sw;
+  sw.start();
+  Status res_status;
+  for (auto i = 0; i < kNumIterations; ++i) {
+    Timestamp timestamp;
+    uint64_t max_error_usec;
+    auto s = clock.NowWithError(&timestamp, &max_error_usec);
+    if (PREDICT_FALSE(!s.ok())) {
+      res_status = s;
+      break;
+    }
+  }
+  sw.stop();
+
+  ASSERT_OK(res_status);
+
+  LOG(INFO) << Substitute("$0 iterations in $1 ms",
+                          kNumIterations, sw.elapsed().wall_millis());
+}
 
 }  // namespace clock
 }  // namespace kudu

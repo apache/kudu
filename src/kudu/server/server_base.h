@@ -52,6 +52,10 @@ namespace clock {
 class Clock;
 } // namespace clock
 
+namespace cloud {
+class InstanceMetadata;
+} // namespace cloud
+
 namespace rpc {
 class ResultTracker;
 class RpcContext;
@@ -226,6 +230,16 @@ class ServerBase {
   CountDownLatch stop_background_threads_latch_;
 
  private:
+  // Whether to enable sanity check on wall clock jumps for certain environments
+  // that are prone to such an issue. The logic is controlled by
+  // --wall_clock_jump_detection and --wall_clock_jump_threshold_sec flags.
+  // If with OK status the *threshold_usec > 0, the clock jump detection
+  // should be enabled with the specified threshold, while *threshold_usec == 0
+  // means clock jump detection isn't needed.
+  static Status WallClockJumpDetectionNeeded(
+      uint64_t* threshold_usec,
+      std::unique_ptr<cloud::InstanceMetadata>* im);
+
   Status InitAcls();
   void GenerateInstanceID();
   Status DumpServerInfo(const std::string& path,
