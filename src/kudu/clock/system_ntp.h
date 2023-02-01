@@ -29,12 +29,17 @@
 namespace kudu {
 namespace clock {
 
-// TimeService implementation which uses the 'ntp_adjtime' call (corresponding to the
-// 'adjtimex' syscall) to consult the Linux kernel for the current time
-// and error bound.
+// The SystemNtp is a TimeService implementation which uses the ntp_adjtime()
+// call [1] (similar to ntp_gettime() call [2] from the NTP kernel API, both
+// based on the adjtimex() syscall on Linux) to consult the Linux kernel
+// for the current time and error bound.
 //
-// This implementation relies on the ntpd service running on the local host
-// to keep the kernel's timekeeping up to date and in sync.
+// This implementation relies on the NTP service running on the local host
+// (implemented, for example, by chronyd, ntpd, etc.) to keep the system clock
+// synchronized with reference NTP time servers.
+//
+// [1] https://man7.org/linux/man-pages/man3/ntp_adjtime.3.html
+// [2] https://man7.org/linux/man-pages/man3/ntp_gettime.3.html
 class SystemNtp : public TimeService {
  public:
   explicit SystemNtp(const scoped_refptr<MetricEntity>& metric_entity);

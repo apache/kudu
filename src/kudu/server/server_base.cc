@@ -69,6 +69,8 @@
 #include "kudu/server/tracing_path_handlers.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/cloud/instance_detector.h"
+#include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/file_cache.h"
@@ -278,6 +280,34 @@ DEFINE_string(jwks_discovery_endpoint_base, "",
               "are taken from received JWTs to get the appropriate Discovery Endpoint.");
 TAG_FLAG(jwks_discovery_endpoint_base, experimental);
 
+// The targeted use-case for the wall clock jump detection is spotting sudden
+// swings of the local clock while it is still reported to be synchronized with
+// reference NTP clock.
+DEFINE_string(wall_clock_jump_detection, "auto",
+              "Whether to run a sanity check on wall clock timestamps using "
+              "the readings of the CLOCK_MONOTONIC_RAW clock as the reference. "
+              "Acceptable values for this flag are \"auto\", \"enabled\", and "
+              "\"disabled\". \"auto\" enables the sanity check in environments "
+              "known to be susceptible to such clock jumps (e.g., Azure VMs); "
+              "\"enabled\" unconditionally enables the check; \"disabled\" "
+              "unconditionally disables the check. The threshold for the "
+              "difference between deltas of consecutive timestamps read from "
+              "wall and CLOCK_MONOTONIC_RAW clocks is controlled by the "
+              "--wall_clock_jump_threshold_sec flag.");
+TAG_FLAG(wall_clock_jump_detection, experimental);
+
+// The idea behind having 900 seconds as the default threshold is to have the
+// bar set quite high, but still under 1000 seconds which is the default time
+// delta threshold for ntpd unless '-g' option is added or 'tinker panic 0'
+// or similar directive is present in ntp.conf (ntpd would exit without trying
+// to adjust time if it detects the difference between the reference time and
+// the local clock time to be greater than 1000 seconds, see 'man ntpd').
+DEFINE_uint32(wall_clock_jump_threshold_sec, 15 * 60,
+              "Maximum allowed divergence between the wall and monotonic "
+              "clocks; effective only when the clock jump protection "
+              "is enabled");
+TAG_FLAG(wall_clock_jump_threshold_sec, experimental);
+
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
@@ -289,6 +319,7 @@ DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_string(log_filename);
 DECLARE_string(keytab_file);
 DECLARE_string(principal);
+DECLARE_string(time_source);
 
 METRIC_DECLARE_gauge_size(merged_entities_count_of_server);
 METRIC_DEFINE_gauge_int64(server, uptime,
@@ -317,6 +348,9 @@ METRIC_DEFINE_gauge_int64(server, memory_usage,
                           kudu::MetricLevel::kInfo);
 #endif // #ifdef TCMALLOC_ENABLED
 
+using kudu::cloud::CloudType;
+using kudu::cloud::InstanceDetector;
+using kudu::cloud::InstanceMetadata;
 using kudu::security::RpcAuthentication;
 using kudu::security::RpcEncryption;
 using std::ostringstream;
@@ -339,6 +373,58 @@ bool IsValidTlsProtocolStr(const string& str) {
 namespace server {
 
 namespace {
+
+enum class TriState {
+  AUTO,
+  ENABLED,
+  DISABLED,
+};
+
+// This is a helper function to parse a flag that has three possible values:
+// "auto", "enabled", "disabled".  That directly maps into the TriState enum.
+Status ParseTriStateFlag(const string& name,
+                         const string& value,
+                         TriState* result = nullptr) {
+  if (iequals(value, "auto")) {
+    if (result) {
+      *result = TriState::AUTO;
+    }
+    return Status::OK();
+  }
+  if (iequals(value, "enabled")) {
+    if (result) {
+      *result = TriState::ENABLED;
+    }
+    return Status::OK();
+  }
+  if (iequals(value, "disabled")) {
+    if (result) {
+      *result = TriState::DISABLED;
+    }
+    return Status::OK();
+  }
+  return Status::InvalidArgument(
+      Substitute("$0: invalid value for flag --$1", value, name));
+}
+
+bool ValidateWallClockJumpDetection(const char* name, const string& value) {
+  const auto s = ParseTriStateFlag(name, value);
+  if (s.ok()) {
+    return true;
+  }
+  LOG(ERROR) << s.ToString();
+  return false;
+}
+DEFINE_validator(wall_clock_jump_detection, &ValidateWallClockJumpDetection);
+
+bool ValidateWallClockJumpThreshold(const char* name, uint32_t value) {
+  if (value == 0) {
+    LOG(ERROR) << Substitute("--$0 must be greater than 0", name);
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(wall_clock_jump_threshold_sec, &ValidateWallClockJumpThreshold);
 
 bool ValidateTlsProtocol(const char* /*flagname*/, const string& value) {
   return IsValidTlsProtocolStr(value);
@@ -584,13 +670,6 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
   fs_opts.file_cache = file_cache_.get();
   fs_manager_.reset(new FsManager(options.env, std::move(fs_opts)));
 
-  if (FLAGS_use_hybrid_clock) {
-    clock_.reset(new clock::HybridClock(metric_entity_));
-  } else {
-    clock_.reset(new clock::LogicalClock(Timestamp::kInitialTimestamp,
-                                         metric_entity_));
-  }
-
   if (FLAGS_webserver_enabled) {
     web_server_.reset(new Webserver(options.webserver_opts));
   }
@@ -634,6 +713,25 @@ void ServerBase::GenerateInstanceID() {
 }
 
 Status ServerBase::Init() {
+  if (!FLAGS_use_hybrid_clock) {
+    clock_.reset(new clock::LogicalClock(Timestamp::kInitialTimestamp,
+                                         metric_entity_));
+  } else {
+    uint64_t threshold_usec = 0;
+    unique_ptr<InstanceMetadata> im;
+    RETURN_NOT_OK(WallClockJumpDetectionNeeded(&threshold_usec, &im));
+    if (threshold_usec > 0) {
+      LOG(INFO) << "enabling wall clock jump detection";
+    }
+    clock_.reset(new clock::HybridClock(
+        metric_entity_, threshold_usec, std::move(im)));
+  }
+
+  // Initialize the clock immediately. This checks that the clock is synchronized
+  // so we're less likely to get into a partially initialized state on disk during startup
+  // if we're having clock problems.
+  RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
+
   Timer* init = startup_path_handler_->init_progress();
   Timer* read_filesystem = startup_path_handler_->read_filesystem_progress();
   init->Start();
@@ -643,10 +741,6 @@ Status ServerBase::Init() {
 
   InitSpinLockContentionProfiling();
 
-  // Initialize the clock immediately. This checks that the clock is synchronized
-  // so we're less likely to get into a partially initialized state on disk during startup
-  // if we're having clock problems.
-  RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
   RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal, FLAGS_keytab_file));
   RETURN_NOT_OK(file_cache_->Init());
 
@@ -766,6 +860,55 @@ Status ServerBase::Init() {
   }
 
   return rpc_server_->Bind();
+}
+
+Status ServerBase::WallClockJumpDetectionNeeded(
+    uint64_t* threshold_usec, unique_ptr<InstanceMetadata>* im) {
+  DCHECK(threshold_usec);
+  DCHECK(im);
+
+  TriState st = TriState::AUTO;
+  RETURN_NOT_OK(ParseTriStateFlag(
+      "wall_clock_jump_detection", FLAGS_wall_clock_jump_detection, &st));
+  switch (st) {
+    case TriState::DISABLED:
+      *threshold_usec = 0;
+      return Status::OK();
+    case TriState::ENABLED:
+      *threshold_usec = FLAGS_wall_clock_jump_threshold_sec * 1000UL * 1000UL;
+      return Status::OK();
+    default:
+      break;
+  }
+  DCHECK(st == TriState::AUTO);
+
+  InstanceDetector detector;
+  unique_ptr<InstanceMetadata> metadata;
+  if (const auto s = detector.Detect(&metadata); !s.ok()) {
+    LOG(INFO) << Substitute("$0: unable to detect cloud type of this node, "
+                            "probably running in non-cloud environment", s.ToString());
+    *threshold_usec = 0;
+    return Status::OK();
+  }
+  LOG(INFO) << Substitute("running on $0 node",
+                          cloud::TypeToString(metadata->type()));
+
+  // Enable an extra check to detect clock jumps on Azure VMs: those seem
+  // to be prone to clock jumps that aren't reflected in NTP clock
+  // synchronization status reported by ntp_adjtime()/ntp_gettime().
+  // Perhaps, that's due to the VMICTimeSync service interfering with the
+  // kernel NTP discipline after a 'memory preserving' maintenance: when a
+  // VM is 'unfrozen' after the update, the VMICTimeSync service updates the
+  // VM's clock to compensate for the pause (see [1]).
+  // [1] https://learn.microsoft.com/en-us/azure/virtual-machines/linux/time-sync
+  if (metadata->type() == CloudType::AZURE) {
+    *threshold_usec = FLAGS_wall_clock_jump_threshold_sec * 1000UL * 1000UL;
+  } else {
+    *threshold_usec = 0;
+  }
+  *im = std::move(metadata);
+
+  return Status::OK();
 }
 
 Status ServerBase::InitAcls() {
