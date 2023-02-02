@@ -119,7 +119,7 @@ Status MiniOidc::Start() {
   Sockaddr addr;
   RETURN_NOT_OK(jwks_server_->GetBoundAddresses(&bound_addrs));
   RETURN_NOT_OK(addr.ParseString(bound_addrs[0].host(), bound_addrs[0].port()));
-  string const jwks_url = Substitute("http://$0/jwks", addr.ToString());
+  const string jwks_url = Substitute("http://$0/jwks", addr.ToString());
 
   // Now start the OIDC Discovery server that points to the JWKS endpoints.
   WebserverOptions oidc_opts;

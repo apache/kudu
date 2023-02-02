@@ -706,7 +706,7 @@ Status ServerBase::Init() {
   std::shared_ptr<JwtVerifier> jwt_verifier;
   if (FLAGS_enable_jwt_token_auth) {
     if (!FLAGS_jwks_url.empty()) {
-      jwt_verifier = std::make_shared<KeyBasedJwtVerifier>(FLAGS_jwks_url, false);
+      jwt_verifier = std::make_shared<PerAccountKeyBasedJwtVerifier>(FLAGS_jwks_url);
     } else if (!FLAGS_jwks_file_path.empty()) {
       jwt_verifier = std::make_shared<KeyBasedJwtVerifier>(FLAGS_jwks_file_path, true);
     } else {

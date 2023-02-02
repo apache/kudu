@@ -1018,8 +1018,8 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
 
 Status PerAccountKeyBasedJwtVerifier::Init() {
   for (auto& [account_id, verifier] : jwt_by_account_id_) {
-    verifier->Init(Substitute("$0?accountId=$1", oidc_uri_, account_id),
-                   /*is_local_file*/false);
+    RETURN_NOT_OK(verifier->Init(Substitute("$0?accountId=$1", oidc_uri_, account_id),
+                   /*is_local_file*/false));
   }
   return Status::OK();
 }

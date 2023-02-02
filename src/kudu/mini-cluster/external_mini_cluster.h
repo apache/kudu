@@ -39,6 +39,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/util/mini_oidc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -314,6 +315,14 @@ struct ExternalMiniClusterOptions {
 
   std::string master_alias_prefix;
   std::string tserver_alias_prefix;
+
+  MiniOidcOptions mini_oidc_options;
+
+  // When set to true, servers are configured to verify JWTs via the configured
+  // OIDC server.
+  //
+  // Default: false
+  bool enable_client_jwt;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
@@ -438,6 +447,10 @@ class ExternalMiniCluster : public MiniCluster {
 
   rangerkms::MiniRangerKMS* ranger_kms() const {
     return ranger_kms_.get();
+  }
+
+  MiniOidc* oidc() const {
+    return oidc_.get();
   }
 
   const std::string& cluster_root() const {
@@ -615,6 +628,7 @@ class ExternalMiniCluster : public MiniCluster {
   std::shared_ptr<ranger::MiniRanger> ranger_;
   std::unique_ptr<security::KeyProvider> key_provider_;
   std::unique_ptr<rangerkms::MiniRangerKMS> ranger_kms_;
+  std::unique_ptr<MiniOidc> oidc_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
 

@@ -17,11 +17,11 @@
 
 #include "kudu/rpc/negotiation.h"
 
-#include <ctime>
 #include <poll.h>
 #include <sys/socket.h>
 
 #include <cerrno>
+#include <ctime>
 #include <memory>
 #include <optional>
 #include <ostream>
