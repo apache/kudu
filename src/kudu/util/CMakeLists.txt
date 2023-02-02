@@ -354,6 +354,17 @@ target_link_libraries(kudu_curl_util
   gutil)
 
 #######################################
+# mini_oidc
+#######################################
+set (MINI_OIDC_SRCS mini_oidc.cc)
+add_library(mini_oidc ${MINI_OIDC_SRCS})
+target_link_libraries(mini_oidc
+  server_process
+  gutil
+  kudu_test_util
+  kudu_util)
+
+#######################################
 # kudu_jwt_util
 #######################################
 add_library(kudu_jwt_util
@@ -630,6 +641,7 @@ ADD_KUDU_TEST(jwt-util-test)
 if(NOT NO_TESTS)
   target_link_libraries(jwt-util-test
     kudu_jwt_util
+    mini_oidc
     server_process)
 endif()
 
