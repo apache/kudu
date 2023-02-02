@@ -968,10 +968,11 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
     }
   }
 
-  // Otherwise, use the Discovery Endpoint to determine what 'jwks_uri' to use.
+  // Otherwise, use the OIDC Discovery Endpoint to determine what 'jwks_uri' to
+  // use.
   kudu::EasyCurl curl;
   kudu::faststring dst;
-  const auto discovery_endpoint = Substitute("$0?accountId=$1", discovery_base_, account_id);
+  const auto discovery_endpoint = Substitute("$0?accountId=$1", oidc_uri_, account_id);
   curl.set_timeout(
       kudu::MonoDelta::FromSeconds(static_cast<int64_t>(FLAGS_jwks_pulling_timeout_s)));
   curl.set_verify_peer(false);
@@ -1017,7 +1018,7 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
 
 Status PerAccountKeyBasedJwtVerifier::Init() {
   for (auto& [account_id, verifier] : jwt_by_account_id_) {
-    verifier->Init(Substitute("$0?accountId=$1", discovery_base_, account_id),
+    verifier->Init(Substitute("$0?accountId=$1", oidc_uri_, account_id),
                    /*is_local_file*/false);
   }
   return Status::OK();

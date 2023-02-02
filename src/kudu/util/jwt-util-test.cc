@@ -36,7 +36,6 @@
 #include <jwt-cpp/traits/kazuho-picojson/defaults.h>
 #include <jwt-cpp/traits/kazuho-picojson/traits.h>
 
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/webserver.h"
 #include "kudu/server/webserver_options.h"
@@ -44,6 +43,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/jwt-util-internal.h"
 #include "kudu/util/jwt_test_certs.h"
+#include "kudu/util/mini_oidc.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
@@ -58,6 +58,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
+using kudu::MiniOidc;
 
 /// Utility class for creating a file that will be automatically deleted upon test
 /// completion.
@@ -933,158 +934,61 @@ TEST(JwtUtilTest, VerifyJWKSUrl) {
 }
 
 namespace {
-
-// $0: account_id
-// $1: jwks_uri
-const char kDiscoveryFormat[] = R"({
-    "issuer": "auth0/$0",
-    "token_endpoint": "dummy.endpoint.com",
-    "response_types_supported": [
-        "id_token"
-    ],
-    "claims_supported": [
-        "sub",
-        "aud",
-        "iss",
-        "exp"
-    ],
-    "subject_types_supported": [
-        "public"
-    ],
-    "id_token_signing_alg_values_supported": [
-        "RS256"
-    ],
-    "jwks_uri": "$1"
-})";
-
-void JWKSDiscoveryHandler(const Webserver::WebRequest& req,
-                          Webserver::PrerenderedWebResponse* resp,
-                          const JWKSMockServer& jwks_server) {
-  const auto* account_id = FindOrNull(req.parsed_args, "accountid");
-  if (!account_id) {
-    resp->output << "expected 'accountId' query";
-    resp->status_code = HttpStatusCode::BadRequest;
-    return;
-  }
-  resp->output << Substitute(kDiscoveryFormat, *account_id,
-                             jwks_server.url_for_account(*account_id));
-  resp->status_code = HttpStatusCode::Ok;
-}
-
 const char kValidAccount[] = "new-phone";
 const char kInvalidAccount[] = "who-is-this";
-const char kMissingAccount[] = "no-where";
-
-class JWKSDiscoveryEndpointMockServer {
- public:
-  Status Start() {
-    unordered_map<string, string> account_id_to_resp({
-        {
-          // Create an account that has valid keys.
-          kValidAccount,
-          Substitute(kJwksRsaFileFormat, kKid1, "RS256",
-              kRsaPubKeyJwkN, kRsaPubKeyJwkE, kKid2, "RS256", kRsaInvalidPubKeyJwkN,
-              kRsaPubKeyJwkE),
-        },
-        {
-          // The keys associated with this account are invalid.
-          kInvalidAccount,
-          Substitute(kJwksRsaFileFormat, kKid1, "RS256",
-              kRsaInvalidPubKeyJwkN, kRsaPubKeyJwkE, kKid2, "RS256",
-              kRsaInvalidPubKeyJwkN, kRsaPubKeyJwkE),
-        },
-    });
-    RETURN_NOT_OK(jwks_server_.StartWithAccounts(account_id_to_resp));
-
-    WebserverOptions opts;
-    opts.port = 0;
-    webserver_.reset(new Webserver(opts));
-    webserver_->RegisterPrerenderedPathHandler(
-        "/.well-known/openid-configuration'", "openid-configuration",
-        // Pass the 'accountId' query arguments to return a response that
-        // points to the JWKS endpoint for the account.
-        [this] (const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
-          JWKSDiscoveryHandler(req, resp, jwks_server_);
-        },
-        /*is_styled*/false, /*is_on_nav_bar*/false);
-    RETURN_NOT_OK(webserver_->Start());
-    vector<Sockaddr> addrs;
-    RETURN_NOT_OK(webserver_->GetBoundAddresses(&addrs));
-    RETURN_NOT_OK(addr_.ParseString("127.0.0.1", addrs[0].port()));
-    url_ = Substitute("http://$0/.well-known/openid-configuration'", addr_.ToString());
-    return Status::OK();
-  }
-
-  const string& url() const {
-    return url_;
-  }
- private:
-  unique_ptr<Webserver> webserver_;
-  JWKSMockServer jwks_server_;
-  string url_;
-  Sockaddr addr_;
-};
-
+const char kMissingAccount[] = "no-one";
 } // anonymous namespace
 
-TEST(JwtUtilTest, VerifyJWKSDiscoveryEndpoint) {
-  JWKSDiscoveryEndpointMockServer discovery_endpoint;
-  ASSERT_OK(discovery_endpoint.Start());
-  PerAccountKeyBasedJwtVerifier jwt_verifier(discovery_endpoint.url());
-  {
-    auto valid_user_token =
-        jwt::create()
-            .set_issuer(Substitute("auth0/$0", kValidAccount))
-            .set_type("JWT")
-            .set_algorithm("RS256")
-            .set_key_id(kKid1)
-            .set_subject(kValidAccount)
-            .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
-    string subject;
-    ASSERT_OK(jwt_verifier.VerifyToken(valid_user_token, &subject));
-    ASSERT_EQ(kValidAccount, subject);
-  }
-  {
-    auto invalid_user_token =
-        jwt::create()
-            .set_issuer(Substitute("auth0/$0", kInvalidAccount))
-            .set_type("JWT")
-            .set_algorithm("RS256")
-            .set_key_id(kKid1)
-            .set_subject(kInvalidAccount)
-            .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
-    string subject;
-    Status s = jwt_verifier.VerifyToken(invalid_user_token, &subject);
-    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
-  }
-  {
-    auto missing_user_token =
-        jwt::create()
-            .set_issuer(Substitute("auth0/$0", kMissingAccount))
-            .set_type("JWT")
-            .set_algorithm("RS256")
-            .set_key_id(kKid1)
-            .set_subject(kMissingAccount)
-            .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
-    string subject;
-    Status s = jwt_verifier.VerifyToken(missing_user_token, &subject);
-    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+TEST(JwtUtilTest, VerifyOIDCDiscoveryEndpoint) {
+  MiniOidcOptions opts;
+  opts.account_ids = {
+    { kValidAccount, /*is_valid*/true },
+    { kInvalidAccount, /*is_valid*/false },
+  };
+  MiniOidc oidc(std::move(opts));
+  ASSERT_OK(oidc.Start());
+  const PerAccountKeyBasedJwtVerifier jwt_verifier(oidc.url());
+
+  // Create and verify a token on the happy path.
+  const string kSubject = "kudu";
+  auto valid_user_token =
+      MiniOidc::CreateJwt(kValidAccount, kSubject, /*is_valid*/true);
+  string subject;
+  ASSERT_OK(jwt_verifier.VerifyToken(valid_user_token, &subject));
+  ASSERT_EQ(kSubject, subject);
+
+  // Verify some expected failure scenarios.
+  const unordered_map<string, string> invalid_jwts {
+    { MiniOidc::CreateJwt(kInvalidAccount, kSubject, false), "invalid issuer with invalid "
+       "subject" },
+    { MiniOidc::CreateJwt(kInvalidAccount, kSubject, true), "invalid issuer with valid subject" },
+    { MiniOidc::CreateJwt(kValidAccount, kSubject, false), "valid issuer with invalid key id" },
+    { MiniOidc::CreateJwt(kMissingAccount, kSubject, true), "missing account" },
+  };
+
+  for (const auto& [jwt, msg] : invalid_jwts) {
+    string invalid_subject;
+    const Status s = jwt_verifier.VerifyToken(jwt, &invalid_subject);
+    EXPECT_FALSE(s.ok()) << Substitute("failed case $0: $1", msg, s.ToString());
   }
 }
 
 TEST(JwtUtilTest, VerifyJWKSDiscoveryEndpointMultipleClients) {
-  JWKSDiscoveryEndpointMockServer discovery_endpoint;
-  ASSERT_OK(discovery_endpoint.Start());
-  PerAccountKeyBasedJwtVerifier jwt_verifier(discovery_endpoint.url());
+  MiniOidcOptions opts;
+  opts.account_ids = {
+      { kValidAccount, /*is_valid*/true }
+  };
+  MiniOidc oidc(std::move(opts));
+  ASSERT_OK(oidc.Start());
+  PerAccountKeyBasedJwtVerifier jwt_verifier(oidc.url());
+
   {
+    const string kSubject = "kudu";
     auto valid_user_token =
-        jwt::create()
-            .set_issuer(Substitute("auth0/$0", kValidAccount))
-            .set_type("JWT")
-            .set_algorithm("RS256")
-            .set_key_id(kKid1)
-            .set_subject(kValidAccount)
-            .sign(jwt::algorithm::rs256(kRsaPubKeyPem, kRsaPrivKeyPem, "", ""));
+        MiniOidc::CreateJwt(kValidAccount, kSubject, /*is_valid*/true);
+    string subject;
+    ASSERT_OK(jwt_verifier.VerifyToken(valid_user_token, &subject));
+    ASSERT_EQ(kSubject, subject);
 
     int constexpr n = 8;
     std::vector<std::thread> threads;
@@ -1095,7 +999,7 @@ TEST(JwtUtilTest, VerifyJWKSDiscoveryEndpointMultipleClients) {
       threads.emplace_back([&](){
         string subject;
         CHECK_OK(jwt_verifier.VerifyToken(valid_user_token, &subject));
-        CHECK_EQ(kValidAccount, subject);
+        CHECK_EQ(kSubject, subject);
         latch.CountDown();
       });
     }
