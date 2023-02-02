@@ -72,6 +72,8 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
+#include "kudu/util/jwt-util.h"
+#include "kudu/util/mini_oidc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
@@ -140,14 +142,12 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       enable_encryption(FLAGS_encrypt_data_at_rest),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
-      rpc_negotiation_timeout(MonoDelta::FromSeconds(3))
+      rpc_negotiation_timeout(MonoDelta::FromSeconds(3)),
 #if !defined(NO_CHRONY)
-      ,
       num_ntp_servers(1),
-      ntp_config_mode(BuiltinNtpConfigMode::ALL_SERVERS)
+      ntp_config_mode(BuiltinNtpConfigMode::ALL_SERVERS),
 #endif // #if !defined(NO_CHRONY) ...
-{
-}
+      enable_client_jwt(false) {}
 
 ExternalMiniCluster::ExternalMiniCluster()
   : opts_(ExternalMiniClusterOptions()) {
@@ -269,12 +269,20 @@ Status ExternalMiniCluster::Start() {
   gflags::FlagSaver saver;
   FLAGS_dns_addr_resolution_override = dns_overrides_;
 
+  std::shared_ptr<PerAccountKeyBasedJwtVerifier> jwt_verifier = nullptr;
+  if (opts_.enable_client_jwt) {
+    oidc_.reset(new MiniOidc(opts_.mini_oidc_options));
+    RETURN_NOT_OK_PREPEND(oidc_->Start(), "Failed to start OIDC endpoints");
+    jwt_verifier = std::make_shared<PerAccountKeyBasedJwtVerifier>(oidc_->url());
+  }
+
   RETURN_NOT_OK_PREPEND(
       rpc::MessengerBuilder("minicluster-messenger")
           .set_num_reactors(1)
           .set_max_negotiation_threads(1)
           .set_rpc_negotiation_timeout_ms(opts_.rpc_negotiation_timeout.ToMilliseconds())
           .set_sasl_proto_name(opts_.principal)
+          .set_jwt_verifier(std::move(jwt_verifier))
           .Build(&messenger_),
       "Failed to start Messenger for minicluster");
 
@@ -718,6 +726,11 @@ Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addr
                                   JoinPathSegments(cluster_root(),
                                                    "ranger-client")));
     flags.emplace_back("--trusted_user_acl=test-admin");
+  }
+  if (opts_.enable_client_jwt) {
+    flags.emplace_back("--enable_jwt_token_auth=true");
+    flags.emplace_back(Substitute("--jwks_url=$0", oidc_->url()));
+    flags.emplace_back(Substitute("--jwks_discovery_endpoint_base=$0", oidc_->url()));
   }
   if (!opts_.master_alias_prefix.empty()) {
     flags.emplace_back(Substitute("--host_for_tests=$0.$1",

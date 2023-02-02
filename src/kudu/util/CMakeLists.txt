@@ -356,7 +356,7 @@ target_link_libraries(kudu_curl_util
 #######################################
 # mini_oidc
 #######################################
-set (MINI_OIDC_SRCS mini_oidc.cc)
+set (MINI_OIDC_SRCS mini_oidc.cc jwt_test_certs.cc)
 add_library(mini_oidc ${MINI_OIDC_SRCS})
 target_link_libraries(mini_oidc
   server_process
