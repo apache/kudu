@@ -22,6 +22,8 @@
 
 #include "kudu/clock/time_service.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -35,7 +37,7 @@ namespace clock {
 // to keep the kernel's timekeeping up to date and in sync.
 class SystemNtp : public TimeService {
  public:
-  SystemNtp();
+  explicit SystemNtp(const scoped_refptr<MetricEntity>& metric_entity);
 
   Status Init() override;
 
@@ -48,9 +50,22 @@ class SystemNtp : public TimeService {
   void DumpDiagnostics(std::vector<std::string>* log) const override;
 
  private:
+  // Returns current timestamp, maxerror, and status as returned by the
+  // invocation of ntp_gettime()/ntp_adjtime() NTP kernel API call.
+  static std::string ClockNtpStatusForMetrics();
+
   // The maximum possible clock frequency skew rate reported by the kernel,
   // parts-per-million (PPM).
   int64_t skew_ppm_;
+
+  // Metric entity. Used to fetch information on NTP-related metrics upon
+  // calling DumpDiagnostics().
+  scoped_refptr<MetricEntity> metric_entity_;
+
+  // Metrics are set to detach to their last value. This means that, during
+  // running the destructor, there might be a need to access other class members
+  // declared above. Hence, this member must be declared last.
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemNtp);
 };

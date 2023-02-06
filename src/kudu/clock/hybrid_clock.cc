@@ -542,7 +542,7 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source) {
       break;
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
     case TimeSource::NTP_SYNC_SYSTEM:
-      time_service_.reset(new clock::SystemNtp);
+      time_service_.reset(new clock::SystemNtp(metric_entity_));
       break;
 #endif
     case TimeSource::UNSYNC_SYSTEM:

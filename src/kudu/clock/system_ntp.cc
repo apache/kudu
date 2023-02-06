@@ -21,6 +21,7 @@
 #include <sys/timex.h>
 
 #include <cerrno>
+#include <functional>
 #include <limits>
 #include <ostream>
 #include <string>
@@ -33,7 +34,9 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/jsonwriter.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
@@ -43,6 +46,11 @@ DECLARE_bool(inject_unsync_time_errors);
 using std::string;
 using std::vector;
 using strings::Substitute;
+
+METRIC_DEFINE_gauge_string(server, clock_ntp_status, "Clock NTP Status String",
+                           kudu::MetricUnit::kState,
+                           "Output of ntp_adjtime()/ntp_gettime() kernel API call",
+                           kudu::MetricLevel::kDebug);
 
 namespace kudu {
 namespace clock {
@@ -114,8 +122,9 @@ void TryRun(vector<string> cmd, vector<string>* log) {
 
 } // anonymous namespace
 
-SystemNtp::SystemNtp()
-    : skew_ppm_(std::numeric_limits<int64_t>::max()) {
+SystemNtp::SystemNtp(const scoped_refptr<MetricEntity>& metric_entity)
+    : skew_ppm_(std::numeric_limits<int64_t>::max()),
+      metric_entity_(metric_entity) {
 }
 
 Status SystemNtp::Init() {
@@ -130,6 +139,10 @@ Status SystemNtp::Init() {
   // for details).
   skew_ppm_ = t.tolerance >> 16;
   VLOG(1) << "ntp_adjtime(): tolerance is " << t.tolerance;
+
+  METRIC_clock_ntp_status.InstantiateFunctionGauge(
+      metric_entity_, []() { return ClockNtpStatusForMetrics(); })->
+          AutoDetachToLastValue(&metric_detacher_);
 
   return Status::OK();
 }
@@ -164,6 +177,8 @@ Status SystemNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
 
 void SystemNtp::DumpDiagnostics(vector<string>* log) const {
   LOG_STRING(ERROR, log) << "Dumping NTP diagnostics";
+
+  TryRun({"ntpstat"}, log);
   TryRun({"ntptime"}, log);
   // Gather as much info as possible from both ntpq and ntpdc, even
   // though some of it might be redundant. Different versions of ntp
@@ -185,6 +200,62 @@ void SystemNtp::DumpDiagnostics(vector<string>* log) const {
 
   TryRun({"chronyc", "-n", "tracking"}, log);
   TryRun({"chronyc", "-n", "sources"}, log);
+  TryRun({"chronyc", "-n", "activity"}, log);
+
+  MetricJsonOptions opts;
+  // There are relevant histogram metrics such as 'hybrid_clock_max_errors' and
+  // 'hybrid_clock_extrapolation_intervals' to output.
+  opts.include_raw_histograms = true;
+  // No need to output attributes -- that information could be retrieved from
+  // elsewhere, if needed.
+  opts.include_entity_attributes = false;
+  opts.filters.entity_metrics.emplace_back("clock_ntp_status");
+  opts.filters.entity_metrics.emplace_back("hybrid_clock_extrapolating");
+  opts.filters.entity_metrics.emplace_back("hybrid_clock_error");
+  opts.filters.entity_metrics.emplace_back("hybrid_clock_timestamp");
+  opts.filters.entity_metrics.emplace_back("hybrid_clock_max_errors");
+  opts.filters.entity_metrics.emplace_back("hybrid_clock_extrapolation_intervals");
+
+  // Collect the metrics in JSON pretty-printed format.
+  std::ostringstream buf;
+  JsonWriter writer(&buf, JsonWriter::PRETTY);
+  if (auto s = metric_entity_->WriteAsJson(&writer, opts); !s.ok()) {
+    LOG_STRING(WARNING, log) << "failed to dump relevant clock metrics: " << s.ToString();
+  } else {
+    LOG_STRING(ERROR, log) << buf.str();
+  }
+}
+
+string SystemNtp::ClockNtpStatusForMetrics() {
+  static constexpr const char* const kFmt = "now:$0 maxerror:$1 status:$2";
+
+#ifdef __APPLE__
+  ntptimeval t;
+  if (const auto s = NtpStateToStatus(ntp_gettime(&t)); !s.ok()) {
+    return Substitute(kFmt, "n/a", "n/a", s.ToString());
+  }
+  const uint64_t now_usec = static_cast<uint64_t>(t.time.tv_sec) * 1000000 +
+      t.time.tv_nsec / 1000;
+#else
+  timex t;
+  t.modes = 0; // set mode to 0 for read-only query
+  const int rc = ntp_adjtime(&t);
+
+  if (const auto s = CheckForNtpAdjtimeError(rc); !s.ok()) {
+    return Substitute(kFmt, "n/a", "n/a", s.ToString());
+  }
+  if (const auto s = NtpStateToStatus(rc); !s.ok()) {
+    return Substitute(kFmt, "n/a", "n/a", s.ToString());
+  }
+
+  if (t.status & STA_NANO) {
+    t.time.tv_usec /= 1000;
+  }
+  const uint64_t now_usec = static_cast<uint64_t>(t.time.tv_sec) * 1000000 +
+      t.time.tv_usec;
+#endif // #ifdef __APPLE__ ... #else ...
+
+  return Substitute(kFmt, now_usec, t.maxerror, "ok");
 }
 
 } // namespace clock

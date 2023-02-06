@@ -577,10 +577,19 @@ TEST_F(HybridClockTest, TestNtpDiagnostics) {
   // error messages that corresponding binaries cannot be found. In either case
   // it proves the tools were attempted to run to collect NTP-related diagnostic
   // information.
+  ASSERT_STR_CONTAINS(s, "ntpstat");
   ASSERT_STR_CONTAINS(s, "ntptime");
   ASSERT_STR_CONTAINS(s, "ntpq");
   ASSERT_STR_CONTAINS(s, "ntpdc");
   ASSERT_STR_CONTAINS(s, "chronyc");
+
+  // Verify the output contains relevant metrics.
+  ASSERT_STR_CONTAINS(s, "clock_ntp_status");
+  ASSERT_STR_CONTAINS(s, "hybrid_clock_extrapolating");
+  ASSERT_STR_CONTAINS(s, "hybrid_clock_error");
+  ASSERT_STR_CONTAINS(s, "hybrid_clock_timestamp");
+  ASSERT_STR_CONTAINS(s, "hybrid_clock_max_errors");
+  ASSERT_STR_CONTAINS(s, "hybrid_clock_extrapolation_intervals");
 }
 #endif // #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE) ...
 
