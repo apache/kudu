@@ -17,6 +17,7 @@
 
 #include "kudu/tserver/tablet_copy_client.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -24,7 +25,6 @@
 #include <optional>
 #include <ostream>
 #include <type_traits>
-#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -75,9 +75,20 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
+#include "kudu/util/throttler.h" // IWYU pragma: keep
 #include "kudu/util/trace.h"
 
+DEFINE_int64(tablet_copy_throttler_bytes_per_sec, 0,
+             "Limit tablet copying speed. It limits the copying speed of all the tablets "
+             "in one server for one session. The default value is 0, which means not limiting "
+             "the speed. The unit is bytes/seconds");
+DEFINE_double(tablet_copy_throttler_burst_factor, 1.0f,
+             "Burst factor for tablet copy throttling. The maximum rate the throttler "
+             "allows within a token refill period (100ms) equals burst factor multiply "
+             "base rate. The default value is 1.0, which means the maximun rate is equals "
+             "to --tablet_copy_throttler_bytes_per_sec.");
 DEFINE_int32(tablet_copy_begin_session_timeout_ms, 30000,
              "Tablet server RPC client timeout for BeginTabletCopySession calls. "
              "Also used for EndTabletCopySession calls.");
@@ -203,7 +214,8 @@ TabletCopyClient::TabletCopyClient(
     FsManager* dst_fs_manager,
     scoped_refptr<ConsensusMetadataManager> cmeta_manager,
     shared_ptr<Messenger> messenger,
-    TabletCopyClientMetrics* dst_tablet_copy_metrics)
+    TabletCopyClientMetrics* dst_tablet_copy_metrics,
+    shared_ptr<Throttler> throttler)
     : tablet_id_(std::move(tablet_id)),
       dst_fs_manager_(dst_fs_manager),
       cmeta_manager_(std::move(cmeta_manager)),
@@ -213,7 +225,8 @@ TabletCopyClient::TabletCopyClient(
       session_idle_timeout_millis_(FLAGS_tablet_copy_begin_session_timeout_ms),
       start_time_micros_(0),
       rng_(GetRandomSeed32()),
-      dst_tablet_copy_metrics_(dst_tablet_copy_metrics) {
+      dst_tablet_copy_metrics_(dst_tablet_copy_metrics),
+      throttler_(std::move(throttler)) {
   auto bm = dst_fs_manager->block_manager();
   transaction_ = bm->NewCreationTransaction();
   if (dst_tablet_copy_metrics_) {
@@ -997,6 +1010,13 @@ Status RemoteTabletCopyClient::DownloadFile(const DataIdPB& data_id,
     if (dst_tablet_copy_metrics_) {
       dst_tablet_copy_metrics_->bytes_fetched->IncrementBy(chunk_size);
     }
+    if (throttler_) {
+      LOG_TIMING(INFO, "Tablet copy throttler") {
+        while (!throttler_->Take(MonoTime::Now(), 0, chunk_size)) {
+          SleepFor(MonoDelta::FromMilliseconds(10));
+        }
+      }
+    }
   }
 
   return Status::OK();
@@ -1072,12 +1092,14 @@ RemoteTabletCopyClient::RemoteTabletCopyClient(
     FsManager* dst_fs_manager,
     scoped_refptr<ConsensusMetadataManager> cmeta_manager,
     shared_ptr<Messenger> messenger,
-    TabletCopyClientMetrics* dst_tablet_copy_metrics)
+    TabletCopyClientMetrics* dst_tablet_copy_metrics,
+    shared_ptr<Throttler> throttler)
     : TabletCopyClient(std::move(tablet_id),
                        dst_fs_manager,
                        std::move(cmeta_manager),
                        std::move(messenger),
-                       dst_tablet_copy_metrics) {
+                       dst_tablet_copy_metrics,
+                       std::move(throttler)) {
 }
 
 RemoteTabletCopyClient::~RemoteTabletCopyClient() {

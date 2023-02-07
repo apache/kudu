@@ -75,11 +75,13 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/throttler.h"
 
 DECLARE_double(env_inject_eio);
 DECLARE_double(tablet_copy_fault_crash_during_download_block);
 DECLARE_double(tablet_copy_fault_crash_during_download_wal);
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
+DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 
@@ -188,7 +190,8 @@ class TabletCopyClientTest : public TabletCopyTest {
   FRIEND_TEST(TabletCopyClientBasicTest, TestSupportsLiveRowCount);
 
   Status CompareFileContents(const string& path1, const string& path2);
-  Status ResetRemoteTabletCopyClient();
+  Status ResetRemoteTabletCopyClient(
+      TabletCopyClientMetrics* tablet_copy_client_metrics = nullptr);
   Status ResetLocalTabletCopyClient();
 
   // Injection of 'supports_live_row_count' modifiers.
@@ -212,6 +215,7 @@ class TabletCopyClientTest : public TabletCopyTest {
   unique_ptr<FsManager> src_fs_manager_;
   MetricRegistry src_metric_registry_;
   scoped_refptr<MetricEntity> src_metric_entity_;
+  std::shared_ptr<Throttler> throttler_;
 };
 
 Status TabletCopyClientTest::CompareFileContents(const string& path1, const string& path2) {
@@ -247,7 +251,8 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
   return Status::OK();
 }
 
-Status TabletCopyClientTest::ResetRemoteTabletCopyClient() {
+Status TabletCopyClientTest::ResetRemoteTabletCopyClient(
+    TabletCopyClientMetrics* tablet_copy_client_metrics) {
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(
       new ConsensusMetadataManager(fs_manager_.get()));
 
@@ -257,7 +262,9 @@ Status TabletCopyClientTest::ResetRemoteTabletCopyClient() {
                                            fs_manager_.get(),
                                            cmeta_manager,
                                            messenger_,
-                                           nullptr /* no metrics */));
+                                           tablet_copy_client_metrics,
+                                           throttler_));
+
   RaftPeerPB* cstate_leader;
   ConsensusStatePB cstate;
   RETURN_NOT_OK(tablet_replica_->consensus()->ConsensusState(&cstate));
@@ -305,6 +312,56 @@ Status TabletCopyClientTest::ResetLocalTabletCopyClient() {
                                           /* tablet_copy_source_metrics */ nullptr));
 
   return Status::OK();
+}
+
+class TabletCopyThrottlerTest : public TabletCopyClientTest {
+ public:
+  TabletCopyThrottlerTest() {
+    mode_ = TabletCopyMode::REMOTE;
+    throttler_ = std::make_shared<Throttler>(
+        MonoTime::Now(),
+        0,
+        FLAGS_tablet_copy_transfer_chunk_size_bytes,
+        2 * FLAGS_tablet_copy_transfer_chunk_size_bytes);
+  }
+
+  void SetUp() override {
+    TabletCopyClientTest::SetUp();
+  }
+};
+
+TEST_F(TabletCopyThrottlerTest, TestThrottler) {
+  scoped_refptr<MetricEntity> src_metric_entity_(
+      METRIC_ENTITY_server.Instantiate(&metric_registry_, "tablet-copy-test"));
+  TabletCopyClientMetrics tablet_copy_client_metrics(src_metric_entity_);
+  ASSERT_OK(ResetRemoteTabletCopyClient(&tablet_copy_client_metrics));
+
+  ASSERT_OK(StartCopy());
+  BlockId block_id = FirstColumnBlockId(*client_->remote_superblock_);
+  Slice slice;
+  faststring scratch;
+
+  // Ensure the block wasn't there before (it shouldn't be, we use our own FsManager dir).
+  Status s = ReadLocalBlockFile(fs_manager_.get(), block_id, &scratch, &slice);
+  ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
+
+  // Check that the client downloaded the block and verification passed.
+  BlockId new_block_id;
+  MonoTime start_time = MonoTime::Now();
+  ASSERT_OK(client_->DownloadBlock(block_id, &new_block_id));
+  MonoTime end_time = MonoTime::Now();
+  // Compute the real tablet downloading speed.
+  double download_speed = tablet_copy_client_metrics.bytes_fetched->value() /
+                          (end_time - start_time).ToSeconds();
+  // Real tablet downloading speed must be less than the defined speed.
+  ASSERT_GE(FLAGS_tablet_copy_transfer_chunk_size_bytes, download_speed);
+  ASSERT_OK(client_->transaction_->CommitCreatedBlocks());
+  // Ensure it placed the block where we expected it to.
+  ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
+  // 'client_' must be destroyed before 'tablet_copy_client_metrics', because client
+  // holds the pointer of 'tablet_copy_client_metrics', and uses 'tablet_copy_client_metrics'
+  // while being destroyed. See tablet_copy_client.cc.
+  client_.reset();
 }
 
 class TabletCopyClientBasicTest : public TabletCopyClientTest,

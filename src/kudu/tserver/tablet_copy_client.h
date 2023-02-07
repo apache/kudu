@@ -40,6 +40,7 @@ class FsManager;
 class HostPort;
 class Schema;
 class ThreadPool;
+class Throttler;
 class WritableFile;
 
 namespace consensus {
@@ -143,6 +144,7 @@ class TabletCopyClient {
   FRIEND_TEST(TabletCopyClientBasicTest, TestDownloadWalSegment);
   FRIEND_TEST(TabletCopyClientBasicTest, TestDownloadAllBlocks);
   FRIEND_TEST(TabletCopyClientAbortTest, TestAbort);
+  FRIEND_TEST(TabletCopyThrottlerTest, TestThrottler);
 
   // Construct the tablet copy client.
   //
@@ -151,7 +153,8 @@ class TabletCopyClient {
                    FsManager* dst_fs_manager,
                    scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
                    std::shared_ptr<rpc::Messenger> messenger,
-                   TabletCopyClientMetrics* dst_tablet_copy_metrics);
+                   TabletCopyClientMetrics* dst_tablet_copy_metrics,
+                   std::shared_ptr<Throttler> throttler = nullptr);
 
   // State machine that guides the progression of a single tablet copy.
   // A tablet copy will go through the states:
@@ -314,6 +317,10 @@ class TabletCopyClient {
   // reading/updating rowset/wal download status.
   simple_spinlock simple_lock_;
 
+  // A throttler to limit tablet copy speed.
+  // The throttler_ is shared among multiple tablet copying tasks in the same session.
+  std::shared_ptr<Throttler> throttler_;
+
   DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);
 };
 
@@ -324,7 +331,8 @@ class RemoteTabletCopyClient : public TabletCopyClient {
       FsManager* dst_fs_manager,
       scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
       std::shared_ptr<rpc::Messenger> messenger,
-      TabletCopyClientMetrics* dst_tablet_copy_metrics);
+      TabletCopyClientMetrics* dst_tablet_copy_metrics,
+      std::shared_ptr<Throttler> throttler = nullptr);
 
   ~RemoteTabletCopyClient() override;
 

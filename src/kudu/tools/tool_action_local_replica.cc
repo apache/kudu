@@ -95,6 +95,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
+#include "kudu/util/throttler.h"
 // IWYU pragma: no_include <boost/container/vector.hpp>
 
 namespace kudu {
@@ -159,6 +160,8 @@ DEFINE_string(dst_fs_metadata_dir, "",
 DECLARE_int32(num_threads);
 DECLARE_bool(tablet_copy_support_download_superblock_in_batch);
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
+DECLARE_int64(tablet_copy_throttler_bytes_per_sec);
+DECLARE_double(tablet_copy_throttler_burst_factor);
 DECLARE_string(tables);
 
 using kudu::consensus::ConsensusMetadata;
@@ -327,6 +330,15 @@ class TabletCopier {
 
     shared_ptr<Messenger> messenger;
     RETURN_NOT_OK(BuildMessenger("tablet_copy_client", &messenger));
+
+    shared_ptr<Throttler> throttler;
+    if (FLAGS_tablet_copy_throttler_bytes_per_sec > 0) {
+      throttler = std::make_shared<Throttler>(MonoTime::Now(),
+                                              0,
+                                              FLAGS_tablet_copy_throttler_bytes_per_sec,
+                                              FLAGS_tablet_copy_throttler_burst_factor);
+    }
+
     // Start to copy tablets.
     for (const auto& tablet_id : tablet_ids_to_copy_) {
       RETURN_NOT_OK(copy_pool->Submit([&]() {
@@ -340,8 +352,9 @@ class TabletCopier {
         Status s;
         unique_ptr<TabletCopyClient> client;
         if (copy_type_ == CopyType::FROM_REMOTE) {
-          client.reset(new RemoteTabletCopyClient(tablet_id, dst_fs_manager_, dst_cmeta_manager_,
-                                                  messenger, &tablet_copy_client_metrics));
+          client.reset(new RemoteTabletCopyClient(
+              tablet_id, dst_fs_manager_, dst_cmeta_manager_,
+              messenger, &tablet_copy_client_metrics, throttler));
           s = client->Start(source_addr_, nullptr);
         } else {
           CHECK_EQ(copy_type_, CopyType::FROM_LOCAL);
@@ -1370,6 +1383,8 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("tablet_copy_download_threads_nums_per_session")
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("tablet_copy_support_download_superblock_in_batch")
+      .AddOptionalParameter("tablet_copy_throttler_bytes_per_sec")
+      .AddOptionalParameter("tablet_copy_throttler_burst_factor")
       .Build();
 
   unique_ptr<Action> copy_from_local =

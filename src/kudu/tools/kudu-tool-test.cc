@@ -159,6 +159,7 @@ DECLARE_int32(catalog_manager_inject_latency_load_ca_info_ms);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
+DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 DECLARE_int32(tserver_unresponsive_timeout_ms);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
 DECLARE_string(block_manager);
@@ -9347,6 +9348,46 @@ TEST_F(ToolTest, TestLocalReplicaCopyRemote) {
   for (string tablet_id : mini_cluster_->mini_tablet_server(0)->ListTablets()) {
     ASSERT_TRUE(find(target_tablet_ids.begin(), target_tablet_ids.end(), tablet_id)
                 != target_tablet_ids.end());
+  }
+}
+
+TEST_F(ToolTest, TestLocalReplicaCopyRemoteWithSpeedLimit) {
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 2;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+  NO_FATALS(CreateTableWithFlushedData("table1", mini_cluster_.get(), 3, 1));
+  auto source_tablet_server = mini_cluster_->mini_tablet_server(0);
+  int source_tserver_tablet_count = source_tablet_server->ListTablets().size();
+  ASSERT_GT(source_tserver_tablet_count, 0);
+  auto target_tablet_server = mini_cluster_->mini_tablet_server(1);
+  int target_tserver_tablet_count_before = target_tablet_server->ListTablets().size();
+  string tablet_ids_str = JoinStrings(source_tablet_server->ListTablets(), ",");
+  string source_tserver_rpc_addr = source_tablet_server->bound_rpc_addr().ToString();
+  string wal_dir = target_tablet_server->options()->fs_opts.wal_root;
+  string data_dirs = JoinStrings(target_tablet_server->options()->fs_opts.data_roots, ",");
+  NO_FATALS(target_tablet_server->Shutdown());
+  // Copy tablet replicas from tserver0 to tserver1.
+  string stderr;
+  NO_FATALS(RunActionStdoutStderrString(
+      Substitute("local_replica copy_from_remote $0 $1 "
+                 "-fs_data_dirs=$2 -fs_wal_dir=$3 -num_threads=3 "
+                 "-tablet_copy_throttler_bytes_per_sec=$4 "
+                 "-tablet_copy_throttler_burst_factor=1",
+                 tablet_ids_str,
+                 source_tserver_rpc_addr,
+                 data_dirs,
+                 wal_dir, 10 * FLAGS_tablet_copy_transfer_chunk_size_bytes),
+      nullptr, &stderr));
+  // To prove that throttler works, but it is hard to compute the copying speed to be limited
+  // under tablet_copy_throttler_bytes_per_sec.
+  ASSERT_STR_CONTAINS(stderr, "Time spent Tablet copy throttler");
+  NO_FATALS(target_tablet_server->Start());
+  vector<string> tids = target_tablet_server->ListTablets();
+  unordered_set<string> target_tablet_ids(tids.begin(), tids.end());
+  ASSERT_EQ(source_tserver_tablet_count + target_tserver_tablet_count_before,
+            target_tablet_ids.size());
+  for (string tablet_id : source_tablet_server->ListTablets()) {
+    ASSERT_TRUE(ContainsKey(target_tablet_ids, tablet_id));
   }
 }
 
