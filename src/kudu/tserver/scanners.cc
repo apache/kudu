@@ -65,8 +65,13 @@ DEFINE_int32(completed_scan_history_count, 10,
              "latest scans will be shown on the tablet server's scans dashboard.");
 TAG_FLAG(completed_scan_history_count, experimental);
 
-// TODO(kedeng) : Add flag to control the display of slow scans, and avoid full scanning
-//                affecting normal Kudu service without perception.
+DEFINE_bool(show_slow_scans, false,
+            "Whether to show slow scans on the /scans page of web or record it in the log. "
+            "Please note that once set to true, full table scans may occur, which may affect "
+            "the normal Kudu service unexpectedly.");
+TAG_FLAG(show_slow_scans, advanced);
+TAG_FLAG(show_slow_scans, runtime);
+
 DEFINE_int32(slow_scanner_threshold_ms, 60 * 1000L, // 1 minute
              "Number of milliseconds for the threshold of slow scan.");
 TAG_FLAG(slow_scanner_threshold_ms, advanced);
@@ -171,7 +176,12 @@ void ScannerManager::RunCollectAndRemovalThread() {
       }
       shutdown_cv_.WaitFor(MonoDelta::FromMicroseconds(FLAGS_scanner_gc_check_interval_us));
     }
-    CollectSlowScanners();
+
+    if (FLAGS_show_slow_scans) {
+      // Control the collection of slow scans to avoid full scanning affecting normal Kudu
+      // service without perception.
+      CollectSlowScanners();
+    }
     RemoveExpiredScanners();
   }
 }
@@ -315,6 +325,12 @@ vector<SharedScanDescriptor> ScannerManager::ListScans() const {
 }
 
 vector<SharedScanDescriptor> ScannerManager::ListSlowScans() const {
+  vector<SharedScanDescriptor> ret;
+  if (!FLAGS_show_slow_scans) {
+    LOG(INFO) << "Slow scans show is disabled. Set --show_slow_scans to enable it.";
+    return ret;
+  }
+
   // Get all the scans first.
   unordered_map<string, SharedScanDescriptor> scans;
   {
@@ -324,7 +340,6 @@ vector<SharedScanDescriptor> ScannerManager::ListSlowScans() const {
     }
   }
 
-  vector<SharedScanDescriptor> ret;
   ret.reserve(scans.size());
   AppendValuesFromMap(scans, &ret);
 
@@ -357,7 +372,6 @@ void ScannerManager::CollectSlowScanners() {
 
       MonoDelta delta_time = now - start_time -
           MonoDelta::FromMilliseconds(slow_scanner_threshold);
-      // TODO(kedeng) : Add flag to control whether to print this log.
       LOG(INFO) << Substitute(
           "Slow scanner id: $0, of tablet $1, "
           "exceed the time threshold $2 ms for $3 ms.",

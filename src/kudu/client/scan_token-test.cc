@@ -75,6 +75,7 @@
 DECLARE_bool(tserver_enforce_access_control);
 DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(slow_scanner_threshold_ms);
+DECLARE_bool(show_slow_scans);
 
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
@@ -367,6 +368,10 @@ class ScanTokenTest : public KuduTest {
 };
 
 TEST_F(ScanTokenTest, SlowScansListTest) {
+  // Slow scans show is disabled by default.
+  ASSERT_FALSE(FLAGS_show_slow_scans);
+  FLAGS_show_slow_scans = true;
+
   constexpr const char* const kTableName = "slow_scans_show";
   // Create schema
   KuduSchema schema;
@@ -417,6 +422,22 @@ TEST_F(ScanTokenTest, SlowScansListTest) {
     ASSERT_EQ(200, CountRows(tokens));
     ASSERT_EQ(2, GetCompletedScansCount());
     ASSERT_EQ(1, GetSlowScansCount());
+  }
+
+  {
+    // Disable the slow scans show.
+    FLAGS_show_slow_scans = false;
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+
+    // Create a slow scan scenarios.
+    FLAGS_scanner_inject_latency_on_each_batch_ms = 50;
+    FLAGS_slow_scanner_threshold_ms = 40;
+    ASSERT_EQ(200, CountRows(tokens));
+    ASSERT_EQ(3, GetCompletedScansCount());
+    // If disable the slow scans, we can only get 0, which represents the count of slow scans.
+    ASSERT_EQ(0, GetSlowScansCount());
   }
 }
 
