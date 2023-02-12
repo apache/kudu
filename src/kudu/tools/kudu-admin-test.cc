@@ -1763,8 +1763,7 @@ TEST_F(AdminCliTest, TestListSoftDeletedTables) {
     }, &stdout));
 
     vector<string> stdout_lines = Split(stdout, ",", strings::SkipEmpty());
-    ASSERT_EQ(1, stdout_lines.size());
-    ASSERT_EQ("\n", stdout_lines[0]);
+    ASSERT_TRUE(stdout_lines.empty());
 
     ASSERT_OK(RunKuduTool({
       "table",

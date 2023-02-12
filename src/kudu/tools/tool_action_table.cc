@@ -358,7 +358,9 @@ class TableLister {
     }
 
     if (iequals(FLAGS_list_table_output_format, "pretty")) {
-      cout << ToPrettyFormat(tables_info_pb) << endl;
+      if (!tables_info_pb.tables().empty()) {
+        cout << ToPrettyFormat(tables_info_pb) << endl;
+      }
     } else {
       DCHECK(iequals(FLAGS_list_table_output_format, "json") ||
           iequals(FLAGS_list_table_output_format, "json_compact"));
