@@ -1603,11 +1603,13 @@ TEST_F(ToolTest, TestModeHelp) {
         "change_config.*Change.*Raft configuration",
         "leader_step_down.*Change.*tablet's leader",
         "unsafe_replace_tablet.*Replace a tablet with an empty one",
+        "info.*Show information of the table which the tablets"
     };
     NO_FATALS(RunTestHelp(kCmd, kTabletModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kCmd,
         { "leader_step_down",
           "unsafe_replace_tablet",
+          "info"
         }));
   }
   {
@@ -4219,6 +4221,68 @@ TEST_F(ToolTest, TestPerfTabletScan) {
                    env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "");
     NO_FATALS(RunActionStdoutNone(args));
     NO_FATALS(RunActionStdoutNone(args + " --ordered_scan"));
+  }
+}
+
+TEST_F(ToolTest, TestTabletInfo) {
+  ExternalMiniClusterOptions opts;
+  const int kNumTabletServers = 3;
+  const int kNumReplicas = 3;
+  const int kNumTablets = 3;
+  opts.num_tablet_servers = kNumTabletServers;
+  const string& kTableName = "test_table";
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_replicas(kNumReplicas);
+  workload.set_table_name(kTableName);
+  workload.Setup();
+
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, kNumTablets, kTimeout, &tablets));
+
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  const string& master_addrs_str = JoinStrings(master_addrs, ",");
+  string stdout;
+  // 'tablet_ids_str' contains 3 tablets, one of them does not existed.
+  string tablet_ids_str = Substitute("$0,test_tablet_id,$1",
+                                     tablets[0].tablet_status().tablet_id(),
+                                     tablets[1].tablet_status().tablet_id());
+  NO_FATALS(RunActionStdoutString(Substitute("tablet info $0 $1",
+                                             master_addrs_str, tablet_ids_str), &stdout));
+  for (int i = 0; i < kNumTabletServers; i++) {
+    for (int j = 0; j < 2; j++) {
+      string replica_info = Substitute("$0 | $1 | $2 | $3 | $4 |",
+          tablets[j].tablet_status().tablet_id(),
+          kTableName,
+          cluster_->tablet_server(i)->uuid(),
+          cluster_->tablet_server(i)->bound_rpc_hostport().host(),
+          cluster_->tablet_server(i)->bound_rpc_hostport().port());
+      ASSERT_STR_CONTAINS(stdout, replica_info);
+    }
+  }
+
+  // Print the result in json format.
+  stdout.clear();
+  NO_FATALS(RunActionStdoutString(Substitute("tablet info $0 $1 --format=json",
+      master_addrs_str, tablet_ids_str), &stdout));
+  for (int i = 0; i < kNumTabletServers; i++) {
+    for (int j = 0; j < 2; j++) {
+      string replica_info = Substitute(
+          R"("ID":"$0","Table Name":"$1","Tablet Server UUID":"$2","Host":"$3","Port":"$4")",
+          tablets[j].tablet_status().tablet_id(),
+          kTableName,
+          cluster_->tablet_server(i)->uuid(),
+          cluster_->tablet_server(i)->bound_rpc_hostport().host(),
+          cluster_->tablet_server(i)->bound_rpc_hostport().port());
+      ASSERT_STR_CONTAINS(stdout, replica_info);
+    }
   }
 }
 

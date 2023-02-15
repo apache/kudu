@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <fstream>  // IWYU pragma: keep
 #include <functional>
 #include <iostream>
@@ -23,17 +24,19 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 
+#include "kudu/client/client-internal.h"
 #include "kudu/client/client.h" // IWYU pragma: keep
+#include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
@@ -67,6 +70,10 @@ DEFINE_int64(move_leader_timeout_sec, 30,
              "Number of seconds to wait for a leader when relocating a leader tablet");
 
 using kudu::client::KuduClient;
+using kudu::client::KuduScanToken;
+using kudu::client::KuduScanTokenBuilder;
+using kudu::client::KuduTable;
+using kudu::client::internal::ReplicaController;
 using kudu::consensus::ADD_PEER;
 using kudu::consensus::ChangeConfigType;
 using kudu::consensus::LeaderStepDownMode;
@@ -81,6 +88,7 @@ using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
+using std::ostream;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -89,6 +97,45 @@ using strings::Substitute;
 
 namespace kudu {
 namespace tools {
+
+Status ShowTabletInfo(const vector<string>& master_addresses,
+                      const vector<string>& tablet_ids) {
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(master_addresses, &client, true));
+  vector<client::KuduClient::Data::TableInfo> tables_info;
+  RETURN_NOT_OK(client->data_->ListTablesWithInfo(client.get(), &tables_info, ""));
+  DataTable cmatrix({"ID", "Table Name", "Tablet Server UUID", "Host", "Port", "Is Leader"});
+
+  for (const auto& tinfo : tables_info) {
+    const auto& tname = tinfo.table_name;
+    client::sp::shared_ptr<KuduTable> client_table;
+    RETURN_NOT_OK(client->OpenTable(tname, &client_table));
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(client_table.get());
+    RETURN_NOT_OK(builder.Build(&tokens));
+
+    for (const auto* token : tokens) {
+      if (std::find(tablet_ids.begin(), tablet_ids.end(), token->tablet().id()) ==
+          tablet_ids.end()) {
+        continue;
+      }
+      for (const auto* replica : token->tablet().replicas()) {
+        const bool is_voter = ReplicaController::is_voter(*replica);
+        const bool is_leader = replica->is_leader();
+        vector<string> row;
+        row.push_back(token->tablet().id());
+        row.push_back(tname);
+        row.push_back(replica->ts().uuid());
+        row.push_back(replica->ts().hostname());
+        row.push_back(std::to_string(replica->ts().port()));
+        row.push_back(is_leader ? "L" : (is_voter ? "V" : "N"));
+        cmatrix.AddRow(row);
+      }
+    }
+  }
+  return cmatrix.PrintTo(cout);
+}
 
 namespace {
 
@@ -276,6 +323,14 @@ Status ReplaceTablet(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status Info(const RunnerContext& context) {
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  const string& tablet_ids_str = FindOrDie(context.required_args, kTabletIdsCsvArg);
+  vector<string> tablet_ids = strings::Split(tablet_ids_str, ",", strings::SkipEmpty());
+  return ShowTabletInfo(master_addresses, tablet_ids);
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTabletMode() {
@@ -359,11 +414,20 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .Build();
 
+  unique_ptr<Action> info =
+      ClusterActionBuilder("info", &Info)
+      .Description("Show information of the table which the tablets blongs to "
+                   "and where the tablets replicas are located.")
+      .AddRequiredParameter({ kTabletIdsCsvArg, kTabletIdsCsvArgDesc })
+      .AddOptionalParameter("format")
+      .Build();
+
   return ModeBuilder("tablet")
       .Description("Operate on remote Kudu tablets")
       .AddMode(std::move(change_config))
       .AddAction(std::move(leader_step_down))
       .AddAction(std::move(replace_tablet))
+      .AddAction(std::move(info))
       .Build();
 }
 

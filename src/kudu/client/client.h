@@ -85,6 +85,8 @@ class LeaderMasterProxy;
 class RemoteKsckCluster;
 class TableAlter;
 class TableLister;
+Status ShowTabletInfo(const std::vector<std::string>& master_addresses,
+                      const std::vector<std::string>& tablet_id);
 } // namespace tools
 
 namespace client {
@@ -1086,6 +1088,8 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class tools::RemoteKsckCluster;
   friend class tools::TableLister;
   friend class ScanTokenTest;
+  friend Status tools::ShowTabletInfo(const std::vector<std::string>& master_addresses,
+                                      const std::vector<std::string>& tablet_id);
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
   FRIEND_TEST(kudu::MetaCacheLookupStressTest, PerfSynthetic);
@@ -1152,6 +1156,8 @@ class KUDU_EXPORT KuduTabletServer {
   friend class KuduClient;
   friend class KuduScanner;
   friend class KuduScanTokenBuilder;
+  friend Status tools::ShowTabletInfo(const std::vector<std::string>& master_addresses,
+                                      const std::vector<std::string>& tablet_id);
 
   KuduTabletServer();
 
