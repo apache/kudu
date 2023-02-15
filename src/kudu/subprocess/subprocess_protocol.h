@@ -17,6 +17,10 @@
 
 #pragma once
 
+#include <sys/types.h>
+
+#include <cstdint>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
@@ -52,12 +56,13 @@ class SubprocessProtocol {
   //
   // If 'close_mode' is CLOSE_ON_DESTROY, the instance has effectively taken
   // control of 'read_fd' and 'write_fd' and the caller shouldn't use them.
-  // 'max_msg_bytes' represents the maximum number of bytes per message.
+  // 'max_msg_bytes' represents the maximum number of bytes per message,
+  // where 0 has the semantics of 'unlimited size'.
   SubprocessProtocol(SerializationMode serialization_mode,
                      CloseMode close_mode,
                      int read_fd,
                      int write_fd,
-                     int max_msg_bytes = kMaxMessageBytes);
+                     uint32_t max_msg_bytes = 0);
 
   ~SubprocessProtocol();
 
@@ -65,8 +70,10 @@ class SubprocessProtocol {
   //
   // Returns EndOfFile if the writer on the other end of the pipe was closed.
   //
-  // Returns an error if serialization_mode_ is PB and the received message
-  // sizes exceeds kMaxMessageBytes.
+  // Returns corresponding error if:
+  //   * the message could not be parsed
+  //   * serialization_mode_ is PB and the payload of the message exceeds
+  //     the limit specified by 'max_msg_bytes_'
   template <class M>
   Status ReceiveMessage(M* message);
 
@@ -78,16 +85,15 @@ class SubprocessProtocol {
 
  private:
   // Private helpers to drive actual pipe reading and writing.
-  Status DoRead(faststring* buf);
-  Status DoWrite(const faststring& buf);
-
-  static const int kMaxMessageBytes;
+  Status DoRead(faststring* buf) const;
+  Status DoReadAndDiscard(ssize_t size) const;
+  Status DoWrite(const faststring& buf) const;
 
   const SerializationMode serialization_mode_;
   const CloseMode close_mode_;
   const int read_fd_;
   const int write_fd_;
-  const int max_msg_bytes_;
+  const uint32_t max_msg_bytes_;  // 0 has the semantics of 'unlimited size'
 
   DISALLOW_COPY_AND_ASSIGN(SubprocessProtocol);
 };

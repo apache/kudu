@@ -19,6 +19,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -47,6 +48,7 @@ DECLARE_int32(subprocess_request_queue_size_bytes);
 DECLARE_int32(subprocess_response_queue_size_bytes);
 DECLARE_int32(subprocess_num_responder_threads);
 DECLARE_int32(subprocess_timeout_secs);
+DECLARE_uint32(subprocess_max_message_size_bytes);
 
 using google::protobuf::Any;
 using std::make_shared;
@@ -332,6 +334,90 @@ TEST_F(SubprocessServerTest, TestRunFromMultipleThreads) {
   }
   for (const auto& r : results) {
     ASSERT_OK(r);
+  }
+}
+
+// The subprocess server should reject messages in protobuf format if their
+// payload is over the threshold specified by the
+// --subprocess_max_message_size_bytes flag.
+TEST_F(SubprocessServerTest, MaxPayloadSize) {
+  // Set a short timeout to speed up testing.
+  FLAGS_subprocess_timeout_secs = 1;
+
+  // The protobuf-encoded message has some metadata, so for a single-character
+  // payload let's set the upper limit to 100 to make sure the encoded message
+  // size is still under 100 bytes.
+  FLAGS_subprocess_max_message_size_bytes = 100;
+  ASSERT_OK(ResetSubprocessServer());
+
+  // Send in a message that isn't oversized as per the current limit.
+  {
+    auto req = CreateEchoSubprocessRequestPB("0");
+    SubprocessResponsePB res;
+    ASSERT_OK(server_->Execute(&req, &res));
+  }
+
+  // Send an oversized message.
+  {
+    auto req = CreateEchoSubprocessRequestPB(string(100, 'x'));
+    SubprocessResponsePB res;
+    const auto s = server_->Execute(&req, &res);
+
+    // The request will timeout because the oversized response is read and
+    // discarded, and there isn't any application-level data to be sent back.
+    // Unfortunately, the current design of the subprocess protocol doesn't
+    // allow for reporting on communication errors between the server and
+    // the subprocesses it spawned.
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "timed out while in flight");
+  }
+
+  // Non-oversized follow-up messages should be received without any issues:
+  // the communication channel should be cleared of any oversized requests
+  // sent earlier.
+  {
+    auto req = CreateEchoSubprocessRequestPB("1");
+    SubprocessResponsePB res;
+    ASSERT_OK(server_->Execute(&req, &res));
+  }
+}
+
+// Test the semantics of the --subprocess_max_message_size_bytes=0 setting,
+// meaning there isn't upper limit on the size of protobuf-encoded responses
+// from the subprocess.
+//
+// NOTE: the Java-based implementation of the related Subprocess components
+//       and test harnesses have their own limit on the maximum allowed size
+//       of the message, but in this context it's enough just to test that
+//       --subprocess_max_message_size_bytes=0 isn't treated literally as 0
+//       for the maximum size of SubprocessResponsePB messages
+TEST_F(SubprocessServerTest, UnlimitedPayloadSize) {
+  // Set a short timeout to speed up testing.
+  FLAGS_subprocess_timeout_secs = 1;
+
+  // No upper limit on protobuf-encoded responses.
+  FLAGS_subprocess_max_message_size_bytes = 0;
+  ASSERT_OK(ResetSubprocessServer());
+
+  // An empty message.
+  {
+    auto req = CreateEchoSubprocessRequestPB("");
+    SubprocessResponsePB res;
+    ASSERT_OK(server_->Execute(&req, &res));
+  }
+
+  // A very short message.
+  {
+    auto req = CreateEchoSubprocessRequestPB("x");
+    SubprocessResponsePB res;
+    ASSERT_OK(server_->Execute(&req, &res));
+  }
+
+  // Just in case, send a longer message: should be OK as well.
+  {
+    auto req = CreateEchoSubprocessRequestPB(string(1024, 'x'));
+    SubprocessResponsePB res;
+    ASSERT_OK(server_->Execute(&req, &res));
   }
 }
 

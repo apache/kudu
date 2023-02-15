@@ -17,6 +17,7 @@
 
 #include "kudu/subprocess/subprocess_proxy.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -30,8 +31,8 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/subprocess/server.h"
 #include "kudu/subprocess/echo_subprocess.h"
+#include "kudu/subprocess/server.h"
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
@@ -41,16 +42,18 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(subprocess_timeout_secs);
+DECLARE_uint32(subprocess_max_message_size_bytes);
 
-METRIC_DECLARE_histogram(echo_subprocess_inbound_queue_length);
-METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_length);
-METRIC_DECLARE_histogram(echo_subprocess_inbound_queue_time_ms);
-METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_time_ms);
-METRIC_DECLARE_histogram(echo_subprocess_execution_time_ms);
-METRIC_DECLARE_histogram(echo_server_outbound_queue_size_bytes);
+METRIC_DECLARE_counter(echo_server_dropped_messages);
 METRIC_DECLARE_histogram(echo_server_inbound_queue_size_bytes);
-METRIC_DECLARE_histogram(echo_server_outbound_queue_time_ms);
 METRIC_DECLARE_histogram(echo_server_inbound_queue_time_ms);
+METRIC_DECLARE_histogram(echo_server_outbound_queue_size_bytes);
+METRIC_DECLARE_histogram(echo_server_outbound_queue_time_ms);
+METRIC_DECLARE_histogram(echo_subprocess_execution_time_ms);
+METRIC_DECLARE_histogram(echo_subprocess_inbound_queue_length);
+METRIC_DECLARE_histogram(echo_subprocess_inbound_queue_time_ms);
+METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_length);
+METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_time_ms);
 
 using std::unique_ptr;
 using std::string;
@@ -98,8 +101,10 @@ class EchoSubprocessTest : public KuduTest {
   const string test_dir_;
 };
 
+#define GET_COUNTER(metric_entity, metric_name) \
+  down_cast<Counter*>((metric_entity)->FindOrNull(METRIC_##metric_name).get())
 #define GET_HIST(metric_entity, metric_name) \
-  down_cast<Histogram*>((metric_entity)->FindOrNull(METRIC_##metric_name).get());
+  down_cast<Histogram*>((metric_entity)->FindOrNull(METRIC_##metric_name).get())
 
 TEST_F(EchoSubprocessTest, TestBasicSubprocessMetrics) {
   const string kMessage = "don't catch you slippin' now";
@@ -209,6 +214,59 @@ TEST_F(EchoSubprocessTest, TestSubprocessMetricsOnError) {
   });
 }
 
+TEST_F(EchoSubprocessTest, DroppedMessagesMetric) {
+  FLAGS_subprocess_timeout_secs = 1;
+  FLAGS_subprocess_max_message_size_bytes = 100;
+  ASSERT_OK(ResetEchoSubprocess());
+
+  const auto* counter = GET_COUNTER(metric_entity_, echo_server_dropped_messages);
+  ASSERT_EQ(0, counter->value());
+
+  // Send an oversized message -- it should be dropped.
+  {
+    EchoRequestPB req;
+    req.set_data(string(100, 'x'));
+    EchoResponsePB resp;
+    const auto s = echo_subprocess_->Execute(req, &resp);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  }
+  // The dropped message's counter should be increment by one.
+  ASSERT_EQ(1, counter->value());
+
+  // Send a non-oversized message.
+  {
+    EchoRequestPB req;
+    req.set_data("x");
+    EchoResponsePB resp;
+    ASSERT_OK(echo_subprocess_->Execute(req, &resp));
+  }
+  // The dropped message's counter should stay at its prior value.
+  ASSERT_EQ(1, counter->value());
+
+  // Send a few more oversized messages.
+  for (size_t i = 0; i < 2; ++i) {
+    EchoRequestPB req;
+    req.set_data(string(1000 + i, 'x'));
+    EchoResponsePB resp;
+    const auto s = echo_subprocess_->Execute(req, &resp);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  }
+  // The dropped message's counter should be incremented by the number of
+  // oversized messages sent after capturing the prior reading.
+  ASSERT_EQ(1 + 2, counter->value());
+
+  // Sent several non-oversized message.
+  for (size_t i = 0; i < 5; ++i) {
+    EchoRequestPB req;
+    req.set_data(string(i, 'x'));
+    EchoResponsePB resp;
+    ASSERT_OK(echo_subprocess_->Execute(req, &resp));
+  }
+  // The dropped message's counter should stay at its prior value.
+  ASSERT_EQ(3, counter->value());
+}
+
+#undef GET_COUNTER
 #undef GET_HIST
 
 } // namespace subprocess
