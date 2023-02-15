@@ -6224,6 +6224,8 @@ Status CatalogManager::BuildLocationsForTablet(
   // No longer used; always set to false.
   locs_pb->set_deprecated_stale(false);
 
+  locs_pb->set_table_id(tablet->table()->id());
+  locs_pb->set_table_name(tablet->table()->table_name());
   return Status::OK();
 }
 

@@ -28,9 +28,13 @@ namespace client {
 class KuduTablet::Data {
  public:
   Data(std::string id, std::vector<const KuduReplica*> replicas);
+  Data(std::string id, std::vector<const KuduReplica*> replicas,
+       std::string table_id, std::string table_name);
   ~Data();
 
   const std::string id_;
+  const std::string table_id_;
+  const std::string table_name_;
   std::vector<const KuduReplica*> replicas_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);

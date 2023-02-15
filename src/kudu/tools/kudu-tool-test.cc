@@ -1525,11 +1525,13 @@ TEST_F(ToolTest, TestModeHelp) {
         "change_config.*Change.*Raft configuration",
         "leader_step_down.*Change.*tablet's leader",
         "unsafe_replace_tablet.*Replace a tablet with an empty one",
+        "show_info.*Show the table and location information of a tablet"
     };
     NO_FATALS(RunTestHelp(kCmd, kTabletModeRegexes));
     NO_FATALS(RunTestHelpRpcFlags(kCmd,
         { "leader_step_down",
           "unsafe_replace_tablet",
+          "show_info"
         }));
   }
   {
@@ -3925,6 +3927,51 @@ TEST_F(ToolTest, TestPerfTabletScan) {
                    env_->IsEncryptionEnabled() ? GetEncryptionArgs() : "");
     NO_FATALS(RunActionStdoutNone(args));
     NO_FATALS(RunActionStdoutNone(args + " --ordered_scan"));
+  }
+}
+
+TEST_F(ToolTest, TestTabletShowInfo) {
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 3;
+  const int kNumTservers = 3;
+  const int kNumTablets = 3;
+  const string& kTableName = "test_table";
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTservers);
+  workload.set_num_replicas(kNumTablets);
+  workload.set_table_name(kTableName);
+  workload.Setup();
+
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, kNumTablets, kTimeout, &tablets));
+
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  const string& master_addrs_str = JoinStrings(master_addrs, ",");
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute("tablet show_info $0 $1",
+      master_addrs_str, tablets[0].tablet_status().tablet_id()), &stdout));
+
+  // Stdout contains table name.
+  ASSERT_STR_CONTAINS(stdout, kTableName);
+  client::sp::shared_ptr<KuduTable> workload_table;
+  ASSERT_OK(workload.client()->OpenTable(workload.table_name(), &workload_table));
+  // Stdout contains table id.
+  ASSERT_STR_CONTAINS(stdout, workload_table->id());
+  for (int i = 0; i < kNumTservers; i++) {
+    // Stdout contains tserver's host.
+    ASSERT_STR_CONTAINS(stdout, cluster_->tablet_server(i)->bound_rpc_hostport().host());
+    // Stdout contains tserver's port.
+    ASSERT_STR_CONTAINS(stdout, Substitute("$0",
+        cluster_->tablet_server(i)->bound_rpc_hostport().port()));
+    // Stdout contains tserver's uuid.
+    ASSERT_STR_CONTAINS(stdout, cluster_->tablet_server(i)->uuid());
   }
 }
 

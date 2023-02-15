@@ -67,6 +67,7 @@ DEFINE_int64(move_leader_timeout_sec, 30,
              "Number of seconds to wait for a leader when relocating a leader tablet");
 
 using kudu::client::KuduClient;
+using kudu::client::KuduTablet;
 using kudu::consensus::ADD_PEER;
 using kudu::consensus::ChangeConfigType;
 using kudu::consensus::LeaderStepDownMode;
@@ -81,6 +82,7 @@ using std::endl;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
+using std::ostream;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -276,6 +278,29 @@ Status ReplaceTablet(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status ShowInfo(const RunnerContext& context) {
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(master_addresses, &client));
+
+  KuduTablet* tablet_raw = nullptr;
+  RETURN_NOT_OK(client->GetTablet(tablet_id, &tablet_raw));
+  unique_ptr<KuduTablet> tablet(tablet_raw);
+
+  cout << Substitute("Table id: $0, Table name: $1",
+                     tablet->table_id(), tablet->table_name()) << endl;
+  DataTable cmatrix({ "UUID", "Host", "Port", "Is Leader"});
+  for (const auto& replica : tablet->replicas()) {
+    cmatrix.AddRow({replica->ts().uuid(), replica->ts().hostname(),
+                   Substitute("$0", replica->ts().port()),
+                   Substitute("$0", replica->is_leader())});
+  }
+  ostream out(std::cout.rdbuf());
+  return cmatrix.PrintTo(out);
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTabletMode() {
@@ -359,11 +384,18 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .Build();
 
+  unique_ptr<Action> show_info =
+      ClusterActionBuilder("show_info", &ShowInfo)
+      .Description("Show the table and location information of a tablet.")
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .Build();
+
   return ModeBuilder("tablet")
       .Description("Operate on remote Kudu tablets")
       .AddMode(std::move(change_config))
       .AddAction(std::move(leader_step_down))
       .AddAction(std::move(replace_tablet))
+      .AddAction(std::move(show_info))
       .Build();
 }
 

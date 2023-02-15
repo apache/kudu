@@ -445,6 +445,9 @@ message TabletLocationsPB {
 
   optional PartitionPB partition = 6;
 
+  optional bytes table_id = 8;
+  optional string table_name = 9;
+
   // DEPRECATED.
   // Used only if interned replicas are not supported by client.
   repeated DEPRECATED_ReplicaPB DEPRECATED_replicas = 4;

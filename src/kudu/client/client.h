@@ -1177,6 +1177,9 @@ class KUDU_EXPORT KuduTablet {
   ///    for the lifetime of the tablet.
   const std::string& id() const;
 
+  const std::string& table_id() const;
+  const std::string& table_name() const;
+
   /// @return The replicas of this tablet. The KuduTablet retains ownership
   /// over the replicas.
   ///

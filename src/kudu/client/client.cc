@@ -704,7 +704,9 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
   }
 
   unique_ptr<KuduTablet> client_tablet(new KuduTablet);
-  client_tablet->data_ = new KuduTablet::Data(tablet_id, std::move(replicas));
+  client_tablet->data_ = new KuduTablet::Data(tablet_id, std::move(replicas),
+                                              t.table_id(),
+                                              t.table_name());
   replicas.clear();
 
   *tablet = client_tablet.release();
@@ -2351,6 +2353,14 @@ KuduTablet::~KuduTablet() {
 
 const string& KuduTablet::id() const {
   return data_->id_;
+}
+
+const string& KuduTablet::table_id() const {
+  return data_->table_id_;
+}
+
+const string& KuduTablet::table_name() const {
+  return data_->table_name_;
 }
 
 const vector<const KuduReplica*>& KuduTablet::replicas() const {

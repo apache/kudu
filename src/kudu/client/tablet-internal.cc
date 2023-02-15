@@ -34,6 +34,14 @@ KuduTablet::Data::Data(string id, vector<const KuduReplica*> replicas)
       replicas_(std::move(replicas)) {
 }
 
+KuduTablet::Data::Data(string id, vector<const KuduReplica*> replicas,
+                       string table_id, string table_name)
+    : id_(std::move(id)),
+      replicas_(std::move(replicas)),
+      table_id_(std::move(table_id)),
+      table_name_(std::move(table_name)) {
+}
+
 KuduTablet::Data::~Data() {
   STLDeleteElements(&replicas_);
 }
