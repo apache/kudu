@@ -24,6 +24,7 @@ import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithImmutableColumns;
+import static org.apache.kudu.test.ClientTestUtil.createSchemaWithNonUniqueKey;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
@@ -2660,6 +2661,24 @@ public class TestKuduTable {
     } catch (IllegalArgumentException e) {
       assertTrue(e.getMessage().contains(
           "More than one columns are set as auto-incrementing columns"));
+    }
+  }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = {
+      "--master_support_auto_incrementing_column=false"
+  })
+  public void testCreateTableWithAutoIncrementingColWhenMasterNotSupport() throws Exception {
+    try {
+      CreateTableOptions builder = getBasicCreateTableOptions();
+      client.createTable(tableName, createSchemaWithNonUniqueKey(), builder);
+      fail("shouldn't be able to create a table with auto-incrementing column " +
+          "when server side doesn't support required AUTO_INCREMENTING_COLUMN feature");
+    } catch (KuduException ex) {
+      final String errmsg = ex.getMessage();
+      assertTrue(errmsg, ex.getStatus().isRemoteError());
+      assertTrue(errmsg, errmsg.matches(
+          ".* server sent error unsupported feature flags"));
     }
   }
 }

@@ -147,6 +147,7 @@ DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(location_mapping_by_uuid);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(master_client_location_assignment_enabled);
+DECLARE_bool(master_support_auto_incrementing_column);
 DECLARE_bool(master_support_connect_to_master_rpc);
 DECLARE_bool(master_support_immutable_column_attribute);
 DECLARE_bool(mock_table_metrics_for_testing);
@@ -9852,7 +9853,6 @@ TEST_F(ReplicationFactorLimitsTest, MaxReplicationFactor) {
 class ClientTestAutoIncrementingColumn : public ClientTest {
  public:
   void SetUp() override {
-    // TODO:achennaka Enable Feature flag here once implemented
 
     KuduTest::SetUp();
 
@@ -9923,7 +9923,6 @@ TEST_F(ClientTestAutoIncrementingColumn, ReadAndWrite) {
     }
   }
 }
-
 
 TEST_F(ClientTestAutoIncrementingColumn, ConcurrentWrites) {
   const string kTableName = "concurrent_writes_auto_incrementing_column";
@@ -10138,6 +10137,26 @@ TEST_F(ClientTestAutoIncrementingColumn, InsertOperationNegatives) {
                         "Illegal state: this type of write operation is not supported on table "
                         "with auto-incrementing column");
   }
+}
+
+TEST_F(ClientTestAutoIncrementingColumn, CreateTableFeatureFlag) {
+  FLAGS_master_support_auto_incrementing_column = false;
+  const string kTableName = "create_table_with_auto_incrementing_column_feature_flag";
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  ASSERT_OK(b.Build(&schema_));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  Status s = table_creator->table_name(kTableName)
+                .schema(&schema_)
+                .add_hash_partitions({"key"}, 2)
+                .num_replicas(1)
+                .Create();
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  ASSERT_STR_CONTAINS(
+      s.ToString(),
+      Substitute("Error creating table $0 on the master: cluster does not support "
+                 "CreateTable with feature(s) AUTO_INCREMENTING_COLUMN", kTableName));
 }
 } // namespace client
 } // namespace kudu

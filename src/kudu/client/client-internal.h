@@ -108,7 +108,8 @@ class KuduClient::Data {
                             const MonoTime& deadline,
                             bool has_range_partition_bounds,
                             bool has_range_specific_hash_schema,
-                            bool has_immutable_column_schema);
+                            bool has_immutable_column_schema,
+                            bool has_auto_incrementing_column);
 
   static Status IsCreateTableInProgress(KuduClient* client,
                                         master::TableIdentifierPB table,

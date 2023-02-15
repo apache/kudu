@@ -319,7 +319,8 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
                                      const MonoTime& deadline,
                                      bool has_range_partition_bounds,
                                      bool has_range_specific_hash_schema,
-                                     bool has_immutable_column_schema) {
+                                     bool has_immutable_column_schema,
+                                     bool has_auto_incrementing_column) {
   vector<uint32_t> features;
   if (has_range_partition_bounds) {
     features.push_back(MasterFeatures::RANGE_PARTITION_BOUNDS);
@@ -329,6 +330,9 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
   }
   if (has_immutable_column_schema) {
     features.push_back(MasterFeatures::IMMUTABLE_COLUMN_ATTRIBUTE);
+  }
+  if (has_auto_incrementing_column) {
+    features.push_back(MasterFeatures::AUTO_INCREMENTING_COLUMN);
   }
   Synchronizer sync;
   AsyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB> rpc(

@@ -337,6 +337,10 @@ public class CreateTableOptions {
 
   List<Integer> getRequiredFeatureFlags(Schema schema) {
     List<Integer> requiredFeatureFlags = new ArrayList<>();
+    if (schema.hasAutoIncrementingColumn()) {
+      requiredFeatureFlags.add(
+              Integer.valueOf(Master.MasterFeatures.AUTO_INCREMENTING_COLUMN_VALUE));
+    }
     if (schema.hasImmutableColumns()) {
       requiredFeatureFlags.add(
               Integer.valueOf(Master.MasterFeatures.IMMUTABLE_COLUMN_ATTRIBUTE_VALUE));

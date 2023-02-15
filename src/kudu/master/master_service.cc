@@ -118,6 +118,12 @@ DEFINE_bool(master_support_immutable_column_attribute, true,
 TAG_FLAG(master_support_immutable_column_attribute, hidden);
 TAG_FLAG(master_support_immutable_column_attribute, runtime);
 
+DEFINE_bool(master_support_auto_incrementing_column, true,
+            "Whether the cluster supports auto-incrementing columns. "
+            "This in turn enables the usage of non-unique primary key.");
+TAG_FLAG(master_support_auto_incrementing_column, unsafe);
+TAG_FLAG(master_support_auto_incrementing_column, experimental);
+TAG_FLAG(master_support_auto_incrementing_column, runtime);
 
 using google::protobuf::Message;
 using kudu::consensus::ReplicaManagementInfoPB;
@@ -956,6 +962,8 @@ bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
       return FLAGS_master_support_upsert_ignore_operations;
     case MasterFeatures::IMMUTABLE_COLUMN_ATTRIBUTE:
       return FLAGS_master_support_immutable_column_attribute;
+    case MasterFeatures::AUTO_INCREMENTING_COLUMN:
+      return FLAGS_master_support_auto_incrementing_column;
     default:
       return false;
   }

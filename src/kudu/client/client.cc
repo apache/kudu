@@ -1060,6 +1060,7 @@ Status KuduTableCreator::Create() {
       break;
     }
   }
+  bool has_auto_incrementing_column = data_->schema_->schema_->has_auto_incrementing();
 
   if (data_->table_type_) {
     req.set_table_type(*data_->table_type_);
@@ -1080,7 +1081,8 @@ Status KuduTableCreator::Create() {
                                          deadline,
                                          !data_->range_partitions_.empty(),
                                          has_range_with_custom_hash_schema,
-                                         has_immutable_column_schema),
+                                         has_immutable_column_schema,
+                                         has_auto_incrementing_column),
       Substitute("Error creating table $0 on the master", data_->table_name_));
   // Spin until the table is fully created, if requested.
   if (data_->wait_) {
