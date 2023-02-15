@@ -19,9 +19,11 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <ostream>
 #include <string>
 
@@ -29,6 +31,7 @@
 #include <google/protobuf/util/json_util.h>
 
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/subprocess/subprocess.pb.h" // IWYU pragma: keep
 #include "kudu/tools/tool.pb.h"  // IWYU pragma: keep
@@ -43,13 +46,11 @@ using std::string;
 namespace kudu {
 namespace subprocess {
 
-const int SubprocessProtocol::kMaxMessageBytes = 1024 * 1024;
-
 SubprocessProtocol::SubprocessProtocol(SerializationMode serialization_mode,
                                        CloseMode close_mode,
                                        int read_fd,
                                        int write_fd,
-                                       int max_msg_bytes)
+                                       uint32_t max_msg_bytes)
     : serialization_mode_(serialization_mode),
       close_mode_(close_mode),
       read_fd_(read_fd),
@@ -97,24 +98,36 @@ Status SubprocessProtocol::ReceiveMessage(M* message) {
     }
     case SerializationMode::PB:
     {
-      // Read four bytes of size (big-endian).
+      // Read four bytes where the size of the payload is encoded (big-endian).
       faststring size_buf;
       size_buf.resize(sizeof(uint32_t));
       RETURN_NOT_OK_PREPEND(DoRead(&size_buf), "unable to receive message size");
-      uint32_t body_size = NetworkByteOrder::Load32(size_buf.data());
+      const uint32_t body_size = NetworkByteOrder::Load32(size_buf.data());
 
-      if (body_size > max_msg_bytes_) {
-        return Status::IOError(
-            Substitute("message size ($0) exceeds maximum message size ($1)",
-                       body_size, max_msg_bytes_));
+      if (max_msg_bytes_ != 0 && PREDICT_FALSE(body_size > max_msg_bytes_)) {
+        const auto msg = Substitute(
+            "message size ($0) exceeds maximum message size ($1)",
+            body_size, max_msg_bytes_);
+
+        // Try to read out and discard of the oversized message to clean the
+        // channel for next messages, if any.
+        LOG(WARNING) << Substitute(
+            "$0: reading and discarding of the oversized message", msg);
+        WARN_NOT_OK(DoReadAndDiscard(body_size),
+                    "failed to read out oversized message");
+        return Status::IOError(msg);
       }
 
       // Read the variable size body.
+      //
+      // TODO(aserbin): maybe, use a pre-allocated buffer to read in the body
+      //                of the message since the limit on the maximum message
+      //                size is known beforehand?
       faststring body_buf;
       body_buf.resize(body_size);
       RETURN_NOT_OK_PREPEND(DoRead(&body_buf), "unable to receive message body");
 
-      // Parse the body into a PB request.
+      // Parse the body into a PB message.
       RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(
           message, body_buf.data(), body_buf.length()),
               Substitute("unable to parse PB: $0", body_buf.ToString()));
@@ -165,38 +178,59 @@ Status SubprocessProtocol::SendMessage(const M& message) {
   return Status::OK();
 }
 
-Status SubprocessProtocol::DoRead(faststring* buf) {
+Status SubprocessProtocol::DoRead(faststring* buf) const {
+  DCHECK_LE(buf->length(), std::numeric_limits<ssize_t>::max());
   uint8_t* pos = buf->data();
-  size_t rem = buf->length();
+  ssize_t rem = buf->length();
   while (rem > 0) {
     ssize_t r;
     RETRY_ON_EINTR(r, read(read_fd_, pos, rem));
     if (r == -1) {
-      return Status::IOError("Error reading from pipe", "", errno);
+      const int err = errno;
+      return Status::IOError("Error reading from pipe", "", err);
     }
     if (r == 0) {
       return Status::EndOfFile("Other end of pipe was closed");
     }
-    DCHECK_GE(rem, r);
     rem -= r;
     pos += r;
   }
   return Status::OK();
 }
 
-Status SubprocessProtocol::DoWrite(const faststring& buf) {
+Status SubprocessProtocol::DoReadAndDiscard(ssize_t size) const {
+  DCHECK_LE(size, std::numeric_limits<ssize_t>::max());
+  uint8_t buf[4096];
+  ssize_t rem = size;
+  while (rem > 0) {
+    ssize_t r;
+    RETRY_ON_EINTR(r, read(read_fd_, buf, std::max<ssize_t>(rem, sizeof(buf))));
+    if (r == -1) {
+      const int err = errno;
+      return Status::IOError("Error reading from pipe", "", err);
+    }
+    if (r == 0) {
+      return Status::EndOfFile("Other end of pipe was closed");
+    }
+    rem -= r;
+  }
+  return Status::OK();
+}
+
+Status SubprocessProtocol::DoWrite(const faststring& buf) const {
+  DCHECK_LE(buf.length(), std::numeric_limits<ssize_t>::max());
   const uint8_t* pos = buf.data();
-  size_t rem = buf.length();
+  ssize_t rem = buf.length();
   while (rem > 0) {
     ssize_t r;
     RETRY_ON_EINTR(r, write(write_fd_, pos, rem));
     if (r == -1) {
-      if (errno == EPIPE) {
+      const int err = errno;
+      if (err == EPIPE) {
         return Status::EndOfFile("Other end of pipe was closed");
       }
-      return Status::IOError("Error writing to pipe", "", errno);
+      return Status::IOError("Error writing to pipe", "", err);
     }
-    DCHECK_GE(rem, r);
     rem -= r;
     pos += r;
   }

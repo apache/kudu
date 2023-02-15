@@ -159,6 +159,12 @@ METRIC_DEFINE_histogram(server, ranger_server_outbound_queue_time_ms,
     "Duration of time in ms spent in the Ranger server's outbound request queue",
     kudu::MetricLevel::kInfo,
     60000LU, 1);
+METRIC_DEFINE_counter(server, ranger_server_dropped_messages,
+    "Number of messages dropped by the subprocess server",
+    kudu::MetricUnit::kMessages,
+    "Number of responses that the Ranger client had sent, but the subprocess "
+    "server failed to receive because they were oversized, corrupted, etc.",
+    kudu::MetricLevel::kWarn);
 
 DECLARE_string(keytab_file);
 DECLARE_string(principal);
@@ -366,6 +372,7 @@ Status BuildArgv(const string& fifo_path, const string& log_properties_path,
 
 } // anonymous namespace
 
+#define CINIT(member, x) member = METRIC_##x.Instantiate(entity)
 #define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)
 RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntity>& entity) {
   HISTINIT(sp_inbound_queue_length, ranger_subprocess_inbound_queue_length);
@@ -377,8 +384,10 @@ RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntit
   HISTINIT(server_inbound_queue_time_ms, ranger_server_inbound_queue_time_ms);
   HISTINIT(server_outbound_queue_size_bytes, ranger_server_outbound_queue_size_bytes);
   HISTINIT(server_outbound_queue_time_ms, ranger_server_outbound_queue_time_ms);
+  CINIT(server_dropped_messages, ranger_server_dropped_messages);
 }
 #undef HISTINIT
+#undef CINIT
 
 RangerClient::RangerClient(Env* env, const scoped_refptr<MetricEntity>& metric_entity)
     : env_(env), metric_entity_(metric_entity) {

@@ -26,6 +26,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -79,6 +80,7 @@ struct SubprocessMetrics {
   scoped_refptr<Histogram> server_inbound_queue_time_ms;
   scoped_refptr<Histogram> server_outbound_queue_size_bytes;
   scoped_refptr<Histogram> server_outbound_queue_time_ms;
+  scoped_refptr<Counter> server_dropped_messages;
 };
 
 // Encapsulates the pending state of a request that is in the process of being
@@ -270,6 +272,10 @@ class SubprocessServer {
 
   // Fixed timeout to be used for each call.
   const MonoDelta call_timeout_;
+
+  // The upper limit on the size of a message in protobuf format received
+  // from a subprocess, 0 means no limit.
+  const uint32_t max_message_size_bytes_;
 
   // Next request ID to be assigned.
   std::atomic<CallId> next_id_;

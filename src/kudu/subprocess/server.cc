@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -43,17 +44,27 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/thread.h"
 
-DEFINE_int32(subprocess_request_queue_size_bytes, 4 * 1024 * 1024,
+DEFINE_int32(subprocess_request_queue_size_bytes, 16 * 1024 * 1024,
              "Maximum size in bytes of the outbound request queue. This is best "
              "effort: if a single request is larger than this, it is still "
              "added to the queue");
 TAG_FLAG(subprocess_request_queue_size_bytes, advanced);
 
-DEFINE_int32(subprocess_response_queue_size_bytes, 4 * 1024 * 1024,
+DEFINE_int32(subprocess_response_queue_size_bytes, 16 * 1024 * 1024,
              "Maximum size in bytes of the inbound response queue. This is best "
              "effort: if a single request is larger than this, it is still "
              "added to the queue");
 TAG_FLAG(subprocess_response_queue_size_bytes, advanced);
+
+DEFINE_uint32(subprocess_max_message_size_bytes, 8 * 1024 * 1024,
+              "Maximum payload size for a message in protobuf format the "
+              "subprocess server accepts from a subprocess (i.e. its child), "
+              "in bytes, 0 means unlimited. If a subprocess sends a message "
+              "with bigger payload than the specified limit, the server "
+              "rejects the message and responds with AppStatusPB::IO_ERROR "
+              "error code. This setting is not effective for messages in JSON "
+              "format.");
+TAG_FLAG(subprocess_max_message_size_bytes, advanced);
 
 DEFINE_int32(subprocess_num_responder_threads, 3,
              "Number of threads that will be dedicated to reading responses "
@@ -95,6 +106,7 @@ SubprocessServer::SubprocessServer(Env* env, const string& receiver_file,
                                    vector<string> subprocess_argv,
                                    SubprocessMetrics metrics)
     : call_timeout_(MonoDelta::FromSeconds(FLAGS_subprocess_timeout_secs)),
+      max_message_size_bytes_(FLAGS_subprocess_max_message_size_bytes),
       next_id_(1),
       closing_(1),
       env_(env),
@@ -143,10 +155,12 @@ Status SubprocessServer::Init() {
 
   // Start the message protocol.
   CHECK(!message_protocol_);
-  message_protocol_.reset(new SubprocessProtocol(SubprocessProtocol::SerializationMode::PB,
-                                                 SubprocessProtocol::CloseMode::CLOSE_ON_DESTROY,
-                                                 receiver_fifo_->read_fd(),
-                                                 process_->ReleaseChildStdinFd()));
+  message_protocol_.reset(new SubprocessProtocol(
+      SubprocessProtocol::SerializationMode::PB,
+      SubprocessProtocol::CloseMode::CLOSE_ON_DESTROY,
+      receiver_fifo_->read_fd(),
+      process_->ReleaseChildStdinFd(),
+      max_message_size_bytes_));
   const int num_threads = FLAGS_subprocess_num_responder_threads;
   responder_threads_.resize(num_threads);
   for (int i = 0; i < num_threads; i++) {
@@ -175,8 +189,9 @@ Status SubprocessServer::Execute(SubprocessRequestPB* req,
   metrics_.server_outbound_queue_size_bytes->Increment(outbound_call_queue_.size());
   CallAndTimer call_and_timer = {
       make_shared<SubprocessCall>(req, resp, &cb, MonoTime::Now() + call_timeout_), {} };
+  const auto deadline = call_and_timer.first->deadline();
   RETURN_NOT_OK_PREPEND(
-      outbound_call_queue_.BlockingPut(std::move(call_and_timer), call_and_timer.first->deadline()),
+      outbound_call_queue_.BlockingPut(std::move(call_and_timer), deadline),
       "couldn't enqueue call");
   return sync.Wait();
 }
@@ -230,8 +245,7 @@ void SubprocessServer::Shutdown() {
     std::lock_guard<simple_spinlock> l(in_flight_lock_);
     calls = std::move(call_by_id_);
   }
-  for (const auto& id_and_call : calls) {
-    const auto& call = id_and_call.second;
+  for (const auto& [_, call] : calls) {
     call->RespondError(Status::ServiceUnavailable("subprocess is shutting down"));
   }
 }
@@ -239,24 +253,49 @@ void SubprocessServer::Shutdown() {
 void SubprocessServer::ReceiveMessagesThread() {
   DCHECK(message_protocol_) << "message protocol is not initialized";
   while (closing_.count() > 0) {
-    // Receive a new response from the subprocess.
+    // Receive next response from the subprocess.
     SubprocessResponsePB response;
-    Status s = message_protocol_->ReceiveMessage(&response);
+    const auto s = message_protocol_->ReceiveMessage(&response);
     if (s.IsEndOfFile()) {
       // The underlying pipe was closed. We're likely shutting down.
       LOG(INFO) << "Received an EOF from the subprocess";
       return;
     }
-    // TODO(awong): getting an error here indicates that this server and the
-    // underlying subprocess are not in sync (e.g. not speaking the same
-    // protocol). We should consider either crashing here, or restarting the
-    // subprocess.
-    DCHECK(s.ok());
-    WARN_NOT_OK(s, "failed to receive response from the subprocess");
+
+    // If the ReceiveMessage() call above returned an error, it means the server
+    // either rejected the message due to some limitations (e.g. maximum size
+    // of the encoded message), or failed to parse the message due to
+    // corruption, or that the server and the underlying subprocess are not in
+    // sync (e.g., speaking different protocol). Since the subprocess protocol
+    // doesn't have a means to address such a condition in a graceful way, not
+    // much can be done in this case. The information on the response identifier
+    // could not be retrieved from the serialized SubprocessResponsePB message
+    // in the discarded data, hence there isn't a way to find what request
+    // that non-delivered message corresponds to.
+    //
+    // Anyways, since the consistency of the server's runtime structures and the
+    // data haven't been compromised, no need to crash here: just log a warning
+    // about this issue. The request will be reported as timed out since when
+    // no corresponding record is found in the inbound request queue at the
+    // deadline.
+    if (PREDICT_FALSE(!s.ok())) {
+      // Log an error and continue: in some cases (e.g., an oversized message
+      // sent by the subprocess), this is a recoverable error once the oversized
+      // message is read out from the communication channel and discarded. At
+      // least, next non-oversized responses can be read without any issue.
+      //
+      // TODO(aserbin): if the data stream is corrupted, resetting the state
+      //                of the subprocess (e.g., restarting the subprocess)
+      //                might provide a short-term remedy as well
+      metrics_.server_dropped_messages->Increment();
+      LOG(ERROR) << Substitute(
+          "failed to receive response from the subprocess: $0", s.ToString());
+      continue;
+    }
+
     // Before adding to the queue, record the size of the response queue.
     metrics_.server_inbound_queue_size_bytes->Increment(inbound_response_queue_.size());
-    ResponsePBAndTimer resp_and_timer = { std::move(response), {} };
-    if (s.ok() && !inbound_response_queue_.BlockingPut(std::move(resp_and_timer)).ok()) {
+    if (!inbound_response_queue_.BlockingPut(ResponsePBAndTimer{ response, {} }).ok()) {
       // The queue has been shut down and we should shut down too.
       DCHECK_EQ(0, closing_.count());
       LOG(INFO) << "failed to put response onto inbound queue";
@@ -273,10 +312,9 @@ void SubprocessServer::ResponderThread() {
     // is shutting down. Also note that even if this fails because we're
     // shutting down, we still populate 'resps' and must run their callbacks.
     s = inbound_response_queue_.BlockingDrainTo(&resps);
-    for (auto& resp_and_timer : resps) {
+    for (auto& [resp, timer] : resps) {
       metrics_.server_inbound_queue_time_ms->Increment(
-          resp_and_timer.second.elapsed().ToMilliseconds());
-      const auto& resp = resp_and_timer.first;
+          timer.elapsed().ToMilliseconds());
 
       if (!resp.has_id()) {
         LOG(FATAL) << Substitute("Received invalid response: $0",
@@ -297,8 +335,7 @@ void SubprocessServer::ResponderThread() {
     calls_and_resps.reserve(resps.size());
     {
       std::lock_guard<simple_spinlock> l(in_flight_lock_);
-      for (auto& resp_and_timer : resps) {
-        auto& resp = resp_and_timer.first;
+      for (auto& [resp, _] : resps) {
         auto id = resp.id();
         auto call = EraseKeyReturnValuePtr(&call_by_id_, id);
         if (call) {
@@ -306,8 +343,8 @@ void SubprocessServer::ResponderThread() {
         }
       }
     }
-    for (auto& call_and_resp : calls_and_resps) {
-      call_and_resp.first->RespondSuccess(std::move(call_and_resp.second));
+    for (auto& [call, resp] : calls_and_resps) {
+      call->RespondSuccess(std::move(resp));
     }
     // If we didn't find our call, it timed out and the its callback has
     // already been called by the deadline checker.
@@ -359,18 +396,16 @@ void SubprocessServer::SendMessagesThread() {
     s = outbound_call_queue_.BlockingDrainTo(&calls);
     {
       std::lock_guard<simple_spinlock> l(in_flight_lock_);
-      for (const auto& call_and_timer : calls) {
-        const auto& call = call_and_timer.first;
+      for (const auto& [call, _] : calls) {
         EmplaceOrDie(&call_by_id_, call->id(), call);
       }
     }
     // NOTE: it's possible that before sending the request, the call already
     // timed out and the deadline checker already called its callback. If so,
     // the following call will no-op.
-    for (const auto& call_and_timer : calls) {
-      const auto& call = call_and_timer.first;
+    for (const auto& [call, timer] : calls) {
       metrics_.server_outbound_queue_time_ms->Increment(
-          call_and_timer.second.elapsed().ToMilliseconds());
+          timer.elapsed().ToMilliseconds());
 
       call->SendRequest(message_protocol_.get());
     }
