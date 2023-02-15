@@ -1176,6 +1176,8 @@ enum MasterFeatures {
   UPSERT_IGNORE = 9;
   // Whether master supports immutable attribute on column schema.
   IMMUTABLE_COLUMN_ATTRIBUTE = 10;
+  // Whether master supports auto incrementing column.
+  AUTO_INCREMENTING_COLUMN = 11;
 }
 
 service MasterService {
