@@ -66,6 +66,9 @@ class MessageReader implements Runnable {
       byte[] data;
       try {
         data = messageIO.readBytes();
+      } catch (KuduSubprocessException e) {
+        LOG.error("%s: continuing", e.getMessage());
+        continue;
       } catch (EOFException e) {
         LOG.info("Reaching the end of the input stream, exiting.");
         // Break the loop if the end of the stream has been reached.

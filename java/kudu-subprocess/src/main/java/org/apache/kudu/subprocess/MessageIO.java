@@ -58,6 +58,8 @@ public class MessageIO {
    * @throws IOException if this input stream has been closed, an I/O
    *                     error occurs, or fail to read the message
    *                     properly
+   * @throws KuduSubprocessException if there was an oversized message
+   *                                 in the stream
    */
   @VisibleForTesting
   byte[] readBytes() throws EOFException, IOException {
@@ -67,9 +69,12 @@ public class MessageIO {
     doRead(sizeBytes, Integer.BYTES);
     int size = bytesToInt(sizeBytes);
     if (size > maxMessageBytes) {
-      throw new IOException(
-          String.format("message size (%d) exceeds maximum message size (%d)",
-                        size, maxMessageBytes));
+      // Read out and discard the oversized message, so the channel is available
+      // for further communication.
+      doReadAndDiscard(size);
+      throw new KuduSubprocessException(String.format(
+          "message size (%d) exceeds maximum message size (%d): message is discarded",
+          size, maxMessageBytes));
     }
     // Read the body based on the size.
     byte[] dataBytes = new byte[size];
@@ -95,6 +100,33 @@ public class MessageIO {
       throw new IOException(
               String.format("unable to receive message, expected (%d) bytes " +
                             "but read (%d) bytes", size, read));
+    }
+  }
+
+  /**
+   * Reads <code>size</code> bytes of data from the underlying buffered input
+   * stream and discards all the bytes read.
+   * If it fails to read the specified size, <code>IOException</code> is thrown.
+   *
+   * @throws EOFException if the end of the stream has been reached
+   * @throws IOException if this input stream has been closed, an I/O
+   *                     error occurs, or fail to read the specified size
+   */
+  private void doReadAndDiscard(int size) throws EOFException, IOException {
+    byte[] buf = new byte[4096];
+    int rem = size;
+    while (rem > 0) {
+      int toRead = Math.min(4096, rem);
+      int read = in.read(buf, 0, toRead);
+      if (read == -1) {
+        throw new EOFException(String.format("the end of the stream " +
+            "has been reached while reading out oversized message (%d bytes)", size));
+      } else if (read != toRead) {
+        throw new IOException(
+            String.format("unable to read next chunk of oversized message (%d bytes), " +
+                "expected %d bytes but read %d bytes", size, toRead, read));
+      }
+      rem -= read;
     }
   }
 

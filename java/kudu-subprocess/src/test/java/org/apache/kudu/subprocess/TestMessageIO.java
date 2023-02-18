@@ -97,28 +97,6 @@ public class TestMessageIO {
   }
 
   /**
-   * Verifies that reading malformed message that exceeds the maximum
-   * bytes size should cause expected error.
-   */
-  @Test
-  public void testMalformedMessageExceedMaxBytes() {
-    byte[] size = MessageIO.intToBytes(SubprocessConfiguration.MAX_MESSAGE_BYTES_DEFAULT + 1);
-    byte[] body = new byte[0];
-    byte[] malformedMessage = Bytes.concat(size, body);
-    ByteArrayInputStream byteInputStream = new ByteArrayInputStream(malformedMessage);
-    BufferedInputStream in = new BufferedInputStream(byteInputStream);
-    MessageIO messageIO = new MessageIO(SubprocessConfiguration.MAX_MESSAGE_BYTES_DEFAULT,
-                                        in, /* out= */null);
-    Throwable thrown = Assert.assertThrows(IOException.class, new ThrowingRunnable() {
-      @Override
-      public void run() throws Exception {
-        messageIO.readBytes();
-      }
-    });
-    Assert.assertTrue(thrown.getMessage().contains("exceeds maximum message size"));
-  }
-
-  /**
    * Verifies that reading malformed messages that has mismatched size
    * and body (not enough data in the body) should cause expected error.
    */
@@ -138,5 +116,42 @@ public class TestMessageIO {
       }
     });
     Assert.assertTrue(thrown.getMessage().contains("unable to receive message"));
+  }
+
+  /**
+   * Verify that KuduSubprocessException is thrown by MessageIO.readBytes() when
+   * an oversized message is detected in the input stream. After the oversized
+   * message is read and discarded, next message can be read from the stream.
+   */
+  @Test
+  public void testOversizedMessage() throws Exception {
+    final int maxMessageSize = 32;
+    byte[] size0 = MessageIO.intToBytes(maxMessageSize + 1);
+    byte[] body0 = new byte[maxMessageSize + 1];
+    Arrays.fill(body0, (byte) 0);
+    byte[] msg0 = Bytes.concat(size0, body0);
+
+    byte[] size1 = MessageIO.intToBytes(maxMessageSize);
+    byte[] body1 = new byte[maxMessageSize];
+    Arrays.fill(body1, (byte) 1);
+    byte[] msg1 = Bytes.concat(size1, body1);
+
+    byte[] msg = Bytes.concat(msg0, msg1);
+
+    BufferedInputStream in = new BufferedInputStream(new ByteArrayInputStream(msg));
+
+    MessageIO messageIO = new MessageIO(maxMessageSize, in, /* out= */null);
+    Throwable thrown = Assert.assertThrows(KuduSubprocessException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        messageIO.readBytes();
+      }
+    });
+    Assert.assertTrue(thrown.getMessage().contains(
+        "message size (33) exceeds maximum message size (32): message is discarded"));
+
+    byte[] readMsg = messageIO.readBytes();
+    Assert.assertEquals(maxMessageSize, readMsg.length);
+    Assert.assertArrayEquals(body1, readMsg);
   }
 }
