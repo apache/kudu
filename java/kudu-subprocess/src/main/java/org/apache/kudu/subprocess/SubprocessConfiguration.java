@@ -51,7 +51,7 @@ public class SubprocessConfiguration {
   private OutputStream outputStream;
 
   @VisibleForTesting
-  static final int MAX_MESSAGE_BYTES_DEFAULT = 1024 * 1024;
+  static final int MAX_MESSAGE_BYTES_DEFAULT = 8 * 1024 * 1024;
 
   public SubprocessConfiguration(String[] args) {
     parse(args);
