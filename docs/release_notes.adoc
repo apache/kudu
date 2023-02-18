@@ -31,6 +31,15 @@
 [[rn_1.17.0_upgrade_notes]]
 == Upgrade Notes
 
+** TLSv1.2 is the minimum TLS protocol version that newer Kudu clients are able to use for secure Kudu RPC. The newer clients are not able to communicate with servers built and run with OpenSSL of versions prior to 1.0.1.  If such a Kudu cluster is running on a deprecated OS (e.g., RHEL/CentOS 6.4), the following options are available to work around the incompatibility:
+* use Kudu clients of 1.14 or earlier versions to communicate with such cluster
+* disable RPC encryption and authentication for Kudu RPC, setting `--rpc_authentication=disabled` and `--rpc_encryption=disabled` for all masters and tablet servers in the cluster to allow the new client to work with the old cluster
+
+** TLSv1.2 is the minimum TLS protocol version that newer Kudu servers are able to use for Kudu RPC.  The newer servers are not able to communicate using secure Kudu RPC with Kudu C++ client applications linked with libkudu_client library built against OpenSSL of versions prior to 1.0.1 or with Java client applications run with outdated Java runtime that doesn't support TLSv1.2.  The following options are available to work around this incompatibility:
+* customize settings for the `--rpc_tls_min_protocol` and `--rpc_tls_ciphers` flags on all masters and tablet servers in the cluster, setting `--rpc_tls_min_protocol=TLSv1` and adding TLSv1-capable cipher suites (e.g. AES128-SHA and AES256-SHA) into the list
+* disable RPC encryption and authentication for Kudu RPC, setting `--rpc_authentication=disabled` and `--rpc_encryption=disabled` for all masters and tablet servers in the cluster to allow such Kudu clients to work with newer clusters
+
+** The default value of tablet history retention time (controlled by `--tablet_history_max_age_sec` flag) on Kudu master has been reduced from 7 days to 5 minutes, since masters always scan data at the latest available snapshot, keeping long history of the system tablet doesn't make much sense.
 
 [[rn_1.17.0_obsoletions]]
 == Obsoletions
@@ -44,14 +53,119 @@ Support for Python 2.x and Python 3.4 and earlier is deprecated and may be remov
 [[rn_1.17.0_new_features]]
 == New features
 
+* Kudu now supports encrypting data at rest. Kudu supports `AES-128-CTR`, `AES-192-CTR`, and `AES-256-CTR` ciphers to encrypt data, supports Apache Ranger KMS and Apache Hadoop KMS. See link:https://kudu.apache.org/docs/security.html#_data_at_rest_[Data at rest] for more details.
+
+* Kudu now supports range-specific hash schemas for tables, it's now possible to alter a table and add a new range partition with custom hash sub-partitioning. It’s controlled by the `--enable_per_range_hash_schemas` master flag which is enabled by default (see link:https://issues.apache.org/jira/browse/KUDU-2671[KUDU-2671]).
+
+* Kudu now supports soft-delete tables. Kudu will reserve the table for a period of time (specified by client API, or use `--default_deleted_table_reserve_seconds` master flag if not specified) after receiving the delete table request, and it's possible to recall this table before the table expired (see link:https://issues.apache.org/jira/browse/KUDU-3326[KUDU-3326]).
+
+* Introduced `Auto-Incrementing` column. These columns are populated on the server side with a monotonically increasing counter, the counter is local to every tablet i.e. each tablet has a separate auto incrementing counter (see link:https://issues.apache.org/jira/browse/KUDU-1945[KUDU-1945]).
+
+* Kudu now supports non-unique primary key. When a table with non-unique primary key is created, an `Auto-Incrementing` column named `auto_incrementing_id` will be added automatically to the table as the key column. The non-unique key columns and the `Auto-Incrementing` column together form the effective primary key (see link:https://issues.apache.org/jira/browse/KUDU-1945[KUDU-1945]).
+
+* Introduced `Immutable` column. It's useful to define such a column which represents a semantically constant entity (see link:https://issues.apache.org/jira/browse/KUDU-3353[KUDU-3353]).
+
+* An experimental feature is added to Kudu that allows it to automatically rebalance tablet leader replicas among tablet servers. The background task can be enabled by setting the `--auto_leader_rebalancing_enabled` flag on the Kudu masters (see link:https://issues.apache.org/jira/browse/KUDU-3390[KUDU-3390]).
+
+* Introduced JWT verification into C++ RPC negotiation. When the newly introduced `--enable_jwt_token_auth` has been enabled, meaning that the server expects a valid JWT to be sent by the client which will be verified when the connection is being established.
+
+* The C++ client scan token builder can now create multiple tokens per tablet. To use this functionality, call `SetSplitSizeBytes()` to specify how many bytes of data each token should scan (see link:https://issues.apache.org/jira/browse/KUDU-2670[KUDU-2670]).
+
+* Exposed write successful/ignore count metrics for Java and C++ clients (see link:https://issues.apache.org/jira/browse/KUDU-3351[KUDU-3351], link:https://issues.apache.org/jira/browse/KUDU-3365[KUDU-3365]).
+
+* Kudu now supports exposing Prometheus formated metrics via `/metrics_prometheus` path of the webserver (see link:https://issues.apache.org/jira/browse/KUDU-3375[KUDU-3375]).
+
+* It’s now possible to deploy Kudu clusters in an internal network (e.g. in K8S environment) and avoid internal traffic (i.e. tservers and masters) using advertised addresses and allow Kudu clients running in external networks. This can be achieved by customizing the setting for the newly introduced `--rpc_proxy_advertised_addresses` and `--rpc_proxied_addresses` server flags (see link:https://issues.apache.org/jira/browse/KUDU-3357[KUDU-3357]).
+
+* It’s now possible to clean up metadata for deleted tables/tablets from Kudu master's in-memory map and the `sys.catalog` table, it is useful to reduce the memory consumption and bootstrap time for masters. This can be achieved by customizing the setting for the newly introduced `--enable_metadata_cleanup_for_deleted_tables_and_tablets` and `--metadata_for_deleted_table_and_tablet_reserved_secs` kudu-master’s flags.
+
+* It’s now possible to perform range rebalancing in the `kudu cluster rebalance` CLI tool by setting the newly introduced `--enable_range_rebalancing` tool flag.
+
+* It’s now possible to compact log container metadata files at runtime, it’s useful to reclaim the disk space once the container becomes full. This can be achieved by customizing the setting for the newly introduced `--log_container_metadata_runtime_compact` kudu-tserver flag (see link:https://issues.apache.org/jira/browse/KUDU-3318[KUDU-3318]).
+
+* New tools `kudu master/tserver set_flag_for_all` are added to update flags in a Kudu cluster in batch.
+
+* A new tool `kudu local_replica copy_from_local` is added to copy replicas from the local filesystem. It can be used when adding disk drivers and make data rebalanced fastly between disk drivers, or can be used when migrating data from the only disk driver to another. It will make data more dense than data on old data directories too.
+
+* A new tool `kudu diagnose parse_metrics` is added to parse metrics out of diagnostic logs (see link:https://issues.apache.org/jira/browse/KUDU-2353[KUDU-2353]).
+
+* A new tool `kudu local_replica tmeta delete_rowsets` is added to delete rowsets from the tablet.
 
 [[rn_1.17.0_improvements]]
 == Optimizations and improvements
 
+* Reduce the memory consumption if there are frequent alter schema operations for tablet servers (see link:https://issues.apache.org/jira/browse/KUDU-3197[KUDU-3197]).
+
+* Reduce the memory consumption by implementing memory budgeting for performing RowSet merge compactions (i.e. CompactRowSetsOp maintenance operations). Several flags have been introduced, while the `--rowset_compaction_memory_estimate_enabled` flag indicates whether to check for available memory necessary to run CompactRowSetsOp maintenance operations (see link:https://issues.apache.org/jira/browse/KUDU-3406[KUDU-3406]).
+
+* Optimized in-list predicate values based on RowSet PK bounds, it‘s possible to skip rows effectively when the predicate is on a non-prefix of the primary key and the leading column(s) have cardinality=1 (see link:https://issues.apache.org/jira/browse/KUDU-1644[KUDU-1644]).
+
+* Speed up CLI tool `kudu cluster rebalance` to run intra-location rebalancing in parallel for location-aware Kudu cluster. Theoretically, running intra-location rebalancing in parallel might shorten the runtime by N times compared with running sequentially, where N is the number of locations in a Kudu cluster. This can be achieved by customizing the setting for the newly introduced `--intra_location_rebalancing_concurrency` tool flag.
+
+* Two new flags `--show_tablet_partition_info` and `--show_hash_partition_info` have been introduced for the `kudu table list` CLI tool to show the corresponding relationship between partitions and tablet ids, and it's possible to specify the output format by specifying `--list_table_output_format` flag.
+
+* A new flag `--create_table_replication_factor` has been introduced for the `kudu table copy` CLI tool to specify the replication factor for the destination table.
+
+* A new flag `--create_table_hash_bucket_nums` has been introduced for the `kudu table copy` CLI tool to specify the number of hash buckets in each hash dimension for the destination table.
+
+* A new flag `--tables` has been introduced for the `kudu master unsafe_rebuild` CLI tool to specify the partial tables that need to be rebuilt, and it will not take effect on the existing other tables on Kudu master.
+
+* A new flag `--fault_tolerant` has been introduced for the `kudu table copy/scan` and `kudu perf table_scan` CLI tool to make the scanner fault-tolerant and the results returned in primary key order per-tablet.
+
+* A new flag `--show_column_comment` has been introduced for the `kudu table describe` CLI tool to show column comments.
+
+* A new flag `--current_leader_uuid` has been introduced for the `kudu tablet leader_step_down` CLI tool to conveniently step down leader replicas from server by UUID.
+
+* A new flag `--use_readable_format` has been introduced for the `kudu local_replica dump rowset` CLI tool to indicate whether to dump the primary key in human readable format. Besides, another flag `--dump_primary_key_bounds_only` has been introduced to this tool to indicate whether to dump rowset primary key bounds only.
+
+* A new flag `--tables` has been introduced for the `kudu local_replica delete` CLI tool to conveniently delete multiple tablets by table name.
+
+* It’s now possible to specify `owner` and `comment` fields when using the `kudu table create` CLI tool to create tables.
+
+* It’s now possible to use the `kudu local_replica copy_from_remote` CLI tool to copy tablets in batches.
+
+* It’s now possible to enable or disable auto rebalancer by setting `--auto_rebalancing_enabled` flag to Kudu master at runtime.
+
+* It’s now possible for `kudu tserver/master get_flags` CLI tool to filter flags even if the server side doesn’t support flags filter function (before Kudu 1.12).
+
+* Added a CSP (Content Security Policy) header to prevent security scanners flag Kudu's web UI as vulnerable.
+
+* A separated section has been introduced to include all non-default flags specially on path `/varz` of Kudu's web UI.
+
+* A separated section has been introduced to show slow scans on path `/scans` of Kudu's web UI. A scan is called 'slow' if it takes more time than defined by `--slow_scanner_threshold_ms`.
+
+* A new `Data retained` column has been introduced to the `Non-running operations` section to indicate the approximate amount of disk space that would be freed on path `/maintenance-manager` of Kudu's web UI.
+
+* Experimentally supported to build and run Kudu on Apple M chips and macOS 11, 12.
 
 [[rn_1.17.0_fixed_issues]]
 == Fixed Issues
 
+* Fixed an issue of historical MVCC data older than the ancient history mark (configured by setting `--tablet_history_max_age_sec`) which has only delete operations without any update operations, hasn't been compacted and GCed if the tablet is created before Kudu 1.10 at which version doesn’t support accurating count of rows (see link:https://issues.apache.org/jira/browse/KUDU-3367[KUDU-3367]).
+
+* Fixed an issue of Kudu server crashes on malicious negotiation attempts.
+
+* Fixed a hang bug of Kudu tablet server started by a user who has no permission of the tablet metadata file (see link:https://issues.apache.org/jira/browse/KUDU-3419[KUDU-3419]).
+
+* Fixed a bug of C++ client toggling `SetFaultTolerant(false)` doesn’t work.
+
+* Fixed a bug of C++ client’s `KuduScanner::SetSelection()` API doesn’t work.
+
+* Fixed a bug of Java client reading repetitive rows even if in fault tolerant scan mode.
+
+* Fixed a bug of Java client's last propagated timestamp and resource metrics don't update in subsequent scan responses.
+
+* Fixed a bug that Java client can't invalidate stale locations of the leader master.
+
+* Fixed a bug that Hive failed to query on Kudu tables (see link:https://issues.apache.org/jira/browse/KUDU-3401[KUDU-3401]).
+
+* Fixed a bug of CLI tool `kudu table copy` failed to copy an unpartitioned table.
+
+* Fixed a bug of CLI tool `kudu master unsafe_rebuild` failed to rebuild the correct latest schema when the table to be rebuilt is unhealthy.
+
+* Fixed a bug that `kudu table copy` failed to copy tables which have string, binary or varchar type of columns in their range keys (see link:https://issues.apache.org/jira/browse/KUDU-3306[KUDU-3306]).
+
+* Fixed a bug of `kudu local_replica list` CLI tool crashes if `--list_detail` flag enabled.
 
 [[rn_1.17.0_wire_compatibility]]
 == Wire Protocol compatibility
@@ -103,6 +217,19 @@ documentation.
 
 [[rn_1.17.0_contributors]]
 == Contributors
+
+Kudu 1.17.0 includes contributions from 24 people, including 10 first-time contributors:
+
+* Ashwani Raina
+* Hari Reddy
+* Kurt Deschler
+* Marton Greber
+* bsglz
+* mammadli.khazar
+* wzhou-code
+* xinghuayu007
+* xlwh
+* Ádám Bakai
 
 [[resources_and_next_steps]]
 == Resources
