@@ -58,6 +58,7 @@ public abstract class AbstractKuduScannerBuilder
   long scanRequestTimeout;
   ReplicaSelection replicaSelection = ReplicaSelection.LEADER_ONLY;
   long keepAlivePeriodMs = AsyncKuduClient.DEFAULT_KEEP_ALIVE_PERIOD_MS;
+  String queryId = "";
 
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
     this.client = client;
@@ -409,6 +410,21 @@ public abstract class AbstractKuduScannerBuilder
   @SuppressWarnings("unchecked")
   public S keepAlivePeriodMs(long keepAlivePeriodMs) {
     this.keepAlivePeriodMs = keepAlivePeriodMs;
+    return (S) this;
+  }
+
+  /**
+   * Set a query id for the scan to trace the whole scanning process.
+   * Query id is posted by the user or generated automatically by the
+   * client library code. It is used to trace the whole query process
+   * for debugging.
+   *
+   * @param queryId query id to trace a query.
+   * @return this instance
+   */
+  @SuppressWarnings("unchecked")
+  public S setQueryId(String queryId) {
+    this.queryId = queryId;
     return (S) this;
   }
 

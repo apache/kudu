@@ -366,6 +366,9 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     if (message.hasKeepAlivePeriodMs()) {
       builder.keepAlivePeriodMs(message.getKeepAlivePeriodMs());
     }
+    if (message.hasQueryId()) {
+      builder.setQueryId(message.getQueryId());
+    }
 
     return builder;
   }
@@ -724,6 +727,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
               builder.setTabletMetadata(tabletMetadataPB);
             }
           }
+          builder.setQueryId(queryId);
 
           tokens.add(new KuduScanToken(keyRange.getTablet(), builder.build()));
         }

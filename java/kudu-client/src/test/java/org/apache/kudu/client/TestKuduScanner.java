@@ -234,6 +234,45 @@ public class TestKuduScanner {
   }
 
   @Test(timeout = 100000)
+  public void testScanWithQueryId() throws Exception {
+    KuduTable table = client.createTable(tableName, getBasicSchema(), getBasicCreateTableOptions());
+    DataGenerator generator = new DataGenerator.DataGeneratorBuilder()
+        .random(RandomUtils.getRandom())
+        .build();
+    KuduSession session = client.newSession();
+    int numRows = 10;
+    for (int i = 0; i < numRows; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      generator.randomizeRow(row);
+      session.apply(insert);
+    }
+    // Scan with specified query id.
+    {
+      int rowsScanned = 0;
+      KuduScanner scanner = client.newScannerBuilder(table)
+          .batchSizeBytes(100)
+          .setQueryId("request-id-for-test")
+          .build();
+      while (scanner.hasMoreRows()) {
+        rowsScanned += scanner.nextRows().getNumRows();
+      }
+      assertEquals(numRows, rowsScanned);
+    }
+    // Scan with default query id.
+    {
+      int rowsScanned = 0;
+      KuduScanner scanner = client.newScannerBuilder(table)
+          .batchSizeBytes(100)
+          .build();
+      while (scanner.hasMoreRows()) {
+        rowsScanned += scanner.nextRows().getNumRows();
+      }
+      assertEquals(numRows, rowsScanned);
+    }
+  }
+
+  @Test(timeout = 100000)
   public void testOpenScanWithDroppedPartition() throws Exception {
     // Create a table with 2 range partitions.
     final Schema basicSchema = getBasicSchema();

@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.collect.ImmutableList;
@@ -284,6 +285,8 @@ public final class AsyncKuduScanner {
 
   final long scanRequestTimeout;
 
+  private String queryId;
+
   /**
    * The prefetching result is cached in memory. This atomic reference is used to avoid
    * two concurrent prefetchings occur and the latest one overrides the previous one.
@@ -396,6 +399,27 @@ public final class AsyncKuduScanner {
     // the duration of the scan to avoid unnecessary wait.
     if (readMode == ReadMode.READ_YOUR_WRITES) {
       this.lowerBoundPropagationTimestamp = this.client.getLastPropagatedTimestamp();
+    }
+  }
+
+  AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedNames,
+                   List<Integer> projectedIndexes, ReadMode readMode, boolean isFaultTolerant,
+                   long scanRequestTimeout,
+                   Map<String, KuduPredicate> predicates, long limit,
+                   boolean cacheBlocks, boolean prefetching,
+                   byte[] startPrimaryKey, byte[] endPrimaryKey,
+                   long startTimestamp, long htTimestamp,
+                   int batchSizeBytes, PartitionPruner pruner,
+                   ReplicaSelection replicaSelection, long keepAlivePeriodMs, String queryId) {
+    this(
+        client, table, projectedNames, projectedIndexes, readMode, isFaultTolerant,
+        scanRequestTimeout, predicates, limit, cacheBlocks, prefetching, startPrimaryKey,
+        endPrimaryKey, startTimestamp, htTimestamp, batchSizeBytes,
+        pruner, replicaSelection, keepAlivePeriodMs);
+    if (queryId.isEmpty()) {
+      this.queryId = UUID.randomUUID().toString().replace("-", "");
+    } else {
+      this.queryId = queryId;
     }
   }
 
@@ -1214,6 +1238,7 @@ public final class AsyncKuduScanner {
         default:
           throw new RuntimeException("unreachable!");
       }
+      builder.setQueryId(UnsafeByteOperations.unsafeWrap(queryId.getBytes(UTF_8)));
 
       return builder.build();
     }
@@ -1326,7 +1351,7 @@ public final class AsyncKuduScanner {
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,
           scanRequestTimeout, predicates, limit, cacheBlocks, prefetching, lowerBoundPrimaryKey,
           upperBoundPrimaryKey, startTimestamp, htTimestamp, batchSizeBytes,
-          PartitionPruner.create(this), replicaSelection, keepAlivePeriodMs);
+          PartitionPruner.create(this), replicaSelection, keepAlivePeriodMs, queryId);
     }
   }
 }

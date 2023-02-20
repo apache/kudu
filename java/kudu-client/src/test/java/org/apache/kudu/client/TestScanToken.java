@@ -142,6 +142,59 @@ public class TestScanToken {
     }
   }
 
+  @Test
+  public void testScanTokenWithQueryId() throws Exception {
+    // Prepare the table for testing.
+    Schema schema = createManyStringsSchema();
+    CreateTableOptions createOptions = new CreateTableOptions();
+    final int buckets = 8;
+    createOptions.addHashPartitions(ImmutableList.of("key"), buckets);
+    client.createTable(testTableName, schema, createOptions);
+
+    KuduSession session = client.newSession();
+    KuduTable table = client.openTable(testTableName);
+    final int totalRows = 100;
+    for (int i = 0; i < totalRows; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addString("key", String.format("key_%02d", i));
+      row.addString("c1", "c1_" + i);
+      row.addString("c2", "c2_" + i);
+      assertEquals(session.apply(insert).hasRowError(), false);
+    }
+    // Scan with specified query id.
+    {
+      int rowsScanned = 0;
+      KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+      tokenBuilder.setProjectedColumnIndexes(ImmutableList.of());
+      tokenBuilder.setQueryId("query-id-for-test");
+      List<KuduScanToken> tokens = tokenBuilder.build();
+      assertEquals(buckets, tokens.size());
+      for (int i = 0; i < tokens.size(); i++) {
+        KuduScanner scanner = tokens.get(i).intoScanner(client);
+        while (scanner.hasMoreRows()) {
+          rowsScanned += scanner.nextRows().getNumRows();
+        }
+      }
+      assertEquals(totalRows, rowsScanned);
+    }
+    // Scan with default query id.
+    {
+      int rowsScanned = 0;
+      KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+      tokenBuilder.setProjectedColumnIndexes(ImmutableList.of());
+      List<KuduScanToken> tokens = tokenBuilder.build();
+      assertEquals(buckets, tokens.size());
+      for (int i = 0; i < tokens.size(); i++) {
+        KuduScanner scanner = tokens.get(i).intoScanner(client);
+        while (scanner.hasMoreRows()) {
+          rowsScanned += scanner.nextRows().getNumRows();
+        }
+      }
+      assertEquals(totalRows, rowsScanned);
+    }
+  }
+
   /**
    * Regression test for KUDU-3349
    */
