@@ -93,16 +93,18 @@ DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_metadata_max_size);
 DECLARE_bool(log_container_metadata_runtime_compact);
 DECLARE_double(log_container_metadata_size_before_compact_ratio);
-DEFINE_int32(startup_benchmark_block_count_for_testing, 1000000,
-             "Block count to do startup benchmark.");
+DEFINE_int32(startup_benchmark_batch_count_for_testing, 1000,
+             "Batch operation (create and delete blocks) count to do startup benchmark.");
+DEFINE_int32(startup_benchmark_block_count_per_batch_for_testing, 1000,
+             "Block count of each batch operation to do startup benchmark.");
 DEFINE_int32(startup_benchmark_data_dir_count_for_testing, 8,
              "Data directories to do startup benchmark.");
 DEFINE_int32(startup_benchmark_reopen_times, 10,
              "Block manager reopen times.");
-DEFINE_int32(startup_benchmark_deleted_block_percentage, 90,
-             "Percentage of deleted blocks in containers.");
+DEFINE_double(startup_benchmark_deleted_block_percentage, 90.0,
+              "Percentage of deleted blocks in containers.");
 DEFINE_validator(startup_benchmark_deleted_block_percentage,
-                 [](const char* /*n*/, int32_t v) { return 0 <= v && v <= 100; });
+                 [](const char* /*n*/, double v) { return 0 <= v && v <= 100; });
 DECLARE_bool(encrypt_data_at_rest);
 
 // Block manager metrics.
@@ -1054,19 +1056,9 @@ TEST_P(LogBlockManagerTest, TestParseKernelRelease) {
 //    threads running a long time since last bootstrap)
 //
 // However it still can be used to micro-optimize the startup process.
-class LogBlockManagerStartupBenchmarkTest: public LogBlockManagerTest {};
-INSTANTIATE_TEST_SUITE_P(StartupBenchmarkSuite, LogBlockManagerStartupBenchmarkTest,
-                         ::testing::Values(false, true));
-
-TEST_P(LogBlockManagerStartupBenchmarkTest, StartupBenchmark) {
-  bool delete_blocks = GetParam();
-  std::vector<std::string> test_dirs;
-  for (int i = 0; i < FLAGS_startup_benchmark_data_dir_count_for_testing; ++i) {
-    test_dirs.emplace_back(test_dir_ + "/" + std::to_string(i));
-  }
-  // Re-open block manager to place data on multiple data directories.
-  ASSERT_OK(ReopenBlockManager(nullptr, nullptr, test_dirs, /* force= */ true));
-
+TEST_P(LogBlockManagerTest, StartupBenchmark) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  SetEncryptionFlags(GetParam());
   // Disable preflushing since this can slow down our writes. In particular,
   // since we write such small blocks in this test, each block will likely
   // begin on the same 4KB page as the prior one we wrote, and due to the
@@ -1076,34 +1068,52 @@ TEST_P(LogBlockManagerStartupBenchmarkTest, StartupBenchmark) {
   // See http://yoshinorimatsunobu.blogspot.com/2014/03/how-syncfilerange-really-works.html
   // for details.
   FLAGS_block_manager_preflush_control = "never";
-  const int kNumBlocks = AllowSlowTests() ? FLAGS_startup_benchmark_block_count_for_testing : 1000;
-
-  // Creates 'kNumBlocks' blocks with minimal data.
-  vector<BlockId> block_ids;
+  vector<string> test_dirs;
   {
-    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
-    for (int i = 0; i < kNumBlocks; i++) {
-      unique_ptr<WritableBlock> block;
-      ASSERT_OK_FAST(bm_->CreateBlock(test_block_opts_, &block));
-      ASSERT_OK_FAST(block->Append("x"));
-      ASSERT_OK_FAST(block->Finalize());
-      block_ids.emplace_back(block->id());
-      transaction->AddCreatedBlock(std::move(block));
+    SCOPED_LOG_TIMING(INFO, "init environment");
+    for (int i = 0; i < FLAGS_startup_benchmark_data_dir_count_for_testing; ++i) {
+      test_dirs.emplace_back(test_dir_ + "/" + std::to_string(i));
     }
-    ASSERT_OK(transaction->CommitCreatedBlocks());
+    // Re-open block manager to place data on multiple data directories.
+    ASSERT_OK(ReopenBlockManager(nullptr, nullptr, test_dirs, /* force= */ true));
   }
 
-  if (delete_blocks) {
+  // Creates FLAGS_startup_benchmark_batch_count_for_testing *
+  //     FLAGS_startup_benchmark_block_count_per_batch_for_testing blocks with minimal data.
+  vector<BlockId> block_ids;
+  block_ids.reserve(FLAGS_startup_benchmark_batch_count_for_testing *
+                    FLAGS_startup_benchmark_block_count_per_batch_for_testing);
+  {
+    SCOPED_LOG_TIMING(INFO, "create blocks");
+    for (int i = 0; i < FLAGS_startup_benchmark_batch_count_for_testing; i++) {
+      unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
+      for (int j = 0; j < FLAGS_startup_benchmark_block_count_per_batch_for_testing; j++) {
+        unique_ptr<WritableBlock> block;
+        ASSERT_OK_FAST(bm_->CreateBlock(test_block_opts_, &block));
+        ASSERT_OK_FAST(block->Append("x"));
+        ASSERT_OK_FAST(block->Finalize());
+        block_ids.emplace_back(block->id());
+        transaction->AddCreatedBlock(std::move(block));
+      }
+      ASSERT_OK(transaction->CommitCreatedBlocks());
+    }
+  }
+
+  int to_delete_count = block_ids.size() * FLAGS_startup_benchmark_deleted_block_percentage / 100;
+  if (to_delete_count > 0) {
     std::mt19937 gen(SeedRandom());
     std::shuffle(block_ids.begin(), block_ids.end(), gen);
-    {
-      int to_delete_count =
-          block_ids.size() * FLAGS_startup_benchmark_deleted_block_percentage / 100;
+
+    SCOPED_LOG_TIMING(INFO, "delete blocks");
+    int j = 0;
+    for (int i = 0; i < FLAGS_startup_benchmark_batch_count_for_testing; i++) {
+      int to_delete_count_per_batch =
+          to_delete_count / FLAGS_startup_benchmark_batch_count_for_testing;
       shared_ptr<BlockDeletionTransaction> deletion_transaction =
           this->bm_->NewDeletionTransaction();
-      for (const BlockId& b : block_ids) {
-        deletion_transaction->AddDeletedBlock(b);
-        if (--to_delete_count <= 0) {
+      for (; j < block_ids.size(); j++) {
+        deletion_transaction->AddDeletedBlock(block_ids[j]);
+        if (--to_delete_count_per_batch <= 0) {
           break;
         }
       }
@@ -1111,10 +1121,17 @@ TEST_P(LogBlockManagerStartupBenchmarkTest, StartupBenchmark) {
     }
   }
 
+  // The deleted blocks need to to be hole punched when shutdown block manager, this procedure may
+  // cost a very long time. We shutdown the block manager manually before restart it, then we can
+  // get a more accurate startup time.
+  {
+    SCOPED_LOG_TIMING(INFO, "shutdown block manager");
+    bm_.reset();
+  }
+
   for (int i = 0; i < FLAGS_startup_benchmark_reopen_times; i++) {
-    LOG_TIMING(INFO, "reopening block manager") {
-      ASSERT_OK(ReopenBlockManager(nullptr, nullptr, test_dirs));
-    }
+    SCOPED_LOG_TIMING(INFO, "reopening block manager");
+    ASSERT_OK(ReopenBlockManager(nullptr, nullptr, test_dirs));
   }
 }
 #endif
