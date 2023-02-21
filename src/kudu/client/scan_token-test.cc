@@ -719,6 +719,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithQueryId) {
   // Scan with query id.
   {
     vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
     KuduScanTokenBuilder builder(table.get());
     ASSERT_OK(builder.SetQueryId("query-id-for-test"));
     ASSERT_OK(builder.Build(&tokens));
@@ -744,6 +745,7 @@ TEST_F(ScanTokenTest, TestScanTokensWithQueryId) {
   // Scan without query id.
   {
     vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
     KuduScanTokenBuilder builder(table.get());
     ASSERT_OK(builder.Build(&tokens));
 
