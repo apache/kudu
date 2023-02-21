@@ -49,7 +49,10 @@ namespace {
 
 const char kHolePunchErrorMsg[] =
     "Error during hole punch test. The log block manager requires a "
-    "filesystem with hole punching support such as ext4 or xfs. On el6, "
+    "filesystem with hole punching support such as ext4 or xfs. ext4 filesystem "
+    "does not support hole punching for encrypted inodes because encrypted "
+    "inodes can't handle collapse/insert range as it would require re-encryption "
+    "of blocks with a different tweak based on the logical block number. On el6, "
     "kernel version 2.6.32-358 or newer is required. To run without hole "
     "punching (at the cost of some efficiency and scalability), reconfigure "
     "Kudu to use the file block manager. Refer to the Kudu documentation for "
