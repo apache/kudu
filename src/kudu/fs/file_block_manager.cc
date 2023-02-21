@@ -25,6 +25,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -232,30 +233,30 @@ void FileBlockLocation::GetAllParentDirs(vector<string>* parent_dirs) const {
 // at Close() time. Embedding a FileBlockLocation (and not a simpler
 // BlockId) consumes more memory, but the number of outstanding
 // FileWritableBlock instances is expected to be low.
-class FileWritableBlock : public WritableBlock {
+class FileWritableBlock final : public WritableBlock {
  public:
   FileWritableBlock(FileBlockManager* block_manager, FileBlockLocation location,
                     shared_ptr<WritableFile> writer);
 
-  virtual ~FileWritableBlock();
+  ~FileWritableBlock() override;
 
-  virtual Status Close() OVERRIDE;
+  Status Close() override;
 
-  virtual Status Abort() OVERRIDE;
+  Status Abort() override;
 
-  virtual BlockManager* block_manager() const OVERRIDE;
+  BlockManager* block_manager() const override;
 
-  virtual const BlockId& id() const OVERRIDE;
+  const BlockId& id() const override;
 
-  virtual Status Append(const Slice& data) OVERRIDE;
+  Status Append(const Slice& data) override;
 
-  virtual Status AppendV(ArrayView<const Slice> data) OVERRIDE;
+  Status AppendV(ArrayView<const Slice> data) override;
 
-  virtual Status Finalize() OVERRIDE;
+  Status Finalize() override;
 
-  virtual size_t BytesAppended() const OVERRIDE;
+  size_t BytesAppended() const override;
 
-  virtual State state() const OVERRIDE;
+  State state() const override;
 
   void HandleError(const Status& s) const;
 
@@ -436,21 +437,21 @@ class FileReadableBlock : public ReadableBlock {
   FileReadableBlock(FileBlockManager* block_manager, BlockId block_id,
                     shared_ptr<RandomAccessFile> reader);
 
-  virtual ~FileReadableBlock();
+  ~FileReadableBlock() override;
 
-  virtual Status Close() OVERRIDE;
+  Status Close() override;
 
-  virtual BlockManager* block_manager() const OVERRIDE;
+  BlockManager* block_manager() const override;
 
-  virtual const BlockId& id() const OVERRIDE;
+  const BlockId& id() const override;
 
-  virtual Status Size(uint64_t* sz) const OVERRIDE;
+  Status Size(uint64_t* sz) const override;
 
-  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE;
+  Status Read(uint64_t offset, Slice result) const override;
 
-  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE;
+  Status ReadV(uint64_t offset, ArrayView<Slice> results) const override;
 
-  virtual size_t memory_footprint() const OVERRIDE;
+  size_t memory_footprint() const override;
 
   void HandleError(const Status& s) const;
 
@@ -557,18 +558,18 @@ class FileBlockCreationTransaction : public BlockCreationTransaction {
  public:
   FileBlockCreationTransaction() = default;
 
-  virtual ~FileBlockCreationTransaction() = default;
+  ~FileBlockCreationTransaction() override = default;
 
-  virtual void AddCreatedBlock(std::unique_ptr<WritableBlock> block) override;
+  void AddCreatedBlock(unique_ptr<WritableBlock> block) override;
 
-  virtual Status CommitCreatedBlocks() override;
+  Status CommitCreatedBlocks() override;
 
  private:
-  std::vector<std::unique_ptr<FileWritableBlock>> created_blocks_;
+  vector<unique_ptr<FileWritableBlock>> created_blocks_;
 };
 
 void FileBlockCreationTransaction::AddCreatedBlock(
-    std::unique_ptr<WritableBlock> block) {
+    unique_ptr<WritableBlock> block) {
   FileWritableBlock* fwb =
       down_cast<FileWritableBlock*>(block.release());
   created_blocks_.emplace_back(unique_ptr<FileWritableBlock>(fwb));
@@ -607,16 +608,16 @@ class FileBlockDeletionTransaction : public BlockDeletionTransaction {
       : fbm_(fbm) {
   }
 
-  virtual ~FileBlockDeletionTransaction() = default;
+  ~FileBlockDeletionTransaction() override = default;
 
-  virtual void AddDeletedBlock(BlockId block) override;
+  void AddDeletedBlock(BlockId block) override;
 
-  virtual Status CommitDeletedBlocks(std::vector<BlockId>* deleted) override;
+  Status CommitDeletedBlocks(vector<BlockId>* deleted) override;
 
  private:
   // The owning FileBlockManager. Must outlive the FileBlockDeletionTransaction.
   FileBlockManager* fbm_;
-  std::vector<BlockId> deleted_blocks_;
+  vector<BlockId> deleted_blocks_;
   DISALLOW_COPY_AND_ASSIGN(FileBlockDeletionTransaction);
 };
 
@@ -624,16 +625,22 @@ void FileBlockDeletionTransaction::AddDeletedBlock(BlockId block) {
   deleted_blocks_.emplace_back(block);
 }
 
-Status FileBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* deleted) {
-  deleted->clear();
+Status FileBlockDeletionTransaction::CommitDeletedBlocks(vector<BlockId>* deleted) {
+  if (deleted) {
+    deleted->clear();
+  }
   Status first_failure;
+  uint64_t deleted_blocks_count = 0;
   for (BlockId block : deleted_blocks_) {
     Status s = fbm_->DeleteBlock(block);
     // If we get NotFound, then the block was already deleted.
     if (!s.ok() && !s.IsNotFound()) {
       if (first_failure.ok()) first_failure = s;
     } else {
-      deleted->emplace_back(block);
+      ++deleted_blocks_count;
+      if (deleted) {
+        deleted->emplace_back(block);
+      }
       if (s.ok() && fbm_->metrics_) {
         fbm_->metrics_->total_blocks_deleted->Increment();
       }
@@ -641,9 +648,10 @@ Status FileBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* d
   }
 
   if (!first_failure.ok()) {
-    first_failure = first_failure.CloneAndPrepend(strings::Substitute("only deleted $0 blocks, "
-                                                                      "first failure",
-                                                                      deleted->size()));
+    first_failure = first_failure.CloneAndPrepend(
+        Substitute("only $0/$1 blocks deleted, first failure",
+                   deleted_blocks_count,
+                   deleted_blocks_.size()));
   }
   deleted_blocks_.clear();
   return first_failure;

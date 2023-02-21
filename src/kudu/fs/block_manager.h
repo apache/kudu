@@ -314,8 +314,8 @@ class BlockDeletionTransaction {
   // Deletes a group of blocks given the block IDs, the actual deletion will take
   // place after the last open reader or writer is closed for each block that needs
   // be to deleted. The 'deleted' out parameter will be set with the list of block
-  // IDs that were successfully deleted, regardless of the value of returned 'status'
-  // is OK or error.
+  // IDs that were successfully deleted if it's not nullptr, regardless of the value
+  // of returned 'status' is OK or error.
   //
   // Returns the first deletion failure that was seen, if any.
   virtual Status CommitDeletedBlocks(std::vector<BlockId>* deleted) = 0;

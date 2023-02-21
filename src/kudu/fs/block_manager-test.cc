@@ -1189,9 +1189,10 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
   deleted_blocks.clear();
   Status s = deletion_transaction->CommitDeletedBlocks(&deleted_blocks);
   ASSERT_TRUE(s.IsIOError());
-  ASSERT_STR_CONTAINS(s.ToString(), Substitute("only deleted $0 blocks, "
-                                               "first failure",
-                                               deleted_blocks.size()));
+  ASSERT_TRUE(deleted_blocks.empty());
+  ASSERT_STR_MATCHES(s.ToString(),
+                     Substitute("only 0/$0 blocks deleted, first failure",
+                                created_blocks.size()));
 }
 
 } // namespace fs

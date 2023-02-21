@@ -313,7 +313,7 @@ class LogBlockManager : public BlockManager {
   // blocks were already deleted, e.g encountered 'NotFound' error during removal.
   //
   // Returns the first deletion failure that was seen, if any.
-  Status RemoveLogBlocks(std::vector<BlockId> block_ids,
+  Status RemoveLogBlocks(const std::vector<BlockId>& block_ids,
                          std::vector<LogBlockRefPtr>* log_blocks,
                          std::vector<BlockId>* deleted);
 

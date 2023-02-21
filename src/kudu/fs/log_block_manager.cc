@@ -342,7 +342,7 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
 //
 // There's no reference to a LogBlock as this block has yet to be
 // persisted.
-class LogWritableBlock : public WritableBlock {
+class LogWritableBlock final : public WritableBlock {
  public:
   LogWritableBlock(LogBlockContainerRefPtr container, BlockId block_id,
                    int64_t block_offset);
@@ -1743,7 +1743,9 @@ LogBlockDeletionTransaction::~LogBlockDeletionTransaction() {
 }
 
 Status LogBlockDeletionTransaction::CommitDeletedBlocks(vector<BlockId>* deleted) {
-  deleted->clear();
+  if (deleted) {
+    deleted->clear();
+  }
   shared_ptr<LogBlockDeletionTransaction> transaction = shared_from_this();
 
   vector<LogBlockRefPtr> log_blocks;
@@ -1760,8 +1762,10 @@ Status LogBlockDeletionTransaction::CommitDeletedBlocks(vector<BlockId>* deleted
   }
 
   if (!first_failure.ok()) {
-    first_failure = first_failure.CloneAndPrepend(Substitute("only deleted $0 blocks, "
-                                                             "first failure", deleted->size()));
+    first_failure = first_failure.CloneAndPrepend(
+        Substitute("only $0/$1 blocks deleted, first failure",
+                   log_blocks.size(),
+                   deleted_blocks_.size()));
   }
   deleted_blocks_.clear();
   return first_failure;
@@ -1928,8 +1932,7 @@ Status LogWritableBlock::Abort() {
   shared_ptr<BlockDeletionTransaction> deletion_transaction =
       container_->block_manager()->NewDeletionTransaction();
   deletion_transaction->AddDeletedBlock(id());
-  vector<BlockId> deleted;
-  return deletion_transaction->CommitDeletedBlocks(&deleted);
+  return deletion_transaction->CommitDeletedBlocks(nullptr);
 }
 
 const BlockId& LogWritableBlock::id() const {
@@ -2653,12 +2656,17 @@ bool LogBlockManager::AddLogBlock(LogBlockRefPtr lb) {
   return true;
 }
 
-Status LogBlockManager::RemoveLogBlocks(vector<BlockId> block_ids,
+Status LogBlockManager::RemoveLogBlocks(const vector<BlockId>& block_ids,
                                         vector<LogBlockRefPtr>* log_blocks,
                                         vector<BlockId>* deleted) {
+  DCHECK(log_blocks);
   Status first_failure;
   vector<LogBlockRefPtr> lbs;
-  int64_t malloc_space = 0, blocks_length = 0;
+  if (deleted) {
+    deleted->reserve(block_ids.size());
+  }
+  int64_t malloc_space = 0;
+  int64_t blocks_length = 0;
   for (const auto& block_id : block_ids) {
     LogBlockRefPtr lb;
     Status s = RemoveLogBlock(block_id, &lb);
@@ -2671,7 +2679,9 @@ Status LogBlockManager::RemoveLogBlocks(vector<BlockId> block_ids,
     } else {
       // If we get NotFound, then the block was already deleted.
       DCHECK(s.IsNotFound());
-      deleted->emplace_back(block_id);
+      if (deleted) {
+        deleted->emplace_back(block_id);
+      }
     }
   }
 
@@ -2718,7 +2728,9 @@ Status LogBlockManager::RemoveLogBlocks(vector<BlockId> block_ids,
         });
       }
 
-      deleted->emplace_back(lb->block_id());
+      if (deleted) {
+        deleted->emplace_back(lb->block_id());
+      }
       log_blocks->emplace_back(std::move(lb));
     }
   }
