@@ -183,6 +183,9 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         KuduSchema(const KuduSchema& schema)
         KuduSchema(vector[KuduColumnSchema]& columns, int key_columns)
 
+        @staticmethod
+        string GetAutoIncrementingColumnName()
+
         c_bool Equals(const KuduSchema& other)
         KuduColumnSchema Column(size_t idx)
         size_t num_columns()
@@ -201,6 +204,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
          KuduColumnSpec* BlockSize(int32_t block_size)
 
          KuduColumnSpec* PrimaryKey()
+         KuduColumnSpec* NonUniquePrimaryKey()
          KuduColumnSpec* NotNull()
          KuduColumnSpec* Nullable()
          KuduColumnSpec* Type(DataType type_)
@@ -216,6 +220,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
 
         KuduColumnSpec* AddColumn(string& name)
         KuduSchemaBuilder* SetPrimaryKey(vector[string]& key_col_names);
+        KuduSchemaBuilder* SetNonUniquePrimaryKey(vector[string]& key_col_names);
 
         Status Build(KuduSchema* schema)
 

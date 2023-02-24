@@ -427,6 +427,35 @@ cdef class ColumnSpec:
         self.spec.PrimaryKey()
         return self
 
+    def non_unique_primary_key(self):
+        """
+        Make this column a non-unique primary key.
+
+        This may only be used to set non-composite non-unique primary keys. If a composite
+        key is desired, use set_non_unique_primary_keys(). This may not be
+        used in conjunction with set_non_unique_primary_keys().
+
+        Notes
+        -----
+        Non-unique primary keys may not be changed after a table is created.
+
+        By specifying non-unique primary key, an auto incrementing column is created
+        automatically. They form together the effective primary key. The auto incrementing field
+        is populated on the server side, it must not be specified during insertion. All subsequent
+        operations like scans will contain the auto incrementing column by default. If one wants to
+        omit the auto incrementing column, it can be accomplished through existing projection
+        methods.
+
+        A call to primary_key() or non_unique_primary_key() overrides any previous call
+        to these two methods.
+
+        Returns
+        -------
+        self
+        """
+        self.spec.NonUniquePrimaryKey()
+        return self
+
     def nullable(self, bint is_nullable=True):
         """
         Set nullable (True) or not nullable (False)
@@ -503,9 +532,9 @@ cdef class SchemaBuilder:
                                colschema.type,
                                colschema.nullable)
 
-    def add_column(self, name, type_=None, nullable=None, compression=None,
-                   encoding=None, primary_key=False, block_size=None,
-                   default=None, precision=None, scale=None, length=None):
+    def add_column(self, name, type_=None, nullable=None, compression=None, encoding=None,
+                   primary_key=False, non_unique_primary_key=False, block_size=None, default=None,
+                   precision=None, scale=None, length=None):
         """
         Add a new column to the schema. Returns a ColumnSpec object for further
         configuration and use in a fluid programming style.
@@ -526,6 +555,8 @@ cdef class SchemaBuilder:
           Or see kudu.ENCODING_* constants
         primary_key : boolean, default False
           Use this column as the table primary key
+        non_unique_primary_key : boolean, default False
+          Use this column as the table non-unique primary key
         block_size : int, optional
           Block size (in bytes) to use for the target column.
         default : obj
@@ -577,6 +608,9 @@ cdef class SchemaBuilder:
         if primary_key:
             result.primary_key()
 
+        if non_unique_primary_key:
+            result.non_unique_primary_key()
+
         if block_size:
             result.block_size(block_size)
 
@@ -605,6 +639,43 @@ cdef class SchemaBuilder:
             key_col_names.push_back(tobytes(name))
 
         self.builder.SetPrimaryKey(key_col_names)
+
+    def set_non_unique_primary_keys(self, key_names):
+        """
+        Set the non-unique primary key of the new Schema based on the given column names.
+
+        This may be used to specify a compound non-unique primary key.
+
+        Notes
+        -----
+        Non-unique primary keys may not be changed after a table is created.
+
+        By specifying non-unique primary key, an auto incrementing column is created
+        automatically. They form together the effective primary key. The auto incrementing field
+        is populated on the server side, it must not be specified during insertion. All subsequent
+        operations like scans will contain the auto incrementing column by default. If one wants to
+        omit the auto incrementing column, it can be accomplished through existing projection
+        methods.
+
+        A call to primary_key() or non_unique_primary_key() overrides any previous call
+        to these two methods.
+
+        Parameters
+        ----------
+        key_names: list of Python strings
+
+        Returns
+        -------
+        self
+
+        """
+        cdef:
+            vector[string] key_col_names
+
+        for name in key_names:
+            key_col_names.push_back(tobytes(name))
+
+        self.builder.SetNonUniquePrimaryKey(key_col_names)
 
     def build(self):
         """
@@ -777,6 +848,17 @@ cdef class Schema:
         indices = self.primary_key_indices()
         return [self.at(i).name for i in indices]
 
+    @staticmethod
+    def get_auto_incrementing_column_name():
+        """
+        Utility function to return the actual name of the auto-incrementing column.
+
+        Returns
+        -------
+        auto-incrementing column name: str
+        """
+        col_name = KuduSchema.GetAutoIncrementingColumnName()
+        return frombytes(col_name)
 
 cdef class KuduValue:
 

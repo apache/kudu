@@ -19,8 +19,10 @@
 from __future__ import division
 
 from kudu.compat import unittest
+from kudu.errors import KuduInvalidArgument
 import kudu
 
+from kudu.schema import Schema
 
 class TestSchema(unittest.TestCase):
 
@@ -288,6 +290,196 @@ class TestSchema(unittest.TestCase):
 
         assert schema[3].nullable
         assert not schema[4].nullable
+
+    def test_auto_incrementing_column_name(self):
+        name = Schema.get_auto_incrementing_column_name()
+        assert isinstance(name, str)
+        assert len(name) > 0
+
+    def test_non_unique_primary_key(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False)
+         .non_unique_primary_key())
+        builder.add_column('data1', 'double')
+        schema = builder.build()
+        assert len(schema) == 3
+        assert len(schema.primary_keys()) == 2
+        assert Schema.get_auto_incrementing_column_name() in schema.primary_keys()
+
+    def test_set_non_unique_primary_keys(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False))
+        builder.add_column('data1', 'double')
+        builder.set_non_unique_primary_keys(['key'])
+        schema = builder.build()
+        assert len(schema) == 3
+        assert len(schema.primary_keys()) == 2
+        assert Schema.get_auto_incrementing_column_name() in schema.primary_keys()
+
+    def test_set_non_unique_primary_keys_wrong_order(self):
+        builder = kudu.schema_builder()
+        builder.add_column('key1', 'int64').nullable(False)
+        builder.add_column('key2', 'double').nullable(False)
+        builder.set_non_unique_primary_keys(['key2', 'key1'])
+        with self.assertRaises(KuduInvalidArgument):
+            schema = builder.build()
+
+    def test_set_non_unique_primary_keys_not_first(self):
+        builder = kudu.schema_builder()
+        builder.add_column('data1', 'double')
+        (builder.add_column('key', 'int64')
+         .nullable(False))
+        builder.set_non_unique_primary_keys(['key'])
+        with self.assertRaises(KuduInvalidArgument):
+            schema = builder.build()
+
+    def test_set_non_unique_primary_keys_same_name_twice(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False))
+        builder.add_column('data1', 'double')
+        builder.set_non_unique_primary_keys(['key', 'key'])
+        with self.assertRaises(KuduInvalidArgument):
+            schema = builder.build()
+
+    def test_unique_and_non_unique_primary_key_on_same_column(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False)
+         .primary_key()
+         .non_unique_primary_key())
+        builder.add_column('data1', 'double')
+        schema = builder.build()
+        assert len(schema) == 3
+        assert len(schema.primary_keys()) == 2
+        assert Schema.get_auto_incrementing_column_name() in schema.primary_keys()
+
+    def test_non_unique_and_unique_primary_key_on_same_column(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False)
+         .non_unique_primary_key()
+         .primary_key())
+        builder.add_column('data1', 'double')
+        schema = builder.build()
+        assert len(schema) == 2
+        assert len(schema.primary_keys()) == 1
+        assert Schema.get_auto_incrementing_column_name() not in schema.primary_keys()
+
+    def test_non_unique_primary_key_not_first(self):
+        builder = kudu.schema_builder()
+        builder.add_column('data1', 'int64')
+        (builder.add_column('key', 'double')
+         .nullable(False)
+         .non_unique_primary_key())
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
+
+    def test_unique_and_non_unique_primary_key_on_different_cols(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key1', 'double')
+         .nullable(False)
+         .primary_key())
+        (builder.add_column('key2', 'double')
+         .nullable(False)
+         .non_unique_primary_key())
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
+
+    def test_non_unique_and_unique_primary_key_on_different_cols(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key1', 'double')
+         .nullable(False)
+         .non_unique_primary_key())
+        (builder.add_column('key2', 'double')
+         .nullable(False)
+         .primary_key())
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
+
+    def test_multiple_non_unique_primary_keys(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key1', 'double')
+         .nullable(False)
+         .non_unique_primary_key())
+        (builder.add_column('key2', 'double')
+         .nullable(False)
+         .non_unique_primary_key())
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
+
+    def test_non_unique_primary_key_and_set_non_unique_primary_keys(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False)
+         .non_unique_primary_key())
+        builder.add_column('data1', 'double')
+        builder.set_non_unique_primary_keys(['key'])
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
+
+    def test_primary_key_and_set_non_unique_primary_keys(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False)
+         .primary_key())
+        builder.add_column('data1', 'double')
+        builder.set_non_unique_primary_keys(['key'])
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
+
+    def test_primary_key_and_set_primary_keys(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False)
+         .primary_key())
+        builder.add_column('data1', 'double')
+        builder.set_primary_keys(['key'])
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
+
+    def test_non_unique_primary_key_and_set_primary_keys(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False)
+         .non_unique_primary_key())
+        builder.add_column('data1', 'double')
+        builder.set_primary_keys(['key'])
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
+
+    def test_set_non_unique_and_set_unique_primary_key(self):
+        builder = kudu.schema_builder()
+        builder.add_column('key1', 'int64').nullable(False)
+        builder.add_column('key2', 'double').nullable(False)
+        builder.set_non_unique_primary_keys(['key1', 'key2'])
+        builder.set_primary_keys(['key1', 'key2'])
+        schema = builder.build()
+        assert len(schema) == 2
+        assert len(schema.primary_keys()) == 2
+        assert Schema.get_auto_incrementing_column_name() not in schema.primary_keys()
+
+    def test_set_unique_and_set_non_unique_primary_key(self):
+        builder = kudu.schema_builder()
+        builder.add_column('key1', 'int64').nullable(False)
+        builder.add_column('key2', 'double').nullable(False)
+        builder.set_primary_keys(['key1', 'key2'])
+        builder.set_non_unique_primary_keys(['key1', 'key2'])
+        schema = builder.build()
+        assert len(schema) == 3
+        assert len(schema.primary_keys()) == 3
+        assert Schema.get_auto_incrementing_column_name() in schema.primary_keys()
+
+    def test_reserved_column_name(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64')
+         .nullable(False)
+         .primary_key())
+        builder.add_column(Schema.get_auto_incrementing_column_name(), 'double')
+        with self.assertRaises(KuduInvalidArgument):
+            builder.build()
 
     def test_default_value(self):
         pass
