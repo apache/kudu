@@ -297,3 +297,64 @@ class TestScanToken(TestScanBase):
 
             self.assertEqual(sorted(tuples),
                              sorted(self.tuples))
+
+    def test_scan_token_auto_incrementing_column(self):
+        table_name = 'scan_auto_incrementing_column'
+        builder = kudu.schema_builder()
+        (builder.add_column('key', kudu.string)
+        .nullable(False)
+        .non_unique_primary_key())
+        schema = builder.build()
+
+        self.client.create_table(
+            table_name, schema,
+            partitioning=kudu.client.Partitioning().add_hash_partitions(['key'], 2))
+        table = self.client.table(table_name)
+
+        # No projection testing default behaviour
+        builder = table.scan_token_builder()
+        tokens = builder.build()
+        for token in tokens:
+            scanner = self.client.deserialize_token_into_scanner(token.serialize())
+            schema = scanner.get_projection_schema()
+            assert len(schema.names) == 2
+            assert kudu.Schema.get_auto_incrementing_column_name() in schema.names
+
+        # Empty projection
+        builder = table.scan_token_builder()
+        builder.set_projected_column_names([])
+        tokens = builder.build()
+        for token in tokens:
+            scanner = self.client.deserialize_token_into_scanner(token.serialize())
+            schema = scanner.get_projection_schema()
+            assert len(schema.names) == 0
+
+        # Projection with only the auto-incrementing column
+        builder = table.scan_token_builder()
+        builder.set_projected_column_names([kudu.Schema.get_auto_incrementing_column_name()])
+        tokens = builder.build()
+        for token in tokens:
+            scanner = self.client.deserialize_token_into_scanner(token.serialize())
+            schema = scanner.get_projection_schema()
+            assert len(schema.names) == 1
+            assert kudu.Schema.get_auto_incrementing_column_name() in schema.names
+
+        # Projection including the auto-incrementing column
+        builder = table.scan_token_builder()
+        builder.set_projected_column_names(['key', kudu.Schema.get_auto_incrementing_column_name()])
+        tokens = builder.build()
+        for token in tokens:
+            scanner = self.client.deserialize_token_into_scanner(token.serialize())
+            schema = scanner.get_projection_schema()
+            assert len(schema.names) == 2
+            assert kudu.Schema.get_auto_incrementing_column_name() in schema.names
+
+        # Projection excluding the auto-incrementing column
+        builder = table.scan_token_builder()
+        builder.set_projected_column_names(['key'])
+        tokens = builder.build()
+        for token in tokens:
+            scanner = self.client.deserialize_token_into_scanner(token.serialize())
+            schema = scanner.get_projection_schema()
+            assert len(schema.names) == 1
+            assert not kudu.Schema.get_auto_incrementing_column_name() in schema.names
