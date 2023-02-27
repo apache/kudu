@@ -181,6 +181,7 @@ DECLARE_bool(enable_workload_score_for_perf_improvement_ops);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(rowset_metadata_store_keys);
 DECLARE_bool(scanner_unregister_on_invalid_seq_id);
+DECLARE_bool(show_slow_scans);
 DECLARE_double(cfile_inject_corruption);
 DECLARE_double(env_inject_eio);
 DECLARE_double(env_inject_full);
@@ -199,7 +200,9 @@ DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(rpc_service_queue_length);
 DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(scanner_gc_check_interval_us);
+DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_ttl_ms);
+DECLARE_int32(slow_scanner_threshold_ms);
 DECLARE_int32(tablet_bootstrap_inject_latency_ms);
 DECLARE_int32(tablet_inject_latency_on_apply_write_op_ms);
 DECLARE_int32(workload_stats_rate_collection_min_interval_ms);
@@ -226,6 +229,7 @@ METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
 METRIC_DECLARE_gauge_size(active_scanners);
 METRIC_DECLARE_gauge_size(tablet_active_scanners);
 METRIC_DECLARE_gauge_size(num_rowsets_on_disk);
+METRIC_DECLARE_gauge_size(slow_scans);
 METRIC_DECLARE_histogram(flush_dms_duration);
 METRIC_DECLARE_histogram(op_apply_queue_length);
 METRIC_DECLARE_histogram(op_apply_queue_time);
@@ -559,6 +563,7 @@ TEST_F(TabletServerTest, TestWebPages) {
     // bugs in the past.
     ASSERT_STR_CONTAINS(buf.ToString(), "hybrid_clock_timestamp");
     ASSERT_STR_CONTAINS(buf.ToString(), "active_scanners");
+    ASSERT_STR_CONTAINS(buf.ToString(), "slow_scans");
     ASSERT_STR_CONTAINS(buf.ToString(), "threads_started");
     ASSERT_STR_CONTAINS(buf.ToString(), "code_cache_queries");
 #ifdef TCMALLOC_ENABLED
@@ -2281,6 +2286,55 @@ static const ReadMode kReadModes[] = {
 };
 
 INSTANTIATE_TEST_SUITE_P(Params, ExpiredScannerParamTest,
+                         testing::ValuesIn(kReadModes));
+
+class SlowScansParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<ReadMode> {
+};
+
+TEST_P(SlowScansParamTest, Test) {
+  const ReadMode mode = GetParam();
+  // Slow scanners aren't shown by default.
+  ASSERT_FALSE(FLAGS_show_slow_scans);
+  FLAGS_show_slow_scans = true;
+  FLAGS_scanner_ttl_ms = 500;
+  // Create slow scan scenarios.
+  FLAGS_scanner_inject_latency_on_each_batch_ms = 50;
+  FLAGS_slow_scanner_threshold_ms = 1;
+
+  int num_rows = 10000;
+  InsertTestRowsDirect(0, num_rows);
+
+  // Instantiate slow scans metric.
+  ASSERT_TRUE(mini_server_->server()->metric_entity());
+  auto slow_scans = METRIC_slow_scans.InstantiateFunctionGauge(
+      mini_server_->server()->metric_entity(), [this]() {
+          return this->mini_server_->server()->scanner_manager()->CountSlowScans(); });
+
+  // Initially, there've been no scanners, so none is slow.
+  ASSERT_EQ(0, slow_scans->value());
+
+  ScanResponsePB resp;
+  NO_FATALS(OpenScannerWithAllColumns(&resp, mode));
+  ScanRequestPB req;
+  RpcController rpc;
+  req.set_scanner_id(resp.scanner_id());
+  req.set_call_seq_id(1);
+  resp.Clear();
+  ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+  // The scanner should be slow after a while, which is defined by '--slow_scanner_threshold_ms'.
+  ASSERT_EQ(1, slow_scans->value());
+
+  // Make scanners expire quickly.
+  FLAGS_scanner_ttl_ms = 1;
+  // Ensure that the metrics have been updated now.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_EQ(0, slow_scans->value());
+  });
+}
+
+INSTANTIATE_TEST_SUITE_P(Params, SlowScansParamTest,
                          testing::ValuesIn(kReadModes));
 
 class ScanCorruptedDeltasParamTest :

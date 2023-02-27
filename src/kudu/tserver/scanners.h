@@ -107,6 +107,10 @@ class ScannerManager {
   // if under concurrent modifications.
   size_t CountActiveScanners() const;
 
+  // Return the number of slow scans that have been defined as
+  // slow by --slow_scanner_threshold_ms.
+  size_t CountSlowScans() const;
+
   // List all active scanners.
   // Note this method will not return a consistent view
   // of all active scanners if under concurrent modifications.
