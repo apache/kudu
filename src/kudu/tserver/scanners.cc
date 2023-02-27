@@ -91,6 +91,13 @@ METRIC_DEFINE_gauge_size(server, active_scanners,
                          "Number of scanners that are currently active",
                          kudu::MetricLevel::kInfo);
 
+METRIC_DEFINE_gauge_size(server, slow_scans,
+                         "Slow Scans",
+                         kudu::MetricUnit::kScanners,
+                         "Number of slow scanners that are defined by --slow_scanner_threshold_ms "
+                         "if --show_slow_scans set to 'true'.",
+                         kudu::MetricLevel::kWarn);
+
 using kudu::rpc::RemoteUser;
 using kudu::tablet::TabletReplica;
 using std::string;
@@ -132,6 +139,9 @@ ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
     metrics_.reset(new ScannerMetrics(metric_entity));
     METRIC_active_scanners.InstantiateFunctionGauge(
         metric_entity, [this]() { return this->CountActiveScanners(); })
+        ->AutoDetach(&metric_detacher_);
+    METRIC_slow_scans.InstantiateFunctionGauge(
+        metric_entity, [this]() { return this->CountSlowScans(); })
         ->AutoDetach(&metric_detacher_);
   }
   for (size_t i = 0; i < kNumScannerMapStripes; i++) {
@@ -276,6 +286,25 @@ size_t ScannerManager::CountActiveScanners() const {
     shared_lock<RWMutex> l(e->lock_);
     total += e->scanners_by_id_.size();
   }
+  return total;
+}
+
+size_t ScannerManager::CountSlowScans() const {
+  size_t total = 0;
+  const MonoTime now = MonoTime::Now();
+  const MonoDelta slow_threshold = MonoDelta::FromMilliseconds(FLAGS_slow_scanner_threshold_ms);
+  for (const auto* stripe : scanner_maps_) {
+    shared_lock<RWMutex> l(stripe->lock_);
+    for (const auto& it : stripe->scanners_by_id_) {
+      const SharedScanner& scanner = it.second;
+      const MonoTime start_time = scanner->start_time();
+      if (start_time + slow_threshold >= now) {
+        continue;
+      }
+      total++;
+    }
+  }
+
   return total;
 }
 
