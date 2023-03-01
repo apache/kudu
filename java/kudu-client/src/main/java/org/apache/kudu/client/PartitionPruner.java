@@ -345,6 +345,10 @@ public class PartitionPruner {
     return true;
   }
 
+  static List<Integer> idsToIndexesForTest(Schema schema, List<Integer> ids) {
+    return idsToIndexes(schema, ids);
+  }
+
   private static List<Integer> idsToIndexes(Schema schema, List<Integer> ids) {
     List<Integer> indexes = new ArrayList<>(ids.size());
     for (int id : ids) {
@@ -635,8 +639,17 @@ public class PartitionPruner {
     return result;
   }
 
+  // Just for test.
+  static BitSet pruneHashComponentV2ForTest(Schema schema,
+      PartitionSchema.HashBucketSchema hashSchema,
+      Map<String, KuduPredicate> predicates) {
+    return pruneHashComponent(schema, hashSchema, predicates);
+  }
+
   /**
-   * Search all combination of in-list and equality predicates for pruneable hash partitions.
+   * Search all combinations of in-list and equality predicates for prunable hash partitions.
+   * The method is an optimized version of 'TestPartitionPruner::pruneHashComponent'
+   * space-complexity wise.
    * @return a bitset containing {@code false} bits for hash buckets which may be pruned
    */
   private static BitSet pruneHashComponent(Schema schema,
@@ -644,6 +657,7 @@ public class PartitionPruner {
                                            Map<String, KuduPredicate> predicates) {
     BitSet hashBuckets = new BitSet(hashSchema.getNumBuckets());
     List<Integer> columnIdxs = idsToIndexes(schema, hashSchema.getColumnIds());
+    List<List<byte[]>> predicateValueList = new ArrayList<>();
     for (int idx : columnIdxs) {
       ColumnSchema column = schema.getColumnByIndex(idx);
       KuduPredicate predicate = predicates.get(column.getName());
@@ -653,34 +667,73 @@ public class PartitionPruner {
         hashBuckets.set(0, hashSchema.getNumBuckets());
         return hashBuckets;
       }
-    }
 
-    List<PartialRow> rows = Arrays.asList(schema.newPartialRow());
-    for (int idx : columnIdxs) {
-      List<PartialRow> newRows = new ArrayList<>();
-      ColumnSchema column = schema.getColumnByIndex(idx);
-      KuduPredicate predicate = predicates.get(column.getName());
       List<byte[]> predicateValues;
       if (predicate.getType() == KuduPredicate.PredicateType.EQUALITY) {
         predicateValues = Collections.singletonList(predicate.getLower());
       } else {
         predicateValues = Arrays.asList(predicate.getInListValues());
       }
-      // For each of the encoded string, replicate it by the number of values in
-      // equality and in-list predicate.
-      for (PartialRow row : rows) {
-        for (byte[] predicateValue : predicateValues) {
-          PartialRow newRow = new PartialRow(row);
-          newRow.setRaw(idx, predicateValue);
-          newRows.add(newRow);
-        }
-      }
-      rows = newRows;
+      predicateValueList.add(predicateValues);
     }
-    for (PartialRow row : rows) {
-      int hash = KeyEncoder.getHashBucket(row, hashSchema);
-      hashBuckets.set(hash);
-    }
+    List<byte[]> valuesCombination = new ArrayList<>();
+    computeHashBuckets(schema, hashSchema, hashBuckets,
+                       columnIdxs, predicateValueList, valuesCombination);
     return hashBuckets;
   }
+
+  /**
+   * pick all combinations and compute their hashes.
+   * @param schema the table schema
+   * @param hashSchema the hash partition schema.
+   * @param hashBuckets the result of this algorithm, a bit 0 means a partition can be pruned
+   * @param columnIdxs  column indexes of columns in the hash partition schema
+   * @param predicateValueList values in in-list predicates of these columns
+   * @param valuesCombination a combination of in-list and equality predicates
+   */
+  private static void computeHashBuckets(Schema schema,
+                                         PartitionSchema.HashBucketSchema hashSchema,
+                                         BitSet hashBuckets,
+                                         List<Integer> columnIdxs,
+                                         List<List<byte[]>> predicateValueList,
+                                         List<byte[]> valuesCombination) {
+    if (hashBuckets.cardinality() == hashSchema.getNumBuckets()) {
+      return;
+    }
+    int level = valuesCombination.size();
+    if (level == columnIdxs.size()) {
+      // This 'valuesCombination' is a picked combination value for computing hash bucket.
+      //
+      // The algorithm is an argorithm like DFS, which pick value for every column in
+      // 'predicateValueList', 'valuesCombination' is the picked values.
+      //
+      // The valuesCombination is a value list picked by followings algorithm:
+      // 1. pick a value from predicateValueList[0] for the column who columnIdxs[0]
+      // stand for. Every value in predicateValueList[0] can be picked.
+      // The count of pick method is predicateValueList[0].size().
+      // 2. pick a value from predicateValueList[1] for the column who columnIdxs[1]
+      // stand for.
+      // The count of pick method is predicateValueList[1].size().
+      // 3. Do this like step 1,2 until the last one column' value picked in
+      // 'predicateValueList[columnIdx.size()-1]' columnIdx[columnIdx.size()-1] stand for.
+      //
+      // The algorithm ends when all combinations has been searched.
+      // 'valuesCombination' saves a combination values of in-list predicates.
+      // So we use the 'valuesCombination' to construct a row, then compute its hash bucket.
+      PartialRow row = schema.newPartialRow();
+      for (int i = 0; i < valuesCombination.size(); i++) {
+        row.setRaw(columnIdxs.get(i), valuesCombination.get(i));
+      }
+      int hash = KeyEncoder.getHashBucket(row, hashSchema);
+      hashBuckets.set(hash);
+      return;
+    }
+    for (int i = 0; i < predicateValueList.get(level).size(); i++) {
+      valuesCombination.add(predicateValueList.get(level).get(i));
+      computeHashBuckets(schema, hashSchema, hashBuckets,
+                         columnIdxs, predicateValueList, valuesCombination);
+      valuesCombination.remove(valuesCombination.size() - 1);
+    }
+  }
+
 }
