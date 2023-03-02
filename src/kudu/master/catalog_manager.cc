@@ -414,6 +414,12 @@ DEFINE_bool(require_new_spec_for_custom_hash_schema_range_bound, false,
 TAG_FLAG(require_new_spec_for_custom_hash_schema_range_bound, experimental);
 TAG_FLAG(require_new_spec_for_custom_hash_schema_range_bound, runtime);
 
+DEFINE_bool(allow_creating_under_replicated_tables, false,
+            "Whether to allow creating tablet when there are enough healthy tablet servers "
+            "to place just the majority of tablet replicas");
+TAG_FLAG(allow_creating_under_replicated_tables, experimental);
+TAG_FLAG(allow_creating_under_replicated_tables, hidden);
+
 DEFINE_uint32(default_deleted_table_reserve_seconds, 0,
               "Time in seconds to be reserved before purging a deleted table for the table "
               "from DeleteTable request. Value 0 means DeleteTable() works the regular way, "
@@ -6011,14 +6017,30 @@ Status CatalogManager::SelectReplicasForTablet(const PlacementPolicy& policy,
                                                TabletInfo* tablet) {
   DCHECK(tablet);
   TableMetadataLock table_guard(tablet->table().get(), LockMode::READ);
-
   if (!table_guard.data().pb.IsInitialized()) {
     return Status::InvalidArgument(
         Substitute("TableInfo for tablet $0 is not initialized (aborted CreateTable attempt?)",
                    tablet->id()));
   }
 
-  const auto nreplicas = table_guard.data().pb.num_replicas();
+  int nreplicas = table_guard.data().pb.num_replicas();
+  // Try to place the majority of replicas for the tablet when the number of live
+  // tablet servers less than the required number of replicas.
+  if (policy.ts_num() < nreplicas &&
+      FLAGS_allow_creating_under_replicated_tables) {
+    // The Raft protocol requires at least (replication_factor / 2) + 1 live replicas
+    // to form a quorum.  Since Kudu places at most one replica of a tablet at one tablet
+    // server, it's necessary to have at least (replication_factor / 2) + 1 live tablet
+    // servers in a cluster to allow the tablet to serve read and write requests.
+    if (policy.ts_num() < consensus::MajoritySize(nreplicas)) {
+      return Status::InvalidArgument(
+          Substitute("need at least $0 out of $1 replicas to form a Raft quorum, "
+                     "but only $2 tablet servers are online",
+                     consensus::MajoritySize(nreplicas), policy.ts_num()));
+    }
+    nreplicas = policy.ts_num();
+  }
+
   if (policy.ts_num() < nreplicas) {
     return Status::InvalidArgument(
         Substitute("Not enough tablet servers are online for table '$0'. Need at least $1 "
@@ -6669,6 +6691,31 @@ Status CatalogManager::ValidateNumberReplicas(const string& normalized_table_nam
         num_ts_needed_for_rereplication, num_live_tservers);
   }
 
+  // Verify that the number of replicas isn't greater than the number of registered
+  // tablet servers in the cluster. This is to make sure the cluster can provide the
+  // expected HA guarantees when all tablet servers are online.  Essentially, this
+  // allows to be sure no tablet stays under-replicated for indefinite time when all
+  // the nodes of the cluster are online.
+  TSDescriptorVector registered_ts_descs;
+  master_->ts_manager()->GetAllDescriptors(&registered_ts_descs);
+  if (FLAGS_allow_creating_under_replicated_tables) {
+    if (num_replicas > registered_ts_descs.size()) {
+      return SetupError(Status::InvalidArgument(Substitute(
+          "not enough registered tablet servers to $0 a table with the requested replication "
+          "factor $1; $2 tablet servers are registered",
+          type == ValidateType::kCreateTable ? "create" : "alter",
+          num_replicas, registered_ts_descs.size())),
+                        resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
+    }
+    if (num_live_tservers < consensus::MajoritySize(num_replicas)) {
+      return SetupError(Status::InvalidArgument(Substitute(
+          "not enough live tablet servers to $0 a table with the requested replication "
+          "factor $1; $2/$3 tablet servers are alive",
+          type == ValidateType::kCreateTable ? "create" : "alter",
+          num_replicas, num_live_tservers, registered_ts_descs.size())),
+                        resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
+    }
+  }
   return Status::OK();
 }
 

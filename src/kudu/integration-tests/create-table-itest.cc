@@ -33,6 +33,7 @@
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
@@ -42,6 +43,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
@@ -51,6 +53,7 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tools/tool_test_util.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -76,6 +79,7 @@ namespace kudu {
 
 using client::KuduClient;
 using client::KuduSchema;
+using client::sp::shared_ptr;
 using cluster::ClusterNodes;
 
 const char* const kTableName = "test-table";
@@ -625,4 +629,152 @@ TEST_F(CreateTableITest, ProxyAdvertisedAddresses) {
   ASSERT_OK(client_->DeleteTable(kTableName));
 }
 
+class NotEnoughHealthyTServersTest :
+    public CreateTableITest,
+    public ::testing::WithParamInterface<bool> {
+};
+
+INSTANTIATE_TEST_SUITE_P(AddNewTS, NotEnoughHealthyTServersTest, ::testing::Bool());
+
+TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  const auto add_new_ts = GetParam();
+  constexpr const char* const kNotEnoughReplicasTableName = "kudu.not_enough_replicas";
+  constexpr const char* const kOverRegistedTSTableName = "kudu.over.registed.ts";
+  constexpr const char* const kFiveReplicaTableName = "kudu.five.replica";
+  constexpr const char* const kOneReplicaTableName = "kudu.one.replica";
+  constexpr int kNumTabletServers = 5;
+  constexpr int kTSUnresponsiveTimeoutMs = 4000;
+  constexpr int kHeartbeatIntervalMs = 3000;
+
+  // Do not validate the number of replicas.
+  vector<string> master_flags = {
+      "--catalog_manager_check_ts_count_for_create_table=false",
+      "--catalog_manager_check_ts_count_for_alter_table=false",
+      Substitute("--tserver_unresponsive_timeout_ms=$0", kTSUnresponsiveTimeoutMs),
+      Substitute("--heartbeat_interval_ms=$0", kHeartbeatIntervalMs),
+      "--allow_unsafe_replication_factor=true",
+      "--allow_creating_under_replicated_tables=true"
+  };
+  NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
+
+  string master_address = cluster_->master()->bound_rpc_addr().ToString();
+
+  auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
+  auto create_table_func = [&](const string& table_name, int replica_num) -> Status {
+    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    return table_creator->table_name(table_name)
+                  .schema(&client_schema)
+                  .set_range_partition_columns({ "key" })
+                  .num_replicas(replica_num)
+                  .Create();
+  };
+
+  // The number of replicas can't be over the number of registered tablet servers.
+  // RF = 6.
+  {
+    Status s = create_table_func(kOverRegistedTSTableName, 6);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "not enough registered tablet servers to");
+    shared_ptr<client::KuduTable> table;
+    s = client_->OpenTable(kOverRegistedTSTableName, &table);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+
+  {
+    // Shutdown 3 tablet servers.
+    for (int i = 0; i < 3; i++) {
+      NO_FATALS(cluster_->tablet_server(i)->Shutdown());
+    }
+    // Wait the 3 tablet servers heartbeat timeout and unresponsive timeout. Then catalog
+    // manager will take them as unavailable tablet servers. KSCK gets the status of tablet
+    // server from tablet serve interface. Here must wait the caltalog manager to take the
+    // as unavailable.
+    SleepFor(MonoDelta::FromMilliseconds(3*(kTSUnresponsiveTimeoutMs + kHeartbeatIntervalMs)));
+  }
+
+  // RF = 5. Creating table will fail because there are not enough live tablet servers.
+  {
+    Status s = create_table_func(kOverRegistedTSTableName, 5);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "not enough live tablet servers to");
+  }
+
+  {
+    // Restart the first tablet server.
+    NO_FATALS(cluster_->tablet_server(0)->Restart());
+    // Wait the restarted tablet server to send a heartbeat and be registered in catalog manaager.
+    SleepFor(MonoDelta::FromMilliseconds(kHeartbeatIntervalMs));
+  }
+
+  // Create a table with RF=5. It should succeed.
+  ASSERT_OK(create_table_func(kFiveReplicaTableName, 5));
+
+  {
+    // Restart the second tablet server.
+    NO_FATALS(cluster_->tablet_server(1)->Restart());
+    // Wait the restarted tablet server to send a heartbeat and be registered in catalog manaager.
+    SleepFor(MonoDelta::FromMilliseconds(kHeartbeatIntervalMs));
+  }
+
+  // RF = 1.
+  ASSERT_OK(create_table_func(kOneReplicaTableName, 1));
+
+  // Create a five-replicas table.
+  ASSERT_OK(create_table_func(kNotEnoughReplicasTableName, 5));
+
+  // Add another column. Test alter table logic.
+  {
+    shared_ptr<KuduClient> client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+    unique_ptr<client::KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(kNotEnoughReplicasTableName));
+    table_alterer->AddColumn("new_column")->Type(client::KuduColumnSchema::INT32);
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  {
+    string out;
+    string cmd = Substitute(
+      "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact", master_address);
+    kudu::tools::RunKuduTool(strings::Split(cmd, " ", strings::SkipEmpty()), &out);
+    rapidjson::Document doc;
+    doc.Parse<0>(out.c_str());
+    ASSERT_EQ(3, doc["table_summaries"].Size());
+    const rapidjson::Value& items = doc["table_summaries"];
+    for (int i = 0; i < items.Size(); i++) {
+      if (string(kOneReplicaTableName) == items[i]["name"].GetString()) {
+        ASSERT_EQ(string("HEALTHY"), items[i]["health"].GetString());
+      } else {
+        ASSERT_EQ(string("UNDER_REPLICATED"), items[i]["health"].GetString());
+      }
+    }
+  }
+
+  if (add_new_ts) {
+    // Add one new tablet server.
+    NO_FATALS(cluster_->AddTabletServer());
+  } else {
+    // Restart the stopped tablet server
+    NO_FATALS(cluster_->tablet_server(2)->Restart());
+  }
+
+  // All tables will become healthy.
+  {
+    ASSERT_EVENTUALLY([&] {
+      string out;
+      string in;
+      string cmd = Substitute(
+      "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact", master_address);
+      kudu::tools::RunKuduTool(strings::Split(cmd, " ", strings::SkipEmpty()), &out, nullptr, in);
+      rapidjson::Document doc;
+      doc.Parse<0>(out.c_str());
+      ASSERT_EQ(3, doc["table_summaries"].Size());
+      const rapidjson::Value& items = doc["table_summaries"];
+      for (int i = 0; i < items.Size(); i++) {
+        ASSERT_EQ(string("HEALTHY"), items[i]["health"].GetString());
+      }
+    });
+  }
+}
 } // namespace kudu
