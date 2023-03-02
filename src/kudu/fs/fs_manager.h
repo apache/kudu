@@ -160,7 +160,7 @@ class FsManager {
   static const char *kWalFileNamePrefix;
   static const char *kWalsRecoveryDirSuffix;
 
-  FsManager(Env* env, FsManagerOpts opts);
+  explicit FsManager(Env* env, FsManagerOpts opts = {});
   ~FsManager();
 
   // ==========================================================================

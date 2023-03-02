@@ -545,7 +545,7 @@ Status RewriteRaftConfig(const RunnerContext& context) {
   DCHECK(!peers.empty());
 
   Env* env = Env::Default();
-  FsManagerOpts fs_opts = FsManagerOpts();
+  FsManagerOpts fs_opts;
   fs_opts.skip_block_manager = true;
   FsManager fs_manager(env, std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
@@ -588,9 +588,9 @@ Status SetRaftTerm(const RunnerContext& context) {
 
   // Load the current metadata from disk and verify that the intended operation is safe.
   Env* env = Env::Default();
-  FsManagerOpts fs_opts = FsManagerOpts();
+  FsManagerOpts fs_opts;
   fs_opts.skip_block_manager = true;
-  FsManager fs_manager(env, fs_opts);
+  FsManager fs_manager(env, std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
   // Load the cmeta file and rewrite the raft config.
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
@@ -671,7 +671,7 @@ Status CopyFromRemote(const RunnerContext& context) {
   HostPort hp;
   RETURN_NOT_OK(ParseHostPortString(rpc_address, &hp));
 
-  FsManager fs_manager(Env::Default(), FsManagerOpts());
+  FsManager fs_manager(Env::Default());
   RETURN_NOT_OK(fs_manager.Open());
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
 

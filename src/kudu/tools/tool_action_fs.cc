@@ -245,7 +245,7 @@ Status Check(const RunnerContext& /*context*/) {
 }
 
 Status Format(const RunnerContext& /*context*/) {
-  FsManager fs_manager(Env::Default(), FsManagerOpts());
+  FsManager fs_manager(Env::Default());
   optional<string> uuid;
   optional<string> server_key;
   optional<string> server_key_iv;

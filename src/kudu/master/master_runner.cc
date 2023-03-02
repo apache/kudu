@@ -302,7 +302,7 @@ Status VerifyMastersGetHostPorts(const vector<HostPort>& master_addrs,
 // Deletes the local system catalog tablet and performs a copy from 'src_hp'.
 Status ClearLocalSystemCatalogAndCopy(const HostPort& src_hp) {
   LOG(INFO) << "Clearing existing system tablet";
-  FsManager fs_manager(Env::Default(), FsManagerOpts());
+  FsManager fs_manager(Env::Default());
   RETURN_NOT_OK(fs_manager.Open());
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(
       new ConsensusMetadataManager(&fs_manager));
