@@ -90,9 +90,9 @@ class TableScanner {
       const std::string& selection_str,
       client::KuduClient::ReplicaSelection* selection);
 
-  Status StartWork(WorkType type);
+  Status StartWork(WorkType work_type);
   Status ScanData(const std::vector<client::KuduScanToken*>& tokens,
-                  const std::function<void(const client::KuduScanBatch& batch)>& cb);
+                  const std::function<Status(const client::KuduScanBatch& batch)>& cb);
   void ScanTask(const std::vector<client::KuduScanToken*>& tokens,
                 Status* thread_status);
   void CopyTask(const std::vector<client::KuduScanToken*>& tokens,
