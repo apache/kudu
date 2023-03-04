@@ -174,6 +174,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         c_bool is_nullable()
         DataType type()
         KuduColumnTypeAttributes type_attributes()
+        string& comment()
 
         c_bool Equals(KuduColumnSchema& other)
         void CopyFrom(KuduColumnSchema& other)
@@ -214,6 +215,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
          KuduColumnSpec* Length(uint16_t length);
 
          KuduColumnSpec* RenameTo(const string& new_name)
+         KuduColumnSpec* Comment(const string& comment)
 
 
     cdef cppclass KuduSchemaBuilder:
