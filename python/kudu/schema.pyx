@@ -256,6 +256,10 @@ cdef class ColumnSchema:
             result.type_attributes = new KuduColumnTypeAttributes(self.schema.type_attributes())
             return result
 
+    property comment:
+        def __get__(self):
+            return frombytes(self.schema.comment())
+
     def equals(self, other):
         if not isinstance(other, ColumnSchema):
             return False
@@ -503,6 +507,21 @@ cdef class ColumnSpec:
         self.spec.RenameTo(tobytes(new_name))
         return self
 
+    def comment(self, comment):
+        """
+        The comment for the column.
+
+        Parameters
+        ----------
+        comment : str
+
+        Retruns
+        -------
+        self : ColumnSpec
+        """
+        self.spec.Comment(tobytes(comment))
+        return self
+
     def block_size(self, block_size):
         """
         Set the target block size for the column.
@@ -556,7 +575,7 @@ cdef class SchemaBuilder:
 
     def add_column(self, name, type_=None, nullable=None, compression=None, encoding=None,
                    primary_key=False, non_unique_primary_key=False, block_size=None, default=None,
-                   precision=None, scale=None, length=None):
+                   precision=None, scale=None, length=None, comment=None):
         """
         Add a new column to the schema. Returns a ColumnSpec object for further
         configuration and use in a fluid programming style.
@@ -589,6 +608,8 @@ cdef class SchemaBuilder:
           Use this scale for the decimal column
         length : int
           Use this length for the varchar column
+        comment : string, default ''
+          Comment of the column schema
 
         Examples
         --------
@@ -626,6 +647,9 @@ cdef class SchemaBuilder:
 
         if length is not None:
             result.length(length)
+
+        if comment is not None:
+            result.comment(comment)
 
         if primary_key:
             result.primary_key()

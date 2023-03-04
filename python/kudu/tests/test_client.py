@@ -661,6 +661,14 @@ class TestClient(KuduTestBase, unittest.TestCase):
             # Confirm column rename
             col = table['string_val_renamed']
 
+            # Check if existing comment can be altered, and new comment can be specified
+            alterer = self.client.new_table_alterer(table)
+            alterer.alter_column('key').comment('new_key_comment')
+            alterer.alter_column('int_val').comment('int_val_comment')
+            table = alterer.alter()
+
+            assert table['key'].spec.comment == 'new_key_comment'
+            assert table['int_val'].spec.comment == 'int_val_comment'
         finally:
             self.client.delete_table('alter-column')
 
@@ -844,8 +852,9 @@ class TestClient(KuduTestBase, unittest.TestCase):
             alterer.alter_column(col_name).compression('none')
             alterer.alter()
 
-            # TODO(martongreber): once column comments are added to the python client
-            # check whether the auto-incrementing column's comment can be altered.
+            alterer = self.client.new_table_alterer(table)
+            alterer.alter_column(col_name).comment('new_comment')
+            alterer.alter()
 
         finally:
             try:

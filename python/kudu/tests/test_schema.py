@@ -305,6 +305,21 @@ class TestSchema(unittest.TestCase):
         assert schema[1].mutable
         assert not schema[2].mutable
 
+    def test_column_comment(self):
+        comment = "test_comment"
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64', nullable=False)
+         .primary_key()
+         .comment(comment))
+
+        builder.add_column('data1', 'double').nullable(True)
+        schema = builder.build()
+        assert isinstance(schema[0].comment, str)
+        assert len(schema[0].comment) > 0
+        assert schema[0].comment == comment
+        assert isinstance(schema[1].comment, str)
+        assert len(schema[1].comment) == 0
+
     def test_auto_incrementing_column_name(self):
         name = Schema.get_auto_incrementing_column_name()
         assert isinstance(name, str)
