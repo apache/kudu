@@ -173,6 +173,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         string& name()
         c_bool is_nullable()
         DataType type()
+        c_bool is_immutable()
         KuduColumnTypeAttributes type_attributes()
         string& comment()
 
@@ -208,6 +209,8 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
          KuduColumnSpec* NonUniquePrimaryKey()
          KuduColumnSpec* NotNull()
          KuduColumnSpec* Nullable()
+         KuduColumnSpec* Immutable()
+         KuduColumnSpec* Mutable()
          KuduColumnSpec* Type(DataType type_)
 
          KuduColumnSpec* Precision(int8_t precision);
