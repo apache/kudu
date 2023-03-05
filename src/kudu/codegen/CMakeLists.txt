@@ -106,6 +106,47 @@ if (APPLE)
       ${PREFIXED_IR_INCLUDES}
       -isysroot "${CMAKE_OSX_SYSROOT}")
   endif()
+else()
+    # Capture multi-line output of the preprocessor, joining stdout and stderr.
+    # The relevant part of the output looks like the following:
+    #
+    # #include "..." search starts here:
+    # #include <...> search starts here:
+    #  /usr/include/c++/11
+    #  /usr/include/x86_64-linux-gnu/c++/11
+    #  /usr/include/c++/11/backward
+    #  /usr/lib/gcc/x86_64-linux-gnu/11/include
+    #  /usr/local/include
+    #  /usr/include/x86_64-linux-gnu
+    #  /usr/include
+    # End of search list.
+    execute_process(
+      COMMAND ${CMAKE_CXX_COMPILER} -xc++ -E -Wp,-v /dev/null
+      ERROR_VARIABLE  CXX_CPP_DIRS_VAR
+      OUTPUT_VARIABLE CXX_CPP_DIRS_VAR
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE CXX_CPP_DIRS_EXIT_CODE)
+    if (NOT ${CXX_CPP_DIRS_CMD_EXIT_CODE} EQUAL 0)
+      message(FATAL_ERROR "failed to get preprocessor builtin directories")
+    endif()
+
+    # Use only the first two include paths: usually, that's enough.
+    # Using all the reported include paths might confuse codegen.
+    execute_process(
+      COMMAND echo ${CXX_CPP_DIRS_VAR}
+      COMMAND sed -n "s|^ ||p"
+      COMMAND head -2
+      COMMAND paste -s -d "\;"
+      RESULT_VARIABLE CXX_CPP_EXTRA_INCLUDE_DIRS_EXIT_CODE
+      OUTPUT_VARIABLE CXX_CPP_EXTRA_INCLUDE_DIRS
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if (${CXX_CPP_EXTRA_INCLUDE_DIRS_EXIT_CODE} EQUAL 0)
+      foreach(dir ${CXX_CPP_EXTRA_INCLUDE_DIRS})
+        set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES} -I${dir})
+      endforeach()
+    else()
+      message(FATAL_ERROR "failed to deduce path to libc++ headers")
+    endif()
 endif()
 
 # Get preprocessing definitions, which enable directives for glog and gtest.
