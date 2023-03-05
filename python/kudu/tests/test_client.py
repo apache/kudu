@@ -341,6 +341,102 @@ class TestClient(KuduTestBase, unittest.TestCase):
         scanner = table.scanner().open()
         assert len(scanner.read_all_tuples()) == 0
 
+    def test_insert_and_mutate_immutable_column(self):
+        table_name = 'insert_and_mutate_immutable_column'
+        try:
+            builder = kudu.schema_builder()
+            (builder.add_column('key', kudu.int32)
+            .nullable(False)
+            .primary_key())
+            builder.add_column('immutable_data', kudu.string).mutable(False)
+            builder.add_column('mutable_data', kudu.string).mutable(True)
+            schema = builder.build()
+
+            self.client.create_table(
+                table_name, schema,
+                partitioning=Partitioning().add_hash_partitions(['key'], 2))
+
+            table = self.client.table(table_name)
+            session = self.client.new_session()
+            op = table.new_insert()
+            op['key'] = 1
+            op['immutable_data'] = 'text'
+            op['mutable_data'] = 'text'
+            session.apply(op)
+            session.flush()
+
+            # Update the mutable columns
+            op = table.new_update()
+            op['key'] = 1
+            op['mutable_data'] = 'new_text'
+            session.apply(op)
+            session.flush()
+
+            # Update the immutable column
+            op = table.new_update()
+            op['key'] = 1
+            op['immutable_data'] = 'new_text'
+            session.apply(op)
+            try:
+                session.flush()
+            except KuduBadStatus:
+                message = 'Immutable: UPDATE not allowed for immutable column'
+                errors, overflow = session.get_pending_errors()
+                assert not overflow
+                assert len(errors) == 1
+                assert message in repr(errors[0])
+
+            # Update ignore on both mutable and immutable columns. The error is ignored.
+            op = table.new_update_ignore()
+            op['key'] = 1
+            op['immutable_data'] = 'new_text'
+            op['mutable_data'] = 'new_text'
+            session.apply(op)
+            session.flush()
+
+            # Update ignore the immutable column
+            op = table.new_update_ignore()
+            op['key'] = 1
+            op['immutable_data'] = 'new_text'
+            session.apply(op)
+            try:
+                session.flush()
+            except KuduBadStatus:
+                message = 'Invalid argument: No fields updated'
+                errors, overflow = session.get_pending_errors()
+                assert not overflow
+                assert len(errors) == 1
+                assert message in repr(errors[0])
+
+            # TODO: test upsert ignore, once it is supported by the Python client.
+
+            # Upsert the mutable columns
+            op = table.new_upsert()
+            op['key'] = 1
+            op['mutable_data'] = 'new_text'
+            session.apply(op)
+            session.flush()
+
+            # Upsert the immutable column
+            op = table.new_upsert()
+            op['key'] = 1
+            op['immutable_data'] = 'new_text'
+            session.apply(op)
+            try:
+                session.flush()
+            except KuduBadStatus:
+                message = 'Immutable: UPDATE not allowed for immutable column'
+                errors, overflow = session.get_pending_errors()
+                assert not overflow
+                assert len(errors) == 1
+                assert message in repr(errors[0])
+
+        finally:
+            try:
+                self.client.delete_table(table_name)
+            except:
+                pass
+
     def test_insert_with_auto_incrementing_column(self):
 
         table_name = 'test_insert_with_auto_incrementing_column'

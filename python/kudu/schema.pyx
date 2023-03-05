@@ -246,6 +246,10 @@ cdef class ColumnSchema:
         def __get__(self):
             return self.schema.is_nullable()
 
+    property mutable:
+        def __get__(self):
+            return not self.schema.is_immutable()
+
     property type_attributes:
         def __get__(self):
             cdef ColumnTypeAttributes result = ColumnTypeAttributes()
@@ -472,6 +476,24 @@ cdef class ColumnSpec:
             self.spec.Nullable()
         else:
             self.spec.NotNull()
+        return self
+
+    def mutable(self, bint is_mutable=True):
+        """
+        Set mutable (True) or immutable (False)
+
+        Parameters
+        ----------
+        is_mutable : boolean, default True
+
+        Returns
+        -------
+        self
+        """
+        if is_mutable:
+            self.spec.Mutable()
+        else:
+            self.spec.Immutable()
         return self
 
     def rename(self, new_name):

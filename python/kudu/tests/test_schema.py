@@ -291,6 +291,20 @@ class TestSchema(unittest.TestCase):
         assert schema[3].nullable
         assert not schema[4].nullable
 
+    def test_mutable_immutable(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key', 'int64', nullable=False)
+         .primary_key())
+
+        builder.add_column('data1', 'double').mutable(True)
+        builder.add_column('data2', 'double').mutable(False)
+
+        schema = builder.build()
+
+        assert schema[0].mutable
+        assert schema[1].mutable
+        assert not schema[2].mutable
+
     def test_auto_incrementing_column_name(self):
         name = Schema.get_auto_incrementing_column_name()
         assert isinstance(name, str)
