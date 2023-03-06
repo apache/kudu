@@ -31,6 +31,7 @@
 #include "kudu/master/master_options.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver_options.h"
+#include "kudu/util/cache.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/net/net_util.h"
@@ -59,6 +60,7 @@ MiniMaster::MiniMaster(string fs_root, HostPort rpc_bind_addr, int num_data_dirs
   opts_.rpc_opts.rpc_reuseport = true;
   opts_.webserver_opts.bind_interface = web_bind_addr.host();
   opts_.webserver_opts.port = web_bind_addr.port();
+  opts_.set_block_cache_metrics_policy(Cache::ExistingMetricsPolicy::kKeep);
   if (num_data_dirs == 1) {
     opts_.fs_opts.wal_root = fs_root_;
     opts_.fs_opts.data_roots = { fs_root_ };
