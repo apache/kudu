@@ -548,6 +548,9 @@ message TablesInfoPB {
     optional int32 num_replicas = 3;
     optional uint64 live_row_count = 4;
     repeated TabletWithPartitionPB tablet_with_partition = 5;
+    optional uint32 num_tablets_in_flight = 6;
+    optional string state = 7;
+    optional bytes id = 8;
   }
 
   repeated TableInfoPB tables = 1;

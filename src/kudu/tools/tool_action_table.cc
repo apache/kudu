@@ -49,12 +49,15 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/tools/table_scanner.h"
 #include "kudu/tools/tool.pb.h"
 #include "kudu/tools/tool_action.h"
@@ -86,6 +89,9 @@ using kudu::client::KuduTableStatistics;
 using kudu::client::KuduValue;
 using kudu::client::internal::ReplicaController;
 using kudu::iequals;
+using kudu::master::ListInFlightTablesRequestPB;
+using kudu::master::ListInFlightTablesResponsePB;
+using kudu::master::MasterServiceProxy;
 using kudu::tools::PartitionPB;
 using std::cerr;
 using std::cout;
@@ -860,6 +866,50 @@ Status ListTables(const RunnerContext& context) {
   vector<string> master_addresses;
   RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
   return TableLister::ListTablets(master_addresses);
+}
+
+Status ListInFlightTables(const RunnerContext& context) {
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+
+  ListInFlightTablesRequestPB req;
+  ListInFlightTablesResponsePB resp;
+
+  RETURN_NOT_OK((proxy.SyncRpc<ListInFlightTablesRequestPB, ListInFlightTablesResponsePB>(
+      req, &resp, "ListInFlightTables", &MasterServiceProxy::ListInFlightTablesAsync)));
+
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  TablesInfoPB tables_info_pb;
+  for (const auto& table : resp.tables()) {
+    TablesInfoPB::TableInfoPB* table_info_pb = tables_info_pb.add_tables();
+    table_info_pb->set_id(table.id());
+    table_info_pb->set_name(table.name());
+    table_info_pb->set_num_tablets(table.num_tablets());
+    table_info_pb->set_num_tablets_in_flight(table.num_tablets_in_flight());
+    table_info_pb->set_state(SysTablesEntryPB_State_Name(table.state()));
+  }
+  if (iequals(FLAGS_list_table_output_format, "pretty")) {
+    for (const auto& table_info : tables_info_pb.tables()) {
+      cout << Substitute("id:$0 name:$1, num_tablets:$2 num_tablets_in_flight:$3 state:$4",
+                         table_info.id(),
+                         table_info.name(),
+                         table_info.num_tablets(),
+                         table_info.num_tablets_in_flight(),
+                         table_info.state()) << endl;
+    }
+  } else {
+    DCHECK(iequals(FLAGS_list_table_output_format, "json") ||
+        iequals(FLAGS_list_table_output_format, "json_compact"));
+    auto mode = iequals(FLAGS_list_table_output_format, "json") ?
+        JsonWriter::Mode::PRETTY : JsonWriter::Mode::COMPACT;
+    cout << JsonWriter::ToJson(tables_info_pb, mode) << endl;
+  }
+
+  return Status::OK();
 }
 
 Status ScanTable(const RunnerContext &context) {
@@ -1830,6 +1880,12 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("list_table_output_format")
       .Build();
 
+  unique_ptr<Action> list_in_flight =
+      ClusterActionBuilder("list_in_flight", &ListInFlightTables)
+      .Description("List tables in flight")
+      .AddOptionalParameter("list_table_output_format")
+      .Build();
+
   unique_ptr<Action> locate_row =
       ClusterActionBuilder("locate_row", &LocateRow)
       .Description("Locate which tablet a row belongs to")
@@ -2085,6 +2141,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(describe_table))
       .AddAction(std::move(drop_range_partition))
       .AddAction(std::move(get_extra_configs))
+      .AddAction(std::move(list_in_flight))
       .AddAction(std::move(list_tables))
       .AddAction(std::move(locate_row))
       .AddAction(std::move(recall))

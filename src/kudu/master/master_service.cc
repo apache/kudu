@@ -643,6 +643,19 @@ void MasterServiceImpl::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   rpc->RespondSuccess();
 }
 
+void MasterServiceImpl::ListInFlightTables(const ListInFlightTablesRequestPB* req,
+                                           ListInFlightTablesResponsePB* resp,
+                                           rpc::RpcContext* rpc) {
+  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+    return;
+  }
+
+  auto s = server_->catalog_manager()->ListInFlightTables(req, resp);
+  CheckRespErrorOrSetUnknown(s, resp);
+  rpc->RespondSuccess();
+}
+
 void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
                                    ListTablesResponsePB* resp,
                                    rpc::RpcContext* rpc) {

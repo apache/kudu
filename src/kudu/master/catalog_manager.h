@@ -143,6 +143,11 @@ struct PersistentTabletInfo {
            pb.state() == SysTabletsEntryPB::DELETED;
   }
 
+  bool is_creating() const {
+    return pb.state() == SysTabletsEntryPB::CREATING ||
+           pb.state() == SysTabletsEntryPB::PREPARING;
+  }
+
   bool is_soft_deleted() const {
     return pb.state() == SysTabletsEntryPB::SOFT_DELETED;
   }
@@ -718,6 +723,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                         const std::optional<std::string>& user,
                         const security::TokenSigner* token_signer,
                         TableInfoMapType map_type = kAllTableType);
+
+  // List all the tables in the process of being created or altered.
+  Status ListInFlightTables(const ListInFlightTablesRequestPB* req,
+                            ListInFlightTablesResponsePB* resp);
 
   // Lists all the running tables. If 'user' is provided, only lists those that
   // the given user is authorized to see.

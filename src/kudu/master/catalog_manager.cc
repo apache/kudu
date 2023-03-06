@@ -3936,6 +3936,43 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   return ExtraConfigPBToPBMap(l.data().pb.extra_config(), resp->mutable_extra_configs());
 }
 
+Status CatalogManager::ListInFlightTables(const ListInFlightTablesRequestPB* /*req*/,
+                                          ListInFlightTablesResponsePB* resp) {
+  for (const auto& table_entry : table_ids_map_) {
+    scoped_refptr<TableInfo> table = table_entry.second;
+    TableMetadataLock table_lock(table.get(), LockMode::READ);
+    if (table_lock.data().is_deleted()) {
+      continue;
+    }
+    vector<scoped_refptr<TabletInfo>> tablets;
+    table->GetAllTablets(&tablets);
+    uint32 num_tablets_in_flight = 0;
+    for (const auto& tablet : tablets) {
+      TabletMetadataLock tablet_lock(tablet.get(), LockMode::READ);
+      if (tablet_lock.data().is_creating()) {
+        num_tablets_in_flight++;
+      }
+    }
+    // Creating a table has 2 steps. The first step is to create the metadata
+    // of the table in the catalog manager and after that the status of the table
+    // will be 'RUNNING'. The second step is to create all replicas of the table
+    // asynchronously.
+    // The table is in the process of being created or altered when the number
+    // of in-flight tablets is not 0.
+    if (num_tablets_in_flight == 0) {
+      continue;
+    }
+
+    ListInFlightTablesResponsePB::TableInfo* table_info = resp->add_tables();
+    table_info->set_id(table->id());
+    table_info->set_name(table_lock.data().name());
+    table_info->set_num_tablets(tablets.size());
+    table_info->set_num_tablets_in_flight(num_tablets_in_flight);
+    table_info->set_state(table_lock.data().pb.state());
+  }
+  return Status::OK();
+}
+
 Status CatalogManager::ListTables(const ListTablesRequestPB* req,
                                   ListTablesResponsePB* resp,
                                   const optional<string>& user) {
@@ -7047,6 +7084,7 @@ INITTED_AND_LEADER_OR_RESPOND(CreateTableResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(DeleteTableResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(IsAlterTableDoneResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(IsCreateTableDoneResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(ListInFlightTablesResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(ListTablesResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTableLocationsResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTableSchemaResponsePB);

@@ -1252,5 +1252,17 @@ Status LeaderMasterProxy::SyncRpc(
                              const ResponseCallback&)>& func,
     std::vector<uint32_t> required_feature_flags);
 
+template
+Status LeaderMasterProxy::SyncRpc(
+    const master::ListInFlightTablesRequestPB& req,
+    master::ListInFlightTablesResponsePB* resp,
+    string func_name,
+    const std::function<void(MasterServiceProxy*,
+                             const master::ListInFlightTablesRequestPB&,
+                             master::ListInFlightTablesResponsePB*,
+                             RpcController*,
+                             const ResponseCallback&)>& func,
+    std::vector<uint32_t> required_feature_flags);
+
 } // namespace tools
 } // namespace kudu

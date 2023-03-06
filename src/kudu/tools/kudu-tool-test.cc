@@ -141,6 +141,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/url-coding.h"
 
+DECLARE_bool(allow_unsafe_replication_factor);
+DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
 DECLARE_bool(enable_tablet_orphaned_block_deletion);
 DECLARE_bool(encrypt_data_at_rest);
 DECLARE_bool(disable_gflag_filter_logic_for_testing);
@@ -173,6 +175,7 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::KuduTableStatistics;
 using kudu::client::KuduValue;
@@ -1547,6 +1550,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "drop_range_partition.*Drop a range partition of table",
         "get_extra_configs.*Get the extra configuration properties for a table",
         "list.*List tables",
+        "list_in_flight.*List tables in flight",
         "locate_row.*Locate which tablet a row belongs to",
         "recall.*Recall a deleted but still reserved table",
         "rename_column.*Rename a column",
@@ -9436,6 +9440,183 @@ TEST_P(SetFlagForAllTest, TestSetFlagForAll) {
       &stdout, &stderr, nullptr, nullptr);
   ASSERT_TRUE(s.IsRuntimeError());
   ASSERT_STR_CONTAINS(stderr, "result: NO_SUCH_FLAG");
+}
+
+class ListInFlightTablesTest :
+    public ToolTest,
+    public ::testing::WithParamInterface<string> {
+};
+
+static vector<string> TableListFormats() {
+  return { "pretty", "json", "json_compact" };
+}
+
+INSTANTIATE_TEST_SUITE_P(, ListInFlightTablesTest,
+                         ::testing::ValuesIn(TableListFormats()));
+
+TEST_P(ListInFlightTablesTest, TestListInFlightTables) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  constexpr const char* const kDeleteTableName = "NeedDeleteTable";
+  constexpr const char* const kAddNewPartitionTableName = "AddNewPartitionTable";
+  constexpr const char* const kNotEnoughTServersTableName = "NoEnoughTServersTable";
+  constexpr int kNumReplicas = 3;
+  constexpr int kNumTabletServers = 3;
+
+  FLAGS_allow_unsafe_replication_factor = true;
+  FLAGS_catalog_manager_check_ts_count_for_create_table = false;
+  // Set a short timeout that masters consider a tserver dead.
+  FLAGS_tserver_unresponsive_timeout_ms = 3000;
+  // Start the cluster.
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTabletServers;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+
+  // Get a kudu client.
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(mini_cluster_->CreateClient(nullptr, &client));
+
+  // Generate a schema.
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  auto create_table_func = [&](const string& table_name, int replica_num) -> Status {
+    unique_ptr<client::KuduTableCreator> table_creator(client->NewTableCreator());
+    return table_creator->table_name(table_name)
+                  .schema(&schema)
+                  .set_range_partition_columns({ "key" })
+                  .num_replicas(replica_num)
+                  .Create();
+  };
+  // Create a table and delete it to prove this CLI command will not list deleted tables.
+  {
+    ASSERT_OK(create_table_func(kDeleteTableName, kNumReplicas));
+    ASSERT_OK(client->DeleteTable(kDeleteTableName));
+  }
+
+  // Create a table.
+  {
+    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kAddNewPartitionTableName)
+             .schema(&schema)
+             .set_range_partition_columns({ "key" })
+             .add_range_partition(lower_bound.release(), upper_bound.release())
+             .num_replicas(kNumReplicas)
+             .Create());
+  }
+
+  // Shutdown one tablet server.
+  mini_cluster_->mini_tablet_server(0)->Shutdown();
+  // Wait the tablet server to be registered as unavailable in catalog manager.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(mini_cluster_->mini_master(0)->master()->ts_manager()->GetLiveCount(), 2);
+  });
+
+  // Create a table without enough healthy tablet servers.
+  // It will timeout.
+  {
+    // Add a table with 3 replicas.
+    Status s = create_table_func(kNotEnoughTServersTableName, kNumReplicas);
+    ASSERT_STR_CONTAINS(s.ToString(), "Timed out waiting for Table Creation");
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  }
+
+  // Add a new partition without enough healthy tablet servers.
+  // It will timeout.
+  {
+    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 1));
+    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 2));
+    KuduTableCreator::RangePartitionBound bound_type = KuduTableCreator::INCLUSIVE_BOUND;
+    unique_ptr<KuduTableAlterer> table_alterer(client->NewTableAlterer(kAddNewPartitionTableName));
+    table_alterer->AddRangePartition(lower_bound.release(), upper_bound.release(),
+                                     bound_type, bound_type);
+    Status s = table_alterer->Alter();
+    ASSERT_STR_CONTAINS(s.ToString(), "Timed out: Timed out waiting for AlterTable");
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  }
+
+  string stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("table list_in_flight $0 "
+                 "--list_table_output_format=$1",
+                 GetMasterAddrsStr(), GetParam()),
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, kNotEnoughTServersTableName);
+  ASSERT_STR_CONTAINS(stdout, kAddNewPartitionTableName);
+
+  if (GetParam() == "pretty") {
+    vector<string> results = Split(stdout, "\n", strings::SkipEmpty());
+    // Only contains 2 tables kNotEnoughTServersTableName and kAddNewPartitionTableName.
+    ASSERT_EQ(2, results.size());
+    for (const string& res : results) {
+      if (res.find(kNotEnoughTServersTableName) != std::string::npos) {
+        ASSERT_STR_CONTAINS(res, "num_tablets:1 num_tablets_in_flight:1 state:RUNNING");
+      } else if (res.find(kAddNewPartitionTableName) != std::string::npos) {
+        ASSERT_STR_CONTAINS(res, "num_tablets:2 num_tablets_in_flight:1 state:ALTERING");
+      } else {
+        FAIL() << "Found unexpected table";
+      }
+    }
+  } else if (GetParam() == "json") {
+    ASSERT_STR_CONTAINS(stdout,
+        "\"name\": \"NoEnoughTServersTable\",\n            "
+        "\"num_tablets\": 1,\n            "
+        "\"num_tablets_in_flight\": 1,\n            "
+        "\"state\": \"RUNNING\"");
+    ASSERT_STR_CONTAINS(stdout,
+        "\"name\": \"AddNewPartitionTable\",\n            "
+        "\"num_tablets\": 2,\n            "
+        "\"num_tablets_in_flight\": 1,\n            "
+        "\"state\": \"ALTERING\"");
+  } else if (GetParam() == "json_compact") {
+    rapidjson::Document doc;
+    doc.Parse<0>(stdout.c_str());
+    ASSERT_EQ(2, doc["tables"].Size());
+    const rapidjson::Value& items = doc["tables"];
+    for (int i = 0; i < items.Size(); i++) {
+      if (items[i]["name"].GetString() == string(kNotEnoughTServersTableName)) {
+        ASSERT_EQ(1, items[i]["num_tablets"].GetInt());
+        ASSERT_EQ(1, items[i]["num_tablets_in_flight"].GetInt());
+        EXPECT_STREQ("RUNNING", items[i]["state"].GetString());
+      } else if (items[i]["name"].GetString() == string(kAddNewPartitionTableName)) {
+        ASSERT_EQ(2, items[i]["num_tablets"].GetInt());
+        ASSERT_EQ(1, items[i]["num_tablets_in_flight"].GetInt());
+        EXPECT_STREQ("ALTERING", items[i]["state"].GetString());
+      } else {
+        FAIL() << "Contain an unknown table";
+      }
+    }
+  } else {
+    FAIL() << "unexpected table list format" << GetParam();
+  }
+
+  // Restart the stopped tablet server.
+  ASSERT_OK(mini_cluster_->mini_tablet_server(0)->Restart());
+  ASSERT_EVENTUALLY([&] {
+    string out;
+    string err;
+    Status s =
+        RunActionStdoutStderrString(Substitute("cluster ksck $0", GetMasterAddrsStr()),
+                                    &out, &err);
+    ASSERT_TRUE(s.ok()) << s.ToString() << ", err:\n" << err << ", out:\n" << out;
+    // Wait until there aren't in-flight tablets (i.e. tablets in progress of being created).
+    out.clear();
+    NO_FATALS(RunActionStdoutString(
+        Substitute("table list_in_flight $0", GetMasterAddrsStr()),
+        &out));
+    ASSERT_TRUE(out.empty()) << out;
+  });
 }
 
 } // namespace tools

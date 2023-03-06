@@ -62,6 +62,8 @@ class IsAlterTableDoneRequestPB;
 class IsAlterTableDoneResponsePB;
 class IsCreateTableDoneRequestPB;
 class IsCreateTableDoneResponsePB;
+class ListInFlightTablesRequestPB;
+class ListInFlightTablesResponsePB;
 class ListMastersRequestPB;
 class ListMastersResponsePB;
 class ListTablesRequestPB;
@@ -161,6 +163,10 @@ class MasterServiceImpl : public MasterServiceIf {
   void ListTables(const ListTablesRequestPB* req,
                   ListTablesResponsePB* resp,
                   rpc::RpcContext* rpc) override;
+
+  void ListInFlightTables(const ListInFlightTablesRequestPB* req,
+                          ListInFlightTablesResponsePB* resp,
+                          rpc::RpcContext* rpc) override;
 
   void GetTableStatistics(const GetTableStatisticsRequestPB* req,
                           GetTableStatisticsResponsePB* resp,

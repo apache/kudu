@@ -612,6 +612,24 @@ message RecallDeletedTableResponsePB {
   optional MasterErrorPB error = 1;
 }
 
+message ListInFlightTablesRequestPB {
+}
+
+message ListInFlightTablesResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  message TableInfo {
+    required bytes id = 1;
+    required string name = 2;
+    optional uint32 num_tablets = 3;
+    optional uint32 num_tablets_in_flight = 4;
+    optional SysTablesEntryPB.State state = 5;
+  }
+  // The information on tables in flight.
+  repeated TableInfo tables = 2;
+}
+
 message ListTablesRequestPB {
   // When used, only returns tables that satisfy a substring match on name_filter.
   optional string name_filter = 1;
@@ -648,7 +666,6 @@ message ListTablesResponsePB {
     optional int32 num_replicas = 5;
     repeated TabletWithPartition tablet_with_partition = 6;
   }
-
   repeated TableInfo tables = 2;
 }
 
@@ -1226,6 +1243,10 @@ service MasterService {
   }
 
   rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
+  }
+
+  rpc ListInFlightTables(ListInFlightTablesRequestPB) returns (ListInFlightTablesResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 
