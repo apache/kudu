@@ -40,7 +40,7 @@ namespace kudu {
 namespace master {
 
 MasterOptions::MasterOptions()
-    : block_cache_metrics_policy_(Cache::ExistingMetricsPolicy::kKeep) {
+    : block_cache_metrics_policy_(Cache::ExistingMetricsPolicy::kReset) {
   rpc_opts.default_port = Master::kDefaultPort;
 
   if (!FLAGS_master_addresses.empty()) {
