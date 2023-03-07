@@ -5953,18 +5953,30 @@ Status CatalogManager::ProcessPendingAssignments(
     return Status::OK();
   }
 
-  // For those tablets which need to be created in this round, assign replicas.
   {
     TSDescriptorVector ts_descs;
     master_->ts_manager()->GetDescriptorsAvailableForPlacement(&ts_descs);
     PlacementPolicy policy(std::move(ts_descs), &rng_);
-    for (auto& tablet : deferred.needs_create_rpc) {
+    auto it = deferred.needs_create_rpc.begin();
+    while (it != deferred.needs_create_rpc.end()) {
       // NOTE: if we fail to select replicas on the first pass (due to
       // insufficient Tablet Servers being online), we will still try
       // again unless the tablet/table creation is cancelled.
-      RETURN_NOT_OK_PREPEND(SelectReplicasForTablet(policy, tablet.get()),
-                            Substitute("error selecting replicas for tablet $0",
-                                       tablet->id()));
+      Status s = SelectReplicasForTablet(policy, (*it).get());
+      if (s.ok()) {
+        it++;
+      } else {
+        // The state of CREATING means the catalog manager has selected replicas for the tablet
+        // and waits for CreateTablet RPC finished. If selecting replicas for the tablet fails,
+        // it needs to recover the state to PREPARING, or its state will become CREATING later
+        // and waits for a long time(defined by FLAGS_tablet_creation_timeout_ms) to create a
+        // new tablet to replace it.
+        (*it)->mutable_metadata()->mutable_dirty()->set_state(
+            SysTabletsEntryPB::PREPARING, "Sending initial creation of tablet");
+        LOG(ERROR) << Substitute("Error selecting replicas for tablet $0, reason: $1",
+                                 (*it)->id(), s.ToString());
+        it = deferred.needs_create_rpc.erase(it);
+      }
     }
   }
 
@@ -6005,6 +6017,7 @@ Status CatalogManager::ProcessPendingAssignments(
       SendDeleteTabletRequest(tablet, l, l.data().pb.state_msg());
     }
   }
+
   // Send the CreateTablet() requests to the servers. This is asynchronous / non-blocking.
   for (const auto& tablet : deferred.needs_create_rpc) {
     TabletMetadataLock l(tablet.get(), LockMode::READ);

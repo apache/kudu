@@ -777,4 +777,95 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
     });
   }
 }
+
+TEST_F(CreateTableITest, TestNotAffectedCreatingTables) {
+  constexpr int kTimeout = 4000;
+  constexpr int kNumTServers = 3;
+  constexpr int kHeartbeatIntervalMs = 2000;
+  constexpr const char* const kNotEnoughTServersTableId = "NotEnoughTServersTable";
+  constexpr const char* const kTwoReplicasTableId = "TwoReplicasTable";
+  constexpr const char* const kOneReplicasTableId = "OneReplicasTable";
+
+  vector<string> master_flags = { "--allow_unsafe_replication_factor=true",
+                                  Substitute("--tserver_unresponsive_timeout_ms=$0", kTimeout),
+                                  Substitute("--heartbeat_interval_ms=$0", kHeartbeatIntervalMs),
+                                  "--catalog_manager_check_ts_count_for_create_table=false" };
+  NO_FATALS(StartCluster({}, master_flags, kNumTServers));
+
+  string master_address = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Shutdown one tablet server.
+  string stopped_ts_uuid = cluster_->tablet_server(0)->uuid();
+  cluster_->tablet_server(0)->Shutdown();
+
+  // Wait until the tablet server become unavailable for replicas placement.
+  SleepFor(MonoDelta::FromMilliseconds(kTimeout + kHeartbeatIntervalMs));
+
+  auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
+
+  auto create_table_func = [&](const string& table_name, int replica_num) -> Status {
+    unique_ptr<client::KuduTableCreator> table_creator(
+        client_->NewTableCreator());
+    return table_creator->table_name(table_name)
+                        .schema(&client_schema)
+                        .set_range_partition_columns({ "key" })
+                        .num_replicas(replica_num)
+                        .timeout(MonoDelta::FromMilliseconds(kTimeout))
+                        .Create();
+  };
+
+  // Create a table without enough healthy tablet servers.
+  // It will timeout.
+  {
+    Status s = create_table_func(kNotEnoughTServersTableId, cluster_->num_tablet_servers());
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Timed out waiting for Table Creation");
+  }
+  // Create a two-replicas table should succeed.
+  ASSERT_OK(create_table_func(kTwoReplicasTableId, 2));
+
+  // Create an one-replica table should succeed.
+  ASSERT_OK(create_table_func(kOneReplicasTableId, 1));
+
+  {
+    string out;
+    string cmd = Substitute(
+      "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact", master_address);
+    kudu::tools::RunKuduTool(strings::Split(cmd, " ", strings::SkipEmpty()), &out);
+    rapidjson::Document doc;
+    doc.Parse<0>(out.c_str());
+    // Only contains 2 tables kTwoReplicasTableId and kOneReplicasTableId.
+    ASSERT_EQ(2, doc["table_summaries"].Size());
+    ASSERT_STR_CONTAINS(out, kTwoReplicasTableId);
+    ASSERT_STR_CONTAINS(out, kOneReplicasTableId);
+    const rapidjson::Value& items = doc["table_summaries"];
+    for (int i = 0; i < items.Size(); i++) {
+      if (items[i]["name"].GetString() == kTwoReplicasTableId ||
+          items[i]["name"].GetString() == kOneReplicasTableId) {
+        ASSERT_EQ(string("HEALTHY"), items[i]["health"].GetString());
+      }
+    }
+  }
+  {
+    // Restart the tablet server and check the health of the cluster.
+    ASSERT_OK(cluster_->tablet_server(0)->Restart());
+    ASSERT_EVENTUALLY([&] {
+      string out;
+      string cmd = Substitute(
+          "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact",
+          master_address);
+      // KSCK will be OK.
+      ASSERT_OK(kudu::tools::RunKuduTool(
+          strings::Split(cmd, " ", strings::SkipEmpty()), &out));
+      rapidjson::Document doc;
+      doc.Parse<0>(out.c_str());
+      // Contains 3 tables kTwoReplicasTableId,
+      // kOneReplicasTableId and kNotEnoughTServersTableId.
+      ASSERT_EQ(3, doc["table_summaries"].Size());
+      ASSERT_STR_CONTAINS(out, kTwoReplicasTableId);
+      ASSERT_STR_CONTAINS(out, kOneReplicasTableId);
+      ASSERT_STR_CONTAINS(out, kNotEnoughTServersTableId);
+    });
+  }
+}
 } // namespace kudu
