@@ -21,24 +21,20 @@
 #include <cstdint>
 #include <functional>
 #include <iosfwd>
-#include <optional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/client/write_op.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
 
 namespace kudu {
-
-namespace client {
-class KuduSchema;
-} // namespace client
-
 namespace tools {
 
 // This class is not thread-safe.
@@ -78,11 +74,10 @@ class TableScanner {
     kCopy
   };
 
-  static Status AddRow(
-      const client::sp::shared_ptr<client::KuduTable>& table,
-      const client::KuduSchema& table_schema,
-      const client::KuduScanBatch::RowPtr& src_row,
-      const client::sp::shared_ptr<client::KuduSession>& session);
+  static Status AddRow(client::KuduSession* session,
+                       client::KuduTable* table,
+                       const client::KuduScanBatch::RowPtr& src_row,
+                       client::KuduWriteOperation::Type write_op_type);
 
   // Convert replica selection from string into the KuduClient::ReplicaSelection
   // enumerator.
