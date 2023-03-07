@@ -514,10 +514,12 @@ class ToolTest : public KuduTest {
   }
 
   enum class TableCopyMode {
-    INSERT_TO_EXIST_TABLE = 0,
-    INSERT_TO_NOT_EXIST_TABLE = 1,
-    UPSERT_TO_EXIST_TABLE = 2,
+    INSERT_TO_EXISTING_TABLE = 0,
+    INSERT_TO_NEW_TABLE = 1,
+    UPSERT_TO_EXISTING_TABLE = 2,
     COPY_SCHEMA_ONLY = 3,
+    INSERT_IGNORE_TO_EXISTING_TABLE = 4,
+    UPSERT_IGNORE_TO_EXISTING_TABLE = 5,
   };
 
   struct RunCopyTableCheckArgs {
@@ -532,7 +534,7 @@ class ToolTest : public KuduTest {
   };
 
   void RunCopyTableCheck(const RunCopyTableCheckArgs& args) {
-    const string kDstTableName = "kudu.table.copy.to";
+    static constexpr const char* const kDstTableName = "kudu.table.copy.to";
 
     // Prepare command flags, create destination table and write some data if needed.
     string write_type;
@@ -541,24 +543,49 @@ class ToolTest : public KuduTest {
     ww.set_table_name(kDstTableName);
     ww.set_num_replicas(1);
     switch (args.mode) {
-      case TableCopyMode::INSERT_TO_EXIST_TABLE:
+      case TableCopyMode::INSERT_TO_EXISTING_TABLE:
         write_type = "insert";
         create_table = "false";
         // Create the dst table.
         ww.set_num_write_threads(0);
         ww.Setup();
         break;
-      case TableCopyMode::INSERT_TO_NOT_EXIST_TABLE:
+      case TableCopyMode::INSERT_IGNORE_TO_EXISTING_TABLE:
+        write_type = "insert_ignore";
+        create_table = "false";
+        // Create the dst table and write some data to it.
+        ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+        ww.set_num_write_threads(1);
+        ww.Setup();
+        ww.Start();
+        ASSERT_EVENTUALLY([&]() {
+          ASSERT_GE(ww.rows_inserted(), 100);
+        });
+        ww.StopAndJoin();
+        break;
+      case TableCopyMode::INSERT_TO_NEW_TABLE:
         write_type = "insert";
         create_table = "true";
         break;
-      case TableCopyMode::UPSERT_TO_EXIST_TABLE:
+      case TableCopyMode::UPSERT_TO_EXISTING_TABLE:
         write_type = "upsert";
         create_table = "false";
         // Create the dst table and write some data to it.
         ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
         ww.set_num_write_threads(1);
-        ww.set_write_batch_size(1);
+        ww.Setup();
+        ww.Start();
+        ASSERT_EVENTUALLY([&]() {
+          ASSERT_GE(ww.rows_inserted(), 100);
+        });
+        ww.StopAndJoin();
+        break;
+      case TableCopyMode::UPSERT_IGNORE_TO_EXISTING_TABLE:
+        write_type = "upsert_ignore";
+        create_table = "false";
+        // Create the dst table and write some data to it.
+        ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+        ww.set_num_write_threads(1);
         ww.Setup();
         ww.Start();
         ASSERT_EVENTUALLY([&]() {
@@ -628,7 +655,7 @@ class ToolTest : public KuduTest {
     }
 
     // Check schema equals when destination table is created automatically.
-    if (args.mode == TableCopyMode::INSERT_TO_NOT_EXIST_TABLE ||
+    if (args.mode == TableCopyMode::INSERT_TO_NEW_TABLE ||
         args.mode == TableCopyMode::COPY_SCHEMA_ONLY) {
       vector<string> src_schema;
       NO_FATALS(RunActionStdoutLines(
@@ -698,20 +725,26 @@ class ToolTest : public KuduTest {
       ASSERT_GE(dst_lines.size(), 1);
       ASSERT_STR_CONTAINS(*dst_lines.rbegin(), "Total count 0 ");
     } else {
-      // Rows scanned from source table can be found in destination table.
+      // Rows scanned from the source table can be found in the destination table.
       set<string> sorted_dst_lines(dst_lines.begin(), dst_lines.end());
-      for (auto src_line = src_lines.begin(); src_line != src_lines.end();) {
-        if (src_line->find("key") != string::npos) {
-          ASSERT_TRUE(ContainsKey(sorted_dst_lines, *src_line));
-          sorted_dst_lines.erase(*src_line);
+      for (auto src_line_it = src_lines.begin(); src_line_it != src_lines.end();) {
+        if (src_line_it->find("key") != string::npos) {
+          if (args.mode != TableCopyMode::INSERT_IGNORE_TO_EXISTING_TABLE) {
+            ASSERT_TRUE(ContainsKey(sorted_dst_lines, *src_line_it)) << *src_line_it;
+          }
+          sorted_dst_lines.erase(*src_line_it);
         }
-        src_line = src_lines.erase(src_line);
+        src_line_it = src_lines.erase(src_line_it);
       }
 
-      // Under all modes except UPSERT_TO_EXIST_TABLE, destination table is empty before
-      // copying, that means destination table should have no more rows than source table
-      // after copying.
-      if (args.mode != TableCopyMode::UPSERT_TO_EXIST_TABLE) {
+      // Under all modes except for UPSERT_TO_EXISTING_TABLE,
+      // INSERT_IGNORE_TO_EXISTING_TABLE, UPSERT_IGNORE_TO_EXISTING_TABLE,
+      // the destination table is empty before copying. That means the
+      // destination table should not have more rows than the source table
+      // after copying is complete.
+      if (args.mode != TableCopyMode::INSERT_IGNORE_TO_EXISTING_TABLE &&
+          args.mode != TableCopyMode::UPSERT_TO_EXISTING_TABLE &&
+          args.mode != TableCopyMode::UPSERT_IGNORE_TO_EXISTING_TABLE) {
         for (const auto& dst_line : sorted_dst_lines) {
           ASSERT_STR_NOT_CONTAINS(dst_line, "key");
         }
@@ -813,7 +846,9 @@ INSTANTIATE_TEST_SUITE_P(ToolTestKerberosParameterized, ToolTestKerberosParamete
 enum RunCopyTableCheckArgsType {
   kTestCopyTableDstTableExist,
   kTestCopyTableDstTableNotExist,
+  kTestCopyTableInsertIgnore,
   kTestCopyTableUpsert,
+  kTestCopyTableUpsertIgnore,
   kTestCopyTableSchemaOnly,
   kTestCopyTableComplexSchema,
   kTestCopyUnpartitionedTable,
@@ -879,16 +914,22 @@ class ToolTestCopyTableParameterized :
                                    1,
                                    total_rows_,
                                    kSimpleSchemaColumns,
-                                   TableCopyMode::INSERT_TO_EXIST_TABLE,
+                                   TableCopyMode::INSERT_TO_EXISTING_TABLE,
                                    -1 };
     switch (test_case_) {
       case kTestCopyTableDstTableExist:
         return { args };
       case kTestCopyTableDstTableNotExist:
-        args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
+        args.mode = TableCopyMode::INSERT_TO_NEW_TABLE;
+        return { args };
+      case kTestCopyTableInsertIgnore:
+        args.mode = TableCopyMode::INSERT_IGNORE_TO_EXISTING_TABLE;
         return { args };
       case kTestCopyTableUpsert:
-        args.mode = TableCopyMode::UPSERT_TO_EXIST_TABLE;
+        args.mode = TableCopyMode::UPSERT_TO_EXISTING_TABLE;
+        return { args };
+      case kTestCopyTableUpsertIgnore:
+        args.mode = TableCopyMode::UPSERT_IGNORE_TO_EXISTING_TABLE;
         return { args };
       case kTestCopyTableSchemaOnly: {
         args.mode = TableCopyMode::COPY_SCHEMA_ONLY;
@@ -911,7 +952,7 @@ class ToolTestCopyTableParameterized :
       }
       case kTestCopyTableComplexSchema: {
         args.columns = kComplexSchemaColumns;
-        args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
+        args.mode = TableCopyMode::INSERT_TO_NEW_TABLE;
         vector<RunCopyTableCheckArgs> multi_args;
         {
           auto args_temp = args;
@@ -951,7 +992,7 @@ class ToolTestCopyTableParameterized :
         return multi_args;
       }
       case kTestCopyUnpartitionedTable: {
-        args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
+        args.mode = TableCopyMode::INSERT_TO_NEW_TABLE;
         vector<RunCopyTableCheckArgs> multi_args;
         {
           auto args_temp = args;
@@ -1176,7 +1217,9 @@ INSTANTIATE_TEST_SUITE_P(CopyTableParameterized,
                          ToolTestCopyTableParameterized,
                          ::testing::Values(kTestCopyTableDstTableExist,
                                            kTestCopyTableDstTableNotExist,
+                                           kTestCopyTableInsertIgnore,
                                            kTestCopyTableUpsert,
+                                           kTestCopyTableUpsertIgnore,
                                            kTestCopyTableSchemaOnly,
                                            kTestCopyTableComplexSchema,
                                            kTestCopyUnpartitionedTable,
