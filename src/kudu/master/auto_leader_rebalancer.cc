@@ -25,6 +25,8 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -37,6 +39,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.pb.h"
@@ -62,6 +65,7 @@ using kudu::rpc::RpcController;
 using std::map;
 using std::nullopt;
 using std::string;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -116,6 +120,7 @@ void AutoLeaderRebalancerTask::Shutdown() {
 Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
     const scoped_refptr<TableInfo>& table_info,
     const vector<string>& tserver_uuids,
+    const unordered_set<string>& exclude_dest_uuids,
     AutoLeaderRebalancerTask::ExecuteMode mode) {
   LOG(INFO) << Substitute("leader rebalance for table $0", table_info->table_name());
   TableMetadataLock table_l(table_info.get(), LockMode::READ);
@@ -243,6 +248,9 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
       }
       double min_score = 1;
       for (int j = 0; j < uuid_followers.size(); j++) {
+        if (ContainsKey(exclude_dest_uuids, uuid_followers[j])) {
+          continue;
+        }
         std::pair<int32_t, int32_t>& replica_and_leader_count =
             replica_and_leader_count_by_ts_uuid[uuid_followers[j]];
         int32_t replica_count = replica_and_leader_count.first;
@@ -328,6 +336,10 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
     if (!ts_manager_->LookupTSByUUID(leader_uuid, &leader_desc)) {
       continue;
     }
+    if (PREDICT_FALSE(TServerStatePB::MAINTENANCE_MODE ==
+                      ts_manager_->GetTServerState(task.second.second))) {
+      continue;
+    }
 
     vector<Sockaddr> resolved;
     RETURN_NOT_OK(host_port->ResolveAddresses(&resolved));
@@ -380,6 +392,14 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
     tserver_uuids.emplace_back(e->permanent_uuid());
   }
 
+  // Avoid transferring leaders to tservers that are in MAINTENANCE_MODE.
+  auto tserver_state_by_uuid = ts_manager_->GetTServerStates();
+  unordered_set<string> exclude_dest_uuids;
+  for (const auto& uuid_state : tserver_state_by_uuid) {
+    if (uuid_state.second.first == TServerStatePB::MAINTENANCE_MODE) {
+      exclude_dest_uuids.insert(uuid_state.first);
+    }
+  }
   vector<scoped_refptr<TableInfo>> table_infos;
   {
     CatalogManager::ScopedLeaderSharedLock leader_lock(catalog_manager_);
@@ -387,7 +407,7 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
     catalog_manager_->GetAllTables(&table_infos);
   }
   for (const auto& table_info : table_infos) {
-    RunLeaderRebalanceForTable(table_info, tserver_uuids);
+    RunLeaderRebalanceForTable(table_info, tserver_uuids, exclude_dest_uuids);
   }
   // @TODO(duyuqi)
   // Enrich the log and add metrics for leader rebalancer.
