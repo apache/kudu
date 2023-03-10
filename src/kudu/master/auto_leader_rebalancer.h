@@ -21,6 +21,7 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/gutil/ref_counted.h"
@@ -75,6 +76,7 @@ class AutoLeaderRebalancerTask {
   Status RunLeaderRebalanceForTable(
       const scoped_refptr<TableInfo>& table_info,
       const std::vector<std::string>& tserver_uuids,
+      const std::unordered_set<std::string>& exclude_dest_uuids,
       AutoLeaderRebalancerTask::ExecuteMode mode = AutoLeaderRebalancerTask::ExecuteMode::NORMAL);
 
   // Only one task can be scheduled at a time.
