@@ -99,7 +99,9 @@ TabletServerTestBase::TabletServerTestBase()
   // purposefully specify non-running Master servers.
   FLAGS_heartbeat_rpc_timeout_ms = 1000;
 
-  GetEncryptionKey(&FLAGS_test_server_key,
+  GetEncryptionKey(nullptr,
+                   nullptr,
+                   &FLAGS_test_server_key,
                    &FLAGS_test_server_key_iv,
                    &FLAGS_test_server_key_version);
 }

@@ -44,6 +44,37 @@ message InstanceMetadataPB {
   // Server key version.
   optional string server_key_version = 5;
 
+  // The tenant_key works on the base of the server_key, but the server_key is not
+  // always upgraded to tenant_key, which means that the server_key may exist in
+  // the latest version. We provide an upgrading tool to facilitate the upgrade of
+  // server_key to tenant_key. During the upgrade process, if we detect that the server_key
+  // related configuration items have values, we read them out and assign them to
+  // the default tenant. Then we don't clear the server_key related configuration items
+  // for compatibility guarantee. And finally update the metadata file with new
+  // configuration values.
+
+  message TenantMetadataPB {
+    // Tenant name.
+    optional string tenant_name = 1;
+
+    // Tenant uuid.
+    optional string tenant_id = 2;
+
+    // Encrypted tenant key used to encrypt/decrypt file keys for this tenant.
+    optional string tenant_key = 3;
+
+    // Initialization vector for the tenant key.
+    optional string tenant_key_iv = 4;
+
+    // Tenant key version.
+    optional string tenant_key_version = 5;
+  }
+
+  // NOTE:
+  //   The priority of tenant key is higher than that of server key, which means that if
+  // both server key info and tenants info exist in the metadata, we will use the tenants.
+  repeated TenantMetadataPB tenants = 6;
+
   // TODO: add a "node type" (TS/Master?)
 }
 

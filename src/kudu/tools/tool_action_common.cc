@@ -171,9 +171,29 @@ DECLARE_bool(show_values);
 DEFINE_string(instance_file, "",
               "Path to the instance file containing the encrypted encryption key.");
 
+DEFINE_string(encryption_key_type,
+              "server_key",
+              "The type of encryption. Must be one of 'tenant_key' or 'server_key'."
+              "To compatible with older versions, the default value is 'server_key'.");
+
+static bool ValidateEncryptionKeyType(const char* flag_name, const std::string& value) {
+  if (kudu::iequals(value, "server_key") ||
+      kudu::iequals(value, "tenant_key")) {
+    return true;
+  }
+  LOG(ERROR) << strings::Substitute("unknown value for --$0 flag: '$1' "
+                                   "(expected one of 'tenant_key' or 'server_key').",
+                                   flag_name, value);
+  return false;
+}
+DEFINE_validator(encryption_key_type, &ValidateEncryptionKeyType);
+
 DECLARE_string(encryption_key_provider);
 DECLARE_string(ranger_kms_url);
 DECLARE_string(encryption_cluster_key_name);
+
+DEFINE_string(tenant_name, "",
+              "The encrypted tenant name to use in the filesystem.");
 
 bool ValidateTimeoutSettings() {
   if (FLAGS_timeout_ms < FLAGS_negotiation_timeout_ms) {
@@ -965,25 +985,45 @@ Status SetEncryptionKey() {
                                                          &instance, pb_util::NOT_SENSITIVE),
                         "Could not open instance file");
 
-  if (string key = instance.server_key();
-      !key.empty()) {
-    unique_ptr<security::KeyProvider> key_provider;
-    if (FLAGS_encryption_key_provider == "ranger-kms"
-        || FLAGS_encryption_key_provider == "ranger_kms") {
-      key_provider.reset(new RangerKMSKeyProvider(FLAGS_ranger_kms_url,
-                                                  FLAGS_encryption_cluster_key_name));
-    } else {
-      key_provider.reset(new DefaultKeyProvider());
+  string decrypted_key;
+  unique_ptr<security::KeyProvider> key_provider;
+  if (FLAGS_encryption_key_provider == "ranger-kms"
+      || FLAGS_encryption_key_provider == "ranger_kms") {
+    key_provider.reset(new RangerKMSKeyProvider(FLAGS_ranger_kms_url,
+                                                FLAGS_encryption_cluster_key_name));
+  } else {
+    key_provider.reset(new DefaultKeyProvider());
+  }
+
+  if (iequals(FLAGS_encryption_key_type, "server_key")) {
+    const string& server_key = instance.server_key();
+    if (!server_key.empty()) {
+      RETURN_NOT_OK(key_provider->DecryptEncryptionKey(instance.server_key(),
+                                                       instance.server_key_iv(),
+                                                       instance.server_key_version(),
+                                                       &decrypted_key));
+    }
+  } else {
+    InstanceMetadataPB::TenantMetadataPB tenant;
+    for (const auto& tdata : instance.tenants()) {
+      if (tdata.tenant_name() == FLAGS_tenant_name) {
+        tenant.CopyFrom(tdata);
+        break;
+      }
     }
 
-    string decrypted_key;
-    RETURN_NOT_OK(key_provider->DecryptEncryptionKey(instance.server_key(),
-                                                     instance.server_key_iv(),
-                                                     instance.server_key_version(),
-                                                     &decrypted_key));
+    if (tenant.has_tenant_key()) {
+      RETURN_NOT_OK(key_provider->DecryptEncryptionKey(tenant.tenant_key(),
+                                                       tenant.tenant_key_iv(),
+                                                       tenant.tenant_key_version(),
+                                                       &decrypted_key));
+    }
+  }
+
+  if (!decrypted_key.empty()) {
     Env::Default()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
                                        a2b_hex(decrypted_key).c_str()),
-                                     key.length() * 4);
+                                     decrypted_key.size() * 4);
   }
 
   return Status::OK();

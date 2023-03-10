@@ -28,6 +28,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -77,6 +78,8 @@ DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(env_inject_lock_failure_globs);
 DECLARE_string(umask);
+DECLARE_bool(encrypt_data_at_rest);
+DECLARE_bool(enable_multi_tenancy);
 
 namespace kudu {
 namespace fs {
@@ -1191,6 +1194,89 @@ TEST_P(FsManagerTestBase, TestAncillaryDirsReported) {
   string report_str = report.ToString();
   ASSERT_STR_CONTAINS(report_str, "wal directory: " + opts.wal_root);
   ASSERT_STR_CONTAINS(report_str, "metadata directory: " + opts.metadata_root);
+}
+
+class OpenFsTypeTest : public KuduTest,
+                       public ::testing::WithParamInterface<std::tuple<string, bool, bool>> {
+ public:
+  OpenFsTypeTest()
+     : fs_root_(GetTestPath("fs_root")) {
+  }
+
+  void SetUp() override {
+    KuduTest::SetUp();
+    FLAGS_block_manager = std::get<0>(GetParam());
+    FLAGS_encrypt_data_at_rest = std::get<1>(GetParam());
+    FLAGS_enable_multi_tenancy = std::get<2>(GetParam());
+
+    // '--enable_multi_tenancy' should set with '--encrypt_data_at_rest'.
+    if (!FLAGS_encrypt_data_at_rest && FLAGS_enable_multi_tenancy) {
+      GTEST_SKIP();
+    }
+
+    FsManagerOpts opts;
+    opts.wal_root = GetTestPath("wal");
+    opts.data_roots = { GetTestPath("data") };
+    opts.metadata_root = GetTestPath("metadata");
+    ReinitFsManagerWithOpts(opts);
+
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
+  }
+
+  FsManager *fs_manager() const { return fs_manager_.get(); }
+
+  static bool is_multi_tenancy_enable() {
+    return FLAGS_encrypt_data_at_rest && FLAGS_enable_multi_tenancy;
+  }
+
+  static bool is_only_encryption_enable() {
+    return FLAGS_encrypt_data_at_rest && !FLAGS_enable_multi_tenancy;
+  }
+
+  static bool is_encryption_disable() {
+    return !FLAGS_encrypt_data_at_rest && !FLAGS_enable_multi_tenancy;
+  }
+
+ protected:
+  void ReinitFsManagerWithPaths(string wal_path, vector<string> data_paths) {
+    FsManagerOpts opts;
+    opts.wal_root = std::move(wal_path);
+    opts.data_roots = std::move(data_paths);
+    ReinitFsManagerWithOpts(std::move(opts));
+  }
+
+  void ReinitFsManagerWithOpts(FsManagerOpts opts) {
+    fs_manager_.reset(new FsManager(env_, std::move(opts)));
+  }
+
+ private:
+  const string fs_root_;
+  unique_ptr<FsManager> fs_manager_;
+};
+
+INSTANTIATE_TEST_SUITE_P(, OpenFsTypeTest,
+                         ::testing::Combine(
+                             ::testing::ValuesIn(BlockManager::block_manager_types()),
+                             ::testing::Bool() /* --encrypt_data_at_rest */,
+                             ::testing::Bool() /* --enable_multi_tenancy */));
+
+TEST_P(OpenFsTypeTest, TestDifferentTypesOpen) {
+  if (is_encryption_disable()) {
+    ASSERT_TRUE(fs_manager()->server_key().empty());
+    ASSERT_FALSE(fs_manager()->is_tenants_exist());
+  }
+
+  if (is_only_encryption_enable()) {
+    ASSERT_FALSE(fs_manager()->server_key().empty());
+    ASSERT_FALSE(fs_manager()->is_tenants_exist());
+  }
+
+  if (is_multi_tenancy_enable()) {
+    // This isn't upgrade case, so no server key exist.
+    ASSERT_TRUE(fs_manager()->server_key().empty());
+    ASSERT_TRUE(fs_manager()->is_tenants_exist());
+  }
 }
 
 } // namespace fs

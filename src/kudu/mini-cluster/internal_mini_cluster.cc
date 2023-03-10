@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <memory>
 #include <ostream>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 
@@ -33,9 +34,9 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_options.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/server/server_base_options.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -157,9 +158,12 @@ Status InternalMiniCluster::StartMasters() {
       auto mini_master(std::make_shared<MiniMaster>(
           GetMasterFsRoot(i), master_rpc_addrs[i]));
       auto* options = mini_master->mutable_options();
-      KuduTest::GetEncryptionKey(&options->server_key,
-                                 &options->server_key_iv,
-                                 &options->server_key_version);
+      // TODO(kedeng) : add tenant key info test
+      KuduTest::GetEncryptionKey(nullptr,
+                                 nullptr,
+                                 &options->server_key_info.server_key,
+                                 &options->server_key_info.server_key_iv,
+                                 &options->server_key_info.server_key_version);
       if (num_masters > 1 || opts_.supply_single_master_addr) {
         mini_master->SetMasterAddresses(master_rpc_addrs);
       }
@@ -218,9 +222,12 @@ Status InternalMiniCluster::AddTabletServer(const HostPort& hp) {
       new MiniTabletServer(GetTabletServerFsRoot(new_idx), hp, opts_.num_data_dirs));
   tablet_server->options()->master_addresses = master_rpc_addrs();
   auto* options = tablet_server->options();
-  KuduTest::GetEncryptionKey(&options->server_key,
-                             &options->server_key_iv,
-                             &options->server_key_version);
+  // TODO(kedeng) : add tenant key info test
+  KuduTest::GetEncryptionKey(nullptr,
+                             nullptr,
+                             &options->server_key_info.server_key,
+                             &options->server_key_info.server_key_iv,
+                             &options->server_key_info.server_key_version);
 
   RETURN_NOT_OK(tablet_server->Start());
   mini_tablet_servers_.emplace_back(std::move(tablet_server));

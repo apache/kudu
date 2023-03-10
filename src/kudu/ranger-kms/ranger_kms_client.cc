@@ -68,6 +68,7 @@ Status RangerKMSClient::DecryptEncryptionKey(const string& encryption_key,
   RETURN_NOT_OK_PREPEND(
       curl.PostToURL(urls, payload.ToString(), &resp, {"Content-Type: application/json"}),
       "failed to decrypt encryption key");
+
   JsonReader r(resp.ToString());
   RETURN_NOT_OK(r.Init());
   string dek_b64;

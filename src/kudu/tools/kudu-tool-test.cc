@@ -1871,6 +1871,32 @@ TEST_F(ToolTest, TestFsFormatWithServerKey) {
   ASSERT_EQ(server_key_version, fs.server_key_version());
 }
 
+TEST_F(ToolTest, TestFsFormatWithTenantKey) {
+  const string kTestDir = GetTestPath("test");
+  ObjectIdGenerator generator;
+  string original_uuid = generator.Next();
+  string tenant_name = "default_tenant_kudu";
+  string tenant_id = "00000000000000000000000000000000";
+  string tenant_key = "00010203040506070809101112131442";
+  string tenant_key_iv = "42141312111009080706050403020100";
+  string tenant_key_version = "kudutenantkey@0";
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs format --fs_wal_dir=$0 --encryption_key_type=$1 --uuid=$2 --tenant_name=$3 "
+      "--tenant_id=$4 --tenant_key=$5 --tenant_key_iv=$6 --tenant_key_version=$7",
+      kTestDir, "tenant_key", original_uuid, tenant_name, tenant_id, tenant_key, tenant_key_iv,
+      tenant_key_version)));
+  FsManager fs(env_, FsManagerOpts(kTestDir));
+  ASSERT_OK(fs.Open());
+
+  string canonicalized_uuid;
+  ASSERT_OK(generator.Canonicalize(fs.uuid(), &canonicalized_uuid));
+  ASSERT_EQ(canonicalized_uuid, fs.uuid());
+  ASSERT_EQ(original_uuid, fs.uuid());
+  ASSERT_EQ(tenant_key, fs.tenant_key());
+  ASSERT_EQ(tenant_key_iv, fs.tenant_key_iv());
+  ASSERT_EQ(tenant_key_version, fs.tenant_key_version());
+}
+
 TEST_F(ToolTest, TestFsDumpUuid) {
   const string kTestDir = GetTestPath("test");
   string uuid;
@@ -1891,8 +1917,8 @@ TEST_F(ToolTest, TestPbcTools) {
   // It's pointless to run these tests in an encrypted environment, as it uses
   // instance files to test pbc tools, which are not encrypted anyway. The tests
   // also make assumptions about the contents of the instance files, which are
-  // different on encrypted servers, as they contain an extra server_key field,
-  // which would make these tests break.
+  // different on encrypted servers, as they contain an extra server_key/tenant_key
+  // field, which would make these tests break.
   if (FLAGS_encrypt_data_at_rest) {
     GTEST_SKIP();
   }
@@ -9034,7 +9060,7 @@ TEST_F(ToolTest, TestLocalReplicaCopyLocal) {
   // replica copy shares an Env between the source and the destination and they
   // use different instance files. This shouldn't be a problem in real life, as
   // its meant to copy tablets between disks on the same server, which would
-  // share UUIDs and server keys.
+  // share UUIDs and encryption keys.
   if (FLAGS_encrypt_data_at_rest) {
     GTEST_SKIP();
   }

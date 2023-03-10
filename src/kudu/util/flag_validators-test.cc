@@ -77,7 +77,7 @@ class FlagsValidatorsBasicTest : public KuduTest {
 
 TEST_F(FlagsValidatorsBasicTest, Grouped) {
   const auto& validators = GetFlagValidators();
-  ASSERT_EQ(2, validators.size());
+  ASSERT_EQ(3, validators.size());
   const auto& it = validators.find("test_group_validator01");
   ASSERT_NE(validators.end(), it);
   const auto& validator = it->second;

@@ -67,6 +67,7 @@ DEFINE_string(test_leave_files, "on_failure",
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
 DECLARE_string(time_source);
+DECLARE_bool(enable_multi_tenancy);
 DECLARE_bool(encrypt_data_at_rest);
 
 using std::string;
@@ -88,7 +89,9 @@ static const uint8_t kEncryptionKey[kEncryptionKeySize] =
   {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 42};
 static const uint8_t kEncryptionKeyIv[kEncryptionKeySize] =
   {42, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
-static const char* const kEncryptionKeyVersion = "kuduclusterkey@0";
+static const char* const kEncryptionKeyVersion = "kudutenantkey@0";
+static const char* const kEncryptionTenantName = "default_tenant_kudu";
+static const char* const kEncryptionTenantID = "00000000000000000000000000000000";
 
 static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 
@@ -208,12 +211,21 @@ void KuduTest::SetEncryptionFlags(bool enable_encryption) {
   }
 }
 
-void KuduTest::GetEncryptionKey(string* key, string* iv, string* version) {
+void KuduTest::GetEncryptionKey(string* name, string* id, string* key, string* iv,
+                                string* version) {
   if (FLAGS_encrypt_data_at_rest) {
+    if (FLAGS_enable_multi_tenancy && name && id) {
+      *name = kEncryptionTenantName;
+      *id = kEncryptionTenantID;
+    }
     strings::b2a_hex(kEncryptionKey, key, kEncryptionKeySize);
     strings::b2a_hex(kEncryptionKeyIv, iv, kEncryptionKeySize);
     *version = kEncryptionKeyVersion;
   } else {
+    if (name && id) {
+      *name = "";
+      *id = "";
+    }
     *key = "";
     *iv = "";
     *version = "";

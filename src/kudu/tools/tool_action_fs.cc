@@ -105,6 +105,33 @@ bool ServerKeySetTogether() {
 
 GROUP_FLAG_VALIDATOR(server_key_set_together, ServerKeySetTogether);
 
+DECLARE_string(encryption_key_type);
+DECLARE_string(tenant_name);
+
+DEFINE_string(tenant_id, "",
+              "The encrypted tenant id to use in the filesystem.");
+DEFINE_string(tenant_key, "",
+              "The encrypted tenant key to use in the filesystem.");
+DEFINE_string(tenant_key_iv, "",
+              "The tenant key IV to use in the filesystem.");
+DEFINE_string(tenant_key_version, "",
+              "The tenant key version to use in the filesystem.");
+
+bool TenantKeySetTogether() {
+  if (FLAGS_tenant_name.empty() != FLAGS_tenant_id.empty()
+      || FLAGS_tenant_name.empty() != FLAGS_tenant_key.empty()
+      || FLAGS_tenant_name.empty() != FLAGS_tenant_key_iv.empty()
+      || FLAGS_tenant_name.empty() != FLAGS_tenant_key_version.empty()) {
+    LOG(ERROR) << "'tenant_name', 'tenant_id', 'tenant_key', 'tenant_key_iv', and "
+                  "'tenant_key_version' must either all be set, or none of them "
+                  "must be set.";
+    return false;
+  }
+  return true;
+}
+
+GROUP_FLAG_VALIDATOR(tenant_key_set_together, TenantKeySetTogether);
+
 DEFINE_bool(repair, false,
             "Repair any inconsistencies in the filesystem.");
 
@@ -247,20 +274,33 @@ Status Check(const RunnerContext& /*context*/) {
 Status Format(const RunnerContext& /*context*/) {
   FsManager fs_manager(Env::Default());
   optional<string> uuid;
+  optional<string> tenant_name;
+  optional<string> tenant_id;
   optional<string> encryption_key;
   optional<string> encryption_key_iv;
   optional<string> encryption_key_version;
   if (!FLAGS_uuid.empty()) {
     uuid = FLAGS_uuid;
   }
-  if (!FLAGS_server_key.empty()
-      && !FLAGS_server_key_iv.empty()
-      && !FLAGS_server_key_version.empty()) {
-    encryption_key = FLAGS_server_key;
-    encryption_key_iv = FLAGS_server_key_iv;
-    encryption_key_version = FLAGS_server_key_version;
+  if (iequals(FLAGS_encryption_key_type, "server_key")) {
+    if (!FLAGS_server_key.empty()
+        && !FLAGS_server_key_iv.empty()
+        && !FLAGS_server_key_version.empty()) {
+      encryption_key = FLAGS_server_key;
+      encryption_key_iv = FLAGS_server_key_iv;
+      encryption_key_version = FLAGS_server_key_version;
+    }
+  } else {
+    if (!FLAGS_tenant_name.empty()) {
+      tenant_name = FLAGS_tenant_name;
+      tenant_id = FLAGS_tenant_id;
+      encryption_key = FLAGS_tenant_key;
+      encryption_key_iv = FLAGS_tenant_key_iv;
+      encryption_key_version = FLAGS_tenant_key_version;
+    }
   }
-  return fs_manager.CreateInitialFileSystemLayout(uuid, encryption_key,
+
+  return fs_manager.CreateInitialFileSystemLayout(uuid, tenant_name, tenant_id, encryption_key,
                                                   encryption_key_iv, encryption_key_version);
 }
 
@@ -910,6 +950,7 @@ unique_ptr<Mode> BuildFsMode() {
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("uuid")
+      .AddOptionalParameter("encryption_key_type")
       .Build();
 
   unique_ptr<Action> update =

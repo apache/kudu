@@ -39,10 +39,12 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -80,7 +82,6 @@ DECLARE_int32(env_inject_short_read_bytes);
 DECLARE_int32(env_inject_short_write_bytes);
 DECLARE_int32(encryption_key_length);
 DECLARE_string(env_inject_eio_globs);
-DECLARE_string(encryption_server_key);
 
 namespace kudu {
 

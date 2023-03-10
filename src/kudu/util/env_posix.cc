@@ -57,6 +57,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/malloc.h"
@@ -208,6 +209,24 @@ TAG_FLAG(encryption_key_length, advanced);
 
 DEFINE_validator(encryption_key_length,
                  [](const char* /*n*/, int32 v) { return v == 128 || v == 192 || v == 256; });
+
+DEFINE_bool(enable_multi_tenancy, false,
+            "Whether enable the multi tenancy feature."
+            "Should set together with --encrypt_data_at_rest");
+TAG_FLAG(enable_multi_tenancy, advanced);
+TAG_FLAG(enable_multi_tenancy, experimental);
+
+bool ValidateMultiTenancySettings() {
+  if (FLAGS_enable_multi_tenancy && !FLAGS_encrypt_data_at_rest) {
+    LOG(ERROR) << strings::Substitute(
+        "The --enable_multi_tenancy can be set 'true' only when --encrypt_data_at_rest "
+        "is set 'true'. Current settings are $0 and $1 correspondingly",
+        FLAGS_enable_multi_tenancy, FLAGS_encrypt_data_at_rest);
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(enable_multi_tenancy, ValidateMultiTenancySettings);
 
 static __thread uint64_t thread_local_id;
 static Atomic64 cur_thread_local_id_;

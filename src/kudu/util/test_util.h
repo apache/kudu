@@ -73,8 +73,9 @@ class KuduTest : public ::testing::Test {
   // variables so that we don't pick up the user's credentials.
   static void OverrideKrb5Environment();
 
-  // Returns the encryption key, IV, and version used by the test.
-  static void GetEncryptionKey(std::string* key, std::string* iv, std::string* version);
+  // Returns the encryption tenant name, tenant id, key, IV, and version used by the test.
+  static void GetEncryptionKey(std::string* name, std::string* id,
+                               std::string* key, std::string* iv, std::string* version);
 
  protected:
   // Returns absolute path based on a unit test-specific work directory, given

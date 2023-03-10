@@ -667,6 +667,8 @@ struct ExternalDaemonOptions {
   std::string ranger_cluster_key;
 };
 
+static const std::string kDefaultTenantName = "default_tenant_kudu";
+
 class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
  public:
   explicit ExternalDaemon(ExternalDaemonOptions opts);
@@ -722,7 +724,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
                         const std::string& principal_base,
                         const std::string& bind_host);
 
-  Status SetEncryptionKey();
+  Status SetEncryptionKey(const std::string& tenant_name = kDefaultTenantName);
 
   // Sends a SIGSTOP signal to the daemon.
   Status Pause() WARN_UNUSED_RESULT;

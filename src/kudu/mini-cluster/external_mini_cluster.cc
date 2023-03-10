@@ -1374,19 +1374,37 @@ Env* ExternalDaemon::env() const {
   return Env::Default();
 }
 
-Status ExternalDaemon::SetEncryptionKey() {
+Status ExternalDaemon::SetEncryptionKey(const string& tenant_name) {
   string path = JoinPathSegments(this->wal_dir(), "instance");;
   LOG(INFO) << "Reading " << path;
   InstanceMetadataPB instance;
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env(), path, &instance, pb_util::NOT_SENSITIVE));
-  if (!instance.server_key().empty()) {
-    string key;
+  string decrypted_key;
+  if (!instance.tenants().empty()) {
+    const InstanceMetadataPB::TenantMetadataPB* tenant = nullptr;
+    for (const auto& tdata : instance.tenants()) {
+      if (tdata.tenant_name() == tenant_name) {
+        tenant = &tdata;
+        break;
+      }
+    }
+    if (tenant && !tenant->tenant_key().empty()) {
+      RETURN_NOT_OK(key_provider_->DecryptEncryptionKey(tenant->tenant_key(),
+                                                        tenant->tenant_key_iv(),
+                                                        tenant->tenant_key_version(),
+                                                        &decrypted_key));
+    }
+  } else if (!instance.server_key().empty()) {
     RETURN_NOT_OK(key_provider_->DecryptEncryptionKey(instance.server_key(),
                                                       instance.server_key_iv(),
                                                       instance.server_key_version(),
-                                                      &key));
-    LOG(INFO) << "Setting key " << key;
-    env()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(a2b_hex(key).c_str()), key.size() * 4);
+                                                      &decrypted_key));
+  }
+
+  if (!decrypted_key.empty()) {
+    LOG(INFO) << "Setting key " << decrypted_key;
+    env()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(a2b_hex(decrypted_key).c_str()),
+                            decrypted_key.size() * 4);
   }
   return Status::OK();
 }

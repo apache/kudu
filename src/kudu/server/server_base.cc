@@ -766,14 +766,27 @@ Status ServerBase::Init() {
   if (s.IsNotFound()) {
     LOG(INFO) << "This appears to be a new deployment of Kudu; creating new FS layout";
     is_first_run_ = true;
-    if (options_.server_key.empty()) {
+
+    if (options_.server_key_info.server_key.empty() &&
+        options_.tenant_key_info.tenant_key.empty()) {
       s = fs_manager_->CreateInitialFileSystemLayout();
+    } else if (!options_.tenant_key_info.tenant_key.empty()) {
+      // The priority of tenant key is higher than that of server key.
+      s = fs_manager_->CreateInitialFileSystemLayout(std::nullopt,
+                                                     options_.tenant_key_info.tenant_name,
+                                                     options_.tenant_key_info.tenant_id,
+                                                     options_.tenant_key_info.tenant_key,
+                                                     options_.tenant_key_info.tenant_key_iv,
+                                                     options_.tenant_key_info.tenant_key_version);
     } else {
       s = fs_manager_->CreateInitialFileSystemLayout(std::nullopt,
-                                                     options_.server_key,
-                                                     options_.server_key_iv,
-                                                     options_.server_key_version);
+                                                     std::nullopt,
+                                                     std::nullopt,
+                                                     options_.server_key_info.server_key,
+                                                     options_.server_key_info.server_key_iv,
+                                                     options_.server_key_info.server_key_version);
     }
+
     if (s.IsAlreadyPresent()) {
       return s.CloneAndPrepend("FS layout already exists; not overwriting existing layout");
     }

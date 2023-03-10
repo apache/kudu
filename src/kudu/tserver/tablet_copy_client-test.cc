@@ -91,6 +91,7 @@ using kudu::consensus::GetRaftConfigLeader;
 using kudu::consensus::RaftPeerPB;
 using kudu::fs::DataDirManager;
 using kudu::tablet::TabletMetadata;
+using std::nullopt;
 using std::shared_ptr;
 using std::string;
 using std::thread;
@@ -124,14 +125,26 @@ class TabletCopyClientTest : public TabletCopyTest {
     metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "test");
     opts.metric_entity = metric_entity_;
     fs_manager_.reset(new FsManager(Env::Default(), opts));
+    string tenant_name;
+    string tenant_id;
     string encryption_key;
     string encryption_key_iv;
     string encryption_key_version;
-    GetEncryptionKey(&encryption_key, &encryption_key_iv, &encryption_key_version);
-    if (encryption_key.empty()) {
+    GetEncryptionKey(&tenant_name, &tenant_id, &encryption_key,
+                     &encryption_key_iv, &encryption_key_version);
+    if (tenant_name.empty() && encryption_key.empty()) {
       ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    } else if (tenant_name.empty()) {
+      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(nullopt,
+                                                           nullopt,
+                                                           nullopt,
+                                                           encryption_key,
+                                                           encryption_key_iv,
+                                                           encryption_key_version));
     } else {
-      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(std::nullopt,
+      ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(nullopt,
+                                                           tenant_name,
+                                                           tenant_id,
                                                            encryption_key,
                                                            encryption_key_iv,
                                                            encryption_key_version));

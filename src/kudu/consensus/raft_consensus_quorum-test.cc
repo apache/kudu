@@ -135,14 +135,26 @@ class RaftConsensusQuorumTest : public KuduTest {
       opts.wal_root = test_path;
       opts.data_roots = { test_path };
       unique_ptr<FsManager> fs_manager(new FsManager(env_, opts));
+      string tenant_name;
+      string tenant_id;
       string encryption_key;
       string encryption_key_iv;
       string encryption_key_version;
-      GetEncryptionKey(&encryption_key, &encryption_key_iv, &encryption_key_version);
-      if (encryption_key.empty()) {
+      GetEncryptionKey(&tenant_name, &tenant_id, &encryption_key,
+                       &encryption_key_iv, &encryption_key_version);
+      if (tenant_name.empty() && encryption_key.empty()) {
         RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
+      } else if (tenant_name.empty()) {
+        RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout(nullopt,
+                                                                nullopt,
+                                                                nullopt,
+                                                                encryption_key,
+                                                                encryption_key_iv,
+                                                                encryption_key_version));
       } else {
         RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout(nullopt,
+                                                                tenant_name,
+                                                                tenant_id,
                                                                 encryption_key,
                                                                 encryption_key_iv,
                                                                 encryption_key_version));

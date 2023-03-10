@@ -33,6 +33,7 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/locks.h"          // for percpu_rwlock
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/oid_generator.h"
@@ -52,6 +53,7 @@ namespace kudu {
 class BlockId;
 class FileCache;
 class InstanceMetadataPB;
+class InstanceMetadataPB_TenantMetadataPB;
 class MemTracker;
 class Timer;
 
@@ -205,14 +207,19 @@ class FsManager {
               std::atomic<int>* containers_total = nullptr );
 
   // Create the initial filesystem layout. If 'uuid' is provided, uses it as
-  // uuid of the filesystem. Otherwise generates one at random. If 'encryption_key',
-  // 'encryption_key_iv', and 'encryption_key_version' are provided, they are used as
-  // the server key of the filesystem. Otherwise, if encryption is enabled,
-  // generates one at random.
+  // uuid of the filesystem. Otherwise generates one at random. If 'tenant_name',
+  // 'tenant_id', 'encryption_key', 'encryption_key_iv', and 'encryption_key_version' are
+  // provided, they are used as the tenant info of the filesystem. If 'encryption_key',
+  // 'encryption_key_iv', and 'encryption_key_version' are provided, they are used as the
+  // server key info of the filesystem. Otherwise, if only '--encrypt_data_at_rest'
+  // is enabled, generates one server key at random. If both '--enable_multi_tenancy'
+  // and '--encrypt_data_at_rest' set at same time, generates one default tenant at random.
   //
   // Returns an error if the file system is already initialized.
   Status CreateInitialFileSystemLayout(
       std::optional<std::string> uuid = std::nullopt,
+      std::optional<std::string> tenant_name = std::nullopt,
+      std::optional<std::string> tenant_id = std::nullopt,
       std::optional<std::string> encryption_key = std::nullopt,
       std::optional<std::string> encryption_key_iv = std::nullopt,
       std::optional<std::string> encryption_key_version = std::nullopt);
@@ -300,10 +307,45 @@ class FsManager {
   // Open() have not been called, this will crash.
   const std::string& uuid() const;
 
-  // Return the server key persisted on the local filesystem. After the server
-  // key is decrypted, it can be used to encrypt/decrypt file keys on the
-  // filesystem.  If PartialOpen() or Open() have not been called, this will
-  // crash. If the file system is not encrypted, it returns an empty string.
+  // ==========================================================================
+  //  tenant helpers
+  // ==========================================================================
+
+  // Use to confirm whether there is tenants information in metadata.
+  bool is_tenants_exist() const;
+
+  // Use to get the existence of the specific tenant.
+  bool is_tenant_exist(const std::string& tenant_name) const;
+
+  // Return the initialization uuid for the tenant.
+  // If PartialOpen() or Open() have not been called, this will
+  // crash. If the tenant does not exist, it returns an empty string.
+  std::string tenant_id(const std::string& tenant_name = fs::kDefaultTenantName) const;
+
+  // Return the tenant key persisted on the local filesystem corresponding to the
+  // tenant_name. After the tenant key is decrypted, it can be used to encrypt/decrypt
+  // file keys on the filesystem. If PartialOpen() or Open() have not been called, this
+  // will crash. If the tenant does not exist, it returns an empty string.
+  std::string tenant_key(const std::string& tenant_name = fs::kDefaultTenantName) const;
+
+  // Return the initialization vector for the tenant key.
+  // If PartialOpen() or Open() have not been called, this will
+  // crash. If the tenant does not exist, it returns an empty string.
+  std::string tenant_key_iv(const std::string& tenant_name = fs::kDefaultTenantName) const;
+
+  // Return the version of the tenant key.
+  // If PartialOpen() or Open() have not been called, this will
+  // crash. If the tenant does not exist, it returns an empty string.
+  std::string tenant_key_version(
+      const std::string& tenant_name = fs::kDefaultTenantName) const;
+
+  // Return the server key persisted on the local filesystem.
+  //
+  // NOTE :
+  // During the first upgrade to the multi-tenant version, if it is detected
+  // that the relevant configuration items of server key have a value, we will
+  // use it to initialize the default tenant, and the original server key related
+  // configuration items will be retained at the same time.
   const std::string& server_key() const;
 
   // Return the initialization vector for the server key.
@@ -372,6 +414,8 @@ class FsManager {
 
   // Create a new InstanceMetadataPB.
   Status CreateInstanceMetadata(std::optional<std::string> uuid,
+                                std::optional<std::string> tenant_name,
+                                std::optional<std::string> tenant_id,
                                 std::optional<std::string> encryption_key,
                                 std::optional<std::string> encryption_key_iv,
                                 std::optional<std::string> encryption_key_version,
@@ -381,6 +425,37 @@ class FsManager {
   // Does not mutate the current state of the fsmanager.
   Status WriteInstanceMetadata(const InstanceMetadataPB& metadata,
                                const std::string& root);
+
+  // Update metadata after adding tenant or removing tenant.
+  Status UpdateMetadata(
+    std::unique_ptr<InstanceMetadataPB> metadata);
+
+  // Search tenant for metadata by tenant name.
+  const InstanceMetadataPB_TenantMetadataPB* GetTenant(const std::string& tenant_name) const;
+  // Except that the caller must hold metadata_rwlock_.
+  const InstanceMetadataPB_TenantMetadataPB* GetTenantUnlock(const std::string& tenant_name) const;
+
+  // Return the tenant id persisted on the local filesystem.
+  // Except that the caller must hold metadata_rwlock_.
+  std::string tenant_id_unlock(const std::string& tenant_name = fs::kDefaultTenantName) const;
+
+  // Return the tenant key persisted on the local filesystem.
+  // Except that the caller must hold metadata_rwlock_.
+  std::string tenant_key_unlock(const std::string& tenant_name = fs::kDefaultTenantName) const;
+
+  // Return the initialization vector for the tenant key unlock.
+  // Except that the caller must hold metadata_rwlock_.
+  std::string tenant_key_iv_unlock(
+      const std::string& tenant_name = fs::kDefaultTenantName) const;
+
+  // Return the version of the tenant key unlock.
+  // Except that the caller must hold metadata_rwlock_.
+  std::string tenant_key_version_unlock(
+      const std::string& tenant_name = fs::kDefaultTenantName) const;
+
+  // Use for update the format and the stamp in the metadata.
+  // If you need to ensure call security, you must lock it by yourself.
+  static void UpdateMetadataFormatAndStampUnlock(InstanceMetadataPB* metadata);
 
   // ==========================================================================
   //  file-system helpers
@@ -428,6 +503,9 @@ class FsManager {
   CanonicalizedRootsList canonicalized_data_fs_roots_;
   CanonicalizedRootsList canonicalized_all_fs_roots_;
 
+  // Lock protecting the 'metadata_' below.
+  mutable percpu_rwlock metadata_rwlock_;
+  // Belongs to the default tenant.
   std::unique_ptr<InstanceMetadataPB> metadata_;
 
   std::unique_ptr<fs::FsErrorManager> error_manager_;

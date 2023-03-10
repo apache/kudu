@@ -30,6 +30,26 @@ class Env;
 
 namespace server {
 
+struct ServerKeyInfo {
+  std::string server_key;
+  std::string server_key_iv;
+  std::string server_key_version;
+
+ public:
+  ServerKeyInfo();
+};
+
+struct TenantKeyInfo {
+  std::string tenant_name;
+  std::string tenant_id;
+  std::string tenant_key;
+  std::string tenant_key_iv;
+  std::string tenant_key_version;
+
+ public:
+  TenantKeyInfo();
+};
+
 // Options common to both types of servers.
 // The subclass constructor should fill these in with defaults from
 // server-specific flags.
@@ -45,9 +65,8 @@ struct ServerBaseOptions {
 
   int32_t metrics_log_interval_ms;
 
-  std::string server_key;
-  std::string server_key_iv;
-  std::string server_key_version;
+  ServerKeyInfo server_key_info;
+  TenantKeyInfo tenant_key_info;
 
  protected:
   ServerBaseOptions();

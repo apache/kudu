@@ -832,7 +832,9 @@ TEST_P(RaftConsensusParamEncryptionITest, TestCatchupAfterOpsEvicted) {
     string encryption_key;
     string encryption_key_iv;
     string encryption_key_version;
-    GetEncryptionKey(&encryption_key, &encryption_key_iv, &encryption_key_version);
+    // TODO(kedeng) : add tenant key info test
+    GetEncryptionKey(nullptr, nullptr, &encryption_key,
+                     &encryption_key_iv, &encryption_key_version);
     kTsFlags.emplace_back("--test_server_key=" + encryption_key);
     kTsFlags.emplace_back("--test_server_key_iv=" + encryption_key_iv);
     kTsFlags.emplace_back("--test_server_key_version=" + encryption_key_version);

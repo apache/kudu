@@ -22,6 +22,7 @@
 #include <functional>
 #include <initializer_list>
 #include <iostream>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -160,6 +161,7 @@ bool ValidateRangerKMSFlags() {
 
 GROUP_FLAG_VALIDATOR(validate_ranger_kms_flags, ValidateRangerKMSFlags);
 
+DECLARE_bool(enable_multi_tenancy);
 DECLARE_bool(encrypt_data_at_rest);
 DECLARE_int32(encryption_key_length);
 
@@ -504,12 +506,38 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     read_instance_metadata_files->Stop();
   }
 
-  if (!server_key().empty() && key_provider_) {
-    string decrypted_key;
+  string decrypted_key;
+  bool tenants_exist = is_tenants_exist();
+  if (tenants_exist && key_provider_) {
+    if (!FLAGS_enable_multi_tenancy) {
+      return Status::IllegalState(
+          "The '--enable_multi_tenancy' should set for the existed tenants.");
+    }
+
+    // TODO(kedeng) :
+    //     After implementing tenant management, different tenants need to be handled here.
+    //
+    // The priority of tenant key is higher than that of server key.
+    RETURN_NOT_OK(
+        key_provider_->DecryptEncryptionKey(this->tenant_key(fs::kDefaultTenantName),
+                                            this->tenant_key_iv(fs::kDefaultTenantName),
+                                            this->tenant_key_version(fs::kDefaultTenantName),
+                                            &decrypted_key));
+  } else if (!server_key().empty() && key_provider_) {
+    // Just check whether the upgrade operation is needed for '--enable_multi_tenancy'.
+    if (FLAGS_enable_multi_tenancy) {
+      return Status::IllegalState(
+          "We should do server key upgrade with Kudu CLI tool for '--enable_multi_tenancy'.");
+    }
+
+    string server_key;
     RETURN_NOT_OK(key_provider_->DecryptEncryptionKey(this->server_key(),
                                                       this->server_key_iv(),
                                                       this->server_key_version(),
                                                       &decrypted_key));
+  }
+
+  if (!decrypted_key.empty()) {
     // 'decrypted_key' is a hexadecimal string and SetEncryptionKey expects bits
     // (hex / 2 = bytes * 8 = bits).
     env_->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
@@ -596,7 +624,69 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   return Status::OK();
 }
 
+Status FsManager::UpdateMetadata(unique_ptr<InstanceMetadataPB> metadata) {
+  // In the event of failure, rollback everything we changed.
+  // <string, string>   <=>   <old instance file, backup instance file>
+  unordered_map<string, string> changed_dirs;
+  auto rollbacker = MakeScopedCleanup([&]() {
+    // Delete new files first so that the backup files could do rollback.
+    for (const auto& changed : changed_dirs) {
+      WARN_NOT_OK(env_->DeleteFile(changed.first),
+                  Substitute("Could not delete file $0 for rollback.", changed.first));
+      VLOG(1) << "Delete file: " << changed.first << " for rollback.";
+
+      WARN_NOT_OK(env_->RenameFile(changed.second, changed.first),
+                  Substitute("Could not rename file $0 for rollback.", changed.second));
+      VLOG(1) << "Rename file: " << changed.second << " to " << changed.first << " for rollback.";
+    }
+  });
+
+  for (const auto& root : canonicalized_all_fs_roots_) {
+    if (!root.status.ok()) {
+      continue;
+    }
+    // Backup the metadata at first.
+    const string old_path = GetInstanceMetadataPath(root.path);
+    string tmp_path = Substitute("$0-$1", old_path, GetCurrentTimeMicros());
+    WARN_NOT_OK(env_->RenameFile(old_path, tmp_path),
+                Substitute("Could not rename file $0, ", old_path));
+    changed_dirs[old_path] = tmp_path;
+    // Write the instance metadata with latest data.
+    RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(*metadata, root.path),
+                          Substitute("Fail to rewrite the instance metadata for path: $0, "
+                          "now try to rollback all the instance metadata file.", old_path));
+  }
+
+  {
+    // Update the records in memory.
+    std::lock_guard<percpu_rwlock> lock(metadata_rwlock_);
+    metadata_ = std::move(metadata);
+  }
+
+  // If all op success, remove the backup data.
+  for (const auto& changed : changed_dirs) {
+    WARN_NOT_OK(env_->DeleteFile(changed.second), Substitute("Could not delete file $0, ",
+                                                             changed.second));
+  }
+
+  // Success: don't rollback any files.
+  rollbacker.cancel();
+  return Status::OK();
+}
+
+void FsManager::UpdateMetadataFormatAndStampUnlock(InstanceMetadataPB* metadata) {
+  string time_str;
+  StringAppendStrftime(&time_str, "%Y-%m-%d %H:%M:%S", time(nullptr), false);
+  string hostname;
+  if (!GetHostname(&hostname).ok()) {
+    hostname = "<unknown host>";
+  }
+  metadata->set_format_stamp(Substitute("Formatted at $0 on $1", time_str, hostname));
+}
+
 Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
+                                                optional<string> tenant_name,
+                                                optional<string> tenant_id,
                                                 optional<string> encryption_key,
                                                 optional<string> encryption_key_iv,
                                                 optional<string> encryption_key_version) {
@@ -624,6 +714,8 @@ Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
   // Files/directories created will NOT be synchronized to disk.
   InstanceMetadataPB metadata;
   RETURN_NOT_OK_PREPEND(CreateInstanceMetadata(std::move(uuid),
+                                               std::move(tenant_name),
+                                               std::move(tenant_id),
                                                std::move(encryption_key),
                                                std::move(encryption_key_iv),
                                                std::move(encryption_key_version),
@@ -722,6 +814,8 @@ Status FsManager::CreateFileSystemRoots(
 }
 
 Status FsManager::CreateInstanceMetadata(optional<string> uuid,
+                                         optional<string> tenant_name,
+                                         optional<string> tenant_id,
                                          optional<string> encryption_key,
                                          optional<string> encryption_key_iv,
                                          optional<string> encryption_key_version,
@@ -733,31 +827,71 @@ Status FsManager::CreateInstanceMetadata(optional<string> uuid,
   } else {
     metadata->set_uuid(oid_generator_.Next());
   }
-  if (encryption_key && encryption_key_iv && encryption_key_version) {
+
+  if (tenant_name && tenant_id && encryption_key && encryption_key_iv && encryption_key_version) {
+    // The tenant key info exist.
+    //
+    // If all the fileds, which means tenant_name/tenant_id/encryption_key/encryption_key_iv/
+    // encryption_key_version, are specified, we treat it as tenant key info of multi-tenancy.
+    InstanceMetadataPB::TenantMetadataPB* tenant_metadata = metadata->add_tenants();
+    tenant_metadata->set_tenant_name(*tenant_name);
+    tenant_metadata->set_tenant_id(*tenant_id);
+    tenant_metadata->set_tenant_key(*encryption_key);
+    tenant_metadata->set_tenant_key_iv(*encryption_key_iv);
+    tenant_metadata->set_tenant_key_version(*encryption_key_version);
+  } else if (!tenant_name && !tenant_id &&
+             encryption_key && encryption_key_iv && encryption_key_version) {
+    // The server key info exist.
+    //
+    // If all the fileds(encryption_key/encryption_key_iv/encryption_key_version) are specified
+    // except tenant_name/tenant_id, we treat it as server key info for encryption.
     metadata->set_server_key(*encryption_key);
     metadata->set_server_key_iv(*encryption_key_iv);
     metadata->set_server_key_version(*encryption_key_version);
-  } else if (encryption_key || encryption_key_iv || encryption_key_version) {
-    return Status::InvalidArgument(
-        "'encryption_key', 'encryption_key_iv', and 'encryption_key_version' must be specified "
-        "together (either all of them must be specified, or none of them).");
-  } else if (FLAGS_encrypt_data_at_rest) {
-    string key_version;
-    RETURN_NOT_OK_PREPEND(
-        key_provider_->GenerateEncryptionKey(metadata->mutable_server_key(),
-                                             metadata->mutable_server_key_iv(),
-                                             &key_version),
-        "failed to generate encrypted server key");
-    metadata->set_server_key_version(key_version);
+  } else {
+    if (encryption_key || encryption_key_iv || encryption_key_version) {
+      // There is incomplete encrypted key information.
+      // (Tenant name or tenant id is not important in this case.)
+      return Status::InvalidArgument(
+          "'encryption_key', 'encryption_key_iv', and 'encryption_key_version' must be specified "
+          "together (either all of them must be specified, or none of them).");
+    }
+
+    // No encrypted key information exist.
+    if (FLAGS_encrypt_data_at_rest && FLAGS_enable_multi_tenancy) {
+      // The multi_tenancy enabled.
+      //
+      // Use kDefaultTenant to encrypt data if '--enable_multi_tenancy' set with
+      // '--encrypt_data_at_rest'.
+      string key;
+      string key_iv;
+      string key_version;
+      RETURN_NOT_OK_PREPEND(
+          key_provider_->GenerateEncryptionKey(&key,
+                                               &key_iv,
+                                               &key_version),
+          "failed to generate encrypted default tenant key");
+      InstanceMetadataPB::TenantMetadataPB* tenant_metadata = metadata->add_tenants();
+      tenant_metadata->set_tenant_name(fs::kDefaultTenantName);
+      tenant_metadata->set_tenant_id(fs::kDefaultTenantID);
+      tenant_metadata->set_tenant_key(key);
+      tenant_metadata->set_tenant_key_iv(key_iv);
+      tenant_metadata->set_tenant_key_version(key_version);
+    } else if (FLAGS_encrypt_data_at_rest) {
+      // The encrypt_data_at_rest enabled.
+      //
+      // Generate encrypted server key to encrypt data if only set '--encrypt_data_at_rest'.
+      string key_version;
+      RETURN_NOT_OK_PREPEND(
+          key_provider_->GenerateEncryptionKey(metadata->mutable_server_key(),
+                                               metadata->mutable_server_key_iv(),
+                                               &key_version),
+          "failed to generate encrypted server key");
+      metadata->set_server_key_version(key_version);
+    }
   }
 
-  string time_str;
-  StringAppendStrftime(&time_str, "%Y-%m-%d %H:%M:%S", time(nullptr), false);
-  string hostname;
-  if (!GetHostname(&hostname).ok()) {
-    hostname = "<unknown host>";
-  }
-  metadata->set_format_stamp(Substitute("Formatted at $0 on $1", time_str, hostname));
+  UpdateMetadataFormatAndStampUnlock(metadata);
   return Status::OK();
 }
 
@@ -791,6 +925,74 @@ const string& FsManager::server_key_iv() const {
 
 const string& FsManager::server_key_version() const {
   return CHECK_NOTNULL(metadata_.get())->server_key_version();
+}
+
+bool FsManager::is_tenants_exist() const {
+  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  return metadata_->tenants_size() > 0;
+}
+
+bool FsManager::is_tenant_exist(const string& tenant_name) const {
+  return GetTenant(tenant_name) != nullptr;
+}
+
+const InstanceMetadataPB_TenantMetadataPB* FsManager::GetTenantUnlock(
+    const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = nullptr;
+  for (const auto& tdata : metadata_->tenants()) {
+    if (tdata.tenant_name() == tenant_name) {
+      tenant = &tdata;
+      break;
+    }
+  }
+
+  return tenant;
+}
+
+const InstanceMetadataPB_TenantMetadataPB* FsManager::GetTenant(
+    const string& tenant_name) const {
+  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  return GetTenantUnlock(tenant_name);
+}
+
+string FsManager::tenant_id_unlock(const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_name);
+  return tenant ? tenant->tenant_id() : string("");
+}
+
+string FsManager::tenant_id(const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_name);
+  return tenant ? tenant->tenant_id() : string("");
+}
+
+string FsManager::tenant_key_unlock(const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_name);
+  return tenant ? tenant->tenant_key() : string("");
+}
+
+string FsManager::tenant_key(const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_name);
+  return tenant ? tenant->tenant_key() : string("");
+}
+
+string FsManager::tenant_key_iv_unlock(const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_name);
+  return tenant ? tenant->tenant_key_iv() : string("");
+}
+
+string FsManager::tenant_key_iv(const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_name);
+  return tenant ? tenant->tenant_key_iv() : string("");
+}
+
+string FsManager::tenant_key_version_unlock(const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_name);
+  return tenant ? tenant->tenant_key_version() : string("");
+}
+
+string FsManager::tenant_key_version(const string& tenant_name) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_name);
+  return tenant ? tenant->tenant_key_version() : string("");
 }
 
 vector<string> FsManager::GetDataRootDirs() const {
