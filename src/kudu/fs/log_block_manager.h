@@ -57,6 +57,7 @@ struct FsReport;
 namespace internal {
 class LogBlock;
 class LogBlockContainer;
+class LogBlockContainerNativeMeta;
 class LogBlockDeletionTransaction;
 class LogWritableBlock;
 struct LogBlockContainerLoadResult;
@@ -65,6 +66,9 @@ struct LogBlockManagerMetrics;
 
 typedef scoped_refptr<internal::LogBlock> LogBlockRefPtr;
 typedef scoped_refptr<internal::LogBlockContainer> LogBlockContainerRefPtr;
+typedef scoped_refptr<internal::LogBlockContainerNativeMeta> LogBlockContainerNativeMetaRefPtr;
+typedef std::unordered_map<std::string, std::vector<BlockRecordPB>> ContainerBlocksByName;
+typedef std::unordered_map<std::string, LogBlockContainerRefPtr> ContainersByName;
 
 // A log-backed (i.e. sequentially allocated file) block storage
 // implementation.
@@ -205,7 +209,6 @@ class LogBlockManager : public BlockManager {
                   FileCache* file_cache,
                   BlockManagerOptions opts);
 
- private:
   FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup);
@@ -220,6 +223,7 @@ class LogBlockManager : public BlockManager {
   FRIEND_TEST(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer);
 
   friend class internal::LogBlockContainer;
+  friend class internal::LogBlockContainerNativeMeta;
   friend class internal::LogBlockDeletionTransaction;
   friend class internal::LogWritableBlock;
   friend class LogBlockManagerTest;
@@ -252,6 +256,22 @@ class LogBlockManager : public BlockManager {
       BlockRecordPB,
       BlockIdHash,
       BlockIdEqual> BlockRecordMap;
+
+  // Creates a new LogBlockContainer in 'dir', 'container' will be set as the newly created
+  // container only if created successfully.
+  //
+  // Returns Status::OK() if created successfully, otherwise returns an error.
+  virtual Status CreateContainer(Dir* dir, LogBlockContainerRefPtr* container) = 0;
+
+  // Opens an existing LogBlockContainer in 'dir' identified by 'id', 'container' will be set as the
+  // opened container only if created successfully.
+  //
+  // Returns Status::OK() if created successfully, otherwise returns an error, the error is recorded
+  // in 'report'.
+  virtual Status OpenContainer(Dir* dir,
+                               FsReport* report,
+                               const std::string& id,
+                               LogBlockContainerRefPtr* container) = 0;
 
   // Adds an as of yet unseen container to this block manager.
   //
@@ -340,9 +360,26 @@ class LogBlockManager : public BlockManager {
                 FsReport* report,
                 std::vector<LogBlockRefPtr> need_repunching,
                 std::vector<LogBlockContainerRefPtr> dead_containers,
-                std::unordered_map<
-                    std::string,
-                    std::vector<BlockRecordPB>> low_live_block_containers);
+                const ContainerBlocksByName& low_live_block_containers);
+
+  // Fetch all the containers we're going to repair.
+  //
+  // The issues to repair are described in 'report' and 'low_live_block_containers', the containers
+  // are returned by 'containers_by_name'.
+  virtual void FindContainersToRepair(FsReport* report,
+                                      const ContainerBlocksByName& low_live_block_containers,
+                                      ContainersByName* containers_by_name);
+
+  // Do the repair work.
+  //
+  // The following repairs will be performed:
+  // 1. Container data files in 'report->full_container_space_check' will be truncated.
+  //
+  // Returns an error if repairing a fatal inconsistency failed.
+  virtual Status DoRepair(Dir* dir,
+                          FsReport* report,
+                          const ContainerBlocksByName& low_live_block_containers,
+                          const ContainersByName& containers_by_name);
 
   // Rewrites a container metadata file, adding all entries in 'records'.
   // The new metadata file is created as a temporary file and renamed over the
@@ -498,6 +535,35 @@ class LogBlockManagerNativeMeta : public LogBlockManager {
                             BlockManagerOptions opts)
       : LogBlockManager(env, dd_manager, error_manager, file_cache, std::move(opts)) {
   }
+
+ private:
+  Status CreateContainer(Dir* dir, LogBlockContainerRefPtr* container) override;
+
+  // Returns Status::Aborted() in the case that the metadata and data files
+  // both appear to have no data (e.g. due to a crash just after creating
+  // one of them but before writing any records).
+  Status OpenContainer(Dir* dir,
+                       FsReport* report,
+                       const std::string& id,
+                       LogBlockContainerRefPtr* container) override;
+
+  void FindContainersToRepair(FsReport* report,
+                              const ContainerBlocksByName& low_live_block_containers,
+                              ContainersByName* containers_by_name) override;
+
+  // Do the repair work.
+  //
+  // The following repairs will be performed:
+  // 1. Repairs in LogBlockManager::DoRepair().
+  // 2. Container metadata files in 'report->partial_record_check' will be truncated.
+  // 3. Container data and metadata files in 'report->incomplete_container_check' will be deleted.
+  // 4. Container metadata files in 'low_live_block_containers' will be compacted.
+  //
+  // Returns an error if repairing a fatal inconsistency failed.
+  Status DoRepair(Dir* dir,
+                  FsReport* report,
+                  const ContainerBlocksByName& low_live_block_containers,
+                  const ContainersByName& containers_by_name) override;
 };
 
 } // namespace fs
