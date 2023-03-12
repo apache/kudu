@@ -28,6 +28,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -78,6 +79,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_string(block_manager);
+
 METRIC_DECLARE_gauge_uint64(tablets_num_failed);
 
 using kudu::client::KuduClient;
@@ -123,6 +126,9 @@ int IntToKey(int i) {
 class TsRecoveryITest : public ExternalMiniClusterITestBase,
                         public ::testing::WithParamInterface<string> {
  public:
+  TsRecoveryITest() {
+    FLAGS_block_manager = GetParam();
+  }
 
  protected:
   void StartClusterOneTs(vector<string> extra_tserver_flags = {},
@@ -134,7 +140,7 @@ void TsRecoveryITest::StartClusterOneTs(vector<string> extra_tserver_flags,
                                         vector<string> extra_master_flags) {
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = 1;
-  opts.block_manager_type = GetParam();
+  opts.block_manager_type = FLAGS_block_manager;
   opts.extra_tserver_flags = std::move(extra_tserver_flags);
   opts.extra_master_flags = std::move(extra_master_flags);
   StartClusterWithOpts(opts);
@@ -236,7 +242,7 @@ TEST_P(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
 // Test for KUDU-2202 that ensures that blocks not found in the FS layer but
 // that are referenced by a tablet will not be reused.
 TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
-  if (GetParam() != "log") {
+  if (FLAGS_block_manager != "log" && FLAGS_block_manager != "logr") {
     GTEST_SKIP() << "Missing blocks is currently only supported by the log "
                     "block manager. Exiting early!";
   }
@@ -308,7 +314,8 @@ TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
     vector<string> children;
     ASSERT_OK(env_->GetChildren(data_dir, &children));
     for (const string& child : children) {
-      if (child != "." && child != ".." && child != fs::kInstanceMetadataFileName) {
+      if (child != "." && child != ".." &&
+          child != fs::kInstanceMetadataFileName && child != "rdb") {
         ASSERT_OK(env_->DeleteFile(JoinPathSegments(data_dir, child)));
       }
     }
@@ -586,7 +593,7 @@ TEST_P(TsRecoveryITestDeathTest, RecoverFromOpIdOverflow) {
     FsManagerOpts opts;
     opts.wal_root = ets->wal_dir();
     opts.data_roots = ets->data_dirs();
-    opts.block_manager_type = GetParam();
+    opts.block_manager_type = FLAGS_block_manager;
     unique_ptr<FsManager> fs_manager(new FsManager(env_, opts));
     ASSERT_OK(fs_manager->Open());
     scoped_refptr<ConsensusMetadataManager> cmeta_manager(
@@ -780,7 +787,8 @@ class UpdaterThreads {
 // these updates would be mistakenly considered as "already flushed", despite
 // the fact that they were only written to the input rowset's memory stores, and
 // never hit disk.
-class Kudu969Test : public TsRecoveryITest {
+class Kudu969Test : public ExternalMiniClusterITestBase,
+                    public ::testing::WithParamInterface<string> {
 };
 INSTANTIATE_TEST_SUITE_P(DifferentFaultPoints,
                          Kudu969Test,

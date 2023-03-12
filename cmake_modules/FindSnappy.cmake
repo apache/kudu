@@ -26,12 +26,22 @@ find_path(SNAPPY_INCLUDE_DIR snappy.h
   # make sure we don't accidentally pick up a different version
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(SNAPPY_SHARED_LIB snappy
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
+
 find_library(SNAPPY_STATIC_LIB libsnappy.a
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
+
+set(__CURRENT_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+if (APPLE)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".dylib")
+else()
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".so")
+endif()
+find_library(SNAPPY_SHARED_LIB snappy
+  NO_CMAKE_SYSTEM_PATH
+  NO_SYSTEM_ENVIRONMENT_PATH)
+set(CMAKE_FIND_LIBRARY_SUFFIXES ${__CURRENT_FIND_LIBRARY_SUFFIXES})
+unset(__CURRENT_FIND_LIBRARY_SUFFIXES)
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Snappy REQUIRED_VARS

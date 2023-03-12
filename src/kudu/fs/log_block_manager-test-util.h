@@ -37,13 +37,14 @@ class WritablePBContainerFile;
 } // namespace pb_util
 
 namespace fs {
+class DataDirManager;
 
 // Corrupts various log block manager on-disk data structures.
 class LBMCorruptor {
  public:
   // Create a LBMCorruptor according to the --block_manager flag.
   static std::unique_ptr<LBMCorruptor> Create(
-      Env* env, std::vector<std::string> data_dirs, uint32_t rand_seed);
+      Env* env, DataDirManager* dd_manager, uint32_t rand_seed);
 
   virtual ~LBMCorruptor() = default;
 
@@ -103,8 +104,13 @@ class LBMCorruptor {
   // Injects one of the above non-fatal inconsistencies (chosen at random).
   Status InjectRandomNonFatalInconsistency();
 
+  // Resets the DataDirManager when the bound DataDirManager changes.
+  void ResetDataDirManager(DataDirManager* dd_manager) {
+    dd_manager_ = dd_manager;
+  }
+
  protected:
-  LBMCorruptor(Env* env, std::vector<std::string> data_dirs, uint32_t rand_seed);
+  LBMCorruptor(Env* env, DataDirManager* dd_manager, uint32_t rand_seed);
 
   // Describes an on-disk LBM container.
   struct Container {
@@ -138,17 +144,21 @@ class LBMCorruptor {
                             const Container** container) const;
 
   // Gets a data directory chosen at random.
-  const std::string& GetRandomDataDir() const;
+  std::string GetRandomDataDir() const;
 
   // Appends a CREATE-DELETE pair of records to the container 'c', the newly
   // created record has a unique id of 'block_id' and is located at
   // 'block_offset' with a size of 'block_length'.
-  virtual Status AppendRecord(const Container* c, BlockId block_id,
-                              int64_t block_offset, int64_t block_length) = 0;
+  virtual Status AppendRecord(const Container* c,
+                              BlockId block_id,
+                              int64_t block_offset,
+                              int64_t block_length) = 0;
 
   // Similar to the above, but only appends the CREATE record.
-  virtual Status AppendCreateRecord(const Container* c, BlockId block_id,
-                                    uint64_t block_offset, int64_t block_length) = 0;
+  virtual Status AppendCreateRecord(const Container* c,
+                                    BlockId block_id,
+                                    uint64_t block_offset,
+                                    int64_t block_length) = 0;
 
   // Appends a partial CREATE record to the metadata part of container 'c', the
   // newly created record has a unique id of 'block_id'. The record is corrupted
@@ -173,14 +183,16 @@ class LBMCorruptor {
     kTwoCreatesForSameBlockId
   };
   // Returns an error if a container could not be found.
-  virtual Status CreateMalformedRecord(
-      const Container* c, MalformedRecordType error_type, BlockRecordPB* record);
+  virtual Status CreateMalformedRecord(const Container* c,
+                                       MalformedRecordType error_type,
+                                       BlockRecordPB* record);
 
   Status CreateContainerDataPart(const std::string& unsuffixed_path);
 
   // Initialized in the constructor.
   Env* env_;
-  const std::vector<std::string> data_dirs_;
+  // Use DataDirManager to access the Dir objects conveniently.
+  DataDirManager* dd_manager_;
   mutable Random rand_;
   ObjectIdGenerator oid_generator_;
   MalformedRecordType max_malformed_types_;

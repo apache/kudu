@@ -22,10 +22,14 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include <gtest/gtest_prod.h>
+#include <rocksdb/db.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -35,7 +39,17 @@
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
+namespace rocksdb {
+class Cache;
+class Status;
+} // namespace rocksdb
+
 namespace kudu {
+
+// Convert a rocksdb::Status to a kudu::Status.
+// NOTE: Keep it here rather than util/status.h because the latter is
+// an exported header, but FromRdbStatus() is used only internally.
+Status FromRdbStatus(const rocksdb::Status& s);
 
 class Env;
 class ThreadPool;
@@ -104,9 +118,12 @@ class Dir {
       std::unique_ptr<ThreadPool> pool);
   virtual ~Dir();
 
+  // Some preparatory work before opening the directory.
+  virtual Status Prepare() { return Status::OK(); }
+
   // Shuts down this dir's thread pool, waiting for any closures submitted via
   // ExecClosure() to finish first.
-  void Shutdown();
+  virtual void Shutdown();
 
   // Run a task on this dir's thread pool.
   //
@@ -159,7 +176,7 @@ class Dir {
   // value of -1 means 1% of the disk space in a directory will be reserved.
   static int reserved_bytes();
 
- private:
+ protected:
   Env* env_;
   DirMetrics* metrics_;
   const FsType fs_type_;
@@ -178,6 +195,37 @@ class Dir {
   int64_t available_bytes_;
 
   DISALLOW_COPY_AND_ASSIGN(Dir);
+};
+
+// Representation of a directory for LogBlockManagerRdbMeta specially.
+class RdbDir: public Dir {
+ public:
+  RdbDir(Env* env,
+         DirMetrics* metrics,
+         FsType fs_type,
+         std::string dir,
+         std::unique_ptr<DirInstanceMetadataFile> metadata_file,
+         std::unique_ptr<ThreadPool> pool);
+
+  // Initialize the RocksDB instance for the directory.
+  //
+  // Returns Status::OK() if prepared successfully, otherwise returns non-OK.
+  Status Prepare() override;
+
+  // Similar to Dir::Shutdown(), but close the RocksDB instance additionally.
+  void Shutdown() override;
+
+  rocksdb::DB* rdb();
+
+ private:
+  // The shared RocksDB instance for this directory.
+  std::unique_ptr<rocksdb::DB> db_;
+  // The RocksDB full path.
+  std::optional<std::string> rdb_dir_;
+  // The block cache shared by all RocksDB instances in all data directories.
+  static std::shared_ptr<rocksdb::Cache> s_block_cache_;
+
+  DISALLOW_COPY_AND_ASSIGN(RdbDir);
 };
 
 struct DirManagerOptions {
@@ -304,6 +352,8 @@ class DirManager {
                                             std::unique_ptr<ThreadPool> pool) = 0;
 
  protected:
+  FRIEND_TEST(LogBlockManagerRdbMetaTest, TestHalfPresentContainer);
+
   // The name to be used by this directory manager for each sub-directory of
   // each directory root.
   virtual const char* dir_name() const = 0;
@@ -396,6 +446,11 @@ class DirManager {
   Status UpdateHealthyInstances(
       const std::vector<std::unique_ptr<DirInstanceMetadataFile>>& instances_to_update,
       const std::set<std::string>& new_all_uuids);
+
+  // Finds a directory by full path name, returning null if it can't be found.
+  //
+  // NOTE: Only for test purpose.
+  Dir* FindDirByFullPathForTests(const std::string& full_path) const;
 
   // The environment to be used for all directory operations.
   Env* env_;

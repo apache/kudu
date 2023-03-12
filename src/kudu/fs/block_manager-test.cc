@@ -41,6 +41,7 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/basictypes.h"
@@ -88,8 +89,10 @@ METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_reading);
 METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_writing);
 METRIC_DECLARE_counter(block_manager_total_writable_blocks);
 METRIC_DECLARE_counter(block_manager_total_readable_blocks);
+METRIC_DECLARE_counter(block_manager_total_blocks_deleted);
 METRIC_DECLARE_counter(block_manager_total_bytes_written);
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
+METRIC_DECLARE_counter(log_block_manager_holes_punched);
 
 // Data directory metrics.
 METRIC_DECLARE_gauge_uint64(data_dirs_full);
@@ -97,7 +100,7 @@ METRIC_DECLARE_gauge_uint64(data_dirs_full);
 // The LogBlockManager is only supported on Linux, since it requires hole punching.
 #define RETURN_NOT_LOG_BLOCK_MANAGER() \
   do { \
-    if (FLAGS_block_manager != "log") { \
+    if (FLAGS_block_manager != "log" && FLAGS_block_manager != "logr") { \
       GTEST_SKIP() << "This platform does not use the log block manager by default. " \
                       "Skipping test."; \
     } \
@@ -109,13 +112,7 @@ namespace fs {
 static const char* kTestData = "test data";
 
 template<typename T>
-string block_manager_type();
-
-template<>
-string block_manager_type<FileBlockManager>() { return "file"; }
-
-template<>
-string block_manager_type<LogBlockManagerNativeMeta>() { return "log"; }
+string block_manager_type() { return T::name(); }
 
 template <typename T>
 class BlockManagerTest : public KuduTest {
@@ -123,9 +120,9 @@ class BlockManagerTest : public KuduTest {
   BlockManagerTest() :
       test_tablet_name_("test_tablet"),
       test_block_opts_(CreateBlockOptions({ test_tablet_name_ })),
-      file_cache_("test_cache", env_, 1, scoped_refptr<MetricEntity>()),
-      bm_(CreateBlockManager(scoped_refptr<MetricEntity>(),
-                             shared_ptr<MemTracker>())) {
+      file_cache_("test_cache", env_, 1, scoped_refptr<MetricEntity>()) {
+    FLAGS_block_manager = T::name();
+    bm_.reset(CreateBlockManager(scoped_refptr<MetricEntity>(), shared_ptr<MemTracker>()));
     CHECK_OK(file_cache_.Init());
   }
 
@@ -183,7 +180,7 @@ class BlockManagerTest : public KuduTest {
     opts.metric_entity = metric_entity;
     opts.parent_mem_tracker = parent_mem_tracker;
     error_manager_ = new FsErrorManager();
-    return new T(env_, this->dd_manager_.get(), error_manager_,
+    return new T(env_, dd_manager_, error_manager_,
                  &file_cache_, std::move(opts), fs::kDefaultTenantName);
   }
 
@@ -223,9 +220,14 @@ class BlockManagerTest : public KuduTest {
   void RunBlockDistributionTest(const vector<string>& paths);
 
   static Status CountFilesCb(int* num_files, Env::FileType type,
-                      const string& /*dirname*/,
-                      const string& basename) {
+                             const string& dirname,
+                             const string& basename) {
     if (basename == kInstanceMetadataFileName) {
+      return Status::OK();
+    }
+    // Ignore the 'rdb' directory which contains the RocksDB related files.
+    string parent_dir = *SplitPath(dirname).rbegin();
+    if (parent_dir == "rdb") {
       return Status::OK();
     }
     if (type == Env::FILE_TYPE) {
@@ -235,7 +237,7 @@ class BlockManagerTest : public KuduTest {
   }
 
   // Utility function that counts the number of files within a directory
-  // hierarchy, ignoring '.', '..', and file 'kInstanceMetadataFileName'.
+  // hierarchy, ignoring '.', '..', 'rdb', and file 'kInstanceMetadataFileName'.
   Status CountFiles(const string& root, int* num_files) {
     *num_files = 0;
     return env_->Walk(
@@ -303,9 +305,8 @@ void BlockManagerTest<FileBlockManager>::RunBlockDistributionTest(const vector<s
   }
 }
 
-template <>
-void BlockManagerTest<LogBlockManagerNativeMeta>::RunBlockDistributionTest(
-    const vector<string>& paths) {
+template<typename T>
+void BlockManagerTest<T>::RunBlockDistributionTest(const vector<string>& paths) {
   vector<int> files_in_each_path(paths.size());
   int num_blocks_per_dir = 30;
   // Spread across 1, then 3, then 5 data directories.
@@ -383,8 +384,8 @@ void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& 
   ASSERT_EQ(20, num_blocks);
 }
 
-template <>
-void BlockManagerTest<LogBlockManagerNativeMeta>::RunMultipathTest(const vector<string>& paths) {
+template<typename T>
+void BlockManagerTest<T>::RunMultipathTest(const vector<string>& paths) {
   // Write (3 * numPaths * 2) blocks, in groups of (numPaths * 2). That should
   // yield two containers per path.
   CreateBlockOptions opts({ "multipath_test" });
@@ -402,9 +403,7 @@ void BlockManagerTest<LogBlockManagerNativeMeta>::RunMultipathTest(const vector<
   }
   ASSERT_OK(transaction->CommitCreatedBlocks());
 
-  // Verify the results. (numPaths * 2) containers were created, each
-  // consisting of 2 files. Thus, there should be a total of
-  // (numPaths * 4) files, ignoring '.', '..', and instance files.
+  // Verify the results.
   int sum = 0;
   for (const string& path : paths) {
     vector<string> children;
@@ -413,7 +412,20 @@ void BlockManagerTest<LogBlockManagerNativeMeta>::RunMultipathTest(const vector<
     ASSERT_OK(CountFiles(path, &files_in_path));
     sum += files_in_path;
   }
-  ASSERT_EQ(paths.size() * 4, sum);
+
+  if (std::is_same<T, LogBlockManagerNativeMeta>::value) {
+    // (numPaths * 2) containers were created, each consisting of 2 files.
+    // Thus, there should be a total of (numPaths * 4) files, ignoring '.',
+    // '..', and instance files.
+    ASSERT_EQ(paths.size() * 4, sum);
+  } else {
+    // (numPaths * 2) containers were created, each consisting of 1 file.
+    // Thus, there should be a total of (numPaths * 2) files, ignoring '.',
+    // '..', 'rdb', and instance files.
+    bool is_logr = std::is_same<T, LogBlockManagerRdbMeta>::value;
+    ASSERT_TRUE(is_logr);
+    ASSERT_EQ(paths.size() * 2, sum);
+  }
 }
 
 template <>
@@ -433,8 +445,8 @@ void BlockManagerTest<FileBlockManager>::RunMemTrackerTest() {
   ASSERT_EQ(tracker->consumption(), initial_mem);
 }
 
-template <>
-void BlockManagerTest<LogBlockManagerNativeMeta>::RunMemTrackerTest() {
+template<typename T>
+void BlockManagerTest<T>::RunMemTrackerTest() {
   shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test tracker");
   ASSERT_OK(ReopenBlockManager(scoped_refptr<MetricEntity>(),
                                tracker,
@@ -454,7 +466,8 @@ void BlockManagerTest<LogBlockManagerNativeMeta>::RunMemTrackerTest() {
 
 // What kinds of BlockManagers are supported?
 #if defined(__linux__)
-typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta> BlockManagers;
+typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta, LogBlockManagerRdbMeta>
+    BlockManagers;
 #else
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif
@@ -1216,6 +1229,13 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseFinalizedWritableBlockTest) {
 }
 
 TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
+  MetricRegistry registry;
+  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
+  ASSERT_OK(this->ReopenBlockManager(entity,
+                                     shared_ptr<MemTracker>(),
+                                     { this->test_dir_ },
+                                     false /* create */));
+
   // Create a BlockCreationTransaction. In this transaction,
   // create some blocks and commit the writes all together.
   const string kTestData = "test data";
@@ -1256,6 +1276,26 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
   }
   vector<BlockId> deleted_blocks;
   ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted_blocks));
+  deletion_transaction.reset();
+  this->dd_manager_->WaitOnClosures();
+
+  // Metric 'log_block_manager_holes_punched' is only updated when --block_manager
+  // is "log" or "logr".
+  int64_t holes_punched = 0;
+  if (FsManager::IsLogType(FLAGS_block_manager)) {
+    // Continuous blocks will be hole punched together, so 'log_block_manager_holes_punched' is
+    // less or equal to the size of 'deleted_blocks', but it must be greater than 0.
+    holes_punched = down_cast<Counter *>(
+        entity->FindOrNull(METRIC_log_block_manager_holes_punched).get())->value();
+    ASSERT_GE(deleted_blocks.size(), holes_punched);
+    ASSERT_GT(holes_punched, 0);
+  }
+
+  // Metric 'block_manager_total_blocks_deleted' is equal to the size of 'deleted_blocks'.
+  int64_t total_blocks_deleted = down_cast<Counter*>(
+      entity->FindOrNull(METRIC_block_manager_total_blocks_deleted).get())->value();
+  ASSERT_EQ(deleted_blocks.size(), total_blocks_deleted);
+
   for (const auto& block : deleted_blocks) {
     created_blocks.erase(std::remove(created_blocks.begin(), created_blocks.end(), block),
                          created_blocks.end());
@@ -1266,16 +1306,38 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
   // in order to test that the first failure properly propagates.
   FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1.0;
+  deletion_transaction = this->bm_->NewDeletionTransaction();
   for (const auto& block : created_blocks) {
     deletion_transaction->AddDeletedBlock(block);
   }
   deleted_blocks.clear();
   Status s = deletion_transaction->CommitDeletedBlocks(&deleted_blocks);
-  ASSERT_TRUE(s.IsIOError());
-  ASSERT_TRUE(deleted_blocks.empty());
-  ASSERT_STR_MATCHES(s.ToString(),
-                     Substitute("only 0/$0 blocks deleted, first failure",
-                                created_blocks.size()));
+  deletion_transaction.reset();
+  this->dd_manager_->WaitOnClosures();
+
+  if (FsManager::IsLogType(FLAGS_block_manager)) {
+    // Metric 'log_block_manager_holes_punched' is not changed because IO error injected.
+    ASSERT_EQ(holes_punched, down_cast<Counter*>(
+        entity->FindOrNull(METRIC_log_block_manager_holes_punched).get())->value());
+  }
+
+  // Because the "logr" block_manager uses RocksDB to store metadata, and the IO error injected
+  // into util/env_posix.cc does not affect RocksDB, updating the metadata stored in the
+  // logr-based block manager succeeds without any errors.
+  if (FLAGS_block_manager == "logr") {
+    ASSERT_OK(s);
+    ASSERT_EQ(created_blocks.size(), deleted_blocks.size());
+    ASSERT_EQ(total_blocks_deleted + deleted_blocks.size(), down_cast<Counter*>(
+        entity->FindOrNull(METRIC_block_manager_total_blocks_deleted).get())->value());
+  } else {
+    ASSERT_TRUE(s.IsIOError());
+    ASSERT_TRUE(deleted_blocks.empty());
+    ASSERT_EQ(total_blocks_deleted, down_cast<Counter*>(
+        entity->FindOrNull(METRIC_block_manager_total_blocks_deleted).get())->value());
+    ASSERT_STR_MATCHES(s.ToString(),
+                       Substitute("only 0/$0 blocks deleted, first failure",
+                                  created_blocks.size()));
+  }
 }
 
 } // namespace fs

@@ -80,8 +80,9 @@ TAG_FLAG(enable_data_block_fsync, unsafe);
 
 #if defined(__linux__)
 DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
-              "Valid options are 'file' and 'log'. The file block manager is not suitable for "
-              "production use due to scaling limitations.");
+              "Valid options are 'file', 'log' and 'logr'. The file block "
+              "manager is not suitable for production use due to scaling "
+              "limitations.");
 #else
 DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
               "Only the file block manager is supported for non-Linux systems.");
@@ -176,6 +177,7 @@ using kudu::fs::FsErrorManager;
 using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
 using kudu::fs::LogBlockManagerNativeMeta;
+using kudu::fs::LogBlockManagerRdbMeta;
 using kudu::fs::ReadableBlock;
 using kudu::fs::UpdateInstanceBehavior;
 using kudu::fs::WritableBlock;
@@ -407,6 +409,10 @@ scoped_refptr<BlockManager> FsManager::InitBlockManager(const string& tenant_id)
     block_manager.reset(new LogBlockManagerNativeMeta(
         GetEnv(tenant_id), dd_manager(tenant_id), error_manager_,
         opts_.file_cache, std::move(bm_opts), tenant_id));
+  } else if (opts_.block_manager_type == "logr") {
+    block_manager.reset(new LogBlockManagerRdbMeta(
+        GetEnv(tenant_id), dd_manager(tenant_id), error_manager_,
+        opts_.file_cache, std::move(bm_opts), tenant_id));
   } else {
     LOG(FATAL) << "Unknown block_manager_type: " << opts_.block_manager_type;
   }
@@ -611,7 +617,7 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
                                           BlockManager::MergeReport::REQUIRED));
     if (read_data_directories) {
       read_data_directories->Stop();
-      if (opts_.metric_entity && opts_.block_manager_type == "log") {
+      if (opts_.metric_entity && FsManager::IsLogType(opts_.block_manager_type)) {
         METRIC_log_block_manager_containers_processing_time_startup.Instantiate(opts_.metric_entity,
             (read_data_directories->TimeElapsed()).ToMilliseconds());
       }
@@ -788,6 +794,10 @@ void FsManager::UpdateMetadataFormatAndStampUnlock(InstanceMetadataPB* metadata)
     hostname = "<unknown host>";
   }
   metadata->set_format_stamp(Substitute("Formatted at $0 on $1", time_str, hostname));
+}
+
+bool FsManager::IsLogType(const std::string& block_manager_type) {
+  return (block_manager_type == "log" || block_manager_type == "logr");
 }
 
 Status FsManager::AddTenantMetadata(const string& tenant_name,

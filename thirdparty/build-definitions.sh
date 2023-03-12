@@ -570,21 +570,30 @@ build_protobuf() {
 }
 
 build_snappy() {
-  SNAPPY_BDIR=$TP_BUILD_DIR/$SNAPPY_NAME$MODE_SUFFIX
-  mkdir -p $SNAPPY_BDIR
-  pushd $SNAPPY_BDIR
-  rm -Rf CMakeCache.txt CMakeFiles/
-  CFLAGS="$EXTRA_CFLAGS -fPIC" \
-    CXXFLAGS="$EXTRA_CXXFLAGS -fPIC" \
-    cmake \
-    -DCMAKE_BUILD_TYPE=release \
-    -DBUILD_STATIC_LIBS=ON \
-    -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
-    -DSNAPPY_BUILD_TESTS=OFF \
-    $EXTRA_CMAKE_FLAGS \
-    $SNAPPY_SOURCE
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
-  popd
+  SNAPPY_SHARED_BDIR=$TP_BUILD_DIR/$SNAPPY_NAME.shared$MODE_SUFFIX
+  SNAPPY_STATIC_BDIR=$TP_BUILD_DIR/$SNAPPY_NAME.static$MODE_SUFFIX
+  for SHARED in ON OFF; do
+    if [ $SHARED = "ON" ]; then
+      SNAPPY_BDIR=$SNAPPY_SHARED_BDIR
+    else
+      SNAPPY_BDIR=$SNAPPY_STATIC_BDIR
+    fi
+    mkdir -p $SNAPPY_BDIR
+    pushd $SNAPPY_BDIR
+    rm -Rf CMakeCache.txt CMakeFiles/
+    CFLAGS="$EXTRA_CFLAGS -fPIC" \
+      CXXFLAGS="$EXTRA_CXXFLAGS -fPIC" \
+      LDFLAGS="$EXTRA_LDFLAGS" \
+      cmake \
+      -DCMAKE_BUILD_TYPE=release \
+      -DBUILD_SHARED_LIBS=$SHARED \
+      -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
+      -DSNAPPY_BUILD_TESTS=OFF \
+      $EXTRA_CMAKE_FLAGS \
+      $SNAPPY_SOURCE
+    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+    popd
+  done
 }
 
 build_zlib() {
@@ -1189,6 +1198,9 @@ build_rocksdb() {
     CXXFLAGS="$EXTRA_CXXFLAGS -fPIC" \
     cmake \
     -DROCKSDB_BUILD_SHARED=ON \
+    -DWITH_SNAPPY=ON \
+    -Dsnappy_ROOT_DIR=$PREFIX \
+    -DUSE_RTTI=ON \
     -DFAIL_ON_WARNINGS=OFF \
     -DWITH_BENCHMARK_TOOLS=OFF \
     -DWITH_CORE_TOOLS=OFF \
@@ -1196,10 +1208,9 @@ build_rocksdb() {
     -DWITH_TRACE_TOOLS=OFF \
     -DWITH_JNI=OFF \
     -DWITH_LIBURING=OFF \
-    -DWITH_LZ4=ON \
     -DWITH_ZSTD=OFF \
-    -DWITH_SNAPPY=ON \
     -DWITH_BZ2=OFF \
+    -DWITH_LZ4=OFF \
     -DWITH_TESTS=OFF \
     -DWITH_GFLAGS=OFF \
     -DCMAKE_BUILD_TYPE=release \

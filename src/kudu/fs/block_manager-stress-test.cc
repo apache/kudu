@@ -65,6 +65,7 @@
 DECLARE_bool(cache_force_single_shard);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
+DECLARE_string(block_manager);
 DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_preallocate_bytes);
 
@@ -132,6 +133,7 @@ class BlockManagerStressTest : public KuduTest {
       total_blocks_read_(0),
       total_bytes_read_(0),
       total_blocks_deleted_(0) {
+    FLAGS_block_manager = T::name();
 
     // Increase the number of containers created.
     FLAGS_log_container_max_size = 1 * 1024 * 1024;
@@ -482,8 +484,8 @@ int BlockManagerStressTest<FileBlockManager>::GetMaxFdCount() const {
       FLAGS_num_reader_threads;
 }
 
-template <>
-int BlockManagerStressTest<LogBlockManagerNativeMeta>::GetMaxFdCount() const {
+template <typename T>
+int BlockManagerStressTest<T>::GetMaxFdCount() const {
   return FLAGS_max_open_files +
       // If all containers are full, each open block could theoretically
       // result in a new container, which is two files briefly outside the
@@ -496,9 +498,9 @@ void BlockManagerStressTest<FileBlockManager>::InjectNonFatalInconsistencies() {
   // Do nothing; the FBM has no repairable inconsistencies.
 }
 
-template <>
-void BlockManagerStressTest<LogBlockManagerNativeMeta>::InjectNonFatalInconsistencies() {
-  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), rand_seed_);
+template <typename T>
+void BlockManagerStressTest<T>::InjectNonFatalInconsistencies() {
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_.get(), rand_seed_);
   ASSERT_OK(corruptor->Init());
 
   for (int i = 0; i < FLAGS_num_inconsistencies; i++) {
@@ -508,7 +510,8 @@ void BlockManagerStressTest<LogBlockManagerNativeMeta>::InjectNonFatalInconsiste
 
 // What kinds of BlockManagers are supported?
 #if defined(__linux__)
-typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta> BlockManagers;
+typedef ::testing::Types<FileBlockManager, LogBlockManagerNativeMeta, LogBlockManagerRdbMeta>
+    BlockManagers;
 #else
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif

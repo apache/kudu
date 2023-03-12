@@ -2112,6 +2112,10 @@ TEST_F(ToolTest, TestPbcTools) {
 }
 
 TEST_F(ToolTest, TestPbcToolsOnMultipleBlocks) {
+  // TODO(yingchun): `kudu rdb dump` and `kudu rdb edit` have to adapt to "logr" block manager.
+  if (FLAGS_block_manager == "logr") {
+    GTEST_SKIP() << "Skipping test, logr block manager is not yet supported";
+  }
   const int kNumCFileBlocks = 1024;
   const int kNumEntries = 1;
   const string kTestDir = GetTestPath("test");
@@ -4567,6 +4571,16 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   const string& data_dir = JoinPathSegments(tserver_dir, "data");
   uint64_t size_before_delete;
   ASSERT_OK(env_->GetFileSizeOnDiskRecursively(data_dir, &size_before_delete));
+  const auto ExcludeIgnoredDirIfNeeded = [&] (uint64_t* total_size) {
+    if (FLAGS_block_manager == "logr") {
+      // Exclude the RocksDB data size.
+      uint64_t size_of_rdb;
+      ASSERT_OK(
+          env_->GetFileSizeOnDiskRecursively(JoinPathSegments(data_dir, "rdb"), &size_of_rdb));
+      *total_size -= size_of_rdb;
+    }
+  };
+  ExcludeIgnoredDirIfNeeded(&size_before_delete);
   NO_FATALS(RunActionStdoutNone(Substitute("local_replica delete $0 --fs_wal_dir=$1 "
                                            "--fs_data_dirs=$1 --clean_unsafe",
                                            tablet_id, tserver_dir)));
@@ -4602,6 +4616,7 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   // indicates that some data has been deleted from disk.
   uint64_t size_after_delete;
   ASSERT_OK(env_->GetFileSizeOnDiskRecursively(data_dir, &size_after_delete));
+  ExcludeIgnoredDirIfNeeded(&size_after_delete);
   ASSERT_LT(size_after_delete, size_before_delete);
 
   // Since there was only one tablet on the node which was deleted by tool,

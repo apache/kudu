@@ -18,6 +18,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -58,6 +59,7 @@ namespace internal {
 class LogBlock;
 class LogBlockContainer;
 class LogBlockContainerNativeMeta;
+class LogBlockContainerRdbMeta;
 class LogBlockDeletionTransaction;
 class LogWritableBlock;
 struct LogBlockContainerLoadResult;
@@ -67,6 +69,7 @@ struct LogBlockManagerMetrics;
 typedef scoped_refptr<internal::LogBlock> LogBlockRefPtr;
 typedef scoped_refptr<internal::LogBlockContainer> LogBlockContainerRefPtr;
 typedef scoped_refptr<internal::LogBlockContainerNativeMeta> LogBlockContainerNativeMetaRefPtr;
+typedef scoped_refptr<internal::LogBlockContainerRdbMeta> LogBlockContainerRdbMetaRefPtr;
 typedef std::unordered_map<std::string, std::vector<BlockRecordPB>> ContainerBlocksByName;
 typedef std::unordered_map<std::string, LogBlockContainerRefPtr> ContainersByName;
 
@@ -215,13 +218,13 @@ class LogBlockManager : public BlockManager {
                   BlockManagerOptions opts,
                   std::string tenant_id);
 
+  FRIEND_TEST(LogBlockManagerNativeMetaTest, TestMetadataTruncation);
   FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup);
   FRIEND_TEST(LogBlockManagerTest, TestFinalizeBlock);
   FRIEND_TEST(LogBlockManagerTest, TestLIFOContainerSelection);
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
-  FRIEND_TEST(LogBlockManagerTest, TestMetadataTruncation);
   FRIEND_TEST(LogBlockManagerTest, TestMisalignedBlocksFuzz);
   FRIEND_TEST(LogBlockManagerTest, TestParseKernelRelease);
   FRIEND_TEST(LogBlockManagerTest, TestBumpBlockIds);
@@ -230,9 +233,9 @@ class LogBlockManager : public BlockManager {
 
   friend class internal::LogBlockContainer;
   friend class internal::LogBlockContainerNativeMeta;
+  friend class internal::LogBlockContainerRdbMeta;
   friend class internal::LogBlockDeletionTransaction;
   friend class internal::LogWritableBlock;
-  friend class LogBlockManagerTest;
 
   // Type for the actual block map used to store all live blocks.
   // We use sparse_hash_map<> here to reduce memory overhead.
@@ -416,6 +419,9 @@ class LogBlockManager : public BlockManager {
                    std::atomic<int>* containers_processed = nullptr,
                    std::atomic<int>* containers_total = nullptr);
 
+  // Estimate the count of containers according to the count of children directories.
+  virtual size_t EstimateContainerCount(size_t children_count) const = 0;
+
   // Reads records from one log block container in the data directory.
   // The result details will be collected into 'result'.
   void LoadContainer(Dir* dir,
@@ -537,6 +543,8 @@ class LogBlockManager : public BlockManager {
 // metadata is simple and performant at open time.
 class LogBlockManagerNativeMeta : public LogBlockManager {
  public:
+  static constexpr const char* const name() { return "log"; }
+
   LogBlockManagerNativeMeta(Env* env,
                             scoped_refptr<DataDirManager> dd_manager,
                             scoped_refptr<FsErrorManager> error_manager,
@@ -548,6 +556,10 @@ class LogBlockManagerNativeMeta : public LogBlockManager {
   }
 
  private:
+  size_t EstimateContainerCount(size_t children_count) const override {
+    return children_count / 2;
+  }
+
   Status CreateContainer(Dir* dir, LogBlockContainerRefPtr* container) override;
 
   // Returns Status::Aborted() in the case that the metadata and data files
@@ -575,6 +587,84 @@ class LogBlockManagerNativeMeta : public LogBlockManager {
                   FsReport* report,
                   const ContainerBlocksByName& low_live_block_containers,
                   const ContainersByName& containers_by_name) override;
+};
+
+// All the container's metadata is written into a RocksDB instance which is
+// shared by all containers in the same data directory.
+// The metadata records in RocksDB are all of CREATE type, the records are
+// deleted from RocksDB when the corresponding blocks are being removed from
+// the block manager. The data in the RocksDB instance is compacted in
+// background automatically, see https://github.com/facebook/rocksdb/wiki/Compaction.
+//
+// Comparing with the LogBlockManagerNativeMeta, the LogBlockManagerRdbMeta has a
+// better performance on opening containers, the latter only contains live block
+// records, while the former needs to scan through all the records in the metadata
+// which may adversely affect the performance when the live block ratio is very low.
+// RocksDB provides many configuration options, we can tune the performance, minimize
+// the read/write and space amplification.
+class LogBlockManagerRdbMeta : public LogBlockManager {
+ public:
+  static constexpr const char* const name() { return "logr"; }
+
+  LogBlockManagerRdbMeta(Env* env,
+                         scoped_refptr<DataDirManager> dd_manager,
+                         scoped_refptr<FsErrorManager> error_manager,
+                         FileCache* file_cache,
+                         BlockManagerOptions opts,
+                         std::string tenant_id)
+      : LogBlockManager(env, std::move(dd_manager), std::move(error_manager),
+                        file_cache, std::move(opts), std::move(tenant_id)) {
+  }
+
+ private:
+  friend class internal::LogBlockContainerRdbMeta;
+  friend class RdbMetadataLBMCorruptor;
+  FRIEND_TEST(LogBlockManagerRdbMetaTest, TestHalfPresentContainer);
+
+  size_t EstimateContainerCount(size_t children_count) const override {
+    // TODO(yingchun): exclude the "rdb" directory when get the children count.
+    return children_count;
+  }
+
+  Status CreateContainer(Dir* dir, LogBlockContainerRefPtr* container) override;
+
+  // Returns Status::Aborted() in the case that the data part appears to have no
+  // data (e.g. due to a crash just after creating it but before writing any
+  // records).
+  Status OpenContainer(Dir* dir,
+                       FsReport* report,
+                       const std::string& id,
+                       LogBlockContainerRefPtr* container) override;
+
+  void FindContainersToRepair(FsReport* report,
+                              const ContainerBlocksByName& low_live_block_containers,
+                              ContainersByName* containers_by_name) override;
+
+  // Do the repair work.
+  //
+  // The following repairs will be performed:
+  // 1. Repairs in LogBlockManager::DoRepair().
+  // 2. Container data files in 'report->incomplete_container_check' will be deleted, and the
+  //    records of these containers in RocksDB will be deleted as well.
+  // 3. Container metadata records in 'report->corrupted_rdb_record_check' will be deleted from
+  //    RocksDB.
+  //
+  // Returns an error if repairing a fatal inconsistency failed.
+  Status DoRepair(Dir* dir,
+                  FsReport* report,
+                  const ContainerBlocksByName& low_live_block_containers,
+                  const ContainersByName& containers_by_name) override;
+
+  // Delete all the metadata part of a container.
+  //
+  // The metadata records are prefixed by the container's 'id' of the RocksDB instance in 'dir'.
+  static Status DeleteContainerMetadata(Dir* dir, const std::string& id);
+
+  // Construct the key used in RocksDB.
+  //
+  // The key is constructed by the container's 'container_id' and the block's 'block_id'.
+  static std::string ConstructRocksDBKey(const std::string& container_id,
+                                         const BlockId& block_id);
 };
 
 } // namespace fs

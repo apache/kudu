@@ -39,6 +39,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
@@ -200,6 +201,10 @@ std::unique_ptr<Dir> DataDirManager::CreateNewDir(
     Env* env, DirMetrics* metrics, FsType fs_type,
     std::string dir, std::unique_ptr<DirInstanceMetadataFile> metadata_file,
     std::unique_ptr<ThreadPool> pool) {
+  if (FLAGS_block_manager == "logr") {
+    return std::make_unique<RdbDir>(env, metrics, fs_type, std::move(dir),
+                                    std::move(metadata_file), std::move(pool));
+  }
   return std::make_unique<Dir>(env, metrics, fs_type, std::move(dir),
                                std::move(metadata_file), std::move(pool));
 }
@@ -270,7 +275,7 @@ int DataDirManager::max_dirs() const {
 }
 
 Status DataDirManager::PopulateDirectoryMaps(const vector<unique_ptr<Dir>>& dirs) {
-  if (opts_.dir_type == "log") {
+  if (FsManager::IsLogType(opts_.dir_type)) {
     return DirManager::PopulateDirectoryMaps(dirs);
   }
   DCHECK_EQ("file", opts_.dir_type);

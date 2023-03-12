@@ -758,6 +758,11 @@ TEST_P(TabletServerDiskSpaceTest, TestFullGroupAddsDir) {
   ASSERT_TRUE(dd_manager->IsTabletInFailedDir(kTabletId));
 
   // The group should be the updated even after restarting the tablet server.
+  // When --block_manager == "logr", it's necessary to reset 'dd_manager', releasing
+  // the last 'dd_manager' reference.  That's to allow for releasing the RocksDB LOCK file.
+  // Otherwise the 'mini_server_' will fail starting later because of the failure to acquire
+  // the RocksDB LOCK file.  Reset it in any case, there is no side effect.
+  dd_manager.reset();
   NO_FATALS(ShutdownAndRebuildTablet(kNumDirs));
   dd_manager = mini_server_->server()->fs_manager()->dd_manager();
   ASSERT_OK(dd_manager->FindDataDirsByTabletId(kTabletId, &dir_group));
@@ -944,7 +949,7 @@ TEST_F(TabletServerStartupWebPageTest, TestLogBlockContainerMetrics) {
   // Validate populated metrics in case of zero containers during startup.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics", addr), &buf));
   string raw = buf.ToString();
-  if (mini_server_->options()->fs_opts.block_manager_type == "log") {
+  if (FsManager::IsLogType(mini_server_->options()->fs_opts.block_manager_type)) {
     ASSERT_STR_MATCHES(raw, "log_block_manager_total_containers_startup\",\n[ ]+\"value\": 0");
     ASSERT_STR_MATCHES(raw, "log_block_manager_processed_containers_startup\",\n[ ]+\"value\": 0");
     // Since we open each directory and read all the contents, the time taken might not be
@@ -3984,7 +3989,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
     METRIC_log_block_manager_blocks_under_management.Instantiate(
         mini_server_->server()->metric_entity(), 0);
   const int block_count_before_flush = ondisk->value();
-  if (FLAGS_block_manager == "log") {
+  if (FsManager::IsLogType(FLAGS_block_manager)) {
     ASSERT_EQ(block_count_before_flush, 0);
   }
 
@@ -3995,7 +4000,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   NO_FATALS(InsertTestRowsRemote(2, 1));
 
   const int block_count_after_flush = ondisk->value();
-  if (FLAGS_block_manager == "log") {
+  if (FsManager::IsLogType(FLAGS_block_manager)) {
     ASSERT_GT(block_count_after_flush, block_count_before_flush);
   }
 
@@ -4034,7 +4039,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
 
   // Verify data was actually removed.
   const int block_count_after_delete = ondisk->value();
-  if (FLAGS_block_manager == "log") {
+  if (FsManager::IsLogType(FLAGS_block_manager)) {
     ASSERT_EQ(block_count_after_delete, 0);
   }
 

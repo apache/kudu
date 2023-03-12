@@ -28,10 +28,16 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <rocksdb/db.h>
+#include <rocksdb/options.h>
+#include <rocksdb/slice.h>
 
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
@@ -59,19 +65,23 @@ using strings::Substitute;
 // LBMCorruptor to trace the LogBlockManagerNativeMeta data corruption.
 class NativeMetadataLBMCorruptor : public LBMCorruptor {
  public:
-  NativeMetadataLBMCorruptor(Env* env, vector<string> data_dirs, uint32_t rand_seed)
-      : LBMCorruptor(env, std::move(data_dirs), rand_seed) {
+  NativeMetadataLBMCorruptor(Env* env, DataDirManager* dd_manager, uint32_t rand_seed)
+      : LBMCorruptor(env, dd_manager, rand_seed) {
     max_malformed_types_ = MalformedRecordType::kTwoCreatesForSameBlockId;
   }
 
  private:
   Status CreateIncompleteContainer() override;
 
-  Status AppendRecord(const Container* c, BlockId block_id,
-                      int64_t block_offset, int64_t block_length) override;
+  Status AppendRecord(const Container* c,
+                      BlockId block_id,
+                      int64_t block_offset,
+                      int64_t block_length) override;
 
-  Status AppendCreateRecord(const Container* c, BlockId block_id,
-                            uint64_t block_offset, int64_t block_length) override;
+  Status AppendCreateRecord(const Container* c,
+                            BlockId block_id,
+                            uint64_t block_offset,
+                            int64_t block_length) override;
 
   Status AppendPartialRecord(const Container* c, BlockId block_id) override;
 
@@ -79,58 +89,100 @@ class NativeMetadataLBMCorruptor : public LBMCorruptor {
 
   Status CreateContainerMetadataPart(const string& unsuffixed_path) const;
 
-  static Status AppendCreateRecordInternal(WritablePBContainerFile* writer, BlockId block_id,
-                                           int64_t block_offset, int64_t block_length);
+  static Status AppendCreateRecordInternal(WritablePBContainerFile* writer,
+                                           BlockId block_id,
+                                           int64_t block_offset,
+                                           int64_t block_length);
   static Status AppendDeleteRecordInternal(WritablePBContainerFile* writer, BlockId block_id);
 
-  Status CreateMalformedRecord(
-      const Container* c, MalformedRecordType error_type, BlockRecordPB* record) override;
+  Status CreateMalformedRecord(const Container* c,
+                               MalformedRecordType error_type,
+                               BlockRecordPB* record) override;
+};
+
+// LBMCorruptor to trace the LogBlockManagerRdbMeta data corruption.
+class RdbMetadataLBMCorruptor : public LBMCorruptor {
+ public:
+  RdbMetadataLBMCorruptor(Env* env, DataDirManager* dd_manager, uint32_t rand_seed)
+      : LBMCorruptor(env, dd_manager, rand_seed) {
+    max_malformed_types_ = MalformedRecordType::kUnrecognizedOpType;
+  }
+
+ private:
+  Status CreateIncompleteContainer() override;
+
+  Status AppendRecord(const Container* c,
+                      BlockId block_id,
+                      int64_t block_offset,
+                      int64_t block_length) override;
+
+  Status AppendCreateRecord(const Container* c,
+                            BlockId block_id,
+                            uint64_t block_offset,
+                            int64_t block_length) override;
+
+  Status AppendPartialRecord(const Container* c, BlockId block_id) override;
+
+  Status AppendMetadataRecord(const Container* c, const BlockRecordPB& record) override;
+
+  static Status AppendCreateRecordInternal(RdbDir* dir,
+                                           const string& id,
+                                           BlockId block_id,
+                                           int64_t block_offset,
+                                           int64_t block_length);
+  static Status AppendDeleteRecordInternal(RdbDir* dir, const string& id, BlockId block_id);
+
+  // Get the RdbDir for the given container.
+  RdbDir* GetRdbDir(const Container* c) const;
 };
 
 unique_ptr<LBMCorruptor> LBMCorruptor::Create(
-    Env* env, std::vector<std::string> data_dirs, uint32_t rand_seed) {
-  if (FLAGS_block_manager == "log") {
-    return std::make_unique<NativeMetadataLBMCorruptor>(env, std::move(data_dirs), rand_seed);
-  }
-  return nullptr;
+        Env* env, DataDirManager* dd_manager, uint32_t rand_seed) {
+    if (FLAGS_block_manager == "log") {
+        return std::make_unique<NativeMetadataLBMCorruptor>(env, dd_manager, rand_seed);
+    }
+    if (FLAGS_block_manager == "logr") {
+        return std::make_unique<RdbMetadataLBMCorruptor>(env, dd_manager, rand_seed);
+    }
+    return nullptr;
 }
 
-LBMCorruptor::LBMCorruptor(Env* env, vector<string> data_dirs, uint32_t rand_seed)
+LBMCorruptor::LBMCorruptor(Env* env, DataDirManager* dd_manager, uint32_t rand_seed)
     : env_(env),
-      data_dirs_(std::move(data_dirs)),
+      dd_manager_(dd_manager),
       rand_(rand_seed) {
-  CHECK_GT(data_dirs_.size(), 0);
+  CHECK_GT(dd_manager_->dirs().size(), 0);
 }
 
 Status LBMCorruptor::Init() {
   vector<Container> all_containers;
   vector<Container> full_containers;
 
-  for (const auto& dd : data_dirs_) {
+  for (const auto& dd : dd_manager_->dirs()) {
     vector<string> dd_files;
     unordered_map<string, Container> containers_by_name;
-    RETURN_NOT_OK(env_->GetChildren(dd, &dd_files));
+    RETURN_NOT_OK(env_->GetChildren(dd->dir(), &dd_files));
     for (const auto& f : dd_files) {
       // As we iterate over each file in the data directory, keep track of data
       // and metadata files, so that only containers with both will be included.
       string stripped;
       if (TryStripSuffixString(
           f, LogBlockManager::kContainerDataFileSuffix, &stripped)) {
-        containers_by_name[stripped].dir = dd;
+        containers_by_name[stripped].dir = dd->dir();
         containers_by_name[stripped].name = stripped;
-        containers_by_name[stripped].data_filename = JoinPathSegments(dd, f);
+        containers_by_name[stripped].data_filename = JoinPathSegments(dd->dir(), f);
       } else if (TryStripSuffixString(
           f, LogBlockManager::kContainerMetadataFileSuffix, &stripped)) {
-        containers_by_name[stripped].dir = dd;
+        containers_by_name[stripped].dir = dd->dir();
         containers_by_name[stripped].name = stripped;
-        containers_by_name[stripped].metadata_filename = JoinPathSegments(dd, f);
+        containers_by_name[stripped].metadata_filename = JoinPathSegments(dd->dir(), f);
       }
     }
 
     for (const auto& e : containers_by_name) {
-      // Only include the container if both of its files were present.
+      // Only include the container if valid files were present.
       if (!e.second.data_filename.empty() &&
-          !e.second.metadata_filename.empty()) {
+          (!e.second.metadata_filename.empty() || FLAGS_block_manager == "logr")) {
         all_containers.push_back(e.second);
 
         // File size is an imprecise proxy for whether a container is full, but
@@ -267,8 +319,9 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
   return Status::OK();
 }
 
-Status LBMCorruptor::CreateMalformedRecord(
-    const Container* /* c */, MalformedRecordType error_type, BlockRecordPB* record) {
+Status LBMCorruptor::CreateMalformedRecord(const Container* /* c */,
+                                           MalformedRecordType error_type,
+                                           BlockRecordPB* record) {
   switch (error_type) {
     case MalformedRecordType::kNoBlockOffset:
       record->clear_offset();
@@ -463,8 +516,8 @@ Status LBMCorruptor::GetRandomContainer(FindContainerMode mode,
   return Status::OK();
 }
 
-const string& LBMCorruptor::GetRandomDataDir() const {
-  return data_dirs_[rand_.Uniform(data_dirs_.size())];
+string LBMCorruptor::GetRandomDataDir() const {
+  return dd_manager_->GetDirs()[rand_.Uniform(dd_manager_->GetDirs().size())];
 }
 
 Status NativeMetadataLBMCorruptor::CreateIncompleteContainer() {
@@ -488,8 +541,10 @@ Status NativeMetadataLBMCorruptor::CreateIncompleteContainer() {
   return Status::OK();
 }
 
-Status NativeMetadataLBMCorruptor::AppendRecord(
-    const Container* c, BlockId block_id, int64_t block_offset, int64_t block_length) {
+Status NativeMetadataLBMCorruptor::AppendRecord(const Container* c,
+                                                BlockId block_id,
+                                                int64_t block_offset,
+                                                int64_t block_length) {
   unique_ptr<WritablePBContainerFile> metadata_writer;
   RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
   RETURN_NOT_OK(AppendCreateRecordInternal(metadata_writer.get(), block_id,
@@ -498,8 +553,10 @@ Status NativeMetadataLBMCorruptor::AppendRecord(
   return metadata_writer->Close();
 }
 
-Status NativeMetadataLBMCorruptor::AppendCreateRecord(
-    const Container* c, BlockId block_id, uint64_t block_offset, int64_t block_length) {
+Status NativeMetadataLBMCorruptor::AppendCreateRecord(const Container* c,
+                                                      BlockId block_id,
+                                                      uint64_t block_offset,
+                                                      int64_t block_length) {
   unique_ptr<WritablePBContainerFile> metadata_writer;
   RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
   RETURN_NOT_OK(AppendCreateRecordInternal(metadata_writer.get(), block_id,
@@ -545,8 +602,9 @@ Status NativeMetadataLBMCorruptor::CreateContainerMetadataPart(
   return metadata_file->Close();
 }
 
-Status NativeMetadataLBMCorruptor::CreateMalformedRecord(
-    const Container* c, MalformedRecordType error_type, BlockRecordPB* record) {
+Status NativeMetadataLBMCorruptor::CreateMalformedRecord(const Container* c,
+                                                         MalformedRecordType error_type,
+                                                         BlockRecordPB* record) {
   switch (error_type) {
     case MalformedRecordType::kDeleteWithoutFirstMatchingCreate:
       record->clear_offset();
@@ -562,9 +620,10 @@ Status NativeMetadataLBMCorruptor::CreateMalformedRecord(
   return Status::OK();
 }
 
-Status NativeMetadataLBMCorruptor::AppendCreateRecordInternal(
-    WritablePBContainerFile* writer, BlockId block_id,
-    int64_t block_offset, int64_t block_length) {
+Status NativeMetadataLBMCorruptor::AppendCreateRecordInternal(WritablePBContainerFile* writer,
+                                                              BlockId block_id,
+                                                              int64_t block_offset,
+                                                              int64_t block_length) {
   BlockRecordPB record;
   block_id.CopyToPB(record.mutable_block_id());
   record.set_op_type(CREATE);
@@ -581,6 +640,99 @@ Status NativeMetadataLBMCorruptor::AppendDeleteRecordInternal(
   record.set_op_type(DELETE);
   record.set_timestamp_us(0); // has no effect
   return writer->Append(record);
+}
+
+Status RdbMetadataLBMCorruptor::AppendPartialRecord(
+    const Container* c, const BlockId block_id) {
+  auto* rdb_dir = GetRdbDir(c);
+  DCHECK(rdb_dir);
+  // Add a new good record to the container.
+  RETURN_NOT_OK(AppendCreateRecordInternal(rdb_dir, c->name, block_id, 0, 0));
+  // Corrupt the record by truncating one byte off the end of it.
+  string key(LogBlockManagerRdbMeta::ConstructRocksDBKey(c->name, block_id));
+  rocksdb::Slice slice_key(key);
+  string value;
+  RETURN_NOT_OK(FromRdbStatus(rdb_dir->rdb()->Get(
+      rocksdb::ReadOptions(), slice_key, &value)));
+  return FromRdbStatus(rdb_dir->rdb()->Put(
+      rocksdb::WriteOptions(), slice_key, rocksdb::Slice(value.data(), value.size() - 1)));
+}
+
+Status RdbMetadataLBMCorruptor::AppendMetadataRecord(
+    const Container* c, const BlockRecordPB& record) {
+  auto* rdb_dir = GetRdbDir(c);
+  DCHECK(rdb_dir);
+  string buf;
+  record.SerializeToString(&buf);
+  string key(LogBlockManagerRdbMeta::ConstructRocksDBKey(
+      c->name, BlockId::FromPB(record.block_id())));
+  return FromRdbStatus(rdb_dir->rdb()->Put(
+      rocksdb::WriteOptions(), rocksdb::Slice(key), rocksdb::Slice(buf)));
+}
+
+RdbDir* RdbMetadataLBMCorruptor::GetRdbDir(const Container* c) const {
+  DCHECK(c);
+  for (const auto& dir : dd_manager_->dirs()) {
+    if (dir->dir() == c->dir) {
+      DCHECK(dir);
+      return down_cast<RdbDir*>(dir.get());
+    }
+  }
+  return nullptr;
+}
+
+Status RdbMetadataLBMCorruptor::AppendRecord(const Container* c,
+                                             const BlockId block_id,
+                                             int64_t block_offset,
+                                             int64_t block_length) {
+  auto* rdb_dir = GetRdbDir(c);
+  DCHECK(rdb_dir);
+  RETURN_NOT_OK(AppendCreateRecordInternal(rdb_dir, c->name, block_id, block_offset, block_length));
+  return AppendDeleteRecordInternal(rdb_dir, c->name, block_id);
+}
+
+Status RdbMetadataLBMCorruptor::CreateIncompleteContainer() {
+  string unsuffixed_path = JoinPathSegments(GetRandomDataDir(), oid_generator_.Next());
+  // Create an incomplete container. Types of incomplete containers:
+  //
+  // 0. Empty data file but no metadata file.
+  return CreateContainerDataPart(unsuffixed_path);
+}
+
+Status RdbMetadataLBMCorruptor::AppendCreateRecord(const Container* c,
+                                                   const BlockId block_id,
+                                                   uint64_t block_offset,
+                                                   int64_t block_length) {
+  auto* rdb_dir = GetRdbDir(c);
+  DCHECK(rdb_dir);
+  return AppendCreateRecordInternal(rdb_dir, c->name, block_id,
+                                    block_offset, block_length);
+}
+
+Status RdbMetadataLBMCorruptor::AppendCreateRecordInternal(RdbDir* dir,
+                                                           const string& id,
+                                                           BlockId block_id,
+                                                           int64_t block_offset,
+                                                           int64_t block_length) {
+  // Construct value.
+  BlockRecordPB record;
+  block_id.CopyToPB(record.mutable_block_id());
+  record.set_op_type(CREATE);
+  record.set_offset(block_offset);
+  record.set_length(block_length);
+  record.set_timestamp_us(0); // has no effect
+  string value;
+  record.SerializeToString(&value);
+
+  // Construct key.
+  string key(LogBlockManagerRdbMeta::ConstructRocksDBKey(id, BlockId::FromPB(record.block_id())));
+  return FromRdbStatus(dir->rdb()->Put({}, rocksdb::Slice(key), rocksdb::Slice(value)));
+}
+
+Status RdbMetadataLBMCorruptor::AppendDeleteRecordInternal(
+    RdbDir* dir, const string& id, BlockId block_id) {
+  string key(LogBlockManagerRdbMeta::ConstructRocksDBKey(id, block_id));
+  return FromRdbStatus(dir->rdb()->Delete({}, rocksdb::Slice(key)));
 }
 
 } // namespace fs
