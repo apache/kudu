@@ -32,6 +32,12 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <rocksdb/cache.h>
+#include <rocksdb/filter_policy.h>
+#include <rocksdb/options.h>
+#include <rocksdb/slice_transform.h>
+#include <rocksdb/status.h>
+#include <rocksdb/table.h>
 
 #include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
@@ -39,6 +45,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/oid_generator.h"
@@ -47,9 +54,11 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_util_prod.h"
 #include "kudu/util/threadpool.h"
 
 using std::set;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -59,8 +68,32 @@ using strings::Substitute;
 
 DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
+DECLARE_string(block_manager);
 
 namespace kudu {
+
+Status FromRdbStatus(const rocksdb::Status& s) {
+  switch (s.code()) {
+    case rocksdb::Status::kOk:
+      return Status::OK();
+    case rocksdb::Status::kNotFound:
+      return Status::NotFound(s.ToString());
+    case rocksdb::Status::kCorruption:
+      return Status::Corruption(s.ToString());
+    case rocksdb::Status::kNotSupported:
+      return Status::NotSupported(s.ToString());
+    case rocksdb::Status::kInvalidArgument:
+      return Status::InvalidArgument(s.ToString());
+    case rocksdb::Status::kIOError:
+      return Status::IOError(s.ToString());
+    case rocksdb::Status::kIncomplete:
+      return Status::Incomplete(s.ToString());
+    case rocksdb::Status::kAborted:
+      return Status::Aborted(s.ToString());
+    default:
+      return Status::RuntimeError(s.ToString());
+  }
+}
 
 namespace {
 
@@ -169,6 +202,105 @@ int Dir::available_space_cache_secs() {
 
 int Dir::reserved_bytes() {
   return FLAGS_fs_data_dirs_reserved_bytes;
+}
+
+shared_ptr<rocksdb::Cache> RdbDir::s_block_cache_;
+RdbDir::RdbDir(Env* env, DirMetrics* metrics,
+               FsType fs_type,
+               string dir,
+               unique_ptr<DirInstanceMetadataFile> metadata_file,
+               unique_ptr<ThreadPool> pool)
+    : Dir(env, metrics, fs_type, std::move(dir), std::move(metadata_file), std::move(pool)) {}
+
+Status RdbDir::Prepare() {
+  DCHECK_STREQ(FLAGS_block_manager.c_str(), "logr");
+  if (db_) {
+    // Some unit tests (e.g. BlockManagerTest.PersistenceTest) reopen the block manager,
+    // 'db_' is possible to be non-nullptr.
+    // In non-test environments, 'db_' is always to be nullptr, log a fatal error if not.
+    DCHECK(IsGTest()) <<
+        Substitute("It's not allowed to reopen the RocksDB $0 except in tests", dir_);
+    return Status::OK();
+  }
+
+  // See the rocksdb::Options details:
+  // https://github.com/facebook/rocksdb/blob/main/include/rocksdb/options.h
+  rocksdb::Options opts;
+  // A RocksDB instance is created if it does not exist when opening the Dir.
+  // TODO(yingchun): We should distinguish creating new data directory and opening existing data
+  //                 directory, and set proper options to avoid mishaps.
+  //                 When creating new data directory, set opts.error_if_exists = true.
+  //                 When opening existing data directory, set opts.create_if_missing = false.
+  opts.create_if_missing = true;
+  // TODO(yingchun): parameterize more rocksDB options, including:
+  //  opts.use_fsync
+  //  opts.error_if_exists
+  //  opts.db_log_dir
+  //  opts.wal_dir
+  //  opts.max_log_file_size
+  //  opts.keep_log_file_num
+  //  opts.max_manifest_file_size
+  //  opts.max_background_jobs
+  //  opts.write_buffer_size
+  //  opts.level0_file_num_compaction_trigger
+  //  opts.max_write_buffer_number
+
+  static std::once_flag flag;
+  std::call_once(flag, [&]() {
+    // TODO(yingchun): parameterize the rocksdb block cache size.
+    s_block_cache_ = rocksdb::NewLRUCache(10 << 20);
+  });
+  rocksdb::BlockBasedTableOptions tbl_opts;
+  tbl_opts.block_cache = s_block_cache_;
+  tbl_opts.whole_key_filtering = false;
+  // TODO(yingchun): parameterize these options.
+  tbl_opts.filter_policy.reset(rocksdb::NewBloomFilterPolicy(9.9));
+  opts.table_factory.reset(NewBlockBasedTableFactory(tbl_opts));
+  // Take advantage of Prefix-Seek, see https://github.com/facebook/rocksdb/wiki/Prefix-Seek.
+  opts.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(ObjectIdGenerator::IdLength()));
+  opts.memtable_prefix_bloom_size_ratio = 0.1;
+
+  rdb_dir_ = JoinPathSegments(dir_, "rdb");
+  rocksdb::DB* db_temp = nullptr;
+  rocksdb::Status rdb_s = rocksdb::DB::Open(opts, *rdb_dir_, &db_temp);
+  RETURN_NOT_OK_PREPEND(FromRdbStatus(rdb_s),
+                        Substitute("open RocksDB failed, path: $0", *rdb_dir_));
+  db_.reset(db_temp);
+  return Status::OK();
+}
+
+void RdbDir::Shutdown() {
+  if (is_shutdown_) {
+    return;
+  }
+
+  // Shut down the thread pool before closing RocksDB to make sure there aren't any in-flight
+  // write operations.
+  WaitOnClosures();
+  pool_->Shutdown();
+
+  // The 'db_' is nullptr if the Dir open failed.
+  if (db_) {
+    // Flushing memtable before closing RocksDB reduces bootstrapping time upon next start-up.
+    // Call Flush() rather than WaitForCompact(), because it's enough to wait for the flush jobs
+    // to finish, compactions jobs may take more time, which results in longer times to shut down
+    // a server.
+    rocksdb::FlushOptions options;
+    options.wait = true;
+    WARN_NOT_OK(FromRdbStatus(db_->Flush(options)),
+                Substitute("Flush RocksDB failed, path: $0", *rdb_dir_));
+    WARN_NOT_OK(FromRdbStatus(db_->Close()),
+                Substitute("Closed RocksDB with error, path: $0", *rdb_dir_));
+    db_.reset();
+  }
+
+  is_shutdown_ = true;
+}
+
+rocksdb::DB* RdbDir::rdb() {
+  DCHECK_STREQ(FLAGS_block_manager.c_str(), "logr");
+  DCHECK(db_);
+  return db_.get();
 }
 
 DirManagerOptions::DirManagerOptions(string dir_type,
@@ -629,6 +761,15 @@ Status DirManager::Open() {
 Dir* DirManager::FindDirByUuidIndex(int uuid_idx) const {
   DCHECK_LT(uuid_idx, dirs_.size());
   return FindPtrOrNull(dir_by_uuid_idx_, uuid_idx);
+}
+
+Dir* DirManager::FindDirByFullPathForTests(const std::string& full_path) const {
+  for (const auto& d : dirs_) {
+    if (HasPrefixString(full_path, d->dir())) {
+      return d.get();
+    }
+  }
+  return nullptr;
 }
 
 bool DirManager::FindUuidIndexByDir(Dir* dir, int* uuid_idx) const {

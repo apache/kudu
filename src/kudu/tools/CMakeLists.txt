@@ -142,6 +142,7 @@ set(KUDU_CLI_TOOL_LINK_LIBS
   kudu_util
   log
   master
+  rocksdb
   tablet
   tool_proto
   transactions

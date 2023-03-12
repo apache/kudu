@@ -62,11 +62,13 @@
 #include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using kudu::pb_util::ReadPBContainerFromPath;
 using kudu::pb_util::SecureDebugString;
+using std::make_tuple;
 using std::nullopt;
 using std::shared_ptr;
 using std::string;
@@ -216,9 +218,23 @@ class FsManagerTestBase : public KuduTest,
 };
 
 INSTANTIATE_TEST_SUITE_P(BlockManagerTypes, FsManagerTestBase,
-    ::testing::Combine(
-        ::testing::ValuesIn(BlockManager::block_manager_types()),
-        ::testing::ValuesIn(kEncryptionType)));
+// TODO(yingchun): When --enable_multi_tenancy is set, the data directories are still shared by
+//  all tenants, which will cause some errors when --block_manager=logr. This will be fixed in the
+//  future as the TODO mentioned in [1]. We can enable all the following test cases when the TODO
+//  is addressed.
+//  1.https://github.com/acelyc111/kudu/blob/master/src/kudu/fs/fs_manager.cc#L1190
+//
+//    ::testing::ValuesIn(BlockManager::block_manager_types()),
+//    ::testing::ValuesIn(kEncryptionType))
+    ::testing::Values(
+    make_tuple("file", kEncryptionType[0]),
+    make_tuple("file", kEncryptionType[1]),
+    make_tuple("file", kEncryptionType[2]),
+    make_tuple("log", kEncryptionType[0]),
+    make_tuple("log", kEncryptionType[1]),
+    make_tuple("log", kEncryptionType[2]),
+    make_tuple("logr", kEncryptionType[0]),
+    make_tuple("logr", kEncryptionType[1])));
 
 TEST_P(FsManagerTestBase, TestBaseOperations) {
   fs_manager()->DumpFileSystemTree(std::cout, tenant_id());
@@ -497,8 +513,7 @@ TEST_P(FsManagerTestBase, TestMetadataDirInDataRoot) {
   // Now let's test adding data directories with metadata in the data root.
   // Adding data directories is not supported by the file block manager.
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping the rest of test, file block manager not supported";
-    return;
+    GTEST_SKIP() << "Skipping the rest of test, file block manager not supported";
   }
 
   // Adding a data dir to the front of the FS root list (i.e. such that the
@@ -1229,11 +1244,19 @@ TEST_P(FsManagerTestBase, TestAddRemoveSpeculative) {
 }
 
 TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
-  const int kNumAttempts = AllowSlowTests() ? 1000 : 100;
-
   if (FLAGS_block_manager == "file") {
     GTEST_SKIP() << "Skipping test, file block manager not supported";
   }
+
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  // When using a sanitizer, reduce the loop times to get a more stable result.
+  const int kNumAttempts = 50;
+#else
+  // In some situations, the tests would last too long time, so we reduce the loop times if not
+  // AllowSlowTests(). For example, when FLAGS_block_manager == "logr", opens a data directory will
+  // open a RocksDB instance, it consumes more time than that if FLAGS_block_manager == "log".
+  const int kNumAttempts = AllowSlowTests() ? 1000 : 50;
+#endif
 
   Random rng_(SeedRandom());
 
@@ -1263,7 +1286,7 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
     }
 
     // Try to add or remove it with failure injection enabled.
-    LOG(INFO) << Substitute("$0ing $1", action_was_add ? "Add" : "Remov", fs_root);
+    SCOPED_LOG_TIMING(INFO, Substitute("$0ing $1", action_was_add ? "add" : "remov", fs_root));
     bool update_succeeded;
     {
       google::FlagSaver saver;

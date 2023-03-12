@@ -55,7 +55,7 @@ add_dependencies(itest_util
   kudu-tserver)
 
 # Tests
-SET_KUDU_TEST_LINK_LIBS(itest_util gumbo-parser gumbo-query)
+SET_KUDU_TEST_LINK_LIBS(itest_util gumbo-parser gumbo-query rocksdb)
 ADD_KUDU_TEST(all_types-itest
   PROCESSORS 4
   NUM_SHARDS 8)

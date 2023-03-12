@@ -253,6 +253,35 @@ LBMPartialRecordCheck::Entry::Entry(string c, int64_t o)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// LBMCorruptedRdbRecordCheck
+///////////////////////////////////////////////////////////////////////////////
+
+void LBMCorruptedRdbRecordCheck::MergeFrom(
+    const LBMCorruptedRdbRecordCheck& other) {
+  MERGE_ENTRIES_FROM(other);
+}
+
+string LBMCorruptedRdbRecordCheck::ToString() const {
+  // Aggregate interesting stats from all of the entries.
+  int64_t corrupted_records_repaired = 0;
+  for (const auto& pr : entries) {
+    if (pr.repaired) {
+      corrupted_records_repaired++;
+    }
+  }
+
+  return Substitute("Total corrupted LBM metadata records in RocksDB: "
+      "$0 ($1 repaired)\n",
+                    entries.size(), corrupted_records_repaired);
+}
+
+LBMCorruptedRdbRecordCheck::Entry::Entry(string c, string k)
+    : container(std::move(c)),
+      rocksdb_key(std::move(k)),
+      repaired(false) {
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // FsReport::Stats
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -301,6 +330,7 @@ void FsReport::MergeFrom(const FsReport& other) {
   MERGE_ONE_CHECK(malformed_record_check);
   MERGE_ONE_CHECK(misaligned_block_check);
   MERGE_ONE_CHECK(partial_record_check);
+  MERGE_ONE_CHECK(corrupted_rdb_record_check);
 
 #undef MERGE_ONE_CHECK
 }
@@ -329,6 +359,7 @@ string FsReport::ToString() const {
   TOSTRING_ONE_CHECK(malformed_record_check, "malformed LBM records");
   TOSTRING_ONE_CHECK(misaligned_block_check, "misaligned LBM blocks");
   TOSTRING_ONE_CHECK(partial_record_check, "partial LBM records");
+  TOSTRING_ONE_CHECK(corrupted_rdb_record_check, "corrupted LBM rdb records");
 
 #undef TOSTRING_ONE_CHECK
   return s;

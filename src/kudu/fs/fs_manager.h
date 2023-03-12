@@ -447,6 +447,9 @@ class FsManager {
     return meta_on_xfs_;
   }
 
+  // Return true if 'block_manager_type' represents a log-backed block manager.
+  static bool IsLogType(const std::string& block_manager_type);
+
  private:
   FRIEND_TEST(fs::FsManagerTestBase, TestDuplicatePaths);
   FRIEND_TEST(fs::FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool);

@@ -39,6 +39,12 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <rocksdb/db.h>
+#include <rocksdb/iterator.h>
+#include <rocksdb/options.h>
+#include <rocksdb/slice.h>
+#include <rocksdb/status.h>
+#include <rocksdb/write_batch.h>
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/data_dirs.h"
@@ -51,6 +57,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -110,6 +117,12 @@ DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
               "Number of bytes to preallocate in a log container when "
               "creating new blocks. Set to 0 to disable preallocation");
 TAG_FLAG(log_container_preallocate_bytes, advanced);
+
+DEFINE_uint64(log_container_rdb_delete_batch_count, 256,
+              "The batch count for deleting blocks in one operation against RocksDB. It is only "
+              "effective when --block_manager='logr'");
+TAG_FLAG(log_container_rdb_delete_batch_count, experimental);
+TAG_FLAG(log_container_rdb_delete_batch_count, advanced);
 
 DEFINE_double(log_container_excess_space_before_cleanup_fraction, 0.10,
               "Additional fraction of a log container's calculated size that "
@@ -206,6 +219,7 @@ METRIC_DEFINE_gauge_uint64(server, log_block_manager_processed_containers_startu
 using kudu::fs::internal::LogBlock;
 using kudu::fs::internal::LogBlockContainer;
 using kudu::fs::internal::LogBlockContainerNativeMeta;
+using kudu::fs::internal::LogBlockContainerRdbMeta;
 using kudu::fs::internal::LogBlockDeletionTransaction;
 using kudu::fs::internal::LogWritableBlock;
 using kudu::pb_util::ReadablePBContainerFile;
@@ -220,6 +234,8 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+using strings::SkipEmpty;
+using strings::Split;
 using strings::Substitute;
 
 namespace kudu {
@@ -882,6 +898,92 @@ class LogBlockContainerNativeMeta final : public LogBlockContainer {
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainerNativeMeta);
 };
 
+////////////////////////////////////////////////////////////
+// LogBlockContainerRdbMeta
+////////////////////////////////////////////////////////////
+
+// The metadata part is stored in a directory-wide shared RocksDB instance, located in
+// "<dir>/rdb/", the keys are prefixed by "<id>.", where the "id" is the container's ID.
+class LogBlockContainerRdbMeta final : public LogBlockContainer {
+ public:
+  // Creates a new LogBlockContainer managed by 'block_manager' in 'dir', 'container' will be set as
+  // the newly created container.
+  //
+  // Returns Status::OK() if created successfully, otherwise returns an error.
+  static Status Create(LogBlockManager* block_manager,
+                       Dir* dir,
+                       LogBlockContainerRefPtr* container);
+
+  // Opens an existing LogBlockContainer in 'dir'.
+  //
+  // Every container is comprised of two parts: "<dir>/<id>.data" and
+  // metadata (i.e. key-value pairs in the RocksDB instance). Together,
+  // 'dir' and 'id' fully describe both parts.
+  //
+  // Returns Status::Aborted() in the case that the data part appears to have no
+  // data (e.g. due to a crash just after creating it but before writing any
+  // records). This is recorded in 'report'.
+  static Status Open(LogBlockManager* block_manager,
+                     Dir* dir,
+                     FsReport* report,
+                     const string& id,
+                     LogBlockContainerRefPtr* container);
+
+  // Check the container whether it is fine.
+  // Only the data part is checked, the metadata part (i.e. the RocksDB instance) has been checked
+  // when open the container, it would fail immediately if it's unhealthy when open the data
+  // directory.
+  //
+  // OK: data file of the container exist;
+  // Aborted: the container will be repaired later;
+  // NotFound: data file of the container has gone missing;
+  //
+  // Note: the status here only represents the result of check.
+  static Status CheckContainerFiles(LogBlockManager* block_manager,
+                                    FsReport* report,
+                                    const Dir* dir,
+                                    const string& common_path,
+                                    const string& data_path);
+
+  LogBlockContainerRdbMeta(LogBlockManager* block_manager,
+                           Dir* data_dir,
+                           string id,
+                           shared_ptr<RWFile> data_file,
+                           uint64_t data_file_size);
+
+  ~LogBlockContainerRdbMeta() override;
+
+  Status RemoveBlockIdsFromMetadata(const vector<LogBlockRefPtr>& lbs,
+                                    vector<BlockId>* deleted_block_ids) override;
+
+  Status AddBlockIdsToMetadata(const vector<LogWritableBlock*>& blocks) override;
+
+  Status SyncMetadata() override;
+
+  Status ProcessRecords(
+      FsReport* report,
+      LogBlockManager::UntrackedBlockMap* live_blocks,
+      LogBlockManager::BlockRecordMap* live_block_records,
+      vector<LogBlockRefPtr>* dead_blocks,
+      uint64_t* max_block_id,
+      ProcessRecordType type) override;
+
+ private:
+  void ProcessDeleteRecord(
+      BlockRecordPB* /*record*/,
+      FsReport* /*report*/,
+      LogBlockManager::UntrackedBlockMap* /*live_blocks*/,
+      LogBlockManager::BlockRecordMap* /*live_block_records*/,
+      vector<LogBlockRefPtr>* /*dead_blocks*/,
+      ProcessRecordType /*type*/) override {
+    LOG(FATAL) << Substitute("Container $0 contains a DELETE type record", ToString());
+  }
+
+  rocksdb::DB* const rdb_;
+
+  DISALLOW_COPY_AND_ASSIGN(LogBlockContainerRdbMeta);
+};
+
 #define CONTAINER_DISK_FAILURE(status_expr, msg) do { \
   Status s_ = (status_expr); \
   HANDLE_DISK_FAILURE(s_, block_manager_->error_manager_->RunErrorNotificationCb( \
@@ -986,6 +1088,7 @@ void LogBlockContainerNativeMeta::CompactMetadata() {
   report.malformed_record_check.emplace();
   report.misaligned_block_check.emplace();
   report.partial_record_check.emplace();
+  report.corrupted_rdb_record_check.emplace();
 
   LogBlockManager::UntrackedBlockMap live_blocks;
   LogBlockManager::BlockRecordMap live_block_records;
@@ -1775,6 +1878,300 @@ void LogBlockContainer::ContainerDeletionAsync(int64_t offset, int64_t length) {
                             data_dir()->dir()));
 }
 
+Status LogBlockContainerRdbMeta::Create(LogBlockManager* block_manager,
+                                        Dir* dir,
+                                        LogBlockContainerRefPtr* container) {
+  DCHECK(container);
+  DCHECK(!container->get());
+  string id;
+  string common_path;
+  string data_path;
+  Status metadata_status;
+  Status data_status;
+  shared_ptr<RWFile> data_file;
+
+  // Repeat in the event of a container id collision (unlikely).
+  //
+  // When looping, we delete any created-and-orphaned records.
+  do {
+    id = block_manager->oid_generator()->Next();
+    common_path = JoinPathSegments(dir->dir(), id);
+    data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
+    metadata_status = LogBlockManagerRdbMeta::DeleteContainerMetadata(dir, id);
+    WARN_NOT_OK(metadata_status, "could not delete all orphaned metadata");
+    if (PREDICT_TRUE(block_manager->file_cache_)) {
+      if (data_file) {
+        WARN_NOT_OK(block_manager->file_cache_->DeleteFile(data_path),
+                    "could not delete orphaned data file thru file cache");
+      }
+      data_status = block_manager->file_cache_->OpenFile<Env::MUST_CREATE>(
+          data_path, &data_file);
+    } else {
+      if (data_file) {
+        WARN_NOT_OK(block_manager->env()->DeleteFile(data_path),
+                    "could not delete orphaned data file");
+      }
+      unique_ptr<RWFile> rwf;
+      RWFileOptions rw_opts;
+
+      rw_opts.mode = Env::MUST_CREATE;
+      rw_opts.is_sensitive = true;
+      data_status = block_manager->env()->NewRWFile(
+          rw_opts, data_path, &rwf);
+      data_file.reset(rwf.release());
+    }
+  } while (PREDICT_FALSE(data_status.IsAlreadyPresent()));
+  if (metadata_status.ok() && data_status.ok()) {
+    container->reset(new LogBlockContainerRdbMeta(block_manager,
+                                                  dir,
+                                                  id,
+                                                  std::move(data_file),
+                                                  0 /*data_file_size*/));
+    VLOG(1) << "Created log block container " << (*container)->ToString();
+  }
+
+  // Prefer metadata status (arbitrarily).
+  auto em = block_manager->error_manager();
+  HANDLE_DISK_FAILURE(metadata_status, em->RunErrorNotificationCb(
+      ErrorHandlerType::DISK_ERROR, dir, block_manager->tenant_id()));
+  HANDLE_DISK_FAILURE(data_status, em->RunErrorNotificationCb(
+      ErrorHandlerType::DISK_ERROR, dir, block_manager->tenant_id()));
+  return !metadata_status.ok() ? metadata_status : data_status;
+}
+
+Status LogBlockContainerRdbMeta::Open(LogBlockManager* block_manager,
+                                      Dir* dir,
+                                      FsReport* report,
+                                      const string& id,
+                                      LogBlockContainerRefPtr* container) {
+  DCHECK(container);
+  DCHECK(!container->get());
+  string common_path = JoinPathSegments(dir->dir(), id);
+  string data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
+  RETURN_NOT_OK(CheckContainerFiles(block_manager, report, dir, common_path, data_path));
+
+  // Open the existing data file for writing.
+  shared_ptr<RWFile> data_file;
+  if (PREDICT_TRUE(block_manager->file_cache_)) {
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(
+        block_manager->file_cache_->OpenFile<Env::MUST_EXIST>(data_path, &data_file));
+  } else {
+    RWFileOptions opts;
+    opts.mode = Env::MUST_EXIST;
+    opts.is_sensitive = true;
+    unique_ptr<RWFile> rwf;
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->env()->NewRWFile(
+        opts, data_path, &rwf));
+    data_file.reset(rwf.release());
+  }
+
+  uint64_t data_file_size;
+  RETURN_NOT_OK_CONTAINER_DISK_FAILURE(data_file->Size(&data_file_size));
+
+  // Create the in-memory container and populate it.
+  LogBlockContainerRefPtr open_container(new LogBlockContainerRdbMeta(
+      block_manager, dir, id, std::move(data_file), data_file_size));
+  VLOG(1) << "Opened log block container " << open_container->ToString();
+  container->swap(open_container);
+  return Status::OK();
+}
+
+Status LogBlockContainerRdbMeta::CheckContainerFiles(LogBlockManager* block_manager,
+                                                     FsReport* report,
+                                                     const Dir* dir,
+                                                     const string& common_path,
+                                                     const string& data_path) {
+  Env* env = block_manager->env();
+  uint64_t data_size = 0;
+  Status s_data = env->GetFileSize(data_path, &data_size);
+  if (!s_data.ok() && !s_data.IsNotFound()) {
+    s_data = s_data.CloneAndPrepend("unable to determine data file size");
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(s_data);
+  }
+
+  const auto kEncryptionHeaderSize = env->GetEncryptionHeaderSize();
+
+  // TODO(yingchun): In the case of data file doesn't exist but metadata records in RocksDB exist,
+  //                 the garbage data in RocksDB has no chance to be cleaned up, because the
+  //                 container is not found (since the data file is not found) when loading
+  //                 containers. Consider to clean up these garbage data.
+  // Check data file exists and has valid length.
+  if (PREDICT_FALSE(data_size <= kEncryptionHeaderSize)) {
+    report->incomplete_container_check->entries.emplace_back(common_path);
+    return Status::Aborted(Substitute("orphaned empty or invalid length file $0", common_path));
+  }
+
+  return Status::OK();
+}
+
+LogBlockContainerRdbMeta::LogBlockContainerRdbMeta(
+    LogBlockManager* block_manager,
+    Dir* data_dir,
+    string id,
+    shared_ptr<RWFile> data_file,
+    uint64_t data_file_size)
+    : LogBlockContainer(block_manager, data_dir, std::move(id),
+                        std::move(data_file), data_file_size),
+      rdb_(down_cast<RdbDir*>(data_dir)->rdb()) {
+}
+
+LogBlockContainerRdbMeta::~LogBlockContainerRdbMeta() {
+  if (dead()) {
+    CHECK(!block_manager_->opts_.read_only);
+    string data_file_name = data_file_->filename();
+    string data_failure_msg =
+        "Could not delete dead container data file " + data_file_name;
+    CONTAINER_DISK_FAILURE(LogBlockManagerRdbMeta::DeleteContainerMetadata(data_dir_, id_),
+                           "Could not delete dead container metadata records " + id_);
+    if (PREDICT_TRUE(block_manager_->file_cache_)) {
+      CONTAINER_DISK_FAILURE(block_manager_->file_cache_->DeleteFile(data_file_name),
+                             data_failure_msg);
+    } else {
+      CONTAINER_DISK_FAILURE(block_manager_->env_->DeleteFile(data_file_name),
+                             data_failure_msg);
+    }
+  }
+  data_file_.reset();
+}
+
+Status LogBlockContainerRdbMeta::ProcessRecords(
+    FsReport* report,
+    LogBlockManager::UntrackedBlockMap* live_blocks,
+    LogBlockManager::BlockRecordMap* live_block_records,
+    vector<LogBlockRefPtr>* dead_blocks,
+    uint64_t* max_block_id,
+    ProcessRecordType type) {
+  int count = 0;
+  SCOPED_LOG_SLOW_EXECUTION(INFO, 100, Substitute("process $0 records in $1",
+                                                  count, data_dir_->dir()));
+  rocksdb::Slice begin_key = id_;
+  string next_id = ObjectIdGenerator::NextOf(id_);
+  rocksdb::Slice end_key = next_id;
+  rocksdb::ReadOptions scan_opt;
+  // Take advantage of Prefix-Seek, see https://github.com/facebook/rocksdb/wiki/Prefix-Seek.
+  scan_opt.prefix_same_as_start = true;
+  scan_opt.total_order_seek = false;
+  scan_opt.auto_prefix_mode = false;
+  scan_opt.readahead_size = 2 << 20;  // TODO(yingchun): make this configurable.
+  scan_opt.iterate_upper_bound = &end_key;
+
+  uint64_t data_file_size = 0;
+  BlockRecordPB record;
+  unique_ptr<rocksdb::Iterator> it(rdb_->NewIterator(scan_opt));
+  it->Seek(begin_key);
+  while (it->Valid() && it->key().starts_with(begin_key)) {
+    if (PREDICT_FALSE(!record.ParseFromArray(it->value().data(), it->value().size()))) {
+      report->corrupted_rdb_record_check->entries.emplace_back(ToString(), it->key().ToString());
+      LOG(WARNING) << Substitute("Parse metadata record in rocksdb failed, path: $0, key: $1",
+                                 ToString(),
+                                 it->key().ToString());
+      it->Next();
+      continue;
+    }
+
+    RETURN_NOT_OK(ProcessRecord(&record, report,
+                                live_blocks, live_block_records, dead_blocks,
+                                &data_file_size, max_block_id, type));
+    it->Next();
+    count++;
+  }
+
+  Status s = FromRdbStatus(it->status());
+  if (PREDICT_FALSE(!s.ok())) {
+    WARN_NOT_OK(s, Substitute("failed to read metadata records from RocksDB $0", ToString()));
+    HandleError(s);
+    return s;
+  }
+
+  return Status::OK();
+}
+
+Status LogBlockContainerRdbMeta::RemoveBlockIdsFromMetadata(
+    const vector<LogBlockRefPtr>& lbs, vector<BlockId>* deleted_block_ids) {
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
+  // Note: We don't check for sufficient disk space for metadata writes in
+  // order to allow for block deletion on full disks.
+  DCHECK(deleted_block_ids);
+  // Perform batch delete has a better performance than single deletes.
+  rocksdb::WriteBatch batch;
+  // The 'keys' is used to keep the lifetime of the data referenced by Slices in 'batch'.
+  vector<string> keys;
+  keys.reserve(lbs.size());
+  for (const auto& lb : lbs) {
+    deleted_block_ids->emplace_back(lb->block_id());
+
+    // Construct key.
+    keys.emplace_back(LogBlockManagerRdbMeta::ConstructRocksDBKey(id_, lb->block_id()));
+
+    // Add the delete operation to batch.
+    RETURN_NOT_OK_HANDLE_ERROR(FromRdbStatus(batch.Delete(rocksdb::Slice(keys.back()))));
+
+    // Tune --log_container_rdb_delete_batch_count to achieve better performance.
+    if (batch.Count() >= FLAGS_log_container_rdb_delete_batch_count) {
+      RETURN_NOT_OK_HANDLE_ERROR(FromRdbStatus(rdb_->Write({}, &batch)));
+      batch.Clear();
+      keys.clear();
+    }
+  }
+
+  if (batch.Count() > 0) {
+    RETURN_NOT_OK_HANDLE_ERROR(FromRdbStatus(rdb_->Write({}, &batch)));
+  }
+
+  return Status::OK();
+}
+
+Status LogBlockContainerRdbMeta::AddBlockIdsToMetadata(
+    const vector<LogWritableBlock*>& blocks) {
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
+  BlockRecordPB record;
+  record.set_op_type(CREATE);
+  record.set_timestamp_us(GetCurrentTimeMicros());
+
+  // Perform batch put has a better performance than single puts.
+  rocksdb::WriteBatch batch;
+  // The 'keys' and 'values' are used to keep the lifetime of the data referenced by Slices
+  // in 'batch'.
+  vector<string> keys;
+  keys.reserve(blocks.size());
+  vector<string> values;
+  values.reserve(blocks.size());
+  for (const auto* block : blocks) {
+    // Construct key.
+    keys.emplace_back(LogBlockManagerRdbMeta::ConstructRocksDBKey(id_, block->id()));
+
+    // Construct value.
+    block->id().CopyToPB(record.mutable_block_id());
+    record.set_offset(block->block_offset());
+    record.set_length(block->block_length());
+    string value;
+    record.SerializeToString(&value);
+    values.emplace_back(value);
+
+    // Add the put operation to batch.
+    RETURN_NOT_OK_HANDLE_ERROR(FromRdbStatus(batch.Put(
+        rocksdb::Slice(keys.back()), rocksdb::Slice(values.back()))));
+  }
+
+  // TODO(yingchun): Add a flag similar to --log_container_rdb_delete_batch_count to add metadata
+  //  records in batch.
+  rocksdb::Status s = rdb_->Write({}, &batch);
+  RETURN_NOT_OK_HANDLE_ERROR(FromRdbStatus(s));
+
+  return Status::OK();
+}
+
+Status LogBlockContainerRdbMeta::SyncMetadata() {
+  VLOG(3) << "Syncing WAL of RocksDB in " << data_dir_->dir();
+  // TODO(yingchun): It's too costly to
+//  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
+//  if (FLAGS_enable_data_block_fsync) {
+//    if (metrics_) metrics_->generic_metrics.total_disk_sync->Increment();
+//    RETURN_NOT_OK_HANDLE_ERROR(FromRdbStatus(rdb_->SyncWAL()));
+//  }
+  return Status::OK();
+}
+
 ///////////////////////////////////////////////////////////
 // LogBlockCreationTransaction
 ////////////////////////////////////////////////////////////
@@ -1975,6 +2372,7 @@ struct LogBlockContainerLoadResult {
     report.malformed_record_check.emplace();
     report.misaligned_block_check.emplace();
     report.partial_record_check.emplace();
+    report.corrupted_rdb_record_check.emplace();
   }
 };
 
@@ -2986,8 +3384,17 @@ void LogBlockManager::OpenDataDir(
     Status* result_status,
     std::atomic<int>* containers_processed,
     std::atomic<int>* containers_total) {
+  Status s = dir->Prepare();
+  if (!s.ok()) {
+    HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(
+        ErrorHandlerType::DISK_ERROR, dir));
+    *result_status = s.CloneAndPrepend(Substitute(
+        "Could not initialize $0", dir->dir()));
+    return;
+  }
+
   vector<string> children;
-  Status s = env_->GetChildren(dir->dir(), &children);
+  s = env_->GetChildren(dir->dir(), &children);
   if (!s.ok()) {
     HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(
         ErrorHandlerType::DISK_ERROR, dir, tenant_id()));
@@ -2998,7 +3405,7 @@ void LogBlockManager::OpenDataDir(
 
   // Find all containers and open them.
   unordered_set<string> containers_seen;
-  results->reserve(children.size() / 2);
+  results->reserve(EstimateContainerCount(children.size()));
   for (const string& child : children) {
     string container_name;
     if (!TryStripSuffixString(
@@ -3260,7 +3667,6 @@ void LogBlockManagerNativeMeta::FindContainersToRepair(
     }
   }
 }
-
 
 Status LogBlockManager::DoRepair(
     Dir* /*dir*/,
@@ -3581,6 +3987,136 @@ int64_t LogBlockManager::LookupBlockLimit(int64_t fs_block_size) {
   // Block size must have been less than the very first key. Return the
   // first recorded entry and hope for the best.
   return kPerFsBlockSizeBlockLimits.begin()->second;
+}
+
+Status LogBlockManagerRdbMeta::CreateContainer(Dir* dir, LogBlockContainerRefPtr* container) {
+  return LogBlockContainerRdbMeta::Create(this, dir, container);
+}
+
+Status LogBlockManagerRdbMeta::OpenContainer(Dir* dir,
+                                             FsReport* report,
+                                             const string& id,
+                                             LogBlockContainerRefPtr* container) {
+  return LogBlockContainerRdbMeta::Open(this, dir, report, id, container);
+}
+
+void LogBlockManagerRdbMeta::FindContainersToRepair(
+    FsReport* report,
+    const ContainerBlocksByName& low_live_block_containers,
+    ContainersByName* containers_by_name) {
+  LogBlockManager::FindContainersToRepair(report, low_live_block_containers, containers_by_name);
+  if (report->corrupted_rdb_record_check) {
+    for (const auto& e : report->corrupted_rdb_record_check->entries) {
+      LogBlockContainerRefPtr c = FindPtrOrNull(all_containers_by_name_, e.container);
+      if (c) {
+        (*containers_by_name)[e.container] = c;
+      }
+    }
+  }
+}
+
+Status LogBlockManagerRdbMeta::DoRepair(
+    Dir* dir,
+    FsReport* report,
+    const ContainerBlocksByName& low_live_block_containers,
+    const ContainersByName& containers_by_name) {
+  RETURN_NOT_OK(LogBlockManager::DoRepair(dir, report, low_live_block_containers,
+                                          containers_by_name));
+  // Delete any incomplete container files.
+  //
+  // This is a non-fatal inconsistency; we can just as easily ignore the
+  // leftover container files.
+  if (report->incomplete_container_check) {
+    for (auto& ic : report->incomplete_container_check->entries) {
+      // Delete the metadata records.
+      // The ic.container is constructed as "<dir>/<cid>", where the "cid" is the container's id.
+      vector<string> dir_and_cid = Split(ic.container, "/", SkipEmpty());
+      CHECK(!dir_and_cid.empty());
+      const auto &cid = dir_and_cid.back();
+      WARN_NOT_OK_LBM_DISK_FAILURE(DeleteContainerMetadata(dir, cid),
+                                   "could not delete incomplete container metadata records");
+      // Delete the data file.
+      Status s = env_->DeleteFile(StrCat(ic.container, kContainerDataFileSuffix));
+      if (!s.ok() && !s.IsNotFound()) {
+        WARN_NOT_OK_LBM_DISK_FAILURE(s, "could not delete incomplete container data file");
+      }
+      ic.repaired = true;
+    }
+  }
+
+  // Delete any corrupted records from RocksDB.
+  //
+  // This is a non-fatal inconsistency; we can just as easily delete the
+  // records.
+  if (report->corrupted_rdb_record_check) {
+    for (auto& e : report->corrupted_rdb_record_check->entries) {
+      // TODO(yingchun): optimize the delete operations to delete in batch.
+      rocksdb::Slice key(e.rocksdb_key);
+      auto s = down_cast<RdbDir*>(dir)->rdb()->Delete({}, key);
+      WARN_NOT_OK_LBM_DISK_FAILURE(
+          FromRdbStatus(s),
+          Substitute("could not delete container corrupted metadata record $0", e.rocksdb_key));
+      e.repaired = true;
+    }
+  }
+
+  return Status::OK();
+}
+
+Status LogBlockManagerRdbMeta::DeleteContainerMetadata(Dir* dir, const string& id) {
+  rocksdb::Slice begin_key(id);
+  string next_id = ObjectIdGenerator::NextOf(id);
+  rocksdb::Slice end_key(next_id);
+  auto* rdb = down_cast<RdbDir*>(dir)->rdb();
+  // TODO(yingchun): DeleteRange() seems not stable, it is declared as now usable in production.
+  //  See https://github.com/facebook/rocksdb/blob/v7.7.3/include/rocksdb/db.h#L475
+  // auto s = rdb->DeleteRange(
+  //     rocksdb::WriteOptions(), rdb->DefaultColumnFamily(), begin_key, end_key);
+  int count = 0;
+  SCOPED_LOG_SLOW_EXECUTION(INFO, 100, Substitute("delete $0 metadata records from $1",
+                                                  count, dir->dir()));
+  // Perform batch delete has a better performance than single deletes.
+  rocksdb::WriteBatch batch;
+  // The 'keys' is used to keep the lifetime of the data referenced by Slices in 'batch'.
+  vector<string> keys;
+  keys.reserve(FLAGS_log_container_rdb_delete_batch_count);
+
+  rocksdb::ReadOptions scan_opt;
+  // Take advantage of Prefix-Seek, see https://github.com/facebook/rocksdb/wiki/Prefix-Seek.
+  scan_opt.prefix_same_as_start = true;
+  scan_opt.total_order_seek = false;
+  scan_opt.auto_prefix_mode = false;
+  scan_opt.readahead_size = 2 << 20;  // TODO(yingchun): make this configurable.
+  scan_opt.iterate_upper_bound = &end_key;
+  unique_ptr<rocksdb::Iterator> it(rdb->NewIterator(scan_opt));
+  it->Seek(begin_key);
+  while (it->Valid() && it->key().starts_with(begin_key)) {
+    keys.emplace_back(it->key().ToString());
+
+    // Add the delete operation to batch.
+    RETURN_NOT_OK(FromRdbStatus(batch.Delete(rocksdb::Slice(keys.back()))));
+
+    // Tune --log_container_rdb_delete_batch_count to achieve better performance.
+    if (batch.Count() >= FLAGS_log_container_rdb_delete_batch_count) {
+      RETURN_NOT_OK(FromRdbStatus(rdb->Write({}, &batch)));
+      batch.Clear();
+      keys.clear();
+    }
+
+    it->Next();
+    count++;
+  }
+
+  if (batch.Count() > 0) {
+    RETURN_NOT_OK(FromRdbStatus(rdb->Write({}, &batch)));
+  }
+
+  return Status::OK();
+}
+
+std::string LogBlockManagerRdbMeta::ConstructRocksDBKey(
+    const std::string& container_id, const BlockId& block_id) {
+  return Substitute("$0.$1", container_id, block_id.ToString());
 }
 
 } // namespace fs
