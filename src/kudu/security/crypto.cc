@@ -75,6 +75,12 @@ struct RsaPrivateKeyTraits : public SslTypeTraits<EVP_PKEY> {
   static constexpr auto kWritePemFunc = &PemWritePrivateKey;
   static constexpr auto kWriteDerFunc = &i2d_PrivateKey_bio;
 };
+struct RsaEncryptedPrivateKeyTraits : public SslTypeTraits<EVP_PKEY> {
+  static constexpr auto kReadPemFunc = &PEM_read_bio_PrivateKey;
+  static constexpr auto kReadDerFunc = &d2i_PKCS8PrivateKey_bio;
+  static constexpr auto kWritePemFunc = &PEM_write_bio_PKCS8PrivateKey;
+  static constexpr auto kWriteDerFunc = &i2d_PKCS8PrivateKey_bio;
+};
 struct RsaPublicKeyTraits : public SslTypeTraits<EVP_PKEY> {
   static constexpr auto kReadPemFunc = &PEM_read_bio_PUBKEY;
   static constexpr auto kReadDerFunc = &d2i_PUBKEY_bio;
@@ -91,6 +97,50 @@ template<> struct SslTypeTraits<EVP_MD_CTX> {
   static constexpr auto kFreeFunc = &EVP_MD_CTX_free;
 #endif
 };
+
+template<>
+Status FromBIO<EVP_PKEY, RsaEncryptedPrivateKeyTraits>(BIO* bio, DataFormat format,
+    c_unique_ptr<EVP_PKEY>* ret, const PasswordCallback& cb) {
+  CHECK(bio);
+  switch (format) {
+    case DataFormat::DER:
+      *ret = ssl_make_unique(RsaEncryptedPrivateKeyTraits::kReadDerFunc(
+            bio, nullptr, &TLSPasswordCB, const_cast<PasswordCallback*>(&cb)));
+      break;
+    case DataFormat::PEM:
+      *ret = ssl_make_unique(RsaEncryptedPrivateKeyTraits::kReadPemFunc(
+            bio, nullptr, &TLSPasswordCB, const_cast<PasswordCallback*>(&cb)));
+      break;
+  }
+  if (PREDICT_FALSE(!*ret)) {
+    return Status::RuntimeError("error reading private key", GetOpenSSLErrors());
+  }
+  return Status::OK();
+}
+
+template<>
+Status ToBIO<EVP_PKEY, RsaEncryptedPrivateKeyTraits>(BIO* bio, DataFormat format,
+    EVP_PKEY* obj, const PasswordCallback& cb) {
+  CHECK(bio);
+  CHECK(obj);
+  switch (format) {
+    case DataFormat::DER:
+      OPENSSL_RET_NOT_OK(RsaEncryptedPrivateKeyTraits::kWriteDerFunc(
+            bio, obj, EVP_aes_256_cbc(), nullptr, 0, &TLSPasswordCB,
+            const_cast<PasswordCallback*>(&cb)),
+          "error exporting data in DER format");
+      break;
+    case DataFormat::PEM:
+      OPENSSL_RET_NOT_OK(RsaEncryptedPrivateKeyTraits::kWritePemFunc(
+            bio, obj, EVP_aes_256_cbc(), nullptr, 0, &TLSPasswordCB,
+            const_cast<PasswordCallback*>(&cb)),
+          "error exporting data in PEM format");
+      break;
+  }
+  OPENSSL_RET_NOT_OK(BIO_flush(bio), "error flushing BIO");
+  return Status::OK();
+}
+
 
 namespace {
 
@@ -184,9 +234,21 @@ Status PrivateKey::FromString(const std::string& data, DataFormat format) {
       data, format, &data_);
 }
 
+Status PrivateKey::FromEncryptedString(const std::string& data, DataFormat format,
+                                       const PasswordCallback& password_cb) {
+  return ::kudu::security::FromString<RawDataType, RsaEncryptedPrivateKeyTraits>(
+      data, format, &data_, password_cb);
+}
+
 Status PrivateKey::ToString(std::string* data, DataFormat format) const {
   return ::kudu::security::ToString<RawDataType, RsaPrivateKeyTraits>(
       data, format, data_.get());
+}
+
+Status PrivateKey::ToEncryptedString(std::string* data, DataFormat format,
+                                  const PasswordCallback& password_cb) const {
+  return ::kudu::security::ToString<RawDataType, RsaEncryptedPrivateKeyTraits>(
+        data, format, data_.get(), password_cb);
 }
 
 Status PrivateKey::FromFile(const std::string& fpath, DataFormat format,

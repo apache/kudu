@@ -75,6 +75,11 @@ class PrivateKey : public RawDataWrapper<EVP_PKEY> {
   Status FromString(const std::string& data, DataFormat format) WARN_UNUSED_RESULT;
   Status ToString(std::string* data, DataFormat format) const WARN_UNUSED_RESULT;
 
+  Status FromEncryptedString(const std::string& data, DataFormat format,
+                             const PasswordCallback& password_cb) WARN_UNUSED_RESULT;
+  Status ToEncryptedString(std::string* data, DataFormat format,
+                           const PasswordCallback& password_cb) const WARN_UNUSED_RESULT;
+
   // If 'cb' is set, it will be called to obtain the password necessary to decrypt
   // the private key file in 'fpath'.
   Status FromFile(const std::string& fpath, DataFormat format,
