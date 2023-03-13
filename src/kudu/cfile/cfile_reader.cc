@@ -546,7 +546,7 @@ Status CFileReader::ReadBlock(const IOContext* io_context,
     scratch.Swap(&decompressed_scratch);
 
     // Set the result block to our decompressed data.
-    block = Slice(buf, uncompressed_size);
+    block = scratch.as_slice();
   }
 
   // It's possible that one of the TryAllocateFromCache() calls above
