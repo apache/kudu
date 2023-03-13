@@ -17,10 +17,12 @@
 
 #include "kudu/security/token_signing_key.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/security/crypto.h"
@@ -28,6 +30,11 @@
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
 
+DEFINE_string(tsk_private_key_password_cmd, "",
+              "A Unix command whose output returns the password to encrypt "
+              "and decrypt the token signing key");
+
+using kudu::security::PasswordCallback;
 using std::unique_ptr;
 using std::string;
 
@@ -59,7 +66,18 @@ bool TokenSigningPublicKey::VerifySignature(const SignedTokenPB& token) const {
 TokenSigningPrivateKey::TokenSigningPrivateKey(
     const TokenSigningPrivateKeyPB& pb)
     : key_(new PrivateKey) {
-  CHECK_OK(key_->FromString(pb.rsa_key_der(), DataFormat::DER));
+  if (FLAGS_tsk_private_key_password_cmd.empty()) {
+    CHECK_OK(key_->FromString(pb.rsa_key_der(), DataFormat::DER));
+  } else {
+    CHECK_OK(key_->FromEncryptedString(pb.rsa_key_der(), DataFormat::DER,
+          [&](string* password) {
+            RETURN_NOT_OK_PREPEND(GetPasswordFromShellCommand(
+                  FLAGS_tsk_private_key_password_cmd, password),
+                "could not get TSK private key password from configured command");
+            return Status::OK();
+          }
+    ));
+  }
   private_key_der_ = pb.rsa_key_der();
   key_seq_num_ = pb.key_seq_num();
   expire_time_ = pb.expire_unix_epoch_seconds();
@@ -74,7 +92,18 @@ TokenSigningPrivateKey::TokenSigningPrivateKey(
     : key_(std::move(key)),
       key_seq_num_(key_seq_num),
       expire_time_(expire_time) {
-  CHECK_OK(key_->ToString(&private_key_der_, DataFormat::DER));
+  if (FLAGS_tsk_private_key_password_cmd.empty()) {
+    CHECK_OK(key_->ToString(&private_key_der_, DataFormat::DER));
+  } else {
+    CHECK_OK(key_->ToEncryptedString(&private_key_der_, DataFormat::DER,
+          [&](string* password){
+            RETURN_NOT_OK_PREPEND(GetPasswordFromShellCommand(
+                  FLAGS_tsk_private_key_password_cmd, password),
+                "could not get TSK private key password from configured command");
+            return Status::OK();
+          }
+    ));
+  }
   PublicKey public_key;
   CHECK_OK(key_->GetPublicKey(&public_key));
   CHECK_OK(public_key.ToString(&public_key_der_, DataFormat::DER));

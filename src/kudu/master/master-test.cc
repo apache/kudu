@@ -149,6 +149,7 @@ DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(ipki_private_key_password_cmd);
 DECLARE_string(location_mapping_cmd);
 DECLARE_string(log_filename);
+DECLARE_string(tsk_private_key_password_cmd);
 DECLARE_string(webserver_doc_root);
 
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
@@ -3039,6 +3040,7 @@ class MasterWithEncryptedKeysTest : public MasterTest,
   void SetUp() override {
     if (GetParam()) {
       FLAGS_ipki_private_key_password_cmd = "echo test";
+      FLAGS_tsk_private_key_password_cmd = "echo foo";
     }
     MasterTest::SetUp();
   }
@@ -3141,7 +3143,7 @@ TEST_F(MasterTest, TestConnectToMasterAndAssignLocation) {
 
 // Test that the master signs its own server certificate when it becomes the leader,
 // and also that it loads TSKs into the messenger's verifier.
-TEST_F(MasterTest, TestSignOwnCertAndLoadTSKs) {
+TEST_P(MasterWithEncryptedKeysTest, TestSignOwnCertAndLoadTSKs) {
   ASSERT_EVENTUALLY([&]() {
       ASSERT_TRUE(master_->tls_context().has_signed_cert());
       ASSERT_GT(master_->messenger()->token_verifier().GetMaxKnownKeySequenceNumber(), -1);

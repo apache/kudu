@@ -24,6 +24,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -91,6 +92,7 @@ class CatalogManagerTskITest : public KuduTest {
       "--raft_enable_pre_election=false",
       "--master_non_leader_masters_propagate_tsk",
       "--tsk_rotation_seconds=2",
+      "--tsk_private_key_password_cmd=echo test",
     };
     copy(master_flags.begin(), master_flags.end(),
         back_inserter(cluster_opts_.extra_master_flags));
