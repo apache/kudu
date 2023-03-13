@@ -123,12 +123,11 @@ Status MessengerBuilder::Build(shared_ptr<Messenger>* msgr) {
       } else {
         RETURN_NOT_OK(tls_context->LoadCertificateAndPasswordProtectedKey(
             rpc_certificate_file_, rpc_private_key_file_,
-            [&](){
-              string ret;
-              WARN_NOT_OK(security::GetPasswordFromShellCommand(
-                  rpc_private_key_password_cmd_, &ret),
+            [&](string* password){
+              RETURN_NOT_OK_PREPEND(security::GetPasswordFromShellCommand(
+                  rpc_private_key_password_cmd_, password),
                   "could not get RPC password from configured command");
-              return ret;
+              return Status::OK();
             }
         ));
       }

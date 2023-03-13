@@ -55,7 +55,12 @@ Status ToBIO(BIO* bio, DataFormat format, TYPE* obj,
 // a password protected private key.
 inline int TLSPasswordCB(char* buf, int size, int /* rwflag */, void* userdata) {
   const auto* cb = reinterpret_cast<const PasswordCallback*>(userdata);
-  std::string pw = (*cb)();
+  std::string pw;
+  Status s = (*cb)(&pw);
+  if (!s.ok()) {
+    LOG(ERROR) << "Failed to obtain password: " << s.ToString();
+    return -1;
+  }
   if (pw.size() >= size) {
     LOG(ERROR) << "Provided key password is longer than maximum length "
                << size;

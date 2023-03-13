@@ -17,11 +17,13 @@
 
 #include "kudu/master/sys_catalog.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -54,7 +56,8 @@ using kudu::security::PrivateKey;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
-using std::vector;
+
+DECLARE_string(ipki_private_key_password_cmd);
 
 namespace google {
 namespace protobuf {
@@ -384,6 +387,62 @@ TEST_F(SysCatalogTest, AttemptOverwriteCertAuthorityInfo) {
       AddCertAuthorityEntry(ca_entry);
   ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_EQ("Corruption: failed to write one or more rows", s.ToString());
+}
+
+class SysCatalogEncryptedCertTest : public SysCatalogTest {
+ public:
+  const string kPassword = "test";
+  void SetUp() override {
+    FLAGS_ipki_private_key_password_cmd = "echo " + kPassword;
+    SysCatalogTest::SetUp();
+  }
+};
+
+TEST_F(SysCatalogEncryptedCertTest, LoadCertAuthorityInfoEncrypted) {
+  SysCertAuthorityEntryPB ca_entry;
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->
+      GetCertAuthorityEntry(&ca_entry));
+
+  // Decrypting key without password should not work.
+  {
+    PrivateKey pkey;
+    Status s = pkey.FromString(ca_entry.private_key(), DataFormat::DER);
+    ASSERT_TRUE(s.IsRuntimeError());
+  }
+
+  // Decrypting key with incorrect password should not work.
+  {
+    PrivateKey pkey;
+    ASSERT_TRUE(pkey.FromEncryptedString(ca_entry.private_key(),
+                                         DataFormat::DER,
+                                         [&](string* password) {
+                                           *password = "not " + kPassword;
+                                           return Status::OK();
+                                         }).IsRuntimeError());
+  }
+
+  // Decrypting key with correct password should work.
+  {
+    PrivateKey pkey;
+    ASSERT_OK(pkey.FromEncryptedString(ca_entry.private_key(),
+                                       DataFormat::DER,
+                                       [&](string* password) {
+                                        *password = kPassword;
+                                        return Status::OK();
+                                      }));
+  }
+
+  // Password callback returning an error should cause the decryption to fail.
+  {
+    PrivateKey pkey;
+    ASSERT_TRUE(pkey.FromEncryptedString(ca_entry.private_key(),
+                                       DataFormat::DER,
+                                       [&](string* password) {
+                                        *password = kPassword;
+                                        return Status::RuntimeError("Something went wrong");
+                                      }).IsRuntimeError());
+  }
+
 }
 
 // Check loading the auto-generated cluster ID upon startup.
