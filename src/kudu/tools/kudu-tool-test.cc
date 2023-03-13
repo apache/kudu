@@ -4872,7 +4872,10 @@ TEST_F(ToolTest, TestTserverListLocationNotAssigned) {
 }
 
 TEST_F(ToolTest, TestTServerListState) {
-  NO_FATALS(StartExternalMiniCluster());
+  constexpr const int kTServerNum = 3;
+  ExternalMiniClusterOptions options;
+  options.num_tablet_servers = kTServerNum;
+  NO_FATALS(StartExternalMiniCluster(options));
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
   const string ts_uuid = cluster_->tablet_server(0)->uuid();
 
@@ -4880,15 +4883,17 @@ TEST_F(ToolTest, TestTServerListState) {
   NO_FATALS(RunActionStdoutNone(Substitute("tserver state enter_maintenance $0 $1",
                                            master_addr, ts_uuid)));
 
-  // If the state isn't requested, we shouldn't see any.
   string out;
   NO_FATALS(RunActionStdoutString(
-        Substitute("tserver list $0 --columns=uuid --format=csv", master_addr), &out));
-  ASSERT_STR_NOT_CONTAINS(out, Substitute("$0,$1", ts_uuid, "MAINTENANCE_MODE"));
+        Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
+
+  for (int i = 1; i < kTServerNum; i++) {
+    // If a ts isn't requested, we shouldn't see its maintenance state.
+    const string ts_uuid_noop = cluster_->tablet_server(i)->uuid();
+    ASSERT_STR_NOT_CONTAINS(out, Substitute("$0,$1", ts_uuid_noop, "MAINTENANCE_MODE"));
+  }
 
   // If it is requested, we should see the state.
-  NO_FATALS(RunActionStdoutString(
-        Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
   ASSERT_STR_CONTAINS(out, Substitute("$0,$1", ts_uuid, "MAINTENANCE_MODE"));
 
   // Ksck should show a table showing the state.
