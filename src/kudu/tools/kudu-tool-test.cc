@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <limits.h>
 #include <sys/stat.h>
 
 #include <algorithm>
@@ -103,6 +104,7 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/transfer.h"
 #include "kudu/subprocess/subprocess_protocol.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -125,6 +127,7 @@
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/jsonreader.h"
+#include "kudu/util/logging_test_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -152,6 +155,7 @@ DECLARE_bool(fs_data_dirs_consider_available_space);
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(show_values);
 DECLARE_bool(show_attributes);
+DECLARE_bool(tablet_copy_support_download_superblock_in_batch);
 DECLARE_int32(catalog_manager_inject_latency_load_ca_info_ms);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
@@ -9345,6 +9349,147 @@ TEST_F(ToolTest, TestLocalReplicaCopyRemote) {
     ASSERT_TRUE(find(target_tablet_ids.begin(), target_tablet_ids.end(), tablet_id)
                 != target_tablet_ids.end());
   }
+}
+
+
+class DownloadSuperblockInBatchTest :
+    public ToolTest,
+    public ::testing::WithParamInterface<std::tuple<bool, bool>> {
+};
+
+INSTANTIATE_TEST_SUITE_P(DownloadSuperblockInBatchParameterized, DownloadSuperblockInBatchTest,
+                         ::testing::Combine(::testing::Bool(),
+                                            ::testing::Bool()));
+
+TEST_P(DownloadSuperblockInBatchTest, TestDownloadSuperblockInBatch) {
+  constexpr const char* const kTableName = "test_table";
+  // Generating a large superblock will cost a lot of time.
+  // Set rpc_max_message_size very small will cause rpc request failed.
+  // Therefore, here set superblock a suitable size.
+  int kSuperblockSize = 20000;
+  FLAGS_encrypt_data_at_rest = std::get<0>(GetParam());
+  FLAGS_tablet_copy_support_download_superblock_in_batch = std::get<1>(GetParam());
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 2;
+  FLAGS_allow_unsafe_replication_factor = true;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+  // Get a kudu client.
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(mini_cluster_->CreateClient(nullptr, &client));
+
+  // Generate a schema.
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 0));
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", 1));
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  // Create a table with a single tablet.
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema)
+            .set_range_partition_columns({ "key" })
+            .add_range_partition(lower_bound.release(), upper_bound.release())
+            .num_replicas(1)
+            .Create());
+
+  vector<string> tablet_ids_first = mini_cluster_->mini_tablet_server(0)->ListTablets();
+  vector<string> tablet_ids_second = mini_cluster_->mini_tablet_server(1)->ListTablets();
+  MiniTabletServer* src_tserver;
+  MiniTabletServer* dst_tserver;
+  string tablet_id_to_copy;
+  // Decide which one is the source tserver, and which one is destination tserver.
+  // There is only one tablet in this cluster, so we known which one is source tserver
+  // by comparing the size of tablets.
+  // It will copy the single tablet from the source tserver to the destination tserver.
+  if (tablet_ids_first.size() > tablet_ids_second.size()) {
+    tablet_id_to_copy = tablet_ids_first.at(0);
+    src_tserver = mini_cluster_->mini_tablet_server(0);
+    dst_tserver = mini_cluster_->mini_tablet_server(1);
+  } else {
+    tablet_id_to_copy = tablet_ids_second.at(0);
+    src_tserver = mini_cluster_->mini_tablet_server(1);
+    dst_tserver = mini_cluster_->mini_tablet_server(0);
+  }
+
+  // Add new columns for the table until superblock file is larger than kSuperblockSize.
+  int i = 0;
+  while (true) {
+    string column_name = Substitute("col_$0", i);
+    unique_ptr<KuduTableAlterer> table_alterer(client->NewTableAlterer(kTableName));
+    table_alterer->AddColumn(column_name)->Type(client::KuduColumnSchema::INT32)
+                 ->NotNull()->Default(KuduValue::FromInt(INT_MAX))
+                 ->Comment("testtttttttttttttttttttttttttttttttttttttttttttttt");
+    ASSERT_OK(table_alterer->Alter());
+    uint64_t file_size = 0;
+    string superblock_path =
+        src_tserver->server()->fs_manager()->GetTabletMetadataPath(tablet_id_to_copy);
+    ASSERT_OK(env_->GetFileSize(superblock_path, &file_size));
+    if (file_size > kSuperblockSize) {
+      break;
+    }
+    i++;
+  }
+  // Restart the source tserver to reset rpc_max_message_size a small size.
+  // So it is easy to make the size of superblock over the value of rpc_max_message_size.
+  FLAGS_rpc_max_message_size = kSuperblockSize / 4;
+  ASSERT_OK(src_tserver->Restart());
+
+  string source_tserver_rpc_addr = src_tserver->bound_rpc_addr().ToString();
+  string wal_dir = dst_tserver->options()->fs_opts.wal_root;
+  string data_dirs = JoinStrings(dst_tserver->options()->fs_opts.data_roots, ",");
+  NO_FATALS(dst_tserver->Shutdown());
+
+  // Copy tablet replicas from source tserver to destination tserver.
+  StringVectorSink capture_logs;
+  ScopedRegisterSink reg(&capture_logs);
+  string stderr;
+  RunActionStdoutStderrString(
+      Substitute("local_replica copy_from_remote $0 $1 "
+                 "-fs_data_dirs=$2 -fs_wal_dir=$3 "
+                 "--tablet_copy_support_download_superblock_in_batch=$4 "
+                 // Disable --rpc_max_message_size_enable_validation, so
+                 // --rpc_max_message_size can be set a small value.
+                 "--rpc_max_message_size_enable_validation=false "
+                 // Set --rpc_max_message_size very small, so it is easy for the size of
+                 // superblock over --rpc_max_message_size. It is used to repeat the network
+                 // error, see line 9477.
+                 "--rpc_max_message_size=$5 "
+                 // This flag and --rpc_max_message_size are in a group flag validator, so
+                 // it is also should be set a small value.
+                 "--consensus_max_batch_size_bytes=$6 "
+                 "--encrypt_data_at_rest=$7 "
+                 "--tablet_copy_transfer_chunk_size_bytes=50",
+                 tablet_id_to_copy,
+                 source_tserver_rpc_addr,
+                 data_dirs,
+                 wal_dir,
+                 FLAGS_tablet_copy_support_download_superblock_in_batch,
+                 (kSuperblockSize / 4),
+                 (kSuperblockSize / 8),
+                 FLAGS_encrypt_data_at_rest), nullptr, &stderr);
+  // The size of superblock is larger than rpc_max_message_size, it will cause a network error.
+  // Downloading superblock will fail.
+  if (!FLAGS_tablet_copy_support_download_superblock_in_batch) {
+    ASSERT_STR_CONTAINS(stderr, "recv error: Network error: RPC frame had a length");
+    return;
+  } else { // Download superblock piece by piece.
+    ASSERT_STR_CONTAINS(JoinStrings(capture_logs.logged_msgs(), "\n"),
+                        "Superblock is very large, it maybe over the rpc messsage size, "
+                        "which is controlled by flag --rpc_max_message_size. Switch it into "
+                        "downloading superblock piece by piece");
+  }
+
+  NO_FATALS(dst_tserver->Start());
+  const vector<string>& target_tablet_ids = dst_tserver->ListTablets();
+  // Copied tablet will exist in target tablet server.
+  ASSERT_TRUE(find(target_tablet_ids.begin(), target_tablet_ids.end(), tablet_id_to_copy)
+              != target_tablet_ids.end());
 }
 
 TEST_F(ToolTest, TestRebuildTserverByLocalReplicaCopy) {

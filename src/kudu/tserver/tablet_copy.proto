@@ -95,6 +95,9 @@ message BeginTabletCopySessionRequestPB {
 
   // tablet_id of the tablet the requester desires to bootstrap from.
   required bytes tablet_id = 2;
+
+  // Whether to download superblock in batch.
+  optional bool auto_download_superblock_in_batch = 3 [default = false];
 }
 
 message BeginTabletCopySessionResponsePB {
@@ -108,7 +111,7 @@ message BeginTabletCopySessionResponsePB {
   required uint64 session_idle_timeout_millis = 2;
 
   // Active superblock at the time of the request.
-  required tablet.TabletSuperBlockPB superblock = 3;
+  optional tablet.TabletSuperBlockPB superblock = 3;
 
   // Identifiers for the WAL segments available for download.
   // Each WAL segment is keyed by its sequence number.
@@ -120,6 +123,9 @@ message BeginTabletCopySessionResponsePB {
 
   // permanent_uuid of the responding peer.
   optional bytes responder_uuid = 6;
+
+  // To represent that superblock is too large to download directly.
+  optional bool superblock_is_too_large = 7 [default = false];
 }
 
 message CheckTabletCopySessionActiveRequestPB {
@@ -142,6 +148,7 @@ message DataIdPB {
     UNKNOWN = 0;
     BLOCK = 1;
     LOG_SEGMENT = 2;
+    SUPER_BLOCK = 3;
   }
 
   // Indicator whether it's a block or log segment id.

@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
@@ -35,7 +36,6 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy.pb.h"
-#include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/once.h"
 #include "kudu/util/slice.h"
@@ -44,6 +44,7 @@
 namespace kudu {
 
 class FsManager;
+class RWFile;
 
 namespace tablet {
 class TabletReplica;
@@ -129,6 +130,13 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
                        std::string* data, int64_t* block_file_size,
                        TabletCopyErrorPB::Code* error_code);
 
+  // Open superblock file and get data piece according to the offset.
+  Status GetSuperBlockPiece(uint64_t offset,
+                            int64_t client_maxlen,
+                            std::string* data,
+                            int64_t* superblock_file_size,
+                            TabletCopyErrorPB::Code* error_code);
+
   // Get a piece of a log segment.
   // The behavior and params are very similar to GetBlockPiece(), but this one
   // is only for sending WAL segment files.
@@ -195,6 +203,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
                         TabletCopyErrorPB::Code* error_code);
 
   const std::string tablet_id_;
+  std::string superblock_tmp_path_;
   FsManager* const fs_manager_;
 
   // Protects concurrent access to Init().

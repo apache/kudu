@@ -157,6 +157,7 @@ DEFINE_string(dst_fs_metadata_dir, "",
               "will be used as the metadata directory.");;
 
 DECLARE_int32(num_threads);
+DECLARE_bool(tablet_copy_support_download_superblock_in_batch);
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
 DECLARE_string(tables);
 
@@ -1368,6 +1369,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("tablet_copy_download_threads_nums_per_session")
       .AddOptionalParameter("num_threads")
+      .AddOptionalParameter("tablet_copy_support_download_superblock_in_batch")
       .Build();
 
   unique_ptr<Action> copy_from_local =

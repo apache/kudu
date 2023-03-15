@@ -48,6 +48,7 @@
 #include "kudu/rpc/transfer.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
@@ -313,6 +314,34 @@ Status TabletCopySourceSession::GetBlockPiece(const BlockId& block_id,
   return Status::OK();
 }
 
+Status TabletCopySourceSession::GetSuperBlockPiece(uint64_t offset,
+                                                   int64_t client_maxlen,
+                                                   string* data,
+                                                   int64_t* superblock_file_size,
+                                                   TabletCopyErrorPB::Code* error_code) {
+  if (offset == 0) {
+    RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
+                          fs_manager_->env(), superblock_tmp_path_, tablet_superblock_,
+                          pb_util::NO_OVERWRITE, pb_util::SYNC,
+                          pb_util::SENSITIVE),
+                          Substitute("Failed to write tablet metadata $0", tablet_id_));
+  }
+  unique_ptr<RandomAccessFile> super_block_reader;
+  RETURN_NOT_OK(fs_manager_->env()->NewRandomAccessFile(superblock_tmp_path_,
+                                                        &super_block_reader));
+  uint64_t file_size;
+  RETURN_NOT_OK(super_block_reader->Size(&file_size));
+  *superblock_file_size = file_size;
+  int64_t response_data_size = 0;
+  RETURN_NOT_OK(GetResponseDataSize(file_size, offset, client_maxlen,
+                                    error_code, &response_data_size));
+  data->resize(response_data_size);
+  uint8_t* buf = reinterpret_cast<uint8_t*>(const_cast<char*>(data->data()));
+  Slice slice(buf, response_data_size);
+  RETURN_NOT_OK_PREPEND(super_block_reader->Read(offset, slice), "read file failed");
+  return Status::OK();
+}
+
 Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
                                                    uint64_t offset, int64_t client_maxlen,
                                                    string* data, int64_t* log_file_size,
@@ -457,9 +486,16 @@ RemoteTabletCopySourceSession::RemoteTabletCopySourceSession(
       tablet_replica_(std::move(tablet_replica)),
       session_id_(std::move(session_id)),
       requestor_uuid_(std::move(requestor_uuid)) {
+  // Use session id to generate the superblock temporary path.
+  // It is thread safety, beacause session id is unique.
+  superblock_tmp_path_ = Substitute("/tmp/tablet-meta-$0", session_id_);
 }
 
 RemoteTabletCopySourceSession::~RemoteTabletCopySourceSession() {
+  if (!superblock_tmp_path_.empty() &&
+      fs_manager_->env()->FileExists(superblock_tmp_path_)) {
+    CHECK_OK(fs_manager_->env()->DeleteFile(superblock_tmp_path_));
+  }
   // No lock taken in the destructor, should only be 1 thread with access now.
   CHECK_OK(UnregisterAnchorIfNeededUnlocked());
 }

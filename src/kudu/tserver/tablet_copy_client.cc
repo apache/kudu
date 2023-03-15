@@ -30,7 +30,6 @@
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
 
-#include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
@@ -74,6 +73,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -142,6 +142,10 @@ DEFINE_int32(tablet_copy_download_threads_nums_per_session, 4,
              "Number of threads per tablet copy session for downloading tablet data blocks.");
 DEFINE_validator(tablet_copy_download_threads_nums_per_session,
      [](const char* /*n*/, int32_t v) { return v > 0; });
+
+DEFINE_bool(tablet_copy_support_download_superblock_in_batch, true,
+            "Whether to support download superblock in batch automatically when it is very large."
+            "When superblock is small, it can be downloaded once a time.");
 
 DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 
@@ -298,6 +302,8 @@ Status RemoteTabletCopyClient::Start(const HostPort& copy_source_addr,
   BeginTabletCopySessionRequestPB req;
   req.set_requestor_uuid(dst_fs_manager_->uuid());
   req.set_tablet_id(tablet_id_);
+  req.set_auto_download_superblock_in_batch(
+      FLAGS_tablet_copy_support_download_superblock_in_batch);
 
   rpc::RpcController controller;
 
@@ -306,12 +312,36 @@ Status RemoteTabletCopyClient::Start(const HostPort& copy_source_addr,
   RETURN_NOT_OK_PREPEND(SendRpcWithRetry(&controller, [&] {
     return proxy_->BeginTabletCopySession(req, &resp, &controller);
   }), "unable to begin tablet copy session");
-
+  session_id_ = resp.session_id();
+  if (resp.superblock_is_too_large()) {
+    // Download superblock from remote and store it in local file.
+    string superblock_path;
+    // Delete the temporary superblock file finally.
+    auto deleter = MakeScopedCleanup([&]() {
+      if (!superblock_path.empty() &&
+          dst_fs_manager_->env()->FileExists(superblock_path)) {
+        WARN_NOT_OK(dst_fs_manager_->env()->DeleteFile(superblock_path),
+                    Substitute("Could not delete temporary superblock file $0",
+                               superblock_path));
+      }
+    });
+    RETURN_NOT_OK_PREPEND(DownloadSuperBlock(&superblock_path),
+                          "Download super block failed");
+    remote_superblock_.reset(new tablet::TabletSuperBlockPB);
+    // Load superblock from a local temporary file.
+    RETURN_NOT_OK_PREPEND(
+        pb_util::ReadPBContainerFromPath(dst_fs_manager_->env(), superblock_path,
+                                         remote_superblock_.get(), pb_util::SENSITIVE),
+        Substitute("Could not load superblock from $0", superblock_path));
+  } else {
+    CHECK(resp.has_superblock());
+    remote_superblock_.reset(resp.release_superblock());
+  }
   TRACE("Tablet copy session begun");
 
   string copy_peer_uuid = resp.has_responder_uuid()
       ? resp.responder_uuid() : "(unknown uuid)";
-  TabletDataState data_state = resp.superblock().tablet_data_state();
+  TabletDataState data_state = remote_superblock_->tablet_data_state();
   if (data_state != tablet::TABLET_DATA_READY) {
     Status s = Status::IllegalState(
         Substitute("Remote peer ($0) is not ready itself! state: $1",
@@ -320,12 +350,8 @@ Status RemoteTabletCopyClient::Start(const HostPort& copy_source_addr,
     return s;
   }
 
-  session_id_ = resp.session_id();
   // Update our default RPC timeout to reflect the server's session timeout.
   session_idle_timeout_millis_ = resp.session_idle_timeout_millis();
-
-  // Store a copy of the remote (old) superblock.
-  remote_superblock_.reset(resp.release_superblock());
 
   // Make a copy of the remote superblock. We first clear out the remote blocks
   // from this structure and then add them back in as they are downloaded.
@@ -882,6 +908,51 @@ Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
     std::lock_guard<simple_spinlock> l(simple_lock_);
     transaction_->AddCreatedBlock(std::move(block));
   }
+  return Status::OK();
+}
+
+Status RemoteTabletCopyClient::DownloadSuperBlock(string* superblock_path) {
+  DataIdPB data_id;
+  data_id.set_type(DataIdPB::SUPER_BLOCK);
+
+  rpc::RpcController controller;
+  controller.set_timeout(MonoDelta::FromMilliseconds(session_idle_timeout_millis_));
+  FetchDataRequestPB req;
+  req.set_session_id(session_id_);
+  req.mutable_data_id()->CopyFrom(data_id);
+  req.set_max_length(FLAGS_tablet_copy_transfer_chunk_size_bytes);
+
+  // Create a temporary file to store the superblock.
+  string tmpl = "super_block.tmp.XXXXXX";
+  unique_ptr<RWFile> tmp_file;
+  RETURN_NOT_OK_PREPEND(dst_fs_manager_->env()->NewTempRWFile(
+      RWFileOptions(), tmpl, superblock_path, &tmp_file),
+                        "could not create temporary super block data file");
+
+  bool done = false;
+  uint64_t offset = 0;
+  while (!done) {
+    req.set_offset(offset);
+
+    // Request the next data chunk.
+    FetchDataResponsePB resp;
+    RETURN_NOT_OK_PREPEND(SendRpcWithRetry(&controller, [&] {
+        return proxy_->FetchData(req, &resp, &controller);
+    }), "unable to fetch data from remote");
+
+    // Sanity-check for corruption.
+    RETURN_NOT_OK_PREPEND(VerifyData(offset, resp.chunk()),
+                          Substitute("error validating data item $0",
+                                     pb_util::SecureShortDebugString(data_id)));
+
+    // Write the data.
+    RETURN_NOT_OK(tmp_file->Write(offset, resp.chunk().data()));
+
+    auto chunk_size = resp.chunk().data().size();
+    done = offset + chunk_size == resp.chunk().total_data_length();
+    offset += chunk_size;
+  }
+  RETURN_NOT_OK_PREPEND(tmp_file->Close(), "close superblock data file failed");
   return Status::OK();
 }
 

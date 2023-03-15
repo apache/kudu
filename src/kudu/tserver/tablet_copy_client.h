@@ -344,6 +344,10 @@ class RemoteTabletCopyClient : public TabletCopyClient {
   // need to be in the header.
   template<class Appendable>
   Status DownloadFile(const DataIdPB& data_id, Appendable* appendable);
+
+  // Download the superblock from remote. The superblock will firstly be stored
+  // in a temporary local file 'superblock_path' and then loaded into the memory.
+  Status DownloadSuperBlock(std::string* superblock_path);
 };
 
 class LocalTabletCopyClient : public TabletCopyClient {

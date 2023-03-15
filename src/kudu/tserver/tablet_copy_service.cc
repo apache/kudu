@@ -37,6 +37,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/transfer.h"
 #include "kudu/server/server_base.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -204,13 +205,21 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   resp->set_responder_uuid(fs_manager_->uuid());
   resp->set_session_id(session_id);
   resp->set_session_idle_timeout_millis(FLAGS_tablet_copy_idle_timeout_sec * 1000);
-  resp->mutable_superblock()->CopyFrom(session->tablet_superblock());
   resp->mutable_initial_cstate()->CopyFrom(session->initial_cstate());
 
   for (const scoped_refptr<log::ReadableLogSegment>& segment : session->log_segments()) {
     resp->add_wal_segment_seqnos(segment->header().sequence_number());
   }
-
+  if (req->auto_download_superblock_in_batch() &&
+      (resp->ByteSizeLong() + session->tablet_superblock().ByteSizeLong() >
+      FLAGS_rpc_max_message_size)) {
+    LOG(WARNING) << "Superblock is very large, it maybe over the rpc messsage size, "
+                    "which is controlled by flag --rpc_max_message_size. Switch it into "
+                    "downloading superblock piece by piece.";
+    resp->set_superblock_is_too_large(true);
+  } else {
+    resp->mutable_superblock()->CopyFrom(session->tablet_superblock());
+  }
   // For testing: Close the session prematurely if unsafe gflag is set but
   // still respond as if it was opened.
   const auto timeout_prob = FLAGS_tablet_copy_early_session_timeout_prob;
@@ -299,6 +308,10 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
     RPC_RETURN_NOT_OK(session->GetBlockPiece(block_id, offset, client_maxlen,
                                              data, &total_data_length, &error_code),
                       error_code, "Unable to get piece of data block", context);
+  } else if (data_id.type() == DataIdPB::SUPER_BLOCK) {
+    RPC_RETURN_NOT_OK(session->GetSuperBlockPiece(offset, client_maxlen, data,
+                                                  &total_data_length, &error_code),
+                      error_code, "Unable to get piece of super block", context);
   } else {
     // Fetching a log segment chunk.
     uint64_t segment_seqno = data_id.wal_segment_seqno();
@@ -371,6 +384,10 @@ Status TabletCopyServiceImpl::FindSessionUnlocked(
 Status TabletCopyServiceImpl::ValidateFetchRequestDataId(
         const DataIdPB& data_id,
         TabletCopyErrorPB::Code* app_error) {
+  if (data_id.type() == DataIdPB::SUPER_BLOCK) {
+    return Status::OK();
+  }
+
   if (PREDICT_FALSE(data_id.has_block_id() && data_id.has_wal_segment_seqno())) {
     *app_error = TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST;
     return Status::InvalidArgument(
