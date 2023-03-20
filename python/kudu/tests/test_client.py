@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from kudu.compat import unittest, long
+from kudu.compat import CompatUnitTest, long
 from kudu.tests.common import KuduTestBase
 from kudu.client import (Partitioning,
                          RangePartition,
@@ -32,7 +32,7 @@ import datetime
 from pytz import utc
 
 
-class TestClient(KuduTestBase, unittest.TestCase):
+class TestClient(KuduTestBase, CompatUnitTest):
 
     def setUp(self):
         pass
@@ -102,7 +102,8 @@ class TestClient(KuduTestBase, unittest.TestCase):
         assert not self.client.table_exists(name)
 
         # Should raise a more meaningful exception at some point
-        with self.assertRaises(kudu.KuduNotFound):
+        error_msg = 'the table does not exist: table_name: "{0}"'.format(name)
+        with self.assertRaisesRegex(kudu.KuduNotFound, error_msg):
             self.client.delete_table(name)
 
     def test_table_nonexistent(self):
@@ -476,10 +477,12 @@ class TestClient(KuduTestBase, unittest.TestCase):
             # inserts. In this case, at the second position it would like to get an int64 (the type
             # of the auto-incrementing counter), therefore we get type error. (Specifying the
             # auto-incremeintg counter is obviously rejected from the server side)
-            with self.assertRaises(TypeError):
+            error_msg = 'an integer is required'
+            with self.assertRaisesRegex(TypeError, error_msg):
                 op = table.new_insert((1,'text'))
 
-            with self.assertRaises(TypeError):
+            error_msg = 'an integer is required'
+            with self.assertRaisesRegex(TypeError, error_msg):
                 op = table.new_insert([1,'text'])
 
         finally:
@@ -534,8 +537,10 @@ class TestClient(KuduTestBase, unittest.TestCase):
         self.client.new_session(flush_mode='sync')
         self.client.new_session(flush_mode='background')
 
-        with self.assertRaises(ValueError):
-            self.client.new_session(flush_mode='foo')
+        flush_mode = 'foo'
+        error_msg = 'Invalid flush mode: {0}'.format(flush_mode)
+        with self.assertRaisesRegex(ValueError, error_msg):
+            self.client.new_session(flush_mode=flush_mode)
 
     def test_session_mutation_buffer_settings(self):
         self.client.new_session(flush_mode=kudu.FLUSH_AUTO_BACKGROUND,
@@ -553,16 +558,20 @@ class TestClient(KuduTestBase, unittest.TestCase):
     def test_session_mutation_buffer_errors(self):
         session = self.client.new_session(flush_mode=kudu.FLUSH_AUTO_BACKGROUND)
 
-        with self.assertRaises(OverflowError):
+        error_msg = 'can\'t convert negative value to unsigned int'
+        with self.assertRaisesRegex(OverflowError, error_msg):
             session.set_mutation_buffer_max_num(-1)
 
-        with self.assertRaises(kudu.errors.KuduInvalidArgument):
+        error_msg = '120: watermark must be between 0 and 100 inclusive'
+        with self.assertRaisesRegex(kudu.errors.KuduInvalidArgument, error_msg):
             session.set_mutation_buffer_flush_watermark(1.2)
 
-        with self.assertRaises(OverflowError):
+        error_msg = 'can\'t convert negative value to unsigned int'
+        with self.assertRaisesRegex(OverflowError, error_msg):
             session.set_mutation_buffer_flush_interval(-1)
 
-        with self.assertRaises(OverflowError):
+        error_msg = 'can\'t convert negative value to size_t'
+        with self.assertRaisesRegex(OverflowError, error_msg):
             session.set_mutation_buffer_space(-1)
 
     def test_connect_timeouts(self):
@@ -599,11 +608,13 @@ class TestClient(KuduTestBase, unittest.TestCase):
                 op[key[0]] = 'test'
 
         # Test incorrectly typed data
-        with self.assertRaises(TypeError):
+        error_msg = 'an integer is required'
+        with self.assertRaisesRegex(TypeError, error_msg):
             op['int_val'] = 'incorrect'
 
         # Test setting NULL in a not-null column
-        with self.assertRaises(kudu.errors.KuduInvalidArgument):
+        error_msg = 'column not nullable: key'
+        with self.assertRaisesRegex(kudu.errors.KuduInvalidArgument, error_msg):
             op['key'] = None
 
     def test_alter_table_rename(self):
@@ -821,22 +832,30 @@ class TestClient(KuduTestBase, unittest.TestCase):
             # negatives
             alterer = self.client.new_table_alterer(table)
             alterer.drop_column(col_name)
-            with self.assertRaises(KuduInvalidArgument):
+            error_msg = 'can\'t drop column: {0}'\
+                        .format(Schema.get_auto_incrementing_column_name())
+            with self.assertRaisesRegex(KuduInvalidArgument, error_msg):
                 alterer.alter()
 
             alterer = self.client.new_table_alterer(table)
             alterer.add_column(col_name)
-            with self.assertRaises(KuduInvalidArgument):
+            error_msg = 'can\'t add a column with reserved name: {0}'\
+                        .format(Schema.get_auto_incrementing_column_name())
+            with self.assertRaisesRegex(KuduInvalidArgument, error_msg):
                 alterer.alter()
 
             alterer = self.client.new_table_alterer(table)
             alterer.alter_column(col_name, "new_column_name")
-            with self.assertRaises(KuduInvalidArgument):
+            error_msg = 'can\'t change name for column: {0}'\
+                        .format(Schema.get_auto_incrementing_column_name())
+            with self.assertRaisesRegex(KuduInvalidArgument, error_msg):
                 alterer.alter()
 
             alterer = self.client.new_table_alterer(table)
             alterer.alter_column(col_name).remove_default()
-            with self.assertRaises(KuduInvalidArgument):
+            error_msg = 'can\'t change remove default for column: {0}'\
+                        .format(Schema.get_auto_incrementing_column_name())
+            with self.assertRaisesRegex(KuduInvalidArgument, error_msg):
                 alterer.alter()
 
             # positives
@@ -869,11 +888,12 @@ class TestClient(KuduTestBase, unittest.TestCase):
     def test_require_authn(self):
         # Kerberos is not enabled on the cluster, so requiring
         # authentication is expected to fail.
-        with self.assertRaises(kudu.KuduBadStatus):
+        error_msg = 'client requires authentication, but server does not have Kerberos enabled'
+        with self.assertRaisesRegex(kudu.KuduBadStatus, error_msg):
             client = kudu.connect(self.master_hosts, self.master_ports,
                      require_authentication=True)
 
-class TestMonoDelta(unittest.TestCase):
+class TestMonoDelta(CompatUnitTest):
 
     def test_empty_ctor(self):
         delta = kudu.TimeDelta()
