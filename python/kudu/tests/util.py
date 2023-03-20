@@ -18,14 +18,14 @@
 # under the License.
 
 from decimal import Decimal
-from kudu.compat import unittest
+from kudu.compat import CompatUnitTest
 from kudu.client import Partitioning
 from kudu.tests.common import KuduTestBase
 import kudu
 import datetime
 import pytz
 
-class TestScanBase(KuduTestBase, unittest.TestCase):
+class TestScanBase(KuduTestBase, CompatUnitTest):
 
     @classmethod
     def setUpClass(self):

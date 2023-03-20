@@ -18,7 +18,7 @@
 # flake8: noqa
 
 import itertools
-
+import contextlib
 try:
     import numpy as np
 except ImportError:
@@ -96,6 +96,16 @@ else:
     def dict_iter(o):
         return list(o.items())
 
+
+if sys.version_info < (3, 1):
+    class CompatUnitTest(unittest.TestCase):
+        @contextlib.contextmanager
+        def assertRaisesRegex(self, expected_exception, expected_regex, *args, **kwargs):
+            with self.assertRaisesRegexp(expected_exception, expected_regex, *args, **kwargs):
+                yield
+else:
+    class CompatUnitTest(unittest.TestCase):
+        pass
 
 integer_types = six.integer_types
 if np is not None:

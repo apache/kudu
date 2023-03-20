@@ -16,7 +16,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from kudu.compat import unittest
 from kudu.tests.util import TestScanBase
 from kudu.tests.common import KuduTestBase
 import kudu
