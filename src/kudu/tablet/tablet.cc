@@ -1467,9 +1467,10 @@ Status Tablet::DoMajorDeltaCompaction(const vector<ColumnId>& col_ids,
 
 bool Tablet::GetTabletAncientHistoryMark(Timestamp* ancient_history_mark) const {
   int32_t tablet_history_max_age_sec = FLAGS_tablet_history_max_age_sec;
-  if (metadata_->extra_config() && metadata_->extra_config()->has_history_max_age_sec()) {
+  const auto& extra_config = metadata_->extra_config();
+  if (extra_config && extra_config->has_history_max_age_sec()) {
     // Override the global configuration with the configuration of the table
-    tablet_history_max_age_sec = metadata_->extra_config()->history_max_age_sec();
+    tablet_history_max_age_sec = extra_config->history_max_age_sec();
   }
   // We currently only support history GC through a fully-instantiated tablet
   // when using the HybridClock, since we can calculate the age of a mutation.
@@ -1835,8 +1836,9 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
 }
 
 bool Tablet::disable_compaction() const {
-  if (metadata_->extra_config() && metadata_->extra_config()->has_disable_compaction()) {
-    return metadata_->extra_config()->disable_compaction();
+  const auto& extra_config = metadata_->extra_config();
+  if (extra_config && extra_config->has_disable_compaction()) {
+    return extra_config->disable_compaction();
   }
   return false;
 }
