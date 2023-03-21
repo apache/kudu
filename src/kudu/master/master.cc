@@ -391,8 +391,8 @@ void Master::InitCatalogManagerTask() {
   if (!s.ok()) {
     LOG(ERROR) << "Unable to init master catalog manager: " << s.ToString();
   }
-  catalog_manager_init_status_.Set(s);
   startup_path_handler_->initialize_master_catalog_progress()->Stop();
+  catalog_manager_init_status_.Set(s);
 }
 
 Status Master::InitCatalogManager() {
