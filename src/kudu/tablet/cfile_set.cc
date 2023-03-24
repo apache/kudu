@@ -170,12 +170,19 @@ Status CFileSet::DoOpen(const IOContext* io_context) {
   } else {
     RETURN_NOT_OK(LoadMinMaxKeys(io_context));
   }
+
   // Verify the loaded keys are valid.
   if (Slice(min_encoded_key_) > max_encoded_key_) {
     return Status::Corruption(Substitute("Min key $0 > max key $1",
                                          KUDU_REDACT(Slice(min_encoded_key_).ToDebugString()),
                                          KUDU_REDACT(Slice(max_encoded_key_).ToDebugString())),
                               ToString());
+  }
+
+  // Update the min/max key in metadata explicitly if user specified.
+  if (FLAGS_rowset_metadata_store_keys && !rowset_metadata_->has_encoded_keys()) {
+    rowset_metadata_->set_min_encoded_key(min_encoded_key_);
+    rowset_metadata_->set_max_encoded_key(max_encoded_key_);
   }
 
   return Status::OK();

@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -36,7 +37,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/rowset_metadata.h" // IWYU pragma: keep
 #include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
@@ -56,6 +57,10 @@ class BloomFileReader;
 namespace fs {
 struct IOContext;
 }  // namespace fs
+
+namespace tserver {
+class TabletServerTest_SetEncodedKeysWhenStartingUp_Test;
+} // namespace tserver
 
 namespace tablet {
 
@@ -134,6 +139,7 @@ class CFileSet :
 
  private:
   friend class Iterator;
+  FRIEND_TEST(tserver::TabletServerTest, SetEncodedKeysWhenStartingUp);
 
   DISALLOW_COPY_AND_ASSIGN(CFileSet);
 

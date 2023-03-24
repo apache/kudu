@@ -79,6 +79,10 @@ namespace log {
 class LogAnchorRegistry;
 }
 
+namespace tserver {
+class TabletServerTest_SetEncodedKeysWhenStartingUp_Test;
+} // namespace tserver
+
 namespace tools {
 Status DumpRowSetInternal(const fs::IOContext& ctx,
                           const std::shared_ptr<tablet::RowSetMetadata>& rs_meta,
@@ -478,6 +482,7 @@ class DiskRowSet :
   FRIEND_TEST(TestCompaction, TestOneToOne);
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
+  FRIEND_TEST(tserver::TabletServerTest, SetEncodedKeysWhenStartingUp);
 
   friend class CompactionInput;
   friend class Tablet;

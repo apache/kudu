@@ -82,6 +82,10 @@ namespace log {
 class LogAnchorRegistry;
 } // namespace log
 
+namespace tserver {
+class TabletServerTest_SetEncodedKeysWhenStartingUp_Test;
+} // namespace tserver
+
 namespace tablet {
 
 class AlterSchemaOpState;
@@ -562,6 +566,7 @@ class Tablet {
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithNonOverlappingRowSets);
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithMinimumValueRowSet);
   FRIEND_TEST(TxnParticipantTest, TestFlushMultipleMRSs);
+  FRIEND_TEST(tserver::TabletServerTest, SetEncodedKeysWhenStartingUp);
 
   // Lifecycle states that a Tablet can be in. Legal state transitions for a
   // Tablet object:
