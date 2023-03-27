@@ -279,6 +279,7 @@ Status RemoteTablet::Refresh(
 }
 
 void RemoteTablet::MarkStale() {
+  VLOG(1) << "Marking tablet stale, tablet id " << tablet_id_;
   stale_ = true;
 }
 
@@ -461,6 +462,14 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
   RemoteTabletServer* leader = nullptr;
   if (!tablet_->stale()) {
     leader = tablet_->LeaderTServer();
+    if (leader) {
+      VLOG(1) << "Client copy of tablet " << tablet_->tablet_id()
+              << " is fresh, leader uuid " << leader->permanent_uuid();
+    } else {
+      VLOG(1) << "Client copy of tablet " << tablet_->tablet_id()
+              << " is fresh (no leader).";
+    }
+
     bool marked_as_follower = false;
     {
       std::lock_guard<simple_spinlock> lock(lock_);
@@ -501,6 +510,8 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
             << "Preemptively marking tserver " << leader->ToString()
             << " as leader in the meta cache.";
         tablet_->MarkTServerAsLeader(leader);
+      } else {
+        VLOG(1) << "Tablet " << tablet_->tablet_id() << ": No valid leader.";
       }
     }
   }
@@ -518,6 +529,7 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
   // shift the write to another tablet (i.e. if it's since been split).
   if (!leader) {
     if (table_) {
+      VLOG(1) << "Table " << table_->name() << ": No valid leader, lookup tablet by key.";
       meta_cache_->LookupTabletByKey(
           table_,
           tablet_->partition().begin(),
@@ -528,6 +540,7 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
             this->LookUpTabletCb(callback, deadline, s);
           });
     } else {
+      VLOG(1) << "No valid table or leader: lookup tablet by ID " << tablet_->tablet_id();
       meta_cache_->LookupTabletById(
           client_,
           tablet_->tablet_id(),
@@ -1212,17 +1225,22 @@ bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
   const TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
     // No cache available for this table.
+    VLOG(1) << "No cache available for table " << table->name();
     return false;
   }
 
   const MetaCacheEntry* e = FindFloorOrNull(*tablets, partition_key);
   if (PREDICT_FALSE(!e)) {
     // No tablets with a start partition key lower than 'partition_key'.
+    VLOG(1) << "Table " << table->name()
+            << ": No tablets found with a start key lower than input key.";
     return false;
   }
 
   // Stale entries must be re-fetched.
   if (e->stale()) {
+    VLOG(1) << "Table " << table->name() << ": Stale entry for tablet "
+            << e->tablet()->tablet_id() << " found, must be re-fetched.";
     return false;
   }
 
@@ -1231,6 +1249,7 @@ bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
     return true;
   }
 
+  VLOG(1) << "Table " << table->name() << ": LookupEntryByKeyFastPath failed!";
   return false;
 }
 
@@ -1409,6 +1428,8 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
     return;
   }
 
+  VLOG(1) << "Fastpath lookup failed with " << fastpath_status.ToString()
+          << ". Proceed with rpc lookup, table: " << table->name();
   LookupRpc* rpc = new LookupRpc(this,
                                  callback,
                                  table,
