@@ -18,9 +18,13 @@
 # Client API example executables
 
 cmake_minimum_required(VERSION 2.8)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(kuduClient REQUIRED)
 include_directories(${KUDU_CLIENT_INCLUDE_DIR})
 
 add_executable(example example.cc)
 target_link_libraries(example kudu_client)
+
+add_executable(non_unique_primary_key non_unique_primary_key.cc)
+target_link_libraries(non_unique_primary_key kudu_client)
