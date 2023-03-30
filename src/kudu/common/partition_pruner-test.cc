@@ -24,14 +24,17 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
+#include "kudu/common/key_encoder.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row.h"
@@ -39,8 +42,11 @@
 #include "kudu/common/row_operations.pb.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -85,6 +91,12 @@ class PartitionPrunerTest : public KuduTest {
                                     const ScanSpec& spec,
                                     size_t remaining_tablets,
                                     size_t pruner_ranges);
+
+  // Search all combinations of in-list and equality predicates.
+  // Return a bitset indicates which hash buckets are selected of these combinations.
+  static vector<bool> PruneHashComponent(const PartitionSchema::HashDimension& hash_dimension,
+                                         const Schema& schema,
+                                         const ScanSpec& scan_spec);
 };
 
 void PartitionPrunerTest::CreatePartitionSchemaPB(
@@ -176,6 +188,49 @@ void PartitionPrunerTest::CheckPrunedPartitions(
 
   ASSERT_EQ(remaining_tablets, partitions.size() - pruned_partitions);
   ASSERT_EQ(pruner_ranges, pruner.NumRangesRemaining());
+}
+
+// The old algorithm. It moved from 'partition_pruner.cc'.
+vector<bool> PartitionPrunerTest::PruneHashComponent(
+    const PartitionSchema::HashDimension& hash_dimension,
+    const Schema& schema,
+    const ScanSpec& scan_spec) {
+  vector<bool> hash_bucket_bitset(hash_dimension.num_buckets, false);
+  vector<string> encoded_strings(1, "");
+  for (size_t col_offset = 0; col_offset < hash_dimension.column_ids.size(); ++col_offset) {
+    vector<string> new_encoded_strings;
+    const ColumnSchema& column = schema.column_by_id(hash_dimension.column_ids[col_offset]);
+    const ColumnPredicate& predicate = FindOrDie(scan_spec.predicates(), column.name());
+    const KeyEncoder<string>& encoder = GetKeyEncoder<string>(column.type_info());
+
+    vector<const void*> predicate_values;
+    if (predicate.predicate_type() == PredicateType::Equality) {
+      predicate_values.push_back(predicate.raw_lower());
+    } else {
+      CHECK(predicate.predicate_type() == PredicateType::InList);
+      predicate_values.insert(predicate_values.end(),
+                              predicate.raw_values().begin(),
+                              predicate.raw_values().end());
+    }
+    // For each of the encoded string, replicate it by the number of values in
+    // equality and in-list predicate.
+    for (const string& encoded_string : encoded_strings) {
+      for (const void* predicate_value : predicate_values) {
+        string new_encoded_string = encoded_string;
+        encoder.Encode(predicate_value,
+                       col_offset + 1 == hash_dimension.column_ids.size(),
+                       &new_encoded_string);
+        new_encoded_strings.emplace_back(new_encoded_string);
+      }
+    }
+    encoded_strings.swap(new_encoded_strings);
+  }
+  for (const string& encoded_string : encoded_strings) {
+    uint32_t hash_value = PartitionSchema::HashValueForEncodedColumns(
+        encoded_string, hash_dimension);
+    hash_bucket_bitset[hash_value] = true;
+  }
+  return hash_bucket_bitset;
 }
 
 TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
@@ -915,6 +970,127 @@ TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
                     ColumnPredicate::InList(schema.column(1), &b_values),
                     ColumnPredicate::InList(schema.column(2), &c_values) },
                   6, 2));
+}
+
+// For test cases that will run with in-list predicates using variant length
+class PartitionPrunerTestWithMaxInListLength : public PartitionPrunerTest,
+                                               public testing::WithParamInterface<int32_t> {};
+
+INSTANTIATE_TEST_SUITE_P(MaxInListLength,
+                         PartitionPrunerTestWithMaxInListLength,
+                         ::testing::Values(1, 10, 20, 50));
+
+// Create a table with 200 columns including 10 key columns and
+// generate some in-list predicates for these key columns. The old algorithm
+// is correct by test cases and in practice, so we check the correctness
+// of new algorithm by comparing it with the old one. At the same time,
+// compare the efficiency of the two algorithms.
+TEST_P(PartitionPrunerTestWithMaxInListLength, TestMultiColumnInListHashPruningManyValues) {
+  const int kMaxInListLength = GetParam();
+  if (kMaxInListLength > 1) {
+    SKIP_IF_SLOW_NOT_ALLOWED();
+  }
+  constexpr const int kColumnSize = 200;
+  constexpr const int kKeyColumnSize = 10;
+  vector<string> key_column_names;
+  SchemaBuilder builder;
+  int i = 0;
+  for (; i < kKeyColumnSize; i++) {
+    builder.AddKeyColumn(Substitute("key_$0", i), DataType::INT32);
+    key_column_names.push_back(Substitute("key_$0", i));
+  }
+  for (; i < kColumnSize; i++) {
+    builder.AddColumn(Substitute("column_$0", i), DataType::INT32);
+  }
+  Schema schema = builder.Build();
+
+  PartitionSchemaPB pb;
+  vector<ColumnNamesNumBucketsAndSeed> hash_buckets;
+  hash_buckets.push_back({{key_column_names[0]}, 24, 0});
+  hash_buckets.push_back({{key_column_names[1], key_column_names[2]}, 24, 0});
+  hash_buckets.push_back({{key_column_names[3], key_column_names[4]}, 64, 0});
+  hash_buckets.push_back({{key_column_names[5],
+                           key_column_names[6],
+                           key_column_names[7],
+                           key_column_names[8],
+                           key_column_names[9]},
+                          12,
+                          0});
+
+  CreatePartitionSchemaPB({}, hash_buckets, &pb);
+  pb.mutable_range_schema()->clear_columns();
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+
+  // Applies the specified predicates to a scan and checks that the new agorithm is
+  // correct by comparing it with the old one. Show the speedup about new agorithm.
+  const auto check = [&](const vector<ColumnPredicate>& predicates,
+                         int64_t combination_count) {
+    ScanSpec opt_spec;
+    for (const auto& pred : predicates) {
+      opt_spec.AddPredicate(pred);
+    }
+    int64_t v1_elapsed_us = 0;
+    int64_t v2_elapsed_us = 0;
+    for (const auto& hash_dimension : partition_schema.hash_schema()) {
+      MonoTime t1 = MonoTime::Now();
+      vector<bool> v1 = PartitionPrunerTest::PruneHashComponent(hash_dimension, schema, opt_spec);
+      MonoTime t2 = MonoTime::Now();
+      vector<bool> v2 = PartitionPruner::PruneHashComponent(hash_dimension, schema, opt_spec);
+      MonoTime t3 = MonoTime::Now();
+      v1_elapsed_us += (t2 - t1).ToMicroseconds();
+      v2_elapsed_us += (t3 - t2).ToMicroseconds();
+      ASSERT_EQ(v1, v2);
+    }
+    // v2 algorithm is more efficient than v1 algorithm.
+    // The following logs are used to compare efficiency of the two algorithms.
+    // v2 (new algorithm) is quicker 100x than v1 (older one).
+    if (v2_elapsed_us != 0 && v1_elapsed_us != 0) {
+      LOG(INFO) << Substitute(
+          "combination_count: $0, old algorithm "
+          "cost: $1us, new algorithm cost: $2us, speedup: $3x",
+          combination_count,
+          v1_elapsed_us,
+          v2_elapsed_us,
+          static_cast<double>(v1_elapsed_us) / v2_elapsed_us);
+    }
+  };
+
+  constexpr const int kTotalCount = 10;
+  for (int index = 0; index < kTotalCount; index++) {
+    vector<int32_t> temp_values;
+    // Increase the vector's capacity to kMaxInListLength * kKeyColumnSize to avoid reallocation
+    // that invalidates some references to the elements.
+    temp_values.reserve(kMaxInListLength * kKeyColumnSize);
+    vector<vector<const void *>> test_cases;
+    test_cases.reserve(kKeyColumnSize);
+    Random r(SeedRandom());
+    int64_t combination_count = 1;
+
+    for (int i = 0; i < kKeyColumnSize; i++) {
+      uint32_t in_list_length = r.Uniform(kMaxInListLength) + 1;
+      vector<const void *> test_case;
+      test_case.reserve(in_list_length);
+      for (int j = 0; j < in_list_length; j++) {
+        int32_t t_value = r.Next32();
+        temp_values.push_back(t_value);
+        test_case.push_back(reinterpret_cast<const void*>(&temp_values.back()));
+      }
+      test_cases.push_back(test_case);
+      combination_count *= in_list_length;
+    }
+
+    vector<ColumnPredicate> predicates;
+    predicates.reserve(kKeyColumnSize);
+    for (int i = 0; i < kKeyColumnSize; i++) {
+      predicates.emplace_back(ColumnPredicate::InList(schema.column(i), &test_cases[i]));
+    }
+
+    check(predicates, combination_count);
+  }
 }
 
 TEST_F(PartitionPrunerTest, TestPruning) {

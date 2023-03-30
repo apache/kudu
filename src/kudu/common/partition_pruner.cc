@@ -183,13 +183,11 @@ vector<bool> PartitionPruner::PruneHashComponent(
     const PartitionSchema::HashDimension& hash_dimension,
     const Schema& schema,
     const ScanSpec& scan_spec) {
-  vector<bool> hash_bucket_bitset(hash_dimension.num_buckets, false);
-  vector<string> encoded_strings(1, "");
+  vector<vector<const void*>> predicate_values_list;
+  predicate_values_list.reserve(hash_dimension.column_ids.size());
   for (size_t col_offset = 0; col_offset < hash_dimension.column_ids.size(); ++col_offset) {
-    vector<string> new_encoded_strings;
     const ColumnSchema& column = schema.column_by_id(hash_dimension.column_ids[col_offset]);
     const ColumnPredicate& predicate = FindOrDie(scan_spec.predicates(), column.name());
-    const KeyEncoder<string>& encoder = GetKeyEncoder<string>(column.type_info());
 
     vector<const void*> predicate_values;
     if (predicate.predicate_type() == PredicateType::Equality) {
@@ -200,25 +198,63 @@ vector<bool> PartitionPruner::PruneHashComponent(
                               predicate.raw_values().begin(),
                               predicate.raw_values().end());
     }
-    // For each of the encoded string, replicate it by the number of values in
-    // equality and in-list predicate.
-    for (const string& encoded_string : encoded_strings) {
-      for (const void* predicate_value : predicate_values) {
-        string new_encoded_string = encoded_string;
-        encoder.Encode(predicate_value,
-                       col_offset + 1 == hash_dimension.column_ids.size(),
-                       &new_encoded_string);
-        new_encoded_strings.emplace_back(new_encoded_string);
-      }
-    }
-    encoded_strings.swap(new_encoded_strings);
+    predicate_values_list.emplace_back(std::move(predicate_values));
   }
-  for (const string& encoded_string : encoded_strings) {
+
+  // A combination of the predicate values is selected to compute the hash buckets.
+  vector<const void*> predicate_values_selected;
+  predicate_values_selected.reserve(hash_dimension.column_ids.size());
+  // Return value for this hash_dimension, it indicates which hash buckets are selected.
+  vector<bool> hash_bucket_bitset(hash_dimension.num_buckets, false);
+  ComputeHashBuckets(schema,
+                     hash_dimension,
+                     predicate_values_list,
+                     &predicate_values_selected,
+                     &hash_bucket_bitset);
+  return hash_bucket_bitset;
+}
+
+void PartitionPruner::ComputeHashBuckets(const Schema& schema, // NOLINT(misc-no-recursion)
+                                         const PartitionSchema::HashDimension& hash_dimension,
+                                         const vector<vector<const void*>>& predicate_values_list,
+                                         vector<const void*>* predicate_values_selected,
+                                         vector<bool>* hash_bucket_bitset) {
+  DCHECK_NOTNULL(predicate_values_selected);
+  DCHECK_NOTNULL(hash_bucket_bitset);
+  bool all_hash_bucket_needed = true;
+  for (const auto b : *hash_bucket_bitset) {
+    all_hash_bucket_needed &= b;
+  }
+  if (all_hash_bucket_needed) {
+    return;
+  }
+  size_t level = predicate_values_selected->size();
+  DCHECK_EQ(hash_dimension.column_ids.size(), predicate_values_list.size());
+  if (level == hash_dimension.column_ids.size()) {
+    string encoded_string;
+    for (size_t col_offset = 0; col_offset < hash_dimension.column_ids.size(); ++col_offset) {
+      const ColumnSchema& column = schema.column_by_id(hash_dimension.column_ids[col_offset]);
+      const KeyEncoder<string>& encoder = GetKeyEncoder<string>(column.type_info());
+      const void* predicate_value = (*predicate_values_selected)[col_offset];
+      encoder.Encode(predicate_value,
+                     col_offset + 1 == hash_dimension.column_ids.size(),
+                     &encoded_string);
+    }
     uint32_t hash_value = PartitionSchema::HashValueForEncodedColumns(
         encoded_string, hash_dimension);
-    hash_bucket_bitset[hash_value] = true;
+    (*hash_bucket_bitset)[hash_value] = true;
+    return;
   }
-  return hash_bucket_bitset;
+  DCHECK_LT(level, predicate_values_list.size());
+  for (size_t i = 0; i < predicate_values_list[level].size(); ++i) {
+    predicate_values_selected->emplace_back(predicate_values_list[level][i]);
+    ComputeHashBuckets(schema,
+                       hash_dimension,
+                       predicate_values_list,
+                       predicate_values_selected,
+                       hash_bucket_bitset);
+    predicate_values_selected->pop_back();
+  }
 }
 
 vector<PartitionPruner::PartitionKeyRange> PartitionPruner::ConstructPartitionKeyRanges(

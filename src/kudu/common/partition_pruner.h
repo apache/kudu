@@ -72,6 +72,7 @@ class PartitionPruner {
  private:
   friend class PartitionPrunerRangeSetTest;
   FRIEND_TEST(PartitionPrunerRangeSetTest, PrepareRangeSet);
+  FRIEND_TEST(PartitionPrunerTestWithMaxInListLength, TestMultiColumnInListHashPruningManyValues);
 
   struct RangeBounds {
     std::string lower;
@@ -89,6 +90,14 @@ class PartitionPruner {
       const PartitionSchema::HashDimension& hash_dimension,
       const Schema& schema,
       const ScanSpec& scan_spec);
+
+  // Pick all combinations in in-list values and compute their hash buckets,
+  // the result is stored in hash_bucket_bitset.
+  static void ComputeHashBuckets(const Schema& schema,
+                                 const PartitionSchema::HashDimension& hash_dimension,
+                                 const std::vector<std::vector<const void*>>& predicate_values_list,
+                                 std::vector<const void*>* predicate_values_selected,
+                                 std::vector<bool>* hash_bucket_bitset);
 
   // Given the range bounds and the hash schema, constructs a set of partition
   // key ranges.
