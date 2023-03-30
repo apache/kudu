@@ -229,3 +229,4 @@ fi
 
 # Run the examples.
 "$EXAMPLES_DIR/example" $LOCALHOST_IP
+"$EXAMPLES_DIR/non_unique_primary_key" $LOCALHOST_IP

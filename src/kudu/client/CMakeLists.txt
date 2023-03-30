@@ -218,6 +218,7 @@ install(FILES
 install(FILES
   ../../../examples/cpp/CMakeLists.txt
   ../../../examples/cpp/example.cc
+  ../../../examples/cpp/non_unique_primary_key.cc
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/kuduClient/examples)
 
 # Exported cmake file for just the library's targets.
