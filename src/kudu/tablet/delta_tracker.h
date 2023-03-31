@@ -287,6 +287,11 @@ class DeltaTracker {
   // in a flushing DMS (if one exists)
   int64_t CountDeletedRows() const;
 
+  // Count the number of deleted rows in REDO delta stores per their
+  // delta stats.
+  // Note : we won't force open files just to read their stats.
+  int64_t CountDeletedRowsInRedos() const;
+
  private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);

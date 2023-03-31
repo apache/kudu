@@ -223,6 +223,15 @@ DEFINE_bool(rowset_compaction_ancient_delta_threshold_enabled, true,
 TAG_FLAG(rowset_compaction_ancient_delta_threshold_enabled, advanced);
 TAG_FLAG(rowset_compaction_ancient_delta_threshold_enabled, runtime);
 
+DEFINE_bool(enable_gc_deleted_rowsets_without_live_row_count, false,
+            "Whether to enable 'DeletedRowsetGCOp' for ancient, fully deleted "
+            "rowsets without live row count stats. This is used to release "
+            "the storage space of ancient, fully deleted rowsets generated "
+            "by Kudu clusters that do not have live row count stats. "
+            "If live row count feature is already supported in your kudu "
+            "cluster, just ignore this flag.");
+TAG_FLAG(enable_gc_deleted_rowsets_without_live_row_count, advanced);
+
 DECLARE_bool(enable_undo_delta_block_gc);
 DECLARE_uint32(rowset_compaction_estimate_min_deltas_size_mb);
 
@@ -1926,7 +1935,8 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
 
   // The deleted rowset GC operation relies on live rowset counting. If this
   // tablet doesn't support such counting, do not register the op.
-  if (metadata_->supports_live_row_count()) {
+  if (metadata_->supports_live_row_count()
+      || FLAGS_enable_gc_deleted_rowsets_without_live_row_count) {
     maintenance_ops.emplace_back(new DeletedRowsetGCOp(this));
     maint_mgr->RegisterOp(maintenance_ops.back().get());
   }

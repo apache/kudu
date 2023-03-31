@@ -61,6 +61,7 @@
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_string(time_source);
+DECLARE_bool(enable_gc_deleted_rowsets_without_live_row_count);
 
 using kudu::clock::HybridClock;
 using std::nullopt;
@@ -110,6 +111,20 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
     ASSERT_OK(tablet()->DeleteAncientDeletedRowsets());
     ASSERT_EQ(bytes + orig_bytes, metrics->deleted_rowset_gc_bytes_deleted->value());
     ASSERT_GT(metrics->deleted_rowset_gc_duration->TotalCount(), orig_count);
+  }
+
+  // Attempt to run the deleted rowset GC, it is our expectation that GC will make no sense
+  // and nothing will change.
+  void TryRunningDeletedRowsetGCWithoutEffect() {
+    const auto& metrics = tablet()->metrics();
+    const int orig_bytes = metrics->deleted_rowset_gc_bytes_deleted->value();
+    const int orig_count = metrics->deleted_rowset_gc_duration->TotalCount();
+    int64_t bytes = 0;
+    ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));
+    ASSERT_EQ(0, bytes);
+    ASSERT_OK(tablet()->DeleteAncientDeletedRowsets());
+    ASSERT_EQ(orig_bytes, metrics->deleted_rowset_gc_bytes_deleted->value());
+    ASSERT_EQ(orig_count, metrics->deleted_rowset_gc_duration->TotalCount());
   }
 
   // Helper functions that mutate rows in batches of keys:
@@ -675,7 +690,25 @@ TEST_F(TabletHistoryGcNoMaintMgrTest, TestUndoDeltaBlockGc) {
   ASSERT_EQ(1, tablet()->metrics()->undo_delta_block_gc_delete_duration->TotalCount());
 }
 
-TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithRedoFiles) {
+class TabletDeletedRowsetGcTest : public TabletHistoryGcNoMaintMgrTest,
+                                  public ::testing::WithParamInterface<bool> {
+public:
+  void SetSupportLiveRowCount() {
+    NO_FATALS(tablet()->metadata()->
+        set_supports_live_row_count_for_tests(/* supports_live_row_count */ GetParam()));
+  }
+
+  void SetUp() override {
+    TabletHistoryGcNoMaintMgrTest::SetUp();
+    NO_FATALS(SetSupportLiveRowCount());
+    FLAGS_enable_gc_deleted_rowsets_without_live_row_count = GetParam();
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(, TabletDeletedRowsetGcTest,
+                         ::testing::Values(true, false));
+
+TEST_P(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsWithRedoFiles) {
   FLAGS_tablet_history_max_age_sec = 1000;
   NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   ASSERT_EQ(kNumRowsets, tablet()->CountUndoDeltasForTests());
@@ -706,15 +739,23 @@ TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithRedoFiles) {
   ASSERT_EQ(0, tablet()->CountRedoDeltasForTests());
 }
 
-TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithDMS) {
+TEST_P(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsWithDMS) {
   FLAGS_tablet_history_max_age_sec = 1000;
   NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   NO_FATALS(DeleteOriginalRows(kNumRowsets, rows_per_rowset_, /*flush_dms*/false));
   NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec + 1)));
-  NO_FATALS(TryRunningDeletedRowsetGC());
+  if (GetParam()) {
+    NO_FATALS(TryRunningDeletedRowsetGC());
+  } else {
+    // We can't get the exact count of live row without live_row_count feature.
+    // If we disable the live_row_count, the imprecise counting will not trigger the GC.
+    // However, this is expected and will not cause any errors, so we can directly ignore this
+    // unit testcase at this time.
+    NO_FATALS(TryRunningDeletedRowsetGCWithoutEffect());
+  }
 }
 
-TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsAfterMinorCompaction) {
+TEST_P(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsAfterMinorCompaction) {
   FLAGS_tablet_history_max_age_sec = 1000;
   NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   // Flush twice as frequently when deleting so we end up with multiple delta
@@ -729,7 +770,7 @@ TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsAfterMinorCompaction) 
   NO_FATALS(TryRunningDeletedRowsetGC());
 }
 
-TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsAfterMajorCompaction) {
+TEST_P(TabletDeletedRowsetGcTest, TestGCDeletedRowsetsAfterMajorCompaction) {
   FLAGS_tablet_history_max_age_sec = 1000;
   NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   // Major delta compaction is a no-op if we only have deletes, so trick the

@@ -39,6 +39,7 @@
 #include "kudu/common/types.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/fs/io_context.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/compaction.h"
@@ -749,6 +750,17 @@ Status DiskRowSet::CountRows(const IOContext* io_context, rowid_t *count) const 
   return Status::OK();
 }
 
+Status DiskRowSet::CountLiveRowsWithoutLiveRowCountStats(uint64_t* count) const {
+  IOContext io_context({ rowset_metadata_->tablet_metadata()->tablet_id() });
+  rowid_t rows_count;
+  // TODO(kedeng) : get operation count in DMS.
+  RETURN_NOT_OK(CountRows(&io_context, &rows_count));
+  int64_t deleted_count = delta_tracker_->CountDeletedRowsInRedos();
+  DCHECK_GE(rows_count, deleted_count);
+  *count = rows_count - deleted_count;
+  return Status::OK();
+}
+
 Status DiskRowSet::CountLiveRows(uint64_t* count) const {
   DCHECK_GE(rowset_metadata_->live_row_count(), delta_tracker_->CountDeletedRows());
   *count = rowset_metadata_->live_row_count() - delta_tracker_->CountDeletedRows();
@@ -877,7 +889,12 @@ Status DiskRowSet::EstimateBytesInPotentiallyAncientUndoDeltas(
 Status DiskRowSet::IsDeletedAndFullyAncient(Timestamp ancient_history_mark,
                                             bool* deleted_and_ancient) {
   uint64_t live_row_count = 0;
-  RETURN_NOT_OK(CountLiveRows(&live_row_count));
+  if (rowset_metadata_->tablet_metadata()->supports_live_row_count()) {
+    RETURN_NOT_OK(CountLiveRows(&live_row_count));
+  } else {
+    RETURN_NOT_OK(CountLiveRowsWithoutLiveRowCountStats(&live_row_count));
+  }
+
   if (live_row_count > 0) {
     *deleted_and_ancient = false;
     return Status::OK();

@@ -384,14 +384,18 @@ class DiskRowSet :
 
   // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
   // yet set, consults the base data and stores the result in 'num_rows_'.
-  Status CountRows(const fs::IOContext* io_context, rowid_t *count) const final override;
+  Status CountRows(const fs::IOContext* io_context, rowid_t *count) const final;
 
   // Count the number of live rows in this DRS.
-  virtual Status CountLiveRows(uint64_t* count) const override;
+  Status CountLiveRows(uint64_t* count) const override;
+  // Because possible operations in DMS and will be ignored, mainly because there is no API
+  // available in the old version(earlier than 1.10) of kudu to obtain this data, this API
+  // can only obtain an approximate live row count.
+  Status CountLiveRowsWithoutLiveRowCountStats(uint64_t* count) const;
 
   // See RowSet::GetBounds(...)
-  virtual Status GetBounds(std::string* min_encoded_key,
-                           std::string* max_encoded_key) const override;
+  Status GetBounds(std::string* min_encoded_key,
+                   std::string* max_encoded_key) const override;
 
   void GetDiskRowSetSpaceUsage(DiskRowSetSpace* drss) const;
 

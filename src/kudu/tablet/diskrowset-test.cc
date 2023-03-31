@@ -768,6 +768,70 @@ TEST_F(TestRowSet, TestDiskSizeEstimation) {
   ASSERT_GT(drss.redo_deltas_size, 0);
 }
 
+TEST_F(TestRowSet, TestGCDRSWithoutLiveRowCount) {
+  // Write a rowset.
+  WriteTestRowSet();
+  shared_ptr<DiskRowSet> rs;
+
+  ASSERT_OK(OpenTestRowSet(&rs));
+  uint64_t rs_live_rows;
+  // The rowset's live row count should be equal when there are no live row count
+  // stats available if no DMS exists.
+  ASSERT_OK(rs->CountLiveRows(&rs_live_rows));
+  ASSERT_EQ(rs_live_rows, FLAGS_roundtrip_num_rows);
+  uint64_t rs_live_rows_without_lrc;
+  CHECK_OK(rs->CountLiveRowsWithoutLiveRowCountStats(&rs_live_rows_without_lrc));
+  ASSERT_EQ(rs_live_rows_without_lrc, rs_live_rows);
+
+  // Write a delta file.
+  UpdateExistingRows(rs.get(), static_cast<float>(FLAGS_update_fraction), nullptr);
+  ASSERT_OK(rs->FlushDeltas(nullptr));
+
+  // The live row count is 0 if the DRS has been fully deleted if no DMS exists.
+  NO_FATALS(DeleteExistingRows(rs.get(), 0, FLAGS_roundtrip_num_rows, nullptr));
+  ASSERT_OK(rs->FlushDeltas(nullptr));
+  CHECK_OK(rs->CountLiveRows(&rs_live_rows));
+  ASSERT_EQ(rs_live_rows, 0);
+  CHECK_OK(rs->CountLiveRowsWithoutLiveRowCountStats(&rs_live_rows_without_lrc));
+  ASSERT_EQ(rs_live_rows_without_lrc, 0);
+}
+
+TEST_F(TestRowSet, TestCountLiveRowsWithoutLiveRowCountStats) {
+  // Write a rowset.
+  WriteTestRowSet();
+  shared_ptr<DiskRowSet> rs;
+
+  ASSERT_OK(OpenTestRowSet(&rs));
+  uint64_t rs_live_rows;
+  // The rowset's live row count from different way should be equal if if no
+  // DMS exists.
+  CHECK_OK(rs->CountLiveRows(&rs_live_rows));
+  ASSERT_EQ(rs_live_rows, FLAGS_roundtrip_num_rows);
+  uint64_t rs_live_rows_without_lrc;
+  CHECK_OK(rs->CountLiveRowsWithoutLiveRowCountStats(&rs_live_rows_without_lrc));
+  ASSERT_EQ(rs_live_rows_without_lrc, rs_live_rows);
+
+  // Write a delta file.
+  UpdateExistingRows(rs.get(), static_cast<float>(FLAGS_update_fraction), nullptr);
+  ASSERT_OK(rs->FlushDeltas(nullptr));
+
+  // The delta file is OK to deal with without a DMS.
+  CHECK_OK(rs->CountLiveRows(&rs_live_rows));
+  ASSERT_EQ(rs_live_rows, FLAGS_roundtrip_num_rows);
+  CHECK_OK(rs->CountLiveRowsWithoutLiveRowCountStats(&rs_live_rows_without_lrc));
+  ASSERT_EQ(rs_live_rows_without_lrc, rs_live_rows);
+
+  // Get a new DMS.
+  UpdateExistingRows(rs.get(), static_cast<float>(FLAGS_update_fraction), nullptr);
+
+  // The 'CountLiveRowsWithoutLiveRowCountStats' may get a smaller value than
+  // 'CountLiveRows' if a DMS exists.
+  CHECK_OK(rs->CountLiveRows(&rs_live_rows));
+  CHECK_OK(rs->CountLiveRowsWithoutLiveRowCountStats(&rs_live_rows_without_lrc));
+  ASSERT_LE(rs_live_rows_without_lrc, rs_live_rows);
+  ASSERT_GE(rs_live_rows_without_lrc, FLAGS_roundtrip_num_rows);
+}
+
 class DiffScanRowSetTest : public KuduRowSetTest,
                            public ::testing::WithParamInterface<tuple<bool, bool>> {
  public:
