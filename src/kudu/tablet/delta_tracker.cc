@@ -1010,6 +1010,20 @@ int64_t DeltaTracker::CountDeletedRows() const {
   return deleted_row_count_ + (dms_exists_ ? dms_->deleted_row_count() : 0);
 }
 
+int64_t DeltaTracker::CountDeletedRowsInRedos() const {
+  shared_lock<rw_spinlock> lock(component_lock_);
+
+  int64_t delete_count = 0;
+  for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
+    // We won't force open files just to read their stats.
+    if (!ds->has_delta_stats()) {
+      continue;
+    }
+    delete_count += ds->delta_stats().delete_count();
+  }
+  return delete_count;
+}
+
 string DeltaTracker::LogPrefix() const {
   return Substitute("T $0 P $1: ",
                     rowset_metadata_->tablet_metadata()->tablet_id(),

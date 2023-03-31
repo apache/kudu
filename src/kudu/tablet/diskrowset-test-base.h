@@ -98,7 +98,7 @@ class TestRowSet : public KuduRowSetTest {
   // The string values are padded out to 15 digits
   void WriteTestRowSet(int n_rows = 0, bool zero_vals = false) {
     DiskRowSetWriter drsw(rowset_meta_.get(), &schema_,
-                          BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
+                          BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01F));
     DoWriteTestRowSet(n_rows, &drsw, zero_vals);
   }
 
