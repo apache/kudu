@@ -82,5 +82,12 @@ Status CreateTestSSLCertWithChainSignedByRoot(const std::string& dir,
                                               std::string* key_file,
                                               std::string* ca_cert_file);
 
+// Same as the CreateTestSSLCertWithPlainKey() except that the 'ca_cert_file' contains
+// an expired certificate.
+Status CreateTestSSLExpiredCertWithChainSignedByRoot(const std::string& dir,
+                                              std::string* cert_file,
+                                              std::string* key_file,
+                                              std::string* expired_ca_cert_file);
+
 } // namespace security
 } // namespace kudu

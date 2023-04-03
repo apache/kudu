@@ -64,7 +64,12 @@ class JWTHelper {
 
   // Load JWKS from a given local JSON file or URL. Returns an error if problems were
   // encountered.
-  Status Init(const std::string& jwks_uri, bool is_local_file);
+  Status Init(const std::string& jwks_uri);
+
+  // Load JWKS from a given local JSON file or URL. Returns an error if problems were
+  // encountered.
+  Status Init(const std::string& jwks_uri, bool jwks_verify_server_certificate,
+              bool is_local_file);
 
   // Decode the given JWT token. The decoding result is stored in decoded_token_out.
   // Return Status::OK if the decoding is successful.
@@ -117,8 +122,11 @@ class KeyBasedJwtVerifier : public JwtVerifier {
 
 class PerAccountKeyBasedJwtVerifier : public JwtVerifier {
  public:
-  explicit PerAccountKeyBasedJwtVerifier(std::string oidc_uri)
-      : oidc_uri_(std::move(oidc_uri)) {}
+  explicit PerAccountKeyBasedJwtVerifier(std::string oidc_uri, bool jwks_verify_server_certificate,
+                                         const std::string jwks_ca_certificate)
+      : oidc_uri_(std::move(oidc_uri)),
+        jwks_verify_server_certificate_(jwks_verify_server_certificate),
+        jwks_ca_certificate_(jwks_ca_certificate) {}
 
   ~PerAccountKeyBasedJwtVerifier() override = default;
 
@@ -132,6 +140,11 @@ class PerAccountKeyBasedJwtVerifier : public JwtVerifier {
   Status JWTHelperForToken(const JWTHelper::JWTDecodedToken& token, JWTHelper** helper) const;
 
   const std::string oidc_uri_;
+
+  const bool jwks_verify_server_certificate_;
+
+  const std::string jwks_ca_certificate_;
+
   // Marked as mutable so that PerAccountKeyBasedJwtVerifier::JWTHelperForToken is able to emplace
   // new JWTHelpers in it.
   mutable std::unordered_map<std::string, std::shared_ptr<JWTHelper>> jwt_by_account_id_;

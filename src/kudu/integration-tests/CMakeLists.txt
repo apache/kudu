@@ -48,8 +48,7 @@ target_link_libraries(itest_util
   kudu_fs
   kudu_test_util
   kudu_tools_test_util
-  kudu_tools_util
-  security_test_util)
+  kudu_tools_util)
 add_dependencies(itest_util
   kudu-master
   kudu-tserver)

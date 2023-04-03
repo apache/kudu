@@ -602,14 +602,16 @@ Status JWKSSnapshot::LoadKeysFromFile(const string& jwks_file_path) {
 
 // Download JWKS from the given URL with Kudu's EasyCurl wrapper.
 Status JWKSSnapshot::LoadKeysFromUrl(
-    const std::string& jwks_url, uint64_t cur_jwks_checksum, bool* is_changed) {
+    const std::string& jwks_url, bool jwks_verify_server_certificate, uint64_t cur_jwks_checksum,
+    bool* is_changed) {
   kudu::EasyCurl curl;
   kudu::faststring dst;
   *is_changed = false;
 
   curl.set_timeout(
       kudu::MonoDelta::FromMilliseconds(static_cast<int64_t>(FLAGS_jwks_pulling_timeout_s) * 1000));
-  curl.set_verify_peer(false);
+  curl.set_verify_peer(jwks_verify_server_certificate);
+
   // TODO support CurlAuthType by calling kudu::EasyCurl::set_auth().
   RETURN_NOT_OK_PREPEND(curl.FetchURL(jwks_url, &dst),
       Substitute("Error downloading JWKS from '$0'", jwks_url));
@@ -694,15 +696,19 @@ JWKSMgr::~JWKSMgr() {
   if (jwks_update_thread_ != nullptr) jwks_update_thread_->Join();
 }
 
-Status JWKSMgr::Init(const std::string& jwks_uri, bool is_local_file) {
+Status JWKSMgr::Init(const std::string& jwks_uri, bool jwks_verify_server_certificate,
+                     bool is_local_file) {
   jwks_uri_ = jwks_uri;
+  jwks_verify_server_certificate_ = jwks_verify_server_certificate;
   std::shared_ptr<JWKSSnapshot> new_jwks = std::make_shared<JWKSSnapshot>();
   if (is_local_file) {
     RETURN_NOT_OK_PREPEND(new_jwks->LoadKeysFromFile(jwks_uri), "Failed to load JWKS");
     SetJWKSSnapshot(new_jwks);
   } else {
     bool is_changed = false;
-    RETURN_NOT_OK_PREPEND(new_jwks->LoadKeysFromUrl(jwks_uri, current_jwks_checksum_, &is_changed),
+    RETURN_NOT_OK_PREPEND(new_jwks->LoadKeysFromUrl(jwks_uri, jwks_verify_server_certificate,
+                                                    current_jwks_checksum_,
+                                                    &is_changed),
                           "Failed to load JWKS");
     DCHECK(is_changed);
     if (is_changed) SetJWKSSnapshot(new_jwks);
@@ -734,7 +740,8 @@ void JWKSMgr::UpdateJWKSThread() {
     new_jwks = std::make_shared<JWKSSnapshot>();
     bool is_changed = false;
     Status status =
-        new_jwks->LoadKeysFromUrl(jwks_uri_, current_jwks_checksum_, &is_changed);
+        new_jwks->LoadKeysFromUrl(jwks_uri_, jwks_verify_server_certificate_,
+                                  current_jwks_checksum_, &is_changed);
     if (!status.ok()) {
       LOG(WARNING) << "Failed to update JWKS: " << status.ToString();
     } else if (is_changed) {
@@ -781,9 +788,17 @@ void JWTHelper::TokenDeleter::operator()(JWTHelper::JWTDecodedToken* token) cons
   delete token;
 }
 
-Status JWTHelper::Init(const std::string& jwks_uri, bool is_local_file) {
+Status JWTHelper::Init(const std::string& jwks_file_path) {
+  return Init(jwks_file_path,
+              /*jwks_verify_server_certificate*/ false,
+              /*is_local_file*/ true);
+}
+
+Status JWTHelper::Init(const std::string& jwks_uri, bool jwks_verify_server_certificate,
+                       bool is_local_file) {
   jwks_mgr_.reset(new JWKSMgr());
-  RETURN_NOT_OK(jwks_mgr_->Init(jwks_uri, is_local_file));
+  RETURN_NOT_OK(jwks_mgr_->Init(jwks_uri, jwks_verify_server_certificate,
+                                is_local_file));
   if (!initialized_) initialized_ = true;
   return Status::OK();
 }
@@ -931,7 +946,7 @@ Status JWTHelper::GetCustomClaimUsername(const JWTDecodedToken* decoded_token,
 }
 
 Status KeyBasedJwtVerifier::Init() {
-  return jwt_->Init(jwks_uri_, is_local_file_);
+  return jwt_->Init(jwks_uri_, /*jwks_verify_server_certificate*/ false, is_local_file_);
 }
 
 Status KeyBasedJwtVerifier::VerifyToken(const string& bytes_raw, string* subject) const {
@@ -1004,7 +1019,9 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
   // accounts, as it creates a JWKS refresh thread for each account. Group the
   // refreshes into a single thread or threadpool.
   auto new_helper = std::make_shared<JWTHelper>();
-  RETURN_NOT_OK_PREPEND(new_helper->Init(jwks_uri, /*is_local_file*/ false),
+  RETURN_NOT_OK_PREPEND(new_helper->Init(jwks_uri,
+                                         jwks_verify_server_certificate_,
+                                         /*is_local_file*/ false),
                         "Error initializing JWT helper");
 
   {
@@ -1019,7 +1036,8 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
 Status PerAccountKeyBasedJwtVerifier::Init() {
   for (auto& [account_id, verifier] : jwt_by_account_id_) {
     RETURN_NOT_OK(verifier->Init(Substitute("$0?accountId=$1", oidc_uri_, account_id),
-                   /*is_local_file*/false));
+                                            jwks_verify_server_certificate_,
+                                            /*is_local_file*/ false));
   }
   return Status::OK();
 }

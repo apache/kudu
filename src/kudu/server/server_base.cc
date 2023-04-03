@@ -274,6 +274,17 @@ DEFINE_string(jwks_url, "",
     "URL of the JSON Web Key Set (JWKS) for JWT verification.");
 TAG_FLAG(jwks_url, experimental);
 
+// Enables retrieving the JWKS URL with verifying the presented TLS certificate
+// from the server.
+DEFINE_bool(jwks_verify_server_certificate, true,
+            "Specifies if the TLS certificate of the JWKS server is verified when retrieving "
+            "the JWKS from the specified JWKS URL. A certificate is considered valid if a "
+            "trust chain can be established for it, and the certificate has a common name or "
+            "SAN that matches the server's hostname. This should only be set to false for "
+            "development / testing.");
+TAG_FLAG(jwks_verify_server_certificate, experimental);
+TAG_FLAG(jwks_verify_server_certificate, unsafe);
+
 DEFINE_string(jwks_discovery_endpoint_base, "",
               "Base URL of the Discovery Endpoint that points to a JSON Web Key Set "
               "(JWKS) for JWT verification. Additional query parameters, like 'accountId', "
@@ -320,6 +331,7 @@ DECLARE_string(log_filename);
 DECLARE_string(keytab_file);
 DECLARE_string(principal);
 DECLARE_string(time_source);
+DECLARE_string(trusted_certificate_file);
 
 METRIC_DECLARE_gauge_size(merged_entities_count_of_server);
 METRIC_DEFINE_gauge_int64(server, uptime,
@@ -800,7 +812,10 @@ Status ServerBase::Init() {
   shared_ptr<JwtVerifier> jwt_verifier = nullptr;
   if (FLAGS_enable_jwt_token_auth) {
     if (!FLAGS_jwks_url.empty()) {
-      jwt_verifier = std::make_shared<PerAccountKeyBasedJwtVerifier>(FLAGS_jwks_url);
+      jwt_verifier =
+          std::make_shared<PerAccountKeyBasedJwtVerifier>(FLAGS_jwks_url,
+                                                          FLAGS_jwks_verify_server_certificate,
+                                                          FLAGS_trusted_certificate_file);
     } else if (!FLAGS_jwks_file_path.empty()) {
       jwt_verifier = std::make_shared<KeyBasedJwtVerifier>(FLAGS_jwks_file_path, true);
     } else {
