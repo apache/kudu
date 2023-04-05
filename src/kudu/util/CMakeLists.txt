@@ -365,12 +365,6 @@ target_link_libraries(mini_oidc
   jwt_test_certs)
 
 #######################################
-# jwt_test_certs
-#######################################
-add_library(jwt_test_certs jwt_test_certs.cc)
-target_link_libraries(jwt_test_certs)
-
-#######################################
 # kudu_jwt_util
 #######################################
 add_library(kudu_jwt_util jwt-util.cc)
@@ -379,6 +373,13 @@ target_link_libraries(kudu_jwt_util
   security
   kudu_curl_util
   kudu_util)
+
+#######################################
+# jwt_test_certs
+#######################################
+add_library(jwt_test_certs jwt_test_certs.cc)
+target_link_libraries(jwt_test_certs
+  kudu_jwt_util)
 
 #######################################
 # kudu_cloud_util
