@@ -23,6 +23,7 @@
 #include <map>
 #include <string>
 
+#include "kudu/client/schema.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/row_operations.h"
@@ -34,6 +35,16 @@ inline Schema GetSimpleTestSchema() {
                   ColumnSchema("int_val", INT32),
                   ColumnSchema("string_val", STRING, true) },
                 1);
+}
+
+inline client::KuduSchema GetAutoIncrementingTestSchema() {
+  client::KuduSchema kudu_schema;
+  client::KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(client::KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  b.AddColumn("int_val")->Type(client::KuduColumnSchema::INT32);
+  b.AddColumn("string_val")->Type(client::KuduColumnSchema::STRING)->Nullable();
+  CHECK_OK(b.Build(&kudu_schema));
+  return kudu_schema;
 }
 
 inline void RowAppendColumn(KuduPartialRow* row,

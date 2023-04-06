@@ -2428,6 +2428,8 @@ TEST_F(ToolTest, TestWalDump) {
       ASSERT_STR_MATCHES(stdout, "Header:");
       ASSERT_STR_MATCHES(stdout, "1\\.1@1");
       ASSERT_STR_MATCHES(stdout, "this is a test insert");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id");
       ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
       ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
       ASSERT_STR_MATCHES(stdout, "Footer:");
@@ -2439,6 +2441,8 @@ TEST_F(ToolTest, TestWalDump) {
       SCOPED_TRACE(stdout);
       ASSERT_STR_MATCHES(stdout, "Header:");
       ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id");
       ASSERT_STR_NOT_MATCHES(stdout, "this is a test insert");
       ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
       ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
@@ -2450,6 +2454,8 @@ TEST_F(ToolTest, TestWalDump) {
       SCOPED_TRACE(stdout);
       ASSERT_STR_MATCHES(stdout, "Header:");
       ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id");
       ASSERT_STR_MATCHES(stdout, "this is a test insert");
       ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
       ASSERT_STR_MATCHES(stdout, "row_operations \\{");
@@ -2461,6 +2467,8 @@ TEST_F(ToolTest, TestWalDump) {
       SCOPED_TRACE(stdout);
       ASSERT_STR_MATCHES(stdout, "Header:");
       ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id");
       ASSERT_STR_NOT_MATCHES(stdout, "this is a test insert");
       ASSERT_STR_MATCHES(stdout, "t<truncated>");
       ASSERT_STR_MATCHES(stdout, "row_operations \\{");
@@ -2472,6 +2480,8 @@ TEST_F(ToolTest, TestWalDump) {
       SCOPED_TRACE(stdout);
       ASSERT_STR_MATCHES(stdout, "Header:");
       ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id");
       ASSERT_STR_NOT_MATCHES(stdout, "this is a test insert");
       ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
       ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
@@ -2483,6 +2493,8 @@ TEST_F(ToolTest, TestWalDump) {
       SCOPED_TRACE(stdout);
       ASSERT_STR_NOT_MATCHES(stdout, "Header:");
       ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id");
       ASSERT_STR_MATCHES(stdout, "this is a test insert");
       ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
       ASSERT_STR_NOT_MATCHES(stdout, "Footer:");
@@ -2707,6 +2719,141 @@ TEST_F(ToolTest, TestWalDumpWithAlterSchema) {
       ASSERT_STR_MATCHES(stdout, kAddColumnName1);
       ASSERT_STR_MATCHES(stdout, kAddColumnName1Message);
       ASSERT_STR_MATCHES(stdout, kAddColumnName2Message);
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_NOT_MATCHES(stdout, "Footer:");
+    }
+  }
+}
+
+TEST_F(ToolTest, TestWalDumpWithAutoIncrementingColumn) {
+  const string kTestDir = GetTestPath("test");
+  const string kTestTablet = "ffffffffffffffffffffffffffffffff";
+  const client::KuduSchema kSchema(GetAutoIncrementingTestSchema());
+  const Schema schema = client::KuduSchema::ToSchema(kSchema);
+  const Schema schema_with_id = SchemaBuilder(client::KuduSchema::ToSchema(kSchema)).Build();
+
+  FsManager fs(env_, FsManagerOpts(kTestDir));
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
+
+  {
+    scoped_refptr<Log> log;
+    ASSERT_OK(Log::Open(LogOptions(),
+                        &fs,
+                        /*file_cache*/nullptr,
+                        kTestTablet,
+                        schema_with_id,
+                        /*schema_version*/0,
+                        /*metric_entity*/nullptr,
+                        &log));
+
+    OpId opid = consensus::MakeOpId(1, 1);
+    ReplicateRefPtr replicate =
+        consensus::make_scoped_refptr_replicate(new ReplicateMsg());
+    replicate->get()->set_op_type(consensus::WRITE_OP);
+    replicate->get()->mutable_id()->CopyFrom(opid);
+    replicate->get()->set_timestamp(1);
+    WriteRequestPB* write = replicate->get()->mutable_write_request();
+    write->mutable_auto_incrementing_column()->set_auto_incrementing_counter(0x5a);
+    ASSERT_OK(SchemaToPB(schema, write->mutable_schema()));
+    AddTestRowToPB(RowOperationsPB::INSERT, schema,
+                   opid.index(),
+                   0,
+                   "this is a test insert",
+                   write->mutable_row_operations());
+    AddTestRowToPB(RowOperationsPB::INSERT, schema,
+                   opid.index(),
+                   0,
+                   "this is a test insert",
+                   write->mutable_row_operations());
+    write->set_tablet_id(kTestTablet);
+    Synchronizer s;
+    ASSERT_OK(log->AsyncAppendReplicates({ replicate }, s.AsStatusCallback()));
+    ASSERT_OK(s.Wait());
+  }
+
+  string wal_path = fs.GetWalSegmentFileName(kTestTablet, 1);
+  string encryption_args;
+  if (env_->IsEncryptionEnabled()) {
+    encryption_args = GetEncryptionArgs() + " --instance_file=" +
+        fs.GetInstanceMetadataPath(kTestDir);
+  }
+  string stdout;
+  for (const auto& args : { Substitute("wal dump $0 $1", wal_path, encryption_args),
+                            Substitute("local_replica dump wals --fs_wal_dir=$0 $1 $2",
+                                       kTestDir, kTestTablet, encryption_args)
+  }) {
+    SCOPED_TRACE(args);
+    {
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=true",
+                                                 args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_MATCHES(stdout, "Auto Incrementing Counter: 90");
+      ASSERT_STR_MATCHES(stdout, "auto_incrementing_id=91");
+      ASSERT_STR_MATCHES(stdout, "auto_incrementing_id=92");
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=false",
+                                                 args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id=");
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute("$0 --print_entries=pb",
+                                                 args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id=");
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_entries=pb --truncate_data=1", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_NOT_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id=");
+      ASSERT_STR_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_entries=id", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_NOT_MATCHES(stdout, "Auto Incrementing Counter");
+      ASSERT_STR_NOT_MATCHES(stdout, "auto_incrementing_id=");
+      ASSERT_STR_NOT_MATCHES(stdout, "t<truncated>");
+      ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
+      ASSERT_STR_MATCHES(stdout, "Footer:");
+    }
+    {
+      NO_FATALS(RunActionStdoutString(Substitute(
+          "$0 --print_meta=false", args), &stdout));
+      SCOPED_TRACE(stdout);
+      ASSERT_STR_NOT_MATCHES(stdout, "Header:");
+      ASSERT_STR_MATCHES(stdout, "1\\.1@1");
+      ASSERT_STR_MATCHES(stdout, "Auto Incrementing Counter: 90");
+      ASSERT_STR_MATCHES(stdout, "auto_incrementing_id=91");
+      ASSERT_STR_MATCHES(stdout, "auto_incrementing_id=92");
       ASSERT_STR_NOT_MATCHES(stdout, "row_operations \\{");
       ASSERT_STR_NOT_MATCHES(stdout, "Footer:");
     }
