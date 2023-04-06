@@ -348,8 +348,15 @@ Status PrintDecodedWriteRequestPB(const string& indent,
   Arena arena(32 * 1024);
   RowOperationsPBDecoder dec(&write.row_operations(), &request_schema, &tablet_schema, &arena);
   vector<DecodedRowOperation> ops;
-  RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
-
+  if (write.has_auto_incrementing_column()) {
+    // Define auto_incrementing_counter and use it as in-out parameter during decoding of the ops
+    // in DecodeOperations().
+    int64_t auto_incrementing_counter =
+        write.auto_incrementing_column().auto_incrementing_counter();
+    RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops, &auto_incrementing_counter));
+  } else {
+    RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
+  }
   cout << indent << "Tablet: " << write.tablet_id() << endl;
   cout << indent << "RequestId: "
       << (request_id ? SecureShortDebugString(*request_id) : "None") << endl;
@@ -357,6 +364,10 @@ Status PrintDecodedWriteRequestPB(const string& indent,
        << ExternalConsistencyMode_Name(write.external_consistency_mode()) << endl;
   if (write.has_propagated_timestamp()) {
     cout << indent << "Propagated TS: " << write.propagated_timestamp() << endl;
+  }
+  if (write.has_auto_incrementing_column()) {
+    cout << indent << "Auto Incrementing Counter: "
+        << write.auto_incrementing_column().auto_incrementing_counter() << endl;
   }
 
   int i = 0;
