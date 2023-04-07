@@ -500,6 +500,12 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
           op->SetFailureStatusOnce(err_max_value);
           return err_max_value;
         }
+        if (*DCHECK_NOTNULL(auto_incrementing_counter) < 0) {
+          static const Status err_value = Status::IllegalState("invalid auto-incrementing "
+                                                               "column value");
+          op->SetFailureStatusOnce(err_value);
+          return err_value;
+        }
         // We increment the auto incrementing counter at this point regardless of future failures
         // in the op for simplicity. The auto-incrementing column key space is large enough to
         // not run of values for any realistic workloads.
@@ -731,6 +737,8 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
   uint8_t prototype_row_storage[tablet_row_size_];
   ContiguousRow prototype_row(tablet_schema_, prototype_row_storage);
   SetupPrototypeRow(*tablet_schema_, &prototype_row);
+  int64_t counter = -1;
+  auto_incrementing_counter = auto_incrementing_counter ? auto_incrementing_counter : &counter;
 
   while (HasNext()) {
     RowOperationsPB::Type type = RowOperationsPB::UNKNOWN;
