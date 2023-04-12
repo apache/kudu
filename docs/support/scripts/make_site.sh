@@ -81,12 +81,21 @@ echo "Successfully built third-party dependencies."
 # Build the binaries so we can auto-generate the command-line references
 mkdir -p "$BUILD_ROOT"
 cd "$BUILD_ROOT"
-rm -rf CMakeCache CMakeFiles/
+rm -rf CMakeCache.txt CMakeFiles/
+
+if command -v ninja &> /dev/null; then
+    CMAKE_GENERATOR="-GNinja"
+    BUILD_TOOL="ninja"
+else
+    CMAKE_GENERATOR=""
+    BUILD_TOOL="make -j$(getconf _NPROCESSORS_ONLN)"
+fi
 if [ -n "$OPT_DOXYGEN" ]; then
   DOXYGEN_FLAGS="-DDOXYGEN_WARN_AS_ERROR=1"
 fi
 $SOURCE_ROOT/build-support/enable_devtoolset.sh \
     $SOURCE_ROOT/thirdparty/installed/common/bin/cmake \
+    $CMAKE_GENERATOR \
     -DNO_TESTS=1 \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
     $DOXYGEN_FLAGS \
@@ -95,7 +104,7 @@ MAKE_TARGETS="kudu kudu-tserver kudu-master"
 if [ -n "$OPT_DOXYGEN" ]; then
   MAKE_TARGETS="$MAKE_TARGETS doxygen"
 fi
-make -j$(getconf _NPROCESSORS_ONLN) $MAKE_TARGETS
+$BUILD_TOOL $MAKE_TARGETS
 
 # Check out the gh-pages repo into $SITE_OUTPUT_DIR
 if [ -d "$SITE_OUTPUT_DIR" -a -n "$OPT_FORCE" ]; then
