@@ -487,6 +487,10 @@ public class KuduTestHarness extends ExternalResource {
     client = asyncClient.syncClient();
   }
 
+  public String createJwtFor(String accountId, String subject, boolean isValid) throws IOException {
+    return miniCluster.createJwtFor(accountId, subject, isValid);
+  }
+
   /**
    * An annotation that can be added to each test method to
    * define additional master server flags to be used when
