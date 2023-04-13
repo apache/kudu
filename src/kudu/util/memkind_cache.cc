@@ -22,40 +22,23 @@
 #include <dlfcn.h>
 
 #include <cstdint>
-//#include <cstring>
-//#include <iostream>
-//#include <memory>
-//#include <mutex>
-//#include <string>
-//#include <utility>
-//#include <vector>
-//
-#include <gflags/gflags.h>
+#include <cstring>
+#include <mutex>
+#include <ostream>
+#include <utility>
+
 #include <glog/logging.h>
-//
-//#include "kudu/gutil/atomic_refcount.h"
-//#include "kudu/gutil/atomicops.h"
-//#include "kudu/gutil/bits.h"
-//#include "kudu/gutil/dynamic_annotations.h"
-//#include "kudu/gutil/hash/city.h"
-//#include "kudu/gutil/macros.h"
-//#include "kudu/gutil/port.h"
-//#include "kudu/gutil/ref_counted.h"
+
+#include "kudu/gutil/atomic_refcount.h"
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-//#include "kudu/gutil/sysinfo.h"
 #include "kudu/util/cache.h"
-//#include "kudu/util/cache_metrics.h"
-//#include "kudu/util/flag_tags.h"
-//#include "kudu/util/locks.h"
-//#include "kudu/util/metrics.h"
-#include "kudu/util/scoped_cleanup.h"
-//#include "kudu/util/slice.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util_prod.h"
 
-//using std::string;
 using std::unique_ptr;
-using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -79,7 +62,7 @@ Slice LRUHandle::value() const {
   return Slice(&kv_data[key_length], val_length);
 }
 
-uint8_t* LRUHandle::val_ptr() {
+uint8_t* LRUHandle::val_ptr() const {
   return &kv_data[key_length];
 }
 
@@ -168,8 +151,8 @@ void MemkindCacheShard::SetMetrics(CacheMetrics* metrics) {
 }
 
 MemkindCacheShard::MemkindCacheShard()
-  : usage_(0),
-  metrics_(nullptr) {
+    : usage_(0),
+      metrics_(nullptr) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;

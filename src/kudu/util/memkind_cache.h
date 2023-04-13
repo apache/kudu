@@ -19,48 +19,24 @@
 
 #pragma once
 
-#include <dlfcn.h>
-
+#include <cstddef>
 #include <cstdint>
-//#include <cstring>
-//#include <iostream>
-//#include <memory>
-#include <mutex>
-//#include <string>
-//#include <utility>
-//#include <vector>
-//
-#include <gflags/gflags.h>
-#include <glog/logging.h>
-//
-#include "kudu/gutil/atomic_refcount.h"
-//#include "kudu/gutil/atomicops.h"
-//#include "kudu/gutil/bits.h"
-//#include "kudu/gutil/dynamic_annotations.h"
-//#include "kudu/gutil/hash/city.h"
-//#include "kudu/gutil/macros.h"
-//#include "kudu/gutil/port.h"
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
-//#include "kudu/gutil/sysinfo.h"
+#include <memory>
+#include <vector>
+
+#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/hash/city.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
-//#include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
-//#include "kudu/util/metrics.h"
-#include "kudu/util/scoped_cleanup.h"
-//#include "kudu/util/slice.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/util/test_util_prod.h"
-
-struct memkind;
-
-//using std::string;
-using std::unique_ptr;
-using std::vector;
-using strings::Substitute;
 
 namespace kudu {
+
+using std::unique_ptr;
+using std::vector;
 
 // Try to dlsym() a particular symbol from 'handle', storing the result in 'ptr'
 // if successful.
@@ -88,7 +64,7 @@ struct LRUHandle {
 
   Slice value() const;
 
-  uint8_t* val_ptr();
+  uint8_t* val_ptr() const;
 };
 
 // We provide our own simple hash table since it removes a whole bunch
@@ -125,7 +101,7 @@ class HandleTable {
 // A single shard of sharded cache.
 class MemkindCacheShard {
  public:
-  explicit MemkindCacheShard();
+  MemkindCacheShard();
   virtual ~MemkindCacheShard() = default;
 
   // Separate from constructor so caller can easily make an array of LRUCache
@@ -170,7 +146,7 @@ class MemkindCacheShard {
  protected:
   // Just reduce the reference count by 1.
   // Return true if last reference
-  bool Unref(LRUHandle* e);
+  static bool Unref(LRUHandle* e);
 
   // Dummy head of LRU list.
   // lru.prev is newest entry, lru.next is oldest entry.
@@ -194,19 +170,19 @@ class ShardedMemkindCache : public Cache {
   virtual uint32_t Shard(uint32_t hash) = 0;
 
  public:
-  explicit ShardedMemkindCache() = default;
+  ShardedMemkindCache() = default;
 
-  virtual ~ShardedMemkindCache() OVERRIDE = default;
+  ~ShardedMemkindCache() OVERRIDE = default;
 
-  virtual UniqueHandle Insert(UniquePendingHandle handle,
-                              Cache::EvictionCallback* eviction_callback) OVERRIDE;
-  virtual UniqueHandle Lookup(const Slice& key, CacheBehavior caching) OVERRIDE;
-  virtual void Release(Handle* handle) OVERRIDE;
-  virtual void Erase(const Slice& key) OVERRIDE;
-  virtual Slice Value(const UniqueHandle& handle) const OVERRIDE;
-  virtual uint8_t* MutableValue(UniquePendingHandle* handle) OVERRIDE;
+  UniqueHandle Insert(UniquePendingHandle handle,
+                      Cache::EvictionCallback* eviction_callback) OVERRIDE;
+  UniqueHandle Lookup(const Slice& key, CacheBehavior caching) OVERRIDE;
+  void Release(Handle* handle) OVERRIDE;
+  void Erase(const Slice& key) OVERRIDE;
+  Slice Value(const UniqueHandle& handle) const OVERRIDE;
+  uint8_t* MutableValue(UniquePendingHandle* handle) OVERRIDE;
 
-  virtual void SetMetrics(unique_ptr<CacheMetrics> metrics,
+  void SetMetrics(unique_ptr<CacheMetrics> metrics,
                           Cache::ExistingMetricsPolicy metrics_policy) OVERRIDE;
 
   size_t Invalidate(const InvalidationControl& ctl) OVERRIDE;

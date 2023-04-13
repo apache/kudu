@@ -19,6 +19,8 @@
 
 #include "kudu/util/nvm_cache.h"
 
+#include <dlfcn.h>
+
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -26,28 +28,26 @@
 #include <mutex>
 #include <string>
 #include <utility>
-//#include <vector>
+#include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/atomic_refcount.h"
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bits.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/memkind_cache.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
-#include "kudu/util/test_util_prod.h"
+#include "kudu/util/status.h"
 
 #ifndef MEMKIND_PMEM_MIN_SIZE
 #define MEMKIND_PMEM_MIN_SIZE (1024 * 1024 * 16) // Taken from memkind 1.9.0.
@@ -75,7 +75,6 @@ TAG_FLAG(nvm_cache_usage_ratio, advanced);
 
 using std::string;
 using std::unique_ptr;
-//using std::vector;
 using strings::Substitute;
 
 static bool ValidateNVMCacheUsageRatio(const char* flagname, double value) {
@@ -174,17 +173,16 @@ class NvmLRUCache: public MemkindCacheShard {
   ~NvmLRUCache() OVERRIDE;
 
  private:
-  void FreeEntry(LRUHandle* e);
+  void FreeEntry(LRUHandle* e) OVERRIDE;
 
   // Wrapper around memkind_malloc which injects failures based on a flag.
-  void* MemkindMalloc(size_t size);
+  void* MemkindMalloc(size_t size) OVERRIDE;
 
   memkind* vmp_;
 };
 
 NvmLRUCache::NvmLRUCache(memkind* vmp)
-  : MemkindCacheShard(),
-  vmp_(vmp) {}
+    : vmp_(vmp) {}
 
 NvmLRUCache::~NvmLRUCache() {
   for (LRUHandle* e = lru_.next; e != &lru_; ) {
@@ -232,7 +230,7 @@ class ShardedLRUCache : public ShardedMemkindCache {
 
   memkind* vmp_;
 
-  uint32_t Shard(uint32_t hash) {
+  uint32_t Shard(uint32_t hash) OVERRIDE {
     // Widen to uint64 before shifting, or else on a single CPU,
     // we would try to shift a uint32_t by 32 bits, which is undefined.
     return static_cast<uint64_t>(hash) >> (32 - shard_bits_);
@@ -240,8 +238,7 @@ class ShardedLRUCache : public ShardedMemkindCache {
 
  public:
   explicit ShardedLRUCache(size_t capacity, const string& /*id*/, memkind* vmp)
-      : ShardedMemkindCache(),
-        shard_bits_(DetermineShardBits()),
+      : shard_bits_(DetermineShardBits()),
         vmp_(vmp) {
     int num_shards = 1 << shard_bits_;
     const size_t per_shard = (capacity + (num_shards - 1)) / num_shards;
@@ -252,7 +249,7 @@ class ShardedLRUCache : public ShardedMemkindCache {
     }
   }
 
-  virtual ~ShardedLRUCache() {
+  ~ShardedLRUCache() OVERRIDE {
     shards_.clear();
     // Per the note at the top of this file, our cache is entirely volatile.
     // Hence, when the cache is destructed, we delete the underlying
@@ -260,7 +257,7 @@ class ShardedLRUCache : public ShardedMemkindCache {
     CALL_MEMKIND(memkind_destroy_kind, vmp_);
   }
 
-  virtual UniquePendingHandle Allocate(Slice key, int val_len, int charge) OVERRIDE {
+  UniquePendingHandle Allocate(Slice key, int val_len, int charge) OVERRIDE {
     int key_len = key.size();
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
@@ -292,7 +289,7 @@ class ShardedLRUCache : public ShardedMemkindCache {
     return UniquePendingHandle(nullptr, Cache::PendingHandleDeleter(this));
   }
 
-  virtual void Free(PendingHandle* ph) OVERRIDE {
+  void Free(PendingHandle* ph) OVERRIDE {
     CALL_MEMKIND(memkind_free, vmp_, ph);
   }
 };
