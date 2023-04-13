@@ -200,6 +200,7 @@ set(UTIL_SRCS
   maintenance_manager_metrics.cc
   malloc.cc
   memcmpable_varint.cc
+  memkind_cache.cc
   memory/arena.cc
   memory/memory.cc
   memory/overwrite.cc
