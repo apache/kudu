@@ -82,6 +82,7 @@ import org.apache.kudu.rpc.RpcHeader.AuthenticationTypePB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
+import org.apache.kudu.security.Token.JwtRawPB;
 import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.util.SecurityUtil;
 
@@ -176,6 +177,7 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
    * ensure that it doesn't change over the course of a negotiation attempt.
    */
   private final SignedTokenPB authnToken;
+  private final JwtRawPB jsonWebToken;
 
   private enum AuthnTokenNotUsedReason {
     NONE_AVAILABLE("no token is available"),
@@ -267,6 +269,9 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
       this.authnToken = null;
       this.authnTokenNotUsedReason = AuthnTokenNotUsedReason.NONE_AVAILABLE;
     }
+    JwtRawPB jwt = securityContext.getJsonWebToken();
+    // TODO(zchovan): also guard this on the presence of certs.
+    this.jsonWebToken = jwt;
   }
 
   public void sendHello(ChannelHandlerContext ctx) {
@@ -558,6 +563,12 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
               "but client had no valid token");
         }
         break;
+      case JWT:
+        if (jsonWebToken == null) {
+          throw new IllegalArgumentException("server chose JWT authentication " +
+              "but client had no valid JWT");
+        }
+        break;
       default:
         throw new IllegalArgumentException("server chose bad authn type " + chosenAuthnType);
     }
@@ -745,6 +756,9 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
       case TOKEN:
         sendTokenExchange(ctx);
         break;
+      case JWT:
+        sendJwtExchange(ctx);
+        break;
       default:
         throw new AssertionError("unreachable");
     }
@@ -761,6 +775,16 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
         .setStep(NegotiateStep.TOKEN_EXCHANGE)
         .setAuthnToken(authnToken);
     state = State.AWAIT_TOKEN_EXCHANGE;
+    sendSaslMessage(ctx, builder.build());
+  }
+
+  private void sendJwtExchange(ChannelHandlerContext ctx) {
+    Preconditions.checkNotNull(jsonWebToken);
+    Preconditions.checkNotNull(sslHandshakeFuture);
+    Preconditions.checkState(sslHandshakeFuture.isSuccess());
+    RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder()
+        .setStep(NegotiateStep.JWT_EXCHANGE)
+        .setJwtRaw(jsonWebToken);
     sendSaslMessage(ctx, builder.build());
   }
 
