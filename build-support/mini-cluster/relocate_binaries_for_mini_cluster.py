@@ -53,8 +53,11 @@ PAT_SASL_LIBPLAIN = re.compile(r'libplain')
 
 # Exclude libraries that are (L)GPL-licensed and libraries that are not
 # portable across Linux kernel versions. One exception is 'libpcre', which
-# is BSD-licensed. It is excluded because it is a transitive dependency
+# Exceptions:
+# 'libpcre' which is BSD-licensed is excluded because it is a transitive dependency
 # introduced by 'libselinux'.
+# 'libjitterentropy' which is both BSD and GPLv2 licensed is excluded because it is
+# a transitive dependency by 'libcurl' in SLES 15 SP4 machines.
 PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         libc|
                                         libstdc\+\+|
@@ -63,6 +66,7 @@ PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         libresolv|
                                         libgcc.*|
                                         libcrypt|
+                                        libjitterentropy|
                                         libm|
                                         libkeyutils|
                                         libcom_err|
