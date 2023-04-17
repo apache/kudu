@@ -655,8 +655,8 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithInvalidCert) {
 
     Status s = client_builder.Build(&client);
     ASSERT_FALSE(s.ok());
-    ASSERT_STR_CONTAINS(s.ToString(),
-                        "SSL certificate problem: unable to get local issuer certificate");
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(s.ToString(), "Error initializing JWT helper: Failed to load JWKS");
   }
 }
 
@@ -708,7 +708,8 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithUntrustedCert) {
 
     Status s = client_builder.Build(&client);
     ASSERT_FALSE(s.ok());
-    ASSERT_STR_CONTAINS(s.ToString(), "SSL peer certificate or SSH remote key was not OK");
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(s.ToString(), "Error initializing JWT helper: Failed to load JWKS");
   }
 }
 
