@@ -384,7 +384,6 @@ class Messenger {
     return token_verifier_;
   }
 
-  const JwtVerifier* jwt_verifier() const { return jwt_verifier_.get(); }
   JwtVerifier* mutable_jwt_verifier() { return jwt_verifier_.get(); }
 
   std::optional<security::SignedTokenPB> authn_token() const {
