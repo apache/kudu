@@ -34,19 +34,4 @@ class JwtVerifier {
   virtual Status VerifyToken(const std::string& bytes_raw, std::string* subject) const = 0;
 };
 
-// Minimal implementation of a JWT verifier to be used when a more full-fledged
-// implementation is not available.
-class SimpleJwtVerifier : public JwtVerifier {
- public:
-  SimpleJwtVerifier() = default;
-  ~SimpleJwtVerifier() override = default;
-  Status Init() override { return Status::OK(); }
-  Status VerifyToken(const std::string&  /*bytes_raw*/,
-                     std::string*  /*subject*/) const override {
-    return Status::NotAuthorized("JWT verification not configured");
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(SimpleJwtVerifier);
-};
-
 } // namespace kudu
