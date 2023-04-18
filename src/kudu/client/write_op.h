@@ -222,16 +222,16 @@ class KUDU_EXPORT KuduUpsert : public KuduWriteOperation {
 /// See KuduUpsert for more details.
 class KUDU_EXPORT KuduUpsertIgnore : public KuduWriteOperation {
  public:
-  ~KuduUpsertIgnore() override;
+  ~KuduUpsertIgnore() OVERRIDE;
 
   /// @copydoc KuduWriteOperation::ToString()
-  std::string ToString() const override { return "UPSERT IGNORE " + row_.ToString(); }
+  std::string ToString() const OVERRIDE { return "UPSERT IGNORE " + row_.ToString(); }
 
  protected:
   /// @cond PROTECTED_MEMBERS_DOCUMENTED
 
   /// @copydoc KuduWriteOperation::type()
-  Type type() const override {
+  Type type() const OVERRIDE {
     return UPSERT_IGNORE;
   }
 
