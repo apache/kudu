@@ -45,7 +45,6 @@ set(MINI_CLUSTER_LIBS
   tserver
   tserver_proto
   tserver_service_proto
-  security_test_util
   wire_protocol_proto)
 
 if (NOT NO_CHRONY)
