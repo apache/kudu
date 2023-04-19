@@ -523,7 +523,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
   MiniOidcOptions oidc_opts;
   const auto* const kValidAccount = "valid";
   const auto* const kInvalidAccount = "invalid";
-  const uint64_t kLifetimeMs = 1000;
+  const uint64_t kLifetimeMs = 5000;
   oidc_opts.account_ids = {
     { kValidAccount, true },
     { kInvalidAccount, false },
@@ -609,7 +609,7 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithInvalidCert) {
   cluster_opts_.enable_client_jwt = true;
   MiniOidcOptions oidc_opts;
   const auto* const kValidAccount = "valid";
-  const uint64_t kLifetimeMs = 1000;
+  const uint64_t kLifetimeMs = 5000;
   oidc_opts.account_ids = {
     { kValidAccount, true }
   };
@@ -666,7 +666,7 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithUntrustedCert) {
   cluster_opts_.enable_client_jwt = true;
   MiniOidcOptions oidc_opts;
   const auto* const kValidAccount = "valid";
-  const uint64_t kLifetimeMs = 1000;
+  const uint64_t kLifetimeMs = 5000;
   oidc_opts.account_ids = {
     { kValidAccount, true }
   };
