@@ -26,5 +26,11 @@ include_directories(${KUDU_CLIENT_INCLUDE_DIR})
 add_executable(example example.cc)
 target_link_libraries(example kudu_client)
 
+# While Kudu C++ client API is still compatible with C++98, the example that
+# demonstrates non-unique keys and auto-incrementing column uses features
+# not available in C++98, so -std=c++0x is added to compile the example code
+# with legacy compilers.
+set_source_files_properties(non_unique_primary_key.cc PROPERTIES
+  COMPILE_FLAGS -std=c++0x)
 add_executable(non_unique_primary_key non_unique_primary_key.cc)
 target_link_libraries(non_unique_primary_key kudu_client)
