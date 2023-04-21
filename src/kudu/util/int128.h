@@ -18,7 +18,9 @@
 // This file is the central location for defining the int128 type
 // used by Kudu. Though this file is small it ensures flexibility
 // as choices and standards around int128 change.
-#pragma once
+
+#ifndef KUDU_UTIL_INT128_H_
+#define KUDU_UTIL_INT128_H_
 
 // __int128 is not supported before gcc 4.6
 #if defined(__clang__) || \
@@ -44,3 +46,5 @@ static const int128_t INT128_MIN = (-INT128_MAX - 1);
 
 } // namespace kudu
 #endif
+
+#endif // #ifndef KUDU_UTIL_INT128_H_ ...
