@@ -404,27 +404,41 @@ make -j4
 ====
 
 [[sles_from_source]]
-=== SUSE Linux Enterprise Server
+=== SUSE Linux Enterprise Server (SLES)
 
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
 $ sudo zypper install autoconf automake cmake curl cyrus-sasl-devel \
-  cyrus-sasl-gssapi flex gcc8 gcc8-c++ gdb git java-1_8_0-openjdk-devel \
-  krb5-devel libtool lsb-release make ntp patch \
-  pkg-config python rsync unzip vim
+  cyrus-sasl-plain cyrus-sasl-gssapi flex gdb git gzip \
+  java-1_8_0-openjdk-devel krb5-client krb5-server krb5-devel \
+  libtool lsb-release make ntp patch pkg-config python rsync unzip vim
 $ sudo zypper install libopenssl-devel
 ----
 
-. If you are building on something older that SUSE 15:
+. If building on something older than SLES 15:
 +
 ----
 $ sudo zypper install openssl-devel
 ----
 
+. Install `gcc8` and `gcc8-c++` (might require activating Development Tools
+Module to add corresponding package repositories):
++
+----
+$ sudo zypper install gcc8 gcc8-c++
+----
+
+. NOTE: If building on SLES 15, the system compiler (GCC7) may be used
+instead:
++
+----
+$ sudo zypper install gcc7 gcc7-c++
+----
+
 . Optional: If support for Kudu's NVM (non-volatile memory) block cache is
 desired, install the memkind library.
-+__
++
 ----
 $ sudo zypper install memkind
 ----
@@ -523,16 +537,19 @@ sudo make DESTDIR=/opt/kudu install
 This script provides an overview of the procedure to build Kudu on SLES, and
 can be used as the basis for an automated deployment scenario. It skips
 the steps marked *Optional* above. If running this on something older than
-SLES 15, replace `libopenssl-devel` with `openssl-devel`.
+SLES 15, replace `libopenssl-devel` with `openssl-devel`. If running this
+on SLES 15, the system compiler GCC7 may be used instead of GCC8 (i.e.
+replace `gcc8` with `gcc7`, and `gcc8-c++` with `gcc7-c++` correspondingly).
 
 [source,bash]
 ----
 #!/bin/bash
 
 sudo zypper install -y autoconf automake cmake curl cyrus-sasl-devel \
-  cyrus-sasl-gssapi flex gcc8 gcc8-c++ gdb git java-1_8_0-openjdk-devel \
+  cyrus-sasl-gssapi flex gdb git java-1_8_0-openjdk-devel \
   krb5-devel libtool lsb-release make ntp patch \
   pkg-config python rsync unzip vim
+sudo zypper install gcc8 gcc8-c++
 sudo zypper install libopenssl-devel
 git clone https://github.com/apache/kudu
 cd kudu
