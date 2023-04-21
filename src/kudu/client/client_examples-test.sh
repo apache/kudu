@@ -121,6 +121,7 @@ for include_file in $(find "$LIBRARY_DIR" -name \*.h) ; do
        -o /dev/null \
        -x c++ \
        -std=c++98 \
+       -Werror \
        -I"$LIBRARY_DIR/usr/local/include" - \
        < "$include_file" ; then
     set +x
