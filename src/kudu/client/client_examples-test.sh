@@ -117,10 +117,12 @@ popd
 for include_file in $(find "$LIBRARY_DIR" -name \*.h) ; do
   echo Checking standalone compilation of "$include_file"...
   if ! ${CXX:-g++} \
+       -c \
        -o /dev/null \
+       -x c++ \
        -std=c++98 \
-       -I"$LIBRARY_DIR/usr/local/include" \
-       "$include_file" ; then
+       -I"$LIBRARY_DIR/usr/local/include" - \
+       < "$include_file" ; then
     set +x
     echo
     echo -----------------------------------------
