@@ -1630,8 +1630,8 @@ Status Tablet::FlushUnlocked() {
     for (const auto& old_mrs : old_mrss) {
       memory_footprint += old_mrs->memory_footprint();
     }
-    VLOG_WITH_PREFIX(1) << Substitute("Flush: entering stage 1 (old memrowset"
-                                      "already frozen for inserts). Memstore"
+    VLOG_WITH_PREFIX(1) << Substitute("Flush: entering stage 1 (old memrowset "
+                                      "already frozen for inserts). Memstore "
                                       "in-memory size: $0 bytes",
                                       memory_footprint);
   }
