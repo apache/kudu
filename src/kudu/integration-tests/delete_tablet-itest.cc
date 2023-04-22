@@ -238,14 +238,15 @@ TEST_F(DeleteTabletITest, TestNoOpDeleteTabletRPC) {
   ASSERT_EQ(0, flush_count_after - flush_count_before);
 }
 
-// Regression test for KUDU-3341: Ensure that master would not retry to send
+// Regression test for KUDU-3341: ensure that master would not retry sending
 // DeleteTablet() RPC to a "wrong server".
-TEST_F(DeleteTabletITest, TestNoMoreRetryWithWongServerUuid) {
+TEST_F(DeleteTabletITest, NoMoreRetryWithWrongServerUuid) {
   SKIP_IF_SLOW_NOT_ALLOWED();
+  constexpr int kNumTablets = 3;
+  constexpr int kNumTabletServers = 4;
+
   FLAGS_raft_heartbeat_interval_ms = 100;
   FLAGS_follower_unavailable_considered_failed_sec = 2;
-  const int kNumTablets = 3;
-  const int kNumTabletServers = 4;
 
   // Start a cluster and wait all tablets running and leader elected.
   NO_FATALS(StartCluster(kNumTabletServers));
@@ -253,8 +254,7 @@ TEST_F(DeleteTabletITest, TestNoMoreRetryWithWongServerUuid) {
   workload.set_num_tablets(kNumTablets);
   workload.Setup();
   ASSERT_EVENTUALLY([&] {
-    ClusterVerifier v(cluster_.get());
-    ASSERT_OK(v.RunKsck());
+    ASSERT_OK(ClusterVerifier(cluster_.get()).RunKsck());
   });
 
   // Get number of replicas on ts-0.
@@ -267,7 +267,7 @@ TEST_F(DeleteTabletITest, TestNoMoreRetryWithWongServerUuid) {
   }
 
   // Stop ts-0 and wait for replacement of replicas finished.
-  Sockaddr addr = ts->bound_rpc_addr();
+  const Sockaddr addr = ts->bound_rpc_addr();
   ts->Shutdown();
   SleepFor(MonoDelta::FromSeconds(2 * FLAGS_follower_unavailable_considered_failed_sec));
 
@@ -275,24 +275,46 @@ TEST_F(DeleteTabletITest, TestNoMoreRetryWithWongServerUuid) {
   ASSERT_OK(cluster_->AddTabletServer(HostPort(addr)));
 
   auto* new_ts = cluster_->mini_tablet_server(kNumTabletServers);
+
   int64_t num_delete_tablet_rpcs = 0;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(GetNumDeleteTabletRPCs(HostPort(new_ts->bound_http_addr()), &num_delete_tablet_rpcs));
     ASSERT_EQ(num_replicas, num_delete_tablet_rpcs);
   });
-  // Sleep enough time to verify no additional DeleteTablet RPCs are sent by master.
+  // Sleep for some time and verify that no additional DeleteTablet RPCs
+  // are sent by the system catalog.
   SleepFor(MonoDelta::FromSeconds(5));
+  ASSERT_OK(GetNumDeleteTabletRPCs(HostPort(new_ts->bound_http_addr()), &num_delete_tablet_rpcs));
   ASSERT_EQ(num_replicas, num_delete_tablet_rpcs);
 
-  // Stop the new tablet server and restart ts-0, finally outdated tablets on ts-0 would be deleted.
+  // Stop the new tablet server and start ts-0 back. The outdated tablet
+  // replicas on ts-0 should be deleted.
   new_ts->Shutdown();
+
+  // Shutdown the system catalog before starting up ts-0. That's to avoid
+  // receiving DeleteTablet calls when tablet server isn't yet able to process
+  // them, but it still counts them in the metric that GetNumDeleteTabletRPCs()
+  // retrieves the stats from.
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    cluster_->mini_master(i)->Shutdown();
+  }
+
   ASSERT_OK(ts->Start());
+
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    ASSERT_OK(cluster_->mini_master(i)->Restart());
+  }
+
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(GetNumDeleteTabletRPCs(HostPort(ts->bound_http_addr()), &num_delete_tablet_rpcs));
     ASSERT_EQ(num_replicas, num_delete_tablet_rpcs);
-    int num_live_tablets = ts->server()->tablet_manager()->GetNumLiveTablets();
-    ASSERT_EQ(0, num_live_tablets);
+    ASSERT_EQ(0, ts->server()->tablet_manager()->GetNumLiveTablets());
   });
+  // Sleep for some time and verify that no additional DeleteTablet RPCs
+  // are sent by the system catalog.
+  SleepFor(MonoDelta::FromSeconds(5));
+  ASSERT_OK(GetNumDeleteTabletRPCs(HostPort(ts->bound_http_addr()), &num_delete_tablet_rpcs));
+  ASSERT_EQ(num_replicas, num_delete_tablet_rpcs);
 }
 
 } // namespace kudu
