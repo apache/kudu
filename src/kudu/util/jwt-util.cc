@@ -34,7 +34,6 @@
 #include <cstring>
 #include <exception>
 #include <functional>
-#include <iterator>
 #include <mutex>
 #include <ostream>
 #include <stdexcept>
@@ -66,13 +65,25 @@
 #include "kudu/util/jwt-util-internal.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/openssl_util.h"
+#include "kudu/util/openssl_util_bio.h"
 #include "kudu/util/promise.h"
+#include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 #include "kudu/util/thread.h"
 
+using kudu::security::DataFormat;
+using kudu::security::GetOpenSSLErrors;
+using kudu::security::ToString;
+using kudu::security::c_unique_ptr;
+using kudu::security::ssl_make_unique;
+using rapidjson::Document;
+using rapidjson::Value;
+using std::make_shared;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
+using strings::WebSafeBase64Unescape;
 
 DEFINE_int32(jwks_update_frequency_s, 60,
     "The time in seconds to wait between downloading JWKS from the specified URL.");
@@ -92,8 +103,36 @@ DEFINE_validator(jwks_pulling_timeout_s, &ValidateBiggerThanZero);
 
 namespace kudu {
 
-using rapidjson::Document;
-using rapidjson::Value;
+namespace security {
+
+template<> struct SslTypeTraits<BIGNUM> {
+  static constexpr auto kFreeFunc = &BN_free;
+};
+
+// Need this function because of template instantiation, but it's never used.
+int WriteDerFuncNotImplementedEC(BIO* /*ununsed*/, EC_KEY* /*unused*/) {
+  LOG(DFATAL) << "this should never be called";
+  return -1;
+}
+template<> struct SslTypeTraits<EC_KEY> {
+  static constexpr auto kFreeFunc = &EC_KEY_free;
+  static constexpr auto kWritePemFunc = &PEM_write_bio_EC_PUBKEY;
+  static constexpr auto kWriteDerFunc = &WriteDerFuncNotImplementedEC;
+};
+
+// Need this function because of template instantiation, but it's never used.
+int WriteDerNotImplementedRSA(BIO* /*unused*/, RSA* /*unused*/) {
+  LOG(DFATAL) << "this should never be called";
+  return -1;
+}
+template<> struct SslTypeTraits<RSA> {
+  static constexpr auto kFreeFunc = &RSA_free;
+  static constexpr auto kWritePemFunc = &PEM_write_bio_RSA_PUBKEY;
+  static constexpr auto kWriteDerFunc = &WriteDerNotImplementedRSA;
+};
+
+} // namespace security
+
 
 // JWK Set (JSON Web Key Set) is JSON data structure that represents a set of JWKs.
 // This class parses JWKS file.
@@ -352,11 +391,9 @@ Status RSAJWTPublicKeyBuilder::CreateJWKPublicKey(
   }
   // Converts public key to PEM encoded form.
   string pub_key;
-  if (!ConvertJwkToPem(it_n->second, it_e->second, pub_key)) {
-    return Status::InvalidArgument(
-        Substitute("Invalid public key 'n':'$0', 'e':'$1'", it_n->second, it_e->second));
-  }
-
+  RETURN_NOT_OK_PREPEND(ConvertJwkToPem(it_n->second, it_e->second, pub_key),
+                        Substitute("invalid public key 'n':'$0', 'e':'$1'",
+                                   it_n->second, it_e->second));
   unique_ptr<JWTPublicKey> jwt_pub_key;
   try {
     if (algorithm == "rs256") {
@@ -385,45 +422,35 @@ Status RSAJWTPublicKeyBuilder::CreateJWKPublicKey(
   return Status::OK();
 }
 
-// Convert public key of RSA from JWK format to PEM encoded format by using OpenSSL APIs.
-bool RSAJWTPublicKeyBuilder::ConvertJwkToPem(
-    const std::string& base64_n, const std::string& base64_e, std::string& pub_key) {
-  pub_key.clear();
+// Convert JWK's RSA public key to PEM format using OpenSSL API.
+Status RSAJWTPublicKeyBuilder::ConvertJwkToPem(
+    const string& base64_n, const string& base64_e, string& pub_key) {
   string str_n;
+  if (!WebSafeBase64Unescape(base64_n, &str_n)) {
+    return Status::InvalidArgument("malformed 'n' key component");
+  }
   string str_e;
-  if (!strings::WebSafeBase64Unescape(base64_n, &str_n)) return false;
-  if (!strings::WebSafeBase64Unescape(base64_e, &str_e)) return false;
-  security::c_unique_ptr<BIGNUM> modul {
-    BN_bin2bn(reinterpret_cast<const unsigned char*>(str_n.c_str()),
-              static_cast<int>(str_n.size()),
-              nullptr),
-    &BN_free
-  };
-  security::c_unique_ptr<BIGNUM> expon {
-    BN_bin2bn(reinterpret_cast<const unsigned char*>(str_e.c_str()),
-              static_cast<int>(str_e.size()),
-              nullptr),
-    &BN_free
-  };
-
-  security::c_unique_ptr<RSA> rsa { RSA_new(), &RSA_free };
+  if (!WebSafeBase64Unescape(base64_e, &str_e)) {
+    return Status::InvalidArgument("malformed 'e' key component");
+  }
+  auto mod = ssl_make_unique(BN_bin2bn(
+      reinterpret_cast<const unsigned char*>(str_n.c_str()),
+      static_cast<int>(str_n.size()),
+      nullptr));
+  auto exp = ssl_make_unique(BN_bin2bn(
+      reinterpret_cast<const unsigned char*>(str_e.c_str()),
+      static_cast<int>(str_e.size()),
+      nullptr));
+  auto rsa = ssl_make_unique(RSA_new());
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-  rsa->n = modul.release();
-  rsa->e = expon.release();
+  rsa->n = mod.release();
+  rsa->e = exp.release();
 #else
   // RSA_set0_key is a new API introduced in OpenSSL version 1.1
-  RSA_set0_key(rsa.get(), modul.release(), expon.release(), nullptr);
+  OPENSSL_RET_NOT_OK(RSA_set0_key(
+      rsa.get(), mod.release(), exp.release(), nullptr), "failed to set RSA key");
 #endif
-
-  unsigned char desc[1024] = { 0 };
-  auto bio = security::ssl_make_unique(BIO_new(BIO_s_mem()));
-  PEM_write_bio_RSA_PUBKEY(bio.get(), rsa.get());
-  if (BIO_read(bio.get(), desc, std::size(desc) - 1) > 0) {
-    pub_key = reinterpret_cast<char*>(desc);
-    // Remove last '\n'.
-    if (pub_key.length() > 0 && pub_key[pub_key.length() - 1] == '\n') pub_key.pop_back();
-  }
-  return !pub_key.empty();
+  return ToString(&pub_key, DataFormat::PEM, rsa.get());
 }
 
 // Create a JWKPublicKey of EC (ES256, ES384 or ES512) from the JWK.
@@ -486,12 +513,11 @@ Status ECJWTPublicKeyBuilder::CreateJWKPublicKey(
   if (it_x->second.empty() || it_y->second.empty()) {
     return Status::InvalidArgument("'x' and 'y' properties must be a non-empty string");
   }
-  // Converts public key to PEM encoded form.
+  // Convert the public key into PEM format.
   string pub_key;
-  if (!ConvertJwkToPem(eccgrp, it_x->second, it_y->second, pub_key)) {
-    return Status::InvalidArgument(
-        Substitute("Invalid public key 'x':'$0', 'y':'$1'", it_x->second, it_y->second));
-  }
+  RETURN_NOT_OK_PREPEND(ConvertJwkToPem(eccgrp, it_x->second, it_y->second, pub_key),
+                        Substitute("invalid public key 'x':'$0', 'y':'$1'",
+                                   it_x->second, it_y->second));
 
   JWTPublicKey* jwt_pub_key = nullptr;
   try {
@@ -514,44 +540,34 @@ Status ECJWTPublicKeyBuilder::CreateJWKPublicKey(
   return Status::OK();
 }
 
-// Convert public key of EC from JWK format to PEM encoded format by using OpenSSL APIs.
-bool ECJWTPublicKeyBuilder::ConvertJwkToPem(int eccgrp, const std::string& base64_x,
-    const std::string& base64_y, std::string& pub_key) {
-  pub_key.clear();
+// Convert JWK's EC public key to PEM format using OpenSSL API.
+Status ECJWTPublicKeyBuilder::ConvertJwkToPem(int eccgrp,
+                                              const string& base64_x,
+                                              const string& base64_y,
+                                              string& pub_key) {
   string ascii_x;
-  string ascii_y;
-  if (!strings::WebSafeBase64Unescape(base64_x, &ascii_x)) return false;
-  if (!strings::WebSafeBase64Unescape(base64_y, &ascii_y)) return false;
-  security::c_unique_ptr<BIGNUM> x {
-    BN_bin2bn(reinterpret_cast<const unsigned char*>(ascii_x.c_str()),
-              static_cast<int>(ascii_x.size()),
-              nullptr),
-    &BN_free
-  };
-  security::c_unique_ptr<BIGNUM> y {
-    BN_bin2bn(reinterpret_cast<const unsigned char*>(ascii_y.c_str()),
-              static_cast<int>(ascii_y.size()),
-              nullptr),
-    &BN_free
-  };
-
-  security::c_unique_ptr<EC_KEY> ecKey { EC_KEY_new_by_curve_name(eccgrp), &EC_KEY_free };
-  EC_KEY_set_asn1_flag(ecKey.get(), OPENSSL_EC_NAMED_CURVE);
-  if (EC_KEY_set_public_key_affine_coordinates(ecKey.get(), x.get(), y.get()) == 0) return false;
-
-  unsigned char desc[1024] = { 0 };
-  auto bio = security::ssl_make_unique(BIO_new(BIO_s_mem()));
-  if (PEM_write_bio_EC_PUBKEY(bio.get(), ecKey.get()) != 0) {
-    if (BIO_read(bio.get(), desc, std::size(desc) - 1) > 0) {
-      pub_key = reinterpret_cast<char*>(desc);
-      // Remove last '\n'.
-      if (pub_key.length() > 0 && pub_key[pub_key.length() - 1] == '\n') {
-        pub_key.pop_back();
-      }
-    }
+  if (!WebSafeBase64Unescape(base64_x, &ascii_x)) {
+    return Status::InvalidArgument("malformed 'x' key component");
   }
+  string ascii_y;
+  if (!WebSafeBase64Unescape(base64_y, &ascii_y)) {
+    return Status::InvalidArgument("malformed 'y' key component");
+  }
+  auto x = ssl_make_unique(BN_bin2bn(
+      reinterpret_cast<const unsigned char*>(ascii_x.c_str()),
+      static_cast<int>(ascii_x.size()),
+      nullptr));
+  auto y = ssl_make_unique(BN_bin2bn(
+      reinterpret_cast<const unsigned char*>(ascii_y.c_str()),
+      static_cast<int>(ascii_y.size()),
+      nullptr));
+  auto ec_key = ssl_make_unique(EC_KEY_new_by_curve_name(eccgrp));
+  OPENSSL_RET_IF_NULL(ec_key, "failed to create EC key");
+  EC_KEY_set_asn1_flag(ec_key.get(), OPENSSL_EC_NAMED_CURVE);
+  OPENSSL_RET_NOT_OK(EC_KEY_set_public_key_affine_coordinates(
+      ec_key.get(), x.get(), y.get()), "failed to set public key");
 
-  return !pub_key.empty();
+  return ToString(&pub_key, DataFormat::PEM, ec_key.get());
 }
 
 //
@@ -970,7 +986,9 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
   // JWTHelper for it, use it.
   const auto& issuer = token.decoded_jwt_.get_issuer();
   std::vector<string> issuer_pieces = strings::Split(issuer, "/");
-  CHECK(!issuer_pieces.empty());
+  if (issuer_pieces.empty()) {
+    return Status::InvalidArgument("cannot parse 'issuer' field");
+  }
   const auto& account_id = issuer_pieces.back();
 
   {

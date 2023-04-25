@@ -59,7 +59,8 @@ kM3Nh6HWFhROptfc6BNusRh1kX/cspDplK5x8EpJ0QKBgQDWFg6S2je0KtbV5PYe
 RultUEe2C0jYMDQx+JYxbPmtcopvZQrFEur3WKVuLy5UAy7EBvwMnZwIG7OOohJb
 vkSpADK6VPn9lbqq7O8cTedEHttm6otmLt8ZyEl3hZMaL3hbuRj6ysjmoFKx6CrX
 rK0/Ikt5ybqUzKCMJZg2VKGTxg==
------END PRIVATE KEY-----)";
+-----END PRIVATE KEY-----
+)";
 const char* kRsaPubKeyPem = R"(-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuGbXWiK3dQTyCbX5xdE4
 yCuYp0AF2d15Qq1JSXT/lx8CEcXb9RbDddl8jGDv+spi5qPa8qEHiK7FwV2KpRE9
@@ -68,7 +69,8 @@ WXI9C+yjHztqyL2h8P6mlThPY9E9ue2fCqdgixfTFIF9Dm4SLHbphUS2iw7w1JgT
 69s7of9+I9l5lsJ9cozf1rxrXX4V1u/SotUuNB3Fp8oB4C1fLBEhSlMcUJirz1E8
 AziMCxS+VrRPDM+zfvpIJg3JljAh3PJHDiLu902v9w+Iplu1WyoB2aPfitxEhRN0
 YwIDAQAB
------END PUBLIC KEY-----)";
+-----END PUBLIC KEY-----
+)";
 // The public keys in JWK format were converted from PEM formatted crypto keys with
 // pem-to-jwk tool at https://hub.docker.com/r/danedmunds/pem-to-jwk/
 const char* kRsaPubKeyJwkN =
@@ -101,13 +103,15 @@ Su5rsCPb8acJo5RO26gGVrfAsDcIXKC+bQJAZZ2XIpsitLyPpuiMOvBbzPavd4gY
 fSSjAkLRi54PKJ8TFUeOP15h9sQzydI8zJU+upvDEKZsZc/UhT/SySDOxQ4G/523
 Y0sz/OZtSWcol/UMgQJALesy++GdvoIDLfJX5GBQpuFgFenRiRDabxrE9MNUZ2aP
 FaFp+DyAe+b4nDwuJaW2LURbr8AEZga7oQj0uYxcYw==
------END RSA PRIVATE KEY-----)";
+-----END RSA PRIVATE KEY-----
+)";
 const char* kRsa512PubKeyPem = R"(-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDdlatRjRjogo3WojgGHFHYLugd
 UWAY9iR3fy4arWNA1KoS8kVw33cJibXr8bvwUAUparCwlvdbH6dvEOfou0/gCFQs
 HUfQrSDv+MuSUMAe8jzKE4qW+jK+xQU9a03GUnKHkkle+Q0pX/g6jXZ7r1/xAK5D
 o2kQ+X5xK9cipRgEKwIDAQAB
------END PUBLIC KEY-----)";
+-----END PUBLIC KEY-----
+)";
 const char* kRsa512PubKeyJwkN =
     "3ZWrUY0Y6IKN1qI4BhxR2C7oHVFgGPYkd38uGq1jQNSqEvJFcN93CYm16_G78FA"
     "FKWqwsJb3Wx-nbxDn6LtP4AhULB1H0K0g7_jLklDAHvI8yhOKlvoyvsUFPWtNxl"
@@ -135,13 +139,15 @@ T/DoEfdciDK0Ui9rzh7HB+eW6rkFJGsDUWwV6SRTCD3X64PcpuDUNpK6ZFCVAkEA
 oaBgAAiDH1UPpAvK6LfALl0P6E1pjLvWjvhOg/Z4xKvS21cJIJlF0ShGFSV2CTzx
 YQUiqLkHegkGxV353XRxVQJAZaW5O2BI5jKy2hK0EoAx3pSnp2X4CmkWrXsSeOgC
 Zz+jDkn8QzPbRwb8cyks/IHc2CBvaFStLFKO2VQj1THDhw==
------END RSA PRIVATE KEY-----)";
+-----END RSA PRIVATE KEY-----
+)";
 const char* kRsa1024PubKeyPem = R"(-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDT+6sb2SvN69NB+6Zg78B7mdke
 0tC91CTfixzCSn7wS8JUvvZKAO1uMgnrCQdDr2TNeRYr6urawIOCDB1Ybz1+cBSN
 xouVdt/aT9+cw27kzVQE59NAPMpQyLtXaAOR6rD8xzyIgAV12QFmc1kHFl7Sjobw
 msu5ZWRqYTwdXvFXIQIDAQAB
------END PUBLIC KEY-----)";
+-----END PUBLIC KEY-----
+)";
 const char* kRsa1024PubKeyJwkN =
     "0_urG9krzevTQfumYO_Ae5nZHtLQvdQk34scwkp-8EvCVL72SgDtbjIJ6wkHQ69"
     "kzXkWK-rq2sCDggwdWG89fnAUjcaLlXbf2k_fnMNu5M1UBOfTQDzKUMi7V2gDke"
@@ -174,7 +180,8 @@ tHPukBzyzxfL3f3T81XcGqUC65tL6aM0djUOrKXtEc4pWBEasd5Q74NO6bD0PNTs
 jOODBXkCgYEAhaD3gZUCWU+ZA6QmxPotfe9L0tzjmUjsLo0QUgIHJa2VaoHzdnWC
 ClvP3tFFkv2dlD6UW+g0JJFTVWcv+HEiC9WUnD/C6dXK/qA3fRvBhRKy8FTwvOis
 zSVeYds6mvDJwFe+2mk0KQiKnxlx22B4PcYbbN7mZ2ClBFTFrp0+Id4=
------END RSA PRIVATE KEY-----)";
+-----END RSA PRIVATE KEY-----
+)";
 const char* kRsa2048PubKeyPem = R"(-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0jCHomsNIaRYVlsemWg9
 yBx3od1B9Fd9RUslk9IVE7IU+QYZ+T4NvRVPAMjpzuurvPnN4uBVPREycXOgEcWH
@@ -183,7 +190,8 @@ R1SBD8qEMAxpiLMH1Q/Yap+etvIjD1r2zQkQke53An9LvVl7OKkM8KGOcE/0tJRm
 c7x8ZlLqogPczkXvW6T+YAkwA8XwginZw0xBzfpoOEnajqm4Yikck0gJ0HwdlYFI
 p72ih7uozne7PYLVGb9X97cL0H1XDiA/SXJiFKo1AKXihcOdIRiw49eo9rzsoWPy
 gQIDAQAB
------END PUBLIC KEY-----)";
+-----END PUBLIC KEY-----
+)";
 const char* kRsa2048PubKeyJwkN =
     "0jCHomsNIaRYVlsemWg9yBx3od1B9Fd9RUslk9IVE7IU-QYZ-T4NvRVPAMjpzuu"
     "rvPnN4uBVPREycXOgEcWHiJDDQEhlQD4F69W8MFE7SXpdcBihzcj5qPYtTFP_52"
@@ -243,7 +251,8 @@ eVY6Sn7JZC9qyE+oCrJMg+0hzc5Gw8+/H+e0Jgca8+76WVu8gGcsLdT+NjYNQwXH
 rzo7tuC/a+Da3nd2UnMheqf8ajt7oXaXgrqYjzK9Fx/QJcUel12ny+Nx+NADx4UU
 K43Js4kcyWyYG9ms7S643u1leDDO+hpeB6EN15U2v7zXi8rMrLqvNKrBi9bCRFDu
 3zsKSPS+qeqpNBsefGtx7oluHdiQocA6w20nQ1DzIW2mOo8Pn5nzt7fPPPA=
------END RSA PRIVATE KEY-----)";
+-----END RSA PRIVATE KEY-----
+)";
 const char* kRsa4096PubKeyPem = R"(-----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAtxmYsvs6ZfhTCFKCHQBW
 /W3iRfh8wZN+/XPXaOiIx9SXYSFrb/WRaTn8UOvflYuRnPYMaRGr5gVTS6/WFVvt
@@ -257,7 +266,8 @@ XcgQWTY7dpIP1BInhepCzHlcLSEiHtmMoCXNC3+i9ZXxiJ1u8avYfGjH8RrJW8dv
 Vw7BS7zlH9s7rCn001VBJCJcXtkGaykw9Zd1E+Jh7IKQJn8gydsQ0enlMmtwsJO/
 tEvYBojFXbl4XecMWADTiExjXobX1y7u9ZTn0KRNkPpX9GTgY3oR0ei+rwOr4d+k
 2CrUdkMTGfjnfcDHKjHh3LMCAwEAAQ==
------END PUBLIC KEY-----)";
+-----END PUBLIC KEY-----
+)";
 const char* kRsa4096PubKeyJwkN =
     "txmYsvs6ZfhTCFKCHQBW_W3iRfh8wZN-_XPXaOiIx9SXYSFrb_WRaTn8UOvflYu"
     "RnPYMaRGr5gVTS6_WFVvtNuZVIDOQBgEOBt5MQ0BeM0yPiM6qacP15couRwxbJx"
@@ -278,13 +288,15 @@ h2Srn7o8+4j/jQpwHTTHZThy10u5jMjaR+mgBwYFK4EEACOhgYkDgYYABAFFah0k
 6m4ddp/tUN/ObrKKwSCp4QUZdiAMaC9eY1HyNBPuuEsH5qCfeY5lmeJwSUpzCosn
 rgW8M2hQ4Kr5V9OXrgHLA5WVtH6//sSkUY2/xYuqc7/Ln8gI5ddtr1qG64Xtgs05
 /CNajSjFZeLm76llakvYiBTTH/ii8hIfrwukW9IP7Q==
------END EC PRIVATE KEY-----)";
+-----END EC PRIVATE KEY-----
+)";
 const char* kEcdsa521PubKeyPem = R"(-----BEGIN PUBLIC KEY-----
 MIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQBRWodJOpuHXaf7VDfzm6yisEgqeEF
 GXYgDGgvXmNR8jQT7rhLB+agn3mOZZnicElKcwqLJ64FvDNoUOCq+VfTl64BywOV
 lbR+v/7EpFGNv8WLqnO/y5/ICOXXba9ahuuF7YLNOfwjWo0oxWXi5u+pZWpL2IgU
 0x/4ovISH68LpFvSD+0=
------END PUBLIC KEY-----)";
+-----END PUBLIC KEY-----
+)";
 const char* kEcdsa521PubKeyJwkX =
     "AUVqHSTqbh12n-1Q385usorBIKnhBRl2IAxoL15jUfI0E-64SwfmoJ95jmWZ4nB"
     "JSnMKiyeuBbwzaFDgqvlX05eu";
@@ -297,12 +309,14 @@ MIGkAgEBBDCrPXJDgQDtNRpM0qNUW/zN1vrCvOVH1CsItVZ+1NeGB+w/2whnIXJQ
 K7U5C1ETPHagBwYFK4EEACKhZANiAAR0JjvVJXc3u1I/7vt5mxzPtAIi1VIqxCwN
 wgISZVySTYZQzyicW2GfhMlFCow28LzqTwH/eCymAvnTAmpK/P1hXhNcnxDBZNOU
 WMbMLFcQrg2wwpIb/k/IXobNwjNPRBo=
------END EC PRIVATE KEY-----)";
+-----END EC PRIVATE KEY-----
+)";
 const char* kEcdsa384PubKeyPem = R"(-----BEGIN PUBLIC KEY-----
 MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEdCY71SV3N7tSP+77eZscz7QCItVSKsQs
 DcICEmVckk2GUM8onFthn4TJRQqMNvC86k8B/3gspgL50wJqSvz9YV4TXJ8QwWTT
 lFjGzCxXEK4NsMKSG/5PyF6GzcIzT0Qa
------END PUBLIC KEY-----)";
+-----END PUBLIC KEY-----
+)";
 const char* kEcdsa384PubKeyJwkX =
     "dCY71SV3N7tSP-77eZscz7QCItVSKsQsDcICEmVckk2GUM8onFthn4TJRQqMNvC8";
 const char* kEcdsa384PubKeyJwkY =
@@ -312,11 +326,13 @@ const char* kEcdsa256PrivKeyPem = R"(-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgPGJGAm4X1fvBuC1z
 SpO/4Izx6PXfNMaiKaS5RUkFqEGhRANCAARCBvmeksd3QGTrVs2eMrrfa7CYF+sX
 sjyGg+Bo5mPKGH4Gs8M7oIvoP9pb/I85tdebtKlmiCZHAZE5w4DfJSV6
------END PRIVATE KEY-----)";
+-----END PRIVATE KEY-----
+)";
 const char* kEcdsa256PubKeyPem = R"(-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQgb5npLHd0Bk61bNnjK632uwmBfr
 F7I8hoPgaOZjyhh+BrPDO6CL6D/aW/yPObXXm7SpZogmRwGROcOA3yUleg==
------END PUBLIC KEY-----)";
+-----END PUBLIC KEY-----
+)";
 const char* kEcdsa256PubKeyJwkX = "Qgb5npLHd0Bk61bNnjK632uwmBfrF7I8hoPgaOZjyhg";
 const char* kEcdsa256PubKeyJwkY = "fgazwzugi-g_2lv8jzm115u0qWaIJkcBkTnDgN8lJXo";
 
