@@ -217,9 +217,8 @@ class RSAJWTPublicKeyBuilder {
                                    std::unique_ptr<JWTPublicKey>* pub_key_out);
 
  private:
-  // Convert public key of RSA from JWK format to PEM encoded format by using OpenSSL
-  // APIs.
-  static bool ConvertJwkToPem(
+  // Convert JWK's RSA public key to PEM format using OpenSSL API.
+  static Status ConvertJwkToPem(
       const std::string& base64_n, const std::string& base64_e, std::string& pub_key);
 };
 
@@ -230,10 +229,11 @@ class ECJWTPublicKeyBuilder {
                                    std::unique_ptr<JWTPublicKey>* pub_key_out);
 
  private:
-  // Convert public key of EC from JWK format to PEM encoded format by using OpenSSL
-  // APIs.
-  static bool ConvertJwkToPem(int eccgrp, const std::string& base64_x,
-      const std::string& base64_y, std::string& pub_key);
+  // Convert JWK's EC public key to PEM format using OpenSSL API.
+  static Status ConvertJwkToPem(int eccgrp,
+                                const std::string& base64_x,
+                                const std::string& base64_y,
+                                std::string& pub_key);
 };
 
 // This class load the JWKS from file or URL, store keys in an internal maps for each
