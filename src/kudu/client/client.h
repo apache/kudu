@@ -304,8 +304,24 @@ class KUDU_EXPORT KuduClientBuilder {
   /// @return Reference to the updated object.
   KuduClientBuilder& connection_negotiation_timeout(const MonoDelta& timeout);
 
+  /// Set JWT (JSON Web Token) to authenticate the client to a server.
+  ///
+  /// @note If both @c import_authentication_credentials and
+  ///   this method are called on the object, the JWT provided with this call
+  ///   overrides the corresponding JWT (if present) that comes as part of the
+  ///   imported authentication credentials.
+  ///
+  /// @param [in] jwt
+  ///   The JSON web token to set.
+  /// @return Reference to the updated object.
+  KuduClientBuilder& jwt(const std::string& jwt);
 
   /// Import serialized authentication credentials from another client.
+  ///
+  /// @note If both @c import_authentication_credentials and
+  ///   this method are called on the object, the JWT provided with this call
+  ///   overrides the corresponding JWT (if present) that comes as part of the
+  ///   imported authentication credentials.
   ///
   /// @param [in] authn_creds
   ///   The serialized authentication credentials, provided by a call to

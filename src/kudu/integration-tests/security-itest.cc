@@ -550,20 +550,12 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
   const auto* const kSubject = "kudu-user";
   const auto configure_builder_for =
       [&] (const string& account_id, KuduClientBuilder* b, const uint64_t delay_ms) {
-    client::AuthenticationCredentialsPB pb;
-    security::JwtRawPB jwt = security::JwtRawPB();
-    *jwt.mutable_jwt_data() = cluster_->oidc()->CreateJwt(account_id, kSubject, true);
-    *pb.mutable_jwt() = std::move(jwt);
-    string creds;
-    CHECK(pb.SerializeToString(&creds));
-
-    SleepFor(MonoDelta::FromMilliseconds(delay_ms));
-
     for (auto i = 0; i < cluster_->num_masters(); ++i) {
       b->add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
     }
-    b->import_authentication_credentials(creds);
+    b->jwt(cluster_->oidc()->CreateJwt(account_id, kSubject, true));
     b->require_authentication(true);
+    SleepFor(MonoDelta::FromMilliseconds(delay_ms));
   };
 
   {
@@ -579,7 +571,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     shared_ptr<KuduClient> client;
     configure_builder_for(kInvalidAccount, &invalid_builder, 0);
     Status s = invalid_builder.Build(&client);
-    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "FATAL_INVALID_JWT");
   }
   {
@@ -587,7 +579,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     shared_ptr<KuduClient> client;
     configure_builder_for(kValidAccount, &timeout_builder, 3 * kLifetimeMs);
     Status s = timeout_builder.Build(&client);
-    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "token expired");
   }
   {
@@ -598,7 +590,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     }
     no_jwt_builder.require_authentication(true);
     Status s = no_jwt_builder.Build(&client);
-    ASSERT_TRUE(s. IsNotAuthorized());
+    ASSERT_TRUE(s. IsNotAuthorized()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
   }
 }
@@ -636,28 +628,17 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithInvalidCert) {
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
 
-  {
-    KuduClientBuilder client_builder;
-    client::AuthenticationCredentialsPB pb;
-    security::JwtRawPB jwt = security::JwtRawPB();
-    *jwt.mutable_jwt_data() = cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true);
-    *pb.mutable_jwt() = std::move(jwt);
-    string creds;
-    CHECK(pb.SerializeToString(&creds));
-
-    for (auto i = 0; i < cluster_->num_masters(); ++i) {
-      client_builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
-    }
-    client_builder.import_authentication_credentials(creds);
-    client_builder.require_authentication(true);
-
-    shared_ptr<KuduClient> client;
-
-    Status s = client_builder.Build(&client);
-    ASSERT_FALSE(s.ok());
-    ASSERT_TRUE(s.IsRuntimeError());
-    ASSERT_STR_CONTAINS(s.ToString(), "Error initializing JWT helper: Failed to load JWKS");
+  KuduClientBuilder client_builder;
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    client_builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
   }
+  client_builder.jwt(cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true));
+  client_builder.require_authentication(true);
+
+  shared_ptr<KuduClient> client;
+  auto s = client_builder.Build(&client);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Error initializing JWT helper: Failed to load JWKS");
 }
 
 TEST_F(SecurityITest, TestJwtMiniClusterWithUntrustedCert) {
@@ -689,28 +670,17 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithUntrustedCert) {
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
 
-  {
-    KuduClientBuilder client_builder;
-    client::AuthenticationCredentialsPB pb;
-    security::JwtRawPB jwt = security::JwtRawPB();
-    *jwt.mutable_jwt_data() = cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true);
-    *pb.mutable_jwt() = std::move(jwt);
-    string creds;
-    CHECK(pb.SerializeToString(&creds));
-
-    for (auto i = 0; i < cluster_->num_masters(); ++i) {
-      client_builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
-    }
-    client_builder.import_authentication_credentials(creds);
-    client_builder.require_authentication(true);
-
-    shared_ptr<KuduClient> client;
-
-    Status s = client_builder.Build(&client);
-    ASSERT_FALSE(s.ok());
-    ASSERT_TRUE(s.IsRuntimeError());
-    ASSERT_STR_CONTAINS(s.ToString(), "Error initializing JWT helper: Failed to load JWKS");
+  KuduClientBuilder client_builder;
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    client_builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
   }
+  client_builder.jwt(cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true));
+  client_builder.require_authentication(true);
+
+  shared_ptr<KuduClient> client;
+  auto s = client_builder.Build(&client);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Error initializing JWT helper: Failed to load JWKS");
 }
 
 TEST_F(SecurityITest, TestWorldReadableKeytab) {
