@@ -128,6 +128,7 @@ using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
+using kudu::security::JwtRawPB;
 using kudu::tserver::ScanResponsePB;
 using std::map;
 using std::make_optional;
@@ -308,6 +309,11 @@ KuduClientBuilder& KuduClientBuilder::connection_negotiation_timeout(
   return *this;
 }
 
+KuduClientBuilder& KuduClientBuilder::jwt(const string& jwt) {
+  data_->jwt_ = jwt;
+  return *this;
+}
+
 KuduClientBuilder& KuduClientBuilder::import_authentication_credentials(string authn_creds) {
   data_->authn_creds_ = std::move(authn_creds);
   return *this;
@@ -395,9 +401,44 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   RETURN_NOT_OK(builder.Build(&messenger));
   UserCredentials user_credentials;
 
-  // Parse and import the provided authn data, if any.
-  if (!data_->authn_creds_.empty()) {
-    RETURN_NOT_OK(ImportAuthnCreds(data_->authn_creds_, messenger.get(), &user_credentials));
+  // Parse and import the provided authn data, if any. Override the JWT portion
+  // of the imported authn credentials if the JWT was specified as well.
+  // If no serialized authn data was provided, use JWT if it's available.
+  if (!data_->authn_creds_.empty() || !data_->jwt_.empty()) {
+    string authn_creds;
+    if (!data_->authn_creds_.empty() && !data_->jwt_.empty()) {
+      // Merge the imported authn creds and the JWT: use data_->authn_creds_,
+      // but override its JWT portion with data_->jwt_.
+      AuthenticationCredentialsPB pb;
+      if (!pb.ParseFromString(data_->authn_creds_)) {
+        return Status::InvalidArgument("invalid authentication data");
+      }
+      if (pb.has_jwt()) {
+        JwtRawPB jwt_pb;
+        // Copying, not moving: Build() is supposed to be re-enterable.
+        *jwt_pb.mutable_jwt_data() = data_->jwt_;
+        *pb.mutable_jwt() = std::move(jwt_pb);
+      }
+      string creds;
+      if (!pb.SerializeToString(&creds)) {
+        return Status::RuntimeError("could not serialize authentication data");
+      }
+      authn_creds = std::move(creds);
+    } else if (!data_->jwt_.empty()) {
+      // Build authn creds with just the provided JWT.
+      JwtRawPB jwt_pb;
+      // Copying, not moving: Build() is supposed to be re-enterable.
+      *jwt_pb.mutable_jwt_data() = data_->jwt_;
+      AuthenticationCredentialsPB pb;
+      *pb.mutable_jwt() = std::move(jwt_pb);
+      if (!pb.SerializeToString(&authn_creds)) {
+        return Status::RuntimeError("could not serialize authentication data");
+      }
+    }
+    RETURN_NOT_OK(ImportAuthnCreds(
+        !authn_creds.empty() ? authn_creds : data_->authn_creds_,
+        messenger.get(),
+        &user_credentials));
   }
   if (!user_credentials.has_real_user()) {
     // If there are no authentication credentials, then set the real user to the
@@ -777,8 +818,7 @@ Status KuduClient::ExportAuthenticationCredentials(string* authn_creds) const {
   if (auto tok = data_->messenger_->authn_token(); tok) {
     pb.mutable_authn_token()->CopyFrom(*tok);
   }
-  auto jwt = data_->messenger_->jwt();
-  if (jwt) {
+  if (auto jwt = data_->messenger_->jwt(); jwt) {
     pb.mutable_jwt()->CopyFrom(*jwt);
   }
   pb.set_real_user(data_->user_credentials_.real_user());
