@@ -234,8 +234,11 @@ or double type.
 Once set during table creation, the set of columns in the primary key may not
 be altered.
 
-Unlike an RDBMS, Kudu does not provide an auto-incrementing column feature,
+Unlike an RDBMS, Kudu does not provide an explicit auto-incrementing column feature,
 so the application must always provide the full primary key during insert.
+
+Columns which do not satisfy the uniqueness constraint can still be used as primary keys, by
+specifying them as non-unique primary keys.
 
 Row delete and update operations must also specify the full primary key of the
 row to be changed. Kudu does not natively support range deletes or updates.
@@ -256,6 +259,39 @@ columns to efficiently find the rows.
 NOTE: Primary key indexing optimizations apply to scans on individual tablets.
 See the <<partition-pruning>> section for details on how scans can use
 predicates to skip entire tablets.
+
+[[non-unique_primary_keys]]
+=== Non-unique Primary Key Index
+
+While specifying columns as non-unique primary key, Kudu internally creates an auto-incrementing
+column. The specified columns and the auto-incrementing column form the effective primary key.
+
+NOTE: The auto-incrementing counter which is used to assign value for auto-incrementing column is
+managed by Kudu, the counter values are monotonically increasing per tablet.
+
+Non-unique primary key columns must be non-nullable, and may not be a boolean, float
+or double type.
+
+Once set during table creation, the set of columns in the non-unique primary key and the
+auto-incrementing column can not be altered.
+
+For inserts, one has to provide values for the non-unique primary key columns without specifying
+the values for auto-incrementing column. The auto-incrementing column is populated on the server
+side automatically.
+
+For updates/deletes the full set of key columns is necessary. One has to perform a scan before
+update/delete operation to get the auto-incrementing value.
+
+Upsert operation is not supported on tables with non-unique primary key.
+
+The non-unique primary key values of a column may not be updated after the row is inserted.
+However, the row may be deleted and re-inserted with the updated value, moreover a new
+auto-incrementing counter value is assigned during insertion for auto-incrementing column.
+
+Restoring tables with non-unique primary keys is not supported currently.
+
+For more details on how to use non-unique primary key, please check the
+link:https://github.com/apache/kudu/tree/master/examples[examples] folder.
 
 [[Backfilling]]
 === Considerations for Backfill Inserts
