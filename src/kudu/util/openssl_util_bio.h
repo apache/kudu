@@ -96,6 +96,7 @@ Status FromString(const std::string& data, DataFormat format,
       data.size()));
   RETURN_NOT_OK_PREPEND((FromBIO<Type, Traits>(bio.get(), format, ret)),
                         "unable to load data from memory");
+  OPENSSL_RET_IF_NULL(bio, "could not create memory BIO");
   return Status::OK();
 }
 
@@ -105,6 +106,7 @@ Status ToString(std::string* data, DataFormat format, Type* obj) {
   auto bio = ssl_make_unique(BIO_new(BIO_s_mem()));
   RETURN_NOT_OK_PREPEND((ToBIO<Type, Traits>(bio.get(), format, obj)),
                         "error serializing data");
+  OPENSSL_RET_IF_NULL(bio, "could not create memory BIO");
   BUF_MEM* membuf;
   OPENSSL_CHECK_OK(BIO_get_mem_ptr(bio.get(), &membuf));
   data->assign(membuf->data, membuf->length);
@@ -115,6 +117,7 @@ template<typename Type, typename Traits = SslTypeTraits<Type>>
 Status FromFile(const std::string& fpath, DataFormat format,
                 c_unique_ptr<Type>* ret, const PasswordCallback& cb = PasswordCallback()) {
   auto bio = ssl_make_unique(BIO_new(BIO_s_file()));
+  OPENSSL_RET_IF_NULL(bio, "could not create file BIO");
   OPENSSL_RET_NOT_OK(BIO_read_filename(bio.get(), fpath.c_str()),
       strings::Substitute("could not read data from file '$0'", fpath));
   RETURN_NOT_OK_PREPEND((FromBIO<Type, Traits>(bio.get(), format, ret, cb)),
