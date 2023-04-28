@@ -101,15 +101,9 @@ Status TlsHandshake::Init(c_unique_ptr<SSL> s) {
   }
 
   auto rbio = ssl_make_unique(BIO_new(BIO_s_mem()));
-  if (!rbio) {
-    return Status::RuntimeError(
-        "failed to create memory-based read BIO", GetOpenSSLErrors());
-  }
+  OPENSSL_RET_IF_NULL(rbio, "failed to create memory read BIO");
   auto wbio = ssl_make_unique(BIO_new(BIO_s_mem()));
-  if (!wbio) {
-    return Status::RuntimeError(
-        "failed to create memory-based write BIO", GetOpenSSLErrors());
-  }
+  OPENSSL_RET_IF_NULL(wbio, "failed to create memory write BIO");
   ssl_ = std::move(s);
   auto* ssl = ssl_.get();
   SSL_set_bio(ssl, rbio.release(), wbio.release());

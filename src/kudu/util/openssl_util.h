@@ -56,6 +56,11 @@ typedef struct x509_st X509;
     return Status::RuntimeError((msg), security::GetOpenSSLErrors()); \
   }
 
+#define OPENSSL_CHECK(call, msg) \
+  if ((call) == nullptr) { \
+    LOG(FATAL) << #msg ": " << security::GetOpenSSLErrors(); \
+  }
+
 #define OPENSSL_RET_IF_NULL(call, msg) \
   if ((call) == nullptr) { \
     return Status::RuntimeError((msg), security::GetOpenSSLErrors()); \

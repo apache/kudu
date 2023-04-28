@@ -59,6 +59,7 @@ string X509NameToString(X509_NAME* name) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(name);
   auto bio = ssl_make_unique(BIO_new(BIO_s_mem()));
+  OPENSSL_CHECK(bio, "could not create memory BIO");
   OPENSSL_CHECK_OK(X509_NAME_print_ex(bio.get(), name, 0, XN_FLAG_ONELINE));
 
   BUF_MEM* membuf;
@@ -213,7 +214,9 @@ Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
   // Create a digest BIO. All data written to the BIO will be sent through the
   // digest (hash) function. The digest BIO requires a null BIO to writethrough to.
   auto null_bio = ssl_make_unique(BIO_new(BIO_s_null()));
+  OPENSSL_RET_IF_NULL(null_bio, "could not create null BIO");
   auto md_bio = ssl_make_unique(BIO_new(BIO_f_md()));
+  OPENSSL_RET_IF_NULL(md_bio, "could not create message digest BIO");
   OPENSSL_RET_NOT_OK(BIO_set_md(md_bio.get(), md), "failed to set digest for BIO");
   BIO_push(md_bio.get(), null_bio.get());
 

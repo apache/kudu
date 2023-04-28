@@ -268,14 +268,12 @@ Status PrivateKey::GetPublicKey(PublicKey* public_key) const {
     return Status::RuntimeError(GetOpenSSLErrors());
   }
   auto tmp = ssl_make_unique(BIO_new(BIO_s_mem()));
-  CHECK(tmp);
+  OPENSSL_RET_IF_NULL(tmp, "could not create memory BIO");
   // Export public key in DER format into the temporary buffer.
   OPENSSL_RET_NOT_OK(i2d_RSA_PUBKEY_bio(tmp.get(), rsa.get()),
       "error extracting public RSA key");
   // Read the public key into the result placeholder.
-  RETURN_NOT_OK(public_key->FromBIO(tmp.get(), DataFormat::DER));
-
-  return Status::OK();
+  return public_key->FromBIO(tmp.get(), DataFormat::DER);
 }
 
 // Modeled after code in $OPENSSL_ROOT/apps/dgst.c
