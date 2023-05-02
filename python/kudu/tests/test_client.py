@@ -881,6 +881,7 @@ class TestClient(KuduTestBase, CompatUnitTest):
             except:
                 pass
 
+class TestAuthAndEncription(KuduTestBase, CompatUnitTest):
     def test_require_encryption(self):
         client = kudu.connect(self.master_hosts, self.master_ports,
                               encryption_policy=ENCRYPTION_REQUIRED)
@@ -892,6 +893,19 @@ class TestClient(KuduTestBase, CompatUnitTest):
         with self.assertRaisesRegex(kudu.KuduBadStatus, error_msg):
             client = kudu.connect(self.master_hosts, self.master_ports,
                      require_authentication=True)
+
+class TestJwt(KuduTestBase, CompatUnitTest):
+    def test_jwt(self):
+        jwt = self.get_jwt(valid=True)
+        client = kudu.connect(self.master_hosts, self.master_ports,
+                              require_authentication=True, jwt=jwt)
+
+        jwt = self.get_jwt(valid=False)
+        error_msg = ('FATAL_INVALID_JWT: Not authorized: Verification failed, error: ' +
+        'failed to verify signature: VerifyFinal failed')
+        with self.assertRaisesRegex(kudu.KuduBadStatus, error_msg):
+            client = kudu.connect(self.master_hosts, self.master_ports,
+                              require_authentication=True, jwt=jwt)
 
 class TestMonoDelta(CompatUnitTest):
 

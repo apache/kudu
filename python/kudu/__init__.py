@@ -61,7 +61,8 @@ from kudu.schema import (int8, int16, int32, int64, string_ as string,  # noqa
 
 
 def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None,
-            require_authentication=False, encryption_policy=ENCRYPTION_OPTIONAL):
+            require_authentication=False, encryption_policy=ENCRYPTION_OPTIONAL,
+            jwt=None):
     """
     Connect to a Kudu master server
 
@@ -80,6 +81,8 @@ def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None,
       Whether to require authentication
     encryption_policy : enum, optional
       Whether to require encryption
+    jwt : string, optional
+      The JSON web token to set.
 
     Returns
     -------
@@ -105,7 +108,7 @@ def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None,
     return Client(addresses, admin_timeout_ms=admin_timeout_ms,
                   rpc_timeout_ms=rpc_timeout_ms,
                   encryption_policy=encryption_policy,
-                  require_authentication=require_authentication)
+                  require_authentication=require_authentication, jwt=jwt)
 
 
 def timedelta(seconds=0, millis=0, micros=0, nanos=0):
