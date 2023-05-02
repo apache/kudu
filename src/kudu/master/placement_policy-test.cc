@@ -17,6 +17,7 @@
 
 #include "kudu/master/placement_policy.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <initializer_list>
@@ -25,6 +26,8 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -62,6 +65,8 @@ class PlacementPolicyTest : public ::testing::Test {
     const size_t replica_num;
     // number of tablet replicas in each dimension
     TabletNumByDimensionMap replica_num_by_dimension;
+    // number of tablet replicas in each table and all its ranges.
+    TabletNumByRangePerTableMap replica_num_by_range_and_table;
   };
 
   struct LocationInfo {
@@ -82,7 +87,7 @@ class PlacementPolicyTest : public ::testing::Test {
   // Get tablet server descriptors for the specified tablet server UUIDs.
   TSDescriptorVector GetDescriptors(const vector<string>& uuids) const {
     TSDescriptorVector result;
-    // O(n^2) is not the best way to do this, but it's OK the test purposes.
+    // O(n^2) is not the best way to do this, but it's OK for test purposes.
     for (const auto& uuid : uuids) {
       for (const auto& desc : descriptors_) {
         if (uuid == desc->permanent_uuid()) {
@@ -107,6 +112,9 @@ class PlacementPolicyTest : public ::testing::Test {
         tsd->set_num_live_replicas(ts.replica_num);
         tsd->location_.emplace(location_info.id);
         tsd->set_num_live_replicas_by_dimension(ts.replica_num_by_dimension);
+        for (const auto& [table, range_map] : ts.replica_num_by_range_and_table) {
+          tsd->set_num_live_replicas_by_range_per_table(table, range_map);
+        }
         ts_descriptors.emplace_back(std::move(tsd));
       }
     }
@@ -277,7 +285,7 @@ TEST_F(PlacementPolicyTest, PlaceExtraTabletReplicaNoLoc) {
       TSDescriptorVector existing(all.begin(), all.end());
       existing.pop_back();
       shared_ptr<TSDescriptor> extra_ts;
-      ASSERT_OK(policy.PlaceExtraTabletReplica(existing, label, &extra_ts));
+      ASSERT_OK(policy.PlaceExtraTabletReplica(existing, label, nullopt, nullopt, &extra_ts));
       ASSERT_TRUE(extra_ts);
       ASSERT_EQ("ts2", extra_ts->permanent_uuid());
     }
@@ -287,7 +295,7 @@ TEST_F(PlacementPolicyTest, PlaceExtraTabletReplicaNoLoc) {
       existing.pop_back();
       existing.pop_back();
       shared_ptr<TSDescriptor> extra_ts;
-      ASSERT_OK(policy.PlaceExtraTabletReplica(existing, label, &extra_ts));
+      ASSERT_OK(policy.PlaceExtraTabletReplica(existing, label, nullopt, nullopt, &extra_ts));
       ASSERT_TRUE(extra_ts);
       ASSERT_EQ("ts2", extra_ts->permanent_uuid());
     }
@@ -295,7 +303,7 @@ TEST_F(PlacementPolicyTest, PlaceExtraTabletReplicaNoLoc) {
     {
       TSDescriptorVector existing(all.begin(), all.end());
       shared_ptr<TSDescriptor> extra_ts;
-      const auto s = policy.PlaceExtraTabletReplica(existing, label, &extra_ts);
+      const auto s = policy.PlaceExtraTabletReplica(existing, label, nullopt, nullopt, &extra_ts);
       ASSERT_TRUE(s.IsNotFound()) << s.ToString();
       ASSERT_FALSE(extra_ts);
       ASSERT_STR_CONTAINS(s.ToString(),
@@ -326,7 +334,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasNoLoc) {
     // Ask just for a single replica.
     {
       TSDescriptorVector result;
-      ASSERT_OK(policy.PlaceTabletReplicas(1, label, &result));
+      ASSERT_OK(policy.PlaceTabletReplicas(1, label, nullopt, nullopt, &result));
       ASSERT_EQ(1, result.size());
       TSDescriptorsMap m;
       ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -339,7 +347,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasNoLoc) {
     // Ask for number of replicas equal to the number of available tablet servers.
     {
       TSDescriptorVector result;
-      ASSERT_OK(policy.PlaceTabletReplicas(3, label, &result));
+      ASSERT_OK(policy.PlaceTabletReplicas(3, label, nullopt, nullopt, &result));
       ASSERT_EQ(3, result.size());
       TSDescriptorsMap m;
       ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -351,7 +359,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasNoLoc) {
     // Try to ask for too many replicas when too few tablet servers are available.
     {
       TSDescriptorVector result;
-      auto s = policy.PlaceTabletReplicas(4, label, &result);
+      auto s = policy.PlaceTabletReplicas(4, label, nullopt, nullopt, &result);
       ASSERT_TRUE(s.IsNotFound()) << s.ToString();
       ASSERT_STR_CONTAINS(s.ToString(),
                           "could not find next location after placing "
@@ -375,7 +383,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicas) {
   // Ask for number of replicas equal to the number of available locations.
   {
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(3, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -390,7 +398,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicas) {
   // enough locations to spread the replicas.
   {
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(5, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(5, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(5, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -404,7 +412,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicas) {
   // Ask for number of replicas greater than the number of tablet servers.
   {
     TSDescriptorVector result;
-    auto s = policy.PlaceTabletReplicas(8, nullopt, &result);
+    auto s = policy.PlaceTabletReplicas(8, nullopt, nullopt, nullopt, &result);
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
                         "could not find next location after placing "
@@ -429,7 +437,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasOneTSPerLocation) {
   // Ask for number of replicas equal to the number of available locations.
   {
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(3, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -443,7 +451,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasOneTSPerLocation) {
   // Ask for number of replicas equal to the number of available locations.
   {
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(5, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(5, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(5, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -457,7 +465,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasOneTSPerLocation) {
   // Ask for number of replicas greater than the number of tablet servers.
   {
     TSDescriptorVector result;
-    auto s = policy.PlaceTabletReplicas(6, nullopt, &result);
+    auto s = policy.PlaceTabletReplicas(6, nullopt, nullopt, nullopt, &result);
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
                         "could not find next location after placing "
@@ -482,7 +490,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasBalancingLocations) {
   // Make sure no location contains the majority of replicas.
   {
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(3, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -498,7 +506,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasBalancingLocations) {
   // Current location selection algorithm loads the locations evenly.
   {
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(5, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(5, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(5, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -513,7 +521,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasBalancingLocations) {
   // servers in the cluster.
   {
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(7, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(7, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(7, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -546,7 +554,7 @@ TEST_F(PlacementPolicyTest, PlaceExtraTabletReplicaViolatedPolicy) {
     // in the same location.
     const auto existing = GetDescriptors({ "A_ts0", "A_ts1", "A_ts2", });
     shared_ptr<TSDescriptor> extra_ts;
-    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, &extra_ts));
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, nullopt, nullopt, &extra_ts));
     ASSERT_TRUE(extra_ts);
     // Within location a replica is placed by the 'power of 2' algorithm.
     ASSERT_TRUE(extra_ts->permanent_uuid() == "C_ts0" ||
@@ -561,7 +569,7 @@ TEST_F(PlacementPolicyTest, PlaceExtraTabletReplicaViolatedPolicy) {
     // constraint would be violated.
     const auto existing = GetDescriptors({ "A_ts0", "A_ts1", "C_ts1", "C_ts2", });
     shared_ptr<TSDescriptor> extra_ts;
-    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, &extra_ts));
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, nullopt, nullopt, &extra_ts));
     ASSERT_TRUE(extra_ts);
     // Within location a replica is placed by the 'power of 2' algorithm.
     ASSERT_TRUE(extra_ts->permanent_uuid() == "B_ts0" ||
@@ -623,7 +631,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L5_TS7) {
   {
     static constexpr auto num_replicas = 3;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     // Make sure the placement of replicas conforms with the main constraint:
@@ -645,7 +653,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L5_TS7) {
   {
     static constexpr auto num_replicas = 5;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -662,7 +670,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L5_TS7) {
   {
     static constexpr auto num_replicas = 7;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -676,7 +684,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L5_TS7) {
   {
     static constexpr auto num_replicas = 9;
     TSDescriptorVector result;
-    auto s = policy.PlaceTabletReplicas(num_replicas, nullopt, &result);
+    auto s = policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result);
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
     const string ref_msg = Substitute(
         "could not find next location after placing 7 out of $0 tablet replicas",
@@ -708,9 +716,9 @@ TEST_F(PlacementPolicyTest, PlaceExtraTablet_L5_TS10_RF5) {
     const auto existing = GetDescriptors(
         { "A_ts0", "B_ts0", "C_ts0", "D_ts0", "E_ts0", });
     shared_ptr<TSDescriptor> extra_ts;
-    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, &extra_ts));
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, nullopt, nullopt, &extra_ts));
     ASSERT_TRUE(extra_ts);
-    // The location with lowest load is selected for the extra replica.
+    // The location with the lowest load is selected for the extra replica.
     ASSERT_EQ("A_ts2", extra_ts->permanent_uuid());
   }
   {
@@ -719,9 +727,9 @@ TEST_F(PlacementPolicyTest, PlaceExtraTablet_L5_TS10_RF5) {
     const auto existing = GetDescriptors(
         { "A_ts0", "A_ts1", "B_ts0", "B_ts1", "C_ts0", });
     shared_ptr<TSDescriptor> extra_ts;
-    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, &extra_ts));
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, nullopt, nullopt, &extra_ts));
     ASSERT_TRUE(extra_ts);
-    // The location with lowest load is selected for the extra replica.
+    // The location with the lowest load is selected for the extra replica.
     ASSERT_EQ("D_ts0", extra_ts->permanent_uuid());
   }
   {
@@ -730,7 +738,7 @@ TEST_F(PlacementPolicyTest, PlaceExtraTablet_L5_TS10_RF5) {
     const auto existing = GetDescriptors(
         { "A_ts0", "B_ts0", "B_ts1", "B_ts2", "E_ts0", });
     shared_ptr<TSDescriptor> extra_ts;
-    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, &extra_ts));
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, nullopt, nullopt, &extra_ts));
     ASSERT_TRUE(extra_ts);
     // Among the locations where an additional replica can be placed,
     // location A and location C have the least load. As for the preferences
@@ -768,7 +776,7 @@ TEST_F(PlacementPolicyTest, PlaceExtraTablet_L5_TS16_RF5) {
   map<string, int> placement_stats;
   for (auto i = 0; i < 6000; ++i) {
     shared_ptr<TSDescriptor> extra_ts;
-    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, &extra_ts));
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, nullopt, nullopt, &extra_ts));
     ASSERT_TRUE(extra_ts);
     const auto& ts_uuid = extra_ts->permanent_uuid();
     ASSERT_TRUE(ts_uuid == "A_ts1" ||
@@ -796,7 +804,7 @@ TEST_F(PlacementPolicyTest, PlaceExtraTablet_L5_TS16_RF5) {
   EXPECT_GT(1500, placement_stats["B_ts3"]);
 }
 
-// Even RF case: edge cases with 2 locaitons.
+// Even RF case: edge cases with 2 locations.
 TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L2_EvenRFEdgeCase) {
   const vector<LocationInfo> cluster_info = {
     { "A", { { "A_ts0", 10 }, { "A_ts1", 10 }, { "A_ts2", 10 }, } },
@@ -810,7 +818,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L2_EvenRFEdgeCase) {
   {
     static constexpr auto num_replicas = 2;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -820,7 +828,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L2_EvenRFEdgeCase) {
   {
     static constexpr auto num_replicas = 4;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -830,7 +838,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L2_EvenRFEdgeCase) {
   {
     static constexpr auto num_replicas = 6;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -843,7 +851,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L2_EvenRFEdgeCase) {
   }
 }
 
-// Odd RF case: edge cases with 2 locaitons.
+// Odd RF case: edge cases with 2 locations.
 // Make sure replicas are placed into both locations, even if ideal density
 // distribution would have them in a single location.
 TEST_F(PlacementPolicyTest, PlaceTabletReplicasCluster_L2_OddRFEdgeCase) {
@@ -859,7 +867,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasCluster_L2_OddRFEdgeCase) {
   {
     static constexpr auto num_replicas = 3;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -870,7 +878,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasCluster_L2_OddRFEdgeCase) {
   {
     static constexpr auto num_replicas = 5;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -894,7 +902,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L3_EvenRF) {
   {
     static constexpr auto num_replicas = 2;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -906,7 +914,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L3_EvenRF) {
   {
     static constexpr auto num_replicas = 4;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -921,7 +929,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L3_EvenRF) {
   {
     static constexpr auto num_replicas = 6;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -934,7 +942,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L3_EvenRF) {
   {
     static constexpr auto num_replicas = 8;
     TSDescriptorVector result;
-    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, &result));
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, nullopt, nullopt, nullopt, &result));
     ASSERT_EQ(num_replicas, result.size());
     TSDescriptorsMap m;
     ASSERT_OK(TSDescriptorVectorToMap(result, &m));
@@ -986,7 +994,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithNewTabletServers) {
     for (auto i = 0; i < 1000; ++i) {
       TSDescriptorVector result;
       // Get the number of tablet replicas on tablet server.
-      ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, &result));
+      ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, nullopt, nullopt, &result));
       ASSERT_EQ(3, result.size());
       for (const auto& ts : result) {
         const auto& ts_uuid = ts->permanent_uuid();
@@ -1010,7 +1018,8 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithNewTabletServers) {
       map<string, int> placement_stats;
       for (auto i = 0; i < 1000; ++i) {
         TSDescriptorVector result;
-        ASSERT_OK(policy.PlaceTabletReplicas(3, make_optional(string(label)), &result));
+        ASSERT_OK(policy.PlaceTabletReplicas(
+            3, make_optional(string(label)), nullopt, nullopt, &result));
         ASSERT_EQ(3, result.size());
         for (const auto& ts : result) {
           const auto& ts_uuid = ts->permanent_uuid();
@@ -1023,6 +1032,413 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithNewTabletServers) {
       double stddev = calc_stddev_func(placement_stats, kMeanPerServer);
       ASSERT_LE(stddev, 3.0);
     }
+  }
+}
+
+// RF is 1 while number of TS is 2, extreme case where one empty tablet server gets a majority
+// of the replicas placed but with range aware replica placement it's more balanced.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithRangesExtremeCase) {
+  const int nReplicationFactor = 1;
+  const int kNumServers = 2;
+  const vector<LocationInfo> cluster_info = {
+      {
+          "",
+          {
+              { "ts0", 0 },
+              { "ts1", 500 },
+          }
+      },
+  };
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    map<string, int> stats;
+    for (auto i = 0; i < 1000; ++i) {
+      TSDescriptorVector result;
+      ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, nullopt, nullopt, &result));
+      ASSERT_EQ(nReplicationFactor, result.size());
+      const auto& ts_uuid = result[0]->permanent_uuid();
+      ++stats[ts_uuid];
+    }
+    ASSERT_EQ(kNumServers, stats.size());
+    ASSERT_LE(748, stats["ts0"]);
+    ASSERT_GE(752, stats["ts0"]);
+    ASSERT_LE(248, stats["ts1"]);
+    ASSERT_GE(252, stats["ts1"]);
+  }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    map<string, int> stats;
+    for (auto i = 0; i < 1000; ++i) {
+      TSDescriptorVector result;
+      ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, "a1", "t1", &result));
+      ASSERT_EQ(nReplicationFactor, result.size());
+      const auto& ts_uuid = result[0]->permanent_uuid();
+      ++stats[ts_uuid];
+    }
+    ASSERT_EQ(kNumServers, stats.size());
+    ASSERT_EQ(500, stats["ts0"]);
+    ASSERT_EQ(500, stats["ts1"]);
+  }
+}
+
+// RF is equal to the number of tablet servers, so replica placement will be same with ranges.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithRanges) {
+  const int nReplicationFactor = 3;
+  const int kNumServers = 3;
+  TabletNumByRangeMap range({ {"a1", 500} });
+  const vector<LocationInfo> cluster_info = {
+      {
+          "",
+          {
+              { "ts0", 0 },
+              { "ts1", 0 },
+              { "ts2", 500, { }, { {"t1", range }, } },
+          }
+      },
+  };
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    map<string, int> stats;
+    for (auto i = 0; i < 1000; ++i) {
+      TSDescriptorVector result;
+      ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, nullopt, nullopt, &result));
+      ASSERT_EQ(nReplicationFactor, result.size());
+      for (const auto& ts : result) {
+        const auto& ts_uuid = ts->permanent_uuid();
+        ++stats[ts_uuid];
+      }
+    }
+    ASSERT_EQ(kNumServers, stats.size());
+    ASSERT_EQ(1000, stats["ts0"]);
+    ASSERT_EQ(1000, stats["ts1"]);
+    ASSERT_EQ(1000, stats["ts2"]);
+  }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    map<string, int> stats;
+    for (auto i = 0; i < 1000; ++i) {
+      TSDescriptorVector result;
+      ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, "a1", "t1", &result));
+      ASSERT_EQ(nReplicationFactor, result.size());
+      for (const auto& ts : result) {
+        const auto& ts_uuid = ts->permanent_uuid();
+        ++stats[ts_uuid];
+      }
+    }
+    ASSERT_EQ(kNumServers, stats.size());
+    ASSERT_EQ(1000, stats["ts0"]);
+    ASSERT_EQ(1000, stats["ts1"]);
+    ASSERT_EQ(1000, stats["ts2"]);
+  }
+}
+
+// RF is 3 while number of tablet servers is 4 with 2 of them empty and the other 2 loaded with
+// 500 replicas, although only one tablet server has replicas with the same range that is being
+// added. The expectation is that the tablet server with replicas not from that range will be
+// treated similar to the empty tablet servers. This test case also ensures that ranges with the
+// same start key from two different tables can properly be differentiated.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithRangesAndTables) {
+  const int nReplicationFactor = 3;
+  const int kNumServers = 4;
+  TabletNumByRangeMap range({ {"a1", 500} });
+  const vector<LocationInfo> cluster_info = {
+      {
+          "",
+          {
+              { "ts0", 0 },
+              { "ts1", 0 },
+              { "ts2", 500, { }, { {"t2", range }, } },
+              { "ts3", 500, { }, { {"t1", range }, } },
+          }
+      },
+  };
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    map<string, int> stats;
+    for (auto i = 0; i < 1000; ++i) {
+      TSDescriptorVector result;
+      ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, nullopt, nullopt, &result));
+      ASSERT_EQ(nReplicationFactor, result.size());
+      for (const auto& ts : result) {
+        const auto& ts_uuid = ts->permanent_uuid();
+        ++stats[ts_uuid];
+      }
+    }
+    ASSERT_EQ(kNumServers, stats.size());
+    ASSERT_EQ(1000, stats["ts0"]);
+    ASSERT_EQ(1000, stats["ts1"]);
+    ASSERT_EQ(500, stats["ts2"]);
+    ASSERT_EQ(500, stats["ts3"]);
+  }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    map<string, int> stats;
+    for (auto i = 0; i < 1000; ++i) {
+      TSDescriptorVector result;
+      ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, "a1", "t1", &result));
+      ASSERT_EQ(nReplicationFactor, result.size());
+      for (const auto& ts : result) {
+        const auto& ts_uuid = ts->permanent_uuid();
+        ++stats[ts_uuid];
+      }
+    }
+    ASSERT_EQ(kNumServers, stats.size());
+    vector<string> tservers_no_load = {"ts0", "ts1", "ts2"};
+    for (const auto& tserver : tservers_no_load) {
+      ASSERT_LE(871, stats[tserver]);
+      ASSERT_GE(881, stats[tserver]);
+    }
+    ASSERT_LE(368, stats["ts3"]);
+    ASSERT_GE(378, stats["ts3"]);
+  }
+}
+
+// RF is 3 while number of tablet servers is 6. Half of them are empty while the other half contain
+// an increasing number of replicas. One of them does not contain replicas of the range that is
+// being placed thus it is expected to be treated like the empty tablet servers when placing
+// replicas by range.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithRangesAndTablesWithDoubleTServers) {
+  const int nReplicationFactor = 3;
+  const int kNumServers = 6;
+  TabletNumByRangeMap range1({ {"b1", 250} });
+  TabletNumByRangeMap range2({ {"a1", 375} });
+  TabletNumByRangeMap range3({ {"a1", 500} });
+  const vector<LocationInfo> cluster_info = {
+      {
+          "",
+          {
+              { "ts0", 0 },
+              { "ts1", 0 },
+              { "ts2", 0 },
+              { "ts3", 250, { }, { {"t1", range1 }, } },
+              { "ts4", 375, { }, { {"t1", range2 }, } },
+              { "ts5", 500, { }, { {"t1", range3 }, } },
+          }
+      },
+  };
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    map<string, int> stats;
+    for (auto i = 0; i < 1000; ++i) {
+      TSDescriptorVector result;
+      ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, nullopt, nullopt, &result));
+      ASSERT_EQ(nReplicationFactor, result.size());
+      for (const auto& ts : result) {
+        const auto& ts_uuid = ts->permanent_uuid();
+        ++stats[ts_uuid];
+      }
+    }
+    ASSERT_EQ(kNumServers, stats.size());
+    vector<string> tservers_no_load = {"ts0", "ts1", "ts2"};
+    for (const auto& tserver : tservers_no_load) {
+      ASSERT_LE(682, stats[tserver]);
+      ASSERT_GE(691, stats[tserver]);
+    }
+    ASSERT_LE(432, stats["ts3"]);
+    ASSERT_GE(441, stats["ts3"]);
+    ASSERT_LE(306, stats["ts4"]);
+    ASSERT_GE(315, stats["ts4"]);
+    ASSERT_LE(182, stats["ts5"]);
+    ASSERT_GE(191, stats["ts5"]);
+  }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    map<string, int> stats;
+    for (auto i = 0; i < 1000; ++i) {
+      TSDescriptorVector result;
+      ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, "a1", "t1", &result));
+      ASSERT_EQ(nReplicationFactor, result.size());
+      for (const auto& ts : result) {
+        const auto& ts_uuid = ts->permanent_uuid();
+        ++stats[ts_uuid];
+      }
+    }
+    ASSERT_EQ(kNumServers, stats.size());
+    vector<string> tservers_no_load = {"ts0", "ts1", "ts2", "ts3"};
+    for (const auto& tserver : tservers_no_load) {
+      ASSERT_LE(642, stats[tserver]);
+      ASSERT_GE(652, stats[tserver]);
+    }
+    ASSERT_LE(264, stats["ts4"]);
+    ASSERT_GE(274, stats["ts4"]);
+    ASSERT_LE(137, stats["ts5"]);
+    ASSERT_GE(147, stats["ts5"]);
+  }
+}
+
+// With RF = 3, 6 tablet servers, and a well-balanced cluster initially, this test case adds
+// several range partitions for the existing table and for a new table. All these range partitions
+// have the same start key and twice as many replicas for the new table will be added. These
+// replicas are expected to be distributed evenly per table.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithSeveralRanges) {
+  const int nReplicationFactor = 3;
+  const int kNumServers = 6;
+  TabletNumByRangeMap ranges_per_table({ {"a1", 250}, {"b1", 250} });
+  const vector<LocationInfo> cluster_info = {
+      {
+          "",
+          {
+              { "ts0", 500, { }, { {"t1", ranges_per_table }, } },
+              { "ts1", 500, { }, { {"t1", ranges_per_table }, } },
+              { "ts2", 500, { }, { {"t1", ranges_per_table }, } },
+              { "ts3", 500, { }, { {"t1", ranges_per_table }, } },
+              { "ts4", 500, { }, { {"t1", ranges_per_table }, } },
+              { "ts5", 500, { }, { {"t1", ranges_per_table }, } },
+          }
+      },
+  };
+
+  ASSERT_OK(Prepare(cluster_info));
+  const auto& all = descriptors();
+  PlacementPolicy policy(all, rng());
+  typedef std::unordered_map<string, std::unordered_map<string, int>> replicas_per_range_per_table;
+  std::unordered_map<string, replicas_per_range_per_table> stats;
+  vector<string> ranges = {"a1", "b1", "c1", "d1", "e1", "f1"};
+  vector<std::pair<string, int>> tables = {{"t1", 500}, {"t2", 1000}};
+  for (const auto& table : tables) {
+    for (const auto& range : ranges) {
+      for (auto i = 0; i < table.second; ++i) {
+        TSDescriptorVector result;
+        ASSERT_OK(
+            policy.PlaceTabletReplicas(nReplicationFactor, nullopt, range, table.first, &result));
+        ASSERT_EQ(nReplicationFactor, result.size());
+        for (const auto& ts : result) {
+          const auto& ts_uuid = ts->permanent_uuid();
+          ++stats[ts_uuid][table.first][range];
+        }
+      }
+    }
+  }
+
+  ASSERT_EQ(kNumServers, stats.size());
+  for (const auto& stat : stats) {
+    int tserver_replicas = 0;
+    // Verifies that two tables exist on each tserver.
+    ASSERT_EQ(2, stat.second.size());
+    for (const auto& table : stat.second) {
+      // Verifies that the six ranges exist for each table on each tserver.
+      ASSERT_EQ(6, table.second.size());
+      for (const auto& ranges : table.second) {
+        // Since we placed twice as many replicas for table "t2", we expect twice as many replicas.
+        if (table.first == "t2") {
+          ASSERT_EQ(500, ranges.second);
+        } else {
+          ASSERT_EQ(250, ranges.second);
+        }
+        tserver_replicas += ranges.second;
+      }
+    }
+    // Verifies that 4500 replicas are placed on each tserver.
+    ASSERT_EQ(4500, tserver_replicas);
+  }
+}
+
+// With RF = 3, 6 tablet servers, and an imbalanced cluster by tables initially, this test case adds
+// several range partitions for the existing table and for a new table.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithImbalanceByTable) {
+  const int nReplicationFactor = 3;
+  const int kNumServers = 6;
+  TabletNumByRangeMap ranges_per_table({ {"a1", 250}, {"b1", 250} });
+  const vector<LocationInfo> cluster_info = {
+      {
+          "",
+          {
+              { "ts0", 500, { }, { {"t1", ranges_per_table }, } },
+              { "ts1", 500, { }, { {"t2", ranges_per_table }, } },
+              { "ts2", 500, { }, { {"t1", ranges_per_table }, } },
+              { "ts3", 500, { }, { {"t2", ranges_per_table }, } },
+              { "ts4", 500, { }, { {"t1", ranges_per_table }, } },
+              { "ts5", 500, { }, { {"t2", ranges_per_table }, } },
+          }
+      },
+  };
+
+  ASSERT_OK(Prepare(cluster_info));
+  const auto& all = descriptors();
+  PlacementPolicy policy(all, rng());
+  typedef std::unordered_map<string, std::unordered_map<string, int>> replicas_per_range_per_table;
+  std::unordered_map<string, replicas_per_range_per_table> stats;
+  vector<string> ranges = {"a1", "b1", "c1", "d1", "e1", "f1"};
+  vector<string> tables = {"t1", "t2"};
+  for (const auto& table : tables) {
+    for (const auto& range : ranges) {
+      for (auto i = 0; i < 500; ++i) {
+        TSDescriptorVector result;
+        ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, range, table, &result));
+        ASSERT_EQ(nReplicationFactor, result.size());
+        for (const auto& ts : result) {
+          const auto& ts_uuid = ts->permanent_uuid();
+          ++stats[ts_uuid][table][range];
+        }
+      }
+    }
+  }
+
+  ASSERT_EQ(kNumServers, stats.size());
+  vector<string> balanced_ranges = {"c1", "d1", "e1", "f1"};
+  vector<string> tservers1 = {"ts0", "ts2", "ts4"};
+  for (const auto& stat : stats) {
+    int tserver_replicas = 0;
+    // Verifies that two tables exist on each tserver.
+    ASSERT_EQ(2, stat.second.size());
+    for (const auto& table : stat.second) {
+      // Verifies that the six ranges exist for each table on each tserver.
+      ASSERT_EQ(6, table.second.size());
+      for (const auto& ranges : table.second) {
+        if (std::find(balanced_ranges.begin(),
+                      balanced_ranges.end(), ranges.first) != balanced_ranges.end()) {
+          ASSERT_LE(245, ranges.second);
+          ASSERT_GE(255, ranges.second);
+        } else if (std::find(tservers1.begin(),
+                           tservers1.end(), stat.first) != tservers1.end()) {
+          // Only range of "a1" or "b1" now. Checks which tservers and for table "t1" or "t2".
+          if (table.first == "t1") {
+            ASSERT_LE(120, ranges.second);
+            ASSERT_GE(130, ranges.second);
+          } else {
+            ASSERT_LE(370, ranges.second);
+            ASSERT_GE(380, ranges.second);
+          }
+        } else {
+          // Ranges "a1" or "b1" for tservers "ts1", "ts3", "ts5". Checks for table "t1" or "t2".
+          if (table.first == "t1") {
+            ASSERT_LE(370, ranges.second);
+            ASSERT_GE(380, ranges.second);
+          } else {
+            ASSERT_LE(120, ranges.second);
+            ASSERT_GE(130, ranges.second);
+          }
+        }
+        tserver_replicas += ranges.second;
+      }
+    }
+    // Verifies that around 3000 replicas are placed on each tserver.
+    ASSERT_LE(2990, tserver_replicas);
+    ASSERT_GE(3110, tserver_replicas);
   }
 }
 

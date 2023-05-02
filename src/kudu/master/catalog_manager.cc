@@ -228,7 +228,7 @@ TAG_FLAG(allow_unsafe_replication_factor, runtime);
 
 DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,
              "Amount of time the catalog manager background task thread waits "
-             "between runs");
+             "between runs.");
 TAG_FLAG(catalog_manager_bg_task_wait_ms, hidden);
 
 DEFINE_int32(max_create_tablets_per_ts, 60,
@@ -357,11 +357,11 @@ TAG_FLAG(auto_leader_rebalancing_enabled, runtime);
 
 DEFINE_uint32(table_locations_cache_capacity_mb, 0,
               "Capacity for the table locations cache (in MiB); a value "
-              "of 0 means table locations are not be cached");
+              "of 0 means table locations are not be cached.");
 TAG_FLAG(table_locations_cache_capacity_mb, advanced);
 
 DEFINE_bool(enable_per_range_hash_schemas, true,
-            "Whether to support range-specific hash schemas for tables");
+            "Whether to support range-specific hash schemas for tables.");
 TAG_FLAG(enable_per_range_hash_schemas, advanced);
 TAG_FLAG(enable_per_range_hash_schemas, runtime);
 
@@ -371,6 +371,10 @@ DEFINE_bool(enable_table_write_limit, false,
             "the write may be forbidden.");
 TAG_FLAG(enable_table_write_limit, experimental);
 TAG_FLAG(enable_table_write_limit, runtime);
+
+DEFINE_bool(enable_range_replica_placement, true,
+            "Whether to use range aware replica placement for newly created tablets.");
+TAG_FLAG(enable_range_replica_placement, runtime);
 
 DEFINE_int64(table_disk_size_limit, -1,
              "Set the target size in bytes of a table to write. "
@@ -385,7 +389,7 @@ DEFINE_int64(table_row_count_limit, -1,
 TAG_FLAG(table_row_count_limit, experimental);
 
 DEFINE_double(table_write_limit_ratio, 0.95,
-              "Set the ratio of how much write limit can be reached");
+              "Set the ratio of how much write limit can be reached.");
 TAG_FLAG(table_write_limit_ratio, experimental);
 
 DEFINE_bool(enable_metadata_cleanup_for_deleted_tables_and_tablets, false,
@@ -410,7 +414,7 @@ TAG_FLAG(enable_chunked_tablet_writes, runtime);
 DEFINE_bool(require_new_spec_for_custom_hash_schema_range_bound, false,
             "Whether to require the client to use newer signature to specify "
             "range bounds when working with a table having custom hash schema "
-            "per range");
+            "per range.");
 TAG_FLAG(require_new_spec_for_custom_hash_schema_range_bound, experimental);
 TAG_FLAG(require_new_spec_for_custom_hash_schema_range_bound, runtime);
 
@@ -4973,16 +4977,29 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
     TSDescriptorVector ts_descs;
     master_->ts_manager()->GetDescriptorsAvailableForPlacement(&ts_descs);
 
-    // Get the dimension of the tablet. Otherwise, it will be nullopt.
+    // Get the dimension, table id, and range start key of the tablet.
     optional<string> dimension = nullopt;
+    optional<string> table_id = nullopt;
+    optional<string> range_key_start = nullopt;
     {
       TabletMetadataLock l(tablet_.get(), LockMode::READ);
       if (tablet_->metadata().state().pb.has_dimension_label()) {
         dimension = tablet_->metadata().state().pb.dimension_label();
       }
+      if (FLAGS_enable_range_replica_placement) {
+        Partition partition;
+        if (tablet_->metadata().state().pb.has_partition()) {
+          const auto& tablet_partition = tablet_->metadata().state().pb.partition();
+          Partition::FromPB(tablet_partition, &partition);
+        }
+        range_key_start = partition.begin().range_key();
+        VLOG(1) << Substitute("range_key_start is set to $1", range_key_start.value());
+        table_id = tablet_->metadata().state().pb.table_id();
+        VLOG(1) << Substitute("table_id is set to $1", table_id.value());
+      }
     }
 
-    // Some of the tablet servers hosting the current members of the config
+    // Some tablet servers hosting the current members of the config
     // (see the 'existing' populated above) might be presumably dead.
     // Inclusion of a presumably dead tablet server into 'existing' is OK:
     // PlacementPolicy::PlaceExtraTabletReplica() does not require elements of
@@ -4991,7 +5008,8 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
     // to host the extra replica is 'ts_descs' after blacklisting all elements
     // common with 'existing'.
     PlacementPolicy policy(std::move(ts_descs), rng_);
-    s = policy.PlaceExtraTabletReplica(std::move(existing), dimension, &extra_replica);
+    s = policy.PlaceExtraTabletReplica(
+        std::move(existing), dimension, range_key_start, table_id, &extra_replica);
   }
   if (PREDICT_FALSE(!s.ok())) {
     auto msg = Substitute("no extra replica candidate found for tablet $0: $1",
@@ -6009,15 +6027,29 @@ Status CatalogManager::SelectReplicasForTablet(const PlacementPolicy& policy,
   config->set_obsolete_local(nreplicas == 1);
   config->set_opid_index(consensus::kInvalidOpIdIndex);
 
-  // Get the dimension of the tablet. Otherwise, it will be nullopt.
+  // Get the dimension, table id, and range start key of the tablet.
   optional<string> dimension = nullopt;
+  optional<string> table_id = nullopt;
+  optional<string> range_key_start = nullopt;
   if (tablet->metadata().state().pb.has_dimension_label()) {
     dimension = tablet->metadata().state().pb.dimension_label();
+  }
+  if (FLAGS_enable_range_replica_placement) {
+    Partition partition;
+    if (tablet->metadata().state().pb.has_partition()) {
+      const auto& tablet_partition = tablet->metadata().state().pb.partition();
+      Partition::FromPB(tablet_partition, &partition);
+    }
+    range_key_start = partition.begin().range_key();
+    VLOG(1) << Substitute("range_key_start is set to $1", range_key_start.value());
+    table_id = tablet->metadata().state().pb.table_id();
+    VLOG(1) << Substitute("table_id is set to $1", table_id.value());
   }
 
   // Select the set of replicas for the tablet.
   TSDescriptorVector descriptors;
-  RETURN_NOT_OK_PREPEND(policy.PlaceTabletReplicas(nreplicas, dimension, &descriptors),
+  RETURN_NOT_OK_PREPEND(policy.PlaceTabletReplicas(
+      nreplicas, dimension, range_key_start, table_id, &descriptors),
                         Substitute("failed to place replicas for tablet $0 "
                                    "(table '$1')",
                                    tablet->id(), table_guard.data().name()));

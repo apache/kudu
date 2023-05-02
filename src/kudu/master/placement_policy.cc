@@ -18,6 +18,7 @@
 #include "kudu/master/placement_policy.h"
 
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <numeric>
@@ -25,7 +26,7 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <unordered_map>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -42,7 +43,6 @@ using std::optional;
 using std::set;
 using std::shared_ptr;
 using std::string;
-using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -51,17 +51,46 @@ namespace master {
 
 namespace {
 
-double GetTSLoad(const optional<string>& dimension, TSDescriptor* desc) {
+typedef std::pair<std::shared_ptr<TSDescriptor>, vector<double>> ts_stats;
+
+double GetTSLoad(TSDescriptor* desc, const optional<string>& dimension) {
   // TODO (oclarms): get the number of times this tablet server has recently been
   //  selected to create a tablet replica by dimension.
   return desc->RecentReplicaCreations() + desc->num_live_replicas(dimension);
 }
 
+double GetTSRangeLoad(TSDescriptor* desc, const string& range_start_key, const string& table_id) {
+  return desc->RecentReplicaCreationsByRange(range_start_key, table_id)
+  + desc->num_live_replicas_by_range(range_start_key, table_id);
+}
+
+double GetTSTableLoad(TSDescriptor* desc, const string& table_id) {
+  return desc->RecentReplicaCreationsByTable(table_id) + desc->num_live_replicas_by_table(table_id);
+}
+
+// Iterates through `src_replicas_stats` and returns set of tablet servers that have the least
+// replicas of a particular stat (range, table, total) that is determined by 'index'.
+vector<ts_stats> TabletServerTieBreaker(const vector<ts_stats>& src_replicas_stats,
+                                        int index) {
+  double min = std::numeric_limits<double>::max();
+  vector<ts_stats> result;
+  for (const auto& stats : src_replicas_stats) {
+    if (stats.second[index] < min) {
+      min = stats.second[index];
+      result.clear();
+      result.emplace_back(stats);
+    } else if (stats.second[index] == min) {
+      result.emplace_back(stats);
+    }
+  }
+  return result;
+}
+
 // Given exactly two choices in 'two_choices', pick the better tablet server on
 // which to place a tablet replica. Ties are broken using 'rng'.
-shared_ptr<TSDescriptor> PickBetterReplica(
+shared_ptr<TSDescriptor> PickBetterTabletServer(
     const TSDescriptorVector& two_choices,
-    const optional<std::string>& dimension,
+    const optional<string>& dimension,
     ThreadSafeRandom* rng) {
   CHECK_EQ(2, two_choices.size());
 
@@ -86,8 +115,8 @@ shared_ptr<TSDescriptor> PickBetterReplica(
   //
   // TODO(wdberkeley): in the future we may want to factor in other items such
   // as available disk space, actual request load, etc.
-  double load_a = GetTSLoad(dimension, a.get());
-  double load_b = GetTSLoad(dimension, b.get());
+  double load_a = GetTSLoad(a.get(), dimension);
+  double load_b = GetTSLoad(b.get(), dimension);
   if (load_a < load_b) {
     return a;
   }
@@ -96,6 +125,51 @@ shared_ptr<TSDescriptor> PickBetterReplica(
   }
   // If the load is the same, we can just pick randomly.
   return two_choices[rng->Uniform(2)];
+}
+
+// Given a set of tablet servers in 'ts_choices', pick the best tablet server on which to place a
+// tablet replica based on the existing number of replicas per the given range. The tiebreaker
+// is the number of replicas per table, then number of replicas overall. If still tied, use rng.
+shared_ptr<TSDescriptor> PickTabletServer(const TSDescriptorVector& ts_choices,
+                                          const string& range_key_start,
+                                          const string& table_id,
+                                          const optional<string>& dimension,
+                                          ThreadSafeRandom* rng) {
+  CHECK_GE(ts_choices.size(), 2);
+  vector<ts_stats> replicas_stats;
+  // Find the number of replicas per the given range, the given table,
+  // and total replicas for each tablet server.
+  for (const auto& ts : ts_choices) {
+    auto* ts_desc = ts.get();
+    auto tablets_by_range = GetTSRangeLoad(ts_desc, range_key_start, table_id);
+    auto tablets_by_table = GetTSTableLoad(ts_desc, table_id);
+    auto tablets = GetTSLoad(ts_desc, dimension);
+    const vector<double> tablet_count = {tablets_by_range, tablets_by_table, tablets};
+    replicas_stats.emplace_back(ts, tablet_count);
+  }
+  // Given set of tablet servers with stats about replicas per given range, table,
+  // and total replicas, find tablet servers with the least replicas per given range.
+  vector<ts_stats> replicas_by_range = TabletServerTieBreaker(replicas_stats, 0);
+  CHECK(!replicas_by_range.empty());
+  if (replicas_by_range.size() == 1) {
+    return replicas_by_range[0].first;
+  }
+  // Given set of tablet servers with the least replicas per given range,
+  // find tablet servers with the least replicas per given table.
+  vector<ts_stats> replicas_by_table = TabletServerTieBreaker(replicas_by_range, 1);
+  CHECK(!replicas_by_table.empty());
+  if (replicas_by_table.size() == 1) {
+    return replicas_by_table[0].first;
+  }
+  // Given set of tablet servers with the least replicas per range and table,
+  // find tablet servers with the least replicas overall.
+  vector<ts_stats> replicas_total = TabletServerTieBreaker(replicas_by_table, 2);
+  CHECK(!replicas_total.empty());
+  if (replicas_total.size() == 1) {
+    return replicas_total[0].first;
+  }
+  // No more tiebreakers, randomly select a tablet server.
+  return replicas_total[rng->Uniform(replicas_total.size())].first;
 }
 
 } // anonymous namespace
@@ -114,7 +188,9 @@ PlacementPolicy::PlacementPolicy(TSDescriptorVector descs,
 }
 
 Status PlacementPolicy::PlaceTabletReplicas(int nreplicas,
-                                            const optional<std::string>& dimension,
+                                            const optional<string>& dimension,
+                                            const optional<string>& range_key_start,
+                                            const optional<string>& table_id,
                                             TSDescriptorVector* ts_descs) const {
   DCHECK(ts_descs);
 
@@ -127,14 +203,17 @@ Status PlacementPolicy::PlaceTabletReplicas(int nreplicas,
     const auto& loc = elem.first;
     const auto loc_nreplicas = elem.second;
     const auto& ts_descriptors = FindOrDie(ltd_, loc);
-    RETURN_NOT_OK(SelectReplicas(ts_descriptors, loc_nreplicas, dimension, ts_descs));
+    RETURN_NOT_OK(SelectReplicas(
+        ts_descriptors, loc_nreplicas, dimension, range_key_start, table_id, ts_descs));
   }
   return Status::OK();
 }
 
 Status PlacementPolicy::PlaceExtraTabletReplica(
     TSDescriptorVector existing,
-    const optional<std::string>& dimension,
+    const optional<string>& dimension,
+    const optional<string>& range_key_start,
+    const optional<string>& table_id,
     shared_ptr<TSDescriptor>* ts_desc) const {
   DCHECK(ts_desc);
 
@@ -172,7 +251,8 @@ Status PlacementPolicy::PlaceExtraTabletReplica(
     return Status::IllegalState(
         Substitute("'$0': no info on tablet servers at location", location));
   }
-  auto replica = SelectReplica(*location_ts_descs_ptr, dimension, existing_set);
+  auto replica = SelectReplica(
+      *location_ts_descs_ptr, dimension, range_key_start, table_id, existing_set);
   if (!replica) {
     return Status::NotFound("could not find tablet server for extra replica");
   }
@@ -233,6 +313,8 @@ Status PlacementPolicy::SelectReplicaLocations(
 Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs,
                                        int nreplicas,
                                        const optional<string>& dimension,
+                                       const optional<string>& range_key_start,
+                                       const optional<string>& table_id,
                                        TSDescriptorVector* result_ts_descs) const {
   if (nreplicas > source_ts_descs.size()) {
     return Status::InvalidArgument(
@@ -244,27 +326,37 @@ Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs
   // put two replicas on the same host.
   set<shared_ptr<TSDescriptor>> already_selected;
   for (auto i = 0; i < nreplicas; ++i) {
-    auto ts = SelectReplica(source_ts_descs, dimension, already_selected);
+    auto ts = SelectReplica(
+        source_ts_descs, dimension, range_key_start, table_id, already_selected);
     CHECK(ts);
 
     // Increment the number of pending replicas so that we take this selection
     // into account when assigning replicas for other tablets of the same table.
     // This value decays back to 0 over time.
     ts->IncrementRecentReplicaCreations();
+    if (range_key_start && table_id) {
+      ts->IncrementRecentReplicaCreationsByRangeAndTable(range_key_start.value(), table_id.value());
+    }
     result_ts_descs->emplace_back(ts);
     EmplaceOrDie(&already_selected, std::move(ts));
   }
   return Status::OK();
 }
 
+// The new replica selection algorithm takes into consideration the number of
+// replicas per range of the set of replicas that is being placed. If there's a
+// tie between multiple tablet servers, the number of replicas per table of the
+// set of replicas being placed will be considered. If there's still a tie between
+// multiple tablet servers, the total number of replicas will be considered. If
+// there's still a tie, a tablet server will be randomly chosen.
 //
-// The replica selection algorithm follows the idea from
+// The old replica selection algorithm follows the idea from
 // "Power of Two Choices in Randomized Load Balancing"[1]. For each replica,
 // we randomly select two tablet servers, and then assign the replica to the
 // less-loaded one of the two. This has some nice properties:
 //
 // 1) because the initial selection of two servers is random, we get good
-//    spreading of replicas across the cluster. In contrast if we sorted by
+//    spreading of replicas across the cluster. In contrast, if we sorted by
 //    load and always picked under-loaded servers first, we'd end up causing
 //    all tablets of a new table to be placed on an empty server. This wouldn't
 //    give good load balancing of that table.
@@ -284,22 +376,39 @@ Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs
 shared_ptr<TSDescriptor> PlacementPolicy::SelectReplica(
     const TSDescriptorVector& ts_descs,
     const optional<string>& dimension,
+    const optional<string>& range_key_start,
+    const optional<string>& table_id,
     const set<shared_ptr<TSDescriptor>>& excluded) const {
-  // Pick two random servers, excluding those we've already picked.
-  // If we've only got one server left, 'two_choices' will actually
-  // just contain one element.
-  vector<shared_ptr<TSDescriptor>> two_choices;
-  ReservoirSample(ts_descs, 2, excluded, rng_, &two_choices);
-  DCHECK_LE(two_choices.size(), 2);
+  if (range_key_start && table_id) {
+    TSDescriptorVector ts_choices;
+    auto choices_size = ts_descs.size() - excluded.size();
+    ReservoirSample(ts_descs, choices_size, excluded, rng_, &ts_choices);
+    DCHECK_EQ(ts_choices.size(), choices_size);
+    if (ts_choices.size() > 1) {
+      return PickTabletServer(
+          ts_choices, range_key_start.value(), table_id.value(), dimension, rng_);
+    }
+    if (ts_choices.size() == 1) {
+      return ts_choices.front();
+    }
+    return nullptr;
+  } else {
+    // Pick two random servers, excluding those we've already picked.
+    // If we've only got one server left, 'two_choices' will actually
+    // just contain one element.
+    TSDescriptorVector two_choices;
+    ReservoirSample(ts_descs, 2, excluded, rng_, &two_choices);
+    DCHECK_LE(two_choices.size(), 2);
 
-  if (two_choices.size() == 2) {
-    // Pick the better of the two.
-    return PickBetterReplica(two_choices, dimension, rng_);
+    if (two_choices.size() == 2) {
+      // Pick the better of the two.
+      return PickBetterTabletServer(two_choices, dimension, rng_);
+    }
+    if (two_choices.size() == 1) {
+      return two_choices.front();
+    }
+    return nullptr;
   }
-  if (two_choices.size() == 1) {
-    return two_choices.front();
-  }
-  return nullptr;
 }
 
 Status PlacementPolicy::SelectLocation(

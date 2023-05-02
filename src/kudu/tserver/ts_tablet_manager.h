@@ -82,8 +82,14 @@ class TabletServer;
 // Map of tablet id -> transition reason string.
 typedef std::unordered_map<std::string, std::string> TransitionInProgressMap;
 
-// Map of dimension -> tablets number.
+// Map of dimension -> number of tablets.
 typedef std::unordered_map<std::string, int32_t> TabletNumByDimensionMap;
+
+// Map of range start key -> number of tablets in that range.
+typedef std::unordered_map<std::string, int32_t> TabletNumByRangeMap;
+
+// Map of table id -> number of tablets by each range in that table.
+typedef std::unordered_map<std::string, TabletNumByRangeMap> TabletNumByRangePerTableMap;
 
 class TransitionInProgressDeleter;
 
@@ -114,7 +120,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // the first tablet whose bootstrap failed.
   Status WaitForAllBootstrapsToFinish();
 
-  // Shut down all of the tablets, gracefully flushing before shutdown.
+  // Shut down all the tablets, gracefully flushing before shutdown.
   void Shutdown();
 
   // Create a new tablet and register it with the tablet manager. The new tablet
@@ -192,7 +198,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   void PopulateIncrementalTabletReport(master::TabletReportPB* report,
                                        const std::vector<std::string>& tablet_ids) const;
 
-  // Get all of the tablets currently hosted on this server.
+  // Get all the tablets currently hosted on this server.
   void GetTabletReplicas(
       std::vector<scoped_refptr<tablet::TabletReplica>>* replicas) const override;
 
@@ -211,6 +217,10 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Get the number of tablets in RUNNING or BOOTSTRAPPING state in each dimension.
   TabletNumByDimensionMap GetNumLiveTabletsByDimension() const;
+
+  // Get the number of tablets in RUNNING or BOOTSTRAPPING state in each range for each table.
+  // TODO(mreddy) Include tablets in INITIALIZED state, but need to check if it's tombstoned.
+  TabletNumByRangePerTableMap GetNumLiveTabletsByRangePerTable() const;
 
   Status RunAllLogGC();
 

@@ -33,6 +33,7 @@
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -1629,6 +1630,21 @@ TabletNumByDimensionMap TSTabletManager::GetNumLiveTabletsByDimension() const {
       if (dimension_label) {
         result[*dimension_label]++;
       }
+    }
+  }
+  return result;
+}
+
+TabletNumByRangePerTableMap TSTabletManager::GetNumLiveTabletsByRangePerTable() const {
+  TabletNumByRangePerTableMap result;
+  shared_lock<RWMutex> l(lock_);
+  for (const auto& entry : tablet_map_) {
+    tablet::TabletStatePB state = entry.second->state();
+    if (state == tablet::BOOTSTRAPPING ||
+        state == tablet::RUNNING) {
+      const string& table_id = entry.second->tablet_metadata()->table_id();
+      const string& range_key = entry.second->tablet_metadata()->partition().begin().range_key();
+      result[table_id][range_key]++;
     }
   }
   return result;

@@ -335,6 +335,17 @@ message TabletReportUpdatesPB {
   repeated ReportedTabletUpdatesPB tablets = 1;
 }
 
+// The number of tablets that are BOOTSTRAPPING or RUNNING per range.
+message TabletsByRangePB {
+  optional bytes range_start_key = 1;
+  optional int32 tablets = 2;
+}
+
+// The number of tablets that are BOOTSTRAPPING or RUNNING per each range for each table.
+message TabletsByRangePerTablePB {
+  repeated TabletsByRangePB num_live_tablets_by_range = 1;
+}
+
 // Heartbeat sent from the tablet-server to the master
 // to establish liveness and report back any status changes.
 message TSHeartbeatRequestPB {
@@ -370,9 +381,14 @@ message TSHeartbeatRequestPB {
   optional consensus.ReplicaManagementInfoPB replica_management_info = 7;
 
   // The number of tablets that are BOOTSTRAPPING or RUNNING in each dimension.
-  // Used by the master to determine load when creating new tablet replicas
+  // Used by the master to determine load when placing new tablet replicas
   // based on dimension.
   map<string, int32> num_live_tablets_by_dimension = 8;
+
+  // Per table, the number of tablets that are BOOTSTRAPPING or RUNNING
+  // in each range. Used by the master to determine load when placing
+  // new tablet replicas based on range and table.
+  map<string, TabletsByRangePerTablePB> num_live_tablets_by_range_per_table = 9;
 }
 
 message TSHeartbeatResponsePB {

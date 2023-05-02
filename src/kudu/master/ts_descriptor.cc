@@ -82,6 +82,7 @@ TSDescriptor::TSDescriptor(std::string perm_id)
       needs_full_report_(false),
       recent_replica_creations_(0),
       last_replica_creations_decay_(MonoTime::Now()),
+      init_time_(MonoTime::Now()),
       num_live_replicas_(0) {
 }
 
@@ -187,7 +188,7 @@ void TSDescriptor::DecayRecentReplicaCreationsUnlocked() {
   if (recent_replica_creations_ == 0) return;
 
   const double kHalflifeSecs = FLAGS_tserver_last_replica_creations_halflife_ms / 1000;
-  MonoTime now = MonoTime::Now();
+  const MonoTime now = MonoTime::Now();
   double secs_since_last_decay = (now - last_replica_creations_decay_).ToSeconds();
   recent_replica_creations_ *= pow(0.5, secs_since_last_decay / kHalflifeSecs);
 
@@ -198,10 +199,82 @@ void TSDescriptor::DecayRecentReplicaCreationsUnlocked() {
   last_replica_creations_decay_ = now;
 }
 
+// TODO(mreddy) Avoid hacky decay code by potentially getting information about recently
+// placed replicas from the system catalog, tablet server takes too long to report during
+// table creation process as requests aren't sent to servers until after selection process.
+void TSDescriptor::DecayRecentReplicaCreationsByRangeUnlocked(const string& range_start_key,
+                                                              const string& table_id) {
+  // In most cases, we won't have any recent replica creations, so
+  // we don't need to bother calling the clock, etc. Such cases include when
+  // the map for the table or the range hasn't been initialized yet, or if the value is 0.
+  if (recent_replicas_by_range_.find(table_id) == recent_replicas_by_range_.end() ||
+      recent_replicas_by_range_[table_id].first.find(range_start_key) ==
+      recent_replicas_by_range_[table_id].first.end() ||
+      recent_replicas_by_range_[table_id].first[range_start_key] == 0) {
+    return;
+  }
+
+  const double kHalflifeSecs = FLAGS_tserver_last_replica_creations_halflife_ms / 1000;
+  const MonoTime now = MonoTime::Now();
+  // If map for the table or range hasn't been initialized yet, use init_time_ as last decay.
+  MonoTime last_decay =
+      last_replica_decay_by_range_.find(table_id) == last_replica_decay_by_range_.end() ||
+      last_replica_decay_by_range_[table_id].first.find(range_start_key) ==
+      last_replica_decay_by_range_[table_id].first.end() ?
+      init_time_ : last_replica_decay_by_range_[table_id].first[range_start_key];
+  double secs_since_last_decay = (now - last_decay).ToSeconds();
+  recent_replicas_by_range_[table_id].first[range_start_key] *=
+      pow(0.5, secs_since_last_decay / kHalflifeSecs);
+
+  // If sufficiently small, reset down to 0 to take advantage of the fast path above.
+  if (recent_replicas_by_range_[table_id].first[range_start_key] < 1e-12) {
+    recent_replicas_by_range_[table_id].first[range_start_key] = 0;
+  }
+  // First time this is set, it silently initializes last_replica_decay_by_range_[table_id].second
+  // to 0. This fails monotime init check in DecayTableUnlocked() so it's set here.
+  last_replica_decay_by_range_[table_id].first[range_start_key] = now;
+  if (!last_replica_decay_by_range_[table_id].second.Initialized()) {
+    last_replica_decay_by_range_[table_id].second = now;
+  }
+}
+
+void TSDescriptor::DecayRecentReplicaCreationsByTableUnlocked(const string& table_id) {
+  // In most cases, we won't have any recent replica creations, so
+  // we don't need to bother calling the clock, etc.
+  if (recent_replicas_by_range_.find(table_id) == recent_replicas_by_range_.end() ||
+      recent_replicas_by_range_[table_id].second == 0) {
+    return;
+  }
+
+  const double kHalflifeSecs = FLAGS_tserver_last_replica_creations_halflife_ms / 1000;
+  const MonoTime now = MonoTime::Now();
+  // If map for the table hasn't been initialized yet, use init_time_ as last decay.
+  MonoTime last_decay =
+      last_replica_decay_by_range_.find(table_id) == last_replica_decay_by_range_.end() ?
+      init_time_ : last_replica_decay_by_range_[table_id].second;
+  double secs_since_last_decay = (now - last_decay).ToSeconds();
+  recent_replicas_by_range_[table_id].second *= pow(0.5, secs_since_last_decay / kHalflifeSecs);
+
+  // If sufficiently small, reset down to 0 to take advantage of the fast path above.
+  if (recent_replicas_by_range_[table_id].second < 1e-12) {
+    recent_replicas_by_range_[table_id].second = 0;
+  }
+  last_replica_decay_by_range_[table_id].second = now;
+}
+
 void TSDescriptor::IncrementRecentReplicaCreations() {
   std::lock_guard<rw_spinlock> l(lock_);
   DecayRecentReplicaCreationsUnlocked();
   recent_replica_creations_ += 1;
+}
+
+void TSDescriptor::IncrementRecentReplicaCreationsByRangeAndTable(const string& range_key_start,
+                                                                  const string& table_id) {
+  std::lock_guard<rw_spinlock> l(lock_);
+  DecayRecentReplicaCreationsByRangeUnlocked(range_key_start, table_id);
+  DecayRecentReplicaCreationsByTableUnlocked(table_id);
+  recent_replicas_by_range_[table_id].first[range_key_start]++;
+  recent_replicas_by_range_[table_id].second++;
 }
 
 double TSDescriptor::RecentReplicaCreations() {
@@ -209,6 +282,22 @@ double TSDescriptor::RecentReplicaCreations() {
   std::lock_guard<rw_spinlock> l(lock_);
   DecayRecentReplicaCreationsUnlocked();
   return recent_replica_creations_;
+}
+
+double TSDescriptor::RecentReplicaCreationsByRange(const string& range_key_start,
+                                                   const string& table_id) {
+  // NOTE: not a shared lock because of the "Decay" side effect.
+  std::lock_guard<rw_spinlock> l(lock_);
+  DecayRecentReplicaCreationsByRangeUnlocked(range_key_start, table_id);
+  DecayRecentReplicaCreationsByTableUnlocked(table_id);
+  return recent_replicas_by_range_[table_id].first[range_key_start];
+}
+
+double TSDescriptor::RecentReplicaCreationsByTable(const string& table_id) {
+  // NOTE: not a shared lock because of the "Decay" side effect.
+  std::lock_guard<rw_spinlock> l(lock_);
+  DecayRecentReplicaCreationsByTableUnlocked(table_id);
+  return recent_replicas_by_range_[table_id].second;
 }
 
 Status TSDescriptor::GetRegistration(ServerRegistrationPB* reg,
