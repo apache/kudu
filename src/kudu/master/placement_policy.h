@@ -72,27 +72,47 @@ class PlacementPolicy {
   // Select tablet servers to host the given number of replicas for a tablet.
   //
   // Parameters:
-  //   'nreplicas'  The 'nreplicas' parameter specifies the desired replication factor.
-  //   'dimension'  The 'dimension' parameter specifies the dimension information of the tablet.
-  //                If not none, place tablet replicas based on the number of tablets in a
-  //                dimension. Otherwise, based on the number of tablets at a tablet server.
-  //   'ts_descs'   The result set of tablet server descriptors is output into the 'ts_descs'
-  //                placeholder (must not be null).
+  //   'nreplicas'        The 'nreplicas' parameter specifies the desired replication factor.
+  //   'dimension'        The 'dimension' parameter specifies the dimension information of the
+  //                      tablet. If not null, place tablet replicas based on the number of tablets
+  //                      in a dimension. Otherwise, based on the number of tablets at a tserver.
+  //   'range_key_start'  The 'range_key_start' parameter specifies the start range key of the
+  //                      tablet. If not null, place tablet replicas based on number of replicas per
+  //                      this range. Otherwise, place them based on number of tablets per tserver.
+  //   'table_id'         The 'table_id' parameter specifies the table id to which the tablet
+  //                      belongs to. If not null, place tablet replicas based on number of replicas
+  //                      per this table if the number of replicas per the range to which this
+  //                      tablet belongs to is equal. Otherwise, place the replicas based on number
+  //                      of tablets at a tablet server.
+  //   'ts_descs'         The result set of tablet server descriptors is output into the 'ts_descs'
+  //                      placeholder (must not be null).
   Status PlaceTabletReplicas(int nreplicas,
                              const std::optional<std::string>& dimension,
+                             const std::optional<std::string>& range_key_start,
+                             const std::optional<std::string>& table_id,
                              TSDescriptorVector* ts_descs) const;
 
   // Select tablet server to host an additional tablet replica.
   //
   // Parameters:
-  //   'existing'  The 'existing' parameter lists current members of the tablet's
-  //               Raft configuration.
-  //   'dimension' The 'dimension' parameter specifies the dimension information of the tablet.
-  //               If not none, place tablet replicas based on the number of tablets in a
-  //               dimension. Otherwise, based on the number of tablets at a tablet server.
-  //   'ts_desc'   The new member is output into 'ts_desc' placeholer (must not be null).
+  //   'existing'         The 'existing' parameter lists current members of the tablet's
+  //                      Raft configuration.
+  //   'dimension'        The 'dimension' parameter specifies the dimension information of the
+  //                      tablet. If not null, place tablet replicas based on the number of tablets
+  //                      in a dimension. Otherwise, based on the number of tablets at a tserver.
+  //   'range_key_start'  The 'range_key_start' parameter specifies the start range key of the
+  //                      tablet. If not null, place tablet replicas based on number of replicas per
+  //                      this range. Otherwise, place them based on number of tablets per tserver.
+  //   'table_id'         The 'table_id' parameter specifies the table id to which the tablet
+  //                      belongs to. If not null, place tablet replicas based on number of replicas
+  //                      per this table if the number of replicas per the range to which this
+  //                      tablet belongs to is equal. Otherwise, place the replicas based on number
+  //                      of tablets at a tablet server.
+  //   'ts_desc'          The new member is output into 'ts_desc' placeholder (must not be null).
   Status PlaceExtraTabletReplica(TSDescriptorVector existing,
                                  const std::optional<std::string>& dimension,
+                                 const std::optional<std::string>& range_key_start,
+                                 const std::optional<std::string>& table_id,
                                  std::shared_ptr<TSDescriptor>* ts_desc) const;
 
  private:
@@ -140,6 +160,8 @@ class PlacementPolicy {
   Status SelectReplicas(const TSDescriptorVector& source_ts_descs,
                         int nreplicas,
                         const std::optional<std::string>& dimension,
+                        const std::optional<std::string>& range_key_start,
+                        const std::optional<std::string>& table_id,
                         TSDescriptorVector* result_ts_descs) const;
 
   // Given the tablet servers in 'ts_descs', pick a tablet server to host
@@ -148,6 +170,8 @@ class PlacementPolicy {
   std::shared_ptr<TSDescriptor> SelectReplica(
       const TSDescriptorVector& ts_descs,
       const std::optional<std::string>& dimension,
+      const std::optional<std::string>& range_key_start,
+      const std::optional<std::string>& table_id,
       const std::set<std::shared_ptr<TSDescriptor>>& excluded) const;
 
   // Select location for next replica of a tablet with the specified replication

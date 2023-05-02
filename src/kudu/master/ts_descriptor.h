@@ -59,8 +59,33 @@ namespace master {
 
 class TSInfoPB;
 
-// Map of dimension -> tablets number.
+// Map of dimension -> number of tablets.
 typedef std::unordered_map<std::string, int32_t> TabletNumByDimensionMap;
+
+// For a table, a map of range start key -> number of tablets for that range.
+typedef std::unordered_map<std::string, int32_t> TabletNumByRangeMap;
+
+// Map of table id -> number of tablets by each range for that table.
+typedef std::unordered_map<std::string, TabletNumByRangeMap> TabletNumByRangePerTableMap;
+
+// For a table, a pair of map of range start key -> number of times this range has
+// had a replica selected on this tablet server and the number of times the table
+// has had a replica selected on this tablet server.
+typedef std::pair<std::unordered_map<std::string, double>, double> RecentReplicaByRangesPerTable;
+
+// Map of table id -> number of times each range in the table and
+// the table itself has had a replica selected on this tablet server.
+typedef std::unordered_map<std::string, RecentReplicaByRangesPerTable> RecentReplicasByTable;
+
+// For a table, a pair of map of range start key -> decay since last replica of this range
+// has had a replica selected on this tablet server and the decay since last replica of the
+// table has had a replica selected on this tablet server.
+typedef std::pair<std::unordered_map<std::string, MonoTime>, MonoTime>
+    LastReplicaDecayByRangesPerTable;
+
+// Map of table id -> decay since last replica of each range in the table and
+// the table itself has had a replica selected on this tablet server.
+typedef std::unordered_map<std::string, LastReplicaDecayByRangesPerTable> LastReplicaDecayByTable;
 
 // Master-side view of a single tablet server.
 //
@@ -129,11 +154,32 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // server. This value will automatically decay over time.
   void IncrementRecentReplicaCreations();
 
+  // Increment the accounting of the number of replicas from the range 'range_key_start'
+  // from the table 'table_id' recently created on this server. Also increments the accounting of
+  // the number of replicas from 'table_id' recently created on this server.
+  // These values will automatically decay over time.
+  void IncrementRecentReplicaCreationsByRangeAndTable(const std::string& range_key_start,
+                                                      const std::string& table_id);
+
   // Return the number of replicas which have recently been created on this
   // TS. This number is incremented when replicas are placed on the TS, and
   // then decayed over time. This method is not 'const' because each call
   // actually performs the time-based decay.
   double RecentReplicaCreations();
+
+  // Return the number of replicas from the range identified by 'range_key_start' from the
+  // table 'table_id' which have recently been created on this TS. This number is incremented
+  // when replicas from this range are placed on the TS, and then decayed over time. This method
+  // is not 'const' because each call actually performs the time-based decay.
+  double RecentReplicaCreationsByRange(const std::string& range_key_start,
+                                       const std::string& table_id);
+
+  // Return the number of replicas from the table identified by
+  // 'table_id' which have recently been created on this TS. This number is
+  // incremented when replicas from this table are placed on the TS, and then
+  // decayed over time. This method is not 'const' because
+  // each call actually performs the time-based decay.
+  double RecentReplicaCreationsByTable(const std::string& table_id);
 
   // Set the number of live replicas (i.e. running or bootstrapping).
   void set_num_live_replicas(int n) {
@@ -148,7 +194,15 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
     num_live_tablets_by_dimension_ = std::move(num_live_tablets_by_dimension);
   }
 
-  // Return the number of live replicas (i.e running or bootstrapping).
+  // Set the number of live replicas per range for each table.
+  void set_num_live_replicas_by_range_per_table(
+      std::string table_id,
+      TabletNumByRangeMap num_live_tablets_by_table) {
+    std::lock_guard<rw_spinlock> l(lock_);
+    num_live_tablets_by_range_per_table_.emplace(table_id, num_live_tablets_by_table);
+  }
+
+  // Return the number of live replicas (i.e. running or bootstrapping).
   // If dimension is none, return the total number of replicas in the tablet server.
   // Otherwise, return the number of replicas in the dimension.
   int num_live_replicas(const std::optional<std::string>& dimension = std::nullopt) const {
@@ -161,6 +215,31 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
       return num_live_tablets;
     }
     return num_live_replicas_;
+  }
+
+  // Return the number of live replicas (i.e. running or bootstrapping)
+  // in the given range for the given table.
+  int num_live_replicas_by_range(const std::string& range_key, const std::string& table_id) const {
+    shared_lock<rw_spinlock> l(lock_);
+    int32_t num_live_tablets_by_range = 0;
+    if (ContainsKey(num_live_tablets_by_range_per_table_, table_id)) {
+      auto ranges = FindOrDie(num_live_tablets_by_range_per_table_, table_id);
+      ignore_result(FindCopy(ranges, range_key, &num_live_tablets_by_range));
+    }
+    return num_live_tablets_by_range;
+  }
+
+  // Return the number of live replicas (i.e. running or bootstrapping) in the given table.
+  int num_live_replicas_by_table(const std::string& table_id) const {
+    shared_lock<rw_spinlock> l(lock_);
+    int32_t num_live_tablets_by_table = 0;
+    if (ContainsKey(num_live_tablets_by_range_per_table_, table_id)) {
+      auto ranges = FindOrDie(num_live_tablets_by_range_per_table_, table_id);
+      for (const auto& range : ranges) {
+        num_live_tablets_by_table += range.second;
+      }
+    }
+    return num_live_tablets_by_table;
   }
 
   // Return the location of the tablet server. This returns a safe copy
@@ -190,6 +269,11 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   void DecayRecentReplicaCreationsUnlocked();
 
+  void DecayRecentReplicaCreationsByRangeUnlocked(const std::string& range_start_key,
+                                                  const std::string& table_id);
+
+  void DecayRecentReplicaCreationsByTableUnlocked(const std::string& range_start_key);
+
   void AssignLocationForTesting(std::string loc) {
     location_ = std::move(loc);
   }
@@ -210,11 +294,23 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   double recent_replica_creations_;
   MonoTime last_replica_creations_decay_;
 
+  // A map that contains the number of times this tablet server has recently been selected to
+  // create a tablet replica per range and table. This value decays back to 0 over time.
+  RecentReplicasByTable recent_replicas_by_range_;
+  LastReplicaDecayByTable last_replica_decay_by_range_;
+
+  // The time this tablet server was started, used to calculate decay for
+  // recent replica creations by range and table.
+  MonoTime init_time_;
+
   // The number of live replicas on this host, from the last heartbeat.
   int num_live_replicas_;
 
   // The number of live replicas in each dimension, from the last heartbeat.
   std::optional<TabletNumByDimensionMap> num_live_tablets_by_dimension_;
+
+  // The number of live replicas for each range for each table on this host from the last heartbeat.
+  TabletNumByRangePerTableMap num_live_tablets_by_range_per_table_;
 
   // The tablet server's location, as determined by the master at registration.
   std::optional<std::string> location_;

@@ -451,11 +451,21 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   }
 
   // 4. Update tserver soft state based on the heartbeat contents.
+  // TODO(mreddy) If --enable_range_replica_placement is set to false, don't populate ranges map.
   ts_desc->UpdateHeartbeatTime();
   ts_desc->set_num_live_replicas(req->num_live_tablets());
   ts_desc->set_num_live_replicas_by_dimension(
       TabletNumByDimensionMap(req->num_live_tablets_by_dimension().begin(),
                               req->num_live_tablets_by_dimension().end()));
+  for (auto it = req->num_live_tablets_by_range_per_table().begin();
+       it != req->num_live_tablets_by_range_per_table().end(); ++it) {
+    TabletNumByRangeMap ranges;
+    for (auto range = it->second.num_live_tablets_by_range().begin();
+         range != it->second.num_live_tablets_by_range().end(); ++range) {
+      ranges[range->range_start_key()] = range->tablets();
+    }
+    ts_desc->set_num_live_replicas_by_range_per_table(it->first, ranges);
+  }
 
   // 5. Only leaders handle tablet reports.
   if (is_leader_master && req->has_tablet_report()) {

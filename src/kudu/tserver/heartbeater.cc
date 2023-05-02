@@ -26,6 +26,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -506,6 +507,19 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
   auto num_live_tablets_by_dimension = server_->tablet_manager()->GetNumLiveTabletsByDimension();
   req.mutable_num_live_tablets_by_dimension()->insert(num_live_tablets_by_dimension.begin(),
                                                       num_live_tablets_by_dimension.end());
+  auto num_live_tablets_by_range_and_table =
+      server_->tablet_manager()->GetNumLiveTabletsByRangePerTable();
+  for (const auto& [table, ranges] : num_live_tablets_by_range_and_table) {
+    master::TabletsByRangePerTablePB table_pb;
+    table_pb.mutable_num_live_tablets_by_range()->Reserve(ranges.size());
+    for (const auto& range : ranges) {
+      master::TabletsByRangePB* range_pb = table_pb.add_num_live_tablets_by_range();
+      range_pb->set_range_start_key(range.first);
+      range_pb->set_tablets(range.second);
+    }
+    auto pair = google::protobuf::MapPair(table, table_pb);
+    req.mutable_num_live_tablets_by_range_per_table()->insert(pair);
+  }
 
   VLOG(2) << "Sending heartbeat:\n" << SecureDebugString(req);
   master::TSHeartbeatResponsePB resp;

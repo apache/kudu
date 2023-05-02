@@ -348,9 +348,9 @@ void SetMasterFlagDefaults() {
       to_string(kDefaultRpcServiceQueueLength).c_str(),
       SET_FLAGS_DEFAULT));
   // Master always reads the latest data snapshot from the system catalog and
-  // never uses any specific timestatmp in past for a read snapshot. With that,
-  // here isn't much sense to keep long chain of UNDO deltas in addition to the
-  // latest version in the MVCC. Keeping short history of deltas frees CPU
+  // never uses any specific past timestamp for a read snapshot. With that,
+  // it doesn't make sense to keep a long chain of UNDO deltas in addition to the
+  // latest version in the MVCC. Keeping a short history of deltas frees CPU
   // cycles, memory, and IO bandwidth that otherwise would be consumed by
   // background maintenance jobs running compactions. In addition, less disk
   // space is consumed to store the system tablet's data.

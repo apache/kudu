@@ -40,6 +40,7 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/mathlimits.h"
@@ -53,7 +54,9 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_test_util.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -199,7 +202,10 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
 TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
   const int kNumServers = 10;
   const int kNumTablets = 20;
-  NO_FATALS(StartCluster({}, {}, kNumServers));
+  vector<string> master_flags = {
+      "--enable_range_replica_placement=false",
+  };
+  NO_FATALS(StartCluster({}, master_flags, kNumServers));
 
   unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
@@ -399,6 +405,99 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenlyWithDimension) {
   }
 }
 
+// Tests the range aware replica placement by adding multiple tables with multiple ranges
+// and checking the replica distribution.
+TEST_F(CreateTableITest, TestSpreadReplicas) {
+  const int kNumServers = 5;
+  const int kNumReplicas = 3;
+  NO_FATALS(StartCluster({ }, { }, kNumServers));
+
+  Schema schema = Schema({ ColumnSchema("key1", INT32),
+                           ColumnSchema("key2", INT32),
+                           ColumnSchema("int_val", INT32),
+                           ColumnSchema("string_val", STRING, true) }, 2);
+  auto client_schema = KuduSchema::FromSchema(schema);
+
+  auto create_table_func = [](KuduClient* client,
+                              KuduSchema* client_schema,
+                              const string& table_name,
+                              const vector<std::pair<int32_t, int32_t>> range_bounds,
+                              const int num_buckets) {
+    unique_ptr<client::KuduTableCreator> table_creator(client->NewTableCreator());
+    table_creator->table_name(table_name)
+        .schema(client_schema)
+        .add_hash_partitions({ "key1" }, num_buckets)
+        .set_range_partition_columns({ "key2" })
+        .num_replicas(kNumReplicas);
+    for (const auto& range_bound : range_bounds) {
+      unique_ptr<KuduPartialRow> lower_bound(client_schema->NewRow());
+      RETURN_NOT_OK(lower_bound->SetInt32("key2", range_bound.first));
+      unique_ptr<KuduPartialRow> upper_bound(client_schema->NewRow());
+      RETURN_NOT_OK(upper_bound->SetInt32("key2", range_bound.second));
+      table_creator->add_range_partition(lower_bound.release(), upper_bound.release());
+    }
+    return table_creator->Create();
+  };
+
+  vector<string> tables = {"table1", "table2", "table3", "table4"};
+  vector<std::pair<int32_t, int32_t>> range_bounds =
+      { {0, 100}, {100, 200}, {200, 300}, {300, 400}};
+  const int doubleNumBuckets = 10;
+  const int numBuckets = 5;
+  for (const auto& table : tables) {
+    if (table == "table1") {
+      ASSERT_OK(create_table_func(
+          client_.get(), &client_schema, table, range_bounds, doubleNumBuckets));
+    } else {
+      ASSERT_OK(create_table_func(
+          client_.get(), &client_schema, table, range_bounds, numBuckets));
+    }
+  }
+
+  // Stats of number of replicas per range per table per tserver.
+  typedef std::unordered_map<string, std::unordered_map<string, int>> replicas_per_range_per_table;
+  std::unordered_map<int, replicas_per_range_per_table> stats;
+  for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
+    rpc::RpcController rpc;
+    tserver::ListTabletsRequestPB req;
+    tserver::ListTabletsResponsePB resp;
+    cluster_->tserver_proxy(ts_idx)->ListTablets(req, &resp, &rpc);
+    for (auto i = 0; i < resp.status_and_schema_size(); ++i) {
+      auto tablet_status = resp.status_and_schema(i).tablet_status();
+      if (tablet_status.has_partition()) {
+        Partition partition;
+        Partition::FromPB(tablet_status.partition(), &partition);
+        auto range_start_key = partition.begin().range_key();
+        auto table_name = tablet_status.table_name();
+        ++stats[ts_idx][table_name][range_start_key];
+      }
+    }
+  }
+
+  ASSERT_EQ(kNumServers, stats.size());
+  for (const auto& stat : stats) {
+    int tserver_replicas = 0;
+    // Verifies that four tables exist on each tserver.
+    ASSERT_EQ(tables.size(), stat.second.size());
+    for (const auto& table : stat.second) {
+      // Verifies that the four ranges exist for each table on each tserver.
+      ASSERT_EQ(range_bounds.size(), table.second.size());
+      for (const auto& ranges : table.second) {
+        // Since there are ten buckets instead of five for table "table1",
+        // we expect twice as many replicas (6 instead of 3).
+        if (table.first == "table1") {
+          ASSERT_EQ(doubleNumBuckets * kNumReplicas / kNumServers, ranges.second);;
+        } else {
+          ASSERT_EQ(numBuckets * kNumReplicas / kNumServers, ranges.second);
+        }
+        tserver_replicas += ranges.second;
+      }
+    }
+    // Verifies that 60 replicas are placed on each tserver, 300 total across 5 tservers.
+    ASSERT_EQ(60, tserver_replicas);
+  }
+}
+
 static void LookUpRandomKeysLoop(const std::shared_ptr<master::MasterServiceProxy>& master,
                                  const char* table_name,
                                  AtomicBool* quit) {
@@ -472,7 +571,7 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
   unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
 
   // Don't bother waiting for table creation to finish; it'll never happen
-  // because all of the tservers are dead.
+  // because all the tservers are dead.
   CHECK_OK(table_creator->table_name(kTableName)
            .schema(&client_schema)
            .set_range_partition_columns({ "key" })
@@ -688,7 +787,7 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
     }
     // Wait the 3 tablet servers heartbeat timeout and unresponsive timeout. Then catalog
     // manager will take them as unavailable tablet servers. KSCK gets the status of tablet
-    // server from tablet serve interface. Here must wait the caltalog manager to take the
+    // server from tablet serve interface. Here must wait the catalog manager to take the
     // as unavailable.
     SleepFor(MonoDelta::FromMilliseconds(3*(kTSUnresponsiveTimeoutMs + kHeartbeatIntervalMs)));
   }
@@ -703,7 +802,7 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
   {
     // Restart the first tablet server.
     NO_FATALS(cluster_->tablet_server(0)->Restart());
-    // Wait the restarted tablet server to send a heartbeat and be registered in catalog manaager.
+    // Wait the restarted tablet server to send a heartbeat and be registered in catalog manager.
     SleepFor(MonoDelta::FromMilliseconds(kHeartbeatIntervalMs));
   }
 
@@ -713,7 +812,7 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
   {
     // Restart the second tablet server.
     NO_FATALS(cluster_->tablet_server(1)->Restart());
-    // Wait the restarted tablet server to send a heartbeat and be registered in catalog manaager.
+    // Wait the restarted tablet server to send a heartbeat and be registered in catalog manager.
     SleepFor(MonoDelta::FromMilliseconds(kHeartbeatIntervalMs));
   }
 
@@ -755,7 +854,7 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
     // Add one new tablet server.
     NO_FATALS(cluster_->AddTabletServer());
   } else {
-    // Restart the stopped tablet server
+    // Restart the stopped tablet server.
     NO_FATALS(cluster_->tablet_server(2)->Restart());
   }
 

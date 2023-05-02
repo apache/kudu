@@ -29,6 +29,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -186,6 +187,7 @@ TEST_P(RebalanceStartCriteriaTest, TabletServerIsDown) {
   const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
   const vector<string> kMasterFlags = {
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+    "--enable_range_replica_placement=false",
   };
   const vector<string> kTserverFlags = {
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
@@ -241,6 +243,7 @@ TEST_P(RebalanceStartCriteriaTest, UnknownIgnoredTServer) {
   const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
   const vector<string> kMasterFlags = {
       Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+      "--enable_range_replica_placement=false",
   };
   const vector<string> kTserverFlags = {
       Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
@@ -283,6 +286,7 @@ TEST_P(RebalanceStartCriteriaTest, TabletServerInMaintenanceMode) {
   const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
   const vector<string> kMasterFlags = {
       Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+      "--enable_range_replica_placement=false",
   };
   const vector<string> kTserverFlags = {
       Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
@@ -355,6 +359,7 @@ TEST_P(RebalanceStartSafetyTest, TooManyIgnoredTservers) {
   const bool is_343_scheme = (GetParam() == Kudu1097::Enable);
   const vector<string> kMasterFlags = {
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+    "--enable_range_replica_placement=false",
   };
   const vector<string> kTserverFlags = {
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
@@ -413,7 +418,10 @@ TEST_F(RebalanceIgnoredTserversTest, Basic) {
 
   FLAGS_num_tablet_servers = 5;
   // Start a cluster with a single tablet.
-  NO_FATALS(BuildAndStart());
+  const vector<string> kMasterFlags = {
+      "--enable_range_replica_placement=false",
+  };
+  NO_FATALS(BuildAndStart({ }, kMasterFlags));
 
   // Pre-condition: all replicas on ignored tservers should be healthy or recovering.
   // Here we just ensure the cluster is healthy.
@@ -625,6 +633,7 @@ TEST_P(RebalanceParamTest, Rebalance) {
   const auto timeout = MonoDelta::FromSeconds(30);
   const vector<string> kMasterFlags = {
     "--allow_unsafe_replication_factor",
+    "--enable_range_replica_placement=false",
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
     Substitute("--tserver_unresponsive_timeout_ms=$0", kTserverUnresponsiveMs),
   };
@@ -738,6 +747,7 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
     master_flags_ = {
       Substitute("--tserver_unresponsive_timeout_ms=$0",
                  tserver_unresponsive_ms_),
+      "--enable_range_replica_placement=false",
     };
   }
 
@@ -764,6 +774,7 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
         "--raft_prepare_replacement_before_eviction=$0", is_343_scheme());
     master_flags_.push_back(scheme_flag);
     tserver_flags_.push_back(scheme_flag);
+    master_flags_.push_back("--enable_range_replica_placement=false");
 
     copy(extra_tserver_flags.begin(), extra_tserver_flags.end(),
          back_inserter(tserver_flags_));
@@ -1631,6 +1642,7 @@ TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
   const vector<string> master_flags = {
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
     Substitute("--tserver_unresponsive_timeout_ms=$0", kTserverUnresponsiveMs),
+    "--enable_range_replica_placement=false",
   };
   const vector<string> tserver_flags = {
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
@@ -2227,6 +2239,7 @@ TEST_F(IntraLocationRebalancingBasicTest, LocationsWithEmptyTabletServers) {
                                        { "/D", 2 } };
   const vector<string>& extra_master_flags = {
     "--master_client_location_assignment_enabled=false",
+    "--enable_range_replica_placement=false",
   };
 
   copy(extra_master_flags.begin(), extra_master_flags.end(),
