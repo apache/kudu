@@ -40,6 +40,9 @@ class KuduTestBase(object):
     NUM_MASTER_SERVERS = 3
     NUM_TABLET_SERVERS = 3
 
+    valid_account_id = "valid_account_id"
+    invalid_account_id = "invalid_account_id"
+
     @classmethod
     def send_and_receive(cls, proc, request):
         binary_req = (json.dumps(request) + "\n").encode("utf-8")
@@ -88,7 +91,15 @@ class KuduTestBase(object):
                        "--default_num_replicas=1",
                        "--ipki_ca_key_size=2048",
                        "--ipki_server_key_size=2048" ],
-                   "extraTserverFlags" : [ "--ipki_server_key_size=2048" ]}})
+                   "extraTserverFlags" : [ "--ipki_server_key_size=2048" ],
+                   "mini_oidc_options" :
+                   { "expiration_time" : "300000",
+                     "jwks_options" :
+                     [{ "account_id" : cls.valid_account_id,
+                       "is_valid_key" : "true" },
+                       { "account_id" : cls.invalid_account_id,
+                       "is_valid_key" : "false" },
+                       ]}}})
         cls.send_and_receive(p, { "start_cluster" : {}})
 
         # Get information about the cluster's masters.
@@ -137,3 +148,17 @@ class KuduTestBase(object):
     @classmethod
     def example_partitioning(cls):
         return Partitioning().set_range_partition_columns(['key'])
+
+    @classmethod
+    def get_jwt(cls, valid=True):
+        account_id = cls.valid_account_id
+        is_valid_key = valid
+        if not valid:
+            account_id = cls.invalid_account_id
+
+        resp = cls.send_and_receive(
+            cls.cluster_proc, { "create_jwt" : {
+                "account_id" : account_id,
+                "subject" : "test",
+                "is_valid_key" : is_valid_key}})
+        return resp['createJwt']['jwt']

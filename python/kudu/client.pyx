@@ -293,7 +293,7 @@ cdef class Client:
     def __cinit__(self, addr_or_addrs, admin_timeout_ms=None,
                   rpc_timeout_ms=None, sasl_protocol_name=None,
                   require_authentication=False,
-                  encryption_policy=ENCRYPTION_OPTIONAL):
+                  encryption_policy=ENCRYPTION_OPTIONAL, jwt=None):
         cdef:
             string c_addr
             vector[string] c_addrs
@@ -340,6 +340,9 @@ cdef class Client:
 
         if require_authentication:
             builder.require_authentication(require_authentication)
+
+        if jwt is not None:
+            builder.jwt(tobytes(jwt))
 
         builder.encryption_policy(encryption_policy)
 
