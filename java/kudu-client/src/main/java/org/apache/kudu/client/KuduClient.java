@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.Executor;
 
 import com.google.common.base.Preconditions;
+import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -30,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.master.Master.TableIdentifierPB;
+import org.apache.kudu.security.Token;
 
 /**
  * A synchronous and thread-safe client for Kudu.
@@ -464,6 +466,21 @@ public class KuduClient implements AutoCloseable {
   @InterfaceStability.Unstable
   public void importAuthenticationCredentials(byte[] authnData) {
     asyncClient.importAuthenticationCredentials(authnData);
+  }
+
+  /**
+   * Set JWT (JSON Web Token) to authenticate the client to a server.
+   * <p>
+   * @note If {@link #importAuthenticationCredentials(byte[] authnData)} and
+   * this method are called on the same object, the JWT provided with this call
+   * overrides the corresponding JWT that comes as a part of the imported
+   * authentication credentials (if present).
+   *
+   * @param jwt The JSON web token to set.
+   */
+  @InterfaceStability.Unstable
+  public void jwt(String jwt) {
+    asyncClient.jwt(jwt);
   }
 
   /**

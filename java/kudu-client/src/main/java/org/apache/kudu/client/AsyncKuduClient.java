@@ -80,6 +80,7 @@ import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
 import org.apache.kudu.master.Master.TSInfoPB;
 import org.apache.kudu.master.Master.TableIdentifierPB;
 import org.apache.kudu.master.Master.TabletLocationsPB;
+import org.apache.kudu.security.Token;
 import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.util.AsyncUtil;
 import org.apache.kudu.util.NetUtil;
@@ -1175,6 +1176,24 @@ public class AsyncKuduClient implements AutoCloseable {
   @InterfaceStability.Unstable
   public void importAuthenticationCredentials(byte[] authnData) {
     securityContext.importAuthenticationCredentials(authnData);
+  }
+
+  /**
+   * Set JWT (JSON Web Token) to authenticate the client to a server.
+   * <p>
+   * @note If {@link #importAuthenticationCredentials(byte[] authnData)} and
+   * this method are called on the same object, the JWT provided with this call
+   * overrides the corresponding JWT that comes as a part of the imported
+   * authentication credentials (if present).
+   *
+   * @param jwt The JSON web token to set.
+   */
+  @InterfaceStability.Unstable
+  public void jwt(String jwt) {
+    Token.JwtRawPB jwtPB = Token.JwtRawPB.newBuilder()
+        .setJwtData(ByteString.copyFromUtf8(jwt))
+        .build();
+    securityContext.setJsonWebToken(jwtPB);
   }
 
   /**

@@ -119,31 +119,18 @@ public class TestMiniKuduCluster {
 
   @Test(timeout = 50000)
   public void testJwt() throws Exception {
-    try {
-      MiniKuduClusterBuilder clusterBuilder = new MiniKuduCluster.MiniKuduClusterBuilder()
-              .numMasterServers(NUM_MASTERS)
-              .numTabletServers(0)
-              .enableClientJwt()
-              .addJwks("account-id", true);
-
-      harness = new KuduTestHarness(clusterBuilder);
-      harness.before();
-      harness.startAllMasterServers();
-
-      String jwt = harness.createJwtFor("account-id", "subject", true);
+    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+                                                     .numMasterServers(NUM_MASTERS)
+                                                     .numTabletServers(0)
+                                                     .enableClientJwt()
+                                                     .addJwks("account-id", true)
+                                                     .build();
+        KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build()) {
+      String jwt = cluster.createJwtFor("account-id", "subject", true);
       assertNotNull(jwt);
-      AuthenticationCredentialsPB credentials = AuthenticationCredentialsPB.newBuilder()
-              .setJwt(JwtRawPB.newBuilder()
-                      .setJwtData(ByteString.copyFromUtf8(jwt))
-                      .build())
-              .build();
 
-      AsyncKuduClient c = harness.getAsyncClient();
-      c.importAuthenticationCredentials(credentials.toByteArray());
-      c.getTablesList();
-
-    } catch (Exception e) {
-      throw new RuntimeException(e);
+      client.jwt(jwt);
+      client.getTablesList();
     }
   }
 
