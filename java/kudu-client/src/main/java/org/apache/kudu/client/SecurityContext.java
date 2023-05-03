@@ -278,6 +278,9 @@ class SecurityContext {
     if (authnToken != null) {
       pb.setAuthnToken(authnToken);
     }
+    if (jsonWebToken != null) {
+      pb.setJwt(jsonWebToken);
+    }
     pb.addAllCaCertDers(trustedCertDers);
     return pb.build().toByteArray();
   }
@@ -315,10 +318,9 @@ class SecurityContext {
       }
 
       LOG.debug("Importing authentication credentials with {} authn token, " +
-                "JWT={} , " +
-                "{} cert(s), and realUser={}",
+                "with {} JWT, {} cert(s), and realUser={}",
                 pb.hasAuthnToken() ? "one" : "no",
-                pb.hasJwt() ? pb.getJwt() : "<none>",
+                pb.hasJwt() ? "one" : "no",
                 pb.getCaCertDersCount(),
                 pb.hasRealUser() ? pb.getRealUser() : "<none>");
       if (pb.hasAuthnToken()) {
@@ -327,7 +329,11 @@ class SecurityContext {
       trustCertificates(pb.getCaCertDersList());
 
       if (pb.hasJwt()) {
-        jsonWebToken = pb.getJwt();
+        // Don't overwrite the JWT in the context if it's already set.
+        if (!jsonWebToken.hasJwtData() ||
+            (jsonWebToken.hasJwtData() && jsonWebToken.getJwtData().isEmpty())) {
+          jsonWebToken = pb.getJwt();
+        }
       }
 
       if (pb.hasRealUser()) {
