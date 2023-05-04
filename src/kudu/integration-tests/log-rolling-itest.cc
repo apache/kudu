@@ -29,6 +29,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/env.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -77,9 +78,10 @@ TEST_F(LogRollingITest, TestLogCleanupOnStartup) {
   ASSERT_OK(cluster.master()->WaitForCatalogManager());
 
   for (int i = 1; i <= 10; i++) {
-    ASSERT_EVENTUALLY([&] () {
+    AssertEventually([&] () {
         ASSERT_EQ(std::min(3, i), CountInfoLogs(cluster.master()->log_dir()));
-    });
+    }, MonoDelta::FromSeconds(60));
+    NO_PENDING_FATALS();
     cluster.master()->Shutdown();
     ASSERT_OK(cluster.master()->Restart());
   }
