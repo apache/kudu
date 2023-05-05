@@ -38,13 +38,13 @@ done
 
 if $ONLY_CHANGED; then
   FILES=$(git diff --name-only $($ROOT/build-support/get-upstream-commit.sh)  \
-    | egrep  '\.(cc|h)$' | grep -v "gutil\|trace_event\|x509_check_host")
+    | egrep  '\.(cc|h)$' | grep -v "gutil\|trace_event\|x509_check_host\|sse2neon\.h")
   if [ -z "$FILES" ]; then
     echo No source files changed
     exit 0
   fi
 else
-  FILES=$(find $ROOT/src -name '*.cc' -or -name '*.h' | grep -v "\.pb\.\|\.service\.\|\.proxy\.\|\.krpc\.\|gutil\|trace_event\|kudu_export\.h\|x509_check_host")
+  FILES=$(find $ROOT/src -name '*.cc' -or -name '*.h' | grep -v "\.pb\.\|\.service\.\|\.proxy\.\|\.krpc\.\|gutil\|trace_event\|kudu_export\.h\|x509_check_host\|sse2neon\.h")
 fi
 
 cpplint_filter="+runtime/broken_libstdcpp_regex,-whitespace/comments,-readability/todo,-readability/inheritance,-build/header_guard,-build/include_order,-legal/copyright,-build/c++11,-readability/nolint"
