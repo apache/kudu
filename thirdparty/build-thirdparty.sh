@@ -313,12 +313,13 @@ save_env
 EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
 
-if [ -n "$OS_LINUX" ] && [ -n "$F_UNINSTRUMENTED" -o -n "$F_LIBUNWIND" ]; then
-  build_libunwind
-fi
-
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_ZLIB" ]; then
   build_zlib
+fi
+
+# Put this after zlib to allow ARM builds to pick up compressed .debug_info support
+if [ -n "$OS_LINUX" ] && [ -n "$F_UNINSTRUMENTED" -o -n "$F_LIBUNWIND" ]; then
+  build_libunwind
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LZ4" ]; then

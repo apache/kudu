@@ -984,11 +984,17 @@ list(APPEND KUDU_BASE_LIBS glog)
 ##
 ## Doesn't build on OSX.
 if (NOT APPLE)
+  set(LIBUNWIND_DEPS)
+  # On ARM, libunwind takes a dependency on zlib
+  if("${ARCH_NAME}" MATCHES "aarch64")
+    set(LIBUNWIND_DEPS zlib)
+  endif()
   find_package(LibUnwind REQUIRED)
   include_directories(SYSTEM ${UNWIND_INCLUDE_DIR})
   ADD_THIRDPARTY_LIB(unwind
     STATIC_LIB "${UNWIND_STATIC_LIB}"
-    SHARED_LIB "${UNWIND_SHARED_LIB}")
+    SHARED_LIB "${UNWIND_SHARED_LIB}"
+    DEPS "${LIBUNWIND_DEPS}")
   list(APPEND KUDU_BASE_LIBS unwind)
 endif()
 
