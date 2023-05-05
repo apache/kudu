@@ -1,0 +1,191 @@
+diff --git a/squeasel.c b/squeasel.c
+index d716783..ff40dcc 100644
+--- a/squeasel.c
++++ b/squeasel.c
+@@ -904,11 +904,26 @@ int sq_get_bound_addresses(const struct sq_context *ctx, struct sockaddr_in ***a
+   return rc;
+ }
+ 
++#if !defined(NO_SSL)
++
++// Return the last OpenSSL error message and clean the thread's error queue.
++static const char *ssl_error(void) {
++  unsigned long err = ERR_peek_error();
++  if (err != 0) {
++    // Clear the thread's error queue.
++    ERR_clear_error();
++    return ERR_error_string(err, NULL);
++  }
++  return "";
++}
++
++#endif
+ 
+ // Write data to the IO channel - opened file descriptor, socket or SSL
+-// descriptor. Return number of bytes written.
++// descriptor. Return number of bytes written. The 'conn' parameter is used
++// only for reporting on errors, if any.
+ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
+-                    int64_t len) {
++                    int64_t len, struct sq_connection *conn) {
+   int64_t sent;
+   int n, k;
+ 
+@@ -922,6 +937,12 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
+ #ifndef NO_SSL
+     if (ssl != NULL) {
+       n = SSL_write(ssl, buf + sent, k);
++      if (n <= 0) {
++        int err = SSL_get_error(ssl, n);
++        if (err != 0 && ERR_peek_error() != 0) {
++          cry(conn, "SSL_write error: %s", ssl_error());
++        }
++      }
+     } else
+ #endif
+       if (fp != NULL) {
+@@ -966,6 +987,12 @@ static int pull(FILE *fp, struct sq_connection *conn, char *buf, int len) {
+ #ifndef NO_SSL
+   } else if (conn->ssl != NULL) {
+     nread = SSL_read(conn->ssl, buf, len);
++    if (nread <= 0) {
++      int err = SSL_get_error(conn->ssl, nread);
++      if (err != 0 && ERR_peek_error() != 0) {
++        cry(conn, "SSL_read error: %s", ssl_error());
++      }
++    }
+ #endif
+   } else {
+     RETRY_ON_EINTR(nread, recv(conn->client.sock, buf, (size_t) len, 0));
+@@ -1050,14 +1077,14 @@ int sq_write(struct sq_connection *conn, const void *buf, size_t len) {
+       allowed = len;
+     }
+     if ((total = push(NULL, conn->client.sock, conn->ssl, (const char *) buf,
+-                      (int64_t) allowed)) == allowed) {
++                      (int64_t) allowed, conn)) == allowed) {
+       buf = (char *) buf + total;
+       conn->last_throttle_bytes += total;
+       while (total < (int64_t) len && conn->ctx->stop_flag == 0) {
+         allowed = conn->throttle > (int64_t) len - total ?
+           (int64_t) len - total : conn->throttle;
+         if ((n = push(NULL, conn->client.sock, conn->ssl, (const char *) buf,
+-                      (int64_t) allowed)) != allowed) {
++                      (int64_t) allowed, conn)) != allowed) {
+           break;
+         }
+         sleep(1);
+@@ -1069,7 +1096,7 @@ int sq_write(struct sq_connection *conn, const void *buf, size_t len) {
+     }
+   } else {
+     total = push(NULL, conn->client.sock, conn->ssl, (const char *) buf,
+-                 (int64_t) len);
++                 (int64_t) len, conn);
+   }
+   return (int) total;
+ }
+@@ -2479,7 +2506,7 @@ static int forward_body_data(struct sq_connection *conn, FILE *fp,
+       if ((int64_t) buffered_len > conn->content_len) {
+         buffered_len = (int) conn->content_len;
+       }
+-      push(fp, sock, ssl, body, (int64_t) buffered_len);
++      push(fp, sock, ssl, body, (int64_t) buffered_len, conn);
+       conn->consumed_content += buffered_len;
+     }
+ 
+@@ -2490,7 +2517,7 @@ static int forward_body_data(struct sq_connection *conn, FILE *fp,
+         to_read = (int) (conn->content_len - conn->consumed_content);
+       }
+       nread = pull(NULL, conn, buf, to_read);
+-      if (nread <= 0 || push(fp, sock, ssl, buf, nread) != nread) {
++      if (nread <= 0 || push(fp, sock, ssl, buf, nread, conn) != nread) {
+         break;
+       }
+       conn->consumed_content += nread;
+@@ -3788,16 +3815,20 @@ static int set_uid_option(struct sq_context *ctx) {
+ static pthread_mutex_t *ssl_mutexes;
+ 
+ static int sslize(struct sq_connection *conn, SSL_CTX *s, int (*func)(SSL *)) {
+-  return (conn->ssl = SSL_new(s)) != NULL &&
+-    SSL_set_fd(conn->ssl, conn->client.sock) == 1 &&
+-    func(conn->ssl) == 1;
+-}
+-
+-// Return OpenSSL error message
+-static const char *ssl_error(void) {
+-  unsigned long err;
+-  err = ERR_get_error();
+-  return err == 0 ? "" : ERR_error_string(err, NULL);
++  conn->ssl = SSL_new(s);
++  if (conn->ssl == NULL) {
++    cry(conn, "SSL_new failed: %s", ssl_error());
++    return 0;
++  }
++  if (SSL_set_fd(conn->ssl, conn->client.sock) != 1) {
++    cry(conn, "SSL_set_fd failed: %s", ssl_error());
++    return 0;
++  }
++  if (func(conn->ssl) != 1) {
++    cry(conn, "sslize failed: %s", ssl_error());
++    return 0;
++  }
++  return 1;
+ }
+ 
+ static void ssl_locking_callback(int mode, int mutex_num, const char *file,
+@@ -3899,8 +3930,8 @@ static int set_ssl_option(struct sq_context *ctx) {
+   }
+ 
+   if ((SSL_CTX_set_options(ctx->ssl_ctx, options) & options) != options) {
+-    cry(fc(ctx), "SSL_CTX_set_options (server) error: could not set options (%d)",
+-        options);
++    cry(fc(ctx), "SSL_CTX_set_options (server) error: could not set options (%d) %s",
++        options, ssl_error());
+     return 0;
+   }
+ 
+@@ -3913,18 +3944,21 @@ static int set_ssl_option(struct sq_context *ctx) {
+   // set up certificate itself. In this case, skip sertificate setting.
+   if ((ctx->callbacks.init_ssl == NULL ||
+        !ctx->callbacks.init_ssl(ctx->ssl_ctx, ctx->user_data)) &&
+-      (SSL_CTX_use_certificate_file(ctx->ssl_ctx, pem, 1) == 0 ||
+-       SSL_CTX_use_PrivateKey_file(ctx->ssl_ctx, private_key, 1) == 0)) {
++      (SSL_CTX_use_certificate_file(ctx->ssl_ctx, pem, 1) != 1 ||
++       SSL_CTX_use_PrivateKey_file(ctx->ssl_ctx, private_key, 1) != 1)) {
+     cry(fc(ctx), "%s: cannot open %s: %s", __func__, pem, ssl_error());
+     return 0;
+   }
+ 
+   if (pem != NULL) {
+-    (void) SSL_CTX_use_certificate_chain_file(ctx->ssl_ctx, pem);
++    if (SSL_CTX_use_certificate_chain_file(ctx->ssl_ctx, pem) != 1) {
++      cry(fc(ctx), "%s: cannot open %s: %s", __func__, pem, ssl_error());
++      return 0;
++    }
+   }
+ 
+   if (ctx->config[SSL_CIPHERS] != NULL) {
+-    if (SSL_CTX_set_cipher_list(ctx->ssl_ctx, ctx->config[SSL_CIPHERS]) == 0) {
++    if (SSL_CTX_set_cipher_list(ctx->ssl_ctx, ctx->config[SSL_CIPHERS]) != 1) {
+       cry(fc(ctx), "SSL_CTX_set_cipher_list: error setting ciphers (%s): %s",
+           ctx->config[SSL_CIPHERS], ssl_error());
+       return 0;
+@@ -4018,7 +4052,9 @@ static void close_connection(struct sq_connection *conn) {
+ #ifndef NO_SSL
+   if (conn->ssl != NULL) {
+     // Run SSL_shutdown twice to ensure completly close SSL connection
+-    SSL_shutdown(conn->ssl);
++    if (SSL_shutdown(conn->ssl) < 0) {
++      cry(conn, "error shutting down SSL connection: %s", ssl_error());
++    }
+     SSL_free(conn->ssl);
+     conn->ssl = NULL;
+   }
+@@ -4053,7 +4089,7 @@ struct sq_connection *sq_connect(const char *host, int port, int use_ssl,
+ #ifndef NO_SSL
+   } else if (use_ssl && (conn->client_ssl_ctx =
+                          SSL_CTX_new(SSLv23_client_method())) == NULL) {
+-    snprintf(ebuf, ebuf_len, "SSL_CTX_new error");
++    snprintf(ebuf, ebuf_len, "SSL_CTX_new error %s", ssl_error());
+     closesocket(sock);
+     free(conn);
+     conn = NULL;
