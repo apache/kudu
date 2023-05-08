@@ -516,10 +516,12 @@ could be range-partitioned on only the timestamp column.
 #### Does Kudu have relational features like autoincrement column, PK/FK constraints, or built-in indexes?
 
 Kudu tables have a primary key that is used for uniqueness as well as providing
-quick access to individual rows. Auto-incrementing columns, foreign key constraints,
-and secondary indexes are not currently supported, but could be added in subsequent
-Kudu releases.
-
+quick access to individual rows. Kudu supports auto-incrementing columns, however auto-incrementing
+columns are system generated and users can't create a table with auto-incrementing column explicitly.
+Columns which don't fulfill the uniqueness constraint can be used to create
+[non-unique primary keys](http://kudu.apache.org/docs/schema_design.html#non-unique_primary_keys).
+Foreign key constraints, and secondary indexes are not currently supported, but
+could be added in subsequent Kudu releases.
 
 ### Transactions
 
