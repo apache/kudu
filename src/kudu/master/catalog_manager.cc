@@ -431,10 +431,6 @@ DEFINE_uint32(default_deleted_table_reserve_seconds, 0,
 TAG_FLAG(default_deleted_table_reserve_seconds, advanced);
 TAG_FLAG(default_deleted_table_reserve_seconds, runtime);
 
-DEFINE_string(ipki_private_key_password_cmd, "",
-              "A Unix command whose output returns the password to encrypt "
-              "and decrypt the IPKI root CA private key.");
-
 DECLARE_string(hive_metastore_uris);
 
 bool ValidateDeletedTableReserveSeconds()  {
@@ -1027,7 +1023,9 @@ CatalogManager::CatalogManager(Master* master)
       state_(kConstructed),
       leader_ready_term_(-1),
       hms_notification_log_event_id_(-1),
-      leader_lock_(RWMutex::Priority::PREFER_WRITING) {
+      leader_lock_(RWMutex::Priority::PREFER_WRITING),
+      ipki_private_key_password_(""),
+      tsk_private_key_password_("") {
   if (RangerAuthzProvider::IsEnabled()) {
     authz_provider_.reset(new RangerAuthzProvider(master_->fs_manager()->env(),
                                                   master_->metric_entity()));
@@ -1314,16 +1312,14 @@ Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
 
   unique_ptr<PrivateKey> ca_private_key(new PrivateKey);
   unique_ptr<Cert> ca_cert(new Cert);
-  if (FLAGS_ipki_private_key_password_cmd.empty()) {
+  if (ipki_private_key_password_.empty()) {
     RETURN_NOT_OK(ca_private_key->FromString(
         info.private_key(), DataFormat::DER));
   } else {
     RETURN_NOT_OK_PREPEND(ca_private_key->FromEncryptedString(
           info.private_key(), DataFormat::DER,
           [&](string* password){
-            RETURN_NOT_OK_PREPEND(security::GetPasswordFromShellCommand(
-                  FLAGS_ipki_private_key_password_cmd, password),
-                "could not get IPKI private key password from configured command");
+            *password = ipki_private_key_password_;
             return Status::OK();
           }
     ), "could not decrypt private key with the password returned by the configured command");
@@ -1358,14 +1354,12 @@ Status CatalogManager::StoreCertAuthorityInfo(const PrivateKey& key,
   leader_lock_.AssertAcquiredForWriting();
 
   SysCertAuthorityEntryPB info;
-  if (FLAGS_ipki_private_key_password_cmd.empty()) {
+  if (ipki_private_key_password_.empty()) {
     RETURN_NOT_OK(key.ToString(info.mutable_private_key(), DataFormat::DER));
   } else {
     RETURN_NOT_OK(key.ToEncryptedString(info.mutable_private_key(), DataFormat::DER,
           [&](string* password){
-            RETURN_NOT_OK_PREPEND(security::GetPasswordFromShellCommand(
-                  FLAGS_ipki_private_key_password_cmd, password),
-                "could not get IPKI private key password from configured command");
+            *password = ipki_private_key_password_;
             return Status::OK();
           }
     ));
@@ -5766,7 +5760,7 @@ Status CatalogManager::LoadTspkEntries(vector<TokenSigningPublicKeyPB>* keys) {
   RETURN_NOT_OK(sys_catalog_->VisitTskEntries(&loader));
   for (const auto& private_key : loader.entries()) {
     // Extract public parts of the loaded keys for the verifier.
-    TokenSigningPrivateKey tsk(private_key);
+    TokenSigningPrivateKey tsk(private_key, tsk_private_key_password_);
     TokenSigningPublicKeyPB key;
     tsk.ExportPublicKeyPB(&key);
     auto key_seq_num = key.key_seq_num();

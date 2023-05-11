@@ -22,17 +22,12 @@
 #include <string>
 #include <utility>
 
-#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/security/crypto.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
-
-DEFINE_string(tsk_private_key_password_cmd, "",
-              "A Unix command whose output returns the password to encrypt "
-              "and decrypt the token signing key");
 
 using kudu::security::PasswordCallback;
 using std::unique_ptr;
@@ -64,16 +59,15 @@ bool TokenSigningPublicKey::VerifySignature(const SignedTokenPB& token) const {
 }
 
 TokenSigningPrivateKey::TokenSigningPrivateKey(
-    const TokenSigningPrivateKeyPB& pb)
+    const TokenSigningPrivateKeyPB& pb,
+    const string& password)
     : key_(new PrivateKey) {
-  if (FLAGS_tsk_private_key_password_cmd.empty()) {
+  if (password.empty()) {
     CHECK_OK(key_->FromString(pb.rsa_key_der(), DataFormat::DER));
   } else {
     CHECK_OK(key_->FromEncryptedString(pb.rsa_key_der(), DataFormat::DER,
-          [&](string* password) {
-            RETURN_NOT_OK_PREPEND(GetPasswordFromShellCommand(
-                  FLAGS_tsk_private_key_password_cmd, password),
-                "could not get TSK private key password from configured command");
+          [&](string* p) {
+            *p = password;
             return Status::OK();
           }
     ));
@@ -88,18 +82,17 @@ TokenSigningPrivateKey::TokenSigningPrivateKey(
 }
 
 TokenSigningPrivateKey::TokenSigningPrivateKey(
-    int64_t key_seq_num, int64_t expire_time, unique_ptr<PrivateKey> key)
+    int64_t key_seq_num, int64_t expire_time, unique_ptr<PrivateKey> key,
+    const std::string& password)
     : key_(std::move(key)),
       key_seq_num_(key_seq_num),
       expire_time_(expire_time) {
-  if (FLAGS_tsk_private_key_password_cmd.empty()) {
+  if (password.empty()) {
     CHECK_OK(key_->ToString(&private_key_der_, DataFormat::DER));
   } else {
     CHECK_OK(key_->ToEncryptedString(&private_key_der_, DataFormat::DER,
-          [&](string* password){
-            RETURN_NOT_OK_PREPEND(GetPasswordFromShellCommand(
-                  FLAGS_tsk_private_key_password_cmd, password),
-                "could not get TSK private key password from configured command");
+          [&](string* p){
+            *p = password;
             return Status::OK();
           }
     ));

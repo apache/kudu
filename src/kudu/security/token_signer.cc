@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -58,7 +59,8 @@ namespace security {
 TokenSigner::TokenSigner(int64_t authn_token_validity_seconds,
                          int64_t authz_token_validity_seconds,
                          int64_t key_rotation_seconds,
-                         shared_ptr<TokenVerifier> verifier)
+                         shared_ptr<TokenVerifier> verifier,
+                         string private_key_password)
     : verifier_(verifier ? std::move(verifier)
                          : std::make_shared<TokenVerifier>()),
       authn_token_validity_seconds_(authn_token_validity_seconds),
@@ -67,7 +69,8 @@ TokenSigner::TokenSigner(int64_t authn_token_validity_seconds,
       // The TSK propagation interval is equal to the rotation interval.
       key_validity_seconds_(2 * key_rotation_seconds_ +
           std::max(authn_token_validity_seconds_, authz_token_validity_seconds)),
-      last_key_seq_num_(-1) {
+      last_key_seq_num_(-1),
+      private_key_password_(std::move(private_key_password)) {
   CHECK_GE(key_rotation_seconds_, 0);
   CHECK_GE(authn_token_validity_seconds_, 0);
   CHECK_GE(authz_token_validity_seconds_, 0);
@@ -91,7 +94,7 @@ Status TokenSigner::ImportKeys(const vector<TokenSigningPrivateKeyPB>& keys) {
     CHECK(key.has_rsa_key_der());
 
     const int64_t key_seq_num = key.key_seq_num();
-    unique_ptr<TokenSigningPrivateKey> tsk(new TokenSigningPrivateKey(key));
+    unique_ptr<TokenSigningPrivateKey> tsk(new TokenSigningPrivateKey(key, private_key_password_));
 
     // Advance the key sequence number, if needed. For the use case when the
     // history of keys sequence numbers is important, the generated keys are
@@ -211,7 +214,7 @@ Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const 
     // Generation of cryptographically strong key takes many CPU cycles;
     // do not want to block other parallel activity.
     l.unlock();
-    return GenerateSigningKey(key_seq_num, key_expiration, tsk);
+    return GenerateSigningKey(key_seq_num, key_expiration, private_key_password_, tsk);
   }
 
   if (tsk_deque_.size() >= 2) {
@@ -244,7 +247,7 @@ Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const 
     // Generation of cryptographically strong key takes many CPU cycles:
     // do not want to block other parallel activity.
     l.unlock();
-    return GenerateSigningKey(key_seq_num, key_expiration, tsk);
+    return GenerateSigningKey(key_seq_num, key_expiration, private_key_password_, tsk);
   }
 
   // It's not yet time to generate a new key.
@@ -310,6 +313,7 @@ Status TokenSigner::TryRotateKey(bool* has_rotated) {
 
 Status TokenSigner::GenerateSigningKey(int64_t key_seq_num,
                                        int64_t key_expiration,
+                                       const string& password,
                                        unique_ptr<TokenSigningPrivateKey>* tsk) {
   unique_ptr<PrivateKey> key(new PrivateKey());
   RETURN_NOT_OK_PREPEND(
@@ -317,7 +321,8 @@ Status TokenSigner::GenerateSigningKey(int64_t key_seq_num,
       "could not generate new RSA token-signing key");
   tsk->reset(new TokenSigningPrivateKey(key_seq_num,
                                         key_expiration,
-                                        std::move(key)));
+                                        std::move(key),
+                                        password));
   return Status::OK();
 }
 

@@ -929,6 +929,14 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   scoped_refptr<TableInfo> FindTableWithNameUnlocked(const std::string& table_name,
                                                      TableInfoMapType map_type = kAllTableType);
 
+  void set_ipki_private_key_password(std::string ipki_private_key_password) {
+    ipki_private_key_password_ = std::move(ipki_private_key_password);
+  }
+
+  void set_tsk_private_key_password(std::string tsk_private_key_password) {
+    tsk_private_key_password_ = std::move(tsk_private_key_password);
+  }
+
  private:
   // These tests calls ElectedAsLeaderCb() directly.
   FRIEND_TEST(kudu::client::ClientTest, TestSoftDeleteAndReserveTable);
@@ -1388,6 +1396,11 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   //
   // Always acquire this lock before state_lock_.
   RWMutex leader_lock_;
+
+  // Password for the encrypted IPKI and TSK private keys stored in the
+  // sys-catalog table.
+  std::string ipki_private_key_password_;
+  std::string tsk_private_key_password_;
 
   // Async operations are accessing some private methods
   // (TODO: this stuff should be deferred and done in the background thread)

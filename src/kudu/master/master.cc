@@ -67,6 +67,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
@@ -121,6 +122,14 @@ DEFINE_string(master_rpc_proxy_advertised_addresses, "",
               "specified via the --rpc_proxy_advertised_addresses "
               "flag for a single master.");
 TAG_FLAG(master_rpc_proxy_advertised_addresses, experimental);
+
+DEFINE_string(ipki_private_key_password_cmd, "",
+              "A Unix command whose output returns the password to encrypt "
+              "and decrypt the IPKI root CA private key.");
+
+DEFINE_string(tsk_private_key_password_cmd, "",
+              "A Unix command whose output returns the password to encrypt "
+              "and decrypt the token signing key");
 
 DECLARE_bool(txn_manager_lazily_initialized);
 DECLARE_bool(txn_manager_enabled);
@@ -254,6 +263,26 @@ Master::~Master() {
 Status Master::Init() {
   CHECK_EQ(kStopped, state_);
 
+  // As getting a password from a shell command relies on forking the process,
+  // it's best to do this in the very beginning of Init() to avoid having to
+  // fork unnecessary threads.
+  string ipki_private_key_password;
+  if (!FLAGS_ipki_private_key_password_cmd.empty()) {
+    RETURN_NOT_OK_PREPEND(security::GetPasswordFromShellCommand(
+          FLAGS_ipki_private_key_password_cmd, &ipki_private_key_password),
+        "could not get IPKI private key password from configured command");
+  }
+
+  string tsk_private_key_password;
+  if (!FLAGS_tsk_private_key_password_cmd.empty()) {
+    RETURN_NOT_OK_PREPEND(security::GetPasswordFromShellCommand(
+          FLAGS_tsk_private_key_password_cmd, &tsk_private_key_password),
+        "could not get TSK private key password from configured command");
+  }
+
+  catalog_manager_->set_ipki_private_key_password(std::move(ipki_private_key_password));
+  catalog_manager_->set_tsk_private_key_password(tsk_private_key_password);
+
   cfile::BlockCache::GetSingleton()->StartInstrumentation(
       metric_entity(), opts_.block_cache_metrics_policy());
 
@@ -280,7 +309,8 @@ Status Master::Init() {
       FLAGS_authn_token_validity_seconds,
       FLAGS_authz_token_validity_seconds,
       FLAGS_tsk_rotation_seconds,
-      messenger_->shared_token_verifier()));
+      messenger_->shared_token_verifier(),
+      std::move(tsk_private_key_password)));
 
   if (!FLAGS_master_rpc_proxy_advertised_addresses.empty()) {
     vector<HostPort> host_ports;

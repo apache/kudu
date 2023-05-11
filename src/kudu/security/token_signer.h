@@ -216,7 +216,8 @@ class TokenSigner {
   TokenSigner(int64_t authn_token_validity_seconds,
               int64_t authz_token_validity_seconds,
               int64_t key_rotation_seconds,
-              std::shared_ptr<TokenVerifier> verifier = nullptr);
+              std::shared_ptr<TokenVerifier> verifier = nullptr,
+              std::string private_key_password = "");
   ~TokenSigner();
 
   // Import token signing keys in PB format, notifying TokenVerifier
@@ -314,6 +315,7 @@ class TokenSigner {
 
   static Status GenerateSigningKey(int64_t key_seq_num,
                                    int64_t key_expiration,
+                                   const std::string& password,
                                    std::unique_ptr<TokenSigningPrivateKey>* tsk) WARN_UNUSED_RESULT;
 
   std::shared_ptr<TokenVerifier> verifier_;
@@ -337,6 +339,8 @@ class TokenSigner {
 
   // The sequence number of the last generated/imported key.
   int64_t last_key_seq_num_;
+
+  const std::string private_key_password_;
 
   // The currently active key is in the front of the queue,
   // the newly added ones are pushed into back of the queue.
