@@ -739,7 +739,6 @@ Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addr
   if (opts_.enable_client_jwt) {
     flags.emplace_back("--enable_jwt_token_auth=true");
     flags.emplace_back(Substitute("--jwks_url=$0", oidc_->url()));
-    flags.emplace_back(Substitute("--jwks_discovery_endpoint_base=$0", oidc_->url()));
   }
   if (!opts_.master_alias_prefix.empty()) {
     flags.emplace_back(Substitute("--host_for_tests=$0.$1",

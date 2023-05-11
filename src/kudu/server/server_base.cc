@@ -254,18 +254,6 @@ DEFINE_bool(enable_jwt_token_auth, false,
     "user name from the token payload.");
 TAG_FLAG(enable_jwt_token_auth, experimental);
 
-DEFINE_bool(jwt_validate_signature, true,
-    "When true, validate the signature of JWT token with pre-installed JWKS.");
-TAG_FLAG(jwt_validate_signature, experimental);
-TAG_FLAG(jwt_validate_signature, unsafe);
-
-DEFINE_bool(jwt_allow_without_tls, false,
-    "When this configuration is set to true, Kudu allows JWT authentication on "
-    "unsecure channel. This should be only enabled for testing, or development "
-    "for which TLS is handled by proxy.");
-TAG_FLAG(jwt_allow_without_tls, experimental);
-TAG_FLAG(jwt_allow_without_tls, unsafe);
-
 DEFINE_string(jwks_file_path, "",
     "File path of the pre-installed JSON Web Key Set (JWKS) for JWT verification.");
 TAG_FLAG(jwks_file_path, experimental);
@@ -284,12 +272,6 @@ DEFINE_bool(jwks_verify_server_certificate, true,
             "development / testing.");
 TAG_FLAG(jwks_verify_server_certificate, experimental);
 TAG_FLAG(jwks_verify_server_certificate, unsafe);
-
-DEFINE_string(jwks_discovery_endpoint_base, "",
-              "Base URL of the Discovery Endpoint that points to a JSON Web Key Set "
-              "(JWKS) for JWT verification. Additional query parameters, like 'accountId', "
-              "are taken from received JWTs to get the appropriate Discovery Endpoint.");
-TAG_FLAG(jwks_discovery_endpoint_base, experimental);
 
 // The targeted use-case for the wall clock jump detection is spotting sudden
 // swings of the local clock while it is still reported to be synchronized with
