@@ -853,7 +853,8 @@ enum RunCopyTableCheckArgsType {
   kTestCopyTableComplexSchema,
   kTestCopyUnpartitionedTable,
   kTestCopyTablePredicates,
-  kTestCopyTableWithStringBounds
+  kTestCopyTableWithStringBounds,
+  kTestCopyTableAutoIncrementingColumn
 };
 // Subclass of ToolTest that allows running individual test cases with different parameters to run
 // 'kudu table copy' CLI tool.
@@ -864,9 +865,10 @@ class ToolTestCopyTableParameterized :
   void SetUp() override {
     test_case_ = GetParam();
     ExternalMiniClusterOptions opts;
-    if (test_case_ == kTestCopyTableSchemaOnly) {
-      // In kTestCopyTableSchemaOnly case, we may create table with RF=3,
-      // means 3 tservers needed at least.
+    if (test_case_ == kTestCopyTableSchemaOnly ||
+        test_case_ == kTestCopyTableAutoIncrementingColumn) {
+      // In kTestCopyTableSchemaOnly and kTestCopyTableAutoIncrementingColumn
+      // case, we may create table with RF=3, means 3 tservers needed at least.
       opts.num_tablet_servers = 3;
     }
     NO_FATALS(StartExternalMiniCluster(opts));
@@ -893,6 +895,10 @@ class ToolTestCopyTableParameterized :
       ww.set_schema(schema);
       ww.Setup();
       return;
+    } else if (test_case_ == kTestCopyTableAutoIncrementingColumn) {
+      KuduSchema schema;
+      ASSERT_OK(CreateAutoIncrementingTable(&schema));
+      ww.set_schema(schema);
     }
     ww.Setup();
     ww.Start();
@@ -921,6 +927,10 @@ class ToolTestCopyTableParameterized :
         return { args };
       case kTestCopyTableDstTableNotExist:
         args.mode = TableCopyMode::INSERT_TO_NEW_TABLE;
+        return { args };
+      case kTestCopyTableAutoIncrementingColumn:
+        args.mode = TableCopyMode::INSERT_TO_NEW_TABLE;
+        args.columns = kAutoIncrementingSchemaColumns;
         return { args };
       case kTestCopyTableInsertIgnore:
         args.mode = TableCopyMode::INSERT_IGNORE_TO_EXISTING_TABLE;
@@ -1186,6 +1196,23 @@ class ToolTestCopyTableParameterized :
         .Create();
   }
 
+  Status CreateAutoIncrementingTable(KuduSchema* schema) {
+    shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(cluster_->CreateClient(nullptr, &client));
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(client::KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+    b.AddColumn("int_val")->Type(client::KuduColumnSchema::INT32);
+    b.AddColumn("string_val")->Type(client::KuduColumnSchema::STRING)->Nullable();
+    RETURN_NOT_OK(b.Build(schema));
+
+    return table_creator->table_name(kTableName)
+        .schema(schema)
+        .set_range_partition_columns({})
+        .num_replicas(3)
+        .Create();
+  }
+
   void InsertOneRowWithNullCell() {
     shared_ptr<KuduClient> client;
     ASSERT_OK(cluster_->CreateClient(nullptr, &client));
@@ -1203,12 +1230,15 @@ class ToolTestCopyTableParameterized :
 
   static const char kTableName[];
   static const char kSimpleSchemaColumns[];
+  static const char kAutoIncrementingSchemaColumns[];
   static const char kComplexSchemaColumns[];
   int test_case_ = 0;
   int64_t total_rows_ = 0;
 };
 const char ToolTestCopyTableParameterized::kTableName[] = "ToolTestCopyTableParameterized";
 const char ToolTestCopyTableParameterized::kSimpleSchemaColumns[] = "key,int_val,string_val";
+const char ToolTestCopyTableParameterized::kAutoIncrementingSchemaColumns[]
+    = "key,int_val,string_val";
 const char ToolTestCopyTableParameterized::kComplexSchemaColumns[]
     = "key_hash0,key_hash1,key_hash2,key_range,int8_val,int16_val,int32_val,int64_val,"
       "timestamp_val,string_val,bool_val,float_val,double_val,binary_val,decimal_val";
@@ -1224,7 +1254,8 @@ INSTANTIATE_TEST_SUITE_P(CopyTableParameterized,
                                            kTestCopyTableComplexSchema,
                                            kTestCopyUnpartitionedTable,
                                            kTestCopyTablePredicates,
-                                           kTestCopyTableWithStringBounds));
+                                           kTestCopyTableWithStringBounds,
+                                           kTestCopyTableAutoIncrementingColumn));
 
 void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
@@ -3725,6 +3756,49 @@ TEST_F(ToolTest, TestLoadgenAutoGenTablePartitioning) {
   expected_tablets += 4;
   ASSERT_OK(RunKuduTool(args));
   ASSERT_OK(WaitForNumTabletsOnTS(ts, expected_tablets, kTimeout));
+}
+
+TEST_F(ToolTest, TestLoadgenAutoIncrementingColumn) {
+  shared_ptr<KuduClient> client;
+  const string kTableName = "loadgen_auto_incrementing";
+  NO_FATALS(StartExternalMiniCluster());
+
+  // Create a table with auto-incrementing column and a single tablet
+  // for simplicity in the test case.
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(client::KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  b.AddColumn("int_val")->Type(client::KuduColumnSchema::INT32);
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema)
+            .set_range_partition_columns({})
+            .num_replicas(1)
+            .Create());
+
+  // Insert data into the table with perf loadgen tool
+  constexpr int kNumRows = 100;
+  NO_FATALS(RunTool(
+      Substitute("perf loadgen $0 -table_name=$1 -num_threads=1 "
+                 "-num_rows_per_thread=$2",
+                 cluster_->master()->bound_rpc_addr().ToString(),
+                 kTableName, kNumRows)));
+
+  // Scan the data back and validate
+  vector<string> lines;
+  NO_FATALS(RunActionStdoutLines(
+      Substitute("table scan $0 $1 -num_threads=1",
+                 cluster_->master()->bound_rpc_addr().ToString(),
+                 kTableName),
+      &lines));
+
+  ASSERT_EQ(kNumRows + 1, lines.size());
+  for (int i = 0; i < kNumRows; i++) {
+    ASSERT_STR_CONTAINS(lines[i], Substitute("int32 key=$0, int64 auto_incrementing_id=$1,"
+                                             " int32 int_val", i, i+1));
+  }
 }
 
 // Run the loadgen with txn-related options.

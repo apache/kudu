@@ -82,10 +82,13 @@ void GenerateDataForRow(const client::KuduSchema& schema, uint64_t record_id,
                         RNG* random, KuduPartialRow* row) {
   for (int col_idx = 0; col_idx < schema.num_columns(); col_idx++) {
     // We randomly generate the inserted data, except for the first column,
-    // which is always based on a monotonic "record id".
+    // which is always based on a monotonic "record id" and the auto-incrementing column,
+    // if present.
     uint64_t value;
     if (col_idx == 0) {
       value = record_id;
+    } else if (col_idx == schema.GetAutoIncrementingColumnIndex()) {
+      continue;
     } else {
       value = random->Next64();
     }

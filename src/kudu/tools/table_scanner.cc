@@ -750,6 +750,27 @@ Status TableScanner::StartWork(WorkType work_type) {
     }
   }
 
+  if (work_type == WorkType::kCopy) {
+    // If we are copying a table we do not want to scan the auto-incrementing column as it would be
+    // populated on the server side. This would avoid scanning an entire column of the table.
+    if (src_table->schema().GetAutoIncrementingColumnIndex() != -1) {
+      vector<string> projected_column_names;
+      for (int i = 0; i < src_table->schema().num_columns(); i++) {
+        if (src_table->schema().Column(i).name() == KuduSchema::GetAutoIncrementingColumnName()) {
+          continue;
+        }
+        projected_column_names.emplace_back(src_table->schema().Column(i).name());
+      }
+      RETURN_NOT_OK(builder.SetProjectedColumnNames(projected_column_names));
+    }
+    // Ensure both the source and destination table schemas are identical at this point.
+    client::sp::shared_ptr<KuduTable> dst_table;
+    RETURN_NOT_OK(dst_client_->get()->OpenTable(*dst_table_name_, &dst_table));
+    if (dst_table->schema() != src_table->schema()) {
+      Status::InvalidArgument("source and destination tables should have the same schema");
+    }
+  }
+
   // Set predicates.
   RETURN_NOT_OK(AddPredicates(src_table, &builder));
 
@@ -853,10 +874,29 @@ Status TableScanner::AddRow(KuduSession* session,
       break;  // unreachable
   }
 
+  // If the destination table has auto-incrementing column, we do not set it
+  // as we skip scanning the auto-incrementing column while scanning the source table.
   auto* dst_row = write_op->mutable_row();
-  memcpy(dst_row->row_data_, src_row.row_data_,
-         ContiguousRowHelper::row_size(*src_row.schema_));
-  BitmapChangeBits(dst_row->isset_bitmap_, 0, table->schema().num_columns(), true);
+  const int auto_incrementing_col_idx = table->schema().GetAutoIncrementingColumnIndex();
+  if (auto_incrementing_col_idx == Schema::kColumnNotFound) {
+    memcpy(dst_row->row_data_, src_row.row_data_,
+           ContiguousRowHelper::row_size(*src_row.schema_));
+    BitmapChangeBits(dst_row->isset_bitmap_, 0, table->schema().num_columns(), true);
+  } else {
+    int src_iterator = 0;
+    for (int dst_iterator = 0; dst_iterator < table->schema().num_columns(); dst_iterator++) {
+      if (auto_incrementing_col_idx != dst_iterator) {
+        if (src_row.IsNull(src_iterator)) {
+          RETURN_NOT_OK(dst_row->SetNull(dst_iterator));
+        } else {
+          RETURN_NOT_OK(dst_row->Set(dst_iterator, src_row.row_data_ +
+              src_row->schema_->column_offset(src_iterator)));
+        }
+        BitmapChange(dst_row->isset_bitmap_, dst_iterator, true);
+        src_iterator++;
+      }
+    }
+  }
 
   return session->Apply(write_op.release());
 }
