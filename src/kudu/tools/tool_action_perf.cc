@@ -528,6 +528,9 @@ Status GenerateRowData(Generator* key_gen, Generator* value_gen, KuduPartialRow*
   // when perform DELETE operations.
   Generator* gen = key_gen;
   for (size_t idx = 0; idx < gen_column_count; ++idx) {
+    if (columns[idx].is_auto_incrementing()) {
+      continue;
+    }
     if (idx == row->schema()->num_key_columns()) {
       gen = value_gen;
     }
