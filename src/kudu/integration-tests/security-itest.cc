@@ -80,6 +80,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(jwt_client_require_trusted_tls_cert);
 DECLARE_string(local_ip_for_outbound_sockets);
 
 using kudu::client::KuduClient;
@@ -94,6 +95,8 @@ using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::rpc::Messenger;
+using kudu::security::CreateTestSSLCertWithChainSignedByRoot;
+using kudu::security::CreateTestSSLExpiredCertWithChainSignedByRoot;
 using std::get;
 using std::string;
 using std::tuple;
@@ -513,6 +516,18 @@ void GetFullBinaryPath(string* binary) {
   (*binary) = JoinPathSegments(DirName(exe), *binary);
 }
 
+namespace {
+
+// In this testing environment, TLS certificates of Kudu servers are
+// self-signed since Kudu uses its own IPKI. To simplify the testing, the
+// certificate chain of the client isn't modified to include the Kudu's
+// IPKI CA, so it's necessary to allow the client sending its JWT to a server
+// without trusted TLS certificate.
+void RelaxJwtAuthnClientRequirements() {
+  FLAGS_jwt_client_require_trusted_tls_cert = false;
+}
+
+} // anonymous namespace
 
 TEST_F(SecurityITest, TestJwtMiniCluster) {
   SKIP_IF_SLOW_NOT_ALLOWED();
@@ -534,10 +549,10 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
   string ca_certificate_file;
   string private_key_file;
   string certificate_file;
-  ASSERT_OK(kudu::security::CreateTestSSLCertWithChainSignedByRoot(GetTestDataDirectory(),
-                                                                   &certificate_file,
-                                                                   &private_key_file,
-                                                                   &ca_certificate_file));
+  ASSERT_OK(CreateTestSSLCertWithChainSignedByRoot(GetTestDataDirectory(),
+                                                   &certificate_file,
+                                                   &private_key_file,
+                                                   &ca_certificate_file));
   // set the certs and private key for the jwks webserver
   oidc_opts.private_key_file = private_key_file;
   oidc_opts.server_certificate = certificate_file;
@@ -547,6 +562,12 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
 
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
+
+  // Wait for the catalog manager to finish initialization: this is necessary
+  // to make sure the master's TLS certificate used for RPC connections is
+  // signed with the IPKI CA, so it will list JWT as authn mechanism available.
+  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
+
   const auto* const kSubject = "kudu-user";
   const auto configure_builder_for =
       [&] (const string& account_id, KuduClientBuilder* b, const uint64_t delay_ms) {
@@ -558,7 +579,9 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     SleepFor(MonoDelta::FromMilliseconds(delay_ms));
   };
 
+  RelaxJwtAuthnClientRequirements();
   {
+    SCOPED_TRACE("Valid JWT");
     KuduClientBuilder valid_builder;
     shared_ptr<KuduClient> client;
     configure_builder_for(kValidAccount, &valid_builder, 0);
@@ -567,6 +590,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     ASSERT_OK(client->ListTables(&tables));
   }
   {
+    SCOPED_TRACE("Invalid JWT");
     KuduClientBuilder invalid_builder;
     shared_ptr<KuduClient> client;
     configure_builder_for(kInvalidAccount, &invalid_builder, 0);
@@ -575,6 +599,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     ASSERT_STR_CONTAINS(s.ToString(), "FATAL_INVALID_JWT");
   }
   {
+    SCOPED_TRACE("Expired JWT");
     KuduClientBuilder timeout_builder;
     shared_ptr<KuduClient> client;
     configure_builder_for(kValidAccount, &timeout_builder, 3 * kLifetimeMs);
@@ -583,6 +608,7 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     ASSERT_STR_CONTAINS(s.ToString(), "token expired");
   }
   {
+    SCOPED_TRACE("No JWT provided");
     KuduClientBuilder no_jwt_builder;
     shared_ptr<KuduClient> client;
     for (auto i = 0; i < cluster_->num_masters(); ++i) {
@@ -610,13 +636,13 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithInvalidCert) {
 
   // Set up certificates for the JWKS server
   string ca_certificate_file;
-  string private_key_file;
   string certificate_file;
-
-  ASSERT_OK(kudu::security::CreateTestSSLExpiredCertWithChainSignedByRoot(GetTestDataDirectory(),
-                                                                   &certificate_file,
-                                                                   &private_key_file,
-                                                                   &ca_certificate_file));
+  string private_key_file;
+  ASSERT_OK(CreateTestSSLExpiredCertWithChainSignedByRoot(
+      GetTestDataDirectory(),
+      &certificate_file,
+      &private_key_file,
+      &ca_certificate_file));
 
   // set the certs and private key for the jwks webserver
   oidc_opts.private_key_file = private_key_file;
@@ -628,6 +654,12 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithInvalidCert) {
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
 
+  // Wait for the catalog manager to finish initialization: this is necessary
+  // to make sure the master's TLS certificate used for RPC connections is
+  // signed with the IPKI CA, so it will list JWT as authn mechanism available.
+  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
+
+  RelaxJwtAuthnClientRequirements();
   KuduClientBuilder client_builder;
   for (auto i = 0; i < cluster_->num_masters(); ++i) {
     client_builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
@@ -658,10 +690,10 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithUntrustedCert) {
   string ca_certificate_file;
   string private_key_file;
   string certificate_file;
-  ASSERT_OK(kudu::security::CreateTestSSLCertWithChainSignedByRoot(GetTestDataDirectory(),
-                                                                   &certificate_file,
-                                                                   &private_key_file,
-                                                                   &ca_certificate_file));
+  ASSERT_OK(CreateTestSSLCertWithChainSignedByRoot(GetTestDataDirectory(),
+                                                   &certificate_file,
+                                                   &private_key_file,
+                                                   &ca_certificate_file));
   // set the certs and private key for the jwks webserver
   // jwks certificate verification is enabled by default, so we won't have to set it
   oidc_opts.private_key_file = private_key_file;
@@ -670,6 +702,12 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithUntrustedCert) {
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
 
+  // Wait for the catalog manager to finish initialization: this is necessary
+  // to make sure the master's TLS certificate used for RPC connections is
+  // signed with the IPKI CA, so it will list JWT as authn mechanism available.
+  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
+
+  RelaxJwtAuthnClientRequirements();
   KuduClientBuilder client_builder;
   for (auto i = 0; i < cluster_->num_masters(); ++i) {
     client_builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());

@@ -29,6 +29,7 @@ from kudu.schema import (Schema,
                          KuduValue)
 import kudu
 import datetime
+import unittest
 from pytz import utc
 
 
@@ -895,6 +896,7 @@ class TestAuthAndEncription(KuduTestBase, CompatUnitTest):
                      require_authentication=True)
 
 class TestJwt(KuduTestBase, CompatUnitTest):
+    @unittest.skip("needs Kudu IPKI CA cert to be in the client's cert bundle")
     def test_jwt(self):
         jwt = self.get_jwt(valid=True)
         client = kudu.connect(self.master_hosts, self.master_ports,

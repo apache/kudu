@@ -457,7 +457,7 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
           },
           false,
           false,
-          Status::NotAuthorized(".*client is not configured with an authentication type"),
+          Status::NotAuthorized("client is not configured with an authentication type"),
           Status::NetworkError(""),
           AuthenticationType::INVALID,
           SaslMechanism::INVALID,
@@ -1119,8 +1119,18 @@ INSTANTIATE_TEST_SUITE_P(NegotiationCombinations,
           },
           true,
           true,
-          Status::OK(),
-          Status::OK(),
+
+          // The client isn't sending its JWT to servers whose authenticity
+          // it cannot verify, otherwise its authn credentials might be stolen
+          // by an impostor. So, even if the client has a JWT handy, it doesn't
+          // advertise its JWT authentication capability since the server
+          // doesn't have a TLS certificate trusted by the client (the IPKI CA
+          // certificate isn't in the client's CA certificate bundle).
+          // With that, the server sees no authentication type presented and
+          // responds with proper NotAuthorized status code.
+          Status::NotAuthorized("client is not configured with an authentication type"),
+
+          Status::NetworkError(""),
           AuthenticationType::JWT,
           SaslMechanism::INVALID,
           true,

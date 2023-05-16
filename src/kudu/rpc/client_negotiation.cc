@@ -29,10 +29,11 @@
 #include <set>
 #include <string>
 
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
@@ -50,6 +51,7 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/slice.h"
@@ -61,6 +63,16 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif // #if defined(__APPLE__)
+
+DEFINE_bool(jwt_client_require_trusted_tls_cert, true,
+            "When this flag is set to 'false', a Kudu client is willing "
+            "to send its JSON Web Token over TLS connections to authenticate "
+            "to a Kudu server whose TLS certificate is not trusted "
+            "by the client. "
+            "NOTE: this is used for test purposes only; don't use in any other "
+            "use case due to security implications");
+TAG_FLAG(jwt_client_require_trusted_tls_cert, hidden);
+TAG_FLAG(jwt_client_require_trusted_tls_cert, unsafe);
 
 DECLARE_bool(rpc_encrypt_loopback_connections);
 
@@ -354,9 +366,13 @@ Status ClientNegotiation::SendNegotiate() {
     // reliably on clients?
     msg.add_authn_types()->mutable_token();
   }
-
-  if (jwt_) {
-    // TODO(zchovan): make sure that we are using a trusted certificate
+  if (jwt_ && (tls_context_->has_trusted_cert() ||
+               PREDICT_FALSE(!FLAGS_jwt_client_require_trusted_tls_cert))) {
+    // The client isn't sending its JWT to servers whose authenticity it cannot
+    // verify, otherwise its authn credentials might be stolen by an impostor.
+    // So, even if the client has a JWT to use, it does not advertise that
+    // it's capable of JWT-based authentication when it doesn't trust the
+    // server's TLS certificate.
     msg.add_authn_types()->mutable_jwt();
   }
 
