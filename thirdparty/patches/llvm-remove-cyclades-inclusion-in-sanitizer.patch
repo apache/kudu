@@ -33,7 +33,7 @@ index 490a04b2181b..42e43a04441d 100644
 --- a/compiler-rt/lib/sanitizer_common/sanitizer_common_interceptors_ioctl.inc
 +++ b/compiler-rt/lib/sanitizer_common/sanitizer_common_interceptors_ioctl.inc
 @@ -366,15 +366,6 @@ static void ioctl_table_fill() {
- 
+
  #if SANITIZER_LINUX && !SANITIZER_ANDROID
    // _(SIOCDEVPLIP, WRITE, struct_ifreq_sz); // the same as EQL_ENSLAVE
 -  _(CYGETDEFTHRESH, WRITE, sizeof(int));
@@ -48,11 +48,11 @@ index 490a04b2181b..42e43a04441d 100644
    _(EQL_EMANCIPATE, WRITE, struct_ifreq_sz);
    _(EQL_ENSLAVE, WRITE, struct_ifreq_sz);
    _(EQL_GETMASTRCFG, WRITE, struct_ifreq_sz);
-diff --git a/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cc b/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cc
-index b7fa6e8f7e07..564c41e3a71e 100644
---- a/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cc
-+++ b/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cc
-@@ -126,7 +126,6 @@ typedef struct user_fpregs elf_fpregset_t;
+diff --git a/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cpp b/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cpp
+index c052aa2bc950..539e64e1d628 100644
+--- a/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cpp
++++ b/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.cpp
+@@ -130,7 +130,6 @@ typedef struct user_fpregs elf_fpregset_t;
  # include <sys/procfs.h>
  #endif
  #include <sys/user.h>
@@ -60,17 +60,17 @@ index b7fa6e8f7e07..564c41e3a71e 100644
  #include <linux/if_eql.h>
  #include <linux/if_plip.h>
  #include <linux/lp.h>
-@@ -437,7 +436,6 @@ unsigned struct_ElfW_Phdr_sz = sizeof(Elf_Phdr);
- 
+@@ -444,7 +443,6 @@ unsigned struct_ElfW_Phdr_sz = sizeof(Elf_Phdr);
+
  #if SANITIZER_LINUX && !SANITIZER_ANDROID
    unsigned struct_ax25_parms_struct_sz = sizeof(struct ax25_parms_struct);
 -  unsigned struct_cyclades_monitor_sz = sizeof(struct cyclades_monitor);
  #if EV_VERSION > (0x010000)
    unsigned struct_input_keymap_entry_sz = sizeof(struct input_keymap_entry);
  #else
-@@ -803,15 +801,6 @@ unsigned struct_ElfW_Phdr_sz = sizeof(Elf_Phdr);
+@@ -810,15 +808,6 @@ unsigned struct_ElfW_Phdr_sz = sizeof(Elf_Phdr);
  #endif // SANITIZER_LINUX
- 
+
  #if SANITIZER_LINUX && !SANITIZER_ANDROID
 -  unsigned IOCTL_CYGETDEFTHRESH = CYGETDEFTHRESH;
 -  unsigned IOCTL_CYGETDEFTIMEOUT = CYGETDEFTIMEOUT;
@@ -85,33 +85,33 @@ index b7fa6e8f7e07..564c41e3a71e 100644
    unsigned IOCTL_EQL_ENSLAVE = EQL_ENSLAVE;
    unsigned IOCTL_EQL_GETMASTRCFG = EQL_GETMASTRCFG;
 diff --git a/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.h b/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.h
-index f1a4fd7d3709..8e287e53c573 100644
+index 658b0abaece8..85d024191722 100644
 --- a/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.h
 +++ b/compiler-rt/lib/sanitizer_common/sanitizer_platform_limits_posix.h
-@@ -982,7 +982,6 @@ struct __sanitizer_cookie_io_functions_t {
- 
+@@ -981,7 +981,6 @@ extern unsigned struct_vt_mode_sz;
+
  #if SANITIZER_LINUX && !SANITIZER_ANDROID
-   extern unsigned struct_ax25_parms_struct_sz;
--  extern unsigned struct_cyclades_monitor_sz;
-   extern unsigned struct_input_keymap_entry_sz;
-   extern unsigned struct_ipx_config_data_sz;
-   extern unsigned struct_kbdiacrs_sz;
-@@ -1327,15 +1326,6 @@ struct __sanitizer_cookie_io_functions_t {
+ extern unsigned struct_ax25_parms_struct_sz;
+-extern unsigned struct_cyclades_monitor_sz;
+ extern unsigned struct_input_keymap_entry_sz;
+ extern unsigned struct_ipx_config_data_sz;
+ extern unsigned struct_kbdiacrs_sz;
+@@ -1326,15 +1325,6 @@ extern unsigned IOCTL_VT_WAITACTIVE;
  #endif  // SANITIZER_LINUX
- 
+
  #if SANITIZER_LINUX && !SANITIZER_ANDROID
--  extern unsigned IOCTL_CYGETDEFTHRESH;
--  extern unsigned IOCTL_CYGETDEFTIMEOUT;
--  extern unsigned IOCTL_CYGETMON;
--  extern unsigned IOCTL_CYGETTHRESH;
--  extern unsigned IOCTL_CYGETTIMEOUT;
--  extern unsigned IOCTL_CYSETDEFTHRESH;
--  extern unsigned IOCTL_CYSETDEFTIMEOUT;
--  extern unsigned IOCTL_CYSETTHRESH;
--  extern unsigned IOCTL_CYSETTIMEOUT;
-   extern unsigned IOCTL_EQL_EMANCIPATE;
-   extern unsigned IOCTL_EQL_ENSLAVE;
-   extern unsigned IOCTL_EQL_GETMASTRCFG;
+-extern unsigned IOCTL_CYGETDEFTHRESH;
+-extern unsigned IOCTL_CYGETDEFTIMEOUT;
+-extern unsigned IOCTL_CYGETMON;
+-extern unsigned IOCTL_CYGETTHRESH;
+-extern unsigned IOCTL_CYGETTIMEOUT;
+-extern unsigned IOCTL_CYSETDEFTHRESH;
+-extern unsigned IOCTL_CYSETDEFTIMEOUT;
+-extern unsigned IOCTL_CYSETTHRESH;
+-extern unsigned IOCTL_CYSETTIMEOUT;
+ extern unsigned IOCTL_EQL_EMANCIPATE;
+ extern unsigned IOCTL_EQL_ENSLAVE;
+ extern unsigned IOCTL_EQL_GETMASTRCFG;
 -- 
 2.32.0
 
