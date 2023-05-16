@@ -290,12 +290,25 @@ class JWKSetParser {
   // EXTRACT_VALUE(Bool, bool)
 };
 
+namespace {
+
+// Utility function to handle exceptions from the jwt-cpp library.
+Status HandleEx(const char* const msg, const std::exception& e) {
+  const auto err = GetOpenSSLErrors();
+  return Status::NotAuthorized(err.empty()
+      ? Substitute("$0: $1", msg, e.what())
+      : Substitute("$0: $1 ($2)", msg, e.what(), err));
+}
+
+} // anonymous namespace
+
 //
 // JWTPublicKey member functions.
 //
 // Verify JWT's signature for the given decoded token with jwt-cpp API.
 Status JWTPublicKey::Verify(
     const DecodedJWT& decoded_jwt, const std::string& algorithm) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   // Verify if algorithms are matching.
   if (algorithm_ != algorithm) {
     return Status::NotAuthorized(
@@ -306,14 +319,8 @@ Status JWTPublicKey::Verify(
   try {
     // Call jwt-cpp API to verify token's signature.
     verifier_.verify(decoded_jwt);
-  } catch (const jwt::error::rsa_exception& e) {
-    return Status::NotAuthorized(Substitute("RSA error: $0", e.what()));
-  } catch (const jwt::error::token_verification_exception& e) {
-    return Status::NotAuthorized(
-        Substitute("Verification failed, error: $0", e.what()));
   } catch (const std::exception& e) {
-    return Status::NotAuthorized(
-        Substitute("Verification failed, error: $0", e.what()));
+    return HandleEx("JWT verification failed", e);
   }
   return Status::OK();
 }
@@ -321,6 +328,7 @@ Status JWTPublicKey::Verify(
 // Create a JWKPublicKey of HS from the JWK.
 Status HSJWTPublicKeyBuilder::CreateJWKPublicKey(
     const JsonKVMap& kv_map, unique_ptr<JWTPublicKey>* pub_key_out) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   // Octet Sequence keys for HS256, HS384 or HS512.
   // JWK Sample:
   // {
@@ -355,8 +363,7 @@ Status HSJWTPublicKeyBuilder::CreateJWKPublicKey(
       return Status::InvalidArgument(Substitute("Invalid 'alg' property value: '$0'", algorithm));
     }
   } catch (const std::exception& e) {
-    return Status::NotAuthorized(
-        Substitute("Failed to initialize verifier, error: $0", e.what()));
+    return HandleEx("failed to initialize verifier", e);
   }
   *pub_key_out = std::move(jwt_pub_key);
   return Status::OK();
@@ -365,6 +372,7 @@ Status HSJWTPublicKeyBuilder::CreateJWKPublicKey(
 // Create a JWKPublicKey of RSA from the JWK.
 Status RSAJWTPublicKeyBuilder::CreateJWKPublicKey(
     const JsonKVMap& kv_map, unique_ptr<JWTPublicKey>* pub_key_out) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   // JWK Sample:
   // {
   //   "kty":"RSA",
@@ -411,11 +419,8 @@ Status RSAJWTPublicKeyBuilder::CreateJWKPublicKey(
     } else {
       return Status::InvalidArgument(Substitute("Invalid 'alg' property value: '$0'", algorithm));
     }
-  } catch (const jwt::error::rsa_exception& e) {
-    return Status::NotAuthorized(Substitute("RSA error: $0", e.what()));
   } catch (const std::exception& e) {
-    return Status::NotAuthorized(
-        Substitute("Failed to initialize verifier, error: $0", e.what()));
+    return HandleEx("failed to initialize verifier", e);
   }
 
   *pub_key_out = std::move(jwt_pub_key);
@@ -425,6 +430,7 @@ Status RSAJWTPublicKeyBuilder::CreateJWKPublicKey(
 // Convert JWK's RSA public key to PEM format using OpenSSL API.
 Status RSAJWTPublicKeyBuilder::ConvertJwkToPem(
     const string& base64_n, const string& base64_e, string& pub_key) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   string str_n;
   if (!WebSafeBase64Unescape(base64_n, &str_n)) {
     return Status::InvalidArgument("malformed 'n' key component");
@@ -456,6 +462,7 @@ Status RSAJWTPublicKeyBuilder::ConvertJwkToPem(
 // Create a JWKPublicKey of EC (ES256, ES384 or ES512) from the JWK.
 Status ECJWTPublicKeyBuilder::CreateJWKPublicKey(
         const JsonKVMap& kv_map, unique_ptr<JWTPublicKey>* pub_key_out) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   // JWK Sample:
   // {
   //   "kty":"EC",
@@ -529,11 +536,8 @@ Status ECJWTPublicKeyBuilder::CreateJWKPublicKey(
       DCHECK(algorithm == "es512");
       jwt_pub_key = new ES512JWTPublicKey(algorithm, pub_key);
     }
-  } catch (const jwt::error::ecdsa_exception& e) {
-    return Status::NotAuthorized(Substitute("EC error: $0", e.what()));
   } catch (const std::exception& e) {
-    return Status::NotAuthorized(
-        Substitute("Failed to initialize verifier, error: $0", e.what()));
+    return HandleEx("failed to initialize verifier", e);
   }
 
   pub_key_out->reset(jwt_pub_key);
@@ -545,6 +549,7 @@ Status ECJWTPublicKeyBuilder::ConvertJwkToPem(int eccgrp,
                                               const string& base64_x,
                                               const string& base64_y,
                                               string& pub_key) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   string ascii_x;
   if (!WebSafeBase64Unescape(base64_x, &ascii_x)) {
     return Status::InvalidArgument("malformed 'x' key component");
@@ -826,6 +831,7 @@ JWKSSnapshotPtr JWTHelper::GetJWKS() const {
 
 // Decode the given JWT token.
 Status JWTHelper::Decode(const string& token, UniqueJWTDecodedToken& decoded_token_out) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   try {
     // Call jwt-cpp API to decode the JWT token with default jwt::json_traits
     // (jwt::picojson_traits).
@@ -843,17 +849,18 @@ Status JWTHelper::Decode(const string& token, UniqueJWTDecodedToken& decoded_tok
     VLOG(3) << msg.str();
 #endif
   } catch (const std::invalid_argument& e) {
-    return Status::NotAuthorized(
-        Substitute("Token is not in correct format, error: $0", e.what()));
+    return HandleEx("token is not in correct format", e);
   } catch (const std::runtime_error& e) {
-    return Status::NotAuthorized(
-        Substitute("Base64 decoding failed or invalid json, error: $0", e.what()));
+    return HandleEx("base64 decoding failed or invalid JSON", e);
+  } catch (const std::exception& e) {
+    return HandleEx("unexpected error while decoding JWT", e);
   }
   return Status::OK();
 }
 
 // Validate the token's signature with public key.
 Status JWTHelper::Verify(const JWTDecodedToken* decoded_token) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   DCHECK(initialized_);
 
   const auto& decoded_jwt = decoded_token->decoded_jwt_;
@@ -923,20 +930,18 @@ Status JWTHelper::Verify(const JWTDecodedToken* decoded_token) const {
       return status;
     }
   } catch (const std::bad_cast& e) {
-    return Status::NotAuthorized(
-        Substitute("Claim was present but not a string, error: $0", e.what()));
+    return HandleEx("claim was present but not a string", e);
   } catch (const jwt::error::claim_not_present_exception& e) {
-    return Status::NotAuthorized(
-        Substitute("Claim not present in JWT token, error $0", e.what()));
+    return HandleEx("claim not present in JWT token", e);
   } catch (const std::exception& e) {
-    return Status::NotAuthorized(
-        Substitute("Token verification failed, error: $0", e.what()));
+    return HandleEx("token verification failed", e);
   }
   return Status::OK();
 }
 
 Status JWTHelper::GetCustomClaimUsername(const JWTDecodedToken* decoded_token,
     const string& jwt_custom_claim_username, string& username) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   DCHECK(!jwt_custom_claim_username.empty());
   const auto& decoded_jwt = decoded_token->decoded_jwt_;
   try {
@@ -952,12 +957,13 @@ Status JWTHelper::GetCustomClaimUsername(const JWTDecodedToken* decoded_token,
       return Status::NotAuthorized(
           Substitute("Claim '$0' is empty", jwt_custom_claim_username));
     }
-
   } catch (const std::runtime_error& e) {
-    return Status::NotAuthorized(
-        Substitute("Claim '$0' was not present, error: $1", jwt_custom_claim_username,
-            e.what()));
+    return HandleEx(Substitute("claim '$0' was not present",
+                               jwt_custom_claim_username).c_str(), e);
+  } catch (const std::exception& e) {
+    return HandleEx("unexpected error while processing JWT claim", e);
   }
+
   return Status::OK();
 }
 

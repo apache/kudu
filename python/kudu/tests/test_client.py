@@ -901,7 +901,7 @@ class TestJwt(KuduTestBase, CompatUnitTest):
                               require_authentication=True, jwt=jwt)
 
         jwt = self.get_jwt(valid=False)
-        error_msg = ('FATAL_INVALID_JWT: Not authorized: Verification failed, error: ' +
+        error_msg = ('FATAL_INVALID_JWT: Not authorized: JWT verification failed: ' +
         'failed to verify signature: VerifyFinal failed')
         with self.assertRaisesRegex(kudu.KuduBadStatus, error_msg):
             client = kudu.connect(self.master_hosts, self.master_ports,
