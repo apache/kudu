@@ -699,11 +699,9 @@ TEST(JwtUtilTest, VerifyJwtFailMismatchingAlgorithms) {
   status = JWTHelper::Decode(token, decoded_token);
   EXPECT_OK(status);
   status = jwt_helper.Verify(decoded_token.get());
-  ASSERT_FALSE(status.ok());
-  ASSERT_TRUE(status.ToString().find(
-                  "JWT algorithm 'rs512' is not matching with JWK algorithm 'rs256'")
-      != std::string::npos)
-      << " Actual error: " << status.ToString();
+  ASSERT_TRUE(status.IsNotAuthorized()) << status.ToString();
+  ASSERT_STR_CONTAINS(status.ToString(),
+      "JWT algorithm 'rs512' is not matching with JWK algorithm 'rs256'");
 }
 
 TEST(JwtUtilTest, VerifyJwtFailKeyNotFound) {
@@ -728,10 +726,8 @@ TEST(JwtUtilTest, VerifyJwtFailKeyNotFound) {
   status = JWTHelper::Decode(token, decoded_token);
   EXPECT_OK(status);
   status = jwt_helper.Verify(decoded_token.get());
-  ASSERT_FALSE(status.ok());
-  ASSERT_TRUE(
-      status.ToString().find("Invalid JWK ID in the JWT token") != std::string::npos)
-      << " Actual error: " << status.ToString();
+  ASSERT_TRUE(status.IsNotAuthorized()) << status.ToString();
+  ASSERT_STR_CONTAINS(status.ToString(), "Invalid JWK ID in the JWT token");
 }
 
 TEST(JwtUtilTest, VerifyJwtTokenWithoutKeyId) {
@@ -798,9 +794,8 @@ TEST(JwtUtilTest, VerifyJwtFailTokenWithoutSignature) {
   status = JWTHelper::Decode(token, decoded_token);
   EXPECT_OK(status);
   status = jwt_helper.Verify(decoded_token.get());
-  ASSERT_FALSE(status.ok());
-  ASSERT_TRUE(status.ToString().find("Unsecured JWT") != std::string::npos)
-      << " Actual error: " << status.ToString();
+  ASSERT_TRUE(status.IsNotAuthorized()) << status.ToString();
+  ASSERT_STR_CONTAINS(status.ToString(), "Unsecured JWT");
 }
 
 TEST(JwtUtilTest, VerifyJwtFailExpiredToken) {
@@ -829,10 +824,8 @@ TEST(JwtUtilTest, VerifyJwtFailExpiredToken) {
   status = JWTHelper::Decode(token, decoded_token);
   EXPECT_OK(status);
   status = jwt_helper.Verify(decoded_token.get());
-  ASSERT_FALSE(status.ok());
-  ASSERT_TRUE(status.ToString().find("Verification failed, error: token expired")
-      != std::string::npos)
-      << " Actual error: " << status.ToString();
+  ASSERT_TRUE(status.IsNotAuthorized()) << status.ToString();
+  ASSERT_STR_CONTAINS(status.ToString(), "JWT verification failed: token expired");
 }
 
 namespace {
