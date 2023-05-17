@@ -32,14 +32,14 @@ class RangerKMSClient {
     : kms_urls_(strings::Split(kms_url, ",", strings::SkipEmpty())),
       cluster_key_name_(std::move(cluster_key_name)) {}
 
-  Status DecryptKey(const std::string& encrypted_key,
-                    const std::string& iv,
-                    const std::string& key_version,
-                    std::string* decrypted_key);
+  Status DecryptEncryptionKey(const std::string& encryption_key,
+                              const std::string& iv,
+                              const std::string& key_version,
+                              std::string* decrypted_key);
 
-  Status GenerateEncryptedServerKey(std::string* encrypted_key,
-                                    std::string* iv,
-                                    std::string* key_version);
+  Status GenerateEncryptionKey(std::string* encryption_key,
+                               std::string* iv,
+                               std::string* key_version);
 
  private:
   std::vector<std::string> kms_urls_;

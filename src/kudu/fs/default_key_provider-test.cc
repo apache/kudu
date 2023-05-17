@@ -35,13 +35,13 @@ class DefaultKeyProviderTest : public KuduTest {
 };
 
 TEST_F(DefaultKeyProviderTest, TestEncryptAndDecrypt) {
-  string encrypted_key;
+  string encryption_key;
   string iv;
   string version;
   string decrypted_key;
-  ASSERT_OK(key_provider_.GenerateEncryptedServerKey(&encrypted_key, &iv, &version));
-  ASSERT_OK(key_provider_.DecryptServerKey(encrypted_key, iv, version, &decrypted_key));
-  ASSERT_NE(encrypted_key, decrypted_key);
+  ASSERT_OK(key_provider_.GenerateEncryptionKey(&encryption_key, &iv, &version));
+  ASSERT_OK(key_provider_.DecryptEncryptionKey(encryption_key, iv, version, &decrypted_key));
+  ASSERT_NE(encryption_key, decrypted_key);
 }
 
 } // namespace security

@@ -247,21 +247,21 @@ Status Check(const RunnerContext& /*context*/) {
 Status Format(const RunnerContext& /*context*/) {
   FsManager fs_manager(Env::Default());
   optional<string> uuid;
-  optional<string> server_key;
-  optional<string> server_key_iv;
-  optional<string> server_key_version;
+  optional<string> encryption_key;
+  optional<string> encryption_key_iv;
+  optional<string> encryption_key_version;
   if (!FLAGS_uuid.empty()) {
     uuid = FLAGS_uuid;
   }
   if (!FLAGS_server_key.empty()
       && !FLAGS_server_key_iv.empty()
       && !FLAGS_server_key_version.empty()) {
-    server_key = FLAGS_server_key;
-    server_key_iv = FLAGS_server_key_iv;
-    server_key_version = FLAGS_server_key_version;
+    encryption_key = FLAGS_server_key;
+    encryption_key_iv = FLAGS_server_key_iv;
+    encryption_key_version = FLAGS_server_key_version;
   }
-  return fs_manager.CreateInitialFileSystemLayout(uuid, server_key,
-                                                  server_key_iv, server_key_version);
+  return fs_manager.CreateInitialFileSystemLayout(uuid, encryption_key,
+                                                  encryption_key_iv, encryption_key_version);
 }
 
 Status DumpUuid(const RunnerContext& /*context*/) {

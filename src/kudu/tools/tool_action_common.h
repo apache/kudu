@@ -246,8 +246,8 @@ Status MasterAddressesToSet(
 Status VerifyMasterAddressList(const std::vector<std::string>& master_addresses);
 
 // Parses the instance file set by the 'instance_file' flag, and sets the
-// server key on the default Env.
-Status SetServerKey();
+// encryption key on the default Env.
+Status SetEncryptionKey();
 
 // A table of data to present to the user.
 //

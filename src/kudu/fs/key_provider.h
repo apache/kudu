@@ -24,21 +24,21 @@
 namespace kudu {
 namespace security {
 
-// An interface for encrypting and decrypting Kudu's server keys.
+// An interface for encrypting and decrypting Kudu's encryption keys.
 class KeyProvider {
  public:
   virtual ~KeyProvider() = default;
 
-  // Decrypts the server key.
-  virtual Status DecryptServerKey(const std::string& encrypted_server_key,
-                                  const std::string& iv,
-                                  const std::string& key_version,
-                                  std::string* server_key) = 0;
+  // Decrypts the encryption key.
+  virtual Status DecryptEncryptionKey(const std::string& encryption_key,
+                                      const std::string& iv,
+                                      const std::string& key_version,
+                                      std::string* decrypted_key) = 0;
 
-  // Generates an encrypted server key.
-  virtual Status GenerateEncryptedServerKey(std::string* encrypted_server_key,
-                                            std::string* iv,
-                                            std::string* key_version) = 0;
+  // Generates an encryption key (the generated key is encrypted).
+  virtual Status GenerateEncryptionKey(std::string* encryption_key,
+                                       std::string* iv,
+                                       std::string* key_version) = 0;
 
 };
 } // namespace security

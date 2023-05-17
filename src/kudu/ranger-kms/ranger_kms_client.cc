@@ -42,17 +42,17 @@ using strings::WebSafeBase64Unescape;
 namespace kudu {
 namespace security {
 
-Status RangerKMSClient::DecryptKey(const string& encrypted_key,
-                                   const string& iv,
-                                   const string& key_version,
-                                   string* decrypted_key) {
+Status RangerKMSClient::DecryptEncryptionKey(const string& encryption_key,
+                                             const string& iv,
+                                             const string& key_version,
+                                             string* decrypted_key) {
   EasyJson payload;
   payload.Set("name", cluster_key_name_);
   string iv_plain = a2b_hex(iv);
   string iv_b64;
   WebSafeBase64Escape(iv_plain, &iv_b64);
   payload.Set("iv", iv_b64);
-  string eek_plain = a2b_hex(encrypted_key);
+  string eek_plain = a2b_hex(encryption_key);
   string eek_b64;
   WebSafeBase64Escape(eek_plain, &eek_b64);
   payload.Set("material", eek_b64);
@@ -67,7 +67,7 @@ Status RangerKMSClient::DecryptKey(const string& encrypted_key,
   faststring resp;
   RETURN_NOT_OK_PREPEND(
       curl.PostToURL(urls, payload.ToString(), &resp, {"Content-Type: application/json"}),
-      "failed to decrypt server key");
+      "failed to decrypt encryption key");
   JsonReader r(resp.ToString());
   RETURN_NOT_OK(r.Init());
   string dek_b64;
@@ -78,9 +78,9 @@ Status RangerKMSClient::DecryptKey(const string& encrypted_key,
   return Status::OK();
 }
 
-Status RangerKMSClient::GenerateEncryptedServerKey(string* encrypted_key,
-                                                   string* iv,
-                                                   string* key_version) {
+Status RangerKMSClient::GenerateEncryptionKey(string* encryption_key,
+                                              string* iv,
+                                              string* key_version) {
   EasyCurl curl;
   curl.set_auth(CurlAuthType::SPNEGO);
   vector<string> urls;
@@ -90,7 +90,7 @@ Status RangerKMSClient::GenerateEncryptedServerKey(string* encrypted_key,
                       url, cluster_key_name_));
   }
   faststring resp;
-  RETURN_NOT_OK_PREPEND(curl.FetchURL(urls, &resp), "failed to generate server key");
+  RETURN_NOT_OK_PREPEND(curl.FetchURL(urls, &resp), "failed to generate encryption key");
   JsonReader r(resp.ToString());
   RETURN_NOT_OK(r.Init());
   vector<const Value*> keys;
@@ -113,7 +113,7 @@ Status RangerKMSClient::GenerateEncryptedServerKey(string* encrypted_key,
   if (!WebSafeBase64Unescape(key_b64, &key_plain)) {
     return Status::Corruption("Invalid encryption key received");
   }
-  *encrypted_key = b2a_hex(key_plain);
+  *encryption_key = b2a_hex(key_plain);
   return Status::OK();
 }
 

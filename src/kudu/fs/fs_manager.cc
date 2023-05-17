@@ -505,16 +505,16 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   }
 
   if (!server_key().empty() && key_provider_) {
-    string server_key;
-    RETURN_NOT_OK(key_provider_->DecryptServerKey(this->server_key(),
-                                                  this->server_key_iv(),
-                                                  this->server_key_version(),
-                                                  &server_key));
-    // 'server_key' is a hexadecimal string and SetEncryptionKey expects bits
+    string decrypted_key;
+    RETURN_NOT_OK(key_provider_->DecryptEncryptionKey(this->server_key(),
+                                                      this->server_key_iv(),
+                                                      this->server_key_version(),
+                                                      &decrypted_key));
+    // 'decrypted_key' is a hexadecimal string and SetEncryptionKey expects bits
     // (hex / 2 = bytes * 8 = bits).
     env_->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
-                             a2b_hex(server_key).c_str()),
-                           server_key.length() * 4);
+                             a2b_hex(decrypted_key).c_str()),
+                           decrypted_key.length() * 4);
   }
 
   // Open the directory manager if it has not been opened already.
@@ -597,9 +597,9 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
 }
 
 Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
-                                                optional<string> server_key,
-                                                optional<string> server_key_iv,
-                                                optional<string> server_key_version) {
+                                                optional<string> encryption_key,
+                                                optional<string> encryption_key_iv,
+                                                optional<string> encryption_key_version) {
   CHECK(!opts_.read_only);
 
   RETURN_NOT_OK(Init());
@@ -624,9 +624,9 @@ Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
   // Files/directories created will NOT be synchronized to disk.
   InstanceMetadataPB metadata;
   RETURN_NOT_OK_PREPEND(CreateInstanceMetadata(std::move(uuid),
-                                               std::move(server_key),
-                                               std::move(server_key_iv),
-                                               std::move(server_key_version),
+                                               std::move(encryption_key),
+                                               std::move(encryption_key_iv),
+                                               std::move(encryption_key_version),
                                                &metadata),
                         "unable to create instance metadata");
   RETURN_NOT_OK_PREPEND(FsManager::CreateFileSystemRoots(
@@ -722,9 +722,9 @@ Status FsManager::CreateFileSystemRoots(
 }
 
 Status FsManager::CreateInstanceMetadata(optional<string> uuid,
-                                         optional<string> server_key,
-                                         optional<string> server_key_iv,
-                                         optional<string> server_key_version,
+                                         optional<string> encryption_key,
+                                         optional<string> encryption_key_iv,
+                                         optional<string> encryption_key_version,
                                          InstanceMetadataPB* metadata) {
   if (uuid) {
     string canonicalized_uuid;
@@ -733,20 +733,20 @@ Status FsManager::CreateInstanceMetadata(optional<string> uuid,
   } else {
     metadata->set_uuid(oid_generator_.Next());
   }
-  if (server_key && server_key_iv && server_key_version) {
-    metadata->set_server_key(*server_key);
-    metadata->set_server_key_iv(*server_key_iv);
-    metadata->set_server_key_version(*server_key_version);
-  } else if (server_key || server_key_iv || server_key_version) {
+  if (encryption_key && encryption_key_iv && encryption_key_version) {
+    metadata->set_server_key(*encryption_key);
+    metadata->set_server_key_iv(*encryption_key_iv);
+    metadata->set_server_key_version(*encryption_key_version);
+  } else if (encryption_key || encryption_key_iv || encryption_key_version) {
     return Status::InvalidArgument(
-        "'server_key', 'server_key_iv', and 'server_key_version' must be specified "
+        "'encryption_key', 'encryption_key_iv', and 'encryption_key_version' must be specified "
         "together (either all of them must be specified, or none of them).");
   } else if (FLAGS_encrypt_data_at_rest) {
     string key_version;
     RETURN_NOT_OK_PREPEND(
-        key_provider_->GenerateEncryptedServerKey(metadata->mutable_server_key(),
-                                                  metadata->mutable_server_key_iv(),
-                                                  &key_version),
+        key_provider_->GenerateEncryptionKey(metadata->mutable_server_key(),
+                                             metadata->mutable_server_key_iv(),
+                                             &key_version),
         "failed to generate encrypted server key");
     metadata->set_server_key_version(key_version);
   }

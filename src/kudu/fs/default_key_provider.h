@@ -30,29 +30,29 @@ namespace security {
 class DefaultKeyProvider : public KeyProvider {
 public:
   ~DefaultKeyProvider() override {}
-  Status DecryptServerKey(const std::string& encrypted_server_key,
-                          const std::string& /*iv*/,
-                          const std::string& /*key_version*/,
-                          std::string* server_key) override {
-    *server_key = strings::a2b_hex(encrypted_server_key);
+  Status DecryptEncryptionKey(const std::string& encryption_key,
+                              const std::string& /*iv*/,
+                              const std::string& /*key_version*/,
+                              std::string* decrypted_key) override {
+    *decrypted_key = strings::a2b_hex(encryption_key);
 #ifdef __linux__
-    memfrob(server_key->data(), server_key->length());
+    memfrob(decrypted_key->data(), decrypted_key->length());
 #else
     // On Linux, memfrob() bitwise XORs the data with the magic number that is
     // the answer to the ultimate question of life, the universe, and
     // everything. On Mac, we do this manually.
     const uint8_t kMagic = 42;
-    for (auto i = 0; i < server_key->length(); ++i) {
-      server_key->data()[i] ^= kMagic;
+    for (auto i = 0; i < decrypted_key->length(); ++i) {
+      decrypted_key->data()[i] ^= kMagic;
     }
 #endif
-    *server_key = strings::b2a_hex(*server_key);
+    *decrypted_key = strings::b2a_hex(*decrypted_key);
     return Status::OK();
   }
 
-  Status GenerateEncryptedServerKey(std::string* server_key,
-                                    std::string* iv,
-                                    std::string* key_version) override {
+  Status GenerateEncryptionKey(std::string* encryption_key,
+                               std::string* iv,
+                               std::string* key_version) override {
     uint8_t key_bytes[32];
     uint8_t iv_bytes[32];
     int num_bytes = 16;
@@ -63,8 +63,8 @@ public:
     OPENSSL_RET_NOT_OK(RAND_bytes(iv_bytes, num_bytes),
                        "Failed to generate random key");
     strings::b2a_hex(iv_bytes, iv, num_bytes);
-    DecryptServerKey(dek, *iv, *key_version, server_key);
-    *key_version = "clusterkey@0";
+    DecryptEncryptionKey(dek, *iv, *key_version, encryption_key);
+    *key_version = "encryptionkey@0";
     return Status::OK();
   }
 };

@@ -751,7 +751,7 @@ Status GenerateHeader(EncryptionHeader* eh) {
   return Status::OK();
 }
 
-Status WriteEncryptionHeader(int fd, const string& filename, const EncryptionHeader& server_key,
+Status WriteEncryptionHeader(int fd, const string& filename, const EncryptionHeader& encryption_key,
                              const EncryptionHeader& eh) {
   vector<Slice> headerv = { kEncryptionHeaderMagic };
   uint32_t key_size;
@@ -781,7 +781,7 @@ Status WriteEncryptionHeader(int fd, const string& filename, const EncryptionHea
   Slice efk(encrypted_file_key, key_size);
   vector<Slice> clear = {file_key};
   vector<Slice> cipher = {efk};
-  RETURN_NOT_OK(DoEncryptV(&server_key, 0, clear, cipher));
+  RETURN_NOT_OK(DoEncryptV(&encryption_key, 0, clear, cipher));
 
   // Add the encrypted file key and trailing zeros to the header.
   headerv.emplace_back(efk);
@@ -810,10 +810,10 @@ Status DoIsOnXfsFilesystem(const string& path, bool* result) {
   return Status::OK();
 }
 
-Status ReadEncryptionHeader(int fd, const string& filename, const EncryptionHeader& server_key,
+Status ReadEncryptionHeader(int fd, const string& filename, const EncryptionHeader& encryption_key,
                             EncryptionHeader* eh) {
   char magic[7];
-  uint8_t algorithm[1];
+  uint8_t algorithm[1] = {0};
   char file_key[32];
   vector<Slice> headerv({ Slice(magic, 7), Slice(algorithm, 1), Slice(file_key, 32) });
   RETURN_NOT_OK(DoReadV(fd, filename, 0, headerv, nullptr));
@@ -839,7 +839,7 @@ Status ReadEncryptionHeader(int fd, const string& filename, const EncryptionHead
   // the file. The actual key size can be used when storing the key in memory.
   // See WriteEncryptionHeader for more info.
   vector<Slice> v = {Slice(file_key, (key_size + 15) & -16)};
-  RETURN_NOT_OK(DoDecryptV(&server_key, 0, v));
+  RETURN_NOT_OK(DoDecryptV(&encryption_key, 0, v));
   memcpy(&eh->key, file_key, key_size);
   return Status::OK();
 }
@@ -1531,10 +1531,10 @@ class PosixEnv : public Env {
     bool encrypted = opts.is_sensitive && IsEncryptionEnabled();
     EncryptionHeader header;
     if (encrypted) {
-      DCHECK(server_key_);
+      DCHECK(encryption_key_);
       int fd;
       RETURN_NOT_OK(DoOpen(fname, OpenMode::MUST_EXIST, &fd));
-      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *server_key_, &header));
+      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *encryption_key_, &header));
       if (fseek(f, kEncryptionHeaderSize, SEEK_CUR)) {
         return IOError(fname, errno);
       }
@@ -1562,8 +1562,8 @@ class PosixEnv : public Env {
     EncryptionHeader header;
     bool encrypted = opts.is_sensitive && IsEncryptionEnabled();
     if (encrypted) {
-      DCHECK(server_key_);
-      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *server_key_, &header));
+      DCHECK(encryption_key_);
+      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *encryption_key_, &header));
     }
     result->reset(new PosixRandomAccessFile(fname, fd,
                   encrypted, header));
@@ -1606,7 +1606,7 @@ class PosixEnv : public Env {
                            const string& fname,
                            unique_ptr<RWFile>* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewRWFile", "path", fname);
-    int fd;
+    int fd = 0;
     bool encrypt = opts.is_sensitive && IsEncryptionEnabled();
     uint64_t size = 0;
     if (opts.mode == MUST_EXIST) {
@@ -1618,12 +1618,12 @@ class PosixEnv : public Env {
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
     EncryptionHeader eh;
     if (encrypt) {
-      DCHECK(server_key_);
+      DCHECK(encryption_key_);
       if (size >= kEncryptionHeaderSize) {
-        RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *server_key_, &eh));
+        RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *encryption_key_, &eh));
       } else {
         RETURN_NOT_OK(GenerateHeader(&eh));
-        RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, *server_key_, eh));
+        RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, *encryption_key_, eh));
       }
     }
     result->reset(new PosixRWFile(fname, fd, opts.sync_on_close,
@@ -1639,9 +1639,9 @@ class PosixEnv : public Env {
     bool encrypt = opts.is_sensitive && IsEncryptionEnabled();
     EncryptionHeader eh;
     if (encrypt) {
-      DCHECK(server_key_);
+      DCHECK(encryption_key_);
       RETURN_NOT_OK(GenerateHeader(&eh));
-      RETURN_NOT_OK(WriteEncryptionHeader(fd, *created_filename, *server_key_, eh));
+      RETURN_NOT_OK(WriteEncryptionHeader(fd, *created_filename, *encryption_key_, eh));
     }
     res->reset(new PosixRWFile(*created_filename, fd, opts.sync_on_close,
                                encrypt, eh));
@@ -2262,7 +2262,7 @@ class PosixEnv : public Env {
 
   bool IsEncryptionEnabled() const override { return FLAGS_encrypt_data_at_rest; }
 
-  void SetEncryptionKey(const uint8_t* server_key, size_t key_size) override {
+  void SetEncryptionKey(const uint8_t* encryption_key, size_t key_size) override {
     EncryptionHeader eh;
     switch (key_size) {
       case 128:
@@ -2277,8 +2277,8 @@ class PosixEnv : public Env {
       default:
         LOG(FATAL) << "Illegal key size: " << key_size;
     }
-    memcpy(eh.key, server_key, key_size / 8);
-    server_key_ = eh;
+    memcpy(eh.key, encryption_key, key_size / 8);
+    encryption_key_ = eh;
   }
 
  private:
@@ -2329,13 +2329,13 @@ class PosixEnv : public Env {
     bool encrypt = opts.is_sensitive && IsEncryptionEnabled();
     EncryptionHeader eh;
     if (encrypt) {
-      DCHECK(server_key_);
+      DCHECK(encryption_key_);
       if (file_size < kEncryptionHeaderSize) {
         RETURN_NOT_OK(GenerateHeader(&eh));
-        RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, *server_key_, eh));
+        RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, *encryption_key_, eh));
         file_size = kEncryptionHeaderSize;
       } else {
-        RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *server_key_, &eh));
+        RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *encryption_key_, &eh));
       }
     }
     result->reset(new PosixWritableFile(fname, fd, file_size, opts.sync_on_close,
@@ -2387,7 +2387,7 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
-  std::optional<EncryptionHeader> server_key_;
+  std::optional<EncryptionHeader> encryption_key_;
 };
 
 }  // namespace

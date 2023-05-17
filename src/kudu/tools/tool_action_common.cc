@@ -951,7 +951,7 @@ Status GetKuduToolAbsolutePathSafe(string* path) {
   return Status::OK();
 }
 
-Status SetServerKey() {
+Status SetEncryptionKey() {
   if (FLAGS_instance_file.empty()) {
     return Status::OK();
   }
@@ -972,12 +972,13 @@ Status SetServerKey() {
       key_provider.reset(new DefaultKeyProvider());
     }
 
-    string server_key;
-    RETURN_NOT_OK(key_provider->DecryptServerKey(instance.server_key(),
-                                                instance.server_key_iv(),
-                                                instance.server_key_version(),
-                                                &server_key));
-    Env::Default()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(a2b_hex(server_key).c_str()),
+    string decrypted_key;
+    RETURN_NOT_OK(key_provider->DecryptEncryptionKey(instance.server_key(),
+                                                     instance.server_key_iv(),
+                                                     instance.server_key_version(),
+                                                     &decrypted_key));
+    Env::Default()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
+                                       a2b_hex(decrypted_key).c_str()),
                                      key.length() * 4);
   }
 

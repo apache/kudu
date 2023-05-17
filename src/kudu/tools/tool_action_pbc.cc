@@ -127,7 +127,7 @@ Status DumpPBContainerFile(const RunnerContext& context) {
     format = ReadablePBContainerFile::Format::DEBUG;
   }
 
-  RETURN_NOT_OK(SetServerKey());
+  RETURN_NOT_OK(SetEncryptionKey());
   Env* env = Env::Default();
   unique_ptr<RandomAccessFile> reader;
   RandomAccessFileOptions opts;
@@ -160,7 +160,7 @@ Status RunEditor(const string& path) {
 }
 
 Status EditFile(const RunnerContext& context) {
-  RETURN_NOT_OK(SetServerKey());
+  RETURN_NOT_OK(SetEncryptionKey());
   Env* env = Env::Default();
   const string& path = FindOrDie(context.required_args, kPathArg);
   const string& dir = DirName(path);

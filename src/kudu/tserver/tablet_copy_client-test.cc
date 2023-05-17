@@ -124,17 +124,17 @@ class TabletCopyClientTest : public TabletCopyTest {
     metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "test");
     opts.metric_entity = metric_entity_;
     fs_manager_.reset(new FsManager(Env::Default(), opts));
-    string server_key;
-    string server_key_iv;
-    string server_key_version;
-    GetEncryptionKey(&server_key, &server_key_iv, &server_key_version);
-    if (server_key.empty()) {
+    string encryption_key;
+    string encryption_key_iv;
+    string encryption_key_version;
+    GetEncryptionKey(&encryption_key, &encryption_key_iv, &encryption_key_version);
+    if (encryption_key.empty()) {
       ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     } else {
       ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout(std::nullopt,
-                                                           server_key,
-                                                           server_key_iv,
-                                                           server_key_version));
+                                                           encryption_key,
+                                                           encryption_key_iv,
+                                                           encryption_key_version));
     }
     ASSERT_OK(fs_manager_->Open());
     ASSERT_OK(ResetTabletCopyClient());

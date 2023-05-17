@@ -41,7 +41,7 @@ namespace {
 const char* const kPathArg = "path";
 
 Status Dump(const RunnerContext& context) {
-  RETURN_NOT_OK(SetServerKey());
+  RETURN_NOT_OK(SetEncryptionKey());
   const string& segment_path = FindOrDie(context.required_args, kPathArg);
 
   scoped_refptr<ReadableLogSegment> segment;

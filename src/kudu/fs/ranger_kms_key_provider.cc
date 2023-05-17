@@ -24,17 +24,17 @@ using std::string;
 namespace kudu {
 namespace security {
 
-Status RangerKMSKeyProvider::DecryptServerKey(const std::string& encrypted_server_key,
-                                              const std::string& iv,
-                                              const std::string& key_version,
-                                              std::string* server_key) {
-  return client_.DecryptKey(encrypted_server_key, iv, key_version, server_key);
+Status RangerKMSKeyProvider::DecryptEncryptionKey(const std::string& encryption_key,
+                                                  const std::string& iv,
+                                                  const std::string& key_version,
+                                                  std::string* decrypted_key) {
+  return client_.DecryptEncryptionKey(encryption_key, iv, key_version, decrypted_key);
 }
 
-Status RangerKMSKeyProvider::GenerateEncryptedServerKey(std::string* encrypted_server_key,
-                                                        std::string* iv,
-                                                        std::string* key_version) {
-  return client_.GenerateEncryptedServerKey(encrypted_server_key, iv, key_version);
+Status RangerKMSKeyProvider::GenerateEncryptionKey(std::string* encryption_key,
+                                                   std::string* iv,
+                                                   std::string* key_version) {
+  return client_.GenerateEncryptionKey(encryption_key, iv, key_version);
 }
 } // namespace security
 } // namespace kudu

@@ -426,7 +426,7 @@ class Fifo : public File {
 
   // Initializes the default environment with encryption enabled using the
   // given AES key.
-  static Status InitializeEncryptedEnv(int key_size, uint8_t* server_key);
+  static Status InitializeEncryptedEnv(int key_size, uint8_t* encryption_key);
 
   // Returns the write fd, set when opened for writes. The fifo must have been
   // opened for writes before calling.

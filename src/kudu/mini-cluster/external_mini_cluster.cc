@@ -603,7 +603,7 @@ Status ExternalMiniCluster::StartMasters() {
     scoped_refptr<ExternalMaster> peer;
     RETURN_NOT_OK(CreateMaster(master_rpc_addrs, i, &peer));
     RETURN_NOT_OK_PREPEND(peer->Start(), Substitute("Unable to start Master at index $0", i));
-    RETURN_NOT_OK(peer->SetServerKey());
+    RETURN_NOT_OK(peer->SetEncryptionKey());
     masters_.emplace_back(std::move(peer));
   }
   return Status::OK();
@@ -680,7 +680,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   }
 
   RETURN_NOT_OK(ts->Start());
-  RETURN_NOT_OK(ts->SetServerKey());
+  RETURN_NOT_OK(ts->SetEncryptionKey());
   tablet_servers_.push_back(ts);
   return Status::OK();
 }
@@ -1370,17 +1370,17 @@ Env* ExternalDaemon::env() const {
   return Env::Default();
 }
 
-Status ExternalDaemon::SetServerKey() {
+Status ExternalDaemon::SetEncryptionKey() {
   string path = JoinPathSegments(this->wal_dir(), "instance");;
   LOG(INFO) << "Reading " << path;
   InstanceMetadataPB instance;
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env(), path, &instance, pb_util::NOT_SENSITIVE));
   if (!instance.server_key().empty()) {
     string key;
-    RETURN_NOT_OK(key_provider_->DecryptServerKey(instance.server_key(),
-                                                  instance.server_key_iv(),
-                                                  instance.server_key_version(),
-                                                  &key));
+    RETURN_NOT_OK(key_provider_->DecryptEncryptionKey(instance.server_key(),
+                                                      instance.server_key_iv(),
+                                                      instance.server_key_version(),
+                                                      &key));
     LOG(INFO) << "Setting key " << key;
     env()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(a2b_hex(key).c_str()), key.size() * 4);
   }

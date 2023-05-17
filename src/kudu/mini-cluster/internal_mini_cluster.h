@@ -165,16 +165,16 @@ class InternalMiniCluster : public MiniCluster {
   }
 
   // Returns the default environment. As the servers in an internal mini-cluster
-  // share the same Env, each tablet server uses the same server key, so the
+  // share the same Env, each tablet server uses the same encryption key, so the
   // default Env can be used here.
-  Env* ts_env(int ts_idx) const override {
+  Env* ts_env(int /* ts_idx */) const override {
     return env_;
   }
 
   // Returns the default environment. As the servers in an internal mini-cluster
-  // share the same Env, each master uses the same server key, so the default
+  // share the same Env, each master uses the same encryption key, so the default
   // Env can be used here.
-  Env* master_env(int master_idx) const override {
+  Env* master_env(int /* master_idx */) const override {
     return env_;
   }
 

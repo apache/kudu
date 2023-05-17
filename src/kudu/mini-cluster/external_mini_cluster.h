@@ -716,7 +716,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
                         const std::string& principal_base,
                         const std::string& bind_host);
 
-  Status SetServerKey();
+  Status SetEncryptionKey();
 
   // Sends a SIGSTOP signal to the daemon.
   Status Pause() WARN_UNUSED_RESULT;

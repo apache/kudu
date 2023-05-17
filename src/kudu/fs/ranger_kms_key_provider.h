@@ -30,19 +30,19 @@ class RangerKMSKeyProvider : public KeyProvider {
  public:
   ~RangerKMSKeyProvider() override {}
 
-  RangerKMSKeyProvider(std::string kms_url, std::string cluster_key_name)
-      : client_(std::move(kms_url), std::move(cluster_key_name)) {}
+  RangerKMSKeyProvider(const std::string& kms_url, std::string cluster_key_name)
+      : client_(kms_url, std::move(cluster_key_name)) {}
 
-  // Decrypts the server key.
-  Status DecryptServerKey(const std::string& encrypted_server_key,
-                          const std::string& iv,
-                          const std::string& key_version,
-                          std::string* server_key) override;
+  // Decrypts the encryption key.
+  Status DecryptEncryptionKey(const std::string& encryption_key,
+                              const std::string& iv,
+                              const std::string& key_version,
+                              std::string* decrypted_key) override;
 
-  // Generates an encrypted server key.
-  Status GenerateEncryptedServerKey(std::string* encrypted_server_key,
-                                    std::string* iv,
-                                    std::string* key_version) override;
+  // Generates an encryption key (the generated key is encrypted).
+  Status GenerateEncryptionKey(std::string* encryption_key,
+                               std::string* iv,
+                               std::string* key_version) override;
 
  private:
   RangerKMSClient client_;
