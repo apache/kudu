@@ -381,8 +381,8 @@ TEST_P(TestNegotiation, TestNegotiation) {
   // Check the negotiation outcome against the expected outcome.
   EXPECT_EQ(desc.client_status.CodeAsString(), client_status.CodeAsString());
   EXPECT_EQ(desc.server_status.CodeAsString(), server_status.CodeAsString());
-  ASSERT_STR_MATCHES(client_status.ToString(), desc.client_status.ToString());
-  ASSERT_STR_MATCHES(server_status.ToString(), desc.server_status.ToString());
+  EXPECT_STR_MATCHES(client_status.ToString(), desc.client_status.ToString());
+  EXPECT_STR_MATCHES(server_status.ToString(), desc.server_status.ToString());
 
   if (client_status.ok()) {
     EXPECT_TRUE(server_status.ok());
