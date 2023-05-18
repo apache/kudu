@@ -52,6 +52,8 @@ class MasterPathHandlers {
                        Webserver::WebResponse* resp);
   void HandleMasters(const Webserver::WebRequest& req,
                      Webserver::WebResponse* resp);
+  void HandleIpkiCaCert(const Webserver::WebRequest& req,
+                        Webserver::PrerenderedWebResponse* resp);
   void HandleDumpEntities(const Webserver::WebRequest& req,
                           Webserver::PrerenderedWebResponse* resp);
 

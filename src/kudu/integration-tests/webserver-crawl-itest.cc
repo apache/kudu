@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <functional>
 #include <ostream>
 #include <string>
 #include <tuple>
@@ -282,7 +283,6 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
     curl.set_verify_peer(false);
   }
 
-  faststring response;
   vector<string> headers;
   if (impersonate_knox) {
     // Pretend we're Knox when communicating with the web UI.
@@ -296,10 +296,18 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
     int ret = FindNth(url, '/', 3);
     string host = ret == string::npos ? url : url.substr(0, ret);
 
-    // Every link should be reachable.
+    // Every link should be reachable, but some URLs are allowed to return
+    // non-2xx status codes temporarily (e.g., 503 Service Unavailable).
     SCOPED_TRACE(url);
-    ASSERT_OK(curl.FetchURL(url, &response, headers));
-    string resp_str = response.ToString();
+    faststring response;
+    if (const auto s = curl.FetchURL(url, &response, headers); !s.ok()) {
+      ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+      ASSERT_STR_MATCHES(s.ToString(), "HTTP [[:digit:]]{3}$");
+      ASSERT_EVENTUALLY([&] {
+        ASSERT_OK(curl.FetchURL(url, &response, headers));
+      });
+    }
+    const string resp_str = response.ToString();
     SCOPED_TRACE(resp_str);
 
     gq::CDocument page;
