@@ -497,13 +497,76 @@ cdef class Client:
 
     def delete_table(self, table_name):
         """
-        Delete a Kudu table. Raises KuduNotFound if the table does not exist.
+        Delete/drop a Kudu table without reserving. Raises KuduNotFound
+        if the table does not exist.
+
+        Notes
+        -----
+        The deleted table may turn to soft-deleted status with the flag
+        default_deleted_table_reserve_seconds set to nonzero on the master side.
+
+        The delete operation or drop operation means that the service will directly
+        delete the table after receiving the instruction. Which means that once we
+        delete the table by mistake, we have no way to recall the deleted data.
+        We have added a new API @soft_delete_table to allow the deleted data to be
+        reserved for a period of time, which means that the wrongly deleted data may
+        be recalled. In order to be compatible with the previous versions, this interface
+        will continue to directly delete tables without reserving the table.
+
+        Refer to soft_delete_table for detailed usage examples.
 
         Parameters
         ----------
         table_name : string
         """
         check_status(self.cp.DeleteTable(tobytes(table_name)))
+
+    def soft_delete_table(self, table_name, reserve_seconds=None):
+        """
+        Soft delete/drop a table.
+
+        Notes
+        -----
+        Usage Example1:
+        Equal to delete_table(table_name) and the table will not be reserved.
+
+        client.soft_delete_table(table_name)
+
+        Usage Example2:
+        The table will be reserved for 600s after delete operation.
+        We can recall the table in time after the delete.
+
+        client.soft_delete_table(table_name, 600)
+        client.recall_table(table_id)
+
+        Parameters
+        ----------
+        table_name : string
+          Name of the table to drop.
+        reserve_seconds : int
+          Reserve seconds after being deleted.
+        """
+        if reserve_seconds is not None:
+            check_status(self.cp.SoftDeleteTable(tobytes(table_name), reserve_seconds))
+        else:
+            check_status(self.cp.SoftDeleteTable(tobytes(table_name)))
+
+    def recall_table(self, table_id, new_table_name=None):
+        """
+        Recall a deleted but still reserved table.
+
+        Parameters
+        ----------
+        table_id : string
+          ID of the table to recall.
+        new_table_name : string
+          New table name for the recalled table. The recalled table will use the original
+          table name if the parameter is empty string (i.e. "").
+        """
+        if new_table_name is not None:
+            check_status(self.cp.RecallTable(tobytes(table_id), tobytes(new_table_name)))
+        else:
+            check_status(self.cp.RecallTable(tobytes(table_id)))
 
     def table_exists(self, table_name):
         """Return True if the indicated table exists in the Kudu cluster.
@@ -563,8 +626,8 @@ cdef class Client:
 
     def list_tables(self, match_substring=None):
         """
-        Retrieve a list of table names in the Kudu cluster with an optional
-        substring filter.
+        Retrieve a list of non-soft-deleted table names in the Kudu cluster with
+        an optional substring filter.
 
         Parameters
         ----------
@@ -586,6 +649,37 @@ cdef class Client:
             check_status(self.cp.ListTables(&tables, c_match))
         else:
             check_status(self.cp.ListTables(&tables))
+
+        result = []
+        for i in range(tables.size()):
+            result.append(frombytes(tables[i]))
+        return result
+
+    def list_soft_deleted_tables(self, match_substring=None):
+        """
+        Retrieve a list of soft-deleted table names in the Kudu cluster with
+        an optional substring filter.
+
+        Parameters
+        ----------
+        match_substring : string, optional
+          If passed, the string must be exactly contained in the table names
+
+        Returns
+        -------
+        tables : list[string]
+          Table names returned from Kudu
+        """
+        cdef:
+            vector[string] tables
+            string c_match
+            size_t i
+
+        if match_substring is not None:
+            c_match = tobytes(match_substring)
+            check_status(self.cp.ListSoftDeletedTables(&tables, c_match))
+        else:
+            check_status(self.cp.ListSoftDeletedTables(&tables))
 
         result = []
         for i in range(tables.size()):

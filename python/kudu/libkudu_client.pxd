@@ -558,6 +558,10 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
     cdef cppclass KuduClient:
 
         Status DeleteTable(const string& table_name)
+        Status SoftDeleteTable(const string& table_name)
+        Status SoftDeleteTable(const string& table_name, uint32_t reserve_seconds)
+        Status RecallTable(const string& table_id)
+        Status RecallTable(const string& table_id, const string& new_table_name)
         Status OpenTable(const string& table_name,
                          shared_ptr[KuduTable]* table)
         Status GetTableSchema(const string& table_name, KuduSchema* schema)
@@ -570,6 +574,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         Status ListTables(vector[string]* tables)
         Status ListTables(vector[string]* tables, const string& filter)
+        Status ListSoftDeletedTables(vector[string]* tables)
+        Status ListSoftDeletedTables(vector[string]* tables, const string& filter)
 
         Status ListTabletServers(vector[KuduTabletServer*]* tablet_servers)
 

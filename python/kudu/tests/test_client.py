@@ -24,11 +24,13 @@ from kudu.client import (Partitioning,
                          ENCRYPTION_REQUIRED,
                          ENCRYPTION_REQUIRED_REMOTE)
 from kudu.errors import (KuduInvalidArgument,
-                         KuduBadStatus)
+                         KuduBadStatus,
+                         KuduNotFound)
 from kudu.schema import (Schema,
                          KuduValue)
 import kudu
 import datetime
+import time
 from pytz import utc
 try:
     from urllib.error import HTTPError
@@ -96,6 +98,13 @@ class TestClient(KuduTestBase, CompatUnitTest):
 
         for name in to_create:
             self.client.delete_table(name)
+
+        self.client.create_table('foo4', schema, partitioning)
+        assert len(self.client.list_soft_deleted_tables()) == 0
+        self.client.soft_delete_table('foo4', 1000)
+        assert len(self.client.list_soft_deleted_tables()) == 1
+        # Force delete the table
+        self.client.soft_delete_table('foo4')
 
     def test_is_multimaster(self):
         assert self.client.is_multimaster
@@ -959,3 +968,184 @@ class TestMonoDelta(CompatUnitTest):
 
         delta = kudu.timedelta(nanos=3500)
         assert delta.to_nanos() == 3500
+
+class TestSoftDelete(KuduTestBase, CompatUnitTest):
+
+    def setUp(self):
+        pass
+
+    def create_test_table(self, table_name, nrows):
+        self.client.create_table(table_name, self.schema, self.partitioning)
+        table = self.client.table(table_name)
+        session = self.client.new_session()
+
+        # Insert a few rows, and scan them back. This is to populate the MetaCache.
+        for i in range(nrows):
+            op = table.new_insert((i, 2, 'hello'))
+            session.apply(op)
+        session.flush()
+
+        scanner = table.scanner().open()
+        tuples = scanner.read_all_tuples()
+        assert len(tuples) == nrows
+
+    def test_soft_deleted_table_alter_operations(self):
+        try:
+            table_name = 'test_soft_deleted_table_alter_operations'
+            self.create_test_table(table_name, 10)
+            table = self.client.table(table_name)
+
+            # Soft-delete the table.
+            assert len(self.client.list_tables()) == 2
+            assert sorted(self.client.list_tables()) == sorted([self.ex_table, table_name])
+            assert len(self.client.list_soft_deleted_tables()) == 0
+            self.client.soft_delete_table(table_name, 600)
+
+            # Soft-deleted table is still visible
+            assert self.client.table_exists(table_name) == True
+
+            # The table has been moved into the soft_deleted list.
+            assert len(self.client.list_tables()) == 1
+            assert self.client.list_tables() == [self.ex_table]
+            assert len(self.client.list_soft_deleted_tables()) == 1
+            assert self.client.list_soft_deleted_tables() == [table_name]
+
+            # Altering a soft-deleted table is not allowed.
+            # Not allowed to rename.
+            alterer = self.client.new_table_alterer(table)
+            alterer.rename("new_table_name")
+            error_msg = 'soft_deleted table {0} should not be altered'.format(table_name)
+            with self.assertRaisesRegex(KuduInvalidArgument, error_msg):
+                alterer.alter()
+
+            # Not allowed to add column.
+            alterer = self.client.new_table_alterer(table)
+            alterer.add_column('new_column', type_='int64', default=0)
+            error_msg = 'soft_deleted table {0} should not be altered'.format(table_name)
+            with self.assertRaisesRegex(KuduInvalidArgument, error_msg):
+                alterer.alter()
+
+            # Not allowed to delete the soft-deleted table with new reserve_seconds value.
+            error_msg = 'soft_deleted table {0} should not be soft deleted again'.format(table_name)
+            with self.assertRaisesRegex(KuduInvalidArgument, error_msg):
+                self.client.soft_delete_table(table_name, 600)
+
+            # Not allowed to set extra configs.
+            # TODO: Once the Python client supports changing extra configs through table alterer,
+            # check that this can't be performed for soft-deleted table.
+
+            # It is not allowed to create a new table with the same name.
+            error_msg = 'table {0} already exists with id {1}'.format(table_name, table.id)
+            with self.assertRaisesRegex(KuduBadStatus, error_msg):
+                self.client.create_table(table_name, self.schema, self.partitioning)
+        finally:
+            try:
+                # Force delete the soft-deleted table.
+                self.client.delete_table(table_name)
+            except:
+                pass
+
+    def test_soft_delete_and_recall_table_positive(self):
+        try:
+            # Create and open the table before soft-deleting it.
+            table_name = "test_soft_delete_and_recall_table_positive"
+            nrows = 10
+            self.create_test_table(table_name, nrows)
+            table = self.client.table(table_name)
+            session = self.client.new_session()
+
+            # Remove the table. Perform sanity checks.
+            self.client.soft_delete_table(table_name, 600)
+            assert len(self.client.list_tables()) == 1
+            assert self.client.list_tables() == [self.ex_table]
+            assert len(self.client.list_soft_deleted_tables()) == 1
+            assert self.client.list_soft_deleted_tables() == [table_name]
+
+            # Read and write are allowed for soft-deleted table.
+            for i in range(nrows):
+                op = table.new_insert((i+nrows, 2, 'hello'))
+                session.apply(op)
+            session.flush()
+
+            scanner = table.scanner().open()
+            tuples = scanner.read_all_tuples()
+            assert len(tuples) == 2*nrows
+
+            # Recall and reopen table. Perform sanity checks.
+            self.client.recall_table(table.id)
+            assert len(self.client.list_tables()) == 2
+            assert sorted(self.client.list_tables()) == sorted([self.ex_table, table_name])
+            assert len(self.client.list_soft_deleted_tables()) == 0
+
+            # Check the data in the table.
+            scanner = table.scanner().open()
+            tuples = scanner.read_all_tuples()
+            assert len(tuples) == 2*nrows
+        finally:
+            try:
+                # Force delete the soft-deleted table.
+                self.client.delete_table(table_name)
+            except:
+                pass
+
+    def test_soft_delete_and_recall_table_with_new_name_positive(self):
+        try:
+            # Create and open the table before soft-deleting it.
+            table_name = "test_soft_delete_and_recall_table_with_new_name_positive"
+            nrows = 10
+            self.create_test_table(table_name, nrows)
+            table = self.client.table(table_name)
+
+            # Remove the table. Perform sanity checks.
+            self.client.soft_delete_table(table_name, 600)
+            assert len(self.client.list_tables()) == 1
+            assert self.client.list_tables() == [self.ex_table]
+            assert len(self.client.list_soft_deleted_tables()) == 1
+            assert self.client.list_soft_deleted_tables() == [table_name]
+
+            # Recall and reopen table. Perform sanity checks.
+            table_name = "new_table_name"
+            self.client.recall_table(table.id, table_name)
+            assert len(self.client.list_tables()) == 2
+            assert sorted(self.client.list_tables()) == sorted([self.ex_table, table_name])
+            assert len(self.client.list_soft_deleted_tables()) == 0
+
+            # Re-open the table. Check the data in the table.
+            table = self.client.table(table_name)
+            scanner = table.scanner().open()
+            tuples = scanner.read_all_tuples()
+            assert len(tuples) == nrows
+            assert table.name == table_name
+        finally:
+            try:
+                # Force delete the soft-deleted table.
+                self.client.delete_table(table_name)
+            except:
+                pass
+
+    def test_soft_delete_and_recall_table_after_reserve_time(self):
+        # Create and open the table before soft-deleting it.
+        table_name = "test_soft_delete_and_recall_table_after_reserve_time"
+        self.create_test_table(table_name, 10)
+
+        # Remove the table. Wait until the table is removed completely.
+        self.client.soft_delete_table(table_name, 1)
+        error_msg = 'the table does not exist'
+        table_exists = True
+        while table_exists:
+            try:
+                table = self.client.table(table_name)
+            except KuduNotFound as kudu_error:
+                assert error_msg in str(kudu_error)
+                table_exists = False
+            time.sleep(1)
+
+        # Try to recall the table.
+        error_msg = 'soft-deleted state false, expired state false, can\'t recall'
+        with self.assertRaisesRegex(KuduNotFound, error_msg):
+            self.client.recall_table(table.id)
+
+        # Perform sanity checks to validate that the table is removed entirely.
+        assert len(self.client.list_tables()) == 1
+        assert self.client.list_tables() == [self.ex_table]
+        assert len(self.client.list_soft_deleted_tables()) == 0
