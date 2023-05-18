@@ -36,6 +36,7 @@ class PeriodicWebUIChecker {
                        const std::string& tablet_id = "",
                        const std::vector<std::string>& master_pages = {
                            "/dump-entities",
+                           "/ipki-ca-cert",
                            "/masters",
                            "/mem-trackers",
                            "/metrics",

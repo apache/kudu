@@ -66,6 +66,9 @@ class MasterCertAuthority {
   // authority with the information read from the system table.
   Status Init(std::unique_ptr<security::PrivateKey> key,
               std::unique_ptr<security::Cert> cert);
+  bool IsInitialized() const {
+    return !!ca_cert_;
+  }
 
   // Sign the given CSR 'csr_der' provided by a server in the cluster.
   // The authenticated user should be passed in 'caller'. The cert contents
@@ -90,12 +93,12 @@ class MasterCertAuthority {
   // This can be sent to participants in the cluster so they can add it to
   // their trust stores.
   const std::string& ca_cert_der() const {
-    CHECK(ca_cert_) << "must Init()";
+    DCHECK(IsInitialized()) << "must Init()";
     return ca_cert_der_;
   }
 
   const security::Cert& ca_cert() const {
-    CHECK(ca_cert_) << "must Init()";
+    DCHECK(IsInitialized()) << "must Init()";
     return *ca_cert_;
   }
 
