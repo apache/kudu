@@ -91,7 +91,11 @@ class KuduTestBase(object):
                    "extraMasterFlags" : [
                        "--default_num_replicas=1",
                        "--ipki_ca_key_size=2048",
-                       "--ipki_server_key_size=2048" ],
+                       "--ipki_server_key_size=2048",
+                       # TODO: once setting flags per unittest is implemented,
+                       # remove this line here and add it to the test:
+                       # 'test_soft_delete_and_recall_table_after_reserve_time'
+                       "--check_expired_table_interval_seconds=2" ],
                    "extraTserverFlags" : [ "--ipki_server_key_size=2048" ],
                    "mini_oidc_options" :
                    { "expiration_time" : "300000",
