@@ -330,6 +330,12 @@ class KUDU_EXPORT KuduClientBuilder {
   /// @return Reference to the updated object.
   KuduClientBuilder& import_authentication_credentials(std::string authn_creds);
 
+  /// Add a trusted root CA certificate into the client's TLS certificate bundle.
+  ///
+  /// @param [in] cert_pem_str
+  ///   The trusted certificate to add, in PEM format.
+  KuduClientBuilder& trusted_certificate(const std::string& cert_pem);
+
   /// @brief Set the number of reactors for the RPC messenger.
   ///
   /// The reactor threads are used for sending and receiving. If not provided,

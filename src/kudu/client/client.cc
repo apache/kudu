@@ -319,6 +319,11 @@ KuduClientBuilder& KuduClientBuilder::import_authentication_credentials(string a
   return *this;
 }
 
+KuduClientBuilder& KuduClientBuilder::trusted_certificate(const string& cert_pem) {
+  data_->trusted_certs_pem_.emplace_back(cert_pem);
+  return *this;
+}
+
 KuduClientBuilder& KuduClientBuilder::num_reactors(int num_reactors) {
   data_->num_reactors_ = num_reactors;
   return *this;
@@ -444,6 +449,11 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
     // If there are no authentication credentials, then set the real user to the
     // currently logged-in user.
     RETURN_NOT_OK(user_credentials.SetLoggedInRealUser());
+  }
+  for (const auto& cert_str : data_->trusted_certs_pem_) {
+    security::Cert cert;
+    RETURN_NOT_OK(cert.FromString(cert_str, security::DataFormat::PEM));
+    RETURN_NOT_OK(messenger->mutable_tls_context()->AddTrustedCertificate(cert));
   }
 
   shared_ptr<KuduClient> c(new KuduClient);
