@@ -204,8 +204,25 @@ class SecurityITest : public KuduTest {
     return proxy.Checksum(req, &resp, &rpc);
   }
 
+  // Retrieve the cluster's IPKI certificate. Effectively, this waits until
+  // the catalog manager is initialized and has the IPKI CA ready to process
+  // requests to the /ipki-ca-cert HTTP endpoint. This also allows to have
+  // the master's TLS certificate used for RPC signed with the IPKI CA,
+  // so it will list the JWT authentication mechanism as available.
+  Status FetchClusterCACert(string* ca_cert_pem) {
+    int leader_idx;
+    RETURN_NOT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+    const auto& http_hp = cluster_->master(leader_idx)->bound_http_hostport();
+    string url = Substitute("http://$0/ipki-ca-cert", http_hp.ToString());
+    EasyCurl curl;
+    faststring dst;
+    auto res = curl.FetchURL(url, &dst);
+    *ca_cert_pem = dst.ToString();
+    return res;
+  }
+
  private:
-  std::shared_ptr<Messenger> NewMessengerOrDie() {
+  static std::shared_ptr<Messenger> NewMessengerOrDie() {
     std::shared_ptr<Messenger> messenger;
     CHECK_OK(rpc::MessengerBuilder("test-messenger")
              .set_num_reactors(1)
@@ -520,25 +537,13 @@ void GetFullBinaryPath(string* binary) {
   (*binary) = JoinPathSegments(DirName(exe), *binary);
 }
 
-namespace {
-
-// In this testing environment, TLS certificates of Kudu servers are
-// self-signed since Kudu uses its own IPKI. To simplify the testing, the
-// certificate chain of the client isn't modified to include the Kudu's
-// IPKI CA, so it's necessary to allow the client sending its JWT to a server
-// without trusted TLS certificate.
-void RelaxJwtAuthnClientRequirements() {
-  FLAGS_jwt_client_require_trusted_tls_cert = false;
-}
-
-} // anonymous namespace
-
 TEST_F(SecurityITest, TestJwtMiniCluster) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   cluster_opts_.enable_kerberos = false;
   cluster_opts_.num_tablet_servers = 0;
   cluster_opts_.enable_client_jwt = true;
+
   MiniOidcOptions oidc_opts;
   const auto* const kValidAccount = "valid";
   const auto* const kInvalidAccount = "invalid";
@@ -567,10 +572,11 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
 
-  // Wait for the catalog manager to finish initialization: this is necessary
-  // to make sure the master's TLS certificate used for RPC connections is
-  // signed with the IPKI CA, so it will list JWT as authn mechanism available.
-  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
+  string cluster_cert_pem;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FetchClusterCACert(&cluster_cert_pem));
+  });
+  ASSERT_FALSE(cluster_cert_pem.empty());
 
   const auto* const kSubject = "kudu-user";
   const auto configure_builder_for =
@@ -580,10 +586,10 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     }
     b->jwt(cluster_->oidc()->CreateJwt(account_id, kSubject, true));
     b->require_authentication(true);
+    b->trusted_certificate(cluster_cert_pem);
     SleepFor(MonoDelta::FromMilliseconds(delay_ms));
   };
 
-  RelaxJwtAuthnClientRequirements();
   {
     SCOPED_TRACE("Valid JWT");
     KuduClientBuilder valid_builder;
@@ -623,6 +629,43 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     ASSERT_TRUE(s. IsNotAuthorized()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
   }
+  {
+    SCOPED_TRACE("Valid JWT but client does not trust master's TLS cert");
+    KuduClientBuilder cb;
+    for (auto i = 0; i < cluster_->num_masters(); ++i) {
+      cb.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
+    }
+    cb.jwt(cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true));
+    cb.require_authentication(true);
+
+    shared_ptr<KuduClient> client;
+    auto s = cb.Build(&client);
+    ASSERT_TRUE(s. IsNotAuthorized()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+        "client requires authentication, but server does not have");
+  }
+  {
+    SCOPED_TRACE("Valid JWT with relaxed requirements for server's TLS cert");
+    KuduClientBuilder cb;
+    for (auto i = 0; i < cluster_->num_masters(); ++i) {
+      cb.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
+    }
+    cb.jwt(cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true));
+    cb.require_authentication(true);
+
+    // If not adding the CA certificate that Kudu RPC server certificates are
+    // signed with, in simplified test scenarios it's possible to relax the
+    // requirements at the client side of the Kudu RPC connection negotiation
+    // protocol. With --jwt_client_require_trusted_tls_cert=false, the client
+    // does not verify the server's TLS certificate before sending its JWT
+    // to the server for authentication.
+    FLAGS_jwt_client_require_trusted_tls_cert = false;
+
+    shared_ptr<KuduClient> client;
+    ASSERT_OK(cb.Build(&client));
+    vector<string> tables;
+    ASSERT_OK(client->ListTables(&tables));
+  }
 }
 
 TEST_F(SecurityITest, TestJwtMiniClusterWithInvalidCert) {
@@ -658,17 +701,18 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithInvalidCert) {
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
 
-  // Wait for the catalog manager to finish initialization: this is necessary
-  // to make sure the master's TLS certificate used for RPC connections is
-  // signed with the IPKI CA, so it will list JWT as authn mechanism available.
-  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
+  string cluster_cert_pem;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FetchClusterCACert(&cluster_cert_pem));
+  });
+  ASSERT_FALSE(cluster_cert_pem.empty());
 
-  RelaxJwtAuthnClientRequirements();
   KuduClientBuilder client_builder;
   for (auto i = 0; i < cluster_->num_masters(); ++i) {
     client_builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
   }
   client_builder.jwt(cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true));
+  client_builder.trusted_certificate(cluster_cert_pem);
   client_builder.require_authentication(true);
 
   shared_ptr<KuduClient> client;
@@ -706,17 +750,18 @@ TEST_F(SecurityITest, TestJwtMiniClusterWithUntrustedCert) {
   cluster_opts_.mini_oidc_options = std::move(oidc_opts);
   ASSERT_OK(StartCluster());
 
-  // Wait for the catalog manager to finish initialization: this is necessary
-  // to make sure the master's TLS certificate used for RPC connections is
-  // signed with the IPKI CA, so it will list JWT as authn mechanism available.
-  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
+  string cluster_cert_pem;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FetchClusterCACert(&cluster_cert_pem));
+  });
+  ASSERT_FALSE(cluster_cert_pem.empty());
 
-  RelaxJwtAuthnClientRequirements();
   KuduClientBuilder client_builder;
   for (auto i = 0; i < cluster_->num_masters(); ++i) {
     client_builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
   }
   client_builder.jwt(cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true));
+  client_builder.trusted_certificate(cluster_cert_pem);
   client_builder.require_authentication(true);
 
   shared_ptr<KuduClient> client;

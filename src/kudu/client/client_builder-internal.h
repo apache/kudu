@@ -45,6 +45,7 @@ class KuduClientBuilder::Data {
   std::string sasl_protocol_name_;
   bool require_authentication_;
   EncryptionPolicy encryption_policy_;
+  std::vector<std::string> trusted_certs_pem_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
