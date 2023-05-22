@@ -795,11 +795,12 @@ Status ServerBase::Init() {
   if (FLAGS_enable_jwt_token_auth) {
     if (!FLAGS_jwks_url.empty()) {
       jwt_verifier =
-          std::make_shared<PerAccountKeyBasedJwtVerifier>(FLAGS_jwks_url,
-                                                          FLAGS_jwks_verify_server_certificate,
-                                                          FLAGS_trusted_certificate_file);
+          std::make_shared<KeyBasedJwtVerifier>(FLAGS_jwks_url,
+                                                FLAGS_jwks_verify_server_certificate,
+                                                FLAGS_trusted_certificate_file);
     } else if (!FLAGS_jwks_file_path.empty()) {
-      jwt_verifier = std::make_shared<KeyBasedJwtVerifier>(FLAGS_jwks_file_path, true);
+      jwt_verifier =
+          std::make_shared<KeyBasedJwtVerifier>(FLAGS_jwks_file_path);
     } else {
       LOG(WARNING) << Substitute("JWT authentication enabled, but neither 'jwks_url' or "
           "'jwks_file_path' are set!");
