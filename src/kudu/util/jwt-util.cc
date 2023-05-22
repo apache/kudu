@@ -810,16 +810,17 @@ void JWTHelper::TokenDeleter::operator()(JWTHelper::JWTDecodedToken* token) cons
 }
 
 Status JWTHelper::Init(const std::string& jwks_file_path) {
-  return Init(jwks_file_path,
-              /*jwks_verify_server_certificate*/ false,
-              /*is_local_file*/ true);
+  jwks_mgr_.reset(new JWKSMgr());
+  RETURN_NOT_OK(jwks_mgr_->Init(jwks_file_path,
+                                /*jwks_verify_server_certificate*/ false,
+                                /*is_local_file*/ true));
+  if (!initialized_) initialized_ = true;
+  return Status::OK();
 }
 
-Status JWTHelper::Init(const std::string& jwks_uri, bool jwks_verify_server_certificate,
-                       bool is_local_file) {
+Status JWTHelper::Init(const std::string& jwks_uri, bool jwks_verify_server_certificate) {
   jwks_mgr_.reset(new JWKSMgr());
-  RETURN_NOT_OK(jwks_mgr_->Init(jwks_uri, jwks_verify_server_certificate,
-                                is_local_file));
+  RETURN_NOT_OK(jwks_mgr_->Init(jwks_uri, jwks_verify_server_certificate, false));
   if (!initialized_) initialized_ = true;
   return Status::OK();
 }
@@ -967,11 +968,21 @@ Status JWTHelper::GetCustomClaimUsername(const JWTDecodedToken* decoded_token,
   return Status::OK();
 }
 
-Status KeyBasedJwtVerifier::Init() {
-  return jwt_->Init(jwks_uri_, /*jwks_verify_server_certificate*/ false, is_local_file_);
+Status KeyBasedJwtVerifier::Init() const {
+  if (!jwt_->IsInitialised()) {
+    if (is_local_file_) {
+      return jwt_->Init(jwks_uri_);
+    }
+
+    return jwt_->Init(jwks_uri_, jwks_verify_server_certificate_);
+  }
+
+  return Status::OK();
 }
 
 Status KeyBasedJwtVerifier::VerifyToken(const string& bytes_raw, string* subject) const {
+  RETURN_NOT_OK(Init());
+
   JWTHelper::UniqueJWTDecodedToken decoded_token;
   RETURN_NOT_OK(JWTHelper::Decode(bytes_raw, decoded_token));
   RETURN_NOT_OK(jwt_->Verify(decoded_token.get()));
@@ -1044,8 +1055,7 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
   // refreshes into a single thread or threadpool.
   auto new_helper = std::make_shared<JWTHelper>();
   RETURN_NOT_OK_PREPEND(new_helper->Init(jwks_uri,
-                                         jwks_verify_server_certificate_,
-                                         /*is_local_file*/ false),
+                                         jwks_verify_server_certificate_),
                         "Error initializing JWT helper");
 
   {
@@ -1057,11 +1067,10 @@ Status PerAccountKeyBasedJwtVerifier::JWTHelperForToken(const JWTHelper::JWTDeco
   return Status::OK();
 }
 
-Status PerAccountKeyBasedJwtVerifier::Init() {
+Status PerAccountKeyBasedJwtVerifier::Init() const {
   for (auto& [account_id, verifier] : jwt_by_account_id_) {
     RETURN_NOT_OK(verifier->Init(Substitute("$0?accountId=$1", oidc_uri_, account_id),
-                                            jwks_verify_server_certificate_,
-                                            /*is_local_file*/ false));
+                                            jwks_verify_server_certificate_));
   }
   return Status::OK();
 }

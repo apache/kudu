@@ -68,8 +68,7 @@ class JWTHelper {
 
   // Load JWKS from a given local JSON file or URL. Returns an error if problems were
   // encountered.
-  Status Init(const std::string& jwks_uri, bool jwks_verify_server_certificate,
-              bool is_local_file);
+  Status Init(const std::string& jwks_uri, bool jwks_verify_server_certificate);
 
   // Decode the given JWT token. The decoding result is stored in decoded_token_out.
   // Return Status::OK if the decoding is successful.
@@ -85,6 +84,8 @@ class JWTHelper {
   // Return Status::OK if the extraction is successful.
   static Status GetCustomClaimUsername(const JWTDecodedToken* decoded_token,
       const std::string& custom_claim_username, std::string& username);
+
+  bool IsInitialised() { return initialized_; }
 
   // Return snapshot of JWKS.
   std::shared_ptr<const JWKSSnapshot> GetJWKS() const;
@@ -104,18 +105,39 @@ class JWTHelper {
 // JwtVerifier implementation that uses JWKS to verify tokens.
 class KeyBasedJwtVerifier : public JwtVerifier {
  public:
-  KeyBasedJwtVerifier(std::string jwks_uri, bool is_local_file)
+  explicit KeyBasedJwtVerifier(const std::string& jwks_file_path)
+      : jwt_(JWTHelper::GetInstance()),
+        jwks_uri_(std::move(jwks_file_path)),
+        is_local_file_(true),
+        jwks_verify_server_certificate_(false),
+        jwks_ca_certificate_("") {
+  }
+
+  KeyBasedJwtVerifier(std::string jwks_uri, bool jwks_verify_server_certificate,
+                      const std::string& jwks_ca_certificate)
       : jwt_(JWTHelper::GetInstance()),
         jwks_uri_(std::move(jwks_uri)),
-        is_local_file_(is_local_file) {
+        is_local_file_(false),
+        jwks_verify_server_certificate_(jwks_verify_server_certificate),
+        jwks_ca_certificate_(jwks_ca_certificate) {
   }
+
   ~KeyBasedJwtVerifier() override = default;
-  Status Init() override;
+
+  Status Init() const override;
+
   Status VerifyToken(const std::string& bytes_raw, std::string* subject) const override;
+
  private:
   JWTHelper* jwt_;
+
   std::string jwks_uri_;
+
   bool is_local_file_;
+
+  const bool jwks_verify_server_certificate_;
+
+  const std::string jwks_ca_certificate_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyBasedJwtVerifier);
 };
@@ -123,14 +145,14 @@ class KeyBasedJwtVerifier : public JwtVerifier {
 class PerAccountKeyBasedJwtVerifier : public JwtVerifier {
  public:
   explicit PerAccountKeyBasedJwtVerifier(std::string oidc_uri, bool jwks_verify_server_certificate,
-                                         const std::string jwks_ca_certificate)
+                                         const std::string& jwks_ca_certificate)
       : oidc_uri_(std::move(oidc_uri)),
         jwks_verify_server_certificate_(jwks_verify_server_certificate),
         jwks_ca_certificate_(jwks_ca_certificate) {}
 
   ~PerAccountKeyBasedJwtVerifier() override = default;
 
-  Status Init() override;
+  Status Init() const override;
 
   Status VerifyToken(const std::string& bytes_raw, std::string* subject) const override;
 

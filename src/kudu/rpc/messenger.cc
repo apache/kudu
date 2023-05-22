@@ -45,7 +45,6 @@
 #include "kudu/rpc/service_if.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
-#include "kudu/util/jwt.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -97,7 +96,6 @@ Status MessengerBuilder::Build(shared_ptr<Messenger>* msgr) {
                                  std::mem_fn(&Messenger::AllExternalReferencesDropped));
   if (jwt_verifier_) {
     new_msgr->jwt_verifier_ = std::move(jwt_verifier_);
-    RETURN_NOT_OK(new_msgr->mutable_jwt_verifier()->Init());
   }
   RETURN_NOT_OK(ParseTriState("--rpc_authentication",
                               rpc_authentication_,

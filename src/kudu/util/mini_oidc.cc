@@ -107,6 +107,9 @@ Status MiniOidc::Start() {
 
   jwks_server_.reset(new Webserver(jwks_opts));
 
+  const string JWKS_ENDPOINT = "jwks.json";
+
+  // For clients with oidc discovery
   for (const auto& [account_id, valid] : options_.account_ids) {
     jwks_server_->RegisterPrerenderedPathHandler(
         Substitute("/jwks/$0", account_id),
@@ -126,6 +129,26 @@ Status MiniOidc::Start() {
         /*is_styled*/ false,
         /*is_on_nav_bar*/ false);
   }
+
+  // for clients without oidc discovery
+  jwks_server_->RegisterPrerenderedPathHandler(
+      "/jwks.json",
+      "jwks",
+      [&](const Webserver::WebRequest&  /*req*/, Webserver::PrerenderedWebResponse* resp) {
+        // NOTE: 'kKid1' points at a valid key, while 'kKid2' points at an
+        // invalid key.
+        resp->output << Substitute(kJwksRsaFileFormat, kKid1,
+                                   "RS256",
+                                   kRsaPubKeyJwkN,
+                                   kRsaPubKeyJwkE, kKid2,
+                                   "RS256",
+                                   kRsaInvalidPubKeyJwkN,
+                                   kRsaPubKeyJwkE),
+        resp->status_code = HttpStatusCode::Ok;
+      },
+      /*is_styled*/ false,
+      /*is_on_nav_bar*/ false);
+
   LOG(INFO) << "Starting JWKS server";
   RETURN_NOT_OK(jwks_server_->Start());
   vector<Sockaddr> advertised_addrs;
@@ -138,9 +161,13 @@ Status MiniOidc::Start() {
     protocol = "http";
   }
 
-  const string jwks_url = Substitute("$0://localhost:$1/jwks",
-                                     protocol,
-                                     advertised_addrs[0].port());
+  jwks_url_ = Substitute("$0://localhost:$1/jwks.json",
+                         protocol,
+                         advertised_addrs[0].port());
+
+  const string discovery_jwks_url = Substitute("$0://localhost:$1/jwks",
+                         protocol,
+                         advertised_addrs[0].port());
 
   // Now start the OIDC Discovery server that points to the JWKS endpoints.
   WebserverOptions oidc_opts;
@@ -152,8 +179,9 @@ Status MiniOidc::Start() {
       "openid-configuration",
       // Pass the 'accountId' query arguments to return a response that
       // points to the JWKS endpoint for the account.
-      [jwks_url](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
-        OidcDiscoveryHandler(req, resp, jwks_url);
+      [discovery_jwks_url](const Webserver::WebRequest& req,
+                           Webserver::PrerenderedWebResponse* resp) {
+        OidcDiscoveryHandler(req, resp, discovery_jwks_url);
       },
       /*is_styled*/ false,
       /*is_on_nav_bar*/ false);
@@ -179,7 +207,6 @@ void MiniOidc::Stop() {
 
 string MiniOidc::CreateJwt(const string& account_id, const string& subject, bool is_valid) {
   auto lifetime = std::chrono::milliseconds(options_.lifetime_ms);
-
   return jwt::create()
       .set_issuer(Substitute("auth0/$0", account_id))
       .set_type("JWT")

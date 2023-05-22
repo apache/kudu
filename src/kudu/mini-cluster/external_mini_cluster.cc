@@ -276,12 +276,15 @@ Status ExternalMiniCluster::Start() {
   std::shared_ptr<JwtVerifier> jwt_verifier = nullptr;
   if (opts_.enable_client_jwt) {
     oidc_.reset(new MiniOidc(opts_.mini_oidc_options));
-    // Set up certificates for the JWKS server
-    RETURN_NOT_OK_PREPEND(oidc_->Start(), "Failed to start OIDC endpoints");
+    string jwks_url = "default.url";
+    if (opts_.start_jwks) {
+      RETURN_NOT_OK_PREPEND(oidc_->Start(), "Failed to start OIDC endpoints");
+      jwks_url = oidc_->jwks_url();
+    }
     jwt_verifier =
-        std::make_shared<PerAccountKeyBasedJwtVerifier>(oidc_->url(),
-                                                        true,
-                                                        opts_.mini_oidc_options.server_certificate);
+        std::make_shared<KeyBasedJwtVerifier>(jwks_url,
+                                              /* jwks_verify_server_certificate */ true,
+                                              opts_.mini_oidc_options.server_certificate);
 
   }
 
@@ -738,7 +741,8 @@ Status ExternalMiniCluster::CreateMaster(const vector<HostPort>& master_rpc_addr
   }
   if (opts_.enable_client_jwt) {
     flags.emplace_back("--enable_jwt_token_auth=true");
-    flags.emplace_back(Substitute("--jwks_url=$0", oidc_->url()));
+    flags.emplace_back(Substitute("--jwks_url=$0",
+                       (opts_.start_jwks) ? oidc_->jwks_url() : "default.url"));
   }
   if (!opts_.master_alias_prefix.empty()) {
     flags.emplace_back(Substitute("--host_for_tests=$0.$1",

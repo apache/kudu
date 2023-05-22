@@ -919,7 +919,10 @@ TEST(JwtUtilTest, VerifyJWKSUrl) {
       "BZiHQeHO38ydRMWIeto78pV2s9sf1CdwVwycuJOfnKY_-M5-fl1hW_25kSTNt33L57a5BgbGZ1sabWP3AD__-HYD2muR"
       "klbfyYn_ghqjL7ihY2ECaZzZ0Utw",
       encoded_token);
-  KeyBasedJwtVerifier jwt_verifier(jwks_server.url(), /*is_local_file*/false);
+  KeyBasedJwtVerifier jwt_verifier(jwks_server.url(),
+                                   /*jwks_verify_server_certificate*/ false,
+                                   /*jwks_ca_certificate*/ "");
+
   ASSERT_OK(jwt_verifier.Init());
   string subject;
   ASSERT_OK(jwt_verifier.VerifyToken(encoded_token, &subject));
@@ -940,6 +943,7 @@ TEST(JwtUtilTest, VerifyOIDCDiscoveryEndpoint) {
   };
   MiniOidc oidc(std::move(opts));
   ASSERT_OK(oidc.Start());
+
   const PerAccountKeyBasedJwtVerifier jwt_verifier(oidc.url(),
                                                    /*jwks_verify_server_certificate*/ false,
                                                    /*jwks_ca_certificate*/ "");

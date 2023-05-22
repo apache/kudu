@@ -323,6 +323,12 @@ struct ExternalMiniClusterOptions {
   //
   // Default: false
   bool enable_client_jwt;
+
+  // When set to false, the jwks server is not started, so JWT verification will not be possible.
+  // Only effective if enable_client_jwt is set to true.
+  //
+  // Default: true
+  bool start_jwks = true;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
