@@ -600,6 +600,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         KuduClientBuilder& jwt(const string& jwt)
 
+        KuduClientBuilder& trusted_certificate(const string& cert_pem)
+
         Status Build(shared_ptr[KuduClient]* client)
 
     cdef cppclass KuduTabletServer:

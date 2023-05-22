@@ -62,7 +62,7 @@ from kudu.schema import (int8, int16, int32, int64, string_ as string,  # noqa
 
 def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None,
             require_authentication=False, encryption_policy=ENCRYPTION_OPTIONAL,
-            jwt=None):
+            jwt=None, trusted_certificates=None):
     """
     Connect to a Kudu master server
 
@@ -83,6 +83,10 @@ def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None,
       Whether to require encryption
     jwt : string, optional
       The JSON web token to set.
+    trusted_certificates : string/list, optional
+      TLS certificates to trust (in PEM format) when negotiating an RPC
+      connection with Kudu servers. This is needed only if authenticating
+      to Kudu servers using JWT.
 
     Returns
     -------
@@ -105,10 +109,13 @@ def connect(host, port=7051, admin_timeout_ms=None, rpc_timeout_ms=None,
         else:
             addresses.append('{0}:{1}'.format(host, port))
 
-    return Client(addresses, admin_timeout_ms=admin_timeout_ms,
+    return Client(addresses,
+                  admin_timeout_ms=admin_timeout_ms,
                   rpc_timeout_ms=rpc_timeout_ms,
                   encryption_policy=encryption_policy,
-                  require_authentication=require_authentication, jwt=jwt)
+                  require_authentication=require_authentication,
+                  jwt=jwt,
+                  trusted_certificates=trusted_certificates)
 
 
 def timedelta(seconds=0, millis=0, micros=0, nanos=0):
