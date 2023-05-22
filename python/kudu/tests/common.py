@@ -63,6 +63,7 @@ class KuduTestBase(object):
 
         master_hosts = []
         master_ports = []
+        master_http_hostports = []
 
         # Start the mini-cluster control process.
         args = ["{0}/kudu".format(bin_path), "test", "mini_cluster"]
@@ -107,8 +108,11 @@ class KuduTestBase(object):
         for m in masters["getMasters"]["masters"]:
             master_hosts.append(m["boundRpcAddress"]["host"])
             master_ports.append(m["boundRpcAddress"]["port"])
+            master_http_hostports.append(
+                '{0}:{1}'.format(m["boundHttpAddress"]["host"],
+                                 m["boundHttpAddress"]["port"]))
 
-        return p, master_hosts, master_ports
+        return p, master_hosts, master_ports, master_http_hostports
 
     @classmethod
     def stop_cluster(cls):
@@ -119,7 +123,9 @@ class KuduTestBase(object):
 
     @classmethod
     def setUpClass(cls):
-        cls.cluster_proc, cls.master_hosts, cls.master_ports = cls.start_cluster()
+        cls.cluster_proc, cls.master_hosts, cls.master_ports, \
+                cls.master_http_hostports = cls.start_cluster()
+
         cls.client = kudu.connect(cls.master_hosts, cls.master_ports)
 
         cls.schema = cls.example_schema()
