@@ -153,6 +153,9 @@ message DaemonInfoPB {
 
   // Daemon's bound RPC address.
   optional HostPortPB bound_rpc_address = 2;
+
+  // Bound address of the embedded web server.
+  optional HostPortPB bound_http_address = 3;
 }
 
 // Response to a GetMastersRequestPB.
