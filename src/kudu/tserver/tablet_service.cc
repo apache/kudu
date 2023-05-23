@@ -1539,7 +1539,10 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   const auto& tablet_id = req->tablet_id();
   TRACE_EVENT1("tserver", "TabletServiceImpl::Write",
                "tablet_id", tablet_id);
-  DVLOG(3) << "Received Write RPC: " << SecureDebugString(*req);
+  DVLOG(3) << Substitute("Received Write RPC: $0, requestor: $1, request id: $2",
+                        SecureDebugString(*req), context->requestor_string(),
+                        context->request_id() == nullptr ?
+                        "" : SecureDebugString(*context->request_id()));
   scoped_refptr<TabletReplica> replica;
   if (!LookupRunningTabletReplicaOrRespond(
         server_->tablet_manager(), tablet_id, resp, context, &replica)) {
