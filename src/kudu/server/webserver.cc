@@ -19,6 +19,9 @@
 
 #include <netinet/in.h>
 #include <openssl/crypto.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/ssl.h>
+#endif
 #include <sys/socket.h>
 
 #include <algorithm>
@@ -291,9 +294,10 @@ Status Webserver::Start() {
   }
 
   if (!opts_.password_file.empty()) {
-    int fips_mode = 0;
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
-    fips_mode = FIPS_mode();
+  int fips_mode = FIPS_mode();
+#else
+  int fips_mode = EVP_default_properties_is_fips_enabled(NULL);
 #endif
     if (fips_mode) {
       return Status::IllegalState(

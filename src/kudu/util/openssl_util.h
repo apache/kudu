@@ -17,9 +17,13 @@
 
 #pragma once
 
+#include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/types.h>
+#endif
 #include <openssl/x509.h>
 
 #include <functional>
