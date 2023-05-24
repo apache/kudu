@@ -22,6 +22,7 @@ import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -124,7 +125,10 @@ public class AsyncKuduSession implements SessionConfiguration {
   private final Random randomizer = new Random();
   private final ErrorCollector errorCollector;
   private int flushIntervalMillis = 1000;
-  private int mutationBufferMaxOps = 1000; // TODO express this in terms of data size.
+  private int mutationBufferMaxOps = 1000;
+
+  // NOTE : -1 means no limit, set a positive value to limit the max size.
+  private long mutationBufferMaxSize = -1;
   private FlushMode flushMode;
   private ExternalConsistencyMode consistencyMode;
   private long timeoutMillis;
@@ -244,12 +248,13 @@ public class AsyncKuduSession implements SessionConfiguration {
   }
 
   @Override
-  public void setMutationBufferSpace(int numOps) {
+  public void setMutationBufferSpace(int numOps, long maxSize) {
     if (hasPendingOperations()) {
       throw new IllegalArgumentException("Cannot change the buffer" +
           " size when operations are buffered");
     }
     this.mutationBufferMaxOps = numOps;
+    this.mutationBufferMaxSize = maxSize;
   }
 
   @Override
@@ -352,7 +357,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     private final Deferred<List<BatchResponse>> deferred;
 
     public TabletLookupCB(Buffer buffer, Deferred<List<BatchResponse>> deferred) {
-      this.lookupsOutstanding = new AtomicInteger(buffer.getOperations().size());
+      this.lookupsOutstanding = new AtomicInteger(buffer.numOps());
       this.buffer = buffer;
       this.deferred = deferred;
     }
@@ -372,7 +377,7 @@ public class AsyncKuduSession implements SessionConfiguration {
       List<Integer> opsFailedIndexesList = new ArrayList<>();
 
       int currentIndex = 0;
-      for (BufferedOperation bufferedOp : buffer.getOperations()) {
+      for (BufferedOperation bufferedOp : buffer) {
         Operation operation = bufferedOp.getOperation();
         if (bufferedOp.tabletLookupFailed()) {
           Exception failure = bufferedOp.getTabletLookupFailure();
@@ -556,7 +561,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @return the operation responses
    */
   private Deferred<List<OperationResponse>> doFlush(Buffer buffer) {
-    if (buffer == null || buffer.getOperations().isEmpty()) {
+    if (buffer == null || buffer.isEmpty()) {
       return Deferred.fromResult(ImmutableList.of());
     }
     LOG.debug("flushing buffer: {}", buffer);
@@ -564,7 +569,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     Deferred<List<BatchResponse>> batchResponses = new Deferred<>();
     Callback<Void, Object> tabletLookupCB = new TabletLookupCB(buffer, batchResponses);
 
-    for (BufferedOperation bufferedOperation : buffer.getOperations()) {
+    for (BufferedOperation bufferedOperation : buffer) {
       AsyncUtil.addBoth(bufferedOperation.getTabletLookup(), tabletLookupCB);
     }
 
@@ -617,7 +622,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   public boolean hasPendingOperations() {
     synchronized (monitor) {
       return activeBuffer == null ? inactiveBuffers.size() < 2 :
-             !activeBuffer.getOperations().isEmpty() || !inactiveBufferAvailable();
+             !activeBuffer.isEmpty() || !inactiveBufferAvailable();
     }
   }
 
@@ -639,6 +644,20 @@ public class AsyncKuduSession implements SessionConfiguration {
           return Deferred.fromResult(resp);
         })
         .addErrback(new SingleOperationErrCallback(operation));
+  }
+
+  private boolean isExcessMaxSize(long size) {
+    return mutationBufferMaxSize >= 0 && size >= mutationBufferMaxSize;
+  }
+
+  /**
+  * Check the buffer and determine whether a flush operation needs to be performed.
+  * @param activeBufferOps the number of active buffer ops
+  * @param activeBufferSize the number of active buffer byte size
+  * @return true if the flush in need.
+  */
+  private boolean needFlush(int activeBufferOps, long activeBufferSize) {
+    return activeBufferOps >= mutationBufferMaxOps || isExcessMaxSize(activeBufferSize);
   }
 
   /**
@@ -678,8 +697,8 @@ public class AsyncKuduSession implements SessionConfiguration {
                                                               LookupType.POINT,
                                                               timeoutMillis);
 
-    // Holds a buffer that should be flushed outside the synchronized block, if necessary.
-    Buffer fullBuffer = null;
+    // Holds buffers that should be flushed outside the synchronized block, if necessary.
+    List<Buffer> fullBuffers = new ArrayList<>();
     try {
       synchronized (monitor) {
         Deferred<Void> notification = flushNotification.get();
@@ -698,7 +717,8 @@ public class AsyncKuduSession implements SessionConfiguration {
           }
         }
 
-        int activeBufferSize = activeBuffer.getOperations().size();
+        int activeBufferOps = activeBuffer.numOps();
+        long activeBufferSize = activeBuffer.bufferSize();
         switch (flushMode) {
           case AUTO_FLUSH_SYNC: {
             // This case is handled above and is impossible here.
@@ -707,19 +727,19 @@ public class AsyncKuduSession implements SessionConfiguration {
             break;
           }
           case MANUAL_FLUSH: {
-            if (activeBufferSize >= mutationBufferMaxOps) {
+            if (needFlush(activeBufferOps, activeBufferSize)) {
               Status statusIllegalState =
                   Status.IllegalState("MANUAL_FLUSH is enabled but the buffer is too big");
               throw new NonRecoverableException(statusIllegalState);
             }
-            activeBuffer.getOperations().add(new BufferedOperation(tablet, operation));
+            activeBuffer.addOperation(new BufferedOperation(tablet, operation));
             break;
           }
           case AUTO_FLUSH_BACKGROUND: {
-            if (activeBufferSize >= mutationBufferMaxOps) {
+            if (needFlush(activeBufferOps, activeBufferSize)) {
               // If the active buffer is full or overflowing, be sure to kick off a flush.
-              fullBuffer = retireActiveBufferUnlocked();
-              activeBufferSize = 0;
+              fullBuffers.add(retireActiveBufferUnlocked());
+              activeBufferOps = 0;
 
               if (!inactiveBufferAvailable()) {
                 Status statusServiceUnavailable =
@@ -733,13 +753,14 @@ public class AsyncKuduSession implements SessionConfiguration {
             // Add the operation to the active buffer, and:
             // 1. If it's the first operation in the buffer, start a background flush timer.
             // 2. If it filled or overflowed the buffer, kick off a flush.
-            activeBuffer.getOperations().add(new BufferedOperation(tablet, operation));
-            if (activeBufferSize == 0) {
+            activeBuffer.addOperation(new BufferedOperation(tablet, operation));
+            if (activeBufferOps == 0) {
               AsyncKuduClient.newTimeout(client.getTimer(), activeBuffer.getFlusherTask(),
                   flushIntervalMillis);
             }
-            if (activeBufferSize + 1 >= mutationBufferMaxOps && inactiveBufferAvailable()) {
-              fullBuffer = retireActiveBufferUnlocked();
+            if (needFlush(activeBufferOps + 1, activeBufferSize + operation.getRow().size()) &&
+                inactiveBufferAvailable()) {
+              fullBuffers.add(retireActiveBufferUnlocked());
             }
             break;
           }
@@ -748,8 +769,10 @@ public class AsyncKuduSession implements SessionConfiguration {
         }
       }
     } finally {
-      // Flush the buffer outside of the synchronized block, if required.
-      doFlush(fullBuffer);
+      // Flush the buffers outside of the synchronized block, if required.
+      for (Buffer fullBuffer : fullBuffers) {
+        doFlush(fullBuffer);
+      }
     }
     return operation.getDeferred();
   }
@@ -874,16 +897,37 @@ public class AsyncKuduSession implements SessionConfiguration {
    * Buffer is externally synchronized. When the active buffer, {@link #monitor}
    * synchronizes access to it.
    */
-  private final class Buffer {
+  private final class Buffer implements Iterable<BufferedOperation> {
     private final List<BufferedOperation> operations = new ArrayList<>();
 
+    // NOTE: This param is different from operations.size().
+    // It's the number of total buffer operation size, mainly used to count the used buffer size.
+    private long operationSize;
     private FlusherTask flusherTask = null;
 
     private Deferred<Void> flushNotification = Deferred.fromResult(null);
     private boolean flushNotificationFired = false;
 
-    public List<BufferedOperation> getOperations() {
-      return operations;
+    public void addOperation(BufferedOperation operation) {
+      operations.add(operation);
+      operationSize += operation.getOperation().getRow().size();
+    }
+
+    @Override
+    public Iterator<BufferedOperation> iterator() {
+      return operations.iterator();
+    }
+
+    public boolean isEmpty() {
+      return operations.isEmpty();
+    }
+
+    public int numOps() {
+      return operations.size();
+    }
+
+    public long bufferSize() {
+      return operationSize;
     }
 
     @GuardedBy("monitor")
@@ -935,6 +979,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     void resetUnlocked() {
       LOG.trace("buffer resetUnlocked: {}", this);
       operations.clear();
+      operationSize = 0;
       flushNotification = new Deferred<>();
       flushNotificationFired = false;
       flusherTask = null;
@@ -944,6 +989,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     public String toString() {
       return MoreObjects.toStringHelper(this)
                         .add("operations", operations.size())
+                        .add("operationSize", operationSize)
                         .add("flusherTask", flusherTask)
                         .add("flushNotification", flushNotification)
                         .toString();

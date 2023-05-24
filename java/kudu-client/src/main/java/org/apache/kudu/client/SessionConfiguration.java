@@ -90,7 +90,17 @@ public interface SessionConfiguration {
    * @param size number of ops.
    * @throws IllegalArgumentException if the buffer isn't empty.
    */
-  void setMutationBufferSpace(int size);
+  default void setMutationBufferSpace(int size) {
+    setMutationBufferSpace(size, -1);
+  }
+
+  /**
+   * Set the number and the maximum byte size of operations that can be buffered.
+   * @param numOps number of ops.
+   * @param maxSize max byte size of ops.
+   * @throws IllegalArgumentException if the buffer isn't empty.
+   */
+  void setMutationBufferSpace(int numOps, long maxSize);
 
   /**
    * Set the low watermark for this session. The default is set to half the mutation buffer space.

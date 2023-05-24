@@ -126,8 +126,8 @@ public class KuduSession implements SessionConfiguration {
   }
 
   @Override
-  public void setMutationBufferSpace(int numOps) {
-    session.setMutationBufferSpace(numOps);
+  public void setMutationBufferSpace(int numOps, long maxSize) {
+    session.setMutationBufferSpace(numOps, maxSize);
   }
 
   @Override

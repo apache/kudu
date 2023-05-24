@@ -22,6 +22,7 @@ import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
+import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -40,6 +41,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.kudu.Schema;
 import org.apache.kudu.WireProtocol.AppStatusPB;
 import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.junit.AssertHelpers.BooleanExpression;
 import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 
 public class TestAsyncKuduSession {
@@ -385,6 +387,44 @@ public class TestAsyncKuduSession {
 
     session.flush().join(DEFAULT_SLEEP);
     assertEquals(2 * kNumOps, countRowsInTable(table));
+  }
+
+  /**
+   * Test KuduSession supports configuring buffer space by data size.
+   */
+  @Test(timeout = 90000)
+  public void testFlushBySize() throws Exception {
+    AsyncKuduSession session = client.newSession();
+    final int kBufferSizeOps = 10;
+    final int kNumOps = 2;
+    // Set a small buffer size so we should flush every time.
+    session.setMutationBufferSpace(kBufferSizeOps, 1);
+    // Set a large flush interval so if the flush by size function is not correctly implemented,
+    // the test will timeout.
+    session.setFlushInterval(60 * 60 * 1000);
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+
+    for (int i = 0; i < kNumOps; i++) {
+      // Should always flush immediately so here join will return soon.
+      OperationResponse resp = session.apply(createInsert(i)).join(DEFAULT_SLEEP);
+      assertFalse(resp.hasRowError());
+    }
+    // Mode AUTO_FLUSH_BACKGROUND also takes time, so we may need wait here.
+    assertEventuallyTrue(String.format("Timeout for flush pending operations"),
+        new BooleanExpression() {
+          @Override
+          public boolean get() throws Exception {
+            return !session.hasPendingOperations();
+          }
+        }, /* timeoutMillis = */500000);
+    assertEquals(0, session.countPendingErrors());
+    // Confirm that we can still make progress.
+    session.apply(createInsert(kNumOps)).join(DEFAULT_SLEEP);
+
+    for (OperationResponse resp: session.flush().join(DEFAULT_SLEEP)) {
+      assertFalse(resp.hasRowError());
+    }
+    assertEquals(0, session.close().join(DEFAULT_SLEEP).size());
   }
 
   // A helper just to make some lines shorter.

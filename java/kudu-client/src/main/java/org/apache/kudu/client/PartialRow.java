@@ -1907,4 +1907,23 @@ public class PartialRow {
   void freeze() {
     this.frozen = true;
   }
+
+  /**
+   * @return in memory size of this row.
+   * <p>
+   * Note: the size here is not accurate, as we do not count all the fields, but it is
+   * enough for most scenarios.
+   */
+  long size() {
+    long size = (long) rowAlloc.length + columnsBitSet.size() / Byte.SIZE;
+    if (nullsBitSet != null) {
+      size += nullsBitSet.size() / Byte.SIZE;
+    }
+    for (ByteBuffer bb : varLengthData) {
+      if (bb != null) {
+        size += bb.capacity();
+      }
+    }
+    return size;
+  }
 }
