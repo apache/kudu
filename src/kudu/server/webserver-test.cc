@@ -18,6 +18,9 @@
 #include "kudu/server/webserver.h"
 
 #include <openssl/crypto.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/ssl.h>
+#endif
 
 #include <cstdlib>
 #include <functional>
@@ -66,10 +69,10 @@ TAG_FLAG(test_sensitive_flag, sensitive);
 
 DECLARE_bool(webserver_enable_csp);
 
-// FIPS_mode is removed from OpenSSL3 for test purposes, a fake one is created and
-// set to disabled.
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
-int FIPS_mode() { return 0; }
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+int fips_mode = FIPS_mode();
+#else
+int fips_mode = EVP_default_properties_is_fips_enabled(NULL);
 #endif
 
 namespace kudu {
@@ -115,7 +118,7 @@ class WebserverTest : public KuduTest {
 
     AddPreInitializedDefaultPathHandlers(server_.get());
     AddPostInitializedDefaultPathHandlers(server_.get());
-    if (!use_htpasswd() || !FIPS_mode()) {
+    if (!use_htpasswd() || !fips_mode) {
       ASSERT_OK(server_->Start());
 
       vector<Sockaddr> addrs;
@@ -168,7 +171,7 @@ class PasswdWebserverTest : public WebserverTest {
 // Send a HTTP request with no username and password. It should reject
 // the request as the .htpasswd is presented to webserver.
 TEST_F(PasswdWebserverTest, TestPasswdMissing) {
-  if (FIPS_mode()) {
+  if (fips_mode) {
     return;
   }
   Status status = curl_.FetchURL(url_, &buf_);
@@ -176,7 +179,7 @@ TEST_F(PasswdWebserverTest, TestPasswdMissing) {
 }
 
 TEST_F(PasswdWebserverTest, TestPasswdPresent) {
-  if (FIPS_mode()) {
+  if (fips_mode) {
     return;
   }
   ASSERT_OK(curl_.set_auth(CurlAuthType::DIGEST, security::kTestAuthUsername,
@@ -185,7 +188,7 @@ TEST_F(PasswdWebserverTest, TestPasswdPresent) {
 }
 
 TEST_F(PasswdWebserverTest, TestCrashInFIPSMode) {
-  if (!FIPS_mode()) {
+  if (!fips_mode) {
     return;
   }
 
