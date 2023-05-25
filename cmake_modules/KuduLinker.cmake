@@ -109,11 +109,13 @@ function(GET_LINKER_VERSION)
   endif()
   if (APPLE)
     set(ld_version_flag "-v,-bundle")
+    set(osx_sysroot --sysroot ${CMAKE_OSX_SYSROOT})
   else()
     set(ld_version_flag "--version")
+    set(osx_sysroot "")
   endif()
   execute_process(
-    COMMAND ${CMAKE_CXX_COMPILER} "-Wl,${ld_version_flag}" -o /dev/null ${ARGN}
+    COMMAND ${CMAKE_CXX_COMPILER} ${osx_sysroot}  "-Wl,${ld_version_flag}" -o /dev/null ${ARGN}
     ERROR_VARIABLE LINKER_STDERR
     OUTPUT_VARIABLE LINKER_STDOUT
     RESULT_VARIABLE LINKER_EXITCODE)
