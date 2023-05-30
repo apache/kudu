@@ -118,10 +118,9 @@ llvm::Function* MakeProjection(const string& name,
 
   // Mark our arguments as not aliasing. This eliminates a redundant
   // load of rbrow->row_block_ and rbrow->row_index_ for each column.
-  // Note that these arguments are 1-based indexes.
+  f->addParamAttr(0, llvm::Attribute::NoAlias);
   f->addParamAttr(1, llvm::Attribute::NoAlias);
   f->addParamAttr(2, llvm::Attribute::NoAlias);
-  f->addParamAttr(3, llvm::Attribute::NoAlias);
 
   // Project row function in IR (note: values in angle brackets are
   // constants whose values are determined right now, at JIT time).
