@@ -68,7 +68,7 @@ public class TestAlterTable {
    * with the provided bounds.
    */
   private KuduTable createTable(List<Pair<Integer, Integer>> bounds) throws KuduException {
-    return createTable(bounds, null);
+    return createTable(bounds, null, 2);
   }
 
   /**
@@ -76,7 +76,8 @@ public class TestAlterTable {
    * The table is hash partitioned on c0 into two buckets, and range partitioned
    * with the provided bounds and the specified owner.
    */
-  private KuduTable createTable(List<Pair<Integer, Integer>> bounds, String owner)
+  private KuduTable createTable(List<Pair<Integer, Integer>> bounds, String owner,
+                                int buckets)
       throws KuduException {
     // Create initial table with single range partition covering the entire key
     // space, and two hash buckets.
@@ -92,8 +93,10 @@ public class TestAlterTable {
 
     CreateTableOptions createOptions =
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("c0"))
-                                .setNumReplicas(1)
-                                .addHashPartitions(ImmutableList.of("c0"), 2);
+                                .setNumReplicas(1);
+    if (buckets > 1) {
+      createOptions = createOptions.addHashPartitions(ImmutableList.of("c0"), buckets);
+    }
 
     for (Pair<Integer, Integer> bound : bounds) {
       PartialRow lower = schema.newPartialRow();
@@ -130,6 +133,161 @@ public class TestAlterTable {
     session.flush();
     RowError[] rowErrors = session.getPendingErrors().getRowErrors();
     assertEquals(String.format("row errors: %s", Arrays.toString(rowErrors)), 0, rowErrors.length);
+  }
+
+  private int countRows(KuduTable table) throws KuduException {
+    KuduScanner scanner = client.newScannerBuilder(table).build();
+    int rowCount = 0;
+    while (scanner.hasMoreRows()) {
+      RowResultIterator it = scanner.nextRows();
+      rowCount += it.getNumRows();
+    }
+    return rowCount;
+  }
+
+  // This unit test is used to verify the problem KUDU-3483. Without the fix,
+  // this unit test will throw an out of index exception.
+  @Test
+  public void testInsertDataWithChangedSchema() throws Exception {
+    // Create a table with single partition in order to make all operations
+    // fall into the same tablet.
+    KuduTable table = createTable(ImmutableList.of(), null, 1);
+    final KuduSession session = client.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+
+    // Test case with the same table schema.
+    {
+      Insert insert = table.newInsert();
+      PartialRow row1 = insert.getRow();
+      row1.addInt("c0", 101);
+      row1.addInt("c1", 101);
+      session.apply(insert);
+
+      Upsert upsert = table.newUpsert();
+      PartialRow row2 = upsert.getRow();
+      row2.addInt("c0", 102);
+      row2.addInt("c1", 102);
+      session.apply(upsert);
+      List<OperationResponse> responses = session.flush();
+      assertEquals(responses.size(), 2);
+
+      RowError[] rowErrors = session.getPendingErrors().getRowErrors();
+      assertEquals(String.format("row errors: %s",
+          Arrays.toString(rowErrors)), 0, rowErrors.length);
+      assertEquals(2, countRows(table));
+    }
+
+    // Test case with adding columns.
+    {
+      // Upsert a row with the old schema.
+      Upsert upsert1 = table.newUpsert();
+      PartialRow row1 = upsert1.getRow();
+      row1.addInt("c0", 103);
+      row1.addInt("c1", 103);
+      session.apply(upsert1);
+
+      // Add one new column.
+      client.alterTable(tableName, new AlterTableOptions()
+          .addColumn("addNonNull", Type.INT32, 100));
+
+      // Reopen the table with new schema.
+      table = client.openTable(tableName);
+      assertEquals(3, table.getSchema().getColumnCount());
+
+      // Upsert a row with the new schema.
+      Upsert upsert2 = table.newUpsert();
+      PartialRow row2 = upsert2.getRow();
+      row2.addInt("c0", 104);
+      row2.addInt("c1", 104);
+      row2.addInt("addNonNull", 101);
+
+      session.apply(upsert2);
+      List<OperationResponse> responses = session.flush();
+      assertEquals(responses.size(), 2);
+
+      RowError[] rowErrors = session.getPendingErrors().getRowErrors();
+      assertEquals(String.format("row errors: %s",
+          Arrays.toString(rowErrors)), 0, rowErrors.length);
+
+      // Read the data. It contains 4 rows.
+      assertEquals(4, countRows(table));
+    }
+
+    // Test case with renamed columns.
+    {
+      table = client.openTable(tableName);
+      // Upsert a row.
+      Upsert upsert1 = table.newUpsert();
+      PartialRow row1 = upsert1.getRow();
+      row1.addInt("c0", 105);
+      row1.addInt("c1", 105);
+      row1.addInt("addNonNull", 101);
+      session.apply(upsert1);
+
+      // Rename one column.
+      client.alterTable(tableName, new AlterTableOptions()
+          .renameColumn("addNonNull", "newAddNonNull"));
+
+      // Reopen the table with the new schema.
+      table = client.openTable(tableName);
+      assertEquals(3, table.getSchema().getColumnCount());
+
+      // Upsert a row with the new schema.
+      Upsert upsert2 = table.newUpsert();
+      PartialRow row2 = upsert2.getRow();
+      row2.addInt("c0", 106);
+      row2.addInt("c1", 106);
+      row2.addInt("newAddNonNull", 101);
+      session.apply(upsert2);
+      List<OperationResponse> responses = session.flush();
+      assertEquals(responses.size(), 2);
+
+      RowError[] rowErrors = session.getPendingErrors().getRowErrors();
+      assertEquals(String.format("row errors: %s",
+          Arrays.toString(rowErrors)), 1, rowErrors.length);
+      assertTrue(Arrays.toString(rowErrors)
+          .contains("Client provided column addNonNull INT32 NOT NULL not present in tablet"));
+
+      // Read the data. It contains 5 rows, one row failed to insert.
+      assertEquals(5, countRows(table));
+    }
+
+    // Test case with drop columns.
+    {
+      // Upsert a row.
+      Upsert upsert1 = table.newUpsert();
+      PartialRow row1 = upsert1.getRow();
+      row1.addInt("c0", 107);
+      row1.addInt("c1", 107);
+      row1.addInt("newAddNonNull", 101);
+      session.apply(upsert1);
+
+      // Drop one column.
+      client.alterTable(tableName, new AlterTableOptions()
+          .dropColumn("newAddNonNull"));
+
+      // Reopen the table with the new schema.
+      table = client.openTable(tableName);
+      assertEquals(2, table.getSchema().getColumnCount());
+
+      // Upsert a row with the new schema.
+      Upsert upsert2 = table.newUpsert();
+      PartialRow row2 = upsert2.getRow();
+      row2.addInt("c0", 108);
+      row2.addInt("c1", 108);
+      session.apply(upsert2);
+      List<OperationResponse> responses = session.flush();
+      assertEquals(responses.size(), 2);
+
+      RowError[] rowErrors = session.getPendingErrors().getRowErrors();
+      assertEquals(String.format("row errors: %s",
+          Arrays.toString(rowErrors)), 1, rowErrors.length);
+      assertTrue(Arrays.toString(rowErrors)
+          .contains("Client provided column newAddNonNull INT32 NOT NULL not present in tablet"));
+
+      // Read the data. It contains 6 rows, one row failed to insert.
+      assertEquals(6, countRows(table));
+    }
   }
 
   @Test
@@ -1065,7 +1223,7 @@ public class TestAlterTable {
   @Test
   public void testAlterChangeOwner() throws Exception {
     String originalOwner = "alice";
-    KuduTable table = createTable(ImmutableList.of(), originalOwner);
+    KuduTable table = createTable(ImmutableList.of(), originalOwner, 2);
     assertEquals(originalOwner, table.getOwner());
 
     String newOwner = "bob";

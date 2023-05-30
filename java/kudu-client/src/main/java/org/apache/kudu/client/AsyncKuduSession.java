@@ -349,7 +349,8 @@ public class AsyncKuduSession implements SessionConfiguration {
 
   /**
    * Callback which waits for all tablet location lookups to complete, groups all operations into
-   * batches by tablet, and dispatches them. When all of the batches are complete, a deferred is
+   * batches by tablet, puts operations into extraBatches which have different schemas with the
+   * ones in batches, then dispatches them. When all of the batches are complete, a deferred is
    * fired and the buffer is added to the inactive queue.
    */
   private final class TabletLookupCB implements Callback<Void, Object> {
@@ -372,8 +373,10 @@ public class AsyncKuduSession implements SessionConfiguration {
       // The final tablet lookup is complete. Batch all of the buffered
       // operations into their respective tablet, and then send the batches.
 
-      // Group the operations by tablet.
-      Map<Slice, Batch> batches = new HashMap<>();
+      // Group the operations by tablet. If two operations belong to the same
+      // tablet but have different table schemas, they will be put into two
+      // separate batches.
+      Map<Slice, List<Batch>> batches = new HashMap<>();
       List<OperationResponse> opsFailedInLookup = new ArrayList<>();
       List<Integer> opsFailedIndexesList = new ArrayList<>();
 
@@ -408,27 +411,48 @@ public class AsyncKuduSession implements SessionConfiguration {
         LocatedTablet tablet = bufferedOp.getTablet();
         Slice tabletId = new Slice(tablet.getTabletId());
 
-        Batch batch = batches.get(tabletId);
-        if (batch == null) {
-          batch = new Batch(operation.getTable(), tablet, ignoreAllDuplicateRows,
+        List<Batch> batchList = batches.get(tabletId);
+        if (batchList == null) {
+          Batch batch = new Batch(operation.getTable(), tablet, ignoreAllDuplicateRows,
               ignoreAllNotFoundRows, txnId);
-          batches.put(tabletId, batch);
+          batch.add(operation, currentIndex++);
+          List<Batch> list = new ArrayList<>();
+          list.add(batch);
+          batches.put(tabletId, list);
+          continue;
         }
+        // Compare with the last schema in the list, because the last operations
+        // have the same schemas with it most likely.
+        Batch lastBatch = batchList.get(batchList.size() - 1);
+        if (lastBatch.operations.get(0).table.getSchema()
+            .equals(operation.table.getSchema())) {
+          lastBatch.add(operation, currentIndex++);
+          continue;
+        }
+        // Put it into a separate batch.
+        Batch batch = new Batch(operation.getTable(), tablet, ignoreAllDuplicateRows,
+            ignoreAllNotFoundRows, txnId);
         batch.add(operation, currentIndex++);
+        batchList.add(batch);
       }
-
-      List<Deferred<BatchResponse>> batchResponses = new ArrayList<>(batches.size() + 1);
+      int batchSize = 0;
+      for (List<Batch> batchList : batches.values()) {
+        batchSize += batchList.size();
+      }
+      List<Deferred<BatchResponse>> batchResponses = new ArrayList<>(batchSize + 1);
       if (!opsFailedInLookup.isEmpty()) {
         batchResponses.add(
             Deferred.fromResult(new BatchResponse(opsFailedInLookup, opsFailedIndexesList)));
       }
 
-      for (Batch batch : batches.values()) {
-        if (timeoutMillis != 0) {
-          batch.resetTimeoutMillis(client.getTimer(), timeoutMillis);
+      for (List<Batch> batchList : batches.values()) {
+        for (Batch batch : batchList) {
+          if (timeoutMillis != 0) {
+            batch.resetTimeoutMillis(client.getTimer(), timeoutMillis);
+          }
+          addBatchCallbacks(batch);
+          batchResponses.add(client.sendRpcToTablet(batch));
         }
-        addBatchCallbacks(batch);
-        batchResponses.add(client.sendRpcToTablet(batch));
       }
 
       // On completion of all batches, fire the completion deferred, and add the buffer

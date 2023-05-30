@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -457,5 +458,34 @@ public class Schema {
   public int getIsDeletedIndex() {
     Preconditions.checkState(hasIsDeleted(), "Schema doesn't have an IS_DELETED columns");
     return isDeletedIndex;
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (obj == this) {
+      return true;
+    }
+    if (!(obj instanceof Schema)) {
+      return false;
+    }
+    Schema that = (Schema) obj;
+    if (this.getPrimaryKeyColumnCount() != that.getPrimaryKeyColumnCount()) {
+      return false;
+    }
+    if (this.getColumns().size() != that.getColumns().size()) {
+      return false;
+    }
+    for (int i = 0; i < this.getColumns().size(); i++) {
+      if (!this.getColumnByIndex(i).equals(that.getColumnByIndex(i))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(varLengthColumnCount, rowSize, isKeyUnique, hasNullableColumns,
+                        hasImmutableColumns, hasAutoIncrementingColumn);
   }
 }
