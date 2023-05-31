@@ -75,6 +75,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
+import org.apache.kudu.client.Client.AuthenticationCredentialsPB;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
 import org.apache.kudu.master.Master.TSInfoPB;
@@ -1179,6 +1180,18 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
+   * Mark the given CA certificates (in DER format) as the trusted ones for the
+   * client. The provided list of certificates replaces any previously set ones.
+   *
+   * @param certificates list of certificates to trust (in DER format)
+   * @throws CertificateException if any of the specified certificates were invalid
+   */
+  @InterfaceStability.Unstable
+  public void trustedCertificates(List<ByteString> certificates) throws CertificateException {
+    securityContext.trustCertificates(certificates);
+  }
+
+  /**
    * Set JWT (JSON Web Token) to authenticate the client to a server.
    * <p>
    * @note If {@link #importAuthenticationCredentials(byte[] authnData)} and
@@ -1190,10 +1203,13 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   @InterfaceStability.Unstable
   public void jwt(String jwt) {
-    Token.JwtRawPB jwtPB = Token.JwtRawPB.newBuilder()
-        .setJwtData(ByteString.copyFromUtf8(jwt))
-        .build();
-    securityContext.setJsonWebToken(jwtPB);
+    AuthenticationCredentialsPB credentials =
+        AuthenticationCredentialsPB.newBuilder()
+          .setJwt(Token.JwtRawPB.newBuilder()
+                  .setJwtData(ByteString.copyFromUtf8(jwt))
+                  .build())
+          .build();
+    securityContext.importAuthenticationCredentials(credentials.toByteArray());
   }
 
   /**
@@ -1945,7 +1961,8 @@ public class AsyncKuduClient implements AutoCloseable {
                 securityContext.setAuthenticationToken(resp.getConnectResponse().getAuthnToken());
               }
               List<ByteString> caCerts = resp.getConnectResponse().getCaCertDerList();
-              if (!caCerts.isEmpty()) {
+              if (!caCerts.isEmpty() && (securityContext.getJsonWebToken() == null ||
+                                         !securityContext.getJsonWebToken().hasJwtData())) {
                 try {
                   securityContext.trustCertificates(caCerts);
                 } catch (CertificateException e) {

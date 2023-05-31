@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.security.cert.CertificateException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -31,7 +32,6 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.master.Master.TableIdentifierPB;
-import org.apache.kudu.security.Token;
 
 /**
  * A synchronous and thread-safe client for Kudu.
@@ -466,6 +466,18 @@ public class KuduClient implements AutoCloseable {
   @InterfaceStability.Unstable
   public void importAuthenticationCredentials(byte[] authnData) {
     asyncClient.importAuthenticationCredentials(authnData);
+  }
+
+  /**
+   * Mark the given CA certificates (in DER format) as the trusted ones for the
+   * client. The provided list of certificates replaces any previously set ones.
+   *
+   * @param certificates list of certificates to trust (in DER format)
+   * @throws CertificateException if any of the specified certificates were invalid
+   */
+  @InterfaceStability.Unstable
+  public void trustedCertificates(List<ByteString> certificates) throws CertificateException {
+    asyncClient.trustedCertificates(certificates);
   }
 
   /**
