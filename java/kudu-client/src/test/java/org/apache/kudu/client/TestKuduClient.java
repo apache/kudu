@@ -42,6 +42,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
@@ -50,8 +51,10 @@ import java.io.Closeable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.security.cert.CertificateException;
 import java.sql.Date;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -66,6 +69,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
 import org.junit.Before;
 import org.junit.Rule;
@@ -1910,5 +1914,15 @@ public class TestKuduClient {
     } finally {
       AsyncKuduSession.injectLatencyBufferFlushCb(false);
     }
+  }
+
+  @Test(timeout = 50000)
+  public void testImportInvalidCert() throws Exception {
+    // An empty certificate to import.
+    byte[] caCert = new byte[0];
+    CertificateException e = assertThrows(CertificateException.class, () -> {
+      client.trustedCertificates(Arrays.asList(ByteString.copyFrom(caCert)));
+    });
+    assertTrue(e.getMessage().contains("Could not parse certificate"));
   }
 }

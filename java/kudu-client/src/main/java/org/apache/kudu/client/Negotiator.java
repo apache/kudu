@@ -162,7 +162,8 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
     INITIAL,
     AWAIT_NEGOTIATE,
     AWAIT_TLS_HANDSHAKE,
-    AWAIT_TOKEN_EXCHANGE,
+    AWAIT_AUTHN_TOKEN_EXCHANGE,
+    AWAIT_JWT_EXCHANGE,
     AWAIT_SASL,
     FINISHED
   }
@@ -175,8 +176,17 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
    * The authentication token we'll try to connect with, maybe null.
    * This is fetched from {@link #securityContext} in the constructor to
    * ensure that it doesn't change over the course of a negotiation attempt.
+   * An authentication token is used as secondary credentials.
    */
   private final SignedTokenPB authnToken;
+  /**
+   * A JSON Web Token (JWT) to authenticate this client/actor to the server
+   * that we'll try to connect with. Similar to {@link #authnToken}, this token
+   * may be null, and it's fetched from {@link #securityContext} as well.
+   * Cannot change over the course of an RPC connection negotiation attempt.
+   *
+   * @note unlike {@link #authnToken}, {@link #jsonWebToken} is used as primary credentials
+   */
   private final JwtRawPB jsonWebToken;
 
   private enum AuthnTokenNotUsedReason {
@@ -254,6 +264,7 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
     this.requireAuthentication = requireAuthentication;
     this.requireEncryption = requireEncryption;
     this.encryptLoopback = encryptLoopback;
+
     SignedTokenPB token = securityContext.getAuthenticationToken();
     if (token != null) {
       if (ignoreAuthnToken) {
@@ -269,9 +280,13 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
       this.authnToken = null;
       this.authnTokenNotUsedReason = AuthnTokenNotUsedReason.NONE_AVAILABLE;
     }
+
     JwtRawPB jwt = securityContext.getJsonWebToken();
-    // TODO(zchovan): also guard this on the presence of certs.
-    this.jsonWebToken = jwt;
+    if (jwt != null && securityContext.hasTrustedCerts()) {
+      this.jsonWebToken = jwt;
+    } else {
+      this.jsonWebToken = null;
+    }
   }
 
   public void sendHello(ChannelHandlerContext ctx) {
@@ -302,6 +317,15 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
     if (authnToken != null) {
       builder.addAuthnTypesBuilder().setToken(
           AuthenticationTypePB.Token.getDefaultInstance());
+    }
+
+    // We may also have a JSON Web token, but it can be sent to the server
+    // only if we can verify the server's authenticity and the channel between
+    // this client and the server is confidential, i.e. it's protected by
+    // authenticated TLS.
+    if (jsonWebToken != null) {
+      builder.addAuthnTypesBuilder().setJwt(
+          AuthenticationTypePB.Jwt.getDefaultInstance());
     }
 
     // We currently don't support client-certificate authentication from the
@@ -345,8 +369,11 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
       case AWAIT_SASL:
         handleSaslMessage(ctx, response);
         break;
-      case AWAIT_TOKEN_EXCHANGE:
-        handleTokenExchangeResponse(ctx, response);
+      case AWAIT_AUTHN_TOKEN_EXCHANGE:
+        handleAuthnTokenExchangeResponse(ctx, response);
+        break;
+      case AWAIT_JWT_EXCHANGE:
+        handleJwtExchangeResponse(ctx, response);
         break;
       case AWAIT_TLS_HANDSHAKE:
         handleTlsMessage(ctx, response);
@@ -595,6 +622,7 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
         engine = securityContext.createSSLEngineTrustAll();
         break;
       case TOKEN:
+      case JWT:
         engine = securityContext.createSSLEngine();
         break;
       default:
@@ -765,7 +793,7 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
   }
 
   private void sendTokenExchange(ChannelHandlerContext ctx) {
-    // We must not send a token unless we have successfully finished
+    // We must not send authn token unless we have successfully finished
     // authenticating via TLS.
     Preconditions.checkNotNull(authnToken);
     Preconditions.checkNotNull(sslHandshakeFuture);
@@ -774,26 +802,39 @@ public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder()
         .setStep(NegotiateStep.TOKEN_EXCHANGE)
         .setAuthnToken(authnToken);
-    state = State.AWAIT_TOKEN_EXCHANGE;
+    state = State.AWAIT_AUTHN_TOKEN_EXCHANGE;
     sendSaslMessage(ctx, builder.build());
   }
 
   private void sendJwtExchange(ChannelHandlerContext ctx) {
+    // We must not send JWT unless we have successfully finished
+    // authenticating via TLS.
     Preconditions.checkNotNull(jsonWebToken);
     Preconditions.checkNotNull(sslHandshakeFuture);
     Preconditions.checkState(sslHandshakeFuture.isSuccess());
+
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder()
         .setStep(NegotiateStep.JWT_EXCHANGE)
         .setJwtRaw(jsonWebToken);
+    state = State.AWAIT_JWT_EXCHANGE;
     sendSaslMessage(ctx, builder.build());
   }
 
-  private void handleTokenExchangeResponse(ChannelHandlerContext ctx, NegotiatePB response)
+  private void handleAuthnTokenExchangeResponse(ChannelHandlerContext ctx, NegotiatePB response)
       throws SaslException {
     Preconditions.checkArgument(response.getStep() == NegotiateStep.TOKEN_EXCHANGE,
         "expected TOKEN_EXCHANGE, got step: {}", response.getStep());
 
-    // The token response doesn't have any actual data in it, so we can just move on.
+    // The authn token response doesn't have any actual data in it, so we can just move on.
+    finish(ctx);
+  }
+
+  private void handleJwtExchangeResponse(ChannelHandlerContext ctx, NegotiatePB response)
+      throws SaslException {
+    Preconditions.checkArgument(response.getStep() == NegotiateStep.JWT_EXCHANGE,
+        "expected JWT_EXCHANGE, got step: {}", response.getStep());
+
+    // The JWT response doesn't have any actual data in it, so we can just move on.
     finish(ctx);
   }
 

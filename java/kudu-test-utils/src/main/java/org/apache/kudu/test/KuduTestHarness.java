@@ -20,10 +20,14 @@ package org.apache.kudu.test;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.List;
 import java.util.Random;
 
@@ -489,6 +493,13 @@ public class KuduTestHarness extends ExternalResource {
 
   public String createJwtFor(String accountId, String subject, boolean isValid) throws IOException {
     return miniCluster.createJwtFor(accountId, subject, isValid);
+  }
+
+  /**
+   * @return cluster's CA certificate in DER format or null if catalog manager isn't ready
+   */
+  public byte[] getClusterCACertDer() throws IOException {
+    return miniCluster.getCACertDer();
   }
 
   /**
