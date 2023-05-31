@@ -17,7 +17,7 @@
 
 // This file adds provided scope and optional maven support.
 
-apply plugin: "propdeps"
-apply plugin: "propdeps-eclipse"
-apply plugin: "propdeps-idea"
-apply plugin: "propdeps-maven"
+apply plugin: "cn.bestwu.propdeps"
+apply plugin: "cn.bestwu.propdeps-eclipse"
+apply plugin: "cn.bestwu.propdeps-idea"
+apply plugin: "cn.bestwu.propdeps-maven"

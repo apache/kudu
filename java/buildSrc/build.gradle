@@ -21,7 +21,6 @@ repositories {
   mavenCentral()
   jcenter()
   maven { url "https://clojars.org/repo" } // Only used for the clojure plugin below.
-  maven { url "https://repo.spring.io/plugins-release" } // Only used for the propdeps plugin below.
   maven { url "https://plugins.gradle.org/m2/" }
 }
 
@@ -35,7 +34,7 @@ dependencies {
   compile "com.google.protobuf:protobuf-gradle-plugin:0.8.18"
   compile "com.netflix.nebula:nebula-clojure-plugin:10.1.1"
   compile "gradle.plugin.com.github.spotbugs.snom:spotbugs-gradle-plugin:4.7.0"
-  compile "io.spring.gradle:propdeps-plugin:0.0.10.RELEASE"
+  compile "gradle.plugin.cn.bestwu.gradle:propdeps-plugin:0.0.10"
   compile "net.ltgt.gradle:gradle-errorprone-plugin:2.0.2"
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.5.4"
   compile "com.google.code.gson:gson:2.8.9"
