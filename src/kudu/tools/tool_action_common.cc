@@ -579,6 +579,10 @@ Status GetServerStatus(const string& address, uint16_t default_port,
 Status GetReplicas(TabletServerServiceProxy* proxy,
                    vector<ListTabletsResponsePB::StatusAndSchemaPB>* replicas) {
   ListTabletsRequestPB req;
+  // Even with FLAGS_include_schema=false, don't set need_schema_info=false
+  // in the request. The reason is that the schema is still needed to decode
+  // the partition of each replica, and the partition information is pretty
+  // much always nice to have.
   req.set_need_schema_info(true);
   ListTabletsResponsePB resp;
   RpcController rpc;
