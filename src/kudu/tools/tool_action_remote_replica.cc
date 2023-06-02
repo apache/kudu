@@ -176,27 +176,6 @@ constexpr const char* const kPeerUUIDsArgDesc =
     "List of peer uuids to be part of new config, separated by whitespace";
 
 
-Status GetReplicas(TabletServerServiceProxy* proxy,
-                   vector<ListTabletsResponsePB::StatusAndSchemaPB>* replicas) {
-  ListTabletsRequestPB req;
-  ListTabletsResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
-
-  // Even with FLAGS_include_schema=false, don't set need_schema_info=false
-  // in the request. The reason is that the schema is still needed to decode
-  // the partition of each replica, and the partition information is pretty
-  // much always nice to have.
-  RETURN_NOT_OK(proxy->ListTablets(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
-  replicas->assign(resp.status_and_schema().begin(),
-                   resp.status_and_schema().end());
-  return Status::OK();
-}
-
 Status CheckReplicas(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kTServerAddressArg);
 
