@@ -639,9 +639,20 @@ if [ "$BUILD_PYTHON" == "1" ]; then
 
   # Build the Python bindings. This assumes we run this script from base dir.
   CC=$CLANG CXX=$CLANG++ python setup.py build_ext
-  set +e
+
+  # A testing environment might have HTTP/HTTPS proxy configured to proxy
+  # requests even for 127.0.0.0/8 network or other quirks. Since some Python
+  # Kudu tests rely on Kudu components listening on 127.0.0.0/8 addresses,
+  # let's unset environment variables that might affect behavior of the
+  # Python libraries like urllib/urllib2.
+  unset ALL_PROXY
+  unset HTTP_PROXY
+  unset HTTPS_PROXY
+  unset http_proxy
+  unset https_proxy
 
   # Run the Python tests. This may also involve some compiler work.
+  set +e
   if ! CC=$CLANG CXX=$CLANG++ python setup.py test \
       --addopts="kudu --junit-xml=$TEST_LOGDIR/python_client.xml" \
       2> $TEST_LOGDIR/python_client.log ; then
