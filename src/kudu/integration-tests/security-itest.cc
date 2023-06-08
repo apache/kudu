@@ -1122,6 +1122,64 @@ TEST_F(SecurityITest, IPKICACert) {
   });
 }
 
+// Test the endpoints of the embedded master's webserver that output the IPKI
+// CA certificates in PEM and DER formats, /ipki-ca-cert[-pem] and
+// ipki-ca-cert-der, correspondingly. Make sure the end-points are functional
+// and their output is consistent.
+TEST_F(SecurityITest, IPKICACertWebServerEndPoints) {
+  // Need just a single master.
+  cluster_opts_.num_masters = 1;
+  // No need to involve tablet servers in this scenario.
+  cluster_opts_.num_tablet_servers = 0;
+
+  ASSERT_OK(StartCluster());
+
+  const auto fetch = [c = cluster_.get()](const string& path, string* out) {
+    const auto& http_hp = c->master()->bound_http_hostport();
+    string url = Substitute("http://$0/$1", http_hp.ToString(), path);
+    EasyCurl curl;
+    faststring dst;
+    auto res = curl.FetchURL(url, &dst);
+    *out = dst.ToString();
+    return res;
+  };
+
+  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
+
+  security::Cert ca_cert_0;
+  {
+    string ca_cert_str_pem;
+    ASSERT_OK(fetch("ipki-ca-cert", &ca_cert_str_pem));
+    ASSERT_OK(ca_cert_0.FromString(ca_cert_str_pem, security::DataFormat::PEM));
+  }
+
+  security::Cert ca_cert_1;
+  {
+    string ca_cert_str_pem;
+    ASSERT_OK(fetch("ipki-ca-cert-pem", &ca_cert_str_pem));
+    ASSERT_OK(ca_cert_1.FromString(ca_cert_str_pem, security::DataFormat::PEM));
+  }
+
+  security::Cert ca_cert_2;
+  {
+    string ca_cert_str_der;
+    ASSERT_OK(fetch("ipki-ca-cert-der", &ca_cert_str_der));
+    ASSERT_OK(ca_cert_2.FromString(ca_cert_str_der, security::DataFormat::DER));
+  }
+
+  // Using (security::Cert --> string) conversion to compare canonical string
+  // representations of the captured CA certificates.
+  string ca_cert_str_0;
+  ASSERT_OK(ca_cert_0.ToString(&ca_cert_str_0, security::DataFormat::PEM));
+  string ca_cert_str_1;
+  ASSERT_OK(ca_cert_1.ToString(&ca_cert_str_1, security::DataFormat::PEM));
+  string ca_cert_str_2;
+  ASSERT_OK(ca_cert_2.ToString(&ca_cert_str_2, security::DataFormat::PEM));
+
+  ASSERT_EQ(ca_cert_str_0, ca_cert_str_1);
+  ASSERT_EQ(ca_cert_str_1, ca_cert_str_2);
+}
+
 class EncryptionPolicyTest :
     public SecurityITest,
     public ::testing::WithParamInterface<tuple<

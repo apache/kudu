@@ -80,6 +80,12 @@ class Webserver : public WebCallbackRegistry {
                                       bool is_styled,
                                       bool is_on_nav_bar) override;
 
+  // Register route 'path' for application/octet-stream (binary data) responses.
+  void RegisterBinaryDataPathHandler(
+      const std::string& path,
+      const std::string& alias,
+      const PrerenderedPathHandlerCallback& callback) override;
+
   // Change the footer HTML to be displayed at the bottom of all styled web pages.
   void set_footer_html(const std::string& html);
 
@@ -113,13 +119,13 @@ class Webserver : public WebCallbackRegistry {
 
    private:
     // If true, the page appears is rendered styled.
-    bool is_styled_;
+    const bool is_styled_;
 
     // If true, the page appears in the navigation bar.
-    bool is_on_nav_bar_;
+    const bool is_on_nav_bar_;
 
     // Alias used when displaying this link on the nav bar.
-    std::string alias_;
+    const std::string alias_;
 
     // Callback to render output for this page.
     PrerenderedPathHandlerCallback callback_;
@@ -128,14 +134,14 @@ class Webserver : public WebCallbackRegistry {
   // Add any necessary Knox-related variables to 'json' based on the headers in 'args'.
   static void AddKnoxVariables(const WebRequest& req, EasyJson* json);
 
+  // Returns a mustache tag that renders the partial at path when
+  // passed to mustache::RenderTemplate.
+  static std::string MustachePartialTag(const std::string& path);
+
   bool static_pages_available() const;
 
   // Build the string to pass to mongoose specifying where to bind.
   Status BuildListenSpec(std::string* spec) const WARN_UNUSED_RESULT;
-
-  // Returns a mustache tag that renders the partial at path when
-  // passed to mustache::RenderTemplate.
-  std::string MustachePartialTag(const std::string& path) const;
 
   // Returns whether or not a mustache template corresponding
   // to the given path can be found.
@@ -184,9 +190,12 @@ class Webserver : public WebCallbackRegistry {
   // parsed the request yet (e.g. an early error out).
   //
   // If 'mode' is STYLED, includes page styling elements like CSS, navigation bar, etc.
+  //
+  // BINARY is a rare case when a binary data is sent as a response.
   enum class StyleMode {
     STYLED,
     UNSTYLED,
+    BINARY,
   };
   void SendResponse(struct sq_connection* connection,
                     PrerenderedWebResponse* resp,
