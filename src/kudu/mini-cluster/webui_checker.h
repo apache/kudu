@@ -37,6 +37,8 @@ class PeriodicWebUIChecker {
                        const std::vector<std::string>& master_pages = {
                            "/dump-entities",
                            "/ipki-ca-cert",
+                           "/ipki-ca-cert-der",
+                           "/ipki-ca-cert-pem",
                            "/masters",
                            "/mem-trackers",
                            "/metrics",

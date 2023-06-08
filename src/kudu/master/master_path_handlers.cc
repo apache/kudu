@@ -77,10 +77,9 @@
 #include "kudu/util/url-coding.h"
 #include "kudu/util/web_callback_registry.h"
 
-namespace kudu {
-
-using consensus::ConsensusStatePB;
-using consensus::RaftPeerPB;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::RaftPeerPB;
+using kudu::security::DataFormat;
 using std::array;
 using std::map;
 using std::ostringstream;
@@ -90,6 +89,7 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
+namespace kudu {
 namespace master {
 
 namespace {
@@ -606,6 +606,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
 }
 
 void MasterPathHandlers::HandleIpkiCaCert(
+    DataFormat cert_format,
     const Webserver::WebRequest& /*req*/,
     Webserver::PrerenderedWebResponse* resp) {
   ostringstream& out = resp->output;
@@ -622,14 +623,18 @@ void MasterPathHandlers::HandleIpkiCaCert(
   }
   const auto& cert = ca->ca_cert();
   string cert_str;
-  if (auto s = cert.ToString(&cert_str, security::DataFormat::PEM); !s.ok()) {
-    auto err = s.CloneAndPrepend("could not convert CA cert to PEM format");
+  if (auto s = cert.ToString(&cert_str, cert_format); !s.ok()) {
+    auto err = s.CloneAndPrepend(
+        Substitute("could not convert CA cert to $0 format",
+                   security::DataFormatToString(cert_format)));
     LOG(ERROR) << err.ToString();
     resp->status_code = HttpStatusCode::InternalServerError;
     out << "ERROR: " << err.ToString();
     return;
   }
-  RemoveExtraWhitespace(&cert_str);
+  if (cert_format == DataFormat::PEM) {
+    RemoveExtraWhitespace(&cert_str);
+  }
   out << cert_str;
 }
 
@@ -850,9 +855,20 @@ Status MasterPathHandlers::Register(Webserver* server) {
   server->RegisterPrerenderedPathHandler(
       "/ipki-ca-cert", "IPKI CA certificate",
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
-        this->HandleIpkiCaCert(req, resp);
+        this->HandleIpkiCaCert(DataFormat::PEM, req, resp);
       },
       false /*is_styled*/, true /*is_on_nav_bar*/);
+  server->RegisterPrerenderedPathHandler(
+      "/ipki-ca-cert-pem", "IPKI CA certificate (PEM format)",
+      [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
+        this->HandleIpkiCaCert(DataFormat::PEM, req, resp);
+      },
+      false /*is_styled*/, false /*is_on_nav_bar*/);
+  server->RegisterBinaryDataPathHandler(
+      "/ipki-ca-cert-der", "IPKI CA certificate (DER format)",
+      [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
+        this->HandleIpkiCaCert(DataFormat::DER, req, resp);
+      });
   server->RegisterPrerenderedPathHandler(
       "/dump-entities", "Dump Entities",
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {

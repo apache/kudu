@@ -14,14 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_MASTER_MASTER_PATH_HANDLERS_H
-#define KUDU_MASTER_MASTER_PATH_HANDLERS_H
+#pragma once
 
 #include <string>
 #include <utility>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -52,7 +52,8 @@ class MasterPathHandlers {
                        Webserver::WebResponse* resp);
   void HandleMasters(const Webserver::WebRequest& req,
                      Webserver::WebResponse* resp);
-  void HandleIpkiCaCert(const Webserver::WebRequest& req,
+  void HandleIpkiCaCert(security::DataFormat cert_format,
+                        const Webserver::WebRequest& req,
                         Webserver::PrerenderedWebResponse* resp);
   void HandleDumpEntities(const Webserver::WebRequest& req,
                           Webserver::PrerenderedWebResponse* resp);
@@ -81,4 +82,3 @@ class MasterPathHandlers {
 
 } // namespace master
 } // namespace kudu
-#endif /* KUDU_MASTER_MASTER_PATH_HANDLERS_H */

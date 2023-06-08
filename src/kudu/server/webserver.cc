@@ -661,7 +661,7 @@ void Webserver::SendResponse(struct sq_connection* connection,
 
       ostringstream oss;
       Status s = zlib::CompressLevel(uncompressed, 1, &oss);
-      if (s.ok()) {
+      if (PREDICT_TRUE(s.ok())) {
         resp->output.str(oss.str());
         is_compressed = true;
       } else {
@@ -686,10 +686,29 @@ void Webserver::SendResponse(struct sq_connection* connection,
 
   // Write the headers to the buffer first, then write the body.
   oss << Substitute("HTTP/1.1 $0\r\n", HttpStatusCodeToString(resp->status_code));
-  oss << Substitute("Content-Type: $0\r\n",
-                    mode == StyleMode::STYLED ? "text/html" : "text/plain");
+
+  // The "Content-Type" is defined by the value of the 'mode' parameter.
+  const char* content_type = nullptr;
+  switch (mode) {
+    case StyleMode::STYLED:
+      content_type = "text/html";
+      break;
+    case StyleMode::UNSTYLED:
+      content_type = "text/plain";
+      break;
+    case StyleMode::BINARY:
+      content_type = "application/octet-stream";
+      break;
+    default:
+      LOG(FATAL) << "unexpected style mode: " << static_cast<uint32_t>(mode);
+      break;  // unreachable
+  }
+  oss << Substitute("Content-Type: $0\r\n", content_type);
+
   oss << Substitute("Content-Length: $0\r\n", body.length());
-  if (is_compressed) oss << "Content-Encoding: gzip\r\n";
+  if (is_compressed) {
+    oss << "Content-Encoding: gzip\r\n";
+  }
   if (PREDICT_TRUE(FLAGS_webserver_enable_csp)) {
     // TODO(aserbin): add information on when to update the SHA hash and
     //                how to do so (ideally, the exact command line)
@@ -699,14 +718,15 @@ void Webserver::SendResponse(struct sq_connection* connection,
   }
   oss << Substitute("X-Frame-Options: $0\r\n", FLAGS_webserver_x_frame_options);
   static const unordered_set<string> kInvalidHeaders = {
+    "Content-Encoding",
     "Content-Length",
     "Content-Type",
     "Content-Security-Policy",
-    "X-Frame-Options"
+    "X-Frame-Options",
   };
   for (const auto& entry : resp->response_headers) {
     // It's forbidden to override the above headers.
-    if (ContainsKey(kInvalidHeaders, entry.first)) {
+    if (PREDICT_FALSE(ContainsKey(kInvalidHeaders, entry.first))) {
       LOG(FATAL) << Substitute("Reserved header $0 was overridden by handler",
                                entry.first);
     }
@@ -729,6 +749,10 @@ void Webserver::AddKnoxVariables(const WebRequest& req, EasyJson* json) {
   } else {
     (*json)["base_url"] = "";
   }
+}
+
+string Webserver::MustachePartialTag(const string& path) {
+  return Substitute("{{> $0.mustache}}", path);
 }
 
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
@@ -757,8 +781,15 @@ void Webserver::RegisterPrerenderedPathHandler(const string& path, const string&
   InsertOrDie(&path_handlers_, path, new PathHandler(is_styled, is_on_nav_bar, alias, callback));
 }
 
-string Webserver::MustachePartialTag(const string& path) const {
-  return Substitute("{{> $0.mustache}}", path);
+void Webserver::RegisterBinaryDataPathHandler(
+    const string& path,
+    const string& alias,
+    const PrerenderedPathHandlerCallback& callback) {
+  std::lock_guard<RWMutex> l(lock_);
+  InsertOrDie(&path_handlers_, path, new PathHandler(false /*is_styled*/,
+                                                     false /*is_on_nav_bar*/,
+                                                     alias,
+                                                     callback));
 }
 
 bool Webserver::MustacheTemplateAvailable(const string& path) const {
