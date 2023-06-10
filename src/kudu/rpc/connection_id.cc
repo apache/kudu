@@ -81,7 +81,7 @@ size_t ConnectionId::HashCode() const {
 bool ConnectionId::Equals(const ConnectionId& other) const {
   return remote() == other.remote() &&
       hostname_ == other.hostname_ &&
-      user_credentials().Equals(other.user_credentials()) &&
+      user_credentials() == other.user_credentials() &&
       network_plane_ == other.network_plane_;
 }
 

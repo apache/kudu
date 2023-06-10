@@ -42,10 +42,16 @@ class UserCredentials {
   std::string ToString() const;
 
   std::size_t HashCode() const;
-  bool Equals(const UserCredentials& other) const;
+
+  bool operator==(const UserCredentials& other) const {
+    return real_user_ == other.real_user_;
+  }
+  bool operator!=(const UserCredentials& other) const {
+    return !(*this == other);
+  }
 
  private:
-  // Remember to update HashCode() and Equals() when new fields are added.
+  // Remember to update HashCode() and operator==() when new fields are added.
   std::string real_user_;
 };
 

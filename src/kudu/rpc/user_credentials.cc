@@ -21,7 +21,7 @@
 #include <string>
 #include <utility>
 
-#include <boost/functional/hash/hash.hpp>
+#include <boost/container_hash/extensions.hpp>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
@@ -54,10 +54,6 @@ size_t UserCredentials::HashCode() const {
     boost::hash_combine(seed, real_user());
   }
   return seed;
-}
-
-bool UserCredentials::Equals(const UserCredentials& other) const {
-  return real_user() == other.real_user();
 }
 
 } // namespace rpc
