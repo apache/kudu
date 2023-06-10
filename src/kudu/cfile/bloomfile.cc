@@ -323,7 +323,7 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
   // If the previous lookup from this bloom on this thread seeked to a different
   // block in the BloomFile, we need to read the correct block and re-hydrate the
   // BloomFilter instance.
-  if (!bci->cur_block_pointer.Equals(bblk_ptr)) {
+  if (bblk_ptr != bci->cur_block_pointer) {
     scoped_refptr<BlockHandle> dblk_data;
     RETURN_NOT_OK(reader_->ReadBlock(io_context, bblk_ptr,
                                      CFileReader::CACHE_BLOCK, &dblk_data));

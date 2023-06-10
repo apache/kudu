@@ -14,10 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CFILE_BLOCK_POINTER_H
-#define KUDU_CFILE_BLOCK_POINTER_H
 
-#include <stdio.h>
+#pragma once
+
+#include <cstdio>
 #include <string>
 
 #include "kudu/cfile/cfile.pb.h"
@@ -31,31 +31,32 @@ namespace cfile {
 
 class BlockPointer {
  public:
-  BlockPointer() {}
-  BlockPointer(const BlockPointer &from) :
-    offset_(from.offset_),
-    size_(from.size_) {}
-
-  explicit BlockPointer(const BlockPointerPB &from) :
-    offset_(from.offset()),
-    size_(from.size()) {
+  BlockPointer()
+      : offset_(0),
+        size_(0) {
   }
 
-  BlockPointer(uint64_t offset, uint64_t size) :
-    offset_(offset),
-    size_(size) {}
+  constexpr BlockPointer(uint64_t offset, uint64_t size)
+      : offset_(offset),
+        size_(size) {
+  }
+
+  explicit BlockPointer(const BlockPointerPB& from)
+      : offset_(from.offset()),
+        size_(from.size()) {
+  }
 
   std::string ToString() const {
     return strings::Substitute("offset=$0 size=$1", offset_, size_);
   }
 
   template<class StrType>
-  void EncodeTo(StrType *s) const {
+  void EncodeTo(StrType* s) const {
     PutVarint64(s, offset_);
     InlinePutVarint32(s, size_);
   }
 
-  Status DecodeFrom(const uint8_t *data, const uint8_t *limit) {
+  Status DecodeFrom(const uint8_t* data, const uint8_t* limit) {
     data = GetVarint64Ptr(data, limit, &offset_);
     if (!data) {
       return Status::Corruption("bad block pointer");
@@ -69,21 +70,24 @@ class BlockPointer {
     return Status::OK();
   }
 
-  void CopyToPB(BlockPointerPB *pb) const {
+  void CopyToPB(BlockPointerPB* pb) const {
     pb->set_offset(offset_);
     pb->set_size(size_);
   }
 
-  uint64_t offset() const {
+  constexpr uint64_t offset() const {
     return offset_;
   }
 
-  uint32_t size() const {
+  constexpr uint32_t size() const {
     return size_;
   }
 
-  bool Equals(const BlockPointer& other) const {
+  constexpr bool operator==(const BlockPointer& other) const {
     return offset_ == other.offset_ && size_ == other.size_;
+  }
+  constexpr bool operator!=(const BlockPointer& other) const {
+    return !(*this == other);
   }
 
  private:
@@ -91,7 +95,5 @@ class BlockPointer {
   uint32_t size_;
 };
 
-
 } // namespace cfile
 } // namespace kudu
-#endif

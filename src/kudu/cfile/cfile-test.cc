@@ -25,6 +25,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -122,7 +123,6 @@ class TestCFile : public CFileTestBase {
     unique_ptr<CFileReader> reader;
     ASSERT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
-    BlockPointer ptr;
     unique_ptr<CFileIterator> iter;
     ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
 
@@ -633,8 +633,6 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   rowid_t reader_nrows;
   ASSERT_OK(reader->CountRows(&reader_nrows));
   ASSERT_EQ(nrows, reader_nrows);
-
-  BlockPointer ptr;
 
   unique_ptr<CFileIterator> iter;
   ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));

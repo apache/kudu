@@ -83,7 +83,6 @@ Status IndexTreeBuilder::Append(
   size_t est_size = idx_block->EstimateEncodedSize();
   if (est_size > options_->index_block_size &&
       idx_block->count() > 1) {
-    BlockPointer index_block_ptr;
     RETURN_NOT_OK(FinishBlockAndPropagate(level));
   }
 
