@@ -78,7 +78,7 @@ size_t ConnectionId::HashCode() const {
   return seed;
 }
 
-bool ConnectionId::Equals(const ConnectionId& other) const {
+bool ConnectionId::operator==(const ConnectionId& other) const {
   return remote() == other.remote() &&
       hostname_ == other.hostname_ &&
       user_credentials() == other.user_credentials() &&
@@ -90,7 +90,7 @@ size_t ConnectionIdHash::operator() (const ConnectionId& conn_id) const {
 }
 
 bool ConnectionIdEqual::operator() (const ConnectionId& cid1, const ConnectionId& cid2) const {
-  return cid1.Equals(cid2);
+  return cid1 == cid2;
 }
 
 } // namespace rpc

@@ -63,10 +63,13 @@ class ConnectionId {
   std::string ToString() const;
 
   size_t HashCode() const;
-  bool Equals(const ConnectionId& other) const;
+  bool operator==(const ConnectionId& other) const;
+  bool operator!=(const ConnectionId& other) const {
+    return !(*this == other);
+  }
 
  private:
-  // Remember to update HashCode() and Equals() when new fields are added.
+  // Remember to update HashCode() and operator==() when new fields are added.
   Sockaddr remote_;
 
   // The original host name before it was resolved to 'remote_'.
