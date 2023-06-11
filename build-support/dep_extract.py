@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 
 # Matches the output lines from the 'ldd' tool. For example:
 #   libcrypto.so.10 => /path/to/usr/lib64/libcrypto.so.10 (0x00007fb0cb0a5000)
@@ -105,6 +106,8 @@ class DependencyExtractor(object):
 
     deps = []
     for line in out.splitlines():
+      if sys.version_info.major >= 3:
+        line = line.decode('utf-8')
       match = LDD_RE.match(line)
       if not match:
         continue
