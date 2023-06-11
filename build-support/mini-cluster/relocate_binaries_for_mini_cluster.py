@@ -58,6 +58,8 @@ PAT_SASL_LIBPLAIN = re.compile(r'libplain')
 # introduced by 'libselinux'.
 # 'libjitterentropy' which is both BSD and GPLv2 licensed is excluded because it is
 # a transitive dependency by 'libcurl' in SLES 15 SP4 machines.
+# 'libgdbm' which is GPLv3 licensed is excluded because it is a transitive dependency
+# by 'libsasldb' in RHEL9 machines.
 PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         libc|
                                         libstdc\+\+|
@@ -65,6 +67,7 @@ PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         libdl|
                                         libresolv|
                                         libgcc.*|
+                                        libgdbm|
                                         libcrypt|
                                         libjitterentropy|
                                         libm|
