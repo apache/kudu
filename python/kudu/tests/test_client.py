@@ -478,7 +478,7 @@ class TestClient(KuduTestBase, CompatUnitTest):
             try:
                 session.flush()
             except KuduBadStatus:
-                message = 'is incorrectly set'
+                message = 'should not be set for'
                 errors, overflow = session.get_pending_errors()
                 assert not overflow
                 assert len(errors) == 1
