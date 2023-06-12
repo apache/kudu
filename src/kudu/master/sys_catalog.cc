@@ -25,6 +25,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -50,6 +51,7 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
@@ -182,7 +184,6 @@ bool ArePBsEqual(const google::protobuf::Message& prev_pb,
 }
 
 } // anonymous namespace
-
 
 SysCatalogTable::SysCatalogTable(Master* master,
                                  ElectedLeaderCallback leader_cb)
@@ -910,6 +911,17 @@ Status SysCatalogTable::AddClusterIdEntry(
 
 Status SysCatalogTable::AddCertAuthorityEntry(
     const SysCertAuthorityEntryPB& entry) {
+  return AddOrUpdateCertAuthorityEntry(entry, RowOperationsPB::INSERT);
+}
+
+Status SysCatalogTable::UpdateCertAuthorityEntry(
+    const SysCertAuthorityEntryPB& entry) {
+  return AddOrUpdateCertAuthorityEntry(entry, RowOperationsPB::UPDATE);
+}
+
+Status SysCatalogTable::AddOrUpdateCertAuthorityEntry(
+    const SysCertAuthorityEntryPB& entry,
+    RowOperationsPB::Type op) {
   WriteRequestPB req;
   req.set_tablet_id(kSysCatalogTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
@@ -922,7 +934,7 @@ Status SysCatalogTable::AddCertAuthorityEntry(
   CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, kSysCertAuthorityEntryId));
   CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
-  enc.Add(RowOperationsPB::INSERT, row);
+  enc.Add(op, row);
 
   return SyncWrite(req);
 }

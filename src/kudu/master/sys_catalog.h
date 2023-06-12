@@ -26,6 +26,7 @@
 
 #include <gtest/gtest_prod.h>
 
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
@@ -267,6 +268,12 @@ class SysCatalogTable {
   // There should be no more than one CA entry in the system table.
   Status AddCertAuthorityEntry(const SysCertAuthorityEntryPB& entry);
 
+  // Update an existing root CA entry (private key and certificate) in the
+  // system table.
+  //
+  // There should be no more than one CA entry in the system table.
+  Status UpdateCertAuthorityEntry(const SysCertAuthorityEntryPB& entry);
+
   // Add TSK (Token Signing Key) entry into the system table.
   Status AddTskEntry(const SysTskEntryPB& entry);
 
@@ -392,6 +399,11 @@ class SysCatalogTable {
 
   // Overwrite (upsert) the latest event ID in the table with the provided ID.
   void ReqSetNotificationLogEventId(tserver::WriteRequestPB* req, int64_t event_id);
+
+  // Add or update root CA entry (private key and certificate) into the system table.
+  // There should be no more than one CA entry in the system table.
+  Status AddOrUpdateCertAuthorityEntry(const SysCertAuthorityEntryPB& entry,
+                                       RowOperationsPB::Type op);
 
   static std::string TskSeqNumberToEntryId(int64_t seq_number);
 

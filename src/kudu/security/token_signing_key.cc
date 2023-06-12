@@ -65,12 +65,23 @@ TokenSigningPrivateKey::TokenSigningPrivateKey(
   if (password.empty()) {
     CHECK_OK(key_->FromString(pb.rsa_key_der(), DataFormat::DER));
   } else {
-    CHECK_OK(key_->FromEncryptedString(pb.rsa_key_der(), DataFormat::DER,
+    Status s = key_->FromEncryptedString(pb.rsa_key_der(), DataFormat::DER,
           [&](string* p) {
             *p = password;
             return Status::OK();
           }
-    ));
+    );
+
+    // It's possible that we have old TSKs from before
+    // --tsk_private_key_password_cmd has been added to the master and they're
+    // still stored in cleartext. In this case, we retry to load the TSK without
+    // password. There's no need to re-encrypt the existing private keys, as
+    // they'll be rolled out soon anyway and the new ones will be encrypted.
+    if (s.IsRuntimeError()) {
+      CHECK_OK(key_->FromString(pb.rsa_key_der(), DataFormat::DER));
+    } else {
+      CHECK_OK(s);
+    }
   }
   private_key_der_ = pb.rsa_key_der();
   key_seq_num_ = pb.key_seq_num();

@@ -1261,6 +1261,15 @@ Status CatalogManager::InitCertAuthority() {
     // should not run without a CA certificate.
     return InitCertAuthorityWith(std::move(key), std::move(cert));
   }
+  // If a cluster existed before KUDU-3448, or the
+  // --ipki_private_key_password_cmd was not set on a cluster, the IPKI private
+  // key is stored in cleartext. In this case, if the administrator adds this
+  // flag to the existing cluster, we need to read the cleartext private key,
+  // encrypt it, and overwrite the cleartext key with the encrypted version.
+  if (s.IsRuntimeError() && !ipki_private_key_password_.empty()) {
+    RETURN_NOT_OK(LoadAndEncryptCertAuthorityInfo(&key, &cert));
+    return InitCertAuthorityWith(std::move(key), std::move(cert));
+  }
 
   return s;
 }
@@ -1324,6 +1333,47 @@ Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
           }
     ), "could not decrypt private key with the password returned by the configured command");
   }
+
+  RETURN_NOT_OK(ca_cert->FromString(
+      info.certificate(), DataFormat::DER));
+  // Extra sanity check.
+  RETURN_NOT_OK(ca_cert->CheckKeyMatch(*ca_private_key));
+
+  key->swap(ca_private_key);
+  cert->swap(ca_cert);
+
+  return Status::OK();
+}
+
+Status CatalogManager::LoadAndEncryptCertAuthorityInfo(unique_ptr<PrivateKey>* key,
+                                                       unique_ptr<Cert>* cert) {
+  leader_lock_.AssertAcquiredForWriting();
+
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_catalog_manager_inject_latency_load_ca_info_ms);
+
+  SysCertAuthorityEntryPB info;
+  RETURN_NOT_OK(sys_catalog_->GetCertAuthorityEntry(&info));
+
+  unique_ptr<PrivateKey> ca_private_key(new PrivateKey);
+  unique_ptr<Cert> ca_cert(new Cert);
+
+  RETURN_NOT_OK_PREPEND(ca_private_key->FromString(info.private_key(), DataFormat::DER),
+      "could not load IPKI private key");
+
+  LOG(INFO) << "IPKI private key was stored in cleartext, attempting to encrypt it.";
+
+  RETURN_NOT_OK_PREPEND(ca_private_key->ToEncryptedString(
+        info.mutable_private_key(), DataFormat::DER,
+        [&](string* password){ *password = ipki_private_key_password_;
+          return Status::OK();
+        }),
+      "private key was stored in cleartext, reencrypting with the provided "
+      "password failed.");
+
+  LOG(INFO) << "IPKI private key successfully encrypted.";
+
+  RETURN_NOT_OK_PREPEND(sys_catalog_->UpdateCertAuthorityEntry(info),
+                        "IPKI certificate couldn't be written to syscatalog");
 
   RETURN_NOT_OK(ca_cert->FromString(
       info.certificate(), DataFormat::DER));

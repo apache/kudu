@@ -1100,6 +1100,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status LoadCertAuthorityInfo(std::unique_ptr<security::PrivateKey>* key,
                                std::unique_ptr<security::Cert>* cert);
 
+  // Same as above, but it doesn't try to decrypt it even if
+  // ipki_private_key_password_ is set, and if it's able to load it, then it
+  // encrypts it using the above password and rewrites the system table entry.
+  Status LoadAndEncryptCertAuthorityInfo(std::unique_ptr<security::PrivateKey>* key,
+                                         std::unique_ptr<security::Cert>* cert);
+
   // Store cluster ID into the system table.
   Status StoreClusterId(const std::string& cluster_id);
 

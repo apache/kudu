@@ -1157,6 +1157,64 @@ TEST_F(SecurityITest, IPKICACertWebServerEndPoints) {
   ASSERT_EQ(ca_cert_str_1, ca_cert_str_2);
 }
 
+TEST_F(SecurityITest, TestEnableAndDisableEncryptedIPKICert) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  ASSERT_OK(StartCluster());
+
+  shared_ptr<KuduClient> client;
+  KuduClientBuilder b;
+  ASSERT_OK(cluster_->CreateClient(&b, &client));
+  NO_FATALS(SmokeTestCluster(client, /*transactional=*/false));
+
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    cluster_->master(i)->mutable_flags()->emplace_back("--ipki_private_key_password_cmd=echo foo");
+  }
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->Restart());
+
+  NO_FATALS(SmokeTestCluster(client, /*transactional=*/false));
+
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    cluster_->master(i)->mutable_flags()->pop_back();
+  }
+  cluster_->Shutdown();
+  // the master should fail to start, which means the tablet servers won't be
+  // able to connect to it and the mini cluster will time out waiting for the
+  // cluster to start up.
+  ASSERT_TRUE(cluster_->Restart().IsTimedOut());
+}
+
+TEST_F(SecurityITest, TestEnableAndDisableEncryptedTSK) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  cluster_opts_.extra_master_flags.emplace_back("--authn_token_validity_seconds=20");
+  cluster_opts_.extra_master_flags.emplace_back("--authz_token_validity_seconds=20");
+  cluster_opts_.extra_master_flags.emplace_back("--tsk_rotation_seconds=20");
+  ASSERT_OK(StartCluster());
+
+  shared_ptr<KuduClient> client;
+  KuduClientBuilder b;
+  ASSERT_OK(cluster_->CreateClient(&b, &client));
+  NO_FATALS(SmokeTestCluster(client, /*transactional=*/false));
+
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    cluster_->master(i)->mutable_flags()->emplace_back("--tsk_private_key_password_cmd=echo foo");
+  }
+  cluster_->Shutdown();
+  SleepFor(MonoDelta::FromSeconds(20));
+  ASSERT_OK(cluster_->Restart());
+  NO_FATALS(SmokeTestCluster(client, /*transactional=*/false));
+
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    cluster_->master(i)->mutable_flags()->pop_back();
+  }
+  cluster_->Shutdown();
+  SleepFor(MonoDelta::FromSeconds(20));
+  // the master should fail to start, which means the tablet servers won't be
+  // able to connect to it and the mini cluster will time out waiting for the
+  // cluster to start up.
+  ASSERT_TRUE(cluster_->Restart().IsTimedOut());
+}
+
 class EncryptionPolicyTest :
     public SecurityITest,
     public ::testing::WithParamInterface<tuple<
