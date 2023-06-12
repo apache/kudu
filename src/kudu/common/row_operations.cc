@@ -472,39 +472,78 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
         tablet_row.set_null(tablet_col_idx, client_set_to_null);
       }
       if (!client_set_to_null) {
-        // Copy the value if it's not null.
-        Status row_status;
-        RETURN_NOT_OK(ReadColumn(
-            col, tablet_row.mutable_cell_ptr(tablet_col_idx), &row_status));
-        if (PREDICT_FALSE(!row_status.ok())) {
-          op->SetFailureStatusOnce(row_status);
+        // Check if the non-null value is present for auto-incrementing column. For UPSERT or
+        // UPSERT_IGNORE operations we allow the user to specify the auto-incrementing value.
+        if (tablet_col_idx != auto_incrementing_col_idx) {
+          // Copy the non-null value.
+          Status row_status;
+          RETURN_NOT_OK(ReadColumn(
+              col, tablet_row.mutable_cell_ptr(tablet_col_idx), &row_status));
+          if (PREDICT_FALSE(!row_status.ok())) {
+            op->SetFailureStatusOnce(row_status);
+          }
+        } else {
+          if (op->type == RowOperationsPB_Type_INSERT ||
+              op->type == RowOperationsPB_Type_INSERT_IGNORE) {
+            // auto-incrementing column values not to be set for INSERT/INSERT_IGNORE operations.
+            static const Status kErrFieldIncorrectlySet = Status::InvalidArgument(
+                "auto-incrementing column should not be set for INSERT/INSERT_IGNORE operations");
+            op->SetFailureStatusOnce(kErrFieldIncorrectlySet);
+            RETURN_NOT_OK(ReadColumnAndDiscard(col));
+            return kErrFieldIncorrectlySet;
+          }
+          // Fetch the auto-incrementing counter from the request.
+          Status row_status;
+          int64_t counter = 0;
+          RETURN_NOT_OK(ReadColumn(
+              col, reinterpret_cast<uint8_t*>(&counter), &row_status));
+          if (PREDICT_FALSE(!row_status.ok())) {
+            op->SetFailureStatusOnce(row_status);
+          } else {
+            // Make sure it is positive.
+            if (counter < 0) {
+              static const Status kErrorValue = Status::InvalidArgument(
+                  "auto-incrementing column value must be greater than zero");
+              op->SetFailureStatusOnce(kErrorValue);
+              return kErrorValue;
+            }
+            // Check if the provided counter value is less than what is in memory
+            // and update the counter in memory.
+            if (counter > *auto_incrementing_counter) {
+              *auto_incrementing_counter = counter;
+            }
+            memcpy(tablet_row.mutable_cell_ptr(tablet_col_idx), &counter, 8);
+          }
         }
       } else if (PREDICT_FALSE(!col.is_nullable())) {
         op->SetFailureStatusOnce(Status::InvalidArgument(
             "NULL values not allowed for non-nullable column", col.ToString()));
         RETURN_NOT_OK(ReadColumnAndDiscard(col));
       }
-      if (PREDICT_FALSE(tablet_col_idx == auto_incrementing_col_idx)) {
-        static const Status err_field_incorrectly_set = Status::InvalidArgument(
-            "auto-incrementing column is incorrectly set");
-        op->SetFailureStatusOnce(err_field_incorrectly_set);
-        return err_field_incorrectly_set;
-      }
     } else {
       // If the client didn't provide a value, check if it's an auto-incrementing
       // field. If so, populate the field as appropriate.
       if (tablet_col_idx == auto_incrementing_col_idx) {
+        if (op->type == RowOperationsPB_Type_UPSERT ||
+            op->type == RowOperationsPB_Type_UPSERT_IGNORE) {
+          static const Status kErrMaxValue = Status::InvalidArgument("auto-incrementing column "
+                                                                     "should be set for "
+                                                                     "UPSERT/UPSERT_IGNORE "
+                                                                     "operations");
+          op->SetFailureStatusOnce(kErrMaxValue);
+          return kErrMaxValue;
+        }
         if (*DCHECK_NOTNULL(auto_incrementing_counter) == INT64_MAX) {
-          static const Status err_max_value = Status::IllegalState("max auto-incrementing column "
+          static const Status kErrMaxValue = Status::IllegalState("max auto-incrementing column "
                                                                    "value reached");
-          op->SetFailureStatusOnce(err_max_value);
-          return err_max_value;
+          op->SetFailureStatusOnce(kErrMaxValue);
+          return kErrMaxValue;
         }
         if (*DCHECK_NOTNULL(auto_incrementing_counter) < 0) {
-          static const Status err_value = Status::IllegalState("invalid auto-incrementing "
+          static const Status kErrValue = Status::IllegalState("invalid auto-incrementing "
                                                                "column value");
-          op->SetFailureStatusOnce(err_value);
-          return err_value;
+          op->SetFailureStatusOnce(kErrValue);
+          return kErrValue;
         }
         // We increment the auto incrementing counter at this point regardless of future failures
         // in the op for simplicity. The auto-incrementing column key space is large enough to
@@ -762,11 +801,6 @@ Status RowOperationsPBDecoder::DecodeOp<DecoderMode::WRITE_OPS>(
   switch (type) {
     case RowOperationsPB::UPSERT:
     case RowOperationsPB::UPSERT_IGNORE:
-      if (tablet_schema_->has_auto_incrementing()) {
-        return Status::NotSupported(
-            Substitute("tables with auto-incrementing column do not support "
-                       "$0 operations", RowOperationsPB_Type_Name(type)));
-      }
     case RowOperationsPB::INSERT:
     case RowOperationsPB::INSERT_IGNORE:
       return DecodeInsertOrUpsert(prototype_row_storage, mapping, op,
