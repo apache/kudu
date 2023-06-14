@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -29,17 +30,21 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 
 using std::string;
 using std::vector;
 using strings::Substitute;
 
 DEFINE_string(trusted_certificate_file, "",
-              "Path to a PEM file that contains certificate(s) to be trusted when "
-              "Kudu acts as a client (e.g. when talking to a KMS service.");
+              "Path to a file that contains certificate(s) (in PEM format) "
+              "to trust when Kudu establishes a TLS-protected connection "
+              "to HTTP/HTTPS server (e.g., KMS service, JWKS server, etc.)");
 
 namespace kudu {
 
@@ -60,6 +65,43 @@ inline Status TranslateError(CURLcode code, const char* errbuf) {
   }
   return Status::NetworkError("curl error", err_msg);
 }
+
+bool ValidateTrustedCertFile() {
+  const auto& fpath = FLAGS_trusted_certificate_file;
+  if (fpath.empty()) {
+    // No validation is needed.
+    return true;
+  }
+
+  // Make sure the file in question does exist, is readable, and non-empty.
+  // There might be extra verification to load the certificate(s) from the file,
+  // but since cURL could have some particular requirements on the contents
+  // of the file, let's skip that extra validation step and defer to the time
+  // when cURL loads the file on its own. Also, the validators might run
+  // at the time when the OpenSSL-based crypto runtime context isn't yet
+  // initialized, so it's safer to defer to TlsContext::Init() where the
+  // initialization is done in a proper way.
+  std::unique_ptr<RandomAccessFile> raf;
+  if (auto s = Env::Default()->NewRandomAccessFile(fpath, &raf); !s.ok()) {
+    LOG(ERROR) << Substitute("could not open file for reading: $0", s.ToString());
+    return false;
+  }
+  // Read just a single byte to make sure that the file is readable.
+  uint8_t scratch[1];
+  Slice data(scratch, sizeof(scratch));
+  if (auto s = raf->Read(0, data); !s.ok()) {
+    LOG(ERROR) << Substitute("could not read from file '$0': $1",
+                             fpath, s.ToString());
+    return false;
+  }
+  return true;
+}
+
+// The validator uses Env API, so it's necessary to use GROUP_FLAG_VALIDATOR()
+// instead of regular gflag's DEFINE_validator() macro to allow for custom
+// behavior of PosixEnv per settings of various flags defined in env_posix.cc.
+GROUP_FLAG_VALIDATOR(validate_trusted_certificate_file,
+                     ValidateTrustedCertFile);
 
 extern "C" {
 size_t WriteCallback(void* buffer, size_t size, size_t nmemb, void* user_ptr) {
