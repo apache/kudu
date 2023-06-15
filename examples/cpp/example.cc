@@ -274,7 +274,11 @@ int main(int argc, char* argv[]) {
     master_addrs.push_back(argv[i]);
   }
 
-  const string kTableName = "test_table";
+  // Kudu doesn't have a notion of a database namespace, but if the integration
+  // with HMS (Hive MetaStore) is enabled, there are restriction on the name
+  // of tables that can be created, so this example adds the 'db' prefix to
+  // make it work both with and without HMS integration.
+  const string kTableName = "db.test_table";
 
   // Enable verbose debugging for the client library.
   kudu::client::SetVerboseLogLevel(2);
