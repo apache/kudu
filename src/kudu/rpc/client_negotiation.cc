@@ -33,7 +33,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
@@ -51,7 +50,6 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/slice.h"
@@ -63,16 +61,6 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif // #if defined(__APPLE__)
-
-DEFINE_bool(jwt_client_require_trusted_tls_cert, true,
-            "When this flag is set to 'false', a Kudu client is willing "
-            "to send its JSON Web Token over TLS connections to authenticate "
-            "to a Kudu server whose TLS certificate is not trusted "
-            "by the client. "
-            "NOTE: this is used for test purposes only; don't use in any other "
-            "use case due to security implications");
-TAG_FLAG(jwt_client_require_trusted_tls_cert, hidden);
-TAG_FLAG(jwt_client_require_trusted_tls_cert, unsafe);
 
 DECLARE_bool(rpc_encrypt_loopback_connections);
 
@@ -202,14 +190,12 @@ Status ClientNegotiation::Negotiate(unique_ptr<ErrorStatusPB>* rpc_error) {
   }
 
   // Step 3: if both ends support TLS, do a TLS handshake.
-  // TODO(KUDU-1921): allow the client to require TLS.
   if (encryption_ != RpcEncryption::DISABLED &&
       ContainsKey(server_features_, TLS)) {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(&tls_handshake_));
 
-    if (negotiated_authn_ == AuthenticationType::SASL ||
-        negotiated_authn_ == AuthenticationType::JWT) {
-      // When using SASL or JWT authentication, verifying the server's certificate is
+    if (negotiated_authn_ == AuthenticationType::SASL) {
+      // When using SASL authentication, verifying the server's certificate is
       // not necessary. This allows the client to still use TLS encryption for
       // connections to servers which only have a self-signed certificate.
       tls_handshake_.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
@@ -366,14 +352,31 @@ Status ClientNegotiation::SendNegotiate() {
     // reliably on clients?
     msg.add_authn_types()->mutable_token();
   }
-  if (jwt_ && (tls_context_->has_trusted_cert() ||
-               PREDICT_FALSE(!FLAGS_jwt_client_require_trusted_tls_cert))) {
-    // The client isn't sending its JWT to servers whose authenticity it cannot
-    // verify, otherwise its authn credentials might be stolen by an impostor.
-    // So, even if the client has a JWT to use, it does not advertise that
-    // it's capable of JWT-based authentication when it doesn't trust the
-    // server's TLS certificate.
-    msg.add_authn_types()->mutable_jwt();
+  if (jwt_) {
+    if (tls_context_->has_trusted_cert()) {
+      msg.add_authn_types()->mutable_jwt();
+    } else {
+      // The client isn't sending its JWT to a server whose authenticity
+      // it cannot verify, otherwise its authn credentials might be stolen
+      // by an impostor. So, even if the client has a JWT to use, it does not
+      // advertise its JWT-based authentication capability when it doesn't trust
+      // the server's TLS certificate.
+      string server_addr_str;
+      {
+        Sockaddr server_addr;
+        if (auto s = socket_->GetPeerAddress(&server_addr); !s.ok()) {
+          LOG(WARNING) << "could not deduce server's address from socket info";
+        } else {
+          server_addr_str = server_addr.ToString();
+        }
+      }
+      const string& server_info = server_addr_str.empty()
+          ? "server" : Substitute("server at $0", server_addr_str);
+      LOG(WARNING) << Substitute(
+          "the client has a JWT but it isn't advertising its JWT-based authn "
+          "capability since it doesn't trust the certificate of the $0",
+          server_info);
+    }
   }
 
   if (PREDICT_FALSE(msg.authn_types().empty())) {
@@ -464,8 +467,6 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
   // The preference list in order of most to least preferred:
   //  * GSSAPI
   //  * PLAIN
-  //
-  // TODO(KUDU-1921): allow the client to require authentication.
   if (ContainsKey(client_mechs, SaslMechanism::GSSAPI) &&
       ContainsKey(server_mechs, SaslMechanism::GSSAPI)) {
     // Check that the client has local Kerberos credentials, and if not fall
