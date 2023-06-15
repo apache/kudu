@@ -84,7 +84,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(jwt_client_require_trusted_tls_cert);
 DECLARE_string(local_ip_for_outbound_sockets);
 
 using kudu::client::KuduClient;
@@ -643,28 +642,6 @@ TEST_F(SecurityITest, TestJwtMiniCluster) {
     ASSERT_TRUE(s. IsNotAuthorized()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
         "client requires authentication, but server does not have");
-  }
-  {
-    SCOPED_TRACE("Valid JWT with relaxed requirements for server's TLS cert");
-    KuduClientBuilder cb;
-    for (auto i = 0; i < cluster_->num_masters(); ++i) {
-      cb.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
-    }
-    cb.jwt(cluster_->oidc()->CreateJwt(kValidAccount, kSubject, true));
-    cb.require_authentication(true);
-
-    // If not adding the CA certificate that Kudu RPC server certificates are
-    // signed with, in simplified test scenarios it's possible to relax the
-    // requirements at the client side of the Kudu RPC connection negotiation
-    // protocol. With --jwt_client_require_trusted_tls_cert=false, the client
-    // does not verify the server's TLS certificate before sending its JWT
-    // to the server for authentication.
-    FLAGS_jwt_client_require_trusted_tls_cert = false;
-
-    shared_ptr<KuduClient> client;
-    ASSERT_OK(cb.Build(&client));
-    vector<string> tables;
-    ASSERT_OK(client->ListTables(&tables));
   }
 }
 
