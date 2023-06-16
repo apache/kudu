@@ -55,6 +55,7 @@ trait KuduTestSuite {
   val tableName: String = "test"
   val owner: String = "testuser"
   val simpleTableName: String = "simple-test"
+  val simpleAutoIncrementingTableName: String = "simple-auto-incrementing-test"
 
   lazy val schema: Schema = {
     val columns = List(
@@ -103,6 +104,13 @@ trait KuduTestSuite {
   lazy val simpleSchema: Schema = {
     val columns = List(
       new ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
+      new ColumnSchemaBuilder("val", Type.STRING).nullable(true).build()).asJava
+    new Schema(columns)
+  }
+
+  lazy val simpleAutoIncrementingSchema: Schema = {
+    val columns = List(
+      new ColumnSchemaBuilder("key", Type.INT32).nonUniqueKey(true).build(),
       new ColumnSchemaBuilder("val", Type.STRING).nullable(true).build()).asJava
     new Schema(columns)
   }

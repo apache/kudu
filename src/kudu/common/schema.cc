@@ -310,8 +310,11 @@ Status Schema::Reset(vector<ColumnSchema> cols,
     if (col.name().empty()) {
       return Status::InvalidArgument("column names must be non-empty");
     }
+    // We have to check for the number of key columns here as
+    // ColumnSchema.getStrippedColumnSchema() would trigger the exception
+    // otherwise.
     if (col.name() == Schema::GetAutoIncrementingColumnName() &&
-        !col.is_auto_incrementing()) {
+        !col.is_auto_incrementing() && num_key_columns_ != 0) {
       return Status::InvalidArgument(Substitute(
           "$0 is a reserved column name", Schema::GetAutoIncrementingColumnName()));
     }

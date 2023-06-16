@@ -83,6 +83,64 @@ class TestKuduBackup extends KuduTestSuite {
   }
 
   @Test
+  def testAutoIncrementingColumnBackupAndRestore() {
+    val rowCount = 100
+    val expectedRowCount = 200
+    val simpleAutoIncrementingTableOptions = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .setNumReplicas(1)
+    val AutoIncrementingTable = kuduClient.createTable(
+      simpleAutoIncrementingTableName,
+      simpleAutoIncrementingSchema,
+      simpleAutoIncrementingTableOptions)
+
+    val session = kuduClient.newSession()
+
+    // Insert some rows.
+    Range(0, rowCount).foreach { i =>
+      val insert = AutoIncrementingTable.newInsert
+      val row = insert.getRow
+      row.addInt("key", i)
+      row.addString("val", s"a$i")
+      session.apply(insert)
+    }
+
+    // Perform a full backup.
+    backupAndValidateTable(simpleAutoIncrementingTableName, rowCount, false)
+    // Insert some more rows.
+    Range(rowCount, 2 * rowCount).foreach { i =>
+      val insert = AutoIncrementingTable.newInsert
+      val row = insert.getRow
+      row.addInt("key", i)
+      row.addString("val", s"a$i")
+      session.apply(insert)
+    }
+    // Perform an incremental backup.
+    backupAndValidateTable(simpleAutoIncrementingTableName, rowCount, true)
+
+    // Restore the table.
+    restoreAndValidateTable(simpleAutoIncrementingTableName, expectedRowCount)
+    // Validate the table schemas match.
+    validateTablesMatch(
+      simpleAutoIncrementingTableName,
+      s"$simpleAutoIncrementingTableName-restore")
+
+    // Validate the data written in the restored table.
+    val restoreTable = kuduClient.openTable(s"$simpleAutoIncrementingTableName-restore")
+    val scanner = kuduClient.newScannerBuilder(restoreTable).build()
+    val rows = scanner.asScala.toList
+    assertEquals(expectedRowCount, rows.length)
+    var i = 0
+    rows.foreach { row =>
+      assertEquals(i, row.getInt("key"))
+      assertEquals(i + 1, row.getLong(Schema.getAutoIncrementingColumnName))
+      assertEquals(s"a$i", row.getString("val"))
+      i += 1
+    }
+    assertEquals(expectedRowCount, rows.length)
+  }
+
+  @Test
   def testSimpleIncrementalBackupAndRestore() {
     insertRows(table, 100) // Insert data into the default test table.
 
