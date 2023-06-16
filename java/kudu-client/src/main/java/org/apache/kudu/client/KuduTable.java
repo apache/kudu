@@ -188,10 +188,6 @@ public class KuduTable {
    * @throws UnsupportedOperationException if the table has auto-incrementing column
    */
   public Upsert newUpsert() {
-    if (schema.hasAutoIncrementingColumn()) {
-      throw new UnsupportedOperationException(
-          "Tables with auto-incrementing column do not support UPSERT operations");
-    }
     return new Upsert(this);
   }
 
@@ -203,10 +199,6 @@ public class KuduTable {
    * @throws UnsupportedOperationException if the table has auto-incrementing column
    */
   public UpsertIgnore newUpsertIgnore() {
-    if (schema.hasAutoIncrementingColumn()) {
-      throw new UnsupportedOperationException(
-          "Tables with auto-incrementing column do not support UPSERT_IGNORE operations");
-    }
     return new UpsertIgnore(this);
   }
 
