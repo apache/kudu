@@ -470,22 +470,29 @@ class TestClient(KuduTestBase, CompatUnitTest):
             table = self.client.table(table_name)
             session = self.client.new_session()
 
-            # Insert with auto incrementing column specified
+            # Insert with auto-incrementing column not specified
             op = table.new_insert()
+            op['key'] = 1
+            session.apply(op)
+            session.flush()
+
+            # TODO: the below test segfaults(KUDU-3454)
+            # # Insert with auto incrementing column specified
+            # op = table.new_insert()
+            # op['key'] = 1
+            # op[Schema.get_auto_incrementing_column_name()] = 1
+            # error_msg = 'should not be specified for Insert operation'
+            # with self.assertRaisesRegex(KuduBadStatus, error_msg):
+            #     session.apply(op)
+
+            # Upsert with auto-incrementing column specified
+            op = table.new_upsert()
             op['key'] = 1
             op[Schema.get_auto_incrementing_column_name()] = 1
             session.apply(op)
-            try:
-                session.flush()
-            except KuduBadStatus:
-                message = 'should not be set for'
-                errors, overflow = session.get_pending_errors()
-                assert not overflow
-                assert len(errors) == 1
-                assert message in repr(errors[0])
 
-            # TODO: Upsert should be rejected as of now. However the test segfaults: KUDU-3454
-            # TODO: Upsert ignore should be rejected. Once Python client supports upsert ignore.
+            # TODO: once upsert_ignore is supported by the Python client,
+            # check if specifying all the key columns works.
 
             # With non-unique primary key, one can't use the tuple/list initialization for new
             # inserts. In this case, at the second position it would like to get an int64 (the type

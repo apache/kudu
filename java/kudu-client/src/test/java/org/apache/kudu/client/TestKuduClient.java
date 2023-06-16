@@ -871,6 +871,29 @@ public class TestKuduClient {
       assertEquals(expectedRow.toString(), rowStrings.get(i));
     }
 
+    // Upsert rows into the table after assigning values for the auto-incrementing
+    // column. The first three rows will be applied as updates and the next three as
+    // inserts.
+    for (int i = 0; i < 6; i++) {
+      Upsert upsert = table.newUpsert();
+      row = upsert.getRow();
+      row.addInt("key", i);
+      row.addLong(Schema.getAutoIncrementingColumnName(), i + 1);
+      row.addInt("c1", i * 20);
+      session.apply(upsert);
+    }
+    session.flush();
+
+    // Scan all the rows in the table with all columns.
+    // Verify that the auto-incrementing column is included in the rows.
+    rowStrings = scanTableToStrings(table);
+    assertEquals(6, rowStrings.size());
+    for (int i = 0; i < rowStrings.size(); i++) {
+      String expectedRow = String.format("INT32 key=%d, INT64 %s=%d, INT32 c1=%d",
+              i, Schema.getAutoIncrementingColumnName(), i + 1, i * 20);
+      assertEquals(expectedRow, rowStrings.get(i));
+    }
+
     // Delete the first row with "key" and auto-incrementing columns.
     // Verify that number of rows is decreased by 1.
     Delete delete = table.newDelete();
@@ -879,7 +902,7 @@ public class TestKuduClient {
     row.addLong(schema.getColumnByIndex(1).getName(), 1);
     session.apply(delete);
     session.flush();
-    assertEquals(2, countRowsInScan(client.newScannerBuilder(table).build()));
+    assertEquals(5, countRowsInScan(client.newScannerBuilder(table).build()));
 
     // Check that we can delete the table.
     client.deleteTable(TABLE_NAME);
@@ -905,23 +928,21 @@ public class TestKuduClient {
     schema = table.getSchema();
     assertTrue(schema.hasAutoIncrementingColumn());
 
-    // Verify that UPSERT is not allowed for table with auto-incrementing column
-    try {
-      table.newUpsert();
-      fail("UPSERT on table with auto-incrementing column");
-    } catch (UnsupportedOperationException e) {
-      assertTrue(e.getMessage().contains(
-          "Tables with auto-incrementing column do not support UPSERT operations"));
-    }
+    // Verify that UPSERT is allowed for table with auto-incrementing column
+    Upsert upsert = table.newUpsert();
+    PartialRow rowUpsert = upsert.getRow();
+    rowUpsert.addInt("key", 0);
+    rowUpsert.addLong(Schema.getAutoIncrementingColumnName(), 1);
+    rowUpsert.addInt("c1", 10);
+    session.apply(upsert);
 
-    // Verify that UPSERT_IGNORE is not allowed for table with auto-incrementing column
-    try {
-      table.newUpsertIgnore();
-      fail("UPSERT_IGNORE on table with auto-incrementing column");
-    } catch (UnsupportedOperationException e) {
-      assertTrue(e.getMessage().contains(
-          "Tables with auto-incrementing column do not support UPSERT_IGNORE operations"));
-    }
+    // Verify that UPSERT_IGNORE is allowed for table with auto-incrementing column
+    UpsertIgnore upsertIgnore = table.newUpsertIgnore();
+    PartialRow rowUpsertIgnore = upsertIgnore.getRow();
+    rowUpsertIgnore.addInt("key", 1);
+    rowUpsertIgnore.addLong(Schema.getAutoIncrementingColumnName(), 2);
+    rowUpsertIgnore.addInt("c1", 20);
+    session.apply(upsertIgnore);
 
     // Change desired block size for auto-incrementing column
     client.alterTable(TABLE_NAME, new AlterTableOptions().changeDesiredBlockSize(
@@ -934,6 +955,33 @@ public class TestKuduClient {
         Schema.getAutoIncrementingColumnName(), ColumnSchema.CompressionAlgorithm.NO_COMPRESSION));
     session.flush();
 
+    // Verify that auto-incrementing column value cannot be specified in an INSERT operation.
+    try {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addInt("key", 1);
+      row.addLong(Schema.getAutoIncrementingColumnName(), 1);
+      row.addInt("c1", 10);
+      session.apply(insert);
+      fail("INSERT on table with auto-incrementing column set");
+    } catch (KuduException ex) {
+      assertTrue(ex.getMessage().contains("Auto-Incrementing column should not " +
+          "be specified for INSERT operation"));
+    }
+
+    // Verify that auto-incrementing column value cannot be specified in an INSERT_IGNORE operation.
+    try {
+      InsertIgnore insertIgnore = table.newInsertIgnore();
+      PartialRow row = insertIgnore.getRow();
+      row.addInt("key", 1);
+      row.addLong(Schema.getAutoIncrementingColumnName(), 1);
+      row.addInt("c1", 10);
+      session.apply(insertIgnore);
+      fail("INSERT on table with auto-incrementing column set");
+    } catch (KuduException ex) {
+      assertTrue(ex.getMessage().contains("Auto-Incrementing column should not " +
+          "be specified for INSERT operation"));
+    }
     // Verify that auto-incrementing column cannot be added
     try {
       client.alterTable(TABLE_NAME, new AlterTableOptions().addColumn(

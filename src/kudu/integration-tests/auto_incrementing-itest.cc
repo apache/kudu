@@ -59,6 +59,8 @@ using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduUpdate;
+using kudu::client::KuduUpsert;
 using kudu::client::sp::shared_ptr;
 using kudu::env_util::ListFilesInDir;
 using kudu::rpc::RpcController;
@@ -88,6 +90,7 @@ class AutoIncrementingItest : public KuduTest {
   Status CreateTableWithPartition() {
     KuduSchemaBuilder b;
     b.AddColumn("c0")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+    b.AddColumn("c1")->Type(client::KuduColumnSchema::STRING)->NotNull();
     RETURN_NOT_OK(b.Build(&kudu_schema_));
 
     int lower_bound = 0;
@@ -115,7 +118,42 @@ class AutoIncrementingItest : public KuduTest {
       unique_ptr<KuduInsert> insert(table_->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
       RETURN_NOT_OK(row->SetInt32("c0", i));
+      RETURN_NOT_OK(row->SetString("c1", "string_val"));
       RETURN_NOT_OK(session->Apply(insert.release()));
+      SleepFor(MonoDelta::FromMilliseconds(sleep_millis));
+    }
+    return Status::OK();
+  }
+
+  // Insert data into the above created table.
+  Status UpdateData(int start_c0_value, int end_c0_value, int sleep_millis = 0,
+                    const string& c1_val = "string_val") {
+    shared_ptr<KuduSession> session(client_->NewSession());
+        RETURN_NOT_OK(client_->OpenTable(kTableName, &table_));
+    for (int i = start_c0_value; i < end_c0_value; i++) {
+      unique_ptr<KuduUpdate> update(table_->NewUpdate());
+      KuduPartialRow* row = update->mutable_row();
+      RETURN_NOT_OK(row->SetInt32("c0", i));
+      RETURN_NOT_OK(row->SetInt64(Schema::GetAutoIncrementingColumnName(), i + 1));
+      RETURN_NOT_OK(row->SetString("c1", c1_val));
+      RETURN_NOT_OK(session->Apply(update.release()));
+      SleepFor(MonoDelta::FromMilliseconds(sleep_millis));
+    }
+    return Status::OK();
+  }
+
+  // Upsert data into the above created table.
+  Status UpsertData(int start_c0_value, int end_c0_value, int sleep_millis = 0,
+                    const string& c1_val = "string_val") {
+    shared_ptr<KuduSession> session(client_->NewSession());
+        RETURN_NOT_OK(client_->OpenTable(kTableName, &table_));
+    for (int i = start_c0_value; i < end_c0_value; i++) {
+      unique_ptr<KuduUpsert> upsert(table_->NewUpsert());
+      KuduPartialRow* row = upsert->mutable_row();
+      RETURN_NOT_OK(row->SetInt32("c0", i));
+      RETURN_NOT_OK(row->SetInt64(Schema::GetAutoIncrementingColumnName(), i + 1));
+      RETURN_NOT_OK(row->SetString("c1", c1_val));
+      RETURN_NOT_OK(session->Apply(upsert.release()));
       SleepFor(MonoDelta::FromMilliseconds(sleep_millis));
     }
     return Status::OK();
@@ -149,6 +187,7 @@ class AutoIncrementingItest : public KuduTest {
     Schema schema = Schema({ ColumnSchema("c0", INT32),
                              ColumnSchema(Schema::GetAutoIncrementingColumnName(),
                                           INT64, false,false, true),
+                             ColumnSchema("c1", STRING),
                            },2);
     RETURN_NOT_OK(SchemaToColumnPBs(schema, scan->mutable_projected_columns()));
     RETURN_NOT_OK(cluster_->tserver_proxy(ts)->Scan(req, &resp, &rpc));
@@ -218,10 +257,96 @@ TEST_F(AutoIncrementingItest, BasicInserts) {
     vector<string> results;
     ASSERT_OK(ScanTablet(j, resp.status_and_schema(0).tablet_status().tablet_id(), &results));
     for (int i = 0; i < kNumRows; i++) {
-      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2)", i,
+      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2, string c1=\"string_val\")", i,
                            Schema::GetAutoIncrementingColumnName(), i + 1), results[i]);
     }
   }
+
+  // Update column c1 with a new string and verify the data
+  ASSERT_OK(UpdateData(0, kNumRows, 0, "val_string"));
+
+  // Scan all the tablet replicas and validate the results.
+  for (int j = 0; j < kNumTabletServers; j++) {
+    auto server = cluster_->tserver_proxy(j);
+    rpc::RpcController rpc;
+    tserver::ListTabletsRequestPB req;
+    tserver::ListTabletsResponsePB resp;
+    server->ListTablets(req, &resp, &rpc);
+    ASSERT_EQ(1, resp.status_and_schema_size());
+    vector<string> results;
+    ASSERT_OK(ScanTablet(j, resp.status_and_schema(0).tablet_status().tablet_id(), &results));
+    for (int i = 0; i < kNumRows; i++) {
+      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2, string c1=\"val_string\")", i,
+                           Schema::GetAutoIncrementingColumnName(), i + 1), results[i]);
+    }
+  }
+}
+
+TEST_F(AutoIncrementingItest, BasicUpserts) {
+  cluster::ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTabletServers;
+  cluster_.reset(new cluster::ExternalMiniCluster(std::move(opts)));
+  ASSERT_OK(cluster_->Start());
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+
+  // Create a table and upsert data. These will be inserts as there is no data present.
+  ASSERT_OK(CreateTableWithPartition());
+  ASSERT_OK(UpsertData(0, kNumRows));
+
+  // Scan all the tablet replicas and validate the results.
+  for (int j = 0; j < kNumTabletServers; j++) {
+    auto server = cluster_->tserver_proxy(j);
+    rpc::RpcController rpc;
+    tserver::ListTabletsRequestPB req;
+    tserver::ListTabletsResponsePB resp;
+    server->ListTablets(req, &resp, &rpc);
+    ASSERT_EQ(1, resp.status_and_schema_size());
+    vector<string> results;
+    ASSERT_OK(ScanTablet(j, resp.status_and_schema(0).tablet_status().tablet_id(), &results));
+    for (int i = 0; i < kNumRows; i++) {
+      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2, string c1=\"string_val\")", i,
+                           Schema::GetAutoIncrementingColumnName(), i + 1), results[i]);
+    }
+  }
+
+  // Upsert data to the same rows written above but with a different c1 column value.
+  ASSERT_OK(UpsertData(0, kNumRows, 0, "val_string"));
+  // Scan all the tablet replicas and validate the results.
+  for (int j = 0; j < kNumTabletServers; j++) {
+    auto server = cluster_->tserver_proxy(j);
+    rpc::RpcController rpc;
+    tserver::ListTabletsRequestPB req;
+    tserver::ListTabletsResponsePB resp;
+    server->ListTablets(req, &resp, &rpc);
+    ASSERT_EQ(1, resp.status_and_schema_size());
+    vector<string> results;
+    ASSERT_OK(ScanTablet(j, resp.status_and_schema(0).tablet_status().tablet_id(), &results));
+    for (int i = 0; i < kNumRows; i++) {
+      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2, string c1=\"val_string\")", i,
+                           Schema::GetAutoIncrementingColumnName(), i + 1), results[i]);
+    }
+  }
+}
+
+TEST_F(AutoIncrementingItest, TestNegatives) {
+  cluster::ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTabletServers;
+  cluster_.reset(new cluster::ExternalMiniCluster(std::move(opts)));
+  ASSERT_OK(cluster_->Start());
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+
+  // Create a table and insert data with auto-incrementing column value present.
+  ASSERT_OK(CreateTableWithPartition());
+  shared_ptr<KuduSession> session(client_->NewSession());
+  ASSERT_OK(client_->OpenTable(kTableName, &table_));
+  unique_ptr<KuduInsert> insert(table_->NewInsert());
+  KuduPartialRow* row = insert->mutable_row();
+  ASSERT_OK(row->SetInt32("c0", 1));
+  ASSERT_OK(row->SetInt64("auto_incrementing_id", 1));
+  ASSERT_OK(row->SetString("c1", "string_val"));
+  Status s = session->Apply(insert.release());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Auto-Incrementing column should not be specified");
 }
 
 TEST_F(AutoIncrementingItest, BootstrapWithNoWals) {
@@ -262,7 +387,7 @@ TEST_F(AutoIncrementingItest, BootstrapWithNoWals) {
     ASSERT_OK(ScanTablet(j, tablet_uuid, &results));
     LOG(INFO) << "Results size: " << results.size();
     for (int i = 0; i < results.size(); i++) {
-      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2)", i + 100,
+      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2, string c1=\"string_val\")", i + 100,
                            Schema::GetAutoIncrementingColumnName(), i + 100 + 1), results[i]);
 
     }
@@ -320,7 +445,7 @@ TEST_F(AutoIncrementingItest, BootstrapNoWalsNoData) {
     ASSERT_OK(ScanTablet(j, tablet_uuid, &results));
     ASSERT_EQ(200, results.size());
     for (int i = 0; i < results.size(); i++) {
-      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2)", i + kNumRows,
+      ASSERT_EQ(Substitute("(int32 c0=$0, int64 $1=$2, string c1=\"string_val\")", i + kNumRows,
                            Schema::GetAutoIncrementingColumnName(), i + 1), results[i]);
     }
   }

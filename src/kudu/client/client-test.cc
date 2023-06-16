@@ -9865,7 +9865,7 @@ class ClientTestAutoIncrementingColumn : public ClientTest {
   }
 };
 
-TEST_F(ClientTestAutoIncrementingColumn, ReadAndWrite) {
+TEST_F(ClientTestAutoIncrementingColumn, ReadAndWriteUsingInserts) {
   const string kTableName = "table_with_auto_incrementing_column";
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
@@ -9920,6 +9920,70 @@ TEST_F(ClientTestAutoIncrementingColumn, ReadAndWrite) {
     for (int i = 0; i < rows.size(); i++) {
       ASSERT_EQ(Substitute("(int32 key=$0, int64 auto_incrementing_id=$1)", i,
                            (i % 10) + 1), rows[i]);
+    }
+  }
+}
+
+TEST_F(ClientTestAutoIncrementingColumn, ReadAndWriteUsingUpserts) {
+  const string kTableName = "concurrent_writes_auto_incrementing_column";
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
+  ASSERT_OK(b.Build(&schema_));
+
+  // Create a table with a single range partition.
+  static constexpr int lower_bound = 0;
+  static constexpr int upper_bound = 20;
+  unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+  unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+
+  ASSERT_OK(lower->SetInt32("key", lower_bound));
+  ASSERT_OK(upper->SetInt32("key", upper_bound));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+                .schema(&schema_)
+                .set_range_partition_columns({"key"})
+                .add_range_partition(lower.release(), upper.release())
+                .num_replicas(3)
+                .Create());
+
+  // Write into these two partitions specifying values for
+  // auto-incrementing column using UPSERT and UPSERT_IGNORE.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  static constexpr auto kNumRows = 20;
+  // Iterate twice Upserting the same data so that the first iteration would have
+  // Upserts as Inserts and in the next iteration Upserts are Updates.
+  for (int j = 0; j < 2; j++) {
+    for (int i = 0; i < kNumRows; i+=2) {
+      unique_ptr<KuduUpsert> upsert(table->NewUpsert());
+      KuduPartialRow* row_upsert = upsert->mutable_row();
+      ASSERT_OK(row_upsert->SetInt32("key", i));
+      ASSERT_OK(row_upsert->SetInt64(Schema::GetAutoIncrementingColumnName(), i + 1));
+      ASSERT_OK(session->Apply(upsert.release()));
+
+      unique_ptr<KuduUpsertIgnore> upsert_ignore(table->NewUpsertIgnore());
+      KuduPartialRow* row_upsert_ignore = upsert_ignore->mutable_row();
+      ASSERT_OK(row_upsert_ignore->SetInt32("key", i + 1));
+      ASSERT_OK(row_upsert_ignore->SetInt64(Schema::GetAutoIncrementingColumnName(), i + 2));
+      ASSERT_OK(session->Apply(upsert_ignore.release()));
+    }
+  }
+  FlushSessionOrDie(session);
+
+  // Read back the rows and confirm the values of auto-incrementing column set
+  // correctly for each of the partitions in different scan modes.
+  for (const auto mode: {KuduClient::LEADER_ONLY, KuduClient::CLOSEST_REPLICA,
+                         KuduClient::FIRST_REPLICA}) {
+    vector<string> rows;
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetSelection(mode));
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(kNumRows, rows.size());
+    for (int i = 0; i < rows.size(); i++) {
+      ASSERT_EQ(Substitute("(int32 key=$0, int64 auto_incrementing_id=$1)", i,
+                           i + 1), rows[i]);
     }
   }
 }
@@ -10099,43 +10163,6 @@ TEST_F(ClientTestAutoIncrementingColumn, AlterOperationNegatives) {
     ASSERT_EQ(Substitute("Invalid argument: can't change immutability for column: $0",
                         Schema::GetAutoIncrementingColumnName()),
               alterer->Alter().ToString());
-  }
-}
-
-TEST_F(ClientTestAutoIncrementingColumn, InsertOperationNegatives) {
-  const string kTableName = "insert_operation_negatives_auto_incrementing_column";
-  KuduSchemaBuilder b;
-  // Create a schema with non-unique PK, such that auto incrementing col is present.
-  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->NonUniquePrimaryKey();
-  ASSERT_OK(b.Build(&schema_));
-
-  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  ASSERT_OK(table_creator->table_name(kTableName)
-            .schema(&schema_)
-            .add_hash_partitions({"key"}, 2)
-            .num_replicas(3)
-            .Create());
-
-  shared_ptr<KuduSession> session(client_->NewSession());
-  shared_ptr<KuduTable> table;
-  client_->OpenTable(kTableName, &table);
-
-  {
-    unique_ptr<KuduUpsert> op(table->NewUpsert());
-    auto* row = op->mutable_row();
-    ASSERT_OK(row->SetInt32("key", 1));
-    ASSERT_STR_CONTAINS(session->Apply(op.release()).ToString(),
-                        "Illegal state: this type of write operation is not supported on table "
-                        "with auto-incrementing column");
-  }
-
-  {
-    unique_ptr<KuduUpsertIgnore> op(table->NewUpsertIgnore());
-    auto* row = op->mutable_row();
-    ASSERT_OK(row->SetInt32("key", 1));
-    ASSERT_STR_CONTAINS(session->Apply(op.release()).ToString(),
-                        "Illegal state: this type of write operation is not supported on table "
-                        "with auto-incrementing column");
   }
 }
 

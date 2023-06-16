@@ -634,6 +634,10 @@ class KUDU_EXPORT KuduPartialRow {
   ///   for this mutation.
   bool IsNonUniqueKeySet() const;
 
+  /// @return @c true if auto-incrementing column has been set
+  ///   for this mutation.
+  bool IsAutoIncrementingColumnSet() const;
+
   /// @return @c true if all column values have been set.
   bool AllColumnsSet() const;
 
