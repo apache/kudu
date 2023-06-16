@@ -70,6 +70,7 @@ object TableMetadata {
         .setCompression(col.getCompressionAlgorithm.toString)
         .setBlockSize(col.getDesiredBlockSize)
         .setComment(col.getComment)
+        .setIsAutoIncrementing(col.isAutoIncrementing)
       if (col.getTypeAttributes != null) {
         builder.setTypeAttributes(getTypeAttributesMetadata(col))
       }
@@ -236,36 +237,50 @@ object TableMetadata {
   }
 
   def getKuduSchema(metadata: TableMetadataPB): Schema = {
-    val columns = metadata.getColumnsList.asScala.map { col =>
-      val colType = Type.getTypeForName(col.getType)
-      val builder = new ColumnSchemaBuilder(col.getName, colType)
-        .key(col.getIsKey)
-        .nullable(col.getIsNullable)
-        .encoding(Encoding.valueOf(col.getEncoding))
-        .compressionAlgorithm(CompressionAlgorithm.valueOf(col.getCompression))
-        .desiredBlockSize(col.getBlockSize)
-        .comment(col.getComment)
-
-      if (col.hasDefaultValue) {
-        val value = valueFromString(col.getDefaultValue.getValue, colType)
-        builder.defaultValue(value)
+    var IsAutoIncrementingPresent = false
+    metadata.getColumnsList.asScala.foreach { col =>
+      if (col.getIsAutoIncrementing) {
+        IsAutoIncrementingPresent = true
       }
-
-      if (col.hasTypeAttributes) {
-        val attributes = col.getTypeAttributes
-        builder.typeAttributes(
-          new ColumnTypeAttributesBuilder()
-            .precision(attributes.getPrecision)
-            .scale(attributes.getScale)
-            .length(attributes.getLength)
-            .build()
-        )
-      }
-      builder.build()
     }
+    val columns = new util.ArrayList[ColumnSchema]()
+    val colIds = new util.ArrayList[Integer]()
     val toId = metadata.getColumnIdsMap.asScala
-    val colIds = metadata.getColumnsList.asScala.map(_.getName).map(toId)
-    new Schema(columns.asJava, colIds.asJava)
+    metadata.getColumnsList.asScala.foreach { col =>
+      if (!col.getIsAutoIncrementing) {
+        val colType = Type.getTypeForName(col.getType)
+        val builder = new ColumnSchemaBuilder(col.getName, colType)
+          .nullable(col.getIsNullable)
+          .encoding(Encoding.valueOf(col.getEncoding))
+          .compressionAlgorithm(CompressionAlgorithm.valueOf(col.getCompression))
+          .desiredBlockSize(col.getBlockSize)
+          .comment(col.getComment)
+        if (IsAutoIncrementingPresent) {
+          builder.nonUniqueKey(col.getIsKey)
+        } else {
+          builder.key(col.getIsKey)
+        }
+
+        if (col.hasDefaultValue) {
+          val value = valueFromString(col.getDefaultValue.getValue, colType)
+          builder.defaultValue(value)
+        }
+
+        if (col.hasTypeAttributes) {
+          val attributes = col.getTypeAttributes
+          builder.typeAttributes(
+            new ColumnTypeAttributesBuilder()
+              .precision(attributes.getPrecision)
+              .scale(attributes.getScale)
+              .length(attributes.getLength)
+              .build()
+          )
+        }
+        colIds.add(toId(col.getName))
+        columns.add(builder.build())
+      }
+    }
+    new Schema(columns, colIds)
   }
 
   private def getValue(row: PartialRow, columnName: String, colType: Type): Any = {

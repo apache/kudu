@@ -49,6 +49,7 @@ message ColumnMetadataPB {
   string compression = 8;
   int32 block_size = 9;
   string comment = 10;
+  bool is_auto_incrementing = 11;
 }
 
 // A human readable string representation of a column value for use
