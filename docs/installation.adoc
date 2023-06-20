@@ -98,7 +98,7 @@ on a version older than 8.0, the Red Hat Developer Toolset must be installed
 ----
 $ sudo yum install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
   cyrus-sasl-plain flex gcc gcc-c++ gdb git java-1.8.0-openjdk-devel \
-  krb5-server krb5-workstation libtool make openssl-devel patch \
+  krb5-server krb5-workstation krb5-devel libtool make openssl-devel patch \
   pkgconfig redhat-lsb-core rsync unzip vim-common which
 ----
 
@@ -109,6 +109,12 @@ https://developers.redhat.com/products/developertoolset/hello-world[here].
 ----
 $ sudo yum install centos-release-scl-rh
 $ sudo yum install devtoolset-8
+----
+
+. If building on RHEL or CentOS older than 9.0, install the `redhat-lsb-core` package:
++
+----
+$ sudo yum install redhat-lsb-core
 ----
 
 . Optional: If support for Kudu's NVM (non-volatile memory) block cache is
@@ -240,8 +246,10 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 
 sudo yum -y install autoconf automake curl cyrus-sasl-devel cyrus-sasl-gssapi \
   cyrus-sasl-plain flex gcc gcc-c++ gdb git java-1.8.0-openjdk-devel \
-  krb5-server krb5-workstation libtool make openssl-devel patch pkgconfig \
-  redhat-lsb-core rsync unzip vim-common which
+  krb5-server krb5-workstation krb5-devel libtool make openssl-devel patch \
+  pkgconfig rsync unzip vim-common which
+# Uncomment the next line if installing on RHEL/CentOS < 9
+# sudo yum -y install redhat-lsb-core
 sudo yum -y install centos-release-scl-rh
 sudo yum -y install devtoolset-8
 git clone https://github.com/apache/kudu
