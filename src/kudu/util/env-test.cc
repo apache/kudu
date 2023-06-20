@@ -260,11 +260,11 @@ TEST_F(TestEnv, TestPreallocate) {
   ASSERT_OK(file->Sync());
 
   // the writable file size should report 0
-  ASSERT_EQ(file->Size(), 0);
+  ASSERT_EQ(0, file->Size());
   // but the real size of the file on disk should report 1MB
   uint64_t size;
   ASSERT_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(size, kOneMb);
+  ASSERT_EQ(kOneMb, size);
 
   // write 1 MB
   uint8_t scratch[kOneMb];
@@ -273,7 +273,7 @@ TEST_F(TestEnv, TestPreallocate) {
   ASSERT_OK(file->Sync());
 
   // the writable file size should now report 1 MB
-  ASSERT_EQ(file->Size(), kOneMb);
+  ASSERT_EQ(kOneMb, file->Size());
   ASSERT_OK(file->Close());
   // and the real size for the file on disk should match only the
   // written size
@@ -299,11 +299,11 @@ TEST_F(TestEnv, TestConsecutivePreallocate) {
   ASSERT_OK(file->Sync());
 
   // the writable file size should report 0
-  ASSERT_EQ(file->Size(), 0);
+  ASSERT_EQ(0, file->Size());
   // but the real size of the file on disk should report 64 MBs
   uint64_t size;
   ASSERT_OK(env_->GetFileSize(test_path, &size));
-  ASSERT_EQ(size, 64 * kOneMb);
+  ASSERT_EQ(64 * kOneMb, size);
 
   // write 1 MB
   uint8_t scratch[kOneMb];
@@ -312,7 +312,7 @@ TEST_F(TestEnv, TestConsecutivePreallocate) {
   ASSERT_OK(file->Sync());
 
   // the writable file size should now report 1 MB
-  ASSERT_EQ(kOneMb, file->Size());
+  ASSERT_EQ(file->Size(), kOneMb);
   ASSERT_OK(env_->GetFileSize(test_path, &size));
   ASSERT_EQ(64 * kOneMb, size);
 
@@ -331,7 +331,7 @@ TEST_F(TestEnv, TestConsecutivePreallocate) {
   ASSERT_OK(file->Sync());
 
   // the writable file size should now report 2 MB
-  ASSERT_EQ(file->Size(), 2 * kOneMb);
+  ASSERT_EQ(2 * kOneMb, file->Size());
   // while the real file size should reamin at 128 MBs
   ASSERT_OK(env_->GetFileSize(test_path, &size));
   ASSERT_EQ(128 * kOneMb, size);
@@ -532,8 +532,8 @@ TEST_F(TestEnv, TestReadVFully) {
 
   // Verify that Read fully reads the whole requested data.
   ASSERT_OK(file->ReadV(0, results));
-  ASSERT_EQ(result1, "abcde");
-  ASSERT_EQ(result2, "12345");
+  ASSERT_EQ("abcde", result1);
+  ASSERT_EQ("12345", result2);
 
   // Turn short reads off again
   FLAGS_env_inject_short_read_bytes = 0;
@@ -626,10 +626,9 @@ TEST_F(TestEnv, TestOverwrite) {
 }
 
 TEST_F(TestEnv, TestReopen) {
-  LOG(INFO) << "Testing reopening behavior";
-  string test_path = GetTestPath("test_env_wf");
-  string first = "The quick brown fox";
-  string second = "jumps over the lazy dog";
+  const string test_path = GetTestPath("test_env_wf");
+  const string first = "The quick brown fox";
+  const string second = "jumps over the lazy dog";
 
   // Create the file and write to it.
   shared_ptr<WritableFile> writer;
@@ -911,7 +910,7 @@ TEST_F(TestEnv, TestRWFile) {
   uint8_t scratch[kTestData.length()];
   Slice result(scratch, kTestData.length());
   ASSERT_OK(file->Read(0, result));
-  ASSERT_EQ(result, kTestData);
+  ASSERT_EQ(kTestData, result);
   uint64_t sz;
   ASSERT_OK(file->Size(&sz));
   ASSERT_EQ(kTestData.length(), sz);
@@ -925,8 +924,8 @@ TEST_F(TestEnv, TestRWFile) {
   Slice result2(scratch2, size2);
   vector<Slice> results = { result1, result2 };
   ASSERT_OK(file->ReadV(0, results));
-  ASSERT_EQ(result1, "abc");
-  ASSERT_EQ(result2, "de");
+  ASSERT_EQ("abc", result1);
+  ASSERT_EQ("de", result2);
 
   // Write past the end of the file and rewrite some of the interior.
   ASSERT_OK(file->Write(kTestData.length() * 2, kTestData));
@@ -938,7 +937,7 @@ TEST_F(TestEnv, TestRWFile) {
   ASSERT_OK(file->Read(0, result3));
 
   // Retest.
-  ASSERT_EQ(result3, kNewTestData);
+  ASSERT_EQ(kNewTestData, result3);
   ASSERT_OK(file->Size(&sz));
   ASSERT_EQ(kNewTestData.length(), sz);
 
@@ -953,7 +952,7 @@ TEST_F(TestEnv, TestRWFile) {
   uint8_t scratch4[kNewTestData.length()];
   Slice result4(scratch4, kNewTestData.length());
   ASSERT_OK(file->Read(0, result4));
-  ASSERT_EQ(result4, kNewTestData);
+  ASSERT_EQ(kNewTestData, result4);
 
   // Test CREATE_OR_OPEN semantics on a new file.
   const string bar_path = GetTestPath("bar");
@@ -979,7 +978,7 @@ TEST_F(TestEnv, TestCanonicalize) {
     ASSERT_EQ(test_dir_, result);
   }
 
-  string dir = GetTestPath("some_dir");
+  const string dir = GetTestPath("some_dir");
   ASSERT_OK(env_->CreateDir(dir));
   string result;
   ASSERT_OK(env_->Canonicalize(dir + "/", &result));
