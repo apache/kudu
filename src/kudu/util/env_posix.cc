@@ -457,7 +457,9 @@ Status DoEncryptV(const EncryptionHeader* eh,
   OPENSSL_RET_NOT_OK(EVP_EncryptInit_ex(ctx.get(), GetEVPCipher(eh->algorithm),
                                         nullptr, eh->key, iv),
                      "Failed to initialize encryption");
-  size_t offset_mod = offset % kEncryptionBlockSize;
+  OPENSSL_RET_NOT_OK(EVP_CIPHER_CTX_set_padding(ctx.get(), 0),
+                     "failed to disable padding");
+  const size_t offset_mod = offset % kEncryptionBlockSize;
   if (offset_mod) {
     unsigned char scratch_clear[kEncryptionBlockSize];
     unsigned char scratch_cipher[kEncryptionBlockSize];
@@ -469,10 +471,6 @@ Status DoEncryptV(const EncryptionHeader* eh,
   }
   for (auto i = 0; i < cleartext.size(); ++i) {
     int out_length;
-    // Normally, EVP_EncryptFinal_ex() would be needed after the last chunk of
-    // data encrypted with EVP_EncryptUpdate(). In Kudu, we only use AES-CTR
-    // which requires no padding or authentication tags, so
-    // EVP_EncryptFinal_ex() doesn't actually add anything.
     OPENSSL_RET_NOT_OK(EVP_EncryptUpdate(ctx.get(),
                                          ciphertext[i].mutable_data(),
                                          &out_length,
@@ -482,6 +480,13 @@ Status DoEncryptV(const EncryptionHeader* eh,
     DCHECK_EQ(out_length, cleartext[i].size());
     DCHECK_LE(out_length, ciphertext[i].size());
   }
+  // EVP_EncryptFinal_ex() would be needed after the last chunk of data
+  // encrypted with EVP_EncryptUpdate() when padding is enabled. However,
+  // the logic above assumes no padding, and it is turned off explicitly
+  // for the cipher context above.
+  //
+  // TODO(aserbin): maybe, call EVP_EncryptFinal_ex() in DEBUG mode to make sure
+  //                no data remains in a partial block?
   return Status::OK();
 }
 
@@ -496,7 +501,9 @@ Status DoDecryptV(const EncryptionHeader* eh, uint64_t offset, ArrayView<Slice> 
   OPENSSL_RET_NOT_OK(EVP_DecryptInit_ex(ctx.get(), GetEVPCipher(eh->algorithm),
                                         nullptr, eh->key, iv),
                      "Failed to initialize decryption");
-  size_t offset_mod = offset % kEncryptionBlockSize;
+  OPENSSL_RET_NOT_OK(EVP_CIPHER_CTX_set_padding(ctx.get(), 0),
+                     "failed to disable padding");
+  const size_t offset_mod = offset % kEncryptionBlockSize;
   if (offset_mod) {
     unsigned char scratch_clear[kEncryptionBlockSize];
     unsigned char scratch_cipher[kEncryptionBlockSize];
@@ -514,8 +521,6 @@ Status DoDecryptV(const EncryptionHeader* eh, uint64_t offset, ArrayView<Slice> 
     int in_length = ciphertext_slice.size();
     if (!in_length || IsAllZeros(ciphertext_slice)) continue;
     int out_length;
-    // We don't call EVP_DecryptFinal_ex() after EVP_DecryptUpdate() for the
-    // same reason we don't call EVP_EncryptFinal_ex().
     OPENSSL_RET_NOT_OK(EVP_DecryptUpdate(ctx.get(),
                                          data[i].mutable_data(),
                                          &out_length,
@@ -523,6 +528,11 @@ Status DoDecryptV(const EncryptionHeader* eh, uint64_t offset, ArrayView<Slice> 
                                          in_length),
                        "Failed to decrypt data");
   }
+  // We don't call EVP_DecryptFinal_ex() after EVP_DecryptUpdate() for the
+  // same reason we don't call EVP_EncryptFinal_ex() in DoEncryptV().
+  //
+  // TODO(aserbin): maybe, call EVP_DecryptFinal_ex() in DEBUG mode to make sure
+  //                no data remains in a partial block?
   return Status::OK();
 }
 
