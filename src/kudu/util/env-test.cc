@@ -1293,8 +1293,8 @@ TEST_P(TestEncryptedEnv, TestEncryption) {
 
   // Reading back from the RWFile should succeed
   ASSERT_OK(rw->ReadV(env_->GetEncryptionHeaderSize() + 13, results));
-  ASSERT_EQ(result1, "This text");
-  ASSERT_EQ(result2, " is slightly longer");
+  ASSERT_EQ("This text", result1);
+  ASSERT_EQ(" is slightly longer", result2);
 
   ASSERT_OK(rw->Close());
 
@@ -1317,8 +1317,8 @@ TEST_P(TestEncryptedEnv, TestEncryption) {
 
   ASSERT_OK(seq_file->Read(&result1));
   ASSERT_OK(seq_file->Read(&result2));
-  ASSERT_EQ(result1, "Hello wor");
-  ASSERT_EQ(result2, "ld! This text is sl");
+  ASSERT_EQ("Hello wor", result1);
+  ASSERT_EQ("ld! This text is sl", result2);
 
   // Check if the file can be read into a RandomAccessFile if treated properly
   // as an encrypted file.
