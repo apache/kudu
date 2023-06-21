@@ -624,6 +624,12 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   return Status::OK();
 }
 
+void FsManager::CopyMetadata(
+    unique_ptr<InstanceMetadataPB>* metadata) {
+  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  (*metadata)->CopyFrom(*metadata_);
+}
+
 Status FsManager::UpdateMetadata(unique_ptr<InstanceMetadataPB> metadata) {
   // In the event of failure, rollback everything we changed.
   // <string, string>   <=>   <old instance file, backup instance file>
@@ -925,6 +931,11 @@ const string& FsManager::server_key_iv() const {
 
 const string& FsManager::server_key_version() const {
   return CHECK_NOTNULL(metadata_.get())->server_key_version();
+}
+
+const int32_t FsManager::tenants_count() const {
+  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  return metadata_->tenants_size();
 }
 
 bool FsManager::is_tenants_exist() const {

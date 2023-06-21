@@ -70,6 +70,7 @@
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
@@ -145,6 +146,7 @@ DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
 DECLARE_bool(enable_tablet_orphaned_block_deletion);
 DECLARE_bool(encrypt_data_at_rest);
+DECLARE_bool(enable_multi_tenancy);
 DECLARE_bool(disable_gflag_filter_logic_for_testing);
 DECLARE_bool(fs_data_dirs_consider_available_space);
 DECLARE_bool(hive_metastore_sasl_enabled);
@@ -1361,8 +1363,9 @@ TEST_F(ToolTest, TestModeHelp) {
         "check.*Kudu filesystem for inconsistencies",
         "dump.*Dump a Kudu filesystem",
         "format.*new Kudu filesystem",
-        "list.*List metadata for on-disk tablets, rowsets, blocks",
+        "list.*List metadata for on-disk tablets, rowsets",
         "update_dirs.*Updates the set of data directories",
+        "upgrade_encryption_key.*Upgrade the encryption key info",
     };
     NO_FATALS(RunTestHelp("fs", kFsModeRegexes));
     NO_FATALS(RunTestHelp("fs not_a_mode", kFsModeRegexes,
@@ -8087,6 +8090,105 @@ TEST_F(ToolTest, TestFsSwappingDirectoriesFailsGracefully) {
   NO_FATALS(RunActionStdoutNone(Substitute(
       "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
       wal_root, JoinStrings(new_data_roots, ","))));
+}
+
+TEST_F(ToolTest, TestFsUpgradeEncryptionKeyFromServerKeyInfoAndFromTenantKeyInfo) {
+  // Create a cluster with server key info.
+  FLAGS_encrypt_data_at_rest = true;
+
+  NO_FATALS(StartMiniCluster());
+  MiniTabletServer* mts = mini_cluster_->mini_tablet_server(0);
+  const string& wal_root = mts->options()->fs_opts.wal_root;
+  vector<string> data_roots = mts->options()->fs_opts.data_roots;
+  const string& metadata_root = mts->options()->fs_opts.metadata_root;
+
+  // Obtain source encryption server key info.
+  FsManager* fs_manager = mts->server()->fs_manager();
+  ASSERT_FALSE(fs_manager->server_key().empty());
+  const string source_key = fs_manager->server_key();
+  ASSERT_FALSE(fs_manager->server_key_iv().empty());
+  const string source_key_iv = fs_manager->server_key_iv();
+  ASSERT_FALSE(fs_manager->server_key_version().empty());
+  const string source_key_version = fs_manager->server_key_version();
+  // No tenant key info exist.
+  ASSERT_FALSE(fs_manager->is_tenants_exist());
+
+  mts->Shutdown();
+
+  // Do the encryption key info upgrade with the kudu CLI tool.
+  // Providing the necessary arguments, the tool should work.
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute(
+      "fs upgrade_encryption_key --fs_data_dirs=$0 --fs_wal_dir=$1 --fs_metadata_dir=$2",
+       JoinStrings(data_roots, ","), wal_root, metadata_root), &stdout));
+  SCOPED_TRACE(stdout);
+
+  // This flag needs to set true after the upgrading.
+  FLAGS_enable_multi_tenancy = true;
+  // Start the tserver and check the encryption key info.
+  ASSERT_OK(mts->Start());
+  ASSERT_OK(mts->WaitStarted());
+
+  {
+    FsManager* fs_manager = mts->server()->fs_manager();
+    // The default tenant key info corresponds to the previous server key information.
+    ASSERT_TRUE(fs_manager->is_tenants_exist());
+    ASSERT_TRUE(fs_manager->is_tenant_exist(fs::kDefaultTenantName));
+    // Make sure there is only one tenant exist.
+    ASSERT_EQ(1, fs_manager->tenants_count());
+    ASSERT_FALSE(fs_manager->tenant_id(fs::kDefaultTenantName).empty());
+    ASSERT_EQ(fs::kDefaultTenantID, fs_manager->tenant_id(fs::kDefaultTenantName));
+    ASSERT_FALSE(fs_manager->tenant_key(fs::kDefaultTenantName).empty());
+    ASSERT_EQ(source_key, fs_manager->tenant_key(fs::kDefaultTenantName));
+    ASSERT_FALSE(fs_manager->tenant_key_iv(fs::kDefaultTenantName).empty());
+    ASSERT_EQ(source_key_iv, fs_manager->tenant_key_iv(fs::kDefaultTenantName));
+    ASSERT_FALSE(fs_manager->tenant_key_version(fs::kDefaultTenantName).empty());
+    ASSERT_EQ(source_key_version, fs_manager->tenant_key_version(fs::kDefaultTenantName));
+
+    // There is no server key in the metadata.
+    ASSERT_TRUE(fs_manager->server_key().empty());
+    ASSERT_TRUE(fs_manager->server_key_iv().empty());
+    ASSERT_TRUE(fs_manager->server_key_version().empty());
+  }
+
+  // We are in tenant key version, try to 'upgrade_encryption_key' from tenant key info.
+  mts->Shutdown();
+
+  string err;
+  RunActionStderrString(Substitute(
+      "fs upgrade_encryption_key --fs_data_dirs=$0 --fs_wal_dir=$1 --fs_metadata_dir=$2",
+       JoinStrings(data_roots, ","), wal_root, metadata_root), &err);
+  // This upgrade tool only works on the cluster with server key info exist.
+  ASSERT_STR_CONTAINS(err, "We should not do server key upgrade on a cluster");
+}
+
+TEST_F(ToolTest, TestFsUpgradeEncryptionKeyFromNoEncryptionKeyInfo) {
+  // Create a cluster without server key info.
+  FLAGS_encrypt_data_at_rest = false;
+
+  NO_FATALS(StartMiniCluster());
+  MiniTabletServer* mts = mini_cluster_->mini_tablet_server(0);
+  const string& wal_root = mts->options()->fs_opts.wal_root;
+  vector<string> data_roots = mts->options()->fs_opts.data_roots;
+  const string& metadata_root = mts->options()->fs_opts.metadata_root;
+
+  // No server key info exist.
+  FsManager* fs_manager = mts->server()->fs_manager();
+  ASSERT_TRUE(fs_manager->server_key().empty());
+  ASSERT_TRUE(fs_manager->server_key_iv().empty());
+  ASSERT_TRUE(fs_manager->server_key_version().empty());
+  // No tenant key info exist.
+  ASSERT_FALSE(fs_manager->is_tenants_exist());
+
+  mts->Shutdown();
+
+  // Do the encryption key info upgrade for a tserver without server key with the kudu CLI tool.
+  string err;
+  RunActionStderrString(Substitute(
+      "fs upgrade_encryption_key --fs_data_dirs=$0 --fs_wal_dir=$1 --fs_metadata_dir=$2",
+       JoinStrings(data_roots, ","), wal_root, metadata_root), &err);
+  // This upgrade tool only works on the cluster with server key info exist.
+  ASSERT_STR_CONTAINS(err, "We should not do server key upgrade on a cluster");
 }
 
 TEST_F(ToolTest, TestStartEndMaintenanceMode) {

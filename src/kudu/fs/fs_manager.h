@@ -82,6 +82,10 @@ namespace tserver {
 class MiniTabletServerTest_TestFsLayoutEndToEnd_Test;
 } // namespace tserver
 
+namespace tools {
+Status UpdateEncryptionKeyInfo(Env* env);
+} // namespace tools
+
 // Options that control the behavior of FsManager.
 struct FsManagerOpts {
   // Creates a new FsManagerOpts with default values.
@@ -307,9 +311,16 @@ class FsManager {
   // Open() have not been called, this will crash.
   const std::string& uuid() const;
 
+  // Copy the metadata_ to metadata.
+  void CopyMetadata(
+    std::unique_ptr<InstanceMetadataPB>* metadata);
+
   // ==========================================================================
   //  tenant helpers
   // ==========================================================================
+
+  // Use to get the total count of all the tenants.
+  const int32_t tenants_count() const;
 
   // Use to confirm whether there is tenants information in metadata.
   bool is_tenants_exist() const;
@@ -390,6 +401,7 @@ class FsManager {
   FRIEND_TEST(fs::FsManagerTestBase, TestOpenWithDuplicateInstanceFiles);
   FRIEND_TEST(tserver::MiniTabletServerTest, TestFsLayoutEndToEnd);
   friend class itest::MiniClusterFsInspector; // for access to directory names
+  friend Status tools::UpdateEncryptionKeyInfo(Env* env); // for update the metadata
 
   // Initializes, sanitizes, and canonicalizes the filesystem roots.
   // Determines the correct filesystem root for tablet-specific metadata.

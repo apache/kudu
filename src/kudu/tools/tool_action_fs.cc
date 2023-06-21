@@ -73,6 +73,7 @@
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
@@ -161,6 +162,7 @@ using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletMetadata;
 using std::cout;
 using std::endl;
+using std::move;
 using std::nullopt;
 using std::optional;
 using std::shared_ptr;
@@ -172,6 +174,45 @@ using strings::Substitute;
 
 namespace kudu {
 namespace tools {
+
+Status UpdateEncryptionKeyInfo(Env* env) {
+  FsManagerOpts fs_opts;
+  fs_opts.update_instances = UpdateInstanceBehavior::UPDATE_AND_ERROR_ON_FAILURE;
+  fs_opts.skip_block_manager = true;
+  FsManager fs_manager(env, std::move(fs_opts));
+  RETURN_NOT_OK(fs_manager.Open());
+
+  if (fs_manager.server_key().empty()) {
+    return Status::IllegalState(
+        "We should not do server key upgrade on a cluster with data rest encryption disabled.");
+  }
+
+  if (fs_manager.is_tenants_exist()) {
+    cout << "This tserver has already in tenant key version, and there is no need to upgrade again."
+         << endl;
+    return Status::OK();
+  }
+
+  unique_ptr<InstanceMetadataPB> metadata(new InstanceMetadataPB);
+  fs_manager.CopyMetadata(&metadata);
+
+  // Add the default tenant key with the server key.
+  InstanceMetadataPB::TenantMetadataPB* tenant_metadata = metadata->add_tenants();
+  tenant_metadata->set_tenant_name(fs::kDefaultTenantName);
+  tenant_metadata->set_tenant_id(fs::kDefaultTenantID);
+  tenant_metadata->set_tenant_key(fs_manager.server_key());
+  tenant_metadata->set_tenant_key_iv(fs_manager.server_key_iv());
+  tenant_metadata->set_tenant_key_version(fs_manager.server_key_version());
+  // Clear the server key info.
+  metadata->clear_server_key();
+  metadata->clear_server_key_iv();
+  metadata->clear_server_key_version();
+
+  // Write the new metadata to disk.
+  RETURN_NOT_OK(fs_manager.UpdateMetadata(move(metadata)));
+
+  return Status::OK();
+}
 
 namespace {
 
@@ -450,6 +491,22 @@ Status Update(const RunnerContext& /*context*/) {
   opts.update_instances = UpdateInstanceBehavior::UPDATE_AND_ERROR_ON_FAILURE;
   FsManager fs(env, std::move(opts));
   return fs.Open();
+}
+
+Status UpgradeEncryptionKey(const RunnerContext& /*context*/) {
+  Env* env = Env::Default();
+  const string& filename = "/tmp/kudu_tserver-metadata-upgrade-instance.lock";
+  FileLock* file_lock;
+  KUDU_RETURN_NOT_OK_PREPEND(env->LockFile(filename, &file_lock),
+                             "Could not lock instance file. Make sure that "
+                             "this tool is not already running.");
+  auto unlock = MakeScopedCleanup([&]() {
+    env->UnlockFile(file_lock);
+  });
+
+  RETURN_NOT_OK(UpdateEncryptionKeyInfo(env));
+
+  return Status::OK();
 }
 
 namespace {
@@ -999,6 +1056,19 @@ unique_ptr<Mode> BuildFsMode() {
       .AddOptionalParameter("h")
       .Build();
 
+  unique_ptr<Action> upgrade_encryption_key =
+      ActionBuilder("upgrade_encryption_key", &UpgradeEncryptionKey)
+      .Description("Upgrade the encryption key info in metadata")
+      .ExtraDescription("Upgrade the server key to the tenant key which belongs to the default "
+                        "tenant. This feature only works on a cluster with data rest encryption "
+                        "enabled.\n\n"
+                        "Note: this function is exclusively for use with the Kudu CLI tool and can "
+                        "only be used once per tserver.")
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
+      .Build();
+
   return ModeBuilder("fs")
       .Description("Operate on a local Kudu filesystem")
       .AddMode(BuildFsDumpMode())
@@ -1006,6 +1076,7 @@ unique_ptr<Mode> BuildFsMode() {
       .AddAction(std::move(format))
       .AddAction(std::move(list))
       .AddAction(std::move(update))
+      .AddAction(std::move(upgrade_encryption_key))
       .Build();
 }
 
