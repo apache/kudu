@@ -223,7 +223,11 @@ Status MiniHms::CreateSecurityProperties() const {
   // smaller RSA keys to shorten runtime of tests, it's necessary to override
   // those default security settings to allow for using relaxed cryptography,
   // particularly smaller RSA keys.
+  // There are additional RSA key length settings on RHEL9 under:
+  // /etc/crypto-policies/back-ends/java.config. These are turned off with:
+  // security.useSystemPropertiesFile.
   string security_file_contents =
+      "security.useSystemPropertiesFile = false\n"
       "jdk.certpath.disabledAlgorithms = MD2, RC4, MD5\n"
       "jdk.tls.disabledAlgorithms = SSLv3, RC4, MD5\n);";
 
