@@ -17,9 +17,7 @@
 
 #include "kudu/common/columnar_serialization.h"
 
-#ifdef __aarch64__
-#include "kudu/util/sse2neon.h" // IWYU pragma: keep
-#else
+#ifdef __x86_64__
 #include <emmintrin.h>
 #include <immintrin.h>
 #endif
@@ -221,11 +219,13 @@ void CopyNonNullBitmapImpl(
   bw.Flush();
 }
 
+#ifdef __x86_64__
 struct PextZp7Clmul {
   inline static uint64_t call(uint64_t val, uint64_t mask) {
     return zp7_pext_64_clmul(val, mask);
   }
 };
+#endif
 struct PextZp7Simple {
   inline static uint64_t call(uint64_t val, uint64_t mask) {
     return zp7_pext_64_simple(val, mask);

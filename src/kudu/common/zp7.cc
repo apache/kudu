@@ -38,11 +38,6 @@
 
 #ifdef __x86_64__
 #include <emmintrin.h>
-#elif defined(__aarch64__)
-#include "kudu/util/sse2neon.h"
-#endif
-
-#ifndef __aarch64__
 #if !defined(__clang__) && defined(__GNUC__) && __GNUC__ < 5
 #define USE_INLINE_ASM_CLMUL
 #else
@@ -59,14 +54,7 @@ typedef struct {
   uint64_t ppp_bit[N_BITS];
 } zp7_masks_64_t;
 
-// If we don't have access to the CLMUL instruction, emulate it with
-// shifts and XORs
-static inline uint64_t prefix_sum(uint64_t x) {
-  for (int i = 0; i < N_BITS; i++)
-    x ^= x << (1 << i);
-  return x;
-}
-
+#ifdef __x86_64__
 // GCC <5 doesn't properly handle the _pext_u64 intrinsic inside
 // a function with a specified target attribute. So, use inline
 // assembly instead.
@@ -82,16 +70,13 @@ static inline __m128i asm_mm_clmulepi64_si128(__m128i a, __m128i b) {
 #define CLMUL(a, b) (_mm_clmulepi64_si128(a, b, 0))
 #endif
 
-
 // Parallel-prefix-popcount. This is used by both the PEXT/PDEP polyfills.
 // It can also be called separately and cached, if the mask values will be used
 // more than once (these can be shared across PEXT and PDEP calls if they use
 // the same masks).
 //
 // This variant depends on the CLMUL instruction.
-#ifndef __aarch64__
 __attribute__((target("pclmul")))
-#endif // __aarch64__
 ATTRIBUTE_NO_SANITIZE_INTEGER
 static zp7_masks_64_t zp7_ppp_64_clmul(uint64_t mask) {
   zp7_masks_64_t r;
@@ -123,6 +108,15 @@ static zp7_masks_64_t zp7_ppp_64_clmul(uint64_t mask) {
   r.ppp_bit[N_BITS - 1] = -_mm_cvtsi128_si64(m) << 1;
 
   return r;
+}
+#endif // __x86_64__
+
+// If we don't have access to the CLMUL instruction, emulate it with
+// shifts and XORs
+static inline uint64_t prefix_sum(uint64_t x) {
+  for (int i = 0; i < N_BITS; i++)
+    x ^= x << (1 << i);
+  return x;
 }
 
 // Implementation that doesn't depend on CLMUL
@@ -171,9 +165,11 @@ uint64_t zp7_pext_64_simple(uint64_t a, uint64_t mask) {
   return zp7_pext_pre_64(a, &masks);
 }
 
+#ifdef __x86_64__
 uint64_t zp7_pext_64_clmul(uint64_t a, uint64_t mask) {
   zp7_masks_64_t masks = zp7_ppp_64_clmul(mask);
   return zp7_pext_pre_64(a, &masks);
 }
+#endif // __x86_64__
 
 } // namespace kudu
