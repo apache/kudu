@@ -22,7 +22,7 @@
 #endif
 
 #ifdef __aarch64__
-#include "kudu/util/sse2neon.h"
+#include <arm_neon.h>
 #else
 #include <emmintrin.h>
 #include <smmintrin.h>

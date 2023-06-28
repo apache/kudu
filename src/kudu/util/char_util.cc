@@ -18,7 +18,7 @@
 #include "kudu/util/char_util.h"
 
 #ifdef __aarch64__
-#include "kudu/util/sse2neon.h"
+#include <arm_neon.h>
 #else
 #include <emmintrin.h>
 #include <smmintrin.h>
@@ -28,6 +28,18 @@
 #include <cstring>
 
 namespace kudu {
+
+#ifdef __aarch64__
+static inline bool AllASCII16B(const uint8_t* str, const uint8x16_t mask) {
+  uint8x16_t a = vld1q_u8(str);
+  uint64x2_t res = vreinterpretq_u64_u8(vtstq_u8(a, mask));
+  return 0 == (vgetq_lane_u64(res, 0) | vgetq_lane_u64(res, 1));
+}
+#elif defined(__x86_64__)
+static inline bool AllASCII16B(const uint8_t* str, const __m128i mask) {
+  return _mm_test_all_zeros(_mm_loadu_si128(reinterpret_cast<const __m128i*>(str)), mask) == 1;
+}
+#endif
 
 Slice UTF8Truncate(Slice val, size_t max_utf8_length) {
   size_t num_utf8_chars = 0;
@@ -39,14 +51,17 @@ Slice UTF8Truncate(Slice val, size_t max_utf8_length) {
 
   // Mask used to determine whether there are any non-ASCII characters in a
   // 128-bit chunk
+#ifdef __aarch64__
+  const uint8x16_t mask = vdupq_n_u8(0x80);
+#elif defined(__x86_64__)
   const __m128i mask = _mm_set1_epi32(0x80808080);
+#endif
 
   while (num_bytes < size) {
     // If the next chunk of bytes are all ASCII we can fast path them.
     if (size - num_bytes >= 16 &&
         max_utf8_length - num_utf8_chars >= 16 &&
-        _mm_test_all_zeros(_mm_loadu_si128(reinterpret_cast<const __m128i*>(str)),
-                           mask) == 1) {
+        AllASCII16B(str, mask)) {
       num_utf8_chars += 16;
       num_bytes += 16;
       str += 16;
