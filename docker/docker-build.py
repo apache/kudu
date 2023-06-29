@@ -197,7 +197,7 @@ def get_full_tag(repository, target, version_tag, os_tag):
       Examples:
         get_tag "kudu" "latest" ""        = apache/kudu:latest
         get_tag "base" "1.8.0" ""         = apache/kudu:base-1.8.0
-        get_tag "base" "1.8.0" "centos6"  = apache/kudu:base-1.8.0-centos6
+        get_tag "base" "1.8.0" "centos7"  = apache/kudu:base-1.8.0-centos7
   """
   full_tag = ''
   # Only include the target if this isn't the default.
