@@ -34,6 +34,8 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -49,9 +51,7 @@ class Env;
 class FileCache;
 
 namespace fs {
-class DataDirManager;
 class Dir;
-class FsErrorManager;
 struct FsReport;
 
 namespace internal {
@@ -181,7 +181,8 @@ class LogBlockManager : public BlockManager {
 
   ~LogBlockManager() override;
 
-  Status Open(FsReport* report, std::atomic<int>* containers_processed,
+  Status Open(FsReport* report, MergeReport need_merage,
+              std::atomic<int>* containers_processed,
               std::atomic<int>* containers_total) override;
 
   Status CreateBlock(const CreateBlockOptions& opts,
@@ -198,16 +199,19 @@ class LogBlockManager : public BlockManager {
 
   void NotifyBlockId(BlockId block_id) override;
 
-  FsErrorManager* error_manager() override { return error_manager_; }
+  scoped_refptr<FsErrorManager> error_manager() override { return error_manager_; }
+
+  std::string tenant_id() const override { return tenant_id_; }
 
  protected:
   // Note: all objects passed as pointers should remain alive for the lifetime
   // of the block manager.
   LogBlockManager(Env* env,
-                  DataDirManager* dd_manager,
-                  FsErrorManager* error_manager,
+                  scoped_refptr<DataDirManager> dd_manager,
+                  scoped_refptr<FsErrorManager> error_manager,
                   FileCache* file_cache,
-                  BlockManagerOptions opts);
+                  BlockManagerOptions opts,
+                  std::string tenant_id);
 
   FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
@@ -441,10 +445,10 @@ class LogBlockManager : public BlockManager {
 
   // Manages and owns the data directories in which the block manager will
   // place its blocks.
-  DataDirManager* dd_manager_;
+  scoped_refptr<DataDirManager> dd_manager_;
 
   // Manages callbacks used to handle disk failure.
-  FsErrorManager* error_manager_;
+  scoped_refptr<FsErrorManager> error_manager_;
 
   // The options that the LogBlockManager was created with.
   const BlockManagerOptions opts_;
@@ -512,6 +516,9 @@ class LogBlockManager : public BlockManager {
   // May be null if instantiated without metrics.
   std::unique_ptr<internal::LogBlockManagerMetrics> metrics_;
 
+  // Which tenant this log block manager belongs to.
+  std::string tenant_id_;
+
   DISALLOW_COPY_AND_ASSIGN(LogBlockManager);
 };
 
@@ -529,11 +536,13 @@ class LogBlockManager : public BlockManager {
 class LogBlockManagerNativeMeta : public LogBlockManager {
  public:
   LogBlockManagerNativeMeta(Env* env,
-                            DataDirManager* dd_manager,
-                            FsErrorManager* error_manager,
+                            scoped_refptr<DataDirManager> dd_manager,
+                            scoped_refptr<FsErrorManager> error_manager,
                             FileCache* file_cache,
-                            BlockManagerOptions opts)
-      : LogBlockManager(env, dd_manager, error_manager, file_cache, std::move(opts)) {
+                            BlockManagerOptions opts,
+                            std::string tenant_id)
+      : LogBlockManager(env, std::move(dd_manager), std::move(error_manager),
+                        file_cache, std::move(opts), std::move(tenant_id)) {
   }
 
  private:

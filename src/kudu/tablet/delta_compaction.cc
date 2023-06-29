@@ -21,6 +21,7 @@
 #include <map>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -38,6 +39,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/cfile_set.h"
@@ -50,8 +52,11 @@
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset_metadata.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/trace.h"
+
+namespace kudu {
+class Arena;
+}
 
 using kudu::fs::BlockCreationTransaction;
 using kudu::fs::BlockManager;
@@ -231,7 +236,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
     nrows += n;
   }
 
-  BlockManager* bm = fs_manager_->block_manager();
+  auto bm = fs_manager_->block_manager();
   unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
   RETURN_NOT_OK(base_data_writer_->FinishAndReleaseBlocks(transaction.get()));
 

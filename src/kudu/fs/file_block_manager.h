@@ -26,7 +26,9 @@
 #include <vector>
 
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
@@ -41,7 +43,6 @@ class MemTracker;
 
 namespace fs {
 class DataDirManager;
-class FsErrorManager;
 struct FsReport;
 
 namespace internal {
@@ -73,14 +74,16 @@ class FileBlockManager : public BlockManager {
   // Note: all objects passed as pointers should remain alive for the lifetime
   // of the block manager.
   FileBlockManager(Env* env,
-                   DataDirManager* dd_manager,
-                   FsErrorManager* error_manager,
+                   scoped_refptr<DataDirManager> dd_manager,
+                   scoped_refptr<FsErrorManager> error_manager,
                    FileCache* file_cache,
-                   BlockManagerOptions opts);
+                   BlockManagerOptions opts,
+                   std::string tenant_id);
 
   ~FileBlockManager() override;
 
-  Status Open(FsReport* report, std::atomic<int>* containers_processed,
+  Status Open(FsReport* report, MergeReport need_merage,
+              std::atomic<int>* containers_processed,
               std::atomic<int>* containers_total) override;
 
   Status CreateBlock(const CreateBlockOptions& opts,
@@ -97,7 +100,9 @@ class FileBlockManager : public BlockManager {
 
   void NotifyBlockId(BlockId block_id) override;
 
-  FsErrorManager* error_manager() override { return error_manager_; }
+  scoped_refptr<FsErrorManager> error_manager() override { return error_manager_; }
+
+  std::string tenant_id() const override { return tenant_id_; }
 
  private:
   friend class internal::FileBlockDeletionTransaction;
@@ -128,10 +133,10 @@ class FileBlockManager : public BlockManager {
 
   // Manages and owns the data directories in which the block manager will
   // place its blocks.
-  DataDirManager* dd_manager_;
+  scoped_refptr<DataDirManager> dd_manager_;
 
   // Manages callbacks used to handle disk failure.
-  FsErrorManager* error_manager_;
+  scoped_refptr<FsErrorManager> error_manager_;
 
   // The options that the FileBlockManager was created with.
   const BlockManagerOptions opts_;
@@ -157,6 +162,9 @@ class FileBlockManager : public BlockManager {
   // Tracks memory consumption of any allocations numerous enough to be
   // interesting.
   std::shared_ptr<MemTracker> mem_tracker_;
+
+  // Which tenant this file block manager belongs to.
+  std::string tenant_id_;
 
   DISALLOW_COPY_AND_ASSIGN(FileBlockManager);
 };

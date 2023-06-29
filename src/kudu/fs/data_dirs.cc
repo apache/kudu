@@ -222,7 +222,7 @@ int DataDir::reserved_bytes() const {
 ////////////////////////////////////////////////////////////
 
 DataDirManagerOptions::DataDirManagerOptions()
-    : DirManagerOptions(FLAGS_block_manager) {}
+    : DirManagerOptions(FLAGS_block_manager, fs::kDefaultTenantID) {}
 
 DataDirManager::DataDirManager(Env* env,
                                const DataDirManagerOptions& opts,
@@ -233,9 +233,9 @@ DataDirManager::DataDirManager(Env* env,
                  opts, std::move(canonicalized_data_roots)) {}
 
 Status DataDirManager::OpenExistingForTests(Env* env,
-                                            vector<string> data_fs_roots,
+                                            const vector<string>& data_fs_roots,
                                             const DataDirManagerOptions& opts,
-                                            unique_ptr<DataDirManager>* dd_manager) {
+                                            scoped_refptr<kudu::fs::DataDirManager>* dd_manager) {
   CanonicalizedRootsList roots;
   for (const auto& r : data_fs_roots) {
     roots.push_back({ r, Status::OK() });
@@ -245,17 +245,17 @@ Status DataDirManager::OpenExistingForTests(Env* env,
 
 Status DataDirManager::OpenExisting(Env* env, CanonicalizedRootsList data_fs_roots,
                                     const DataDirManagerOptions& opts,
-                                    unique_ptr<DataDirManager>* dd_manager) {
-  unique_ptr<DataDirManager> dm;
+                                    scoped_refptr<kudu::fs::DataDirManager>* dd_manager) {
+  scoped_refptr<DataDirManager> dm;
   dm.reset(new DataDirManager(env, opts, std::move(data_fs_roots)));
   RETURN_NOT_OK(dm->Open());
   dd_manager->swap(dm);
   return Status::OK();
 }
 
-Status DataDirManager::CreateNewForTests(Env* env, vector<string> data_fs_roots,
+Status DataDirManager::CreateNewForTests(Env* env, const vector<string>& data_fs_roots,
                                          const DataDirManagerOptions& opts,
-                                         unique_ptr<DataDirManager>* dd_manager) {
+                                         scoped_refptr<kudu::fs::DataDirManager>* dd_manager) {
   CanonicalizedRootsList roots;
   for (const auto& r : data_fs_roots) {
     roots.push_back({ r, Status::OK() });
@@ -265,8 +265,8 @@ Status DataDirManager::CreateNewForTests(Env* env, vector<string> data_fs_roots,
 
 Status DataDirManager::CreateNew(Env* env, CanonicalizedRootsList data_fs_roots,
                                  const DataDirManagerOptions& opts,
-                                 unique_ptr<DataDirManager>* dd_manager) {
-  unique_ptr<DataDirManager> dm;
+                                 scoped_refptr<kudu::fs::DataDirManager>* dd_manager) {
+  scoped_refptr<DataDirManager> dm;
   dm.reset(new DataDirManager(env, opts, std::move(data_fs_roots)));
   RETURN_NOT_OK(dm->Create());
   RETURN_NOT_OK(dm->Open());

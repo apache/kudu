@@ -26,17 +26,18 @@
 #include "kudu/fs/dir_manager.h"
 #include "kudu/fs/dir_util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/mutex.h"
 
 namespace kudu {
 namespace fs {
 
 // Callback to error-handling code. The input string is the UUID a failed
-// component.
+// component and the ID of the corresponding tenant.
 //
 // e.g. the ErrorNotificationCb for disk failure handling takes the UUID of a
 // directory, marks it failed, and shuts down the tablets in that directory.
-typedef std::function<void(const std::string&)> ErrorNotificationCb;
+typedef std::function<void(const std::string&, const std::string&)> ErrorNotificationCb;
 
 // Evaluates the expression and handles it if it results in an error.
 // Returns if the status is an error.
@@ -129,7 +130,7 @@ enum ErrorHandlerType {
 // e.g. the TSTabletManager registers a callback to handle disk failure.
 // Blocks and other entities that may hit disk failures can call it without
 // knowing about the TSTabletManager.
-class FsErrorManager {
+class FsErrorManager : public RefCountedThreadSafe<FsErrorManager> {
  public:
   FsErrorManager();
 
@@ -146,15 +147,28 @@ class FsErrorManager {
   // Runs the error notification callback.
   //
   // 'uuid' is the full UUID of the component that failed.
-  void RunErrorNotificationCb(ErrorHandlerType e, const std::string& uuid) const;
+  // 'tenant_id' is used to indicate the corresponding tenant, if not specified,
+  // we will treat it as the default tenant.
+  void RunErrorNotificationCb(
+      ErrorHandlerType e,
+      const std::string& uuid,
+      const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Runs the error notification callback with the UUID of 'dir'.
-  void RunErrorNotificationCb(ErrorHandlerType e, const Dir* dir) const {
+  //
+  // 'tenant_id' is used to indicate the corresponding tenant, if not specified,
+  // we will treat it as the default tenant.
+  void RunErrorNotificationCb(ErrorHandlerType e,
+                              const Dir* dir,
+                              const std::string& tenant_id = fs::kDefaultTenantID) const {
     DCHECK_EQ(e, ErrorHandlerType::DISK_ERROR);
-    RunErrorNotificationCb(e, dir->instance()->uuid());
+    RunErrorNotificationCb(e, dir->instance()->uuid(), tenant_id);
   }
 
  private:
+  friend class RefCountedThreadSafe<FsErrorManager>;
+  ~FsErrorManager() {}
+
    // Callbacks to be run when an error occurs.
   std::unordered_map<ErrorHandlerType, ErrorNotificationCb, std::hash<int>> callbacks_;
 

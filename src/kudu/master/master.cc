@@ -198,15 +198,17 @@ GROUP_FLAG_VALIDATOR(multi_master_pp, &ValidateMultiMasterProxiedRpcFlags);
 
 constexpr const char* kReplaceMasterMessage =
     "this master may return incorrect results and should be replaced";
-void CrashMasterOnDiskError(const string& uuid) {
+void CrashMasterOnDiskError(const string& uuid, const string& /* tenant_id */) {
   LOG(FATAL) << Substitute("Disk error detected on data directory $0: $1",
                            uuid, kReplaceMasterMessage);
 }
-void CrashMasterOnCFileCorruption(const string& tablet_id) {
+void CrashMasterOnCFileCorruption(const string& tablet_id,
+                                  const string& /* tenant_id */) {
   LOG(FATAL) << Substitute("CFile corruption detected on system catalog $0: $1",
                            tablet_id, kReplaceMasterMessage);
 }
-void CrashMasterOnKudu2233Corruption(const string& tablet_id) {
+void CrashMasterOnKudu2233Corruption(const string& tablet_id,
+                                     const string& /* tenant_id */) {
   LOG(FATAL) << Substitute("KUDU-2233 corruption detected on system catalog $0: $1 ",
                            tablet_id, kReplaceMasterMessage);
 }

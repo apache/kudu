@@ -37,6 +37,7 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
@@ -130,7 +131,7 @@ class BlockManagerTest : public KuduTest {
   void SetUp() override {
     // Pass in a report to prevent the block manager from logging unnecessarily.
     FsReport report;
-    ASSERT_OK(bm_->Open(&report, nullptr, nullptr));
+    ASSERT_OK(bm_->Open(&report, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
     ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
     ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
@@ -168,8 +169,9 @@ class BlockManagerTest : public KuduTest {
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
     opts.parent_mem_tracker = parent_mem_tracker;
-    return new T(env_, this->dd_manager_.get(), &error_manager_,
-                 &file_cache_, std::move(opts));
+    error_manager_ = new FsErrorManager();
+    return new T(env_, this->dd_manager_.get(), error_manager_,
+                 &file_cache_, std::move(opts), fs::kDefaultTenantName);
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
@@ -191,7 +193,7 @@ class BlockManagerTest : public KuduTest {
           env_, paths, opts, &dd_manager_));
     }
     bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker));
-    RETURN_NOT_OK(bm_->Open(nullptr, nullptr, nullptr));
+    RETURN_NOT_OK(bm_->Open(nullptr, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
 
     // Certain tests may maintain their own directory groups, in which case
     // the default test group should not be used.
@@ -238,10 +240,10 @@ class BlockManagerTest : public KuduTest {
   DataDirGroupPB test_group_pb_;
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
-  FsErrorManager error_manager_;
-  unique_ptr<DataDirManager> dd_manager_;
+  scoped_refptr<FsErrorManager> error_manager_;
+  scoped_refptr<DataDirManager> dd_manager_;
   FileCache file_cache_;
-  unique_ptr<T> bm_;
+  scoped_refptr<T> bm_;
 };
 
 template <>
@@ -249,7 +251,7 @@ void BlockManagerTest<LogBlockManagerNativeMeta>::SetUp() {
   RETURN_NOT_LOG_BLOCK_MANAGER();
   // Pass in a report to prevent the block manager from logging unnecessarily.
   FsReport report;
-  ASSERT_OK(bm_->Open(&report, nullptr, nullptr));
+  ASSERT_OK(bm_->Open(&report, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
   ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
 
   // Store the DataDirGroupPB for tests that reopen the block manager.
@@ -748,10 +750,10 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   // The existing block manager is left open, which proxies for the process
   // having crashed without cleanly shutting down the block manager. The
   // on-disk metadata should still be clean.
-  unique_ptr<BlockManager> new_bm(this->CreateBlockManager(
+  scoped_refptr<BlockManager> new_bm(this->CreateBlockManager(
       scoped_refptr<MetricEntity>(),
       MemTracker::CreateTracker(-1, "other tracker")));
-  ASSERT_OK(new_bm->Open(nullptr, nullptr, nullptr));
+  ASSERT_OK(new_bm->Open(nullptr, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
 
   // Test that the state of all three blocks is properly reflected.
   unique_ptr<ReadableBlock> read_block;

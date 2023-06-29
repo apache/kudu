@@ -1393,7 +1393,7 @@ TEST_F(TestCompaction, TestEmptyFlushDoesntLeakBlocks) {
   // Fetch the metric for the number of on-disk blocks, so we can later verify
   // that we actually remove data.
   fs::LogBlockManager* lbm = down_cast<fs::LogBlockManager*>(
-      harness_->fs_manager()->block_manager());
+      harness_->fs_manager()->block_manager().get());
 
   vector<BlockId> before_block_ids;
   ASSERT_OK(lbm->GetAllBlockIds(&before_block_ids));

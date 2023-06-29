@@ -195,7 +195,7 @@ struct BlockManagerOptions {
 
 // Utilities for Kudu block lifecycle management. All methods are
 // thread-safe.
-class BlockManager {
+class BlockManager : public RefCountedThreadSafe<BlockManager> {
  public:
   // Lists the available block manager types.
   static std::vector<std::string> block_manager_types() {
@@ -207,6 +207,15 @@ class BlockManager {
   }
 
   virtual ~BlockManager() {}
+
+  enum class MergeReport {
+    NOT_REQUIRED,    ///< Do no fs report merge operation when open block manager.
+                     ///< The report only records the data of this open operation.
+
+    REQUIRED         ///< Do fs report merge operation when open block manager if report ptr
+                     ///  is not null.
+                     ///< The report updates the data of this operation to the incoming data.
+  };
 
   // Opens an existing on-disk representation of this block manager and
   // checks it for inconsistencies. If found, and if the block manager was not
@@ -223,7 +232,8 @@ class BlockManager {
   // If 'containers_processed' and 'containers_total' are not nullptr, they will
   // be populated with total containers attempted to be opened/processed and
   // total containers present respectively.
-  virtual Status Open(FsReport* report, std::atomic<int>* containers_processed,
+  virtual Status Open(FsReport* report, MergeReport need_merage,
+                      std::atomic<int>* containers_processed,
                       std::atomic<int>* containers_total) = 0;
 
   // Creates a new block using the provided options and opens it for
@@ -273,7 +283,13 @@ class BlockManager {
   virtual void NotifyBlockId(BlockId block_id) = 0;
 
   // Exposes the FsErrorManager used to handle fs errors.
-  virtual FsErrorManager* error_manager() = 0;
+  virtual scoped_refptr<FsErrorManager> error_manager() = 0;
+
+  // Exposes the tenant id.
+  virtual std::string tenant_id() const = 0;
+
+ private:
+  friend class RefCountedThreadSafe<BlockManager>;
 };
 
 // Group a set of block creations together in a transaction. This has two

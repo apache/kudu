@@ -724,7 +724,7 @@ class TabletServerDiskSpaceTest : public TabletServerTestBase,
 // and there are additional directories available, directories are added to the
 // group, and the new groups are persisted to disk.
 TEST_P(TabletServerDiskSpaceTest, TestFullGroupAddsDir) {
-  DataDirManager* dd_manager = mini_server_->server()->fs_manager()->dd_manager();
+  scoped_refptr<DataDirManager> dd_manager = mini_server_->server()->fs_manager()->dd_manager();
   vector<string> dir_group;
   ASSERT_OK(dd_manager->FindDataDirsByTabletId(kTabletId, &dir_group));
   ASSERT_EQ(kNumDirs - 1, dir_group.size());

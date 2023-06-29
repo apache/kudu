@@ -26,6 +26,7 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -41,11 +42,13 @@
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/default_key_provider.h"
 #include "kudu/fs/dir_manager.h"
 #include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -64,6 +67,7 @@
 
 using kudu::pb_util::ReadPBContainerFromPath;
 using kudu::pb_util::SecureDebugString;
+using std::nullopt;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -84,8 +88,27 @@ DECLARE_bool(enable_multi_tenancy);
 namespace kudu {
 namespace fs {
 
+static constexpr const char* const kTenantSelectors[] = {
+  "00000000000000000000000000000000", // "default_tenant_kudu"
+  "00000000000000000000000000000001", // "test_tenant_kudu"
+};
+
+static constexpr const char* const kEncryptionType[] = {
+  "kNonEncryption",         // FLAGS_encrypt_data_at_rest = false
+                            // FLAGS_enable_multi_tenancy = false
+  "kServerEncryption",      // FLAGS_encrypt_data_at_rest = true
+                            // FLAGS_enable_multi_tenancy = false
+  "kMultiTenantEncryption", // FLAGS_encrypt_data_at_rest = true
+                            // FLAGS_enable_multi_tenancy = true
+};
+
+static constexpr const char* const kTestTenantName = "test_tenant_kudu";
+static constexpr const char* const kTestTenantKey = "00010203040506070809101112131442";
+static constexpr const char* const kTestTenantKeyIv = "42141312111009080706050403020100";
+static constexpr const char* const kTestTenantKeyVersion = "kudutenantkey@0";
+
 class FsManagerTestBase : public KuduTest,
-                          public testing::WithParamInterface<string> {
+                          public testing::WithParamInterface<std::tuple<string, const char*>> {
  public:
   FsManagerTestBase()
      : fs_root_(GetTestPath("fs_root")) {
@@ -93,12 +116,58 @@ class FsManagerTestBase : public KuduTest,
 
   void SetUp() override {
     KuduTest::SetUp();
-    FLAGS_block_manager = GetParam();
+    FLAGS_block_manager = std::get<0>(GetParam());
+    auto encryption_type = std::get<1>(GetParam());
+    if (encryption_type == kEncryptionType[0]) {
+      tenant_id_ = kTenantSelectors[0];
+      FLAGS_encrypt_data_at_rest = false;
+      FLAGS_enable_multi_tenancy = false;
+    } else if (encryption_type == kEncryptionType[1]) {
+      tenant_id_ = kTenantSelectors[0];
+      FLAGS_encrypt_data_at_rest = true;
+      FLAGS_enable_multi_tenancy = false;
+    } else if (encryption_type == kEncryptionType[2]) {
+      tenant_id_ = kTenantSelectors[1];
+      FLAGS_encrypt_data_at_rest = true;
+      FLAGS_enable_multi_tenancy = true;
+    } else {
+      ASSERT_TRUE(0);
+    }
 
     // Initialize File-System Layout
     ReinitFsManager();
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
+    if (tenant_id() != kTenantSelectors[0]) {
+      // Init tenant for non default tenant.
+      ASSERT_OK(fs_manager_->AddTenant(kTestTenantName,
+                                       tenant_id(),
+                                       kTestTenantKey,
+                                       kTestTenantKeyIv,
+                                       kTestTenantKeyVersion));
+    }
+  }
+
+  Env* GetEnv() const {
+    // TODO(kedeng):
+    //    Different tenants should use their own environments, but currently
+    // the data loading patches for multi-tenants have not been merged, which
+    // results in ignoring tenant information when re-opening the FS manager.
+    // This method is temporarily used to ensure that the single test can run
+    // successfully, and the implementation here will need to be modified in
+    // the future.
+    return fs_manager()->GetEnv(kTenantSelectors[0]);
+  }
+
+  void AddNonDefaultTanent() {
+    if (tenant_id() != kTenantSelectors[0]) {
+      // Init tenant for non default tenant.
+      ASSERT_OK(fs_manager_->AddTenant(kTestTenantName,
+                                       tenant_id(),
+                                       kTestTenantKey,
+                                       kTestTenantKeyIv,
+                                       kTestTenantKeyVersion));
+    }
   }
 
   void ReinitFsManager() {
@@ -122,36 +191,141 @@ class FsManagerTestBase : public KuduTest,
 
     // Test Write
     unique_ptr<WritableBlock> writer;
-    ASSERT_OK(fs_manager()->CreateNewBlock({}, &writer));
+    ASSERT_OK(fs_manager()->CreateNewBlock({}, &writer, tenant_id()));
     ASSERT_OK(writer->Append(data));
     ASSERT_OK(writer->Close());
 
     // Test Read
     Slice result(buffer, data.size());
     unique_ptr<ReadableBlock> reader;
-    ASSERT_OK(fs_manager()->OpenBlock(writer->id(), &reader));
+    ASSERT_OK(fs_manager()->OpenBlock(writer->id(), &reader, tenant_id()));
     ASSERT_OK(reader->Read(0, result));
     ASSERT_EQ(data, result);
   }
 
   FsManager *fs_manager() const { return fs_manager_.get(); }
 
+  const string& tenant_id() const { return tenant_id_; }
+
  protected:
   const string fs_root_;
 
  private:
   unique_ptr<FsManager> fs_manager_;
+  string tenant_id_;
 };
+
 INSTANTIATE_TEST_SUITE_P(BlockManagerTypes, FsManagerTestBase,
-                         ::testing::ValuesIn(BlockManager::block_manager_types()));
+    ::testing::Combine(
+        ::testing::ValuesIn(BlockManager::block_manager_types()),
+        ::testing::ValuesIn(kEncryptionType)));
 
 TEST_P(FsManagerTestBase, TestBaseOperations) {
-  fs_manager()->DumpFileSystemTree(std::cout);
+  fs_manager()->DumpFileSystemTree(std::cout, tenant_id());
 
   TestReadWriteDataFile(Slice("test0"));
   TestReadWriteDataFile(Slice("test1"));
 
-  fs_manager()->DumpFileSystemTree(std::cout);
+  fs_manager()->DumpFileSystemTree(std::cout, tenant_id());
+}
+
+TEST_P(FsManagerTestBase, TestTenantAccountOperation) {
+  int tenant_num = fs_manager()->tenants_count();
+  const string non_exist_tenant_name = "non_exist_tenant_name";
+  const string non_exist_tenant = "10000000000000000000000000000000";
+  const string default_tenant_id = "00000000000000000000000000000000";
+  auto encryption_type = std::get<1>(GetParam());
+  if (encryption_type != kEncryptionType[2]) {
+    if (encryption_type == kEncryptionType[0]) {
+      // Multi-tenancy is disabled.
+      ASSERT_FALSE(FLAGS_enable_multi_tenancy);
+      ASSERT_FALSE(FLAGS_encrypt_data_at_rest);
+    } else if (encryption_type == kEncryptionType[1]) {
+      // Multi-tenancy is disabled but data at rest encryption is enabled.
+      ASSERT_FALSE(FLAGS_enable_multi_tenancy);
+      ASSERT_TRUE(FLAGS_encrypt_data_at_rest);
+    }
+    ASSERT_EQ(0, tenant_num);
+    ASSERT_FALSE(fs_manager()->is_tenants_exist());
+
+    // Add tenant is not allowed.
+    ASSERT_DEATH(fs_manager()->AddTenant(non_exist_tenant_name, non_exist_tenant,
+                                         nullopt, nullopt, nullopt), "");
+    ASSERT_FALSE(fs_manager()->VertifyTenant(non_exist_tenant));
+    ASSERT_TRUE(fs_manager()->VertifyTenant(default_tenant_id));
+    ASSERT_EQ(0, fs_manager()->GetDataRootDirs(non_exist_tenant).size());
+    ASSERT_NE(0, fs_manager()->GetDataRootDirs(default_tenant_id).size());
+    ASSERT_FALSE(fs_manager()->block_manager(non_exist_tenant));
+    ASSERT_TRUE(fs_manager()->block_manager(default_tenant_id));
+
+    // Remove tenant is not allowed.
+    const auto s = fs_manager()->RemoveTenant(non_exist_tenant);
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+        Substitute("Not support for removing tenant for id: $0.", non_exist_tenant));
+  } else {
+    // Multi-tenancy is enabled.
+    ASSERT_TRUE(FLAGS_enable_multi_tenancy);
+    ASSERT_TRUE(FLAGS_encrypt_data_at_rest);
+    ASSERT_EQ(2, tenant_num);
+    ASSERT_TRUE(fs_manager()->is_tenants_exist());
+    for (const auto& tenant : kTenantSelectors) {
+      ASSERT_TRUE(fs_manager()->is_tenant_exist(tenant));
+      ASSERT_TRUE(fs_manager()->VertifyTenant(tenant));
+      // Re-add a tenant which was already exist will fail.
+      string new_tenant = "new_tenant_name";
+      const auto s = fs_manager()->AddTenant(new_tenant, tenant, nullopt,
+                                             nullopt, nullopt);
+      ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(),
+          Substitute("Tenant $0 already exists.", tenant));
+    }
+
+    ASSERT_FALSE(fs_manager()->is_tenant_exist(non_exist_tenant));
+
+    // Test add tenant.
+    string new_tenant_name = "new_tenant_name";
+    string new_tenant = "00000000000000000000000000000011";
+    // Make sure the new tenant does not exist.
+    ASSERT_FALSE(fs_manager()->is_tenant_exist(new_tenant));
+    // Generate key info to do tenant init.
+    security::DefaultKeyProvider key_provider;
+    string encrypted_key;
+    string iv;
+    string version;
+    ASSERT_OK(key_provider.GenerateEncryptionKey(&encrypted_key, &iv, &version));
+    ASSERT_OK(fs_manager()->AddTenant(new_tenant_name, new_tenant,
+                                      encrypted_key, iv, version));
+
+    // The key info we get need equal to what we set.
+    ASSERT_EQ(new_tenant_name, fs_manager()->tenant_name(new_tenant));
+    ASSERT_EQ(encrypted_key, fs_manager()->tenant_key(new_tenant));
+    ASSERT_EQ(iv, fs_manager()->tenant_key_iv(new_tenant));
+    ASSERT_EQ(version, fs_manager()->tenant_key_version(new_tenant));
+
+    // The new tenant need exist after 'AddTenant'.
+    ASSERT_TRUE(fs_manager()->is_tenant_exist(new_tenant));
+    ASSERT_EQ(3, fs_manager()->tenants_count());
+    for (auto& tenant : fs_manager()->GetAllTenants()) {
+      ASSERT_TRUE(fs_manager()->is_tenant_exist(tenant));
+      ASSERT_TRUE(fs_manager()->VertifyTenant(tenant));
+      ASSERT_NE(0, fs_manager()->GetDataRootDirs(tenant).size());
+    }
+
+    // Test remove tenant.
+    ASSERT_TRUE(fs_manager()->is_tenant_exist(new_tenant));
+    ASSERT_OK(fs_manager()->RemoveTenant(new_tenant));
+    ASSERT_FALSE(fs_manager()->is_tenant_exist(new_tenant));
+    ASSERT_EQ(2, fs_manager()->tenants_count());
+    for (auto& tenant : fs_manager()->GetAllTenants()) {
+      ASSERT_TRUE(fs_manager()->is_tenant_exist(tenant));
+    }
+
+    // Remove default tenant is not allowed.
+    const auto s = fs_manager()->RemoveTenant(default_tenant_id);
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Remove default tenant is not allowed.");
+  }
 }
 
 TEST_P(FsManagerTestBase, TestIllegalPaths) {
@@ -181,8 +355,10 @@ TEST_P(FsManagerTestBase, TestDuplicatePaths) {
   string path = GetTestPath("foo");
   ReinitFsManagerWithPaths(path, { path, path, path });
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_OK(fs_manager()->Open());
+  NO_FATALS(AddNonDefaultTanent());
   ASSERT_EQ(vector<string>({ JoinPathSegments(path, fs_manager()->kDataDirName) }),
-            fs_manager()->GetDataRootDirs());
+            fs_manager()->GetDataRootDirs(tenant_id()));
 }
 
 TEST_P(FsManagerTestBase, TestListTablets) {
@@ -192,21 +368,21 @@ TEST_P(FsManagerTestBase, TestListTablets) {
 
   string path = fs_manager()->GetTabletMetadataDir();
   unique_ptr<WritableFile> writer;
-  ASSERT_OK(env_->NewWritableFile(
+  ASSERT_OK(GetEnv()->NewWritableFile(
       JoinPathSegments(path, "foo.kudutmp"), &writer));
-  ASSERT_OK(env_->NewWritableFile(
+  ASSERT_OK(GetEnv()->NewWritableFile(
       JoinPathSegments(path, "foo.kudutmp.abc123"), &writer));
-  ASSERT_OK(env_->NewWritableFile(
+  ASSERT_OK(GetEnv()->NewWritableFile(
       JoinPathSegments(path, "foo.bak"), &writer));
-  ASSERT_OK(env_->NewWritableFile(
+  ASSERT_OK(GetEnv()->NewWritableFile(
       JoinPathSegments(path, "foo.bak.abc123"), &writer));
-  ASSERT_OK(env_->NewWritableFile(
+  ASSERT_OK(GetEnv()->NewWritableFile(
       JoinPathSegments(path, ".hidden"), &writer));
   // An uncanonicalized id.
-  ASSERT_OK(env_->NewWritableFile(
+  ASSERT_OK(GetEnv()->NewWritableFile(
       JoinPathSegments(path, "6ba7b810-9dad-11d1-80b4-00c04fd430c8"), &writer));
   // 1 valid tablet id.
-  ASSERT_OK(env_->NewWritableFile(
+  ASSERT_OK(GetEnv()->NewWritableFile(
       JoinPathSegments(path, "922ff7ed14c14dbca4ee16331dfda42a"), &writer));
 
   ASSERT_OK(fs_manager()->ListTabletIds(&tablet_ids));
@@ -215,10 +391,10 @@ TEST_P(FsManagerTestBase, TestListTablets) {
 
 TEST_P(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
   string path = GetTestPath("new_fs_root");
-  ASSERT_OK(env_->CreateDir(path));
+  ASSERT_OK(GetEnv()->CreateDir(path));
   {
     unique_ptr<WritableFile> writer;
-    ASSERT_OK(env_->NewWritableFile(
+    ASSERT_OK(GetEnv()->NewWritableFile(
         JoinPathSegments(path, "some_file"), &writer));
   }
 
@@ -236,7 +412,7 @@ TEST_P(FsManagerTestBase, TestEmptyWALPath) {
 
 TEST_P(FsManagerTestBase, TestOnlyWALPath) {
   string path = GetTestPath("new_fs_root");
-  ASSERT_OK(env_->CreateDir(path));
+  ASSERT_OK(GetEnv()->CreateDir(path));
 
   ReinitFsManagerWithPaths(path, {});
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
@@ -332,8 +508,8 @@ TEST_P(FsManagerTestBase, TestMetadataDirInDataRoot) {
   Status s = fs_manager()->Open();
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  ASSERT_FALSE(env_->FileExists(opts.data_roots[0]));
-  ASSERT_TRUE(env_->FileExists(opts.data_roots[1]));
+  ASSERT_FALSE(GetEnv()->FileExists(opts.data_roots[0]));
+  ASSERT_TRUE(GetEnv()->FileExists(opts.data_roots[1]));
 
   // Now allow the reordering by specifying the expected metadata root.
   opts.metadata_root = opts.data_roots[1];
@@ -414,7 +590,7 @@ TEST_P(FsManagerTestBase, TestCreateWithFailedDirs) {
   // Create some top-level paths to place roots in.
   vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
   for (const string& path : data_paths) {
-    env_->CreateDir(path);
+    GetEnv()->CreateDir(path);
   }
   // Initialize the FS layout with roots in subdirectories of data_paths. When
   // we canonicalize paths, we canonicalize the dirname of each path (e.g.
@@ -440,18 +616,18 @@ TEST_P(FsManagerTestBase, TestOpenWithDuplicateInstanceFiles) {
   WritableFileOptions wr_opts;
   wr_opts.mode = Env::MUST_CREATE;
   const string duplicate_test_root = GetTestPath("fs_dup");
-  ASSERT_OK(env_->CreateDir(duplicate_test_root));
+  ASSERT_OK(GetEnv()->CreateDir(duplicate_test_root));
   const string duplicate_instance = JoinPathSegments(
       duplicate_test_root, FsManager::kInstanceMetadataFileName);
-  ASSERT_OK(env_util::CopyFile(env_, fs_manager()->GetInstanceMetadataPath(fs_root_),
+  ASSERT_OK(env_util::CopyFile(GetEnv(), fs_manager()->GetInstanceMetadataPath(fs_root_),
                                duplicate_instance, wr_opts));
 
   // Make a copy of the per-directory instance file.
   const string duplicate_test_dir = JoinPathSegments(duplicate_test_root, kDataDirName);
-  ASSERT_OK(env_->CreateDir(duplicate_test_dir));
+  ASSERT_OK(GetEnv()->CreateDir(duplicate_test_dir));
   const string duplicate_dir_instance = JoinPathSegments(
       duplicate_test_dir, kInstanceMetadataFileName);
-  ASSERT_OK(env_util::CopyFile(env_,
+  ASSERT_OK(env_util::CopyFile(GetEnv(),
         fs_manager()->dd_manager()->FindDirByUuidIndex(0)->instance()->path(),
         duplicate_dir_instance, wr_opts));
 
@@ -543,7 +719,7 @@ TEST_P(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   // empty disk and attempt to use it. Upon opening the FS layout, we should
   // see no failed directories.
   FLAGS_env_inject_eio = 0;
-  ASSERT_OK(env_->DeleteRecursively(new_root));
+  ASSERT_OK(GetEnv()->DeleteRecursively(new_root));
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
   ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
@@ -571,7 +747,7 @@ TEST_P(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   // The above behavior should be seen if the data directories are missing...
   FLAGS_env_inject_eio = 0;
   for (const auto& root : opts.data_roots) {
-    ASSERT_OK(env_->DeleteRecursively(root));
+    ASSERT_OK(GetEnv()->DeleteRecursively(root));
   }
   ReinitFsManagerWithOpts(opts);
   s = fs_manager()->Open();
@@ -591,8 +767,8 @@ TEST_P(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
   // Create some parent directories and subdirectories.
   const string dir1 = GetTestPath("test1");
   const string dir2 = GetTestPath("test2");
-  ASSERT_OK(env_->CreateDir(dir1));
-  ASSERT_OK(env_->CreateDir(dir2));
+  ASSERT_OK(GetEnv()->CreateDir(dir1));
+  ASSERT_OK(GetEnv()->CreateDir(dir2));
   const string subdir1 = GetTestPath("test1/subdir");
   const string subdir2 = GetTestPath("test2/subdir");
   FsManagerOpts opts;
@@ -611,7 +787,7 @@ TEST_P(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
 
   // Now fail the canonicalization by deleting a parent directory. This
   // simulates the mountpoint disappearing.
-  ASSERT_OK(env_->DeleteRecursively(dir2));
+  ASSERT_OK(GetEnv()->DeleteRecursively(dir2));
   ReinitFsManagerWithOpts(opts);
   Status s = fs_manager()->Open();
   ASSERT_OK(s);
@@ -622,7 +798,7 @@ TEST_P(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
   }
 
   // Let's try that again, but with the appropriate mountpoint/directory.
-  ASSERT_OK(env_->CreateDir(dir2));
+  ASSERT_OK(GetEnv()->CreateDir(dir2));
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
   ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
@@ -740,14 +916,14 @@ TEST_P(FsManagerTestBase, TestUmask) {
 TEST_P(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
   const string kWalRoot = fs_manager()->GetWalsRootDir();
 
-  ASSERT_OK(env_->DeleteDir(kWalRoot));
+  ASSERT_OK(GetEnv()->DeleteDir(kWalRoot));
   ReinitFsManager();
   Status s = fs_manager()->Open();
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
 
   unique_ptr<WritableFile> f;
-  ASSERT_OK(env_->NewWritableFile(kWalRoot, &f));
+  ASSERT_OK(GetEnv()->NewWritableFile(kWalRoot, &f));
   s = fs_manager()->Open();
   ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "exists but is not a directory");
@@ -807,7 +983,7 @@ TEST_P(FsManagerTestBase, TestEIOWhileChangingDirs) {
   for (int i = 0; i < kMaxDirs; i++) {
     const string dir = Substitute("$0$1", kTestPathBase, i);
     all_dirs.emplace_back(dir);
-    ASSERT_OK(env_->CreateDir(dir));
+    ASSERT_OK(GetEnv()->CreateDir(dir));
   }
   FsManagerOpts opts;
   opts.wal_root = all_dirs[0];
@@ -840,7 +1016,7 @@ TEST_P(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
   // Helper to get a new root.
   auto create_root = [&] (int i) {
     const string dir = Substitute("$0$1", kTestPathBase, i);
-    CHECK_OK(env_->CreateDir(dir));
+    CHECK_OK(GetEnv()->CreateDir(dir));
     return dir;
   };
 
@@ -860,7 +1036,7 @@ TEST_P(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
       // Collect the contents of the InstanceMetadataPB objects.
       const auto instance_path = JoinPathSegments(root, FsManager::kInstanceMetadataFileName);
       unique_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
-      Status s = ReadPBContainerFromPath(env_, instance_path, pb.get(), pb_util::NOT_SENSITIVE);
+      Status s = ReadPBContainerFromPath(GetEnv(), instance_path, pb.get(), pb_util::NOT_SENSITIVE);
       if (s.IsNotFound()) {
         InsertOrDie(&instances, instance_path, "");
       } else {
@@ -872,7 +1048,7 @@ TEST_P(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
       unique_ptr<DirInstanceMetadataPB> bmi_pb(new DirInstanceMetadataPB);
       const auto block_manager_instance = JoinPathSegments(
           JoinPathSegments(root, kDataDirName), kInstanceMetadataFileName);
-      s = ReadPBContainerFromPath(env_, block_manager_instance,
+      s = ReadPBContainerFromPath(GetEnv(), block_manager_instance,
                                   bmi_pb.get(), pb_util::NOT_SENSITIVE);
       if (s.IsNotFound()) {
         InsertOrDie(&instances, block_manager_instance, "");
@@ -939,7 +1115,7 @@ TEST_P(FsManagerTestBase, TestReAddRemovedDataDir) {
     opts.data_roots = data_roots;
     ReinitFsManagerWithOpts(opts);
     ASSERT_OK(fs_manager()->Open());
-    DataDirManager* dd_manager = fs_manager()->dd_manager();
+    auto dd_manager = fs_manager()->dd_manager();
     ASSERT_EQ(data_roots.size(), dd_manager->GetDirs().size());
 
     // Since we haven't deleted any directories or instance files, ensure that
@@ -967,8 +1143,8 @@ TEST_P(FsManagerTestBase, TestCannotRemoveDataDirServingAsMetadataDir) {
 
   // Create a new fs layout with a metadata root explicitly set to the first
   // data root.
-  ASSERT_OK(env_->DeleteRecursively(fs_root_));
-  ASSERT_OK(env_->CreateDir(fs_root_));
+  ASSERT_OK(GetEnv()->DeleteRecursively(fs_root_));
+  ASSERT_OK(GetEnv()->CreateDir(fs_root_));
 
   FsManagerOpts opts;
   opts.data_roots = { JoinPathSegments(fs_root_, "data1"),
@@ -1127,14 +1303,14 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
       // into the new fs root) then retry.
       string source_instance = fs_manager()->GetInstanceMetadataPath(fs_root_);
       bool is_dir;
-      Status s = env_->IsDirectory(fs_root, &is_dir);
+      Status s = GetEnv()->IsDirectory(fs_root, &is_dir);
       if (s.ok()) {
         ASSERT_TRUE(is_dir);
         string new_instance = fs_manager()->GetInstanceMetadataPath(fs_root);
-        if (!env_->FileExists(new_instance)) {
+        if (!GetEnv()->FileExists(new_instance)) {
           WritableFileOptions wr_opts;
           wr_opts.mode = Env::MUST_CREATE;
-          ASSERT_OK(env_util::CopyFile(env_, source_instance, new_instance, wr_opts));
+          ASSERT_OK(env_util::CopyFile(GetEnv(), source_instance, new_instance, wr_opts));
           ReinitFsManagerWithOpts(fs_opts);
           open_status = fs_manager()->Open();
         }
@@ -1163,10 +1339,10 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
         string data_dir = JoinPathSegments(root, kDataDirName);
         string instance = JoinPathSegments(data_dir,
                                            kInstanceMetadataFileName);
-        ASSERT_TRUE(env_->FileExists(instance));
+        ASSERT_TRUE(GetEnv()->FileExists(instance));
         string copy = instance + kTmpInfix;
-        if (env_->FileExists(copy)) {
-          ASSERT_OK(env_->RenameFile(copy, instance));
+        if (GetEnv()->FileExists(copy)) {
+          ASSERT_OK(GetEnv()->RenameFile(copy, instance));
           repaired = true;
         }
       }

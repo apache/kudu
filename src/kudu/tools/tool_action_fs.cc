@@ -208,7 +208,7 @@ Status UpdateEncryptionKeyInfo(Env* env) {
   metadata->clear_server_key_version();
 
   // Write the new metadata to disk.
-  RETURN_NOT_OK(fs_manager.UpdateMetadata(move(metadata)));
+  RETURN_NOT_OK(fs_manager.UpdateMetadata(metadata));
 
   return Status::OK();
 }

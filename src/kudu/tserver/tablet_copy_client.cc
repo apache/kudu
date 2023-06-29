@@ -214,7 +214,7 @@ TabletCopyClient::TabletCopyClient(
       start_time_micros_(0),
       rng_(GetRandomSeed32()),
       dst_tablet_copy_metrics_(dst_tablet_copy_metrics) {
-  BlockManager* bm = dst_fs_manager->block_manager();
+  auto bm = dst_fs_manager->block_manager();
   transaction_ = bm->NewCreationTransaction();
   if (dst_tablet_copy_metrics_) {
     dst_tablet_copy_metrics_->open_client_sessions->Increment();

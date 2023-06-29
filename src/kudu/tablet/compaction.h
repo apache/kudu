@@ -28,6 +28,7 @@
 
 #include "kudu/common/rowblock.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/status.h"
 
@@ -233,7 +234,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 // After return of this function, this CompactionInput object is "used up" and will
 // no longer be useful.
 Status FlushCompactionInput(const std::string& tablet_id,
-                            const fs::FsErrorManager* error_manager,
+                            const scoped_refptr<fs::FsErrorManager>& error_manager,
                             CompactionInput* input,
                             const MvccSnapshot& snap,
                             const HistoryGcOpts& history_gc_opts,

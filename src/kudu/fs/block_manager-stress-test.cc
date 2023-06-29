@@ -36,6 +36,7 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h" // IWYU pragma: keep
 #include "kudu/fs/fs.pb.h"
@@ -149,7 +150,7 @@ class BlockManagerStressTest : public KuduTest {
     // Defer block manager creation until after the above flags are set.
     bm_.reset(CreateBlockManager());
     CHECK_OK(file_cache_.Init());
-    CHECK_OK(bm_->Open(nullptr, nullptr, nullptr));
+    CHECK_OK(bm_->Open(nullptr, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
     CHECK_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
     CHECK_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
@@ -186,8 +187,9 @@ class BlockManagerStressTest : public KuduTest {
       CHECK_OK(DataDirManager::OpenExistingForTests(env_, data_dirs,
           DataDirManagerOptions(), &dd_manager_));
     }
-    return new T(env_, dd_manager_.get(), &error_manager_,
-                 &file_cache_, BlockManagerOptions());
+    error_manager_ = new FsErrorManager();
+    return new T(env_, dd_manager_.get(), error_manager_,
+                 &file_cache_, BlockManagerOptions(), fs::kDefaultTenantName);
   }
 
   void RunTest(double secs) {
@@ -254,13 +256,13 @@ class BlockManagerStressTest : public KuduTest {
   // Protects written_blocks_.
   simple_spinlock lock_;
 
-  unique_ptr<DataDirManager> dd_manager_;
+  scoped_refptr<DataDirManager> dd_manager_;
 
-  FsErrorManager error_manager_;
+  scoped_refptr<FsErrorManager> error_manager_;
 
   FileCache file_cache_;
 
-  unique_ptr<BlockManager> bm_;
+  scoped_refptr<BlockManager> bm_;
 
   // Test group of disk to spread data across.
   DataDirGroupPB test_group_pb_;
@@ -542,7 +544,7 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
     LOG(INFO) << "Running on populated block manager (restart #" << i << ")";
     this->bm_.reset(this->CreateBlockManager());
     FsReport report;
-    ASSERT_OK(this->bm_->Open(&report, nullptr, nullptr));
+    ASSERT_OK(this->bm_->Open(&report, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
     ASSERT_OK(this->dd_manager_->LoadDataDirGroupFromPB(this->test_tablet_name_,
                                                         this->test_group_pb_));
     ASSERT_OK(report.LogAndCheckForFatalErrors());

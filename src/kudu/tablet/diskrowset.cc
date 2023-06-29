@@ -41,6 +41,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_compaction.h"
@@ -242,7 +243,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block, int live_row_count) 
 
 Status DiskRowSetWriter::Finish() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::Finish");
-  BlockManager* bm = rowset_metadata_->fs_manager()->block_manager();
+  auto bm = rowset_metadata_->fs_manager()->block_manager();
   unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
   RETURN_NOT_OK(FinishAndReleaseBlocks(transaction.get()));
   return transaction->CommitCreatedBlocks();
@@ -336,7 +337,7 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(
       can_roll_(false),
       written_count_(0),
       written_size_(0) {
-  BlockManager* bm = tablet_metadata->fs_manager()->block_manager();
+  auto bm = tablet_metadata->fs_manager()->block_manager();
   block_transaction_ = bm->NewCreationTransaction();
   CHECK(schema.has_column_ids());
 }

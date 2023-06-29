@@ -29,7 +29,8 @@ namespace kudu {
 namespace fs {
 
 // Default error-handling callback that no-ops.
-static void DoNothingErrorNotification(const string& /* uuid */) {}
+static void DoNothingErrorNotification(const string& /* uuid */,
+                                       const string& /* tenant_id */) {}
 
 FsErrorManager::FsErrorManager() {
   InsertOrDie(&callbacks_, ErrorHandlerType::DISK_ERROR, &DoNothingErrorNotification);
@@ -47,9 +48,11 @@ void FsErrorManager::UnsetErrorNotificationCb(ErrorHandlerType e) {
   EmplaceOrUpdate(&callbacks_, e, &DoNothingErrorNotification);
 }
 
-void FsErrorManager::RunErrorNotificationCb(ErrorHandlerType e, const string& uuid) const {
+void FsErrorManager::RunErrorNotificationCb(ErrorHandlerType e,
+                                            const string& uuid,
+                                            const string& tenant_id) const {
   std::lock_guard<Mutex> l(lock_);
-  FindOrDie(callbacks_, e)(uuid);
+  FindOrDie(callbacks_, e)(uuid, tenant_id);
 }
 
 }  // namespace fs

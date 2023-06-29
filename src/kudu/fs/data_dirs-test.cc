@@ -110,7 +110,7 @@ class DataDirsTest : public KuduTest {
   const CreateBlockOptions test_block_opts_;
   MetricRegistry registry_;
   scoped_refptr<MetricEntity> entity_;
-  std::unique_ptr<DataDirManager> dd_manager_;
+  scoped_refptr<DataDirManager> dd_manager_;
 };
 
 TEST_F(DataDirsTest, TestCreateGroup) {

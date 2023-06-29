@@ -31,6 +31,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
 #include "kudu/util/monotime.h"
@@ -86,7 +87,7 @@ class FsErrorManagerTest : public KuduTest {
   // time, it is likely that some will write to the same entry.
   //
   // NOTE: this can be curried into an ErrorNotificationCb.
-  void SleepAndWriteFirstEmptyCb(int i, const string& /* s */) {
+  void SleepAndWriteFirstEmptyCb(int i, const string& /* s */, const string& /* u */) {
     DFAKE_SCOPED_LOCK(fake_lock_);
     int first_available = FindFirst(-1);
     SleepForRand();
@@ -107,14 +108,14 @@ class FsErrorManagerTest : public KuduTest {
     return positions;
   }
 
-  FsErrorManager* em() const { return em_.get(); }
+  scoped_refptr<FsErrorManager> em() const { return em_; }
 
  protected:
   // The single vector that the error notification callbacks will all write to.
   vector<int> test_vec_;
 
  private:
-  unique_ptr<FsErrorManager> em_;
+  scoped_refptr<FsErrorManager> em_;
 
   // Fake lock used to ensure threads don't run error-handling at the same time.
   DFAKE_MUTEX(fake_lock_);
@@ -130,8 +131,8 @@ TEST_F(FsErrorManagerTest, TestBasicRegistration) {
   // Register a callback to update the first '-1' entry in test_vec_ to '0'
   // after waiting a random amount of time.
   em()->SetErrorNotificationCb(
-      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
-        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::DISK_ERROR, uuid);
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid, const string& tenant_id) {
+        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::DISK_ERROR, uuid, tenant_id);
       });
   em()->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, "");
   ASSERT_EQ(0, FindFirst(ErrorHandlerType::DISK_ERROR));
@@ -143,8 +144,8 @@ TEST_F(FsErrorManagerTest, TestBasicRegistration) {
 
   // Now register another callback.
   em()->SetErrorNotificationCb(
-      ErrorHandlerType::NO_AVAILABLE_DISKS, [this](const string& uuid) {
-        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::NO_AVAILABLE_DISKS, uuid);
+      ErrorHandlerType::NO_AVAILABLE_DISKS, [this](const string& uuid, const string& tenant_id) {
+        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::NO_AVAILABLE_DISKS, uuid, tenant_id);
       });
   em()->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, "");
   ASSERT_EQ(1, FindFirst(ErrorHandlerType::NO_AVAILABLE_DISKS));
@@ -165,12 +166,12 @@ TEST_F(FsErrorManagerTest, TestBasicRegistration) {
 // Test that the callbacks get run serially.
 TEST_F(FsErrorManagerTest, TestSerialization) {
   em()->SetErrorNotificationCb(
-      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
-        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::DISK_ERROR, uuid);
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid, const string& tenant_id) {
+        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::DISK_ERROR, uuid, tenant_id);
       });
   em()->SetErrorNotificationCb(
-      ErrorHandlerType::NO_AVAILABLE_DISKS, [this](const string& uuid) {
-        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::NO_AVAILABLE_DISKS, uuid);
+      ErrorHandlerType::NO_AVAILABLE_DISKS, [this](const string& uuid, const string& tenant_id) {
+        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::NO_AVAILABLE_DISKS, uuid, tenant_id);
       });
 
   // Swap back and forth between error-handler type.

@@ -22,6 +22,7 @@
 #include <iosfwd>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -30,12 +31,16 @@
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/dir_manager.h"
 #include "kudu/fs/error_manager.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/locks.h"          // for percpu_rwlock
 #include "kudu/util/env.h"
+#include "kudu/util/locks.h"          // for percpu_rwlock
 #include "kudu/util/metrics.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
@@ -60,17 +65,13 @@ class Timer;
 
 namespace fs {
 
-class BlockManager;
-class DataDirManager;
 class FsManagerTestBase_TestDuplicatePaths_Test;
 class FsManagerTestBase_TestEIOWhileRunningUpdateDirsTool_Test;
 class FsManagerTestBase_TestIsolatedMetadataDir_Test;
 class FsManagerTestBase_TestMetadataDirInDataRoot_Test;
 class FsManagerTestBase_TestMetadataDirInWALRoot_Test;
 class FsManagerTestBase_TestOpenWithDuplicateInstanceFiles_Test;
-class ReadableBlock;
-class WritableBlock;
-struct CreateBlockOptions;
+class FsManagerTestBase_TestTenantAccountOperation_Test;
 struct FsReport;
 
 } // namespace fs
@@ -250,20 +251,30 @@ class FsManager {
   // ==========================================================================
 
   // Creates a new block based on the options specified in 'opts'.
+  // If the tenant id is not specified, we treat it as the default tenant.
   //
   // Block will be synced on close.
   Status CreateNewBlock(const fs::CreateBlockOptions& opts,
-                        std::unique_ptr<fs::WritableBlock>* block);
+                        std::unique_ptr<fs::WritableBlock>* block,
+                        const std::string& tenant_id = fs::kDefaultTenantID);
 
+  // If the tenant id is not specified, we treat it as the default tenant.
   Status OpenBlock(const BlockId& block_id,
-                   std::unique_ptr<fs::ReadableBlock>* block);
+                   std::unique_ptr<fs::ReadableBlock>* block,
+                   const std::string& tenant_id = fs::kDefaultTenantID);
 
-  bool BlockExists(const BlockId& block_id) const;
+  // If the tenant id is not specified, we treat it as the default tenant.
+  bool BlockExists(const BlockId& block_id,
+                   const std::string& tenant_id = fs::kDefaultTenantID);
 
   // ==========================================================================
   //  on-disk path
   // ==========================================================================
-  std::vector<std::string> GetDataRootDirs() const;
+  // Get the data subdirectories for each data root, which belong to the tenant
+  // specified by the tenant id.
+  // If the tenant id is not specified, we treat it as the default tenant.
+  std::vector<std::string> GetDataRootDirs(
+      const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   std::string GetWalsRootDir() const {
     DCHECK(initted_);
@@ -304,10 +315,10 @@ class FsManager {
 
   // Get env to do read/write.
   // Different tenant owns different env.
-  // Create a new env for the tenant if search fail when '--enable_multi_tenancy' enabled.
+  // Return nullptr if search fail when '--enable_multi_tenancy' enabled.
   //
   // If the tenant id is not specified, we treat it as the default tenant.
-  Env* GetEnv(const std::string& tenant_id = fs::kDefaultTenantID);
+  Env* GetEnv(const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   bool read_only() const {
     return opts_.read_only;
@@ -325,8 +336,29 @@ class FsManager {
   //  tenant helpers
   // ==========================================================================
 
+  // A new tenant must have a tenant name and tenant ID. If the tenant key information
+  // is missing and the key generation service is available, we can use the relevant
+  // key generation service to generate the key information for it.
+  //
+  // The validation of tenant name and ID needs to be conducted on the master side.
+  Status AddTenant(const std::string& tenant_name,
+                   const std::string& tenant_id,
+                   std::optional<std::string> tenant_key,
+                   std::optional<std::string> tenant_key_iv,
+                   std::optional<std::string> tenant_key_version);
+
+  // As the tenant ID is globally unique and cannot be changed, while the tenant
+  // name can be changed, we use the tenant ID as the parameter to delete a tenant.
+  //
+  // TODO(kedeng):
+  //     All data owned by a tenant should be deleted when the tenant is removed.
+  Status RemoveTenant(const std::string& tenant_id);
+
+  // Get all the tenant id including the default tenant.
+  std::vector<std::string> GetAllTenants() const;
+
   // Use to get the total count of all the tenants.
-  const int32_t tenants_count() const;
+  int32 tenants_count() const;
 
   // Use to confirm whether there is tenants information in metadata.
   bool is_tenants_exist() const;
@@ -374,25 +406,42 @@ class FsManager {
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================
-  bool Exists(const std::string& path) const {
-    return env_->FileExists(path);
+  // Used to judge whether a certain path exists.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  bool Exists(const std::string& path,
+              const std::string& tenant_id = fs::kDefaultTenantID) const {
+    return GetEnv(tenant_id)->FileExists(path);
   }
 
-  Status ListDir(const std::string& path, std::vector<std::string> *objects) const {
-    return env_->GetChildren(path, objects);
+  // Get the dir list belongs to the tenant.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  Status ListDir(const std::string& path,
+                 std::vector<std::string> *objects,
+                 const std::string& tenant_id = fs::kDefaultTenantID) const {
+    return GetEnv(tenant_id)->GetChildren(path, objects);
   }
 
-  fs::DataDirManager* dd_manager() const {
-    return dd_manager_.get();
-  }
+  // Search the tenant's dd manager.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  scoped_refptr<fs::DataDirManager> dd_manager(
+      const std::string& tenant_id = fs::kDefaultTenantID) const;
 
-  fs::BlockManager* block_manager() {
-    DCHECK(block_manager_);
-    return block_manager_.get();
-  }
+  // Get block manager by tenant id.
+  // If the tenant does not exist, add it to the metadata, create a new block
+  // manager and new dd manager for corresponding.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  scoped_refptr<fs::BlockManager> block_manager(
+      const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Prints the file system trees under the file system roots.
-  void DumpFileSystemTree(std::ostream& out);
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  void DumpFileSystemTree(std::ostream& out,
+                          const std::string& tenant_id = fs::kDefaultTenantID);
 
   bool meta_on_xfs() const {
     return meta_on_xfs_;
@@ -405,6 +454,7 @@ class FsManager {
   FRIEND_TEST(fs::FsManagerTestBase, TestMetadataDirInWALRoot);
   FRIEND_TEST(fs::FsManagerTestBase, TestMetadataDirInDataRoot);
   FRIEND_TEST(fs::FsManagerTestBase, TestOpenWithDuplicateInstanceFiles);
+  FRIEND_TEST(fs::FsManagerTestBase, TestTenantAccountOperation);
   FRIEND_TEST(tserver::MiniTabletServerTest, TestFsLayoutEndToEnd);
   friend class itest::MiniClusterFsInspector; // for access to directory names
   friend Status tools::UpdateEncryptionKeyInfo(Env* env); // for update the metadata
@@ -414,9 +464,19 @@ class FsManager {
   Status Init();
 
   // Select and create an instance of the appropriate block manager.
+  // Search for the block manager corresponding to the tenant first, if no one exist,
+  // create a new one and then return it.
   //
   // Does not actually perform any on-disk operations.
-  void InitBlockManager();
+  scoped_refptr<fs::BlockManager> InitBlockManager(
+      const std::string& tenant_id = fs::kDefaultTenantID);
+
+  // Search the tenant's block manager.
+  scoped_refptr<fs::BlockManager> SearchBlockManager(const std::string& tenant_id) const {
+    std::lock_guard<LockType> lock(bm_lock_);
+    scoped_refptr<fs::BlockManager> block_manager(FindPtrOrNull(block_manager_map_, tenant_id));
+    return block_manager;
+  }
 
   // Creates filesystem roots from 'canonicalized_roots', writing new on-disk
   // instances using 'metadata'.
@@ -444,9 +504,32 @@ class FsManager {
   Status WriteInstanceMetadata(const InstanceMetadataPB& metadata,
                                const std::string& root);
 
+  // To support multi-tenant scenarios and non-encrypted scenarios, some interfaces
+  // have added a tenant ID parameter.
+  // This interface is used to confirm the validity of the tenant ID. The default
+  // tenant ID is valid in any scenario, while a non-default tenant ID is only valid
+  // when multi-tenant features are enabled.
+  //
+  // If valid, it returns true, otherwise it returns false.
+  bool VertifyTenant(const std::string& tenant_id) const;
+
+  // We record tenant information in metadata and persist it to disk. When we add a
+  // new tenant, the records on the disk need to be updated at first, and then
+  // update the metadata in memory if success.
+  //
+  // Called only in the encryption enable scenario when a new tenant appears.
+  Status AddTenantMetadata(const std::string& tenant_name,
+                           const std::string& tenant_id,
+                           const std::string& tenant_key,
+                           const std::string& tenant_key_iv,
+                           const std::string& tenant_key_version);
+
+  // Remove the tenant recorded in the memory and the disk.
+  Status RemoveTenantMetadata(const std::string& tenant_id);
+
   // Update metadata after adding tenant or removing tenant.
   Status UpdateMetadata(
-    std::unique_ptr<InstanceMetadataPB> metadata);
+    std::unique_ptr<InstanceMetadataPB>& metadata);
 
   // Search tenant for metadata by tenant id.
   const InstanceMetadataPB_TenantMetadataPB* GetTenant(const std::string& tenant_id) const;
@@ -479,12 +562,47 @@ class FsManager {
   //  file-system helpers
   // ==========================================================================
 
+  // Create a new env for the tenant if search fail when '--enable_multi_tenancy' enabled.
+  Env* AddEnv(const std::string& tenant_id);
+
+  // Set encryption key for the env of tenant.
+  Status SetEncryptionKey(const std::string& tenant_id);
+  // Except that the caller must hold md_lock_.
+  Status SetEncryptionKeyUnlock(const std::string& tenant_id);
+
+  // Create data dir manager for tenant and add it to dd manager map.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  Status CreateNewDataDirManager(const std::string& tenant_id = fs::kDefaultTenantID);
+
+  // Open data dir manager for tenant and add it to dd manager map.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  Status OpenDataDirManager(const std::string& tenant_id = fs::kDefaultTenantID);
+
   // Prints the file system tree for the objects in 'objects' under the given
   // 'path'. Prints lines with the given 'prefix'.
   void DumpFileSystemTree(std::ostream& out,
                           const std::string& prefix,
                           const std::string& path,
                           const std::vector<std::string>& objects);
+
+  // Init and open block manager for tenant and add it to block manager map.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  Status InitAndOpenBlockManager(fs::FsReport* report = nullptr,
+                                 std::atomic<int>* containers_processed = nullptr,
+                                 std::atomic<int>* containers_total = nullptr,
+                                 const std::string& tenant_id = fs::kDefaultTenantID,
+                                 fs::BlockManager::MergeReport need_merage =
+                                     fs::BlockManager::MergeReport::NOT_REQUIRED);
+
+  // Add data dir manager to the 'dd_manager_map_' keyed by tenant_id.
+  // Return 'AlreadyPresent' if the tenant present.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  Status AddDataDirManager(scoped_refptr<fs::DataDirManager> dd_manager,
+                           const std::string& tenant_id = fs::kDefaultTenantID);
 
   // Deletes leftover temporary files in all "special" top-level directories
   // (e.g. WAL root directory).
@@ -498,6 +616,9 @@ class FsManager {
 
   // Returns true if 'fname' is a valid tablet ID.
   bool IsValidTabletId(const std::string& fname);
+
+  // Different tenants should own different data storage paths.
+  CanonicalizedRootsList get_canonicalized_data_fs_roots(const std::string& tenant_id) const;
 
   static const char *kDataDirName;
   static const char *kTabletMetadataDirName;
@@ -531,14 +652,24 @@ class FsManager {
   CanonicalizedRootsList canonicalized_data_fs_roots_;
   CanonicalizedRootsList canonicalized_all_fs_roots_;
 
-  // Lock protecting the 'metadata_' below.
+  // Lock protecting the 'metadata_'.
   mutable percpu_rwlock metadata_rwlock_;
   // Belongs to the default tenant.
   std::unique_ptr<InstanceMetadataPB> metadata_;
 
-  std::unique_ptr<fs::FsErrorManager> error_manager_;
-  std::unique_ptr<fs::DataDirManager> dd_manager_;
-  std::unique_ptr<fs::BlockManager> block_manager_;
+  // Shared by all the block managers.
+  scoped_refptr<fs::FsErrorManager> error_manager_;
+  // Lock protecting 'dd_manager_map_' below.
+  mutable LockType ddm_lock_;
+  typedef scoped_refptr<fs::DataDirManager> ScopedDDManagerPtr;
+  typedef std::map<std::string, ScopedDDManagerPtr> DataDirManagerMap;
+  DataDirManagerMap dd_manager_map_;
+
+  // Lock protecting 'block_manager_map_'.
+  mutable LockType bm_lock_;
+  typedef scoped_refptr<fs::BlockManager> ScopedBlockManagerPtr;
+  typedef std::map<std::string, ScopedBlockManagerPtr> BlockManagerMap;
+  BlockManagerMap block_manager_map_;
 
   std::unique_ptr<security::KeyProvider> key_provider_;
 

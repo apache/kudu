@@ -134,15 +134,17 @@ Status TabletServer::Start() {
   CHECK_EQ(kInitialized, state_);
 
   fs_manager_->SetErrorNotificationCb(
-      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
-        this->tablet_manager_->FailTabletsInDataDir(uuid);
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid, const string& tenant_id) {
+        this->tablet_manager_->FailTabletsInDataDir(uuid, tenant_id);
       });
   fs_manager_->SetErrorNotificationCb(
-      ErrorHandlerType::CFILE_CORRUPTION, [this](const string& uuid) {
+      ErrorHandlerType::CFILE_CORRUPTION, [this](const string& uuid,
+                                                 const string& /* tenant_id */) {
         this->tablet_manager_->FailTabletAndScheduleShutdown(uuid);
       });
   fs_manager_->SetErrorNotificationCb(
-      ErrorHandlerType::KUDU_2233_CORRUPTION, [this](const string& uuid) {
+      ErrorHandlerType::KUDU_2233_CORRUPTION, [this](const string& uuid,
+                                                     const string& /* tenant_id */) {
         this->tablet_manager_->FailTabletAndScheduleShutdown(uuid);
       });
   unique_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));

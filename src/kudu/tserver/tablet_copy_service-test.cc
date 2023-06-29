@@ -21,8 +21,8 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>

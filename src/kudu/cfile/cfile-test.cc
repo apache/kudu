@@ -975,7 +975,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestReleaseBlock) {
   WriterOptions opts;
   CFileWriter w(opts, GetTypeInfo(STRING), false, std::move(sink));
   ASSERT_OK(w.Start());
-  BlockManager* bm = fs_manager_->block_manager();
+  auto bm = fs_manager_->block_manager();
   unique_ptr<fs::BlockCreationTransaction> transaction = bm->NewCreationTransaction();
   ASSERT_OK(w.FinishAndReleaseBlock(transaction.get()));
   ASSERT_OK(transaction->CommitCreatedBlocks());

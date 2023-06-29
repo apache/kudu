@@ -1918,8 +1918,9 @@ Status TSTabletManager::DeleteTabletData(
   return Status::OK();
 }
 
-void TSTabletManager::FailTabletsInDataDir(const string& uuid) {
-  DataDirManager* dd_manager = fs_manager_->dd_manager();
+void TSTabletManager::FailTabletsInDataDir(const string& uuid,
+                                           const string& tenant_id) {
+  scoped_refptr<DataDirManager> dd_manager = fs_manager_->dd_manager(tenant_id);
   int uuid_idx;
   CHECK(dd_manager->FindUuidIndexByUuid(uuid, &uuid_idx))
       << Substitute("No data directory found with UUID $0", uuid);

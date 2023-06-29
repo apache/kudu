@@ -165,6 +165,7 @@ DECLARE_bool(enable_multi_tenancy);
 DECLARE_bool(encrypt_data_at_rest);
 DECLARE_int32(encryption_key_length);
 
+using kudu::fs::BlockManager;
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::DataDirManager;
@@ -243,7 +244,20 @@ FsManager::FsManager(Env* env, FsManagerOpts opts)
   }
 }
 
-FsManager::~FsManager() {}
+FsManager::~FsManager() {
+  {
+    std::lock_guard<LockType> lock(ddm_lock_);
+    dd_manager_map_.clear();
+  }
+  {
+    std::lock_guard<LockType> lock(bm_lock_);
+    block_manager_map_.clear();
+  }
+  {
+    std::lock_guard<LockType> lock(env_lock_);
+    env_map_.clear();
+  }
+}
 
 void FsManager::SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificationCb cb) {
   error_manager_->SetErrorNotificationCb(e, std::move(cb));
@@ -375,20 +389,34 @@ Status FsManager::Init() {
   return Status::OK();
 }
 
-void FsManager::InitBlockManager() {
+scoped_refptr<BlockManager> FsManager::InitBlockManager(const string& tenant_id) {
+  auto block_manager = SearchBlockManager(tenant_id);
+  if (block_manager) {
+    return block_manager;
+  }
+
   BlockManagerOptions bm_opts;
   bm_opts.metric_entity = opts_.metric_entity;
   bm_opts.parent_mem_tracker = opts_.parent_mem_tracker;
   bm_opts.read_only = opts_.read_only;
   if (opts_.block_manager_type == "file") {
-    block_manager_.reset(new FileBlockManager(
-        GetEnv(), dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
+    block_manager.reset(new FileBlockManager(
+        GetEnv(tenant_id), dd_manager(tenant_id), error_manager_,
+        opts_.file_cache, std::move(bm_opts), tenant_id));
   } else if (opts_.block_manager_type == "log") {
-    block_manager_.reset(new LogBlockManagerNativeMeta(
-        GetEnv(), dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
+    block_manager.reset(new LogBlockManagerNativeMeta(
+        GetEnv(tenant_id), dd_manager(tenant_id), error_manager_,
+        opts_.file_cache, std::move(bm_opts), tenant_id));
   } else {
     LOG(FATAL) << "Unknown block_manager_type: " << opts_.block_manager_type;
   }
+
+  {
+    std::lock_guard<LockType> lock(bm_lock_);
+    block_manager_map_[tenant_id] = block_manager;
+  }
+
+  return block_manager;
 }
 
 Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
@@ -520,9 +548,9 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     //
     // The priority of tenant key is higher than that of server key.
     RETURN_NOT_OK(
-        key_provider_->DecryptEncryptionKey(this->tenant_key(fs::kDefaultTenantName),
-                                            this->tenant_key_iv(fs::kDefaultTenantName),
-                                            this->tenant_key_version(fs::kDefaultTenantName),
+        key_provider_->DecryptEncryptionKey(this->tenant_key(fs::kDefaultTenantID),
+                                            this->tenant_key_iv(fs::kDefaultTenantID),
+                                            this->tenant_key_version(fs::kDefaultTenantID),
                                             &decrypted_key));
   } else if (!server_key().empty() && key_provider_) {
     // Just check whether the upgrade operation is needed for '--enable_multi_tenancy'.
@@ -547,17 +575,7 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   }
 
   // Open the directory manager if it has not been opened already.
-  if (!dd_manager_) {
-    DataDirManagerOptions dm_opts;
-    dm_opts.metric_entity = opts_.metric_entity;
-    dm_opts.read_only = opts_.read_only;
-    dm_opts.dir_type = opts_.block_manager_type;
-    dm_opts.update_instances = opts_.update_instances;
-    LOG_TIMING(INFO, "opening directory manager") {
-      RETURN_NOT_OK(DataDirManager::OpenExisting(GetEnv(),
-          canonicalized_data_fs_roots_, dm_opts, &dd_manager_));
-    }
-  }
+  RETURN_NOT_OK(OpenDataDirManager());
 
   // Only clean temporary files after the data dir manager successfully opened.
   // This ensures that we were able to obtain the exclusive directory locks
@@ -569,8 +587,8 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
 
   // Set an initial error handler to mark data directories as failed.
   error_manager_->SetErrorNotificationCb(
-      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
-        this->dd_manager_->MarkDirFailedByUuid(uuid);
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid, const string& tenant_id) {
+        this->dd_manager(tenant_id)->MarkDirFailedByUuid(uuid);
       });
 
   // Finally, initialize and open the block manager if needed.
@@ -578,14 +596,11 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     if (read_data_directories) {
       read_data_directories->Start();
     }
-    InitBlockManager();
-    LOG_TIMING(INFO, "opening block manager") {
-      if (opts_.block_manager_type == "file") {
-        RETURN_NOT_OK(block_manager_->Open(report, nullptr, nullptr));
-      } else {
-        RETURN_NOT_OK(block_manager_->Open(report, containers_processed, containers_total));
-      }
-    }
+    RETURN_NOT_OK(InitAndOpenBlockManager(report,
+                                          containers_processed,
+                                          containers_total,
+                                          fs::kDefaultTenantID,
+                                          BlockManager::MergeReport::REQUIRED));
     if (read_data_directories) {
       read_data_directories->Stop();
       if (opts_.metric_entity && opts_.block_manager_type == "log") {
@@ -625,13 +640,89 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   return Status::OK();
 }
 
+Status FsManager::AddDataDirManager(scoped_refptr<DataDirManager> dd_manager,
+                                    const string& tenant_id) {
+  std::lock_guard<LockType> lock(ddm_lock_);
+  scoped_refptr<DataDirManager> ddm(FindPtrOrNull(dd_manager_map_, tenant_id));
+  if (ddm) {
+    return Status::AlreadyPresent(Substitute("Tenant $0 already exists.", tenant_id));
+  }
+  dd_manager_map_[tenant_id] = std::move(dd_manager);
+  return Status::OK();
+}
+
+CanonicalizedRootsList FsManager::get_canonicalized_data_fs_roots(const string& tenant_id) const {
+  if (tenant_id == fs::kDefaultTenantID) {
+    return canonicalized_data_fs_roots_;
+  }
+
+  // TODO(kedeng):
+  //   Different tenants should own different data storage paths, and the new solution
+  // needs to be compatible with existing implementation details.
+  return canonicalized_data_fs_roots_;
+}
+
+Status FsManager::CreateNewDataDirManager(const string& tenant_id) {
+  CHECK(!dd_manager(tenant_id));
+
+  scoped_refptr<DataDirManager> ddm = nullptr;
+  DataDirManagerOptions dm_opts;
+  dm_opts.metric_entity = opts_.metric_entity;
+  dm_opts.read_only = opts_.read_only;
+  dm_opts.dir_type = opts_.block_manager_type;
+  dm_opts.tenant_id = tenant_id;
+  LOG_TIMING(INFO, "creating directory manager") {
+  RETURN_NOT_OK(DataDirManager::CreateNew(GetEnv(tenant_id),
+      get_canonicalized_data_fs_roots(tenant_id), dm_opts, &ddm));
+  }
+  RETURN_NOT_OK(AddDataDirManager(ddm, tenant_id));
+
+  return Status::OK();
+}
+
+Status FsManager::OpenDataDirManager(const string& tenant_id) {
+  if (!dd_manager(tenant_id)) {
+    scoped_refptr<DataDirManager> ddm = nullptr;
+    DataDirManagerOptions dm_opts;
+    dm_opts.metric_entity = opts_.metric_entity;
+    dm_opts.read_only = opts_.read_only;
+    dm_opts.dir_type = opts_.block_manager_type;
+    dm_opts.update_instances = opts_.update_instances;
+    dm_opts.tenant_id = tenant_id;
+    LOG_TIMING(INFO, "opening directory manager") {
+    RETURN_NOT_OK(DataDirManager::OpenExisting(GetEnv(tenant_id),
+        get_canonicalized_data_fs_roots(tenant_id), dm_opts, &ddm));
+    }
+    RETURN_NOT_OK(AddDataDirManager(ddm, tenant_id));
+  }
+  return Status::OK();
+}
+
+Status FsManager::InitAndOpenBlockManager(FsReport* report,
+                                          std::atomic<int>* containers_processed,
+                                          std::atomic<int>* containers_total,
+                                          const string& tenant_id,
+                                          BlockManager::MergeReport need_merage) {
+  auto block_manager = InitBlockManager(tenant_id);
+  DCHECK(block_manager);
+  LOG_TIMING(INFO, "opening block manager") {
+    if (opts_.block_manager_type == "file") {
+      RETURN_NOT_OK(block_manager->Open(report, need_merage, nullptr, nullptr));
+    } else {
+      RETURN_NOT_OK(block_manager->Open(report, need_merage,
+                                        containers_processed, containers_total));
+    }
+  }
+  return Status::OK();
+}
+
 void FsManager::CopyMetadata(
     unique_ptr<InstanceMetadataPB>* metadata) {
   shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
   (*metadata)->CopyFrom(*metadata_);
 }
 
-Status FsManager::UpdateMetadata(unique_ptr<InstanceMetadataPB> metadata) {
+Status FsManager::UpdateMetadata(unique_ptr<InstanceMetadataPB>& metadata) {
   // In the event of failure, rollback everything we changed.
   // <string, string>   <=>   <old instance file, backup instance file>
   unordered_map<string, string> changed_dirs;
@@ -691,6 +782,48 @@ void FsManager::UpdateMetadataFormatAndStampUnlock(InstanceMetadataPB* metadata)
   metadata->set_format_stamp(Substitute("Formatted at $0 on $1", time_str, hostname));
 }
 
+Status FsManager::AddTenantMetadata(const string& tenant_name,
+                                    const string& tenant_id,
+                                    const string& tenant_key,
+                                    const string& tenant_key_iv,
+                                    const string& tenant_key_version) {
+  unique_ptr<InstanceMetadataPB> metadata(new InstanceMetadataPB);
+  {
+    shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+    metadata->CopyFrom(*metadata_);
+  }
+  InstanceMetadataPB::TenantMetadataPB* tenant_metadata = metadata->add_tenants();
+  tenant_metadata->set_tenant_name(tenant_name);
+  tenant_metadata->set_tenant_id(tenant_id);
+  tenant_metadata->set_tenant_key(tenant_key);
+  tenant_metadata->set_tenant_key_iv(tenant_key_iv);
+  tenant_metadata->set_tenant_key_version(tenant_key_version);
+  UpdateMetadataFormatAndStampUnlock(metadata.get());
+
+  return UpdateMetadata(metadata);
+}
+
+Status FsManager::RemoveTenantMetadata(const string& tenant_id) {
+  if (!is_tenant_exist(tenant_id)) {
+    return Status::NotFound(Substitute("$0: tenant not found", tenant_id));
+  }
+
+  unique_ptr<InstanceMetadataPB> metadata(new InstanceMetadataPB);
+  {
+    shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+    metadata->CopyFrom(*metadata_);
+  }
+  for (int i = 0; i < metadata->tenants_size(); i++) {
+    if (metadata->tenants(i).tenant_id() == tenant_id) {
+      metadata->mutable_tenants()->DeleteSubrange(i, 1);
+      break;
+    }
+  }
+  UpdateMetadataFormatAndStampUnlock(metadata.get());
+
+  return UpdateMetadata(metadata);
+}
+
 Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
                                                 optional<string> tenant_name,
                                                 optional<string> tenant_id,
@@ -720,6 +853,7 @@ Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
   //
   // Files/directories created will NOT be synchronized to disk.
   InstanceMetadataPB metadata;
+  string tid = tenant_id ? *tenant_id : fs::kDefaultTenantID;
   RETURN_NOT_OK_PREPEND(CreateInstanceMetadata(std::move(uuid),
                                                std::move(tenant_name),
                                                std::move(tenant_id),
@@ -748,14 +882,7 @@ Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
   // Create the directory manager.
   //
   // All files/directories created will be synchronized to disk.
-  DataDirManagerOptions dm_opts;
-  dm_opts.metric_entity = opts_.metric_entity;
-  dm_opts.read_only = opts_.read_only;
-  LOG_TIMING(INFO, "creating directory manager") {
-    RETURN_NOT_OK_PREPEND(DataDirManager::CreateNew(
-        GetEnv(), canonicalized_data_fs_roots_, dm_opts, &dd_manager_),
-                          "Unable to create directory manager");
-  }
+  RETURN_NOT_OK(CreateNewDataDirManager(tid));
 
   if (FLAGS_enable_data_block_fsync) {
     // Files/directories created by the directory manager in the fs roots have
@@ -934,7 +1061,15 @@ const string& FsManager::server_key_version() const {
   return CHECK_NOTNULL(metadata_.get())->server_key_version();
 }
 
-const int32_t FsManager::tenants_count() const {
+bool FsManager::VertifyTenant(const std::string& tenant_id) const {
+  if (tenant_id == fs::kDefaultTenantID) {
+    return true;
+  }
+
+  return FLAGS_enable_multi_tenancy && is_tenant_exist(tenant_id);
+}
+
+int32 FsManager::tenants_count() const {
   shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
   return metadata_->tenants_size();
 }
@@ -1007,16 +1142,93 @@ string FsManager::tenant_key_version(const string& tenant_id) const {
   return tenant ? tenant->tenant_key_version() : string("");
 }
 
-Env* FsManager::GetEnv(const std::string& tenant_id) {
+Status FsManager::AddTenant(const string& tenant_name,
+                            const string& tenant_id,
+                            optional<string> tenant_key,
+                            optional<string> tenant_key_iv,
+                            optional<string> tenant_key_version) {
+  CHECK(FLAGS_enable_multi_tenancy);
+  if (is_tenant_exist(tenant_id)) {
+    return Status::AlreadyPresent(Substitute("Tenant $0 already exists.", tenant_id));
+  }
+
+  if ((!tenant_key || !tenant_key_iv || !tenant_key_version) && key_provider_) {
+    // Generate tenant key info if missing something of tenant.
+    RETURN_NOT_OK_PREPEND(key_provider_->GenerateTenantKey(tenant_id,
+                                                           &(*tenant_key),
+                                                           &(*tenant_key_iv),
+                                                           &(*tenant_key_version)),
+                          Substitute("Failed to generate encrypted tenant key for tenant: $0.",
+                                     tenant_id));
+  }
+
+  // Update the metadata.
+  RETURN_NOT_OK_PREPEND(AddTenantMetadata(tenant_name,
+                                          tenant_id,
+                                          *tenant_key,
+                                          *tenant_key_iv,
+                                          *tenant_key_version),
+                        Substitute("Fail to update metadata for add tenant: $0.", tenant_id));
+
+  // Make sure env is available for create dd manager.
+  if (!AddEnv(tenant_id)) {
+    return Status::Corruption(Substitute("Fail to add env for tenant with id: $0.", tenant_id));
+  }
+  RETURN_NOT_OK_PREPEND(SetEncryptionKey(tenant_id),
+                        Substitute("Unable to set encryption key for tenant: $0.", tenant_id));
+
+  // Create new dd manager and add the new dd manager to the dd manager map.
+  //
+  // TODO(kedeng):
+  //     The new tenant should have its own dd manager instead of sharing the default tenant's
+  // dd manager. This needs to be implemented along with having different storage paths for
+  // different tenants.
+  RETURN_NOT_OK_PREPEND(OpenDataDirManager(tenant_id),
+                        Substitute("Unable to create and open data dir manager for tenant: $0.",
+                                   tenant_id));
+
+  // Create new block manager and add the new block manager to the block manager map.
+  RETURN_NOT_OK_PREPEND(InitAndOpenBlockManager(nullptr,
+                                                nullptr,
+                                                nullptr,
+                                                tenant_id),
+                        Substitute("Unable to open block manager for tenant: $0.", tenant_id));
+
+  return Status::OK();
+}
+
+Status FsManager::RemoveTenant(const string& tenant_id) {
+  if (!VertifyTenant(tenant_id)) {
+    return Status::NotSupported(
+        Substitute("Not support for removing tenant for id: $0.", tenant_id));
+  }
+
+  if (tenant_id == fs::kDefaultTenantID) {
+    return Status::NotSupported("Remove default tenant is not allowed.");
+  }
+
+  return RemoveTenantMetadata(tenant_id);
+}
+
+vector<string> FsManager::GetAllTenants() const {
+  vector<string> tenant_ids;
+  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  for (const auto& tdata : metadata_->tenants()) {
+    tenant_ids.push_back(tdata.tenant_id());
+  }
+
+  return tenant_ids;
+}
+
+Env* FsManager::AddEnv(const std::string& tenant_id) {
   if (tenant_id == fs::kDefaultTenantID) {
     return env_;
   }
 
   std::lock_guard<LockType> lock(env_lock_);
   auto env = FindPtrOrNull(env_map_, tenant_id);
-  if (!env && !FLAGS_enable_multi_tenancy) {
-    LOG(ERROR) << "'--enable_multi_tenancy' is disable for tenant: " << tenant_id;
-    return nullptr;
+  if (env) {
+    return env.get();
   }
 
   // Create new env and add the new env to the env map.
@@ -1026,9 +1238,36 @@ Env* FsManager::GetEnv(const std::string& tenant_id) {
   return new_env.get();
 }
 
-vector<string> FsManager::GetDataRootDirs() const {
+Env* FsManager::GetEnv(const std::string& tenant_id) const {
+  if (tenant_id == fs::kDefaultTenantID) {
+    return env_;
+  }
+
+  std::lock_guard<LockType> lock(env_lock_);
+  auto env = FindPtrOrNull(env_map_, tenant_id);
+  if (env) {
+    return env.get();
+  }
+
+  LOG(ERROR) << "'The --enable_multi_tenancy' is " << FLAGS_enable_multi_tenancy
+              << " for tenant: " << tenant_id << ", and we fail to search the env.";
+  return nullptr;
+}
+
+scoped_refptr<DataDirManager> FsManager::dd_manager(const string& tenant_id) const {
+  std::lock_guard<LockType> lock(ddm_lock_);
+  scoped_refptr<DataDirManager> dd_manager(FindPtrOrNull(dd_manager_map_, tenant_id));
+  return dd_manager;
+}
+
+vector<string> FsManager::GetDataRootDirs(const string& tenant_id) const {
+  if (!VertifyTenant(tenant_id)) {
+    LOG(ERROR) << "Unable to get data root dirs for non existing tenant: "
+               << tenant_id << ", exit.";
+    return {};
+  }
   // Get the data subdirectory for each data root.
-  return dd_manager_->GetDirs();
+  return dd_manager(tenant_id)->GetDirs();
 }
 
 string FsManager::GetTabletMetadataDir() const {
@@ -1123,12 +1362,29 @@ void FsManager::CheckAndFixPermissions() {
   }
 }
 
+scoped_refptr<BlockManager> FsManager::block_manager(const std::string& tenant_id) const {
+  if (!VertifyTenant(tenant_id)) {
+    LOG(ERROR) << "Do AddTenant for " << tenant_id
+               << " first before calling 'block_manager()'.";
+    return nullptr;
+  }
+
+  auto block_manager = SearchBlockManager(tenant_id);
+  return block_manager;
+}
+
 // ==========================================================================
 //  Dump/Debug utils
 // ==========================================================================
 
-void FsManager::DumpFileSystemTree(ostream& out) {
+void FsManager::DumpFileSystemTree(ostream& out, const string& tenant_id) {
   DCHECK(initted_);
+
+  if (!VertifyTenant(tenant_id)) {
+    LOG(ERROR) << "Unable to dump file system tree for non existing tenant: "
+               << tenant_id << ", exit.";
+    return;
+  }
 
   for (const auto& root : canonicalized_all_fs_roots_) {
     if (!root.status.ok()) {
@@ -1137,7 +1393,7 @@ void FsManager::DumpFileSystemTree(ostream& out) {
     out << "File-System Root: " << root.path << std::endl;
 
     vector<string> objects;
-    Status s = GetEnv()->GetChildren(root.path, &objects);
+    Status s = GetEnv(tenant_id)->GetChildren(root.path, &objects);
     if (!s.ok()) {
       LOG(ERROR) << "Unable to list the fs-tree: " << s.ToString();
       return;
@@ -1164,25 +1420,66 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
   }
 }
 
+Status FsManager::SetEncryptionKeyUnlock(const string& tenant_id) {
+  // Set encryption key for tenant.
+  if (is_tenant_exist(tenant_id) && key_provider_) {
+    string tenant_key;
+    RETURN_NOT_OK(key_provider_->DecryptEncryptionKey(tenant_key_unlock(tenant_id),
+                                                      tenant_key_iv_unlock(tenant_id),
+                                                      tenant_key_version_unlock(tenant_id),
+                                                      &tenant_key));
+    // 'tenant_key' is a hexadecimal string and SetEncryptionKey expects bits
+    // (hex / 2 = bytes * 8 = bits).
+    GetEnv(tenant_id)->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
+                                          a2b_hex(tenant_key).c_str()),
+                                        tenant_key.length() * 4);
+  }
+  return Status::OK();
+}
+
+Status FsManager::SetEncryptionKey(const string& tenant_id) {
+  shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
+  return SetEncryptionKeyUnlock(tenant_id);
+}
+
 // ==========================================================================
 //  Data read/write interfaces
 // ==========================================================================
 
-Status FsManager::CreateNewBlock(const CreateBlockOptions& opts, unique_ptr<WritableBlock>* block) {
+Status FsManager::CreateNewBlock(const CreateBlockOptions& opts,
+                                 unique_ptr<WritableBlock>* block,
+                                 const string& tenant_id) {
+  if (!VertifyTenant(tenant_id)) {
+    return Status::NotFound(Substitute("$0: tenant not found", tenant_id));
+  }
+
+  auto bm = block_manager(tenant_id);
   CHECK(!opts_.read_only);
-  DCHECK(block_manager_);
-  return block_manager_->CreateBlock(opts, block);
+  DCHECK(bm);
+  return bm->CreateBlock(opts, block);
 }
 
-Status FsManager::OpenBlock(const BlockId& block_id, unique_ptr<ReadableBlock>* block) {
-  DCHECK(block_manager_);
-  return block_manager_->OpenBlock(block_id, block);
+Status FsManager::OpenBlock(const BlockId& block_id,
+                            unique_ptr<ReadableBlock>* block,
+                            const string& tenant_id) {
+  if (!VertifyTenant(tenant_id)) {
+    return Status::NotFound(Substitute("$0: tenant not found", tenant_id));
+  }
+
+  auto bm = block_manager(tenant_id);
+  DCHECK(bm);
+  return bm->OpenBlock(block_id, block);
 }
 
-bool FsManager::BlockExists(const BlockId& block_id) const {
-  DCHECK(block_manager_);
+bool FsManager::BlockExists(const BlockId& block_id, const string& tenant_id) {
+  if (!VertifyTenant(tenant_id)) {
+    return false;
+  }
+
+  auto bm = block_manager(tenant_id);
+  DCHECK(bm);
   unique_ptr<ReadableBlock> block;
-  return block_manager_->OpenBlock(block_id, &block).ok();
+  return bm->OpenBlock(block_id, &block).ok();
 }
 
 } // namespace kudu

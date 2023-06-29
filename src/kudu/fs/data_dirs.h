@@ -106,7 +106,8 @@ struct DataDirManagerOptions : public DirManagerOptions {
 
 // Encapsulates knowledge of data directory management on behalf of block
 // managers.
-class DataDirManager : public DirManager {
+class DataDirManager : public DirManager,
+                       public RefCountedThreadSafe<DataDirManager> {
  public:
   enum class DirDistributionMode {
     ACROSS_ALL_DIRS,
@@ -116,20 +117,20 @@ class DataDirManager : public DirManager {
   // Public static initializers for use in tests. When used, data_fs_roots is
   // expected to be the successfully canonicalized directories.
   static Status CreateNewForTests(Env* env,
-                                  std::vector<std::string> data_fs_roots,
+                                  const std::vector<std::string>& data_fs_roots,
                                   const DataDirManagerOptions& opts,
-                                  std::unique_ptr<DataDirManager>* dd_manager);
+                                  scoped_refptr<DataDirManager>* dd_manager);
   static Status OpenExistingForTests(Env* env,
-                                     std::vector<std::string> data_fs_roots,
+                                     const std::vector<std::string>& data_fs_roots,
                                      const DataDirManagerOptions& opts,
-                                     std::unique_ptr<DataDirManager>* dd_manager);
+                                     scoped_refptr<DataDirManager>* dd_manager);
 
   // Constructs a directory manager and creates its necessary files on-disk.
   //
   // Returns an error if any of the directories already exist.
   static Status CreateNew(Env* env, CanonicalizedRootsList data_fs_roots,
                           const DataDirManagerOptions& opts,
-                          std::unique_ptr<DataDirManager>* dd_manager);
+                          scoped_refptr<DataDirManager>* dd_manager);
 
   // Constructs a directory manager and indexes the files found on-disk.
   //
@@ -137,7 +138,7 @@ class DataDirManager : public DirManager {
   // max allowed, or if locks need to be acquired and cannot be.
   static Status OpenExisting(Env* env, CanonicalizedRootsList data_fs_roots,
                              const DataDirManagerOptions& opts,
-                             std::unique_ptr<DataDirManager>* dd_manager);
+                             scoped_refptr<DataDirManager>* dd_manager);
 
   // Deserializes a DataDirGroupPB and associates the resulting DataDirGroup
   // with a tablet_id.
@@ -196,6 +197,8 @@ class DataDirManager : public DirManager {
   FRIEND_TEST(DataDirsTest, TestLoadBalancingBias);
   FRIEND_TEST(DataDirsTest, TestLoadBalancingDistribution);
   FRIEND_TEST(DataDirsTest, TestFailedDirNotAddedToGroup);
+  friend class RefCountedThreadSafe<DataDirManager>;
+  ~DataDirManager() override {}
 
   // Populates the maps to index the given directories.
   Status PopulateDirectoryMaps(const std::vector<std::unique_ptr<Dir>>& dirs) override;

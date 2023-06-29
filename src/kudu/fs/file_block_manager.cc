@@ -96,7 +96,7 @@ namespace internal {
 class FileBlockLocation {
  public:
   // Empty constructor
-  FileBlockLocation() {
+  FileBlockLocation() : data_dir_(nullptr) {
   }
 
   // Construct a location from its constituent parts.
@@ -260,6 +260,8 @@ class FileWritableBlock final : public WritableBlock {
 
   void HandleError(const Status& s) const;
 
+  string tenant_id() const { return block_manager_->tenant_id(); }
+
   // Starts an asynchronous flush of dirty block data to disk.
   Status FlushDataAsync();
 
@@ -315,7 +317,7 @@ FileWritableBlock::~FileWritableBlock() {
 void FileWritableBlock::HandleError(const Status& s) const {
   HANDLE_DISK_FAILURE(
       s, block_manager_->error_manager()->RunErrorNotificationCb(
-          ErrorHandlerType::DISK_ERROR, location_.data_dir()));
+          ErrorHandlerType::DISK_ERROR, location_.data_dir(), tenant_id()));
 }
 
 Status FileWritableBlock::Close() {
@@ -476,7 +478,7 @@ void FileReadableBlock::HandleError(const Status& s) const {
   const Dir* dir = block_manager_->dd_manager_->FindDirByUuidIndex(
       internal::FileBlockLocation::GetDirIdx(block_id_));
   HANDLE_DISK_FAILURE(s, block_manager_->error_manager()->RunErrorNotificationCb(
-      ErrorHandlerType::DISK_ERROR, dir));
+      ErrorHandlerType::DISK_ERROR, dir, block_manager_->dd_manager_->tenant_id()));
 }
 
 FileReadableBlock::FileReadableBlock(FileBlockManager* block_manager,
@@ -684,7 +686,8 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
       if (metrics_) metrics_->total_disk_sync->Increment();
       RETURN_NOT_OK_HANDLE_DISK_FAILURE(env_->SyncDir(s),
           error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-                                                 location.data_dir()));
+                                                 location.data_dir(),
+                                                 tenant_id()));
     }
   }
   return Status::OK();
@@ -702,20 +705,22 @@ bool FileBlockManager::FindBlockPath(const BlockId& block_id,
 }
 
 FileBlockManager::FileBlockManager(Env* env,
-                                   DataDirManager* dd_manager,
-                                   FsErrorManager* error_manager,
+                                   scoped_refptr<DataDirManager> dd_manager,
+                                   scoped_refptr<FsErrorManager> error_manager,
                                    FileCache* file_cache,
-                                   BlockManagerOptions opts)
+                                   BlockManagerOptions opts,
+                                   string tenant_id)
   : env_(DCHECK_NOTNULL(env)),
-    dd_manager_(dd_manager),
-    error_manager_(DCHECK_NOTNULL(error_manager)),
+    dd_manager_(std::move(dd_manager)),
+    error_manager_(DCHECK_NOTNULL(std::move(error_manager))),
     opts_(std::move(opts)),
     file_cache_(file_cache),
     rand_(GetRandomSeed32()),
     next_block_id_(rand_.Next64()),
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "file_block_manager",
-                                           opts_.parent_mem_tracker)) {
+                                           opts_.parent_mem_tracker)),
+    tenant_id_(std::move(tenant_id)) {
   if (opts_.metric_entity) {
     metrics_.reset(new internal::BlockManagerMetrics(opts_.metric_entity));
   }
@@ -724,8 +729,9 @@ FileBlockManager::FileBlockManager(Env* env,
 FileBlockManager::~FileBlockManager() {
 }
 
-Status FileBlockManager::Open(FsReport* report, std::atomic<int>* containers_processed,
-                              std::atomic<int>* containers_total) {
+Status FileBlockManager::Open(FsReport* report, MergeReport need_merage,
+                              std::atomic<int>* /* containers_processed */,
+                              std::atomic<int>* /* containers_total */) {
   // Prepare the filesystem report and either return or log it.
   FsReport local_report;
   set<int> failed_dirs = dd_manager_->GetFailedDirs();
@@ -745,7 +751,11 @@ Status FileBlockManager::Open(FsReport* report, std::atomic<int>* containers_pro
     local_report.data_dirs.push_back(dd->dir());
   }
   if (report) {
-    *report = std::move(local_report);
+    if (need_merage == MergeReport::REQUIRED) {
+      report->MergeFrom(local_report);
+    } else {
+      *report = std::move(local_report);
+    }
   } else {
     RETURN_NOT_OK(local_report.LogAndCheckForFatalErrors());
   }
@@ -758,7 +768,9 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
 
   Dir* dir;
   RETURN_NOT_OK_EVAL(dd_manager_->GetDirAddIfNecessary(opts, &dir),
-      error_manager_->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, opts.tablet_id));
+      error_manager_->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS,
+                                             opts.tablet_id,
+                                             tenant_id()));
   int uuid_idx;
   CHECK(dd_manager_->FindUuidIndexByDir(dir, &uuid_idx));
 
@@ -794,7 +806,8 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
     // no point in doing so. On disk failure, the tablet specified by 'opts'
     // will be shut down, so the returned block would not be used.
     RETURN_NOT_OK_HANDLE_DISK_FAILURE(s,
-        error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, dir));
+        error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
+                                               dir, tenant_id()));
     WritableFileOptions wr_opts;
     wr_opts.mode = Env::MUST_CREATE;
     wr_opts.is_sensitive = true;
@@ -815,7 +828,8 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
     block->reset(new internal::FileWritableBlock(this, location, writer));
   } else {
     HANDLE_DISK_FAILURE(s,
-        error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, dir));
+        error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
+                                               dir, tenant_id()));
     return s;
   }
   return Status::OK();
@@ -824,8 +838,9 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
 #define RETURN_NOT_OK_FBM_DISK_FAILURE(status_expr) do { \
   RETURN_NOT_OK_HANDLE_DISK_FAILURE((status_expr), \
       error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, \
-      dd_manager_->FindDirByUuidIndex( \
-      internal::FileBlockLocation::GetDirIdx(block_id)))); \
+          dd_manager_->FindDirByUuidIndex( \
+              internal::FileBlockLocation::GetDirIdx(block_id)), \
+          tenant_id())); \
 } while (0)
 
 Status FileBlockManager::OpenBlock(const BlockId& block_id,

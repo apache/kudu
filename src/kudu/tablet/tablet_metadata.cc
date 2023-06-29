@@ -569,7 +569,7 @@ void TabletMetadata::DeleteOrphanedBlocks(const BlockIdContainer& blocks) {
     return;
   }
 
-  BlockManager* bm = fs_manager()->block_manager();
+  auto bm = fs_manager()->block_manager();
   shared_ptr<BlockDeletionTransaction> transaction = bm->NewDeletionTransaction();
   for (const BlockId& b : blocks) {
     transaction->AddDeletedBlock(b);

@@ -159,8 +159,11 @@ Status Dir::RefreshAvailableSpace(RefreshMode mode) {
   return Status::OK();
 }
 
-DirManagerOptions::DirManagerOptions(const string& dir_type)
-    : dir_type(dir_type), read_only(false),
+DirManagerOptions::DirManagerOptions(string dir_type,
+                                     string tid)
+    : dir_type(std::move(dir_type)),
+      tenant_id(std::move(tid)),
+      read_only(false),
       update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES) {}
 
 

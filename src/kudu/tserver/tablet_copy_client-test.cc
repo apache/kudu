@@ -223,8 +223,8 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
   RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->GetEnv(), path2, &file2));
 
   uint64_t size1;
-  uint64_t size2;
   RETURN_NOT_OK(file1->Size(&size1));
+  uint64_t size2;
   RETURN_NOT_OK(file2->Size(&size2));
   size1 -= file1->GetEncryptionHeaderSize();
   size2 -= file2->GetEncryptionHeaderSize();
@@ -547,7 +547,7 @@ TEST_P(TabletCopyClientBasicTest, TestDownloadAllBlocks) {
 // stop the copy client and cause it to fail.
 TEST_P(TabletCopyClientBasicTest, TestFailedDiskStopsClient) {
   ASSERT_OK(StartCopy());
-  DataDirManager* dd_manager = fs_manager_->dd_manager();
+  scoped_refptr<DataDirManager> dd_manager = fs_manager_->dd_manager();
 
   // Repeatedly fetch files for the client.
   Status s;

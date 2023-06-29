@@ -133,23 +133,26 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
       // Use a small file cache (smaller than the number of containers).
       //
       // Not strictly necessary except for TestDeleteFromContainerAfterMetadataCompaction.
-      file_cache_("test_cache", env_, 50, scoped_refptr<MetricEntity>()),
-      bm_(CreateBlockManager(scoped_refptr<MetricEntity>())) {
+      file_cache_("test_cache", env_, 50, scoped_refptr<MetricEntity>()) {
     CHECK_OK(file_cache_.Init());
+    error_manager_ = make_scoped_refptr(new FsErrorManager());
+    bm_ = CreateBlockManager(scoped_refptr<MetricEntity>());
   }
 
   void SetUp() override {
     // Pass in a report to prevent the block manager from logging unnecessarily.
     FsReport report;
-    ASSERT_OK(bm_->Open(&report, nullptr, nullptr));
+    ASSERT_OK(bm_->Open(&report, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
     ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
     ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
  protected:
-  LogBlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
-                                      vector<string> test_data_dirs = {}) {
+  scoped_refptr<LogBlockManager> CreateBlockManager(
+      const scoped_refptr<MetricEntity>& metric_entity,
+      vector<string> test_data_dirs = {}) {
     PrepareDataDirs(&test_data_dirs);
+
     if (!dd_manager_) {
       // Ensure the directory manager is initialized.
       CHECK_OK(DataDirManager::CreateNewForTests(env_, test_data_dirs,
@@ -159,8 +162,8 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
     CHECK_EQ(FLAGS_block_manager, "log");
-    return new LogBlockManagerNativeMeta(
-        env_, dd_manager_.get(), &error_manager_, &file_cache_, std::move(opts));
+    return make_scoped_refptr(new LogBlockManagerNativeMeta(env_, dd_manager_.get(), error_manager_,
+                              &file_cache_, std::move(opts), fs::kDefaultTenantID));
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity = nullptr,
@@ -186,8 +189,8 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
       RETURN_NOT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
     }
 
-    bm_.reset(CreateBlockManager(metric_entity, test_data_dirs));
-    RETURN_NOT_OK(bm_->Open(report, nullptr, nullptr));
+    bm_ = CreateBlockManager(metric_entity, test_data_dirs);
+    RETURN_NOT_OK(bm_->Open(report, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
     return Status::OK();
   }
 
@@ -247,10 +250,10 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
 
-  unique_ptr<DataDirManager> dd_manager_;
-  FsErrorManager error_manager_;
+  scoped_refptr<DataDirManager> dd_manager_;
+  scoped_refptr<FsErrorManager> error_manager_;
   FileCache file_cache_;
-  unique_ptr<LogBlockManager> bm_;
+  scoped_refptr<LogBlockManager> bm_;
 
  private:
   enum GetMode {
@@ -1908,11 +1911,12 @@ TEST_P(LogBlockManagerTest, TestOpenWithFailedDirectories) {
       DataDirManagerOptions(), &dd_manager_));
 
   // Wire in a callback to fail data directories.
-  error_manager_.SetErrorNotificationCb(
-      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
+    error_manager_->SetErrorNotificationCb(
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid,
+                                           const string& /* tenant_id */) {
         this->dd_manager_->MarkDirFailedByUuid(uuid);
       });
-  bm_.reset(CreateBlockManager(nullptr));
+  bm_ = CreateBlockManager(nullptr);
 
   // Fail one of the directories, chosen randomly.
   FLAGS_crash_on_eio = false;
@@ -1922,7 +1926,7 @@ TEST_P(LogBlockManagerTest, TestOpenWithFailedDirectories) {
 
   // Check the report, ensuring the correct directory has failed.
   FsReport report;
-  ASSERT_OK(bm_->Open(&report, nullptr, nullptr));
+  ASSERT_OK(bm_->Open(&report, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
   ASSERT_EQ(kNumDirs - 1, report.data_dirs.size());
   for (const string& data_dir : report.data_dirs) {
     ASSERT_NE(data_dir, test_dirs[failed_idx]);

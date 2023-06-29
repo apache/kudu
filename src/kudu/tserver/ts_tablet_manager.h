@@ -242,7 +242,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   void FailTabletAndScheduleShutdown(const std::string& tablet_id);
 
   // Forces shutdown of the tablet replicas in the data dir corresponding to 'uuid'.
-  void FailTabletsInDataDir(const std::string& uuid);
+  void FailTabletsInDataDir(const std::string& uuid, const std::string& tenant_id);
 
   // Refresh the cached counts of tablet states, if the cache is old enough,
   // and return the count for tablet state 'st'.

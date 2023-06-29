@@ -984,7 +984,7 @@ Mutation* MergeUndoHistories(Mutation* left, Mutation* right) {
 // If 'old_row' has previous versions, this transforms prior version in undos
 // and adds them to 'new_undo_head'.
 Status MergeDuplicatedRowHistory(const string& tablet_id,
-                                 const FsErrorManager* error_manager,
+                                 const scoped_refptr<FsErrorManager>& error_manager,
                                  CompactionInputRow* old_row,
                                  Mutation** new_undo_head,
                                  Arena* arena) {
@@ -1343,7 +1343,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 }
 
 Status FlushCompactionInput(const string& tablet_id,
-                            const FsErrorManager* error_manager,
+                            const scoped_refptr<FsErrorManager>& error_manager,
                             CompactionInput* input,
                             const MvccSnapshot& snap,
                             const HistoryGcOpts& history_gc_opts,

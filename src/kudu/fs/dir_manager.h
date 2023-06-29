@@ -187,6 +187,11 @@ struct DirManagerOptions {
   // Must not be empty.
   std::string dir_type;
 
+  // The id used to distinguish different tenants.
+  //
+  // Must not be empty.
+  std::string tenant_id;
+
   // The entity under which all metrics should be grouped. If null, metrics
   // will not be produced.
   //
@@ -205,7 +210,8 @@ struct DirManagerOptions {
   UpdateInstanceBehavior update_instances;
 
  protected:
-  explicit DirManagerOptions(const std::string& dir_type);
+  explicit DirManagerOptions(std::string dir_type,
+                             std::string tid);
 };
 
 class DirManager {
@@ -286,6 +292,8 @@ class DirManager {
   // Finds the set of tablet IDs that are registered to use the directory with
   // the given UUID index.
   std::set<std::string> FindTabletsByDirUuidIdx(int uuid_idx) const;
+
+  const std::string tenant_id() { return opts_.tenant_id; }
 
   // Create a new directory using the appropriate directory implementation.
   virtual std::unique_ptr<Dir> CreateNewDir(Env* env,
