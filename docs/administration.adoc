@@ -1611,9 +1611,15 @@ the cluster and `ksck` is healthy before shutting down the next.
   healthy state.
 . The decommissioned tablet server can be brought offline.
 . To completely remove it from the cluster so `ksck` shows the cluster as
-  completely healthy, restart the masters. In the case of a single master,
-  this will cause cluster downtime. With multi-master, restart the masters in
-  sequence to avoid cluster downtime.
+  completely healthy, run the `kudu tserver unregister` tool.
++
+NOTE: From Kudu version 1.16.0 onwards, the `kudu tserver unregister` tool has been
+added that unregisters a dead tablet server from the cluster. In Kudu versions that
+do not support this tool, all the Kudu masters must be restarted to completely remove
+the dead tablet server from the cluster so `ksck` shows the cluster as completely healthy.
+In the case of a single master, this will cause cluster downtime. With multi-master,
+restart the masters in sequence to avoid cluster downtime.
++
 
 In Kudu versions that do not support the above tooling, different steps must be
 followed to decommission a tablet server:
