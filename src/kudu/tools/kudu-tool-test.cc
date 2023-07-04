@@ -8133,17 +8133,17 @@ TEST_F(ToolTest, TestFsUpgradeEncryptionKeyFromServerKeyInfoAndFromTenantKeyInfo
     FsManager* fs_manager = mts->server()->fs_manager();
     // The default tenant key info corresponds to the previous server key information.
     ASSERT_TRUE(fs_manager->is_tenants_exist());
-    ASSERT_TRUE(fs_manager->is_tenant_exist(fs::kDefaultTenantName));
+    ASSERT_TRUE(fs_manager->is_tenant_exist(fs::kDefaultTenantID));
     // Make sure there is only one tenant exist.
     ASSERT_EQ(1, fs_manager->tenants_count());
-    ASSERT_FALSE(fs_manager->tenant_id(fs::kDefaultTenantName).empty());
-    ASSERT_EQ(fs::kDefaultTenantID, fs_manager->tenant_id(fs::kDefaultTenantName));
-    ASSERT_FALSE(fs_manager->tenant_key(fs::kDefaultTenantName).empty());
-    ASSERT_EQ(source_key, fs_manager->tenant_key(fs::kDefaultTenantName));
-    ASSERT_FALSE(fs_manager->tenant_key_iv(fs::kDefaultTenantName).empty());
-    ASSERT_EQ(source_key_iv, fs_manager->tenant_key_iv(fs::kDefaultTenantName));
-    ASSERT_FALSE(fs_manager->tenant_key_version(fs::kDefaultTenantName).empty());
-    ASSERT_EQ(source_key_version, fs_manager->tenant_key_version(fs::kDefaultTenantName));
+    ASSERT_FALSE(fs_manager->tenant_name(fs::kDefaultTenantID).empty());
+    ASSERT_EQ(fs::kDefaultTenantName, fs_manager->tenant_name(fs::kDefaultTenantID));
+    ASSERT_FALSE(fs_manager->tenant_key(fs::kDefaultTenantID).empty());
+    ASSERT_EQ(source_key, fs_manager->tenant_key(fs::kDefaultTenantID));
+    ASSERT_FALSE(fs_manager->tenant_key_iv(fs::kDefaultTenantID).empty());
+    ASSERT_EQ(source_key_iv, fs_manager->tenant_key_iv(fs::kDefaultTenantID));
+    ASSERT_FALSE(fs_manager->tenant_key_version(fs::kDefaultTenantID).empty());
+    ASSERT_EQ(source_key_version, fs_manager->tenant_key_version(fs::kDefaultTenantID));
 
     // There is no server key in the metadata.
     ASSERT_TRUE(fs_manager->server_key().empty());

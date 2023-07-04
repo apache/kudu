@@ -194,6 +194,8 @@ DECLARE_string(encryption_cluster_key_name);
 
 DEFINE_string(tenant_name, "",
               "The encrypted tenant name to use in the filesystem.");
+DEFINE_string(tenant_id, "",
+              "The encrypted tenant id to use in the filesystem.");
 
 bool ValidateTimeoutSettings() {
   if (FLAGS_timeout_ms < FLAGS_negotiation_timeout_ms) {
@@ -1006,7 +1008,7 @@ Status SetEncryptionKey() {
   } else {
     InstanceMetadataPB::TenantMetadataPB tenant;
     for (const auto& tdata : instance.tenants()) {
-      if (tdata.tenant_name() == FLAGS_tenant_name) {
+      if (tdata.tenant_id() == FLAGS_tenant_id) {
         tenant.CopyFrom(tdata);
         break;
       }

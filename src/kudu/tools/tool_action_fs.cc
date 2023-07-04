@@ -108,9 +108,8 @@ GROUP_FLAG_VALIDATOR(server_key_set_together, ServerKeySetTogether);
 
 DECLARE_string(encryption_key_type);
 DECLARE_string(tenant_name);
+DECLARE_string(tenant_id);
 
-DEFINE_string(tenant_id, "",
-              "The encrypted tenant id to use in the filesystem.");
 DEFINE_string(tenant_key, "",
               "The encrypted tenant key to use in the filesystem.");
 DEFINE_string(tenant_key_iv, "",
@@ -332,7 +331,7 @@ Status Format(const RunnerContext& /*context*/) {
       encryption_key_version = FLAGS_server_key_version;
     }
   } else {
-    if (!FLAGS_tenant_name.empty()) {
+    if (!FLAGS_tenant_id.empty()) {
       tenant_name = FLAGS_tenant_name;
       tenant_id = FLAGS_tenant_id;
       encryption_key = FLAGS_tenant_key;

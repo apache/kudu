@@ -1374,7 +1374,7 @@ Env* ExternalDaemon::env() const {
   return Env::Default();
 }
 
-Status ExternalDaemon::SetEncryptionKey(const string& tenant_name) {
+Status ExternalDaemon::SetEncryptionKey(const string& tenant_id) {
   string path = JoinPathSegments(this->wal_dir(), "instance");;
   LOG(INFO) << "Reading " << path;
   InstanceMetadataPB instance;
@@ -1383,7 +1383,7 @@ Status ExternalDaemon::SetEncryptionKey(const string& tenant_name) {
   if (!instance.tenants().empty()) {
     const InstanceMetadataPB::TenantMetadataPB* tenant = nullptr;
     for (const auto& tdata : instance.tenants()) {
-      if (tdata.tenant_name() == tenant_name) {
+      if (tdata.tenant_id() == tenant_id) {
         tenant = &tdata;
         break;
       }

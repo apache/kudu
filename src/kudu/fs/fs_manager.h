@@ -326,29 +326,29 @@ class FsManager {
   bool is_tenants_exist() const;
 
   // Use to get the existence of the specific tenant.
-  bool is_tenant_exist(const std::string& tenant_name) const;
+  bool is_tenant_exist(const std::string& tenant_id) const;
 
-  // Return the initialization uuid for the tenant.
+  // Return the initialization name for the tenant.
   // If PartialOpen() or Open() have not been called, this will
   // crash. If the tenant does not exist, it returns an empty string.
-  std::string tenant_id(const std::string& tenant_name = fs::kDefaultTenantName) const;
+  std::string tenant_name(const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Return the tenant key persisted on the local filesystem corresponding to the
-  // tenant_name. After the tenant key is decrypted, it can be used to encrypt/decrypt
+  // tenant_id. After the tenant key is decrypted, it can be used to encrypt/decrypt
   // file keys on the filesystem. If PartialOpen() or Open() have not been called, this
   // will crash. If the tenant does not exist, it returns an empty string.
-  std::string tenant_key(const std::string& tenant_name = fs::kDefaultTenantName) const;
+  std::string tenant_key(const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Return the initialization vector for the tenant key.
   // If PartialOpen() or Open() have not been called, this will
   // crash. If the tenant does not exist, it returns an empty string.
-  std::string tenant_key_iv(const std::string& tenant_name = fs::kDefaultTenantName) const;
+  std::string tenant_key_iv(const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Return the version of the tenant key.
   // If PartialOpen() or Open() have not been called, this will
   // crash. If the tenant does not exist, it returns an empty string.
   std::string tenant_key_version(
-      const std::string& tenant_name = fs::kDefaultTenantName) const;
+      const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Return the server key persisted on the local filesystem.
   //
@@ -442,28 +442,28 @@ class FsManager {
   Status UpdateMetadata(
     std::unique_ptr<InstanceMetadataPB> metadata);
 
-  // Search tenant for metadata by tenant name.
-  const InstanceMetadataPB_TenantMetadataPB* GetTenant(const std::string& tenant_name) const;
+  // Search tenant for metadata by tenant id.
+  const InstanceMetadataPB_TenantMetadataPB* GetTenant(const std::string& tenant_id) const;
   // Except that the caller must hold metadata_rwlock_.
-  const InstanceMetadataPB_TenantMetadataPB* GetTenantUnlock(const std::string& tenant_name) const;
+  const InstanceMetadataPB_TenantMetadataPB* GetTenantUnlock(const std::string& tenant_id) const;
 
   // Return the tenant id persisted on the local filesystem.
   // Except that the caller must hold metadata_rwlock_.
-  std::string tenant_id_unlock(const std::string& tenant_name = fs::kDefaultTenantName) const;
+  std::string tenant_name_unlock(const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Return the tenant key persisted on the local filesystem.
   // Except that the caller must hold metadata_rwlock_.
-  std::string tenant_key_unlock(const std::string& tenant_name = fs::kDefaultTenantName) const;
+  std::string tenant_key_unlock(const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Return the initialization vector for the tenant key unlock.
   // Except that the caller must hold metadata_rwlock_.
   std::string tenant_key_iv_unlock(
-      const std::string& tenant_name = fs::kDefaultTenantName) const;
+      const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Return the version of the tenant key unlock.
   // Except that the caller must hold metadata_rwlock_.
   std::string tenant_key_version_unlock(
-      const std::string& tenant_name = fs::kDefaultTenantName) const;
+      const std::string& tenant_id = fs::kDefaultTenantID) const;
 
   // Use for update the format and the stamp in the metadata.
   // If you need to ensure call security, you must lock it by yourself.

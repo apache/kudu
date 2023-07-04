@@ -943,15 +943,15 @@ bool FsManager::is_tenants_exist() const {
   return metadata_->tenants_size() > 0;
 }
 
-bool FsManager::is_tenant_exist(const string& tenant_name) const {
-  return GetTenant(tenant_name) != nullptr;
+bool FsManager::is_tenant_exist(const string& tenant_id) const {
+  return GetTenant(tenant_id) != nullptr;
 }
 
 const InstanceMetadataPB_TenantMetadataPB* FsManager::GetTenantUnlock(
-    const string& tenant_name) const {
+    const string& tenant_id) const {
   const InstanceMetadataPB::TenantMetadataPB* tenant = nullptr;
   for (const auto& tdata : metadata_->tenants()) {
-    if (tdata.tenant_name() == tenant_name) {
+    if (tdata.tenant_id() == tenant_id) {
       tenant = &tdata;
       break;
     }
@@ -961,48 +961,48 @@ const InstanceMetadataPB_TenantMetadataPB* FsManager::GetTenantUnlock(
 }
 
 const InstanceMetadataPB_TenantMetadataPB* FsManager::GetTenant(
-    const string& tenant_name) const {
+    const string& tenant_id) const {
   shared_lock<rw_spinlock> md_lock(metadata_rwlock_.get_lock());
-  return GetTenantUnlock(tenant_name);
+  return GetTenantUnlock(tenant_id);
 }
 
-string FsManager::tenant_id_unlock(const string& tenant_name) const {
-  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_name);
-  return tenant ? tenant->tenant_id() : string("");
+string FsManager::tenant_name_unlock(const string& tenant_id) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_id);
+  return tenant ? tenant->tenant_name() : string("");
 }
 
-string FsManager::tenant_id(const string& tenant_name) const {
-  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_name);
-  return tenant ? tenant->tenant_id() : string("");
+string FsManager::tenant_name(const string& tenant_id) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_id);
+  return tenant ? tenant->tenant_name() : string("");
 }
 
-string FsManager::tenant_key_unlock(const string& tenant_name) const {
-  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_name);
+string FsManager::tenant_key_unlock(const string& tenant_id) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_id);
   return tenant ? tenant->tenant_key() : string("");
 }
 
-string FsManager::tenant_key(const string& tenant_name) const {
-  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_name);
+string FsManager::tenant_key(const string& tenant_id) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_id);
   return tenant ? tenant->tenant_key() : string("");
 }
 
-string FsManager::tenant_key_iv_unlock(const string& tenant_name) const {
-  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_name);
+string FsManager::tenant_key_iv_unlock(const string& tenant_id) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_id);
   return tenant ? tenant->tenant_key_iv() : string("");
 }
 
-string FsManager::tenant_key_iv(const string& tenant_name) const {
-  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_name);
+string FsManager::tenant_key_iv(const string& tenant_id) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_id);
   return tenant ? tenant->tenant_key_iv() : string("");
 }
 
-string FsManager::tenant_key_version_unlock(const string& tenant_name) const {
-  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_name);
+string FsManager::tenant_key_version_unlock(const string& tenant_id) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenantUnlock(tenant_id);
   return tenant ? tenant->tenant_key_version() : string("");
 }
 
-string FsManager::tenant_key_version(const string& tenant_name) const {
-  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_name);
+string FsManager::tenant_key_version(const string& tenant_id) const {
+  const InstanceMetadataPB::TenantMetadataPB* tenant = GetTenant(tenant_id);
   return tenant ? tenant->tenant_key_version() : string("");
 }
 
