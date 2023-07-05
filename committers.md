@@ -34,6 +34,7 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | misty | Misty Linville | PMC |
 | mpercy | Mike Percy | PMC |
 | sailesh | Sailesh Mukil | PMC |
+| shenxingwuying | Yuqi Du | PMC |
 | stack | Michael Stack | PMC |
 | todd | Todd Lipcon | PMC |
 | wdberkeley | William Berkeley | PMC |
