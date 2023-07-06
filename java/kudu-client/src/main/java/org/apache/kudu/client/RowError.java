@@ -100,7 +100,7 @@ public class RowError {
   @Override
   public String toString() {
     // Intentionally not redacting the row key to make this more useful.
-    return "Row error for primary key=" + Bytes.pretty(operation.getRow().encodePrimaryKey()) +
+    return "Row error for row=" + operation.getRow() +
         ", tablet=" + operation.getTablet() +
         ", server=" + tsUUID +
         ", status=" + status.toString();
