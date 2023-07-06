@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <thread>
 #include <vector>
 
@@ -32,7 +33,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log.pb.h"
-#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_reader.h" // IWYU pragma: keep
 #include "kudu/consensus/log_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/data_dirs.h"
@@ -392,7 +393,7 @@ TEST_F(TabletCopyServiceTest, TestFetchInvalidBlockOffset) {
   RpcController controller;
   // Impossible offset.
   uint64_t offset = std::numeric_limits<uint64_t>::max() -
-      mini_server_->server()->fs_manager()->env()->GetEncryptionHeaderSize();
+      mini_server_->server()->fs_manager()->GetEnv()->GetEncryptionHeaderSize();
   Status status = DoFetchData(session_id, AsDataTypeId(FirstColumnBlockId(superblock)),
                               &offset, nullptr, &resp, &controller);
   NO_FATALS(AssertRemoteError(status, controller.error_response(),

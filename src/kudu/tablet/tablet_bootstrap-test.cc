@@ -23,6 +23,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -47,7 +48,6 @@
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
-#include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
@@ -324,7 +324,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
     ASSERT_OK(AppendCommit(opid));
     log::SegmentSequence segments;
     log_->reader()->GetSegmentsSnapshot(&segments);
-    fs_manager_->env()->DeleteFile(segments[0]->path());
+    fs_manager_->GetEnv()->DeleteFile(segments[0]->path());
 
     // Untrack the tablet in the data dir manager so upon the next call to
     // BootstrapTestTablet, the tablet metadata's data dir group can be loaded.
@@ -392,7 +392,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
 
   log::SegmentSequence segments;
   log_->reader()->GetSegmentsSnapshot(&segments);
-  fs_manager_->env()->DeleteFile(segments[0]->path());
+  fs_manager_->GetEnv()->DeleteFile(segments[0]->path());
 
   current_index_ += 2;
 

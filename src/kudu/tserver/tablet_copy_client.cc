@@ -530,7 +530,7 @@ Status TabletCopyClient::Finish() {
     string meta_copy_path = Substitute("$0.copy.$1$2", meta_path, start_time_micros_, kTmpInfix);
     WritableFileOptions opts;
     opts.is_sensitive = true;
-    RETURN_NOT_OK_PREPEND(env_util::CopyFile(dst_fs_manager_->env(), meta_path,
+    RETURN_NOT_OK_PREPEND(env_util::CopyFile(dst_fs_manager_->GetEnv(), meta_path,
                                              meta_copy_path, opts),
                           "Unable to make copy of tablet metadata");
   }
@@ -626,8 +626,8 @@ Status TabletCopyClient::DownloadWALs() {
   // not kept from previous copies and runs.
   RETURN_NOT_OK(log::Log::DeleteOnDiskData(dst_fs_manager_, tablet_id_));
   string path = dst_fs_manager_->GetTabletWalDir(tablet_id_);
-  RETURN_NOT_OK(dst_fs_manager_->env()->CreateDir(path));
-  RETURN_NOT_OK(dst_fs_manager_->env()->SyncDir(DirName(path))); // fsync() parent dir.
+  RETURN_NOT_OK(dst_fs_manager_->GetEnv()->CreateDir(path));
+  RETURN_NOT_OK(dst_fs_manager_->GetEnv()->SyncDir(DirName(path))); // fsync() parent dir.
 
   // Download the WAL segments.
   const int num_segments = wal_seqnos_.size();
@@ -810,7 +810,7 @@ Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
   opts.sync_on_close = true;
   opts.is_sensitive = true;
   unique_ptr<WritableFile> writer;
-  RETURN_NOT_OK_PREPEND(dst_fs_manager_->env()->NewWritableFile(opts, dest_path, &writer),
+  RETURN_NOT_OK_PREPEND(dst_fs_manager_->GetEnv()->NewWritableFile(opts, dest_path, &writer),
                         "Unable to open file for writing");
   RETURN_NOT_OK_PREPEND(TransferFile(data_id, writer.get()),
                         Substitute("Unable to download WAL segment with seq. number $0",
@@ -839,7 +839,7 @@ Status TabletCopyClient::WriteConsensusMetadata() {
     string cmeta_copy_path = Substitute("$0.copy.$1$2", cmeta_path, start_time_micros_, kTmpInfix);
     WritableFileOptions opts;
     opts.is_sensitive = true;
-    RETURN_NOT_OK_PREPEND(env_util::CopyFile(dst_fs_manager_->env(), cmeta_path,
+    RETURN_NOT_OK_PREPEND(env_util::CopyFile(dst_fs_manager_->GetEnv(), cmeta_path,
                                              cmeta_copy_path, opts),
                           "Unable to make copy of consensus metadata");
   }

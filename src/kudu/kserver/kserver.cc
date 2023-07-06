@@ -24,6 +24,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -31,7 +32,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
@@ -159,7 +159,7 @@ Status KuduServer::Init() {
 
   // These pools are shared by all replicas hosted by this server, and thus
   // are capped at a portion of the overall per-euid thread resource limit.
-  auto server_wide_pool_limit = GetThreadPoolThreadLimit(fs_manager_->env());
+  auto server_wide_pool_limit = GetThreadPoolThreadLimit(fs_manager_->GetEnv());
   LOG(INFO) << Substitute("Server-wide thread pool size limit: $0",
                           server_wide_pool_limit);
   RETURN_NOT_OK(ThreadPoolBuilder("prepare")

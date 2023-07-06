@@ -26,6 +26,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <boost/iterator/iterator_facade.hpp>
+#include <boost/iterator/reverse_iterator.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <gflags/gflags.h>
 
@@ -638,7 +640,7 @@ Status SegmentAllocator::AllocateNewSegment() {
   string path_tmpl = JoinPathSegments(ctx_->log_dir, tmp_suffix);
   VLOG_WITH_PREFIX(2) << "Creating temp. file for place holder segment, template: " << path_tmpl;
   unique_ptr<RWFile> segment_file;
-  Env* env = ctx_->fs_manager->env();
+  Env* env = ctx_->fs_manager->GetEnv();
   RWFileOptions opts;
   opts.is_sensitive = true;
   RETURN_NOT_OK_PREPEND(env->NewTempRWFile(
@@ -671,7 +673,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
   const auto& tablet_id = ctx_->tablet_id;
   string new_segment_path = ctx_->fs_manager->GetWalSegmentFileName(
       tablet_id, active_segment_sequence_number_);
-  Env* env = ctx_->fs_manager->env();
+  Env* env = ctx_->fs_manager->GetEnv();
   RETURN_NOT_OK_PREPEND(env->RenameFile(next_segment_path_, new_segment_path),
                         "could not rename next WAL segment");
   if (opts_->force_fsync_all) {
@@ -761,7 +763,7 @@ Status Log::Open(LogOptions options,
                  scoped_refptr<Log>* log) {
 
   string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_id);
-  RETURN_NOT_OK(env_util::CreateDirIfMissing(fs_manager->env(), tablet_wal_path));
+  RETURN_NOT_OK(env_util::CreateDirIfMissing(fs_manager->GetEnv(), tablet_wal_path));
 
   LogContext ctx({ tablet_id, std::move(tablet_wal_path) });
   ctx.metric_entity = metric_entity;
@@ -789,7 +791,7 @@ Status Log::Init() {
   CHECK_EQ(kLogInitialized, log_state_);
 
   // Init the index.
-  log_index_.reset(new LogIndex(ctx_.fs_manager->env(),
+  log_index_.reset(new LogIndex(ctx_.fs_manager->GetEnv(),
                                 ctx_.file_cache,
                                 ctx_.log_dir));
 
@@ -1075,7 +1077,7 @@ Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
         // segments_to_delete goes out of scope.
         RETURN_NOT_OK(ctx_.file_cache->DeleteFile(segment->path()));
       } else {
-        RETURN_NOT_OK(ctx_.fs_manager->env()->DeleteFile(segment->path()));
+        RETURN_NOT_OK(ctx_.fs_manager->GetEnv()->DeleteFile(segment->path()));
       }
       (*num_gced)++;
     }
@@ -1180,12 +1182,12 @@ Status Log::Close() {
 
 bool Log::HasOnDiskData(FsManager* fs_manager, const string& tablet_id) {
   const string wal_dir = fs_manager->GetTabletWalDir(tablet_id);
-  return fs_manager->env()->FileExists(wal_dir);
+  return fs_manager->GetEnv()->FileExists(wal_dir);
 }
 
 Status Log::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
   string wal_dir = fs_manager->GetTabletWalDir(tablet_id);
-  Env* env = fs_manager->env();
+  Env* env = fs_manager->GetEnv();
   if (!env->FileExists(wal_dir)) {
     return Status::OK();
   }
@@ -1213,7 +1215,7 @@ Status Log::RemoveRecoveryDirIfExists(FsManager* fs_manager, const string& table
   string tmp_path = Substitute("$0-$1", recovery_path, GetCurrentTimeMicros());
   VLOG(1) << kLogPrefix << "Renaming log recovery dir from "  << recovery_path
           << " to " << tmp_path;
-  RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(recovery_path, tmp_path),
+  RETURN_NOT_OK_PREPEND(fs_manager->GetEnv()->RenameFile(recovery_path, tmp_path),
                         Substitute("Could not rename old recovery dir from: $0 to: $1",
                                    recovery_path, tmp_path));
 
@@ -1225,7 +1227,7 @@ Status Log::RemoveRecoveryDirIfExists(FsManager* fs_manager, const string& table
   // We don't need to delete through the file cache; we're guaranteed that
   // the log has been closed (though this invariant isn't verifiable here
   // without additional plumbing).
-  RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
+  RETURN_NOT_OK_PREPEND(fs_manager->GetEnv()->DeleteRecursively(tmp_path),
                         "Could not remove renamed recovery dir " + tmp_path);
   VLOG(1) << kLogPrefix << "Completed deletion of old log recovery files and directory "
           << tmp_path;

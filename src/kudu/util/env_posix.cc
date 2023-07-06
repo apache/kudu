@@ -90,6 +90,7 @@
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using std::accumulate;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -2431,6 +2432,10 @@ Env* Env::Default() {
 
 unique_ptr<Env> Env::NewEnv() {
   return unique_ptr<Env>(new PosixEnv());
+}
+
+shared_ptr<Env> Env::NewSharedEnv() {
+  return shared_ptr<Env>(new PosixEnv());
 }
 
 std::ostream& operator<<(std::ostream& o, Env::ResourceLimitType t) {

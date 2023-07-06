@@ -1031,7 +1031,7 @@ CatalogManager::CatalogManager(Master* master)
       ipki_private_key_password_(""),
       tsk_private_key_password_("") {
   if (RangerAuthzProvider::IsEnabled()) {
-    authz_provider_.reset(new RangerAuthzProvider(master_->fs_manager()->env(),
+    authz_provider_.reset(new RangerAuthzProvider(master_->fs_manager()->GetEnv(),
                                                   master_->metric_entity()));
   } else {
     authz_provider_.reset(new DefaultAuthzProvider);

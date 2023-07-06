@@ -509,7 +509,7 @@ Status PrintReplicaUuids(const RunnerContext& context) {
 
 Status BackupConsensusMetadata(FsManager* fs_manager,
                                const string& tablet_id) {
-  Env* env = fs_manager->env();
+  Env* env = fs_manager->GetEnv();
   string cmeta_filename = fs_manager->GetConsensusMetadataPath(tablet_id);
   string backup_filename = Substitute("$0.pre_rewrite.$1", cmeta_filename, env->NowMicros());
   WritableFileOptions opts;

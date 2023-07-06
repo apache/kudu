@@ -727,11 +727,11 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
     if (fs_manager->Exists(log_dir)) {
       LOG_WITH_PREFIX(INFO) << "Deleting old log files from previous recovery attempt in "
                             << log_dir;
-      RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(log_dir),
+      RETURN_NOT_OK_PREPEND(fs_manager->GetEnv()->DeleteRecursively(log_dir),
                             "Could not recursively delete old log dir " + log_dir);
     }
 
-    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(fs_manager->env(), log_dir),
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(fs_manager->GetEnv(), log_dir),
                           "Failed to create log directory " + log_dir);
 
     *needs_recovery = true;
@@ -741,7 +741,7 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
   // If we made it here, there was no pre-existing recovery dir.
   // Now we look for log files in log_dir, and if we find any then we rename
   // the whole log_dir to a recovery dir and return needs_recovery = true.
-  RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(fs_manager->env(), log_dir),
+  RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(fs_manager->GetEnv(), log_dir),
                         "Failed to create log dir");
 
   vector<string> children;
@@ -764,10 +764,10 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
     // and then re-create the log directory.
     VLOG_WITH_PREFIX(1) << "Moving log directory " << log_dir << " to recovery directory "
                         << recovery_path << " in preparation for log replay";
-    RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(log_dir, recovery_path),
+    RETURN_NOT_OK_PREPEND(fs_manager->GetEnv()->RenameFile(log_dir, recovery_path),
                           Substitute("Could not move log directory $0 to recovery dir $1",
                                      log_dir, recovery_path));
-    RETURN_NOT_OK_PREPEND(fs_manager->env()->CreateDir(log_dir),
+    RETURN_NOT_OK_PREPEND(fs_manager->GetEnv()->CreateDir(log_dir),
                           "Failed to recreate log directory " + log_dir);
   }
   return Status::OK();
@@ -783,7 +783,7 @@ Status TabletBootstrap::OpenLogReaderInRecoveryDir() {
   // isn't fsynced() during writing, its contents are useless to us.
   scoped_refptr<LogIndex> log_index(nullptr);
   const string recovery_dir = fs_manager->GetTabletWalRecoveryDir(tablet_id);
-  RETURN_NOT_OK_PREPEND(LogReader::Open(fs_manager->env(), recovery_dir, log_index, tablet_id,
+  RETURN_NOT_OK_PREPEND(LogReader::Open(fs_manager->GetEnv(), recovery_dir, log_index, tablet_id,
                                         tablet_->GetMetricEntity().get(),
                                         file_cache_,
                                         &log_reader_),

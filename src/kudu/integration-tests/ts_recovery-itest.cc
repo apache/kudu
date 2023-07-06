@@ -213,7 +213,7 @@ TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
     string segment = fs_manager->GetWalSegmentFileName(tablet_id, 2);
 
     LOG(INFO) << "Deleting WAL segment: " << segment;
-    ASSERT_OK(fs_manager->env()->DeleteFile(segment));
+    ASSERT_OK(fs_manager->GetEnv()->DeleteFile(segment));
   }
 
   ASSERT_OK(cluster_->Restart());
@@ -628,7 +628,7 @@ TEST_P(TsRecoveryITestDeathTest, RecoverFromOpIdOverflow) {
     // been written, thus avoiding the check.
     string wal_dir = fs_manager->GetTabletWalDir(tablet_id);
     vector<string> wal_children;
-    ASSERT_OK(fs_manager->env()->GetChildren(wal_dir, &wal_children));
+    ASSERT_OK(fs_manager->GetEnv()->GetChildren(wal_dir, &wal_children));
     // Skip '.', '..', and index files.
     std::unordered_set<string> wal_segments;
     for (const auto& filename : wal_children) {
@@ -640,9 +640,9 @@ TEST_P(TsRecoveryITestDeathTest, RecoverFromOpIdOverflow) {
                                       << wal_children;
     // If WAL segment index 1 exists, delete it.
     string first_segment = fs_manager->GetWalSegmentFileName(tablet_id, 1);
-    if (fs_manager->env()->FileExists(first_segment)) {
+    if (fs_manager->GetEnv()->FileExists(first_segment)) {
       LOG(INFO) << "Deleting first WAL segment: " << first_segment;
-      ASSERT_OK(fs_manager->env()->DeleteFile(first_segment));
+      ASSERT_OK(fs_manager->GetEnv()->DeleteFile(first_segment));
     }
 
     // We also need to update the ConsensusMetadata to match with the term we

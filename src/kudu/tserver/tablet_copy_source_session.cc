@@ -519,7 +519,7 @@ Status LocalTabletCopySourceSession::InitOnce() {
   // Read the SuperBlock from disk.
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(
-      pb_util::ReadPBContainerFromPath(fs_manager_->env(), path, &tablet_superblock_,
+      pb_util::ReadPBContainerFromPath(fs_manager_->GetEnv(), path, &tablet_superblock_,
                                        pb_util::SENSITIVE),
       Substitute("Unable to access superblock for tablet $0", tablet_id_));
 

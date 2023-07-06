@@ -80,6 +80,9 @@ class Env {
   // environment.  Unlike the default env, this is not owned by Kudu, and
   // must be destroyed when not used anymore.
   static std::unique_ptr<Env> NewEnv();
+  // Same as the usage of "NewEnv()", it also needs to be destroyed when
+  // no longer used.
+  static std::shared_ptr<Env> NewSharedEnv();
 
   // Create a brand new sequentially-readable file with the specified name.
   // On success, stores a pointer to the new file in *result and returns OK.

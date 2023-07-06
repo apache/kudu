@@ -295,7 +295,7 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
   string dir = fs_manager_->GetConsensusMetadataDir();
   bool created_dir = false;
   RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(
-      fs_manager_->env(), dir, &created_dir),
+      fs_manager_->GetEnv(), dir, &created_dir),
                         "Unable to create consensus metadata root dir");
   // fsync() parent dir if we had to create the dir.
   if (PREDICT_FALSE(created_dir)) {
@@ -308,7 +308,7 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
       FLAGS_cmeta_force_fsync || (FLAGS_cmeta_fsync_override_on_xfs && fs_manager_->meta_on_xfs());
   string meta_file_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
-      fs_manager_->env(), meta_file_path, pb_,
+      fs_manager_->GetEnv(), meta_file_path, pb_,
       flush_mode == OVERWRITE ? pb_util::OVERWRITE : pb_util::NO_OVERWRITE,
       // We use FLAGS_log_force_fsync_all here because the consensus metadata is
       // essentially an extension of the primary durability mechanism of the
@@ -362,7 +362,7 @@ Status ConsensusMetadata::Create(FsManager* fs_manager,
   } else {
     // Sanity check: ensure that there is no cmeta file currently on disk.
     const string& path = fs_manager->GetConsensusMetadataPath(tablet_id);
-    if (fs_manager->env()->FileExists(path)) {
+    if (fs_manager->GetEnv()->FileExists(path)) {
       return Status::AlreadyPresent(Substitute("File $0 already exists", path));
     }
   }
@@ -375,7 +375,7 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
                                const std::string& peer_uuid,
                                scoped_refptr<ConsensusMetadata>* cmeta_out) {
   scoped_refptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
-  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->env(),
+  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->GetEnv(),
                                                  fs_manager->GetConsensusMetadataPath(tablet_id),
                                                  &cmeta->pb_,
                                                  pb_util::SENSITIVE));
@@ -388,7 +388,7 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
 
 Status ConsensusMetadata::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
   string cmeta_path = fs_manager->GetConsensusMetadataPath(tablet_id);
-  RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteFile(cmeta_path),
+  RETURN_NOT_OK_PREPEND(fs_manager->GetEnv()->DeleteFile(cmeta_path),
                         Substitute("Unable to delete consensus metadata file for tablet $0",
                                    tablet_id));
   return Status::OK();
@@ -417,7 +417,7 @@ void ConsensusMetadata::UpdateRoleAndTermCache() {
 Status ConsensusMetadata::UpdateOnDiskSize() {
   string path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   uint64_t on_disk_size;
-  RETURN_NOT_OK(fs_manager_->env()->GetFileSize(path, &on_disk_size));
+  RETURN_NOT_OK(fs_manager_->GetEnv()->GetFileSize(path, &on_disk_size));
   on_disk_size_ = on_disk_size;
   return Status::OK();
 }

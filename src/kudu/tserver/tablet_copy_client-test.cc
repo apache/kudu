@@ -215,13 +215,15 @@ class TabletCopyClientTest : public TabletCopyTest {
 };
 
 Status TabletCopyClientTest::CompareFileContents(const string& path1, const string& path2) {
-  shared_ptr<RandomAccessFile> file1, file2;
+  shared_ptr<RandomAccessFile> file1;
+  shared_ptr<RandomAccessFile> file2;
   RandomAccessFileOptions opts;
   opts.is_sensitive = true;
-  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->env(), path1, &file1));
-  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->env(), path2, &file2));
+  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->GetEnv(), path1, &file1));
+  RETURN_NOT_OK(env_util::OpenFileForRandom(opts, fs_manager_->GetEnv(), path2, &file2));
 
-  uint64_t size1, size2;
+  uint64_t size1;
+  uint64_t size2;
   RETURN_NOT_OK(file1->Size(&size1));
   RETURN_NOT_OK(file2->Size(&size2));
   size1 -= file1->GetEncryptionHeaderSize();

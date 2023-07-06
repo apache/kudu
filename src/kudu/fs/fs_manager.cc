@@ -183,6 +183,7 @@ using kudu::security::DefaultKeyProvider;
 using kudu::security::RangerKMSKeyProvider;
 using std::optional;
 using std::ostream;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -294,7 +295,7 @@ Status FsManager::Init() {
     // Strip the basename when canonicalizing, as it may not exist. The
     // dirname, however, must exist.
     string canonicalized;
-    Status s = env_->Canonicalize(DirName(root), &canonicalized);
+    Status s = GetEnv()->Canonicalize(DirName(root), &canonicalized);
     if (PREDICT_FALSE(!s.ok())) {
       if (s.IsNotFound() || s.IsDiskFailure()) {
         // If the directory fails to canonicalize due to disk failure, store
@@ -337,7 +338,7 @@ Status FsManager::Init() {
     // If there is already metadata in the first data root, use it. Otherwise,
     // use the WAL root.
     LOG(INFO) << "Metadata directory not provided";
-    if (env_->FileExists(meta_dir_in_data_root)) {
+    if (GetEnv()->FileExists(meta_dir_in_data_root)) {
       canonicalized_metadata_fs_root_ = canonicalized_data_fs_roots_[0];
       LOG(INFO) << "Using existing metadata directory in first data directory";
     } else {
@@ -381,10 +382,10 @@ void FsManager::InitBlockManager() {
   bm_opts.read_only = opts_.read_only;
   if (opts_.block_manager_type == "file") {
     block_manager_.reset(new FileBlockManager(
-        env_, dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
+        GetEnv(), dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
   } else if (opts_.block_manager_type == "log") {
     block_manager_.reset(new LogBlockManagerNativeMeta(
-        env_, dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
+        GetEnv(), dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
   } else {
     LOG(FATAL) << "Unknown block_manager_type: " << opts_.block_manager_type;
   }
@@ -398,7 +399,7 @@ Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
       continue;
     }
     unique_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
-    Status s = pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root.path),
+    Status s = pb_util::ReadPBContainerFromPath(GetEnv(), GetInstanceMetadataPath(root.path),
                                                 pb.get(), pb_util::NOT_SENSITIVE);
     if (PREDICT_FALSE(!s.ok())) {
       if (s.IsNotFound()) {
@@ -432,7 +433,7 @@ Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
   const auto bad_meta_fs_msg =
       Substitute("Could not determine file system of metadata directory $0",
                  meta_root_path);
-  Status s = env_->IsOnXfsFilesystem(meta_root_path, &meta_on_xfs_);
+  Status s = GetEnv()->IsOnXfsFilesystem(meta_root_path, &meta_on_xfs_);
   if (FLAGS_cmeta_fsync_override_on_xfs) {
     // Err on the side of visibility if we expect a behavior change based on
     // the file system.
@@ -465,7 +466,7 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
                                     GetConsensusMetadataDir() };
   for (const auto& d : ancillary_dirs) {
     bool is_dir;
-    RETURN_NOT_OK_PREPEND(env_->IsDirectory(d, &is_dir),
+    RETURN_NOT_OK_PREPEND(GetEnv()->IsDirectory(d, &is_dir),
                           Substitute("could not verify required directory $0", d));
     if (!is_dir) {
       return Status::Corruption(
@@ -479,12 +480,12 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   auto deleter = MakeScopedCleanup([&]() {
     // Delete files first so that the directories will be empty when deleted.
     for (const auto& f : created_files) {
-      WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
+      WARN_NOT_OK(GetEnv()->DeleteFile(f), "Could not delete file " + f);
     }
     // Delete directories in reverse order since parent directories will have
     // been added before child directories.
     for (auto it = created_dirs.rbegin(); it != created_dirs.rend(); it++) {
-      WARN_NOT_OK(env_->DeleteDir(*it), "Could not delete dir " + *it);
+      WARN_NOT_OK(GetEnv()->DeleteDir(*it), "Could not delete dir " + *it);
     }
   });
 
@@ -540,9 +541,9 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   if (!decrypted_key.empty()) {
     // 'decrypted_key' is a hexadecimal string and SetEncryptionKey expects bits
     // (hex / 2 = bytes * 8 = bits).
-    env_->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
-                             a2b_hex(decrypted_key).c_str()),
-                           decrypted_key.length() * 4);
+    GetEnv()->SetEncryptionKey(reinterpret_cast<const uint8_t*>(
+                                 a2b_hex(decrypted_key).c_str()),
+                               decrypted_key.length() * 4);
   }
 
   // Open the directory manager if it has not been opened already.
@@ -553,7 +554,7 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     dm_opts.dir_type = opts_.block_manager_type;
     dm_opts.update_instances = opts_.update_instances;
     LOG_TIMING(INFO, "opening directory manager") {
-      RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
+      RETURN_NOT_OK(DataDirManager::OpenExisting(GetEnv(),
           canonicalized_data_fs_roots_, dm_opts, &dd_manager_));
     }
   }
@@ -602,7 +603,7 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
   if (FLAGS_enable_data_block_fsync) {
     // Files/directories created by the directory manager in the fs roots have
     // been synchronized, so now is a good time to sync the roots themselves.
-    WARN_NOT_OK(env_util::SyncAllParentDirs(env_, created_dirs, created_files),
+    WARN_NOT_OK(env_util::SyncAllParentDirs(GetEnv(), created_dirs, created_files),
                 "could not sync newly created fs roots");
   }
 
@@ -637,11 +638,11 @@ Status FsManager::UpdateMetadata(unique_ptr<InstanceMetadataPB> metadata) {
   auto rollbacker = MakeScopedCleanup([&]() {
     // Delete new files first so that the backup files could do rollback.
     for (const auto& changed : changed_dirs) {
-      WARN_NOT_OK(env_->DeleteFile(changed.first),
+      WARN_NOT_OK(GetEnv()->DeleteFile(changed.first),
                   Substitute("Could not delete file $0 for rollback.", changed.first));
       VLOG(1) << "Delete file: " << changed.first << " for rollback.";
 
-      WARN_NOT_OK(env_->RenameFile(changed.second, changed.first),
+      WARN_NOT_OK(GetEnv()->RenameFile(changed.second, changed.first),
                   Substitute("Could not rename file $0 for rollback.", changed.second));
       VLOG(1) << "Rename file: " << changed.second << " to " << changed.first << " for rollback.";
     }
@@ -654,7 +655,7 @@ Status FsManager::UpdateMetadata(unique_ptr<InstanceMetadataPB> metadata) {
     // Backup the metadata at first.
     const string old_path = GetInstanceMetadataPath(root.path);
     string tmp_path = Substitute("$0-$1", old_path, GetCurrentTimeMicros());
-    WARN_NOT_OK(env_->RenameFile(old_path, tmp_path),
+    WARN_NOT_OK(GetEnv()->RenameFile(old_path, tmp_path),
                 Substitute("Could not rename file $0, ", old_path));
     changed_dirs[old_path] = tmp_path;
     // Write the instance metadata with latest data.
@@ -671,7 +672,7 @@ Status FsManager::UpdateMetadata(unique_ptr<InstanceMetadataPB> metadata) {
 
   // If all op success, remove the backup data.
   for (const auto& changed : changed_dirs) {
-    WARN_NOT_OK(env_->DeleteFile(changed.second), Substitute("Could not delete file $0, ",
+    WARN_NOT_OK(GetEnv()->DeleteFile(changed.second), Substitute("Could not delete file $0, ",
                                                              changed.second));
   }
 
@@ -706,12 +707,12 @@ Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
   auto deleter = MakeScopedCleanup([&]() {
     // Delete files first so that the directories will be empty when deleted.
     for (const auto& f : created_files) {
-      WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
+      WARN_NOT_OK(GetEnv()->DeleteFile(f), "Could not delete file " + f);
     }
     // Delete directories in reverse order since parent directories will have
     // been added before child directories.
     for (auto it = created_dirs.rbegin(); it != created_dirs.rend(); it++) {
-      WARN_NOT_OK(env_->DeleteDir(*it), "Could not delete dir " + *it);
+      WARN_NOT_OK(GetEnv()->DeleteDir(*it), "Could not delete dir " + *it);
     }
   });
 
@@ -737,7 +738,7 @@ Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
                                     GetConsensusMetadataDir() };
   for (const string& dir : ancillary_dirs) {
     bool created;
-    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, dir, &created),
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(GetEnv(), dir, &created),
                           Substitute("Unable to create directory $0", dir));
     if (created) {
       created_dirs.emplace_back(dir);
@@ -752,14 +753,14 @@ Status FsManager::CreateInitialFileSystemLayout(optional<string> uuid,
   dm_opts.read_only = opts_.read_only;
   LOG_TIMING(INFO, "creating directory manager") {
     RETURN_NOT_OK_PREPEND(DataDirManager::CreateNew(
-        env_, canonicalized_data_fs_roots_, dm_opts, &dd_manager_),
+        GetEnv(), canonicalized_data_fs_roots_, dm_opts, &dd_manager_),
                           "Unable to create directory manager");
   }
 
   if (FLAGS_enable_data_block_fsync) {
     // Files/directories created by the directory manager in the fs roots have
     // been synchronized, so now is a good time to sync the roots themselves.
-    WARN_NOT_OK(env_util::SyncAllParentDirs(env_, created_dirs, created_files),
+    WARN_NOT_OK(env_util::SyncAllParentDirs(GetEnv(), created_dirs, created_files),
                 "could not sync newly created fs roots");
   }
 
@@ -782,12 +783,12 @@ Status FsManager::CreateFileSystemRoots(
       return Status::IOError("cannot create FS layout; at least one directory "
                              "failed to canonicalize", root.path);
     }
-    if (!env_->FileExists(root.path)) {
+    if (!GetEnv()->FileExists(root.path)) {
       // We'll create the directory below.
       continue;
     }
     bool is_empty;
-    RETURN_NOT_OK_PREPEND(env_util::IsDirectoryEmpty(env_, root.path, &is_empty),
+    RETURN_NOT_OK_PREPEND(env_util::IsDirectoryEmpty(GetEnv(), root.path, &is_empty),
                           "unable to check if FSManager root is empty");
     if (!is_empty) {
       non_empty_roots.emplace_back(root.path);
@@ -807,7 +808,7 @@ Status FsManager::CreateFileSystemRoots(
     }
     string root_name = root.path;
     bool created;
-    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_name, &created),
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(GetEnv(), root_name, &created),
                           "unable to create FSManager root");
     if (created) {
       created_dirs->emplace_back(root_name);
@@ -907,7 +908,7 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
 
   // The instance metadata is written effectively once per TS, so the
   // durability cost is negligible.
-  RETURN_NOT_OK(pb_util::WritePBContainerToPath(env_, path,
+  RETURN_NOT_OK(pb_util::WritePBContainerToPath(GetEnv(), path,
                                                 metadata,
                                                 pb_util::NO_OVERWRITE,
                                                 pb_util::SYNC,
@@ -1006,6 +1007,25 @@ string FsManager::tenant_key_version(const string& tenant_id) const {
   return tenant ? tenant->tenant_key_version() : string("");
 }
 
+Env* FsManager::GetEnv(const std::string& tenant_id) {
+  if (tenant_id == fs::kDefaultTenantID) {
+    return env_;
+  }
+
+  std::lock_guard<LockType> lock(env_lock_);
+  auto env = FindPtrOrNull(env_map_, tenant_id);
+  if (!env && !FLAGS_enable_multi_tenancy) {
+    LOG(ERROR) << "'--enable_multi_tenancy' is disable for tenant: " << tenant_id;
+    return nullptr;
+  }
+
+  // Create new env and add the new env to the env map.
+  LOG(INFO) << "Create new env for tenant: " << tenant_id;
+  shared_ptr<Env> new_env = Env::NewSharedEnv();
+  env_map_[tenant_id] = new_env;
+  return new_env.get();
+}
+
 vector<string> FsManager::GetDataRootDirs() const {
   // Get the data subdirectory for each data root.
   return dd_manager_->GetDirs();
@@ -1087,7 +1107,7 @@ void FsManager::CleanTmpFiles() {
   for (const auto& s : { GetWalsRootDir(),
                          GetTabletMetadataDir(),
                          GetConsensusMetadataDir() }) {
-    WARN_NOT_OK(env_util::DeleteTmpFilesRecursively(env_, s),
+    WARN_NOT_OK(env_util::DeleteTmpFilesRecursively(GetEnv(), s),
                 Substitute("Error deleting tmp files in $0", s));
   }
 }
@@ -1097,7 +1117,7 @@ void FsManager::CheckAndFixPermissions() {
     if (!root.status.ok()) {
       continue;
     }
-    WARN_NOT_OK(env_->EnsureFileModeAdheresToUmask(root.path),
+    WARN_NOT_OK(GetEnv()->EnsureFileModeAdheresToUmask(root.path),
                 Substitute("could not check and fix permissions for path: $0",
                            root.path));
   }
@@ -1117,7 +1137,7 @@ void FsManager::DumpFileSystemTree(ostream& out) {
     out << "File-System Root: " << root.path << std::endl;
 
     vector<string> objects;
-    Status s = env_->GetChildren(root.path, &objects);
+    Status s = GetEnv()->GetChildren(root.path, &objects);
     if (!s.ok()) {
       LOG(ERROR) << "Unable to list the fs-tree: " << s.ToString();
       return;
@@ -1134,7 +1154,7 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
 
     vector<string> sub_objects;
     string sub_path = JoinPathSegments(path, name);
-    Status s = env_->GetChildren(sub_path, &sub_objects);
+    Status s = GetEnv()->GetChildren(sub_path, &sub_objects);
     if (s.ok()) {
       out << prefix << name << "/" << std::endl;
       DumpFileSystemTree(out, prefix + "---", sub_path, sub_objects);

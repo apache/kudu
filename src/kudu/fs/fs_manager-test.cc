@@ -638,26 +638,26 @@ TEST_P(FsManagerTestBase, TestTmpFilesCleanup) {
   shared_ptr<WritableFile> tmp_writer;
 
   string tmp_path = JoinPathSegments(fs_manager()->GetWalsRootDir(), "wal.kudutmp.file");
-  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->GetEnv(), tmp_path, &tmp_writer));
 
   tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[0], "data1.kudutmp.file");
-  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->GetEnv(), tmp_path, &tmp_writer));
 
   tmp_path = JoinPathSegments(fs_manager()->GetConsensusMetadataDir(), "12345.kudutmp.asdfg");
-  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->GetEnv(), tmp_path, &tmp_writer));
 
   tmp_path = JoinPathSegments(fs_manager()->GetTabletMetadataDir(), "12345.kudutmp.asdfg");
-  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->GetEnv(), tmp_path, &tmp_writer));
 
   // Not a misprint here: checking for just ".kudutmp" as well
   tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[1], "data2.kudutmp");
-  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->GetEnv(), tmp_path, &tmp_writer));
 
   // Try with nested directory
   string nested_dir_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[2], "data4");
-  ASSERT_OK(env_util::CreateDirIfMissing(fs_manager()->env(), nested_dir_path));
+  ASSERT_OK(env_util::CreateDirIfMissing(fs_manager()->GetEnv(), nested_dir_path));
   tmp_path = JoinPathSegments(nested_dir_path, "data4.kudutmp.file");
-  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->GetEnv(), tmp_path, &tmp_writer));
 
   // Add a loop using symlink
   string data3_link = JoinPathSegments(nested_dir_path, "data3-link");
@@ -670,7 +670,7 @@ TEST_P(FsManagerTestBase, TestTmpFilesCleanup) {
   lookup_dirs.emplace_back(fs_manager()->GetTabletMetadataDir());
 
   int n_tmp_files = 0;
-  ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
+  ASSERT_OK(CountTmpFiles(fs_manager()->GetEnv(), lookup_dirs, &n_tmp_files));
   ASSERT_EQ(6, n_tmp_files);
 
   // The FsManager should not delete any tmp files if it fails to acquire
@@ -683,7 +683,7 @@ TEST_P(FsManagerTestBase, TestTmpFilesCleanup) {
     ReinitFsManagerWithPaths(wal_path, data_paths);
     Status s = fs_manager()->Open();
     ASSERT_STR_MATCHES(s.ToString(), "Could not lock.*");
-    ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
+    ASSERT_OK(CountTmpFiles(fs_manager()->GetEnv(), lookup_dirs, &n_tmp_files));
     ASSERT_EQ(6, n_tmp_files);
   }
 
@@ -692,7 +692,7 @@ TEST_P(FsManagerTestBase, TestTmpFilesCleanup) {
   ASSERT_OK(fs_manager()->Open());
 
   n_tmp_files = 0;
-  ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
+  ASSERT_OK(CountTmpFiles(fs_manager()->GetEnv(), lookup_dirs, &n_tmp_files));
   ASSERT_EQ(0, n_tmp_files);
 }
 

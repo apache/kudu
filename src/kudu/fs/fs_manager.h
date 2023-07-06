@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cstdint>
 #include <iosfwd>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -301,7 +302,12 @@ class FsManager {
     return JoinPathSegments(GetConsensusMetadataDir(), tablet_id);
   }
 
-  Env* env() { return env_; }
+  // Get env to do read/write.
+  // Different tenant owns different env.
+  // Create a new env for the tenant if search fail when '--enable_multi_tenancy' enabled.
+  //
+  // If the tenant id is not specified, we treat it as the default tenant.
+  Env* GetEnv(const std::string& tenant_id = fs::kDefaultTenantID);
 
   bool read_only() const {
     return opts_.read_only;
@@ -499,8 +505,18 @@ class FsManager {
   static const char *kInstanceMetadataFileName;
   static const char *kConsensusMetadataDirName;
 
+  typedef rw_spinlock LockType;
+
+  // Lock protecting the env_map_ below.
+  mutable LockType env_lock_;
   // The environment to be used for all filesystem operations.
+  // Different tenant use different env.
+  typedef std::map<std::string, std::shared_ptr<Env>> EnvMap;
+  // The environment for default tenant, which belongs to kudu and must never be deleted.
   Env* env_;
+  // The map records the env information of all tenants except the default tenant.
+  // They must be destroyed when not used anymore.
+  EnvMap env_map_;
 
   // The options that the FsManager was created with.
   const FsManagerOpts opts_;

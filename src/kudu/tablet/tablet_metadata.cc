@@ -114,7 +114,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
   // Verify that no existing tablet exists with the same ID.
-  if (fs_manager->env()->FileExists(fs_manager->GetTabletMetadataPath(tablet_id))) {
+  if (fs_manager->GetEnv()->FileExists(fs_manager->GetTabletMetadataPath(tablet_id))) {
     return Status::AlreadyPresent("Tablet already exists", tablet_id);
   }
 
@@ -302,7 +302,7 @@ Status TabletMetadata::DeleteSuperBlock() {
   }
 
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
-  RETURN_NOT_OK_PREPEND(fs_manager_->env()->DeleteFile(path),
+  RETURN_NOT_OK_PREPEND(fs_manager_->GetEnv()->DeleteFile(path),
                         "Unable to delete superblock for tablet " + tablet_id_);
   return Status::OK();
 }
@@ -375,7 +375,7 @@ Status TabletMetadata::LoadFromDisk() {
 Status TabletMetadata::UpdateOnDiskSize() {
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
   uint64_t on_disk_size;
-  RETURN_NOT_OK(fs_manager()->env()->GetFileSize(path, &on_disk_size));
+  RETURN_NOT_OK(fs_manager()->GetEnv()->GetFileSize(path, &on_disk_size));
   on_disk_size_.store(on_disk_size, memory_order_relaxed);
   return Status::OK();
 }
@@ -708,7 +708,7 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
 
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
-                            fs_manager_->env(), path, pb,
+                            fs_manager_->GetEnv(), path, pb,
                             pb_util::OVERWRITE, pb_util::SYNC,
                             pb_util::SENSITIVE),
                         Substitute("Failed to write tablet metadata $0", tablet_id_));
@@ -731,7 +731,7 @@ std::optional<consensus::OpId> TabletMetadata::tombstone_last_logged_opid() cons
 Status TabletMetadata::ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) const {
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(
-      pb_util::ReadPBContainerFromPath(fs_manager_->env(), path, superblock, pb_util::SENSITIVE),
+      pb_util::ReadPBContainerFromPath(fs_manager_->GetEnv(), path, superblock, pb_util::SENSITIVE),
       Substitute("Could not load tablet metadata from $0", path));
   return Status::OK();
 }
