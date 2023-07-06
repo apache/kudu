@@ -25,13 +25,21 @@ import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import com.google.common.collect.ImmutableList;
 import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
 import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.DateUtil;
 
 public class TestRowErrors {
 
@@ -97,6 +105,82 @@ public class TestRowErrors {
     RowErrorsAndOverflowStatus reos = session.getPendingErrors();
     assertEquals(dupRows, reos.getRowErrors().length);
     assertEquals(0, session.countPendingErrors());
+  }
+
+  @Test(timeout = 100000)
+  public void readableRowErrorTest() throws Exception {
+    KuduSession session = harness.getClient().newSession();
+    Map<Type, String> dataByType = new HashMap<>();
+    dataByType.put(Type.INT32, "10000");
+    dataByType.put(Type.DATE, "1970-01-01");
+    dataByType.put(Type.STRING, "fun with ütf");
+    dataByType.put(Type.BINARY, "[0, 1, 2, 3, 4]");
+    int anotherColData = 101;
+    Type[] types = new Type[] {Type.INT32, Type.DATE, Type.STRING, Type.BINARY};
+    for (Type dataType : types) {
+      flushDifferentTypeData(dataType, dataByType, anotherColData, session);
+      for (RowError re : session.getPendingErrors().getRowErrors()) {
+        String cmpStr = String.format("Row error for row=(%s c0=%s, int32 c1=%d)",
+                        dataType.getName(), dataByType.get(dataType), anotherColData);
+        if (dataType == Type.STRING || dataType == Type.BINARY) {
+          cmpStr = String.format("Row error for row=(%s c0=\"%s\", int32 c1=%d)",
+                   dataType.getName(), dataByType.get(dataType), anotherColData);
+        }
+        assertTrue(re.toString().contains(cmpStr));
+      }
+    }
+  }
+
+  private void flushDifferentTypeData(Type dataType, Map<Type, String> dataByType,
+                                      int anotherColData, KuduSession session)
+                                      throws Exception {
+    String tableName = TestRowErrors.class.getName() + "-" + System.currentTimeMillis();
+    CreateTableOptions createOptions = new CreateTableOptions()
+        .addHashPartitions(ImmutableList.of("c0"), 2, 0);
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c0", dataType)
+                                .nullable(false)
+                                .key(true)
+                                .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.INT32)
+                                .nullable(false)
+                                .build());
+    Schema schema = new Schema(columns);
+
+    KuduClient client = harness.getClient();
+    client.createTable(tableName, schema, createOptions);
+    table = client.openTable(tableName);
+
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+
+    Update update = table.newUpdate();
+    PartialRow row = update.getRow();
+    switch (dataType) {
+      // Type.INT32.
+      case INT32:
+        row.addInt("c0", Integer.parseInt(dataByType.get(dataType)));
+        break;
+      // Type.DATE.
+      case DATE:
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd" );
+        java.util.Date d1 = sdf.parse(dataByType.get(dataType));
+        java.sql.Date d2 = new java.sql.Date(d1.getTime());
+        row.addDate("c0",  d2);
+        break;
+      // Type.STRING.
+      case STRING:
+        row.addString("c0", dataByType.get(dataType));
+        break;
+      // Type.BINARY.
+      case BINARY:
+        row.addBinary("c0", dataByType.get(dataType).getBytes("UTF-8"));
+        break;
+      default:
+        return;
+    }
+    row.addInt("c1", anotherColData);
+    session.apply(update);
+    session.flush();
   }
 
   private Insert createInsert(int key) {
