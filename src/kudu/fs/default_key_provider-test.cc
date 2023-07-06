@@ -44,5 +44,16 @@ TEST_F(DefaultKeyProviderTest, TestEncryptAndDecrypt) {
   ASSERT_NE(encryption_key, decrypted_key);
 }
 
+TEST_F(DefaultKeyProviderTest, TestEncryptAndDecryptWithTenant) {
+  string encryption_key;
+  string iv;
+  string version;
+  string decrypted_key;
+  const string tenant_id = "00000000000000000000000000000000";
+  ASSERT_OK(key_provider_.GenerateTenantKey(tenant_id, &encryption_key, &iv, &version));
+  ASSERT_OK(key_provider_.DecryptEncryptionKey(encryption_key, iv, version, &decrypted_key));
+  ASSERT_NE(encryption_key, decrypted_key);
+}
+
 } // namespace security
 } // namespace kudu

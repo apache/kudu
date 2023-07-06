@@ -67,6 +67,14 @@ public:
     *key_version = "encryptionkey@0";
     return Status::OK();
   }
+
+  // The tenant id is useless in 'DefaultKeyProvider'.
+  Status GenerateTenantKey(const std::string& /* tenant_id */,
+                           std::string* encryption_key,
+                           std::string* iv,
+                           std::string* key_version) override {
+    return GenerateEncryptionKey(encryption_key, iv, key_version);
+  }
 };
 } // namespace security
 } // namespace kudu

@@ -40,6 +40,12 @@ class KeyProvider {
                                        std::string* iv,
                                        std::string* key_version) = 0;
 
+  // Generates an encryption key with the tenant_id.
+  virtual Status GenerateTenantKey(const std::string& tenant_id,
+                                   std::string* encryption_key,
+                                   std::string* iv,
+                                   std::string* key_version) = 0;
+
 };
 } // namespace security
 } // namespace kudu

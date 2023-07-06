@@ -79,16 +79,17 @@ Status RangerKMSClient::DecryptEncryptionKey(const string& encryption_key,
   return Status::OK();
 }
 
-Status RangerKMSClient::GenerateEncryptionKey(string* encryption_key,
-                                              string* iv,
-                                              string* key_version) {
+Status RangerKMSClient::GenerateEncryptionKeyFromKMS(const string& key_name,
+                                                     string* encryption_key,
+                                                     string* iv,
+                                                     string* key_version) {
   EasyCurl curl;
   curl.set_auth(CurlAuthType::SPNEGO);
   vector<string> urls;
   urls.reserve(kms_urls_.size());
   for (const auto& url : kms_urls_) {
     urls.emplace_back(Substitute("$0/v1/key/$1/_eek?eek_op=generate&num_keys=1",
-                      url, cluster_key_name_));
+                      url, key_name));
   }
   faststring resp;
   RETURN_NOT_OK_PREPEND(curl.FetchURL(urls, &resp), "failed to generate encryption key");
@@ -116,6 +117,19 @@ Status RangerKMSClient::GenerateEncryptionKey(string* encryption_key,
   }
   *encryption_key = b2a_hex(key_plain);
   return Status::OK();
+}
+
+Status RangerKMSClient::GenerateTenantKey(const string& tenant_id,
+                                          string* encryption_key,
+                                          string* iv,
+                                          string* key_version) {
+  return GenerateEncryptionKeyFromKMS(tenant_id, encryption_key, iv, key_version);
+}
+
+Status RangerKMSClient::GenerateEncryptionKey(string* encryption_key,
+                                              string* iv,
+                                              string* key_version) {
+  return GenerateEncryptionKeyFromKMS(cluster_key_name_, encryption_key, iv, key_version);
 }
 
 } // namespace security

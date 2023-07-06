@@ -44,6 +44,11 @@ class RangerKMSKeyProvider : public KeyProvider {
                                std::string* iv,
                                std::string* key_version) override;
 
+  // Generates an encryption key with the tenant_id.
+  Status GenerateTenantKey(const std::string& tenant_id,
+                           std::string* encryption_key,
+                           std::string* iv,
+                           std::string* key_version) override;
  private:
   RangerKMSClient client_;
 };

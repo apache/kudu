@@ -41,7 +41,17 @@ class RangerKMSClient {
                                std::string* iv,
                                std::string* key_version);
 
+  Status GenerateTenantKey(const std::string& tenant_id,
+                           std::string* encryption_key,
+                           std::string* iv,
+                           std::string* key_version);
+
  private:
+  Status GenerateEncryptionKeyFromKMS(const std::string& key_name,
+                                      std::string* encryption_key,
+                                      std::string* iv,
+                                      std::string* key_version);
+
   std::vector<std::string> kms_urls_;
   std::string cluster_key_name_;
 
