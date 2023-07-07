@@ -376,6 +376,15 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   // 'lock_' is held.
   void MergePendingOpRegistrationsUnlocked();
 
+  /// Determine whether to run flush ops, depends on memory pressure and
+  /// the flag run_non_memory_ops_prob.
+  ///
+  /// @param [out] used_memory_percentage
+  ///    The memory usage for now.
+  ///
+  /// @return Should the maintenance manager find a flush operation to run.
+  bool ProceedWithFlush(double* used_memory_percentage);
+
   const std::string server_uuid_;
   const int32_t num_threads_;
   const MonoDelta polling_interval_;

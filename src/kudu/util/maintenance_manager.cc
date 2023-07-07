@@ -101,6 +101,18 @@ DEFINE_double(data_gc_prioritization_prob, 0.5,
              "such as delta compaction.");
 TAG_FLAG(data_gc_prioritization_prob, experimental);
 
+DEFINE_double(run_non_memory_ops_prob, 0,
+              "The probability that the tablet server will not flush DRS or MRS "
+              "while under memory pressure. This is useful when the server is under "
+              "memory pressure for a long time and there are non-memory operations "
+              "waiting to be run. The higher value means higher probability to "
+              "do other ops instead of flushing ops. This might be needed to turn "
+              "on if system admin found that the tablet server is under memory "
+              "pressure for a long time and there is a significant degradation in "
+              "performance.");
+TAG_FLAG(run_non_memory_ops_prob, experimental);
+TAG_FLAG(run_non_memory_ops_prob, runtime);
+
 DEFINE_double(maintenance_op_multiplier, 1.1,
               "Multiplier applied on different priority levels, table maintenance OPs on level N "
               "has multiplier of FLAGS_maintenance_op_multiplier^N, the last score will be "
@@ -120,6 +132,20 @@ DEFINE_int32(maintenance_manager_inject_latency_ms, 0,
              "Injects latency into maintenance thread. For use in tests only.");
 TAG_FLAG(maintenance_manager_inject_latency_ms, runtime);
 TAG_FLAG(maintenance_manager_inject_latency_ms, unsafe);
+
+DECLARE_int32(memory_pressure_percentage);
+DECLARE_int32(memory_limit_soft_percentage);
+
+static bool ValidateProbability(const char* flagname, double value) {
+  if (value >= 0.0 && value <= 1.0) {
+    return true;
+  }
+  LOG(ERROR) << Substitute("$0 must be a probability from 0 to 1,"
+                           " value $1 is invalid", flagname, value);
+  return false;
+}
+DEFINE_validator(run_non_memory_ops_prob, &ValidateProbability);
+DEFINE_validator(data_gc_prioritization_prob, &ValidateProbability);
 
 namespace kudu {
 
@@ -193,7 +219,9 @@ MaintenanceManager::MaintenanceManager(
                          : FLAGS_maintenance_manager_history_size),
       completed_ops_count_(0),
       rand_(GetRandomSeed32()),
-      memory_pressure_func_(&process_memory::UnderMemoryPressure),
+      memory_pressure_func_([&](double* consumption) {
+        return this->ProceedWithFlush(consumption);
+      }),
       metrics_(CHECK_NOTNULL(metric_entity)) {
   CHECK_OK(ThreadPoolBuilder("MaintenanceMgr")
                .set_min_threads(num_threads_)
@@ -504,6 +532,9 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   // are anchoring WALs. Choosing the op that frees the most WALs ensures that
   // all ops that anchor memory (and also anchor WALs) will eventually be
   // performed.
+  //
+  // Do not always flush MRS/DMS even under memory pressure, some perf improvement
+  // ops might be more important than freeing memory even if under memory pressure.
   double capacity_pct;
   if (memory_pressure_func_(&capacity_pct) && most_logs_retained_bytes_ram_anchored_op) {
     DCHECK_GT(most_logs_retained_bytes_ram_anchored, 0);
@@ -693,4 +724,14 @@ void MaintenanceManager::DecreaseOpCountAndNotifyWaiters(MaintenanceOp* op) {
   op->cond_->Signal();
 }
 
+bool MaintenanceManager::ProceedWithFlush(double* used_memory_percentage) {
+  if (process_memory::UnderMemoryPressure(used_memory_percentage)) {
+    double pressure_threshold = static_cast<double>(FLAGS_memory_pressure_percentage) / 100;
+    double soft_limit = static_cast<double>(FLAGS_memory_limit_soft_percentage) / 100;
+    return pressure_threshold >= soft_limit || *used_memory_percentage >= soft_limit ||
+        rand_.NextDoubleFraction() >= FLAGS_run_non_memory_ops_prob *
+        (soft_limit - *used_memory_percentage) / (soft_limit - pressure_threshold);
+  }
+  return false;
+}
 } // namespace kudu
