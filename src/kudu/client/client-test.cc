@@ -5351,6 +5351,8 @@ TEST_F(ClientTest, TestSoftDeleteAndRecallAfterReserveTimeTable) {
   vector<string> tables;
   ASSERT_OK(client_->ListSoftDeletedTables(&tables));
   ASSERT_EQ(0, tables.size());
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_EQ(0, tables.size());
 
   // Try to recall the table.
   Status s = client_->RecallTable(client_table_->id());
@@ -5358,6 +5360,66 @@ TEST_F(ClientTest, TestSoftDeleteAndRecallAfterReserveTimeTable) {
 
   ASSERT_OK(client_->ListTables(&tables));
   ASSERT_TRUE(tables.empty());
+}
+
+TEST_F(ClientTest, TestCompactionOfSoftDeletedAndRecalledTable) {
+  // Open the table before deleting it.
+  ASSERT_OK(client_->OpenTable(kTableName, &client_table_));
+  const string table_id = client_table_->id();
+  // Check the compaction is enabled.
+  map<string, string> extra_configs = client_table_->extra_configs();
+  ASSERT_FALSE(ContainsKey(extra_configs, "kudu.table.disable_compaction"));
+
+  {
+    // Soft delete the table.
+    ASSERT_OK(client_->SoftDeleteTable(kTableName, 60000));
+
+    // Do some soft-deleted table checks.
+    vector<string> tables;
+    ASSERT_OK(client_->ListTables(&tables));
+    ASSERT_EQ(0, tables.size());
+    ASSERT_OK(client_->ListSoftDeletedTables(&tables));
+    ASSERT_EQ(1, tables.size());
+    ASSERT_EQ(string(kTableName), tables[0]);
+
+    // Wait for the table has 'disable_compaction' config.
+    AssertEventually([&] {
+      // Reopen table.
+      shared_ptr<KuduTable> t;
+      ASSERT_OK(client_->OpenTable(kTableName, &t));
+      // The compaction is disabled for soft_deleted table.
+      map<string, string> extra_configs = t->extra_configs();
+      ASSERT_TRUE(ContainsKey(extra_configs, "kudu.table.disable_compaction"));
+      ASSERT_EQ("1", extra_configs["kudu.table.disable_compaction"]);
+    }, MonoDelta::FromSeconds(5));
+    NO_PENDING_FATALS();
+  }
+
+  {
+    // Recall and reopen table.
+    vector<string> tables;
+    ASSERT_OK(client_->ListSoftDeletedTables(&tables));
+    ASSERT_EQ(1, tables.size());
+
+    ASSERT_OK(client_->RecallTable(table_id));
+    ASSERT_OK(client_->ListTables(&tables));
+    ASSERT_EQ(1, tables.size());
+    ASSERT_EQ(kTableName, tables[0]);
+    ASSERT_OK(client_->ListSoftDeletedTables(&tables));
+    ASSERT_TRUE(tables.empty());
+
+    // The compaction is enabled for recalled table.
+    AssertEventually([&] {
+      // Reopen table.
+      shared_ptr<KuduTable> t;
+      ASSERT_OK(client_->OpenTable(kTableName, &t));
+      // The compaction is enabled for non soft deleted table.
+      map<string, string> extra_configs = t->extra_configs();
+      ASSERT_TRUE(ContainsKey(extra_configs, "kudu.table.disable_compaction"));
+      ASSERT_EQ("0", extra_configs["kudu.table.disable_compaction"]);
+    }, MonoDelta::FromSeconds(5));
+    NO_PENDING_FATALS();
+  }
 }
 
 TEST_F(ClientTest, TestDeleteWithDeletedTableReserveSeconds) {

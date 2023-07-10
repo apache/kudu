@@ -261,8 +261,18 @@ struct PersistentTableInfo {
            pb.state() == SysTablesEntryPB::SOFT_DELETED;
   }
 
+  // To improve the efficiency of the GC scheduler during the soft
+  // deletion process, we need to disable the corresponding table's
+  // compaction through 'AlterTable'. This is why we introduced a new
+  // approach to determine the soft deletion status based on the table's
+  // status and reserved time, as the existing approach using state to
+  // determine the soft deletion status may return an incorrect result
+  // during the Alter table process.
   bool is_soft_deleted() const {
-    return pb.state() == SysTablesEntryPB::SOFT_DELETED;
+    return pb.state() == SysTablesEntryPB::SOFT_DELETED ||
+        (pb.state() != SysTablesEntryPB::REMOVED &&
+         pb.has_soft_deleted_reserved_seconds() &&
+         pb.soft_deleted_reserved_seconds() != UINT32_MAX);
   }
 
   // Expired table must in SOFT_DELETED state.
@@ -691,13 +701,23 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                RecallDeletedTableResponsePB* resp,
                                rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
 
+  enum class AlterType {
+    // Only normal type tables are allowed to be altered, not soft-deleted tables.
+    kNormal = 0,
+    // Alterations are allowed for both normal type tables and soft-deleted tables.
+    kForceToSoftDeleted
+  };
+
   // Alter the specified table in response to an AlterTableRequest RPC.
   //
   // The RPC context is provided for logging/tracing purposes,
   // but this function does not itself respond to the RPC.
+  // The 'alter_type' used by soft-delete function, which means the table
+  // state will not change to 'ALTERING' for disable the compaction.
   Status AlterTableRpc(const AlterTableRequestPB& req,
                        AlterTableResponsePB* resp,
-                       rpc::RpcContext* rpc);
+                       rpc::RpcContext* rpc,
+                       AlterType alter_type = AlterType::kNormal);
 
   // Alter the specified table in response to an 'ALTER TABLE' HMS
   // notification log listener event.
@@ -985,6 +1005,15 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status RecallDeletedTable(const RecallDeletedTableRequestPB& req,
                             RecallDeletedTableResponsePB* resp,
                             rpc::RpcContext* rpc);
+
+  // Disable compaction for soft deleted table to improve the scheduling performance
+  // of the compaction.
+  Status DisableCompactionForSoftDeletedTable(const DeleteTableRequestPB& req,
+                                              rpc::RpcContext* rpc);
+
+  // Enable compaction for recalled table to make the recalled table turn to normal.
+  Status EnableCompactionforRecalledTable(const RecallDeletedTableRequestPB& req,
+                                          rpc::RpcContext* rpc);
 
   // Check whether the table's write limit is reached,
   // if true, the write permission should be disabled.

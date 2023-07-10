@@ -2635,7 +2635,57 @@ Status CatalogManager::SoftDeleteTable(const DeleteTableRequestPB& req,
   TRACE("Committing in-memory state");
   l.Commit();
 
+  // 7. Disable compaction for soft-deleted table.
+  TRACE("Disable compaction for soft-deleted table");
+  RETURN_NOT_OK(DisableCompactionForSoftDeletedTable(req, rpc));
+
   VLOG(1) << "Soft deleted table " << table->ToString();
+  return Status::OK();
+}
+
+Status CatalogManager::DisableCompactionForSoftDeletedTable(const DeleteTableRequestPB& req,
+                                                            rpc::RpcContext* rpc) {
+  AlterTableRequestPB alter_req;
+  alter_req.mutable_table()->CopyFrom(req.table());
+  (*alter_req.mutable_new_extra_configs())[kTableDisableCompaction] = "true";
+  AlterTableResponsePB alter_resp;
+  // Soft deleted tables cannot set extra configs so we should do this with
+  // 'alter_type' set to kForceToSoftDeleted.
+  Status s = AlterTableRpc(alter_req, &alter_resp, rpc,
+                           /* alter_type */ AlterType::kForceToSoftDeleted);
+  if (!s.ok()) {
+    s = s.CloneAndPrepend("an error occurred while disable compaction for soft deleted table.");
+    LOG(WARNING) << s.ToString();
+    return s;
+  }
+
+  // After the extra config set, we need change the table state to 'soft-deleted'.
+  // But AlterTableRpc is an asynchronous operation, and we cannot wait here for the operation
+  // to complete, as it will cause the soft deletion to timeout. Ultimately, it was decided to
+  // restore the table's state to the 'SOFT_DELETED' state in HandleTabletSchemaVersionReport.
+
+  return Status::OK();
+}
+
+Status CatalogManager::EnableCompactionforRecalledTable(const RecallDeletedTableRequestPB& req,
+                                                        rpc::RpcContext* rpc) {
+  AlterTableRequestPB alter_req;
+  alter_req.mutable_table()->CopyFrom(req.table());
+  (*alter_req.mutable_new_extra_configs())[kTableDisableCompaction] = "false";
+  AlterTableResponsePB alter_resp;
+  // Soft deleted tables cannot set extra configs so we should do this with
+  // 'alter_type' set to kForceToSoftDeleted.
+  Status s = AlterTableRpc(alter_req, &alter_resp, rpc,
+                           /* alter_type */ AlterType::kForceToSoftDeleted);
+  if (!s.ok()) {
+    s = s.CloneAndPrepend("an error occurred while enable compaction for soft deleted table.");
+    LOG(WARNING) << s.ToString();
+    return s;
+  }
+
+  // The state of the recalled soft-deleted table is normal 'RUNNING' state, so there is no need
+  // to process the state of the table here.
+
   return Status::OK();
 }
 
@@ -2838,13 +2888,18 @@ Status CatalogManager::RecallDeletedTableRpc(const RecallDeletedTableRequestPB& 
     alter_req.set_new_table_name(req.new_table_name());
 
     AlterTableResponsePB alter_resp;
-    Status s = AlterTableRpc(alter_req, &alter_resp, rpc);
+    Status s = AlterTableRpc(alter_req, &alter_resp, rpc,
+                             /* alter_type */ AlterType::kForceToSoftDeleted);
     if (!s.ok()) {
       s = s.CloneAndPrepend("an error occurred while renaming the recalled table.");
       LOG(WARNING) << s.ToString();
       return s;
     }
   }
+
+  // Enable compaction for recall deleted table.
+  TRACE("Enable compaction for recall deleted table");
+  RETURN_NOT_OK(EnableCompactionforRecalledTable(req, rpc));
 
   return Status::OK();
 }
@@ -3323,19 +3378,24 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
 Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
                                      AlterTableResponsePB* resp,
-                                     rpc::RpcContext* rpc) {
+                                     rpc::RpcContext* rpc,
+                                     AlterType alter_type) {
   LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
                           RequestorString(rpc), SecureShortDebugString(req));
 
-  bool is_soft_deleted_table = false;
-  bool is_expired_table = false;
-  Status s = GetTableStates(req.table(), kAllTableType, &is_soft_deleted_table, &is_expired_table);
-  // Alter soft_deleted table is not allowed.
-  if (s.ok() && is_soft_deleted_table) {
-    return SetupError(
-        Status::InvalidArgument(Substitute("soft_deleted table $0 should not be altered",
-                                            req.table().table_name())),
-        resp, MasterErrorPB::TABLE_SOFT_DELETED);
+  Status s;
+  if (alter_type == AlterType::kNormal) {
+    bool is_soft_deleted_table = false;
+    bool is_expired_table = false;
+    s = GetTableStates(req.table(), kAllTableType, &is_soft_deleted_table, &is_expired_table);
+    // Alter soft_deleted table is not allowed, unless we have a reason to force a alter,
+    // such as turning off compaction for a soft-deleted table.
+    if (s.ok() && is_soft_deleted_table) {
+      return SetupError(
+          Status::InvalidArgument(Substitute("soft_deleted table $0 should not be altered",
+                                             req.table().table_name())),
+          resp, MasterErrorPB::TABLE_SOFT_DELETED);
+    }
   }
 
   leader_lock_.AssertAcquiredForReading();
@@ -5976,11 +6036,25 @@ void CatalogManager::HandleTabletSchemaVersionReport(
     return;
   }
 
-  // Update the state from altering to running and remove the last fully
-  // applied schema (if it exists).
+  // Update the state from altering and remove the last fully applied
+  // schema (if it exists).
+  // The final state depends on the state before the alteration. If the
+  // alteration is for a soft-deleted table, the state will change to
+  // 'SOFT_DELETED'. If the alteration is for a normal table, the state
+  // will change to 'RUNNING'.
   l.mutable_data()->pb.clear_fully_applied_schema();
-  l.mutable_data()->set_state(SysTablesEntryPB::RUNNING,
-                              Substitute("Current schema version=$0", current_version));
+  // 'soft_deleted_reserved_seconds' is only exist for 'SOFT_DELETED' state.
+  if (l.mutable_data()->pb.has_soft_deleted_reserved_seconds() &&
+      l.mutable_data()->pb.soft_deleted_reserved_seconds() != UINT32_MAX) {
+    string deletion_msg = "Table soft deleted at " +
+                          l.mutable_data()->pb.has_delete_timestamp() ?
+                          std::to_string(l.mutable_data()->pb.delete_timestamp()) :
+                          LocalTimeAsString();
+    l.mutable_data()->set_state(SysTablesEntryPB::SOFT_DELETED, deletion_msg);
+  } else {
+    l.mutable_data()->set_state(SysTablesEntryPB::RUNNING,
+                                Substitute("Current schema version=$0", current_version));
+  }
 
   {
     SysCatalogTable::Actions actions;

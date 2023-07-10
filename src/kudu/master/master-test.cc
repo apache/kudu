@@ -3644,27 +3644,41 @@ TEST_F(MasterStartupTest, StartupWebPage) {
 }
 
 TEST_F(MasterTest, GetTableStatesWithName) {
-  const char* kTableName = "testtable";
+  const char* kTableNameA = "testtablea";
+  const char* kTableNameB = "testtableb";
   const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
   bool is_soft_deleted_table = false;
   bool is_expired_table = false;
-  TableIdentifierPB table_identifier;
-  table_identifier.set_table_name(kTableName);
+  TableIdentifierPB table_identifier_a;
+  table_identifier_a.set_table_name(kTableNameA);
+  TableIdentifierPB table_identifier_b;
+  table_identifier_b.set_table_name(kTableNameB);
 
-  // Create a new table.
-  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+  // Create new tables.
+  ASSERT_OK(CreateTable(kTableNameA, kTableSchema));
+  ASSERT_OK(CreateTable(kTableNameB, kTableSchema));
   ListTablesResponsePB tables;
   NO_FATALS(DoListAllTables(&tables));
-  ASSERT_EQ(1, tables.tables_size());
-  ASSERT_EQ(kTableName, tables.tables(0).name());
-  string table_id = tables.tables(0).id();
-  ASSERT_FALSE(table_id.empty());
+  ASSERT_EQ(2, tables.tables_size());
+  string table_id_a;
+  string table_id_b;
+  for (const auto& table : tables.tables()) {
+    if (table.name() == kTableNameA) {
+      table_id_a = table.id();
+    } else if (table.name() == kTableNameB) {
+      table_id_b = table.id();
+    } else {
+      ASSERT_FALSE(1);
+    }
+  }
+  ASSERT_FALSE(table_id_a.empty());
+  ASSERT_FALSE(table_id_b.empty());
 
   {
     // Default table is not expired.
     CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
     ASSERT_OK(master_->catalog_manager()->GetTableStates(
-        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        table_identifier_a, CatalogManager::TableInfoMapType::kAllTableType,
         &is_soft_deleted_table, &is_expired_table));
     ASSERT_FALSE(is_soft_deleted_table);
     ASSERT_FALSE(is_expired_table);
@@ -3673,22 +3687,21 @@ TEST_F(MasterTest, GetTableStatesWithName) {
   {
     // In reserve time, table is not expired.
     CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
-    ASSERT_OK(SoftDelete(kTableName, 100));
+    ASSERT_OK(SoftDelete(kTableNameA, 100));
     ASSERT_OK(master_->catalog_manager()->GetTableStates(
-        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        table_identifier_a, CatalogManager::TableInfoMapType::kAllTableType,
         &is_soft_deleted_table, &is_expired_table));
     ASSERT_TRUE(is_soft_deleted_table);
     ASSERT_FALSE(is_expired_table);
-    ASSERT_OK(RecallTable(table_id));
   }
 
   {
     // After reserve time, table is expired.
     CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
-    ASSERT_OK(SoftDelete(kTableName, 1));
+    ASSERT_OK(SoftDelete(kTableNameB, 1));
     SleepFor(MonoDelta::FromSeconds(1));
     ASSERT_OK(master_->catalog_manager()->GetTableStates(
-        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        table_identifier_b, CatalogManager::TableInfoMapType::kAllTableType,
         &is_soft_deleted_table, &is_expired_table));
     ASSERT_TRUE(is_soft_deleted_table);
     ASSERT_TRUE(is_expired_table);
@@ -3696,51 +3709,65 @@ TEST_F(MasterTest, GetTableStatesWithName) {
 }
 
 TEST_F(MasterTest, GetTableStatesWithId) {
-  const char* kTableName = "testtable";
+  const char* kTableNameA = "testtablea";
+  const char* kTableNameB = "testtableb";
   const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
   bool is_soft_deleted_table = false;
   bool is_expired_table = false;
 
-  // Create a new table.
-  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+  // Create new tables.
+  ASSERT_OK(CreateTable(kTableNameA, kTableSchema));
+  ASSERT_OK(CreateTable(kTableNameB, kTableSchema));
   ListTablesResponsePB tables;
   NO_FATALS(DoListAllTables(&tables));
-  ASSERT_EQ(1, tables.tables_size());
-  ASSERT_EQ(kTableName, tables.tables(0).name());
-  string table_id = tables.tables(0).id();
-  ASSERT_FALSE(table_id.empty());
-  TableIdentifierPB table_identifier;
-  table_identifier.set_table_id(table_id);
+  ASSERT_EQ(2, tables.tables_size());
+  string table_id_a;
+  string table_id_b;
+  for (const auto& table : tables.tables()) {
+    if (table.name() == kTableNameA) {
+      table_id_a = table.id();
+    } else if (table.name() == kTableNameB) {
+      table_id_b = table.id();
+    } else {
+      ASSERT_FALSE(1);
+    }
+  }
+  ASSERT_FALSE(table_id_a.empty());
+  ASSERT_FALSE(table_id_b.empty());
+
+  TableIdentifierPB table_identifier_a;
+  table_identifier_a.set_table_id(table_id_a);
+  TableIdentifierPB table_identifier_b;
+  table_identifier_b.set_table_id(table_id_b);
 
   {
     // Default table is not expired.
     CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
     ASSERT_OK(master_->catalog_manager()->GetTableStates(
-        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        table_identifier_a, CatalogManager::TableInfoMapType::kAllTableType,
         &is_soft_deleted_table, &is_expired_table));
     ASSERT_FALSE(is_soft_deleted_table);
     ASSERT_FALSE(is_expired_table);
   }
 
   {
-    // In reserve time, table is not expired.
+    // In reserve time, kTableNameA is not expired.
     CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
-    ASSERT_OK(SoftDelete(kTableName, 100));
+    ASSERT_OK(SoftDelete(kTableNameA, 100));
     ASSERT_OK(master_->catalog_manager()->GetTableStates(
-        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        table_identifier_a, CatalogManager::TableInfoMapType::kAllTableType,
         &is_soft_deleted_table, &is_expired_table));
     ASSERT_TRUE(is_soft_deleted_table);
     ASSERT_FALSE(is_expired_table);
-    ASSERT_OK(RecallTable(table_id));
   }
 
   {
-    // After reserve time, table is expired.
+    // After reserve time, kTableNameB is expired.
     CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
-    ASSERT_OK(SoftDelete(kTableName, 1));
+    ASSERT_OK(SoftDelete(kTableNameB, 1));
     SleepFor(MonoDelta::FromSeconds(1));
     ASSERT_OK(master_->catalog_manager()->GetTableStates(
-        table_identifier, CatalogManager::TableInfoMapType::kAllTableType,
+        table_identifier_b, CatalogManager::TableInfoMapType::kAllTableType,
         &is_soft_deleted_table, &is_expired_table));
     ASSERT_TRUE(is_soft_deleted_table);
     ASSERT_TRUE(is_expired_table);
