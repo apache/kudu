@@ -107,6 +107,7 @@ class SubprocessServerTest : public KuduTest {
 
   Status InitSubprocessServer(int java_queue_size,
                               int java_parser_threads,
+                              int java_max_msg_bytes,
                               shared_ptr<SubprocessServer>* out) {
     // Set up a subprocess server pointing at the kudu-subprocess.jar that
     // contains an echo handler and call EchoSubprocessMain.
@@ -130,6 +131,10 @@ class SubprocessServerTest : public KuduTest {
       argv.emplace_back("-p");
       argv.emplace_back(std::to_string(java_parser_threads));
     }
+    if (java_max_msg_bytes > 0) {
+      argv.emplace_back("-m");
+      argv.emplace_back(std::to_string(java_max_msg_bytes));
+    }
     *out = make_shared<SubprocessServer>(env_, pipe_path, std::move(argv),
                                          EchoSubprocessMetrics(metric_entity_));
     return (*out)->Init();
@@ -137,8 +142,9 @@ class SubprocessServerTest : public KuduTest {
 
   // Resets the subprocess server to account for any new configuration.
   Status ResetSubprocessServer(int java_queue_size = 0,
-                               int java_parser_threads = 0) {
-    return InitSubprocessServer(java_queue_size, java_parser_threads, &server_);
+                               int java_parser_threads = 0,
+                               int java_max_msg_bytes = 0) {
+    return InitSubprocessServer(java_queue_size, java_parser_threads, java_max_msg_bytes, &server_);
   }
 
  protected:
@@ -318,10 +324,11 @@ TEST_F(SubprocessServerTest, TestRunFromMultipleThreads) {
   } \
 } while (0);
 
+  threads.reserve(kNumThreads);
   for (int i = 0; i < kNumThreads; i++) {
     threads.emplace_back([&, i] {
       shared_ptr<SubprocessServer> server;
-      EXIT_NOT_OK(InitSubprocessServer(0, 0, &server), i);
+      EXIT_NOT_OK(InitSubprocessServer(0, 0, 0, &server), i);
       const string msg = Substitute("$0 bottles of tea on the wall", i);
       SubprocessRequestPB req = CreateEchoSubprocessRequestPB(msg);
       SubprocessResponsePB resp;
@@ -416,6 +423,44 @@ TEST_F(SubprocessServerTest, UnlimitedPayloadSize) {
   // Just in case, send a longer message: should be OK as well.
   {
     auto req = CreateEchoSubprocessRequestPB(string(1024, 'x'));
+    SubprocessResponsePB res;
+    ASSERT_OK(server_->Execute(&req, &res));
+  }
+}
+
+// Check cases where the message is large enough to not fit in the pipe to be
+// transferred in one single pipe message transmission.
+TEST_F(SubprocessServerTest, LargePayloadSize) {
+  // Set a short timeout to speed up testing.
+  FLAGS_subprocess_timeout_secs = 5;
+  // Set the max message to 24MB (3x the default size)
+  FLAGS_subprocess_max_message_size_bytes =  24 * 1024 * 1024;
+  ASSERT_OK(ResetSubprocessServer(0, 0, 24 * 1024 * 1024));
+
+  // Send in a large message that isn't oversized as per the current limit.
+  {
+    auto req = CreateEchoSubprocessRequestPB(string(23 * 1024 * 1024, 'x'));
+    SubprocessResponsePB res;
+    ASSERT_OK(server_->Execute(&req, &res));
+  }
+
+  // Send a large oversized message.
+  {
+    auto req = CreateEchoSubprocessRequestPB(string(24 * 1024 * 1024, 'x'));
+    SubprocessResponsePB res;
+    const auto s = server_->Execute(&req, &res);
+
+    // The request will timeout because the oversized response is read and
+    // discarded, and there isn't any application-level data to be sent back.
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "timed out while in flight");
+  }
+
+  // Non-oversized follow-up messages should be received without any issues:
+  // the communication channel should be cleared of any oversized requests
+  // sent earlier.
+  {
+    auto req = CreateEchoSubprocessRequestPB(string(23 * 1024 * 1024, 'x'));
     SubprocessResponsePB res;
     ASSERT_OK(server_->Execute(&req, &res));
   }

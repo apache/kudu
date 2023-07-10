@@ -54,7 +54,6 @@ public class MessageIO {
    * from multiple threads concurrently.
    *
    * @return the message in a byte array.
-   * @throws EOFException if the end of the stream has been reached
    * @throws IOException if this input stream has been closed, an I/O
    *                     error occurs, or fail to read the message
    *                     properly
@@ -62,7 +61,7 @@ public class MessageIO {
    *                                 in the stream
    */
   @VisibleForTesting
-  byte[] readBytes() throws EOFException, IOException {
+  byte[] readBytes() throws IOException {
     Preconditions.checkNotNull(in);
     // Read four bytes of the message to get the size of the body.
     byte[] sizeBytes = new byte[Integer.BYTES];
@@ -85,48 +84,58 @@ public class MessageIO {
   /**
    * Reads <code>size</code> bytes of data from the underlying buffered input
    * stream into the specified byte array, starting at the offset <code>0</code>.
+   * The reads are performed until we reach EOF of the stream (when the return
+   * value of the underlying read method is -1) or when we read more than or
+   * equal to the <code>size</code> bytes.
    * If it fails to read the specified size, <code>IOException</code> is thrown.
    *
-   * @throws EOFException if the end of the stream has been reached
    * @throws IOException if this input stream has been closed, an I/O
    *                     error occurs, or fail to read the specified size
    */
-  private void doRead(byte[] bytes, int size) throws EOFException, IOException {
+  private void doRead(byte[] bytes, int size) throws IOException {
     Preconditions.checkNotNull(bytes);
-    int read = in.read(bytes, 0, size);
-    if (read == -1) {
-      throw new EOFException("the end of the stream has been reached");
-    } else if (read != size) {
+    int totalRead = in.read(bytes, 0, size);
+    do {
+      int read = in.read(bytes, totalRead, size - totalRead);
+      if (read == -1) {
+        break;
+      }
+      totalRead += read;
+    } while (totalRead < size);
+    if (totalRead != size) {
       throw new IOException(
-              String.format("unable to receive message, expected (%d) bytes " +
-                            "but read (%d) bytes", size, read));
+          String.format("unable to receive message, expected (%d) bytes " +
+              "but read (%d) bytes.", size, totalRead));
     }
   }
 
   /**
    * Reads <code>size</code> bytes of data from the underlying buffered input
-   * stream and discards all the bytes read.
+   * stream and discards all the bytes read. The reads are performed until we
+   * reach EOF of the stream (when the return value of the underlying read
+   * method is -1) or when we read more than or equal to the
+   * <code>size</code> bytes.
    * If it fails to read the specified size, <code>IOException</code> is thrown.
    *
-   * @throws EOFException if the end of the stream has been reached
    * @throws IOException if this input stream has been closed, an I/O
    *                     error occurs, or fail to read the specified size
    */
-  private void doReadAndDiscard(int size) throws EOFException, IOException {
+  private void doReadAndDiscard(int size) throws IOException {
     byte[] buf = new byte[4096];
     int rem = size;
-    while (rem > 0) {
-      int toRead = Math.min(4096, rem);
+    int toRead = Math.min(4096, rem);
+    do {
       int read = in.read(buf, 0, toRead);
       if (read == -1) {
-        throw new EOFException(String.format("the end of the stream " +
-            "has been reached while reading out oversized message (%d bytes)", size));
-      } else if (read != toRead) {
-        throw new IOException(
-            String.format("unable to read next chunk of oversized message (%d bytes), " +
-                "expected %d bytes but read %d bytes", size, toRead, read));
+        break;
       }
       rem -= read;
+      toRead = Math.min(4096, rem);
+    } while (rem > 0);
+    if (rem > 0) {
+      throw new IOException(
+          String.format("unable to read next chunk of oversized message (%d bytes), " +
+              "expected %d bytes but read %d bytes", size, size, size - rem));
     }
   }
 
