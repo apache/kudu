@@ -229,6 +229,8 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
   public void testMalformedPB() throws Exception {
     SubprocessExecutor executor = setUpExecutorIO(NO_ERR, /*injectIOError*/false);
     requestSenderPipe.write("malformed".getBytes(StandardCharsets.UTF_8));
+    // We need to close the pipe for the read() in InputStream.java to not block
+    requestSenderPipe.close();
     Throwable thrown = Assert.assertThrows(ExecutionException.class,
         () -> executor.run(new SubprocessConfiguration(NO_ARGS),
                            new EchoProtocolHandler(), TIMEOUT_MS));
