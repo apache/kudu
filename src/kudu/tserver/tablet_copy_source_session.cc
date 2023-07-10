@@ -321,14 +321,14 @@ Status TabletCopySourceSession::GetSuperBlockPiece(uint64_t offset,
                                                    TabletCopyErrorPB::Code* error_code) {
   if (offset == 0) {
     RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
-                          fs_manager_->env(), superblock_tmp_path_, tablet_superblock_,
+                          fs_manager_->GetEnv(), superblock_tmp_path_, tablet_superblock_,
                           pb_util::NO_OVERWRITE, pb_util::SYNC,
                           pb_util::SENSITIVE),
                           Substitute("Failed to write tablet metadata $0", tablet_id_));
   }
   unique_ptr<RandomAccessFile> super_block_reader;
-  RETURN_NOT_OK(fs_manager_->env()->NewRandomAccessFile(superblock_tmp_path_,
-                                                        &super_block_reader));
+  RETURN_NOT_OK(fs_manager_->GetEnv()->NewRandomAccessFile(superblock_tmp_path_,
+                                                           &super_block_reader));
   uint64_t file_size;
   RETURN_NOT_OK(super_block_reader->Size(&file_size));
   *superblock_file_size = file_size;
@@ -493,8 +493,8 @@ RemoteTabletCopySourceSession::RemoteTabletCopySourceSession(
 
 RemoteTabletCopySourceSession::~RemoteTabletCopySourceSession() {
   if (!superblock_tmp_path_.empty() &&
-      fs_manager_->env()->FileExists(superblock_tmp_path_)) {
-    CHECK_OK(fs_manager_->env()->DeleteFile(superblock_tmp_path_));
+      fs_manager_->GetEnv()->FileExists(superblock_tmp_path_)) {
+    CHECK_OK(fs_manager_->GetEnv()->DeleteFile(superblock_tmp_path_));
   }
   // No lock taken in the destructor, should only be 1 thread with access now.
   CHECK_OK(UnregisterAnchorIfNeededUnlocked());

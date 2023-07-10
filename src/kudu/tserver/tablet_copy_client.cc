@@ -319,8 +319,8 @@ Status RemoteTabletCopyClient::Start(const HostPort& copy_source_addr,
     // Delete the temporary superblock file finally.
     auto deleter = MakeScopedCleanup([&]() {
       if (!superblock_path.empty() &&
-          dst_fs_manager_->env()->FileExists(superblock_path)) {
-        WARN_NOT_OK(dst_fs_manager_->env()->DeleteFile(superblock_path),
+          dst_fs_manager_->GetEnv()->FileExists(superblock_path)) {
+        WARN_NOT_OK(dst_fs_manager_->GetEnv()->DeleteFile(superblock_path),
                     Substitute("Could not delete temporary superblock file $0",
                                superblock_path));
       }
@@ -330,7 +330,7 @@ Status RemoteTabletCopyClient::Start(const HostPort& copy_source_addr,
     remote_superblock_.reset(new tablet::TabletSuperBlockPB);
     // Load superblock from a local temporary file.
     RETURN_NOT_OK_PREPEND(
-        pb_util::ReadPBContainerFromPath(dst_fs_manager_->env(), superblock_path,
+        pb_util::ReadPBContainerFromPath(dst_fs_manager_->GetEnv(), superblock_path,
                                          remote_superblock_.get(), pb_util::SENSITIVE),
         Substitute("Could not load superblock from $0", superblock_path));
   } else {
@@ -925,7 +925,7 @@ Status RemoteTabletCopyClient::DownloadSuperBlock(string* superblock_path) {
   // Create a temporary file to store the superblock.
   string tmpl = "super_block.tmp.XXXXXX";
   unique_ptr<RWFile> tmp_file;
-  RETURN_NOT_OK_PREPEND(dst_fs_manager_->env()->NewTempRWFile(
+  RETURN_NOT_OK_PREPEND(dst_fs_manager_->GetEnv()->NewTempRWFile(
       RWFileOptions(), tmpl, superblock_path, &tmp_file),
                         "could not create temporary super block data file");
 
