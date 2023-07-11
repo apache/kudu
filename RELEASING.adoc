@@ -268,8 +268,8 @@ NOTE: If `uploadArchives` is executed without `--no-parallel`, uploading a
 number of artifacts fails with "peer not authenticated" errors.
 
 . Build and deploy new binary test JARs for the RC on macOS and Linux. Build
-  the Linux JAR on a CentOS 7 image, and build the macOS JAR on macOS
-  High Sierra if possible (see
+  the Linux JAR on a CentOS 7 image, and build the macOS JAR on macOS Big Sur
+  if possible (see
   link:https://issues.apache.org/jira/browse/KUDU-2724[KUDU-2724] to remove the
   need to build on an old version of macOS).
 +
