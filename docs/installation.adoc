@@ -60,8 +60,7 @@ Linux::
       link:troubleshooting.html#slow_dns_nscd[troubleshooting slow DNS lookups]
       for more information.
 macOS::
-    - macOS 10.13 (High Sierra), macOS 10.14 (Mojave), macOS 10.15 (Catalina),
-      macOS 11 (Big Sur), macOS 12 (Monterey)
+    - macOS 11 (Big Sur), macOS 12 (Monterey), macOS 13 (Ventura)
 
 Windows::
     - Microsoft Windows is unsupported.
