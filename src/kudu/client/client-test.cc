@@ -9479,10 +9479,13 @@ TEST_P(ClientTestImmutableColumn, TestUpsert) {
     EXPECT_EQ(expect_row, rows[0]);
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
   // Perform an UPSERT. This upsert will attemp to update an immutable column,
   // which will result an error.
   Status s = ApplyUpsertToSession(session.get(), client_table_, 1, 4, "upserted row 3",
                                   update_immu_col_to_null_ ? nullopt : optional<int>(999));
+#pragma GCC diagnostic pop
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "failed to flush data: error details are available "
