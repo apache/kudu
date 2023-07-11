@@ -402,7 +402,7 @@ TEST_F(AutoIncrementingItest, BootstrapWalsDiverge) {
     vector<string> result;
     ASSERT_OK(ScanTablet(j, tablet_uuid, &result));
     results.emplace_back(result);
-    j = ++j % kNumTabletServers;
+    j = (j + 1) % kNumTabletServers;
   }
   ASSERT_EQ(kNumTabletServers, results.size());
   for (int i = 0; i < kNumTabletServers - 1; i++) {
