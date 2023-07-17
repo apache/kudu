@@ -18,6 +18,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -65,7 +66,7 @@ class MinidumpExceptionHandler {
   Status DeleteExcessMinidumpFiles(Env* env);
 
   // Get the path to the directory that will be used for writing minidumps.
-  std::string minidump_dir() const;
+  const std::string& minidump_dir() const;
 
  private:
   Status InitMinidumpExceptionHandler();
@@ -79,11 +80,12 @@ class MinidumpExceptionHandler {
   // The number of instnaces of this class that are currently in existence.
   // We keep this counter in order to force a crash if more than one is running
   // at a time, as a sanity check.
-  static std::atomic<int> current_num_instances_;
+  static std::atomic<size_t> current_num_instances_;
 
-  #ifndef __APPLE__
-  std::atomic<bool> user_signal_handler_thread_running_;// Unused in macOS build.
-  #endif
+#ifndef __APPLE__
+  // Unused in macOS build.
+  std::atomic<bool> user_signal_handler_thread_running_ = false;
+#endif
 
   scoped_refptr<Thread> user_signal_handler_thread_;
 

@@ -24,6 +24,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <functional>
 #include <initializer_list>
 #include <memory>
@@ -122,6 +123,8 @@ static sigset_t GetSigset(int signo) {
   return signals;
 }
 
+std::atomic<size_t> MinidumpExceptionHandler::current_num_instances_ = 0;
+
 #if defined(__linux__)
 
 // Called by the exception handler before minidump is produced.
@@ -204,7 +207,10 @@ bool MinidumpExceptionHandler::WriteMinidump() {
 }
 
 Status MinidumpExceptionHandler::InitMinidumpExceptionHandler() {
+  DCHECK(!breakpad_handler_);
+
   minidump_dir_ = FLAGS_minidump_path;
+  CHECK(!minidump_dir_.empty());
   if (minidump_dir_[0] != '/') {
     minidump_dir_ = JoinPathSegments(FLAGS_log_dir, minidump_dir_);
   }
@@ -267,20 +273,24 @@ Status MinidumpExceptionHandler::InitMinidumpExceptionHandler() {
 }
 
 Status MinidumpExceptionHandler::RegisterMinidumpExceptionHandler() {
-  if (!FLAGS_enable_minidumps) return Status::OK();
+  if (!FLAGS_enable_minidumps) {
+    return Status::OK();
+  }
 
   // Ensure only one active instance is alive per process at any given time.
-  CHECK_EQ(0, MinidumpExceptionHandler::current_num_instances_.fetch_add(1));
+  CHECK_EQ(0, current_num_instances_.fetch_add(1));
   RETURN_NOT_OK(InitMinidumpExceptionHandler());
-  RETURN_NOT_OK(StartUserSignalHandlerThread());
-  return Status::OK();
+
+  return StartUserSignalHandlerThread();
 }
 
 void MinidumpExceptionHandler::UnregisterMinidumpExceptionHandler() {
-  if (!FLAGS_enable_minidumps) return;
+  if (!FLAGS_enable_minidumps) {
+    return;
+  }
 
   StopUserSignalHandlerThread();
-  CHECK_EQ(1, MinidumpExceptionHandler::current_num_instances_.fetch_sub(1));
+  CHECK_EQ(1, current_num_instances_.fetch_sub(1));
 }
 
 Status MinidumpExceptionHandler::StartUserSignalHandlerThread() {
@@ -315,16 +325,16 @@ void MinidumpExceptionHandler::RunUserSignalHandlerThread() {
   }
 }
 
-#else // defined(__linux__)
+#else // #if defined(__linux__) ...
 
-// At the time of writing, we don't support breakpad on Mac so we just stub out
-// all the methods defined in the header file.
+// At the time of writing, we support breakpad only on Linux, so we just stub
+// out all the methods defined in the header file, i.e. the methods implemented
+// below in the '#else' macro's scope are all no-op.
 
 Status MinidumpExceptionHandler::InitMinidumpExceptionHandler() {
   return Status::OK();
 }
 
-// No-op on non-Linux platforms.
 Status MinidumpExceptionHandler::RegisterMinidumpExceptionHandler() {
   return Status::OK();
 }
@@ -346,9 +356,7 @@ void MinidumpExceptionHandler::StopUserSignalHandlerThread() {
 void MinidumpExceptionHandler::RunUserSignalHandlerThread() {
 }
 
-#endif // defined(__linux__)
-
-std::atomic<int> MinidumpExceptionHandler::current_num_instances_;
+#endif // if defined(__linux__) ... #else ...
 
 MinidumpExceptionHandler::MinidumpExceptionHandler() {
   CHECK_OK(RegisterMinidumpExceptionHandler());
@@ -362,7 +370,7 @@ Status MinidumpExceptionHandler::DeleteExcessMinidumpFiles(Env* env) {
   // Do not delete minidump files if minidumps are disabled.
   if (!FLAGS_enable_minidumps) return Status::OK();
 
-  int32_t max_minidumps = FLAGS_max_minidumps;
+  const int32_t max_minidumps = FLAGS_max_minidumps;
   // Disable rotation if set to 0 or less.
   if (max_minidumps <= 0) return Status::OK();
 
@@ -377,7 +385,8 @@ Status MinidumpExceptionHandler::DeleteExcessMinidumpFiles(Env* env) {
   return env_util::DeleteExcessFilesByPattern(env, pattern, max_minidumps);
 }
 
-string MinidumpExceptionHandler::minidump_dir() const {
+const string& MinidumpExceptionHandler::minidump_dir() const {
+  DCHECK(breakpad_handler_);
   return minidump_dir_;
 }
 
