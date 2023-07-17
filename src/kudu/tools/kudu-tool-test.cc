@@ -9439,6 +9439,7 @@ TEST_P(DownloadSuperblockInBatchTest, TestDownloadSuperblockInBatch) {
   // So it is easy to make the size of superblock over the value of rpc_max_message_size.
   FLAGS_rpc_max_message_size = kSuperblockSize / 4;
   ASSERT_OK(src_tserver->Restart());
+  ASSERT_OK(src_tserver->WaitStarted());
 
   string source_tserver_rpc_addr = src_tserver->bound_rpc_addr().ToString();
   string wal_dir = dst_tserver->options()->fs_opts.wal_root;
@@ -9447,32 +9448,34 @@ TEST_P(DownloadSuperblockInBatchTest, TestDownloadSuperblockInBatch) {
 
   // Copy tablet replicas from source tserver to destination tserver.
   StringVectorSink capture_logs;
-  ScopedRegisterSink reg(&capture_logs);
   string stderr;
-  RunActionStdoutStderrString(
-      Substitute("local_replica copy_from_remote $0 $1 "
-                 "-fs_data_dirs=$2 -fs_wal_dir=$3 "
-                 "--tablet_copy_support_download_superblock_in_batch=$4 "
-                 // Disable --rpc_max_message_size_enable_validation, so
-                 // --rpc_max_message_size can be set a small value.
-                 "--rpc_max_message_size_enable_validation=false "
-                 // Set --rpc_max_message_size very small, so it is easy for the size of
-                 // superblock over --rpc_max_message_size. It is used to repeat the network
-                 // error, see line 9477.
-                 "--rpc_max_message_size=$5 "
-                 // This flag and --rpc_max_message_size are in a group flag validator, so
-                 // it is also should be set a small value.
-                 "--consensus_max_batch_size_bytes=$6 "
-                 "--encrypt_data_at_rest=$7 "
-                 "--tablet_copy_transfer_chunk_size_bytes=50",
-                 tablet_id_to_copy,
-                 source_tserver_rpc_addr,
-                 data_dirs,
-                 wal_dir,
-                 FLAGS_tablet_copy_support_download_superblock_in_batch,
-                 (kSuperblockSize / 4),
-                 (kSuperblockSize / 8),
-                 FLAGS_encrypt_data_at_rest), nullptr, &stderr);
+  {
+    ScopedRegisterSink rs(&capture_logs);
+    RunActionStderrString(
+        Substitute("local_replica copy_from_remote $0 $1 "
+                  "-fs_data_dirs=$2 -fs_wal_dir=$3 "
+                  "--tablet_copy_support_download_superblock_in_batch=$4 "
+                  // Disable --rpc_max_message_size_enable_validation, so
+                  // --rpc_max_message_size can be set a small value.
+                  "--rpc_max_message_size_enable_validation=false "
+                  // Set --rpc_max_message_size very small, so it is easy for the size of
+                  // superblock over --rpc_max_message_size. It is used to repeat the network
+                  // error, see line 9477.
+                  "--rpc_max_message_size=$5 "
+                  // This flag and --rpc_max_message_size are in a group flag validator, so
+                  // it is also should be set a small value.
+                  "--consensus_max_batch_size_bytes=$6 "
+                  "--encrypt_data_at_rest=$7 "
+                  "--tablet_copy_transfer_chunk_size_bytes=50",
+                  tablet_id_to_copy,
+                  source_tserver_rpc_addr,
+                  data_dirs,
+                  wal_dir,
+                  FLAGS_tablet_copy_support_download_superblock_in_batch,
+                  (kSuperblockSize / 4),
+                  (kSuperblockSize / 8),
+                  FLAGS_encrypt_data_at_rest), &stderr);
+  }
   // The size of superblock is larger than rpc_max_message_size, it will cause a network error.
   // Downloading superblock will fail.
   if (!FLAGS_tablet_copy_support_download_superblock_in_batch) {
