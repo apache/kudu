@@ -270,11 +270,13 @@ Status PartitionSchema::FromPB(
     RETURN_NOT_OK(ExtractColumnIds(range_pb.columns(), schema,
                                    &partition_schema->range_schema_.column_ids));
   } else {
-    // Fill in the default range partition (PK columns).
+    // Fill in the default range partition (PK columns excluding the auto-incrementing column).
     // like the sorting above, this should only happen during table creation
     // while deserializing the user-provided partition schema.
     for (size_t column_idx = 0; column_idx < schema.num_key_columns(); ++column_idx) {
-      partition_schema->range_schema_.column_ids.push_back(schema.column_id(column_idx));
+      if (schema.auto_incrementing_col_idx() != column_idx) {
+        partition_schema->range_schema_.column_ids.push_back(schema.column_id(column_idx));
+      }
     }
   }
 

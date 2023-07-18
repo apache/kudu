@@ -2313,4 +2313,23 @@ TEST_F(PartitionTest, HasCustomHashSchemasWhenAddingAndDroppingRanges) {
   ASSERT_EQ(0, ps.hash_schema_idx_by_encoded_range_start_.size());
 }
 
+// A test scenario to verify we create the default range partition
+// with all the primary keys except auto-incrementing column, if present.
+TEST_F(PartitionTest, PartitionKeyWithAutoIncrementingColumn) {
+  // CREATE TABLE t (c1 STRING, c2 STRING),
+  // NON-UNIQUE PRIMARY KEY (c1)
+  // PARTITION BY HASH (c1) PARTITIONS 2;
+  Schema schema({ ColumnSchema("c1", STRING),
+                  ColumnSchema("auto_increment_id", INT64, false, false, true),
+                  ColumnSchema("c2", STRING) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) }, 2);
+
+  PartitionSchemaPB schema_builder;
+  AddHashDimension(&schema_builder, { "c1" }, 2, 0);
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+
+  ASSERT_EQ(1, partition_schema.range_schema().column_ids.size());
+  ASSERT_EQ("HASH (c1) PARTITIONS 2, RANGE (c1)", partition_schema.DebugString(schema));
+}
 } // namespace kudu
