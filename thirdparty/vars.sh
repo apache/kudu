@@ -162,7 +162,7 @@ PYTHON_SOURCE=$TP_SOURCE_DIR/$PYTHON_NAME
 #
 # The source can be found in the 'kudu' branch of https://github.com/cloudera/catapult
 # and built with "tracing/kudu-build.sh" included within the repository.
-TRACE_VIEWER_VERSION=21d76f8350fea2da2aa25cb6fd512703497d0c11
+TRACE_VIEWER_VERSION=99efe2f56191867ba7bb602c7c227dea6d576d2f
 TRACE_VIEWER_NAME=kudu-trace-viewer-$TRACE_VIEWER_VERSION
 TRACE_VIEWER_SOURCE=$TP_SOURCE_DIR/$TRACE_VIEWER_NAME
 
