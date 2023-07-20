@@ -49,7 +49,7 @@ versions += [
     micrometer     : "1.8.2",
     mockito        : "4.2.0",
     murmur         : "1.0.0",
-    netty          : "4.1.73.Final",
+    netty          : "4.1.94.Final",
     osdetector     : "1.6.2",
     protobuf       : "3.21.12",
     ranger         : "2.1.0",
