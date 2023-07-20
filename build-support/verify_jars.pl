@@ -28,7 +28,7 @@ my $pat_kudu_shaded_prefix = qr{^org/apache/kudu/shaded/};
 
 # Allowed filenames of non-Java files in JARs.
 my $pat_allow_non_java =
-    qr{(?:\.(?:txt|xml|properties|json|proto|MF|jnilib|so|swp)|
+    qr{(?:\.(?:txt|xml|properties|json|proto|MF|jnilib|pro|so|swp)|
           LICENSE|NOTICE|DEPENDENCIES|
           # The kudu-spark DataSourceRegister file.
           DataSourceRegister|
