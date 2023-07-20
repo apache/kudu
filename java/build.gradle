@@ -65,6 +65,14 @@ subprojects {
     exclude group: "org.checkerframework", module: "checker-compat-qual"
     exclude group: "org.codehaus.mojo", module: "animal-sniffer-annotations"
   }
+
+  sourceSets {
+    all {
+      configurations.all { conf ->
+        attributes.attribute(Attribute.of("org.gradle.jvm.environment", String), "standard-jvm")
+      }
+    }
+  }
 }
 
 // A task that does nothing, but is useful to ensure the Gradle build and tasks are initialized.
