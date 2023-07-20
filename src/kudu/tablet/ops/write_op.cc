@@ -72,6 +72,12 @@ DEFINE_int32(tablet_inject_latency_on_apply_write_op_ms, 0,
 TAG_FLAG(tablet_inject_latency_on_apply_write_op_ms, unsafe);
 TAG_FLAG(tablet_inject_latency_on_apply_write_op_ms, runtime);
 
+DEFINE_int32(tablet_inject_latency_on_prepare_write_op_ms, 0,
+             "How much latency to inject when a write op is prepared. "
+             "For testing only!");
+TAG_FLAG(tablet_inject_latency_on_prepare_write_op_ms, unsafe);
+TAG_FLAG(tablet_inject_latency_on_prepare_write_op_ms, runtime);
+
 DECLARE_bool(enable_txn_partition_lock);
 
 using std::optional;
@@ -164,6 +170,12 @@ void WriteOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
 
 Status WriteOp::Prepare() {
   TRACE_EVENT0("op", "WriteOp::Prepare");
+
+  if (PREDICT_FALSE(FLAGS_tablet_inject_latency_on_prepare_write_op_ms) > 0) {
+    TRACE("injecting $0ms of latency due to --tablet_inject_latency_on_prepare_write_op_ms",
+          FLAGS_tablet_inject_latency_on_prepare_write_op_ms);
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_inject_latency_on_prepare_write_op_ms));
+  }
 
   Tablet* tablet = state()->tablet_replica()->tablet();
   TRACE(Substitute("PREPARE: starting on tablet $0", tablet->tablet_id()));

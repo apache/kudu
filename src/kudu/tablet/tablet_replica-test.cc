@@ -431,7 +431,8 @@ TEST_F(TabletReplicaTest, TestActiveOpPreventsLogGC) {
 
     scoped_refptr<OpDriver> driver;
     ASSERT_OK(tablet_replica_->NewLeaderOpDriver(std::move(op),
-                                                 &driver));
+                                                 &driver,
+                                                 MonoTime::Max()));
     driver->ExecuteAsync();
     apply_started.Wait();
     ASSERT_TRUE(driver->GetOpId().IsInitialized())

@@ -188,6 +188,15 @@ METRIC_DEFINE_counter(tablet, deleted_rowset_gc_bytes_deleted,
                       "Number of bytes deleted by garbage-collecting deleted rowsets.",
                       kudu::MetricLevel::kDebug);
 
+METRIC_DEFINE_counter(tablet, ops_timed_out_in_prepare_queue,
+                      "Number of Requests Timed Out In Prepare Queue",
+                      kudu::MetricUnit::kRequests,
+                      "Number of WriteRequest RPCs that timed out while their "
+                      "corresponding operations were waiting in the tablet's "
+                      "prepare queue, and thus were not started but "
+                      "acknowledged with TimedOut error status.",
+                      kudu::MetricLevel::kInfo);
+
 METRIC_DEFINE_histogram(tablet, bloom_lookups_per_op, "Bloom Lookups per Operation",
                         kudu::MetricUnit::kProbes,
                         "Tracks the number of bloom filter lookups performed by each "
@@ -424,6 +433,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(bytes_flushed),
     MINIT(deleted_rowset_gc_bytes_deleted),
     MINIT(undo_delta_block_gc_bytes_deleted),
+    MINIT(ops_timed_out_in_prepare_queue),
     MINIT(bloom_lookups_per_op),
     MINIT(key_file_lookups_per_op),
     MINIT(delta_file_lookups_per_op),
