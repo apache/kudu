@@ -43,9 +43,11 @@
 #include "kudu/tablet/op_order_verifier.h"
 #include "kudu/tablet/ops/op_tracker.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status_callback.h"
 #include "kudu/util/threadpool.h"
@@ -107,7 +109,8 @@ OpDriver::OpDriver(OpTracker *op_tracker,
                    Log* log,
                    ThreadPoolToken* prepare_pool_token,
                    ThreadPool* apply_pool,
-                   OpOrderVerifier* order_verifier)
+                   OpOrderVerifier* order_verifier,
+                   MonoTime deadline)
     : op_tracker_(op_tracker),
       consensus_(consensus),
       log_(log),
@@ -115,6 +118,7 @@ OpDriver::OpDriver(OpTracker *op_tracker,
       apply_pool_(apply_pool),
       order_verifier_(order_verifier),
       trace_(new Trace()),
+      deadline_(deadline),
       start_time_(MonoTime::Now()),
       replication_state_(NOT_REPLICATING),
       prepare_state_(NOT_PREPARED) {
@@ -233,9 +237,18 @@ void OpDriver::ExecuteAsync() {
 
 void OpDriver::PrepareTask() {
   TRACE_EVENT_FLOW_END0("op", "PrepareTask", this);
-  Status prepare_status = Prepare();
+  if (PREDICT_FALSE(deadline_ <= MonoTime::Now())) {
+    static const Status kTimedOut = Status::TimedOut(
+        "operation timed out while waiting in prepare queue");
+    if (auto* m = op_->state()->tablet_replica()->tablet()->metrics();
+        PREDICT_TRUE(m)) {
+      m->ops_timed_out_in_prepare_queue->Increment();
+    }
+    return HandleFailure(kTimedOut);
+  }
+  const auto prepare_status = Prepare();
   if (PREDICT_FALSE(!prepare_status.ok())) {
-    HandleFailure(prepare_status);
+    return HandleFailure(prepare_status);
   }
 }
 

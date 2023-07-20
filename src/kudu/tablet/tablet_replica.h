@@ -46,6 +46,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -53,7 +54,6 @@ class AlterTableTest;
 class DnsResolver;
 class MaintenanceManager;
 class MaintenanceOp;
-class MonoDelta;
 class ThreadPool;
 class ThreadPoolToken;
 class TxnOpDispatcherITest;
@@ -180,8 +180,10 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   // Submits a write to a tablet and executes it asynchronously.
   // The caller is expected to build and pass a WriteOpState that points to the
-  // RPC's WriteRequest, and WriteResponse.
-  Status SubmitWrite(std::unique_ptr<WriteOpState> op_state);
+  // RPC's WriteRequest, and WriteResponse. The 'deadline' parameter corresponds
+  // to the timeout of the corresponding RPC, if present/specified.
+  Status SubmitWrite(std::unique_ptr<WriteOpState> op_state,
+                     MonoTime deadline = MonoTime::Max());
 
   // Submits an op to update transaction participant state, executing it
   // asynchonously.
@@ -190,7 +192,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Called by the tablet service to start an alter schema op.
   //
   // The op contains all the information required to execute the
-  // AlterSchema operation and send the response back.
+  // AlterSchema operation and send the response back. The 'deadline' parameter
+  // corresponds to the timeout of the corresponding RPC, if present/specified.
   //
   // If the returned Status is OK, the response to the client will be sent
   // asynchronously. Otherwise the tablet service will have to send the response directly.
@@ -198,7 +201,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // The AlterSchema operation is taking the tablet component lock in exclusive mode
   // meaning that no other operation on the tablet can be executed while the
   // AlterSchema is in progress.
-  Status SubmitAlterSchema(std::unique_ptr<AlterSchemaOpState> op_state);
+  Status SubmitAlterSchema(std::unique_ptr<AlterSchemaOpState> op_state,
+                           MonoTime deadline = MonoTime::Max());
 
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 
@@ -308,8 +312,12 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Convenience method to return the permanent_uuid of this peer.
   std::string permanent_uuid() const { return tablet_->metadata()->fs_manager()->uuid(); }
 
+  // The 'deadline' parameter is used to short-cuircut processing operations
+  // that have timed out while in the prepare queue. For most call sites,
+  // the deadline is naturally defined by the corresponding RPC.
   Status NewLeaderOpDriver(std::unique_ptr<Op> op,
-                           scoped_refptr<OpDriver>* driver);
+                           scoped_refptr<OpDriver>* driver,
+                           MonoTime deadline);
 
   Status NewReplicaOpDriver(std::unique_ptr<Op> op,
                             scoped_refptr<OpDriver>* driver);

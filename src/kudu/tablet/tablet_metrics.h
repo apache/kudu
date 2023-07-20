@@ -76,6 +76,7 @@ struct TabletMetrics {
   scoped_refptr<Counter> bytes_flushed;
   scoped_refptr<Counter> deleted_rowset_gc_bytes_deleted;
   scoped_refptr<Counter> undo_delta_block_gc_bytes_deleted;
+  scoped_refptr<Counter> ops_timed_out_in_prepare_queue;
 
   scoped_refptr<Histogram> bloom_lookups_per_op;
   scoped_refptr<Histogram> key_file_lookups_per_op;

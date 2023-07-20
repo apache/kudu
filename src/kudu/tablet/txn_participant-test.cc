@@ -69,6 +69,7 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -999,7 +1000,7 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
   scoped_refptr<OpDriver> driver;
   unique_ptr<DelayedParticipantOp> op(
       new DelayedParticipantOp(&apply_start, &apply_continue, std::move(op_state)));
-  ASSERT_OK(tablet_replica_->NewLeaderOpDriver(std::move(op), &driver));
+  ASSERT_OK(tablet_replica_->NewLeaderOpDriver(std::move(op), &driver, MonoTime::Max()));
   driver->ExecuteAsync();
   // Wait for the apply to start, indicating that we have persisted and
   // replicated but not yet Raft committed the participant op.

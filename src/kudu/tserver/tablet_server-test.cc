@@ -197,6 +197,7 @@ DECLARE_int32(maintenance_manager_num_threads);
 DECLARE_int32(maintenance_manager_polling_interval_ms);
 DECLARE_int32(memory_pressure_percentage);
 DECLARE_int32(metrics_retirement_age_ms);
+DECLARE_int32(rpc_num_service_threads);
 DECLARE_int32(rpc_service_queue_length);
 DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(scanner_gc_check_interval_us);
@@ -205,6 +206,7 @@ DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(slow_scanner_threshold_ms);
 DECLARE_int32(tablet_bootstrap_inject_latency_ms);
 DECLARE_int32(tablet_inject_latency_on_apply_write_op_ms);
+DECLARE_int32(tablet_inject_latency_on_prepare_write_op_ms);
 DECLARE_int32(workload_stats_rate_collection_min_interval_ms);
 DECLARE_int32(workload_stats_metric_collection_interval_ms);
 DECLARE_string(block_manager);
@@ -216,6 +218,7 @@ DECLARE_uint32(tablet_apply_pool_overload_threshold_ms);
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
 METRIC_DECLARE_counter(log_block_manager_holes_punched);
+METRIC_DECLARE_counter(ops_timed_out_in_prepare_queue);
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
 METRIC_DECLARE_counter(rows_deleted);
@@ -4931,6 +4934,96 @@ TEST_F(OpApplyQueueTest, ApplyQueueBackpressure) {
     EXPECT_LT(h->MaxValue(), 3 * kNumCalls / 4);
     EXPECT_LT(h->MeanValue(), kNumCalls / 2);
   }
+}
+
+class OpPrepareQueueTest : public TabletServerTestBase {
+ public:
+  void SetUp() override {
+    // To have the expected sequence of hanling requests sent out in
+    // asynchronous manner regardless of any scheduler anomalies, run just
+    // a single thread in the service pool.
+    FLAGS_rpc_num_service_threads = 1;
+
+    NO_FATALS(TabletServerTestBase::SetUp());
+    NO_FATALS(StartTabletServer(/*num_data_dirs=*/1));
+  }
+};
+
+// This test verifies that write requests that time out in the prepare queue
+// aren't processed any further, but responded with TimedOut error status
+// even before starting the PREPARE phase of the operation processing.
+TEST_F(OpPrepareQueueTest, RequestTimesOutInPrepareQueue) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  constexpr const int32_t kLatencyMs = 3000;
+
+  // Instantiate metrics to be used in this scenario.
+  scoped_refptr<TabletReplica> tablet;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+  const auto& metric_entity = tablet->tablet()->GetMetricEntity();
+  ASSERT_TRUE(metric_entity);
+  scoped_refptr<Counter> timed_out_ops_num =
+      METRIC_ops_timed_out_in_prepare_queue.Instantiate(metric_entity);
+
+  // Inject latency into the PREPARE phase of every write operation.
+  FLAGS_tablet_inject_latency_on_prepare_write_op_ms = kLatencyMs;
+
+  CountDownLatch latch(2);
+  auto cbk = [&latch]() {
+    latch.CountDown();
+  };
+
+  WriteRequestPB req0;
+  req0.set_tablet_id(kTabletId);
+  ASSERT_OK(SchemaToPB(schema_, req0.mutable_schema()));
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 0, 0, "req0",
+                 req0.mutable_row_operations());
+
+  // Set timeout to be longer than the injected delay to make sure the first
+  // write request doesn't time out.
+  RpcController ctl0;
+  ctl0.set_timeout(MonoDelta::FromMilliseconds(2 * kLatencyMs));
+  WriteResponsePB resp0;
+  proxy_->WriteAsync(req0, &resp0, &ctl0, cbk);
+
+  // Make sure no operations has timed out yet in the queue.
+  ASSERT_EQ(0, timed_out_ops_num->value());
+
+  // Send another write request to a tablet server. Due to the injected latency,
+  // it takes a long time to process the first request, so the second request
+  // will be waiting in the prepare queue since there is a just single thread
+  // in the tablet's prepare thread pool.
+  WriteRequestPB req1;
+  req1.set_tablet_id(kTabletId);
+  ASSERT_OK(SchemaToPB(schema_, req1.mutable_schema()));
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1, 1, "req1",
+                 req1.mutable_row_operations());
+
+  // Set timeout to be less than the injected latency to make sure the request
+  // would time out in the prepare queue.
+  RpcController ctl1;
+  ctl1.set_timeout(MonoDelta::FromMilliseconds(kLatencyMs / 2));
+  WriteResponsePB resp1;
+  proxy_->WriteAsync(req1, &resp1, &ctl1, cbk);
+
+  // Wait until both the requests have been responded to.
+  latch.Wait();
+
+  // There should be a single operation timed out in the prepare queue: that's
+  // the operation corresponding to 'req1'.
+  ASSERT_EQ(1, timed_out_ops_num->value());
+
+  // The first request should succeed since its timeout is higher than
+  // the injected latency.
+  ASSERT_FALSE(resp0.has_error());
+  ASSERT_OK(ctl0.status());
+
+  // The second request should time out, and the metrics readings above prove
+  // it has been timed out in the prepare queue, so the corresponding operation
+  // hasn't been started.
+  ASSERT_FALSE(resp1.has_error());
+  const auto& s = ctl1.status();
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
 } // namespace tserver

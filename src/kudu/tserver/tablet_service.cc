@@ -1209,7 +1209,8 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
       new RpcOpCompletionCallback<AlterSchemaResponsePB>(context, resp)));
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
-  Status s = replica->SubmitAlterSchema(std::move(op_state));
+  Status s = replica->SubmitAlterSchema(std::move(op_state),
+                                        context->GetClientDeadline());
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -1674,7 +1675,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
         new RpcOpCompletionCallback<WriteResponsePB>(context, resp)));
 
     // Submit the write operation. The RPC will be responded asynchronously.
-    s = replica->SubmitWrite(std::move(op_state));
+    s = replica->SubmitWrite(std::move(op_state), deadline);
   } else {
     if (!FLAGS_enable_txn_system_client_init) {
       return SetupErrorAndRespond(

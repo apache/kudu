@@ -229,7 +229,8 @@ class OpDriver : public RefCountedThreadSafe<OpDriver> {
            log::Log* log,
            ThreadPoolToken* prepare_pool_token,
            ThreadPool* apply_pool,
-           OpOrderVerifier* order_verifier);
+           OpOrderVerifier* order_verifier,
+           MonoTime deadline = MonoTime::Max());
 
   // Perform any non-constructor initialization. Sets the op that will be
   // executed.
@@ -377,6 +378,10 @@ class OpDriver : public RefCountedThreadSafe<OpDriver> {
 
   // Trace object for tracing any ops started by this driver.
   scoped_refptr<Trace> trace_;
+
+  // Deadline for the operation, if any. It's propagated from the corresponding
+  // client RPC, and set to MonoTime::Max() if no deadline has been specified.
+  const MonoTime deadline_;
 
   const MonoTime start_time_;
   MonoTime replication_start_time_;

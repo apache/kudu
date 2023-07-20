@@ -591,13 +591,14 @@ Status TabletReplica::UnregisterTxnOpDispatcher(int64_t txn_id,
   return unregister_status;
 }
 
-Status TabletReplica::SubmitWrite(unique_ptr<WriteOpState> op_state) {
+Status TabletReplica::SubmitWrite(unique_ptr<WriteOpState> op_state,
+                                  MonoTime deadline) {
   RETURN_NOT_OK(CheckRunning());
 
   op_state->SetResultTracker(result_tracker_);
   unique_ptr<WriteOp> op(new WriteOp(std::move(op_state), consensus::LEADER));
   scoped_refptr<OpDriver> driver;
-  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
+  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver, deadline));
   driver->ExecuteAsync();
   return Status::OK();
 }
@@ -608,18 +609,19 @@ Status TabletReplica::SubmitTxnParticipantOp(std::unique_ptr<ParticipantOpState>
   op_state->SetResultTracker(result_tracker_);
   unique_ptr<ParticipantOp> op(new ParticipantOp(std::move(op_state), consensus::LEADER));
   scoped_refptr<OpDriver> driver;
-  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
+  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver, MonoTime::Max()));
   driver->ExecuteAsync();
   return Status::OK();
 }
 
-Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaOpState> state) {
+Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaOpState> state,
+                                        MonoTime deadline) {
   RETURN_NOT_OK(CheckRunning());
 
   unique_ptr<AlterSchemaOp> op(
       new AlterSchemaOp(std::move(state), consensus::LEADER));
   scoped_refptr<OpDriver> driver;
-  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
+  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver, deadline));
   driver->ExecuteAsync();
   return Status::OK();
 }
@@ -897,14 +899,16 @@ void TabletReplica::FinishConsensusOnlyRound(ConsensusRound* round) {
 }
 
 Status TabletReplica::NewLeaderOpDriver(unique_ptr<Op> op,
-                                        scoped_refptr<OpDriver>* driver) {
+                                        scoped_refptr<OpDriver>* driver,
+                                        MonoTime deadline) {
   scoped_refptr<OpDriver> op_driver = new OpDriver(
     &op_tracker_,
     consensus_.get(),
     log_.get(),
     prepare_pool_token_.get(),
     apply_pool_,
-    &op_order_verifier_);
+    &op_order_verifier_,
+    deadline);
   RETURN_NOT_OK(op_driver->Init(std::move(op), consensus::LEADER));
   *driver = std::move(op_driver);
 
