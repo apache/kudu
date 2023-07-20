@@ -1363,28 +1363,33 @@ void Tablet::AbortTransaction(Txn* txn,  const OpId& op_id) {
 }
 
 Status Tablet::ApplyRowOperations(WriteOpState* op_state) {
-  int num_ops = op_state->row_ops().size();
-
+  const size_t num_ops = op_state->row_ops().size();
   StartApplying(op_state);
 
+  TRACE("starting BulkCheckPresence");
   IOContext io_context({ tablet_id() });
   RETURN_NOT_OK(BulkCheckPresence(&io_context, op_state));
+  TRACE("finished BulkCheckPresence");
 
+  TRACE("starting ApplyRowOperation cycle");
   // Actually apply the ops.
-  for (int op_idx = 0; op_idx < num_ops; op_idx++) {
+  for (size_t op_idx = 0; op_idx < num_ops; ++op_idx) {
     RowOp* row_op = op_state->row_ops()[op_idx];
-    if (row_op->has_result()) continue;
+    if (row_op->has_result()) {
+      continue;
+    }
     RETURN_NOT_OK(ApplyRowOperation(&io_context, op_state, row_op,
                                     op_state->mutable_op_stats(op_idx)));
     DCHECK(row_op->has_result());
   }
+  TRACE("finished ApplyRowOperation cycle");
 
   {
     std::lock_guard<rw_spinlock> l(last_rw_time_lock_);
     last_write_time_ = MonoTime::Now();
   }
 
-  if (metrics_ && num_ops > 0) {
+  if (metrics_ && PREDICT_TRUE(num_ops > 0)) {
     metrics_->AddProbeStats(op_state->mutable_op_stats(0), num_ops, op_state->arena());
   }
   return Status::OK();

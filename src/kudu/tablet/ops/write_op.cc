@@ -166,7 +166,7 @@ Status WriteOp::Prepare() {
   TRACE_EVENT0("op", "WriteOp::Prepare");
 
   Tablet* tablet = state()->tablet_replica()->tablet();
-  TRACE(Substitute("PREPARE: Starting on tablet $0", tablet->tablet_id()));
+  TRACE(Substitute("PREPARE: starting on tablet $0", tablet->tablet_id()));
   // Decode everything first so that we give up if something major is wrong.
   Schema client_schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(state_->request()->schema(), &client_schema),
@@ -243,7 +243,7 @@ Status WriteOp::Prepare() {
   }
   RETURN_NOT_OK(tablet->AcquireRowLocks(state()));
 
-  TRACE("PREPARE: Finished");
+  TRACE("PREPARE: finished");
   return Status::OK();
 }
 
@@ -283,7 +283,7 @@ void WriteOp::UpdatePerRowMetricsAndErrors() {
 // it seems pointless to return a Status!
 Status WriteOp::Apply(CommitMsg** commit_msg) {
   TRACE_EVENT0("op", "WriteOp::Apply");
-  TRACE("APPLY: Starting");
+  TRACE("APPLY: starting");
 
   if (PREDICT_FALSE(ANNOTATE_UNPROTECTED_READ(
       FLAGS_tablet_inject_latency_on_apply_write_op_ms) > 0)) {
@@ -294,7 +294,7 @@ Status WriteOp::Apply(CommitMsg** commit_msg) {
 
   Tablet* tablet = state()->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->ApplyRowOperations(state()));
-  TRACE("APPLY: Finished");
+  TRACE("APPLY: finished");
 
   UpdatePerRowMetricsAndErrors();
 

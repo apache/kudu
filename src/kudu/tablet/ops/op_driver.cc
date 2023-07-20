@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -39,10 +40,10 @@
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tablet/mvcc.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/op_order_verifier.h"
 #include "kudu/tablet/ops/op_tracker.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
@@ -314,7 +315,7 @@ Status OpDriver::Prepare() {
                         mutable_state()->consensus_round()->replicate_msg()));
       RETURN_NOT_OK(op_->Start());
       VLOG_WITH_PREFIX(4) << "Triggering consensus replication.";
-      TRACE("REPLICATION: Starting.");
+      TRACE("REPLICATION: starting");
       // Trigger consensus replication.
       {
         std::lock_guard<simple_spinlock> lock(lock_);
@@ -427,7 +428,7 @@ void OpDriver::ReplicationFinished(const Status& status) {
   }
 
   TRACE_COUNTER_INCREMENT("replication_time_us", replication_duration.ToMicroseconds());
-  TRACE("REPLICATION: Finished.");
+  TRACE("REPLICATION: finished");
 
   // If we have prepared and replicated, we're ready
   // to move ahead and apply this operation.
@@ -533,7 +534,7 @@ void OpDriver::ApplyTask() {
     // until now.earliest > prepare_latest. Only after this are the locks
     // released.
     if (mutable_state()->external_consistency_mode() == COMMIT_WAIT) {
-      TRACE("APPLY: Commit Wait.");
+      TRACE("APPLY: CommitWait");
       // If we can't commit wait and have already applied we might have consistency
       // issues if we still reply to the client that the operation was a success.
       // On the other hand we don't have rollbacks as of yet thus we can't undo the
