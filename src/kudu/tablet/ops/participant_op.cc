@@ -160,7 +160,7 @@ void ParticipantOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
 
 Status ParticipantOp::Prepare() {
   TRACE_EVENT0("op", "ParticipantOp::Prepare");
-  TRACE("PREPARE: Starting.");
+  TRACE("PREPARE: starting");
   state_->AcquireTxnAndLock();
   RETURN_NOT_OK(state_->ValidateOp());
 
@@ -196,7 +196,7 @@ Status ParticipantOp::Prepare() {
       // Nothing to do in all other cases.
       break;
   }
-  TRACE("PREPARE: Finished.");
+  TRACE("PREPARE: finished");
   return Status::OK();
 }
 
@@ -262,12 +262,12 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* table
 
 Status ParticipantOp::Apply(CommitMsg** commit_msg) {
   TRACE_EVENT0("op", "ParticipantOp::Apply");
-  TRACE("APPLY: Starting.");
+  TRACE("APPLY: starting");
   state_->tablet_replica()->tablet()->StartApplying(state_.get());
   CHECK_OK(state_->PerformOp(state()->op_id(), state_->tablet_replica()->tablet()));
   *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(state_->pb_arena());
   (*commit_msg)->set_op_type(OperationType::PARTICIPANT_OP);
-  TRACE("APPLY: Finished.");
+  TRACE("APPLY: finished");
   return Status::OK();
 }
 
