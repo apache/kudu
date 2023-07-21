@@ -119,6 +119,11 @@ this functionality, use the newly introduced `SetSplitSizeBytes()` method of the
 specify how many bytes of data each token should scan
 (see link:https://issues.apache.org/jira/browse/KUDU-3393[KUDU-3393]).
 
+* Kudu's default replica placement algorithm is now range and table aware to prevent hotspotting
+unlike the old power of two choices algorithm. New replicas from the same range are spread evenly
+across available tablet servers, the table the range belongs to is used as a tiebreaker (see
+link:https://issues.apache.org/jira/browse/KUDU-3476[KUDU-3476]).
+
 * Statistics on various write operations is now available via Kudu client API at the session level
 (see link:https://issues.apache.org/jira/browse/KUDU-3351[KUDU-3351],
 link:https://issues.apache.org/jira/browse/KUDU-3365[KUDU-3365]).
