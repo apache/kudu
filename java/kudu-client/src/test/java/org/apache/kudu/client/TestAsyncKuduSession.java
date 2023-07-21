@@ -396,7 +396,9 @@ public class TestAsyncKuduSession {
   public void testFlushBySize() throws Exception {
     AsyncKuduSession session = client.newSession();
     final int kBufferSizeOps = 10;
-    final int kNumOps = 2;
+    // Considering the existence of buffers, we set a number of operations that is significantly
+    // larger than the number of buffers to ensure that the buffers are triggered to flush.
+    final int kNumOps = 100;
     // Set a small buffer size so we should flush every time.
     session.setMutationBufferSpace(kBufferSizeOps, 1);
     // Set a large flush interval so if the flush by size function is not correctly implemented,
@@ -405,21 +407,28 @@ public class TestAsyncKuduSession {
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
 
     for (int i = 0; i < kNumOps; i++) {
-      // Should always flush immediately so here join will return soon.
-      OperationResponse resp = session.apply(createInsert(i)).join(DEFAULT_SLEEP);
-      assertFalse(resp.hasRowError());
+      // If the client tries to buffer many more operations, it may receive a
+      // PleaseThrottleException. In this case, if the client simply waits for a flush notification
+      // on the Deferred returned with the exception, it can continue to buffer operations.
+      Insert insert = createInsert(i);
+      try {
+        session.apply(insert);
+      } catch (PleaseThrottleException ex) {
+        ex.getDeferred().join(DEFAULT_SLEEP);
+        session.apply(insert);
+      }
     }
-    // Mode AUTO_FLUSH_BACKGROUND also takes time, so we may need wait here.
-    assertEventuallyTrue(String.format("Timeout for flush pending operations"),
-        new BooleanExpression() {
-          @Override
-          public boolean get() throws Exception {
-            return !session.hasPendingOperations();
-          }
-        }, /* timeoutMillis = */500000);
+    // There might be pending requests in the cache, but the above operation should not generate any
+    // errors.
     assertEquals(0, session.countPendingErrors());
     // Confirm that we can still make progress.
-    session.apply(createInsert(kNumOps)).join(DEFAULT_SLEEP);
+    Insert insert = createInsert(kNumOps);
+    try {
+      session.apply(insert);
+    } catch (PleaseThrottleException ex) {
+      ex.getDeferred().join(DEFAULT_SLEEP);
+      session.apply(insert);
+    }
 
     for (OperationResponse resp: session.flush().join(DEFAULT_SLEEP)) {
       assertFalse(resp.hasRowError());
