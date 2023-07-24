@@ -315,6 +315,11 @@ further messages after encountering such a condition.
 running on a machine lacking SSE4.2 support (see
 link:https://issues.apache.org/jira/browse/KUDU-3248[KUDU-3248]).
 
+* Fixed a bug where the subprocess crashes in case of receiving large messages from the Kudu master
+when the pipe gets full to transport the entire message in one go or when there is a delay in
+sending from the master (see
+link:https://issues.apache.org/jira/browse/KUDU-3489[KUDU-3489]).
+
 [[rn_1.17.0_wire_compatibility]]
 == Wire Protocol compatibility
 
