@@ -67,23 +67,24 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::client::KuduClient;
+using kudu::client::KuduSchema;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::ClusterNodes;
+using kudu::tools::RunKuduTool;
 using std::multimap;
 using std::set;
 using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
+using strings::Split;
 using strings::Substitute;
 
 METRIC_DECLARE_entity(server);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_CreateTablet);
 
 namespace kudu {
-
-using client::KuduClient;
-using client::KuduSchema;
-using client::sp::shared_ptr;
-using cluster::ClusterNodes;
 
 const char* const kTableName = "test-table";
 
@@ -757,7 +758,7 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
   };
   NO_FATALS(StartCluster({}, master_flags, kNumTabletServers));
 
-  string master_address = cluster_->master()->bound_rpc_addr().ToString();
+  const auto& master_address = cluster_->master()->bound_rpc_addr().ToString();
 
   auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
   auto create_table_func = [&](const string& table_name, int replica_num) -> Status {
@@ -783,7 +784,7 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
   {
     // Shutdown 3 tablet servers.
     for (int i = 0; i < 3; i++) {
-      NO_FATALS(cluster_->tablet_server(i)->Shutdown());
+      cluster_->tablet_server(i)->Shutdown();
     }
     // Wait the 3 tablet servers heartbeat timeout and unresponsive timeout. Then catalog
     // manager will take them as unavailable tablet servers. KSCK gets the status of tablet
@@ -801,7 +802,7 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
 
   {
     // Restart the first tablet server.
-    NO_FATALS(cluster_->tablet_server(0)->Restart());
+    ASSERT_OK(cluster_->tablet_server(0)->Restart());
     // Wait the restarted tablet server to send a heartbeat and be registered in catalog manager.
     SleepFor(MonoDelta::FromMilliseconds(kHeartbeatIntervalMs));
   }
@@ -811,7 +812,7 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
 
   {
     // Restart the second tablet server.
-    NO_FATALS(cluster_->tablet_server(1)->Restart());
+    ASSERT_OK(cluster_->tablet_server(1)->Restart());
     // Wait the restarted tablet server to send a heartbeat and be registered in catalog manager.
     SleepFor(MonoDelta::FromMilliseconds(kHeartbeatIntervalMs));
   }
@@ -833,10 +834,13 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
   }
 
   {
-    string out;
-    string cmd = Substitute(
+    const string cmd = Substitute(
       "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact", master_address);
-    kudu::tools::RunKuduTool(strings::Split(cmd, " ", strings::SkipEmpty()), &out);
+    string out;
+    const auto s = RunKuduTool(Split(cmd, " ", strings::SkipEmpty()), &out);
+    // Since there are under-replicated tables, the ksck tool exits
+    // with non-zero code.
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     rapidjson::Document doc;
     doc.Parse<0>(out.c_str());
     ASSERT_EQ(3, doc["table_summaries"].Size());
@@ -852,26 +856,34 @@ TEST_P(NotEnoughHealthyTServersTest, TestNotEnoughHealthyTServers) {
 
   if (add_new_ts) {
     // Add one new tablet server.
-    NO_FATALS(cluster_->AddTabletServer());
+    ASSERT_OK(cluster_->AddTabletServer());
   } else {
     // Restart the stopped tablet server.
-    NO_FATALS(cluster_->tablet_server(2)->Restart());
+    ASSERT_OK(cluster_->tablet_server(2)->Restart());
   }
 
   // All tables will become healthy.
   {
     ASSERT_EVENTUALLY([&] {
+      static const string kTableStatusHealthy = "HEALTHY";
+      const string cmd = Substitute(
+          "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact", master_address);
       string out;
       string in;
-      string cmd = Substitute(
-      "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact", master_address);
-      kudu::tools::RunKuduTool(strings::Split(cmd, " ", strings::SkipEmpty()), &out, nullptr, in);
+      const auto s = (RunKuduTool(Split(cmd, " ", strings::SkipEmpty()), &out, nullptr, in));
+      if (add_new_ts) {
+        // Not all tablet servers are running, so the ksck tool exits
+        // with non-zero code.
+        ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+      } else {
+        ASSERT_OK(s);
+      }
       rapidjson::Document doc;
       doc.Parse<0>(out.c_str());
       ASSERT_EQ(3, doc["table_summaries"].Size());
       const rapidjson::Value& items = doc["table_summaries"];
       for (int i = 0; i < items.Size(); i++) {
-        ASSERT_EQ(string("HEALTHY"), items[i]["health"].GetString());
+        ASSERT_EQ(kTableStatusHealthy, items[i]["health"].GetString());
       }
     });
   }
@@ -894,7 +906,6 @@ TEST_F(CreateTableITest, TestNotAffectedCreatingTables) {
   string master_address = cluster_->master()->bound_rpc_addr().ToString();
 
   // Shutdown one tablet server.
-  string stopped_ts_uuid = cluster_->tablet_server(0)->uuid();
   cluster_->tablet_server(0)->Shutdown();
 
   // Wait until the tablet server become unavailable for replicas placement.
@@ -927,10 +938,13 @@ TEST_F(CreateTableITest, TestNotAffectedCreatingTables) {
   ASSERT_OK(create_table_func(kOneReplicasTableId, 1));
 
   {
-    string out;
-    string cmd = Substitute(
+    const string cmd = Substitute(
       "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact", master_address);
-    kudu::tools::RunKuduTool(strings::Split(cmd, " ", strings::SkipEmpty()), &out);
+    string out;
+    const auto s = RunKuduTool(Split(cmd, " ", strings::SkipEmpty()), &out);
+    // Since not all registered tablet servers are up and running, the ksck tool
+    // exits with non-zero code.
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     rapidjson::Document doc;
     doc.Parse<0>(out.c_str());
     // Only contains 2 tables kTwoReplicasTableId and kOneReplicasTableId.
@@ -954,8 +968,7 @@ TEST_F(CreateTableITest, TestNotAffectedCreatingTables) {
           "cluster ksck $0 --sections=TABLE_SUMMARIES --ksck_format=json_compact",
           master_address);
       // KSCK will be OK.
-      ASSERT_OK(kudu::tools::RunKuduTool(
-          strings::Split(cmd, " ", strings::SkipEmpty()), &out));
+      ASSERT_OK(RunKuduTool(Split(cmd, " ", strings::SkipEmpty()), &out));
       rapidjson::Document doc;
       doc.Parse<0>(out.c_str());
       // Contains 3 tables kTwoReplicasTableId,
