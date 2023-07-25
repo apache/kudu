@@ -514,7 +514,9 @@ Status CheckCompleteReplace(const client::sp::shared_ptr<client::KuduClient>& cl
       // replica will not be evicted prior the new non-voter replica becomes
       // is promoted into voter. Demoting former leader too early might even
       // delay promotion of already caught-up non-leader replica.
-      if (is_all_voters &&
+      // Also, do not send LeaderStepDown request if voter num is 1 since
+      // it make no sense and will make the leader stuck for a long time.
+      if (is_all_voters && cstate.committed_config().peers().size() > 1 &&
           leader_uuid == ts_uuid && leader_uuid == cstate.leader_uuid()) {
         // The leader is the node we intend to remove; make it step down.
         ignore_result(DoLeaderStepDown(tablet_id, leader_uuid, leader_hp,
