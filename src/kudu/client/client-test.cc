@@ -151,6 +151,7 @@ DECLARE_bool(master_support_auto_incrementing_column);
 DECLARE_bool(master_support_connect_to_master_rpc);
 DECLARE_bool(master_support_immutable_column_attribute);
 DECLARE_bool(mock_table_metrics_for_testing);
+DECLARE_bool(prevent_kudu_3461_infinite_recursion);
 DECLARE_bool(rpc_listen_on_unix_domain_socket);
 DECLARE_bool(rpc_trace_negotiation);
 DECLARE_bool(scanner_inject_service_unavailable_on_continue_scan);
@@ -184,12 +185,13 @@ DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
 DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
+DECLARE_uint32(default_deleted_table_reserve_seconds);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
 DECLARE_uint32(txn_keepalive_interval_ms);
 DECLARE_uint32(txn_staleness_tracker_interval_ms);
 DECLARE_uint32(txn_manager_status_table_num_replicas);
+
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
-DECLARE_uint32(default_deleted_table_reserve_seconds);
 
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
 METRIC_DECLARE_counter(location_mapping_cache_hits);
@@ -498,6 +500,30 @@ class ClientTest : public KuduTest {
     NO_FATALS(InsertTestRows(table, session.get(), num_rows, first_row));
     FlushSessionOrDie(session);
     NO_FATALS(CheckNoRpcOverflow());
+  }
+
+  // Inserts 'num_rows' test rows using 'client' and expect an invalid argument error
+  void InsertTestRowsWithInvalidArgError(KuduClient* client,
+                                         KuduTable* table,
+                                         int num_rows,
+                                         int first_row = 0) const {
+    shared_ptr<KuduSession> session = client->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+    NO_FATALS(InsertTestRows(table, session.get(), num_rows, first_row));
+
+    // Flush is expected to fail because of stale tablet entry in metacache
+    ASSERT_TRUE(session->Flush().IsIOError());
+
+    vector<KuduError*> errors;
+    ElementDeleter d(&errors);
+    bool overflow;
+    session->GetPendingErrors(&errors, &overflow);
+    ASSERT_FALSE(overflow);
+    ASSERT_EQ(errors.size(), num_rows);
+
+    // Check for only the first error.
+    ASSERT_TRUE(errors[0]->status().IsInvalidArgument());
+    ASSERT_STR_CONTAINS(errors[0]->status().ToString(), "Tablet id is not valid anymore");
   }
 
   // Inserts 'num_rows' using the default client.
@@ -10242,6 +10268,123 @@ TEST_F(ClientTestAutoIncrementingColumn, CreateTableFeatureFlag) {
       s.ToString(),
       Substitute("Error creating table $0 on the master: cluster does not support "
                  "CreateTable with feature(s) AUTO_INCREMENTING_COLUMN", kTableName));
+}
+
+class ClientTestMetacache : public ClientTest {
+ public:
+  // Helper method to reproduce the stack overflow scenario caused
+  // due to a bug in client metacache code where it ends up in infinite
+  // recursion loop:
+  // 1. Using object's existing client_ for DDL ops, start by creating
+  //    a table with a range partition
+  // 2. Using a new DML client (client_insert_ops), insert a row
+  // 3. Using DDL client (client_), drop the partition
+  // 4. Using DDL client (client_), add a partition with same range
+  // 5. Using insert client (client_insert_ops), insert a row again
+  // 6. If fix (to avoid infinite recursion) is enabled:
+  //      - #5 is expected to fail with "invalid tablet" error
+  //      - Re-insert of row using same client is expected to pass
+  //        as cache invalidation has happened in previous step.
+  // 7. If fix (to avoid infinite recursion) is disabled:
+  //      - #5 is expected to cause a crash due to stack overflow
+  void TestClientMetacacheHelper(const string& table_name) {
+    // Create a partition boundary [0, 1)
+    unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+
+    // Create a table with above range partition using client_
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+
+    // Add a range partition
+    table_creator->add_range_partition(lower_bound.release(),
+                                       upper_bound.release());
+
+    // Create the table
+    ASSERT_OK(table_creator->table_name(table_name)
+                            .schema(&schema_)
+                            .num_replicas(1)
+                            .set_range_partition_columns({ "key" })
+                            .Create());
+
+    // Create a new client for update/insert ops
+    shared_ptr<KuduClient> client_insert_ops;
+    shared_ptr<KuduTable> table_insert_ops;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_insert_ops));
+    ASSERT_OK(client_insert_ops->OpenTable(table_name, &table_insert_ops));
+
+    // Insert a row to the partition using client_insert_ops
+    NO_FATALS(InsertTestRows(client_insert_ops.get(), table_insert_ops.get(),
+                             1, 0));
+
+    // Drop the range partitions using the DDL client i.e. client_
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    lower_bound.reset(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    upper_bound.reset(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+    alterer->DropRangePartition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(alterer->Alter());
+
+    // Add same range again using same DDL client i.e. client_
+    // This, essentially, adds a new partition with same range
+    // but with a different incarnation (a new generation, if you will).
+    // Any subsequent DML op is expected to consult the new metacache
+    // entry that represents the new tablet generation as the previous
+    // cache entry is not valid anymore.
+    alterer.reset(client_->NewTableAlterer(table_name));
+    lower_bound.reset(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    upper_bound.reset(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+    alterer->AddRangePartition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(alterer->Alter());
+
+    if (FLAGS_prevent_kudu_3461_infinite_recursion) {
+      // Insert a row to the table using same insert client i.e. client_insert_ops
+      // This is expected to fail with "Status::InvalidArgument()" error
+      NO_FATALS(InsertTestRowsWithInvalidArgError(client_insert_ops.get(),
+                                                  table_insert_ops.get(),
+                                                  1, 0));
+
+      // Try inserting row again. This time it is expected to succeed
+      NO_FATALS(InsertTestRows(client_insert_ops.get(), table_insert_ops.get(),
+                               1, 0));
+    } else {
+      // Death tests use fork(), which is unsafe particularly in a threaded
+      // context. For this test, Google Test detected more than one threads. See
+      // https://github.com/google/googletest/blob/master/docs/advanced.md#death-tests-and-threads
+      // for more explanation. If not set to "threadsafe", the test gets stuck.
+      GTEST_FLAG_SET(death_test_style, "threadsafe");
+
+      // Insert a row to the table using same insert client i.e. client_insert_ops
+      // This is expected to crash due to stack overflow
+      ASSERT_DEATH((InsertTestRows(client_insert_ops.get(),
+                                   table_insert_ops.get(),
+                                   1, 0)), "");
+    }
+  }
+};
+
+// The purpose of this test is to verify case of infinite recursion
+// caused due to stale cache entry for a deleted tablet being re-created
+// via one client and populated with a row using a different client.
+// Refer KUDU-3461 for more details. The infinite recursion ends up in stack
+// overflow crash.
+TEST_F(ClientTestMetacache, TestClientMetacacheRecursion) {
+  FLAGS_prevent_kudu_3461_infinite_recursion = false;
+  TestClientMetacacheHelper(CURRENT_TEST_NAME());
+}
+
+// The purpose of this test is to verify fix for stack overflow by
+// avoiding infinite recursion and returning an error back to client
+// upon detection of stale cache entry for deleted tablet and cleanup
+// the stale client cache entry. Subsequent insert is expected to succeed.
+// Refer KUDU-3461 for more details.
+TEST_F(ClientTestMetacache, TestClientMetacacheInvalidation) {
+  FLAGS_prevent_kudu_3461_infinite_recursion = true;
+  TestClientMetacacheHelper(CURRENT_TEST_NAME());
 }
 } // namespace client
 } // namespace kudu

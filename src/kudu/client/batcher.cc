@@ -22,6 +22,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -57,7 +58,7 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 
@@ -499,6 +500,15 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
   // Prefer controller failures over response failures.
   if (result.status.ok() && resp_.has_error()) {
     result.status = StatusFromPB(resp_.error().status());
+  }
+
+  // In a multi-client usage scenario, where one client is used for DDL ops
+  // and other is used for DML ops on the same range partition, tablet
+  // entry in metacache may become invalid, rendering it useless for
+  // subsequent operation. This check lets client know about the same.
+  if (result.status.IsInvalidArgument()) {
+    result.result = RetriableRpcStatus::NON_RETRIABLE_ERROR;
+    return result;
   }
 
   // If we get TABLET_NOT_FOUND, the replica we thought was leader has been deleted.

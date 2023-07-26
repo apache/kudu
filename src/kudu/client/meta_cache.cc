@@ -101,6 +101,11 @@ DEFINE_int32(client_tablet_locations_by_id_ttl_ms, 60 * 60 * 1000, // 60 minutes
 TAG_FLAG(client_tablet_locations_by_id_ttl_ms, advanced);
 TAG_FLAG(client_tablet_locations_by_id_ttl_ms, runtime);
 
+DEFINE_bool(prevent_kudu_3461_infinite_recursion, true,
+            "Whether or not to prevent infinite recursion caused due to stale "
+            "client metacache as described in KUDU-3461. Used for testing only!");
+TAG_FLAG(prevent_kudu_3461_infinite_recursion, unsafe);
+
 namespace kudu {
 namespace client {
 namespace internal {
@@ -279,7 +284,7 @@ Status RemoteTablet::Refresh(
 }
 
 void RemoteTablet::MarkStale() {
-  VLOG(1) << "Marking tablet stale, tablet id " << tablet_id_;
+  VLOG(2) << Substitute("Marking tablet stale, tablet id $0", tablet_id_);
   stale_ = true;
 }
 
@@ -462,12 +467,14 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
   RemoteTabletServer* leader = nullptr;
   if (!tablet_->stale()) {
     leader = tablet_->LeaderTServer();
-    if (leader) {
-      VLOG(1) << "Client copy of tablet " << tablet_->tablet_id()
-              << " is fresh, leader uuid " << leader->permanent_uuid();
-    } else {
-      VLOG(1) << "Client copy of tablet " << tablet_->tablet_id()
-              << " is fresh (no leader).";
+    if (VLOG_IS_ON(2)) {
+      if (leader) {
+        VLOG(2) << Substitute("Client entry of tablet $0 is fresh, leader uuid $1",
+                              tablet_->tablet_id(), leader->permanent_uuid());
+      } else {
+        VLOG(2) << Substitute("Client entry of tablet $0 is fresh (no leader).",
+                              tablet_->tablet_id());
+      }
     }
 
     bool marked_as_follower = false;
@@ -529,7 +536,32 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
   // shift the write to another tablet (i.e. if it's since been split).
   if (!leader) {
     if (table_) {
-      VLOG(1) << "Table " << table_->name() << ": No valid leader, lookup tablet by key.";
+      VLOG(2) << Substitute("Table $0: No valid leader, lookup tablet by key.",
+                            table_->name());
+      if (PREDICT_TRUE(FLAGS_prevent_kudu_3461_infinite_recursion)) {
+        // First check metacache for the tablet
+        scoped_refptr<RemoteTablet> remote_tablet;
+        Status fastpath_status = meta_cache_->FastLookupTabletByKey(table_,
+                                                                    tablet_->partition().begin(),
+                                                                    MetaCache::LookupType::kPoint,
+                                                                    &remote_tablet);
+        if (!fastpath_status.IsIncomplete()) {
+          VLOG(2) << Substitute("Explicit fastpath lookup succeeded(maybe), "
+                                "proceed with callback, table: $0",
+                                table_->name());
+          if (remote_tablet &&
+              remote_tablet->tablet_id() != tablet_->tablet_id()) {
+            // Skip further processing if tablet in question has turned invalid
+            LOG(INFO) << Substitute("Tablet under process found to be invalid, "
+                                    "table: $0 - old tabletid: $1, new tabletid: $2",
+                                    table_->name(), tablet_->tablet_id(),
+                                    remote_tablet->tablet_id());
+            callback(Status::InvalidArgument("Tablet id is not valid anymore"),
+                                             nullptr);
+            return;
+          }
+        }
+      }
       meta_cache_->LookupTabletByKey(
           table_,
           tablet_->partition().begin(),
@@ -587,6 +619,8 @@ void MetaCacheServerPicker::LookUpTabletCb(const ServerPickedCallback& callback,
 
   // If we couldn't lookup the tablet call the user callback immediately.
   if (!status.ok()) {
+    VLOG(2) << Substitute("Tablet lookup failed, tablet id: $0, status: $1",
+                          tablet_->tablet_id(), status.ToString());
     callback(status, nullptr);
     return;
   }
@@ -929,6 +963,8 @@ void LookupRpc::SendRpcSlowPath() {
     req_.set_replica_type_filter(master::ANY_REPLICA);
   }
 
+  VLOG(2) << Substitute("Slowpathing RPC $0: refreshing our metadata from the Master",
+                        ToString());
   // Actually send the request.
   AsyncLeaderMasterRpc::SendRpc();
 }
@@ -1225,22 +1261,22 @@ bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
   const TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
     // No cache available for this table.
-    VLOG(1) << "No cache available for table " << table->name();
+    VLOG(2) << Substitute("No cache available for table $0", table->name());
     return false;
   }
 
   const MetaCacheEntry* e = FindFloorOrNull(*tablets, partition_key);
   if (PREDICT_FALSE(!e)) {
     // No tablets with a start partition key lower than 'partition_key'.
-    VLOG(1) << "Table " << table->name()
-            << ": No tablets found with a start key lower than input key.";
+    VLOG(2) << Substitute("Table $0: No tablets found with a start key lower than input key.",
+                          table->name());
     return false;
   }
 
   // Stale entries must be re-fetched.
   if (e->stale()) {
-    VLOG(1) << "Table " << table->name() << ": Stale entry for tablet "
-            << e->tablet()->tablet_id() << " found, must be re-fetched.";
+    VLOG(2) << Substitute("Table $0: Stale entry for tablet $1 found, must be re-fetched.",
+                          table->name(), e->tablet()->tablet_id());
     return false;
   }
 
@@ -1249,19 +1285,28 @@ bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
     return true;
   }
 
-  VLOG(1) << "Table " << table->name() << ": LookupEntryByKeyFastPath failed!";
+  VLOG(2) << Substitute("Table $0: Fastpath lookup by key failed!", table->name());
   return false;
+}
+
+Status MetaCache::FastLookupTabletByKey(const KuduTable* table,
+                                        PartitionKey partition_key,
+                                        MetaCache::LookupType lookup_type,
+                                        scoped_refptr<RemoteTablet>* remote_tablet) {
+  return DoFastPathLookup(table, &partition_key, lookup_type, remote_tablet);
 }
 
 Status MetaCache::DoFastPathLookup(const KuduTable* table,
                                    PartitionKey* partition_key,
                                    MetaCache::LookupType lookup_type,
                                    scoped_refptr<RemoteTablet>* remote_tablet) {
+  static const string err_str = "No tablet covering the requested range partition";
   MetaCacheEntry entry;
   while (PREDICT_TRUE(LookupEntryByKeyFastPath(table, *partition_key, &entry))
          && (entry.is_non_covered_range() || entry.tablet()->HasLeader())) {
-    VLOG(4) << "Fast lookup: found " << entry.DebugString(table) << " for "
-            << DebugLowerBoundPartitionKey(table, *partition_key);
+    VLOG(4) << Substitute("Fast lookup: found $0 for $1",
+                          entry.DebugString(table),
+                          DebugLowerBoundPartitionKey(table, *partition_key));
     if (!entry.is_non_covered_range()) {
       if (remote_tablet) {
         *remote_tablet = entry.tablet();
@@ -1269,11 +1314,12 @@ Status MetaCache::DoFastPathLookup(const KuduTable* table,
       return Status::OK();
     }
     if (lookup_type == LookupType::kPoint || entry.upper_bound_partition_key().empty()) {
-      return Status::NotFound("No tablet covering the requested range partition",
-                              entry.DebugString(table));
+      VLOG(2) << Substitute(err_str);
+      return Status::NotFound(err_str, entry.DebugString(table));
     }
     *partition_key = entry.upper_bound_partition_key();
   }
+  VLOG(2) << Substitute("Fastpath lookup failed with incomplete status");
   return Status::Incomplete("");
 }
 
@@ -1428,8 +1474,9 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
     return;
   }
 
-  VLOG(1) << "Fastpath lookup failed with " << fastpath_status.ToString()
-          << ". Proceed with rpc lookup, table: " << table->name();
+  VLOG(2) << Substitute("Fastpath lookup failed with $0. Proceed with RPC lookup,"
+                        " table: $1",
+                        fastpath_status.ToString(), table->name());
   LookupRpc* rpc = new LookupRpc(this,
                                  callback,
                                  table,

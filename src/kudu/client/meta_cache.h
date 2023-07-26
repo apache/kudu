@@ -437,6 +437,17 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
 
+  // Do a fastpath look up of tablet that hosts the given partition key for a
+  // table. If available, the tablet is stored in 'remote_tablet' (if not NULL).
+  // Returns:
+  // - NotFound if the lookup hits a non-covering range.
+  // - Incomplete if the fast path was not possible.
+  // - OK if the lookup was successful.
+  Status FastLookupTabletByKey(const KuduTable* table,
+                               PartitionKey partition_key,
+                               LookupType lookup_type,
+                               scoped_refptr<RemoteTablet>* remote_tablet);
+
   // Look up which tablet hosts the given partition key for a table.
   // If @split_size_bytes set nonzero, send SplitKeyRangeRPC to remote tserver,
   // otherwise search only occurs locally.
