@@ -48,6 +48,10 @@ class TabletServerAdminServiceProxy;
 class TabletServerServiceProxy;
 } // namespace tserver
 
+namespace consensus {
+class ConsensusServiceProxy;
+} // namespace consensus
+
 namespace cluster {
 
 // Mode to which node types a certain action (like Shutdown()) should apply.
@@ -123,6 +127,11 @@ class MiniCluster {
   // Returns an RPC proxy to the tserver admin service at 'idx'. Requires that
   // the tserver at 'idx' is running.
   virtual std::shared_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy(
+      int idx) const = 0;
+
+  // Returns an RPC proxy to the tserver consensus service at 'idx'. Requires that
+  // the tserver at 'idx' is running.
+  virtual std::shared_ptr<consensus::ConsensusServiceProxy> tserver_consensus_proxy(
       int idx) const = 0;
 
   // Returns the UUID for the tablet server 'ts_idx'

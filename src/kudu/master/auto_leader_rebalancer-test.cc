@@ -17,17 +17,23 @@
 #include "kudu/master/auto_leader_rebalancer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <iostream>
+#include <map>
 #include <memory>
-#include <ostream>
+#include <numeric>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/test_workload.h"
@@ -42,6 +48,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
+#include "kudu/consensus/consensus.proxy.h"// IWYU pragma: keep
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -53,10 +60,13 @@ class AutoRebalancerTask;
 }  // namespace master
 }  // namespace kudu
 
-
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using kudu::tserver::ListTabletsResponsePB;
+using kudu::tserver::MiniTabletServer;
+using kudu::consensus::LeaderStepDownRequestPB;
+using kudu::consensus::LeaderStepDownResponsePB;
+using kudu::rpc::RpcController;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -129,11 +139,249 @@ class LeaderRebalancerTest : public KuduTest {
         table_info, tserver_uuids, {}, AutoLeaderRebalancerTask::ExecuteMode::TEST);
   }
 
+  // Get the leader numbers of each tablet server.
+  void GetLeaderDistribution(std::map<string, int32_t>* leader_map) {
+    leader_map->clear();
+    scoped_refptr<TableInfo> table;
+    master::Master* master = cluster_->mini_master()->master();
+    master::CatalogManager* catalog_manager = master->catalog_manager();
+    {
+      CatalogManager::ScopedLeaderSharedLock leaderlock(catalog_manager);
+      catalog_manager->GetTableInfoByName(table_name(), &table);
+    }
+    std::vector<string> leader_list;
+    for (const auto& tablet : table->tablet_map()) {
+      client::KuduTablet* ptr;
+      workload_->client()->GetTablet(tablet.second->id(), &ptr);
+      unique_ptr<client::KuduTablet> tablet_ptr(ptr);
+      for (const auto* replica : tablet_ptr->replicas()) {
+        if (replica->is_leader()) {
+          leader_list.push_back(replica->ts().uuid());
+        }
+      }
+    }
+    TSDescriptorVector descriptors;
+    master->ts_manager()->GetAllDescriptors(&descriptors);
+    for (const auto& e : descriptors) {
+      if (e->PresumedDead()) {
+        continue;
+      }
+      leader_map->emplace(e->permanent_uuid(), count(
+          leader_list.begin(), leader_list.end(), e->permanent_uuid()));
+    }
+  }
+
+  // Make the leader distribution as the vector passed in.
+  Status MakeLeaderDistribution(std::vector<int32_t> leader_distribution) {
+    master::Master* master = cluster_->mini_master()->master();
+    TSDescriptorVector descriptors;
+    master->ts_manager()->GetAllDescriptors(&descriptors);
+    if (descriptors.size() != leader_distribution.size()) {
+      return Status::IllegalState("The size of leader distribution vector should "
+                                  "be the number of tablet servers.");
+    }
+
+    scoped_refptr<TableInfo> table;
+    master::CatalogManager* catalog_manager = master->catalog_manager();
+    {
+      CatalogManager::ScopedLeaderSharedLock leaderlock(catalog_manager);
+      catalog_manager->GetTableInfoByName(table_name(), &table);
+    }
+
+    if (std::accumulate(leader_distribution.begin(), leader_distribution.end(), 0) !=
+        table->num_tablets()) {
+      return Status::IllegalState("The sum of leader distribution should "
+                                  "be the tablet number of the table.");
+    }
+
+    int32_t index = 0;
+    int32_t tmp_distribution = 0;
+    MiniTabletServer* tserver = cluster_->mini_tablet_server(0);
+    for (const auto& tablet : table->tablet_map()) {
+      if (tmp_distribution >= leader_distribution.at(index)) {
+        index++;
+        tmp_distribution = 0;
+        tserver = cluster_->mini_tablet_server(index);
+      }
+      unique_ptr<client::KuduTablet> tablet_copy;
+      {
+        client::KuduTablet* ptr;
+        workload_->client()->GetTablet(tablet.second->id(), &ptr);
+        tablet_copy.reset(ptr);
+      }
+      for (const auto* replica: tablet_copy->replicas()) {
+        if (replica->is_leader()) {
+          if (replica->ts().uuid() == tserver->uuid()) {
+            break;
+          }
+          LeaderStepDownRequestPB req;
+          req.set_dest_uuid(replica->ts().uuid());
+          req.set_tablet_id(tablet.second->id());
+          req.set_new_leader_uuid(tserver->uuid());
+          req.set_mode(consensus::GRACEFUL);
+          LeaderStepDownResponsePB resp;
+          RpcController rpc;
+          RETURN_NOT_OK(cluster_->tserver_consensus_proxy(cluster_
+                        ->tablet_server_index_by_uuid(replica->ts().uuid()))
+                        ->LeaderStepDown(req, &resp, &rpc));
+          break;
+        }
+      }
+      tmp_distribution++;
+    }
+    return Status::OK();
+  }
+
  protected:
   unique_ptr<InternalMiniCluster> cluster_;
   InternalMiniClusterOptions cluster_opts_;
   unique_ptr<TestWorkload> workload_;
 };
+
+// Verify if the leader rebalancing is able to balance the leaders in various
+// workloads.
+// We need to make sure that the function RunLeaderRebalanceForTable is
+// correct. After that we could use it to check leader balance by passing
+// TEST mode.
+TEST_F(LeaderRebalancerTest, FunctionalTestForDivided) {
+  const int kNumTServers = 3;
+  const int kNumTablets = 9;
+  cluster_opts_.num_tablet_servers = kNumTServers;
+
+  ASSERT_OK(CreateAndStartCluster());
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/ 3);
+
+  // Simulate the leader distribution.
+  std::vector<int32_t> leader_distribution = {4, 4, 1};
+  MakeLeaderDistribution(leader_distribution);
+
+  SleepFor(MonoDelta::FromMilliseconds(3000));
+  std::map<string, int32_t> leader_map;
+  GetLeaderDistribution(&leader_map);
+  LOG(INFO) << "The leader distribution is " << '\n';
+  for (const auto& leader : leader_map) {
+    std::cout << leader.first << "  " << leader.second << '\n';
+  }
+
+  // Try to do rebalance 10 times.
+  master::Master* master = cluster_->mini_master()->master();
+  int32_t retries = 10;
+  master::AutoLeaderRebalancerTask* leader_rebalancer =
+      master->catalog_manager()->auto_leader_rebalancer();
+  for (int i = 0; i < retries; i++) {
+    leader_rebalancer->RunLeaderRebalancer();
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+  }
+
+  // Check the leader numbers of each tablet server. It should always be floor(avg)
+  // or ceil(avg), where the parameter avg is (tablet num) / (tablet server num).
+  double expected_leader_num = static_cast<double>(kNumTablets) / 3;
+  GetLeaderDistribution(&leader_map);
+  LOG(INFO) << "The leader distribution is " << '\n';
+  for (const auto& leader : leader_map) {
+    std::cout << leader.first << "  " << leader.second << '\n';
+  }
+  for (const auto& leader: leader_map) {
+    ASSERT_GE(leader.second, std::floor(expected_leader_num));
+    ASSERT_LE(leader.second, std::ceil(expected_leader_num));
+  }
+
+  // Try different leader distribution.
+  std::vector<int32_t> leader_distribution2 = {0, 8, 1};
+  MakeLeaderDistribution(leader_distribution2);
+
+  SleepFor(MonoDelta::FromMilliseconds(3000));
+  GetLeaderDistribution(&leader_map);
+  LOG(INFO) << "The leader distribution is " << '\n';
+  for (const auto& leader : leader_map) {
+    std::cout << leader.first << "  " << leader.second << '\n';
+  }
+
+  for (int i = 0; i < retries; i++) {
+    leader_rebalancer->RunLeaderRebalancer();
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+  }
+
+  GetLeaderDistribution(&leader_map);
+  LOG(INFO) << "The leader distribution is " << '\n';
+  for (const auto& leader : leader_map) {
+    std::cout << leader.first << "  " << leader.second << '\n';
+  }
+  for (const auto& leader: leader_map) {
+    ASSERT_GE(leader.second, std::floor(expected_leader_num));
+    ASSERT_LE(leader.second, std::ceil(expected_leader_num));
+  }
+}
+
+TEST_F(LeaderRebalancerTest, FunctionalTestForNotDivided) {
+  const int kNumTServers = 3;
+  const int kNumTablets = 10;
+  cluster_opts_.num_tablet_servers = kNumTServers;
+
+  ASSERT_OK(CreateAndStartCluster());
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/ 3);
+
+  // Simulate the leader distribution.
+  std::vector<int32_t> leader_distribution = {5, 4, 1};
+  MakeLeaderDistribution(leader_distribution);
+
+  SleepFor(MonoDelta::FromMilliseconds(3000));
+  std::map<string, int32_t> leader_map;
+  GetLeaderDistribution(&leader_map);
+  LOG(INFO) << "The leader distribution is " << '\n';
+  for (const auto& leader : leader_map) {
+    std::cout << leader.first << "  " << leader.second << '\n';
+  }
+
+  // Try to do rebalance 10 times.
+  master::Master* master = cluster_->mini_master()->master();
+  int32_t retries = 10;
+  master::AutoLeaderRebalancerTask* leader_rebalancer =
+    master->catalog_manager()->auto_leader_rebalancer();
+  for (int i = 0; i < retries; i++) {
+    leader_rebalancer->RunLeaderRebalancer();
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+  }
+
+  // Check the leader numbers of each tablet server. It should always be floor(avg)
+  // or ceil(avg), where the parameter avg is (tablet num) / (tablet server num).
+  double expected_leader_num = static_cast<double>(kNumTablets) / 3;
+  GetLeaderDistribution(&leader_map);
+  LOG(INFO) << "The leader distribution is " << '\n';
+  for (const auto& leader : leader_map) {
+    std::cout << leader.first << "  " << leader.second << '\n';
+  }
+  for (const auto& leader: leader_map) {
+    ASSERT_GE(leader.second, std::floor(expected_leader_num));
+    ASSERT_LE(leader.second, std::ceil(expected_leader_num));
+  }
+
+  // Try different leader distribution.
+  std::vector<int32_t> leader_distribution2 = {8, 1, 1};
+  MakeLeaderDistribution(leader_distribution2);
+
+  SleepFor(MonoDelta::FromMilliseconds(3000));
+  GetLeaderDistribution(&leader_map);
+  LOG(INFO) << "The leader distribution is " << '\n';
+  for (const auto& leader : leader_map) {
+    std::cout << leader.first << "  " << leader.second << '\n';
+  }
+
+  for (int i = 0; i < retries; i++) {
+    leader_rebalancer->RunLeaderRebalancer();
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+  }
+
+  GetLeaderDistribution(&leader_map);
+  LOG(INFO) << "The leader distribution is " << '\n';
+  for (const auto& leader : leader_map) {
+    std::cout << leader.first << "  " << leader.second << '\n';
+  }
+  for (const auto& leader: leader_map) {
+    ASSERT_GE(leader.second, std::floor(expected_leader_num));
+    ASSERT_LE(leader.second, std::ceil(expected_leader_num));
+  }
+}
 
 // Create a cluster, and create a table,
 // whether tablets is balanced, which decided by creating table process.

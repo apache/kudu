@@ -68,6 +68,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -104,6 +105,7 @@ using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
+using kudu::consensus::ConsensusServiceProxy;
 using std::back_inserter;
 using std::copy;
 using std::map;
@@ -1121,6 +1123,13 @@ std::shared_ptr<TabletServerAdminServiceProxy> ExternalMiniCluster::tserver_admi
   CHECK_LT(idx, tablet_servers_.size());
   const auto& addr = CHECK_NOTNULL(tablet_server(idx))->bound_rpc_addr();
   return std::make_shared<TabletServerAdminServiceProxy>(messenger_, addr, addr.host());
+}
+
+std::shared_ptr<ConsensusServiceProxy> ExternalMiniCluster::tserver_consensus_proxy(
+    int idx) const {
+  CHECK_LT(idx, tablet_servers_.size());
+  const auto& addr = CHECK_NOTNULL(tablet_server(idx))->bound_rpc_addr();
+  return std::make_shared<consensus::ConsensusServiceProxy>(messenger_, addr, addr.host());
 }
 
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder* builder,

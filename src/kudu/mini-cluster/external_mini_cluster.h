@@ -99,6 +99,10 @@ class TabletServerAdminServiceProxy;
 class TabletServerServiceProxy;
 } // namespace tserver
 
+namespace consensus {
+class ConsensusServiceProxy;
+} // namespace consensus
+
 namespace cluster {
 
 class ExternalDaemon;
@@ -506,6 +510,8 @@ class ExternalMiniCluster : public MiniCluster {
   std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const override;
   std::shared_ptr<tserver::TabletServerServiceProxy> tserver_proxy(int idx) const override;
   std::shared_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy(
+      int idx) const override;
+  std::shared_ptr<consensus::ConsensusServiceProxy> tserver_consensus_proxy(
       int idx) const override;
 
   std::string block_manager_type() const {

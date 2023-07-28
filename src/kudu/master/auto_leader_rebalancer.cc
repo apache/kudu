@@ -18,6 +18,7 @@
 #include "kudu/master/auto_leader_rebalancer.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -201,29 +202,43 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalanceForTable(
   map<string, std::pair<int32_t, int32_t>> replica_and_leader_count_by_ts_uuid;
   // uuid->leader should transfer count
   map<string, int32_t> leader_transfer_source;
+  size_t remaining_tablets = tablet_infos.size();
+  size_t remaining_tservers = tserver_uuids.size();
   for (const auto& uuid : tserver_uuids) {
     auto* tablet_ids_ptr = FindOrNull(tablet_ids_by_ts_uuid, uuid);
-    uint32_t replica_count = tablet_ids_ptr ? tablet_ids_ptr->size() : 0;
+    int32_t replica_count = tablet_ids_ptr ? tablet_ids_ptr->size() : 0;
     if (replica_count == 0) {
       // means no replicas (and no leaders), maybe a tserver joined kudu cluster just now, skip it
+      remaining_tservers--;
       continue;
     }
     auto* leader_tablet_ids_ptr = FindOrNull(leader_tablet_ids_by_ts_uuid, uuid);
-    uint32_t leader_count = leader_tablet_ids_ptr ? leader_tablet_ids_ptr->size() : 0;
+    int32_t leader_count = leader_tablet_ids_ptr ? leader_tablet_ids_ptr->size() : 0;
     replica_and_leader_count_by_ts_uuid.insert(
         {uuid, std::pair<int32_t, int32_t>(replica_count, leader_count)});
     VLOG(1) << Substitute(
         "uuid: $0, replica_count: $1, leader_count: $2", uuid, replica_count, leader_count);
 
-    // Our target is every tserver' replicas, number of leader : number of follower is
-    // 1 : (replica_refactor -1). The constant 1 is a coarse-grained correction factor to help
-    // leader rebalancer to converge stable.
-    int32_t should_transfer_count = static_cast<int32_t>(leader_count) -
-                                    (static_cast<int32_t>(replica_count) / replication_factor + 1);
+    // If the number of remaining tablets is divisible by the number of remaining tablet
+    // servers, the leader num of all the remaining tablet servers should be the division
+    // result.
+    // Else, the maximum number of leader replicas per tablet server should be the ceil value
+    // of the average leaders num. Transfer the excess leaders if a tablet server's
+    // leader num is more than that.
+    const uint32_t target_leader_count =
+        (remaining_tablets + remaining_tservers - 1) / remaining_tservers;
+    int32_t should_transfer_count = leader_count - static_cast<int32_t>(target_leader_count);
     if (should_transfer_count > 0) {
       leader_transfer_source.insert({uuid, should_transfer_count});
       VLOG(1) << Substitute("$0 should transfer leader count: $1", uuid, should_transfer_count);
     }
+    if (remaining_tablets % remaining_tservers == 0) {
+      remaining_tablets -= target_leader_count;
+    } else {
+      remaining_tablets -= (should_transfer_count >= 0 ? target_leader_count :
+                            (target_leader_count - 1));
+    }
+    remaining_tservers--;
   }
 
   // Step 3.
@@ -383,7 +398,10 @@ Status AutoLeaderRebalancerTask::RunLeaderRebalancer() {
   // we get all tserver uuids
   TSDescriptorVector descriptors;
   ts_manager_->GetAllDescriptors(&descriptors);
-
+  if (PREDICT_FALSE(descriptors.empty())) {
+    VLOG(1) << "No tserver registered for now, skipping this leader rebalancing round.";
+    return Status::OK();
+  }
   vector<string> tserver_uuids;
   for (const auto& e : descriptors) {
     if (e->PresumedDead()) {
