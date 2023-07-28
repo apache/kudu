@@ -74,28 +74,29 @@ add_custom_command(OUTPUT ${HMS_PLUGIN_JAR}
   DEPENDS proto_jar)
 add_custom_target(hms_plugin_jar DEPENDS ${HMS_PLUGIN_JAR})
 
-set(MINI_HMS_SRCS
-  mini_hms.cc)
-
-add_library(mini_hms ${MINI_HMS_SRCS})
-target_link_libraries(mini_hms
-  gutil
-  krpc
-  kudu_test_util
-  kudu_util)
-add_dependencies(mini_hms hms_plugin_jar)
-
-##############################
-# hms tests
-##############################
-
 if (NOT NO_TESTS)
-  SET_KUDU_TEST_LINK_LIBS(
-    kudu_hms
-    mini_hms
-    mini_kdc)
+  # The mini_hms library is used only for tests.
+  set(MINI_HMS_SRCS
+    mini_hms.cc)
 
-  # These tests must run serially, otherwise starting the HMS can take a very long time.
-  ADD_KUDU_TEST(hms_catalog-test RUN_SERIAL true NUM_SHARDS 4)
-  ADD_KUDU_TEST(hms_client-test RUN_SERIAL true NUM_SHARDS 4)
+  add_library(mini_hms ${MINI_HMS_SRCS})
+  target_link_libraries(mini_hms
+    gutil
+    krpc
+    kudu_test_util
+    kudu_util)
+  add_dependencies(mini_hms hms_plugin_jar)
 endif()
+
+#########################################
+# Unit tests
+#########################################
+
+SET_KUDU_TEST_LINK_LIBS(
+  kudu_hms
+  mini_hms
+  mini_kdc)
+
+# These tests must run serially, otherwise starting the HMS can take a very long time.
+ADD_KUDU_TEST(hms_catalog-test RUN_SERIAL true NUM_SHARDS 4)
+ADD_KUDU_TEST(hms_client-test RUN_SERIAL true NUM_SHARDS 4)

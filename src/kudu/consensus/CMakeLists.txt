@@ -117,6 +117,10 @@ target_link_libraries(consensus
   log
   protobuf)
 
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(
   log
   consensus

@@ -55,6 +55,9 @@ if(NOT APPLE)
     kudu_util)
 endif()
 
-# Tests
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(tpch)
 ADD_KUDU_TEST(tpch/rpc_line_item_dao-test)

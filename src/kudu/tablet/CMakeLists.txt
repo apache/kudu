@@ -86,14 +86,20 @@ target_link_libraries(tablet
   kudu_util
   consensus)
 
-add_library(tablet_test_util
-  tablet-test-util.cc
-  tablet_replica-test-base.cc)
-target_link_libraries(tablet_test_util
-  kudu_common
-  kudu_test_util
-  log_proto
-  tablet)
+if(NOT NO_TESTS)
+  add_library(tablet_test_util
+    tablet-test-util.cc
+    tablet_replica-test-base.cc)
+  target_link_libraries(tablet_test_util
+    kudu_common
+    kudu_test_util
+    log_proto
+    tablet)
+endif()
+
+#######################################
+# Unit tests
+#######################################
 
 SET_KUDU_TEST_LINK_LIBS(tablet tablet_test_util)
 ADD_KUDU_TEST(all_types-scan-correctness-test NUM_SHARDS 8 PROCESSORS 2)
@@ -130,6 +136,6 @@ ADD_KUDU_TEST(tablet_replica-test)
 ADD_KUDU_TEST(tablet_throttle-test)
 ADD_KUDU_TEST(txn_participant-test)
 
-# Some tests don't have dependencies on other tablet stuff
+# The tests below don't have dependencies on other tablet stuff.
 SET_KUDU_TEST_LINK_LIBS(kudu_util gutil)
 ADD_KUDU_TEST(cbtree-test RUN_SERIAL true)

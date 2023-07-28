@@ -235,7 +235,6 @@ set(UTIL_SRCS
   string_case.cc
   striped64.cc
   subprocess.cc
-  test_graph.cc
   test_util_prod.cc
   thread.cc
   threadlocal.cc
@@ -253,6 +252,10 @@ set(UTIL_SRCS
   yamlreader.cc
   zlib.cc
 )
+
+if(NOT NO_TESTS)
+  set(UTIL_SRCS ${UTIL_SRCS} test_graph.cc)
+endif()
 
 # overwrite.cc contains a single function which would be a hot spot in
 # debug builds. It's separated into a separate file so it can be
@@ -354,15 +357,13 @@ target_link_libraries(kudu_curl_util
   gutil)
 
 #######################################
-# mini_oidc
+# kudu_cloud_util
 #######################################
-add_library(mini_oidc mini_oidc.cc)
-target_link_libraries(mini_oidc
-  server_process
-  gutil
-  kudu_test_util
-  kudu_util
-  jwt_test_certs)
+add_library(kudu_cloud_util
+  cloud/instance_detector.cc
+  cloud/instance_metadata.cc)
+target_link_libraries(kudu_cloud_util
+  kudu_curl_util)
 
 #######################################
 # kudu_jwt_util
@@ -375,20 +376,26 @@ target_link_libraries(kudu_jwt_util
   kudu_util)
 
 #######################################
-# jwt_test_certs
+# mini_oidc
 #######################################
-add_library(jwt_test_certs jwt_test_certs.cc)
-target_link_libraries(jwt_test_certs
-  kudu_jwt_util)
+if(NOT NO_TESTS)
+  add_library(mini_oidc mini_oidc.cc)
+  target_link_libraries(mini_oidc
+    server_process
+    gutil
+    kudu_test_util
+    kudu_util
+    jwt_test_certs)
+endif()
 
 #######################################
-# kudu_cloud_util
+# jwt_test_certs
 #######################################
-add_library(kudu_cloud_util
-  cloud/instance_detector.cc
-  cloud/instance_metadata.cc)
-target_link_libraries(kudu_cloud_util
-  kudu_curl_util)
+if(NOT NO_TESTS)
+  add_library(jwt_test_certs jwt_test_certs.cc)
+  target_link_libraries(jwt_test_certs
+    kudu_jwt_util)
+endif()
 
 # See the comment in sanitizer_options.cc for details on this library's usage.
 # The top-level CMakeLists sets a ${SANITIZER_OPTIONS_OVERRIDE} variable which
@@ -397,9 +404,9 @@ target_link_libraries(kudu_cloud_util
 #######################################
 # sanitizer_options
 #######################################
-add_library(sanitizer_options STATIC sanitizer_options.cc)
-target_link_libraries(sanitizer_options gutil)
 if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
+  add_library(sanitizer_options STATIC sanitizer_options.cc)
+  target_link_libraries(sanitizer_options gutil)
   # By default the sanitizers use addr2line utility to symbolize reports.
   # llvm-symbolizer is faster, consumes less memory and produces much better reports.
   # We set KUDU_EXTERNAL_SYMBOLIZER_PATH which is used in sanitizer_options.cc
@@ -414,18 +421,26 @@ if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
 endif()
 
 #######################################
-# kudu_test_util
+# protoc-gen-insertions
 #######################################
 
-# Used by mini-cluster, so must be built even when NO_TESTS=0.
-add_library(kudu_test_util
-  test_util.cc)
-target_link_libraries(kudu_test_util
-  gflags
-  glog
-  gmock
-  gtest
-  kudu_util)
+add_executable(protoc-gen-insertions protoc-gen-insertions.cc)
+target_link_libraries(protoc-gen-insertions gutil protobuf protoc ${KUDU_BASE_LIBS})
+
+#######################################
+# kudu_test_util
+#######################################
+if(NOT NO_TESTS)
+  # The kudu_test_util is needed only for testing.
+  add_library(kudu_test_util
+    test_util.cc)
+  target_link_libraries(kudu_test_util
+    gflags
+    glog
+    gmock
+    gtest
+    kudu_util)
+endif()
 
 #######################################
 # kudu_test_main
@@ -448,13 +463,6 @@ if(NOT NO_TESTS)
       rt)
   endif()
 endif()
-
-#######################################
-# protoc-gen-insertions
-#######################################
-
-add_executable(protoc-gen-insertions protoc-gen-insertions.cc)
-target_link_libraries(protoc-gen-insertions gutil protobuf protoc ${KUDU_BASE_LIBS})
 
 #######################################
 # Unit tests
@@ -570,16 +578,17 @@ endif()
 #######################################
 # jsonwriter_test_proto
 #######################################
-
-PROTOBUF_GENERATE_CPP(
-  JSONWRITER_TEST_PROTO_SRCS JSONWRITER_TEST_PROTO_HDRS JSONWRITER_TEST_PROTO_TGTS
-  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
-  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES jsonwriter_test.proto)
-add_library(jsonwriter_test_proto ${JSONWRITER_TEST_PROTO_SRCS} ${JSONWRITER_TEST_PROTO_HDRS})
-target_link_libraries(jsonwriter_test_proto
-  pb_util_proto
-  protobuf)
+if(NOT NO_TESTS)
+  PROTOBUF_GENERATE_CPP(
+    JSONWRITER_TEST_PROTO_SRCS JSONWRITER_TEST_PROTO_HDRS JSONWRITER_TEST_PROTO_TGTS
+    SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+    PROTO_FILES jsonwriter_test.proto)
+  add_library(jsonwriter_test_proto ${JSONWRITER_TEST_PROTO_SRCS} ${JSONWRITER_TEST_PROTO_HDRS})
+  target_link_libraries(jsonwriter_test_proto
+    pb_util_proto
+    protobuf)
+endif()
 
 #######################################
 # jsonwriter-test
@@ -594,22 +603,23 @@ endif()
 #######################################
 # pb_util_test_proto
 #######################################
-
-PROTOBUF_GENERATE_CPP(
-  PROTO_CONTAINER_TEST_PROTO_SRCS PROTO_CONTAINER_TEST_PROTO_HDRS PROTO_CONTAINER_TEST_PROTO_TGTS
-  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
-  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES
-    proto_container_test.proto
-    proto_container_test2.proto
-    proto_container_test3.proto
-    pb_util_test.proto)
-add_library(pb_util_test_proto
-  ${PROTO_CONTAINER_TEST_PROTO_SRCS}
-  ${PROTO_CONTAINER_TEST_PROTO_HDRS})
-target_link_libraries(pb_util_test_proto
-  pb_util_proto
-  protobuf)
+if(NOT NO_TESTS)
+  PROTOBUF_GENERATE_CPP(
+    PROTO_CONTAINER_TEST_PROTO_SRCS PROTO_CONTAINER_TEST_PROTO_HDRS PROTO_CONTAINER_TEST_PROTO_TGTS
+    SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+    PROTO_FILES
+      proto_container_test.proto
+      proto_container_test2.proto
+      proto_container_test3.proto
+      pb_util_test.proto)
+  add_library(pb_util_test_proto
+    ${PROTO_CONTAINER_TEST_PROTO_SRCS}
+    ${PROTO_CONTAINER_TEST_PROTO_HDRS})
+  target_link_libraries(pb_util_test_proto
+    pb_util_proto
+    protobuf)
+endif()
 
 #######################################
 # pb_util-test

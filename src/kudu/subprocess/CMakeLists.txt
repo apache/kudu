@@ -60,18 +60,20 @@ target_link_libraries(kudu_subprocess
 )
 add_dependencies(kudu_subprocess subprocess_jar)
 
-add_library(echo_subprocess
-  echo_subprocess.cc
-)
-target_link_libraries(echo_subprocess
-  kudu_subprocess
-)
-
 #######################################
 # Unit tests
 #######################################
 
 if (NOT NO_TESTS)
+  # The echo_subprocess library/module is used only for testing, so there is
+  # no need to build it if NO_TESTS is defined.
+  add_library(echo_subprocess
+    echo_subprocess.cc
+  )
+  target_link_libraries(echo_subprocess
+    kudu_subprocess
+  )
+
   SET_KUDU_TEST_LINK_LIBS(
     kudu_subprocess
     echo_subprocess

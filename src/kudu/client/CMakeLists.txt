@@ -244,19 +244,24 @@ install(FILES
 # script to forcefully change the kudu_client_exported target to kudu_client.
 install(SCRIPT MungeExportedInstallTargets.cmake)
 
+#######################################
 # Test utility library
+#######################################
+if(NOT NO_TESTS)
+  # This code is useful for other tests which use the client, but isn't
+  # part of the client itself (ie we don't want to ship it to customers,
+  # and therefore don't need to worry about export strictness)
+  add_library(kudu_client_test_util
+    client-test-util.cc)
+  target_link_libraries(kudu_client_test_util
+    gmock
+    gtest
+    kudu_client)
+endif()
 
-# This code is useful for other tests which use the client, but isn't
-# part of the client itself (ie we don't want to ship it to customers,
-# and therefore don't need to worry about export strictness)
-add_library(kudu_client_test_util
-  client-test-util.cc)
-target_link_libraries(kudu_client_test_util
-  gmock
-  gtest
-  kudu_client)
-
-# Tests
+#######################################
+# Unit tests
+#######################################
 
 # The OS X system compiler does not support source symbol maps, so the client
 # leaks internal symbols globally.

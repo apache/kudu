@@ -41,6 +41,12 @@ target_link_libraries(clock
 # mini_chronyd
 ##############################
 
+# The mini_chronyd is used only for tests, and corresponding tests for this
+# module below are skipped if NO_TEST=1.
+if(NO_TESTS)
+  return()
+endif()
+
 if (NOT NO_CHRONY)
   # Link the chrony binaries so that they can be found via
   # MiniChronyd::GetPath in MiniChronyd::Start.

@@ -341,10 +341,13 @@ std::unique_ptr<Mode> BuildPerfMode();
 std::unique_ptr<Mode> BuildRemoteReplicaMode();
 std::unique_ptr<Mode> BuildTableMode();
 std::unique_ptr<Mode> BuildTabletMode();
-std::unique_ptr<Mode> BuildTestMode();
 std::unique_ptr<Mode> BuildTxnMode();
 std::unique_ptr<Mode> BuildTServerMode();
 std::unique_ptr<Mode> BuildWalMode();
+
+#if !defined(KUDU_CLI_TOOL_NO_TESTS)
+std::unique_ptr<Mode> BuildTestMode();
+#endif
 
 } // namespace tools
 } // namespace kudu

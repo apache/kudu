@@ -105,7 +105,6 @@ ADD_EXPORTABLE_LIBRARY(tserver_service_proto
 
 set(TSERVER_SRCS
   heartbeater.cc
-  mini_tablet_server.cc
   scanner_metrics.cc
   scanners.cc
   tablet_copy_client.cc
@@ -118,6 +117,10 @@ set(TSERVER_SRCS
   ts_tablet_manager.cc
   tserver_path_handlers.cc
 )
+
+if(NOT NO_TESTS)
+  set(TSERVER_SRCS ${TSERVER_SRCS} mini_tablet_server.cc)
+endif()
 
 add_library(tserver ${TSERVER_SRCS})
 target_link_libraries(tserver
@@ -174,7 +177,7 @@ if (NOT NO_TESTS)
 endif()
 
 #########################################
-# tserver tests
+# Unit tests
 #########################################
 
 SET_KUDU_TEST_LINK_LIBS(

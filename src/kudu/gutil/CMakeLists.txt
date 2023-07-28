@@ -72,10 +72,14 @@ ADD_EXPORTABLE_LIBRARY(gutil
   # Disable warnings which trigger a lot in the Google code:
   COMPILE_FLAGS "-funsigned-char -Wno-char-subscripts")
 
-add_kudu_test(strings/string_util-test)
-add_kudu_test(strings/numbers-test)
+#######################################
+# Unit tests
+#######################################
+
+ADD_KUDU_TEST(strings/string_util-test)
+ADD_KUDU_TEST(strings/numbers-test)
 if (NOT APPLE)
   # The sysinfo-test consists of scenarios for Linux-specific function
   # ParseMaxCpuIndex(): that doesn't exist on macOS.
-  add_kudu_test(sysinfo-test)
+  ADD_KUDU_TEST(sysinfo-test)
 endif()

@@ -94,6 +94,10 @@ ADD_EXPORTABLE_LIBRARY(kudu_common
   SRCS ${COMMON_SRCS}
   DEPS ${COMMON_LIBS})
 
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(kudu_common)
 ADD_KUDU_TEST(columnar_serialization-test)
 ADD_KUDU_TEST(columnblock-test)
