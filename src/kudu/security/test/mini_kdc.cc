@@ -273,6 +273,22 @@ Status MiniKdc::CreateServiceKeytab(const string& spn,
   return Status::OK();
 }
 
+Status MiniKdc::CreateServiceKeytabWithName(const string& spn, const string& name,
+                                    string* path) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("creating service keytab for $0", spn));
+  string kt_path = name;
+  kt_path = JoinPathSegments(options_.data_root, kt_path) + ".keytab";
+
+  string kadmin;
+  RETURN_NOT_OK(GetBinaryPath("kadmin.local", &kadmin));
+  RETURN_NOT_OK(Subprocess::Call(MakeArgv({
+          kadmin, "-q", Substitute("add_principal -randkey $0", spn)})));
+  RETURN_NOT_OK(Subprocess::Call(MakeArgv({
+          kadmin, "-q", Substitute("ktadd -k $0 $1", kt_path, spn)})));
+  *path = kt_path;
+  return Status::OK();
+}
+
 Status MiniKdc::RandomizePrincipalKey(const string& spn) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("randomizing key for $0", spn));
   string kadmin;

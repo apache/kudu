@@ -85,6 +85,11 @@ DEFINE_string(keytab_file, "",
               "to be used to authenticate RPC connections.");
 TAG_FLAG(keytab_file, stable);
 
+DEFINE_string(spnego_keytab_file, "",
+               "Absolute path to Kerberos keytab file "
+               "for HTTP SPNEGO. If it is empty, --keytab_file flag will be used.");
+TAG_FLAG(spnego_keytab_file, advanced);
+
 using std::mt19937;
 using std::nullopt;
 using std::optional;

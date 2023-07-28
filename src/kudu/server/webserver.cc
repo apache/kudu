@@ -44,6 +44,7 @@
 #include <glog/logging.h>
 #include <mustache.h>
 #include <squeasel.h>
+#include <gssapi/gssapi_krb5.h>
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/macros.h"
@@ -135,6 +136,7 @@ DEFINE_string(webserver_x_content_type_options, "nosniff",
 TAG_FLAG(webserver_x_content_type_options, advanced);
 TAG_FLAG(webserver_x_content_type_options, runtime);
 
+DECLARE_string(spnego_keytab_file);
 
 namespace kudu {
 
@@ -352,14 +354,18 @@ Status Webserver::Start() {
   }
 
   if (opts_.require_spnego) {
-    // We assume that security::InitKerberosForServer() has already been called, which
-    // ensures that the keytab path has been propagated into this environment variable
-    // where the GSSAPI calls will pick it up.
-    const char* kt_file = getenv("KRB5_KTNAME");
+    // If the spnego_keytab_file flag is empty, GSSAPI will find the keytab path from
+    // KRB5_KTNAME environment variable which is set by InitKerberosForServer().
+    // Setting spnego_keytab_file flag will make GSSAPI to use spnego dedicated keytab
+    // instead of KRB5_KTNAME.
+    const char* kt_file = FLAGS_spnego_keytab_file.empty() ?
+      getenv("KRB5_KTNAME") :
+      FLAGS_spnego_keytab_file.c_str();
     if (!kt_file || !Env::Default()->FileExists(kt_file)) {
       return Status::InvalidArgument("Unable to configure web server for SPNEGO authentication: "
                                      "must configure a keytab file for the server");
     }
+    krb5_gss_register_acceptor_identity(kt_file);
   }
 
   options.emplace_back("listening_ports");

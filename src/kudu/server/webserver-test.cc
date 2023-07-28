@@ -75,6 +75,8 @@ TAG_FLAG(test_sensitive_flag, sensitive);
 
 DECLARE_bool(webserver_enable_csp);
 
+DECLARE_string(spnego_keytab_file);
+
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
 int fips_mode = FIPS_mode();
 #else
@@ -249,6 +251,39 @@ class SpnegoWebserverTest : public WebserverTest {
 
 };
 
+class SpnegoDedicatedKeytabWebserverTest : public SpnegoWebserverTest {
+ protected:
+  void MaybeSetupSpnego(WebserverOptions* opts) override {
+    kdc_.reset(new MiniKdc(MiniKdcOptions{}));
+    ASSERT_OK(kdc_->Start());
+    kdc_->SetKrb5Environment();
+    string kt_path;
+    ASSERT_OK(kdc_->CreateServiceKeytabWithName("HTTP/127.0.0.1",
+                                                "spnego.dedicated",
+                                                &kt_path));
+    ASSERT_OK(kdc_->CreateUserPrincipal("alice"));
+    FLAGS_spnego_keytab_file = kt_path;
+    opts->require_spnego = true;
+    opts->spnego_post_authn_callback = [&](const string& spn) {
+      last_authenticated_spn_ = spn;
+    };
+  }
+
+};
+
+TEST_F(SpnegoDedicatedKeytabWebserverTest, TestAuthenticated) {
+  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(DoSpnegoCurl());
+  EXPECT_EQ("alice@KRBTEST.COM", last_authenticated_spn_);
+  EXPECT_STR_CONTAINS(buf_.ToString(), "Kudu");
+}
+
+// Tests that execute DoSpnegoCurl() are ignored in MacOS (except the first test case)
+// MacOS heimdal kerberos caches kdc port number somewhere so that all the test cases
+// executing DoSpnegoCurl() use same kdc port number and it is test defect.
+// Please refer to KUDU-3533(https://issues.apache.org/jira/browse/KUDU-3533)
+#ifndef __APPLE__
+
 TEST_F(SpnegoWebserverTest, TestAuthenticated) {
   ASSERT_OK(kdc_->Kinit("alice"));
   ASSERT_OK(DoSpnegoCurl());
@@ -289,6 +324,8 @@ TEST_F(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
   EXPECT_EQ("Must authenticate with SPNEGO.", buf_.ToString());
   EXPECT_EQ(kNotAuthn, last_authenticated_spn_);
 }
+
+#endif
 
 // Test some malformed authorization headers.
 TEST_F(SpnegoWebserverTest, TestInvalidHeaders) {

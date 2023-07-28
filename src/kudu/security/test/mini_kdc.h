@@ -92,6 +92,12 @@ class MiniKdc {
   // will be reset and a new keytab will be generated.
   Status CreateServiceKeytab(const std::string& spn, std::string* path);
 
+  // Creates a new service principal and associated keytab, specifying its
+  // keytab file name with 'name'. if "test" is assigned, keytab file name
+  // will be "test.keytab".
+  Status CreateServiceKeytabWithName(const std::string& spn, const std::string& name,
+                                      std::string* path);
+
   // Randomize the key for the given SPN. This invalidates any previously-produced
   // keytabs.
   Status RandomizePrincipalKey(const std::string& spn);
