@@ -101,7 +101,7 @@ target_link_libraries(kudu_tools_rebalance
 # kudu
 #######################################
 
-add_executable(kudu
+set(KUDU_CLI_TOOL_SRCS
   master_rebuilder.cc
   tool_action_cluster.cc
   tool_action_diagnose.cc
@@ -114,13 +114,19 @@ add_executable(kudu
   tool_action_remote_replica.cc
   tool_action_table.cc
   tool_action_tablet.cc
-  tool_action_test.cc
   tool_action_tserver.cc
   tool_action_txn.cc
   tool_action_wal.cc
   tool_main.cc
 )
-target_link_libraries(kudu
+
+if(NOT NO_TESTS)
+  set(KUDU_CLI_TOOL_SRCS ${KUDU_CLI_TOOL_SRCS} tool_action_test.cc)
+endif()
+
+add_executable(kudu ${KUDU_CLI_TOOL_SRCS})
+
+set(KUDU_CLI_TOOL_LINK_LIBS
   ${SANITIZER_OPTIONS_OVERRIDE}
   ${KRB5_REALM_OVERRIDE}
   clock
@@ -136,13 +142,17 @@ target_link_libraries(kudu
   kudu_util
   log
   master
-  mini_cluster
   tablet
   tool_proto
   transactions
   tserver
   ${KUDU_BASE_LIBS}
 )
+if(NOT NO_TESTS)
+  set(KUDU_CLI_TOOL_LINK_LIBS ${KUDU_CLI_TOOL_LINK_LIBS} mini_cluster)
+endif()
+target_link_libraries(kudu ${KUDU_CLI_TOOL_LINK_LIBS})
+
 option(KUDU_CLIENT_INSTALL "Whether to install the Kudu command line tool" ON)
 if(KUDU_CLIENT_INSTALL)
   install(TARGETS kudu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -154,13 +164,16 @@ endif()
 # kudu_tools_test_util
 #######################################
 
-add_library(kudu_tools_test_util
-  tool_test_util.cc
-)
-target_link_libraries(kudu_tools_test_util
-  kudu_tools_util
-  kudu_util
-)
+if(NOT NO_TESTS)
+  # The kudu_tools_test_util library is used only by tests.
+  add_library(kudu_tools_test_util
+    tool_test_util.cc
+  )
+  target_link_libraries(kudu_tools_test_util
+    kudu_tools_util
+    kudu_util
+  )
+endif()
 
 #######################################
 # Unit tests

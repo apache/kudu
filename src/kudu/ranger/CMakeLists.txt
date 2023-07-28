@@ -51,26 +51,29 @@ target_link_libraries(kudu_ranger ${RANGER_DEPS})
 # mini_ranger
 #######################################
 
-execute_process(COMMAND ln -nsf
-  "${THIRDPARTY_DIR}/installed/common/opt/ranger"
-  "${EXECUTABLE_OUTPUT_PATH}/ranger-home")
-execute_process(COMMAND ln -nsf
-  "${THIRDPARTY_DIR}/installed/common/opt/hadoop"
-  "${EXECUTABLE_OUTPUT_PATH}/hadoop-home")
-execute_process(COMMAND ln -nsf
-  "${JAVA_HOME}"
-  "${EXECUTABLE_OUTPUT_PATH}/java-home")
+# The mini_ranger is used only in tests.
+if(NOT NO_TESTS)
+  execute_process(COMMAND ln -nsf
+    "${THIRDPARTY_DIR}/installed/common/opt/ranger"
+    "${EXECUTABLE_OUTPUT_PATH}/ranger-home")
+  execute_process(COMMAND ln -nsf
+    "${THIRDPARTY_DIR}/installed/common/opt/hadoop"
+    "${EXECUTABLE_OUTPUT_PATH}/hadoop-home")
+  execute_process(COMMAND ln -nsf
+    "${JAVA_HOME}"
+    "${EXECUTABLE_OUTPUT_PATH}/java-home")
 
-set(MINI_RANGER_SRCS
-  mini_ranger.cc)
-set(MINI_RANGER_DEPS
-  kudu_curl_util
-  kudu_test_util
-  kudu_ranger
-  kudu_util
-  mini_postgres)
-add_library(mini_ranger ${MINI_RANGER_SRCS})
-target_link_libraries(mini_ranger ${MINI_RANGER_DEPS})
+  set(MINI_RANGER_SRCS
+    mini_ranger.cc)
+  set(MINI_RANGER_DEPS
+    kudu_curl_util
+    kudu_test_util
+    kudu_ranger
+    kudu_util
+    mini_postgres)
+  add_library(mini_ranger ${MINI_RANGER_SRCS})
+  target_link_libraries(mini_ranger ${MINI_RANGER_DEPS})
+endif()
 
 #######################################
 # Unit tests

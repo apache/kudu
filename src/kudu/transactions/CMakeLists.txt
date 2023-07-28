@@ -47,6 +47,10 @@ target_link_libraries(transactions
   ${KUDU_BASE_LIBS}
 )
 
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(transactions tablet_test_util)
 ADD_KUDU_TEST(txn_status_manager-test)
 ADD_KUDU_TEST(txn_status_tablet-test)

@@ -15,6 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# The mini-cluster is used only for testing.
+if(NO_TESTS)
+  return()
+endif()
+
 set(MINI_CLUSTER_SRCS
   external_mini_cluster.cc
   internal_mini_cluster.cc
@@ -47,7 +52,7 @@ set(MINI_CLUSTER_LIBS
   tserver_service_proto
   wire_protocol_proto)
 
-if (NOT NO_CHRONY)
+if(NOT NO_CHRONY)
   set(MINI_CLUSTER_LIBS ${MINI_CLUSTER_LIBS} mini_chronyd)
 endif()
 
@@ -57,6 +62,9 @@ add_dependencies(mini_cluster
   kudu-tserver
   kudu-master)
 
-# Tests
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(mini_cluster kudu_hms)
 ADD_KUDU_TEST(external_mini_cluster-test PROCESSORS 3)

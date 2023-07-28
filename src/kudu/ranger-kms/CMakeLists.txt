@@ -16,24 +16,6 @@
 # under the License.
 
 #######################################
-# mini_ranger_kms
-#######################################
-execute_process(COMMAND ln -nsf
-        "${THIRDPARTY_DIR}/installed/common/opt/ranger-kms"
-        "${EXECUTABLE_OUTPUT_PATH}/ranger_kms-home")
-
-set(MINI_RANGER_KMS_SRCS
-        mini_ranger_kms.cc)
-set(MINI_RANGER_KMS_DEPS
-        kudu_test_util
-        kudu_util
-        mini_postgres
-        mini_ranger)
-
-add_library(mini_ranger_kms ${MINI_RANGER_KMS_SRCS})
-target_link_libraries(mini_ranger_kms ${MINI_RANGER_KMS_DEPS})
-
-#######################################
 # ranger_kms_client
 #######################################
 set(RANGER_KMS_CLIENT_SRCS
@@ -46,10 +28,22 @@ add_library(ranger_kms_client ${RANGER_KMS_CLIENT_SRCS})
 target_link_libraries(ranger_kms_client ${RANGER_KMS_CLIENT_DEPS})
 
 #######################################
-# Unit tests
+# mini_ranger_kms
 #######################################
+if(NOT NO_TESTS)
+  # The mini_ranger_kms is used only in tests.
+  execute_process(COMMAND ln -nsf
+          "${THIRDPARTY_DIR}/installed/common/opt/ranger-kms"
+          "${EXECUTABLE_OUTPUT_PATH}/ranger_kms-home")
 
-SET_KUDU_TEST_LINK_LIBS(
-        itest_util
-        mini_postgres
-        mini_ranger_kms)
+  set(MINI_RANGER_KMS_SRCS
+          mini_ranger_kms.cc)
+  set(MINI_RANGER_KMS_DEPS
+          kudu_test_util
+          kudu_util
+          mini_postgres
+          mini_ranger)
+
+  add_library(mini_ranger_kms ${MINI_RANGER_KMS_SRCS})
+  target_link_libraries(mini_ranger_kms ${MINI_RANGER_KMS_DEPS})
+endif()

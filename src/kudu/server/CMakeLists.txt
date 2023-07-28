@@ -75,9 +75,9 @@ if(${KUDU_TCMALLOC_AVAILABLE})
   target_link_libraries(server_process tcmalloc profiler)
 endif()
 
-#########################################
-# server_process tests
-#########################################
+#######################################
+# Unit tests
+#######################################
 
 SET_KUDU_TEST_LINK_LIBS(
   kudu_curl_util
@@ -86,5 +86,3 @@ SET_KUDU_TEST_LINK_LIBS(
   security_test_util)
 ADD_KUDU_TEST(rpc_server-test)
 ADD_KUDU_TEST(webserver-test)
-
-SET_KUDU_TEST_LINK_LIBS(server_process)

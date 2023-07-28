@@ -45,16 +45,21 @@ target_link_libraries(kudu_fs
   gutil
   ranger_kms_client)
 
-add_library(kudu_fs_test_util
-  log_block_manager-test-util.cc)
+if(NOT NO_TESTS)
+  add_library(kudu_fs_test_util
+    log_block_manager-test-util.cc)
 
-target_link_libraries(kudu_fs_test_util
-  fs_proto
-  kudu_fs
-  kudu_util
-  gutil)
+  target_link_libraries(kudu_fs_test_util
+    fs_proto
+    kudu_fs
+    kudu_util
+    gutil)
+endif()
 
-# Tests
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(kudu_fs kudu_fs_test_util)
 ADD_KUDU_TEST(block_manager-test)
 ADD_KUDU_TEST(block_manager-stress-test RUN_SERIAL true)
@@ -64,6 +69,6 @@ ADD_KUDU_TEST(dir_util-test)
 ADD_KUDU_TEST(error_manager-test)
 ADD_KUDU_TEST(fs_manager-test)
 if (NOT APPLE)
-  # Will only pass on Linux.
+  # The log block manager is available only on Linux.
   ADD_KUDU_TEST(log_block_manager-test)
 endif()

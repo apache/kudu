@@ -57,19 +57,25 @@ set(CFILE_LIBS
 
 target_link_libraries(cfile ${CFILE_LIBS})
 
-add_library(cfile_test_util
-  bloomfile-test-base.cc)
+if(NOT NO_TESTS)
+  add_library(cfile_test_util
+    bloomfile-test-base.cc)
 
-target_link_libraries(cfile_test_util
-  cfile
-  kudu_test_util)
+  target_link_libraries(cfile_test_util
+    cfile
+    kudu_test_util)
+endif()
 
-# Tests
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(cfile)
 ADD_KUDU_TEST(index-test)
 ADD_KUDU_TEST(cfile-test NUM_SHARDS 4)
 ADD_KUDU_TEST(encoding-test LABELS no_tsan)
 ADD_KUDU_TEST(block_cache-test)
+
 SET_KUDU_TEST_LINK_LIBS(cfile cfile_test_util)
 ADD_KUDU_TEST(bloomfile-test)
 ADD_KUDU_TEST(mt-bloomfile-test RUN_SERIAL true)

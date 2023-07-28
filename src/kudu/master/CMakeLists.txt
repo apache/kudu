@@ -61,7 +61,6 @@ set(MASTER_SRCS
   master_path_handlers.cc
   master_runner.cc
   master_service.cc
-  mini_master.cc
   placement_policy.cc
   ranger_authz_provider.cc
   sys_catalog.cc
@@ -72,6 +71,10 @@ set(MASTER_SRCS
   ts_manager.cc
   txn_manager.cc
   txn_manager_service.cc)
+
+if(NOT NO_TESTS)
+  set(MASTER_SRCS ${MASTER_SRCS} mini_master.cc)
+endif()
 
 add_library(master ${MASTER_SRCS})
 target_link_libraries(master
@@ -96,7 +99,28 @@ target_link_libraries(master
   transactions
   tserver)
 
-# Tests
+#########################################
+# kudu-master
+#########################################
+
+add_executable(kudu-master master_main.cc)
+target_link_libraries(kudu-master
+  ${SANITIZER_OPTIONS_OVERRIDE}
+  ${KRB5_REALM_OVERRIDE}
+  master
+  ${KUDU_BASE_LIBS})
+
+option(KUDU_MASTER_INSTALL "Whether to install the Kudu Master executable" ON)
+if(KUDU_MASTER_INSTALL)
+  install(TARGETS kudu-master RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+else()
+  message(STATUS "Skipping install rule for the Kudu Master executable")
+endif()
+
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(
   kudu_client
   kudu_curl_util
@@ -122,21 +146,3 @@ ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(ts_descriptor-test DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(ts_state-test)
 ADD_KUDU_TEST(txn_manager-test RESOURCE_LOCK "master-web-port")
-
-#########################################
-# kudu-master
-#########################################
-
-add_executable(kudu-master master_main.cc)
-target_link_libraries(kudu-master
-  ${SANITIZER_OPTIONS_OVERRIDE}
-  ${KRB5_REALM_OVERRIDE}
-  master
-  ${KUDU_BASE_LIBS})
-
-option(KUDU_MASTER_INSTALL "Whether to install the Kudu Master executable" ON)
-if(KUDU_MASTER_INSTALL)
-  install(TARGETS kudu-master RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
-else()
-  message(STATUS "Skipping install rule for the Kudu Master executable")
-endif()

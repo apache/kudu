@@ -234,6 +234,13 @@ add_definitions(-DKUDU_HEADERS_USE_RICH_SLICE=1)
 # exported client headers).
 add_definitions(-DKUDU_HEADERS_NO_STUBS=1)
 
+# If not building tests, add an extra macro to allow for omitting test-related
+# provisions and functionality from the kudu CLI tool: that's based on the
+# mini-cluster library, and the mini-cluster library is built only for testing.
+if(NO_TESTS)
+  add_definitions(-DKUDU_CLI_TOOL_NO_TESTS)
+endif()
+
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
 # For CMAKE_BUILD_TYPE=Debug
@@ -1209,14 +1216,18 @@ if (NOT NO_TESTS)
   find_package(KerberosPrograms)
 endif()
 
-# The tests as well as any binaries which are run as subprocesses by tests (eg tserver,
-# master, and the 'kudu' CLI tool) need to link these in. We have to set them
-# here so they are accessible by all targets.
+# The tests as well as any binaries which are run as subprocesses by tests
+# (e.g. tserver, master, and the 'kudu' CLI tool) need to link these in.
+# We have to set them here so they are accessible by all targets.
 if (NOT APPLE)
-  set(SANITIZER_OPTIONS_OVERRIDE -Wl,-u_sanitizer_options_link_helper sanitizer_options)
+  if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
+    set(SANITIZER_OPTIONS_OVERRIDE -Wl,-u_sanitizer_options_link_helper sanitizer_options)
+  endif()
   set(KRB5_REALM_OVERRIDE -Wl,--undefined=krb5_realm_override_loaded krb5_realm_override)
 else()
-  set(SANITIZER_OPTIONS_OVERRIDE -Wl,-U,_sanitizer_options_link_helper sanitizer_options)
+  if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
+    set(SANITIZER_OPTIONS_OVERRIDE -Wl,-U,_sanitizer_options_link_helper sanitizer_options)
+  endif()
   set(KRB5_REALM_OVERRIDE -Wl,-U,krb5_realm_override_loaded krb5_realm_override)
 endif()
 

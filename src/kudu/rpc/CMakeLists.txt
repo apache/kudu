@@ -98,27 +98,32 @@ target_link_libraries(protoc-gen-krpc
     protobuf
     gutil)
 
-#### RPC test
-PROTOBUF_GENERATE_CPP(
-  RPC_TEST_DIFF_PACKAGE_SRCS RPC_TEST_DIFF_PACKAGE_HDRS RPC_TEST_DIFF_PACKAGE_TGTS
-  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
-  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES rtest_diff_package.proto)
-add_library(rtest_diff_package_proto ${RPC_TEST_DIFF_PACKAGE_SRCS} ${RPC_TEST_DIFF_PACKAGE_HDRS})
-target_link_libraries(rtest_diff_package_proto rpc_header_proto)
+### RPC test
+if(NOT NO_TESTS)
+  PROTOBUF_GENERATE_CPP(
+    RPC_TEST_DIFF_PACKAGE_SRCS RPC_TEST_DIFF_PACKAGE_HDRS RPC_TEST_DIFF_PACKAGE_TGTS
+    SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+    PROTO_FILES rtest_diff_package.proto)
+  add_library(rtest_diff_package_proto ${RPC_TEST_DIFF_PACKAGE_SRCS} ${RPC_TEST_DIFF_PACKAGE_HDRS})
+  target_link_libraries(rtest_diff_package_proto rpc_header_proto)
 
-KRPC_GENERATE(
-  RTEST_KRPC_SRCS RTEST_KRPC_HDRS RTEST_KRPC_TGTS
-  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
-  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES rtest.proto)
-add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
-target_link_libraries(rtest_krpc
-  krpc
-  rpc_header_proto
-  rtest_diff_package_proto)
+  KRPC_GENERATE(
+    RTEST_KRPC_SRCS RTEST_KRPC_HDRS RTEST_KRPC_TGTS
+    SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+    PROTO_FILES rtest.proto)
+  add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
+  target_link_libraries(rtest_krpc
+    krpc
+    rpc_header_proto
+    rtest_diff_package_proto)
+endif()
 
-# Tests
+#######################################
+# Unit tests
+#######################################
+
 SET_KUDU_TEST_LINK_LIBS(
   krpc
   mini_kdc

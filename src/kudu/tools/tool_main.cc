@@ -70,7 +70,9 @@ unique_ptr<Mode> RootMode(const string& name) {
       .AddMode(BuildRemoteReplicaMode())
       .AddMode(BuildTableMode())
       .AddMode(BuildTabletMode())
+#if !defined(KUDU_CLI_TOOL_NO_TESTS)
       .AddMode(BuildTestMode())
+#endif
       .AddMode(BuildTxnMode())
       .AddMode(BuildTServerMode())
       .AddMode(BuildWalMode())

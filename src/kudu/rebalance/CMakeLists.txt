@@ -36,9 +36,7 @@ target_link_libraries(rebalance
 # Unit tests
 #######################################
 
-SET_KUDU_TEST_LINK_LIBS(
-  rebalance
-)
+SET_KUDU_TEST_LINK_LIBS(rebalance)
 
 ADD_KUDU_TEST(placement_policy_util-test)
 ADD_KUDU_TEST(rebalance-test)

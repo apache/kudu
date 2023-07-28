@@ -95,18 +95,20 @@ ADD_EXPORTABLE_LIBRARY(security
   SRCS ${SECURITY_SRCS}
   DEPS ${SECURITY_LIBS})
 
-
 ##############################
 # mini_kdc
 ##############################
 
-set(MINI_KDC_SRCS test/mini_kdc.cc)
+if (NOT NO_TESTS)
+  # The mini_kdc is used only in tests.
+  set(MINI_KDC_SRCS test/mini_kdc.cc)
 
-add_library(mini_kdc ${MINI_KDC_SRCS})
-target_link_libraries(mini_kdc
-  gutil
-  kudu_test_util
-  kudu_util)
+  add_library(mini_kdc ${MINI_KDC_SRCS})
+  target_link_libraries(mini_kdc
+    gutil
+    kudu_test_util
+    kudu_util)
+endif()
 
 ##############################
 # security_test_util
@@ -124,18 +126,21 @@ if (NOT NO_TESTS)
     kudu_test_util
     kudu_util
     security)
-
-  # Tests
-  SET_KUDU_TEST_LINK_LIBS(
-    mini_kdc
-    security
-    security_test_util)
-
-  ADD_KUDU_TEST(ca/cert_management-test)
-  ADD_KUDU_TEST(cert-test)
-  ADD_KUDU_TEST(crypto-test)
-  ADD_KUDU_TEST(test/mini_kdc-test)
-  ADD_KUDU_TEST(tls_handshake-test)
-  ADD_KUDU_TEST(tls_socket-test PROCESSORS 2)
-  ADD_KUDU_TEST(token-test)
 endif()
+
+#########################################
+# Unit tests
+#########################################
+
+SET_KUDU_TEST_LINK_LIBS(
+  mini_kdc
+  security
+  security_test_util)
+
+ADD_KUDU_TEST(ca/cert_management-test)
+ADD_KUDU_TEST(cert-test)
+ADD_KUDU_TEST(crypto-test)
+ADD_KUDU_TEST(test/mini_kdc-test)
+ADD_KUDU_TEST(tls_handshake-test)
+ADD_KUDU_TEST(tls_socket-test PROCESSORS 2)
+ADD_KUDU_TEST(token-test)
