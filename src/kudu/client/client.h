@@ -1088,6 +1088,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class tools::LeaderMasterProxy;
   friend class tools::RemoteKsckCluster;
   friend class tools::TableLister;
+  friend class KeepAlivePeriodicallyTest;
   friend class ScanTokenTest;
   friend Status tools::ShowTabletInfo(const std::vector<std::string>& master_addresses,
                                       const std::vector<std::string>& tablet_id);
@@ -2949,6 +2950,32 @@ class KUDU_EXPORT KuduScanner {
   ///   fault tolerant.
   Status KeepAlive();
 
+  /// Keep the current remote scanner alive by sending keep-alive requests periodically.
+  ///
+  /// This function uses a timer to call KeepAlive() periodically which is
+  /// defined by parameter keep_alive_interval_ms. It sends keep-alive requests to
+  /// the server periodically using a separate thread. This is useful if the client
+  /// takes long time to handle the fetched data before having the chance to call
+  /// KeepAlive(). This can be called after the scanner is opened and the timer can
+  /// be stopped by calling StopKeepAlivePeriodically().
+  ///
+  /// @note This method isn't thread-safe.
+  ///
+  /// @param [in] keep_alive_interval_ms
+  ///   The interval to send keep alive request. The default value is 30000 ms,
+  ///   which is half of the default setting for the --scanner_ttl_ms scanner.
+  /// @return It returns a non-OK if the scanner is not opened.
+  Status StartKeepAlivePeriodically(uint64_t keep_alive_interval_ms = 30000);
+
+  /// Stop keeping the current remote scanner alive periodically.
+  ///
+  /// This function stops to send keep-alive requests to the server periodically.
+  /// After function StartKeepAlivePeriodically is called, this function can be used to
+  /// stop the keep-alive timer at any time. The timer will be stopped automatically
+  /// after finishing scanning. But it can also be stopped manually by calling this
+  /// function.
+  void StopKeepAlivePeriodically();
+
   /// Close the scanner.
   ///
   /// Closing the scanner releases resources on the server. This call does not
@@ -3207,6 +3234,9 @@ class KUDU_EXPORT KuduScanner {
   FRIEND_TEST(ClientTest, TestScanWithQueryId);
   FRIEND_TEST(ClientTest, TestReadAtSnapshotNoTimestampSet);
   FRIEND_TEST(ConsistencyITest, TestSnapshotScanTimestampReuse);
+  FRIEND_TEST(KeepAlivePeriodicallyTest, TestScannerKeepAlivePeriodicallyCrossServers);
+  FRIEND_TEST(KeepAlivePeriodicallyTest, TestScannerKeepAlivePeriodicallyScannerTolerate);
+  FRIEND_TEST(KeepAlivePeriodicallyTest, TestStopKeepAlivePeriodically);
   FRIEND_TEST(ScanTokenTest, TestScanTokens);
   FRIEND_TEST(ScanTokenTest, TestScanTokens_NonUniquePrimaryKey);
   FRIEND_TEST(ScanTokenTest, TestScanTokensWithQueryId);

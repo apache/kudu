@@ -2090,6 +2090,15 @@ Status KuduScanner::KeepAlive() {
   return data_->KeepAlive();
 }
 
+Status KuduScanner::StartKeepAlivePeriodically(uint64_t keep_alive_interval_ms) {
+  return data_->StartKeepAlivePeriodically(keep_alive_interval_ms,
+                                           data_->table_->client()->data_->messenger_);
+}
+
+void KuduScanner::StopKeepAlivePeriodically() {
+  data_->StopKeepAlivePeriodically();
+}
+
 void KuduScanner::Close() {
   if (!data_->open_) return;
 
@@ -2119,10 +2128,14 @@ void KuduScanner::Close() {
 
 bool KuduScanner::HasMoreRows() const {
   CHECK(data_->open_);
-  return !data_->short_circuit_ &&                 // The scan is not short circuited
+  bool has_more = !data_->short_circuit_ &&        // The scan is not short circuited
       (data_->data_in_open_ ||                     // more data in hand
        data_->last_response_.has_more_results() || // more data in this tablet
        data_->MoreTablets());                      // more tablets to scan, possibly with more data
+  if (!has_more) {
+    data_->StopKeepAlivePeriodically();
+  }
+  return has_more;
 }
 
 Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {

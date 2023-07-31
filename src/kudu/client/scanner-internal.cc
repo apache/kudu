@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -45,6 +46,8 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"
+#include "kudu/rpc/messenger.h" // IWYU pragma: keep
+#include "kudu/rpc/periodic.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -61,7 +64,9 @@ using google::protobuf::FieldDescriptor;
 using google::protobuf::Reflection;
 using kudu::rpc::ComputeExponentialBackoff;
 using kudu::rpc::CredentialsPolicy;
+using kudu::rpc::Messenger;
 using kudu::rpc::RpcController;
+using kudu::rpc::PeriodicTimer;
 using kudu::security::SignedTokenPB;
 using kudu::tserver::NewScanRequestPB;
 using kudu::tserver::RowFormatFlags;
@@ -90,6 +95,31 @@ KuduScanner::Data::Data(KuduTable* table)
 }
 
 KuduScanner::Data::~Data() {
+  if (keep_alive_timer_) {
+    keep_alive_timer_->Stop();
+  }
+}
+
+Status KuduScanner::Data::StartKeepAlivePeriodically(uint64_t keep_alive_interval_ms,
+                                                     std::shared_ptr<Messenger> messenger) {
+  if (!open_) return Status::IllegalState("Scanner was not open.");
+  if (keep_alive_timer_ && keep_alive_timer_->started()) {
+    return Status::OK();
+  }
+  keep_alive_timer_ = PeriodicTimer::Create(
+      messenger,
+      [&]() {
+        return KeepAlive();
+      },
+      MonoDelta::FromMilliseconds(keep_alive_interval_ms));
+  keep_alive_timer_->Start();
+  return Status::OK();
+}
+
+void KuduScanner::Data::StopKeepAlivePeriodically() {
+  if (keep_alive_timer_) {
+    keep_alive_timer_->Stop();
+  }
 }
 
 Status KuduScanner::Data::EnrichStatusMessage(Status s) const {

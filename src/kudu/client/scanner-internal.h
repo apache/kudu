@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/columnar_scan_batch.h"
@@ -48,6 +49,11 @@ namespace kudu {
 class MonoTime;
 class PartitionKey;
 class Schema;
+
+namespace rpc {
+class Messenger;
+class PeriodicTimer;
+} // rpc
 
 namespace tserver {
 class TabletServerServiceProxy;
@@ -168,6 +174,13 @@ class KuduScanner::Data {
                     std::set<std::string>* blacklist);
 
   Status KeepAlive();
+
+  // Send keep alive requests periodically in an independent thread.
+  Status StartKeepAlivePeriodically(uint64_t keep_alive_interval_ms,
+                                    std::shared_ptr<rpc::Messenger> messenger);
+
+  // Stop sending keep-alive requests periodically.
+  void StopKeepAlivePeriodically();
 
   // Returns whether there may exist more tablets to scan.
   //
@@ -292,6 +305,13 @@ class KuduScanner::Data {
   Status EnrichStatusMessage(Status s) const;
 
   void UpdateResourceMetrics();
+
+  // This is used to send keep-alive requests periodically.
+  // When the scanner calls StartKeepAlivePeriodically(),
+  // it will be initialized.
+  std::shared_ptr<rpc::PeriodicTimer> keep_alive_timer_;
+
+  FRIEND_TEST(KeepAlivePeriodicallyTest, TestScannerKeepAlivePeriodicallyCrossServers);
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

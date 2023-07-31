@@ -36,6 +36,7 @@
 #include <thread>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -99,6 +100,7 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/periodic.h" // IWYU pragma: keep
 #include "kudu/rpc/service_pool.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
@@ -117,6 +119,7 @@
 #include "kudu/util/async_util.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/env.h"
 #include "kudu/util/locks.h"  // IWYU pragma: keep
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -231,6 +234,7 @@ using std::set;
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -2978,6 +2982,184 @@ TEST_F(ClientTest, TestScannerKeepAlive) {
   }
   ASSERT_FALSE(scanner.HasMoreRows());
   ASSERT_EQ(sum, 499500);
+}
+
+class KeepAlivePeriodicallyTest :
+    public ClientTest,
+    public ::testing::WithParamInterface<bool> {
+ public:
+  void SetUp() override {
+    ClientTest::SetUp();
+    // Create a new cluster with 3 tablet servers.
+    InternalMiniClusterOptions options;
+    options.num_tablet_servers = 3;
+    cluster_->Shutdown();
+    env_->DeleteRecursively(test_dir_);
+    cluster_.reset(new InternalMiniCluster(env_, options));
+    ASSERT_OK(cluster_->Start());
+    ASSERT_OK(KuduClientBuilder()
+        .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+        .Build(&client_));
+
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    // Create a table with 3 hash partitions.
+    ASSERT_OK(table_creator->table_name(kTableName)
+                           .schema(&schema_)
+                           .num_replicas(3)
+                           .add_hash_partitions({ "key" }, 3)
+                           .timeout(MonoDelta::FromSeconds(60))
+                           .Create());
+
+    ASSERT_OK(client_->OpenTable(kTableName, &test_table_));
+    NO_FATALS(InsertTestRows(test_table_.get(), 3000));
+
+    // Every tablet server owns 3 tablet replicas.
+    for (int i = 0; i < 3; i++) {
+      vector<string> tablet_ids = cluster_->mini_tablet_server(i)->ListTablets();
+      ASSERT_EQ(3, tablet_ids.size());
+    }
+  }
+
+  shared_ptr<KuduTable> test_table_;
+};
+
+INSTANTIATE_TEST_SUITE_P(KeepAlivePeriodically, KeepAlivePeriodicallyTest, ::testing::Bool());
+
+// Test case 1: 3 tablets is distributed in different tablet servers.
+// When the scanner opens the next tablet, keepalive requests are sent
+// to the other tablet server automatically.
+TEST_P(KeepAlivePeriodicallyTest, TestScannerKeepAlivePeriodicallyCrossServers) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const auto keep_alive_periodically = GetParam();
+  // Set the scanner TTL low.
+  FLAGS_scanner_ttl_ms = 500;
+  KuduScanner scanner(test_table_.get());
+  ASSERT_OK(scanner.SetBatchSizeBytes(100));
+  ASSERT_OK(scanner.Open());
+
+  // Start the keepalive timer.
+  if (keep_alive_periodically) {
+    ASSERT_OK(scanner.StartKeepAlivePeriodically(FLAGS_scanner_ttl_ms/10));
+  }
+
+  KuduScanBatch batch;
+  bool has_expired_scan = false;
+  while (scanner.HasMoreRows()) {
+    // Sleep 1s to make scanner expired when without keepalive peroidically.
+    SleepFor(MonoDelta::FromSeconds(1));
+    Status s = scanner.NextBatch(&batch);
+    if (keep_alive_periodically) {
+      // It is OK, the scanner is not expired.
+      ASSERT_OK(s);
+    } else if (s.IsNotFound()) {
+      // It is expired.
+      has_expired_scan = true;
+      break;
+    }
+  }
+  if (keep_alive_periodically) {
+    // Test keep alive timer will be stopped automatically after no more rows to read.
+    ASSERT_FALSE(scanner.data_->keep_alive_timer_->started());
+    ASSERT_FALSE(has_expired_scan);
+  } else {
+    ASSERT_TRUE(has_expired_scan);
+  }
+}
+
+// Test case 2: The scanner are reading a tablet replica in a tablet
+// server, if the tablet server is stopped, the client automatically
+// restarts the scanning at some other tablet replica hosted by different
+// tablet server. And keepalive requests are sent the new tablet server.
+TEST_P(KeepAlivePeriodicallyTest, TestScannerKeepAlivePeriodicallyScannerTolerate) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const auto keep_alive_periodically = GetParam();
+
+  // Set the scanner TTL low.
+  FLAGS_scanner_ttl_ms = 500;
+  KuduScanner scanner(test_table_.get());
+  ASSERT_OK(scanner.SetFaultTolerant());
+  ASSERT_OK(scanner.SetBatchSizeBytes(100));
+  ASSERT_OK(scanner.Open());
+
+  // Start the keepalive timer.
+  if (keep_alive_periodically) {
+    ASSERT_OK(scanner.StartKeepAlivePeriodically(FLAGS_scanner_ttl_ms/2));
+  }
+
+  // Do a first scan.
+  ASSERT_TRUE(scanner.HasMoreRows());
+  KuduScanBatch batch;
+  scanner.NextBatch(&batch);
+  ASSERT_TRUE(scanner.HasMoreRows());
+
+  // Stop the current tablet server.
+  KuduTabletServer* kts_ptr;
+  ASSERT_OK(scanner.GetCurrentServer(&kts_ptr));
+  unique_ptr<KuduTabletServer> kts(kts_ptr);
+  RestartTServerAndWait(kts->uuid());
+
+  bool has_expired_scan = false;
+  while (scanner.HasMoreRows()) {
+    SleepFor(MonoDelta::FromSeconds(1));
+    Status s = scanner.NextBatch(&batch);
+    // Set fault tolerance false to enable the scanner expired.
+    ASSERT_OK(scanner.data_->mutable_configuration()->SetFaultTolerant(false));
+    if (keep_alive_periodically) {
+      // It is OK, the scanner is not expired.
+      ASSERT_OK(s);
+    } else if (s.IsNotFound()) {
+      // It is expired.
+      has_expired_scan = true;
+      break;
+    }
+  }
+  if (keep_alive_periodically) {
+    ASSERT_FALSE(has_expired_scan);
+  } else {
+    ASSERT_TRUE(has_expired_scan);
+  }
+}
+
+TEST_P(KeepAlivePeriodicallyTest, TestStopKeepAlivePeriodically) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const auto stop_keepalive_periodcally = GetParam();
+
+  // Set the scanner TTL low.
+  FLAGS_scanner_ttl_ms = 500;
+  KuduScanner scanner(test_table_.get());
+  ASSERT_OK(scanner.SetBatchSizeBytes(100));
+  ASSERT_OK(scanner.Open());
+
+  ASSERT_OK(scanner.StartKeepAlivePeriodically(FLAGS_scanner_ttl_ms/2));
+
+  // Stop the keepalive timer.
+  if (stop_keepalive_periodcally) {
+    scanner.StopKeepAlivePeriodically();
+  }
+
+  KuduScanBatch batch;
+  bool has_expired_scan = false;
+  while (scanner.HasMoreRows()) {
+    // Sleep 1s to make scanner expired when without keepalive peroidically.
+    SleepFor(MonoDelta::FromSeconds(1));
+    Status s = scanner.NextBatch(&batch);
+    if (!stop_keepalive_periodcally) {
+      // It is OK, the scanner is not expired.
+      ASSERT_OK(s);
+    } else if (s.IsNotFound()) {
+      // It is expired.
+      has_expired_scan = true;
+      break;
+    }
+  }
+  if (stop_keepalive_periodcally) {
+    ASSERT_TRUE(has_expired_scan);
+  } else {
+    ASSERT_FALSE(has_expired_scan);
+  }
 }
 
 // Test cleanup of scanners on the server side when closed.
