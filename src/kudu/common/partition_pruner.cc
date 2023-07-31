@@ -221,14 +221,13 @@ void PartitionPruner::ComputeHashBuckets(const Schema& schema, // NOLINT(misc-no
                                          vector<bool>* hash_bucket_bitset) {
   DCHECK(predicate_values_selected);
   DCHECK(hash_bucket_bitset);
-  bool all_hash_bucket_needed = true;
-  for (const auto b : *hash_bucket_bitset) {
-    all_hash_bucket_needed &= b;
-  }
-  if (all_hash_bucket_needed) {
+
+  if (std::all_of(hash_bucket_bitset->begin(),
+                  hash_bucket_bitset->end(),
+                  [](bool b) { return b; })) {
     return;
   }
-  size_t level = predicate_values_selected->size();
+  const size_t level = predicate_values_selected->size();
   DCHECK_EQ(hash_dimension.column_ids.size(), predicate_values_list.size());
   if (level == hash_dimension.column_ids.size()) {
     string encoded_string;
