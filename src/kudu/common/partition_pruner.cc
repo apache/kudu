@@ -219,8 +219,8 @@ void PartitionPruner::ComputeHashBuckets(const Schema& schema, // NOLINT(misc-no
                                          const vector<vector<const void*>>& predicate_values_list,
                                          vector<const void*>* predicate_values_selected,
                                          vector<bool>* hash_bucket_bitset) {
-  DCHECK_NOTNULL(predicate_values_selected);
-  DCHECK_NOTNULL(hash_bucket_bitset);
+  DCHECK(predicate_values_selected);
+  DCHECK(hash_bucket_bitset);
   bool all_hash_bucket_needed = true;
   for (const auto b : *hash_bucket_bitset) {
     all_hash_bucket_needed &= b;
