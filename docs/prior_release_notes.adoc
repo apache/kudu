@@ -37,6 +37,223 @@ reproduced on this page. Please consult the
 link:http://kudu.apache.org/releases/[documentation of the appropriate release]
 for a list of known issues and limitations.
 
+[[rn_1.16.0]]
+= Apache Kudu 1.16.0 Release Notes
+
+[[rn_1.16.0_upgrade_notes]]
+== Upgrade Notes
+
+[[rn_1.16.0_deprecations]]
+== Deprecations
+* Support for Python 2.x and Python 3.4 and earlier is deprecated and may be
+removed in the next minor release.
+
+[[rn_1.16.0_new_features]]
+== New features
+
+* Clients can now require authentication and encryption instead of depending on
+server-side settings
+(link:https://issues.apache.org/jira/browse/KUDU-1921[KUDU-1921]).
+
+* Kudu Masters now automatically attempt to add themselves to an existing
+cluster if there is a healthy Raft quorum among Kudu Masters.
+
+* A new tool `kudu master unsafe_rebuild` is added to reconstruct the master
+catalog from tablet metadata collected from tablet servers. This can be used
+in emergencies to restore access to tables when all masters are unavailable.
+
+* A new tool `kudu table set_replication_factor` is added to alter the
+replication factor of a table. The tool immediately updates table metadata in
+the master, and the master will asynchronously effect the new replication
+factor. Progress can be monitored by running `ksck`.
+
+* It’s now possible to require a minimum replication factor for a Kudu table.
+This can be achieved by customizing the setting for the newly introduced
+`--min_num_replicas` kudu-master’s flag. For example, setting
+`--min_num_replicas=3` enforces every newly created table to have at least 3
+replicas for each of its tablets, so there cannot be a data loss when just a
+single tablet server in the cluster fails irrecoverably. For the sake of
+backward compatibility, `--min_num_replicas` is set to 1 by default.
+
+* It’s now possible to track startup progress on the `/startup` page on the web
+UI. There are also metrics added to track the overall server startup progress
+as well as the processing of the log block containers and starting of the
+tablets (link:https://issues.apache.org/jira/browse/KUDU-1959[KUDU-1959]).
+
+* A new tool `kudu table add_column` is added to add columns to existing tables
+using the CLI
+(link:https://issues.apache.org/jira/browse/KUDU-3339[KUDU-3339]).
+
+* A new tool `kudu tserver unregister` is added to remove a dead tablet server
+from the cluster without restarting the masters
+(link:https://issues.apache.org/jira/browse/KUDU-2915[KUDU-2915]).
+
+
+[[rn_1.16.0_improvements]]
+== Optimizations and improvements
+
+* Kudu will now more aggressively fsync consensus-related metadata when metadata
+is configured to be on an XFS mount. This may lead to increased contention on
+the device that backs metadata, but will prevent corruption in the event of an
+outage (link:https://issues.apache.org/jira/browse/KUDU-2195[KUDU-2195]).
+
+* A clearer message is logged when the Ranger subprocess crashes, to specify a
+problem with the Ranger client.
+
+* Two new flags have been introduced for the `kudu table scan` and `kudu perf
+table_scan` CLI tools: `--row_count_only` and `--report_scanner_stats`. With
+these new flags, the above mentioned CLI tools allow to issue scan requests
+equivalent to running “SELECT COUNT(1) FROM <table_name>” from impala-shell.
+These new provisions are useful in detecting and troubleshooting scan
+performance issues.
+
+* Added replica selection configuration knob for the `kudu table scan` and `kudu
+perf table_scan` CLI tools: it’s controlled by the `--replica_selection` flag.
+
+* To improve security, the following flags are now marked as sensitive and will
+be redacted in the logs and WebUI when the redaction is enabled:
+** `--webserver_private_key_file`
+** `--webserver_private_key_password_cmd`
+** `--webserver_password_file`
+
+* The logic to select the effective time source when running with
+`--time_source=auto` has been updated. The `builtin` time source would be
+auto-selected if a Kudu server runs with `--time_source=auto` in an
+environment where the instance detector isn't aware of dedicated NTP servers
+AND the `--builtin_ntp_servers` flag is set to a valid value. Otherwise, if
+`--builtin_ntp_servers` flag is set to an empty or invalid value, the
+effective time source becomes `system` for platforms supporting the
+`get_ntptime()` API, otherwise the catch-all case selects the `system_unsync`
+as the time effective source.
+
+* It is now possible to print or edit PBC files in batch using the `kudu pbc`
+CLI tool, and also to format its JSON input/output as “pretty”.
+
+* Client connection timeout is now configurable in the Java client
+(link:https://issues.apache.org/jira/browse/KUDU-3240[KUDU-3240]).
+
+* A new `/healthz` endpoint is now available on the kudu-master and tablet-server
+embedded web servers for liveness checks
+(link:https://issues.apache.org/jira/browse/KUDU-3308[KUDU-3308]).
+
+* Hive Metastore URI is now logged to the console when connecting via `kudu hms`
+CLI tool (link:https://issues.apache.org/jira/browse/KUDU-3189[KUDU-3189]).
+
+* It is now possible to start up a master when there is an additional master
+address present in the master addresses flag
+(link:https://issues.apache.org/jira/browse/KUDU-3311[KUDU-3311]).
+
+* Table entity is now accessible in `KuduWriteOperation` in the C++ client,
+making understanding errors on the client side easier
+(link:https://issues.apache.org/jira/browse/KUDU-2623[KUDU-2623]).
+
+* The rebalancer tool now doesn’t move replicas to tablet servers in maintenance
+mode (link:https://issues.apache.org/jira/browse/KUDU-3328[KUDU-3328]).
+
+* Improved the performance of the run length encoding (RLE).
+
+[[rn_1.16.0_fixed_issues]]
+== Fixed Issues
+* Log4J used in Ranger subprocess was upgraded to 2.17.1 which contains patches
+go several security vulnerabilities
+(link:https://nvd.nist.gov/vuln/detail/CVE-2021-44832[CVE-2021-44832],
+link:https://nvd.nist.gov/vuln/detail/CVE-2021-45105[CVE-2021-45105],
+link:https://nvd.nist.gov/vuln/detail/CVE-2021-45046[CVE-2021-45046], and
+link:https://nvd.nist.gov/vuln/detail/CVE-2021-44228[CVE-2021-44228]).
+
+* Kudu servers previously crashed if hostnames became unresolvable via DNS (e.g.
+if the container hosting a server were destroyed). Such errors are now treated
+as transient and the lookups are retried periodically. See
+link:https://issues.apache.org/jira/browse/KUDU-75[KUDU-75],
+link:https://issues.apache.org/jira/browse/KUDU-1620[KUDU-1620],
+and link:https://issues.apache.org/jira/browse/KUDU-1885[KUDU-1885] for more details.
+
+* Fixed an issue in Kudu Java client where concurrent flushing of data buffers
+could lead to errors reported as 'java.lang.AssertionError: This Deferred was
+already called'
+(link:https://issues.apache.org/jira/browse/KUDU-3277[KUDU-3277]).
+
+* Fixed Kudu RPC negotiation issue when running with cyrus-sasl-gssapi-2.1.27-5
+and newer versions of the RPM package. A failed RPC connection negotiation
+attempt would result in an error logged along with the full connection
+negotiation trace: `Runtime error: SASL(-15): mechanism too weak for this
+user: Unable to find a callback: 32775`
+(link:https://issues.apache.org/jira/browse/KUDU-3297[KUDU-3297]).
+
+* Fixed crash in kudu-master and kudu-tserver when running with kernel where the
+`getrandom(2)` API is not available (versions of Linux kernel prior to 3.17).
+
+* Fixed bug which could lead to exhaustion of the address space for the outgoing
+connections on a busy Kudu cluster
+(link:https://issues.apache.org/jira/browse/KUDU-3352[KUDU-3352]).
+
+* Fixed a bug in the Java client where a malformed tablet server ID in the scan
+token causes connection failures and timeouts in some cases
+(link:https://issues.apache.org/jira/browse/KUDU-3349[KUDU-3349]).
+
+* Fixed a bug where the rebalancer failed with `-ignored_tservers` flag
+(link:https://issues.apache.org/jira/browse/KUDU-3346[KUDU-3346]).
+
+[[rn_1.16.0_wire_compatibility]]
+== Wire Protocol compatibility
+
+Kudu 1.16.0 is wire-compatible with previous versions of Kudu:
+
+* Kudu 1.16 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.
+* Rolling upgrade between Kudu 1.15 and Kudu 1.16 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.
+* Kudu 1.0 clients may connect to servers running Kudu 1.16 with the exception of the
+below-mentioned restrictions regarding secure clusters.
+
+The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.16 and versions earlier than 1.3:
+
+* If a Kudu 1.16 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.
+* If a Kudu 1.16 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.
+
+[[rn_1.16.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.16.0
+
+[[rn_1.16.0_client_compatibility]]
+=== Client Library Compatibility
+
+* The Kudu 1.16 Java client library is API- and ABI-compatible with Kudu 1.15. Applications
+written against Kudu 1.15 will compile and run against the Kudu 1.16 client library and
+vice-versa.
+
+* The Kudu 1.16 {cpp} client is API- and ABI-forward-compatible with Kudu 1.15.
+Applications written and compiled against the Kudu 1.15 client library will run without
+modification against the Kudu 1.16 client library. Applications written and compiled
+against the Kudu 1.16 client library will run without modification against the Kudu 1.15
+client library.
+
+* The Kudu 1.16 Python client is API-compatible with Kudu 1.15. Applications
+written against Kudu 1.15 will continue to run against the Kudu 1.16 client
+and vice-versa.
+
+[[rn_1.16.0_known_issues]]
+== Known Issues and Limitations
+
+Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
+documentation.
+
+[[rn_1.16.0_contributors]]
+== Contributors
+
+Kudu 1.16.0 includes contributions from 17 people, including 5 first-time contributors:
+
+* Riza Suminto
+* Zoltan Chovan
+* kedeng
+* khazarmammadli
+* yejiabao
+
+Thank you for your contributions!
+
 [[rn_1.15.0]]
 = Apache Kudu 1.15.0 Release Notes
 
