@@ -377,12 +377,14 @@ documentation.
 [[rn_1.17.0_contributors]]
 == Contributors
 
-Kudu 1.17.0 includes contributions from 24 people, including 10 first-time contributors:
+Kudu 1.17.0 includes contributions from 26 people, including 12 first-time contributors:
 
 * Ashwani Raina
 * Hari Reddy
 * Kurt Deschler
 * Marton Greber
+* Song Jiacheng
+* Zoltan Martonka
 * bsglz
 * mammadli.khazar
 * wzhou-code
