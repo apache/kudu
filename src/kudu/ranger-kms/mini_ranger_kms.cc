@@ -21,14 +21,15 @@
 #include <initializer_list>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/postgres/mini_postgres.h"
+#include "kudu/postgres/mini_postgres.h"  // IWYU pragma: keep
 #include "kudu/ranger-kms/mini_ranger_kms_configs.h"
-#include "kudu/ranger/mini_ranger.h"
+#include "kudu/ranger/mini_ranger.h"      // IWYU pragma: keep
 #include "kudu/util/easy_json.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
@@ -275,7 +276,7 @@ Status MiniRangerKMS::StartRangerKMS() {
     RETURN_NOT_OK(WaitForTcpBind(process_->pid(),
                                  &port_,
                                  { "0.0.0.0", "127.0.0.1", },
-                                 MonoDelta::FromMilliseconds(90000)));
+                                 MonoDelta::FromSeconds(90)));
     LOG(INFO) << "Ranger KMS bound to " << port_;
     LOG(INFO) << "Ranger KMS URL: " << ranger_kms_url_;
   }

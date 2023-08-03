@@ -20,6 +20,7 @@
 #include <csignal>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -27,7 +28,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/postgres/mini_postgres.h"
+#include "kudu/postgres/mini_postgres.h"      // IWYU pragma: keep
 #include "kudu/ranger/mini_ranger_configs.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/util/curl_util.h"
@@ -45,8 +46,6 @@
 using std::string;
 using std::vector;
 using strings::Substitute;
-
-static constexpr int kRangerStartTimeoutMs = 90000;
 
 namespace kudu {
 namespace ranger {
@@ -236,7 +235,7 @@ Status MiniRanger::StartRanger() {
     RETURN_NOT_OK(WaitForTcpBind(process_->pid(),
                                  &port,
                                  { "0.0.0.0", "127.0.0.1", },
-                                 MonoDelta::FromMilliseconds(kRangerStartTimeoutMs)));
+                                 MonoDelta::FromSeconds(90)));
     LOG(INFO) << "Ranger bound to " << port;
     LOG(INFO) << "Ranger admin URL: " << ranger_admin_url_;
   }

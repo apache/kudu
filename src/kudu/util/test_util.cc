@@ -17,10 +17,11 @@
 
 #include "kudu/util/test_util.h"
 
-#include <limits.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <climits>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -452,7 +453,8 @@ int CountOpenFds(Env* env, const string& path_pattern) {
 namespace {
 const vector<string> kWildcard = { "0.0.0.0" };
 
-Status WaitForBind(pid_t pid, uint16_t* port,
+Status WaitForBind(pid_t pid,
+                   uint16_t* port,
                    const vector<string>& addresses,
                    const char* kind,
                    MonoDelta timeout) {
@@ -494,10 +496,10 @@ Status WaitForBind(pid_t pid, uint16_t* port,
   const auto& addresses_to_check = addresses.empty() ? kWildcard : addresses;
   for (int64_t i = 1; ; ++i) {
     for (const auto& addr : addresses_to_check) {
-      string addr_pattern = Substitute("n$0:", addr == "0.0.0.0" ? "*" : addr);
+      const string addr_pattern = Substitute("n$0:", addr == "0.0.0.0" ? "*" : addr);
       string lsof_out;
       int32_t p = -1;
-      Status s = Subprocess::Call(cmd, "", &lsof_out).AndThen([&] () {
+      const auto s = Subprocess::Call(cmd, "", &lsof_out).AndThen([&] () {
         StripTrailingNewline(&lsof_out);
         vector<string> lines = strings::Split(lsof_out, "\n");
         for (int index = 2; index < lines.size(); index += 2) {
@@ -506,18 +508,21 @@ Status WaitForBind(pid_t pid, uint16_t* port,
               !cur_line.contains("->")) {
             cur_line.remove_prefix(addr_pattern.size());
             if (!safe_strto32(cur_line.data(), cur_line.size(), &p)) {
-              return Status::RuntimeError("unexpected lsof output", lsof_out);
+              return Status::RuntimeError(Substitute(
+                  "could not parse port number in string '$0' from lsof output",
+                  string(cur_line.data(), cur_line.size())), lsof_out);
             }
 
             return Status::OK();
           }
         }
 
-        return Status::RuntimeError("unexpected lsof output", lsof_out);
+        return Status::NotFound(
+            "could not find pattern of a bound port in lsof output", lsof_out);
       });
 
       if (s.ok()) {
-        CHECK(p > 0 && p < std::numeric_limits<uint16_t>::max())
+        CHECK(p > 0 && p <= std::numeric_limits<uint16_t>::max())
             << "parsed invalid port: " << p;
         VLOG(1) << "Determined bound port: " << p;
         *port = static_cast<uint16_t>(p);
@@ -525,10 +530,15 @@ Status WaitForBind(pid_t pid, uint16_t* port,
         return Status::OK();
       }
       if (deadline < MonoTime::Now()) {
-        return s;
+        return Status::TimedOut(Substitute(
+            "process with PID $0 is not yet bound to any port at the specified "
+            "addresses; last attempt running lsof returned '$1'",
+            pid, s.ToString()));
       }
     }
-    SleepFor(MonoDelta::FromMilliseconds(i * 10));
+    auto time_left_ms = std::max<int64_t>(
+        (deadline - MonoTime::Now()).ToMilliseconds(), 0);
+    SleepFor(MonoDelta::FromMilliseconds(std::min<int64_t>(i * 10, time_left_ms)));
   }
 
   // Should not reach here.
@@ -574,7 +584,7 @@ Status WaitForBindAtPort(const vector<string>& addresses,
           "n$0:$1", addr == "0.0.0.0" ? "*" : addr, port);
       for (const auto& l : lines) {
         if (l.empty()) {
-          return Status::RuntimeError("unexpected lsof output", lsof_out);
+          return Status::RuntimeError("empty line in lsof output", lsof_out);
         }
         if (l[0] == 'p' || l[0] == 'f') {
           continue;
@@ -592,7 +602,9 @@ Status WaitForBindAtPort(const vector<string>& addresses,
     if (deadline < MonoTime::Now()) {
       break;
     }
-    SleepFor(MonoDelta::FromMilliseconds(i * 10));
+    auto time_left_ms = std::max<int64_t>(
+        (deadline - MonoTime::Now()).ToMilliseconds(), 0);
+    SleepFor(MonoDelta::FromMilliseconds(std::min<int64_t>(i * 10, time_left_ms)));
   }
 
   return Status::TimedOut(
