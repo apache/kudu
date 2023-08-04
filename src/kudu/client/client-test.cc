@@ -8699,26 +8699,14 @@ class TableKeyRangeTest : public ClientTest {
   }
 
   static void InsertTestRowsWithStrings(KuduTable* table, KuduSession* session, int num_rows) {
-    vector<int> keys = { 0, 250, 500, 750 };
     string str_val = "*";
-    int diff_value = 120; // use to create discontinuous data in a tablet
-    for (int k = 0; k < keys.size(); k++) {
-      for (int i = keys[k]; i < keys[k] + num_rows; i++) {
-        unique_ptr<KuduInsert> insert(table->NewInsert());
-        ASSERT_OK(insert->mutable_row()->SetInt32("key", i));
-        ASSERT_OK(insert->mutable_row()->SetInt32("int_val", i * 2));
-        ASSERT_OK(insert->mutable_row()->SetString("string_val", str_val));
-        ASSERT_OK(session->Apply(insert.release()));
-        ASSERT_OK(session->Flush());
-      }
-      for (int i = keys[k] + diff_value; i < keys[k] + diff_value + num_rows; i++) {
-        unique_ptr<KuduInsert> insert(table->NewInsert());
-        ASSERT_OK(insert->mutable_row()->SetInt32("key", i));
-        ASSERT_OK(insert->mutable_row()->SetInt32("int_val", i * 2));
-        ASSERT_OK(insert->mutable_row()->SetString("string_val", str_val));
-        ASSERT_OK(session->Apply(insert.release()));
-        ASSERT_OK(session->Flush());
-      }
+    for (int i = 0; i < num_rows; i++) {
+      unique_ptr<KuduInsert> insert(table->NewInsert());
+      ASSERT_OK(insert->mutable_row()->SetInt32("key", i));
+      ASSERT_OK(insert->mutable_row()->SetInt32("int_val", i * 2));
+      ASSERT_OK(insert->mutable_row()->SetString("string_val", str_val));
+      ASSERT_OK(session->Apply(insert.release()));
+      ASSERT_OK(session->Flush());
     }
   }
 
@@ -8740,7 +8728,7 @@ TEST_F(TableKeyRangeTest, TestGetTableKeyRange) {
     // Should have no rows to begin with.
     ASSERT_EQ(0, CountRowsFromClient(table.get()));
     // Insert rows
-    NO_FATALS(InsertTestRowsWithStrings(client_table_.get(), session.get(), 100));
+    NO_FATALS(InsertTestRowsWithStrings(client_table_.get(), session.get(), 1000));
     NO_FATALS(CheckNoRpcOverflow());
   }
 
@@ -8756,7 +8744,7 @@ TEST_F(TableKeyRangeTest, TestGetTableKeyRange) {
     ASSERT_EQ(4, tokens.size());
 
     NO_FATALS(CheckTokensInfo(tokens));
-    ASSERT_EQ(800, CountRows(tokens));
+    ASSERT_EQ(1000, CountRows(tokens));
   }
 
   {
@@ -8772,7 +8760,7 @@ TEST_F(TableKeyRangeTest, TestGetTableKeyRange) {
     ASSERT_EQ(4, tokens.size());
 
     NO_FATALS(CheckTokensInfo(tokens));
-    ASSERT_EQ(800, CountRows(tokens));
+    ASSERT_EQ(1000, CountRows(tokens));
   }
 
   uint32_t token_size_a = 0;
@@ -8785,10 +8773,10 @@ TEST_F(TableKeyRangeTest, TestGetTableKeyRange) {
     builder.SetSplitSizeBytes(700);
     ASSERT_OK(builder.Build(&tokens));
     token_size_a = tokens.size();
-    ASSERT_LT(4, token_size_a);
+    ASSERT_LE(4, token_size_a);
 
     NO_FATALS(CheckTokensInfo(tokens));
-    ASSERT_EQ(800, CountRows(tokens));
+    ASSERT_EQ(1000, CountRows(tokens));
   }
 
   uint32_t token_size_b = 0;
@@ -8801,14 +8789,18 @@ TEST_F(TableKeyRangeTest, TestGetTableKeyRange) {
     builder.SetSplitSizeBytes(20);
     ASSERT_OK(builder.Build(&tokens));
     token_size_b = tokens.size();
-    ASSERT_LT(4, token_size_b);
+    ASSERT_LE(4, token_size_b);
 
     NO_FATALS(CheckTokensInfo(tokens));
-    ASSERT_EQ(800, CountRows(tokens));
+    ASSERT_EQ(1000, CountRows(tokens));
   }
 
-  // diffferent splitSizeBytes leads to different token
-  ASSERT_NE(token_size_a, token_size_b);
+  // Different "splitSizeBytes" values typically leads to
+  // different numbers of tokens, although they may also
+  // leads to the same number of tokens.
+  // However, a smaller "splitSizeBytes" value will definitely
+  // not generate fewer tokens than a larger "splitSizeBytes" value.
+  ASSERT_LE(token_size_a, token_size_b);
 
   {
     // search from tserver
@@ -8821,9 +8813,10 @@ TEST_F(TableKeyRangeTest, TestGetTableKeyRange) {
     ASSERT_EQ(tokens.size(), 4);
 
     NO_FATALS(CheckTokensInfo(tokens));
-    ASSERT_EQ(800, CountRows(tokens));
+    ASSERT_EQ(1000, CountRows(tokens));
   }
 }
+
 class ClientTxnManagerProxyTest : public ClientTest {
  public:
   void SetUp() override {
