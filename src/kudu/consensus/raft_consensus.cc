@@ -1180,7 +1180,7 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* r
 
       // If the OpIds match, i.e. if they have the same term and id, then this is just
       // duplicate, we skip...
-      if (OpIdEquals(round->replicate_msg()->id(), leader_msg->id())) {
+      if (round->replicate_msg()->id() == leader_msg->id()) {
         VLOG_WITH_PREFIX_UNLOCKED(2) << "Skipping op id " << leader_msg->id()
                                      << " (already replicated)";
         deduplicated_req->preceding_opid = &leader_msg->id();
@@ -1256,8 +1256,8 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
                              Status::IllegalState(error_msg));
 
   // Adding a check to eliminate an unnecessary log message in the
-  // scenario where this is the first message from the Leader of a new tablet.
-  if (!OpIdEquals(MakeOpId(1,1), *req.preceding_opid)) {
+  // scenario where this is the first message from the leader of a new tablet.
+  if (MakeOpId(1, 1) != *req.preceding_opid) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Refusing update from remote peer "
                                    << req.leader_uuid << ": " << error_msg;
   }
@@ -1830,8 +1830,8 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
 
   // Candidate must have last-logged OpId at least as large as our own to get
   // our vote.
-  bool vote_yes = !OpIdLessThan(request->candidate_status().last_received(),
-                                local_last_logged_opid);
+  const bool vote_yes =
+      request->candidate_status().last_received() >= local_last_logged_opid;
 
   // Record the term advancement if necessary. We don't do so in the case of
   // pre-elections because it's possible that the node who called the pre-election

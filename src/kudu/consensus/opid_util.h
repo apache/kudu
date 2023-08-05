@@ -15,19 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_CONSENSUS_OPID_UTIL_H_
-#define KUDU_CONSENSUS_OPID_UTIL_H_
+#pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <iosfwd>
 #include <string>
+
+#include "kudu/consensus/opid.pb.h"
 
 namespace kudu {
 namespace consensus {
 
 class ConsensusRequestPB;
-class OpId;
 
 // Minimum possible term.
 extern const int64_t kMinimumTerm;
@@ -38,68 +37,43 @@ extern const int64_t kMinimumOpIdIndex;
 // Log index that is lower than the minimum index (and so will never occur).
 extern const int64_t kInvalidOpIdIndex;
 
-// Returns true iff left == right.
-bool OpIdEquals(const OpId& left, const OpId& right);
+inline bool operator==(const OpId& lhs, const OpId& rhs) {
+  return lhs.term() == rhs.term() && lhs.index() == rhs.index();
+}
 
-// Returns true iff left < right.
-bool OpIdLessThan(const OpId& left, const OpId& right);
+inline bool operator!=(const OpId& lhs, const OpId& rhs) {
+  return !(lhs == rhs);
+}
 
-// Returns true iff left > right.
-bool OpIdBiggerThan(const OpId& left, const OpId& right);
+inline bool operator<(const OpId& lhs, const OpId& rhs) {
+  if (lhs.term() < rhs.term()) {
+    return true;
+  }
+  if (lhs.term() > rhs.term()) {
+    return false;
+  }
+  return lhs.index() < rhs.index();
+}
 
-// Copies to_compare into target under the following conditions:
-// - If to_compare is initialized and target is not.
-// - If they are both initialized and to_compare is less than target.
-// Otherwise, does nothing.
-// If to_compare is copied into target, returns true, else false.
-bool CopyIfOpIdLessThan(const OpId& to_compare, OpId* target);
+inline bool operator<=(const OpId& lhs, const OpId& rhs) {
+  return lhs < rhs || lhs == rhs;
+}
 
-// Return -1 if left < right,
-//         0 if equal,
-//         1 if left > right.
-int OpIdCompare(const OpId& left, const OpId& right);
+inline bool operator>(const OpId& lhs, const OpId& rhs) {
+  return !(lhs <= rhs);
+}
 
-// OpId hash functor. Suitable for use with std::unordered_map.
-struct OpIdHashFunctor {
-  size_t operator() (const OpId& id) const;
-};
-
-// OpId equals functor. Suitable for use with std::unordered_map.
-struct OpIdEqualsFunctor {
-  bool operator() (const OpId& left, const OpId& right) const;
-};
-
-// OpId less than functor for pointers.. Suitable for use with std::sort and std::map.
-struct OpIdLessThanPtrFunctor {
-  // Returns true iff left < right.
-  bool operator() (const OpId* left, const OpId* right) const;
-};
-
-// Sorts op id's by index only, disregarding the term.
-struct OpIdIndexLessThanPtrFunctor {
-  // Returns true iff left.index() < right.index().
-  bool operator() (const OpId* left, const OpId* right) const;
-};
-
-// OpId compare() functor. Suitable for use with std::sort and std::map.
-struct OpIdCompareFunctor {
-  // Returns true iff left < right.
-  bool operator() (const OpId& left, const OpId& right) const;
-};
-
-// OpId comparison functor that returns true iff left > right. Suitable for use
-// with std::sort and std::map to sort keys in increasing order.
-struct OpIdBiggerThanFunctor {
-  bool operator() (const OpId& left, const OpId& right) const;
-};
+inline bool operator>=(const OpId& lhs, const OpId& rhs) {
+  return !(lhs < rhs);
+}
 
 std::ostream& operator<<(std::ostream& os, const consensus::OpId& op_id);
 
 // Return the minimum possible OpId.
-OpId MinimumOpId();
+const OpId& MinimumOpId();
 
 // Return the maximum possible OpId.
-OpId MaximumOpId();
+const OpId& MaximumOpId();
 
 std::string OpIdToString(const OpId& id);
 
@@ -109,5 +83,3 @@ OpId MakeOpId(int64_t term, int64_t index);
 
 }  // namespace consensus
 }  // namespace kudu
-
-#endif /* KUDU_CONSENSUS_OPID_UTIL_H_ */

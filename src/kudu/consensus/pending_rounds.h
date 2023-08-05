@@ -75,7 +75,7 @@ class PendingRounds {
 
   // Returns the id of the latest pending op (i.e. the one with the latest
   // index). This must be called under the lock.
-  OpId GetLastPendingOpOpId() const;
+  const OpId& GetLastPendingOpOpId() const;
 
   // Used by replicas to cancel pending ops. Pending ops are those that have
   // completed prepare/replicate but are waiting on the LEADER's commit to

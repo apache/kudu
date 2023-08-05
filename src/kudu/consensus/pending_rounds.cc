@@ -133,7 +133,7 @@ bool PendingRounds::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatc
   return true;
 }
 
-OpId PendingRounds::GetLastPendingOpOpId() const {
+const OpId& PendingRounds::GetLastPendingOpOpId() const {
   return pending_ops_.empty()
       ? MinimumOpId() : (--pending_ops_.end())->second->id();
 }
@@ -175,7 +175,7 @@ Status PendingRounds::AdvanceCommittedIndex(int64_t committed_index) {
     DCHECK(round);
     const OpId& current_id = round->id();
 
-    if (PREDICT_TRUE(!OpIdEquals(last_committed_op_id_, MinimumOpId()))) {
+    if (PREDICT_TRUE(last_committed_op_id_ != MinimumOpId())) {
       CHECK_OK(CheckOpInSequence(last_committed_op_id_, current_id));
     }
 

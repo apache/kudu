@@ -51,7 +51,7 @@
   do { \
     const consensus::OpId& TOKENPASTE2(_left, __LINE__) = (left); \
     const consensus::OpId& TOKENPASTE2(_right, __LINE__) = (right); \
-    if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right, __LINE__))) { \
+    if (TOKENPASTE2(_left, __LINE__) != TOKENPASTE2(_right, __LINE__)) { \
       FAIL() << "Expected: " \
             << pb_util::SecureShortDebugString(TOKENPASTE2(_left, __LINE__)) << "\n" \
             << "Value: " \
@@ -354,7 +354,7 @@ class NoOpTestPeerProxy : public TestPeerProxy {
     response->Clear();
     {
       std::lock_guard<simple_spinlock> lock(lock_);
-      if (OpIdLessThan(last_received_, request.preceding_id())) {
+      if (last_received_ < request.preceding_id()) {
         ConsensusErrorPB* error = response->mutable_status()->mutable_error();
         error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
         StatusToPB(Status::IllegalState(""), error->mutable_status());

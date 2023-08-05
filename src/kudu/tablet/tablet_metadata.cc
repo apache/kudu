@@ -491,7 +491,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     // consider it equal to "not present".
     if (superblock.has_tombstone_last_logged_opid() &&
         superblock.tombstone_last_logged_opid().IsInitialized() &&
-        !OpIdEquals(MinimumOpId(), superblock.tombstone_last_logged_opid())) {
+        superblock.tombstone_last_logged_opid() != MinimumOpId()) {
       tombstone_last_logged_opid_ = superblock.tombstone_last_logged_opid();
     } else {
       tombstone_last_logged_opid_.reset();
@@ -771,7 +771,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
 
   pb.set_tablet_data_state(tablet_data_state_);
   if (tombstone_last_logged_opid_ &&
-      !OpIdEquals(MinimumOpId(), *tombstone_last_logged_opid_)) {
+      *tombstone_last_logged_opid_ != MinimumOpId()) {
     *pb.mutable_tombstone_last_logged_opid() = *tombstone_last_logged_opid_;
   }
 

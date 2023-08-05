@@ -1043,7 +1043,7 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
 
   // Returns the id of the (replicate) operation this context
   // refers to. This is only set _after_ RaftConsensus::Replicate(context).
-  OpId id() const {
+  const OpId& id() const {
     return replicate_msg_->get()->id();
   }
 

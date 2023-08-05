@@ -115,7 +115,6 @@ using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::consensus::MinimumOpId;
 using kudu::consensus::NO_OP;
 using kudu::consensus::OpId;
-using kudu::consensus::OpIdEquals;
 using kudu::consensus::OpIdToString;
 using kudu::consensus::OperationType;
 using kudu::consensus::OperationType_Name;
@@ -967,7 +966,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state,
     const auto& existing_entry = existing_entry_iter->second;
 
     auto iter = state->pending_replicates.lower_bound(index);
-    DCHECK(OpIdEquals(iter->second->replicate().id(), existing_entry->replicate().id()));
+    DCHECK(iter->second->replicate().id() == existing_entry->replicate().id());
 
     const auto& last_entry = state->pending_replicates.rbegin()->second;
     VLOG_WITH_PREFIX(1) << "Overwriting operations starting at: "
@@ -1090,7 +1089,7 @@ Status TabletBootstrap::ApplyCommitMessage(const IOContext* io_context,
   if (PREDICT_TRUE(pending_replicate_entry)) {
     // We found a replicate with the same index, make sure it also has the same term.
     const auto& replicate = pending_replicate_entry->replicate();
-    if (PREDICT_FALSE(!OpIdEquals(committed_op_id, replicate.id()))) {
+    if (PREDICT_FALSE(committed_op_id != replicate.id())) {
       string error_msg = Substitute("Committed operation's OpId: $0 didn't match the"
           "commit message's committed OpId: $1. Pending operation: $2, Commit message: $3",
           SecureShortDebugString(replicate.id()),

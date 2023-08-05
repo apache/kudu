@@ -3026,7 +3026,7 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
     ASSERT_OK(GetLastOpIdForReplica(tablet_id_, tservers[0], consensus::RECEIVED_OPID,
                                     MonoDelta::FromSeconds(10), &cur_opid));
     VLOG(1) << "Current OpId on server 0: " << OpIdToString(cur_opid);
-  } while (consensus::OpIdEquals(prev_opid, cur_opid));
+  } while (prev_opid == cur_opid);
   workload.StopAndJoin();
   ASSERT_OK(cluster_->SetFlag(ext_tservers[0],
             "log_inject_io_error_on_append_fraction", "1.0"));

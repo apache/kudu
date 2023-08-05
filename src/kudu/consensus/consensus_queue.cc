@@ -29,7 +29,6 @@
 #include <utility>
 
 #include <gflags/gflags.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
@@ -443,7 +442,7 @@ Status PeerMessageQueue::AppendOperations(vector<ReplicateRefPtr> msgs,
       }));
   lock.lock();
   DCHECK(last_id.IsInitialized());
-  queue_state_.last_appended = last_id;
+  queue_state_.last_appended = std::move(last_id);
   UpdateMetricsUnlocked();
 
   return Status::OK();
@@ -1080,13 +1079,14 @@ void PeerMessageQueue::PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& pre
     // time we contact them to try to promote them.
     if (prev_peer_state.last_received.index() == 0) return;
 
-    int64_t last_batch_size =
-        std::max<int64_t>(0, peer->last_received.index() - prev_peer_state.last_received.index());
-    bool peer_caught_up =
-        !OpIdEquals(status.last_received_current_leader(), MinimumOpId()) &&
+    int64_t last_batch_size = std::max<int64_t>(0, peer->last_received.index() -
+        prev_peer_state.last_received.index());
+    if (status.last_received_current_leader() == MinimumOpId() ||
         status.last_received_current_leader().index() + last_batch_size
-            >= queue_state_.committed_index;
-    if (!peer_caught_up) return;
+            < queue_state_.committed_index) {
+      // The peer hasn't caught up yet.
+      return;
+    }
 
     // TODO(mpercy): Implement a SafeToPromote() check to ensure that we only
     // try to promote a NON_VOTER to VOTER if we will be able to commit the
@@ -1127,10 +1127,9 @@ void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
     return;
   }
 
-  bool peer_caught_up =
-      !OpIdEquals(status.last_received_current_leader(), MinimumOpId()) &&
-      OpIdEquals(status.last_received_current_leader(), queue_state_.last_appended);
-  if (!peer_caught_up) {
+  if (status.last_received_current_leader() == MinimumOpId() ||
+      status.last_received_current_leader() != queue_state_.last_appended) {
+    // The peer hasn't caught up yet.
     return;
   }
 
@@ -1205,13 +1204,12 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       PromoteIfNeeded(peer, prev_peer_state, status);
 
       TransferLeadershipIfNeeded(*peer, status);
-    } else if (!OpIdEquals(status.last_received_current_leader(), MinimumOpId())) {
+    } else if (status.last_received_current_leader() != MinimumOpId()) {
       // Their log may have diverged from ours, however we are in the process
       // of replicating our ops to them, so continue doing so. Eventually, we
       // will cause the divergent entry in their log to be overwritten.
       peer->last_received = status.last_received_current_leader();
       peer->next_index = peer->last_received.index() + 1;
-
     } else {
       // The peer is divergent and they have not (successfully) received
       // anything from us yet. Start sending from their last committed index.
@@ -1473,7 +1471,7 @@ bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {
   OpId log_op;
   Status s = log_cache_.LookupOpId(desired_op.index(), &log_op);
   if (PREDICT_TRUE(s.ok())) {
-    return OpIdEquals(desired_op, log_op);
+    return desired_op == log_op;
   }
   if (PREDICT_TRUE(s.IsNotFound() || s.IsIncomplete())) {
     return false;

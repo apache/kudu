@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -333,7 +334,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     shared_ptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
     while (true) {
-      if (OpIdCompare(peer->queue_->GetLastOpIdInLog(), to_wait_for) >= 0) {
+      if (peer->queue_->GetLastOpIdInLog() >= to_wait_for) {
         return;
       }
       SleepFor(MonoDelta::FromMilliseconds(1));
@@ -518,9 +519,22 @@ class RaftConsensusQuorumTest : public KuduTest {
     }
   }
 
-  void VerifyNoCommitsBeforeReplicates(const LogEntries& entries) {
-    std::unordered_set<OpId, OpIdHashFunctor, OpIdEqualsFunctor> replication_ops;
+  static void VerifyNoCommitsBeforeReplicates(const LogEntries& entries) {
+    // OpId equals functor for std::unordered_map.
+    struct OpIdEqualsFunctor {
+      bool operator()(const OpId& lhs, const OpId& rhs) const {
+        return lhs == rhs;
+      }
+    };
 
+    // OpId hash functor for std::unordered_map.
+    struct OpIdHashFunctor {
+      size_t operator()(const OpId& id) const {
+        return (id.term() + 31) ^ id.index();
+      }
+    };
+
+    std::unordered_set<OpId, OpIdHashFunctor, OpIdEqualsFunctor> replication_ops;
     for (const auto& entry : entries) {
       if (entry->has_replicate()) {
         ASSERT_TRUE(InsertIfNotPresent(&replication_ops, entry->replicate().id()))
@@ -985,7 +999,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   // Appending this message to peer0 should work and update
   // its 'last_received' to 'id'.
   ASSERT_OK(follower->Update(&req, &resp));
-  ASSERT_TRUE(OpIdEquals(resp.status().last_received(), *id));
+  ASSERT_EQ(resp.status().last_received(), *id);
   ASSERT_EQ(0, follower->queue_->metrics_.num_ops_behind_leader->value());
 
   // Now skip one message in the same term. The replica should
@@ -1019,7 +1033,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   WaitForCommitIfNotAlreadyPresent(last_op_id.index(), 1, 2);
 
   // Ensure last-logged OpId is > (0,0).
-  ASSERT_TRUE(OpIdLessThan(MinimumOpId(), last_op_id));
+  ASSERT_LT(MinimumOpId(), last_op_id);
 
   const int kPeerIndex = 1;
   shared_ptr<RaftConsensus> peer;
