@@ -499,7 +499,7 @@ void MvccSnapshot::AddAppliedTimestamp(Timestamp timestamp) {
   }
 }
 
-bool MvccSnapshot::Equals(const MvccSnapshot& other) const {
+bool MvccSnapshot::operator==(const MvccSnapshot& other) const {
   if (type_ != other.type_) {
     return false;
   }

@@ -158,7 +158,7 @@ class MvccSnapshot {
 
   // Returns true if 'other' represents the same set of timestamps as this
   // snapshot, false otherwise.
-  bool Equals(const MvccSnapshot& other) const;
+  bool operator==(const MvccSnapshot& other) const;
 
  private:
   friend class MvccManager;

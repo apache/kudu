@@ -462,10 +462,9 @@ Status DeltaPreparer<Traits>::FilterColumnIdsAndCollectDeltas(
   }
 
   // May only be used on a fully inclusive snapshot.
-  DCHECK(opts_.snap_to_include.Equals(Traits::kType == REDO ?
-                                      MvccSnapshot::CreateSnapshotIncludingAllOps() :
-                                      MvccSnapshot::CreateSnapshotIncludingNoOps()));
-
+  DCHECK(opts_.snap_to_include ==
+         (Traits::kType == REDO ? MvccSnapshot::CreateSnapshotIncludingAllOps()
+                                : MvccSnapshot::CreateSnapshotIncludingNoOps()));
   faststring buf;
   RowChangeListEncoder encoder(&buf);
   for (const auto& src : prepared_deltas_) {
