@@ -497,8 +497,15 @@ TEST_F(HybridClockTest, TimeSourceAutoSelection) {
       ASSERT_STR_CONTAINS(s.ToString(), "Operation not permitted");
       preconditions_satisfied = false;
     } else if (s.IsServiceUnavailable()) {
-      ASSERT_STR_CONTAINS(
-          s.ToString(), "Error reading clock. Clock considered unsynchronized");
+      // For the effective time source auto-selected, the pattern for the error
+      // message below covers the 'builtin' and the 'system' cases
+      // correspondingly. The only other possible case left is 'system_unsync':
+      // if the 'system_unsync' time source is auto-selected, there shouldn't be
+      // any clock synchronization error unless the --inject_unsync_time_errors
+      // flag is set to 'true', which isn't the case in this test scenario.
+      static const string kErrMsgPattern = "(wallclock is not synchronized|"
+          "Error reading clock\\. Clock considered unsynchronized)";
+      ASSERT_STR_MATCHES(s.ToString(), kErrMsgPattern);
       preconditions_satisfied = false;
     }
   }
