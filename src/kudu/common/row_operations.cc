@@ -439,6 +439,10 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
   if (PREDICT_FALSE(!tablet_row_storage || !tablet_isset_bitmap)) {
     return Status::RuntimeError("Out of memory");
   }
+  // Initialize the bitmap since some columns might be lost in the client schema,
+  // in which case the original value of the lost columns might be set to default
+  // value by upsert request.
+  memset(tablet_isset_bitmap, 0, BitmapSize(tablet_schema_->num_columns()));
 
   // Initialize the new row from the 'prototype' row which has been set
   // with all of the server-side default values. This copy may be entirely

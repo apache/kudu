@@ -1005,4 +1005,31 @@ TEST_F(RowOperationsTest, ExceedCellLimit) {
   }
 }
 
+TEST_F(RowOperationsTest, SchemasDoNotMatch) {
+  Schema client_schema({ ColumnSchema("key", INT32),
+                         ColumnSchema("int_val", INT32) },
+                       1);
+  SchemaBuilder server_schema_builder;
+  ASSERT_OK(server_schema_builder.AddKeyColumn("key", INT32));
+  ASSERT_OK(server_schema_builder.AddColumn("int_val", INT32));
+  ASSERT_OK(server_schema_builder.AddNullableColumn("string_val", STRING));
+  Schema server_schema = server_schema_builder.Build();
+
+  KuduPartialRow row(&client_schema);
+  ASSERT_OK(row.SetInt32("key", 1));
+  ASSERT_OK(row.SetInt32("int_val", 2));
+  RowOperationsPB pb;
+  RowOperationsPBEncoder(&pb).Add(RowOperationsPB::UPSERT, row);
+
+  arena_.Reset();
+  RowOperationsPBDecoder decoder(&pb, &client_schema, &server_schema, &arena_);
+  vector<DecodedRowOperation> ops;
+  ASSERT_OK(decoder.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
+  // The correct bitmap should be {1, 1, 0}.
+  ASSERT_EQ(1, ops.size());
+  ASSERT_TRUE(BitmapTest(ops[0].isset_bitmap, 0));
+  ASSERT_TRUE(BitmapTest(ops[0].isset_bitmap, 1));
+  ASSERT_FALSE(BitmapTest(ops[0].isset_bitmap, 2));
+}
+
 } // namespace kudu
