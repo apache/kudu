@@ -15,36 +15,32 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# The mini_postgres is used only for tests, and its tests are disabled
-# if NO_TESTS=1 is set.
-if(NO_TESTS)
-  return()
-endif()
-
 #######################################
 # mini_postgres
 #######################################
+# The mini_postgres is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
+  execute_process(COMMAND ln -nsf
+    "${THIRDPARTY_DIR}/installed/common/bin"
+    "${EXECUTABLE_OUTPUT_PATH}/postgres")
+  execute_process(COMMAND ln -nsf
+    "${THIRDPARTY_DIR}/installed/common/lib"
+    "${EXECUTABLE_OUTPUT_PATH}/postgres-lib")
+  execute_process(COMMAND ln -nsf
+    "${THIRDPARTY_DIR}/installed/common/share/postgresql"
+    "${EXECUTABLE_OUTPUT_PATH}/postgres-share")
+  execute_process(COMMAND ln -nsf
+    "${THIRDPARTY_DIR}/installed/common/opt/jdbc/postgresql.jar"
+    "${EXECUTABLE_OUTPUT_PATH}/postgresql.jar")
 
-execute_process(COMMAND ln -nsf
-  "${THIRDPARTY_DIR}/installed/common/bin"
-  "${EXECUTABLE_OUTPUT_PATH}/postgres")
-execute_process(COMMAND ln -nsf
-  "${THIRDPARTY_DIR}/installed/common/lib"
-  "${EXECUTABLE_OUTPUT_PATH}/postgres-lib")
-execute_process(COMMAND ln -nsf
-  "${THIRDPARTY_DIR}/installed/common/share/postgresql"
-  "${EXECUTABLE_OUTPUT_PATH}/postgres-share")
-execute_process(COMMAND ln -nsf
-  "${THIRDPARTY_DIR}/installed/common/opt/jdbc/postgresql.jar"
-  "${EXECUTABLE_OUTPUT_PATH}/postgresql.jar")
-
-add_library(mini_postgres
-  mini_postgres.cc)
-target_link_libraries(mini_postgres
-  gutil
-  kudu_test_util
-  kudu_util
-)
+  add_library(mini_postgres
+    mini_postgres.cc)
+  target_link_libraries(mini_postgres
+    gutil
+    kudu_test_util
+    kudu_util
+  )
+endif()
 
 #######################################
 # Unit tests

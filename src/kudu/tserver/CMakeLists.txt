@@ -118,7 +118,8 @@ set(TSERVER_SRCS
   tserver_path_handlers.cc
 )
 
-if(NOT NO_TESTS)
+# The mini_tablet_server is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   set(TSERVER_SRCS ${TSERVER_SRCS} mini_tablet_server.cc)
 endif()
 

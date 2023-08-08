@@ -51,8 +51,8 @@ target_link_libraries(kudu_ranger ${RANGER_DEPS})
 # mini_ranger
 #######################################
 
-# The mini_ranger is used only in tests.
-if(NOT NO_TESTS)
+# The mini_ranger is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   execute_process(COMMAND ln -nsf
     "${THIRDPARTY_DIR}/installed/common/opt/ranger"
     "${EXECUTABLE_OUTPUT_PATH}/ranger-home")

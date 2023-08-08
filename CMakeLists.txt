@@ -234,11 +234,17 @@ add_definitions(-DKUDU_HEADERS_USE_RICH_SLICE=1)
 # exported client headers).
 add_definitions(-DKUDU_HEADERS_NO_STUBS=1)
 
-# If not building tests, add an extra macro to allow for omitting test-related
-# provisions and functionality from the kudu CLI tool: that's based on the
-# mini-cluster library, and the mini-cluster library is built only for testing.
-if(NO_TESTS)
-  add_definitions(-DKUDU_CLI_TOOL_NO_TESTS)
+# The test-related CLI tool will be built if not disabled explicitly.
+if("${KUDU_CLI_TEST_TOOL_ENABLED}" STREQUAL "" OR KUDU_CLI_TEST_TOOL_ENABLED)
+  add_definitions(-DKUDU_CLI_TEST_TOOL_ENABLED)
+  set(KUDU_CLI_TEST_TOOL_ENABLED 1)
+endif()
+
+if(NOT NO_TESTS)
+  # If building tests, the test-related CLI tool must be built as well for testing.
+  if(NOT KUDU_CLI_TEST_TOOL_ENABLED)
+    message(FATAL_ERROR "Must not set -DKUDU_CLI_TEST_TOOL_ENABLED=0 when build with -DNO_TESTS=0")
+  endif()
 endif()
 
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')

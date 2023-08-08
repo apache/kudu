@@ -99,8 +99,8 @@ ADD_EXPORTABLE_LIBRARY(security
 # mini_kdc
 ##############################
 
-if (NOT NO_TESTS)
-  # The mini_kdc is used only in tests.
+# The mini_kdc is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   set(MINI_KDC_SRCS test/mini_kdc.cc)
 
   add_library(mini_kdc ${MINI_KDC_SRCS})

@@ -345,7 +345,7 @@ std::unique_ptr<Mode> BuildTxnMode();
 std::unique_ptr<Mode> BuildTServerMode();
 std::unique_ptr<Mode> BuildWalMode();
 
-#if !defined(KUDU_CLI_TOOL_NO_TESTS)
+#if defined(KUDU_CLI_TEST_TOOL_ENABLED)
 std::unique_ptr<Mode> BuildTestMode();
 #endif
 

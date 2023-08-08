@@ -72,7 +72,8 @@ set(MASTER_SRCS
   txn_manager.cc
   txn_manager_service.cc)
 
-if(NOT NO_TESTS)
+# The mini_master is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   set(MASTER_SRCS ${MASTER_SRCS} mini_master.cc)
 endif()
 
