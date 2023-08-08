@@ -30,8 +30,8 @@ target_link_libraries(ranger_kms_client ${RANGER_KMS_CLIENT_DEPS})
 #######################################
 # mini_ranger_kms
 #######################################
-if(NOT NO_TESTS)
-  # The mini_ranger_kms is used only in tests.
+# The mini_ranger_kms is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   execute_process(COMMAND ln -nsf
           "${THIRDPARTY_DIR}/installed/common/opt/ranger-kms"
           "${EXECUTABLE_OUTPUT_PATH}/ranger_kms-home")

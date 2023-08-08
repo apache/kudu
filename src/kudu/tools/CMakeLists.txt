@@ -120,7 +120,7 @@ set(KUDU_CLI_TOOL_SRCS
   tool_main.cc
 )
 
-if(NOT NO_TESTS)
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   set(KUDU_CLI_TOOL_SRCS ${KUDU_CLI_TOOL_SRCS} tool_action_test.cc)
 endif()
 
@@ -148,9 +148,12 @@ set(KUDU_CLI_TOOL_LINK_LIBS
   tserver
   ${KUDU_BASE_LIBS}
 )
-if(NOT NO_TESTS)
+
+# The mini_cluster is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   set(KUDU_CLI_TOOL_LINK_LIBS ${KUDU_CLI_TOOL_LINK_LIBS} mini_cluster)
 endif()
+
 target_link_libraries(kudu ${KUDU_CLI_TOOL_LINK_LIBS})
 
 option(KUDU_CLIENT_INSTALL "Whether to install the Kudu command line tool" ON)

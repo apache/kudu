@@ -457,7 +457,7 @@ string SerializeRequest(const ControlShellRequestPB& req) {
 
 } // anonymous namespace
 
-#if !defined(KUDU_CLI_TOOL_NO_TESTS)
+#if defined(KUDU_CLI_TEST_TOOL_ENABLED)
 unique_ptr<Mode> BuildTestMode() {
 
   ControlShellRequestPB create;
@@ -488,7 +488,7 @@ unique_ptr<Mode> BuildTestMode() {
       .AddAction(std::move(control_shell))
       .Build();
 }
-#endif // #if !defined(KUDU_CLI_TOOL_NO_TESTS) ...
+#endif // #if defined(KUDU_CLI_TEST_TOOL_ENABLED) ...
 
 } // namespace tools
 } // namespace kudu

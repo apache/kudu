@@ -378,7 +378,8 @@ target_link_libraries(kudu_jwt_util
 #######################################
 # mini_oidc
 #######################################
-if(NOT NO_TESTS)
+# The mini_oidc is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   add_library(mini_oidc mini_oidc.cc)
   target_link_libraries(mini_oidc
     server_process
@@ -391,7 +392,8 @@ endif()
 #######################################
 # jwt_test_certs
 #######################################
-if(NOT NO_TESTS)
+# The jwt_test_certs is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   add_library(jwt_test_certs jwt_test_certs.cc)
   target_link_libraries(jwt_test_certs
     kudu_jwt_util)
@@ -430,8 +432,8 @@ target_link_libraries(protoc-gen-insertions gutil protobuf protoc ${KUDU_BASE_LI
 #######################################
 # kudu_test_util
 #######################################
-if(NOT NO_TESTS)
-  # The kudu_test_util is needed only for testing.
+# The kudu_test_util is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   add_library(kudu_test_util
     test_util.cc)
   target_link_libraries(kudu_test_util

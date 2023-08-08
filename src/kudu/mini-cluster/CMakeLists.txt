@@ -15,52 +15,53 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# The mini-cluster is used only for testing.
-if(NO_TESTS)
-  return()
+##############################
+# mini_cluster
+##############################
+# The mini_cluster is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
+  set(MINI_CLUSTER_SRCS
+    external_mini_cluster.cc
+    internal_mini_cluster.cc
+    mini_cluster.cc
+    webui_checker.cc
+  )
+
+  set(MINI_CLUSTER_LIBS
+    gflags
+    glog
+    gmock
+    gtest
+    gutil
+    krpc
+    kudu_client
+    kudu_common
+    kudu_test_util
+    kudu_util
+    master
+    master_proto
+    mini_hms
+    mini_kdc
+    mini_oidc
+    mini_ranger
+    mini_ranger_kms
+    server_base_proto
+    tablet_proto
+    tserver
+    tserver_proto
+    tserver_service_proto
+    wire_protocol_proto)
+
+  if(NOT NO_CHRONY)
+    set(MINI_CLUSTER_LIBS ${MINI_CLUSTER_LIBS} mini_chronyd)
+  endif()
+
+  add_library(mini_cluster ${MINI_CLUSTER_SRCS})
+  target_link_libraries(mini_cluster ${MINI_CLUSTER_LIBS})
+  add_dependencies(mini_cluster
+    kudu-tserver
+    kudu-master)
 endif()
-
-set(MINI_CLUSTER_SRCS
-  external_mini_cluster.cc
-  internal_mini_cluster.cc
-  mini_cluster.cc
-  webui_checker.cc
-)
-
-set(MINI_CLUSTER_LIBS
-  gflags
-  glog
-  gmock
-  gtest
-  gutil
-  krpc
-  kudu_client
-  kudu_common
-  kudu_test_util
-  kudu_util
-  master
-  master_proto
-  mini_hms
-  mini_kdc
-  mini_oidc
-  mini_ranger
-  mini_ranger_kms
-  server_base_proto
-  tablet_proto
-  tserver
-  tserver_proto
-  tserver_service_proto
-  wire_protocol_proto)
-
-if(NOT NO_CHRONY)
-  set(MINI_CLUSTER_LIBS ${MINI_CLUSTER_LIBS} mini_chronyd)
-endif()
-
-add_library(mini_cluster ${MINI_CLUSTER_SRCS})
-target_link_libraries(mini_cluster ${MINI_CLUSTER_LIBS})
-add_dependencies(mini_cluster
-  kudu-tserver
-  kudu-master)
 
 #######################################
 # Unit tests

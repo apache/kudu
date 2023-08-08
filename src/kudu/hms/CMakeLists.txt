@@ -74,8 +74,8 @@ add_custom_command(OUTPUT ${HMS_PLUGIN_JAR}
   DEPENDS proto_jar)
 add_custom_target(hms_plugin_jar DEPENDS ${HMS_PLUGIN_JAR})
 
-if (NOT NO_TESTS)
-  # The mini_hms library is used only for tests.
+# The mini_hms is used only for tests.
+if (KUDU_CLI_TEST_TOOL_ENABLED)
   set(MINI_HMS_SRCS
     mini_hms.cc)
 
