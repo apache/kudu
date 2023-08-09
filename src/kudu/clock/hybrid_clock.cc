@@ -260,8 +260,6 @@ Status HybridClock::Init() {
   TimeSource time_source = TimeSource::UNKNOWN;
   RETURN_NOT_OK(SelectTimeSource(
       FLAGS_time_source, &time_source, instance_metadata_.get()));
-  LOG(INFO) << Substitute("auto-selected time source: $0",
-                          TimeSourceToString(time_source));
   return InitWithTimeSource(time_source);
 }
 
@@ -560,6 +558,8 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
     SetCommandLineOptionWithMode("time_source",
                                  TimeSourceToString(result_time_source),
                                  FlagSettingMode::SET_FLAGS_DEFAULT);
+    LOG(INFO) << Substitute("auto-selected time source '$0' for the hybrid clock",
+                            TimeSourceToString(result_time_source));
   } else if (iequals(time_source_str, TIME_SOURCE_MOCK)) {
     result_time_source = TimeSource::MOCK;
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
@@ -581,6 +581,8 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
 Status HybridClock::InitWithTimeSource(TimeSource time_source) {
   DCHECK_EQ(kNotInitialized, state_);
 
+  LOG(INFO) << Substitute("initializing the hybrid clock with '$0' time source",
+                          TimeSourceToString(time_source));
   switch (time_source) {
     case TimeSource::NTP_SYNC_BUILTIN:
       time_service_.reset(new clock::BuiltInNtp(metric_entity_));
@@ -597,7 +599,7 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source) {
       time_service_.reset(new clock::MockNtp);
       break;
     default:
-      return Status::InvalidArgument("invalid time source for hybrid clock",
+      return Status::InvalidArgument("invalid time source for the hybrid clock",
                                      TimeSourceToString(time_source));
   }
   if (FLAGS_hybrid_clock_inject_init_delay_ms > 0) {
