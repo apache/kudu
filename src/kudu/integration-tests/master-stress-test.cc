@@ -23,6 +23,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -49,7 +50,6 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/thrift/client.h"
@@ -436,8 +436,8 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
     MessengerBuilder bld("RestartMasterMessenger");
     CHECK_OK(bld.Build(&messenger));
 
-    MonoTime deadline(MonoTime::Now());
-    deadline.AddDelta(MonoDelta::FromSeconds(FLAGS_num_seconds_to_run));
+    const auto deadline = MonoTime::Now() +
+        MonoDelta::FromSeconds(FLAGS_num_seconds_to_run);
 
     MonoTime now(MonoTime::Now());
     while (now < deadline) {

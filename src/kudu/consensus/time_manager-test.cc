@@ -203,8 +203,7 @@ TEST_F(TimeManagerTest, TestTimeManagerLeaderMode) {
   // safe time shouldn't move anymore ...
   ASSERT_EQ(time_manager_->GetSafeTime(), safe_after);
   now = clock_.Now();
-  MonoTime after_small = MonoTime::Now();
-  after_small.AddDelta(MonoDelta::FromMilliseconds(100));
+  const auto after_small = MonoTime::Now() + MonoDelta::FromMilliseconds(100);
   ASSERT_TRUE(time_manager_->WaitUntilSafe(now, after_small).IsTimedOut());
 
   // ... unless we get a message from the leader.

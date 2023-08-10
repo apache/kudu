@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <mutex>
 #include <ostream>
+#include <type_traits>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -474,12 +475,10 @@ void ResultTracker::GCResults() {
   lock_guard<simple_spinlock> l(lock_);
   MonoTime now = MonoTime::Now();
   // Calculate the instants before which we'll start GCing ClientStates and CompletionRecords.
-  MonoTime time_to_gc_clients_from = now;
-  time_to_gc_clients_from.AddDelta(
-      MonoDelta::FromMilliseconds(-FLAGS_remember_clients_ttl_ms));
-  MonoTime time_to_gc_responses_from = now;
-  time_to_gc_responses_from.AddDelta(
-      MonoDelta::FromMilliseconds(-FLAGS_remember_responses_ttl_ms));
+  const auto time_to_gc_clients_from = now -
+      MonoDelta::FromMilliseconds(FLAGS_remember_clients_ttl_ms);
+  const auto time_to_gc_responses_from = now -
+      MonoDelta::FromMilliseconds(FLAGS_remember_responses_ttl_ms);
 
   // Now go through the ClientStates. If we haven't heard from a client in a while
   // GC it and all its completion records (making sure there isn't actually one in progress first).

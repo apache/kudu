@@ -23,11 +23,18 @@
 #include <cstdint>
 #include <ctime>
 #include <ostream>
+#include <string>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/util/test_util.h"
+
+// Many original scenarios in this test suite use the deprecated
+// MonoTime/MonoDelta API, so let's add a blanket pragma to quell the warnings
+// about using the deprecated methods.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace kudu {
 
@@ -38,16 +45,14 @@ TEST(TestMonoTime, TestMonotonicity) {
 
   do {
     next = MonoTime::Now();
-    //LOG(INFO) << " next = " << next.ToString();
-  } while (!prev.ComesBefore(next));
-  ASSERT_FALSE(next.ComesBefore(prev));
+  } while (prev >= next);
+  ASSERT_LE(prev, next);
   alarm(0);
 }
 
 TEST(TestMonoTime, TestComparison) {
-  MonoTime now(MonoTime::Now());
-  MonoTime future(now);
-  future.AddDelta(MonoDelta::FromNanoseconds(1L));
+  const MonoTime now(MonoTime::Now());
+  const MonoTime future(now + MonoDelta::FromNanoseconds(1L));
 
   ASSERT_GT((future - now).ToNanoseconds(), 0);
   ASSERT_LT((now - future).ToNanoseconds(), 0);
@@ -508,3 +513,5 @@ TEST(TestMonoTimePerf, TestMonoTimePerf) {
 }
 
 } // namespace kudu
+
+#pragma GCC diagnostic pop

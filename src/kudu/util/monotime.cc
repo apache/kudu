@@ -19,6 +19,7 @@
 
 #include <sys/time.h>
 
+#include <cstdint>
 #include <ctime>
 #include <limits>
 #include <ostream>
@@ -47,8 +48,7 @@ namespace kudu {
 const int64_t MonoDelta::kUninitialized = kint64min;
 
 MonoDelta MonoDelta::FromSeconds(double seconds) {
-  int64_t delta = seconds * MonoTime::kNanosecondsPerSecond;
-  return MonoDelta(delta);
+  return MonoDelta(seconds * MonoTime::kNanosecondsPerSecond);
 }
 
 MonoDelta MonoDelta::FromMilliseconds(int64_t ms) {
@@ -71,22 +71,16 @@ bool MonoDelta::Initialized() const {
   return nano_delta_ != kUninitialized;
 }
 
-bool MonoDelta::LessThan(const MonoDelta &rhs) const {
-  DCHECK(Initialized());
-  DCHECK(rhs.Initialized());
-  return nano_delta_ < rhs.nano_delta_;
+bool MonoDelta::LessThan(const MonoDelta& rhs) const {
+  return *this < rhs;
 }
 
-bool MonoDelta::MoreThan(const MonoDelta &rhs) const {
-  DCHECK(Initialized());
-  DCHECK(rhs.Initialized());
-  return nano_delta_ > rhs.nano_delta_;
+bool MonoDelta::MoreThan(const MonoDelta& rhs) const {
+  return *this > rhs;
 }
 
-bool MonoDelta::Equals(const MonoDelta &rhs) const {
-  DCHECK(Initialized());
-  DCHECK(rhs.Initialized());
-  return nano_delta_ == rhs.nano_delta_;
+bool MonoDelta::Equals(const MonoDelta& rhs) const {
+  return *this == rhs;
 }
 
 std::string MonoDelta::ToString() const {
@@ -94,14 +88,12 @@ std::string MonoDelta::ToString() const {
 }
 
 MonoDelta::MonoDelta(int64_t delta)
-  : nano_delta_(delta) {
+    : nano_delta_(delta) {
 }
 
 double MonoDelta::ToSeconds() const {
   DCHECK(Initialized());
-  double d(nano_delta_);
-  d /= MonoTime::kNanosecondsPerSecond;
-  return d;
+  return static_cast<double>(nano_delta_) / MonoTime::kNanosecondsPerSecond;
 }
 
 int64_t MonoDelta::ToNanoseconds() const {
@@ -111,7 +103,7 @@ int64_t MonoDelta::ToNanoseconds() const {
 
 int64_t MonoDelta::ToMicroseconds() const {
   DCHECK(Initialized());
- return nano_delta_ / MonoTime::kNanosecondsPerMicrosecond;
+  return nano_delta_ / MonoTime::kNanosecondsPerMicrosecond;
 }
 
 int64_t MonoDelta::ToMilliseconds() const {
@@ -119,7 +111,7 @@ int64_t MonoDelta::ToMilliseconds() const {
   return nano_delta_ / MonoTime::kNanosecondsPerMillisecond;
 }
 
-void MonoDelta::ToTimeVal(struct timeval *tv) const {
+void MonoDelta::ToTimeVal(struct timeval* tv) const {
   DCHECK(Initialized());
   tv->tv_sec = nano_delta_ / MonoTime::kNanosecondsPerSecond;
   tv->tv_usec = (nano_delta_ - (tv->tv_sec * MonoTime::kNanosecondsPerSecond))
@@ -210,20 +202,16 @@ bool MonoTime::Initialized() const {
   return nanos_ != 0;
 }
 
-MonoDelta MonoTime::GetDeltaSince(const MonoTime &rhs) const {
+MonoDelta MonoTime::GetDeltaSince(const MonoTime& rhs) const {
   return rhs - *this;
 }
 
-void MonoTime::AddDelta(const MonoDelta &delta) {
-  DCHECK(Initialized());
-  DCHECK(delta.Initialized());
-  nanos_ += delta.nano_delta_;
+void MonoTime::AddDelta(const MonoDelta& delta) {
+  this->operator+=(delta);
 }
 
-bool MonoTime::ComesBefore(const MonoTime &rhs) const {
-  DCHECK(Initialized());
-  DCHECK(rhs.Initialized());
-  return nanos_ < rhs.nanos_;
+bool MonoTime::ComesBefore(const MonoTime& rhs) const {
+  return *this < rhs;
 }
 
 std::string MonoTime::ToString() const {
@@ -236,16 +224,20 @@ void MonoTime::ToTimeSpec(struct timespec* ts) const {
 }
 
 bool MonoTime::Equals(const MonoTime& other) const {
-  return nanos_ == other.nanos_;
+  return *this == other;
 }
 
 MonoTime& MonoTime::operator+=(const MonoDelta& delta) {
-  this->AddDelta(delta);
+  DCHECK(Initialized());
+  DCHECK(delta.Initialized());
+  nanos_ += delta.nano_delta_;
   return *this;
 }
 
 MonoTime& MonoTime::operator-=(const MonoDelta& delta) {
-  this->AddDelta(MonoDelta(-1 * delta.nano_delta_));
+  DCHECK(Initialized());
+  DCHECK(delta.Initialized());
+  nanos_ -= delta.nano_delta_;
   return *this;
 }
 
@@ -264,9 +256,7 @@ MonoTime::MonoTime(int64_t nanos) KUDU_MONOTIME_NOEXCEPT
 }
 
 double MonoTime::ToSeconds() const {
-  double d(nanos_);
-  d /= MonoTime::kNanosecondsPerSecond;
-  return d;
+  return static_cast<double>(nanos_) / MonoTime::kNanosecondsPerSecond;
 }
 
 void SleepFor(const MonoDelta& delta) {
@@ -274,80 +264,84 @@ void SleepFor(const MonoDelta& delta) {
   base::SleepForNanoseconds(delta.ToNanoseconds());
 }
 
-bool operator==(const MonoDelta &lhs, const MonoDelta &rhs) {
-  return lhs.Equals(rhs);
+bool operator==(const MonoDelta& lhs, const MonoDelta& rhs) {
+  DCHECK(lhs.Initialized());
+  DCHECK(rhs.Initialized());
+  return lhs.nano_delta_ == rhs.nano_delta_;
 }
 
-bool operator!=(const MonoDelta &lhs, const MonoDelta &rhs) {
-  return !lhs.Equals(rhs);
+bool operator!=(const MonoDelta& lhs, const MonoDelta& rhs) {
+  return !(lhs == rhs);
 }
 
-bool operator<(const MonoDelta &lhs, const MonoDelta &rhs) {
-  return lhs.LessThan(rhs);
+bool operator<(const MonoDelta& lhs, const MonoDelta& rhs) {
+  DCHECK(lhs.Initialized());
+  DCHECK(rhs.Initialized());
+  return lhs.nano_delta_ < rhs.nano_delta_;
 }
 
-bool operator<=(const MonoDelta &lhs, const MonoDelta &rhs) {
-  return lhs.LessThan(rhs) || lhs.Equals(rhs);
+bool operator<=(const MonoDelta& lhs, const MonoDelta& rhs) {
+  return !(lhs > rhs);
 }
 
-bool operator>(const MonoDelta &lhs, const MonoDelta &rhs) {
-  return lhs.MoreThan(rhs);
+bool operator>(const MonoDelta& lhs, const MonoDelta& rhs) {
+  return rhs < lhs;
 }
 
-bool operator>=(const MonoDelta &lhs, const MonoDelta &rhs) {
-  return lhs.MoreThan(rhs) || lhs.Equals(rhs);
+bool operator>=(const MonoDelta& lhs, const MonoDelta& rhs) {
+  return !(lhs < rhs);
 }
 
-MonoDelta operator-(const MonoDelta &lhs, const MonoDelta &rhs) {
+MonoDelta operator-(const MonoDelta& lhs, const MonoDelta& rhs) {
   return MonoDelta(lhs.nano_delta_ - rhs.nano_delta_);
 }
 
-MonoDelta operator+(const MonoDelta &lhs, const MonoDelta &rhs) {
+MonoDelta operator+(const MonoDelta& lhs, const MonoDelta& rhs) {
   return MonoDelta(lhs.nano_delta_ + rhs.nano_delta_);
 }
 
 bool operator==(const MonoTime& lhs, const MonoTime& rhs) {
-  return lhs.Equals(rhs);
+  return lhs.nanos_ == rhs.nanos_;
 }
 
 bool operator!=(const MonoTime& lhs, const MonoTime& rhs) {
-  return !lhs.Equals(rhs);
+  return !(lhs == rhs);
 }
 
 bool operator<(const MonoTime& lhs, const MonoTime& rhs) {
-  return lhs.ComesBefore(rhs);
+  DCHECK(lhs.Initialized());
+  DCHECK(rhs.Initialized());
+  return lhs.nanos_ < rhs.nanos_;
 }
 
 bool operator<=(const MonoTime& lhs, const MonoTime& rhs) {
-  return lhs.ComesBefore(rhs) || lhs.Equals(rhs);
+  return !(lhs > rhs);
 }
 
 bool operator>(const MonoTime& lhs, const MonoTime& rhs) {
-  return rhs.ComesBefore(lhs);
+  return rhs < lhs;
 }
 
 bool operator>=(const MonoTime& lhs, const MonoTime& rhs) {
-  return rhs.ComesBefore(lhs) || rhs.Equals(lhs);
+  return !(lhs < rhs);
 }
 
 MonoTime operator+(const MonoTime& t, const MonoDelta& delta) {
-  MonoTime tmp(t);
-  tmp.AddDelta(delta);
-  return tmp;
+  DCHECK(t.Initialized());
+  DCHECK(delta.Initialized());
+  return MonoTime(t.nanos_ + delta.nano_delta_);
 }
 
 MonoTime operator-(const MonoTime& t, const MonoDelta& delta) {
-  MonoTime tmp(t);
-  tmp.AddDelta(MonoDelta::FromNanoseconds(-delta.ToNanoseconds()));
-  return tmp;
+  DCHECK(t.Initialized());
+  DCHECK(delta.Initialized());
+  return MonoTime(t.nanos_ - delta.nano_delta_);
 }
 
 MonoDelta operator-(const MonoTime& t_end, const MonoTime& t_beg) {
   DCHECK(t_beg.Initialized());
   DCHECK(t_end.Initialized());
-  int64_t delta(t_end.nanos_);
-  delta -= t_beg.nanos_;
-  return MonoDelta(delta);
+  return MonoDelta(t_end.nanos_ - t_beg.nanos_);
 }
 
 std::ostream& operator<<(std::ostream& os, const kudu::MonoTime& time) {

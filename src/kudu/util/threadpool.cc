@@ -260,9 +260,9 @@ void ThreadPoolToken::Shutdown() {
 // Submit a task, running after delay_ms delay some time
 Status ThreadPoolToken::Schedule(std::function<void()> f, int64_t delay_ms) {
   CHECK(mode() == ThreadPool::ExecutionMode::SERIAL);
-  MonoTime execute_time = MonoTime::Now();
-  execute_time.AddDelta(MonoDelta::FromMilliseconds(delay_ms));
-  return pool_->Schedule(this, std::move(f), execute_time);
+  return pool_->Schedule(this,
+                         std::move(f),
+                         MonoTime::Now() + MonoDelta::FromMilliseconds(delay_ms));
 }
 
 void ThreadPoolToken::Wait() {

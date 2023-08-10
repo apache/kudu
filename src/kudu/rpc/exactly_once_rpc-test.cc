@@ -25,6 +25,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -44,7 +45,6 @@
 #include "kudu/rpc/rtest.pb.h"
 #include "kudu/rpc/rtest.proxy.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
@@ -220,11 +220,10 @@ class ExactlyOnceRpcTest : public RpcTestBase {
                      shared_ptr<Messenger> messenger,
                      int value,
                      int server_sleep = 0) : latch(1) {
-      MonoTime now = MonoTime::Now();
-      now.AddDelta(MonoDelta::FromMilliseconds(10000));
+      const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(10);
       rpc = new CalculatorServiceRpc(server_picker,
                                      request_tracker,
-                                     now,
+                                     deadline,
                                      std::move(messenger),
                                      value,
                                      &latch,
@@ -298,8 +297,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
   // This continuously issues calls to the server, that often last longer than
   // 'remember_responses_ttl_ms', making sure that we don't get errors back.
   void DoLongWritesThread(MonoDelta run_for) {
-    MonoTime run_until = MonoTime::Now();
-    run_until.AddDelta(run_for);
+    const auto run_until = MonoTime::Now() + run_for;
     int counter = 0;
     while (MonoTime::Now() < run_until) {
       unique_ptr<RetriableRpcExactlyOnceAdder> adder(new RetriableRpcExactlyOnceAdder(
@@ -327,8 +325,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
   // client should be GCed.
   void StubbornlyWriteTheSameRequestThread(ResultTracker::SequenceNumber sequence_number,
                                            MonoDelta run_for) {
-    MonoTime run_until = MonoTime::Now();
-    run_until.AddDelta(run_for);
+    const auto run_until = MonoTime::Now() + run_for;
     // Make an initial request, so that we get a response to compare to.
     ExactlyOnceResponsePB original_response;
     CHECK_OK(MakeAddCall(sequence_number, 0, &original_response));
