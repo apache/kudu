@@ -727,7 +727,7 @@ uint64_t StackTrace::HashCode() const {
                                sizeof(frames_[0]) * num_frames_);
 }
 
-bool StackTrace::LessThan(const StackTrace& s) const {
+bool StackTrace::operator<(const StackTrace& s) const {
   return std::lexicographical_compare(frames_, &frames_[num_frames_],
                                       s.frames_, &s.frames_[num_frames_]);
 }
@@ -784,9 +784,10 @@ Status StackTraceSnapshot::SnapshotAllStacks() {
   }
   collectors_.clear();
 
-  std::sort(infos_.begin(), infos_.end(), [](const ThreadInfo& a, const ThreadInfo& b) {
-      return a.stack.LessThan(b.stack);
-    });
+  std::sort(infos_.begin(),
+            infos_.end(), [](const ThreadInfo& a, const ThreadInfo& b) {
+    return a.stack < b.stack; // NOLINT(build/include_what_you_use)
+  });
   return Status::OK();
 }
 
@@ -796,7 +797,7 @@ void StackTraceSnapshot::VisitGroups(const StackTraceSnapshot::VisitorFunc& visi
   while (group_end != infos_.end()) {
     do {
       ++group_end;
-    } while (group_end != infos_.end() && group_end->stack.Equals(group_start->stack));
+    } while (group_end != infos_.end() && group_end->stack == group_start->stack);
     visitor(ArrayView<ThreadInfo>(&*group_start, std::distance(group_start, group_end)));
     group_start = group_end;
   }

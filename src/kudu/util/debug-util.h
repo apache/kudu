@@ -144,14 +144,18 @@ class StackTrace {
   }
 
   // Returns true if the stack trace 's' matches this trace.
-  bool Equals(const StackTrace& s) const {
+  bool operator==(const StackTrace& s) const {
     return s.num_frames_ == num_frames_ &&
-      strings::memeq(frames_, s.frames_,
-                     num_frames_ * sizeof(frames_[0]));
+        strings::memeq(frames_, s.frames_, num_frames_ * sizeof(frames_[0]));
+  }
+
+  // Returns true if 's' doesn't match this trace.
+  bool operator!=(const StackTrace& s) const {
+    return !(*this == s);
   }
 
   // Comparison operator for use in sorting.
-  bool LessThan(const StackTrace& s) const;
+  bool operator<(const StackTrace& s) const;
 
   // Collect and store the current stack trace. Skips the top 'skip_frames' frames
   // from the stack. For example, a value of '1' will skip whichever function

@@ -142,32 +142,32 @@ Atomic32 g_profiling_enabled = 0;
 ContentionStacks* g_contention_stacks = nullptr;
 
 void ContentionStacks::AddStack(const StackTrace& s, int64_t cycles) {
-  uint64_t hash = s.HashCode();
+  const uint64_t hash = s.HashCode();
 
   // Linear probe up to 4 attempts before giving up
   for (int i = 0; i < kNumLinearProbeAttempts; i++) {
-    Entry* e = &entries_[(hash + i) % kNumEntries];
-    if (!e->lock.TryLock()) {
+    Entry& e = entries_[(hash + i) % kNumEntries];
+    if (!e.lock.TryLock()) {
       // If we fail to lock it, we can safely just use a different slot.
       // It's OK if a single stack shows up multiple times, because pprof
       // aggregates them in the end anyway.
       continue;
     }
 
-    if (e->trip_count == 0) {
+    if (e.trip_count == 0) {
       // It's an un-claimed slot. Claim it.
-      e->hash = hash;
-      e->trace.CopyFrom(s);
-    } else if (e->hash != hash || !e->trace.Equals(s)) {
+      e.hash = hash;
+      e.trace.CopyFrom(s);
+    } else if (e.hash != hash || e.trace != s) {
       // It's claimed by a different stack trace.
-      e->lock.Unlock();
+      e.lock.Unlock();
       continue;
     }
 
     // Contribute to the stats for this stack.
-    e->cycle_count += cycles;
-    e->trip_count++;
-    e->lock.Unlock();
+    e.cycle_count += cycles;
+    ++e.trip_count;
+    e.lock.Unlock();
     return;
   }
 
