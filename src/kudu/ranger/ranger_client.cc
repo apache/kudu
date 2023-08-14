@@ -69,7 +69,9 @@ DEFINE_string(ranger_java_extra_args, "",
 DEFINE_string(ranger_jar_path, "",
               "Path to the JAR file containing the Ranger subprocess. If "
               "not specified, the default JAR file path is expected to be "
-              "next to the master binary.");
+              "next to the master binary. It can be a colon-separated list of "
+              "JARs. If it is, the paths are not verified and passed straight to "
+              "Java.");
 
 DEFINE_string(ranger_receiver_fifo_dir, "",
               "Directory in which to create a fifo used to receive messages "
@@ -237,32 +239,6 @@ string JavaPath() {
   return FLAGS_ranger_java_path;
 }
 
-bool ValidateRangerConfiguration() {
-  if (!FLAGS_ranger_config_path.empty()) {
-    // First, check the specified Java path.
-    const string java_path = JavaPath();
-    if (!Env::Default()->FileExists(java_path)) {
-      // Otherwise, since the specified path is not absolute, check if
-      // the Java binary is on the PATH.
-      string p;
-      Status s = Subprocess::Call({ "which", java_path }, "", &p);
-      if (!s.ok()) {
-        LOG(ERROR) << Substitute("--ranger_java_path has invalid java binary path: $0",
-                                 java_path);
-        return false;
-      }
-    }
-    const string ranger_jar_path = RangerJarPath();
-    if (!Env::Default()->FileExists(ranger_jar_path)) {
-      LOG(ERROR) << Substitute("--ranger_jar_path has invalid JAR file path: $0",
-                               ranger_jar_path);
-      return false;
-    }
-  }
-  return true;
-}
-GROUP_FLAG_VALIDATOR(ranger_config_flags, ValidateRangerConfiguration);
-
 bool ValidateLog4jLevel(const char* /*flagname*/, const string& value) {
   static const vector<string> kLevels = {
     "all",
@@ -390,6 +366,36 @@ Status BuildArgv(const string& fifo_path, const string& log_properties_path,
 }
 
 } // anonymous namespace
+
+bool ValidateRangerConfiguration() {
+  if (!FLAGS_ranger_config_path.empty()) {
+    // First, check the specified Java path.
+    const string java_path = JavaPath();
+    if (!Env::Default()->FileExists(java_path)) {
+      // Otherwise, since the specified path is not absolute, check if
+      // the Java binary is on the PATH.
+      string p;
+      Status s = Subprocess::Call({ "which", java_path }, "", &p);
+      if (!s.ok()) {
+        LOG(ERROR) << Substitute("--ranger_java_path has invalid java binary path: $0",
+                                 java_path);
+        return false;
+      }
+    }
+    const string ranger_jar_path = RangerJarPath();
+
+    // If the JAR path contains a colon, we skip verifying the paths and leave
+    // it to Java.
+    if (ranger_jar_path.find(':') == string::npos &&
+        !Env::Default()->FileExists(ranger_jar_path)) {
+      LOG(ERROR) << Substitute("--ranger_jar_path has invalid JAR file path: $0",
+                               ranger_jar_path);
+      return false;
+    }
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(ranger_config_flags, ValidateRangerConfiguration);
 
 #define CINIT(member, x) member = METRIC_##x.Instantiate(entity)
 #define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)

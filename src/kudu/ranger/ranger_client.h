@@ -130,5 +130,8 @@ class RangerClient {
   scoped_refptr<MetricEntity> metric_entity_;
 };
 
+// Validate Ranger configuration.
+bool ValidateRangerConfiguration();
+
 } // namespace ranger
 } // namespace kudu
