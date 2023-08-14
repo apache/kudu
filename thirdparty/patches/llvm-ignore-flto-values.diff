@@ -1,0 +1,11 @@
+--- a/clang/include/clang/Driver/Options.td	2020-10-07 10:10:48.000000000 +0000
++++ b/clang/include/clang/Driver/Options.td	2023-07-27 12:10:37.987953132 +0000
+@@ -1335,6 +1335,8 @@
+ def flimited_precision_EQ : Joined<["-"], "flimited-precision=">, Group<f_Group>;
+ def fapple_link_rtlib : Flag<["-"], "fapple-link-rtlib">, Group<f_Group>,
+   HelpText<"Force linking the clang builtins runtime library">;
++def : Flag<["-"], "flto=auto">, Group<clang_ignored_gcc_optimization_f_Group>;
++def : Flag<["-"], "flto=jobserver">, Group<clang_ignored_gcc_optimization_f_Group>;
+ def flto_EQ : Joined<["-"], "flto=">, Flags<[CoreOption, CC1Option]>, Group<f_Group>,
+   HelpText<"Set LTO mode to either 'full' or 'thin'">, Values<"thin,full">;
+ def flto : Flag<["-"], "flto">, Flags<[CoreOption, CC1Option]>, Group<f_Group>,
