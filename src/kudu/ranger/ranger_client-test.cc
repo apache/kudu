@@ -54,6 +54,7 @@ DECLARE_string(log_dir);
 DECLARE_string(ranger_config_path);
 DECLARE_string(ranger_log_config_dir);
 DECLARE_string(ranger_log_level);
+DECLARE_string(ranger_jar_path);
 DECLARE_string(ranger_java_extra_args);
 DECLARE_bool(ranger_logtostdout);
 DECLARE_bool(ranger_overwrite_log_config);
@@ -338,6 +339,24 @@ TEST_F(RangerClientTest, TestAuthorizeActionsAllAuthorized) {
   ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", /*is_owner=*/false, &actions));
   ASSERT_EQ(3, actions.size());
 }
+
+TEST_F(RangerClientTest, TestInvalidJARFails) {
+  FLAGS_ranger_config_path = test_dir_;
+  FLAGS_ranger_jar_path = "/this/is/not/a/real/location/hopefully.jar";
+  ASSERT_FALSE(ValidateRangerConfiguration());
+}
+
+TEST_F(RangerClientTest, TestMultipleInvalidJARsLeftUnchecked) {
+  FLAGS_ranger_config_path = test_dir_;
+  FLAGS_ranger_jar_path = "/this/is/not/a/real/location/hopefully.jar:/another/invalid/path.jar";
+  ASSERT_TRUE(ValidateRangerConfiguration());
+}
+
+TEST_F(RangerClientTest, TestDefaultJARPath) {
+  FLAGS_ranger_config_path = test_dir_;
+  ASSERT_TRUE(ValidateRangerConfiguration());
+}
+
 
 class RangerClientTestBase : public KuduTest {
  public:
