@@ -54,6 +54,7 @@ DECLARE_string(log_dir);
 DECLARE_string(ranger_config_path);
 DECLARE_string(ranger_log_config_dir);
 DECLARE_string(ranger_log_level);
+DECLARE_string(ranger_java_extra_args);
 DECLARE_bool(ranger_logtostdout);
 DECLARE_bool(ranger_overwrite_log_config);
 
@@ -344,6 +345,7 @@ class RangerClientTestBase : public KuduTest {
       : test_dir_(GetTestDataDirectory()) {}
 
   void SetUp() override {
+    SKIP_IF_SLOW_NOT_ALLOWED();
     metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "ranger_client-test");
     FLAGS_ranger_log_level = "debug";
     FLAGS_ranger_logtostdout = true;
@@ -381,6 +383,35 @@ class RangerClientTestBase : public KuduTest {
   std::unique_ptr<MiniRanger> ranger_;
   std::unique_ptr<RangerClient> client_;
 };
+
+class RangerClientTestExtraJVMArgs : public RangerClientTestBase {
+ public:
+  void SetUp() override {
+    SKIP_IF_SLOW_NOT_ALLOWED();
+    metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "ranger_client-test");
+    FLAGS_ranger_log_level = "debug";
+    FLAGS_ranger_logtostdout = true;
+    FLAGS_ranger_config_path = test_dir_;
+    FLAGS_ranger_log_config_dir = JoinPathSegments(test_dir_, "log_conf");
+    FLAGS_log_dir = JoinPathSegments(test_dir_, "logs");
+    ASSERT_OK(env_->CreateDir(FLAGS_log_dir));
+  }
+};
+
+TEST_F(RangerClientTestExtraJVMArgs, SmokeTest) {
+  FLAGS_ranger_java_extra_args = "-Xmx1G  -XX:+UseG1GC";
+  ASSERT_OK(InitializeRanger());
+
+  bool authorized;
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::METADATA, "db", "table", /*is_owner=*/false,
+                                    /*requires_delegate_admin=*/false, &authorized));
+  ASSERT_TRUE(authorized);
+}
+
+TEST_F(RangerClientTestExtraJVMArgs, TestCrashOnInvalidArguments) {
+  FLAGS_ranger_java_extra_args = "-XX:+InvalidArgumentHopeTheyWontChooseThisNameForAFLag";
+  ASSERT_DEATH(InitializeRanger(), "The subprocess has exited with status 1");
+}
 
 namespace {
 

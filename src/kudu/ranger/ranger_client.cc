@@ -32,6 +32,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/security/init.h"
@@ -61,6 +62,9 @@ DEFINE_string(ranger_java_path, "",
               "using the Kudu user's PATH. If not specified, $JAVA_HOME/bin/java "
               "is used. If $JAVA_HOME is not found, Kudu will attempt to "
               "find 'java' in the Kudu user's PATH.");
+
+DEFINE_string(ranger_java_extra_args, "",
+              "Extra JVM arguments to be passed to the Ranger subprocess.");
 
 DEFINE_string(ranger_jar_path, "",
               "Path to the JAR file containing the Ranger subprocess. If "
@@ -352,8 +356,16 @@ Status BuildArgv(const string& fifo_path, const string& log_properties_path,
     JavaPath(),
     Substitute("-Djava.security.krb5.conf=$0", GetKrb5ConfigFile()),
     Substitute("-Dlog4j2.configurationFile=$0", log_properties_path),
-    "-cp", JavaClasspath(), kMainClass,
   };
+  if (!FLAGS_ranger_java_extra_args.empty()) {
+    vector<string> args = strings::Split(FLAGS_ranger_java_extra_args, " ", strings::SkipEmpty());
+    for (auto& arg : args) {
+      ret.emplace_back(std::move(arg));
+    }
+  }
+  ret.emplace_back("-cp");
+  ret.emplace_back(JavaClasspath());
+  ret.emplace_back(kMainClass);
   // When Kerberos is enabled in Kudu, pass both Kudu principal and keytab file
   // to the Ranger subprocess.
   if (!FLAGS_keytab_file.empty()) {
