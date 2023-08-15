@@ -19,7 +19,6 @@
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <signal.h>
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
@@ -278,7 +277,7 @@ Subprocess::~Subprocess() {
   if (state_ == kRunning) {
     LOG(WARNING) << Substitute(
         "Child process $0 ($1) was orphaned. Sending signal $2...",
-        child_pid_, JoinStrings(argv_, " "), sig_on_destruct_);
+        child_pid_.load(), JoinStrings(argv_, " "), sig_on_destruct_);
     WARN_NOT_OK(KillAndWait(sig_on_destruct_),
                 Substitute("Failed to KillAndWait() with signal $0",
                            sig_on_destruct_));
@@ -321,7 +320,7 @@ static int pipe2(int pipefd[2], int flags) {
 Status Subprocess::Start() {
   VLOG(2) << "Invoking command: " << argv_;
   if (state_ != kNotStarted) {
-    const string err_str = Substitute("$0: illegal sub-process state", state_);
+    const string err_str = Substitute("$0: illegal sub-process state", state_.load());
     LOG(DFATAL) << err_str;
     return Status::IllegalState(err_str);
   }
@@ -603,10 +602,14 @@ Status Subprocess::Kill(int signal) {
     LOG(DFATAL) << err_str;
     return Status::IllegalState(err_str);
   }
-  if (kill(child_pid_, signal) != 0) {
+  int ret = kill(child_pid_, signal);
+  if (ret != 0 && ret != ESRCH) {
     return Status::RuntimeError("Unable to kill",
                                 ErrnoToString(errno),
                                 errno);
+  }
+  if (ret == ESRCH) {
+    LOG(WARNING) << Substitute("Process $0 ($1) has already exited", program_, child_pid_.load());
   }
 
   // Signal delivery is often asynchronous. For some signals, we try to wait
@@ -804,7 +807,7 @@ Status Subprocess::DoWait(int* wait_status, WaitMode mode) {
     return Status::OK();
   }
   if (state_ != kRunning) {
-    const string err_str = Substitute("$0: illegal sub-process state", state_);
+    const string err_str = Substitute("$0: illegal sub-process state", state_.load());
     LOG(DFATAL) << err_str;
     return Status::IllegalState(err_str);
   }

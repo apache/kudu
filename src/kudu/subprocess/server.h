@@ -224,8 +224,9 @@ class SubprocessServer {
   // collisions between subprocesses started in different process and threads.
   static std::string FifoPath(const std::string& base);
 
-  SubprocessServer(Env* env, const std::string& receiver_file,
-      std::vector<std::string> subprocess_argv, SubprocessMetrics metrics);
+  SubprocessServer(Env* env, std::string receiver_file,
+      std::vector<std::string> subprocess_argv, SubprocessMetrics metrics,
+      bool exit_on_failure = false);
   virtual ~SubprocessServer();
 
   // Initialize the server, starting the subprocess and worker threads.
@@ -270,6 +271,9 @@ class SubprocessServer {
   // inbound response queue.
   void ReceiveMessagesThread();
 
+  // Starts the exit checker thread.
+  void ExitCheckerThread();
+
   // Fixed timeout to be used for each call.
   const MonoDelta call_timeout_;
 
@@ -312,6 +316,10 @@ class SubprocessServer {
   // and triggers their callbacks.
   scoped_refptr<Thread> deadline_checker_;
 
+  // Waits for the process to exit. If it exits with a non-zero exit code, it
+  // kills the main process if exit_on_failure_ is set to true.
+  scoped_refptr<Thread> exit_checker_;
+
   // Pull work off the response queue and trigger the associated callbacks if
   // appropriate.
   std::vector<scoped_refptr<Thread>> responder_threads_;
@@ -334,6 +342,10 @@ class SubprocessServer {
   // call's callback.
   simple_spinlock in_flight_lock_;
   std::map<CallId, std::shared_ptr<SubprocessCall>> call_by_id_;
+
+  // If set to true, kills the main process if the subprocess exits with a
+  // non-zero exit code.
+  std::atomic<bool> exit_on_failure_;
 };
 
 } // namespace subprocess

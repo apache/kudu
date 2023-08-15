@@ -17,9 +17,10 @@
 #ifndef KUDU_UTIL_SUBPROCESS_H
 #define KUDU_UTIL_SUBPROCESS_H
 
-#include <signal.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <csignal>
 #include <map>
 #include <string>
 #include <vector>
@@ -209,8 +210,8 @@ class Subprocess {
   std::string program_;
   std::vector<std::string> argv_;
   std::map<std::string, std::string> env_;
-  State state_;
-  int child_pid_;
+  std::atomic<State> state_;
+  std::atomic<int> child_pid_;
   enum StreamMode fd_state_[3];
   int child_fds_[3];
   std::string cwd_;
