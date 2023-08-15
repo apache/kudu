@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <cstdlib>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -102,19 +103,21 @@ string SubprocessServer::FifoPath(const string& base) {
   return Substitute("$0.$1.$2", base, getpid(), Thread::CurrentThreadId());
 }
 
-SubprocessServer::SubprocessServer(Env* env, const string& receiver_file,
+SubprocessServer::SubprocessServer(Env* env, string receiver_file,
                                    vector<string> subprocess_argv,
-                                   SubprocessMetrics metrics)
+                                   SubprocessMetrics metrics,
+                                   bool exit_on_failure)
     : call_timeout_(MonoDelta::FromSeconds(FLAGS_subprocess_timeout_secs)),
       max_message_size_bytes_(FLAGS_subprocess_max_message_size_bytes),
       next_id_(1),
       closing_(1),
       env_(env),
-      receiver_file_(receiver_file),
+      receiver_file_(std::move(receiver_file)),
       process_(make_shared<Subprocess>(std::move(subprocess_argv))),
       outbound_call_queue_(FLAGS_subprocess_request_queue_size_bytes),
       inbound_response_queue_(FLAGS_subprocess_response_queue_size_bytes),
-      metrics_(std::move(metrics)) {
+      metrics_(std::move(metrics)),
+      exit_on_failure_(exit_on_failure) {
   process_->ShareParentStdin(false);
   process_->ShareParentStdout(true);
   process_->ShareParentStderr(true);
@@ -143,6 +146,9 @@ Status SubprocessServer::Init() {
                                [this, &cb]() { this->StartSubprocessThread(cb); },
                                &read_thread_));
   RETURN_NOT_OK_PREPEND(sync.Wait(), "Failed to start subprocess");
+  RETURN_NOT_OK(Thread::Create("subprocess", "exit-checker",
+                               [this]() { this->ExitCheckerThread(); },
+                               &exit_checker_));
 
   // NOTE: callers should try to ensure each receiver file path is used by a
   // single subprocess.
@@ -211,6 +217,9 @@ void SubprocessServer::Shutdown() {
   // don't init there. Shutdown() is still called in this case from the
   // destructor though so these checks are necessary.
   if (process_->IsStarted()) {
+    // We're intentionally killing the process so the parent process shouldn't
+    // die when the child gets killed.
+    exit_on_failure_ = false;
     WARN_NOT_OK(process_->KillAndWait(SIGTERM), "failed to stop subprocess");
   }
   inbound_response_queue_.Shutdown();
@@ -229,6 +238,9 @@ void SubprocessServer::Shutdown() {
   }
   if (start_thread_) {
     start_thread_->Join();
+  }
+  if (exit_checker_) {
+    exit_checker_->Join();
   }
   for (const auto& t : responder_threads_) {
     t->Join();
@@ -381,6 +393,19 @@ void SubprocessServer::CheckDeadlinesThread() {
     for (const auto& call : timed_out_calls) {
       call->RespondError(Status::TimedOut("timed out while in flight"));
     }
+  }
+}
+
+void SubprocessServer::ExitCheckerThread() {
+  int status;
+  CHECK_OK(process_->Wait(&status));
+  string message = Substitute("The subprocess has exited with status $0",
+                              WIFEXITED(status) ? WEXITSTATUS(status) : WTERMSIG(status));
+
+  if (exit_on_failure_) {
+    LOG(FATAL) << message;
+  } else {
+    LOG(WARNING) << message;
   }
 }
 

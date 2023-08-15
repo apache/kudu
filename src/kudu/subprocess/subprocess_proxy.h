@@ -54,9 +54,9 @@ template<class ReqPB, class RespPB, class MetricsPB>
 class SubprocessProxy {
  public:
   SubprocessProxy(Env* env, const std::string& receiver_file,
-                  std::vector<std::string> argv, const scoped_refptr<MetricEntity>& entity,
-                  std::string subprocess_name = "subprocess")
-      : server_(new SubprocessServer(env, receiver_file, std::move(argv), MetricsPB(entity))),
+                  const std::vector<std::string>& argv, const scoped_refptr<MetricEntity>& entity,
+                  std::string subprocess_name = "subprocess", bool exit_on_failure = true)
+      : server_(new SubprocessServer(env, receiver_file, argv, MetricsPB(entity), exit_on_failure)),
         subprocess_name_(std::move(subprocess_name)) {}
 
   // Starts the underlying subprocess.

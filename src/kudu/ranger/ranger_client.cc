@@ -104,6 +104,10 @@ DEFINE_bool(ranger_logtostdout, false,
 TAG_FLAG(ranger_logtostdout, advanced);
 TAG_FLAG(ranger_logtostdout, evolving);
 
+DEFINE_bool(ranger_crash_master_on_subprocess_failure, true,
+            "Whether to crash the Master if the Ranger subprocess crashes.");
+TAG_FLAG(ranger_crash_master_on_subprocess_failure, advanced);
+
 DECLARE_int32(max_log_files);
 DECLARE_uint32(max_log_size);
 DECLARE_uint32(subprocess_max_message_size_bytes);
@@ -422,8 +426,9 @@ Status RangerClient::Start() {
   const string fifo_path = SubprocessServer::FifoPath(RangerFifoBase());
   vector<string> argv;
   RETURN_NOT_OK(BuildArgv(fifo_path, log_properties_path, &argv));
-  subprocess_.reset(new RangerSubprocess(env_, fifo_path, std::move(argv), metric_entity_,
-                                         "Ranger client subprocess"));
+  subprocess_.reset(new RangerSubprocess(env_, fifo_path, argv, metric_entity_,
+                                         "Ranger client subprocess",
+                                         FLAGS_ranger_crash_master_on_subprocess_failure));
   return subprocess_->Start();
 }
 
