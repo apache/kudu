@@ -596,6 +596,17 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
+--------------------------------------------------------------------------------
+thirdparty/src/rocksdb-*/: Apache 2.0 license
+libraries: librocksdb
+Source: https://github.com/facebook/rocksdb
+Licensing note: https://github.com/facebook/rocksdb#license (permalink
+https://github.com/facebook/rocksdb/blob/bc448e9c89ffcef97434cd35591cee7b8e7c98c3/README.md?plain=1#L27-L29)
+License text: https://github.com/facebook/rocksdb/blob/bc448e9c89ffcef97434cd35591cee7b8e7c98c3/LICENSE.Apache
+
+RocksDB is dual-licensed under both the GPLv2 and Apache 2.0 License.
+The Apache Kudu project includes librocksdb as a thirdparty library under the Apache 2.0 license.
+
 ================================================================================
 BUILD-ONLY DEPENDENCIES
 ================================================================================
