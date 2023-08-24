@@ -5108,9 +5108,9 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
           Partition::FromPB(tablet_partition, &partition);
         }
         range_key_start = partition.begin().range_key();
-        VLOG(1) << Substitute("range_key_start is set to $1", range_key_start.value());
+        VLOG(1) << Substitute("range_key_start is set to $0", range_key_start.value());
         table_id = tablet_->metadata().state().pb.table_id();
-        VLOG(1) << Substitute("table_id is set to $1", table_id.value());
+        VLOG(1) << Substitute("table_id is set to $0", table_id.value());
       }
     }
 
@@ -6185,9 +6185,9 @@ Status CatalogManager::SelectReplicasForTablet(const PlacementPolicy& policy,
       Partition::FromPB(tablet_partition, &partition);
     }
     range_key_start = partition.begin().range_key();
-    VLOG(1) << Substitute("range_key_start is set to $1", range_key_start.value());
+    VLOG(1) << Substitute("range_key_start is set to $0", range_key_start.value());
     table_id = tablet->metadata().state().pb.table_id();
-    VLOG(1) << Substitute("table_id is set to $1", table_id.value());
+    VLOG(1) << Substitute("table_id is set to $0", table_id.value());
   }
 
   // Select the set of replicas for the tablet.
