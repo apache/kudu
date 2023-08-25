@@ -340,7 +340,7 @@ fetch_and_patch \
  "patch -d projects -p1 < $TP_DIR/patches/llvm-remove-cyclades-inclusion-in-sanitizer.patch" \
  "patch -p2 < $TP_DIR/patches/llvm-fix-missing-include.patch" \
  "patch -d projects -p1 < $TP_DIR/patches/llvm-Sanitizer-built-against-glibc-2_34-doesnt-work.patch" \
- "patch -d tools -p1 < $TP_DIR/patches/llvm-ignore-flto-values.diff"
+ "patch -d tools -p1 < $TP_DIR/patches/llvm-ignore-flto-values.patch"
 
 LZ4_PATCHLEVEL=0
 fetch_and_patch \
