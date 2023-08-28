@@ -128,6 +128,13 @@ SystemNtp::SystemNtp(const scoped_refptr<MetricEntity>& metric_entity)
 }
 
 Status SystemNtp::Init() {
+  // Register the metric before trying to call NTP-related calls which could
+  // return an error. The metric is here to provide useful diagnostics under
+  // all possible conditions.
+  METRIC_clock_ntp_status.InstantiateFunctionGauge(
+      metric_entity_, []() { return ClockNtpStatusForMetrics(); })->
+          AutoDetachToLastValue(&metric_detacher_);
+
   timex t;
   t.modes = 0; // set mode to 0 for read-only query
   const int rc = ntp_adjtime(&t);
@@ -139,10 +146,6 @@ Status SystemNtp::Init() {
   // for details).
   skew_ppm_ = t.tolerance >> 16;
   VLOG(1) << "ntp_adjtime(): tolerance is " << t.tolerance;
-
-  METRIC_clock_ntp_status.InstantiateFunctionGauge(
-      metric_entity_, []() { return ClockNtpStatusForMetrics(); })->
-          AutoDetachToLastValue(&metric_detacher_);
 
   return Status::OK();
 }
