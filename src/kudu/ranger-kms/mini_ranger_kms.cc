@@ -276,7 +276,7 @@ Status MiniRangerKMS::StartRangerKMS() {
     RETURN_NOT_OK(WaitForTcpBind(process_->pid(),
                                  &port_,
                                  { "0.0.0.0", "127.0.0.1", },
-                                 MonoDelta::FromSeconds(90)));
+                                 MonoDelta::FromSeconds(120)));
     LOG(INFO) << "Ranger KMS bound to " << port_;
     LOG(INFO) << "Ranger KMS URL: " << ranger_kms_url_;
   }
