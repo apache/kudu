@@ -95,6 +95,8 @@ class KUDU_EXPORT KuduWriteOperation {
   ///   caller must handle redaction themselves, if necessary.
   virtual std::string ToString() const = 0;
 
+  /// @return Raw pointer to KuduTable object representing the table
+  ///   that the write is targeted for.
   const KuduTable* table() const { return table_.get(); }
 
  protected:

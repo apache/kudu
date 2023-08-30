@@ -332,8 +332,9 @@ class KUDU_EXPORT KuduClientBuilder {
 
   /// Add a trusted root CA certificate into the client's TLS certificate bundle.
   ///
-  /// @param [in] cert_pem_str
+  /// @param [in] cert_pem
   ///   The trusted certificate to add, in PEM format.
+  /// @return Reference to the updated object.
   KuduClientBuilder& trusted_certificate(const std::string& cert_pem);
 
   /// @brief Set the number of reactors for the RPC messenger.
@@ -711,7 +712,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// The delete operation or drop operation means that the service will directly
   /// delete the table after receiving the instruction. Which means that once we
   /// delete the table by mistake, we have no way to recall the deleted data.
-  /// We have added a new API @SoftDeleteTable to allow the deleted data to be
+  /// We have added a new SoftDeleteTable API to allow the deleted data to be
   /// reserved for a period of time, which means that the wrongly deleted data may
   /// be recalled. In order to be compatible with the previous versions, this interface
   /// will continue to directly delete tables without reserving the table.
@@ -3372,6 +3373,18 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   /// @return Operation result status.
   Status IncludeTabletMetadata(bool include_metadata) WARN_UNUSED_RESULT;
 
+  /// Set approximate data size (in bytes) for each key range that a single scan
+  /// token is built for.
+  ///
+  /// @param [in] split_size_bytes
+  ///   The approximate target size of the data to be retrieved per scan token.
+  ///   If set to @c 0 (and that's the default, unless explicitly set by calling
+  ///   this method), the key ranges of the scan tokens to be produced
+  ///   are determined by the table's partition schema, so a single token
+  ///   is built per single tablet. Also see @c KuduScanToken#setSplitSizeBytes
+  ///   in the Java client.
+  void SetSplitSizeBytes(uint64_t split_size_bytes);
+
   /// Build the set of scan tokens.
   ///
   /// The builder may be reused after this call.
@@ -3381,11 +3394,6 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   ///   elements.
   /// @return Operation result status.
   Status Build(std::vector<KuduScanToken*>* tokens) WARN_UNUSED_RESULT;
-
-  /// Set the size of the data in each key range.
-  /// The default value is 0 without set and tokens build by meta cache.
-  /// It's corresponding to 'setSplitSizeBytes' in Java client.
-  void SetSplitSizeBytes(uint64_t split_size_bytes);
 
  private:
   class KUDU_NO_EXPORT Data;

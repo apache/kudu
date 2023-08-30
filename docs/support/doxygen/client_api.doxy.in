@@ -43,6 +43,19 @@ RECURSIVE              = YES
 # in those anyway.
 EXCLUDE                = @DOXY_CLIENT_API_EXCLUDE@
 
+# Enable pre-processing and macro expansion in doxygen (both are turned off
+# by default otherwise), but expand only macros that specified by the
+# PREDEFINED configuration parameter below. As of now, that's to simplify the
+# signatures of the documented methods that otherwise might be interpreted
+# in a wrong way by doxygen. This recipe is documented at least at
+# https://www.doxygen.nl/manual/preprocessing.html
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+
+# Below is the list of macros to be expanded by a custom way by doxygen.
+PREDEFINED             = ATTRIBUTE_DEPRECATED(x):=
+
 # We add information about the Kudu version the documentation is generated for.
 # NOTE: this tag requires GENERATE_HTML enabled.
 HTML_FOOTER            = @DOXY_CLIENT_API_FOOTER@
