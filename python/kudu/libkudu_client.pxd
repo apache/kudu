@@ -549,9 +549,9 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         PartitionType_Inclusive " kudu::client::KuduTableCreator::INCLUSIVE_BOUND"
 
     enum EncryptionPolicy" kudu::client::KuduClientBuilder::EncryptionPolicy":
-        EncryptionPolicy_Optional " kudu::client::KuduClientBuilder::EncryptionPolicy::OPTIONAL"
-        EncryptionPolicy_RequiredRemote " kudu::client::KuduClientBuilder::EncryptionPolicy::REQUIRED_REMOTE"
-        EncryptionPolicy_Required " kudu::client::KuduClientBuilder::EncryptionPolicy::REQUIRED"
+        EncryptionPolicy_Optional " kudu::client::KuduClientBuilder::OPTIONAL"
+        EncryptionPolicy_RequiredRemote " kudu::client::KuduClientBuilder::REQUIRED_REMOTE"
+        EncryptionPolicy_Required " kudu::client::KuduClientBuilder::REQUIRED"
 
     Status DisableOpenSSLInitialization()
 
