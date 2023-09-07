@@ -22,7 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <type_traits>
+#include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -182,6 +182,8 @@ TEST_F(BlockBloomFilterTest, CumulativeFind) {
 // The empirical false positives we find when looking for random items is with a constant
 // factor of the false positive probability the Bloom filter was constructed for.
 TEST_F(BlockBloomFilterTest, FindInvalid) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   // We use a deterministic pseudorandom number generator with a set seed. The reason is
   // that with a run-dependent seed, there will always be inputs that can fail. That's a
   // potential argument for this to be a benchmark rather than a test, although the
@@ -236,6 +238,8 @@ TEST_F(BlockBloomFilterTest, FindInvalid) {
 
 // Test that MaxNdv() and MinLogSpace() are dual
 TEST_F(BlockBloomFilterTest, MinSpaceMaxNdv) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   for (int log2fpp = -2; log2fpp >= -30; --log2fpp) {
     const double fpp = pow(2, log2fpp);
     for (int given_log_space = 8; given_log_space < 30; ++given_log_space) {
@@ -284,6 +288,8 @@ TEST_F(BlockBloomFilterTest, MinSpaceEdgeCase) {
 
 // Check that MinLogSpace() and FalsePositiveProb() are dual
 TEST_F(BlockBloomFilterTest, MinSpaceForFpp) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   for (size_t ndv = 10000; ndv < 100 * 1000 * 1000; ndv *= 1.1) {
     for (double fpp = 0.1; fpp > pow(2, -20); fpp *= 0.9) { // NOLINT: loop on double
       // When contructing a Bloom filter, we can request a particular fpp by calling
