@@ -37,6 +37,375 @@ reproduced on this page. Please consult the
 link:http://kudu.apache.org/releases/[documentation of the appropriate release]
 for a list of known issues and limitations.
 
+[[rn_1.17.0]]
+= Apache Kudu 1.17.0 Release Notes
+
+[[rn_1.17.0_upgrade_notes]]
+== Upgrade Notes
+
+** TLSv1.2 is the minimum TLS protocol version that newer Kudu clients are able to use for secure
+Kudu RPC. The newer clients are not able to communicate with servers built and run with OpenSSL of
+versions prior to 1.0.1.  If such a Kudu cluster is running on a deprecated OS versions
+(e.g., RHEL/CentOS 6.4), the following options are available to work around the incompatibility:
+* use Kudu clients of 1.14 or earlier versions to communicate with such cluster
+* disable RPC encryption and authentication for Kudu RPC, setting `--rpc_authentication=disabled`
+and `--rpc_encryption=disabled` for all masters and tablet servers in the cluster to allow the new
+client to work with the old cluster
+
+** TLSv1.2 is the minimum TLS protocol version that newer Kudu servers are able to use for secure
+Kudu RPC. The newer servers are not able to communicate using secure Kudu RPC with Kudu C++ client
+applications linked with libkudu_client library built against OpenSSL of versions prior to 1.0.1 or
+with Java client applications run with outdated Java runtime that doesn't support TLSv1.2.  The
+following options are available to work around this incompatibility:
+* customize settings for the `--rpc_tls_min_protocol` and `--rpc_tls_ciphers` flags on all masters
+and tablet servers in the cluster, setting `--rpc_tls_min_protocol=TLSv1` and adding TLSv1-capable
+cipher suites (e.g. AES128-SHA and AES256-SHA) into the list
+* disable RPC encryption and authentication for Kudu RPC, setting `--rpc_authentication=disabled`
+and `--rpc_encryption=disabled` for all masters and tablet servers in the cluster to allow such Kudu
+clients to work with newer clusters
+
+[[rn_1.17.0_obsoletions]]
+== Obsoletions
+
+
+[[rn_1.17.0_deprecations]]
+== Deprecations
+
+Support for Python 2.x and Python 3.4 and earlier is deprecated and may be removed in the next minor
+release.
+
+[[rn_1.17.0_new_features]]
+== New features
+
+* Kudu now supports encrypting data at rest. Kudu supports `AES-128-CTR`, `AES-192-CTR`, and
+`AES-256-CTR` ciphers to encrypt data, supports Apache Ranger KMS and Apache Hadoop KMS. See
+link:https://kudu.apache.org/docs/security.html#_data_at_rest_[Data at rest] for more details.
+
+* Kudu now supports range-specific hash schemas for tables. It's now possible to add ranges with
+their own unique hash schema independent of the table-wide hash schema. This can be done at table
+creation time and while altering the table. It’s controlled by the `--enable_per_range_hash_schemas`
+master flag which is enabled by default (see
+link:https://issues.apache.org/jira/browse/KUDU-2671[KUDU-2671]).
+
+* Kudu now supports soft-deleted tables. Kudu keeps a soft-deleted table aside for a period of time
+(a.k.a. reservation), not purging the data yet.  The table can be restored/recalled back before its
+reservation expires.  The reservation period can be customized via Kudu client API upon
+soft-deleting the table.  The default reservation period is controlled by the
+`--default_deleted_table_reserve_seconds` master's flag.
+NOTE: As of Kudu 1.17 release, the soft-delete functionality is not supported when HMS integration
+is enabled, but this should be addressed in a future release (see
+link:https://issues.apache.org/jira/browse/KUDU-3326[KUDU-3326]).
+
+* Introduced `Auto-Incrementing` column. An auto-incrementing column is populated on the server side
+with a monotonically increasing counter. The counter is local to every tablet, i.e. each tablet has
+a separate auto incrementing counter (see
+link:https://issues.apache.org/jira/browse/KUDU-1945[KUDU-1945]).
+
+* Kudu now supports experimental non-unique primary key. When a table with non-unique primary key is
+created, an `Auto-Incrementing` column named `auto_incrementing_id` is added automatically to the
+table as the key column. The non-unique key columns and the `Auto-Incrementing` column together form
+the effective primary key (see link:https://issues.apache.org/jira/browse/KUDU-1945[KUDU-1945]).
+
+* Introduced `Immutable` column. It's useful to represent a semantically constant entity (see
+link:https://issues.apache.org/jira/browse/KUDU-3353[KUDU-3353]).
+
+* An experimental feature is added to Kudu that allows it to automatically rebalance tablet leader
+replicas among tablet servers. The background task can be enabled by setting the
+`--auto_leader_rebalancing_enabled` flag on the Kudu masters. By default, the flag is set to 'false'
+(see link:https://issues.apache.org/jira/browse/KUDU-3390[KUDU-3390]).
+
+* Introduced an experimental feature: authentication of Kudu client applications to Kudu servers
+using JSON Web Tokens (JWT).  The JWT-based authentication can be used as an alternative to Kerberos
+authentication for Kudu applications running at edge nodes where configuring Kerberos might be
+cumbersome.  Similar to Kerberos credentials, a JWT is considered a primary client's credentials.
+The server-side capability of JWT-based authentication is controlled by the
+`--enable_jwt_token_auth` flag (set 'false' by default).  When the flat set to 'true', a Kudu server
+is capable of authenticating Kudu clients using the JWT provided by the client during RPC connection
+negotiation.  From its side, a Kudu client authenticates a Kudu server by verifying its TLS
+certificate.  For the latter to succeed, the client should use Kudu client API to add the cluster's
+IPKI CA certificate into the list of trusted certificates.
+
+* The C++ client scan token builder can now create multiple tokens per tablet. So, it's now possible
+to dynamically scale the set of readers/scanners fetching data from a Kudu table in parallel. To use
+this functionality, use the newly introduced `SetSplitSizeBytes()` method of the Kudu client API to
+specify how many bytes of data each token should scan
+(see link:https://issues.apache.org/jira/browse/KUDU-3393[KUDU-3393]).
+
+* Kudu's default replica placement algorithm is now range and table aware to prevent hotspotting
+unlike the old power of two choices algorithm. New replicas from the same range are spread evenly
+across available tablet servers, the table the range belongs to is used as a tiebreaker (see
+link:https://issues.apache.org/jira/browse/KUDU-3476[KUDU-3476]).
+
+* Statistics on various write operations is now available via Kudu client API at the session level
+(see link:https://issues.apache.org/jira/browse/KUDU-3351[KUDU-3351],
+link:https://issues.apache.org/jira/browse/KUDU-3365[KUDU-3365]).
+
+* Kudu now exposes all its metrics except for string gauges in Prometheus format via the embedded
+webserver's `/metrics_prometheus` endpoint (see
+link:https://issues.apache.org/jira/browse/KUDU-3375[KUDU-3375]).
+
+* It’s now possible to deploy Kudu clusters in an internal network (e.g. in K8S environment) and
+avoid internal traffic (i.e. tservers and masters) using advertised addresses and allow Kudu clients
+running in external networks. This can be achieved by customizing the setting for the newly
+introduced `--rpc_proxy_advertised_addresses` and `--rpc_proxied_addresses` server flags. This might
+be useful in various scenarios where Kudu cluster is running in an internal network behind a
+firewall, but Kudu clients are running at the other side of the firewall using JWT to authenticate
+to Kudu servers, and the RPC traffic between to the Kudu cluster is forwarded through a TCP/SOCKS
+proxy (see link:https://issues.apache.org/jira/browse/KUDU-3357[KUDU-3357]).
+
+* It’s now possible to clean up metadata for deleted tables/tablets from Kudu master's in-memory map
+and the `sys.catalog` table.  This is useful in reducing the memory consumption and bootstrap time
+for masters. This can be achieved by customizing the setting for the newly introduced
+`--enable_metadata_cleanup_for_deleted_tables_and_tablets` and
+`--metadata_for_deleted_table_and_tablet_reserved_secs` kudu-master’s flags.
+
+* It’s now possible to perform range rebalancing for a single table per run in the `kudu cluster
+rebalance` CLI tool by setting the newly introduced `--enable_range_rebalancing` tool flag.  This is
+useful to address various hot-spotting issues when too many tablet replicas from the same range (but
+different hash buckets) were placed at the same tablet server.  The hot-spotting issue in tablet
+replica placement should be address in a follow-up releases, see
+link:https://issues.apache.org/jira/browse/KUDU-3476[KUDU-3476] for details.
+
+* It’s now possible to compact log container metadata files at runtime.  This is useful in
+reclaiming the disk space once the container becomes full. This feature can be turned on/off by
+customizing the setting for the newly introduced `--log_container_metadata_runtime_compact`
+kudu-tserver flag (see link:https://issues.apache.org/jira/browse/KUDU-3318[KUDU-3318]).
+
+* New CLI tools `kudu master/tserver set_flag_for_all` are added to update flags for all masters and
+tablet servers in a Kudu cluster at once.
+
+* A new CLI tool `kudu local_replica copy_from_local` is added to copy tablet replicas' data at the
+filesystem level. It can be used when adding disks and for quick rebalancing of data between disks,
+or can be used when migrating data from one data directory to the other. It will make data more
+dense than data on old data directories too.
+
+* A new CLI tool `kudu diagnose parse_metrics` is added to parse metrics out of diagnostic logs (see
+link:https://issues.apache.org/jira/browse/KUDU-2353[KUDU-2353]).
+
+* A new CLI tool `kudu local_replica tmeta delete_rowsets` is added to delete rowsets from the
+tablet.
+
+* A sanity check has been added to detect wall clock jumps, it is controlled by the newly introduced
+`--wall_clock_jump_detection` and `--wall_clock_jump_threshold_sec` flags. That should help to
+address issues reported in link:https://issues.apache.org/jira/browse/KUDU-2906[KUDU-2906].
+
+[[rn_1.17.0_improvements]]
+== Optimizations and improvements
+
+* Reduce the memory consumption if there are frequent alter schema operations for tablet servers
+(see link:https://issues.apache.org/jira/browse/KUDU-3197[KUDU-3197]).
+
+* Reduce the memory consumption by implementing memory budgeting for performing RowSet merge
+compactions (i.e. CompactRowSetsOp maintenance operations). Several flags have been introduced,
+while the `--rowset_compaction_memory_estimate_enabled` flag indicates whether to check for
+available memory necessary to run CompactRowSetsOp maintenance operations (see
+link:https://issues.apache.org/jira/browse/KUDU-3406[KUDU-3406]).
+
+* Optimized evaluating in-list predicates based on RowSet PK bounds.  A tablet server can now
+effectively skip rows when the predicate is on a non-prefix part of the primary key and the leading
+columns' cardinality is 1 (see link:https://issues.apache.org/jira/browse/KUDU-1644[KUDU-1644]).
+
+* Speed up CLI tool `kudu cluster rebalance` to run intra-location rebalancing in parallel for
+location-aware Kudu cluster. Theoretically, running intra-location rebalancing in parallel might
+shorten the runtime by N times compared with running sequentially, where N is the number of
+locations in a Kudu cluster. This can be achieved by customizing the setting for the newly
+introduced `--intra_location_rebalancing_concurrency` flag.
+
+* Two new flags `--show_tablet_partition_info` and `--show_hash_partition_info` have been introduced
+for the `kudu table list` CLI tool to show the corresponding relationship between partitions and
+tablet ids, and it's possible to specify the output format by specifying
+`--list_table_output_format` flag.
+
+* A new flag `--create_table_replication_factor` has been introduced for the `kudu table copy` CLI
+tool to specify the replication factor for the destination table.
+
+* A new flag `--create_table_hash_bucket_nums` has been introduced for the `kudu table copy` CLI
+tool to specify the number of hash buckets in each hash dimension for the destination table.
+
+* A new flag `--tables` has been introduced for the `kudu master unsafe_rebuild` CLI tool to rebuild
+the metadata of specified tables on Kudu master, and it has no effect on the other tables.
+
+* A new flag `--fault_tolerant` has been introduced for the `kudu table copy/scan` and
+`kudu perf table_scan` CLI tool to make the scanner fault-tolerant and the results returned in
+primary key order per-tablet.
+
+* A new flag `--show_column_comment` has been introduced for the `kudu table describe` CLI tool to
+show column comments.
+
+* A new flag `--current_leader_uuid` has been introduced for the `kudu tablet leader_step_down` CLI
+tool to conveniently step down leader replica using a given UUID.
+
+* A new flag `--use_readable_format` has been introduced for the `kudu local_replica dump rowset`
+CLI tool to indicate whether to dump the primary key in human readable format. Besides, another flag
+`--dump_primary_key_bounds_only` has been introduced to this tool to indicate whether to dump rowset
+primary key bounds only.
+
+* A new flag `--tables` has been introduced for the `kudu local_replica delete` CLI tool to
+conveniently delete multiple tablets by table name.
+
+* It’s now possible to specify `owner` and `comment` fields when using the `kudu table create` CLI
+tool to create tables.
+
+* It’s now possible to use the `kudu local_replica copy_from_remote` CLI tool to copy tablets in a
+batch.
+
+* It’s now possible to enable or disable auto rebalancer by setting `--auto_rebalancing_enabled`
+flag to Kudu master at runtime.
+
+* It’s now possible for `kudu tserver/master get_flags` CLI tool to filter flags even if the server
+side doesn’t support flags filter function (the latter is for Kudu servers of releases prior to
+1.12).
+
+* Added a CSP (Content Security Policy) header to prevent security scanners flagging Kudu's web UI
+as vulnerable.
+
+* A separated section has been introduced to include all non-default flags specially on path `/varz`
+of Kudu's web UI.
+
+* A separated section has been introduced to show slow scans on path `/scans` of Kudu's web UI, it
+can be enabled by tweaking the `--show_slow_scans` flag for tablet servers. A scan is called 'slow'
+if it takes more time than defined by `--slow_scanner_threshold_ms`.
+
+* A new `Data retained` column has been introduced to the `Non-running operations` section to
+indicate the approximate amount of disk space that would be freed on path `/maintenance-manager` of
+Kudu's web UI.
+
+* The default value of tablet history retention time (controlled by `--tablet_history_max_age_sec`
+flag) on Kudu master has been reduced from 7 days to 5 minutes. It's not necessary to keep such a
+long history of the system tablet since masters always scan data at the latest available snapshot.
+
+* Kudu can now be built and run on Apple M chips and macOS 11, 12. As with prior releases, Kudu's
+support for macOS is experimental, and should only be used for development.
+
+[[rn_1.17.0_fixed_issues]]
+== Fixed Issues
+
+* Fixed an issue where historical MVCC data older than the ancient history mark (configured by
+`--tablet_history_max_age_sec`) that had only DELETE operations wouldn't be compacted correctly. As
+a result, the ancient history data could not be GCed if the tablet had been created by Kudu servers
+of releases prior to 1.10 (those versions did not support live row counting) (see
+link:https://issues.apache.org/jira/browse/KUDU-3367[KUDU-3367]).
+
+* Fixed an issue where the Kudu server could potentially crash on malicious negotiation attempts.
+
+* Fixed a bug when a Kudu tablet server started under an OS account that had no permission to access
+tablet metadata files would stuck in the tablet bootstrapping phase (see
+link:https://issues.apache.org/jira/browse/KUDU-3419[KUDU-3419]).
+
+* Fixed a bug in the C++ client where toggling `SetFaultTolerant(false)` would not work.
+
+* Fixed a bug in the C++ client where toggling `KuduScanner::SetSelection()` would not work.
+
+* Fixed a bug in the Java client where under certain conditions same rows would be returned multiple
+times even if the scanner was configured to be fault-tolerant.
+
+* Fixed a bug in the Java client where the last propagated timestamp and resource metrics would not
+be updated in subsequent scan responses.
+
+* Fixed a bug in the Java client where it would not invalidate stale locations of the leader master.
+
+* Fixed a bug in the Kudu HMS client that was causing failures when scanning Kudu tables from Hive
+(see link:https://issues.apache.org/jira/browse/KUDU-3401[KUDU-3401]).
+
+* Fixed a bug where the `kudu table copy` CLI tool would fail copying an unpartitioned table.
+
+* Fixed a bug where the `kudu master unsafe_rebuild` CLI tool would rebuild the system catalog with
+outdated schemas of tables that were unhealthy during the rebuild process.
+
+* Fixed a bug where `kudu table copy` failed to copy tables that had STRING, BINARY or VARCHAR type
+of columns in their range keys (see
+link:https://issues.apache.org/jira/browse/KUDU-3306[KUDU-3306]).
+
+* Fixed a bug of the `kudu table copy` CLI tool crashing if encountering an error while copying rows
+to the destination table. The tool now exits gracefully and provides additional information for
+troubleshooting in such a condition.
+
+* Fixed a bug where the `kudu local_replica list` CLI tool would crash if the `--list_detail` flag
+was enabled.
+
+* Fixed a bug when a sub-process running Ranger client would crash when receiving a oversized
+message from Kudu master.  With the fix, each peer communicating via the Subprocess protocol now
+discards an oversized message, logs about the issue, and clears the channel, and is able to receive
+further messages after encountering such a condition.
+
+* Fixed a bug when a Kudu application linked with kudu_client library would crash with SIGILL if
+running on a machine lacking SSE4.2 support (see
+link:https://issues.apache.org/jira/browse/KUDU-3248[KUDU-3248]).
+
+* Fixed a bug where the subprocess crashes in case of receiving large messages from the Kudu master
+when the pipe gets full to transport the entire message in one go or when there is a delay in
+sending from the master (see
+link:https://issues.apache.org/jira/browse/KUDU-3489[KUDU-3489]).
+
+[[rn_1.17.0_wire_compatibility]]
+== Wire Protocol compatibility
+
+Kudu 1.17.0 is wire-compatible with previous versions of Kudu:
+
+* Kudu 1.17 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.
+* Rolling upgrade between Kudu 1.16 and Kudu 1.17 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.
+* Kudu 1.0 clients may connect to servers running Kudu 1.17 with the exception of the
+below-mentioned restrictions regarding secure clusters.
+
+The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.17 and versions earlier than 1.3:
+
+* If a Kudu 1.17 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.
+* If a Kudu 1.17 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.
+
+[[rn_1.17.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.17.0
+
+
+[[rn_1.17.0_client_compatibility]]
+=== Client Library Compatibility
+
+* The Kudu 1.17 Java client library is API- and ABI-compatible with Kudu 1.16. Applications written
+against Kudu 1.16 will compile and run against the Kudu 1.17 client library. Applications written
+against Kudu 1.17 will compile and run against the Kudu 1.16 client library unless they use the
+API newly introduced in Kudu 1.17.
+
+* The Kudu 1.17 {cpp} client is API- and ABI-forward-compatible with Kudu 1.16. Applications written
+and compiled against the Kudu 1.16 client library will run without modification against the Kudu
+1.17 client library. Applications written and compiled against the Kudu 1.17 client library will
+run without modification against the Kudu 1.16 client library unless they use the API newly
+introduced in Kudu 1.17.
+
+* The Kudu 1.17 Python client is API-compatible with Kudu 1.16. Applications
+written against Kudu 1.16 will continue to run against the Kudu 1.17 client
+and vice-versa.
+
+[[rn_1.17.0_known_issues]]
+== Known Issues and Limitations
+
+Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
+documentation.
+
+[[rn_1.17.0_contributors]]
+== Contributors
+
+Kudu 1.17.0 includes contributions from 26 people, including 12 first-time contributors:
+
+* Ashwani Raina
+* Hari Reddy
+* Kurt Deschler
+* Marton Greber
+* Song Jiacheng
+* Zoltan Martonka
+* bsglz
+* mammadli.khazar
+* wzhou-code
+* xinghuayu007
+* xlwh
+* Ádám Bakai
+
+Thank you for your contributions!
+
 [[rn_1.16.0]]
 = Apache Kudu 1.16.0 Release Notes
 
