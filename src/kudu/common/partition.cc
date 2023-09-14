@@ -219,8 +219,7 @@ Status PartitionSchema::FromPB(
       schema, pb.hash_schema(), &partition_schema->hash_schema_));
 
   const auto custom_ranges_num = pb.custom_hash_schema_ranges_size();
-  vector<HashSchema> range_hash_schemas;
-  range_hash_schemas.resize(custom_ranges_num);
+  vector<HashSchema> range_hash_schemas(custom_ranges_num);
   vector<pair<KuduPartialRow, KuduPartialRow>> range_bounds;
   for (auto i = 0; i < custom_ranges_num; ++i) {
     const auto& range = pb.custom_hash_schema_ranges(i);

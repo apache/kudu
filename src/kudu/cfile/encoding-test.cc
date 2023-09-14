@@ -50,6 +50,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
@@ -460,8 +461,7 @@ class TestEncoding : public KuduTest {
     ASSERT_EQ(kOrdinalPosBase, bd->GetFirstRowId());
     ASSERT_EQ(0, bd->GetCurrentIndex());
 
-    vector<CppType> decoded;
-    decoded.resize(size);
+    vector<CppType> decoded(size);
 
     ColumnBlock dst_block(GetTypeInfo(Type), nullptr, &decoded[0], size, &memory_);
     ColumnDataView view(&dst_block);
@@ -578,8 +578,7 @@ class TestEncoding : public KuduTest {
 
     ASSERT_EQ(kOrdinalPosBase, ibd->GetFirstRowId());
 
-    vector<CppType> decoded;
-    decoded.resize(to_insert.size());
+    vector<CppType> decoded(to_insert.size());
 
     ColumnBlock dst_block(GetTypeInfo(IntType), nullptr,
                           &decoded[0],
@@ -662,8 +661,7 @@ class TestEncoding : public KuduTest {
 
     ASSERT_EQ(kOrdinalPosBase, bd->GetFirstRowId());
 
-    vector<uint8_t> decoded;
-    decoded.resize(to_insert.size());
+    vector<uint8_t> decoded(to_insert.size());
 
     ColumnBlock dst_block(GetTypeInfo(BOOL), nullptr,
                           &decoded[0],

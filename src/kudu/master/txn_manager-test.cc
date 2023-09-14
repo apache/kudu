@@ -489,8 +489,7 @@ TEST_F(TxnManagerTest, BeginManyTransactions) {
     const size_t kNumThreads = 2 * kNumCPUs;
     vector<thread> threads;
     threads.reserve(kNumThreads);
-    vector<vector<int64_t>> txn_ids_per_thread;
-    txn_ids_per_thread.resize(kNumThreads);
+    vector<vector<int64_t>> txn_ids_per_thread(kNumThreads);
     for (auto& slice : txn_ids_per_thread) {
       slice.reserve(kNumTransactionsPerThread);
     }

@@ -157,9 +157,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
 
     // 3) Write new UNDO mutations for the current block. The REDO mutations
     //    are written out in step 6.
-    vector<CompactionInputRow> input_rows;
-    input_rows.resize(block.nrows());
-    for (int i = 0; i < block.nrows(); i++) {
+    vector<CompactionInputRow> input_rows(block.nrows());
+    for (auto i = 0; i < block.nrows(); ++i) {
       CompactionInputRow* input_row = &input_rows[i];
       input_row->row.Reset(&block, i);
       input_row->redo_head = redo_mutation_block[i];

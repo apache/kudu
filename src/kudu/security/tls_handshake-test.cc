@@ -135,8 +135,7 @@ class TestTlsHandshakeBase : public KuduTest {
   static void ReadAndCompare(SSL* ssl, const string& expected_data) {
     ASSERT_GT(expected_data.size(), 0);
     string result;
-    string buf;
-    buf.resize(expected_data.size());
+    string buf(expected_data.size(), string::value_type());
     int yet_to_read = expected_data.size();
     while (yet_to_read > 0) {
       auto bytes_read = SSL_read(ssl, buf.data(), yet_to_read);
@@ -181,8 +180,7 @@ class TestTlsHandshakeBase : public KuduTest {
     BIO* wbio = SSL_get_wbio(src);
     int pending_wr = BIO_ctrl_pending(wbio);
 
-    string data;
-    data.resize(pending_wr);
+    string data(pending_wr, string::value_type());
     auto bytes_read = BIO_read(wbio, &data[0], data.size());
     ASSERT_EQ(data.size(), bytes_read);
     ASSERT_EQ(0, BIO_ctrl_pending(wbio));

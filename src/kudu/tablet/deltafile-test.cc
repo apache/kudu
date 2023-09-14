@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -53,6 +54,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
@@ -309,9 +311,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     ASSERT_OK(it->Init(nullptr));
     ASSERT_OK(it->SeekToOrdinal(0));
 
-    vector<Mutation *> mutations;
-    mutations.resize(100);
-
+    vector<Mutation*> mutations(100);
     Arena arena(1024);
 
     int start_row = 0;

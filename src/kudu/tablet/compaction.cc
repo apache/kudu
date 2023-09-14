@@ -138,7 +138,7 @@ class MemRowSetCompactionInput : public CompactionInput {
   }
 
   Status PrepareBlock(vector<CompactionInputRow>* block) override {
-    int num_in_block = iter_->remaining_in_leaf();
+    const auto num_in_block = iter_->remaining_in_leaf();
     block->resize(num_in_block);
 
     // Realloc the internal block storage if we don't have enough space to

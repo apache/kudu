@@ -242,12 +242,12 @@ ConnectToClusterRpc::ConnectToClusterRpc(LeaderCallback user_cb,
       addrs_with_names_(std::move(addrs_with_names)),
       user_credentials_(std::move(user_credentials)),
       rpc_timeout_(rpc_timeout),
+      responses_(addrs_with_names_.size()),
       pending_responses_(0),
       completed_(false) {
   DCHECK(deadline.Initialized());
 
   // Using resize instead of reserve to explicitly initialized the values.
-  responses_.resize(addrs_with_names_.size());
   mutable_retrier()->mutable_controller()->set_credentials_policy(creds_policy);
 }
 

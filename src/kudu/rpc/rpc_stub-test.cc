@@ -27,6 +27,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -36,7 +37,6 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/proxy.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -60,6 +60,12 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/user.h"
+
+namespace kudu {
+namespace rpc {
+class Messenger;
+} // namespace rpc
+} // namespace kudu
 
 DEFINE_bool(is_panic_test_child, false, "Used by TestRpcPanic");
 DECLARE_bool(socket_inject_short_recvs);
@@ -123,10 +129,9 @@ TEST_F(RpcStubTest, TestShortRecvs) {
 // IO threads can deal with read/write calls that don't succeed
 // in sending the entire data in one go.
 TEST_F(RpcStubTest, TestBigCallData) {
-  const int kNumSentAtOnce = 20;
-  const size_t kMessageSize = 5 * 1024 * 1024;
-  string data;
-  data.resize(kMessageSize);
+  constexpr int kNumSentAtOnce = 20;
+  constexpr size_t kMessageSize = 5 * 1024 * 1024;
+  string data(kMessageSize, string::value_type());
 
   CalculatorServiceProxy p(client_messenger_, server_addr_, server_addr_.host());
 

@@ -269,7 +269,7 @@ static Status ReadFileChunkToBuf(const Info* info,
   // however any modern compiler should be compatible with it.
   // Violates the API contract, but avoids excessive copies.
   data->resize(response_data_size);
-  uint8_t* buf = reinterpret_cast<uint8_t*>(const_cast<char*>(data->data()));
+  uint8_t* buf = reinterpret_cast<uint8_t*>(data->data());
   Slice slice(buf, response_data_size);
   Status s = info->Read(offset, slice);
   if (PREDICT_FALSE(!s.ok())) {

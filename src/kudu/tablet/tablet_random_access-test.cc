@@ -38,7 +38,6 @@
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/port.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/rowset.h"
@@ -80,6 +79,7 @@ class TestRandomAccess : public KuduTabletTest {
  public:
   TestRandomAccess()
       : KuduTabletTest(CreateKeyValueTestSchema()),
+        expected_tablet_state_(FLAGS_keyspace_size),
         done_(1) {
     OverrideFlagForSlowTests("keyspace_size", "30000");
     OverrideFlagForSlowTests("runtime_seconds", "10");
@@ -88,10 +88,9 @@ class TestRandomAccess : public KuduTabletTest {
     // Set a small block size to increase chances that a single update will span
     // multiple delta blocks.
     FLAGS_deltafile_default_block_size = 1024;
-    expected_tablet_state_.resize(FLAGS_keyspace_size);
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTabletTest::SetUp();
     writer_.reset(new LocalTabletWriter(tablet().get(), &client_schema_));
     SeedRandom();
@@ -388,8 +387,6 @@ TEST_F(TestRandomAccess, Test) {
   });
   NO_FATALS(DoRandomBatches());
 }
-
-
 
 } // namespace tablet
 } // namespace kudu

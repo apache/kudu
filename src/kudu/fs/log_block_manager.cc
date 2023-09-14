@@ -2356,13 +2356,13 @@ LogBlockManager::LogBlockManager(Env* env,
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "log_block_manager",
                                            opts_.parent_mem_tracker)),
+    managed_block_shards_(kBlockMapChunk),
     file_cache_(file_cache),
     buggy_el6_kernel_(IsBuggyEl6Kernel(env->GetKernelRelease())),
     next_block_id_(1),
     tenant_id_(std::move(tenant_id)) {
-  managed_block_shards_.resize(kBlockMapChunk);
   for (auto& mb : managed_block_shards_) {
-    mb.lock = unique_ptr<simple_spinlock>(new simple_spinlock());
+    mb.lock = unique_ptr<simple_spinlock>(new simple_spinlock);
     mb.blocks_by_block_id
         = unique_ptr<BlockMap>(new BlockMap(10,
                                             BlockMap::hasher(),

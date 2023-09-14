@@ -638,9 +638,8 @@ KuduSchemaBuilder* KuduSchemaBuilder::SetNonUniquePrimaryKey(const vector<string
 }
 
 Status KuduSchemaBuilder::Build(KuduSchema* schema) {
-  vector<KuduColumnSchema> cols;
-  cols.resize(data_->specs.size(), KuduColumnSchema());
-  for (int i = 0; i < cols.size(); i++) {
+  vector<KuduColumnSchema> cols(data_->specs.size(), KuduColumnSchema());
+  for (auto i = 0; i < cols.size(); ++i) {
     RETURN_NOT_OK(data_->specs[i]->ToColumnSchema(&cols[i]));
   }
 

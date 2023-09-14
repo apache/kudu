@@ -533,8 +533,7 @@ class TabletTestBase : public KuduTabletTest {
 
     // Keep a bitmap of which rows have been seen from the requested
     // range.
-    std::vector<bool> seen_rows;
-    seen_rows.resize(expected_row_count);
+    std::vector<bool> seen_rows(expected_row_count);
 
     uint64_t actual_row_count = 0;
     while (iter->HasNext()) {

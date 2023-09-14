@@ -397,7 +397,7 @@ Status ServerNegotiation::SendError(ErrorStatusPB::RpcErrorCodePB code, const St
 Status ServerNegotiation::ValidateConnectionHeader(faststring* recv_buf) {
   TRACE("Waiting for connection header");
   size_t num_read;
-  const size_t conn_header_len = kMagicNumberLength + kHeaderFlagsLength;
+  static constexpr size_t conn_header_len = kMagicNumberLength + kHeaderFlagsLength;
   recv_buf->resize(conn_header_len);
   RETURN_NOT_OK(socket_->BlockingRecv(recv_buf->data(), conn_header_len, &num_read, deadline_));
   DCHECK_EQ(conn_header_len, num_read);

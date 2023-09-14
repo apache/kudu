@@ -21,19 +21,21 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
-#include <string>
-#include <vector>
 #include <ostream>
+#include <string>
+#include <type_traits>
+#include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/rowset_metadata.h"
-#include "kudu/util/interval_tree.h"
+#include "kudu/tablet/rowset_metadata.h"  // IWYU pragma: keep
 #include "kudu/util/interval_tree-inl.h"
+#include "kudu/util/interval_tree.h"
 #include "kudu/util/slice.h"
 
+using std::function;
 using std::optional;
 using std::shared_ptr;
 using std::string;
@@ -128,12 +130,12 @@ RowSetTree::RowSetTree()
 }
 
 Status RowSetTree::Reset(const RowSetVector &rowsets) {
-  CHECK(!initted_);
-  std::vector<RowSetWithBounds *> entries;
+  DCHECK(!initted_);
+  vector<RowSetWithBounds *> entries;
   RowSetVector unbounded;
   ElementDeleter deleter(&entries);
   entries.reserve(rowsets.size());
-  std::vector<RSEndpoint> endpoints;
+  vector<RSEndpoint> endpoints;
   endpoints.reserve(rowsets.size()*2);
 
   // Iterate over each of the provided RowSets, fetching their
@@ -234,8 +236,8 @@ void RowSetTree::FindRowSetsWithKeyInRange(const Slice &encoded_key,
 }
 
 void RowSetTree::ForEachRowSetContainingKeys(
-    const std::vector<Slice>& encoded_keys,
-    const std::function<void(RowSet*, int)>& cb) const {
+    const vector<Slice>& encoded_keys,
+    const function<void(RowSet*, int)>& cb) const {
 
   DCHECK(std::is_sorted(encoded_keys.cbegin(), encoded_keys.cend(),
                         Slice::Comparator()));
@@ -250,9 +252,8 @@ void RowSetTree::ForEachRowSetContainingKeys(
   // the matching Slices, but that won't allow us to easily tell the caller
   // which specific operation _index_ matched the RowSet. So, we make a vector
   // of QueryStructs to pair the Slice with its original index.
-  vector<QueryStruct> queries;
-  queries.resize(encoded_keys.size());
-  for (int i = 0; i < encoded_keys.size(); i++) {
+  vector<QueryStruct> queries(encoded_keys.size());
+  for (auto i = 0; i < encoded_keys.size(); ++i) {
     queries[i] = {encoded_keys[i], i};
   }
 

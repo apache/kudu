@@ -188,6 +188,9 @@ MaintenanceManager::MaintenanceManager(
       cond_(&lock_),
       shutdown_(false),
       running_ops_(0),
+      completed_ops_(options.history_size
+                         ? options.history_size
+                         : FLAGS_maintenance_manager_history_size),
       completed_ops_count_(0),
       rand_(GetRandomSeed32()),
       memory_pressure_func_(&process_memory::UnderMemoryPressure),
@@ -196,10 +199,6 @@ MaintenanceManager::MaintenanceManager(
                .set_min_threads(num_threads_)
                .set_max_threads(num_threads_)
                .Build(&thread_pool_));
-  uint32_t history_size = options.history_size == 0 ?
-                          FLAGS_maintenance_manager_history_size :
-                          options.history_size;
-  completed_ops_.resize(history_size);
 }
 
 MaintenanceManager::~MaintenanceManager() {

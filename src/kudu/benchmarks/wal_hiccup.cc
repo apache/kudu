@@ -164,9 +164,7 @@ void WalHiccupBenchmarker::Run() {
   int num_setups = 1 << 7;
   wal_histos_.resize(num_setups);
 
-  vector<double> total_time;
-  total_time.resize(num_setups);
-
+  vector<double> total_time(num_setups);
   vector<uint32_t> setups;
   setups.reserve(num_setups);
   for (uint32_t setup = 0; setup < num_setups; setup++) {

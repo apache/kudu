@@ -106,9 +106,8 @@ SelectedRows SelectionVector::GetSelectedRows() const {
     return SelectedRows(this);
   }
 
-  vector<uint16_t> selected;
+  vector<uint16_t> selected(n_selected > 0 ? n_selected : 0);
   if (n_selected > 0) {
-    selected.resize(n_selected);
     if (kHasBmi) {
       GetSelectedRowsInternal<true>(&bitmap_[0], n_bytes_, selected.data());
     } else {

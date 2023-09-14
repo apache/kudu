@@ -1139,8 +1139,7 @@ TEST_P(ThreadPoolTestTokenTypes, TestTokenWaitForAll) {
   const int kNumTokens = 3;
   const int kNumSubmissions = 20;
   Random r(SeedRandom());
-  vector<unique_ptr<ThreadPoolToken>> tokens;
-  tokens.resize(kNumTokens);
+  vector<unique_ptr<ThreadPoolToken>> tokens(kNumTokens);
   for (int i = 0; i < kNumTokens; i++) {
     tokens[i] = pool_->NewToken(GetParam());
   }

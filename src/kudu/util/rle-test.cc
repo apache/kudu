@@ -227,10 +227,9 @@ void ValidateRle(const vector<T>& values, int bit_width,
 TEST(Rle, SpecificSequences) {
   const int kTestLen = 1024;
   uint8_t expected_buffer[kTestLen];
-  vector<uint64_t> values;
+  vector<uint64_t> values(100);
 
   // Test 50 0' followed by 50 1's
-  values.resize(100);
   for (int i = 0; i < 50; ++i) {
     values[i] = 0;
   }

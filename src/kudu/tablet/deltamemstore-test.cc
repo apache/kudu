@@ -26,6 +26,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -35,8 +36,8 @@
 #include <gtest/gtest.h>
 
 #include "kudu/clock/logical_clock.h"
-#include "kudu/common/columnblock.h"
 #include "kudu/common/columnblock-test-util.h"
+#include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
@@ -58,6 +59,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
@@ -589,9 +591,8 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
 
   ASSERT_EQ(2, dms_->Count());
 
-  const int kBatchSize = 10;
-  vector<Mutation *> mutations;
-  mutations.resize(kBatchSize);
+  constexpr size_t kBatchSize = 10;
+  vector<Mutation*> mutations(kBatchSize);
 
   RowIteratorOptions opts;
   opts.projection = &schema_;

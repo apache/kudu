@@ -44,8 +44,7 @@ void TestUrl(const string& input, const string& expected_encoded, bool hive_comp
   EXPECT_EQ(input, output);
 
   // Convert string to vector and try that also
-  vector<uint8_t> input_vector;
-  input_vector.resize(input.size());
+  vector<uint8_t> input_vector(input.size());
   if (!input.empty()) {
     memcpy(&input_vector[0], input.c_str(), input.size());
   }
@@ -65,8 +64,7 @@ void TestBase64(const string& input, const string& expected_encoded) {
   EXPECT_EQ(input, output);
 
   // Convert string to vector and try that also
-  vector<uint8_t> input_vector;
-  input_vector.resize(input.size());
+  vector<uint8_t> input_vector(input.size());
   memcpy(&input_vector[0], input.c_str(), input.size());
   string intermediate2;
   Base64Encode(input_vector, &intermediate2);

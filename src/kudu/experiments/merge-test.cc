@@ -107,8 +107,7 @@ void SimpleMerge(const vector<vector<MergeType> > &in_lists,
 int main(int argc, char **argv) {
   google::ParseCommandLineFlags(&argc, &argv, true);
 
-  vector<vector<MergeType> > in_lists;
-  in_lists.resize(FLAGS_num_lists);
+  vector<vector<MergeType>> in_lists(FLAGS_num_lists);
 
   for (int i = 0; i < FLAGS_num_lists; i++) {
     vector<MergeType> &list = in_lists[i];

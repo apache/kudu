@@ -188,9 +188,8 @@ class LockTable {
 };
 
 vector<LockEntry*> LockTable::GetLockEntries(ArrayView<Slice> keys) {
-  vector<LockEntry*> entries;
-  entries.resize(keys.size());
-  for (int i = 0; i < keys.size(); i++) {
+  vector<LockEntry*> entries(keys.size());
+  for (auto i = 0; i < keys.size(); ++i) {
     entries[i] = new LockEntry(keys[i]);
   }
 
