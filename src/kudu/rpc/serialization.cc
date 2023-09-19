@@ -190,27 +190,43 @@ Status ValidateConnHeader(const Slice& slice) {
     << "Invalid RPC header length";
 
   // validate actual magic
-  if (!slice.starts_with(kMagicNumber)) {
-    if (slice.starts_with("GET ") ||
+  if (PREDICT_FALSE(!slice.starts_with(kMagicNumber))) {
+    // Check if that's an HTTP request sent by mistake (misconfiguration, etc.)
+    // to the RPC port. There might be network monitoring tools that might send
+    // HTTP requests as well to TCP ports they detect or otherwise know about.
+    //
+    // The list of possible HTTP requests [1] is ordered
+    // by the empirical and perceived likelihood of receiving one vs another.
+    //
+    // [1] https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods
+    if (slice.starts_with("GET") ||
+        slice.starts_with("HEAD") ||
+        slice.starts_with("OPTIONS") ||
         slice.starts_with("POST") ||
-        slice.starts_with("HEAD")) {
-      return Status::InvalidArgument("invalid negotation, appears to be an HTTP client on "
-                                     "the RPC port");
+        slice.starts_with("CONNECT") ||
+        slice.starts_with("DELETE") ||
+        slice.starts_with("PUT") ||
+        slice.starts_with("PATCH") ||
+        slice.starts_with("TRACE")) {
+      return Status::InvalidArgument(
+          "invalid negotiation, appears to be an HTTP client on the RPC port");
     }
-    return Status::InvalidArgument("connection must begin with magic number", kMagicNumber);
+    return Status::InvalidArgument(Substitute(
+        "connection must begin with magic number '$0' not with '$1'",
+        kMagicNumber, slice.ToDebugString(kMagicNumberLength)));
   }
 
-  const uint8_t *data = slice.data();
+  const uint8_t* data = slice.data();
   data += kMagicNumberLength;
 
   // validate version
-  if (data[kHeaderPosVersion] != kCurrentRpcVersion) {
-    return Status::InvalidArgument("Unsupported RPC version",
+  if (PREDICT_FALSE(data[kHeaderPosVersion] != kCurrentRpcVersion)) {
+    return Status::InvalidArgument("unsupported RPC version",
         StringPrintf("Received: %d, Supported: %d",
             data[kHeaderPosVersion], kCurrentRpcVersion));
   }
 
-  // TODO: validate additional header flags:
+  // TODO(mpercy): validate additional header flags:
   // RPC_SERVICE_CLASS
   // RPC_AUTH_PROTOCOL
 
