@@ -38,6 +38,7 @@
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/net/net_util.h"
@@ -219,6 +220,10 @@ Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
     }
     rpc_proxy_advertised_hostports_ = std::move(host_ports);
   }
+
+  // Log information on the library used by the messenger's TLS context.
+  LOG(INFO) << Substitute("running with $0",
+                          messenger_->tls_context().GetEngineVersionInfo());
 
   server_state_ = INITIALIZED;
   return Status::OK();

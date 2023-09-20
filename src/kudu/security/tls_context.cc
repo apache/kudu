@@ -28,9 +28,11 @@
 #include <openssl/x509v3.h>
 
 #include <algorithm>
+#include <functional>
+#include <memory>
 #include <mutex>
-#include <ostream>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -643,6 +645,15 @@ Status TlsContext::InitiateHandshake(TlsHandshake* handshake) const {
   ssl->s3->flags |= SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS;
 #endif
   return handshake->Init(std::move(ssl));
+}
+
+const char* TlsContext::GetEngineVersionInfo() const {
+  CHECK(ctx_);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  return CHECK_NOTNULL(SSLeay_version(SSLEAY_VERSION));
+#else
+  return CHECK_NOTNULL(OpenSSL_version(OPENSSL_VERSION));
+#endif
 }
 
 } // namespace security

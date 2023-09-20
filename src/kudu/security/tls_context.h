@@ -18,8 +18,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -181,6 +179,12 @@ class TlsContext {
   }
 
   bool is_external_cert() const { return is_external_cert_; }
+
+  // Output information on the TLS engine/library. Essentially, this is
+  // a wrapper to get the OpenSSL version string. It must not return null.
+  // See https://www.openssl.org/docs/man1.1.1/man3/OpenSSL_version.html
+  // for details.
+  const char* GetEngineVersionInfo() const;
 
  private:
 
