@@ -2583,10 +2583,10 @@ Status CatalogManager::SoftDeleteTable(const DeleteTableRequestPB& req,
         resp, MasterErrorPB::TABLE_NOT_FOUND);
   }
 
-  TRACE("Soft delete modifying in-memory table state");
-  string deletion_msg = "Table soft deleted at " + LocalTimeAsString();
+  TRACE("Modifying in-memory table state");
+  const auto state_msg = Substitute("table soft-deleted at $0", LocalTimeAsString());
   // soft delete state change
-  l.mutable_data()->set_state(SysTablesEntryPB::SOFT_DELETED, deletion_msg);
+  l.mutable_data()->set_state(SysTablesEntryPB::SOFT_DELETED, state_msg);
   l.mutable_data()->set_delete_timestamp(WallTime_Now());
   uint32_t reserve_seconds = req.reserve_seconds() == 0 ?
       FLAGS_default_deleted_table_reserve_seconds : req.reserve_seconds();
@@ -2603,7 +2603,7 @@ Status CatalogManager::SoftDeleteTable(const DeleteTableRequestPB& req,
 
     for (const auto& t : tablets) {
       t->mutable_metadata()->mutable_dirty()->set_state(
-          SysTabletsEntryPB::SOFT_DELETED, deletion_msg);
+          SysTabletsEntryPB::SOFT_DELETED, state_msg);
     }
 
     // 3. Update sys-catalog with the removed table and tablet state.
@@ -6038,22 +6038,26 @@ void CatalogManager::HandleTabletSchemaVersionReport(
 
   // Update the state from altering and remove the last fully applied
   // schema (if it exists).
+  //
   // The final state depends on the state before the alteration. If the
-  // alteration is for a soft-deleted table, the state will change to
-  // 'SOFT_DELETED'. If the alteration is for a normal table, the state
-  // will change to 'RUNNING'.
-  l.mutable_data()->pb.clear_fully_applied_schema();
-  // 'soft_deleted_reserved_seconds' is only exist for 'SOFT_DELETED' state.
-  if (l.mutable_data()->pb.has_soft_deleted_reserved_seconds() &&
-      l.mutable_data()->pb.soft_deleted_reserved_seconds() != UINT32_MAX) {
-    string deletion_msg = "Table soft deleted at " +
-                          l.mutable_data()->pb.has_delete_timestamp() ?
-                          std::to_string(l.mutable_data()->pb.delete_timestamp()) :
-                          LocalTimeAsString();
-    l.mutable_data()->set_state(SysTablesEntryPB::SOFT_DELETED, deletion_msg);
+  // alteration is for a soft-deleted table, the state changes to
+  // 'SOFT_DELETED'. If the alteration is for a regular table, the state changes
+  // to 'RUNNING'.
+  auto* st = l.mutable_data();
+  auto& pb = st->pb;
+  pb.clear_fully_applied_schema();
+  // The 'soft_deleted_reserved_seconds' field is present only for tables
+  // in the 'SOFT_DELETED' state.
+  if (pb.has_soft_deleted_reserved_seconds() &&
+      pb.soft_deleted_reserved_seconds() != UINT32_MAX) {
+    st->set_state(SysTablesEntryPB::SOFT_DELETED,
+                  Substitute("table soft-deleted at $0",
+                             pb.has_delete_timestamp()
+                                 ? std::to_string(pb.delete_timestamp())
+                                 : LocalTimeAsString()));
   } else {
-    l.mutable_data()->set_state(SysTablesEntryPB::RUNNING,
-                                Substitute("Current schema version=$0", current_version));
+    st->set_state(SysTablesEntryPB::RUNNING,
+                  Substitute("current schema version=$0", current_version));
   }
 
   {
