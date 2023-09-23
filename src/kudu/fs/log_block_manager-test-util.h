@@ -30,6 +30,7 @@
 namespace kudu {
 
 class BlockId;
+class BlockRecordPB;
 
 namespace pb_util {
 class WritablePBContainerFile;
@@ -40,7 +41,11 @@ namespace fs {
 // Corrupts various log block manager on-disk data structures.
 class LBMCorruptor {
  public:
-  LBMCorruptor(Env* env, std::vector<std::string> data_dirs, uint32_t rand_seed);
+  // Create a LBMCorruptor according to the --block_manager flag.
+  static std::unique_ptr<LBMCorruptor> Create(
+      Env* env, std::vector<std::string> data_dirs, uint32_t rand_seed);
+
+  virtual ~LBMCorruptor() = default;
 
   // Initializes a the corruptor, parsing all data directories for containers.
   //
@@ -63,7 +68,7 @@ class LBMCorruptor {
 
   // Creates a new incomplete container. This inconsistency is non-fatal and
   // repairable.
-  Status CreateIncompleteContainer();
+  virtual Status CreateIncompleteContainer() = 0;
 
   // Adds a malformed record to a container (chosen at random). This
   // inconsistency is fatal and irreparable.
@@ -87,12 +92,23 @@ class LBMCorruptor {
   // Returns an error if a container could not be found.
   Status AddPartialRecordToContainer();
 
+  enum class NonFatalInconsistency : uint32_t {
+    kMisalignedBlockToContainer = 0,
+    kIncompleteContainer,
+    kPreallocateFullContainer,
+    kUnpunchedBlockToFullContainer,
+    kPartialRecordToContainer,
+    kMaxNonFatalInconsistency
+  };
   // Injects one of the above non-fatal inconsistencies (chosen at random).
   Status InjectRandomNonFatalInconsistency();
 
- private:
+ protected:
+  LBMCorruptor(Env* env, std::vector<std::string> data_dirs, uint32_t rand_seed);
+
   // Describes an on-disk LBM container.
   struct Container {
+    std::string dir;
     std::string name;
     std::string data_filename;
     std::string metadata_filename;
@@ -102,16 +118,6 @@ class LBMCorruptor {
   Status OpenMetadataWriter(
       const Container& container,
       std::unique_ptr<pb_util::WritablePBContainerFile>* writer);
-
-  // Appends a CREATE record to 'writer'.
-  static Status AppendCreateRecord(pb_util::WritablePBContainerFile* writer,
-                                   BlockId block_id,
-                                   int64_t block_offset,
-                                   int64_t block_length);
-
-  // Appends a DELETE record to 'writer'.
-  static Status AppendDeleteRecord(pb_util::WritablePBContainerFile* writer,
-                                   BlockId block_id);
 
   // Preallocates space at the end of a container's data file for a new block.
   //
@@ -134,11 +140,50 @@ class LBMCorruptor {
   // Gets a data directory chosen at random.
   const std::string& GetRandomDataDir() const;
 
+  // Appends a CREATE-DELETE pair of records to the container 'c', the newly
+  // created record has a unique id of 'block_id' and is located at
+  // 'block_offset' with a size of 'block_length'.
+  virtual Status AppendRecord(const Container* c, BlockId block_id,
+                              int64_t block_offset, int64_t block_length) = 0;
+
+  // Similar to the above, but only appends the CREATE record.
+  virtual Status AppendCreateRecord(const Container* c, BlockId block_id,
+                                    uint64_t block_offset, int64_t block_length) = 0;
+
+  // Appends a partial CREATE record to the metadata part of container 'c', the
+  // newly created record has a unique id of 'block_id'. The record is corrupted
+  // by truncating one byte off the end of it.
+  virtual Status AppendPartialRecord(const Container* c, BlockId block_id) = 0;
+
+  // Appends a 'record' to the metadata part of container 'c'.
+  virtual Status AppendMetadataRecord(const Container* c, const BlockRecordPB& record) = 0;
+
+  // Corrupt the 'record' in some way. Kinds of malformed records (as per the
+  // malformed record checking code in log_block_manager.cc).
+  enum class MalformedRecordType : uint32_t {
+    // All LBMCorruptor derive classes have these kind of errors.
+    kNoBlockOffset = 0,
+    kNoBlockLength,
+    kNegativeBlockOffset,
+    kNegativeBlockLength,
+    kMetadataSizeLargerThanDataSize,
+    kUnrecognizedOpType,
+    // Only NativeMetadataLBMCorruptor class has these kind of errors.
+    kDeleteWithoutFirstMatchingCreate,
+    kTwoCreatesForSameBlockId
+  };
+  // Returns an error if a container could not be found.
+  virtual Status CreateMalformedRecord(
+      const Container* c, MalformedRecordType error_type, BlockRecordPB* record);
+
+  Status CreateContainerDataPart(const std::string& unsuffixed_path);
+
   // Initialized in the constructor.
   Env* env_;
   const std::vector<std::string> data_dirs_;
   mutable Random rand_;
   ObjectIdGenerator oid_generator_;
+  MalformedRecordType max_malformed_types_;
 
   // Initialized in Init().
   std::vector<Container> all_containers_;

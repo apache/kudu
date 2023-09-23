@@ -498,11 +498,11 @@ void BlockManagerStressTest<FileBlockManager>::InjectNonFatalInconsistencies() {
 
 template <>
 void BlockManagerStressTest<LogBlockManagerNativeMeta>::InjectNonFatalInconsistencies() {
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), rand_seed_);
-  ASSERT_OK(corruptor.Init());
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), rand_seed_);
+  ASSERT_OK(corruptor->Init());
 
   for (int i = 0; i < FLAGS_num_inconsistencies; i++) {
-    ASSERT_OK(corruptor.InjectRandomNonFatalInconsistency());
+    ASSERT_OK(corruptor->InjectRandomNonFatalInconsistency());
   }
 }
 

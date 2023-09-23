@@ -35,12 +35,14 @@
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+DECLARE_string(block_manager);
 DECLARE_uint64(log_container_max_size);
 
 namespace kudu {
@@ -52,6 +54,46 @@ using std::string;
 using std::vector;
 using std::unique_ptr;
 using std::unordered_map;
+using strings::Substitute;
+
+// LBMCorruptor to trace the LogBlockManagerNativeMeta data corruption.
+class NativeMetadataLBMCorruptor : public LBMCorruptor {
+ public:
+  NativeMetadataLBMCorruptor(Env* env, vector<string> data_dirs, uint32_t rand_seed)
+      : LBMCorruptor(env, std::move(data_dirs), rand_seed) {
+    max_malformed_types_ = MalformedRecordType::kTwoCreatesForSameBlockId;
+  }
+
+ private:
+  Status CreateIncompleteContainer() override;
+
+  Status AppendRecord(const Container* c, BlockId block_id,
+                      int64_t block_offset, int64_t block_length) override;
+
+  Status AppendCreateRecord(const Container* c, BlockId block_id,
+                            uint64_t block_offset, int64_t block_length) override;
+
+  Status AppendPartialRecord(const Container* c, BlockId block_id) override;
+
+  Status AppendMetadataRecord(const Container* c, const BlockRecordPB& record) override;
+
+  Status CreateContainerMetadataPart(const string& unsuffixed_path) const;
+
+  static Status AppendCreateRecordInternal(WritablePBContainerFile* writer, BlockId block_id,
+                                           int64_t block_offset, int64_t block_length);
+  static Status AppendDeleteRecordInternal(WritablePBContainerFile* writer, BlockId block_id);
+
+  Status CreateMalformedRecord(
+      const Container* c, MalformedRecordType error_type, BlockRecordPB* record) override;
+};
+
+unique_ptr<LBMCorruptor> LBMCorruptor::Create(
+    Env* env, std::vector<std::string> data_dirs, uint32_t rand_seed) {
+  if (FLAGS_block_manager == "log") {
+    return std::make_unique<NativeMetadataLBMCorruptor>(env, std::move(data_dirs), rand_seed);
+  }
+  return nullptr;
+}
 
 LBMCorruptor::LBMCorruptor(Env* env, vector<string> data_dirs, uint32_t rand_seed)
     : env_(env),
@@ -74,10 +116,12 @@ Status LBMCorruptor::Init() {
       string stripped;
       if (TryStripSuffixString(
           f, LogBlockManager::kContainerDataFileSuffix, &stripped)) {
+        containers_by_name[stripped].dir = dd;
         containers_by_name[stripped].name = stripped;
         containers_by_name[stripped].data_filename = JoinPathSegments(dd, f);
       } else if (TryStripSuffixString(
           f, LogBlockManager::kContainerMetadataFileSuffix, &stripped)) {
+        containers_by_name[stripped].dir = dd;
         containers_by_name[stripped].name = stripped;
         containers_by_name[stripped].metadata_filename = JoinPathSegments(dd, f);
       }
@@ -108,11 +152,12 @@ Status LBMCorruptor::Init() {
 Status LBMCorruptor::PreallocateFullContainer() {
   const int kPreallocateBytes = 16 * 1024;
   const Container* c = nullptr;
-  RETURN_NOT_OK(GetRandomContainer(FULL, &c));
+  RETURN_NOT_OK(GetRandomContainer(FULL, &c)); // NOLINT(clang-analyzer-core.NonNullParamChecker)
+  CHECK_NE(c, nullptr);
 
   // Pick one of the preallocation modes at random; both are recoverable.
   RWFile::PreAllocateMode mode;
-  int r = rand_.Uniform(2);
+  auto r = rand_.Uniform(2);
   if (r == 0) {
     mode = RWFile::CHANGE_FILE_SIZE;
   } else {
@@ -124,8 +169,9 @@ Status LBMCorruptor::PreallocateFullContainer() {
   RWFileOptions opts;
   opts.mode = Env::MUST_EXIST;
   opts.is_sensitive = true;
-  RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
-  int64_t initial_size;
+  RETURN_NOT_OK(env_->NewRWFile( // NOLINT(clang-analyzer-core.NonNullParamChecker)
+      opts, c->data_filename, &data_file));
+  int64_t initial_size = 0;
   RETURN_NOT_OK(PreallocateForBlock(data_file.get(), mode,
                                     kPreallocateBytes, &initial_size));
   if (mode == RWFile::DONT_CHANGE_FILE_SIZE) {
@@ -146,7 +192,8 @@ Status LBMCorruptor::AddUnpunchedBlockToFullContainer() {
   RETURN_NOT_OK(GetRandomContainer(FULL, &c));
 
   uint64_t fs_block_size;
-  RETURN_NOT_OK(env_->GetBlockSize(c->data_filename, &fs_block_size));
+  RETURN_NOT_OK(env_->GetBlockSize( // NOLINT(clang-analyzer-core.NonNullParamChecker)
+      c->data_filename, &fs_block_size));
 
   // "Write" out the block by growing the data file by some random amount.
   //
@@ -157,69 +204,32 @@ Status LBMCorruptor::AddUnpunchedBlockToFullContainer() {
   opts.is_sensitive = true;
   RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
   int64_t block_length = (rand_.Uniform(16) + 1) * fs_block_size;
-  int64_t initial_data_size;
+  int64_t initial_data_size = 0;
   RETURN_NOT_OK(PreallocateForBlock(data_file.get(), RWFile::CHANGE_FILE_SIZE,
                                     block_length, &initial_data_size));
   RETURN_NOT_OK(data_file->Close());
 
   // Having written out the block, write both CREATE and DELETE metadata
   // records for it.
-  unique_ptr<WritablePBContainerFile> metadata_writer;
-  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
   BlockId block_id(rand_.Next64());
-  RETURN_NOT_OK(AppendCreateRecord(metadata_writer.get(), block_id,
-                                   initial_data_size, block_length));
-  RETURN_NOT_OK(AppendDeleteRecord(metadata_writer.get(), block_id));
-
+  RETURN_NOT_OK(AppendRecord(c, block_id, initial_data_size, block_length));
   LOG(INFO) << "Added unpunched block to full container " << c->name;
-  return metadata_writer->Close();
+
+  return Status::OK();
 }
 
-Status LBMCorruptor::CreateIncompleteContainer() {
-  unique_ptr<RWFile> data_file;
-  unique_ptr<RWFile> metadata_file;
-  string unsuffixed_path = JoinPathSegments(GetRandomDataDir(),
-                                            oid_generator_.Next());
-  string data_fname = StrCat(
-      unsuffixed_path, LogBlockManager::kContainerDataFileSuffix);
-  string metadata_fname = StrCat(
-      unsuffixed_path, LogBlockManager::kContainerMetadataFileSuffix);
-
-  // Create an incomplete container. Kinds of incomplete containers:
-  //
-  // 1. Empty data file but no metadata file.
-  // 2. No data file but metadata file exists (and is up to a certain size).
-  // 3. Empty data file and metadata file exists (and is up to a certain size).
-  int r = rand_.Uniform(3);
+Status LBMCorruptor::CreateContainerDataPart(const std::string& unsuffixed_path) {
   RWFileOptions opts;
   opts.is_sensitive = true;
-  if (r == 0) {
-    RETURN_NOT_OK(env_->NewRWFile(opts, data_fname, &data_file));
-  } else if (r == 1) {
-    RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &data_file));
-  } else {
-    CHECK_EQ(r, 2);
-    RETURN_NOT_OK(env_->NewRWFile(opts, data_fname, &data_file));
-    RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &data_file));
-  }
-
-  if (data_file) {
-    RETURN_NOT_OK(data_file->Close());
-  }
-
-  if (metadata_file) {
-    int md_length = rand_.Uniform(pb_util::kPBContainerMinimumValidLength);
-    RETURN_NOT_OK(metadata_file->Truncate(md_length));
-    RETURN_NOT_OK(metadata_file->Close());
-  }
-
-  LOG(INFO) << "Created incomplete container " << unsuffixed_path;
-  return Status::OK();
+  unique_ptr<RWFile> data_file;
+  string data_fname = StrCat(unsuffixed_path, LogBlockManager::kContainerDataFileSuffix);
+  RETURN_NOT_OK(env_->NewRWFile(opts, data_fname, &data_file));
+  return data_file->Close();
 }
 
 Status LBMCorruptor::AddMalformedRecordToContainer() {
   const int kBlockSize = 16 * 1024;
-  const Container* c;
+  const Container* c = nullptr;
   RETURN_NOT_OK(GetRandomContainer(ANY, &c));
 
   // Ensure the container's data file has enough space for the new block. We're
@@ -232,7 +242,8 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
     opts.is_sensitive = true;
-    RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
+    RETURN_NOT_OK(env_->NewRWFile( // NOLINT(clang-analyzer-core.NonNullParamChecker)
+        opts, c->data_filename, &data_file));
     RETURN_NOT_OK(PreallocateForBlock(data_file.get(), RWFile::CHANGE_FILE_SIZE,
                                       kBlockSize, &initial_data_size));
     RETURN_NOT_OK(data_file->Close());
@@ -247,52 +258,49 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
   record.set_length(kBlockSize);
   record.set_timestamp_us(0);
 
-  unique_ptr<WritablePBContainerFile> metadata_writer;
-  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
-
-  // Corrupt the record in some way. Kinds of malformed records (as per the
-  // malformed record checking code in log_block_manager.cc):
-  //
-  // 0. No block offset.
-  // 1. No block length.
-  // 2. Negative block offset.
-  // 3. Negative block length.
-  // 4. Offset + length > data file size.
-  // 5. Two CREATEs for same block ID.
-  // 6. DELETE without first matching CREATE.
-  // 7. Unrecognized op type.
-  int r = rand_.Uniform(8);
-  if (r == 0) {
-    record.clear_offset();
-  } else if (r == 1) {
-    record.clear_length();
-  } else if (r == 2) {
-    record.set_offset(-1);
-  } else if (r == 3) {
-    record.set_length(-1);
-  } else if (r == 4) {
-    record.set_offset(kint64max / 2);
-  } else if (r == 5) {
-    RETURN_NOT_OK(metadata_writer->Append(record));
-  } else if (r == 6) {
-    record.clear_offset();
-    record.clear_length();
-    record.set_op_type(DELETE);
-  } else {
-    CHECK_EQ(r, 7);
-    record.set_op_type(UNKNOWN);
-  }
+  MalformedRecordType r = static_cast<MalformedRecordType>(
+      rand_.Uniform(static_cast<uint32_t>(max_malformed_types_) + 1));
+  RETURN_NOT_OK(CreateMalformedRecord(c, r, &record));
+  RETURN_NOT_OK(AppendMetadataRecord(c, record));
 
   LOG(INFO) << "Added malformed record to container " << c->name;
-  return metadata_writer->Append(record);
+  return Status::OK();
+}
+
+Status LBMCorruptor::CreateMalformedRecord(
+    const Container* /* c */, MalformedRecordType error_type, BlockRecordPB* record) {
+  switch (error_type) {
+    case MalformedRecordType::kNoBlockOffset:
+      record->clear_offset();
+      break;
+    case MalformedRecordType::kNoBlockLength:
+      record->clear_length();
+      break;
+    case MalformedRecordType::kNegativeBlockOffset:
+      record->set_offset(-1);
+      break;
+    case MalformedRecordType::kNegativeBlockLength:
+      record->set_length(-1);
+      break;
+    case MalformedRecordType::kMetadataSizeLargerThanDataSize:
+      record->set_offset(kint64max / 2);
+      break;
+    case MalformedRecordType::kUnrecognizedOpType:
+      record->set_op_type(UNKNOWN);
+      break;
+    default:
+      LOG(FATAL) << "Unexpected value " << static_cast<uint32_t>(error_type);
+  }
+  return Status::OK();
 }
 
 Status LBMCorruptor::AddMisalignedBlockToContainer() {
-  const Container* c;
+  const Container* c = nullptr;
   RETURN_NOT_OK(GetRandomContainer(ANY, &c));
 
   uint64_t fs_block_size;
-  RETURN_NOT_OK(env_->GetBlockSize(c->data_filename, &fs_block_size));
+  RETURN_NOT_OK(env_->GetBlockSize( // NOLINT(clang-analyzer-core.NonNullParamChecker)
+      c->data_filename, &fs_block_size));
 
   unique_ptr<RWFile> data_file;
   RWFileOptions opts;
@@ -341,44 +349,26 @@ Status LBMCorruptor::AddMisalignedBlockToContainer() {
   RETURN_NOT_OK(data_file->Close());
 
   // Having written out the block, write a corresponding metadata record.
-  unique_ptr<WritablePBContainerFile> metadata_writer;
-  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
-  RETURN_NOT_OK(AppendCreateRecord(metadata_writer.get(), block_id,
-                                   block_offset, block_length));
+  RETURN_NOT_OK(AppendCreateRecord(c, block_id, block_offset, block_length));
 
-  LOG(INFO) << "Added misaligned block to container " << c->name;
-  return metadata_writer->Close();
+  LOG(INFO) << Substitute("Added misaligned block $0 to container $1",
+                          block_id.ToString(), c->name);
+  return Status::OK();
 }
 
 Status LBMCorruptor::AddPartialRecordToContainer() {
-  const Container* c;
+  const Container* c = nullptr;
   RETURN_NOT_OK(GetRandomContainer(ANY, &c));
 
-  unique_ptr<WritablePBContainerFile> metadata_writer;
-  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
-
-  // Add a new good record to the container.
-  RETURN_NOT_OK(AppendCreateRecord(metadata_writer.get(),
-                                   BlockId(rand_.Next64()),
-                                   0, 0));
-
-  // Corrupt the record by truncating one byte off the end of it.
-  {
-    RWFileOptions opts;
-    opts.mode = Env::MUST_EXIST;
-    opts.is_sensitive = true;
-    unique_ptr<RWFile> metadata_file;
-    RETURN_NOT_OK(env_->NewRWFile(opts, c->metadata_filename, &metadata_file));
-    uint64_t initial_metadata_size;
-    RETURN_NOT_OK(metadata_file->Size(&initial_metadata_size));
-    RETURN_NOT_OK(metadata_file->Truncate(initial_metadata_size - 1));
-  }
+  BlockId block_id = BlockId(rand_.Next64());
+  RETURN_NOT_OK(
+      AppendPartialRecord(c, block_id)); // NOLINT(clang-analyzer-core.NonNullParamChecker)
 
   // Once a container has a partial record, it cannot be further corrupted by
   // the corruptor.
 
   // Make a local copy of the container's name; erase() below will free it.
-  string container_name = c->name;
+  string container_name = c->name; // NOLINT(clang-analyzer-core.NonNullParamChecker)
 
   auto remove_matching_container = [&](const Container& e) {
     return container_name == e.name;
@@ -398,28 +388,29 @@ Status LBMCorruptor::AddPartialRecordToContainer() {
 
 Status LBMCorruptor::InjectRandomNonFatalInconsistency() {
   while (true) {
-    int r = rand_.Uniform(5);
+    NonFatalInconsistency r = static_cast<NonFatalInconsistency>(rand_.Uniform(
+        static_cast<uint32_t>(NonFatalInconsistency::kMaxNonFatalInconsistency)));
     switch (r) {
-      case 0:
+      case NonFatalInconsistency::kMisalignedBlockToContainer:
         return AddMisalignedBlockToContainer();
-      case 1:
+      case NonFatalInconsistency::kIncompleteContainer:
         return CreateIncompleteContainer();
-      case 2:
+      case NonFatalInconsistency::kPreallocateFullContainer:
         if (full_containers_.empty()) {
           // Loop and try a different operation.
           break;
         }
         return PreallocateFullContainer();
-      case 3:
+      case NonFatalInconsistency::kUnpunchedBlockToFullContainer:
         if (full_containers_.empty()) {
           // Loop and try a different operation.
           break;
         }
         return AddUnpunchedBlockToFullContainer();
-      case 4:
+      case NonFatalInconsistency::kPartialRecordToContainer:
         return AddPartialRecordToContainer();
       default:
-        LOG(FATAL) << "Unexpected value " << r;
+        LOG(FATAL) << "Unexpected value " << static_cast<uint32_t>(r);
     }
   }
 }
@@ -440,28 +431,6 @@ Status LBMCorruptor::OpenMetadataWriter(
 
   *writer = std::move(local_writer);
   return Status::OK();
-}
-
-Status LBMCorruptor::AppendCreateRecord(WritablePBContainerFile* writer,
-                                        BlockId block_id,
-                                        int64_t block_offset,
-                                        int64_t block_length) {
-  BlockRecordPB record;
-  block_id.CopyToPB(record.mutable_block_id());
-  record.set_op_type(CREATE);
-  record.set_offset(block_offset);
-  record.set_length(block_length);
-  record.set_timestamp_us(0); // has no effect
-  return writer->Append(record);
-}
-
-Status LBMCorruptor::AppendDeleteRecord(WritablePBContainerFile* writer,
-                                        BlockId block_id) {
-  BlockRecordPB record;
-  block_id.CopyToPB(record.mutable_block_id());
-  record.set_op_type(DELETE);
-  record.set_timestamp_us(0); // has no effect
-  return writer->Append(record);
 }
 
 Status LBMCorruptor::PreallocateForBlock(RWFile* data_file,
@@ -496,6 +465,122 @@ Status LBMCorruptor::GetRandomContainer(FindContainerMode mode,
 
 const string& LBMCorruptor::GetRandomDataDir() const {
   return data_dirs_[rand_.Uniform(data_dirs_.size())];
+}
+
+Status NativeMetadataLBMCorruptor::CreateIncompleteContainer() {
+  string unsuffixed_path = JoinPathSegments(GetRandomDataDir(), oid_generator_.Next());
+  // Create an incomplete container. Kinds of incomplete containers:
+  //
+  // 0. Empty data file but no metadata file.
+  // 1. No data file but metadata file exists (and is up to a certain size).
+  // 2. Empty data file and metadata file exists (and is up to a certain size).
+  auto r = rand_.Uniform(3);
+  if (r == 0) {
+    RETURN_NOT_OK(CreateContainerDataPart(unsuffixed_path));
+  } else if (r == 1) {
+    RETURN_NOT_OK(CreateContainerMetadataPart(unsuffixed_path));
+  } else {
+    CHECK_EQ(r, 2);
+    RETURN_NOT_OK(CreateContainerDataPart(unsuffixed_path));
+    RETURN_NOT_OK(CreateContainerMetadataPart(unsuffixed_path));
+  }
+  LOG(INFO) << "Created incomplete container " << unsuffixed_path;
+  return Status::OK();
+}
+
+Status NativeMetadataLBMCorruptor::AppendRecord(
+    const Container* c, BlockId block_id, int64_t block_offset, int64_t block_length) {
+  unique_ptr<WritablePBContainerFile> metadata_writer;
+  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+  RETURN_NOT_OK(AppendCreateRecordInternal(metadata_writer.get(), block_id,
+                                           block_offset, block_length));
+  RETURN_NOT_OK(AppendDeleteRecordInternal(metadata_writer.get(), block_id));
+  return metadata_writer->Close();
+}
+
+Status NativeMetadataLBMCorruptor::AppendCreateRecord(
+    const Container* c, BlockId block_id, uint64_t block_offset, int64_t block_length) {
+  unique_ptr<WritablePBContainerFile> metadata_writer;
+  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+  RETURN_NOT_OK(AppendCreateRecordInternal(metadata_writer.get(), block_id,
+                                           block_offset, block_length));
+  return metadata_writer->Close();
+}
+
+Status NativeMetadataLBMCorruptor::AppendPartialRecord(
+    const Container* c, BlockId block_id) {
+  unique_ptr<WritablePBContainerFile> metadata_writer;
+  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+  // Add a new good record to the container.
+  RETURN_NOT_OK(AppendCreateRecordInternal(metadata_writer.get(), block_id, 0, 0));
+  // Corrupt the record by truncating one byte off the end of it.
+  RWFileOptions opts;
+  opts.mode = Env::MUST_EXIST;
+  opts.is_sensitive = true;
+  unique_ptr<RWFile> metadata_file;
+  RETURN_NOT_OK(env_->NewRWFile(opts, c->metadata_filename, &metadata_file));
+  uint64_t initial_metadata_size;
+  RETURN_NOT_OK(metadata_file->Size(&initial_metadata_size));
+  return metadata_file->Truncate(initial_metadata_size - 1);
+}
+
+Status NativeMetadataLBMCorruptor::AppendMetadataRecord(
+    const Container* c, const BlockRecordPB& record) {
+  unique_ptr<WritablePBContainerFile> metadata_writer;
+  RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
+  return metadata_writer->Append(record);
+}
+
+Status NativeMetadataLBMCorruptor::CreateContainerMetadataPart(
+    const string& unsuffixed_path) const {
+  RWFileOptions opts;
+  opts.is_sensitive = true;
+  unique_ptr<RWFile> metadata_file;
+  string metadata_fname = StrCat(
+      unsuffixed_path, LogBlockManager::kContainerMetadataFileSuffix);
+  RETURN_NOT_OK(env_->NewRWFile(opts, metadata_fname, &metadata_file));
+  // Truncate the metadata file to a small random length.
+  int md_length = rand_.Uniform(pb_util::kPBContainerMinimumValidLength);
+  RETURN_NOT_OK(metadata_file->Truncate(md_length));
+  return metadata_file->Close();
+}
+
+Status NativeMetadataLBMCorruptor::CreateMalformedRecord(
+    const Container* c, MalformedRecordType error_type, BlockRecordPB* record) {
+  switch (error_type) {
+    case MalformedRecordType::kDeleteWithoutFirstMatchingCreate:
+      record->clear_offset();
+      record->clear_length();
+      record->set_op_type(DELETE);
+      break;
+    case MalformedRecordType::kTwoCreatesForSameBlockId:
+      RETURN_NOT_OK(AppendMetadataRecord(c, *record));
+      break;
+    default:
+      return LBMCorruptor::CreateMalformedRecord(c, error_type, record);
+  }
+  return Status::OK();
+}
+
+Status NativeMetadataLBMCorruptor::AppendCreateRecordInternal(
+    WritablePBContainerFile* writer, BlockId block_id,
+    int64_t block_offset, int64_t block_length) {
+  BlockRecordPB record;
+  block_id.CopyToPB(record.mutable_block_id());
+  record.set_op_type(CREATE);
+  record.set_offset(block_offset);
+  record.set_length(block_length);
+  record.set_timestamp_us(0); // has no effect
+  return writer->Append(record);
+}
+
+Status NativeMetadataLBMCorruptor::AppendDeleteRecordInternal(
+    WritablePBContainerFile* writer, BlockId block_id) {
+  BlockRecordPB record;
+  block_id.CopyToPB(record.mutable_block_id());
+  record.set_op_type(DELETE);
+  record.set_timestamp_us(0); // has no effect
+  return writer->Append(record);
 }
 
 } // namespace fs

@@ -188,7 +188,6 @@ class LogBlockManagerTest : public KuduTest, public ::testing::WithParamInterfac
                                                          DataDirManagerOptions(), &dd_manager_));
       RETURN_NOT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
     }
-
     bm_ = CreateBlockManager(metric_entity, test_data_dirs);
     RETURN_NOT_OK(bm_->Open(report, BlockManager::MergeReport::NOT_REQUIRED, nullptr, nullptr));
     return Status::OK();
@@ -1390,12 +1389,12 @@ TEST_P(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
   NO_FATALS(GetOnlyContainer(&container_name));
 
   // Add a mixture of regular and misaligned blocks to it.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
-  ASSERT_OK(corruptor.Init());
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), SeedRandom());
+  ASSERT_OK(corruptor->Init());
   int num_misaligned_blocks = 0;
   for (int i = 0; i < kNumBlocks; i++) {
     if (rand() % 2) {
-      ASSERT_OK(corruptor.AddMisalignedBlockToContainer());
+      ASSERT_OK(corruptor->AddMisalignedBlockToContainer());
 
       // Need to reopen the block manager after each corruption because the
       // container metadata writers do not expect the metadata files to have
@@ -1508,9 +1507,9 @@ TEST_P(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
   NO_FATALS(GetContainerNames(&container_names));
 
   // Corrupt one container.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
-  ASSERT_OK(corruptor.Init());
-  ASSERT_OK(corruptor.PreallocateFullContainer());
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), SeedRandom());
+  ASSERT_OK(corruptor->Init());
+  ASSERT_OK(corruptor->PreallocateFullContainer());
 
   // Check the report.
   FsReport report;
@@ -1553,10 +1552,10 @@ TEST_P(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
   ASSERT_OK(env_->GetFileSizeOnDisk(data_file, &initial_file_size_on_disk));
 
   // Add some "unpunched blocks" to the container.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
-  ASSERT_OK(corruptor.Init());
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), SeedRandom());
+  ASSERT_OK(corruptor->Init());
   for (int i = 0; i < kNumBlocks; i++) {
-    ASSERT_OK(corruptor.AddUnpunchedBlockToFullContainer());
+    ASSERT_OK(corruptor->AddUnpunchedBlockToFullContainer());
   }
 
   uint64_t file_size_on_disk;
@@ -1596,10 +1595,10 @@ TEST_P(LogBlockManagerTest, TestRepairIncompleteContainer) {
   // Create some incomplete containers. The corruptor will select between
   // several variants of "incompleteness" at random (see
   // LBMCorruptor::CreateIncompleteContainer() for details).
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
-  ASSERT_OK(corruptor.Init());
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), SeedRandom());
+  ASSERT_OK(corruptor->Init());
   for (int i = 0; i < kNumContainers; i++) {
-    ASSERT_OK(corruptor.CreateIncompleteContainer());
+    ASSERT_OK(corruptor->CreateIncompleteContainer());
   }
   vector<string> container_names;
   NO_FATALS(GetContainerNames(&container_names));
@@ -1635,10 +1634,10 @@ TEST_P(LogBlockManagerTest, TestDetectMalformedRecords) {
   // Add some malformed records. The corruptor will select between
   // several variants of "malformedness" at random (see
   // LBMCorruptor::AddMalformedRecordToContainer for details).
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
-  ASSERT_OK(corruptor.Init());
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), SeedRandom());
+  ASSERT_OK(corruptor->Init());
   for (int i = 0; i < kNumRecords; i++) {
-    ASSERT_OK(corruptor.AddMalformedRecordToContainer());
+    ASSERT_OK(corruptor->AddMalformedRecordToContainer());
   }
 
   // Check the report.
@@ -1666,10 +1665,10 @@ TEST_P(LogBlockManagerTest, TestDetectMisalignedBlocks) {
   NO_FATALS(GetOnlyContainer(&container_name));
 
   // Add some misaligned blocks.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
-  ASSERT_OK(corruptor.Init());
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), SeedRandom());
+  ASSERT_OK(corruptor->Init());
   for (int i = 0; i < kNumBlocks; i++) {
-    ASSERT_OK(corruptor.AddMisalignedBlockToContainer());
+    ASSERT_OK(corruptor->AddMisalignedBlockToContainer());
   }
 
   // Check the report.
@@ -1706,10 +1705,10 @@ TEST_P(LogBlockManagerTest, TestRepairPartialRecords) {
   ASSERT_EQ(kNumContainers, container_names.size());
 
   // Add some partial records.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
-  ASSERT_OK(corruptor.Init());
+  auto corruptor = LBMCorruptor::Create(env_, dd_manager_->GetDirs(), SeedRandom());
+  ASSERT_OK(corruptor->Init());
   for (int i = 0; i < kNumRecords; i++) {
-    ASSERT_OK(corruptor.AddPartialRecordToContainer());
+    ASSERT_OK(corruptor->AddPartialRecordToContainer());
   }
 
   // Check the report.
