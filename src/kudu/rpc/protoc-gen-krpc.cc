@@ -451,6 +451,14 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
             "    \"Number of rejected $rpc_full_name$ requests due to RPC queue overflow\",\n"
             "    kudu::MetricLevel::kInfo);\n"
             "\n");
+        Print(printer, *subs,
+            "METRIC_DEFINE_counter(server,\n"
+            "    timed_out_on_response_$rpc_full_name_plainchars$,\n"
+            "    \"Late $rpc_full_name$ RPC Responses\",\n"
+            "    kudu::MetricUnit::kRequests,\n"
+            "    \"Number of times $rpc_full_name$ responses were sent past the RPC's deadline\",\n"
+            "    kudu::MetricLevel::kInfo);\n"
+            "\n");
         subs->Pop(); // method
       }
 
@@ -507,6 +515,9 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
             "        METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(entity);\n"
             "    mi->queue_overflow_rejections =\n"
             "        METRIC_queue_overflow_rejections_$rpc_full_name_plainchars$.Instantiate("
+            "entity);\n"
+            "    mi->timed_out_on_response =\n"
+            "        METRIC_timed_out_on_response_$rpc_full_name_plainchars$.Instantiate("
             "entity);\n"
             "    mi->func = [this](const Message* req, Message* resp, RpcContext* ctx) {\n"
             "      this->$rpc_name$(\n"

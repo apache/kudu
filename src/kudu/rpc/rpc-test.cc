@@ -56,6 +56,7 @@
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/rtest.pb.h"
 #include "kudu/rpc/serialization.h"
+#include "kudu/rpc/service_pool.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/util/countdown_latch.h"
@@ -80,6 +81,7 @@ class AcceptorPool;
 }  // namespace kudu
 
 METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep);
+METRIC_DECLARE_counter(timed_out_on_response_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
@@ -96,11 +98,9 @@ using std::thread;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
-
-namespace kudu {
-
 using strings::Substitute;
 
+namespace kudu {
 namespace rpc {
 
 // RPC proxies require a hostname to be passed. In this test we're just connecting to
@@ -1232,6 +1232,194 @@ TEST_P(TestRpc, TestRpcHandlerLatencyMetric) {
   // TODO: Implement an incoming queue latency test.
   // For now we just assert that the metric exists.
   ASSERT_TRUE(FindOrDie(metric_map, &METRIC_rpc_incoming_queue_time));
+}
+
+// Set of basic test scenarios for the per-RPC 'timed_out_on_response' metric.
+TEST_P(TestRpc, TimedOutOnResponseMetric) {
+  constexpr uint64_t kSleepMicros = 20 * 1000;
+  const string kMethodName = "Sleep";
+
+  // Set RPC connection negotiation timeout to be very high to avoid flakiness
+  // if name resolution is very slow.
+  rpc_negotiation_timeout_ms_ = 60 * 1000;
+
+  Sockaddr server_addr = bind_addr();
+  ASSERT_OK(StartTestServerWithGeneratedCode(&server_addr, enable_ssl()));
+
+  shared_ptr<Messenger> cm;
+  ASSERT_OK(CreateMessenger("client", &cm, 1/*n_reactors*/, enable_ssl()));
+  Proxy p(cm, server_addr, kRemoteHostName, CalculatorService::static_service_name());
+
+  // Get references to the metrics map and a couple of relevant metrics.
+  const auto& mm = server_messenger_->metric_entity()->UnsafeMetricsMapForTests();
+  const auto* latency_histogram = down_cast<Histogram*>(FindOrDie(
+      mm, &METRIC_handler_latency_kudu_rpc_test_CalculatorService_Sleep).get());
+  const auto* timed_out_on_response = down_cast<Counter*>(FindOrDie(
+      mm, &METRIC_timed_out_on_response_kudu_rpc_test_CalculatorService_Sleep).get());
+  const auto* timed_out_in_queue = service_pool_->RpcsTimedOutInQueueMetricForTests();
+
+  ASSERT_EQ(0, latency_histogram->TotalCount());
+  ASSERT_EQ(0, timed_out_on_response->value());
+  ASSERT_EQ(0, timed_out_in_queue->value());
+
+  // Make a dry-run call to avoid flakiness in this test scenario if name
+  // resolution is slow. This primes the DNS resolver and its cache.
+  {
+    SleepRequestPB req;
+    req.set_sleep_micros(kSleepMicros);
+    SleepResponsePB resp;
+    RpcController ctl;
+    ASSERT_OK(p.SyncRequest(kMethodName, req, &resp, &ctl));
+    ASSERT_EQ(1, latency_histogram->TotalCount());
+    ASSERT_EQ(0, timed_out_on_response->value());
+  }
+
+  // Run the sequence of sub-scenarios where the requests successfully complete
+  // at the server side, but the client might mark them as timed.
+  SleepRequestPB req;
+  req.set_sleep_micros(kSleepMicros);
+
+  // Client side doesn't set the timeout for the RPC at all.
+  {
+    RpcController ctl;
+    SleepResponsePB resp;
+    ASSERT_OK(p.SyncRequest(kMethodName, req, &resp, &ctl));
+    ASSERT_EQ(2, latency_histogram->TotalCount());
+    ASSERT_EQ(0, timed_out_on_response->value());
+  }
+
+  // Set the timeout for the RPC much higher than the request would take
+  // to process (assuming scheduler anomalies does not spill over 30 seconds).
+  {
+    RpcController ctl;
+    ctl.set_timeout(MonoDelta::FromSeconds(30));
+    SleepResponsePB resp;
+    ASSERT_OK(p.SyncRequest(kMethodName, req, &resp, &ctl));
+    ASSERT_EQ(3, latency_histogram->TotalCount());
+    ASSERT_EQ(0, timed_out_on_response->value());
+  }
+
+  // Set the timeout for the RPC to the minimum recognizable by the server
+  // side value greater than 0.
+  {
+    RpcController ctl;
+    ctl.set_timeout(MonoDelta::FromMilliseconds(1));
+    SleepResponsePB resp;
+    const auto s = p.SyncRequest(kMethodName, req, &resp, &ctl);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Timed out: Sleep RPC");
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_EQ(4, latency_histogram->TotalCount());
+    });
+    ASSERT_EQ(1, timed_out_on_response->value());
+  }
+
+  // Set the timeout for the RPC to be close to the time it takes to process
+  // the request.
+  {
+    RpcController ctl;
+    ctl.set_timeout(MonoDelta::FromMicroseconds(kSleepMicros));
+    SleepResponsePB resp;
+    const auto s = p.SyncRequest(kMethodName, req, &resp, &ctl);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Timed out: Sleep RPC");
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_EQ(5, latency_histogram->TotalCount());
+    });
+    ASSERT_EQ(2, timed_out_on_response->value());
+  }
+
+  // Not a single RPC times out in the service queue -- all the RPCs have been
+  // successfully processed by the server, just a couple of them were responded
+  // after the client-defined deadline.
+  ASSERT_EQ(0, timed_out_in_queue->value());
+}
+
+// A special scenario for the per-RPC 'timed_out_on_response' metric when an
+// RPC times out while waiting in the queue, so it's not actually processed.
+TEST_P(TestRpc, TimedOutOnResponseMetricServiceQueue) {
+  constexpr uint64_t kSleepMicros = 20 * 1000;
+  const string kMethodName = "Sleep";
+
+  // Set RPC connection negotiation timeout to be very high to avoid flakiness
+  // if name resolution is very slow.
+  rpc_negotiation_timeout_ms_ = 60 * 1000;
+
+  // Limit the capacity of the service's thread pool, so requests are processed
+  // sequentially by a single worker thread.
+  n_worker_threads_ = 1;
+
+  Sockaddr server_addr = bind_addr();
+  ASSERT_OK(StartTestServerWithGeneratedCode(&server_addr, enable_ssl()));
+
+  shared_ptr<Messenger> cm;
+  ASSERT_OK(CreateMessenger("client", &cm, 1/*n_reactors*/, enable_ssl()));
+  Proxy p(cm, server_addr, kRemoteHostName, CalculatorService::static_service_name());
+
+  // Get the reference to the metrics map and create handles to the needed metrics.
+  const auto& mm = server_messenger_->metric_entity()->UnsafeMetricsMapForTests();
+
+  const auto* latency_histogram = down_cast<Histogram*>(FindOrDie(
+      mm, &METRIC_handler_latency_kudu_rpc_test_CalculatorService_Sleep).get());
+  const auto* timed_out_on_response = down_cast<Counter*>(FindOrDie(
+      mm, &METRIC_timed_out_on_response_kudu_rpc_test_CalculatorService_Sleep).get());
+  const auto* timed_out_in_queue = service_pool_->RpcsTimedOutInQueueMetricForTests();
+
+  // In the beginning, all the related metrics should be zeroed.
+  ASSERT_EQ(0, latency_histogram->TotalCount());
+  ASSERT_EQ(0, timed_out_on_response->value());
+  ASSERT_EQ(0, timed_out_in_queue->value());
+
+  // Make a dry-run call to avoid flakiness in this test scenario if name
+  // resolution is slow. This primes the DNS resolver and its cache.
+  {
+    SleepRequestPB req;
+    req.set_sleep_micros(kSleepMicros);
+    SleepResponsePB resp;
+    RpcController ctl;
+    ASSERT_OK(p.SyncRequest(kMethodName, req, &resp, &ctl));
+  }
+  ASSERT_EQ(1, latency_histogram->TotalCount());
+  ASSERT_EQ(0, timed_out_on_response->value());
+  ASSERT_EQ(0, timed_out_in_queue->value());
+
+  CountDownLatch latch(2);
+
+  // The first RPC should be successful: sleep for the specified time.
+  SleepRequestPB req0;
+  req0.set_sleep_micros(kSleepMicros);
+  SleepResponsePB resp0;
+  RpcController ctl0;
+  p.AsyncRequest(kMethodName, req0, &resp0, &ctl0,
+                 [&latch]() { latch.CountDown(); });
+
+  // The second RPC should wait in the RPC queue while the first is being
+  // processed by the only thread in the RPC service thread pool.  Eventually,
+  // it should time out.
+  SleepRequestPB req1;
+  req1.set_return_app_error(true);
+  SleepResponsePB resp1;
+  RpcController ctl1;
+  ctl1.set_timeout(MonoDelta::FromMicroseconds(kSleepMicros));
+  p.AsyncRequest(kMethodName, req1, &resp1, &ctl1,
+                 [&latch]() { latch.CountDown(); });
+
+  // Wait for the completion of both requests sent asynchronously above.
+  latch.Wait();
+
+  // The have been 3 requests total in this scenario.
+  ASSERT_EQ(3, latency_histogram->TotalCount());
+
+  // The first RPC should return OK.
+  ASSERT_OK(ctl0.status());
+
+  // The second RPC should time out while waiting in the queue
+  // and the corresponding metrics should be incremented.
+  const auto& s = ctl1.status();
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Timed out: Sleep RPC");
+  ASSERT_EQ(1, timed_out_on_response->value());
+  ASSERT_EQ(1, timed_out_in_queue->value());
 }
 
 static void DestroyMessengerCallback(shared_ptr<Messenger>* messenger,

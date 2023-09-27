@@ -306,6 +306,13 @@ void InboundCall::RecordHandlingCompleted() {
   DCHECK(!timing_.time_completed.Initialized());  // Protect against multiple calls.
   timing_.time_completed = MonoTime::Now();
 
+  // If it's now past the deadline defined by the client, the yet-to-be-sent
+  // response is already late and the RPC will be declared as "timed out"
+  // (if detected) when it arrives to the client side.
+  if (method_info_ && timing_.time_completed > deadline_) {
+    method_info_->timed_out_on_response->Increment();
+  }
+
   if (!timing_.time_handled.Initialized()) {
     // Sometimes we respond to a call before we begin handling it (e.g. due to queue
     // overflow, etc). These cases should not be counted against the histogram.

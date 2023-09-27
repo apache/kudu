@@ -422,6 +422,7 @@ class RpcTestBase : public KuduTest {
         n_server_reactor_threads_(3),
         n_worker_threads_(3),
         keepalive_time_ms_(1000),
+        rpc_negotiation_timeout_ms_(3000),
         service_queue_length_(200),
         metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test.rpc_test")) {
   }
@@ -467,6 +468,7 @@ class RpcTestBase : public KuduTest {
           MonoDelta::FromMilliseconds(std::min(keepalive_time_ms_ / 5, 100)));
     }
     bld.set_metric_entity(metric_entity_);
+    bld.set_rpc_negotiation_timeout_ms(rpc_negotiation_timeout_ms_);
     return bld.Build(messenger);
   }
 
@@ -667,6 +669,7 @@ static void DoTestSidecar(Proxy* p, int size1, int size2) {
   int n_server_reactor_threads_;
   int n_worker_threads_;
   int keepalive_time_ms_;
+  int rpc_negotiation_timeout_ms_;
   int service_queue_length_;
 
   std::string service_name_;
