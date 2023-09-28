@@ -13,7 +13,7 @@ Get help using Kudu or contribute to the project on our mailing lists or our cha
   ([subscribe](mailto:user-subscribe@kudu.apache.org))
   ([unsubscribe](mailto:user-unsubscribe@kudu.apache.org))
   for usage questions, help, and announcements.
-* **<a class="icon slack" href="https://getkudu-slack.herokuapp.com/">Kudu Slack channel</a>** -
+* **<a class="icon slack" href="https://join.slack.com/t/getkudu/shared_invite/zt-244b4zvki-hB1q9IbAk6CqHNMZHvUALA">Kudu Slack channel</a>** -
   where many Kudu developers and users hang out to answer questions and chat.
 
 **Developer mailing lists**
