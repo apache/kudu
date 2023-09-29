@@ -110,6 +110,7 @@
 #include "kudu/master/table_locations_cache.h"
 #include "kudu/master/table_locations_cache_metrics.h"
 #include "kudu/master/table_metrics.h"
+#include "kudu/master/tablet_loader.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h" // IWYU pragma: keep
@@ -593,12 +594,12 @@ GROUP_FLAG_VALIDATOR(replication_factor_flags,
                      ValidateReplicationFactorFlags);
 } // anonymous namespace
 
+namespace kudu {
+namespace master {
+
 ////////////////////////////////////////////////////////////
 // Table Loader
 ////////////////////////////////////////////////////////////
-
-namespace kudu {
-namespace master {
 
 class TableLoader : public TableVisitor {
  public:
@@ -668,62 +669,6 @@ class TableLoader : public TableVisitor {
   CatalogManager *catalog_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TableLoader);
-};
-
-////////////////////////////////////////////////////////////
-// Tablet Loader
-////////////////////////////////////////////////////////////
-
-class TabletLoader : public TabletVisitor {
- public:
-  explicit TabletLoader(CatalogManager *catalog_manager)
-    : catalog_manager_(catalog_manager) {
-  }
-
-  Status VisitTablet(const string& table_id,
-                     const string& tablet_id,
-                     const SysTabletsEntryPB& metadata) override {
-    // Lookup the table.
-    scoped_refptr<TableInfo> table(FindPtrOrNull(
-        catalog_manager_->table_ids_map_, table_id));
-    if (table == nullptr) {
-      // Tables and tablets are always created/deleted in one operation, so
-      // this shouldn't be possible.
-      string msg = Substitute("Missing table $0 required by tablet $1 (metadata: $2)",
-                              table_id, tablet_id, SecureDebugString(metadata));
-      LOG(ERROR) << msg;
-      return Status::Corruption(msg);
-    }
-
-    // Set up the tablet info.
-    scoped_refptr<TabletInfo> tablet = new TabletInfo(table, tablet_id);
-    TabletMetadataLock l(tablet.get(), LockMode::WRITE);
-    l.mutable_data()->pb.CopyFrom(metadata);
-
-    // Add the tablet to the tablet manager.
-    catalog_manager_->tablet_map_[tablet->id()] = tablet;
-
-    // Add the tablet to the table.
-    bool is_deleted = l.mutable_data()->is_deleted();
-    l.Commit();
-    if (!is_deleted) {
-      // Need to use a new tablet lock here because AddRemoveTablets() reads
-      // from clean state, which is uninitialized for these brand new tablets.
-      TabletMetadataLock l(tablet.get(), LockMode::READ);
-      table->AddRemoveTablets({ tablet }, {});
-      LOG(INFO) << Substitute("Loaded metadata for tablet $0 (table $1)",
-                              tablet_id, table->ToString());
-    }
-
-    VLOG(2) << Substitute("Metadata for tablet $0: $1",
-                          tablet_id, SecureShortDebugString(metadata));
-    return Status::OK();
-  }
-
- private:
-  CatalogManager *catalog_manager_;
-
-  DISALLOW_COPY_AND_ASSIGN(TabletLoader);
 };
 
 ////////////////////////////////////////////////////////////

@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/ref_counted.h"
@@ -33,6 +34,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/master/tablet_loader.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
@@ -65,6 +67,18 @@ class Message;
 namespace kudu {
 namespace master {
 
+static bool PbEquals(const google::protobuf::Message& a, const google::protobuf::Message& b) {
+  return pb_util::SecureDebugString(a) == pb_util::SecureDebugString(b);
+}
+
+template<class C>
+static bool MetadatasEqual(const scoped_refptr<C>& ti_a,
+                           const scoped_refptr<C>& ti_b) {
+  MetadataLock<C> l_a(ti_a.get(), LockMode::READ);
+  MetadataLock<C> l_b(ti_b.get(), LockMode::READ);
+  return PbEquals(l_a.data().pb, l_b.data().pb);
+}
+
 class SysCatalogTest : public KuduTest {
  protected:
   void SetUp() override {
@@ -94,18 +108,6 @@ class SysCatalogTest : public KuduTest {
   Master* master_;
   unique_ptr<MasterServiceProxy> proxy_;
 };
-
-static bool PbEquals(const google::protobuf::Message& a, const google::protobuf::Message& b) {
-  return pb_util::SecureDebugString(a) == pb_util::SecureDebugString(b);
-}
-
-template<class C>
-static bool MetadatasEqual(const scoped_refptr<C>& ti_a,
-                           const scoped_refptr<C>& ti_b) {
-  MetadataLock<C> l_a(ti_a.get(), LockMode::READ);
-  MetadataLock<C> l_b(ti_b.get(), LockMode::READ);
-  return PbEquals(l_a.data().pb, l_b.data().pb);
-}
 
 // Test the sys-catalog tables basic operations (add, update, delete,
 // visit)
@@ -414,6 +416,259 @@ TEST_F(SysCatalogTest, LoadClusterID) {
   ASSERT_OK(mini_master_->master()->catalog_manager()->sys_catalog()->
           GetClusterIdEntry(&cluster_id_entry));
   ASSERT_EQ(init_id, cluster_id_entry.cluster_id());
+}
+
+// A unit test for the TabletLoader::ConvertFromLegacy(PartitionPB*) method.
+TEST_F(SysCatalogTest, TabletRangesConversionFromLegacyFormat) {
+  // Zero hash dimensions.
+  {
+    PartitionPB pb;
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+  {
+    PartitionPB pb;
+    *pb.mutable_partition_key_start() = "";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+  {
+    PartitionPB pb;
+    *pb.mutable_partition_key_end() = "";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+  {
+    PartitionPB pb;
+    *pb.mutable_partition_key_start() = "";
+    *pb.mutable_partition_key_end() = "";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+  {
+    PartitionPB pb;
+    *pb.mutable_partition_key_start() = "a";
+    *pb.mutable_partition_key_end() = "b";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+  {
+    PartitionPB pb;
+    *pb.mutable_partition_key_start() = "";
+    *pb.mutable_partition_key_end() = string("\0\0\0\1\0\0\0\2", 8) + "xyz";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+  {
+    PartitionPB pb;
+    *pb.mutable_partition_key_start() = string("\0\0\0\1", 4);
+    *pb.mutable_partition_key_end() = "";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+  {
+    PartitionPB pb;
+    *pb.mutable_partition_key_start() = string("\0\0\0\1", 4);
+    *pb.mutable_partition_key_end() = string("\0\0\0\1\0\0\0\2", 8) + "xyz";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+
+  // One hash dimension, bounded range, short range keys.
+  //   [ (1, "ab"), (1, "ac") ) --> same
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(1);
+    *pb.mutable_partition_key_start() = string("\0\0\0\1", 4) + "ab";
+    *pb.mutable_partition_key_end() = string("\0\0\0\1", 4) + "ac";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+
+  // One hash dimension, bounded range, long range keys.
+  //   [ (2, "0123456789"), (2, "abcdefghijklmn") ) --> same
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(1);
+    *pb.mutable_partition_key_start() = string("\0\0\0\2", 4) + "0123456789";
+    *pb.mutable_partition_key_end() = string("\0\0\0\2", 4) + "abcdefghijklmn";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+
+  // Two hash dimensions, bounded range, long range keys.
+  //   [ (0, 5, "0000000000000005"), (0, 5, "0000000000000006") ) --> same
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(1);
+    *pb.mutable_partition_key_start() =
+        string("\0\0\0\0\0\0\0\5", 8) + "0000000000000005";
+    *pb.mutable_partition_key_end() =
+        string("\0\0\0\0\0\0\0\5", 8) + "0000000000000006";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+
+  // One hash dimension, new format:
+  //   [ (1, _), (1, "a") ) --> same
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(1);
+    *pb.mutable_partition_key_start() = string("\0\0\0\1", 4);
+    *pb.mutable_partition_key_end() = string("\0\0\0\1", 4) + "a";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+
+  // Two hash dimensions, new format:
+  //   [ (2, 0, _), (2, 0, "t") ) --> same
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(2);
+    pb.add_hash_buckets(0);
+    *pb.mutable_partition_key_start() = string("\0\0\0\2\0\0\0\0", 8);
+    *pb.mutable_partition_key_end() = string("\0\0\0\2\0\0\0\0", 8) + "t";
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+
+  // One hash dimension, legacy format:
+  //   [ (_, _), (2, "b") ) --> [ (2, _), (2, "b") )
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(2);
+    *pb.mutable_partition_key_start() = "";
+    *pb.mutable_partition_key_end() = string("\0\0\0\2", 4) + "b";
+    PartitionPB pb_orig(pb);
+    ASSERT_TRUE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_FALSE(PbEquals(pb_orig, pb));
+
+    // Verify the results of the conversion.
+    Partition p;
+    Partition::FromPB(pb, &p);
+    ASSERT_EQ(string("\0\0\0\2", 4), p.begin().hash_key());
+    ASSERT_EQ("", p.begin().range_key());
+    ASSERT_EQ(string("\0\0\0\2", 4), p.end().hash_key());
+    ASSERT_EQ("b", p.end().range_key());
+  }
+
+  // Two hash dimensions, legacy format:
+  //   [ (3, _, _), (3, 1, "u") ) --> [ (3, 1, _), (3, 1, "u") )
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(3);
+    pb.add_hash_buckets(1);
+    *pb.mutable_partition_key_start() = string("\0\0\0\3", 4);
+    *pb.mutable_partition_key_end() = string("\0\0\0\3\0\0\0\1", 8) + "u";
+    PartitionPB pb_orig(pb);
+    ASSERT_TRUE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_FALSE(PbEquals(pb_orig, pb));
+
+    // Verify the results of the conversion.
+    Partition p;
+    Partition::FromPB(pb, &p);
+    ASSERT_EQ(string("\0\0\0\3\0\0\0\1", 8), p.begin().hash_key());
+    ASSERT_EQ("", p.begin().range_key());
+    ASSERT_EQ(string("\0\0\0\3\0\0\0\1", 8), p.end().hash_key());
+    ASSERT_EQ("u", p.end().range_key());
+  }
+
+  // One hash dimension, new format:
+  //   [ (3, "d"), (4, _) ) --> same
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(3);
+    *pb.mutable_partition_key_start() = string("\0\0\0\3", 4) + "c";
+    *pb.mutable_partition_key_end() = string("\0\0\0\4", 4);
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+
+  // One hash dimension, legacy format:
+  //   [ (4, "d"), (_, _) ) --> [ (4, "d"), (5, _) )
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(4);
+    *pb.mutable_partition_key_start() = string("\0\0\0\4", 4) + "d";
+    *pb.mutable_partition_key_end() = "";
+    PartitionPB pb_orig(pb);
+    ASSERT_TRUE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_FALSE(PbEquals(pb_orig, pb));
+
+    Partition p;
+    Partition::FromPB(pb, &p);
+    ASSERT_EQ(string("\0\0\0\4", 4), p.begin().hash_key());
+    ASSERT_EQ("d", p.begin().range_key());
+    ASSERT_EQ(string("\0\0\0\5", 4), p.end().hash_key());
+    ASSERT_EQ("", p.end().range_key());
+  }
+
+  // Two hash dimensions, legacy format:
+  //   [ (5, 5, "e"), (_, _, _) ) --> [ (5, 5, "e"), (5, 6, _) )
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(5);
+    pb.add_hash_buckets(5);
+    *pb.mutable_partition_key_start() = string("\0\0\0\5\0\0\0\5", 8) + "e";
+    *pb.mutable_partition_key_end() = "";
+    PartitionPB pb_orig(pb);
+    ASSERT_TRUE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_FALSE(PbEquals(pb_orig, pb));
+
+    Partition p;
+    Partition::FromPB(pb, &p);
+    ASSERT_EQ(string("\0\0\0\5\0\0\0\5", 8), p.begin().hash_key());
+    ASSERT_EQ("e", p.begin().range_key());
+    ASSERT_EQ(string("\0\0\0\5\0\0\0\6", 8), p.end().hash_key());
+    ASSERT_EQ("", p.end().range_key());
+  }
+
+  // Two hash dimensions, new format:
+  //   [ (0, 1, "a0b1"), (0, 2, _) ) --> same
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(0);
+    pb.add_hash_buckets(1);
+    *pb.mutable_partition_key_start() = string("\0\0\0\0\0\0\0\1", 8) + "a0b1";
+    *pb.mutable_partition_key_end() = string("\0\0\0\0\0\0\0\2", 8);
+    PartitionPB pb_orig(pb);
+    ASSERT_FALSE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_TRUE(PbEquals(pb_orig, pb));
+  }
+
+  // Two hash dimensions, legacy format:
+  //   [ (1, 2, "x"), (2, _, _) ) --> [ (1, 2, "x"), (1, 3, _) )
+  {
+    PartitionPB pb;
+    pb.add_hash_buckets(1);
+    pb.add_hash_buckets(2);
+    *pb.mutable_partition_key_start() = string("\0\0\0\1\0\0\0\2", 8) + "x";
+    *pb.mutable_partition_key_end() = string("\0\0\0\2", 4);
+    PartitionPB pb_orig(pb);
+    ASSERT_TRUE(TabletLoader::ConvertFromLegacy(&pb));
+    ASSERT_FALSE(PbEquals(pb_orig, pb));
+
+    Partition p;
+    Partition::FromPB(pb, &p);
+    ASSERT_EQ(string("\0\0\0\1\0\0\0\2", 8), p.begin().hash_key());
+    ASSERT_EQ("x", p.begin().range_key());
+    ASSERT_EQ(string("\0\0\0\1\0\0\0\3", 8), p.end().hash_key());
+    ASSERT_EQ("", p.end().range_key());
+  }
 }
 
 } // namespace master

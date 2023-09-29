@@ -67,6 +67,7 @@ set(MASTER_SRCS
   table_locations_cache.cc
   table_locations_cache_metrics.cc
   table_metrics.cc
+  tablet_loader.cc
   ts_descriptor.cc
   ts_manager.cc
   txn_manager.cc
