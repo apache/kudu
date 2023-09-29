@@ -62,9 +62,32 @@ template <typename Buffer> class KeyEncoder;
 // serialized representation.
 class PartitionKey {
  public:
+  // Return 'true' if the partition key 'pk' for the range partition with
+  // the bucket indices for its hash schema specified in 'hash_buckets' is
+  // in legacy (pre-KUDU-2671) representation, 'false' otherwise.
+  // The difference between the two representations exists only for unbounded
+  // ranges that have non-trivial hash schemas (i.e. when a range is backed
+  // at least by two tablets corresponding to different hash buckets).
+  // For details, see https://github.com/apache/kudu/commit/8df970f7a652
+  static bool IsLegacy(const PartitionKey& pk,
+                       const std::vector<int32_t>& hash_buckets);
+
+  // Convert lower bound partition key 'pk' from pre-KUDU-2671 (i.e. legacy)
+  // representation into post-KUDU-2671 representation.
+  static PartitionKey LowerBoundFromLegacy(const PartitionKey& pk,
+                                           const std::vector<int32_t>& hash_buckets);
+
+  // Convert upper bound partition key 'pk' from pre-KUDU-2671 (i.e. legacy)
+  // representation into post-KUDU-2671 representation.
+  static PartitionKey UpperBoundFromLegacy(const PartitionKey& pk,
+                                           const std::vector<int32_t>& hash_buckets);
+
   // Build a PartitionKey that represents infinity. For the beginning of a
   // partition represents '-inf'; for the end of a partition represents '+inf'.
   PartitionKey() = default;
+
+  // Build a PartitionKey from another instance of this class.
+  PartitionKey(const PartitionKey& other) = default;
 
   // Build PartitionKey object given hash and range parts.
   PartitionKey(std::string hash_key, std::string range_key)

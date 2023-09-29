@@ -124,6 +124,39 @@ PartitionKey Partition::StringToPartitionKey(const std::string& key_str,
                       key_str.substr(hash_part_size));
 }
 
+bool PartitionKey::IsLegacy(const PartitionKey& pk,
+                            const vector<int32_t>& hash_buckets) {
+  return pk.range_key().empty() && !hash_buckets.empty() &&
+      pk.hash_key().size() != kEncodedBucketSize * hash_buckets.size();
+
+}
+
+PartitionKey PartitionKey::LowerBoundFromLegacy(const PartitionKey& pk,
+                                                const vector<int32_t>& hash_buckets) {
+  DCHECK(PartitionKey::IsLegacy(pk, hash_buckets));
+  const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
+  PartitionKey res;
+  for (const auto bucket : hash_buckets) {
+    hash_encoder.Encode(&bucket, res.mutable_hash_key());
+  }
+  return res;
+}
+
+PartitionKey PartitionKey::UpperBoundFromLegacy(const PartitionKey& pk,
+                                                const vector<int32_t>& hash_buckets) {
+  DCHECK(PartitionKey::IsLegacy(pk, hash_buckets));
+  const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
+  PartitionKey res;
+  for (auto idx = 0; idx < hash_buckets.size(); ++idx) {
+    int32_t b = hash_buckets[idx];
+    if (idx + 1 == hash_buckets.size()) {
+      ++b;
+    }
+    hash_encoder.Encode(&b, res.mutable_hash_key());
+  }
+  return res;
+}
+
 string PartitionKey::DebugString() const {
   std::ostringstream ss;
   ss << "h:";
