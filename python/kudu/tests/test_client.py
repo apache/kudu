@@ -306,6 +306,7 @@ class TestClient(KuduTestBase, CompatUnitTest):
 
         # synchronous
         session.flush()
+        self.doVerifyMetrics(session, 100, 0, 0, 0, 0, 0, 0, 0)
 
         # Update a row, upsert another one
         op = table.new_update()
@@ -322,6 +323,7 @@ class TestClient(KuduTestBase, CompatUnitTest):
                                2: 'upserted'})
         session.apply(op)
         session.flush()
+        self.doVerifyMetrics(session, 100, 0, 1, 0, 1, 0, 0, 0)
 
         # Insert ignore existing row
         op = table.new_insert_ignore((3, 1, 'hello_1'))
@@ -352,6 +354,7 @@ class TestClient(KuduTestBase, CompatUnitTest):
                 op = table.new_delete_ignore({'key': i})
             session.apply(op)
         session.flush()
+        self.doVerifyMetrics(session, 100, 1, 1, 0, 1, 1, 100, 1)
 
         scanner = table.scanner().open()
         assert len(scanner.read_all_tuples()) == 0

@@ -750,6 +750,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         int CountPendingErrors()
         void GetPendingErrors(vector[C_KuduError*]* errors, c_bool* overflowed)
+        ResourceMetrics& GetWriteOpMetrics()
 
         KuduClient* client()
 

@@ -172,3 +172,23 @@ class KuduTestBase(object):
                 "subject" : "test",
                 "is_valid_key" : is_valid_key}})
         return resp['createJwt']['jwt']
+
+    @classmethod
+    def doVerifyMetrics(cls, session,
+        successful_inserts,
+        insert_ignore_errors,
+        successful_upserts,
+        upsert_ignore_errors,
+        successful_updates,
+        update_ignore_errors,
+        successful_deletes,
+        delete_ignore_errors,):
+        metrics = session.get_write_op_metrics()
+        assert successful_inserts == metrics["successful_inserts"]
+        assert insert_ignore_errors == metrics["insert_ignore_errors"]
+        assert successful_upserts == metrics["successful_upserts"]
+        assert upsert_ignore_errors == metrics["upsert_ignore_errors"]
+        assert successful_updates == metrics["successful_updates"]
+        assert update_ignore_errors == metrics["update_ignore_errors"]
+        assert successful_deletes == metrics["successful_deletes"]
+        assert delete_ignore_errors == metrics["delete_ignore_errors"]

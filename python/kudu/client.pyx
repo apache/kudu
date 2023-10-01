@@ -1734,6 +1734,22 @@ cdef class Session:
 
         return result, overflowed
 
+    def get_write_op_metrics(self):
+        """
+        Return the cumulative write operation metrics since the beginning of the session.
+
+        Returns
+        -------
+        metrics : Dictionary
+        """
+        _map = self.s.get().GetWriteOpMetrics().Get()
+
+        # Convert map to python dictionary
+        result = {}
+        for it in _map:
+            result[frombytes(it.first)] = it.second
+        return result
+
 
 cdef class Row:
 
