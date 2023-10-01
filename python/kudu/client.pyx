@@ -1052,6 +1052,24 @@ cdef class Table:
         """
         return Upsert(self, record)
 
+    def new_upsert_ignore(self, record=None):
+        """
+        Create a new UpsertIgnore operation. Pass the completed UpsertIgnore to a Session.
+        If a record is provided, a PartialRow will be initialized with values
+        from the input record. The record can be in the form of a tuple, dict,
+        or list. Dictionary keys can be either column names, indexes, or a
+        mix of both names and indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
+
+        Returns
+        -------
+        upsertIgnore : UpsertIgnore
+        """
+        return UpsertIgnore(self, record)
+
     def new_update(self, record=None):
         """
         Create a new Update operation. Pass the completed Update to a Session.
@@ -3179,6 +3197,17 @@ cdef class Upsert(WriteOperation):
         self.py_row.row = self.op.mutable_row()
         if record:
             self.py_row.from_record(record)
+    def __dealloc__(self):
+        del self.op
+
+
+cdef class UpsertIgnore(WriteOperation):
+    def __cinit__(self, Table table, record=None):
+        self.op = table.ptr().NewUpsertIgnore()
+        self.py_row.row = self.op.mutable_row()
+        if record:
+            self.py_row.from_record(record)
+
     def __dealloc__(self):
         del self.op
 

@@ -378,22 +378,32 @@ class TestClient(KuduTestBase, CompatUnitTest):
             session = self.client.new_session()
             op = table.new_insert()
             op['key'] = 1
-            op['immutable_data'] = 'text'
-            op['mutable_data'] = 'text'
+            op['immutable_data'] = 'immutable_text'
+            op['mutable_data'] = 'mutable_text'
             session.apply(op)
             session.flush()
+            # successful_inserts++
+            self.doVerifyMetrics(session, 1, 0, 0, 0, 0, 0, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 1 == len(results)
+            assert (1, 'immutable_text', 'mutable_text') in results
 
             # Update the mutable columns
             op = table.new_update()
             op['key'] = 1
-            op['mutable_data'] = 'new_text'
+            op['mutable_data'] = 'new_mutable_text_update'
             session.apply(op)
             session.flush()
+            # successful_updates++
+            self.doVerifyMetrics(session, 1, 0, 0, 0, 1, 0, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 1 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_update') in results
 
             # Update the immutable column
             op = table.new_update()
             op['key'] = 1
-            op['immutable_data'] = 'new_text'
+            op['immutable_data'] = 'new_immutable_text_update'
             session.apply(op)
             try:
                 session.flush()
@@ -403,19 +413,26 @@ class TestClient(KuduTestBase, CompatUnitTest):
                 assert not overflow
                 assert len(errors) == 1
                 assert message in repr(errors[0])
+            # nothing changed
+            self.doVerifyMetrics(session, 1, 0, 0, 0, 1, 0, 0, 0)
 
             # Update ignore on both mutable and immutable columns. The error is ignored.
             op = table.new_update_ignore()
             op['key'] = 1
-            op['immutable_data'] = 'new_text'
-            op['mutable_data'] = 'new_text'
+            op['immutable_data'] = 'new_immutable_text_update_ignore'
+            op['mutable_data'] = 'new_mutable_text_update_ignore'
             session.apply(op)
             session.flush()
+            # successful_updates++, update_ignore_errors++
+            self.doVerifyMetrics(session, 1, 0, 0, 0, 2, 1, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 1 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_update_ignore') in results
 
-            # Update ignore the immutable column
+            # Update ignore only the immutable column results in 'Invalid argument' error
             op = table.new_update_ignore()
             op['key'] = 1
-            op['immutable_data'] = 'new_text'
+            op['immutable_data'] = 'new_immutable_text_update_ignore'
             session.apply(op)
             try:
                 session.flush()
@@ -425,20 +442,28 @@ class TestClient(KuduTestBase, CompatUnitTest):
                 assert not overflow
                 assert len(errors) == 1
                 assert message in repr(errors[0])
-
-            # TODO: test upsert ignore, once it is supported by the Python client.
+            # nothing changed
+            self.doVerifyMetrics(session, 1, 0, 0, 0, 2, 1, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 1 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_update_ignore') in results
 
             # Upsert the mutable columns
             op = table.new_upsert()
             op['key'] = 1
-            op['mutable_data'] = 'new_text'
+            op['mutable_data'] = 'new_mutable_text_upsert'
             session.apply(op)
             session.flush()
+            # successful_upserts++
+            self.doVerifyMetrics(session, 1, 0, 1, 0, 2, 1, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 1 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_upsert') in results
 
             # Upsert the immutable column
             op = table.new_upsert()
             op['key'] = 1
-            op['immutable_data'] = 'new_text'
+            op['immutable_data'] = 'new_immutable_text_upsert'
             session.apply(op)
             try:
                 session.flush()
@@ -448,6 +473,67 @@ class TestClient(KuduTestBase, CompatUnitTest):
                 assert not overflow
                 assert len(errors) == 1
                 assert message in repr(errors[0])
+            # nothing changed
+            self.doVerifyMetrics(session, 1, 0, 1, 0, 2, 1, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 1 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_upsert') in results
+
+            # Upsert ignore can insert a row without immutable column set
+            op = table.new_upsert_ignore()
+            op['key'] = 2
+            op['mutable_data'] = 'mutable_text'
+            session.apply(op)
+            session.flush()
+            # successful_upserts++
+            self.doVerifyMetrics(session, 1, 0, 2, 0, 2, 1, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 2 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_upsert') in results
+            assert (2, None, 'mutable_text') in results
+
+            # Upsert ignore can insert a new row with immutable column set
+            op = table.new_upsert_ignore()
+            op['key'] = 3
+            op['immutable_data'] = 'immutable_text'
+            session.apply(op)
+            session.flush()
+            # successful_upserts++
+            self.doVerifyMetrics(session, 1, 0, 3, 0, 2, 1, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 3 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_upsert') in results
+            assert (2, None, 'mutable_text') in results
+            assert (3, 'immutable_text', None) in results
+
+            # Upsert ignore can update existing row without immutable column set
+            op = table.new_upsert_ignore()
+            op['key'] = 1
+            op['mutable_data'] = 'new_mutable_text_upsert_ignore'
+            session.apply(op)
+            session.flush()
+            # successful_upserts++
+            self.doVerifyMetrics(session, 1, 0, 4, 0, 2, 1, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 3 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_upsert_ignore') in results
+            assert (2, None, 'mutable_text') in results
+            assert (3, 'immutable_text', None) in results
+
+            # Try to upsert ignore existing row with immutable column set
+            op = table.new_upsert_ignore()
+            op['key'] = 1
+            op['immutable_data'] = 'new_immutable_text_upsert_ignore'
+            op['mutable_data'] = 'new_mutable_text_upsert_ignore_2'
+            session.apply(op)
+            session.flush()
+            # successful_upsers++, upsert_ignore_errors++
+            self.doVerifyMetrics(session, 1, 0, 5, 1, 2, 1, 0, 0)
+            results = table.scanner().open().read_all_tuples()
+            assert 3 == len(results)
+            assert (1, 'immutable_text', 'new_mutable_text_upsert_ignore_2') in results
+            assert (2, None, 'mutable_text') in results
+            assert (3, 'immutable_text', None) in results
 
         finally:
             try:
@@ -494,8 +580,11 @@ class TestClient(KuduTestBase, CompatUnitTest):
             op[Schema.get_auto_incrementing_column_name()] = 1
             session.apply(op)
 
-            # TODO: once upsert_ignore is supported by the Python client,
-            # check if specifying all the key columns works.
+            # Upsert ignore with auto-incrementing column specified
+            op = table.new_upsert_ignore()
+            op['key'] = 1
+            op[Schema.get_auto_incrementing_column_name()] = 1
+            session.apply(op)
 
             # With non-unique primary key, one can't use the tuple/list initialization for new
             # inserts. In this case, at the second position it would like to get an int64 (the type

@@ -17,8 +17,8 @@
 
 from kudu.client import (Client, Table, Scanner, Session,  # noqa
                          Insert, InsertIgnore, Update, UpdateIgnore,
-                         Delete, DeleteIgnore, Predicate,
-                         TimeDelta, KuduError, ScanTokenBuilder,
+                         Delete, DeleteIgnore, Upsert, UpsertIgnore,
+                         Predicate, TimeDelta, KuduError, ScanTokenBuilder,
                          ScanToken,
                          LEADER_ONLY,
                          CLOSEST_REPLICA,

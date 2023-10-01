@@ -464,6 +464,7 @@ cdef extern from "kudu/client/write_op.h" namespace "kudu::client" nogil:
         INSERT_IGNORE " kudu::client::KuduWriteOperation::INSERT_IGNORE"
         UPDATE_IGNORE " kudu::client::KuduWriteOperation::UPDATE_IGNORE"
         DELETE_IGNORE " kudu::client::KuduWriteOperation::DELETE_IGNORE"
+        UPSERT_IGNORE " kudu::client::KuduWriteOperation::UPSERT_IGNORE"
 
     cdef cppclass KuduWriteOperation:
         KuduPartialRow& row()
@@ -483,6 +484,9 @@ cdef extern from "kudu/client/write_op.h" namespace "kudu::client" nogil:
         pass
 
     cdef cppclass KuduUpsert(KuduWriteOperation):
+        pass
+
+    cdef cppclass KuduUpsertIgnore(KuduWriteOperation):
         pass
 
     cdef cppclass KuduDelete(KuduWriteOperation):
@@ -684,6 +688,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduInsert* NewInsert()
         KuduInsertIgnore* NewInsertIgnore()
         KuduUpsert* NewUpsert()
+        KuduUpsertIgnore* NewUpsertIgnore()
         KuduUpdate* NewUpdate()
         KuduUpdateIgnore* NewUpdateIgnore()
         KuduDelete* NewDelete()
