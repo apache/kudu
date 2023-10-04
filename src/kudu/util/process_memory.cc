@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <memory>
 #include <ostream>
+#include <type_traits>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -169,10 +170,7 @@ void DoInitLimits() {
   int64_t limit = FLAGS_memory_limit_hard_bytes;
   if (limit == 0) {
     // If no limit is provided, we'll use 80% of system RAM.
-    int64_t total_ram;
-    CHECK_OK(Env::Default()->GetTotalRAMBytes(&total_ram));
-    limit = total_ram * 4;
-    limit /= 5;
+    limit = MaxMemoryAvailable();
   }
   g_hard_limit = limit;
   g_soft_limit = FLAGS_memory_limit_soft_percentage * g_hard_limit / 100;
@@ -213,6 +211,16 @@ int64_t CurrentConsumption() {
   // to just looking at the sum of our tracked memory.
   return MemTracker::GetRootTracker()->consumption();
 #endif
+}
+
+int64_t MaxMemoryAvailable() {
+  int64_t total_ram;
+  CHECK_OK(Env::Default()->GetTotalRAMBytes(&total_ram));
+  // We will use 80% of system RAM to align with default hard limit.
+  total_ram = total_ram * 4;
+  total_ram /= 5;
+
+  return total_ram;
 }
 
 int64_t HardLimit() {

@@ -41,6 +41,9 @@ void MaybeGCAfterRelease(int64_t released_bytes);
 // Return the total current memory consumption of the process.
 int64_t CurrentConsumption();
 
+// Return the maximum memory available for consumption.
+int64_t MaxMemoryAvailable();
+
 // Return the configured hard limit for the process.
 int64_t HardLimit();
 

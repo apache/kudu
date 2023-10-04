@@ -16,9 +16,11 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <deque>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -34,6 +36,7 @@
 #include "kudu/tools/tool_action.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/status.h"
 
 DECLARE_bool(help);
@@ -51,6 +54,7 @@ using std::string;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
+using std::to_string;
 using strings::Substitute;
 
 namespace kudu {
@@ -248,6 +252,19 @@ static bool ParseCommandLineFlags(const char* prog_name) {
   return show_help;
 }
 
+// Return minimum of the two - Maximum memory available and Maximum RPC size
+// allowed. The return value is in bytes.
+static int64_t GetRPCMaxMessageSizeBytes() {
+  int64_t rpc_max_message_size = std::numeric_limits<int32_t>::max();
+
+  // Current consumption by this process is of the order of a few hundred KBs
+  // which is negligible as compared to HardLimit which is usually in GBs, so
+  // it is ok to ignore current consumption when computing maximum memory
+  // available.
+  int64_t max_memory_available = kudu::process_memory::MaxMemoryAvailable();
+  return std::min(rpc_max_message_size, max_memory_available);
+}
+
 int main(int argc, char** argv) {
   // Disable redaction by default so that user data printed to the console will be shown
   // in full.
@@ -257,6 +274,25 @@ int main(int argc, char** argv) {
   // Set logtostderr by default given these are command line tools.
   CHECK_NE("",  google::SetCommandLineOptionWithMode(
       "logtostderr", "true", google::SET_FLAGS_DEFAULT));
+
+  // Set default RPC max message size to minimum of the two i.e. max memory
+  // available and maximum size allowed for an RPC message. This is to
+  // accommodate huge response payloads.
+  const int64_t kDefaultRPCMaxMessageSizeBytes = GetRPCMaxMessageSizeBytes();
+  CHECK_NE("",  google::SetCommandLineOptionWithMode(
+      "rpc_max_message_size",
+      to_string(kDefaultRPCMaxMessageSizeBytes).c_str(),
+      google::SET_FLAGS_DEFAULT));
+
+  // Set default maximum txn memory limit to at least same value as default
+  // rpc_max_message_size (set above) to pass 'group validation check' for
+  // tablet_transaction_memory_limit_mb and rpc_max_message_size.
+  const int64_t kDefaultTabletTxnMemLimitMB =
+    (kDefaultRPCMaxMessageSizeBytes + ((1024 * 1024) - 1)) / (1024 * 1024);
+  CHECK_NE("",  google::SetCommandLineOptionWithMode(
+      "tablet_transaction_memory_limit_mb",
+      to_string(kDefaultTabletTxnMemLimitMB).c_str(),
+      google::SET_FLAGS_DEFAULT));
 
   // Hide the regular gflags help unless --helpfull is used.
   //
