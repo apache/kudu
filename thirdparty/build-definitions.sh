@@ -465,18 +465,39 @@ build_glog() {
 }
 
 build_gperftools() {
+  local cfg_options="\
+    --enable-frame-pointers\
+    --with-pic\
+    --prefix=$PREFIX\
+    --enable-emergency-malloc"
+
+  local cfg_cflags="$EXTRA_CFLAGS"
+  local cfg_cxxflags="$EXTRA_CXXFLAGS"
+  local cfg_ldflags="$EXTRA_LDFLAGS"
+  local cfg_libs="$EXTRA_LIBS"
+
+  # On Linux, build perftools with libunwind support to have an option
+  # to collect stacktraces using libunwind in addition to the libgcc-
+  # and the frame pointers-based methods (if available for particular
+  # architecture). For more details on the stacktrace capturing options,
+  # see [1].
+  #
+  # [1] https://github.com/gperftools/gperftools/wiki/gperftools'-stacktrace-capturing-methods-and-their-issues
+  if [ -n "$OS_LINUX" ]; then
+    cfg_options="$cfg_options --enable-libunwind"
+    cfg_cflags="$cfg_cflags -I$PREFIX/include"
+    cfg_cxxflags="$cfg_cxxflags -I$PREFIX/include"
+    cfg_ldflags="$cfg_ldflags -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib"
+  fi
+
   GPERFTOOLS_BDIR=$TP_BUILD_DIR/$GPERFTOOLS_NAME$MODE_SUFFIX
   mkdir -p $GPERFTOOLS_BDIR
   pushd $GPERFTOOLS_BDIR
-  CFLAGS="$EXTRA_CFLAGS" \
-    CXXFLAGS="$EXTRA_CXXFLAGS" \
-    LDFLAGS="$EXTRA_LDFLAGS" \
-    LIBS="$EXTRA_LIBS" \
-    $GPERFTOOLS_SOURCE/configure \
-    --enable-frame-pointers \
-    --with-pic \
-    --prefix=$PREFIX \
-    --enable-emergency-malloc
+  CFLAGS="$cfg_cflags" \
+    CXXFLAGS="$cfg_cxxflags" \
+    LDFLAGS="$cfg_ldflags" \
+    LIBS="$cfg_libs" \
+    $GPERFTOOLS_SOURCE/configure $cfg_options
   fixup_libtool
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
