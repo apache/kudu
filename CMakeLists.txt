@@ -1157,9 +1157,16 @@ if (NOT "${KUDU_USE_ASAN}" AND
   ADD_THIRDPARTY_LIB(tcmalloc
     STATIC_LIB "${TCMALLOC_STATIC_LIB}"
     SHARED_LIB "${TCMALLOC_SHARED_LIB}")
+  # gperftools in thirdparty are built with --enable-libunwind to allow
+  # for TCMALLOC_STACKTRACE_METHOD=libunwind stacktrace collection
+  set(PROFILER_DEPS)
+  if (NOT APPLE)
+    set(PROFILER_DEPS unwind)
+  endif()
   ADD_THIRDPARTY_LIB(profiler
     STATIC_LIB "${PROFILER_STATIC_LIB}"
-    SHARED_LIB "${PROFILER_SHARED_LIB}")
+    SHARED_LIB "${PROFILER_SHARED_LIB}"
+    DEPS "${PROFILER_DEPS}")
   list(APPEND KUDU_BASE_LIBS tcmalloc profiler)
   add_definitions("-DTCMALLOC_ENABLED")
   set(KUDU_TCMALLOC_AVAILABLE 1)
