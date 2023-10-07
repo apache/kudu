@@ -469,7 +469,6 @@ build_glog() {
 
 build_gperftools() {
   local cfg_options="\
-    --enable-frame-pointers\
     --with-pic\
     --prefix=$PREFIX\
     --enable-emergency-malloc"
