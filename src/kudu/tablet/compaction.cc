@@ -987,7 +987,8 @@ Status MergeDuplicatedRowHistory(const string& tablet_id,
                                  const scoped_refptr<FsErrorManager>& error_manager,
                                  CompactionInputRow* old_row,
                                  Mutation** new_undo_head,
-                                 Arena* arena) {
+                                 Arena* arena,
+                                 const HistoryGcOpts& history_gc_opts) {
   if (PREDICT_TRUE(old_row->previous_ghost == nullptr)) return Status::OK();
 
   // Use an all inclusive snapshot as all of the previous version's undos and redos
@@ -1013,7 +1014,8 @@ Status MergeDuplicatedRowHistory(const string& tablet_id,
                                                  &pv_new_undos_head,
                                                  &pv_delete_redo,
                                                  arena,
-                                                 &previous_ghost->row));
+                                                 &previous_ghost->row,
+                                                 history_gc_opts));
 
     // We should be left with only one redo, the delete.
 #ifndef NDEBUG
@@ -1222,7 +1224,8 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       Mutation** new_undo_head,
                                       Mutation** new_redo_head,
                                       Arena* arena,
-                                      RowBlockRow* dst_row) {
+                                      RowBlockRow* dst_row,
+                                      const HistoryGcOpts& history_gc_opts) {
   bool is_deleted = false;
 
   #define ERROR_LOG_CONTEXT \
@@ -1236,6 +1239,10 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   // Const cast this away here since we're ever only going to point to it
   // which doesn't actually mutate it and having Mutation::set_next()
   // take a non-const value is required in other places.
+  // If there are any existing ancient undo mutations in the list,
+  // those will be removed in the caller i.e. FlushCompactionInput
+  // post processing of 'applying the mutations' and 'merging duplicate
+  // history'.
   Mutation* undo_head = const_cast<Mutation*>(src_row.undo_head);
   Mutation* redo_delete = nullptr;
 
@@ -1274,6 +1281,14 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
           continue;
         }
 
+        // If the timestamp of current redo mutation is ancient, don't consider
+        // it when converting to undo delta. Any ancient redo mutation is
+        // not taken into consideration when maintaining the past undo deltas
+        // as all these ancient updates are expected to be GC'ed anyway.
+        if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
+          continue;
+        }
+
         // create the UNDO mutation in the provided arena.
         current_undo = Mutation::CreateInArena(arena, redo_mut->timestamp(),
                                                undo_encoder.as_changelist());
@@ -1286,6 +1301,22 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         redo_decoder.TwiddleDeleteStatus(&is_deleted);
         // Delete mutations are left as redos. Encode the DELETE as a redo.
         undo_encoder.SetToDelete();
+
+        // No need to check whether current redo mutation is ancient or not.
+        // There are two cases hereafter:
+        // 1. If this is the last mutation (of type DELETE) for this row and
+        //    if this mutation turns out to be ancient, it will be detected
+        //    in caller while processing ancient undo deltas. Essentially,
+        //    all the mutations for this row will be GC'ed in such a case with
+        //    just one allocation for redo_delete which is acceptable.
+        //
+        // 2. If there is at least a subsequent mutation for this row, it
+        //    would be a re-insert case as noted below. For such scenario,
+        //    redo_delete is anyway going to get deleted.
+        // As both cases are only causing one time object allocation for short
+        // duration, we can let this allocation go through without checking for
+        // ancient mark in order to avoid too many changes to current logic of
+        // handling DELETE and REINSERT mutations.
         redo_delete = Mutation::CreateInArena(arena,
                                               redo_mut->timestamp(),
                                               undo_encoder.as_changelist());
@@ -1294,7 +1325,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
       // When we see a reinsert REDO we do the following:
       // 1 - Reset the REDO head, which contained a DELETE REDO.
       // 2 - Apply the REINSERT to the row, passing an undo_encoder that encodes the state of
-      //     the row prior to to the REINSERT.
+      //     the row prior to the REINSERT.
       // 3 - Create a mutation for the REINSERT above and add it to the UNDOs, this mutation
       //     will have the timestamp of the DELETE REDO.
       // 4 - Create a new delete UNDO. This mutation will have the timestamp of the REINSERT REDO.
@@ -1315,12 +1346,22 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
             dst_row, static_cast<Arena*>(nullptr), &undo_encoder), ERROR,
                           "Unable to apply reinsert undo. \n" + ERROR_LOG_CONTEXT);
 
-        // 3 - Create a mutation for the REINSERT above and add it to the UNDOs.
-        current_undo = Mutation::CreateInArena(arena,
-                                               delete_ts,
-                                               undo_encoder.as_changelist());
-        SetHead(&undo_head, current_undo);
+        // Check if redo mutation of type DELETE from previous iteration is
+        // ancient. Skip creating undo object for the same if it is ancient.
+        // We still want to process redo mutation from current iteration though.
+        if (!history_gc_opts.IsAncientHistory(delete_ts)) {
+          // 3 - Create a mutation for the REINSERT above and add it to the UNDOs.
+          current_undo = Mutation::CreateInArena(arena,
+                                                 delete_ts,
+                                                 undo_encoder.as_changelist());
+          SetHead(&undo_head, current_undo);
+        }
 
+        // Check if redo mutation from current iteration is ancient. Skip
+        // creating corresponding undo object for the same if it is ancient.
+        if (history_gc_opts.IsAncientHistory(redo_mut->timestamp())) {
+          continue;
+        }
         // 4 - Create a DELETE mutation and add it to the UNDOs.
         undo_encoder.Reset();
         undo_encoder.SetToDelete();
@@ -1384,17 +1425,19 @@ Status FlushCompactionInput(const string& tablet_id,
                                                    &new_undos_head,
                                                    &new_redos_head,
                                                    input->PreparedBlockArena(),
-                                                   &dst_row));
+                                                   &dst_row,
+                                                   history_gc_opts));
 
       // Merge the histories of 'input_row' with previous ghosts, if there are any.
       RETURN_NOT_OK(MergeDuplicatedRowHistory(tablet_id,
                                               error_manager,
                                               input_row,
                                               &new_undos_head,
-                                              input->PreparedBlockArena()));
+                                              input->PreparedBlockArena(),
+                                              history_gc_opts));
 
       // Remove ancient UNDOS and check whether the row should be garbage collected.
-      bool is_garbage_collected;
+      bool is_garbage_collected = false;
       RemoveAncientUndos(history_gc_opts,
                          &new_undos_head,
                          new_redos_head,

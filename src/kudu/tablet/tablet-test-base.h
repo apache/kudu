@@ -572,7 +572,7 @@ class TabletTestBase : public KuduTabletTest {
     }
     ASSERT_EQ(expected_row_count, actual_row_count)
         << "Expected row count didn't match actual row count";
-    LOG(INFO) << "Successfully verified " << expected_row_count << "rows";
+    LOG(INFO) << Substitute("Successfully verified $0 rows", expected_row_count);
   }
 
   // Iterate through the full table, stringifying the resulting rows

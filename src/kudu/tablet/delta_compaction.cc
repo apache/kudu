@@ -183,8 +183,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
       bool is_garbage_collected;
 
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(
-          snap, *input_row, &new_undos_head, &new_redos_head, &mem.arena, &dst_row));
-
+          snap, *input_row, &new_undos_head, &new_redos_head, &mem.arena,
+          &dst_row, history_gc_opts_));
       RemoveAncientUndos(history_gc_opts_,
                          &new_undos_head,
                          new_redos_head,

@@ -250,6 +250,69 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMajorDeltaCompaction) {
       R"(Redo Mutations: \[\];$)"));
 }
 
+// Test that we do not generate undos for redo operations that are older than
+// the AHM during rowset compaction.
+TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnRowSetCompaction) {
+  FLAGS_tablet_history_max_age_sec = 1; // Keep history for 1 second.
+
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
+  NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual0));
+  Timestamp time_after_insert = clock()->Now();
+
+  // Timestamps recorded after each round of updates.
+  Timestamp post_update_ts[2];
+
+  // Mutate all of the rows, setting val=1. Then again for val=2.
+  LocalTabletWriter writer(tablet().get(), &client_schema_);
+  for (int val = 1; val <= 2; val++) {
+    for (int row_idx = 0; row_idx < TotalNumRows(); row_idx++) {
+      ASSERT_OK(UpdateTestRow(&writer, row_idx, val));
+    }
+    // We must flush the DMS before rowset compaction can operate on these REDOs.
+    for (int i = 0; i < kNumRowsets; i++) {
+      ASSERT_OK(tablet()->FlushBiggestDMSForTests());
+    }
+    post_update_ts[val - 1] = clock()->Now();
+  }
+
+  // Move the AHM beyond our mutations, which are represented as REDOs.
+  NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(2)));
+
+  // At this point, only mutations present are residing in REDO deltas until
+  // next compaction cycle kicks in. Current-time reads should give us 2, but
+  // reads from the past should give us 0 or 1.
+  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(),
+                                                   time_after_insert, kRowsEqual0));
+  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(),
+                                                   post_update_ts[0], kRowsEqual1));
+  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(),
+                                                   post_update_ts[1], kRowsEqual2));
+  NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual2));
+
+  // Run rowset compaction.
+  ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+
+  // RowSet compaction has applied all the REDO mutations on base data and also
+  // GC'ed all the existing UNDO deltas. So, current-time reads should give us
+  // 2, and reads from the past should also give us 2.
+  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(),
+                                                   time_after_insert, kRowsEqual2));
+  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(),
+                                                   post_update_ts[0], kRowsEqual2));
+  NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(),
+                                                   post_update_ts[1], kRowsEqual2));
+  NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual2));
+
+
+  // Now, we should have base data = 2 with no other historical values.
+  // RowSet compaction will apply all the outstanding ancient REDO deltas and
+  // remove any ancient existing UNDOs, so we don't expect any UNDO deltas or
+  // REDO deltas at all, at this point.
+  NO_FATALS(VerifyDebugDumpRowsMatch(
+      R"(int32 val=2\); Undo Mutations: \[\]; )"
+      R"(Redo Mutations: \[\];$)"));
+}
+
 // Test that major delta compaction works when run on a subset of columns:
 // 1. Insert rows and flush to DiskRowSets.
 // 2. Mutate two columns.
@@ -473,6 +536,89 @@ TEST_F(TabletHistoryGcTest, TestGhostRowsNotRevived) {
   NO_FATALS(VerifyTestRows(0, 1));
   NO_FATALS(VerifyDebugDumpRowsMatch(
       R"(int32 val=3\); Undo Mutations: \[\]; Redo Mutations: \[\];)"));
+}
+
+// Verify data integrity with "ghost" rows and their corresponding updates
+// across AHM.
+TEST_F(TabletHistoryGcTest, TestGhostRowsUpatesAHM) {
+  FLAGS_tablet_history_max_age_sec = 100;
+
+  LocalTabletWriter writer(tablet().get(), &client_schema_);
+
+  // Step 1: Iteratively insert, update and delete the row along with flush
+  // to create ghost rows in different rowsets.
+  for (int i = 0; i <= 1; i++) {
+    ASSERT_OK(InsertTestRow(&writer, 0, i));
+    ASSERT_OK(UpdateTestRow(&writer, 0, i + 10));
+    ASSERT_OK(DeleteTestRow(&writer, 0));
+    ASSERT_OK(tablet()->Flush());
+  }
+
+  // Step 2: Insert the row of same key with a new value.
+  // This will also end up in a different rowset with its own mutation list.
+  ASSERT_OK(InsertTestRow(&writer, 0, 2));
+  ASSERT_OK(tablet()->Flush());
+
+  // We should end up with three rowsets with presence of ghost rows with
+  // their corresponding updates.
+  // Step1: (Insert 0 -> Update 10 -> Delete)
+  // (int32 val=10); Undo Mutations: [@TS1(SET val=0), @TS0(DELETE)];
+  // Redo Mutations: [@TS2(DELETE)];
+  // (Insert 1 -> Update 11 -> Delete)
+  // (int32 val=11); Undo Mutations: [@TS4(SET val=1), @TS3(DELETE)];
+  // Redo Mutations: [@TS5(DELETE)];
+  // Step 2: Insert 2
+  // (int32 val=2); Undo Mutations: [@TS6(DELETE)]; Redo Mutations: [];
+  NO_FATALS(VerifyDebugDumpRowsMatch(
+      R"(int32 val=10\); Undo Mutations: \[@[[:digit:]]+\(SET val=0\), )"
+      R"(@[[:digit:]]+\(DELETE\)\]; Redo Mutations: \[@[[:digit:]]+\(DELETE\)\];)"
+      R"(|)"
+      R"(int32 val=11\); Undo Mutations: \[@[[:digit:]]+\(SET val=1\), )"
+      R"(@[[:digit:]]+\(DELETE\)\]; Redo Mutations: \[@[[:digit:]]+\(DELETE\)\];)"
+      R"(|)"
+      R"(int32 val=2\); Undo Mutations: \[@[[:digit:]]+\(DELETE\)\]; )"
+      R"(Redo Mutations: \[\];)"));
+
+  // Move the clock ahead to ensure all the updates until now are deemed ancient.
+  NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(200)));
+
+  // Step 3: Update test row with new value that will be applied to last rowset
+  // from Step 2 which has just an INSERT (i.e. a non-ghost row).
+  for (int i = 0; i <= 1; i++) {
+    ASSERT_OK(UpdateTestRow(&writer, 0, i + 20));
+    ASSERT_OK(tablet()->Flush());
+  }
+
+  // Until compaction runs, we expect to have three rowsets with same number of
+  // ghost rows and latest couple of updates (from Step 3) to non-ghost row.
+  // Step 3: Insert 2 -> Update 20 -> Update 21
+  // (int32 val=2); Undo Mutations: [@TS6(DELETE)];
+  // Redo Mutations: [@TS7(SET val=20), @TS8(SET val=21)];
+  NO_FATALS(VerifyDebugDumpRowsMatch(
+      R"(int32 val=10\); Undo Mutations: \[@[[:digit:]]+\(SET val=0\), )"
+      R"(@[[:digit:]]+\(DELETE\)\]; Redo Mutations: \[@[[:digit:]]+\(DELETE\)\];)"
+      R"(|)"
+      R"(int32 val=11\); Undo Mutations: \[@[[:digit:]]+\(SET val=1\), )"
+      R"(@[[:digit:]]+\(DELETE\)\]; Redo Mutations: \[@[[:digit:]]+\(DELETE\)\];)"
+      R"(|)"
+      R"(int32 val=2\); Undo Mutations: \[@[[:digit:]]+\(DELETE\)\]; )"
+      R"(Redo Mutations: \[@[[:digit:]]+\(SET val=20\), )"
+      R"(@[[:digit:]]+\(SET val=21\)\];)"));
+
+  // Step 4: This should result in a rowset with single row as base data.
+  ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+
+  // Now the compaction has completed, we expect to have a rowset with no ghost
+  // rows and only the latest updates (i.e. non-ancient from Step 3) present in
+  // base data and UNDO deltas. Also, compaction applies all the REDO deltas,
+  // hence no REDO delta is expected to be present.
+  // Step 4: Insert 2 -> Update 20 -> Update 21
+  // (int32 val=21); Undo Mutations: [@TS8(SET val=20), @TS7(SET val=2)];
+  // Redo Mutations: [];
+  NO_FATALS(VerifyDebugDumpRowsMatch(
+      R"(int32 val=21\); Undo Mutations: \[@[[:digit:]]+\(SET val=20\), )"
+      R"(@[[:digit:]]+\(SET val=2\)\]; )"
+      R"(Redo Mutations: \[\];$)"));
 }
 
 // Test to ensure that nothing bad happens when we partially GC different rows

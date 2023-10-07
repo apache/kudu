@@ -226,7 +226,8 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       Mutation** new_undo_head,
                                       Mutation** new_redo_head,
                                       Arena* arena,
-                                      RowBlockRow* dst_row);
+                                      RowBlockRow* dst_row,
+                                      const HistoryGcOpts& history_gc_opts);
 
 // Iterate through this compaction input, flushing all rows to the given RollingDiskRowSetWriter.
 // The 'snap' argument should match the MvccSnapshot used to create the compaction input.
