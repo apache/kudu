@@ -100,6 +100,9 @@ class DeltaStats {
   // set 'col_ids'.
   void AddColumnIdsWithUpdates(std::set<ColumnId>* col_ids) const;
 
+  // Return true if there is a column that has at least one update.
+  bool ColumnUpdated() const;
+
  private:
   std::unordered_map<ColumnId, int64_t> update_counts_by_col_id_;
   uint64_t delete_count_;

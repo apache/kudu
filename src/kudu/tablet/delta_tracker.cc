@@ -937,7 +937,7 @@ size_t DeltaTracker::CountRedoDeltaStores() const {
 uint64_t DeltaTracker::UndoDeltaOnDiskSize() const {
   shared_lock<rw_spinlock> lock(component_lock_);
   uint64_t size = 0;
-  for (const shared_ptr<DeltaStore>& ds : undo_delta_stores_) {
+  for (const auto& ds : undo_delta_stores_) {
     size += ds->EstimateSize();
   }
   return size;
@@ -946,7 +946,7 @@ uint64_t DeltaTracker::UndoDeltaOnDiskSize() const {
 uint64_t DeltaTracker::RedoDeltaOnDiskSize() const {
   shared_lock<rw_spinlock> lock(component_lock_);
   uint64_t size = 0;
-  for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
+  for (const auto& ds : redo_delta_stores_) {
     size += ds->EstimateSize();
   }
   return size;
@@ -956,20 +956,19 @@ void DeltaTracker::GetColumnIdsToCompact(std::vector<ColumnId>* col_ids) const {
   shared_lock<rw_spinlock> lock(component_lock_);
 
   set<ColumnId> column_ids_to_compact;
-  uint32_t all_delete_op_delta_store_cnt = 0;
-  for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
+  uint64_t all_delete_op_delta_store_cnt = 0;
+  for (const auto& ds : redo_delta_stores_) {
     // We won't force open files just to read their stats.
     if (!ds->has_delta_stats()) {
       continue;
     }
-
-    ds->delta_stats().AddColumnIdsWithUpdates(&column_ids_to_compact);
+    const auto& delta_stats = ds->delta_stats();
+    delta_stats.AddColumnIdsWithUpdates(&column_ids_to_compact);
 
     // Count the number of REDO delta stores that contain only DELETE
     // operations where more than a single DELETE operation is present.
-    if ((ds->delta_stats().reinsert_count() == 0) &&
-        (ds->delta_stats().UpdateCount() == 0) &&
-        (ds->delta_stats().delete_count() > 1)) {
+    if ((delta_stats.reinsert_count() == 0) && (delta_stats.UpdateCount() == 0) &&
+        (delta_stats.delete_count() > 1)) {
       all_delete_op_delta_store_cnt++;
     }
   }
@@ -987,6 +986,33 @@ void DeltaTracker::GetColumnIdsToCompact(std::vector<ColumnId>* col_ids) const {
                                  schema_column_ids.end());
   }
   col_ids->assign(column_ids_to_compact.begin(), column_ids_to_compact.end());
+}
+
+bool DeltaTracker::DeltaStoreNeedToBeCompacted() const {
+  uint64_t all_delete_op_delta_store_cnt = 0;
+  {
+    shared_lock<rw_spinlock> lock(component_lock_);
+
+    for (const auto& ds: redo_delta_stores_) {
+      if (!ds->has_delta_stats()) {
+        continue;
+      }
+      const auto& delta_stats = ds->delta_stats();
+      if (delta_stats.ColumnUpdated()) {
+        return true;
+      }
+      if ((delta_stats.reinsert_count() == 0) && (delta_stats.UpdateCount() == 0) &&
+          (delta_stats.delete_count() > 1)) {
+        all_delete_op_delta_store_cnt++;
+      }
+    }
+  }
+  // If there is no updated column, try to find a cold delta file
+  // with delete only ops to be compacted.
+  const auto max_delta_age = MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec);
+  MonoTime last_update_time = last_update_time_.load();
+  return all_delete_op_delta_store_cnt > FLAGS_all_delete_op_delta_file_cnt_for_compaction
+      && MonoTime::Now() - last_update_time > max_delta_age;
 }
 
 Status DeltaTracker::InitAllDeltaStoresForTests(WhichStores stores) {

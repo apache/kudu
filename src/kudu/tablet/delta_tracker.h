@@ -270,6 +270,9 @@ class DeltaTracker {
   // Retrieves the list of column indexes to compact.
   void GetColumnIdsToCompact(std::vector<ColumnId>* col_ids) const;
 
+  // Check if there is at least one delta file that needs to be compacted.
+  bool DeltaStoreNeedToBeCompacted() const;
+
   Mutex* compact_flush_lock() {
     return &compact_flush_lock_;
   }

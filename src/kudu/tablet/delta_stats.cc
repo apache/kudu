@@ -16,6 +16,7 @@
 // under the License.
 #include "kudu/tablet/delta_stats.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <ostream>
 #include <utility>
@@ -146,6 +147,12 @@ void DeltaStats::AddColumnIdsWithUpdates(std::set<ColumnId>* col_ids) const {
       col_ids->insert(e.first);
     }
   }
+}
+
+bool DeltaStats::ColumnUpdated() const {
+  return std::any_of(update_counts_by_col_id_.begin(),
+                     update_counts_by_col_id_.end(),
+                     [&](const auto& e) { return e.second > 0; });
 }
 
 } // namespace tablet

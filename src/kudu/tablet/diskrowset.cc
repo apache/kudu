@@ -859,9 +859,8 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
   }
 
   if (type == RowSet::MAJOR_DELTA_COMPACTION) {
-    vector<ColumnId> col_ids_for_compact;
-    delta_tracker_->GetColumnIdsToCompact(&col_ids_for_compact);
-    if (!col_ids_for_compact.empty()) {
+    // No need to get all the delta files which need to be compacted.
+    if (delta_tracker_->DeltaStoreNeedToBeCompacted()) {
       DiskRowSetSpace drss;
       GetDiskRowSetSpaceUsage(&drss);
       double ratio = static_cast<double>(drss.redo_deltas_size) / drss.base_data_size;
