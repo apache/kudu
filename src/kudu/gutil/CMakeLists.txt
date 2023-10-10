@@ -50,7 +50,7 @@ set(GUTIL_SRCS
   utf/rune.c
   walltime.cc)
 
-if (NOT "${ARCH_NAME}" MATCHES "aarch64" AND NOT  "${ARCH_NAME}" MATCHES "ppc64le")
+if ("${ARCH_NAME}" MATCHES "x86_64")
 set(GUTIL_SRCS
   atomicops-internals-x86.cc
   ${GUTIL_SRCS})
