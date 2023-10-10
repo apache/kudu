@@ -177,21 +177,22 @@ include(CompilerInfo)
 # compiler flags that are common across debug/release builds
 execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH_NAME)
 message(STATUS "Found ARCH_NAME: ${ARCH_NAME}")
-# The Apple backend for aarch64 is called arm64.
-# Rename to aarch64 to simplify all of our build checks.
 if("${ARCH_NAME}" MATCHES "arm64")
+  # The Apple backend for aarch64 is called arm64.
+  # Change ARCH_NAME to aarch64 to simplify all of our build checks.
   set(ARCH_NAME "aarch64")
 endif()
 message(STATUS "Using ARCH_NAME: ${ARCH_NAME}")
-if("${ARCH_NAME}" MATCHES "aarch64")
+
+if("${ARCH_NAME}" MATCHES "x86_64")
+  # -msse4.2: Enable sse4.2 compiler intrinsics on x86_64
+  set(CXX_COMMON_FLAGS "-msse4.2")
+elseif("${ARCH_NAME}" MATCHES "aarch64")
   # Certain platforms such as ARM do not use signed chars by default
   # which causes issues with certain bounds checks.
   set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -fsigned-char")
   # Turn off fp-contract on aarch64 to avoid multiply-add operation result difference.
   set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -ffp-contract=off")
-elseif( NOT ( "${ARCH_NAME}" MATCHES "ppc64le" ))
-  # -msse4.2: Enable sse4.2 compiler intrinsics.
-  set(CXX_COMMON_FLAGS "-msse4.2")
 endif()
 #  -Wall: Enable all warnings.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wall")
