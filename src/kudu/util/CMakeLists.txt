@@ -263,9 +263,11 @@ endif()
 set_source_files_properties(memory/overwrite.cc PROPERTIES COMPILE_FLAGS "-O3")
 
 # Detect AVX2 support
-set(AVX2_CMD "echo | ${CMAKE_CXX_COMPILER} -mavx2 -dM -E - | awk '$2 == \"__AVX2__\" { print $3 }'")
 execute_process(
-  COMMAND bash -c ${AVX2_CMD}
+  COMMAND echo
+  COMMAND ${CMAKE_CXX_COMPILER} -mavx2 -dM -E -
+  COMMAND awk "$2 == \"__AVX2__\" { print $3 }"
+  ERROR_QUIET
   OUTPUT_VARIABLE AVX2_SUPPORT
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
