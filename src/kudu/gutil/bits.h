@@ -16,7 +16,7 @@ class Bits {
   static int CountOnes(uint32 n) {
     n -= ((n >> 1) & 0x55555555);
     n = ((n >> 2) & 0x33333333) + (n & 0x33333333);
-    return (((n + (n >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24;
+    return static_cast<int>((((n + (n >> 4)) & 0xF0F0F0FULL) * 0x1010101ULL) >> 24);
   }
 
   // Count bits using sideways addition [WWG'57]. See Knuth TAOCP v4 7.1.3(59)
