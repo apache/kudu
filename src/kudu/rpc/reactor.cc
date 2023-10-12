@@ -27,6 +27,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include <boost/intrusive/list.hpp>
@@ -50,6 +51,7 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -606,7 +608,16 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
 
   scoped_refptr<Trace> trace(new Trace());
   ADOPT_TRACE(trace.get());
-  TRACE("Submitting negotiation task for $0", conn->ToString());
+  string local_addr_str;
+  {
+    Sockaddr local_addr;
+    if (auto s = conn->GetLocalAddress(&local_addr); PREDICT_FALSE(!s.ok())) {
+      WARN_NOT_OK(s, "failed to retrieve information on local address");
+    } else {
+      local_addr_str = Substitute(" (local address $0)", local_addr.ToString());
+    }
+  }
+  TRACE("Submitting negotiation task for $0$1", conn->ToString(), local_addr_str);
   auto authentication = reactor()->messenger()->authentication();
   auto encryption = reactor()->messenger()->encryption();
   auto loopback_encryption = reactor()->messenger()->loopback_encryption();
