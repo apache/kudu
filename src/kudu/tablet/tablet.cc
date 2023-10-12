@@ -649,8 +649,7 @@ Status Tablet::NewRowIterator(RowIteratorOptions opts,
 }
 
 Status Tablet::DecodeWriteOperations(const Schema* client_schema,
-                                     WriteOpState* op_state,
-                                     bool is_leader) {
+                                     WriteOpState* op_state) {
   TRACE_EVENT0("tablet", "Tablet::DecodeWriteOperations");
 
   DCHECK(op_state->row_ops().empty());

@@ -164,8 +164,7 @@ class Tablet {
   // Decode the Write (insert/mutate) operations from within a user's
   // request.
   Status DecodeWriteOperations(const Schema* client_schema,
-                               WriteOpState* op_state,
-                               bool is_leader = false);
+                               WriteOpState* op_state);
 
   // Acquire locks for each of the operations in the given write op.
   // This also sets the row op's RowSetKeyProbe.

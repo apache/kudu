@@ -216,7 +216,7 @@ Status WriteOp::Prepare() {
           replicate_msg()->write_request().auto_incrementing_column().auto_incrementing_counter());
     }
   }
-  s = tablet->DecodeWriteOperations(&client_schema, state(), is_leader);
+  s = tablet->DecodeWriteOperations(&client_schema, state());
   if (!s.ok()) {
     // TODO(unknown): is MISMATCHED_SCHEMA always right here? probably not.
     state()->completion_callback()->set_error(s, TabletServerErrorPB::MISMATCHED_SCHEMA);
