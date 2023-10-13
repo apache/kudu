@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <optional>
@@ -377,10 +378,6 @@ class AlterTableTest : public KuduTest {
     for (auto& op : tablet_replica_->tablet()->maintenance_ops_) {
       ASSERT_EQ(expected_priority, op->priority());
     }
-  }
-
-  void CheckDisableCompaction(const bool& disable_compaction) {
-    ASSERT_EQ(tablet_replica_->tablet()->disable_compaction(), disable_compaction);
   }
 
  protected:
@@ -2526,30 +2523,46 @@ TEST_F(AlterTableTest, TestMaintenancePriorityAlter) {
   NO_FATALS(CheckMaintenancePriority(0));
 }
 
-TEST_F(AlterTableTest, TestDisableCompactAlter) {
-  // Default disable_compaction.
-  NO_FATALS(CheckDisableCompaction(false));
+TEST_F(AlterTableTest, DisableCompactionAlter) {
+  const auto* tablet = tablet_replica_->tablet();
+  ASSERT_NE(nullptr, tablet);
 
-  // Set disable_compaction true.
+  // Check the default setting for the 'disable_compaction' property.
+  ASSERT_TRUE(tablet->compaction_enabled());
+
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
-  ASSERT_OK(table_alterer->AlterExtraConfig(
-                           {{"kudu.table.disable_compaction", "true"}})->Alter());
-  NO_FATALS(CheckDisableCompaction(true));
 
-  // Reset to default disable_compaction.
-  ASSERT_OK(table_alterer->AlterExtraConfig(
-                           {{"kudu.table.disable_compaction", ""}})->Alter());
-  NO_FATALS(CheckDisableCompaction(false));
+  // Set the property to 'true'.
+  for (const auto& val : {"true", "TRUE", "True", "TrUe", "TRUe"}) {
+    SCOPED_TRACE(Substitute("setting value to: $0", val));
+    ASSERT_OK(table_alterer->AlterExtraConfig(
+        {{"kudu.table.disable_compaction", val}})->Alter());
+    ASSERT_FALSE(tablet->compaction_enabled());
+  }
 
-  // Set disable_compaction false.
+  // Reset the property to the default setting by supplying an empty string
+  // for the property's value.
   ASSERT_OK(table_alterer->AlterExtraConfig(
-                           {{"kudu.table.disable_compaction", "false"}})->Alter());
-  NO_FATALS(CheckDisableCompaction(false));
+      {{"kudu.table.disable_compaction", ""}})->Alter());
+  ASSERT_TRUE(tablet->compaction_enabled());
 
-  // Set to invalid string.
-  Status s = table_alterer->AlterExtraConfig(
-                           {{"kudu.table.disable_compaction", "ok"}})->Alter();
-  ASSERT_TRUE(s.IsInvalidArgument());
+  // Explicitly set the 'disable_compaction' property to 'false'.
+  for (const auto& val : {"false", "FALSE", "False", "FaLsE", "fALSE"}) {
+    SCOPED_TRACE(Substitute("setting value to: $0", val));
+    ASSERT_OK(table_alterer->AlterExtraConfig(
+        {{"kudu.table.disable_compaction", "false"}})->Alter());
+    ASSERT_TRUE(tablet->compaction_enabled());
+  }
+
+  // Try setting the property to an invalid value.
+  for (const auto& val : {"ok", "ttrue", "trueue", "falsee", "fallse"}) {
+    SCOPED_TRACE(Substitute("trying to set value: $0", val));
+    const auto s = table_alterer->AlterExtraConfig(
+        {{"kudu.table.disable_compaction", val}})->Alter();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    // The prior setting should be still effective.
+    ASSERT_TRUE(tablet->compaction_enabled());
+  }
 }
 
 TEST_F(AlterTableTest, AddAndRemoveImmutableAttribute) {

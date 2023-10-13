@@ -119,8 +119,8 @@ int32_t TabletOpBase::priority() const {
   return priority;
 }
 
-bool TabletOpBase::DisableCompaction() const {
-  return tablet_->disable_compaction();
+bool TabletOpBase::compaction_enabled() const {
+  return tablet_->compaction_enabled();
 }
 
 ////////////////////////////////////////////////////////////
@@ -136,7 +136,7 @@ CompactRowSetsOp::CompactRowSetsOp(Tablet* tablet)
 }
 
 void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
-  if (PREDICT_FALSE(!FLAGS_enable_rowset_compaction || DisableCompaction())) {
+  if (PREDICT_FALSE(!FLAGS_enable_rowset_compaction || !compaction_enabled())) {
     KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << Substitute("Rowset compaction is disabled (check --enable_rowset_compaction "
            "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());
@@ -217,7 +217,7 @@ MinorDeltaCompactionOp::MinorDeltaCompactionOp(Tablet* tablet)
 }
 
 void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
-  if (PREDICT_FALSE(!FLAGS_enable_minor_delta_compaction || DisableCompaction())) {
+  if (PREDICT_FALSE(!FLAGS_enable_minor_delta_compaction || !compaction_enabled())) {
     KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << Substitute("Minor delta compaction is disabled (check --enable_minor_delta_compaction "
            "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());
@@ -301,7 +301,7 @@ MajorDeltaCompactionOp::MajorDeltaCompactionOp(Tablet* tablet)
 }
 
 void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
-  if (PREDICT_FALSE(!FLAGS_enable_major_delta_compaction || DisableCompaction())) {
+  if (PREDICT_FALSE(!FLAGS_enable_major_delta_compaction || !compaction_enabled())) {
     KLOG_EVERY_N_SECS(WARNING, FLAGS_update_stats_log_throttling_interval_sec)
         << Substitute("Major delta compaction is disabled (check --enable_major_delta_compaction "
            "and disable_compaction in extra_config for tablet:$0)", tablet_->tablet_id());

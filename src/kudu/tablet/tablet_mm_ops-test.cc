@@ -142,7 +142,7 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
 
 TEST_F(KuduTabletMmOpsTest, TestCompactRowSetsOpCacheStats) {
   CompactRowSetsOp op(tablet().get());
-  ASSERT_FALSE(op.DisableCompaction());
+  ASSERT_TRUE(op.compaction_enabled());
   NO_FATALS(TestFirstCall(&op));
   auto* m = tablet()->metrics();
   NO_FATALS(TestAffectedMetrics(&op, { m->flush_mrs_duration,
@@ -155,13 +155,13 @@ TEST_F(KuduTabletMmOpsTest, TestDisableCompactRowSetsOp) {
   TableExtraConfigPB extra_config;
   extra_config.set_disable_compaction(true);
   NO_FATALS(AlterSchema(*harness_->tablet()->schema(), std::make_optional(extra_config)));
-  ASSERT_TRUE(op.DisableCompaction());
+  ASSERT_FALSE(op.compaction_enabled());
   NO_FATALS(TestNoAffectedMetrics(&op));
 }
 
 TEST_F(KuduTabletMmOpsTest, TestMinorDeltaCompactionOpCacheStats) {
   MinorDeltaCompactionOp op(tablet().get());
-  ASSERT_FALSE(op.DisableCompaction());
+  ASSERT_TRUE(op.compaction_enabled());
   NO_FATALS(TestFirstCall(&op));
   NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
                                        tablet()->metrics()->flush_dms_duration,
@@ -174,13 +174,13 @@ TEST_F(KuduTabletMmOpsTest, TestDisableMinorDeltaCompactionOp) {
   TableExtraConfigPB extra_config;
   extra_config.set_disable_compaction(true);
   NO_FATALS(AlterSchema(*harness_->tablet()->schema(), std::make_optional(extra_config)));
-  ASSERT_TRUE(op.DisableCompaction());
+  ASSERT_FALSE(op.compaction_enabled());
   NO_FATALS(TestNoAffectedMetrics(&op));
 }
 
 TEST_F(KuduTabletMmOpsTest, TestMajorDeltaCompactionOpCacheStats) {
   MajorDeltaCompactionOp op(tablet().get());
-  ASSERT_FALSE(op.DisableCompaction());
+  ASSERT_TRUE(op.compaction_enabled());
   NO_FATALS(TestFirstCall(&op));
   NO_FATALS(TestAffectedMetrics(&op, { tablet()->metrics()->flush_mrs_duration,
                                        tablet()->metrics()->flush_dms_duration,
@@ -194,7 +194,7 @@ TEST_F(KuduTabletMmOpsTest, TestDisableMajorDeltaCompactionOp) {
   TableExtraConfigPB extra_config;
   extra_config.set_disable_compaction(true);
   NO_FATALS(AlterSchema(*harness_->tablet()->schema(), std::make_optional(extra_config)));
-  ASSERT_TRUE(op.DisableCompaction());
+  ASSERT_FALSE(op.compaction_enabled());
   NO_FATALS(TestNoAffectedMetrics(&op));
 }
 } // namespace tablet

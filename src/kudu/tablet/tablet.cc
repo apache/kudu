@@ -1891,12 +1891,12 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   return Status::OK();
 }
 
-bool Tablet::disable_compaction() const {
+bool Tablet::compaction_enabled() const {
   const auto& extra_config = metadata_->extra_config();
   if (extra_config && extra_config->has_disable_compaction()) {
-    return extra_config->disable_compaction();
+    return !extra_config->disable_compaction();
   }
-  return false;
+  return true;
 }
 
 void Tablet::GetRowSetsForTests(RowSetVector* out) {

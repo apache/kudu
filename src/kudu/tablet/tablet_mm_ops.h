@@ -40,9 +40,10 @@ class TabletOpBase : public MaintenanceOp {
   TabletOpBase(std::string name, IOUsage io_usage, Tablet* tablet);
   std::string LogPrefix() const;
 
-  // Return false if the tablets need to compact,
-  // otherwise return true.
-  bool DisableCompaction() const;
+  // Return 'true' if the tablet's data may be compacted (i.e. the tablet
+  // should be considered as a candidate for compaction),
+  // otherwise return 'false'.
+  bool compaction_enabled() const;
 
  protected:
   int32_t priority() const override;

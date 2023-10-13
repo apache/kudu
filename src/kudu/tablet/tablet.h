@@ -510,9 +510,9 @@ class Tablet {
 
   std::string LogPrefix() const;
 
-  // Return false if the tablets need to compact,
-  // otherwise return true.
-  bool disable_compaction() const;
+  // Return 'true' if the tablet's data may be compacted,
+  // otherwise return 'false'.
+  bool compaction_enabled() const;
 
   // Return the default bloom filter sizing parameters, configured by server flags.
   static BloomFilterSizing DefaultBloomSizing();
