@@ -1,10 +1,13 @@
---- a/lib/vtls/openssl.c	2023-05-03 19:15:43.000000000 -0700
-+++ b/lib/vtls/openssl.c	2023-05-04 20:58:10.000000000 -0700
-@@ -405,6 +405,18 @@
+diff --git a/lib/vtls/openssl.c b/lib/vtls/openssl.c
+index 9f9c8d136..446d54bcd 100644
+--- a/lib/vtls/openssl.c
++++ b/lib/vtls/openssl.c
+@@ -954,6 +954,19 @@ static char *ossl_strerror(unsigned long error, char *buf, size_t size)
    return buf;
  }
  
-+static void ossl_error_details(struct Curl_easy *data, const char *err_msg) {
++static void ossl_error_details(struct Curl_easy *data, const char *err_msg)
++{
 +  char err_buf[256];
 +  while(true) {
 +    unsigned long ssl_err = ERR_get_error();
@@ -16,10 +19,10 @@
 +  }
 +}
 +
- /* Return an extra data index for the connection data.
-  * This index can be used with SSL_get_ex_data() and SSL_set_ex_data().
-  */
-@@ -796,14 +808,17 @@
+ static int passwd_callback(char *buf, int num, int encrypting,
+                            void *global_passwd)
+ {
+@@ -1456,14 +1469,17 @@ int cert_stuff(struct Curl_easy *data,
        }
  
        if(SSL_CTX_use_PrivateKey(ctx, pri) != 1) {
@@ -35,18 +38,18 @@
 +      if(SSL_CTX_check_private_key(ctx) != 1) {
          failf(data, "private key from PKCS12 file '%s' "
 -              "does not match certificate in same file", cert_file);
-+              "does not match certificate in same file: %s", cert_file,
++                    "does not match certificate in same file: %s", cert_file,
 +              ossl_strerror(ERR_get_error(), error_buffer,
 +                            sizeof(error_buffer)));
          goto fail;
        }
        /* Set Certificate Verification chain */
-@@ -860,8 +875,10 @@
-       /* FALLTHROUGH */
-     case SSL_FILETYPE_ASN1:
-       if(SSL_CTX_use_PrivateKey_file(ctx, key_file, file_type) != 1) {
+@@ -1521,8 +1537,10 @@ fail:
+         SSL_CTX_use_PrivateKey_blob(ctx, key_blob, file_type, key_passwd) :
+       SSL_CTX_use_PrivateKey_file(ctx, key_file, file_type);
+       if(cert_use_result != 1) {
 -        failf(data, "unable to set private key file: '%s' type %s",
--              key_file, key_type?key_type:"PEM");
+-              key_file?key_file:"(memory blob)", key_type?key_type:"PEM");
 +        failf(data, "unable to set private key file: '%s' type %s: %s",
 +              key_file, key_type ? key_type : "PEM",
 +              ossl_strerror(ERR_get_error(), error_buffer,
@@ -54,18 +57,18 @@
          return 0;
        }
        break;
-@@ -903,7 +920,9 @@
-             return 0;
-           }
-           if(SSL_CTX_use_PrivateKey(ctx, priv_key) != 1) {
--            failf(data, "unable to set private key");
-+            failf(data, "unable to set private key: %s",
-+                  ossl_strerror(ERR_get_error(), error_buffer,
-+                                sizeof(error_buffer)));
-             EVP_PKEY_free(priv_key);
-             return 0;
-           }
-@@ -975,7 +994,9 @@
+@@ -1562,7 +1580,9 @@ fail:
+           return 0;
+         }
+         if(SSL_CTX_use_PrivateKey(ctx, priv_key) != 1) {
+-          failf(data, "unable to set private key");
++          failf(data, "unable to set private key: %s",
++                ossl_strerror(ERR_get_error(), error_buffer,
++                              sizeof(error_buffer)));
+           EVP_PKEY_free(priv_key);
+           return 0;
+         }
+@@ -1635,7 +1655,9 @@ fail:
        /* Now we know that a key and cert have been set against
         * the SSL context */
        if(!SSL_CTX_check_private_key(ctx)) {
@@ -76,34 +79,32 @@
          return 0;
        }
      }
-@@ -2724,18 +2745,21 @@
-     /* tell SSL where to find CA certificates that are used to verify
-        the servers certificate. */
-     if(!SSL_CTX_load_verify_locations(BACKEND->ctx, ssl_cafile, ssl_capath)) {
-+
-+      static const char * const err_msg =
-+        "error setting certificate verify locations";
-       if(verifypeer) {
-         /* Fail if we insist on successfully verifying the server. */
--        failf(data, "error setting certificate verify locations:\n"
--              "  CAfile: %s\n  CApath: %s",
-+        failf(data, "%s:\n  CAfile: %s\n  CApath: %s",
-+              err_msg,
-               ssl_cafile ? ssl_cafile : "none",
-               ssl_capath ? ssl_capath : "none");
-+        ossl_error_details(data, err_msg);
-         return CURLE_SSL_CACERT_BADFILE;
+@@ -3234,17 +3256,19 @@ static CURLcode populate_x509_store(struct Curl_cfilter *cf,
+       /* tell OpenSSL where to find CA certificates that are used to verify the
+          server's certificate. */
+       if(!X509_STORE_load_locations(store, ssl_cafile, ssl_capath)) {
++        static const char * const err_msg =
++            "error setting certificate verify locations";
+         if(!imported_native_ca && !imported_ca_info_blob) {
+           /* Fail if we insist on successfully verifying the server. */
+-          failf(data, "error setting certificate verify locations:"
+-                "  CAfile: %s CApath: %s",
++          failf(data, "%s:\n  CAfile: %s\n  CApath: %s",
++                err_msg,
+                 ssl_cafile ? ssl_cafile : "none",
+                 ssl_capath ? ssl_capath : "none");
++          ossl_error_details(data, err_msg);
+           return CURLE_SSL_CACERT_BADFILE;
+         }
+         else {
+-          infof(data, "error setting certificate verify locations,"
+-                " continuing anyway");
++          infof(data, "%s, continuing anyway:\n", err_msg);
+         }
        }
-       /* Just continue with a warning if no strict  certificate verification
-          is required. */
--      infof(data, "error setting certificate verify locations,"
--            " continuing anyway:\n");
-+      infof(data, "%s, continuing anyway:\n", err_msg);
-     }
-     else {
-       /* Everything is fine. */
-@@ -2762,7 +2786,9 @@
-                                  X509_LOOKUP_file());
+ #endif
+@@ -3268,7 +3292,9 @@ static CURLcode populate_x509_store(struct Curl_cfilter *cf,
+     lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
      if(!lookup ||
         (!X509_load_crl_file(lookup, ssl_crlfile, X509_FILETYPE_PEM)) ) {
 -      failf(data, "error loading CRL file: %s", ssl_crlfile);
@@ -113,7 +114,7 @@
        return CURLE_SSL_CRL_BADFILE;
      }
      /* Everything is fine. */
-@@ -2994,6 +3020,8 @@
+@@ -3960,6 +3986,8 @@ static CURLcode ossl_connect_step2(struct Curl_cfilter *cf,
          result = CURLE_SSL_CONNECT_ERROR;
          ossl_strerror(errdetail, error_buffer, sizeof(error_buffer));
        }

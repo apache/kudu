@@ -769,7 +769,6 @@ build_curl() {
     --disable-manual \
     --disable-mime \
     --disable-netrc \
-    --disable-parsedate \
     --disable-pop3 \
     --disable-progress-meter \
     --disable-rtsp \
@@ -783,7 +782,9 @@ build_curl() {
     --without-librtmp \
     --without-libssh2 \
     --without-nghttp2 \
-    --with-gssapi
+    --without-zstd \
+    --with-gssapi \
+    --with-openssl
   unset KRB5CONFIG
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd

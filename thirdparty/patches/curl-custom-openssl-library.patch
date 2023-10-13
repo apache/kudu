@@ -1,6 +1,8 @@
---- a/configure.ac	2021-04-14 12:03:20.819257209 -0700
-+++ b/configure.ac	2021-04-14 12:27:51.050220736 -0700
-@@ -1715,9 +1715,13 @@
+diff --git a/m4/curl-openssl.m4 b/m4/curl-openssl.m4
+index a4811d2a3..a465ffacb 100644
+--- a/m4/curl-openssl.m4
++++ b/m4/curl-openssl.m4
+@@ -136,9 +136,13 @@ if test "x$OPT_OPENSSL" != xno; then
      fi
    fi
  
