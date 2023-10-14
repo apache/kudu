@@ -55,7 +55,7 @@ class SetServerWallClockForTestsResponsePB;
 class GenericServiceImpl : public GenericServiceIf {
  public:
   explicit GenericServiceImpl(ServerBase* server);
-  virtual ~GenericServiceImpl();
+  ~GenericServiceImpl() override;
 
   bool AuthorizeSuperUser(const google::protobuf::Message* req,
                           google::protobuf::Message* resp,
@@ -65,37 +65,37 @@ class GenericServiceImpl : public GenericServiceIf {
                        google::protobuf::Message* resp,
                        rpc::RpcContext* rpc) override;
 
-  virtual void GetFlags(const GetFlagsRequestPB* req,
-                        GetFlagsResponsePB* resp,
-                        rpc::RpcContext* rpc) override;
+  void GetFlags(const GetFlagsRequestPB* req,
+                GetFlagsResponsePB* resp,
+                rpc::RpcContext* rpc) override;
 
-  virtual void SetFlag(const SetFlagRequestPB* req,
-                       SetFlagResponsePB* resp,
+  void SetFlag(const SetFlagRequestPB* req,
+               SetFlagResponsePB* resp,
+               rpc::RpcContext* rpc) override;
+
+  void FlushCoverage(const FlushCoverageRequestPB* req,
+                     FlushCoverageResponsePB* resp,
+                     rpc::RpcContext* rpc) override;
+
+  void CheckLeaks(const CheckLeaksRequestPB* req,
+                  CheckLeaksResponsePB* resp,
+                  rpc::RpcContext* rpc) override;
+
+  void ServerClock(const ServerClockRequestPB* req,
+                   ServerClockResponsePB* resp,
+                   rpc::RpcContext* rpc) override;
+
+  void SetServerWallClockForTests(const SetServerWallClockForTestsRequestPB *req,
+                                  SetServerWallClockForTestsResponsePB *resp,
+                                  rpc::RpcContext *context) override;
+
+  void GetStatus(const GetStatusRequestPB* req,
+                 GetStatusResponsePB* resp,
+                 rpc::RpcContext* rpc) override;
+
+  void DumpMemTrackers(const DumpMemTrackersRequestPB* req,
+                       DumpMemTrackersResponsePB* resp,
                        rpc::RpcContext* rpc) override;
-
-  virtual void FlushCoverage(const FlushCoverageRequestPB* req,
-                             FlushCoverageResponsePB* resp,
-                             rpc::RpcContext* rpc) override;
-
-  virtual void CheckLeaks(const CheckLeaksRequestPB* req,
-                          CheckLeaksResponsePB* resp,
-                          rpc::RpcContext* rpc) override;
-
-  virtual void ServerClock(const ServerClockRequestPB* req,
-                           ServerClockResponsePB* resp,
-                           rpc::RpcContext* rpc) override;
-
-  virtual void SetServerWallClockForTests(const SetServerWallClockForTestsRequestPB *req,
-                                          SetServerWallClockForTestsResponsePB *resp,
-                                          rpc::RpcContext *context) override;
-
-  virtual void GetStatus(const GetStatusRequestPB* req,
-                         GetStatusResponsePB* resp,
-                         rpc::RpcContext* rpc) override;
-
-  virtual void DumpMemTrackers(const DumpMemTrackersRequestPB* req,
-                               DumpMemTrackersResponsePB* resp,
-                               rpc::RpcContext* rpc) override;
  private:
   ServerBase* server_;
 

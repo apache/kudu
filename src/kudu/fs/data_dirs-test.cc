@@ -85,7 +85,7 @@ class DataDirsTest : public KuduTest {
       test_block_opts_(CreateBlockOptions({ test_tablet_name_ })),
       entity_(METRIC_ENTITY_server.Instantiate(&registry_, "test")) {}
 
-  virtual void SetUp() override {
+  void SetUp() override {
     KuduTest::SetUp();
     FLAGS_fs_target_data_dirs_per_tablet = kNumDirs / 2 + 1;
     DataDirManagerOptions opts;

@@ -33,7 +33,6 @@
 #include <rapidjson/rapidjson.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/atomic.h"
@@ -343,12 +342,12 @@ TEST_F(TraceTest, TestChromeSampling) {
 
 class TraceEventCallbackTest : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     ASSERT_EQ(nullptr, s_instance);
     s_instance = this;
   }
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     TraceLog::GetInstance()->SetDisabled();
 
     // Flush the buffer so that one test doesn't end up leaving any
@@ -673,12 +672,12 @@ class TraceEventSyntheticDelayTest : public KuduTest,
     now_ = MonoTime::Min();
   }
 
-  virtual ~TraceEventSyntheticDelayTest() {
+  ~TraceEventSyntheticDelayTest() override {
     ResetTraceEventSyntheticDelays();
   }
 
   // TraceEventSyntheticDelayClock implementation.
-  virtual MonoTime Now() OVERRIDE {
+  MonoTime Now() override {
     AdvanceTime(MonoDelta::FromMilliseconds(kShortDurationMs / 10));
     return now_;
   }

@@ -72,7 +72,7 @@ class ConvertableToTraceFormat : public kudu::RefCountedThreadSafe<ConvertableTo
   virtual void AppendAsTraceFormat(std::string* out) const = 0;
 
  protected:
-  virtual ~ConvertableToTraceFormat() {}
+  virtual ~ConvertableToTraceFormat() = default;
 
  private:
   friend class kudu::RefCountedThreadSafe<ConvertableToTraceFormat>;
@@ -216,7 +216,7 @@ class TraceBufferChunk {
 // TraceBuffer holds the events as they are collected.
 class TraceBuffer {
  public:
-  virtual ~TraceBuffer() {}
+  virtual ~TraceBuffer() = default;
 
   virtual std::unique_ptr<TraceBufferChunk> GetChunk(size_t *index) = 0;
   virtual void ReturnChunk(size_t index,

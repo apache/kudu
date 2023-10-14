@@ -117,7 +117,7 @@ struct StacksRecord {
 // Interface for consuming the parsed records from a diagnostics log.
 class LogVisitor {
  public:
-  virtual ~LogVisitor() {}
+  virtual ~LogVisitor() = default;
   virtual Status ParseRecord(const ParsedLine& pl) = 0;
 };
 

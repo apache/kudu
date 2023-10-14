@@ -38,7 +38,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -87,7 +86,7 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
     ntp->SetMockClockWallTimeForTests(micros);
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     NO_FATALS(TabletTestBase<IntKeyTestSetup<INT64>>::SetUp());
     // Mock clock defaults to 0 and this screws up the AHM calculation which ends up negative.
     SetMockTime(GetCurrentTimeMicros());
@@ -541,7 +540,7 @@ TEST_F(TabletHistoryGcTest, TestGcWithConcurrentCompaction) {
           offset_(0) {
     }
 
-    Status PostWriteSnapshot() OVERRIDE {
+    Status PostWriteSnapshot() override {
       LocalTabletWriter writer(test_->tablet().get(), &test_->client_schema());
       int offset = offset_.load(std::memory_order_acquire);
       // Update our reinserted row.

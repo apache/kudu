@@ -46,6 +46,8 @@ namespace tserver {
 // TODO: Rename this interface.
 class TabletReplicaLookupIf {
  public:
+  virtual ~TabletReplicaLookupIf() = default;
+
   virtual Status GetTabletReplica(const std::string& tablet_id,
                                   scoped_refptr<tablet::TabletReplica>* tablet_replica) const = 0;
 

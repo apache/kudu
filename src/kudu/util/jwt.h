@@ -27,7 +27,7 @@ namespace kudu {
 
 class JwtVerifier {
  public:
-  virtual ~JwtVerifier() {}
+  virtual ~JwtVerifier() = default;
   virtual Status Init() const = 0;
   // Verifies a JWT, which is passed as bytes_raw, then extracts the subject from the verified
   // token and returns it by pointer in subject. The returned pointer is owned by the caller.

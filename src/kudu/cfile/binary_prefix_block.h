@@ -51,21 +51,21 @@ class BinaryPrefixBlockBuilder final : public BlockBuilder {
 
   bool IsBlockFull() const override;
 
-  int Add(const uint8_t *vals, size_t count) OVERRIDE;
+  int Add(const uint8_t *vals, size_t count) override;
 
   void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override;
 
-  void Reset() OVERRIDE;
+  void Reset() override;
 
-  size_t Count() const OVERRIDE;
+  size_t Count() const override;
 
   // Return the first added key.
   // key should be a Slice *
-  Status GetFirstKey(void *key) const OVERRIDE;
+  Status GetFirstKey(void *key) const override;
 
   // Return the last added key.
   // key should be a Slice *
-  Status GetLastKey(void *key) const OVERRIDE;
+  Status GetLastKey(void *key) const override;
 
  private:
   faststring header_buf_;
@@ -87,28 +87,28 @@ class BinaryPrefixBlockDecoder final : public BlockDecoder {
  public:
   explicit BinaryPrefixBlockDecoder(scoped_refptr<BlockHandle> block);
 
-  virtual Status ParseHeader() OVERRIDE;
-  virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
-  virtual Status SeekAtOrAfterValue(const void *value,
-                                    bool *exact_match) OVERRIDE;
-  Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE;
+  Status ParseHeader() override;
+  void SeekToPositionInBlock(uint pos) override;
+  Status SeekAtOrAfterValue(const void *value,
+                            bool *exact_match) override;
+  Status CopyNextValues(size_t *n, ColumnDataView *dst) override;
 
-  virtual bool HasNext() const OVERRIDE {
+  bool HasNext() const override {
     DCHECK(parsed_);
     return cur_idx_ < num_elems_;
   }
 
-  virtual size_t Count() const OVERRIDE {
+  size_t Count() const override {
     DCHECK(parsed_);
     return num_elems_;
   }
 
-  virtual size_t GetCurrentIndex() const OVERRIDE {
+  size_t GetCurrentIndex() const override {
     DCHECK(parsed_);
     return cur_idx_;
   }
 
-  virtual rowid_t GetFirstRowId() const OVERRIDE {
+  rowid_t GetFirstRowId() const override {
     DCHECK(parsed_);
     return ordinal_pos_base_;
   }

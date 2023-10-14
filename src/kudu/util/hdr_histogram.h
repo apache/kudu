@@ -253,8 +253,7 @@ class AbstractHistogramIterator {
   // Create iterator with new histogram.
   // The histogram must not be mutated while the iterator is in use.
   explicit AbstractHistogramIterator(const HdrHistogram* histogram);
-  virtual ~AbstractHistogramIterator() {
-  }
+  virtual ~AbstractHistogramIterator() = default;
 
   // Returns true if the iteration has more elements.
   virtual bool HasNext() const;
@@ -315,8 +314,8 @@ class RecordedValuesIterator : public AbstractHistogramIterator {
   explicit RecordedValuesIterator(const HdrHistogram* histogram);
 
  protected:
-  virtual void IncrementIterationLevel() OVERRIDE;
-  virtual bool ReachedIterationLevel() const OVERRIDE;
+  void IncrementIterationLevel() override;
+  bool ReachedIterationLevel() const override;
 
  private:
   int visited_sub_bucket_index_;
@@ -336,16 +335,16 @@ class RecordedValuesIterator : public AbstractHistogramIterator {
 // This class is not thread-safe.
 class PercentileIterator : public AbstractHistogramIterator {
  public:
-  // TODO: Explain percentile_ticks_per_half_distance.
+  // TODO(mpercy): Explain percentile_ticks_per_half_distance.
   PercentileIterator(const HdrHistogram* histogram,
                      int percentile_ticks_per_half_distance);
-  virtual bool HasNext() const OVERRIDE;
-  virtual double PercentileIteratedTo() const OVERRIDE;
-  virtual double PercentileIteratedFrom() const OVERRIDE;
+  bool HasNext() const override;
+  double PercentileIteratedTo() const override;
+  double PercentileIteratedFrom() const override;
 
  protected:
-  virtual void IncrementIterationLevel() OVERRIDE;
-  virtual bool ReachedIterationLevel() const OVERRIDE;
+  void IncrementIterationLevel() override;
+  bool ReachedIterationLevel() const override;
 
  private:
   int percentile_ticks_per_half_distance_;

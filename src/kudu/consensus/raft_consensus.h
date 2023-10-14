@@ -1003,7 +1003,7 @@ struct ConsensusBootstrapInfo {
 //   on a restart.
 class ConsensusRoundHandler {
  public:
-  virtual ~ConsensusRoundHandler() {}
+  virtual ~ConsensusRoundHandler() = default;
 
   virtual Status StartFollowerOp(const scoped_refptr<ConsensusRound>& context) = 0;
 

@@ -30,9 +30,9 @@
 // IWYU pragma: no_include <rapidjson/internal/../rapidjson.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/rapidjson.h>  // IWYU pragma: keep
+#include <rapidjson/stream.h>
 #include <rapidjson/writer.h>
 
-#include "kudu/gutil/port.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.pb.h"
@@ -69,6 +69,8 @@ class UTF8StringStreamBuffer {
 // correspond to this subclass.
 class JsonWriterIf {
  public:
+  virtual ~JsonWriterIf() = default;
+
   virtual void Null() = 0;
   virtual void Bool(bool b) = 0;
   virtual void Int(int i) = 0;
@@ -84,8 +86,6 @@ class JsonWriterIf {
   virtual void EndObject() = 0;
   virtual void StartArray() = 0;
   virtual void EndArray() = 0;
-
-  virtual ~JsonWriterIf() {}
 };
 
 // Adapts the different rapidjson Writer implementations to our virtual
@@ -95,21 +95,21 @@ class JsonWriterImpl : public JsonWriterIf {
  public:
   explicit JsonWriterImpl(ostringstream* out);
 
-  virtual void Null() OVERRIDE;
-  virtual void Bool(bool b) OVERRIDE;
-  virtual void Int(int i) OVERRIDE;
-  virtual void Uint(unsigned u) OVERRIDE;
-  virtual void Int64(int64_t i64) OVERRIDE;
-  virtual void Uint64(uint64_t u64) OVERRIDE;
-  virtual void Double(double d) OVERRIDE;
-  virtual void String(const char* str, size_t length) OVERRIDE;
-  virtual void String(const char* str) OVERRIDE;
-  virtual void String(const std::string& str) OVERRIDE;
+  void Null() override;
+  void Bool(bool b) override;
+  void Int(int i) override;
+  void Uint(unsigned u) override;
+  void Int64(int64_t i64) override;
+  void Uint64(uint64_t u64) override;
+  void Double(double d) override;
+  void String(const char* str, size_t length) override;
+  void String(const char* str) override;
+  void String(const std::string& str) override;
 
-  virtual void StartObject() OVERRIDE;
-  virtual void EndObject() OVERRIDE;
-  virtual void StartArray() OVERRIDE;
-  virtual void EndArray() OVERRIDE;
+  void StartObject() override;
+  void EndObject() override;
+  void StartArray() override;
+  void EndArray() override;
 
  private:
   UTF8StringStreamBuffer stream_;

@@ -55,7 +55,7 @@ const char* TypeToString(CloudType type);
 class InstanceMetadata {
  public:
   InstanceMetadata();
-  virtual ~InstanceMetadata() {}
+  virtual ~InstanceMetadata() = default;
 
   // Initialize the object, collecting information about a cloud instance.
   // It's a synchronous call and it can take some time to complete.

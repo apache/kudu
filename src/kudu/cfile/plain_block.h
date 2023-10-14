@@ -56,7 +56,7 @@ class PlainBlockBuilder final : public BlockBuilder {
     Reset();
   }
 
-  virtual int Add(const uint8_t *vals_void, size_t count) OVERRIDE {
+  int Add(const uint8_t *vals_void, size_t count) override {
     int old_size = buffer_.size();
     buffer_.resize(old_size + count * kCppTypeSize);
     memcpy(&buffer_[old_size], vals_void, count * kCppTypeSize);
@@ -64,33 +64,33 @@ class PlainBlockBuilder final : public BlockBuilder {
     return count;
   }
 
-  virtual bool IsBlockFull() const override {
+  bool IsBlockFull() const override {
     return buffer_.size() > options_->storage_attributes.cfile_block_size;
   }
 
-  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override {
     InlineEncodeFixed32(&buffer_[0], count_);
     InlineEncodeFixed32(&buffer_[4], ordinal_pos);
     *slices = { Slice(buffer_) };
   }
 
-  virtual void Reset() OVERRIDE {
+  void Reset() override {
     count_ = 0;
     buffer_.clear();
     buffer_.resize(kPlainBlockHeaderSize);
   }
 
-  virtual size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return count_;
   }
 
-  virtual Status GetFirstKey(void *key) const OVERRIDE {
+  Status GetFirstKey(void *key) const override {
     DCHECK_GT(count_, 0);
     UnalignedStore(key, Decode<CppType>(&buffer_[kPlainBlockHeaderSize]));
     return Status::OK();
   }
 
-  virtual Status GetLastKey(void *key) const OVERRIDE {
+  Status GetLastKey(void *key) const override {
     DCHECK_GT(count_, 0);
     size_t idx = kPlainBlockHeaderSize + (count_ - 1) * kCppTypeSize;
     UnalignedStore(key, Decode<CppType>(&buffer_[idx]));
@@ -123,7 +123,7 @@ class PlainBlockDecoder final : public BlockDecoder {
         cur_idx_(0) {
   }
 
-  virtual Status ParseHeader() OVERRIDE {
+  Status ParseHeader() override {
     CHECK(!parsed_);
 
     if (data_.size() < kPlainBlockHeaderSize) {
@@ -149,7 +149,7 @@ class PlainBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
+  void SeekToPositionInBlock(uint pos) override {
     CHECK(parsed_) << "Must call ParseHeader()";
 
     if (PREDICT_FALSE(num_elems_ == 0)) {
@@ -161,8 +161,8 @@ class PlainBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  virtual Status SeekAtOrAfterValue(const void *value, bool *exact_match) OVERRIDE {
-    DCHECK(value != NULL);
+  Status SeekAtOrAfterValue(const void *value, bool *exact_match) override {
+    DCHECK(value != nullptr);
 
     CppType target = UnalignedLoad<CppType>(value);
 
@@ -193,7 +193,7 @@ class PlainBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE {
+  Status CopyNextValues(size_t *n, ColumnDataView *dst) override {
     DCHECK(parsed_);
     DCHECK_LE(*n, dst->nrows());
     DCHECK_EQ(dst->stride(), sizeof(CppType));
@@ -212,19 +212,19 @@ class PlainBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual bool HasNext() const OVERRIDE {
+  bool HasNext() const override {
     return cur_idx_ < num_elems_;
   }
 
-  virtual size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return num_elems_;
   }
 
-  virtual size_t GetCurrentIndex() const OVERRIDE {
+  size_t GetCurrentIndex() const override {
     return cur_idx_;
   }
 
-  virtual rowid_t GetFirstRowId() const OVERRIDE {
+  rowid_t GetFirstRowId() const override {
     return ordinal_pos_base_;
   }
 

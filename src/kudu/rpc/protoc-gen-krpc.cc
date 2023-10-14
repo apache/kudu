@@ -80,7 +80,7 @@ std::optional<string> GetAuthzMethod(const MethodDescriptor& method) {
 
 class Substituter {
  public:
-  virtual ~Substituter() {}
+  virtual ~Substituter() = default;
   virtual void InitSubstitutionMap(map<string, string>* map) const = 0;
 };
 

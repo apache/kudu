@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/log_index.h"
+
 #include <cstdint>
 #include <string>
 
 #include <gtest/gtest.h>
 
-#include "kudu/consensus/log_index.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/metrics.h"
@@ -44,7 +44,7 @@ class LogIndexTest : public KuduTest {
         index_(new LogIndex(env_, &file_cache_, test_dir_)) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     ASSERT_OK(file_cache_.Init());
   }

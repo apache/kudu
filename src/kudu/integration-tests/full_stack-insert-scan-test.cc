@@ -24,6 +24,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -42,7 +43,6 @@
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -142,7 +142,7 @@ class FullStackInsertScanTest : public KuduTest {
   const int kNumInsertsPerClient;
   const int kNumRows;
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
   }
 

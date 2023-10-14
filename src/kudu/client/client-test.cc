@@ -5891,7 +5891,7 @@ class DLSCallback : public KuduStatusCallback {
   explicit DLSCallback(Atomic32* i) : i_(i) {
   }
 
-  virtual void Run(const Status& s) OVERRIDE {
+  void Run(const Status& s) override {
     CHECK_OK(s);
     NoBarrier_AtomicIncrement(i_, 1);
     delete this;

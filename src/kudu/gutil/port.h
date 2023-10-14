@@ -501,7 +501,7 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 // Annotate a virtual method indicating it must be overriding a virtual
 // method in the parent class.
 // Use like:
-//   virtual void foo() OVERRIDE;
+//   void foo() OVERRIDE;
 #if defined(COMPILER_MSVC)
 #define OVERRIDE override
 #elif defined(__clang__)

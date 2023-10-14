@@ -21,6 +21,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -34,11 +35,9 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -65,7 +64,7 @@ class CompositePushdownTest : public KuduTabletTest {
                               4)) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTabletTest::SetUp();
 
     FillTestTablet();

@@ -41,7 +41,8 @@ class CFileWriter;
 
 class BlockBuilder {
  public:
-  BlockBuilder() { }
+  BlockBuilder() = default;
+  virtual ~BlockBuilder() = default;
 
   // Append extra information to the end of the current cfile, for example:
   // append the dictionary block for under dictionary encoding mode.
@@ -94,7 +95,6 @@ class BlockBuilder {
   // If no keys have been added, returns Status::NotFound
   virtual Status GetLastKey(void *key) const = 0;
 
-  virtual ~BlockBuilder() {}
  private:
   DISALLOW_COPY_AND_ASSIGN(BlockBuilder);
 };
@@ -102,7 +102,8 @@ class BlockBuilder {
 
 class BlockDecoder {
  public:
-  BlockDecoder() { }
+  BlockDecoder() = default;
+  virtual ~BlockDecoder() = default;
 
   virtual Status ParseHeader() = 0;
 
@@ -192,7 +193,6 @@ class BlockDecoder {
   // header which is shared by all data blocks.
   virtual rowid_t GetFirstRowId() const = 0;
 
-  virtual ~BlockDecoder() {}
  private:
   DISALLOW_COPY_AND_ASSIGN(BlockDecoder);
 };

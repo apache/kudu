@@ -28,7 +28,6 @@
 #include <google/protobuf/io/printer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 
@@ -43,10 +42,10 @@ static const char* const kIncludeToInsert = "#include \"kudu/util/protobuf-annot
 static const char* const kProtoExtension = ".proto";
 
 class InsertAnnotations : public ::google::protobuf::compiler::CodeGenerator {
-  virtual bool Generate(const google::protobuf::FileDescriptor *file,
-                        const std::string &/*param*/,
-                        google::protobuf::compiler::GeneratorContext *gen_context,
-                        std::string *error) const OVERRIDE {
+  bool Generate(const google::protobuf::FileDescriptor* file,
+                const std::string& /*param*/,
+                google::protobuf::compiler::GeneratorContext* gen_context,
+                std::string* error) const override {
 
     // Determine the file name we will substitute into.
     string path_no_extension;

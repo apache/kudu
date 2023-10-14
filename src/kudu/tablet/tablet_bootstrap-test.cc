@@ -56,7 +56,6 @@
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -99,7 +98,7 @@ namespace tablet {
 class BootstrapTest : public LogTestBase {
  protected:
 
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     LogTestBase::SetUp();
     cmeta_manager_.reset(new ConsensusMetadataManager(fs_manager_.get()));
   }

@@ -36,6 +36,7 @@
 #include <utility>
 
 #include <boost/heap/skew_heap.hpp>
+#include <boost/intrusive/detail/list_iterator.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/list_hook.hpp>
 #include <boost/iterator/iterator_facade.hpp>
@@ -472,20 +473,20 @@ class MergeIterator : public RowwiseIterator {
   // all key columns; otherwise a CHECK will fire at initialization time.
   MergeIterator(MergeIteratorOptions opts, vector<IterWithBounds> iters);
 
-  virtual ~MergeIterator();
+  ~MergeIterator() override;
 
   // The passed-in iterators should be already initialized.
-  Status Init(ScanSpec *spec) OVERRIDE;
+  Status Init(ScanSpec *spec) override;
 
-  virtual bool HasNext() const OVERRIDE;
+  bool HasNext() const override;
 
-  virtual string ToString() const OVERRIDE;
+  string ToString() const override;
 
-  virtual const Schema& schema() const OVERRIDE;
+  const Schema& schema() const override;
 
-  virtual void GetIteratorStats(vector<IteratorStats>* stats) const OVERRIDE;
+  void GetIteratorStats(vector<IteratorStats>* stats) const override;
 
-  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+  Status NextBlock(RowBlock* dst) override;
 
  private:
   // Materializes as much of the next block's worth of data into 'dst' at offset
@@ -935,21 +936,21 @@ class UnionIterator : public RowwiseIterator {
   // The iterators must have matching schemas and should not yet be initialized.
   explicit UnionIterator(vector<IterWithBounds> iters);
 
-  Status Init(ScanSpec *spec) OVERRIDE;
+  Status Init(ScanSpec *spec) override;
 
-  bool HasNext() const OVERRIDE;
+  bool HasNext() const override;
 
-  string ToString() const OVERRIDE;
+  string ToString() const override;
 
-  const Schema &schema() const OVERRIDE {
+  const Schema &schema() const override {
     CHECK(initted_);
-    CHECK(schema_.get() != NULL) << "Bad schema in " << ToString();
+    CHECK(schema_.get() != nullptr) << "Bad schema in " << ToString();
     return *CHECK_NOTNULL(schema_.get());
   }
 
-  virtual void GetIteratorStats(vector<IteratorStats>* stats) const OVERRIDE;
+  void GetIteratorStats(vector<IteratorStats>* stats) const override;
 
-  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+  Status NextBlock(RowBlock* dst) override;
 
  private:
   void PrepareBatch();
@@ -1121,23 +1122,23 @@ class MaterializingIterator : public RowwiseIterator {
   explicit MaterializingIterator(unique_ptr<ColumnwiseIterator> iter);
 
   // Initialize the iterator, performing predicate pushdown as described above.
-  Status Init(ScanSpec *spec) OVERRIDE;
+  Status Init(ScanSpec *spec) override;
 
-  bool HasNext() const OVERRIDE;
+  bool HasNext() const override;
 
-  string ToString() const OVERRIDE;
+  string ToString() const override;
 
-  const Schema &schema() const OVERRIDE {
+  const Schema &schema() const override {
     return iter_->schema();
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
+  void GetIteratorStats(std::vector<IteratorStats>* stats) const override {
     iter_->GetIteratorStats(stats);
     predicates_effectiveness_ctx_.PopulateIteratorStatsWithDisabledPredicates(
         col_idx_predicates_, stats);
   }
 
-  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+  Status NextBlock(RowBlock* dst) override;
 
   const IteratorPredicateEffectivenessContext& effectiveness_context() const {
     return predicates_effectiveness_ctx_;
@@ -1361,19 +1362,19 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
 
   // Initialize the iterator.
   // POSTCONDITION: spec->predicates().empty()
-  Status Init(ScanSpec *spec) OVERRIDE;
+  Status Init(ScanSpec *spec) override;
 
-  virtual Status NextBlock(RowBlock *dst) OVERRIDE;
+  Status NextBlock(RowBlock *dst) override;
 
-  bool HasNext() const OVERRIDE;
+  bool HasNext() const override;
 
-  string ToString() const OVERRIDE;
+  string ToString() const override;
 
-  const Schema &schema() const OVERRIDE {
+  const Schema &schema() const override {
     return base_iter_->schema();
   }
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
+  void GetIteratorStats(std::vector<IteratorStats>* stats) const override {
     base_iter_->GetIteratorStats(stats);
     predicates_effectiveness_ctx_.PopulateIteratorStatsWithDisabledPredicates(
         col_idx_predicates_, stats);

@@ -45,7 +45,6 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -94,7 +93,7 @@ class TestCFileSet : public KuduRowSetTest {
                             ColumnSchema("c2", INT32, true) }, 1))
   {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduRowSetTest::SetUp();
 
     // Use a small cfile block size, so that when we skip materializing a given
@@ -688,7 +687,7 @@ class InListPredicateBenchmark : public KuduRowSetTest {
   InListPredicateBenchmark()
       : KuduRowSetTest(Schema({ColumnSchema("c0", INT32), ColumnSchema("c1", INT32)}, 2)) {}
 
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduRowSetTest::SetUp();
 
     // Use a small cfile block size, so that when we skip materializing a given

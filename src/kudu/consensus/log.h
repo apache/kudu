@@ -631,6 +631,7 @@ struct LogEntryBatchLogicalSize {
 
 class LogFaultHooks {
  public:
+  virtual ~LogFaultHooks() = default;
 
   // Executed immediately before returning from Log::Sync() at *ALL*
   // times.
@@ -645,8 +646,6 @@ class LogFaultHooks {
 
   virtual Status PreClose() { return Status::OK(); }
   virtual Status PostClose() { return Status::OK(); }
-
-  virtual ~LogFaultHooks() {}
 };
 
 }  // namespace log

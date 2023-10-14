@@ -335,7 +335,7 @@ class KsckTabletServer {
       : uuid_(std::move(uuid)),
         location_(std::move(location)) {}
 
-  virtual ~KsckTabletServer() {}
+  virtual ~KsckTabletServer() = default;
 
   // Connects to the configured tablet server and populates the fields of this class. 'health' must
   // not be nullptr.

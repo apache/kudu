@@ -49,7 +49,7 @@
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
-#include "kudu/tools/ksck_checksum.h"
+#include "kudu/tools/ksck_checksum.h" // IWYU pragma: keep
 #include "kudu/tools/ksck_results.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/util/jsonreader.h"
@@ -236,23 +236,23 @@ class MockKsckCluster : public KsckCluster {
       : fetch_info_status_(Status::OK()) {
   }
 
-  virtual Status Connect() override {
+  Status Connect() override {
     return fetch_info_status_;
   }
 
-  virtual Status RetrieveTabletServers() override {
+  Status RetrieveTabletServers() override {
     return Status::OK();
   }
 
-  virtual Status RetrieveTablesList() override {
+  Status RetrieveTablesList() override {
     return Status::OK();
   }
 
-  virtual Status RetrieveAllTablets() override {
+  Status RetrieveAllTablets() override {
     return Status::OK();
   }
 
-  virtual Status RetrieveTabletsList(const shared_ptr<KsckTable>& /* unused */) override {
+  Status RetrieveTabletsList(const shared_ptr<KsckTable>& /* unused */) override {
     return Status::OK();
   }
 

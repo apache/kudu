@@ -29,7 +29,6 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
@@ -52,7 +51,7 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
     next_time_(MonoTime::Now()) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     Superclass::SetUp();
     TabletMetrics* metrics = tablet()->metrics();
     all_possible_metrics_.push_back(metrics->flush_mrs_duration);

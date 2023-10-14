@@ -40,7 +40,6 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -72,7 +71,7 @@ class TestTabletMetadata : public KuduTabletTest {
       : KuduTabletTest(GetSimpleTestSchema()) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTabletTest::SetUp();
     writer_.reset(new LocalTabletWriter(harness_->tablet().get(),
                                         &client_schema_));

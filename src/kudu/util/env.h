@@ -66,7 +66,7 @@ class Env {
     MUST_EXIST
   };
 
-  Env() { }
+  Env() = default;
   virtual ~Env();
 
   // Return a default environment suitable for the current operating
@@ -732,7 +732,7 @@ class RWFile : public File {
 // Identifies a locked file.
 class FileLock {
  public:
-  FileLock() { }
+  FileLock() = default;
   virtual ~FileLock();
  private:
   DISALLOW_COPY_AND_ASSIGN(FileLock);

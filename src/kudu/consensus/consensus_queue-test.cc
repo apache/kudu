@@ -51,7 +51,6 @@
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/metrics.h"
@@ -95,7 +94,7 @@ class ConsensusQueueTest : public KuduTest {
         allow_status_msg_for_failed_peer_(false) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
@@ -130,7 +129,7 @@ class ConsensusQueueTest : public KuduTest {
         &allow_status_msg_for_failed_peer_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     log_->WaitUntilAllFlushed();
     queue_->Close();
   }

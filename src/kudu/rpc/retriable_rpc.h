@@ -64,7 +64,7 @@ class RetriableRpc : public Rpc {
         sequence_number_(RequestTracker::kNoSeqNo),
         num_attempts_(0) {}
 
-  virtual ~RetriableRpc() {
+  ~RetriableRpc() override {
     DCHECK_EQ(sequence_number_, RequestTracker::kNoSeqNo);
   }
 

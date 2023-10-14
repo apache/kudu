@@ -101,7 +101,7 @@ class KuduTabletTest : public KuduTest {
       clock_type_(clock_type) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     SetUpTestTablet();
@@ -182,7 +182,7 @@ class KuduRowSetTest : public KuduTabletTest {
     : KuduTabletTest(schema) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTabletTest::SetUp();
     ASSERT_OK(tablet()->metadata()->CreateRowSet(&rowset_meta_));
   }

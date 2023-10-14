@@ -94,6 +94,7 @@ class Op {
   };
 
   Op(consensus::DriverType type, OpType op_type);
+  virtual ~Op() = default;
 
   // Returns the OpState for this op.
   virtual OpState* state() = 0;
@@ -142,8 +143,6 @@ class Op {
 
   // Each implementation should have its own ToString() method.
   virtual std::string ToString() const = 0;
-
-  virtual ~Op() {}
 
  private:
   const consensus::DriverType type_;
@@ -321,6 +320,7 @@ class OpState {
 class OpCompletionCallback {
  public:
   OpCompletionCallback();
+  virtual ~OpCompletionCallback();
 
   // Allows to set an error for this op and a mapping to a server level code.
   // Calling this method does not mean the op is completed.
@@ -336,8 +336,6 @@ class OpCompletionCallback {
 
   // Subclasses should override this.
   virtual void OpCompleted();
-
-  virtual ~OpCompletionCallback();
 
  protected:
   Status status_;

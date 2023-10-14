@@ -22,6 +22,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <thread>
 #include <vector>
 
@@ -36,7 +37,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/data_gen_util.h"
@@ -109,7 +109,7 @@ class RemoteKsckTest : public KuduTest {
     CHECK_OK(b.Build(&schema_));
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     // Speed up testing, saves about 700ms per TEST_F.
@@ -150,7 +150,7 @@ class RemoteKsckTest : public KuduTest {
     ksck_.reset(new Ksck(cluster_, &err_stream_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (mini_cluster_) {
       mini_cluster_->Shutdown();
       mini_cluster_.reset();

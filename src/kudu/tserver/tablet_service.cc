@@ -63,6 +63,7 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -1014,8 +1015,8 @@ class ScanResultChecksummer : public ScanResultCollector {
         rows_checksummed_(0) {
   }
 
-  virtual void HandleRowBlock(Scanner* scanner,
-                              const RowBlock& row_block) OVERRIDE {
+  void HandleRowBlock(Scanner* scanner,
+                      const RowBlock& row_block) override {
 
     const Schema* client_projection_schema = scanner->client_projection_schema();
     if (!client_projection_schema) {
@@ -1034,9 +1035,9 @@ class ScanResultChecksummer : public ScanResultCollector {
   }
 
   // Returns a constant -- we only return checksum based on a time budget.
-  virtual int64_t ResponseSize() const OVERRIDE { return sizeof(agg_checksum_); }
+  int64_t ResponseSize() const override { return sizeof(agg_checksum_); }
 
-  virtual int64_t NumRowsReturned() const OVERRIDE {
+  int64_t NumRowsReturned() const override {
     return 0;
   }
 

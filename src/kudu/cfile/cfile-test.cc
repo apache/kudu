@@ -58,7 +58,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/stringprintf.h"
@@ -407,7 +406,7 @@ class TestCFileBothCacheMemoryTypes :
     public TestCFile,
     public ::testing::WithParamInterface<Cache::MemoryType> {
  public:
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     // The NVM cache can run using any directory as its path -- it doesn't have
     // a lot of practical use outside of an actual NVM device, but for testing
     // purposes, we'll point it at our test dir, unless otherwise specified.
@@ -429,7 +428,7 @@ class TestCFileBothCacheMemoryTypes :
     CFileTestBase::SetUp();
   }
 
-  void TearDown() OVERRIDE {
+  void TearDown() override {
     Singleton<BlockCache>::UnsafeReset();
   }
 };

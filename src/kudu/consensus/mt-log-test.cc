@@ -23,7 +23,9 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -31,9 +33,9 @@
 #include <gtest/gtest.h>
 
 #include "kudu/clock/clock.h"
+#include "kudu/common/row_operations.pb.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
@@ -42,7 +44,6 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -112,7 +113,7 @@ class MultiThreadedLogTest : public LogTestBase {
       : random_(SeedRandom()) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     LogTestBase::SetUp();
   }
 

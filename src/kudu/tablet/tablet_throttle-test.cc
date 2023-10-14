@@ -17,15 +17,15 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/port.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.h"   // IWYU pragma: keep
 #include "kudu/util/monotime.h"
 
 DECLARE_int64(tablet_throttler_rpc_per_sec);
@@ -40,7 +40,7 @@ class TestTabletThrottle : public KuduTabletTest {
    : KuduTabletTest(CreateBaseSchema()) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     FLAGS_tablet_throttler_rpc_per_sec = 100;
     FLAGS_tablet_throttler_bytes_per_sec = 1000 * 1000;
     KuduTabletTest::SetUp();

@@ -368,19 +368,20 @@ class DiskRowSet :
                    ProbeStats* stats,
                    OperationResultPB* result) override;
 
-  Status CheckRowPresent(const RowSetKeyProbe &probe, const fs::IOContext* io_context,
+  Status CheckRowPresent(const RowSetKeyProbe &probe,
+                         const fs::IOContext* io_context,
                          bool *present, ProbeStats* stats) const override;
 
   ////////////////////
   // Read functions.
   ////////////////////
-  virtual Status NewRowIterator(const RowIteratorOptions& opts,
-                                std::unique_ptr<RowwiseIterator>* out) const override;
+  Status NewRowIterator(const RowIteratorOptions& opts,
+                        std::unique_ptr<RowwiseIterator>* out) const override;
 
-  virtual Status NewCompactionInput(const Schema* projection,
-                                    const MvccSnapshot &snap,
-                                    const fs::IOContext* io_context,
-                                    std::unique_ptr<CompactionInput>* out) const override;
+  Status NewCompactionInput(const Schema* projection,
+                            const MvccSnapshot &snap,
+                            const fs::IOContext* io_context,
+                            std::unique_ptr<CompactionInput>* out) const override;
 
   // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
   // yet set, consults the base data and stores the result in 'num_rows_'.

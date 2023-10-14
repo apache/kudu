@@ -20,8 +20,9 @@
 #include <functional>
 #include <memory>
 #include <ostream>
-#include <vector>
+#include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -33,7 +34,6 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
@@ -72,7 +72,7 @@ class FlushCallback : public KuduStatusCallback {
     sem_->Acquire();
   }
 
-  virtual void Run(const Status& s) OVERRIDE {
+  void Run(const Status& s) override {
     BatchFinished();
     CHECK_OK(s);
     sem_->Release();

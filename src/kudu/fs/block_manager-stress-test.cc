@@ -155,7 +155,7 @@ class BlockManagerStressTest : public KuduTest {
     CHECK_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     // If non-standard paths were provided we need to delete them in between
     // test runs.
     if (!FLAGS_block_manager_paths.empty()) {

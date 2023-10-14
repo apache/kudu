@@ -418,10 +418,10 @@ void STLDeleteValues(T *v) {
 // directly.
 class BaseDeleter {
  public:
-  virtual ~BaseDeleter() {}
+  virtual ~BaseDeleter() = default;
 
  protected:
-  BaseDeleter() {}
+  BaseDeleter() = default;
 
  private:
   DISALLOW_EVIL_CONSTRUCTORS(BaseDeleter);
@@ -437,7 +437,7 @@ class TemplatedElementDeleter : public BaseDeleter {
       : container_ptr_(ptr) {
   }
 
-  virtual ~TemplatedElementDeleter<STLContainer>() {
+  ~TemplatedElementDeleter<STLContainer>() override {
     STLDeleteElements(container_ptr_);
   }
 
@@ -477,7 +477,7 @@ class TemplatedValueDeleter : public BaseDeleter {
       : container_ptr_(ptr) {
   }
 
-  virtual ~TemplatedValueDeleter<STLContainer>() {
+  ~TemplatedValueDeleter<STLContainer>() override {
     STLDeleteValues(container_ptr_);
   }
 

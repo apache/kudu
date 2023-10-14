@@ -55,8 +55,8 @@ class Cache {
   // cache.
   class EvictionCallback {
    public:
-    virtual void EvictedEntry(Slice key, Slice value) = 0;
     virtual ~EvictionCallback() = default;
+    virtual void EvictedEntry(Slice key, Slice value) = 0;
   };
 
   Cache() = default;

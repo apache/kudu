@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -41,7 +42,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -85,7 +85,7 @@ class ConsensusPeersTest : public KuduTest {
     raft_pool_token_ = raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
@@ -118,7 +118,7 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_OK(bld.Build(&messenger_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (log_) {
       ASSERT_OK(log_->WaitUntilAllFlushed());
     }

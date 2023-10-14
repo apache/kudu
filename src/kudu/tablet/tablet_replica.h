@@ -207,12 +207,12 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 
   // Used by consensus to create and start a new ReplicaOp.
-  virtual Status StartFollowerOp(
+  Status StartFollowerOp(
       const scoped_refptr<consensus::ConsensusRound>& round) override;
 
   // Used by consensus to notify the tablet replica that a consensus-only round
   // has finished, advancing MVCC safe time as appropriate.
-  virtual void FinishConsensusOnlyRound(consensus::ConsensusRound* round) override;
+  void FinishConsensusOnlyRound(consensus::ConsensusRound* round) override;
 
   consensus::RaftConsensus* consensus() {
     std::lock_guard<simple_spinlock> lock(lock_);

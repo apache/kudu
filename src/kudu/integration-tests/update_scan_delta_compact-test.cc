@@ -21,6 +21,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -35,7 +36,6 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/port.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -99,7 +99,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
     CHECK_OK(b.Build(&schema_));
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
   }
 
@@ -114,7 +114,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
     ASSERT_OK(client_->OpenTable(kTableName, &table_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (cluster_) {
       cluster_->Shutdown();
     }

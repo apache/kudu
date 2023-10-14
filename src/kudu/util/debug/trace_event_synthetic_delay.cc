@@ -10,7 +10,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
 
 namespace {
@@ -31,7 +30,7 @@ class TraceEventSyntheticDelayRegistry : public TraceEventSyntheticDelayClock {
   void ResetAllDelays();
 
   // TraceEventSyntheticDelayClock implementation.
-  virtual MonoTime Now() OVERRIDE;
+  MonoTime Now() override;
 
  private:
   TraceEventSyntheticDelayRegistry();

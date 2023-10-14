@@ -22,6 +22,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -30,7 +31,6 @@
 #include <google/protobuf/descriptor.pb.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/port.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
@@ -64,7 +64,7 @@ static const int kUseDefaultVersion = 0; // Use the default container version (d
 
 class TestPBUtil : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     path_ = GetTestPath(kTestFileName);
   }

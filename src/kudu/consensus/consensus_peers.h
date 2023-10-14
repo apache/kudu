@@ -227,7 +227,7 @@ class Peer :
 // be replaced for tests.
 class PeerProxy {
  public:
-  virtual ~PeerProxy() {}
+  virtual ~PeerProxy() = default;
 
   // Sends a request, asynchronously, to a remote peer.
   virtual void UpdateAsync(const ConsensusRequestPB& request,
@@ -263,11 +263,10 @@ class PeerProxy {
 // but can be replaced for tests.
 class PeerProxyFactory {
  public:
+  virtual ~PeerProxyFactory() = default;
 
   virtual Status NewProxy(const RaftPeerPB& peer_pb,
                           std::unique_ptr<PeerProxy>* proxy) = 0;
-
-  virtual ~PeerProxyFactory() {}
 
   virtual const std::shared_ptr<rpc::Messenger>& messenger() const = 0;
 };

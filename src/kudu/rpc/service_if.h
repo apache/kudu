@@ -108,7 +108,7 @@ class ServiceIf {
 // Base class for code-generated service classes.
 class GeneratedServiceIf : public ServiceIf {
  public:
-  virtual ~GeneratedServiceIf();
+  ~GeneratedServiceIf() override;
 
   // Looks up the appropriate method in 'methods_by_name_' and executes
   // it on the current thread.

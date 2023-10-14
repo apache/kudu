@@ -599,7 +599,7 @@ class MergeCompactionInput : public CompactionInput {
     }
   }
 
-  virtual ~MergeCompactionInput() {
+  ~MergeCompactionInput() override {
     STLDeleteElements(&states_);
   }
 

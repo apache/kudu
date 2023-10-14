@@ -233,7 +233,7 @@ class CFileReader {
 // It is used to fill the data requested by the projection.
 class ColumnIterator {
  public:
-  virtual ~ColumnIterator() {}
+  virtual ~ColumnIterator() = default;
 
   // Seek to the given ordinal entry in the file.
   // Entry 0 is the first entry written to the file.

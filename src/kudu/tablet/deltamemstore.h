@@ -81,9 +81,9 @@ class DeltaMemStore : public DeltaStore,
                        std::shared_ptr<MemTracker> parent_tracker,
                        std::shared_ptr<DeltaMemStore>* dms);
 
-  virtual Status Init(const fs::IOContext* io_context) OVERRIDE;
+  Status Init(const fs::IOContext* io_context) override;
 
-  virtual bool Initted() const OVERRIDE {
+  bool Initted() const override {
     return true;
   }
 
@@ -120,13 +120,14 @@ class DeltaMemStore : public DeltaStore,
   // Returns Status::OK and sets 'iterator' to the new DeltaIterator, or
   // returns Status::NotFound if the mutations within this delta store
   // cannot include the snapshot.
-  virtual Status NewDeltaIterator(const RowIteratorOptions& opts,
-                                  std::unique_ptr<DeltaIterator>* iterator) const OVERRIDE;
+  Status NewDeltaIterator(const RowIteratorOptions& opts,
+                          std::unique_ptr<DeltaIterator>* iterator) const override;
 
-  virtual Status CheckRowDeleted(rowid_t row_idx, const fs::IOContext* io_context,
-                                 bool* deleted) const OVERRIDE;
+  Status CheckRowDeleted(rowid_t row_idx,
+                         const fs::IOContext* io_context,
+                         bool* deleted) const override;
 
-  virtual uint64_t EstimateSize() const OVERRIDE {
+  uint64_t EstimateSize() const override {
     return arena_->memory_footprint();
   }
 
@@ -136,7 +137,7 @@ class DeltaMemStore : public DeltaStore,
   typedef btree::CBTree<DMSTreeTraits> DMSTree;
   typedef btree::CBTreeIterator<DMSTreeTraits> DMSTreeIter;
 
-  virtual std::string ToString() const OVERRIDE {
+  std::string ToString() const override {
     return "DMS";
   }
 
@@ -146,7 +147,7 @@ class DeltaMemStore : public DeltaStore,
   }
 
   // The returned stats will always be empty, and the number of columns unset.
-  virtual const DeltaStats& delta_stats() const OVERRIDE {
+  const DeltaStats& delta_stats() const override {
     return delta_stats_;
   }
 

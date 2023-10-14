@@ -588,6 +588,8 @@ class PeerMessageQueue {
 // The interface between RaftConsensus and the PeerMessageQueue.
 class PeerMessageQueueObserver {
  public:
+  virtual ~PeerMessageQueueObserver() = default;
+
   // Notify the observer that the commit index has advanced to 'committed_index'.
   virtual void NotifyCommitIndex(int64_t committed_index) = 0;
 
@@ -611,8 +613,6 @@ class PeerMessageQueueObserver {
 
   // Notify the observer that the health of one of the peers has changed.
   virtual void NotifyPeerHealthChange() = 0;
-
-  virtual ~PeerMessageQueueObserver() {}
 };
 
 }  // namespace consensus

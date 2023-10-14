@@ -273,7 +273,7 @@ constexpr int kAuthzCacheTTLMultiplier = 3;
 // the underlying authorization service (e.g. Ranger).
 class TSAuthzITestHarness {
  public:
-  virtual ~TSAuthzITestHarness() {}
+  virtual ~TSAuthzITestHarness() = default;
 
   ExternalMiniClusterOptions GetClusterOpts() const {
     ExternalMiniClusterOptions opts;

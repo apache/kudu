@@ -38,7 +38,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
@@ -102,7 +101,7 @@ class TsTabletManagerTest : public KuduTest {
     : schema_({ ColumnSchema("key", INT32) }, 1) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     mini_server_.reset(new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"),
                                             HostPort("127.0.0.1", 0)));
@@ -116,7 +115,7 @@ class TsTabletManagerTest : public KuduTest {
     heartbeater_ = mini_server_->server()->heartbeater();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     KuduTest::TearDown();
   }
 

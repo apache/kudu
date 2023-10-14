@@ -35,7 +35,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -94,13 +93,15 @@ class SimpleSink : public google::LogSink {
  public:
   explicit SimpleSink(LoggingCallback cb) : cb_(std::move(cb)) {}
 
-  virtual ~SimpleSink() OVERRIDE {
-  }
+  ~SimpleSink() override = default;
 
-  virtual void send(google::LogSeverity severity, const char* full_filename,
-                    const char* base_filename, int line,
-                    const struct ::tm* tm_time,
-                    const char* message, size_t message_len) OVERRIDE {
+  void send(google::LogSeverity severity,
+            const char* full_filename,
+            const char* /*base_filename*/,
+            int line,
+            const struct ::tm* tm_time,
+            const char* message,
+            size_t message_len) override {
     LogSeverity kudu_severity;
     switch (severity) {
       case google::INFO:

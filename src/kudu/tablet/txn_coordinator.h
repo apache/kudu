@@ -45,7 +45,7 @@ typedef std::map<int64_t, std::vector<std::string>> ParticipantIdsByTxnId;
 // Manages ongoing transactions and participants thereof.
 class TxnCoordinator {
  public:
-  virtual ~TxnCoordinator() {}
+  virtual ~TxnCoordinator() = default;
 
   // Shut down the TxnCoordinator.
   virtual void Shutdown() = 0;

@@ -147,7 +147,7 @@ struct PrivilegeParams {
 
 class MasterAuthzITestHarness {
  public:
-  virtual ~MasterAuthzITestHarness() {}
+  virtual ~MasterAuthzITestHarness() = default;
 
   static Status GetTableLocationsWithTableId(const string& table_name,
                                              const optional<string>& table_id,

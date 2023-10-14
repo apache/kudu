@@ -123,6 +123,8 @@ class CompactionInput {
   static CompactionInput* Merge(const std::vector<std::shared_ptr<CompactionInput>>& inputs,
                                 const Schema* schema);
 
+  virtual ~CompactionInput() = default;
+
   virtual Status Init() = 0;
   virtual Status PrepareBlock(std::vector<CompactionInputRow>* block) = 0;
 
@@ -139,8 +141,6 @@ class CompactionInput {
   // Return an estimate on the maximum amount of memory used by the object
   // during its lifecycle while initializing, reading and processing data, etc.
   virtual size_t memory_footprint() const = 0;
-
-  virtual ~CompactionInput() {}
 };
 
 // The set of rowsets which are taking part in a given compaction.

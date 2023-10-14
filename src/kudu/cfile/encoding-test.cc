@@ -46,7 +46,6 @@
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -80,7 +79,7 @@ class TestEncoding : public KuduTest {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     memory_.Reset();
     default_write_options_.storage_attributes.cfile_block_size = 256 * 1024;

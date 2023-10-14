@@ -36,6 +36,8 @@ class ScanSpec;
 
 class IteratorBase {
  public:
+  virtual ~IteratorBase() = default;
+
   // Initialize the iterator with the given scan spec.
   //
   // The scan spec may be transformed by this call to remove predicates
@@ -58,8 +60,6 @@ class IteratorBase {
 
   // Return the schema for the rows which this iterator produces.
   virtual const Schema &schema() const = 0;
-
-  virtual ~IteratorBase() {}
 };
 
 class RowwiseIterator : public virtual IteratorBase {

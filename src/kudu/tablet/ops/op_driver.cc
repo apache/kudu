@@ -92,7 +92,7 @@ class FollowerOpCompletionCallback : public OpCompletionCallback {
     }
   }
 
-  virtual ~FollowerOpCompletionCallback() {}
+ ~FollowerOpCompletionCallback() override = default;
 
  private:
   const RequestIdPB& request_id_;

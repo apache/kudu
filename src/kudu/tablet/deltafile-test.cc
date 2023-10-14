@@ -45,7 +45,6 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
@@ -90,8 +89,7 @@ class TestDeltaFile : public KuduTest {
       schema_(CreateSchema()) {
   }
 
- public:
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs"))));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());

@@ -219,7 +219,8 @@ class WriteRpc : public RetriableRpc<RemoteTabletServer, WriteRequestPB, WriteRe
            shared_ptr<Messenger> messenger,
            const string& tablet_id,
            uint64_t propagated_timestamp);
-  virtual ~WriteRpc();
+  ~WriteRpc() override;
+
   string ToString() const override;
 
   const KuduTable* table() const {

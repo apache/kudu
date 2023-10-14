@@ -20,15 +20,14 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/proxy.h"
 #include "kudu/rpc/rpc-test-base.h"
@@ -60,6 +59,8 @@ using std::vector;
 
 namespace kudu {
 namespace rpc {
+
+class AcceptorPool;
 
 class MultiThreadedRpcTest : public RpcTestBase {
  public:
@@ -185,7 +186,7 @@ class BogusServicePool : public ServicePool {
                    size_t service_queue_length)
     : ServicePool(std::move(service), metric_entity, service_queue_length) {
   }
-  virtual Status Init(int num_threads) OVERRIDE {
+  Status Init(int /*num_threads*/) override {
     // Do nothing
     return Status::OK();
   }

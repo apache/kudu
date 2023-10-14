@@ -886,43 +886,43 @@ class Tablet {
 // parts of the compaction code.
 class Tablet::CompactionFaultHooks {
  public:
+  virtual ~CompactionFaultHooks() = default;
   virtual Status PostSelectIterators() { return Status::OK(); }
-  virtual ~CompactionFaultHooks() {}
 };
 
 class Tablet::FlushCompactCommonHooks {
  public:
+  virtual ~FlushCompactCommonHooks() = default;
   virtual Status PostTakeMvccSnapshot() { return Status::OK(); }
   virtual Status PostWriteSnapshot() { return Status::OK(); }
   virtual Status PostSwapInDuplicatingRowSet() { return Status::OK(); }
   virtual Status PostReupdateMissedDeltas() { return Status::OK(); }
   virtual Status PostSwapNewRowSet() { return Status::OK(); }
-  virtual ~FlushCompactCommonHooks() {}
 };
 
 // Hooks used in test code to inject faults or other code into interesting
 // parts of the Flush() code.
 class Tablet::FlushFaultHooks {
  public:
+  virtual ~FlushFaultHooks() = default;
   virtual Status PostSwapNewMemRowSet() { return Status::OK(); }
-  virtual ~FlushFaultHooks() {}
 };
 
 class Tablet::Iterator : public RowwiseIterator {
  public:
-  virtual ~Iterator();
+  ~Iterator() override;
 
-  virtual Status Init(ScanSpec *spec) OVERRIDE;
+  Status Init(ScanSpec *spec) override;
 
-  virtual bool HasNext() const OVERRIDE;
+  bool HasNext() const override;
 
-  virtual Status NextBlock(RowBlock *dst) OVERRIDE;
+  Status NextBlock(RowBlock *dst) override;
 
-  std::string ToString() const OVERRIDE;
+  std::string ToString() const override;
 
-  const Schema &schema() const OVERRIDE;
+  const Schema &schema() const override;
 
-  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
+  void GetIteratorStats(std::vector<IteratorStats>* stats) const override;
 
  private:
   friend class Tablet;

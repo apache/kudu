@@ -199,7 +199,7 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
 // Callbacks made after a transfer completes.
 struct TransferCallbacks {
  public:
-  virtual ~TransferCallbacks() {}
+  virtual ~TransferCallbacks() = default;
 
   // The transfer finished successfully.
   virtual void NotifyTransferFinished() = 0;

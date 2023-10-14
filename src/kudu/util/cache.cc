@@ -563,7 +563,7 @@ class ShardedCache : public Cache {
     }
   }
 
-  virtual ~ShardedCache() {
+  ~ShardedCache() override {
     STLDeleteElements(&shards_);
   }
 

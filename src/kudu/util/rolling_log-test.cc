@@ -28,7 +28,6 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -50,7 +49,7 @@ class RollingLogTest : public KuduTest {
     : log_dir_(GetTestPath("log_dir")) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_OK(env_->CreateDir(log_dir_));
   }
 

@@ -101,7 +101,7 @@ struct InternalMiniClusterOptions {
 class InternalMiniCluster : public MiniCluster {
  public:
   InternalMiniCluster(Env* env, InternalMiniClusterOptions options);
-  virtual ~InternalMiniCluster();
+  ~InternalMiniCluster() override;
 
   // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
   // All servers run on the loopback interface with ephemeral ports.

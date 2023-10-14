@@ -247,13 +247,13 @@ class MemRowSet : public RowSet,
   // Update or delete an existing row in the memrowset.
   //
   // Returns Status::NotFound if the row doesn't exist.
-  virtual Status MutateRow(Timestamp timestamp,
-                           const RowSetKeyProbe &probe,
-                           const RowChangeList &delta,
-                           const consensus::OpId& op_id,
-                           const fs::IOContext* io_context,
-                           ProbeStats* stats,
-                           OperationResultPB *result) override;
+  Status MutateRow(Timestamp timestamp,
+                   const RowSetKeyProbe &probe,
+                   const RowChangeList &delta,
+                   const consensus::OpId& op_id,
+                   const fs::IOContext* io_context,
+                   ProbeStats* stats,
+                   OperationResultPB *result) override;
 
   // Return the number of entries in the memrowset.
   // NOTE: this requires iterating all data, and is thus
@@ -268,13 +268,13 @@ class MemRowSet : public RowSet,
     return Status::OK();
   }
 
-  virtual Status CountLiveRows(uint64_t* count) const override {
+  Status CountLiveRows(uint64_t* count) const override {
     *count = live_row_count_.Load();
     return Status::OK();
   }
 
-  virtual Status GetBounds(std::string *min_encoded_key,
-                           std::string *max_encoded_key) const override;
+  Status GetBounds(std::string *min_encoded_key,
+                   std::string *max_encoded_key) const override;
 
   uint64_t OnDiskSize() const override {
     return 0;
@@ -305,7 +305,7 @@ class MemRowSet : public RowSet,
   }
 
   // MemRowSets are never available for compaction, currently.
-  virtual bool IsAvailableForCompaction() override {
+  bool IsAvailableForCompaction() override {
     return false;
   }
 
@@ -315,8 +315,9 @@ class MemRowSet : public RowSet,
   }
 
   // TODO(todd): unit test me
-  Status CheckRowPresent(const RowSetKeyProbe &probe, const fs::IOContext* io_context,
-                         bool *present, ProbeStats* stats) const override;
+  Status CheckRowPresent(const RowSetKeyProbe& probe,
+                         const fs::IOContext* io_context,
+                         bool* present, ProbeStats* stats) const override;
 
   // Return the memory footprint of this memrowset.
   // Note that this may be larger than the sum of the data
@@ -337,14 +338,14 @@ class MemRowSet : public RowSet,
   Iterator *NewIterator(const RowIteratorOptions& opts) const;
 
   // Alias to conform to DiskRowSet interface
-  virtual Status NewRowIterator(const RowIteratorOptions& opts,
-                                std::unique_ptr<RowwiseIterator>* out) const override;
+  Status NewRowIterator(const RowIteratorOptions& opts,
+                        std::unique_ptr<RowwiseIterator>* out) const override;
 
   // Create compaction input.
-  virtual Status NewCompactionInput(const Schema* projection,
-                                    const MvccSnapshot& snap,
-                                    const fs::IOContext* io_context,
-                                    std::unique_ptr<CompactionInput>* out) const override;
+  Status NewCompactionInput(const Schema* projection,
+                            const MvccSnapshot& snap,
+                            const fs::IOContext* io_context,
+                            std::unique_ptr<CompactionInput>* out) const override;
 
   // Return the Schema for the rows in this memrowset.
    const Schema &schema() const {
@@ -520,7 +521,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
  public:
   class MRSRowProjector;
 
-  virtual ~Iterator();
+  ~Iterator() override;
 
   Status Init(ScanSpec *spec) override;
 

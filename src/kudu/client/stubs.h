@@ -104,7 +104,7 @@ struct StubsCompileAssert {
 // Annotate a virtual method indicating it must be overriding a virtual
 // method in the parent class.
 // Use like:
-//   virtual void foo() OVERRIDE;
+//   void foo() OVERRIDE;
 #ifndef OVERRIDE
 # if defined(COMPILER_MSVC)
 #   define OVERRIDE override

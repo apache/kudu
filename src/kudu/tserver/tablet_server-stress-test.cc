@@ -24,7 +24,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/countdown_latch.h"
@@ -77,7 +76,7 @@ class TSStressTest : public TabletServerTestBase {
     FLAGS_enable_maintenance_manager = true;
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     TabletServerTestBase::SetUp();
     NO_FATALS(StartTabletServer(/* num_data_dirs */ 1));
 

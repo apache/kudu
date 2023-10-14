@@ -75,7 +75,7 @@ static const char* kDefaultPoolName = "test";
 class ThreadPoolTest : public KuduTest {
  public:
 
-  virtual void SetUp() override {
+  void SetUp() override {
     KuduTest::SetUp();
     ASSERT_OK(ThreadPoolBuilder(kDefaultPoolName).Build(&pool_));
   }

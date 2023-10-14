@@ -45,7 +45,6 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
@@ -560,7 +559,7 @@ class ReupdateHooks : public Tablet::FlushCompactCommonHooks {
         client_schema_(schema) {
   }
 
-  Status PostWriteSnapshot() OVERRIDE {
+  Status PostWriteSnapshot() override {
     tablet::LocalTabletWriter writer(tablet_, &client_schema_);
     for (const MaterializedTestRow& update : updates_) {
       KuduPartialRow row(&client_schema_);

@@ -103,7 +103,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Construct the tablet manager.
   explicit TSTabletManager(TabletServer* server);
 
-  virtual ~TSTabletManager();
+  ~TSTabletManager() override;
 
   // Load all tablet metadata blocks from disk, and open their respective tablets.
   // Starts the timer, 'start_tablets' and populates the 'tablets_total'. The subsequent
@@ -176,7 +176,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                                   scoped_refptr<tablet::TabletReplica>* replica) const
                                   override;
 
-  virtual const NodeInstancePB& NodeInstance() const override;
+  const NodeInstancePB& NodeInstance() const override;
 
   // Initiate tablet copy of the specified tablet on the tablet_copy_pool_.
   // See the StartTabletCopy() RPC declaration in consensus.proto for details.

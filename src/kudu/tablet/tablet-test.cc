@@ -46,7 +46,6 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
@@ -453,7 +452,7 @@ TYPED_TEST(TestTablet, TestReinsertDuringFlush) {
    public:
     explicit MyCommonHooks(TestFixture *test) : test_(test) {}
 
-    Status PostWriteSnapshot() OVERRIDE {
+    Status PostWriteSnapshot() override {
       LocalTabletWriter writer(test_->tablet().get(), &test_->client_schema());
       test_->InsertTestRow(&writer, 0, 1);
       CHECK_OK(test_->DeleteTestRow(&writer, 0));
@@ -1163,29 +1162,27 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks {
     return Status::OK();
   }
 
-  virtual Status PostTakeMvccSnapshot() OVERRIDE {
+  Status PostTakeMvccSnapshot() override {
     // before we flush we update the MemRowSet afterwards we update the
     // DeltaMemStore
     if (!flushed_) {
       return DoHook(MRS_MUTATION);
-    } else {
-      return DoHook(DELTA_MUTATION);
     }
+    return DoHook(DELTA_MUTATION);
   }
-  virtual Status PostWriteSnapshot() OVERRIDE {
+  Status PostWriteSnapshot() override {
     if (!flushed_) {
       return DoHook(MRS_MUTATION);
-    } else {
-      return DoHook(DELTA_MUTATION);
     }
+    return DoHook(DELTA_MUTATION);
   }
-  virtual Status PostSwapInDuplicatingRowSet() OVERRIDE {
+  Status PostSwapInDuplicatingRowSet() override {
     return DoHook(DUPLICATED_MUTATION);
   }
-  virtual Status PostReupdateMissedDeltas() OVERRIDE {
+  Status PostReupdateMissedDeltas() override {
     return DoHook(DUPLICATED_MUTATION);
   }
-  virtual Status PostSwapNewRowSet() OVERRIDE {
+  Status PostSwapNewRowSet() override {
     return DoHook(DELTA_MUTATION);
   }
  protected:

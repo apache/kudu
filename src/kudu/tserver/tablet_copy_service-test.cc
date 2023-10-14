@@ -39,7 +39,6 @@
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -86,7 +85,7 @@ class TabletCopyServiceTest : public TabletCopyTest {
   }
 
  protected:
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     TabletCopyTest::SetUp();
     tablet_copy_proxy_.reset(
         new TabletCopyServiceProxy(

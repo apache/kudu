@@ -245,7 +245,7 @@ class DelayedApplyOp : public WriteOp {
         apply_continue_(DCHECK_NOTNULL(apply_continue)) {
   }
 
-  virtual Status Apply(CommitMsg** commit_msg) override {
+  Status Apply(CommitMsg** commit_msg) override {
     apply_started_->CountDown();
     LOG(INFO) << "Delaying apply...";
     apply_continue_->Wait();

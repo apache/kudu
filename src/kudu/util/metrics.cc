@@ -42,13 +42,13 @@ TAG_FLAG(metrics_retirement_age_ms, advanced);
 // More complex applications will define other entities.
 METRIC_DEFINE_entity(server);
 
-namespace kudu {
-
 using std::string;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
+
+namespace kudu {
 
 template<typename Collection>
 void WriteMetricsToJson(JsonWriter* writer,
@@ -72,7 +72,7 @@ void WriteMetricsToJson(JsonWriter* writer,
 template<typename Collection>
 void WriteMetricsToPrometheus(PrometheusWriter* writer,
                               const Collection& metrics,
-                              const std::string& prefix) {
+                              const string& prefix) {
   for (const auto& [name, val] : metrics) {
     WARN_NOT_OK(val->WriteAsPrometheus(writer, prefix),
                 Substitute("Failed to write $0 as Prometheus", name));
@@ -818,7 +818,7 @@ Status Gauge::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Gauge::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
+Status Gauge::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
   prototype_->WriteFields(writer, prefix);
 
   WriteValue(writer, prefix);
@@ -902,14 +902,15 @@ void StringGauge::WriteValue(JsonWriter* writer) const {
 // (see https://prometheus.io/docs/instrumenting/exposition_formats/).
 // DCHECK() is added to make sure this method is not called from anywhere,
 // but overriding it is necessary since Gauge::WriteValue() is a pure virtual one.
-// An alternative could be defining a empty implementation for Gauge::WriteValue()
+// An alternative could be defining an empty implementation for Gauge::WriteValue()
 // virtual method and not adding this empty override here.
-void StringGauge::WriteValue(PrometheusWriter* writer, const std::string& prefix) const {
+void StringGauge::WriteValue(PrometheusWriter* /*writer*/,
+                             const string& /*prefix*/) const {
   DCHECK(false);
 }
 
 Status StringGauge::WriteAsPrometheus(PrometheusWriter* /*writer*/,
-                                      const std::string& /*prefix*/) const {
+                                      const string& /*prefix*/) const {
   // Prometheus doesn't support string gauges.
   // This function ensures that output written to Prometheus is empty.
   return Status::OK();
@@ -976,7 +977,7 @@ void MeanGauge::WriteValue(JsonWriter* writer) const {
   writer->Double(total_count());
 }
 
-void MeanGauge::WriteValue(PrometheusWriter* writer, const std::string& prefix) const {
+void MeanGauge::WriteValue(PrometheusWriter* writer, const string& prefix) const {
   auto output = Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
                            MetricUnit::Name(prototype_->unit()), value());
 
@@ -1029,7 +1030,7 @@ Status Counter::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Counter::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
+Status Counter::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
   prototype_->WriteFields(writer, prefix);
 
   writer->WriteEntry(Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
@@ -1094,9 +1095,9 @@ Status Histogram::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Histogram::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
+Status Histogram::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
   prototype_->WriteFields(writer, prefix);
-  std::string output = "";
+  string output = "";
   MetricJsonOptions opts;
   // Snapshot is taken to preserve the consistency across metrics and
   // requirements given by Prometheus. The value for the _bucket in +Inf

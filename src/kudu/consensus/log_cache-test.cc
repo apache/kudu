@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -45,7 +46,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/mem_tracker.h"
@@ -85,7 +85,7 @@ class LogCacheTest : public KuduTest {
             &metric_registry_, "LogCacheTest::tablet")) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
@@ -104,7 +104,7 @@ class LogCacheTest : public KuduTest {
     ASSERT_OK(clock_->Init());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     log_->WaitUntilAllFlushed();
   }
 

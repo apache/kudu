@@ -21,6 +21,7 @@
 #include <ostream> // IWYU pragma: keep
 #include <set>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -31,7 +32,6 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/common.pb.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h" // IWYU pragma: keep
 #include "kudu/gutil/strings/substitute.h"
@@ -107,12 +107,12 @@ class MasterFailoverTest : public KuduTest,
     opts_.extra_tserver_flags.emplace_back("--heartbeat_interval_ms=500");
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     NO_FATALS(RestartCluster());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (cluster_) {
       cluster_->Shutdown();
     }

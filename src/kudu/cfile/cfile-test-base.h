@@ -72,6 +72,8 @@ class DataGenerator {
     total_entries_(0)
   {}
 
+  virtual ~DataGenerator() = default;
+
   void Reset() {
     block_entries_ = 0;
     total_entries_ = 0;
@@ -144,8 +146,6 @@ class DataGenerator {
     return values_[index];
   }
 
-  virtual ~DataGenerator() {}
-
  private:
   std::unique_ptr<cpp_type[]> values_;
   std::unique_ptr<uint8_t[]> non_null_bitmap_;
@@ -161,7 +161,7 @@ class UInt8DataGenerator : public DataGenerator<UINT8, HAS_NULLS> {
  public:
   UInt8DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  uint8_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  uint8_t BuildTestValue(size_t /*block_index*/, size_t value) override {
     return (value * 10) % 256;
   }
 };
@@ -171,7 +171,7 @@ class Int8DataGenerator : public DataGenerator<INT8, HAS_NULLS> {
  public:
   Int8DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  int8_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  int8_t BuildTestValue(size_t /*block_index*/, size_t value) override {
     return ((value * 10) % 128) * (value % 2 == 0 ? -1 : 1);
   }
 };
@@ -181,7 +181,7 @@ class UInt16DataGenerator : public DataGenerator<UINT16, HAS_NULLS> {
  public:
   UInt16DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  uint16_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  uint16_t BuildTestValue(size_t /*block_index*/, size_t value) override {
     return (value * 10) % 65536;
   }
 };
@@ -191,7 +191,7 @@ class Int16DataGenerator : public DataGenerator<INT16, HAS_NULLS> {
  public:
   Int16DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  int16_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  int16_t BuildTestValue(size_t block_index, size_t value) override {
     return ((value * 10) % 32768) * (value % 2 == 0 ? -1 : 1);
   }
 };
@@ -201,7 +201,7 @@ class UInt32DataGenerator : public DataGenerator<UINT32, HAS_NULLS> {
  public:
   UInt32DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  uint32_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  uint32_t BuildTestValue(size_t /*block_index*/, size_t value) override {
     return value * 10;
   }
 };
@@ -211,7 +211,7 @@ class Int32DataGenerator : public DataGenerator<INT32, HAS_NULLS> {
  public:
   Int32DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  int32_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  int32_t BuildTestValue(size_t /*block_index*/, size_t value) override {
     return (value * 10) *(value % 2 == 0 ? -1 : 1);
   }
 };
@@ -221,7 +221,7 @@ class UInt64DataGenerator : public DataGenerator<UINT64, HAS_NULLS> {
  public:
   UInt64DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  uint64_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
+  uint64_t BuildTestValue(size_t /*block_index*/, size_t value) override {
     return value * 0x123456789abcdefULL;
   }
 };
@@ -231,7 +231,7 @@ class Int64DataGenerator : public DataGenerator<INT64, HAS_NULLS> {
  public:
   Int64DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  int64_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
+  int64_t BuildTestValue(size_t /*block_index*/, size_t value) override {
     int64_t r = (value * 0x123456789abcdefULL) & 0x7fffffffffffffffULL;
     return value % 2 == 0 ? r : -r;
   }
@@ -242,7 +242,7 @@ class Int128DataGenerator : public DataGenerator<INT128, HAS_NULLS> {
 public:
   Int128DataGenerator() {}
   ATTRIBUTE_NO_SANITIZE_INTEGER
-  int128_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
+  int128_t BuildTestValue(size_t /*block_index*/, size_t value) override {
     int128_t r = (value * 0x123456789abcdefULL) & 0x7fffffffffffffffULL;
     return value % 2 == 0 ? r : -r;
   }
@@ -256,7 +256,7 @@ class FPDataGenerator : public DataGenerator<DATA_TYPE, HAS_NULLS> {
   typedef typename DataTypeTraits<DATA_TYPE>::cpp_type cpp_type;
 
   FPDataGenerator() {}
-  cpp_type BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  cpp_type BuildTestValue(size_t /*block_index*/, size_t value) override {
     return static_cast<cpp_type>(value) * 1.0001;
   }
 };
@@ -273,12 +273,12 @@ class StringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
       : formatter_(std::move(formatter)) {
   }
 
-  Slice BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  Slice BuildTestValue(size_t block_index, size_t value) override {
     data_buffers_[block_index] = formatter_(value);
     return Slice(data_buffers_[block_index]);
   }
 
-  void Resize(size_t num_entries) OVERRIDE {
+  void Resize(size_t num_entries) override {
     data_buffers_.resize(num_entries);
     DataGenerator<STRING, HAS_NULLS>::Resize(num_entries);
   }
@@ -299,7 +299,7 @@ class DuplicateStringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
     num_(num) {
   }
 
-  Slice BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+  Slice BuildTestValue(size_t block_index, size_t value) override {
     // random number from 0 ~ num_-1
     value = random() % num_;
     char *buf = data_buffer_[block_index].data;
@@ -308,7 +308,7 @@ class DuplicateStringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
     return Slice(buf, len);
   }
 
-  void Resize(size_t num_entries) OVERRIDE {
+  void Resize(size_t num_entries) override {
     if (num_entries > this->block_entries()) {
       data_buffer_.reset(new Buffer[num_entries]);
     }
@@ -337,7 +337,7 @@ class RandomInt32DataGenerator : public DataGenerator<INT32, /* HAS_NULLS= */ fa
 
 class CFileTestBase : public KuduTest {
  public:
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));

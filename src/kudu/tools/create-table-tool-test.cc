@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -32,7 +33,6 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
@@ -68,7 +68,7 @@ class CreateTableToolTest : public KuduTest {
     STLDeleteValues(&ts_map_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (cluster_) cluster_->Shutdown();
     KuduTest::TearDown();
   }

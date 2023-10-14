@@ -56,7 +56,6 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -99,7 +98,7 @@ static const uint64_t kTwoMb = 2 * kOneMb;
 
 class TestEnv : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     CheckFallocateSupport();
   }

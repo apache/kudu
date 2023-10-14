@@ -76,7 +76,6 @@
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
@@ -253,7 +252,7 @@ class ToolTest : public KuduTest {
     STLDeleteValues(&ts_map_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (cluster_) cluster_->Shutdown();
     if (mini_cluster_) mini_cluster_->Shutdown();
     KuduTest::TearDown();
@@ -7458,7 +7457,7 @@ class ControlShellToolTest :
     public ::testing::WithParamInterface<std::tuple<SubprocessProtocol::SerializationMode,
                                                     bool>> {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     ToolTest::SetUp();
 
     // Start the control shell.
@@ -7485,7 +7484,7 @@ class ControlShellToolTest :
                                         shell_->ReleaseChildStdinFd()));
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     if (proto_) {
       // Stopping the protocol interface will close the fds, causing the shell
       // to exit on its own.

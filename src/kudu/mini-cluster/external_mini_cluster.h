@@ -346,7 +346,7 @@ class ExternalMiniCluster : public MiniCluster {
   explicit ExternalMiniCluster(ExternalMiniClusterOptions opts);
 
   // Destroys a cluster.
-  virtual ~ExternalMiniCluster();
+  ~ExternalMiniCluster() override;
 
   // Start the cluster.
   Status Start() override;
@@ -479,21 +479,21 @@ class ExternalMiniCluster : public MiniCluster {
   }
 
   // Returns the WALs root directory for the tablet server 'ts_idx'.
-  virtual std::string WalRootForTS(int ts_idx) const override;
+  std::string WalRootForTS(int ts_idx) const override;
 
   // Returns the UUID for the tablet server 'ts_idx'.
-  virtual std::string UuidForTS(int ts_idx) const override;
+  std::string UuidForTS(int ts_idx) const override;
 
   // Returns the Env on which the cluster operates. If encryption is enabled,
   // the encryption key is incorrect. For reading/writing files, ts_env() and
   // master_env() should be used instead.
-  virtual Env* env() const override;
+  Env* env() const override;
 
   // Returns the Env on which a specific tablet server operates.
-  virtual Env* ts_env(int ts_idx) const override;
+  Env* ts_env(int ts_idx) const override;
 
   // Returns the Env on which a specific master operates.
-  virtual Env* master_env(int master_idx) const override;
+  Env* master_env(int master_idx) const override;
 
   BindMode bind_mode() const override {
     return opts_.bind_mode;
@@ -868,11 +868,11 @@ class ExternalMaster : public ExternalDaemon {
  public:
   explicit ExternalMaster(ExternalDaemonOptions opts);
 
-  virtual Status Start() override;
+  Status Start() override;
 
   // Restarts the daemon.
   // Requires that it has previously been shutdown.
-  virtual Status Restart() override WARN_UNUSED_RESULT;
+  Status Restart() override WARN_UNUSED_RESULT;
 
   Env* env() const override { return env_.get(); }
 
@@ -895,13 +895,15 @@ class ExternalMaster : public ExternalDaemon {
   static std::vector<std::string> GetMasterFlags(const ExternalDaemonOptions& opts);
  private:
   friend class RefCountedThreadSafe<ExternalMaster>;
+
   // Get flags specific to ExternalMaster where 'rpc_bind_addr' and 'http_addr' are
   // the RPC and HTTP addresses to bind in case of start or the corresponding bound
   // addresses in case of restart.
   static std::vector<std::string> GetCommonFlags(const HostPort& rpc_bind_addr,
                                                  const HostPort& http_addr = HostPort());
+  ~ExternalMaster() override;
+
   const std::unique_ptr<Env> env_;
-  virtual ~ExternalMaster();
 };
 
 class ExternalTabletServer : public ExternalDaemon {
@@ -909,11 +911,11 @@ class ExternalTabletServer : public ExternalDaemon {
   ExternalTabletServer(ExternalDaemonOptions opts,
                        std::vector<HostPort> master_addrs);
 
-  virtual Status Start() override;
+  Status Start() override;
 
   // Restarts the daemon.
   // Requires that it has previously been shutdown.
-  virtual Status Restart() override WARN_UNUSED_RESULT;
+  Status Restart() override WARN_UNUSED_RESULT;
 
   Env* env() const override { return env_.get(); }
  private:
@@ -921,7 +923,7 @@ class ExternalTabletServer : public ExternalDaemon {
   const std::unique_ptr<Env> env_;
 
   friend class RefCountedThreadSafe<ExternalTabletServer>;
-  virtual ~ExternalTabletServer();
+  ~ExternalTabletServer() override;
 };
 
 } // namespace cluster

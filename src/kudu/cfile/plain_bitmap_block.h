@@ -51,11 +51,11 @@ class PlainBitMapBlockBuilder final : public BlockBuilder {
     Reset();
   }
 
-  virtual bool IsBlockFull() const override {
+  bool IsBlockFull() const override {
     return writer_.bytes_written() > options_->storage_attributes.cfile_block_size;
   }
 
-  virtual int Add(const uint8_t* vals, size_t count) OVERRIDE  {
+  int Add(const uint8_t* vals, size_t count) override  {
     for (const uint8_t* val = vals;
          val < vals + count;
          ++val) {
@@ -67,14 +67,14 @@ class PlainBitMapBlockBuilder final : public BlockBuilder {
     return count;
   }
 
-  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override {
     InlineEncodeFixed32(&buf_[0], count_);
     InlineEncodeFixed32(&buf_[4], ordinal_pos);
     writer_.Flush(false);
     *slices = { Slice(buf_) };
   }
 
-  virtual void Reset() OVERRIDE {
+  void Reset() override {
     count_ = 0;
     writer_.Clear();
     // Reserve space for a header
@@ -82,17 +82,17 @@ class PlainBitMapBlockBuilder final : public BlockBuilder {
     writer_.PutValue(0xdeadbeef, 32);
   }
 
-  virtual size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return count_;
   }
 
-  // TODO Implement this method
-  virtual Status GetFirstKey(void* key) const OVERRIDE {
+  // TODO(afeinberg): Implement this method
+  Status GetFirstKey(void* /*key*/) const override {
     return Status::NotSupported("BOOL keys not supported");
   }
 
-  // TODO Implement this method
-  virtual Status GetLastKey(void* key) const OVERRIDE {
+  // TODO(afeinberg): Implement this method
+  Status GetLastKey(void* /*key*/) const override {
     return Status::NotSupported("BOOL keys not supported");
   }
 
@@ -119,7 +119,7 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
         cur_idx_(0) {
   }
 
-  virtual Status ParseHeader() OVERRIDE {
+  Status ParseHeader() override {
     CHECK(!parsed_);
 
     if (data_.size() < kHeaderSize) {
@@ -148,7 +148,7 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
+  void SeekToPositionInBlock(uint pos) override {
     CHECK(parsed_) << "Must call ParseHeader()";
 
     if (PREDICT_FALSE(num_elems_ == 0)) {
@@ -163,13 +163,13 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  // TODO : Support BOOL keys
-  virtual Status SeekAtOrAfterValue(const void *value,
-                                    bool *exact_match) OVERRIDE {
+  // TODO(afeinberg): Support BOOL keys
+  Status SeekAtOrAfterValue(const void* /*value*/,
+                            bool* /*exact_match*/) override {
     return Status::NotSupported("BOOL keys are not supported!");
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE {
+  Status CopyNextValues(size_t *n, ColumnDataView *dst) override {
     DCHECK(parsed_);
     DCHECK_LE(*n, dst->nrows());
     DCHECK_EQ(dst->stride(), sizeof(bool));
@@ -196,13 +196,13 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual bool HasNext() const OVERRIDE { return cur_idx_ < num_elems_; }
+  bool HasNext() const override { return cur_idx_ < num_elems_; }
 
-  virtual size_t Count() const OVERRIDE { return num_elems_; }
+  size_t Count() const override { return num_elems_; }
 
-  virtual size_t GetCurrentIndex() const OVERRIDE { return cur_idx_; }
+  size_t GetCurrentIndex() const override { return cur_idx_; }
 
-  virtual rowid_t GetFirstRowId() const OVERRIDE { return ordinal_pos_base_; }
+  rowid_t GetFirstRowId() const override { return ordinal_pos_base_; }
 
  private:
   enum {

@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -161,7 +162,7 @@ class TsLocationAssignmentITest :
     opts_.extra_tserver_flags.emplace_back("--enable_txn_system_client_init=false");
   }
 
-  virtual ~TsLocationAssignmentITest() = default;
+  ~TsLocationAssignmentITest() override = default;
 
  protected:
   void StartCluster() {

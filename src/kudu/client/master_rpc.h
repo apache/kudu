@@ -24,7 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/rpc.h"
@@ -90,14 +89,14 @@ class ConnectToClusterRpc : public rpc::Rpc,
                       rpc::CredentialsPolicy creds_policy =
       rpc::CredentialsPolicy::ANY_CREDENTIALS);
 
-  virtual void SendRpc() OVERRIDE;
+  void SendRpc() override;
 
-  virtual std::string ToString() const OVERRIDE;
+  std::string ToString() const override;
  private:
   friend class RefCountedThreadSafe<ConnectToClusterRpc>;
-  ~ConnectToClusterRpc();
+  ~ConnectToClusterRpc() override;
 
-  virtual void SendRpcCb(const Status& status) OVERRIDE;
+  void SendRpcCb(const Status& status) override;
 
   // Invoked when a response comes back from the master with index
   // 'master_idx'.

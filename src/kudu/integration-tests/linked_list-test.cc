@@ -45,7 +45,6 @@
 
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/port.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/linked_list-test-util.h"
 #include "kudu/integration-tests/ts_itest-base.h"
@@ -95,7 +94,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
  public:
   LinkedListTest() {}
 
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     TabletServerIntegrationTestBase::SetUp();
 
     LOG(INFO) << "Linked List Test Configuration:";

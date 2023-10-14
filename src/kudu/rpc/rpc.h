@@ -88,7 +88,7 @@ struct RetriableRpcStatus {
 template <class Server>
 class ServerPicker : public RefCountedThreadSafe<ServerPicker<Server>> {
  public:
-  virtual ~ServerPicker() {}
+  virtual ~ServerPicker() = default;
 
   typedef std::function<void(const Status&, Server*)> ServerPickedCallback;
 
@@ -200,7 +200,7 @@ class Rpc {
       std::shared_ptr<rpc::Messenger> messenger,
       BackoffType backoff)
       : retrier_(deadline, std::move(messenger), backoff) {}
-  virtual ~Rpc() {}
+  virtual ~Rpc() = default;
 
   // Asynchronously sends the RPC to the remote end.
   //

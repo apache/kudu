@@ -21,6 +21,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -35,7 +36,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -101,7 +101,7 @@ class MasterReplicationTest : public KuduTest {
     opts_.num_tablet_servers = kNumTabletServerReplicas;
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     cluster_.reset(new InternalMiniCluster(env_, opts_));
     ASSERT_OK(cluster_->Start());

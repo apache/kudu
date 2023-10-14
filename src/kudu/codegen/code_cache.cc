@@ -24,7 +24,6 @@
 #include <glog/logging.h>
 
 #include "kudu/codegen/jit_wrapper.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/faststring.h"
@@ -53,7 +52,7 @@ JITWrapper* CacheValueToJITWrapper(Slice val) {
 class CodeCache::EvictionCallback : public Cache::EvictionCallback {
  public:
   EvictionCallback() {}
-  virtual void EvictedEntry(Slice key, Slice value) OVERRIDE {
+  void EvictedEntry(Slice /*key*/, Slice value) override {
     CacheValueToJITWrapper(value)->Release();
   }
  private:

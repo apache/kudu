@@ -68,7 +68,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/escaping.h"
@@ -248,7 +247,7 @@ namespace tserver {
 class TabletServerTest : public TabletServerTestBase {
  public:
   // Starts the tablet server, override to start it later.
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     NO_FATALS(TabletServerTestBase::SetUp());
     NO_FATALS(StartTabletServer(/*num_data_dirs=*/1));
   }
@@ -995,7 +994,7 @@ TEST_F(TabletServerStartupWebPageTest, TestLogBlockContainerMetrics) {
 class TabletServerDiskErrorTest : public TabletServerTestBase,
                                   public testing::WithParamInterface<ErrorType> {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     const int kNumDirs = 5;
     NO_FATALS(TabletServerTestBase::SetUp());
     // Ensure the server will flush frequently.
@@ -1826,33 +1825,33 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks,
   }
 
   // This should go in pre-flush and get flushed
-  virtual Status PostSwapNewMemRowSet() OVERRIDE {
+  Status PostSwapNewMemRowSet() override {
     return DoHook(1, 10 + iteration_);
   }
   // This should go in after the flush, but before
   // the duplicating row set, i.e., this should appear as
   // a missed delta.
-  virtual Status PostTakeMvccSnapshot() OVERRIDE {
+  Status PostTakeMvccSnapshot() override {
     return DoHook(2, 20 + iteration_);
   }
   // This too should appear as a missed delta.
-  virtual Status PostWriteSnapshot() OVERRIDE {
+  Status PostWriteSnapshot() override {
     return DoHook(3, 30 + iteration_);
   }
   // This should appear as a duplicated mutation
-  virtual Status PostSwapInDuplicatingRowSet() OVERRIDE {
+  Status PostSwapInDuplicatingRowSet() override {
     return DoHook(4, 40 + iteration_);
   }
   // This too should appear as a duplicated mutation
-  virtual Status PostReupdateMissedDeltas() OVERRIDE {
+  Status PostReupdateMissedDeltas() override {
     return DoHook(5, 50 + iteration_);
   }
   // This should go into the new delta.
-  virtual Status PostSwapNewRowSet() OVERRIDE {
+  Status PostSwapNewRowSet() override {
     return DoHook(6, 60 + iteration_);
   }
   // This should go in pre-flush (only on compactions)
-  virtual Status PostSelectIterators() OVERRIDE {
+  Status PostSelectIterators() override {
     return DoHook(7, 70 + iteration_);
   }
   void increment_iteration() {

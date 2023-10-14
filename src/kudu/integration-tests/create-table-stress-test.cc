@@ -36,7 +36,6 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -99,7 +98,7 @@ class CreateTableStressTest : public KuduTest {
     CHECK_OK(b.Build(&schema_));
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Make heartbeats faster to speed test runtime.
     FLAGS_heartbeat_interval_ms = 10;
 
@@ -130,7 +129,7 @@ class CreateTableStressTest : public KuduTest {
     ASSERT_OK(CreateTabletServerMap(master_proxy_, messenger_, &ts_map_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     cluster_->Shutdown();
     STLDeleteValues(&ts_map_);
   }

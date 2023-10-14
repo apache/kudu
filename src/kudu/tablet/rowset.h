@@ -120,6 +120,8 @@ class RowSet {
     UNDERESTIMATE,
   };
 
+  virtual ~RowSet() = default;
+
   // Check if a given row key is present in this rowset.
   // Sets *present and returns Status::OK, unless an error
   // occurs.
@@ -295,8 +297,6 @@ class RowSet {
                                          int64_t* blocks_deleted,
                                          int64_t* bytes_deleted) = 0;
 
-  virtual ~RowSet() {}
-
   // Return true if this RowSet is available for compaction, based on
   // the current state of the compact_flush_lock. This should only be
   // used under the Tablet's compaction selection lock, or else the
@@ -406,31 +406,31 @@ class DuplicatingRowSet : public RowSet {
  public:
   DuplicatingRowSet(RowSetVector old_rowsets, RowSetVector new_rowsets);
 
-  virtual Status MutateRow(Timestamp timestamp,
-                           const RowSetKeyProbe &probe,
-                           const RowChangeList &update,
-                           const consensus::OpId& op_id,
-                           const fs::IOContext* io_context,
-                           ProbeStats* stats,
-                           OperationResultPB* result) override;
+  Status MutateRow(Timestamp timestamp,
+                   const RowSetKeyProbe &probe,
+                   const RowChangeList &update,
+                   const consensus::OpId& op_id,
+                   const fs::IOContext* io_context,
+                   ProbeStats* stats,
+                   OperationResultPB* result) override;
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, const fs::IOContext* io_context,
                          bool *present, ProbeStats* stats) const override;
 
-  virtual Status NewRowIterator(const RowIteratorOptions& opts,
-                                std::unique_ptr<RowwiseIterator>* out) const override;
+  Status NewRowIterator(const RowIteratorOptions& opts,
+                        std::unique_ptr<RowwiseIterator>* out) const override;
 
-  virtual Status NewCompactionInput(const Schema* projection,
-                                    const MvccSnapshot &snap,
-                                    const fs::IOContext* io_context,
-                                    std::unique_ptr<CompactionInput>* out) const override;
+  Status NewCompactionInput(const Schema* projection,
+                            const MvccSnapshot &snap,
+                            const fs::IOContext* io_context,
+                            std::unique_ptr<CompactionInput>* out) const override;
 
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const override;
 
-  virtual Status CountLiveRows(uint64_t* count) const override;
+  Status CountLiveRows(uint64_t* count) const override;
 
-  virtual Status GetBounds(std::string* min_encoded_key,
-                           std::string* max_encoded_key) const override;
+  Status GetBounds(std::string* min_encoded_key,
+                   std::string* max_encoded_key) const override;
 
   // Return the total size on-disk of this rowset, in bytes.
   uint64_t OnDiskSize() const override;
@@ -454,15 +454,15 @@ class DuplicatingRowSet : public RowSet {
     return nullptr;
   }
 
-  virtual bool IsAvailableForCompaction() override {
+  bool IsAvailableForCompaction() override {
     return false;
   }
 
-  virtual bool has_been_compacted() const override {
+  bool has_been_compacted() const override {
     return false;
   }
 
-  virtual void set_has_been_compacted() override {
+  void set_has_been_compacted() override {
     LOG(FATAL) << "Cannot be compacted";
   }
 

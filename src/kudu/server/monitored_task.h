@@ -27,7 +27,7 @@ namespace kudu {
 
 class MonitoredTask : public RefCountedThreadSafe<MonitoredTask> {
  public:
-  virtual ~MonitoredTask() {}
+  virtual ~MonitoredTask() = default;
 
     enum State {
       kStatePreparing,

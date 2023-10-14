@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -66,7 +67,7 @@ class JitteredPeriodicTimerTest : public PeriodicTimerTest,
       : counter_(0) {
   }
 
-  virtual void SetUp() override {
+  void SetUp() override {
     PeriodicTimerTest::SetUp();
 
     MessengerBuilder builder("test");
@@ -78,7 +79,7 @@ class JitteredPeriodicTimerTest : public PeriodicTimerTest,
                                    GetOptions());
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     // Ensure that the reactor threads are fully quiesced (and thus no timer
     // callbacks are running) by the time 'counter_' is destroyed.
     messenger_->Shutdown();
@@ -202,7 +203,7 @@ TEST_F(PeriodicTimerTest, TestCallbackRestartsTimer) {
 
 class JitteredOneShotPeriodicTimerTest : public JitteredPeriodicTimerTest {
  protected:
-  virtual PeriodicTimer::Options GetOptions() override {
+  PeriodicTimer::Options GetOptions() override {
     PeriodicTimer::Options opts;
     opts.jitter_pct = GetParam();
     opts.one_shot = true;

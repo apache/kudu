@@ -56,7 +56,7 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
     Reset();
   }
 
-  virtual int Add(const uint8_t* vals, size_t count) OVERRIDE {
+  int Add(const uint8_t* vals, size_t count) override {
      for (const uint8_t* val = vals;
           val < vals + count;
           ++val) {
@@ -68,34 +68,34 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
     return count;
   }
 
-  virtual bool IsBlockFull() const override {
+  bool IsBlockFull() const override {
     return encoder_.len() > options_->storage_attributes.cfile_block_size;
   }
 
-  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override {
     InlineEncodeFixed32(&buf_[0], count_);
     InlineEncodeFixed32(&buf_[4], ordinal_pos);
     encoder_.Flush();
     *slices = { buf_ };
   }
 
-  virtual void Reset() OVERRIDE {
+  void Reset() override {
     count_ = 0;
     encoder_.Clear();
     encoder_.Reserve(kRleBitmapBlockHeaderSize, 0);
   }
 
-  virtual size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return count_;
   }
 
-  // TODO Implement this method
-  virtual Status GetFirstKey(void* key) const OVERRIDE {
+  // TODO(afeinberg) Implement this method
+  Status GetFirstKey(void* key) const override {
     return Status::NotSupported("BOOL keys not supported");
   }
 
-  // TODO Implement this method
-  virtual Status GetLastKey(void* key) const OVERRIDE {
+  // TODO(afeinberg) Implement this method
+  Status GetLastKey(void* key) const override {
     return Status::NotSupported("BOOL keys not supported");
   }
 
@@ -120,7 +120,7 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
         cur_idx_(0) {
   }
 
-  virtual Status ParseHeader() OVERRIDE {
+  Status ParseHeader() override {
     CHECK(!parsed_);
 
     if (data_.size() < kRleBitmapBlockHeaderSize) {
@@ -141,7 +141,7 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
+  void SeekToPositionInBlock(uint pos) override {
     CHECK(parsed_) << "Must call ParseHeader()";
     DCHECK_LE(pos, num_elems_)
       << "Tried to seek to " << pos << " which is > number of elements ("
@@ -167,7 +167,7 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView* dst) OVERRIDE {
+  Status CopyNextValues(size_t *n, ColumnDataView* dst) override {
     DCHECK(parsed_);
 
     DCHECK_LE(*n, dst->nrows());
@@ -195,18 +195,18 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual Status SeekAtOrAfterValue(const void *value,
-                                    bool *exact_match) OVERRIDE {
+  Status SeekAtOrAfterValue(const void* /*value*/,
+                            bool* /*exact_match*/) override {
     return Status::NotSupported("BOOL keys are not supported!");
   }
 
-  virtual bool HasNext() const OVERRIDE { return cur_idx_ < num_elems_; }
+  bool HasNext() const override { return cur_idx_ < num_elems_; }
 
-  virtual size_t Count() const OVERRIDE { return num_elems_; }
+  size_t Count() const override { return num_elems_; }
 
-  virtual size_t GetCurrentIndex() const OVERRIDE { return cur_idx_; }
+  size_t GetCurrentIndex() const override { return cur_idx_; }
 
-  virtual rowid_t GetFirstRowId() const OVERRIDE { return ordinal_pos_base_; }
+  rowid_t GetFirstRowId() const override { return ordinal_pos_base_; }
 
  private:
   scoped_refptr<BlockHandle> block_;
@@ -232,11 +232,11 @@ class RleIntBlockBuilder final : public BlockBuilder {
     Reset();
   }
 
-  virtual bool IsBlockFull() const OVERRIDE {
+  bool IsBlockFull() const override {
     return rle_encoder_.len() > options_->storage_attributes.cfile_block_size;
   }
 
-  virtual int Add(const uint8_t* vals_void, size_t count) OVERRIDE {
+  int Add(const uint8_t* vals_void, size_t count) override {
     DCHECK_EQ(reinterpret_cast<uintptr_t>(vals_void) & (alignof(CppType) - 1), 0)
         << "Pointer passed to Add() must be naturally-aligned";
 
@@ -254,24 +254,24 @@ class RleIntBlockBuilder final : public BlockBuilder {
     return count;
   }
 
-  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override {
     InlineEncodeFixed32(&buf_[0], count_);
     InlineEncodeFixed32(&buf_[4], ordinal_pos);
     rle_encoder_.Flush();
     *slices = { Slice(buf_) };
   }
 
-  virtual void Reset() OVERRIDE {
+  void Reset() override {
     count_ = 0;
     rle_encoder_.Clear();
     rle_encoder_.Reserve(kRleBitmapBlockHeaderSize, 0);
   }
 
-  virtual size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return count_;
   }
 
-  virtual Status GetFirstKey(void* key) const OVERRIDE {
+  Status GetFirstKey(void* key) const override {
     if (PREDICT_FALSE(count_ == 0)) {
       return Status::NotFound("No keys in the block");
     }
@@ -279,7 +279,7 @@ class RleIntBlockBuilder final : public BlockBuilder {
     return Status::OK();
   }
 
-  virtual Status GetLastKey(void* key) const OVERRIDE {
+  Status GetLastKey(void* key) const override {
     if (PREDICT_FALSE(count_ == 0)) {
       return Status::NotFound("No keys in the block");
     }
@@ -321,7 +321,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
         cur_idx_(0) {
   }
 
-  virtual Status ParseHeader() OVERRIDE {
+  Status ParseHeader() override {
     CHECK(!parsed_);
 
     if (data_.size() < kRleBitmapBlockHeaderSize) {
@@ -343,7 +343,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
+  void SeekToPositionInBlock(uint pos) override {
     CHECK(parsed_) << "Must call ParseHeader()";
     DCHECK_LE(pos, num_elems_)
         << "Tried to seek to " << pos << " which is > number of elements ("
@@ -368,7 +368,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  virtual Status SeekAtOrAfterValue(const void *value_void, bool *exact_match) OVERRIDE {
+  Status SeekAtOrAfterValue(const void *value_void, bool *exact_match) override {
     // Currently using linear search as we do not check whether a
     // mid-point of a buffer will fall on a literal or not.
     //
@@ -402,7 +402,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
     return Status::NotFound("not in block");
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE {
+  Status CopyNextValues(size_t *n, ColumnDataView *dst) override {
     DCHECK(parsed_);
 
     DCHECK_LE(*n, dst->nrows());
@@ -477,19 +477,19 @@ class RleIntBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  virtual bool HasNext() const OVERRIDE {
+  bool HasNext() const override {
     return cur_idx_ < num_elems_;
   }
 
-  virtual size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return num_elems_;
   }
 
-  virtual size_t GetCurrentIndex() const OVERRIDE {
+  size_t GetCurrentIndex() const override {
     return cur_idx_;
   }
 
-  virtual rowid_t GetFirstRowId() const OVERRIDE {
+  rowid_t GetFirstRowId() const override {
     return ordinal_pos_base_;
   };
  private:

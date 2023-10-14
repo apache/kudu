@@ -84,19 +84,19 @@ class BinaryDictBlockBuilder final : public BlockBuilder {
 
   // Append the dictionary block for the current cfile to the end of the cfile and set the footer
   // accordingly.
-  Status AppendExtraInfo(CFileWriter* c_writer, CFileFooterPB* footer) OVERRIDE;
+  Status AppendExtraInfo(CFileWriter* c_writer, CFileFooterPB* footer) override;
 
-  int Add(const uint8_t* vals, size_t count) OVERRIDE;
+  int Add(const uint8_t* vals, size_t count) override;
 
-  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE;
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override;
 
-  void Reset() OVERRIDE;
+  void Reset() override;
 
-  size_t Count() const OVERRIDE;
+  size_t Count() const override;
 
-  Status GetFirstKey(void* key) const OVERRIDE;
+  Status GetFirstKey(void* key) const override;
 
-  Status GetLastKey(void* key) const OVERRIDE;
+  Status GetLastKey(void* key) const override;
 
   static const size_t kMaxHeaderSize = sizeof(uint32_t) * 1;
 
@@ -139,28 +139,28 @@ class BinaryDictBlockDecoder final : public BlockDecoder {
  public:
   explicit BinaryDictBlockDecoder(scoped_refptr<BlockHandle> block, CFileIterator* iter);
 
-  virtual Status ParseHeader() OVERRIDE;
-  virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
-  virtual Status SeekAtOrAfterValue(const void* value, bool* exact_match) OVERRIDE;
-  Status CopyNextValues(size_t* n, ColumnDataView* dst) OVERRIDE;
+  Status ParseHeader() override;
+  void SeekToPositionInBlock(uint pos) override;
+  Status SeekAtOrAfterValue(const void* value, bool* exact_match) override;
+  Status CopyNextValues(size_t* n, ColumnDataView* dst) override;
   Status CopyNextAndEval(size_t* n,
                          ColumnMaterializationContext* ctx,
                          SelectionVectorView* sel,
                          ColumnDataView* dst) override;
 
-  virtual bool HasNext() const OVERRIDE {
+  bool HasNext() const override {
     return data_decoder_->HasNext();
   }
 
-  virtual size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return data_decoder_->Count();
   }
 
-  virtual size_t GetCurrentIndex() const OVERRIDE {
+  size_t GetCurrentIndex() const override {
     return data_decoder_->GetCurrentIndex();
   }
 
-  virtual rowid_t GetFirstRowId() const OVERRIDE {
+  rowid_t GetFirstRowId() const override {
     return data_decoder_->GetFirstRowId();
   }
 

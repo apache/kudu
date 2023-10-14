@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/util/kernel_stack_watchdog.h"
-
 #include <ostream>
 #include <string>
 #include <thread>
@@ -27,9 +25,9 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -47,7 +45,7 @@ namespace kudu {
 
 class StackWatchdogTest : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     KernelStackWatchdog::GetInstance()->SaveLogsForTests(true);
     ANNOTATE_BENIGN_RACE(&FLAGS_hung_task_check_interval_ms, "");

@@ -17,9 +17,9 @@
 #include "kudu/server/glog_metrics.h"
 
 #include <cstddef>
+
 #include <glog/logging.h>
 
-#include "kudu/gutil/port.h"
 #include "kudu/util/metrics.h"
 
 METRIC_DEFINE_counter(server, glog_info_messages,
@@ -49,10 +49,13 @@ class MetricsSink : public google::LogSink {
     error_counter_(METRIC_glog_error_messages.Instantiate(entity)) {
   }
 
-  virtual void send(google::LogSeverity severity, const char* full_filename,
-                    const char* base_filename, int line,
-                    const struct ::tm* tm_time,
-                    const char* message, size_t message_len) OVERRIDE {
+  void send(google::LogSeverity severity,
+            const char* /*full_filename*/,
+            const char* /*base_filename*/,
+            int /*line*/,
+            const struct ::tm* /*tm_time*/,
+            const char* /*message*/,
+            size_t /*message_len*/) override {
 
     Counter* c;
     switch (severity) {

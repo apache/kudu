@@ -89,14 +89,14 @@ class ConnectToMasterRpc : public Rpc {
                      CredentialsPolicy creds_policy,
                      ConnectToMasterResponsePB* out);
 
-  ~ConnectToMasterRpc();
+  ~ConnectToMasterRpc() override;
 
-  virtual void SendRpc() OVERRIDE;
+  void SendRpc() override;
 
-  virtual std::string ToString() const OVERRIDE;
+  string ToString() const override;
 
  private:
-  virtual void SendRpcCb(const Status& status) OVERRIDE;
+  void SendRpcCb(const Status& status) override;
 
   const StatusCallback user_cb_;
 

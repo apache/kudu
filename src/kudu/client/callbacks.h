@@ -101,12 +101,12 @@ class KUDU_EXPORT KuduLoggingMemberCallback : public KuduLoggingCallback {
   }
 
   /// @copydoc KuduLoggingCallback::Run()
-  virtual void Run(KuduLogSeverity severity,
-                   const char* filename,
-                   int line_number,
-                   const struct ::tm* time,
-                   const char* message,
-                   size_t message_len) OVERRIDE {
+  void Run(KuduLogSeverity severity,
+           const char* filename,
+           int line_number,
+           const struct ::tm* time,
+           const char* message,
+           size_t message_len) OVERRIDE {
     (object_->*member_)(severity, filename, line_number, time,
         message, message_len);
   }
@@ -142,12 +142,12 @@ class KUDU_EXPORT KuduLoggingFunctionCallback : public KuduLoggingCallback {
   }
 
   /// @copydoc KuduLoggingCallback::Run()
-  virtual void Run(KuduLogSeverity severity,
-                   const char* filename,
-                   int line_number,
-                   const struct ::tm* time,
-                   const char* message,
-                   size_t message_len) OVERRIDE {
+  void Run(KuduLogSeverity severity,
+           const char* filename,
+           int line_number,
+           const struct ::tm* time,
+           const char* message,
+           size_t message_len) OVERRIDE {
     function_(arg_, severity, filename, line_number, time,
               message, message_len);
   }
@@ -195,7 +195,7 @@ class KUDU_EXPORT KuduStatusMemberCallback : public KuduStatusCallback {
   }
 
   /// @copydoc KuduStatusCallback::Run()
-  virtual void Run(const Status& s) OVERRIDE {
+  void Run(const Status& s) OVERRIDE {
     (object_->*member_)(s);
   }
 
@@ -225,7 +225,7 @@ class KUDU_EXPORT KuduStatusFunctionCallback : public KuduStatusCallback {
   }
 
   /// @copydoc KuduStatusCallback::Run()
-  virtual void Run(const Status& s) OVERRIDE {
+  void Run(const Status& s) OVERRIDE {
     function_(arg_, s);
   }
 

@@ -67,6 +67,8 @@ class RpcSidecar {
       Slice buffer,
       SidecarSliceVector* sidecars);
 
+  virtual ~RpcSidecar() = default;
+
   // Append Slice representation of the sidecar's data to the given payload.
   //
   // Note that, even if a sidecar appends multiple slices here, the receiver will
@@ -75,8 +77,6 @@ class RpcSidecar {
 
   // Return the total size of the slices to be appended.
   virtual size_t TotalSize() const = 0;
-  virtual ~RpcSidecar() { }
-
 };
 
 } // namespace rpc

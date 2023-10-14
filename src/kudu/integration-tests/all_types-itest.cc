@@ -22,6 +22,7 @@
 #include <ostream>
 #include <random>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -623,7 +624,7 @@ class AllTypesItest : public KuduTest {
     ASSERT_OK(VerifyRows(scanner_setup, verifier));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     cluster_->AssertNoCrashes();
     cluster_->Shutdown();
   }

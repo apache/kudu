@@ -112,7 +112,7 @@ class ConsistencyITest : public MiniClusterITestBase {
     CHECK_OK(b.Build(&schema_));
   }
 
-  virtual void SetUp() override {
+  void SetUp() override {
     MiniClusterITestBase::SetUp();
     StartCluster(num_tablet_servers_);
 

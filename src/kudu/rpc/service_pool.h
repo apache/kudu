@@ -51,7 +51,7 @@ class ServicePool : public RpcService {
   ServicePool(std::unique_ptr<ServiceIf> service,
               const scoped_refptr<MetricEntity>& metric_entity,
               size_t service_queue_length);
-  virtual ~ServicePool();
+  ~ServicePool() override;
 
   // Set a hook function to be called when any RPC gets rejected because
   // the service queue is full.

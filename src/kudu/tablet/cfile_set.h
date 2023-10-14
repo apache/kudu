@@ -189,27 +189,28 @@ class CFileSet :
 // together, and iterated in parallel.
 class CFileSet::Iterator : public ColumnwiseIterator {
  public:
+  ~Iterator() override;
 
-  virtual Status Init(ScanSpec *spec) OVERRIDE;
+  Status Init(ScanSpec *spec) override;
 
-  virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
+  Status PrepareBatch(size_t *nrows) override;
 
-  virtual Status InitializeSelectionVector(SelectionVector *sel_vec) OVERRIDE;
+  Status InitializeSelectionVector(SelectionVector *sel_vec) override;
 
   Status MaterializeColumn(ColumnMaterializationContext *ctx) override;
 
-  virtual Status FinishBatch() OVERRIDE;
+  Status FinishBatch() override;
 
-  virtual bool HasNext() const OVERRIDE {
+  bool HasNext() const override {
     DCHECK(initted_);
     return cur_idx_ < upper_bound_idx_;
   }
 
-  virtual std::string ToString() const OVERRIDE {
+  std::string ToString() const override {
     return std::string("rowset iterator for ") + base_data_->ToString();
   }
 
-  const Schema &schema() const OVERRIDE {
+  const Schema &schema() const override {
     return *projection_;
   }
 
@@ -220,9 +221,8 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   }
 
   // Collect the IO statistics for each of the underlying columns.
-  virtual void GetIteratorStats(std::vector<IteratorStats> *stats) const OVERRIDE;
+  void GetIteratorStats(std::vector<IteratorStats> *stats) const override;
 
-  virtual ~Iterator();
  private:
   DISALLOW_COPY_AND_ASSIGN(Iterator);
   FRIEND_TEST(TestCFileSet, TestRangeScan);

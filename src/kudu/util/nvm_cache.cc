@@ -621,7 +621,7 @@ class ShardedLRUCache : public Cache {
     }
   }
 
-  virtual ~ShardedLRUCache() {
+  ~ShardedLRUCache() override {
     shards_.clear();
     // Per the note at the top of this file, our cache is entirely volatile.
     // Hence, when the cache is destructed, we delete the underlying
@@ -629,36 +629,36 @@ class ShardedLRUCache : public Cache {
     CALL_MEMKIND(memkind_destroy_kind, vmp_);
   }
 
-  virtual UniqueHandle Insert(UniquePendingHandle handle,
-                              Cache::EvictionCallback* eviction_callback) OVERRIDE {
+  UniqueHandle Insert(UniquePendingHandle handle,
+                      Cache::EvictionCallback* eviction_callback) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle.release()));
     return UniqueHandle(
         shards_[Shard(h->hash)]->Insert(h, eviction_callback),
         Cache::HandleDeleter(this));
   }
-  virtual UniqueHandle Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
+  UniqueHandle Lookup(const Slice& key, CacheBehavior caching) override {
     const uint32_t hash = HashSlice(key);
     return UniqueHandle(
         shards_[Shard(hash)]->Lookup(key, hash, caching == EXPECT_IN_CACHE),
         Cache::HandleDeleter(this));
   }
-  virtual void Release(Handle* handle) OVERRIDE {
+  void Release(Handle* handle) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
     shards_[Shard(h->hash)]->Release(handle);
   }
-  virtual void Erase(const Slice& key) OVERRIDE {
+  void Erase(const Slice& key) override {
     const uint32_t hash = HashSlice(key);
     shards_[Shard(hash)]->Erase(key, hash);
   }
-  virtual Slice Value(const UniqueHandle& handle) const OVERRIDE {
+  Slice Value(const UniqueHandle& handle) const override {
     return reinterpret_cast<const LRUHandle*>(handle.get())->value();
   }
-  virtual uint8_t* MutableValue(UniquePendingHandle* handle) OVERRIDE {
+  uint8_t* MutableValue(UniquePendingHandle* handle) override {
     return reinterpret_cast<LRUHandle*>(handle->get())->val_ptr();
   }
 
-  virtual void SetMetrics(unique_ptr<CacheMetrics> metrics,
-                          Cache::ExistingMetricsPolicy metrics_policy) OVERRIDE {
+  void SetMetrics(unique_ptr<CacheMetrics> metrics,
+                  Cache::ExistingMetricsPolicy metrics_policy) override {
     if (metrics_ && metrics_policy == Cache::ExistingMetricsPolicy::kKeep) {
       CHECK(IsGTest()) << "Metrics should only be set once per Cache";
       return;
@@ -668,7 +668,7 @@ class ShardedLRUCache : public Cache {
       shard->SetMetrics(metrics_.get());
     }
   }
-  virtual UniquePendingHandle Allocate(Slice key, int val_len, int charge) OVERRIDE {
+  UniquePendingHandle Allocate(Slice key, int val_len, int charge) override {
     int key_len = key.size();
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
@@ -700,7 +700,7 @@ class ShardedLRUCache : public Cache {
     return UniquePendingHandle(nullptr, Cache::PendingHandleDeleter(this));
   }
 
-  virtual void Free(PendingHandle* ph) OVERRIDE {
+  void Free(PendingHandle* ph) override {
     CALL_MEMKIND(memkind_free, vmp_, ph);
   }
 

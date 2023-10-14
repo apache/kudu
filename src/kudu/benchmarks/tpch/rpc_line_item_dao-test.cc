@@ -31,7 +31,6 @@
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/client/row_result.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
@@ -54,7 +53,7 @@ class RpcLineItemDAOTest : public KuduTest {
  public:
   RpcLineItemDAOTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     // Start minicluster
@@ -73,7 +72,7 @@ class RpcLineItemDAOTest : public KuduTest {
     dao_->Init();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     cluster_->Shutdown();
     KuduTest::TearDown();
   }

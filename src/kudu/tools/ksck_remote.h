@@ -124,7 +124,7 @@ class RemoteKsckTabletServer : public KsckTabletServer,
       const KsckChecksumOptions& options,
       std::shared_ptr<KsckChecksumManager> manager) override;
 
-  virtual std::string address() const override {
+  std::string address() const override {
     return host_port_.ToString();
   }
 
@@ -161,15 +161,15 @@ class RemoteKsckCluster : public KsckCluster {
   static Status Build(const std::vector<std::string>& master_addresses,
                       std::shared_ptr<KsckCluster>* cluster);
 
-  virtual Status Connect() override;
+  Status Connect() override;
 
-  virtual Status RetrieveTabletServers() override;
+  Status RetrieveTabletServers() override;
 
-  virtual Status RetrieveTablesList() override;
+  Status RetrieveTablesList() override;
 
-  virtual Status RetrieveAllTablets() override;
+  Status RetrieveAllTablets() override;
 
-  virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) override;
+  Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) override;
 
   std::shared_ptr<rpc::Messenger> messenger() const override {
     return messenger_;

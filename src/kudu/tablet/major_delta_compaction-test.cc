@@ -32,7 +32,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/io_context.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -78,7 +77,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
     }
   };
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduRowSetTest::SetUp();
   }
 

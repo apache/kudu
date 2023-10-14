@@ -25,8 +25,8 @@
 namespace kudu {
 
 struct CacheMetrics {
-  virtual ~CacheMetrics() {
-  }
+  virtual ~CacheMetrics() = default;
+
   scoped_refptr<Counter> inserts;
   scoped_refptr<Counter> lookups;
   scoped_refptr<Counter> evictions;

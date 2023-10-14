@@ -357,7 +357,7 @@ Status MemRowSet::GetBounds(string *min_encoded_key,
 class MemRowSet::Iterator::MRSRowProjector {
  public:
   typedef RowProjector::ProjectionIdxMapping ProjectionIdxMapping;
-  virtual ~MRSRowProjector() {}
+  virtual ~MRSRowProjector() = default;
   virtual Status ProjectRowForRead(const MRSRow& src_row,
                                    RowBlockRow* dst_row,
                                    Arena* arena) = 0;

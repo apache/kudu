@@ -626,7 +626,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Temporarily forces the catalog manager to be a follower. Only for tests!
   class ScopedLeaderDisablerForTests {
    public:
-
     explicit ScopedLeaderDisablerForTests(CatalogManager* catalog)
         : catalog_(catalog),
         old_leader_ready_term_(catalog->leader_ready_term_) {
@@ -634,7 +633,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
       catalog_->leader_ready_term_ = -1;
     }
 
-    ~ScopedLeaderDisablerForTests() {
+    virtual ~ScopedLeaderDisablerForTests() {
       std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
       catalog_->leader_ready_term_ = old_leader_ready_term_;
     }
@@ -881,13 +880,13 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // table specified by 'tablet_id'.
   //
   // See also: TabletReplicaLookupIf, ConsensusServiceImpl.
-  virtual Status GetTabletReplica(const std::string& tablet_id,
-                                  scoped_refptr<tablet::TabletReplica>* replica) const override;
+  Status GetTabletReplica(const std::string& tablet_id,
+                          scoped_refptr<tablet::TabletReplica>* replica) const override;
 
-  virtual void GetTabletReplicas(
+  void GetTabletReplicas(
       std::vector<scoped_refptr<tablet::TabletReplica>>* replicas) const override;
 
-  virtual const NodeInstancePB& NodeInstance() const override;
+  const NodeInstancePB& NodeInstance() const override;
 
   bool IsInitialized() const;
 

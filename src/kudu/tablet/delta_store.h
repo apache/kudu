@@ -169,6 +169,8 @@ class SelectedDeltas {
 // This is implemented by DeltaMemStore and by DeltaFileReader.
 class DeltaStore {
  public:
+  virtual ~DeltaStore() = default;
+
   // Performs any post-construction work for the DeltaStore, which may
   // include additional I/O.
   virtual Status Init(const fs::IOContext* io_context) = 0;
@@ -210,8 +212,6 @@ class DeltaStore {
   virtual bool has_delta_stats() const  {
     return Initted();
   }
-
-  virtual ~DeltaStore() {}
 };
 
 typedef std::vector<std::shared_ptr<DeltaStore>> SharedDeltaStoreVector;
@@ -314,6 +314,8 @@ class PreparedDeltas {
 
 class DeltaIterator : public PreparedDeltas {
  public:
+  virtual ~DeltaIterator() = default;
+
   // Initialize the iterator. This must be called once before any other
   // call.
   virtual Status Init(ScanSpec *spec) = 0;
@@ -387,8 +389,6 @@ class DeltaIterator : public PreparedDeltas {
   // Return an estimate on the maximum amount of memory a DeltaIterator object
   // uses during its lifecycle while initializing, preparing next batch, etc.
   virtual size_t memory_footprint() = 0;
-
-  virtual ~DeltaIterator() {}
 };
 
 // DeltaPreparer traits suited for a DMSIterator.

@@ -30,7 +30,7 @@ class InboundCall;
 
 class RpcService : public RefCountedThreadSafe<RpcService> {
  public:
-  virtual ~RpcService() {}
+  virtual ~RpcService() = default;
 
   // Enqueue a call for processing.
   // On failure, the RpcService::QueueInboundCall() implementation is

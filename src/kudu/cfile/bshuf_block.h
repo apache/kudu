@@ -106,7 +106,7 @@ class BShufBlockBuilder final : public BlockBuilder {
     Reset();
   }
 
-  void Reset() OVERRIDE {
+  void Reset() override {
     auto block_size = options_->storage_attributes.cfile_block_size;
     count_ = 0;
     data_.clear();
@@ -123,7 +123,7 @@ class BShufBlockBuilder final : public BlockBuilder {
     return rem_elem_capacity_ == 0;
   }
 
-  int Add(const uint8_t* vals_void, size_t count) OVERRIDE {
+  int Add(const uint8_t* vals_void, size_t count) override {
     DCHECK(!finished_);
     int to_add = std::min<int>(rem_elem_capacity_, count);
     data_.append(vals_void, to_add * size_of_type);
@@ -132,11 +132,11 @@ class BShufBlockBuilder final : public BlockBuilder {
     return to_add;
   }
 
-  size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return count_;
   }
 
-  Status GetFirstKey(void* key) const OVERRIDE {
+  Status GetFirstKey(void* key) const override {
     DCHECK(finished_);
     if (count_ == 0) {
       return Status::NotFound("no keys in data block");
@@ -145,7 +145,7 @@ class BShufBlockBuilder final : public BlockBuilder {
     return Status::OK();
   }
 
-  Status GetLastKey(void* key) const OVERRIDE {
+  Status GetLastKey(void* key) const override {
     DCHECK(finished_);
     if (count_ == 0) {
       return Status::NotFound("no keys in data block");
@@ -154,7 +154,7 @@ class BShufBlockBuilder final : public BlockBuilder {
     return Status::OK();
   }
 
-  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override {
     RememberFirstAndLastKey();
     *slices = { Finish(ordinal_pos, size_of_type) };
   }
@@ -244,7 +244,7 @@ class BShufBlockDecoder final : public BlockDecoder {
         cur_idx_(0) {
   }
 
-  Status ParseHeader() OVERRIDE {
+  Status ParseHeader() override {
     CHECK(!parsed_);
     if (data_.size() < kHeaderSize) {
       return Status::Corruption(
@@ -291,7 +291,7 @@ class BShufBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  void SeekToPositionInBlock(uint pos) OVERRIDE {
+  void SeekToPositionInBlock(uint pos) override {
     CHECK(parsed_) << "Must call ParseHeader()";
     if (PREDICT_FALSE(num_elems_ == 0)) {
       DCHECK_EQ(0, pos);
@@ -302,7 +302,7 @@ class BShufBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  Status SeekAtOrAfterValue(const void* value_void, bool* exact) OVERRIDE {
+  Status SeekAtOrAfterValue(const void* value_void, bool* exact) override {
     CppType target = UnalignedLoad<CppType>(value_void);
     int32_t left = 0;
     int32_t right = num_elems_;
@@ -329,7 +329,7 @@ class BShufBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  Status CopyNextValues(size_t* n, ColumnDataView* dst) OVERRIDE {
+  Status CopyNextValues(size_t* n, ColumnDataView* dst) override {
     DCHECK_EQ(dst->stride(), sizeof(CppType));
     return CopyNextValuesToArray(n, dst->data());
   }
@@ -355,20 +355,20 @@ class BShufBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  size_t GetCurrentIndex() const OVERRIDE {
+  size_t GetCurrentIndex() const override {
     DCHECK(parsed_) << "must parse header first";
     return cur_idx_;
   }
 
-  virtual rowid_t GetFirstRowId() const OVERRIDE {
+  rowid_t GetFirstRowId() const override {
     return ordinal_pos_base_;
   }
 
-  size_t Count() const OVERRIDE {
+  size_t Count() const override {
     return num_elems_;
   }
 
-  bool HasNext() const OVERRIDE {
+  bool HasNext() const override {
     return (num_elems_ - cur_idx_) > 0;
   }
 

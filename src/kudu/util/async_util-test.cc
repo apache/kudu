@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <functional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -43,7 +44,7 @@ class AsyncUtilTest : public KuduTest {
     // Set up an alarm to fail the test in case of deadlock.
     alarm(30);
   }
-  virtual ~AsyncUtilTest() {
+  ~AsyncUtilTest() override {
     // Disable the alarm on test exit.
     alarm(0);
   }
