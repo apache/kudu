@@ -241,6 +241,7 @@ Status MiniRangerKMS::StartRangerKMS() {
     // @todo(zchovan): add link to source
     std::vector<string> args({
       JoinPathSegments(java_home_, "bin/java"),
+      "-Djava.net.preferIPv4Stack=true",      // ensure IPv4 is used
       "-Dproc_rangerkms",
       Substitute("-Dhostname=$0", host_),
       Substitute("-Dlog4j.configuration=file:$0",
