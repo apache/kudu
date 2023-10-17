@@ -84,8 +84,14 @@ inline std::string GetRangerKMSSiteXml(const std::string& kms_host,
     <value>$1</value>
   </property>
   <property>
+    <!-- Explicitly disable opening HTTPS port -->
+    <name>ranger.service.https.port</name>
+    <value>-1</value>
+  </property>
+  <property>
+    <!-- Explicitly disable opening the shutdown port -->
     <name>ranger.service.shutdown.port</name>
-    <value>0</value>
+    <value>-1</value>
   </property>
   <property>
     <name>ranger.contextName</name>

@@ -271,13 +271,20 @@ Status MiniRangerKMS::StartRangerKMS() {
          { "RANGER_KMS_EWS_LIB_DIR", kLibDir }
     });
     RETURN_NOT_OK(process_->Start());
-    LOG(INFO) << "Ranger KMS PID: " << process_->pid() << std::endl;
-    RETURN_NOT_OK(WaitForTcpBind(process_->pid(),
-                                 &port_,
-                                 { "0.0.0.0", "127.0.0.1", },
-                                 MonoDelta::FromMilliseconds(90000)));
-    LOG(INFO) << "Ranger KMS bound to " << port_;
+    LOG(INFO) << "Ranger KMS PID: " << process_->pid();
     LOG(INFO) << "Ranger KMS URL: " << ranger_kms_url_;
+
+    uint16_t port;
+    RETURN_NOT_OK(WaitForTcpBind(process_->pid(),
+                                 &port, { "0.0.0.0" },
+                                 MonoDelta::FromSeconds(120)));
+    if (port_ != port) {
+      // A sanity check: with the configuration provided, RangerKMS is expected
+      // to listen only on a single port.
+      return Status::ConfigurationError(Substitute(
+          "Ranger KMS opens port $0, but the only expected one is $1",
+           port, port_));
+    }
   }
 
   return Status::OK();

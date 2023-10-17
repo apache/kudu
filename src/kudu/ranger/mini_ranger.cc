@@ -91,19 +91,12 @@ Status MiniRanger::InitRanger(const string& admin_home, bool* fresh_install) {
 }
 
 Status MiniRanger::CreateConfigs() {
-  // Ranger listens on 2 ports:
-  //
-  // - port_ is the RPC port (REST API) that the Ranger subprocess and
-  //   EasyCurl can talk to
-  // - ranger_shutdown_port is the port which Ranger listens on for a shutdown
-  //   command. We're not using this shutdown port as we simply send a SIGTERM,
-  //   but it's necessary to set it to a random value to avoid collisions in
-  //   parallel testing.
+  // With the Tomcat's shutdown port disabled, Ranger listens just on a single
+  // REST API port (MiniRanger::port_) that the Ranger subprocess and EasyCurl
+  // can talk to.
   if (port_ == 0) {
     RETURN_NOT_OK(GetRandomPort(host_, &port_));
   }
-  uint16_t ranger_shutdown_port;
-  RETURN_NOT_OK(GetRandomPort(host_, &ranger_shutdown_port));
   string admin_home = ranger_admin_home();
 
   ranger_admin_url_ = Substitute("http://$0:$1", host_, port_);
@@ -120,9 +113,8 @@ Status MiniRanger::CreateConfigs() {
       JoinPathSegments(admin_home, "ranger-admin-site.xml")));
 
   RETURN_NOT_OK(WriteStringToFile(
-      env_, GetRangerAdminDefaultSiteXml(
-        JoinPathSegments(bin_dir(), "postgresql.jar"),
-        ranger_shutdown_port),
+      env_, GetRangerAdminDefaultSiteXml(JoinPathSegments(bin_dir(),
+                                                          "postgresql.jar")),
       JoinPathSegments(admin_home, "ranger-admin-default-site.xml")));
 
   RETURN_NOT_OK(WriteStringToFile(env_, GetRangerCoreSiteXml(kerberos_),
@@ -232,13 +224,20 @@ Status MiniRanger::StartRanger() {
         { "RANGER_USER", "miniranger" },
     });
     RETURN_NOT_OK(process_->Start());
+    LOG(INFO) << "Ranger admin URL: " << ranger_admin_url_;
+
     uint16_t port;
     RETURN_NOT_OK(WaitForTcpBind(process_->pid(),
                                  &port,
-                                 { "0.0.0.0", "127.0.0.1", },
-                                 MonoDelta::FromMilliseconds(kRangerStartTimeoutMs)));
-    LOG(INFO) << "Ranger bound to " << port;
-    LOG(INFO) << "Ranger admin URL: " << ranger_admin_url_;
+                                 { "0.0.0.0" },
+                                 MonoDelta::FromSeconds(120)));
+    if (port_ != port) {
+      // A sanity check: with the configuration provided, Ranger is expected
+      // to listen only on a single port.
+      return Status::ConfigurationError(Substitute(
+          "Ranger opens port $0, but the only expected one is $1",
+           port, port_));
+    }
   }
   if (fresh_install) {
     RETURN_NOT_OK(CreateKuduService());
