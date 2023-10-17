@@ -136,6 +136,11 @@ inline std::string GetRangerAdminSiteXml(const std::string& admin_host,
     <value>$3</value>
   </property>
   <property>
+    <!-- Explicitly disable opening HTTPS port -->
+    <name>ranger.service.https.port</name>
+    <value>-1</value>
+  </property>
+  <property>
     <name>ranger.admin.cookie.name</name>
     <value>RANGERADMINSESSIONID</value>
   </property>
@@ -178,15 +183,13 @@ inline std::string GetRangerAdminSiteXml(const std::string& admin_host,
 
 // Gets the ranger-admin-default-site.xml that has some additional configuration
 // needed to start Ranger. It's unclear why this has to be a separate file.
-inline std::string GetRangerAdminDefaultSiteXml(const std::string& pg_driver,
-                                                uint16_t shutdown_port) {
+inline std::string GetRangerAdminDefaultSiteXml(const std::string& pg_driver) {
   // ranger-admin-default-site.xml
   // - postgres JDBC driver path
   // - RANGER_HOME (needed for jceks/KMS), impala says this is ranger-home, but the
   //   conf/jcsks directory doesn't exist for us.
   //
   // $0: postgres JDBC driver path
-  // $1: ranger shutdown port
   const char* kRangerAdminDefaultSiteTemplate = R"(
 <configuration>
 
@@ -197,8 +200,9 @@ inline std::string GetRangerAdminDefaultSiteXml(const std::string& pg_driver,
     <description/>
   </property>
   <property>
+    <!-- Explicitly disable opening the shutdown port -->
     <name>ranger.service.shutdown.port</name>
-    <value>$1</value>
+    <value>-1</value>
   </property>
 
 <!-- JPA config we can't remove because Ranger fails to start due to config resolution issues -->
@@ -300,8 +304,7 @@ inline std::string GetRangerAdminDefaultSiteXml(const std::string& pg_driver,
   </property>
 </configuration>
 )";
-  return strings::Substitute(kRangerAdminDefaultSiteTemplate, pg_driver,
-                             shutdown_port);
+  return strings::Substitute(kRangerAdminDefaultSiteTemplate, pg_driver);
 }
 
 // Gets the contents of the log4j.properties file which is used to set up the
