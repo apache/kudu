@@ -56,19 +56,20 @@ const int64_t kInitialTerm = 3;
 
 class ConsensusMetadataTest : public KuduTest, public ::testing::WithParamInterface<bool> {
  public:
-  ConsensusMetadataTest()
-      : fs_manager_(env_, FsManagerOpts(GetTestPath("fs_root"))) {
+  ConsensusMetadataTest() {
+    SetEncryptionFlags(GetParam());
+    fs_manager_ = std::make_unique<FsManager>(env_, FsManagerOpts(GetTestPath("fs_root")));
   }
 
   void SetUp() override {
     KuduTest::SetUp();
-    ASSERT_OK(fs_manager_.CreateInitialFileSystemLayout());
-    ASSERT_OK(fs_manager_.Open());
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
 
     // Initialize test configuration.
     config_.set_opid_index(kInvalidOpIdIndex);
     RaftPeerPB* peer = config_.add_peers();
-    peer->set_permanent_uuid(fs_manager_.uuid());
+    peer->set_permanent_uuid(fs_manager_->uuid());
     peer->set_member_type(RaftPeerPB::VOTER);
   }
 
@@ -78,7 +79,7 @@ class ConsensusMetadataTest : public KuduTest, public ::testing::WithParamInterf
                          int64_t opid_index, const string& permanant_uuid, int64_t term);
 
 
-  FsManager fs_manager_;
+  std::unique_ptr<FsManager> fs_manager_;
   RaftConfigPB config_;
 };
 
@@ -99,49 +100,46 @@ INSTANTIATE_TEST_SUITE_P(, ConsensusMetadataTest, ::testing::Values(false, true)
 
 // Test the basic "happy case" of creating and then loading a file.
 TEST_P(ConsensusMetadataTest, TestCreateLoad) {
-  SetEncryptionFlags(GetParam());
   // Create the file.
   {
-    ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
+    ASSERT_OK(ConsensusMetadata::Create(fs_manager_.get(), kTabletId, fs_manager_->uuid(),
                                         config_, kInitialTerm));
   }
 
   // Load the file.
   scoped_refptr<ConsensusMetadata> cmeta;
-  ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta));
-  NO_FATALS(AssertValuesEqual(cmeta, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm));
+  ASSERT_OK(ConsensusMetadata::Load(fs_manager_.get(), kTabletId, fs_manager_->uuid(), &cmeta));
+  NO_FATALS(AssertValuesEqual(cmeta, kInvalidOpIdIndex, fs_manager_->uuid(), kInitialTerm));
   ASSERT_GT(cmeta->on_disk_size(), 0);
 }
 
 // Test deferred creation.
 TEST_P(ConsensusMetadataTest, TestDeferredCreateLoad) {
-  SetEncryptionFlags(GetParam());
   // Create the cmeta object, but not the file.
   scoped_refptr<ConsensusMetadata> writer;
-  ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
+  ASSERT_OK(ConsensusMetadata::Create(fs_manager_.get(), kTabletId, fs_manager_->uuid(),
                                       config_, kInitialTerm,
                                       ConsensusMetadataCreateMode::NO_FLUSH_ON_CREATE,
                                       &writer));
 
   // Try to load the file: it should not be there.
   scoped_refptr<ConsensusMetadata> reader;
-  Status s = ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &reader);
+  Status s = ConsensusMetadata::Load(fs_manager_.get(), kTabletId, fs_manager_->uuid(), &reader);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   // Flush; now the file will be there.
   ASSERT_OK(writer->Flush());
-  ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &reader));
-  NO_FATALS(AssertValuesEqual(reader, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm));
+  ASSERT_OK(ConsensusMetadata::Load(fs_manager_.get(), kTabletId, fs_manager_->uuid(), &reader));
+  NO_FATALS(AssertValuesEqual(reader, kInvalidOpIdIndex, fs_manager_->uuid(), kInitialTerm));
 }
 
 // Ensure that Create() will not overwrite an existing file.
 TEST_P(ConsensusMetadataTest, TestCreateNoOverwrite) {
-  SetEncryptionFlags(GetParam());
   // Create the consensus metadata file.
-  ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
+  ASSERT_OK(ConsensusMetadata::Create(fs_manager_.get(), kTabletId, fs_manager_->uuid(),
                                       config_, kInitialTerm));
   // Try to create it again.
-  Status s = ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
+  Status s = ConsensusMetadata::Create(fs_manager_.get(), kTabletId, fs_manager_->uuid(),
                                        config_, kInitialTerm);
   ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   ASSERT_STR_MATCHES(s.ToString(), "Unable to write consensus meta file.*already exists");
@@ -149,18 +147,16 @@ TEST_P(ConsensusMetadataTest, TestCreateNoOverwrite) {
 
 // Ensure that we get an error when loading a file that doesn't exist.
 TEST_P(ConsensusMetadataTest, TestFailedLoad) {
-  SetEncryptionFlags(GetParam());
-  Status s = ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid());
+  Status s = ConsensusMetadata::Load(fs_manager_.get(), kTabletId, fs_manager_->uuid());
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   LOG(INFO) << "Expected failure: " << s.ToString();
 }
 
 // Check that changes are not written to disk until Flush() is called.
 TEST_P(ConsensusMetadataTest, TestFlush) {
-  SetEncryptionFlags(GetParam());
   const int64_t kNewTerm = 4;
   scoped_refptr<ConsensusMetadata> cmeta;
-  ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
+  ASSERT_OK(ConsensusMetadata::Create(fs_manager_.get(), kTabletId, fs_manager_->uuid(),
                                       config_, kInitialTerm,
                                       ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
                                       &cmeta));
@@ -171,8 +167,9 @@ TEST_P(ConsensusMetadataTest, TestFlush) {
   // since it's read-only.
   {
     scoped_refptr<ConsensusMetadata> cmeta_read;
-    ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta_read));
-    NO_FATALS(AssertValuesEqual(cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm));
+    ASSERT_OK(ConsensusMetadata::Load(
+        fs_manager_.get(), kTabletId, fs_manager_->uuid(), &cmeta_read));
+    NO_FATALS(AssertValuesEqual(cmeta_read, kInvalidOpIdIndex, fs_manager_->uuid(), kInitialTerm));
     ASSERT_GT(cmeta->on_disk_size(), 0);
   }
 
@@ -181,8 +178,9 @@ TEST_P(ConsensusMetadataTest, TestFlush) {
 
   {
     scoped_refptr<ConsensusMetadata> cmeta_read;
-    ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta_read));
-    NO_FATALS(AssertValuesEqual(cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kNewTerm));
+    ASSERT_OK(ConsensusMetadata::Load(
+        fs_manager_.get(), kTabletId, fs_manager_->uuid(), &cmeta_read));
+    NO_FATALS(AssertValuesEqual(cmeta_read, kInvalidOpIdIndex, fs_manager_->uuid(), kNewTerm));
     ASSERT_EQ(cmeta_size, cmeta_read->on_disk_size());
   }
 }
@@ -201,14 +199,13 @@ RaftConfigPB BuildConfig(const vector<string>& uuids) {
 
 // Test ConsensusMetadata active role calculation.
 TEST_P(ConsensusMetadataTest, TestActiveRole) {
-  SetEncryptionFlags(GetParam());
   vector<string> uuids = { "a", "b", "c", "d" };
   string peer_uuid = "e";
   RaftConfigPB config1 = BuildConfig(uuids); // We aren't a member of this config...
   config1.set_opid_index(0);
 
   scoped_refptr<ConsensusMetadata> cmeta;
-  ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, peer_uuid,
+  ASSERT_OK(ConsensusMetadata::Create(fs_manager_.get(), kTabletId, peer_uuid,
                                       config1, kInitialTerm,
                                       ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
                                       &cmeta));
@@ -268,14 +265,13 @@ TEST_P(ConsensusMetadataTest, TestActiveRole) {
 // Ensure that invocations of ToConsensusStatePB() return the expected state
 // in the returned object.
 TEST_P(ConsensusMetadataTest, TestToConsensusStatePB) {
-  SetEncryptionFlags(GetParam());
   vector<string> uuids = { "a", "b", "c", "d" };
   string peer_uuid = "e";
 
   RaftConfigPB committed_config = BuildConfig(uuids); // We aren't a member of this config...
   committed_config.set_opid_index(1);
   scoped_refptr<ConsensusMetadata> cmeta;
-  ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, peer_uuid,
+  ASSERT_OK(ConsensusMetadata::Create(fs_manager_.get(), kTabletId, peer_uuid,
                                       committed_config, kInitialTerm,
                                       ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
                                       &cmeta));
@@ -328,13 +324,12 @@ static void AssertConsensusMergeExpected(const scoped_refptr<ConsensusMetadata>&
 
 // Ensure that MergeCommittedConsensusStatePB() works as advertised.
 TEST_P(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB) {
-  SetEncryptionFlags(GetParam());
   vector<string> uuids = { "a", "b", "c", "d" };
 
   RaftConfigPB committed_config = BuildConfig(uuids); // We aren't a member of this config...
   committed_config.set_opid_index(1);
   scoped_refptr<ConsensusMetadata> cmeta;
-  ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, "e",
+  ASSERT_OK(ConsensusMetadata::Create(fs_manager_.get(), kTabletId, "e",
                                       committed_config, 1,
                                       ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
                                       &cmeta));
