@@ -25,6 +25,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -168,8 +169,12 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+constexpr const char* const kBlockIdsArg = "block_ids";
+constexpr const char* const kBlockIdsDesc = "Block ids existing in metadata files";
 
 namespace kudu {
 namespace tools {
@@ -436,6 +441,36 @@ Status DumpFsTree(const RunnerContext& /*context*/) {
   RETURN_NOT_OK(fs_manager.Open());
 
   fs_manager.DumpFileSystemTree(std::cout);
+  return Status::OK();
+}
+
+Status LocateBlock(const RunnerContext& context) {
+  const string& block_ids_str = FindOrDie(context.required_args, kBlockIdsArg);
+  vector<string> block_ids = strings::Split(block_ids_str, ",", strings::SkipEmpty());
+  if (block_ids.empty()) {
+    return Status::InvalidArgument("no block identifiers provided");
+  }
+  FsManagerOpts opts;
+  opts.read_only = true;
+  opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
+  FsManager fs_manager(Env::Default(), std::move(opts));
+  RETURN_NOT_OK(fs_manager.Open());
+  DataTable output_table({ "block id", "path" });
+  for (const string& blkid_str : block_ids) {
+    uint64_t blkid = 0;
+    if (!safe_strtou64(blkid_str.c_str(), &blkid)) {
+      output_table.AddRow({blkid_str, "not an integer"});
+      continue;
+    }
+    BlockId block_id(blkid);
+    string path;
+    if (fs_manager.block_manager()->FindBlockPath(block_id, &path)) {
+      output_table.AddRow({blkid_str, path});
+    } else {
+      output_table.AddRow({blkid_str, "not found"});
+    }
+  }
+  RETURN_NOT_OK(output_table.PrintTo(cout));
   return Status::OK();
 }
 
@@ -1068,12 +1103,22 @@ unique_ptr<Mode> BuildFsMode() {
       .AddOptionalParameter("fs_wal_dir")
       .Build();
 
+  unique_ptr<Action> locate_block =
+      ActionBuilder("locate_block", &LocateBlock)
+      .Description("Find the file's path where the block locates")
+      .AddRequiredParameter({ kBlockIdsArg, kBlockIdsDesc })
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
+      .Build();
+
   return ModeBuilder("fs")
       .Description("Operate on a local Kudu filesystem")
       .AddMode(BuildFsDumpMode())
       .AddAction(std::move(check))
       .AddAction(std::move(format))
       .AddAction(std::move(list))
+      .AddAction(std::move(locate_block))
       .AddAction(std::move(update))
       .AddAction(std::move(upgrade_encryption_key))
       .Build();

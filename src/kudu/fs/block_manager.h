@@ -258,6 +258,13 @@ class BlockManager : public RefCountedThreadSafe<BlockManager> {
   virtual Status OpenBlock(const BlockId& block_id,
                            std::unique_ptr<ReadableBlock>* block) = 0;
 
+  // Get the data file where the block located.
+  //
+  // Find the data file according to the block id. The data file is the
+  // unique file where the block data is stored. On success, overwrites
+  // 'path' with the file's path.
+  virtual bool FindBlockPath(const BlockId& block_id, std::string* path) const = 0;
+
   // Constructs a block creation transaction to group a set of block creation
   // operations and closes the registered blocks together.
   virtual std::unique_ptr<BlockCreationTransaction> NewCreationTransaction() = 0;

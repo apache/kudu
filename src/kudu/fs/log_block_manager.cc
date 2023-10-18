@@ -2641,6 +2641,21 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
   return Status::OK();
 }
 
+bool LogBlockManager::FindBlockPath(const BlockId& block_id, string* path) const {
+  LogBlockRefPtr lb;
+  {
+    auto index = block_id.id() & kBlockMapMask;
+    std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+    lb = FindPtrOrNull(*managed_block_shards_[index].blocks_by_block_id, block_id);
+  }
+  if (!lb) {
+    return false;
+  }
+  *path = StrCat(JoinPathSegments(lb->container()->data_dir()->dir(), lb->container()->id()),
+                 LogBlockManager::kContainerDataFileSuffix);
+  return true;
+}
+
 unique_ptr<BlockCreationTransaction> LogBlockManager::NewCreationTransaction() {
   CHECK(!opts_.read_only);
   return std::make_unique<internal::LogBlockCreationTransaction>();

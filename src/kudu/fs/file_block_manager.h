@@ -89,6 +89,8 @@ class FileBlockManager : public BlockManager {
   Status CreateBlock(const CreateBlockOptions& opts,
                      std::unique_ptr<WritableBlock>* block) override;
 
+  bool FindBlockPath(const BlockId& block_id, std::string* path) const override;
+
   Status OpenBlock(const BlockId& block_id,
                    std::unique_ptr<ReadableBlock>* block) override;
 
@@ -120,11 +122,6 @@ class FileBlockManager : public BlockManager {
 
   // Synchronizes the metadata for a block with the given location.
   Status SyncMetadata(const internal::FileBlockLocation& location);
-
-  // Looks up the path of the file backing a particular block ID.
-  //
-  // On success, overwrites 'path' with the file's path.
-  bool FindBlockPath(const BlockId& block_id, std::string* path) const;
 
   Env* env() const { return env_; }
 

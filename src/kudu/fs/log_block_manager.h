@@ -191,6 +191,8 @@ class LogBlockManager : public BlockManager {
   Status OpenBlock(const BlockId& block_id,
                    std::unique_ptr<ReadableBlock>* block) override;
 
+  bool FindBlockPath(const BlockId& block_id, std::string* path) const override;
+
   std::unique_ptr<BlockCreationTransaction> NewCreationTransaction() override;
 
   std::shared_ptr<BlockDeletionTransaction> NewDeletionTransaction() override;

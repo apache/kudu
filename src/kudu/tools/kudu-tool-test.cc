@@ -1366,6 +1366,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "dump.*Dump a Kudu filesystem",
         "format.*new Kudu filesystem",
         "list.*List metadata for on-disk tablets, rowsets",
+        "locate_block.*Find the file's path where the block locates",
         "update_dirs.*Updates the set of data directories",
         "upgrade_encryption_key.*Upgrade the encryption key info",
     };
@@ -9301,6 +9302,69 @@ TEST_F(UnregisterTServerTest, TestUnregisterTServerNotPresumedDead) {
     NO_FATALS(RunActionStdoutString(Substitute("cluster ksck $0", master_addrs_str), &out));
     ASSERT_STR_NOT_CONTAINS(out, ts_uuid);
   }
+}
+
+class FindBlockPathTest : public ToolTest, public ::testing::WithParamInterface<string> {
+};
+
+static vector<string> BlockManagerType() {
+  return { "log", "file" };
+}
+
+INSTANTIATE_TEST_SUITE_P(, FindBlockPathTest, ::testing::ValuesIn(BlockManagerType()));
+
+TEST_P(FindBlockPathTest, TestFindBlockPath) {
+  FLAGS_block_manager = GetParam();
+
+  // Create replicas and fill some data.
+  NO_FATALS(StartMiniCluster());
+  NO_FATALS(CreateTableWithFlushedData("tablename", mini_cluster_.get()));
+
+  auto fs_manager = mini_cluster_->mini_tablet_server(0)->server()->fs_manager();
+  vector<BlockId> block_ids;
+  ASSERT_OK(fs_manager->block_manager()->GetAllBlockIds(&block_ids));
+  string fs_wal_dir = mini_cluster_->mini_tablet_server(0)->options()->fs_opts.wal_root;
+  string fs_data_dirs = JoinMapped(fs_manager->GetDataRootDirs(),
+      [] (const string& data_dir) {
+        return data_dir.substr(0, data_dir.length() - strlen("/data"));
+      }, ",");
+  string fs_paths = "--fs_wal_dir=" + fs_wal_dir + " "
+                    "--fs_data_dirs=" + fs_data_dirs;
+
+  ASSERT_EQ(1, fs_manager->GetDataRootDirs().size());
+
+  // Case 1: block id exists.
+  string stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("fs locate_block $0 $1 --block_manager=$2",
+                 block_ids[0].ToString(), fs_paths, FLAGS_block_manager),
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, Substitute("$0 | $1",
+      block_ids[0].ToString(), fs_data_dirs));
+
+  // Case 2: block id does not exists.
+  stdout.clear();
+  // 281474976710655 = (2^49 - 1). That is a very unique id, which will
+  // not exist in log_blog_manager or file_block_manager.
+  NO_FATALS(RunActionStdoutString(
+      Substitute("fs locate_block 281474976710655,$0 $1 --block_manager=$2",
+                 block_ids[0].ToString(), fs_paths, FLAGS_block_manager),
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, Substitute("$0 | $1",
+      block_ids[0].ToString(), fs_data_dirs));
+  ASSERT_STR_CONTAINS(stdout, Substitute("$0 | $1",
+      block_ids[0].ToString(), fs_data_dirs));
+  ASSERT_STR_MATCHES(stdout, "281474976710655* | not found");
+
+  // case 3: block id is not integer.
+  string stderr;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("fs locate_block 88uu88888,$0 $1 --block_manager=$2",
+                 block_ids[0].ToString(), fs_paths, FLAGS_block_manager),
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, Substitute("$0 | $1",
+      block_ids[0].ToString(), fs_data_dirs));
+  ASSERT_STR_MATCHES(stdout, "88uu88888* | not an integer");
 }
 
 TEST_F(ToolTest, TestLocalReplicaCopyLocal) {
