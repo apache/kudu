@@ -17,6 +17,7 @@
     inflate*;
     zError;
     zlib*;
+    uncompress*;
 
     # devtoolset
     __cxa_throw_bad_array*;
