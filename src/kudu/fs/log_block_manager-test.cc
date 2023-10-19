@@ -503,9 +503,7 @@ TEST_P(LogBlockManagerTest, MetricsTest) {
           {0, &METRIC_log_block_manager_dead_containers_deleted} }));
   }
   // Wait for the actual hole punching to take place.
-  for (const auto& data_dir : dd_manager_->dirs()) {
-    data_dir->WaitOnClosures();
-  }
+  dd_manager_->WaitOnClosures();
   NO_FATALS(CheckLogMetrics(new_entity,
       { {9 * 1024, &METRIC_log_block_manager_bytes_under_management},
         {10, &METRIC_log_block_manager_blocks_under_management},
@@ -2177,9 +2175,7 @@ TEST_P(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
       }
       ASSERT_OK(transaction->CommitDeletedBlocks(nullptr));
       transaction.reset();
-      for (const auto& data_dir : dd_manager_->dirs()) {
-        data_dir->WaitOnClosures();
-      }
+      dd_manager_->WaitOnClosures();
     }
 
     // Close and reset the writer.
@@ -2255,9 +2251,7 @@ TEST_P(LogBlockManagerTest, TestHalfPresentContainer) {
     transaction->AddDeletedBlock(block_id);
     ASSERT_OK(transaction->CommitDeletedBlocks(nullptr));
     transaction.reset();
-    for (const auto& data_dir : dd_manager_->dirs()) {
-      data_dir->WaitOnClosures();
-    }
+    dd_manager_->WaitOnClosures();
   };
 
   const auto CheckOK = [&] () {
