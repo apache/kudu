@@ -54,5 +54,5 @@ of Kudu. Specifically you will learn:
 Looking forward, I am excited to see Kudu gain additional features and adoption
 and eventually the second revision of this title. In the meantime, if you have
 feedback or questions, please reach out on the `#getting-started-kudu` channel of
-the [Kudu Slack](https://getkudu-slack.herokuapp.com/) or if you prefer non-real-time
+the [Kudu Slack](https://join.slack.com/t/getkudu/shared_invite/zt-244b4zvki-hB1q9IbAk6CqHNMZHvUALA) or if you prefer non-real-time
 communication, please use the user@ mailing list!

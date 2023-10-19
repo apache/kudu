@@ -81,7 +81,7 @@ store, and access data in Kudu tables with Apache Impala.
 Aside from training, you can also get help with using Kudu through
 [documentation](docs/index.html),
 the [mailing lists](community.html),
-and the [Kudu chat room](https://getkudu-slack.herokuapp.com/).
+and the [Kudu chat room](https://join.slack.com/t/getkudu/shared_invite/zt-244b4zvki-hB1q9IbAk6CqHNMZHvUALA).
 
 #### Is there a quickstart?
 
