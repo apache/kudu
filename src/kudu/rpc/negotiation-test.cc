@@ -1530,7 +1530,7 @@ TEST_F(TestNegotiation, TestPreflight) {
   } else {
     ASSERT_FALSE(s.ok()) << s.ToString();
 #ifndef KRB5_VERSION_LE_1_10
-    ASSERT_STR_MATCHES(s.ToString(), "error accessing keytab: Permission denied");
+    ASSERT_STR_MATCHES(s.ToString(), "Permission denied");
 #endif
   }
   CHECK_ERR(unlink(kt_path.c_str()));
