@@ -28,6 +28,7 @@
 #include <set>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -58,7 +59,7 @@
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -95,6 +96,7 @@ using kudu::itest::AddServer;
 using kudu::itest::DeleteTablet;
 using kudu::itest::DeleteTabletWithRetries;
 using kudu::itest::GetInt64Metric;
+using kudu::itest::ListTablesWithInfo;
 using kudu::itest::RemoveServer;
 using kudu::itest::TServerDetails;
 using kudu::pb_util::SecureDebugString;
@@ -1291,6 +1293,69 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
       ASSERT_GE(num_heartbeats, prev_heartbeats + (kNumReplicas * kHeartbeatsToWait));
     });
   }
+}
+
+// Test if the tombstoned tablets could be deleted by sending incremental reports with
+// tombstoned replicas.
+TEST_F(DeleteTableITest, TombstonedTabletsDeletedByReport) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  constexpr int kNumTablets = 3;
+  constexpr int kNumTabletServers = 4;
+
+  vector<string> ts_flags;
+  vector<string> master_flags;
+  NO_FATALS(StartCluster(ts_flags, master_flags, kNumTabletServers));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.Setup();
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(ClusterVerifier(cluster_.get()).RunKsck());
+  });
+
+  // Choose a random tablet replica and set it replaced, and then it will be tombstoned.
+  ConsensusStatePB cstate;
+  string tablet_id = inspect_->ListTabletsOnTS(0)[0];
+  NO_FATALS(itest::GetConsensusState(ts_map_[cluster_->tablet_server(0)->uuid()],
+                                    tablet_id, MonoDelta::FromSeconds(10),
+                                    EXCLUDE_HEALTH_REPORT, &cstate));
+  RaftPeerPB follower;
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.permanent_uuid() != cstate.leader_uuid()) {
+      follower = peer;
+    }
+  }
+
+  vector<consensus::BulkChangeConfigRequestPB::ConfigChangeItemPB> changes_pb;
+  consensus::BulkChangeConfigRequestPB::ConfigChangeItemPB change_pb;
+  change_pb.set_type(consensus::MODIFY_PEER);
+  RaftPeerPB* peer = change_pb.mutable_peer();
+  peer->set_permanent_uuid(follower.permanent_uuid());
+  peer->mutable_attrs()->set_replace(true);
+  changes_pb.emplace_back(std::move(change_pb));
+  NO_FATALS(BulkChangeConfig(ts_map_[cstate.leader_uuid()], tablet_id, changes_pb,
+                            MonoDelta::FromSeconds(30)));
+
+  uint32_t index = cluster_->tablet_server_index_by_uuid(follower.permanent_uuid());
+  NO_FATALS(WaitForTabletTombstonedOnTS(index, tablet_id, CMETA_NOT_EXPECTED));
+
+  // Now delete the table and the tombstoned tablet should remain.
+  NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
+  ASSERT_EVENTUALLY([&] {
+    master::ListTablesResponsePB table;
+    ListTablesWithInfo(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                       MonoDelta::FromSeconds(10), &table);
+    ASSERT_EQ(0, table.tables_size());
+  });
+  ASSERT_OK(CheckTabletTombstonedOnTS(index, tablet_id, CMETA_NOT_EXPECTED));
+
+  // Set the newly added flag to make the next incremental report of the tserver include
+  // the tombstoned replicas.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(index),
+                              "tserver_send_tombstoned_tablets_report_inteval_secs", "0"));
+  AssertEventually([&] {
+    ASSERT_OK(CheckTabletDeletedOnTS(index, tablet_id, SUPERBLOCK_NOT_EXPECTED));
+  });
 }
 
 // Parameterized test case for TABLET_DATA_DELETED deletions.
