@@ -45,6 +45,7 @@
 #include "kudu/util/jwt.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -469,6 +470,9 @@ class RpcTestBase : public KuduTest {
     }
     bld.set_metric_entity(metric_entity_);
     bld.set_rpc_negotiation_timeout_ms(rpc_negotiation_timeout_ms_);
+    std::string hostname;
+    RETURN_NOT_OK(GetFQDN(&hostname));
+    bld.set_hostname(hostname);
     return bld.Build(messenger);
   }
 

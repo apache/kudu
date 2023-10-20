@@ -2384,13 +2384,19 @@ TEST_F(MasterTest, ServerAttributes) {
   EasyCurl c;
   faststring buf;
   ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics?ids=kudu.master",
-                                mini_master_->bound_http_addr().ToString()),
-                                &buf));
-  string raw = buf.ToString();
-  string server_hostname;
+                                  mini_master_->bound_http_addr().ToString()),
+                                  &buf));
+  const auto& raw = buf.ToString();
   ASSERT_STR_CONTAINS(raw, "\"uuid\": \"" + mini_master_->permanent_uuid() + "\"");
-  ASSERT_OK(GetFQDN(&server_hostname));
+  const auto& server_hostname = mini_master_->master()->messenger()->hostname();
   ASSERT_STR_CONTAINS(raw, "\"hostname\": \"" + server_hostname + "\"");
+}
+
+// Test that hostname is set properly for Master's Messenger.
+TEST_F(MasterTest, ServerHostname) {
+  string server_hostname;
+  ASSERT_OK(GetFQDN(&server_hostname));
+  ASSERT_EQ(server_hostname, mini_master_->master()->messenger()->hostname());
 }
 
 // Run multiple threads calling GetTableSchema() directly to system catalog.

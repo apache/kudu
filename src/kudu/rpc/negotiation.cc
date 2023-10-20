@@ -273,7 +273,9 @@ static Status DoServerNegotiation(Connection* conn,
                                        encryption,
                                        encrypt_loopback,
                                        messenger->sasl_proto_name());
-
+  if (!messenger->hostname().empty()) {
+    server_negotiation.set_server_fqdn(messenger->hostname());
+  }
   if (authentication != RpcAuthentication::DISABLED && !messenger->keytab_file().empty()) {
     RETURN_NOT_OK(server_negotiation.EnableGSSAPI());
   }

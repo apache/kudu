@@ -326,6 +326,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
       rpcz_store_(new RpczStore),
       metric_entity_(bld.metric_entity_),
       rpc_negotiation_timeout_ms_(bld.rpc_negotiation_timeout_ms_),
+      hostname_(bld.hostname_),
       sasl_proto_name_(bld.sasl_proto_name_),
       keytab_file_(bld.keytab_file_),
       reuseport_(bld.reuseport_),

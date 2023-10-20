@@ -731,6 +731,19 @@ Status ServerBase::Init() {
 
   InitSpinLockContentionProfiling();
 
+  // Get the FQDN of the node where the server is running. If fetching of the
+  // FQDN fails, it attempts to set the 'hostname_' field to the local hostname.
+  string hostname;
+  if (auto s = GetFQDN(&hostname); !s.ok()) {
+    const auto& msg = Substitute("could not determine host FQDN: $0", s.ToString());
+    if (hostname.empty()) {
+      LOG(ERROR) << msg;
+      return s;
+    }
+    LOG(WARNING) << msg;
+  }
+  DCHECK(!hostname.empty());
+
   RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal, FLAGS_keytab_file));
   RETURN_NOT_OK(file_cache_->Init());
 
@@ -816,6 +829,7 @@ Status ServerBase::Init() {
          .set_epki_certificate_authority_file(FLAGS_rpc_ca_certificate_file)
          .set_epki_private_password_key_cmd(FLAGS_rpc_private_key_password_cmd)
          .set_keytab_file(FLAGS_keytab_file)
+         .set_hostname(hostname)
          .enable_inbound_tls();
 
   if (options_.rpc_opts.rpc_reuseport) {
@@ -1142,12 +1156,10 @@ std::string ServerBase::FooterHtml() const {
 Status ServerBase::Start() {
   GenerateInstanceID();
 
+  DCHECK(!fs_manager_->uuid().empty());
   metric_entity_->SetAttribute("uuid", fs_manager_->uuid());
-  // Get the FQDN. If that fails server_hostname will have either the local hostname
-  // (if GetHostname() succeeds) or still be empty (if GetHostname() fails)
-  string server_hostname = "";
-  WARN_NOT_OK(GetFQDN(&server_hostname), "could not determine host FQDN");
-  metric_entity_->SetAttribute("hostname", server_hostname);
+  DCHECK(!messenger_->hostname().empty());
+  metric_entity_->SetAttribute("hostname", messenger_->hostname());
 
   RETURN_NOT_OK(RegisterService(
       unique_ptr<rpc::ServiceIf>(new GenericServiceImpl(this))));

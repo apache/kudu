@@ -144,6 +144,12 @@ class MessengerBuilder {
     return *this;
   }
 
+  // Set the name of the node where the result messenger will be running.
+  MessengerBuilder& set_hostname(const std::string& hostname) {
+    hostname_ = hostname;
+    return *this;
+  }
+
   // Set the SASL protocol name that is used for the SASL negotiation.
   MessengerBuilder& set_sasl_proto_name(const std::string& sasl_proto_name) {
     sasl_proto_name_ = sasl_proto_name;
@@ -270,6 +276,7 @@ class MessengerBuilder {
   MonoDelta coarse_timer_granularity_;
   scoped_refptr<MetricEntity> metric_entity_;
   int64_t rpc_negotiation_timeout_ms_;
+  std::string hostname_;
   std::string sasl_proto_name_;
   std::string rpc_authentication_;
   std::string rpc_encryption_;
@@ -434,6 +441,14 @@ class Messenger {
     return rpc_negotiation_timeout_ms_;
   }
 
+  // The name of the node where this Messenger is running. The best case is
+  // FQDN retrieved using getaddrinfo(), but it might be just local hostname
+  // retrived by gethostname(). It can also be empty if Messenger has been
+  // created without setting the hostname.
+  const std::string& hostname() const {
+    return hostname_;
+  }
+
   const std::string& sasl_proto_name() const {
     return sasl_proto_name_;
   }
@@ -535,6 +550,9 @@ class Messenger {
   // Timeout in milliseconds after which an incomplete connection negotiation will timeout.
   const int64_t rpc_negotiation_timeout_ms_;
 
+  // The name of the node where this messenger is running.
+  const std::string hostname_;
+
   // The SASL protocol name that is used for the SASL negotiation.
   const std::string sasl_proto_name_;
 
@@ -542,7 +560,7 @@ class Messenger {
   const std::string keytab_file_;
 
   // Whether to set SO_REUSEPORT on the listening sockets.
-  bool reuseport_;
+  const bool reuseport_;
 
   // The ownership of the Messenger object is somewhat subtle. The pointer graph
   // looks like this:
