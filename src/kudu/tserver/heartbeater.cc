@@ -107,6 +107,18 @@ DEFINE_uint32(heartbeat_inject_required_feature_flag, 0,
 TAG_FLAG(heartbeat_inject_required_feature_flag, runtime);
 TAG_FLAG(heartbeat_inject_required_feature_flag, unsafe);
 
+DEFINE_int32(tserver_send_tombstoned_tablets_report_inteval_secs, 1800,
+             "Time interval in seconds of sending a incremental tablets report "
+             "to delete the tombstoned replicas whose tablets had already been "
+             "deleted. Turn off this by setting it to a value less than 0. If "
+             "this interval is set to less than the heartbeat interval, the "
+             "tablets report will only be sent at the heartbeat interval. And "
+             "also, please set this interval less than the flag "
+             "metadata_for_deleted_table_and_tablet_reserved_secs of master if "
+             "enable_metadata_cleanup_for_deleted_tables_and_tablets is set true. "
+             "Otherwise, the tombstoned tablets probably could not be deleted.");
+TAG_FLAG(tserver_send_tombstoned_tablets_report_inteval_secs, runtime);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 using kudu::consensus::ReplicaManagementInfoPB;
@@ -139,7 +151,7 @@ class Heartbeater::Thread {
   Status Stop();
   void TriggerASAP();
   void MarkTabletsDirty(const vector<string>& tablet_ids, const string& reason);
-  void GenerateIncrementalTabletReport(TabletReportPB* report);
+  void GenerateIncrementalTabletReport(TabletReportPB* report, bool including_tombstoned);
   void GenerateFullTabletReport(TabletReportPB* report);
 
   // Mark that the master successfully received and processed the given
@@ -216,6 +228,8 @@ class Heartbeater::Thread {
   // Indicates that the thread should send a full tablet report. Set when
   // the thread detects that the master has been elected leader.
   bool send_full_tablet_report_;
+  // Time of sending last report with tombstoned tablets.
+  MonoTime last_tombstoned_report_time_;
 
   DISALLOW_COPY_AND_ASSIGN(Thread);
 };
@@ -279,7 +293,7 @@ vector<TabletReportPB> Heartbeater::GenerateIncrementalTabletReportsForTests() {
   vector<TabletReportPB> results;
   for (const auto& thread : threads_) {
     TabletReportPB report;
-    thread->GenerateIncrementalTabletReport(&report);
+    thread->GenerateIncrementalTabletReport(&report, false);
     results.emplace_back(std::move(report));
   }
   return results;
@@ -316,7 +330,8 @@ Heartbeater::Thread::Thread(HostPort master_address, TabletServer* server)
     cond_(&mutex_),
     should_run_(false),
     heartbeat_asap_(true),
-    send_full_tablet_report_(false) {
+    send_full_tablet_report_(false),
+    last_tombstoned_report_time_(MonoTime::Now()) {
 }
 
 Status Heartbeater::Thread::ConnectToMaster() {
@@ -483,7 +498,7 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
   // Send the most recently known TSK sequence number so that the master can
   // send us knew ones if they exist.
   req.set_latest_tsk_seq_num(server_->token_verifier().GetMaxKnownKeySequenceNumber());
-
+  bool including_tombstoned = false;
   if (send_full_tablet_report_) {
     LOG(INFO) << Substitute(
         "Master $0 was elected leader, sending a full tablet report...",
@@ -500,7 +515,11 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
   } else {
     VLOG(2) << Substitute("Sending an incremental tablet report to master $0...",
                           master_address_.ToString());
-    GenerateIncrementalTabletReport(req.mutable_tablet_report());
+    // Check if it is time to send a report with tombstoned replicas.
+    including_tombstoned = FLAGS_tserver_send_tombstoned_tablets_report_inteval_secs >= 0 &&
+        (MonoTime::Now() - last_tombstoned_report_time_).ToSeconds() >=
+        FLAGS_tserver_send_tombstoned_tablets_report_inteval_secs;
+    GenerateIncrementalTabletReport(req.mutable_tablet_report(), including_tombstoned);
   }
 
   req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
@@ -754,7 +773,8 @@ void Heartbeater::Thread::MarkTabletsDirty(const vector<string>& tablet_ids,
   }
 }
 
-void Heartbeater::Thread::GenerateIncrementalTabletReport(TabletReportPB* report) {
+void Heartbeater::Thread::GenerateIncrementalTabletReport(TabletReportPB* report,
+                                                          bool including_tombstoned) {
   report->Clear();
   report->set_sequence_number(next_report_seq_.fetch_add(1));
   report->set_is_incremental(true);
@@ -764,7 +784,7 @@ void Heartbeater::Thread::GenerateIncrementalTabletReport(TabletReportPB* report
     AppendKeysFromMap(dirty_tablets_, &dirty_tablet_ids);
   }
   server_->tablet_manager()->PopulateIncrementalTabletReport(
-      report, dirty_tablet_ids);
+      report, dirty_tablet_ids, including_tombstoned);
 }
 
 void Heartbeater::Thread::GenerateFullTabletReport(TabletReportPB* report) {

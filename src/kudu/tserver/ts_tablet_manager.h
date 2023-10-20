@@ -196,7 +196,8 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Adds updated tablet information to 'report'. Only tablets in 'tablet_ids'
   // are included.
   void PopulateIncrementalTabletReport(master::TabletReportPB* report,
-                                       const std::vector<std::string>& tablet_ids) const;
+                                       const std::vector<std::string>& tablet_ids,
+                                       bool including_tombstoned) const;
 
   // Get all the tablets currently hosted on this server.
   void GetTabletReplicas(

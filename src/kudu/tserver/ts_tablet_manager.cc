@@ -1771,7 +1771,8 @@ void TSTabletManager::PopulateFullTabletReport(TabletReportPB* report) const {
 }
 
 void TSTabletManager::PopulateIncrementalTabletReport(TabletReportPB* report,
-                                                      const vector<string>& tablet_ids) const {
+                                                      const vector<string>& tablet_ids,
+                                                      bool including_tombstoned) const {
   // See comment in PopulateFullTabletReport for rationale on making a local
   // copy of the set of tablets to report.
   vector<scoped_refptr<tablet::TabletReplica>> to_report;
@@ -1787,6 +1788,13 @@ void TSTabletManager::PopulateIncrementalTabletReport(TabletReportPB* report,
       } else {
         // Removed.
         report->add_removed_tablet_ids(id);
+      }
+    }
+    if (including_tombstoned) {
+      for (const auto& entry : tablet_map_) {
+        if (entry.second->data_state() == tablet::TABLET_DATA_TOMBSTONED) {
+          to_report.push_back(entry.second);
+        }
       }
     }
   }
