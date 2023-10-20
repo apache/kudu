@@ -38,6 +38,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/slru_cache.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_int32(num_threads, 16, "The number of threads to access the cache concurrently.");
@@ -54,6 +55,10 @@ namespace kudu {
 
 // Benchmark a 1GB cache.
 static constexpr int kCacheCapacity = 1024 * 1024 * 1024;
+static constexpr int kProbationarySegmentCapacity = 820 * 1024 * 1024;
+static constexpr int kProtectedSegmentCapacity = 204 * 1024 * 1024;
+static constexpr uint32_t kLookups = 3;
+
 // Use 4kb entries.
 static constexpr int kEntrySize = 4 * 1024;
 
@@ -74,11 +79,18 @@ struct BenchSetup {
   // in the cache.
   double dataset_cache_ratio;
 
+  Cache::EvictionPolicy eviction_policy;
+
   string ToString() const {
     string ret;
     switch (pattern) {
       case Pattern::ZIPFIAN: ret += "ZIPFIAN"; break;
       case Pattern::UNIFORM: ret += "UNIFORM"; break;
+    }
+    if (eviction_policy == Cache::EvictionPolicy::SLRU) {
+      ret += " SLRU";
+    } else {
+      ret += " LRU";
     }
     ret += StringPrintf(" ratio=%.2fx n_unique=%d", dataset_cache_ratio, max_key());
     return ret;
@@ -86,6 +98,11 @@ struct BenchSetup {
 
   // Return the maximum cache key to be generated for a lookup.
   uint32_t max_key() const {
+    if (eviction_policy == Cache::EvictionPolicy::SLRU) {
+      return static_cast<int64_t>(
+          (kProbationarySegmentCapacity + kProtectedSegmentCapacity) * dataset_cache_ratio)
+          / kEntrySize;
+    }
     return static_cast<int64_t>(kCacheCapacity * dataset_cache_ratio) / kEntrySize;
   }
 };
@@ -95,7 +112,13 @@ class CacheBench : public KuduTest,
  public:
   void SetUp() override {
     KuduTest::SetUp();
-    cache_.reset(NewCache(kCacheCapacity, "test-cache"));
+    const BenchSetup& setup = GetParam();
+    if (setup.eviction_policy == Cache::EvictionPolicy::SLRU) {
+      cache_.reset(NewSLRUCache(kProbationarySegmentCapacity, kProtectedSegmentCapacity,
+                                "test-cache", kLookups));
+    } else {
+      cache_.reset(NewCache(kCacheCapacity, "test-cache"));
+    }
   }
 
   // Run queries against the cache until '*done' becomes true.
@@ -157,10 +180,14 @@ class CacheBench : public KuduTest,
 // Test both distributions, and for each, test both the case where the data
 // fits in the cache and where it is a bit larger.
 INSTANTIATE_TEST_SUITE_P(Patterns, CacheBench, testing::ValuesIn(std::vector<BenchSetup>{
-      {BenchSetup::Pattern::ZIPFIAN, 1.0},
-      {BenchSetup::Pattern::ZIPFIAN, 3.0},
-      {BenchSetup::Pattern::UNIFORM, 1.0},
-      {BenchSetup::Pattern::UNIFORM, 3.0}
+      {BenchSetup::Pattern::ZIPFIAN, 1.0, Cache::EvictionPolicy::LRU},
+      {BenchSetup::Pattern::ZIPFIAN, 1.0, Cache::EvictionPolicy::SLRU},
+      {BenchSetup::Pattern::ZIPFIAN, 3.0, Cache::EvictionPolicy::LRU},
+      {BenchSetup::Pattern::ZIPFIAN, 3.0, Cache::EvictionPolicy::SLRU},
+      {BenchSetup::Pattern::UNIFORM, 1.0, Cache::EvictionPolicy::LRU},
+      {BenchSetup::Pattern::UNIFORM, 1.0, Cache::EvictionPolicy::SLRU},
+      {BenchSetup::Pattern::UNIFORM, 3.0, Cache::EvictionPolicy::LRU},
+      {BenchSetup::Pattern::UNIFORM, 3.0, Cache::EvictionPolicy::SLRU}
     }));
 
 TEST_P(CacheBench, RunBench) {

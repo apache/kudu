@@ -244,6 +244,7 @@ set(UTIL_SRCS
   ${SEMAPHORE_CC}
   signal.cc
   slice.cc
+  slru_cache.cc
   spinlock_profiling.cc
   status.cc
   status_callback.cc
@@ -574,6 +575,7 @@ ADD_KUDU_TEST(rwc_lock-test RUN_SERIAL true)
 ADD_KUDU_TEST(safe_math-test)
 ADD_KUDU_TEST(scoped_cleanup-test)
 ADD_KUDU_TEST(slice-test)
+ADD_KUDU_TEST(slru_cache-test)
 ADD_KUDU_TEST(sorted_disjoint_interval_list-test)
 ADD_KUDU_TEST(spinlock_profiling-test)
 ADD_KUDU_TEST(stack_watchdog-test PROCESSORS 2)

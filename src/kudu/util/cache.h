@@ -53,6 +53,9 @@ class Cache {
 
     // The least-recently-used items are evicted.
     LRU,
+
+    // Segmented version of LRU.
+    SLRU,
   };
 
   // Callback interface which is called when an entry is evicted from the cache.

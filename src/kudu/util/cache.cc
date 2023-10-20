@@ -75,6 +75,8 @@ string ToString(Cache::EvictionPolicy p) {
       return "fifo";
     case Cache::EvictionPolicy::LRU:
       return "lru";
+    case Cache::EvictionPolicy::SLRU:
+      return "slru";
     default:
       LOG(FATAL) << "unexpected cache eviction policy: " << static_cast<int>(p);
       break;
