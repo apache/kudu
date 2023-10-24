@@ -354,11 +354,15 @@ TEST_P(LogBlockManagerTest, MetricsTest) {
 
   // Lower the max container size so that we can more easily test full
   // container metrics.
-  // TODO(abukor): If this is 1024, this becomes full when writing the first
-  // block because of alignments. If it is over 4k, it fails with encryption
-  // disabled due to having only 5 containers instead of 10. Investigate this.
-  FLAGS_log_container_max_size = GetParam() ? 8192 : 1024;
-
+  uint64_t fs_block_size;
+  ASSERT_OK(env_->GetBlockSize(test_dir_, &fs_block_size));
+  // The block size is not fixed in different file systems. some file systems
+  // are 4K, but the others are 64K. Hence, here use the block size to set
+  // FLAGS_log_container_max_size when encryption is enabled. Because the
+  // encryption header occuppies one block on disk, so set FLAGS_log_container_max_size
+  // (2 * fs_block_size) when the encryption is enabled and set it fs_block_size when
+  // the encryption is disabled.
+  FLAGS_log_container_max_size = GetParam() ? 2 * fs_block_size : fs_block_size;
   // One block --> one container.
   unique_ptr<WritableBlock> writer;
   ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
