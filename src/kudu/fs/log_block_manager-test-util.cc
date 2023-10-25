@@ -153,7 +153,7 @@ Status LBMCorruptor::PreallocateFullContainer() {
   const int kPreallocateBytes = 16 * 1024;
   const Container* c = nullptr;
   RETURN_NOT_OK(GetRandomContainer(FULL, &c)); // NOLINT(clang-analyzer-core.NonNullParamChecker)
-  CHECK_NE(c, nullptr);
+  CHECK(c);
 
   // Pick one of the preallocation modes at random; both are recoverable.
   RWFile::PreAllocateMode mode;
