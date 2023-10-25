@@ -24,7 +24,7 @@
 
 #include <cerrno>
 #include <cstdint>
-#include <cstring>
+#include <cstdlib>
 #include <deque>
 #include <functional>
 #include <limits>
@@ -569,19 +569,19 @@ Status BuiltInNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   const auto mono = GetMonoTimeMicrosRaw();
   DCHECK_GE(mono, last.mono);
 
-  const int64_t delta_t = mono - last.mono;
+  const int64_t delta = mono - last.mono;
   if (PREDICT_FALSE(MonoDelta::FromSeconds(
           FLAGS_builtin_ntp_true_time_refresh_max_interval_s) <
-                    MonoDelta::FromMicroseconds(delta_t))) {
+                    MonoDelta::FromMicroseconds(delta))) {
     return Status::ServiceUnavailable(Substitute(
         "$0: too long after last true time refresh",
-        MonoDelta::FromMicroseconds(delta_t).ToString()));
+        MonoDelta::FromMicroseconds(delta).ToString()));
   }
 
   // TODO(KUDU-2940): apply measured local clock skew against the true time
   //                  clock when computing projected wallclock reading and error
-  *now_usec = delta_t + last.wall;
-  *error_usec = last.error + delta_t * kSkewPpm / 1e6;
+  *now_usec = delta + last.wall;
+  *error_usec = std::abs(last.error + (delta * kSkewPpm / 1000000));
   return Status::OK();
 }
 
