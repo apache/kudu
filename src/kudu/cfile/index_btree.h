@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_CFILE_INDEX_BTREE_H
-#define KUDU_CFILE_INDEX_BTREE_H
+#pragma once
 
 #include <cstddef>
 #include <memory>
@@ -44,18 +43,17 @@ struct WriterOptions;
 class IndexTreeBuilder {
  public:
   explicit IndexTreeBuilder(
-    const WriterOptions *options,
-    CFileWriter *writer);
+    const WriterOptions* options,
+    CFileWriter* writer);
 
   // Append the given key into the index.
-  // The key is copied into the builder's internal
-  // memory.
-  Status Append(const Slice &key, const BlockPointer &block);
-  Status Finish(BTreeInfoPB *info);
+  // The key is copied into the builder's internal memory.
+  Status Append(const Slice& key, const BlockPointer& block_ptr);
+  Status Finish(BTreeInfoPB* info);
+
  private:
-  IndexBlockBuilder *CreateBlockBuilder(bool is_leaf);
-  Status Append(const Slice &key, const BlockPointer &block_ptr,
-                size_t level);
+  static IndexBlockBuilder* CreateBlockBuilder(bool is_leaf);
+  Status Append(const Slice& key, const BlockPointer& block_ptr, size_t level);
 
   // Finish the current block at the given index level, and then
   // propagate by inserting this block into the next higher-up
@@ -65,10 +63,10 @@ class IndexTreeBuilder {
   // Finish the current block at the given level, writing it
   // to the file. Return the location of the written block
   // in 'written'.
-  Status FinishAndWriteBlock(size_t level, BlockPointer *written);
+  Status FinishAndWriteBlock(size_t level, BlockPointer* written);
 
-  const WriterOptions *options_;
-  CFileWriter *writer_;
+  const WriterOptions* options_;
+  CFileWriter* writer_;
 
   std::vector<std::unique_ptr<IndexBlockBuilder>> idx_blocks_;
 
@@ -77,21 +75,21 @@ class IndexTreeBuilder {
 
 class IndexTreeIterator {
  public:
-  explicit IndexTreeIterator(
+  IndexTreeIterator(
       const fs::IOContext* io_context,
-      const CFileReader *reader,
-      const BlockPointer &root_blockptr);
+      const CFileReader* reader,
+      const BlockPointer& root_blockptr);
   ~IndexTreeIterator();
 
   Status SeekToFirst();
-  Status SeekAtOrBefore(const Slice &search_key);
-  bool HasNext();
+  Status SeekAtOrBefore(const Slice& search_key);
+  bool HasNext() const;
   Status Next();
 
   // The slice key at which the iterator
   // is currently seeked to.
-  const Slice GetCurrentKey() const;
-  const BlockPointer &GetCurrentBlockPointer() const;
+  const Slice& GetCurrentKey() const;
+  const BlockPointer& GetCurrentBlockPointer() const;
 
   static IndexTreeIterator* Create(
     const fs::IOContext* io_context,
@@ -103,20 +101,21 @@ class IndexTreeIterator {
   }
 
  private:
-  IndexBlockIterator *BottomIter();
-  IndexBlockReader *BottomReader();
-  IndexBlockIterator *seeked_iter(int depth);
-  IndexBlockReader *seeked_reader(int depth);
-  Status LoadBlock(const BlockPointer &block, int depth);
-  Status SeekDownward(const Slice &search_key, const BlockPointer &in_block,
-                      int cur_depth);
-  Status SeekToFirstDownward(const BlockPointer &in_block, int cur_depth);
+  IndexBlockIterator* BottomIter();
+  const IndexBlockReader* BottomReader() const;
+  IndexBlockIterator* seeked_iter(size_t depth);
+  const IndexBlockReader* seeked_reader(size_t depth) const;
+  Status LoadBlock(const BlockPointer& block, size_t depth);
+  Status SeekDownward(const Slice& search_key,
+                      const BlockPointer& in_block,
+                      size_t cur_depth);
+  Status SeekToFirstDownward(const BlockPointer& in_block, size_t cur_depth);
 
   struct SeekedIndex;
 
-  const CFileReader *reader_;
+  const CFileReader* reader_;
 
-  BlockPointer root_block_;
+  const BlockPointer root_block_;
 
   std::vector<std::unique_ptr<SeekedIndex>> seeked_indexes_;
 
@@ -127,4 +126,3 @@ class IndexTreeIterator {
 
 } // namespace cfile
 } // namespace kudu
-#endif

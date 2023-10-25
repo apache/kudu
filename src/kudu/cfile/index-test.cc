@@ -26,13 +26,17 @@
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/block_pointer.h"
+#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/gutil/endian.h"
+#include "kudu/util/coding.h"
+#include "kudu/util/coding-inl.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/protobuf_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -43,17 +47,17 @@ using std::unique_ptr;
 namespace kudu {
 namespace cfile {
 
-Status SearchInReaderString(const IndexBlockReader &reader,
-                            const string &search_key,
-                            BlockPointer *ptr, Slice *match) {
+Status SearchInReaderString(const IndexBlockReader& reader,
+                            const string& search_key,
+                            BlockPointer* ptr,
+                            Slice* match) {
 
   static faststring dst;
 
   unique_ptr<IndexBlockIterator> iter(reader.NewIterator());
   dst.clear();
   KeyEncoderTraits<BINARY, faststring>::Encode(search_key, &dst);
-  Status s = iter->SeekAtOrBefore(Slice(dst));
-  RETURN_NOT_OK(s);
+  RETURN_NOT_OK(iter->SeekAtOrBefore(Slice(dst)));
 
   *ptr = iter->GetCurrentBlockPointer();
   *match = iter->GetCurrentKey();
@@ -61,17 +65,17 @@ Status SearchInReaderString(const IndexBlockReader &reader,
 }
 
 
-Status SearchInReaderUint32(const IndexBlockReader &reader,
+Status SearchInReaderUint32(const IndexBlockReader& reader,
                             uint32_t search_key,
-                            BlockPointer *ptr, Slice *match) {
+                            BlockPointer* ptr,
+                            Slice* match) {
 
   static faststring dst;
 
   unique_ptr<IndexBlockIterator> iter(reader.NewIterator());
   dst.clear();
   KeyEncoderTraits<UINT32, faststring>::Encode(search_key, &dst);
-  Status s = iter->SeekAtOrBefore(Slice(dst));
-  RETURN_NOT_OK(s);
+  RETURN_NOT_OK(iter->SeekAtOrBefore(Slice(dst)));
 
   *ptr = iter->GetCurrentBlockPointer();
   *match = iter->GetCurrentKey();
@@ -79,32 +83,35 @@ Status SearchInReaderUint32(const IndexBlockReader &reader,
 }
 
 // Expects a Slice containing a big endian encoded int
-static uint32_t SliceAsUInt32(const Slice &slice) {
-  CHECK_EQ(slice.size(), 4);
-  uint32_t val;
+static uint32_t SliceAsUInt32(const Slice& slice) {
+  CHECK_EQ(4, slice.size());
+  uint32_t val = 0;
   memcpy(&val, slice.data(), slice.size());
   val = BigEndian::FromHost32(val);
   return val;
 }
 
-static void AddToIndex(IndexBlockBuilder *idx, uint32_t val,
-                       const BlockPointer &block_pointer) {
-
+static void AddToIndex(IndexBlockBuilder* idx,
+                       uint32_t val,
+                       const BlockPointer& block_pointer) {
   static faststring dst;
   dst.clear();
   KeyEncoderTraits<UINT32, faststring>::Encode(val, &dst);
   idx->Add(Slice(dst), block_pointer);
 }
 
+static void AddEmptyKeyToIndex(IndexBlockBuilder* idx,
+                               const BlockPointer& block_pointer) {
+  idx->Add({}, block_pointer);
+}
 
 // Test IndexBlockBuilder and IndexReader with integers
 TEST(TestIndexBuilder, TestIndexWithInts) {
 
   // Encode an index block.
-  WriterOptions opts;
-  IndexBlockBuilder idx(&opts, true);
+  IndexBlockBuilder idx(true);
 
-  const int EXPECTED_NUM_ENTRIES = 4;
+  static constexpr int EXPECTED_NUM_ENTRIES = 4;
 
   uint32_t i;
 
@@ -204,8 +211,7 @@ TEST(TestIndexBuilder, TestIndexWithInts) {
 }
 
 TEST(TestIndexBlock, TestIndexBlockWithStrings) {
-  WriterOptions opts;
-  IndexBlockBuilder idx(&opts, true);
+  IndexBlockBuilder idx(true);
 
   // Insert data for "hello-10" through "hello-40" by 10s
   const int EXPECTED_NUM_ENTRIES = 4;
@@ -302,8 +308,7 @@ TEST(TestIndexBlock, TestIndexBlockWithStrings) {
 // Test seeking around using the IndexBlockIterator class
 TEST(TestIndexBlock, TestIterator) {
   // Encode an index block with 1000 entries.
-  WriterOptions opts;
-  IndexBlockBuilder idx(&opts, true);
+  IndexBlockBuilder idx(true);
 
   for (int i = 0; i < 1000; i++) {
     uint32_t key = i * 10;
@@ -338,6 +343,199 @@ TEST(TestIndexBlock, TestIterator) {
   ASSERT_EQ(0U, SliceAsUInt32(iter->GetCurrentKey()));
   ASSERT_EQ(100000U, iter->GetCurrentBlockPointer().offset());
   ASSERT_TRUE(iter->HasNext());
+}
+
+// Parse an empty index block and make sure the IndexBlockReader's API works
+// as expected.
+TEST(TestIndexBlock, EmptyBlock) {
+  IndexBlockBuilder idx(true);
+  ASSERT_TRUE(idx.empty());
+  ASSERT_EQ(0, idx.count());
+  Slice key;
+  const auto s = idx.GetFirstKey(&key);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+
+  const Slice b = idx.Finish();
+  IndexBlockReader reader;
+  ASSERT_OK(reader.Parse(b));
+  ASSERT_TRUE(reader.IsLeaf());
+  ASSERT_EQ(0, reader.Count());
+  unique_ptr<IndexBlockIterator> it(reader.NewIterator());
+  ASSERT_FALSE(it->HasNext());
+  {
+    const auto s = it->SeekToIndex(0);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+  {
+    const auto s = it->Next();
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+  {
+    const Slice key;
+    const auto s = it->SeekAtOrBefore(key);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+}
+
+// Test how IndexBlockBuilder and IndexBlockReader work with empty keys
+// in an index block.
+TEST(TestIndexBlock, EmptyKeys) {
+  // All the sanity checks in the parser are based on min/max estimates,
+  // and there might be variations in the size of the encoded fields because
+  // of varint encoding, where higher values consume more space when serialized.
+  // That's exercised below by using different number of blocks in the generated
+  // index file.
+
+  // One empty key.
+  {
+    IndexBlockBuilder idx(true);
+    AddEmptyKeyToIndex(&idx, BlockPointer(0, 1));
+    const Slice b = idx.Finish();
+
+    IndexBlockReader reader;
+    ASSERT_OK(reader.Parse(b));
+  }
+
+  // Several empty keys.
+  {
+    IndexBlockBuilder idx(true);
+    for (auto i = 0; i < 8; ++i) {
+      AddEmptyKeyToIndex(&idx, BlockPointer(i, 1));
+    }
+    const Slice b = idx.Finish();
+
+    IndexBlockReader reader;
+    ASSERT_OK(reader.Parse(b));
+  }
+
+  // Many empty keys.
+  {
+    IndexBlockBuilder idx(true);
+    for (auto i = 0; i < 65536; ++i) {
+      AddEmptyKeyToIndex(&idx, BlockPointer(i, 1));
+    }
+    const Slice b = idx.Finish();
+
+    IndexBlockReader reader;
+    ASSERT_OK(reader.Parse(b));
+  }
+}
+
+// Corrupt the trailer or its size in the block and try to parse the block.
+TEST(TestIndexBlock, CorruptedTrailer) {
+  // Data chunk is too small.
+  {
+    uint8_t buf[3];
+    Slice b(buf, sizeof(buf));
+    IndexBlockReader reader;
+    const auto s = reader.Parse(b);
+    ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "index block too small");
+  }
+
+  // The trailer's size is too small.
+  {
+    IndexBlockBuilder idx(true);
+    AddToIndex(&idx, 0, BlockPointer(1, 1024));
+    const Slice b = idx.Finish();
+
+    const uint8_t* trailer_size_ptr = b.data() + b.size() - sizeof(uint32_t);
+
+    faststring buf;
+    InlinePutFixed32(&buf, 3);
+    memmove(const_cast<uint8_t*>(trailer_size_ptr), buf.data(), buf.size());
+
+    IndexBlockReader reader;
+    const auto s = reader.Parse(b);
+    ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "3: invalid index block trailer size");
+  }
+
+  // The trailer's size is too big.
+  {
+    IndexBlockBuilder idx(true);
+    AddToIndex(&idx, 1, BlockPointer(2, 1024));
+    const Slice b = idx.Finish();
+
+    const uint8_t* trailer_size_ptr = b.data() + b.size() - sizeof(uint32_t);
+
+    faststring buf;
+    InlinePutFixed32(&buf, 1234);
+    memmove(const_cast<uint8_t*>(trailer_size_ptr), buf.data(), buf.size());
+
+    IndexBlockReader reader;
+    const auto s = reader.Parse(b);
+    ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "1234: invalid index block trailer size");
+  }
+
+  // The number of key offsets too high for the actual amount of data stored.
+  {
+    IndexBlockBuilder idx(true);
+    AddToIndex(&idx, 2, BlockPointer(3, 1024));
+    const Slice b = idx.Finish();
+
+    const uint8_t* trailer_size_ptr = b.data() + b.size() - sizeof(uint32_t);
+    const size_t trailer_size = DecodeFixed32(trailer_size_ptr);
+    const uint8_t* trailer_ptr = trailer_size_ptr - trailer_size;
+    IndexBlockTrailerPB t;
+    ASSERT_TRUE(t.ParseFromArray(trailer_ptr, trailer_size));
+    t.set_num_entries(5);
+
+    // To make sure writing over the new serialized message doesn't require
+    // updating the encoded trailer size, check that the new serialized
+    // PB message is the same size as the original message.
+    ASSERT_EQ(trailer_size, t.ByteSizeLong());
+
+    faststring buf;
+    ASSERT_TRUE(AppendPBToString(t, &buf));
+    memmove(const_cast<uint8_t*>(trailer_ptr), buf.data(), buf.size());
+
+    IndexBlockReader reader;
+    const auto s = reader.Parse(b);
+    ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "5: too many entries in trailer");
+  }
+
+  // Negative number of key offsets.
+  {
+    IndexBlockBuilder idx(true);
+    AddToIndex(&idx, 3, BlockPointer(4, 1024));
+    const Slice b = idx.Finish();
+
+    IndexBlockTrailerPB t;
+    {
+      const uint8_t* trailer_size_ptr = b.data() + b.size() - sizeof(uint32_t);
+      const size_t trailer_size = DecodeFixed32(trailer_size_ptr);
+      const uint8_t* trailer_ptr = trailer_size_ptr - trailer_size;
+      ASSERT_TRUE(t.ParseFromArray(trailer_ptr, trailer_size));
+    }
+
+    IndexBlockTrailerPB tc(t);
+    tc.set_num_entries(-3);
+    // The new trailer serialized into a bigger message due to negative value
+    // of the int32_t field.
+    ASSERT_GT(tc.ByteSizeLong(), t.ByteSizeLong());
+
+    unique_ptr<uint8_t[]> bc_data(
+        new uint8_t[b.size() + tc.ByteSizeLong() - t.ByteSizeLong()]);
+    Slice bc(b);
+    bc.relocate(bc_data.get());
+
+    faststring buf;
+    ASSERT_TRUE(AppendPBToString(tc, &buf));
+    InlinePutFixed32(&buf, tc.ByteSizeLong());
+
+    // Overwrite the trailer and the trailer size.
+    memmove(bc.mutable_data() + bc.size() - tc.ByteSizeLong() - sizeof(uint32_t),
+            buf.data(),
+            buf.size());
+
+    IndexBlockReader reader;
+    const auto s = reader.Parse(bc);
+    ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "-3: bad number of entries in trailer");
+  }
 }
 
 TEST(TestIndexKeys, TestGetSeparatingKey) {

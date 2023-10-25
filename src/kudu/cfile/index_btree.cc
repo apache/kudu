@@ -33,6 +33,7 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
@@ -47,31 +48,30 @@ namespace kudu {
 namespace cfile {
 
 IndexTreeBuilder::IndexTreeBuilder(
-  const WriterOptions *options,
-  CFileWriter *writer) :
-  options_(options),
-  writer_(writer) {
+    const WriterOptions* options,
+    CFileWriter* writer)
+    : options_(options),
+      writer_(writer) {
   idx_blocks_.emplace_back(CreateBlockBuilder(true));
 }
 
-
-IndexBlockBuilder *IndexTreeBuilder::CreateBlockBuilder(bool is_leaf) {
-  return new IndexBlockBuilder(options_, is_leaf);
+IndexBlockBuilder* IndexTreeBuilder::CreateBlockBuilder(bool is_leaf) {
+  return new IndexBlockBuilder(is_leaf);
 }
 
-Status IndexTreeBuilder::Append(const Slice &key,
-                                const BlockPointer &block) {
-  return Append(key, block, 0);
+Status IndexTreeBuilder::Append(const Slice& key,
+                                const BlockPointer& block_ptr) {
+  return Append(key, block_ptr, 0);
 }
 
-Status IndexTreeBuilder::Append(
-  const Slice &key, const BlockPointer &block_ptr,
-  size_t level) {
+Status IndexTreeBuilder::Append(const Slice& key,
+                                const BlockPointer& block_ptr,
+                                size_t level) {
   if (level >= idx_blocks_.size()) {
     // Need to create a new level
-    CHECK(level == idx_blocks_.size()) <<
-      "trying to create level " << level << " but size is only "
-                                << idx_blocks_.size();
+    DCHECK(level == idx_blocks_.size()) <<
+          Substitute("trying to create level $0 but size is only $1",
+                     level, idx_blocks_.size());
     VLOG(1) << "Creating level-" << level << " in index b-tree";
     idx_blocks_.emplace_back(CreateBlockBuilder(false));
   }
@@ -79,35 +79,31 @@ Status IndexTreeBuilder::Append(
   IndexBlockBuilder* idx_block = idx_blocks_[level].get();
   idx_block->Add(key, block_ptr);
 
-  // This index block is full, and there are at least two entries,
-  // flush it.
-  size_t est_size = idx_block->EstimateEncodedSize();
-  if (est_size > options_->index_block_size &&
-      idx_block->count() > 1) {
+  // If this index block is full and there are at least two entries,
+  // then flush it.
+  if (idx_block->count() > 1 &&
+      idx_block->EstimateEncodedSize() > options_->index_block_size) {
     RETURN_NOT_OK(FinishBlockAndPropagate(level));
   }
 
   return Status::OK();
 }
 
-
-Status IndexTreeBuilder::Finish(BTreeInfoPB *info) {
-  // Now do the same for the positional index blocks, starting
-  // with leaf
-  VLOG(1) << "flushing tree, b-tree has " <<
-    idx_blocks_.size() << " levels";
+Status IndexTreeBuilder::Finish(BTreeInfoPB* info) {
+  DCHECK(!idx_blocks_.empty());
+  // Now do the same for the positional index blocks, starting with leaf.
+  VLOG(1) << "flushing tree, b-tree has " << idx_blocks_.size() << " levels";
 
   // Flush all but the root of the index.
-  for (size_t i = 0; i < idx_blocks_.size() - 1; i++) {
-    RETURN_NOT_OK(FinishBlockAndPropagate(i));
+  for (size_t i = 1; i < idx_blocks_.size(); ++i) {
+    RETURN_NOT_OK(FinishBlockAndPropagate(i - 1));
   }
 
   // Flush the root
-  int root_level = idx_blocks_.size() - 1;
+  const size_t root_level = idx_blocks_.size() - 1;
   BlockPointer ptr;
-  Status s = FinishAndWriteBlock(root_level, &ptr);
-  if (!s.ok()) {
-    return s.CloneAndPrepend("Unable to flush root index block");
+  if (auto s = FinishAndWriteBlock(root_level, &ptr); PREDICT_FALSE(!s.ok())) {
+    return s.CloneAndPrepend("unable to flush root index block");
   }
 
   VLOG(1) << "Flushed root index block: " << ptr.ToString();
@@ -117,6 +113,7 @@ Status IndexTreeBuilder::Finish(BTreeInfoPB *info) {
 }
 
 Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
+  DCHECK_LT(level, idx_blocks_.size());
   IndexBlockBuilder* idx_block = idx_blocks_[level].get();
 
   // If the block doesn't have any data in it, we don't need to
@@ -124,8 +121,8 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
   // This happens if a lower-level block fills up exactly,
   // and then the file completes.
   //
-  // TODO: add a test case which exercises this explicitly.
-  if (idx_block->count() == 0) {
+  // TODO(todd): add a test case which exercises this explicitly.
+  if (idx_block->empty()) {
     return Status::OK();
   }
 
@@ -135,18 +132,15 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
 
   // Get the first key of the finished block.
   Slice first_in_idx_block;
-  Status s = idx_block->GetFirstKey(&first_in_idx_block);
-
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to get first key of level-" << level
-               << " index block: " << s.ToString() << std::endl
-               << GetStackTrace();
+  if (auto s = idx_block->GetFirstKey(&first_in_idx_block); PREDICT_FALSE(!s.ok())) {
+    LOG(ERROR) << Substitute(
+        "unable to get first key of level-$0 index block: $1\n$2",
+        level, s.ToString(), GetStackTrace());
     return s;
   }
 
   // Add to higher-level index.
-  RETURN_NOT_OK(Append(first_in_idx_block, idx_block_ptr,
-                       level + 1));
+  RETURN_NOT_OK(Append(first_in_idx_block, idx_block_ptr, level + 1));
 
   // Finally, reset the block we just wrote. It's important to wait until
   // here to do this, since the first_in_idx_block data may point to internal
@@ -159,13 +153,12 @@ Status IndexTreeBuilder::FinishBlockAndPropagate(size_t level) {
 // Finish the current block at the given level, writing it
 // to the file. Return the location of the written block
 // in 'written'.
-Status IndexTreeBuilder::FinishAndWriteBlock(size_t level, BlockPointer *written) {
-  IndexBlockBuilder* idx_block = idx_blocks_[level].get();
-  vector<Slice> v { idx_block->Finish() };
-  Status s = writer_->AddBlock(std::move(v), written, "index block");
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to append level-" << level << " index "
-               << "block to file";
+Status IndexTreeBuilder::FinishAndWriteBlock(size_t level, BlockPointer* written) {
+  DCHECK_LT(level, idx_blocks_.size());
+  vector<Slice> v { idx_blocks_[level].get()->Finish() };
+  if (auto s = writer_->AddBlock(std::move(v), written, "index block");
+      PREDICT_FALSE(!s.ok())) {
+    LOG(ERROR) << Substitute("unable to append level-$0 index block to file", level);
     return s;
   }
 
@@ -189,15 +182,16 @@ struct IndexTreeIterator::SeekedIndex {
   IndexBlockIterator iter;
 };
 
-IndexTreeIterator::IndexTreeIterator(const IOContext* io_context, const CFileReader *reader,
-                                     const BlockPointer &root_blockptr)
+IndexTreeIterator::IndexTreeIterator(const IOContext* io_context,
+                                     const CFileReader* reader,
+                                     const BlockPointer& root_blockptr)
     : reader_(reader),
       root_block_(root_blockptr),
       io_context_(io_context) {
 }
 IndexTreeIterator::~IndexTreeIterator() = default;
 
-Status IndexTreeIterator::SeekAtOrBefore(const Slice &search_key) {
+Status IndexTreeIterator::SeekAtOrBefore(const Slice& search_key) {
   return SeekDownward(search_key, root_block_, 0);
 }
 
@@ -205,7 +199,7 @@ Status IndexTreeIterator::SeekToFirst() {
   return SeekToFirstDownward(root_block_, 0);
 }
 
-bool IndexTreeIterator::HasNext() {
+bool IndexTreeIterator::HasNext() const {
   for (int i = seeked_indexes_.size(); i > 0; i--) {
     if (seeked_indexes_[i - 1]->iter.HasNext())
       return true;
@@ -214,7 +208,7 @@ bool IndexTreeIterator::HasNext() {
 }
 
 Status IndexTreeIterator::Next() {
-  CHECK(!seeked_indexes_.empty()) << "not seeked";
+  DCHECK(!seeked_indexes_.empty()) << "not seeked";
 
   // Start at the bottom level of the BTree, calling Next(),
   // until one succeeds. If any does not succeed, then
@@ -249,34 +243,34 @@ Status IndexTreeIterator::Next() {
   return Status::OK();
 }
 
-const Slice IndexTreeIterator::GetCurrentKey() const {
+const Slice& IndexTreeIterator::GetCurrentKey() const {
   return seeked_indexes_.back()->iter.GetCurrentKey();
 }
 
-const BlockPointer &IndexTreeIterator::GetCurrentBlockPointer() const {
+const BlockPointer& IndexTreeIterator::GetCurrentBlockPointer() const {
   return seeked_indexes_.back()->iter.GetCurrentBlockPointer();
 }
 
-IndexBlockIterator *IndexTreeIterator::BottomIter() {
+IndexBlockIterator* IndexTreeIterator::BottomIter() {
   return &seeked_indexes_.back()->iter;
 }
 
-IndexBlockReader *IndexTreeIterator::BottomReader() {
+const IndexBlockReader* IndexTreeIterator::BottomReader() const {
   return &seeked_indexes_.back()->reader;
 }
 
-IndexBlockIterator *IndexTreeIterator::seeked_iter(int depth) {
+IndexBlockIterator* IndexTreeIterator::seeked_iter(size_t depth) {
+  DCHECK_LT(depth, seeked_indexes_.size());
   return &seeked_indexes_[depth]->iter;
 }
 
-IndexBlockReader *IndexTreeIterator::seeked_reader(int depth) {
+const IndexBlockReader* IndexTreeIterator::seeked_reader(size_t depth) const {
+  DCHECK_LT(depth, seeked_indexes_.size());
   return &seeked_indexes_[depth]->reader;
 }
 
-Status IndexTreeIterator::LoadBlock(const BlockPointer &block,
-                                    int depth) {
-
-  SeekedIndex *seeked;
+Status IndexTreeIterator::LoadBlock(const BlockPointer& block, size_t depth) {
+  SeekedIndex* seeked;
   if (depth < seeked_indexes_.size()) {
     // We have a cached instance from previous seek.
     seeked = seeked_indexes_[depth].get();
@@ -294,7 +288,7 @@ Status IndexTreeIterator::LoadBlock(const BlockPointer &block,
     seeked->iter.Reset();
   } else {
     // No cached instance, make a new one.
-    seeked_indexes_.emplace_back(new SeekedIndex());
+    seeked_indexes_.emplace_back(new SeekedIndex);
     seeked = seeked_indexes_.back().get();
   }
 
@@ -307,16 +301,15 @@ Status IndexTreeIterator::LoadBlock(const BlockPointer &block,
                         Substitute("failed to parse index block in block $0 at $1",
                                    reader_->block_id().ToString(),
                                    block.ToString()));
-
   return Status::OK();
 }
 
-Status IndexTreeIterator::SeekDownward(const Slice &search_key, const BlockPointer &in_block,
-                                       int cur_depth) {
-
+Status IndexTreeIterator::SeekDownward(const Slice& search_key,
+                                       const BlockPointer& in_block,
+                                       size_t cur_depth) {
   // Read the block.
   RETURN_NOT_OK(LoadBlock(in_block, cur_depth));
-  IndexBlockIterator *iter = seeked_iter(cur_depth);
+  IndexBlockIterator* iter = seeked_iter(cur_depth);
 
   RETURN_NOT_OK(iter->SeekAtOrBefore(search_key));
 
@@ -330,10 +323,11 @@ Status IndexTreeIterator::SeekDownward(const Slice &search_key, const BlockPoint
   return SeekDownward(search_key, iter->GetCurrentBlockPointer(), cur_depth + 1);
 }
 
-Status IndexTreeIterator::SeekToFirstDownward(const BlockPointer &in_block, int cur_depth) {
+Status IndexTreeIterator::SeekToFirstDownward(const BlockPointer& in_block,
+                                              size_t cur_depth) {
   // Read the block.
   RETURN_NOT_OK(LoadBlock(in_block, cur_depth));
-  IndexBlockIterator *iter = seeked_iter(cur_depth);
+  IndexBlockIterator* iter = seeked_iter(cur_depth);
 
   RETURN_NOT_OK(iter->SeekToIndex(0));
 
@@ -343,18 +337,16 @@ Status IndexTreeIterator::SeekToFirstDownward(const BlockPointer &in_block, int 
   if (seeked_reader(cur_depth)->IsLeaf()) {
     seeked_indexes_.resize(cur_depth + 1);
     return Status::OK();
-  } else {
-    return SeekToFirstDownward(iter->GetCurrentBlockPointer(), cur_depth + 1);
   }
+  return SeekToFirstDownward(iter->GetCurrentBlockPointer(), cur_depth + 1);
 }
 
-IndexTreeIterator *IndexTreeIterator::IndexTreeIterator::Create(
+IndexTreeIterator* IndexTreeIterator::IndexTreeIterator::Create(
     const IOContext* io_context,
-    const CFileReader *reader,
-    const BlockPointer &root_blockptr) {
+    const CFileReader* reader,
+    const BlockPointer& root_blockptr) {
   return new IndexTreeIterator(io_context, reader, root_blockptr);
 }
-
 
 } // namespace cfile
 } // namespace kudu
