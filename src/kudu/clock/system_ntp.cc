@@ -21,6 +21,7 @@
 #include <sys/timex.h>
 
 #include <cerrno>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <ostream>
@@ -170,7 +171,7 @@ Status SystemNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   uint64_t now = static_cast<uint64_t>(t.time.tv_sec) * 1000000 +
       t.time.tv_usec;
 #endif
-  *error_usec = t.maxerror;
+  *error_usec = std::abs(t.maxerror);
   *now_usec = now;
   return Status::OK();
 }

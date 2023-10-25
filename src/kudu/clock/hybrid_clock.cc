@@ -672,9 +672,9 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source) {
 }
 
 Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
-  auto read_time_before = MonoTime::Now();
+  const auto read_time_before = MonoTime::Now();
   Status s = time_service_->WalltimeWithError(now_usec, error_usec);
-  auto read_time_after = MonoTime::Now();
+  const auto read_time_after = MonoTime::Now();
 
   bool is_extrapolated = false;
   if (PREDICT_TRUE(s.ok())) {
@@ -697,8 +697,15 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
     // The max likelihood estimate is that 'B' corresponds to the average of 'A'
     // and 'C'. Then we need to add in this uncertainty (half of C - A) into any
     // future clock readings that we extrapolate from this estimate.
-    int64_t read_duration_us = (read_time_after - read_time_before).ToMicroseconds();
-    int64_t read_time_error_us = read_duration_us / 2;
+    const int64_t read_duration_us = (read_time_after - read_time_before).ToMicroseconds();
+
+    // Per manual page of clock_gettime(CLOCK_MONOTONIC) [1], 'read_duration_us'
+    // is guaranteed to be a non-negative number. Just out of paranoia,
+    // transform it into 0 if it turns to be a negative number.
+    //
+    // [1] https://man7.org/linux/man-pages/man3/clock_gettime.3.html
+    const uint64_t read_time_error_us =
+        (read_duration_us > 0) ? read_duration_us / 2 : 0;
     MonoTime read_time_max_likelihood = read_time_before +
         MonoDelta::FromMicroseconds(read_time_error_us);
 
@@ -724,12 +731,16 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
       is_extrapolating_ = true;
       extrapolating_->set_value(is_extrapolating_);
     }
-    if (!last_clock_read_time_.Initialized()) {
+    if (PREDICT_FALSE(!last_clock_read_time_.Initialized())) {
       RETURN_NOT_OK_PREPEND(s, "could not read system time source");
     }
     MonoDelta time_since_last_read = read_time_after - last_clock_read_time_;
-    int64_t micros_since_last_read = time_since_last_read.ToMicroseconds();
-    int64_t accum_error_us = (micros_since_last_read * time_service_->skew_ppm()) / 1000000;
+    const int64_t micros_since_last_read = time_since_last_read.ToMicroseconds();
+    if (PREDICT_FALSE(micros_since_last_read < 0)) {
+      RETURN_NOT_OK_PREPEND(s, "inconsistent readings of the monotonic clock");
+    }
+    const uint64_t accum_error_us =
+        std::abs(micros_since_last_read * time_service_->skew_ppm()) / 1000000;
     *now_usec = last_clock_read_physical_ + micros_since_last_read;
     *error_usec = last_clock_read_error_ + accum_error_us;
     is_extrapolated = true;
@@ -749,7 +760,7 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
         *error_usec,
         is_extrapolated ? "unsynchronized" : "synchronized"));
   }
-  return kudu::Status::OK();
+  return Status::OK();
 }
 
 // Used to get the timestamp for metrics.
