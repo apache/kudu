@@ -18,6 +18,7 @@
 #include "kudu/tablet/compaction.h"
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -107,7 +108,7 @@ namespace tablet {
 
 class RowSetMetadata;
 
-constexpr const char* const kRowKeyFormat = "hello %010ld";
+constexpr const char* const kRowKeyFormat = "hello %010" PRId64;
 constexpr const size_t kLargeRollThreshold = 8UL * 1024 * 1024 * 1024;  // 8GB
 constexpr const size_t kSmallRollThreshold = 1024; // 1KB
 

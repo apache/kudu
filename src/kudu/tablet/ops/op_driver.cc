@@ -79,7 +79,7 @@ class FollowerOpCompletionCallback : public OpCompletionCallback {
         response_(response),
         result_tracker_(std::move(result_tracker)) {}
 
-  virtual void OpCompleted() {
+  void OpCompleted() override {
     if (status_.ok()) {
       result_tracker_->RecordCompletionAndRespond(request_id_, response_);
     } else {
