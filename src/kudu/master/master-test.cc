@@ -641,14 +641,13 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ASSERT_EQ(tablet_servers.Size(), 1);
     const rapidjson::Value& tablet_server = tablet_servers[rapidjson::SizeType(0)];
     ASSERT_STREQ("localhost:1000",
-        tablet_server["rpc_addrs"][rapidjson::SizeType(0)].GetString());
+                 tablet_server["rpc_addrs"][rapidjson::SizeType(0)].GetString());
     ASSERT_STREQ("http://localhost:2000",
-        tablet_server["http_addrs"][rapidjson::SizeType(0)].GetString());
+                 tablet_server["http_addrs"][rapidjson::SizeType(0)].GetString());
     ASSERT_STREQ("my-ts-uuid", tablet_server["uuid"].GetString());
     ASSERT_TRUE(tablet_server["millis_since_heartbeat"].GetInt64() >= 0);
-    ASSERT_EQ(true, tablet_server["live"].GetBool());
-    ASSERT_STREQ(VersionInfo::GetVersionInfo().c_str(),
-        tablet_server["version"].GetString());
+    ASSERT_TRUE(tablet_server["live"].GetBool());
+    ASSERT_EQ(VersionInfo::GetVersionInfo(), tablet_server["version"].GetString());
     string start_time;
     StringAppendStrftime(&start_time, "%Y-%m-%d %H:%M:%S %Z", static_cast<time_t>(10000), true);
     ASSERT_STREQ(start_time.c_str(), tablet_server["start_time"].GetString());
@@ -3778,6 +3777,25 @@ TEST_F(MasterTest, GetTableStatesWithId) {
     ASSERT_TRUE(is_soft_deleted_table);
     ASSERT_TRUE(is_expired_table);
   }
+}
+
+TEST_F(MasterTest, TestMastersListedInDumpEndpoints) {
+  EasyCurl c;
+  faststring buf;
+  string addr = Substitute("http://$0", mini_master_->bound_http_addr().ToString());
+  ASSERT_OK(c.FetchURL(Substitute("$0/dump-entities", addr), &buf));
+  rapidjson::Document doc;
+  doc.Parse<0>(buf.ToString().c_str());
+  const rapidjson::Value& masters = doc["masters"];
+  ASSERT_EQ(1, masters.Size());
+  const rapidjson::Value& master = masters[rapidjson::SizeType(0)];
+  ASSERT_EQ(mini_master_->bound_rpc_addr().ToString(),
+            master["rpc_addrs"][rapidjson::SizeType(0)].GetString());
+  ASSERT_EQ(addr, master["http_addrs"][rapidjson::SizeType(0)].GetString());
+  ASSERT_EQ(mini_master_->permanent_uuid(), master["uuid"].GetString());
+  ASSERT_EQ(VersionInfo::GetVersionInfo(), master["version"].GetString());
+  ASSERT_STREQ("LEADER", master["role"].GetString());
+  ASSERT_NE("", master["start_time"].GetString());
 }
 
 } // namespace master

@@ -747,7 +747,9 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
                                             Webserver::PrerenderedWebResponse* resp) {
   ostringstream* output = &resp->output;
   if (!master_->catalog_manager()->IsInitialized()) {
-    JsonError(Status::ServiceUnavailable("CatalogManager is not running"), output);
+    Status s = Status::ServiceUnavailable("CatalogManager is not running");
+    JsonError(s, output);
+    LOG(WARNING) << s.ToString();
     return;
   }
 
@@ -761,6 +763,7 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
   auto s = master_->catalog_manager()->sys_catalog()->VisitTables(&d);
   if (!s.ok()) {
     JsonError(s, output);
+    LOG(WARNING) << s.ToString();
     return;
   }
   jw.EndArray();
@@ -770,7 +773,51 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
   s = master_->catalog_manager()->sys_catalog()->VisitTablets(&d);
   if (!s.ok()) {
     JsonError(s, output);
+    LOG(WARNING) << s.ToString();
     return;
+  }
+  jw.EndArray();
+
+  jw.String("masters");
+  jw.StartArray();
+  vector<ServerEntryPB> masters;
+  s = master_->ListMasters(&masters, /*use_external_addr=*/false);
+  if (!s.ok()) {
+    JsonError(s, output);
+    LOG(WARNING) << s.ToString();
+    return;
+  }
+
+  for (const auto& master : masters) {
+    jw.StartObject();
+    jw.String("uuid");
+    jw.String(master.instance_id().permanent_uuid());
+
+    jw.String("rpc_addrs");
+    jw.StartArray();
+    for (const HostPortPB& host_port : master.registration().rpc_addresses()) {
+      jw.String(Substitute("$0:$1", host_port.host(), host_port.port()));
+    }
+    jw.EndArray();
+
+    jw.String("http_addrs");
+    jw.StartArray();
+    for (const HostPortPB& host_port : master.registration().http_addresses()) {
+      jw.String(Substitute("$0://$1:$2", master.registration().https_enabled() ? "https" : "http",
+                                         host_port.host(), host_port.port()));
+    }
+    jw.EndArray();
+
+    jw.String("role");
+    jw.String(RaftPeerPB_Role_Name(master.role()));
+
+    jw.String("version");
+    jw.String(master.registration().software_version());
+
+    jw.String("start_time");
+    jw.String(StartTimeToString(master.registration()));
+
+    jw.EndObject();
   }
   jw.EndArray();
 
