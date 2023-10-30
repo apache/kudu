@@ -1578,13 +1578,25 @@ class PosixEnv : public Env {
     bool encrypted = opts.is_sensitive && IsEncryptionEnabled();
     EncryptionHeader header;
     if (encrypted) {
+      auto cleanup = MakeScopedCleanup([&]() {
+        fclose(f);
+      });
+
       DCHECK(encryption_key_);
       int fd;
       RETURN_NOT_OK(DoOpen(fname, OpenMode::MUST_EXIST, &fd));
+
+      auto fd_cleanup = MakeScopedCleanup([&]() {
+          DoClose(fd);
+      });
+
       RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *encryption_key_, &header));
       if (fseek(f, kEncryptionHeaderSize, SEEK_CUR)) {
         return IOError(fname, errno);
       }
+
+      cleanup.cancel();
+      fd_cleanup.cancel();
     }
     result->reset(new PosixSequentialFile(fname, encrypted, f, header));
     return Status::OK();
@@ -1610,7 +1622,7 @@ class PosixEnv : public Env {
     bool encrypted = opts.is_sensitive && IsEncryptionEnabled();
     if (encrypted) {
       DCHECK(encryption_key_);
-      RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *encryption_key_, &header));
+      RETURN_NOT_OK_EVAL(ReadEncryptionHeader(fd, fname, *encryption_key_, &header), DoClose(fd));
     }
     result->reset(new PosixRandomAccessFile(fname, fd,
                   encrypted, header));
@@ -1628,7 +1640,12 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "PosixEnv::NewWritableFile", "path", fname);
     int fd;
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
-    return InstantiateNewWritableFile(fname, fd, opts, result);
+    auto cleanup = MakeScopedCleanup([&]() {
+      DoClose(fd);
+    });
+    RETURN_NOT_OK(InstantiateNewWritableFile(fname, fd, opts, result));
+    cleanup.cancel();
+    return Status::OK();
   }
 
   Status NewTempWritableFile(const WritableFileOptions& opts,
@@ -1639,8 +1656,12 @@ class PosixEnv : public Env {
     int fd = 0;
     string tmp_filename;
     RETURN_NOT_OK(MkTmpFile(name_template, &fd, &tmp_filename));
+    auto cleanup = MakeScopedCleanup([&]() {
+      DoClose(fd);
+    });
     RETURN_NOT_OK(InstantiateNewWritableFile(tmp_filename, fd, opts, result));
     created_filename->swap(tmp_filename);
+    cleanup.cancel();
     return Status::OK();
   }
 
@@ -1664,6 +1685,9 @@ class PosixEnv : public Env {
     RETURN_NOT_OK(DoOpen(fname, opts.mode, &fd));
     EncryptionHeader eh;
     if (encrypt) {
+      auto cleanup = MakeScopedCleanup([&]() {
+        DoClose(fd);
+      });
       DCHECK(encryption_key_);
       if (size >= kEncryptionHeaderSize) {
         RETURN_NOT_OK(ReadEncryptionHeader(fd, fname, *encryption_key_, &eh));
@@ -1671,6 +1695,7 @@ class PosixEnv : public Env {
         RETURN_NOT_OK(GenerateHeader(&eh));
         RETURN_NOT_OK(WriteEncryptionHeader(fd, fname, *encryption_key_, eh));
       }
+      cleanup.cancel();
     }
     result->reset(new PosixRWFile(fname, fd, opts.sync_on_close,
                                   encrypt, eh));
@@ -1687,9 +1712,13 @@ class PosixEnv : public Env {
     bool encrypt = opts.is_sensitive && IsEncryptionEnabled();
     EncryptionHeader eh;
     if (encrypt) {
+      auto cleanup = MakeScopedCleanup([&]() {
+        DoClose(fd);
+      });
       DCHECK(encryption_key_);
       RETURN_NOT_OK(GenerateHeader(&eh));
       RETURN_NOT_OK(WriteEncryptionHeader(fd, *created_filename, *encryption_key_, eh));
+      cleanup.cancel();
     }
     res->reset(new PosixRWFile(*created_filename, fd, opts.sync_on_close,
                                encrypt, eh));
