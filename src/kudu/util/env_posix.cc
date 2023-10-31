@@ -88,6 +88,7 @@
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
+using kudu::security::ssl_make_unique;
 using std::accumulate;
 using std::string;
 using std::unique_ptr;
@@ -222,10 +223,15 @@ const uint8_t kEncryptionHeaderSize = 64;
 
 const char* const kEncryptionHeaderMagic = "kuduenc";
 
-using evp_ctx_unique_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
+namespace security {
+
+template<> struct SslTypeTraits<EVP_CIPHER_CTX> {
+  static constexpr auto kFreeFunc = &EVP_CIPHER_CTX_free;
+};
+
+} // namespace security
 
 namespace {
-
 
 struct FreeDeleter {
   inline void operator()(void* ptr) const {
@@ -452,10 +458,14 @@ Status DoEncryptV(const EncryptionHeader* eh,
   InlineBigEndianEncodeFixed64(&iv[0], 0);
   InlineBigEndianEncodeFixed64(&iv[8], offset / kEncryptionBlockSize);
 
-  evp_ctx_unique_ptr ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
-
-  OPENSSL_RET_NOT_OK(EVP_EncryptInit_ex(ctx.get(), GetEVPCipher(eh->algorithm),
-                                        nullptr, eh->key, iv),
+  const auto* cipher = GetEVPCipher(eh->algorithm);
+  if (!cipher) {
+    return Status::RuntimeError(
+        StringPrintf("no cipher for algorithm 0x%02x", eh->algorithm));
+  }
+  auto ctx = ssl_make_unique(EVP_CIPHER_CTX_new());
+  OPENSSL_RET_IF_NULL(ctx, "failed to create cipher context");
+  OPENSSL_RET_NOT_OK(EVP_EncryptInit_ex(ctx.get(), cipher, nullptr, eh->key, iv),
                      "Failed to initialize encryption");
   OPENSSL_RET_NOT_OK(EVP_CIPHER_CTX_set_padding(ctx.get(), 0),
                      "failed to disable padding");
@@ -497,9 +507,14 @@ Status DoDecryptV(const EncryptionHeader* eh, uint64_t offset, ArrayView<Slice> 
   InlineBigEndianEncodeFixed64(&iv[0], 0);
   InlineBigEndianEncodeFixed64(&iv[8], offset / kEncryptionBlockSize);
 
-  evp_ctx_unique_ptr ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
-  OPENSSL_RET_NOT_OK(EVP_DecryptInit_ex(ctx.get(), GetEVPCipher(eh->algorithm),
-                                        nullptr, eh->key, iv),
+  const auto* cipher = GetEVPCipher(eh->algorithm);
+  if (!cipher) {
+    return Status::RuntimeError(
+        StringPrintf("no cipher for algorithm 0x%02x", eh->algorithm));
+  }
+  auto ctx = ssl_make_unique(EVP_CIPHER_CTX_new());
+  OPENSSL_RET_IF_NULL(ctx, "failed to create cipher context");
+  OPENSSL_RET_NOT_OK(EVP_DecryptInit_ex(ctx.get(), cipher, nullptr, eh->key, iv),
                      "Failed to initialize decryption");
   OPENSSL_RET_NOT_OK(EVP_CIPHER_CTX_set_padding(ctx.get(), 0),
                      "failed to disable padding");
