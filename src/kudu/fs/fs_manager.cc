@@ -543,6 +543,11 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
           "The '--enable_multi_tenancy' should set for the existed tenants.");
     }
 
+    if (FLAGS_encrypt_data_at_rest && tenant_key(fs::kDefaultTenantID).empty()) {
+      return Status::IllegalState(
+          "Data at rest encryption is enabled and tenants exist, but no tenant key found");
+    }
+
     // TODO(kedeng) :
     //     After implementing tenant management, different tenants need to be handled here.
     //
@@ -556,7 +561,7 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
     // Just check whether the upgrade operation is needed for '--enable_multi_tenancy'.
     if (FLAGS_enable_multi_tenancy) {
       return Status::IllegalState(
-          "We should do server key upgrade with Kudu CLI tool for '--enable_multi_tenancy'.");
+          "--enable_multi_tenancy is set, but no tenants exist.");
     }
 
     string server_key;
@@ -564,6 +569,9 @@ Status FsManager::Open(FsReport* report, Timer* read_instance_metadata_files,
                                                       this->server_key_iv(),
                                                       this->server_key_version(),
                                                       &decrypted_key));
+  } else if (server_key().empty() && FLAGS_encrypt_data_at_rest) {
+    return Status::IllegalState(
+        "--encrypt_data_at_rest is set, but no server key found.");
   }
 
   if (!decrypted_key.empty()) {

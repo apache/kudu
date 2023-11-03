@@ -1372,6 +1372,23 @@ TEST_P(FsManagerTestBase, TestAncillaryDirsReported) {
   ASSERT_STR_CONTAINS(report_str, "metadata directory: " + opts.metadata_root);
 }
 
+// Regression test for KUDU-3522.
+TEST_P(FsManagerTestBase, TestFailToStartWithoutEncryptionKeys) {
+  if (!FLAGS_encrypt_data_at_rest) {
+    // Skipping this test if encryption is not enabled.
+    GTEST_SKIP();
+  }
+  // Disable encryption while creating file system.
+  FLAGS_encrypt_data_at_rest = false;
+  const auto& path = GetTestPath("unencrypted");
+  ReinitFsManagerWithPaths(path, { path });
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+
+  // Re-enable encryption and attempt to open the FS.
+  FLAGS_encrypt_data_at_rest = true;
+  ASSERT_TRUE(fs_manager()->Open().IsIllegalState());
+}
+
 class OpenFsTypeTest : public KuduTest,
                        public ::testing::WithParamInterface<std::tuple<string, bool, bool>> {
  public:
