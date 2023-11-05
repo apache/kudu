@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/split.h"
@@ -37,6 +38,10 @@ using std::vector;
 using strings::Split;
 using strings::Substitute;
 
+DECLARE_bool(enable_multi_tenancy);
+DECLARE_bool(encrypt_data_at_rest);
+DECLARE_string(block_manager);
+
 namespace kudu {
 namespace tools {
 
@@ -50,7 +55,8 @@ Status RunKuduTool(const vector<string>& args, string* out, string* err,
                    const string& in, map<string, string> env_vars) {
   vector<string> total_args = { GetKuduToolAbsolutePath() };
 
-  // Some scenarios might add unsafe flags for testing purposes.
+  // Some scenarios might add experimental or unsafe flags for testing purposes.
+  total_args.emplace_back("--unlock_experimental_flags");
   total_args.emplace_back("--unlock_unsafe_flags");
 
   // Speed up filesystem-based operations.
@@ -67,6 +73,15 @@ Status RunKuduTool(const vector<string>& args, string* out, string* err,
   // level higher than 0, so it's necessary to override it on the client
   // side as well to allow clients to accept and verify TLS certificates.
   total_args.emplace_back("--openssl_security_level_override=0");
+
+  // Pass some flags to the CLI tools for testing purposes.
+  // Now only --encrypt_data_at_rest, --enable_multi_tenancy and --block_manager
+  // flags are passed by default.
+  total_args.emplace_back(Substitute("--encrypt_data_at_rest=$0",
+                                     FLAGS_encrypt_data_at_rest));
+  total_args.emplace_back(Substitute("--enable_multi_tenancy=$0",
+                                     FLAGS_enable_multi_tenancy));
+  total_args.emplace_back(Substitute("--block_manager=$0", FLAGS_block_manager));
 
   total_args.insert(total_args.end(), args.begin(), args.end());
   return Subprocess::Call(total_args, in, out, err, std::move(env_vars));

@@ -271,17 +271,7 @@ class ToolTest : public KuduTest {
                  const string& in = "") const {
     string out;
     string err;
-    string args(arg_str);
-    // Pass the flags to the CLI tools. Now only --encrypt_data_at_rest and
-    // --enable_multi_tenancy flags are passed by default, the other flags
-    // are needed to be passed manually by adding them in 'arg_str'.
-    if (FLAGS_encrypt_data_at_rest) {
-      args += " --encrypt_data_at_rest";
-    }
-    if (FLAGS_enable_multi_tenancy) {
-      args += " --enable_multi_tenancy --unlock_experimental_flags";
-    }
-    Status s = RunKuduTool(strings::Split(args, " ", strings::SkipEmpty()),
+    Status s = RunKuduTool(strings::Split(arg_str, " ", strings::SkipEmpty()),
                            &out, &err, in);
     if (stdout) {
       *stdout = out;
