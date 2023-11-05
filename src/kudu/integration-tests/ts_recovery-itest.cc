@@ -146,7 +146,7 @@ void TsRecoveryITest::StartClusterOneTs(vector<string> extra_tserver_flags,
 // being unable to complete replay of the WAL and leaves the WAL recovery directory in place.
 // 3. The master should tombstone the FAILED replica, causing its recovery directory to be deleted.
 // A subsequent tablet copy and tablet bootstrap should cause the replica to become healthy again.
-TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
+TEST_P(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
   // Start a cluster with 3 tablet servers consisting of 1 tablet with 3 replicas.
   // Configure a small log segment size to quickly create new log segments.
   // Since we want to write as quickly as possible, we disable WAL compression.
