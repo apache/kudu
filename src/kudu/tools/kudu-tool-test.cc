@@ -15,10 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <limits.h>
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <climits>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -64,6 +64,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
@@ -1421,6 +1422,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kLocalReplicaCMetaRegexes = {
+        "unsafe_recreate.*Rewrite the consensus metadata",
         "print_replica_uuids.*Print all tablet replica peer UUIDs",
         "rewrite_raft_config.*Rewrite a tablet replica",
         "set_term.*Bump the current term",
@@ -4985,6 +4987,36 @@ TEST_F(ToolTest, TestLocalReplicaCMetaOps) {
                                               tablet_ids[i], ts_uuids[0]));
     }
   }
+
+  constexpr const char* const tablet_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  constexpr const char* const create_cmeta_cmd =
+    "local_replica cmeta unsafe_recreate $0 $1 10 20 $2:$3";
+
+  // Test creating cmeta for a non-existing tablet.
+  {
+    NO_FATALS(RunActionStdoutNone(Substitute(
+            create_cmeta_cmd,
+            flags, tablet_id, ts_uuids[0], ts_host_port)));
+  }
+
+  // Test that attempting to create cmeta for an existing tablet fails.
+  {
+    string stdout, stderr;
+    Status s = RunTool(Substitute(create_cmeta_cmd,
+                                  flags, tablet_id, ts_uuids[0], ts_host_port),
+                       &stdout, &stderr);
+    ASSERT_FALSE(s.ok());
+    ASSERT_EQ("", stdout);
+    ASSERT_STR_CONTAINS(stderr, "already exists");
+  }
+
+  // Test that creating cmeta for an existing tablet succeeds with "--force"
+  // option.
+  {
+    NO_FATALS(RunActionStdoutNone(Substitute(
+            create_cmeta_cmd,
+            flags + " --force", tablet_id, ts_uuids[0], ts_host_port)));
+  }
 }
 
 TEST_F(ToolTest, TestServerSetFlag) {
@@ -8455,6 +8487,74 @@ TEST_F(ToolTest, TestCheckFSWithNonDefaultMetadataDir) {
       "fs check --fs_wal_dir=$0 --fs_metadata_dir=$1",
       opts.wal_root, opts.metadata_root), &stdout));
   SCOPED_TRACE(stdout);
+}
+
+TEST_F(ToolTest, TestRecreateCMeta) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  constexpr int kNumTservers = 3;
+  constexpr int kNumTablets = 1;
+  constexpr int kNumRows = 1000;
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTservers;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_replicas(kNumTservers);
+  workload.Setup();
+
+  workload.Start();
+  while (workload.rows_inserted() < kNumRows) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  vector<string> tablet_ids;
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  ASSERT_OK(ListRunningTabletIds(ts, kTimeout, &tablet_ids));
+  const string tablet_id = tablet_ids[0];
+
+  // Get opid and term.
+  consensus::GetLastOpIdRequestPB req;
+  consensus::GetLastOpIdResponsePB resp;
+  req.set_tablet_id(tablet_id);
+  req.set_dest_uuid(cluster_->tablet_server(0)->uuid());
+  RpcController rpc;
+  rpc.set_timeout(kTimeout);
+  ts->consensus_proxy->GetLastOpId(req, &resp, &rpc);
+  const int opid = resp.opid().index();
+  const int term = resp.opid().term();
+
+  // Get server UUIDs and hostports.
+  map<string, HostPort> servers;
+  for (auto i = 0; i < cluster_->num_tablet_servers(); i++) {
+    const auto ts = cluster_->tablet_server(i);
+    servers.emplace(ts->uuid(), ts->bound_rpc_hostport());
+  }
+
+  const string servers_string = JoinMapped(servers,
+                                           [](const pair<string, HostPort> server) {
+      return Substitute("$0:$1:$2", server.first, server.second.host(), server.second.port());
+      }, " ");
+
+  // Shut down the server and delete the cmeta file.
+  cluster_->tablet_server(0)->Shutdown();
+  const auto wal_dir = cluster_->tablet_server(0)->wal_dir();
+  Substitute("$0/consensus-meta/$1", wal_dir, tablet_id);
+  Env::Default()->DeleteFile(Substitute("$0/consensus-meta/$1", wal_dir, tablet_id));
+
+  // Set up and run the cmeta unsafe_recreate command.
+  const auto flags = Substitute("--fs_wal_dir=$0 --fs_data_dirs=$1",
+                                cluster_->tablet_server(0)->wal_dir(),
+                                cluster_->tablet_server(0)->data_dir());
+  const auto cmd = Substitute("local_replica cmeta unsafe_recreate $0 $1 $2 $3 $4",
+                              flags, tablet_id, term, opid, servers_string);
+  NO_FATALS(RunActionStdoutNone(cmd));
+
+  // Verify the cluster.
+  ASSERT_OK(cluster_->tablet_server(0)->Restart());
+  NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
 }
 
 TEST_F(ToolTest, TestReplaceTablet) {

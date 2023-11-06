@@ -157,6 +157,7 @@ DEFINE_string(dst_fs_metadata_dir, "",
               "metadata directory if any exists. If none exists, --dst_fs_wal_dir "
               "will be used as the metadata directory.");;
 
+DECLARE_bool(force);
 DECLARE_int32(num_threads);
 DECLARE_bool(tablet_copy_support_download_superblock_in_batch);
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
@@ -672,6 +673,61 @@ Status DeleteRowsets(const RunnerContext& context) {
   LOG(INFO) << "Successfully removed rowsets with identifiers:" << JoinElements(to_remove, ",");
 
   return Status::OK();
+}
+
+Status UnsafeRecreateCmeta(const RunnerContext& context) {
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  int64_t term;
+  int64_t opid_index;
+  try {
+    term = stoi(FindOrDie(context.required_args, "term"));
+    opid_index = stoi(FindOrDie(context.required_args, "index"));
+  } catch (...) {
+    return Status::InvalidArgument("term and index must be provided and must be numerical");
+  }
+
+  RaftConfigPB config;
+  config.set_opid_index(opid_index);
+  config.set_obsolete_local(false);
+
+  set<string> uuids;
+  set<string> host_ports;
+  // Parse peer arguments.
+  for (const auto& arg : context.variadic_args) {
+    RaftPeerPB* peer = config.add_peers();
+    peer->set_member_type(consensus::RaftPeerPB_MemberType_VOTER);
+    string uuid;
+    HostPort host_port;
+    RETURN_NOT_OK(ParsePeerString(arg, &uuid, &host_port));
+    if (!uuids.emplace(uuid).second) {
+      return Status::InvalidArgument("Duplicate UUID: " + uuid);
+    }
+    if (!host_ports.emplace(host_port.ToString()).second) {
+      return Status::InvalidArgument("Duplicate RPC address: " + host_port.ToString());
+    }
+    peer->set_permanent_uuid(uuid);
+    HostPortPB* hostPort = peer->mutable_last_known_addr();
+    hostPort->set_host(host_port.host());
+    hostPort->set_port(host_port.port());
+  }
+
+  // Load file system.
+  Env* env = Env::Default();
+  FsManagerOpts fs_opts;
+  fs_opts.skip_block_manager = true;
+  FsManager fs_manager(env, std::move(fs_opts));
+  RETURN_NOT_OK(fs_manager.Open());
+
+  // We need a scoped_refptr to avoid a check failure on RefCountedThreadSafe
+  // object deleted without calling Release().
+  scoped_refptr<ConsensusMetadataManager> manager(new ConsensusMetadataManager(&fs_manager));
+
+  if (FLAGS_force && manager->Load(tablet_id).ok()) {
+    RETURN_NOT_OK(manager->Delete(tablet_id));
+  }
+
+  // Write the cmeta file.
+  return manager->Create(tablet_id, config, term);
 }
 
 Status CopyFromRemote(const RunnerContext& context) {
@@ -1356,6 +1412,19 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
           .AddOptionalParameter("fs_wal_dir")
           .Build();
 
+  unique_ptr<Action> unsafe_recreate =
+      ActionBuilder("unsafe_recreate", &UnsafeRecreateCmeta)
+      .Description("Rewrite the consensus metadata based on the provided arguments")
+      .AddRequiredParameter({kTabletIdArg, kTabletIdArgDesc})
+      .AddRequiredParameter({"term", "Raft term"})
+      .AddRequiredParameter({"index", "OpId index"})
+      .AddRequiredVariadicParameter({kRaftPeersArg, kRaftPeersArgDesc})
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("force")
+      .Build();
+
   unique_ptr<Mode> cmeta =
       ModeBuilder("cmeta")
       .Description("Operate on a local tablet replica's consensus "
@@ -1363,6 +1432,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddAction(std::move(print_replica_uuids))
       .AddAction(std::move(rewrite_raft_config))
       .AddAction(std::move(set_term))
+      .AddAction(std::move(unsafe_recreate))
       .Build();
 
   unique_ptr<Mode> tmeta =
