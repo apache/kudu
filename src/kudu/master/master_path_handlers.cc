@@ -945,26 +945,25 @@ pair<string, string> MasterPathHandlers::TSDescToLinkPair(const TSDescriptor& de
 
 string MasterPathHandlers::MasterAddrsToCsv() const {
   vector<HostPort> master_addresses;
-  Status s = master_->GetMasterHostPorts(&master_addresses);
-  LOG(WARNING) << "Unable to fetch master addresses: " << s.ToString();
-  if (!s.ok()) {
+  if (auto s = master_->GetMasterHostPorts(&master_addresses); !s.ok()) {
+    LOG(WARNING) << "unable to fetch master addresses: " << s.ToString();
     return string();
   }
   if (!master_addresses.empty()) {
-    vector<string> all_addresses;
-    all_addresses.reserve(master_addresses.size());
-    for (const HostPort& hp : master_addresses) {
-      all_addresses.push_back(hp.ToString());
-    }
-    return JoinElements(all_addresses, ",");
+    return JoinMapped(master_addresses,
+                      [] (const HostPort& hp) { return hp.ToString(); },
+                      ",");
   }
   vector<HostPort> hps;
-  s = master_->rpc_server()->GetBoundHostPorts(&hps);
-  if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << "Unable to determine proper local hostname: " << s.ToString();
+  if (auto s = master_->rpc_server()->GetBoundHostPorts(&hps); !s.ok()) {
+    LOG(WARNING) << "unable to get bound host:ports pairs: " << s.ToString();
     return string();
   }
-  return hps[0].ToString();
+  if (hps.empty()) {
+    LOG(WARNING) << "empty list of bound host:port pairs";
+    return string();
+  }
+  return hps.front().ToString();
 }
 
 Status MasterPathHandlers::GetLeaderMasterHttpAddr(string* leader_http_addr) const {
