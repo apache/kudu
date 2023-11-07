@@ -479,9 +479,10 @@ Status DoEncryptV(const EncryptionHeader* eh,
   InlineBigEndianEncodeFixed64(&iv[8], offset / kEncryptionBlockSize);
 
   const auto* cipher = GetEVPCipher(eh->algorithm);
-  if (!cipher) {
+  if (PREDICT_FALSE(!cipher)) {
     return Status::RuntimeError(
-        StringPrintf("no cipher for algorithm 0x%02x", eh->algorithm));
+        StringPrintf("no cipher for algorithm 0x%02x",
+                     static_cast<uint16_t>(eh->algorithm)));
   }
   auto ctx = ssl_make_unique(EVP_CIPHER_CTX_new());
   OPENSSL_RET_IF_NULL(ctx, "failed to create cipher context");
@@ -528,9 +529,10 @@ Status DoDecryptV(const EncryptionHeader* eh, uint64_t offset, ArrayView<Slice> 
   InlineBigEndianEncodeFixed64(&iv[8], offset / kEncryptionBlockSize);
 
   const auto* cipher = GetEVPCipher(eh->algorithm);
-  if (!cipher) {
+  if (PREDICT_FALSE(!cipher)) {
     return Status::RuntimeError(
-        StringPrintf("no cipher for algorithm 0x%02x", eh->algorithm));
+        StringPrintf("no cipher for algorithm 0x%02x",
+                     static_cast<uint16_t>(eh->algorithm)));
   }
   auto ctx = ssl_make_unique(EVP_CIPHER_CTX_new());
   OPENSSL_RET_IF_NULL(ctx, "failed to create cipher context");
