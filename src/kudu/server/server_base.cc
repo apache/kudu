@@ -671,6 +671,7 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
 
 ServerBase::~ServerBase() {
   ShutdownImpl();
+  security::DestroyKerberosForServer();
 }
 
 Sockaddr ServerBase::first_rpc_address() const {
@@ -831,6 +832,11 @@ Status ServerBase::Init() {
          .set_keytab_file(FLAGS_keytab_file)
          .set_hostname(hostname)
          .enable_inbound_tls();
+
+  auto username = kudu::security::GetLoggedInUsernameFromKeytab();
+  if (username.has_value()) {
+    builder.set_sasl_proto_name(username.value());
+  }
 
   if (options_.rpc_opts.rpc_reuseport) {
     builder.set_reuseport();
@@ -1118,8 +1124,6 @@ void ServerBase::ShutdownImpl() {
     tcmalloc_memory_gc_thread_->Join();
   }
 #endif
-
-  security::DestroyKerberosForServer();
 }
 
 #ifdef TCMALLOC_ENABLED

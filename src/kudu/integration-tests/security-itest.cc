@@ -873,6 +873,37 @@ TEST_F(SecurityITest, TestCorruptKerberosCC) {
   }
 }
 
+TEST_F(SecurityITest, TestNonDefaultPrincipalMultipleMaster) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  cluster_opts_.principal = "oryx";
+
+  // Start with a single master setup and add two masters
+  ASSERT_OK(StartCluster());
+  ASSERT_OK(cluster_->master(0)->WaitForCatalogManager());
+  ASSERT_OK(cluster_->AddMaster());
+  ASSERT_OK(cluster_->master(1)->WaitForCatalogManager());
+  ASSERT_OK(cluster_->AddMaster());
+  ASSERT_OK(cluster_->master(2)->WaitForCatalogManager());
+
+  // Tablet servers need to be restarted in order to update their master list.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+    ASSERT_OK(cluster_->tablet_server(i)->Restart());
+  }
+
+  // Run a smoke test to verify that the cluster is working properly.
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  SmokeTestCluster(client);
+
+  // Shut down the leader master to simulate recoverable error.
+  cluster_->leader_master()->Shutdown();
+
+  // Run a smoke test to verify that the cluster is still working properly.
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  SmokeTestCluster(client);
+}
+
 TEST_F(SecurityITest, TestNonDefaultPrincipal) {
   const string kPrincipal = "oryx";
   cluster_opts_.principal = kPrincipal;

@@ -48,6 +48,7 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/security/init.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
@@ -104,7 +105,11 @@ AutoLeaderRebalancerTask::~AutoLeaderRebalancerTask() { Shutdown(); }
 
 Status AutoLeaderRebalancerTask::Init() {
   DCHECK(!thread_) << "AutoleaderRebalancerTask is already initialized";
-  RETURN_NOT_OK(MessengerBuilder("auto-leader-rebalancer").Build(&messenger_));
+  MessengerBuilder builder("auto-leader-rebalancer");
+  if (auto username = kudu::security::GetLoggedInUsernameFromKeytab()) {
+    builder.set_sasl_proto_name(username.value());
+  }
+  RETURN_NOT_OK(std::move(builder).Build(&messenger_));
   return Thread::Create("catalog manager", "auto-leader-rebalancer",
                         [this]() { this->RunLoop(); }, &thread_);
 }

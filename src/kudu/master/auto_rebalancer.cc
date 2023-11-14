@@ -52,6 +52,7 @@
 #include "kudu/rebalance/rebalancer.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/security/init.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/monotime.h"
@@ -175,7 +176,11 @@ AutoRebalancerTask::~AutoRebalancerTask() {
 
 Status AutoRebalancerTask::Init() {
   DCHECK(!thread_) << "AutoRebalancerTask is already initialized";
-  RETURN_NOT_OK(MessengerBuilder("auto-rebalancer").Build(&messenger_));
+  MessengerBuilder builder("auto-rebalancer");
+  if (auto username = kudu::security::GetLoggedInUsernameFromKeytab()) {
+    builder.set_sasl_proto_name(username.value());
+  }
+  RETURN_NOT_OK(std::move(builder).Build(&messenger_));
   return Thread::Create("catalog manager", "auto-rebalancer",
                         [this]() { this->RunLoop(); }, &thread_);
 }

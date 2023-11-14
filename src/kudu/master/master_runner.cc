@@ -55,6 +55,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/security/init.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -313,7 +314,11 @@ Status ClearLocalSystemCatalogAndCopy(const HostPort& src_hp) {
       /*last_logged_opid*/std::nullopt));
   LOG(INFO) << "Copying system tablet from " << src_hp.ToString();
   std::shared_ptr<rpc::Messenger> messenger;
-  RETURN_NOT_OK(rpc::MessengerBuilder("tablet_copy_client").Build(&messenger));
+  rpc::MessengerBuilder builder("tablet_copy_client");
+  if (auto username = kudu::security::GetLoggedInUsernameFromKeytab()) {
+    builder.set_sasl_proto_name(username.value());
+  }
+  RETURN_NOT_OK(builder.Build(&messenger));
   RemoteTabletCopyClient copy_client(SysCatalogTable::kSysCatalogTabletId,
                                      &fs_manager, cmeta_manager,
                                      messenger, nullptr /* no metrics */);
@@ -430,7 +435,11 @@ Status RunMasterServer() {
       master_addrs.emplace_back(hp.ToString());
     }
     client::sp::shared_ptr<KuduClient> client;
-    RETURN_NOT_OK(KuduClientBuilder()
+    KuduClientBuilder builder;
+    if (auto username = kudu::security::GetLoggedInUsernameFromKeytab()) {
+      builder.sasl_protocol_name(username.value());
+    }
+    RETURN_NOT_OK(builder
         .master_server_addrs(master_addrs)
         .Build(&client));
     AddMasterRequestPB add_req;
