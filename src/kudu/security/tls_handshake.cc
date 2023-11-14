@@ -164,7 +164,7 @@ Status TlsHandshake::Continue(const string& recv, string* send) {
   if (rc == 1) {
     // SSL_do_handshake() must have read all the pending data.
     DCHECK_EQ(0, BIO_ctrl_pending(rbio));
-    VLOG(2) << Substitute("TSL Handshake complete");
+    VLOG(2) << Substitute("TLS Handshake complete");
     return Status::OK();
   }
   return Status::Incomplete("TLS Handshake incomplete");
