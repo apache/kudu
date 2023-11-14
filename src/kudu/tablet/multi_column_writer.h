@@ -14,16 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_MULTI_COLUMN_WRITER_H
-#define KUDU_TABLET_MULTI_COLUMN_WRITER_H
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
 
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
@@ -35,10 +35,6 @@ class RowBlock;
 class Schema;
 struct ColumnId;
 
-namespace cfile {
-class CFileWriter;
-} // namespace cfile
-
 namespace fs {
 class BlockCreationTransaction;
 } // namespace fs
@@ -47,13 +43,13 @@ namespace tablet {
 
 // Wrapper which writes several columns in parallel corresponding to some
 // Schema. Written blocks will fall in the tablet_id's data dir group.
-class MultiColumnWriter {
+class MultiColumnWriter final {
  public:
   MultiColumnWriter(FsManager* fs,
                     const Schema* schema,
                     std::string tablet_id);
 
-  virtual ~MultiColumnWriter();
+  ~MultiColumnWriter() = default;
 
   // Open and start writing the columns.
   Status Open();
@@ -70,9 +66,9 @@ class MultiColumnWriter {
   // Return the number of bytes written so far.
   size_t written_size() const;
 
-  cfile::CFileWriter* writer_for_col_idx(int i) {
-    DCHECK_LT(i, cfile_writers_.size());
-    return cfile_writers_[i];
+  cfile::CFileWriter* writer_for_col_idx(size_t i) {
+    CHECK_LT(i, cfile_writers_.size());
+    return cfile_writers_[i].get();
   }
 
   // Return the block IDs of the written columns, keyed by column ID.
@@ -83,17 +79,15 @@ class MultiColumnWriter {
  private:
   FsManager* const fs_;
   const Schema* const schema_;
-
-  bool finished_;
-
   const std::string tablet_id_;
 
-  std::vector<cfile::CFileWriter *> cfile_writers_;
+  std::vector<std::unique_ptr<cfile::CFileWriter>> cfile_writers_;
   std::vector<BlockId> block_ids_;
+  bool open_;
+  bool finished_;
 
   DISALLOW_COPY_AND_ASSIGN(MultiColumnWriter);
 };
 
 } // namespace tablet
 } // namespace kudu
-#endif /* KUDU_TABLET_MULTI_COLUMN_WRITER_H */

@@ -30,38 +30,41 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+
+using kudu::cfile::CFileWriter;
+using kudu::fs::BlockCreationTransaction;
+using kudu::fs::CreateBlockOptions;
+using kudu::fs::WritableBlock;
+using std::map;
+using std::string;
+using std::unique_ptr;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
 
-using cfile::CFileWriter;
-using fs::BlockCreationTransaction;
-using fs::CreateBlockOptions;
-using fs::WritableBlock;
-using std::unique_ptr;
-
 MultiColumnWriter::MultiColumnWriter(FsManager* fs,
                                      const Schema* schema,
-                                     std::string tablet_id)
-  : fs_(fs),
-    schema_(schema),
-    finished_(false),
-    tablet_id_(std::move(tablet_id)) {
-}
-
-MultiColumnWriter::~MultiColumnWriter() {
-  STLDeleteElements(&cfile_writers_);
+                                     string tablet_id)
+    : fs_(fs),
+      schema_(DCHECK_NOTNULL(schema)),
+      tablet_id_(std::move(tablet_id)),
+      open_(false),
+      finished_(false) {
+  cfile_writers_.reserve(schema_->num_columns());
+  block_ids_.reserve(schema_->num_columns());
 }
 
 Status MultiColumnWriter::Open() {
-  CHECK(cfile_writers_.empty());
+  DCHECK(!open_) << "already open";
+  DCHECK(cfile_writers_.empty()); // this method isn't re-entrant after failures
 
   // Open columns.
   const CreateBlockOptions block_opts({ tablet_id_ });
-  for (int i = 0; i < schema_->num_columns(); i++) {
-    const ColumnSchema &col = schema_->column(i);
+  for (auto i = 0; i < schema_->num_columns(); ++i) {
+    const auto& col = schema_->column(i);
 
     cfile::WriterOptions opts;
 
@@ -69,7 +72,7 @@ Status MultiColumnWriter::Open() {
     // the corresponding rows.
     opts.write_posidx = true;
 
-    /// Set the column storage attributes.
+    // Set the column storage attributes.
     opts.storage_attributes = col.attributes();
 
     // If the schema has a single PK and this is the PK col
@@ -77,32 +80,32 @@ Status MultiColumnWriter::Open() {
       opts.write_validx = true;
     }
 
-    // Open file for write.
+    // Open file for writing.
     unique_ptr<WritableBlock> block;
     RETURN_NOT_OK_PREPEND(fs_->CreateNewBlock(block_opts, &block),
-                          "Unable to open output file for column " + col.ToString());
+        Substitute("tablet $0: unable to open output file for column $1",
+                   tablet_id_, col.ToString()));
     BlockId block_id(block->id());
 
     // Create the CFile writer itself.
     unique_ptr<CFileWriter> writer(new CFileWriter(
-        std::move(opts),
-        col.type_info(),
-        col.is_nullable(),
-        std::move(block)));
+        std::move(opts), col.type_info(), col.is_nullable(), std::move(block)));
     RETURN_NOT_OK_PREPEND(writer->Start(),
-                          "Unable to Start() writer for column " + col.ToString());
-
-    cfile_writers_.push_back(writer.release());
-    block_ids_.push_back(block_id);
+        Substitute("tablet $0: unable to start writer for column $1",
+                   tablet_id_, col.ToString()));
+    cfile_writers_.emplace_back(std::move(writer));
+    block_ids_.emplace_back(block_id);
   }
-  VLOG(1) << strings::Substitute("Opened CFile writers for $0 column(s)",
-                                 cfile_writers_.size());
+  open_ = true;
+  VLOG(1) << Substitute("Opened CFile writers for $0 column(s)",
+                        cfile_writers_.size());
 
   return Status::OK();
 }
 
 Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
-  for (int i = 0; i < schema_->num_columns(); i++) {
+  DCHECK(open_);
+  for (auto i = 0; i < schema_->num_columns(); ++i) {
     ColumnBlock column = block.column_block(i);
     if (column.is_nullable()) {
       RETURN_NOT_OK(cfile_writers_[i]->AppendNullableEntries(column.non_null_bitmap(),
@@ -116,13 +119,14 @@ Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
 
 Status MultiColumnWriter::FinishAndReleaseBlocks(
     BlockCreationTransaction* transaction) {
-  CHECK(!finished_);
-  for (int i = 0; i < schema_->num_columns(); i++) {
-    CFileWriter *writer = cfile_writers_[i];
-    Status s = writer->FinishAndReleaseBlock(transaction);
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to Finish writer for column " <<
-        schema_->column(i).ToString() << ": " << s.ToString();
+  DCHECK(open_);
+  DCHECK(!finished_);
+  for (auto i = 0; i < schema_->num_columns(); ++i) {
+    auto s = cfile_writers_[i]->FinishAndReleaseBlock(transaction);
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG(ERROR) << Substitute(
+          "tablet $0: unable to finialize writer for column $1",
+          tablet_id_, schema_->column(i).ToString());
       return s;
     }
   }
@@ -130,17 +134,19 @@ Status MultiColumnWriter::FinishAndReleaseBlocks(
   return Status::OK();
 }
 
-void MultiColumnWriter::GetFlushedBlocksByColumnId(std::map<ColumnId, BlockId>* ret) const {
-  CHECK(finished_);
-  ret->clear();
-  for (int i = 0; i < schema_->num_columns(); i++) {
-    (*ret)[schema_->column_id(i)] = block_ids_[i];
+void MultiColumnWriter::GetFlushedBlocksByColumnId(map<ColumnId, BlockId>* ret) const {
+  DCHECK(finished_);
+  auto& r = *ret;
+  r.clear();
+  for (auto i = 0; i < schema_->num_columns(); ++i) {
+    r[schema_->column_id(i)] = block_ids_[i];
   }
 }
 
 size_t MultiColumnWriter::written_size() const {
+  DCHECK(open_);
   size_t size = 0;
-  for (const CFileWriter *writer : cfile_writers_) {
+  for (const auto& writer: cfile_writers_) {
     size += writer->written_size();
   }
   return size;
