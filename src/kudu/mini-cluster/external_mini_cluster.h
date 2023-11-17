@@ -387,11 +387,7 @@ class ExternalMiniCluster : public MiniCluster {
 
   // Return a pointer to the running leader master. This may be NULL
   // if the cluster is not started.
-  //
-  // TODO(unknown): Use the appropriate RPC here to return the leader master,
-  // to allow some of the existing tests (e.g., raft_consensus-itest)
-  // to use multiple masters.
-  ExternalMaster* leader_master() { return master(0); }
+  ExternalMaster* leader_master();
 
   // Perform an RPC to determine the leader of the external mini
   // cluster.  Set 'index' to the leader master's index (for calls to

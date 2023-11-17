@@ -76,6 +76,7 @@
 #include "kudu/util/jwt-util.h"
 #include "kudu/util/mini_oidc.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/path_util.h"
@@ -995,6 +996,15 @@ Status ExternalMiniCluster::WaitForTabletsRunning(
   return Status::TimedOut(SecureDebugString(resp));
 }
 
+ExternalMaster* ExternalMiniCluster::leader_master() {
+  int idx = 0;
+  Status s = GetLeaderMasterIndex(&idx);
+  if (!s.ok()) {
+    return nullptr;
+  }
+  return master(idx);
+}
+
 Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   scoped_refptr<ConnectToClusterRpc> rpc;
   Synchronizer sync;
@@ -1026,18 +1036,22 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   rpc->SendRpc();
   RETURN_NOT_OK(sync.Wait());
   bool found = false;
-  for (int i = 0; i < masters_.size(); i++) {
-    const auto& bound_hp = masters_[i]->bound_rpc_hostport();
+  DnsResolver dns_resolver;
+  for (int i = 0; i < masters_.size() && !found; i++) {
+    vector<Sockaddr> addresses;
+    RETURN_NOT_OK(dns_resolver.ResolveAddresses(masters_[i]->bound_rpc_hostport(), &addresses));
+    for (const auto& adress : addresses) {
+      if (adress == leader_master_addr) {
+        found = true;
+        *idx = i;
+        break;
+      }
+    }
+
     // If using BindMode::UNIQUE_LOOPBACK mode, in rare cases different masters
     // might bind to different local IP addresses but use same port numbers.
     // So, it's necessary to check both the returned hostnames and IP addresses
     // to point to leader master.
-    if (bound_hp.port() == leader_master_addr.port() &&
-        bound_hp.host() == leader_master_hostname) {
-      found = true;
-      *idx = i;
-      break;
-    }
   }
   if (!found) {
     // There is never a situation where this should happen, so it's

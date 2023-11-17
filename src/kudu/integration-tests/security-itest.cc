@@ -1487,6 +1487,9 @@ TEST_P(ConnectToFollowerMasterTest, AuthnTokenVerifierHaveKeys) {
       Substitute("--rpc_encryption=$0", params.rpc_encryption));
   cluster_opts_.extra_tserver_flags.emplace_back(
       Substitute("--rpc_encryption=$0", params.rpc_encryption));
+  // Since leader falure detection is disabled, there is no leader at this point, so tablet servers
+  // can not be started.
+  cluster_opts_.num_tablet_servers = 0;
   ASSERT_OK(StartCluster());
 
   const auto& master_host = cluster_->master(0)->bound_rpc_addr().host();

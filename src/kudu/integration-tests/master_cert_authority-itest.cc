@@ -21,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -362,6 +363,10 @@ class ConnectToClusterBaseTest : public KuduTest {
       : run_time_seconds_(run_time_seconds),
         latency_ms_(latency_ms) {
     cluster_opts_.num_masters = num_masters;
+
+    // Tablet Servers are not needed because the goal of these tests are to check that kudu client
+    // succesfully connects to the cluster even if there are big latences or election in progress.
+    cluster_opts_.num_tablet_servers = 0;
   }
 
   void SetUp() override {
