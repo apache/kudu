@@ -849,7 +849,7 @@ Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round
   state->set_consensus_round(round);
 
   scoped_refptr<OpDriver> driver;
-  RETURN_NOT_OK(NewReplicaOpDriver(std::move(op), &driver));
+  RETURN_NOT_OK(NewFollowerOpDriver(std::move(op), &driver));
 
   // A raw pointer is required to avoid a refcount cycle.
   auto* driver_raw = driver.get();
@@ -915,8 +915,8 @@ Status TabletReplica::NewLeaderOpDriver(unique_ptr<Op> op,
   return Status::OK();
 }
 
-Status TabletReplica::NewReplicaOpDriver(unique_ptr<Op> op,
-                                                  scoped_refptr<OpDriver>* driver) {
+Status TabletReplica::NewFollowerOpDriver(unique_ptr<Op> op,
+                                          scoped_refptr<OpDriver>* driver) {
   scoped_refptr<OpDriver> op_driver = new OpDriver(
     &op_tracker_,
     consensus_.get(),

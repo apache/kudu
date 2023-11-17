@@ -319,8 +319,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                            scoped_refptr<OpDriver>* driver,
                            MonoTime deadline);
 
-  Status NewReplicaOpDriver(std::unique_ptr<Op> op,
-                            scoped_refptr<OpDriver>* driver);
+  Status NewFollowerOpDriver(std::unique_ptr<Op> op,
+                             scoped_refptr<OpDriver>* driver);
 
   // Tells the tablet's log to garbage collect.
   Status RunLogGC();
