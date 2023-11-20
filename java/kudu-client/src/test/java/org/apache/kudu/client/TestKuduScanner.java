@@ -17,10 +17,13 @@
 
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.client.AsyncKuduScanner.DEFAULT_IS_DELETED_COL_NAME;
+import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
+import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -38,6 +41,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Rule;
@@ -54,6 +58,7 @@ import org.apache.kudu.test.CapturingLogAppender;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.RandomUtils;
 import org.apache.kudu.test.cluster.KuduBinaryLocator;
+import org.apache.kudu.test.junit.AssertHelpers;
 import org.apache.kudu.util.DataGenerator;
 import org.apache.kudu.util.Pair;
 
@@ -560,5 +565,89 @@ public class TestKuduScanner {
     assertEquals(0, row.getInt(0));
     assertTrue(row.hasIsDeleted());
     assertTrue(row.isDeleted());
+  }
+
+  @Test
+  public void testScannerLeaderChanged() throws Exception {
+    // Prepare the table for testing.
+    Schema schema = createManyStringsSchema();
+    CreateTableOptions createOptions = new CreateTableOptions();
+    final int buckets = 2;
+    createOptions.addHashPartitions(ImmutableList.of("key"), buckets);
+    createOptions.setNumReplicas(3);
+    client.createTable(tableName, schema, createOptions);
+
+    KuduSession session = client.newSession();
+    KuduTable table = client.openTable(tableName);
+    final int totalRows = 2000;
+    for (int i = 0; i < totalRows; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addString("key", String.format("key_%02d", i));
+      row.addString("c1", "c1_" + i);
+      row.addString("c2", "c2_" + i);
+      assertEquals(session.apply(insert).hasRowError(), false);
+    }
+    AsyncKuduClient asyncClient = harness.getAsyncClient();
+    KuduScanner kuduScanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+            .replicaSelection(ReplicaSelection.LEADER_ONLY)
+            .batchSizeBytes(100)
+            .build();
+
+    // Open the scanner first.
+    kuduScanner.nextRows();
+    final HostAndPort referenceServerHostPort = harness.findLeaderTabletServer(
+            new LocatedTablet(kuduScanner.currentTablet()));
+    final String referenceTabletId = kuduScanner.currentTablet().getTabletId();
+
+    // Send LeaderStepDown request.
+    KuduBinaryLocator.ExecutableInfo exeInfo = KuduBinaryLocator.findBinary("kudu");
+    LOG.info(harness.getMasterAddressesAsString());
+    List<String> commandLine = Lists.newArrayList(exeInfo.exePath(),
+            "tablet",
+            "leader_step_down",
+            harness.findLeaderMasterServer().toString(),
+            kuduScanner.currentTablet().getTabletId());
+    ProcessBuilder processBuilder = new ProcessBuilder(commandLine);
+    processBuilder.environment().putAll(exeInfo.environment());
+    Process stepDownProcess = processBuilder.start();
+    assertEquals(0, stepDownProcess.waitFor());
+
+    // Wait until the leader changes.
+    assertEventuallyTrue(
+        "The leadership should be transferred",
+        new AssertHelpers.BooleanExpression() {
+          @Override
+          public boolean get() throws Exception {
+            asyncClient.emptyTabletsCacheForTable(table.getTableId());
+            List<LocatedTablet> tablets = table.getTabletsLocations(50000);
+            LocatedTablet targetTablet = null;
+            for (LocatedTablet tablet : tablets) {
+              String tabletId = new String(tablet.getTabletId(), UTF_8);
+              if (tabletId.equals(referenceTabletId)) {
+                targetTablet = tablet;
+              }
+            }
+            HostAndPort targetHp = harness.findLeaderTabletServer(targetTablet);
+            return !targetHp.equals(referenceServerHostPort);
+          }
+        },
+        10000/*timeoutMillis*/);
+
+    // Simulate that another request(like Batch) has sent to the wrong leader tablet server and
+    // the change of leadership has been acknowledged. The response will demote the leader.
+    kuduScanner.currentTablet().demoteLeader(
+            kuduScanner.currentTablet().getLeaderServerInfo().getUuid());
+    asyncClient.emptyTabletsCacheForTable(table.getTableId());
+
+    int rowsScannedInNextScans = 0;
+    try {
+      while (kuduScanner.hasMoreRows()) {
+        rowsScannedInNextScans += kuduScanner.nextRows().numRows;
+      }
+    } catch (Exception ex) {
+      assertFalse(ex.getMessage().matches(".*Scanner .* not found.*"));
+    }
+    assertTrue(rowsScannedInNextScans > 0);
   }
 }

@@ -285,6 +285,12 @@ public final class AsyncKuduScanner {
   final long scanRequestTimeout;
 
   /**
+   * UUID of the tserver which the scanner is bound with. The following scans of
+   * this scanner will be sent to the tserver.
+   */
+  private String tsUUID;
+
+  /**
    * The prefetching result is cached in memory. This atomic reference is used to avoid
    * two concurrent prefetchings occur and the latest one overrides the previous one.
    */
@@ -541,6 +547,10 @@ public final class AsyncKuduScanner {
     this.rowDataFormat = rowDataFormat;
   }
 
+  public String getTsUUID() {
+    return tsUUID;
+  }
+
   /**
    * Scans a number of rows.
    * <p>
@@ -599,12 +609,14 @@ public final class AsyncKuduScanner {
           }
 
           if (!resp.more || resp.scannerId == null) {
+            tsUUID = resp.data.getTsUUID();
             scanFinished();
             return Deferred.fromResult(resp.data); // there might be data to return
           }
           scannerId = resp.scannerId;
           sequenceId++;
           canRequestMore = resp.more;
+          tsUUID = resp.data.getTsUUID();
           if (LOG.isDebugEnabled()) {
             LOG.debug("Scanner {} opened on {}", Bytes.pretty(scannerId), tablet);
           }
