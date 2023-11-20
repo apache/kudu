@@ -96,10 +96,22 @@ DEFINE_int64(heap_sample_every_n_bytes, 0,
              "Enable heap occupancy sampling. If this flag is set to some positive "
              "value N, a memory allocation will be sampled approximately every N bytes. "
              "Lower values of N incur larger overhead but give more accurate results. "
-             "A value such as 524288 (512KB) is a reasonable choice with relatively "
-             "low overhead.");
+             "Warning: Setting this flag to a positive value increases lock contention "
+             "in tcmalloc; the lower the value, the higher the lock contention.");
 TAG_FLAG(heap_sample_every_n_bytes, advanced);
 TAG_FLAG(heap_sample_every_n_bytes, experimental);
+TAG_FLAG(heap_sample_every_n_bytes, unsafe);
+
+static bool ValidateHeapSample(const char* /*flagname*/, int64_t value) {
+  if (value > 0) {
+    LOG(WARNING) << "Flag heap_sample_every_n_bytes is set to a positive value, this may "
+                    "significantly increases lock contention in tcmalloc and degrade "
+                    "performance.";
+  }
+  return true;
+}
+
+DEFINE_validator(heap_sample_every_n_bytes, &ValidateHeapSample);
 #endif
 
 DEFINE_bool(disable_core_dumps, false, "Disable core dumps when this process crashes.");
