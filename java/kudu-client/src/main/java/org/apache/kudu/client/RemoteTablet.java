@@ -302,6 +302,17 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
     return results;
   }
 
+  /**
+   * Get information on tablet server by its UUID.
+   * @param uuid tablet server uuid.
+   * @return tablet server info by the uuid.
+   */
+  ServerInfo getTabletServerByUuid(String uuid) {
+    synchronized (tabletServers) {
+      return tabletServers.get(uuid);
+    }
+  }
+
   @Override
   public int compareTo(RemoteTablet remoteTablet) {
     if (remoteTablet == null) {
