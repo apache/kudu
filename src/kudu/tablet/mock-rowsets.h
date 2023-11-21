@@ -61,7 +61,7 @@ class MockRowSet : public RowSet {
   Status NewCompactionInput(const Schema* /*projection*/,
                             const MvccSnapshot& /*snap*/,
                             const fs::IOContext* /*io_context*/,
-                            std::unique_ptr<CompactionInput>* /*out*/) const override {
+                            std::unique_ptr<CompactionOrFlushInput>* /*out*/) const override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }

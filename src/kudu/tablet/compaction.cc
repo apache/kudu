@@ -113,8 +113,8 @@ void AdvanceToLastInList(const Mutation** m) {
   }
 }
 
-// CompactionInput yielding rows and mutations from a MemRowSet.
-class MemRowSetCompactionInput : public CompactionInput {
+// CompactionOrFlushInput yielding rows and mutations from a MemRowSet.
+class MemRowSetCompactionInput : public CompactionOrFlushInput {
  public:
   MemRowSetCompactionInput(const MemRowSet& memrowset,
                            const MvccSnapshot& snap,
@@ -163,7 +163,7 @@ class MemRowSetCompactionInput : public CompactionInput {
 
       // Handle the rare case where a row was inserted and deleted in the same operation.
       // This row can never be observed and should not be compacted/flushed. This saves
-      // us some trouble later on on compactions.
+      // us some trouble later during compaction.
       //
       // See CompareDuplicatedRows().
       if (PREDICT_FALSE(input_row.redo_head != nullptr &&
@@ -228,8 +228,8 @@ class MemRowSetCompactionInput : public CompactionInput {
 
 ////////////////////////////////////////////////////////////
 
-// CompactionInput yielding rows and mutations from an on-disk DiskRowSet.
-class DiskRowSetCompactionInput : public CompactionInput {
+// CompactionOrFlushInput yielding rows and mutations from an on-disk DiskRowSet.
+class DiskRowSetCompactionInput : public CompactionOrFlushInput {
  public:
   DiskRowSetCompactionInput(unique_ptr<RowwiseIterator> base_iter,
                             unique_ptr<DeltaIterator> redo_delta_iter,
@@ -539,7 +539,7 @@ void TransferRedoHistory(CompactionInputRow* newer, CompactionInputRow* older) {
 }
 
 
-class MergeCompactionInput : public CompactionInput {
+class MergeCompactionInput : public CompactionOrFlushInput {
  private:
   // State kept for each of the inputs.
   struct MergeState {
@@ -584,7 +584,7 @@ class MergeCompactionInput : public CompactionInput {
       return schema.Compare(pending.back().row, (*other.next()).row) < 0;
     }
 
-    shared_ptr<CompactionInput> input;
+    shared_ptr<CompactionOrFlushInput> input;
     vector<CompactionInputRow> pending;
     int pending_idx;
 
@@ -592,7 +592,7 @@ class MergeCompactionInput : public CompactionInput {
   };
 
  public:
-  MergeCompactionInput(const vector<shared_ptr<CompactionInput>>& inputs,
+  MergeCompactionInput(const vector<shared_ptr<CompactionOrFlushInput>>& inputs,
                        const Schema* schema)
       : schema_(schema),
         num_dup_rows_(0),
@@ -1096,11 +1096,11 @@ string CompactionInputRowToString(const CompactionInputRow& input_row) {
 
 ////////////////////////////////////////////////////////////
 
-Status CompactionInput::Create(const DiskRowSet& rowset,
-                               const Schema* projection,
-                               const MvccSnapshot& snap,
-                               const IOContext* io_context,
-                               unique_ptr<CompactionInput>* out) {
+Status CompactionOrFlushInput::Create(const DiskRowSet& rowset,
+                                      const Schema* projection,
+                                      const MvccSnapshot& snap,
+                                      const IOContext* io_context,
+                                      unique_ptr<CompactionOrFlushInput>* out) {
   CHECK(projection->has_column_ids());
 
   unique_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection, io_context));
@@ -1130,45 +1130,47 @@ Status CompactionInput::Create(const DiskRowSet& rowset,
   return Status::OK();
 }
 
-CompactionInput* CompactionInput::Create(const MemRowSet& memrowset,
-                                         const Schema* projection,
-                                         const MvccSnapshot& snap) {
+CompactionOrFlushInput* CompactionOrFlushInput::Create(const MemRowSet& memrowset,
+                                                       const Schema* projection,
+                                                       const MvccSnapshot& snap) {
   CHECK(projection->has_column_ids());
   return new MemRowSetCompactionInput(memrowset, snap, projection);
 }
 
-CompactionInput* CompactionInput::Merge(const vector<shared_ptr<CompactionInput>>& inputs,
-                                        const Schema* schema) {
+CompactionOrFlushInput* CompactionOrFlushInput::Merge(
+    const vector<shared_ptr<CompactionOrFlushInput>>& inputs,
+    const Schema* schema) {
   CHECK(schema->has_column_ids());
   return new MergeCompactionInput(inputs, schema);
 }
 
 
-Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot& snap,
-                                                  const Schema* schema,
-                                                  const IOContext* io_context,
-                                                  shared_ptr<CompactionInput>* out) const {
+Status RowSetsInCompactionOrFlush::CreateCompactionOrFlushInput(
+    const MvccSnapshot& snap,
+    const Schema* schema,
+    const IOContext* io_context,
+    shared_ptr<CompactionOrFlushInput>* out) const {
   CHECK(schema->has_column_ids());
 
-  vector<shared_ptr<CompactionInput>> inputs;
+  vector<shared_ptr<CompactionOrFlushInput>> inputs;
   for (const auto& rs : rowsets_) {
-    unique_ptr<CompactionInput> input;
+    unique_ptr<CompactionOrFlushInput> input;
     RETURN_NOT_OK_PREPEND(rs->NewCompactionInput(schema, snap, io_context, &input),
                           Substitute("Could not create compaction input for rowset $0",
                                      rs->ToString()));
-    inputs.push_back(shared_ptr<CompactionInput>(input.release()));
+    inputs.push_back(shared_ptr<CompactionOrFlushInput>(input.release()));
   }
 
   if (inputs.size() == 1) {
     *out = std::move(inputs[0]);
   } else {
-    out->reset(CompactionInput::Merge(inputs, schema));
+    out->reset(CompactionOrFlushInput::Merge(inputs, schema));
   }
 
   return Status::OK();
 }
 
-void RowSetsInCompaction::DumpToLog() const {
+void RowSetsInCompactionOrFlush::DumpToLog() const {
   VLOG(1) << "Selected " << rowsets_.size() << " rowsets to compact:";
   // Dump the selected rowsets to the log, and collect corresponding iterators.
   for (const auto& rs : rowsets_) {
@@ -1388,9 +1390,17 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   #undef ERROR_LOG_CONTEXT
 }
 
+// Following method processes the compaction input by reading input rows in
+// blocks and for each row inside the block:
+// - Apply all REDO mutations collected for the row at hand.
+// - Generate corresponding UNDO deltas for applied mutations.
+// - For a row with 'ghost' entries, merge their histories of mutations.
+// - Remove any ancient UNDO mutations, as those are not applicable anymore.
+// - Append UNDO and REDO deltas to DiskRowSetWriter output.
+// - Append fully or partially (resized) processed rowblock to DRS writer output.
 Status FlushCompactionInput(const string& tablet_id,
                             const scoped_refptr<FsErrorManager>& error_manager,
-                            CompactionInput* input,
+                            CompactionOrFlushInput* input,
                             const MvccSnapshot& snap,
                             const HistoryGcOpts& history_gc_opts,
                             RollingDiskRowSetWriter* out) {
@@ -1460,10 +1470,12 @@ Status FlushCompactionInput(const string& tablet_id,
       rowid_t index_in_current_drs;
 
       if (new_undos_head != nullptr) {
+        // Append UNDO deltas to DiskRowSetWriter output.
         out->AppendUndoDeltas(dst_row.row_index(), new_undos_head, &index_in_current_drs);
       }
 
       if (new_redos_head != nullptr) {
+        // Append REDO deltas to DiskRowSetWriter output.
         out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs);
       }
 
@@ -1497,6 +1509,7 @@ Status FlushCompactionInput(const string& tablet_id,
 
       n++;
       if (n == block.nrows()) {
+        // Append fully processed rowblock to DRS writer output.
         RETURN_NOT_OK(out->AppendBlock(block, live_row_count));
         live_row_count = 0;
         n = 0;
@@ -1505,6 +1518,7 @@ Status FlushCompactionInput(const string& tablet_id,
 
     if (n > 0) {
       block.Resize(n);
+      // Append partially (resized) processed rowblock to DRS writer output.
       RETURN_NOT_OK(out->AppendBlock(block, live_row_count));
       block.Resize(block.row_capacity());
     }
@@ -1515,7 +1529,7 @@ Status FlushCompactionInput(const string& tablet_id,
 }
 
 Status ReupdateMissedDeltas(const IOContext* io_context,
-                            CompactionInput* input,
+                            CompactionOrFlushInput* input,
                             const HistoryGcOpts& history_gc_opts,
                             const MvccSnapshot& snap_to_exclude,
                             const MvccSnapshot& snap_to_include,
@@ -1687,7 +1701,9 @@ Status ReupdateMissedDeltas(const IOContext* io_context,
 }
 
 
-Status DebugDumpCompactionInput(CompactionInput* input, int64_t* rows_left, vector<string>* lines) {
+Status DebugDumpCompactionInput(CompactionOrFlushInput* input,
+                                int64_t* rows_left,
+                                vector<string>* lines) {
   RETURN_NOT_OK(input->Init());
   vector<CompactionInputRow> rows;
 

@@ -93,7 +93,7 @@ Status DumpRowSetInternal(const fs::IOContext& ctx,
 namespace tablet {
 
 class CFileSet;
-class CompactionInput;
+class CompactionOrFlushInput;
 class DeltaFileWriter;
 class DeltaStats;
 class HistoryGcOpts;
@@ -381,7 +381,7 @@ class DiskRowSet :
   Status NewCompactionInput(const Schema* projection,
                             const MvccSnapshot &snap,
                             const fs::IOContext* io_context,
-                            std::unique_ptr<CompactionInput>* out) const override;
+                            std::unique_ptr<CompactionOrFlushInput>* out) const override;
 
   // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
   // yet set, consults the base data and stores the result in 'num_rows_'.
@@ -489,7 +489,7 @@ class DiskRowSet :
   FRIEND_TEST(TestRowSet, TestDMSFlush);
   FRIEND_TEST(tserver::TabletServerTest, SetEncodedKeysWhenStartingUp);
 
-  friend class CompactionInput;
+  friend class CompactionOrFlushInput;
   friend class Tablet;
   friend Status kudu::tools::DumpRowSetInternal(
       const fs::IOContext& ctx,

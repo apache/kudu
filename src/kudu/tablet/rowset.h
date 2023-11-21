@@ -59,7 +59,7 @@ struct IOContext;
 
 namespace tablet {
 
-class CompactionInput;
+class CompactionOrFlushInput;
 class OperationResultPB;
 class RowSetKeyProbe;
 class RowSetMetadata;
@@ -168,7 +168,7 @@ class RowSet {
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
-                                    std::unique_ptr<CompactionInput>* out) const = 0;
+                                    std::unique_ptr<CompactionOrFlushInput>* out) const = 0;
 
   // Count the number of rows in this rowset.
   virtual Status CountRows(const fs::IOContext* io_context, rowid_t *count) const = 0;
@@ -423,7 +423,7 @@ class DuplicatingRowSet : public RowSet {
   Status NewCompactionInput(const Schema* projection,
                             const MvccSnapshot &snap,
                             const fs::IOContext* io_context,
-                            std::unique_ptr<CompactionInput>* out) const override;
+                            std::unique_ptr<CompactionOrFlushInput>* out) const override;
 
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const override;
 

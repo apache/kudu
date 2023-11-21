@@ -1566,7 +1566,7 @@ Status Tablet::Flush() {
 Status Tablet::FlushUnlocked() {
   TRACE_EVENT0("tablet", "Tablet::FlushUnlocked");
   RETURN_NOT_OK(CheckHasNotBeenStopped());
-  RowSetsInCompaction input;
+  RowSetsInCompactionOrFlush input;
   vector<shared_ptr<MemRowSet>> old_mrss;
   {
     // Create a new MRS with the latest schema.
@@ -1654,7 +1654,7 @@ Status Tablet::FlushUnlocked() {
   return Status::OK();
 }
 
-Status Tablet::ReplaceMemRowSetsUnlocked(RowSetsInCompaction* compaction,
+Status Tablet::ReplaceMemRowSetsUnlocked(RowSetsInCompactionOrFlush* new_mrss,
                                          vector<shared_ptr<MemRowSet>>* old_mrss) {
   DCHECK(old_mrss->empty());
   old_mrss->emplace_back(components_->memrowset);
@@ -1666,7 +1666,7 @@ Status Tablet::ReplaceMemRowSetsUnlocked(RowSetsInCompaction* compaction,
   for (auto& mrs : *old_mrss) {
     std::unique_lock<std::mutex> ms_lock(*mrs->compact_flush_lock(), std::try_to_lock);
     CHECK(ms_lock.owns_lock());
-    compaction->AddRowSet(mrs, std::move(ms_lock));
+    new_mrss->AddRowSet(mrs, std::move(ms_lock));
   }
 
   shared_ptr<MemRowSet> new_mrs;
@@ -1801,7 +1801,7 @@ bool Tablet::ShouldThrottleAllow(int64_t bytes) {
   return throttler_->Take(MonoTime::Now(), 1, bytes);
 }
 
-Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
+Status Tablet::PickRowSetsToCompact(RowSetsInCompactionOrFlush *picked,
                                     CompactFlags flags) const {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   // Grab a local reference to the current RowSetTree. This is to avoid
@@ -1997,7 +1997,20 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
                                    txns_being_flushed);
 }
 
-Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
+// Computes on-disk size of all the deltas in provided rowsets.
+size_t Tablet::GetAllDeltasSizeOnDisk(const RowSetsInCompactionOrFlush &input) {
+  size_t deltas_on_disk_size = 0;
+  for (const auto& rs : input.rowsets()) {
+    DiskRowSetSpace drss;
+    DiskRowSet* drs = down_cast<DiskRowSet*>(rs.get());
+    drs->GetDiskRowSetSpaceUsage(&drss);
+    deltas_on_disk_size += drss.redo_deltas_size + drss.undo_deltas_size;
+  }
+
+  return deltas_on_disk_size;
+}
+
+Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
                                         int64_t mrs_being_flushed,
                                         const vector<TxnInfoBeingFlushed>& txns_being_flushed) {
   const char *op_name =
@@ -2006,39 +2019,46 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                "tablet_id", tablet_id(),
                "op", op_name);
 
+  // Save the stats on the total on-disk size of all deltas in selected rowsets.
+  size_t deltas_on_disk_size = 0;
+  if (mrs_being_flushed == TabletMetadata::kNoMrsFlushed) {
+    deltas_on_disk_size = GetAllDeltasSizeOnDisk(input);
+  }
+
   const auto& tid = tablet_id();
   const IOContext io_context({ tid });
 
+  shared_ptr<CompactionOrFlushInput> merge;
+  const SchemaPtr schema_ptr = schema();
   MvccSnapshot flush_snap(mvcc_);
   VLOG_WITH_PREFIX(1) << Substitute("$0: entering phase 1 (flushing snapshot). "
                                     "Phase 1 snapshot: $1",
                                     op_name, flush_snap.ToString());
 
-  // Save the stats on the total on-disk size of all deltas in selected rowsets.
-  size_t deltas_on_disk_size = 0;
-  if (mrs_being_flushed == TabletMetadata::kNoMrsFlushed) {
-    for (const auto& rs : input.rowsets()) {
-      DiskRowSetSpace drss;
-      DiskRowSet* drs = down_cast<DiskRowSet*>(rs.get());
-      drs->GetDiskRowSetSpaceUsage(&drss);
-      deltas_on_disk_size += drss.redo_deltas_size + drss.undo_deltas_size;
-    }
-  }
-
+  // Fault injection hook for testing and debugging purpose only.
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostTakeMvccSnapshot(),
                           "PostTakeMvccSnapshot hook failed");
   }
 
-  shared_ptr<CompactionInput> merge;
-  const SchemaPtr schema_ptr = schema();
-  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema_ptr.get(), &io_context, &merge));
+  // Create input of rowsets by iterating through all rowsets and for each rowset:
+  //   - For compaction ops, create input that contains initialized base,
+  //     relevant REDO and UNDO delta iterators to be used read from persistent storage.
+  //   - For Flush ops, create iterator for in-memory tree holding data updates.
+  RETURN_NOT_OK(input.CreateCompactionOrFlushInput(flush_snap,
+                                                   schema_ptr.get(),
+                                                   &io_context,
+                                                   &merge));
 
+  // Initializing a DRS writer, to be used later for writing REDO, UNDO deltas, delta stats, etc.
   RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), DefaultBloomSizing(),
                                compaction_policy_->target_rowset_size());
   RETURN_NOT_OK_PREPEND(drsw.Open(), "Failed to open DiskRowSet for flush");
 
+  // Get tablet history, to be used later for AHM validation checks.
   HistoryGcOpts history_gc_opts = GetHistoryGcOpts();
+
+  // Apply REDO and UNDO deltas to the rows, merge histories of rows with 'ghost' entries.
   RETURN_NOT_OK_PREPEND(
       FlushCompactionInput(
           tid, metadata_->fs_manager()->block_manager()->error_manager(),
@@ -2046,6 +2066,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
       "Flush to disk failed");
   RETURN_NOT_OK_PREPEND(drsw.Finish(), "Failed to finish DRS writer");
 
+  // Fault injection hook for testing and debugging purpose only.
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostWriteSnapshot(),
                           "PostWriteSnapshot hook failed");
@@ -2071,6 +2092,8 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
     metrics_->bytes_flushed->IncrementBy(drsw.written_size());
   }
 
+  // Open all the rowsets (that were processed in this stage) from disk and
+  // store the pointers to each of rowset inside new_disk_rowsets.
   vector<shared_ptr<RowSet>> new_disk_rowsets;
   new_disk_rowsets.reserve(new_drs_metas.size());
   {
@@ -2168,6 +2191,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   // swap as committed in 'non_duplicated_ops_snap'.
   non_duplicated_ops_snap.AddAppliedTimestamps(applying_during_swap);
 
+  // Fault injection hook for testing and debugging purpose only.
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapInDuplicatingRowSet(),
                           "PostSwapInDuplicatingRowSet hook failed");
@@ -2182,9 +2206,11 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                                     "which arrived during Phase 1. Snapshot: $1",
                                     op_name, non_duplicated_ops_snap.ToString());
   const SchemaPtr schema_ptr2 = schema();
-  RETURN_NOT_OK_PREPEND(
-      input.CreateCompactionInput(non_duplicated_ops_snap, schema_ptr2.get(), &io_context, &merge),
-          Substitute("Failed to create $0 inputs", op_name).c_str());
+  RETURN_NOT_OK_PREPEND(input.CreateCompactionOrFlushInput(non_duplicated_ops_snap,
+                                                           schema_ptr2.get(),
+                                                           &io_context,
+                                                           &merge),
+                        Substitute("Failed to create $0 inputs", op_name).c_str());
 
   // Update the output rowsets with the deltas that came in in phase 1, before we swapped
   // in the DuplicatingRowSets. This will perform a flush of the updated DeltaTrackers
@@ -2199,6 +2225,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
         Substitute("Failed to re-update deltas missed during $0 phase 1",
                      op_name).c_str());
 
+  // Fault injection hook for testing and debugging purpose only.
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostReupdateMissedDeltas(),
                           "PostReupdateMissedDeltas hook failed");
@@ -2269,6 +2296,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                                     drs_written,
                                     bytes_written);
 
+  // Fault injection hook for testing and debugging purpose only.
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapNewRowSet(),
                           "PostSwapNewRowSet hook failed");
@@ -2316,7 +2344,7 @@ void Tablet::UpdateAverageRowsetHeight() {
 Status Tablet::Compact(CompactFlags flags) {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
 
-  RowSetsInCompaction input;
+  RowSetsInCompactionOrFlush input;
   // Step 1. Capture the rowsets to be merged
   RETURN_NOT_OK_PREPEND(PickRowSetsToCompact(&input, flags),
                         "Failed to pick rowsets to compact");

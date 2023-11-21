@@ -343,8 +343,8 @@ Status MemRowSet::NewRowIterator(const RowIteratorOptions& opts,
 Status MemRowSet::NewCompactionInput(const Schema* projection,
                                      const MvccSnapshot& snap,
                                      const IOContext* /*io_context*/,
-                                     unique_ptr<CompactionInput>* out) const  {
-  out->reset(CompactionInput::Create(*this, projection, snap));
+                                     unique_ptr<CompactionOrFlushInput>* out) const  {
+  out->reset(CompactionOrFlushInput::Create(*this, projection, snap));
   return Status::OK();
 }
 

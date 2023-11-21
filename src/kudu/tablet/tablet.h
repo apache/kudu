@@ -94,7 +94,7 @@ class HistoryGcOpts;
 class MemRowSet;
 class ParticipantOpState;
 class RowSetTree;
-class RowSetsInCompaction;
+class RowSetsInCompactionOrFlush;
 class TxnMetadata;
 class WriteOpState;
 struct RowOp;
@@ -678,11 +678,11 @@ class Tablet {
                                     const ScanSpec* spec,
                                     std::vector<IterWithBounds>* iters) const;
 
-  Status PickRowSetsToCompact(RowSetsInCompaction *picked,
+  Status PickRowSetsToCompact(RowSetsInCompactionOrFlush *picked,
                               CompactFlags flags) const;
 
   // Performs a merge compaction or a flush.
-  Status DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
+  Status DoMergeCompactionOrFlush(const RowSetsInCompactionOrFlush &input,
                                   int64_t mrs_being_flushed,
                                   const std::vector<TxnInfoBeingFlushed>& txns_being_flushed);
 
@@ -701,6 +701,9 @@ class Tablet {
                        const RowSetMetadataVector& to_add,
                        int64_t mrs_being_flushed,
                        const std::vector<TxnInfoBeingFlushed>& txns_being_flushed);
+
+  // Computes on-disk size of all the deltas in provided rowsets.
+  size_t GetAllDeltasSizeOnDisk(const RowSetsInCompactionOrFlush& input);
 
   static void ModifyRowSetTree(const RowSetTree& old_tree,
                                const RowSetVector& rowsets_to_remove,
@@ -732,7 +735,7 @@ class Tablet {
   // before the replacement. If any MemRowSet is not empty it will be added to
   // the 'compaction' input and the MemRowSets' compaction locks will be taken
   // to prevent the inclusion in any concurrent compactions.
-  Status ReplaceMemRowSetsUnlocked(RowSetsInCompaction* compaction,
+  Status ReplaceMemRowSetsUnlocked(RowSetsInCompactionOrFlush* new_mrss,
                                    std::vector<std::shared_ptr<MemRowSet>>* old_mrss);
 
   // Convert the specified read client schema (without IDs) to a server schema (with IDs)

@@ -88,7 +88,7 @@ namespace tablet {
 // NOTE: all allocations done by the MemRowSet are done inside its associated
 // thread-safe arena, and then freed in bulk when the MemRowSet is destructed.
 
-class CompactionInput;
+class CompactionOrFlushInput;
 class MemRowSet;
 class Mutation;
 class OperationResultPB;
@@ -345,7 +345,7 @@ class MemRowSet : public RowSet,
   Status NewCompactionInput(const Schema* projection,
                             const MvccSnapshot& snap,
                             const fs::IOContext* io_context,
-                            std::unique_ptr<CompactionInput>* out) const override;
+                            std::unique_ptr<CompactionOrFlushInput>* out) const override;
 
   // Return the Schema for the rows in this memrowset.
    const Schema &schema() const {
@@ -493,6 +493,8 @@ class MemRowSet : public RowSet,
   volatile uint64_t debug_insert_count_;
   volatile uint64_t debug_update_count_;
 
+  // Lock governing this rowset's inclusion in a compact/flush. If locked,
+  // no other compactor/flusher will attempt to include this rowset.
   std::mutex compact_flush_lock_;
 
   log::MinLogIndexAnchorer anchorer_;

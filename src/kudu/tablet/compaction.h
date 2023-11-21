@@ -95,7 +95,7 @@ class HistoryGcOpts {
 };
 
 // Interface for an input feeding into a compaction or flush.
-class CompactionInput {
+class CompactionOrFlushInput {
  public:
   // Create an input which reads from the given rowset, yielding base rows
   // prior to the given snapshot.
@@ -110,20 +110,21 @@ class CompactionInput {
                        const Schema* projection,
                        const MvccSnapshot& snap,
                        const fs::IOContext* io_context,
-                       std::unique_ptr<CompactionInput>* out);
+                       std::unique_ptr<CompactionOrFlushInput>* out);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
   // prior to the given snapshot.
-  static CompactionInput* Create(const MemRowSet& memrowset,
-                                 const Schema* projection,
-                                 const MvccSnapshot& snap);
+  static CompactionOrFlushInput* Create(const MemRowSet& memrowset,
+                                        const Schema* projection,
+                                        const MvccSnapshot& snap);
 
-  // Create an input which merges several other compaction inputs. The inputs are merged
+  // Create a collection of merge states containing a state per input. The inputs are merged
   // in key-order according to the given schema. All inputs must have matching schemas.
-  static CompactionInput* Merge(const std::vector<std::shared_ptr<CompactionInput>>& inputs,
-                                const Schema* schema);
+  static CompactionOrFlushInput* Merge(
+      const std::vector<std::shared_ptr<CompactionOrFlushInput>>& inputs,
+      const Schema* schema);
 
-  virtual ~CompactionInput() = default;
+  virtual ~CompactionOrFlushInput() = default;
 
   virtual Status Init() = 0;
   virtual Status PrepareBlock(std::vector<CompactionInputRow>* block) = 0;
@@ -143,8 +144,8 @@ class CompactionInput {
   virtual size_t memory_footprint() const = 0;
 };
 
-// The set of rowsets which are taking part in a given compaction.
-class RowSetsInCompaction {
+// The set of rowsets which are taking part in a given compaction or flush operation.
+class RowSetsInCompactionOrFlush {
  public:
   void AddRowSet(const std::shared_ptr<RowSet>& rowset,
                  std::unique_lock<std::mutex> lock) {
@@ -154,15 +155,15 @@ class RowSetsInCompaction {
     rowsets_.push_back(rowset);
   }
 
-  // Create the appropriate compaction input for this compaction -- either a merge
+  // Create the appropriate input for this compaction/flush -- either a merge
   // of all the inputs, or the single input if there was only one.
   //
-  // 'schema' is the schema for the output of the compaction, and must remain valid
-  // for the lifetime of the returned CompactionInput.
-  Status CreateCompactionInput(const MvccSnapshot& snap,
-                               const Schema* schema,
-                               const fs::IOContext* io_context,
-                               std::shared_ptr<CompactionInput>* out) const;
+  // 'schema' is the schema for the output of the compaction/flush, and must
+  // remain valid for the lifetime of the returned CompactionOrFlushInput.
+  Status CreateCompactionOrFlushInput(const MvccSnapshot& snap,
+                                      const Schema* schema,
+                                      const fs::IOContext* io_context,
+                                      std::shared_ptr<CompactionOrFlushInput>* out) const;
 
   // Dump a log message indicating the chosen rowsets.
   void DumpToLog() const;
@@ -178,7 +179,7 @@ class RowSetsInCompaction {
   std::vector<std::unique_lock<std::mutex>> locks_;
 };
 
-// One row yielded by CompactionInput::PrepareBlock.
+// One row yielded by CompactionOrFlushInput::PrepareBlock.
 // Looks like this (assuming n UNDO records and m REDO records):
 // UNDO_n <- ... <- UNDO_1 <- UNDO_head <- row -> REDO_head -> REDO_1 -> ... -> REDO_m
 struct CompactionInputRow {
@@ -232,11 +233,11 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 // Iterate through this compaction input, flushing all rows to the given RollingDiskRowSetWriter.
 // The 'snap' argument should match the MvccSnapshot used to create the compaction input.
 //
-// After return of this function, this CompactionInput object is "used up" and will
+// After return of this function, this CompactionOrFlushInput object is "used up" and will
 // no longer be useful.
 Status FlushCompactionInput(const std::string& tablet_id,
                             const scoped_refptr<fs::FsErrorManager>& error_manager,
-                            CompactionInput* input,
+                            CompactionOrFlushInput* input,
                             const MvccSnapshot& snap,
                             const HistoryGcOpts& history_gc_opts,
                             RollingDiskRowSetWriter* out);
@@ -249,10 +250,10 @@ Status FlushCompactionInput(const std::string& tablet_id,
 // The output rowsets passed in must be non-overlapping and in ascending key order:
 // typically they are the resulting rowsets from a RollingDiskRowSetWriter.
 //
-// After return of this function, this CompactionInput object is "used up" and will
+// After return of this function, this CompactionOrFlushInput object is "used up" and will
 // yield no further rows.
 Status ReupdateMissedDeltas(const fs::IOContext* io_context,
-                            CompactionInput* input,
+                            CompactionOrFlushInput* input,
                             const HistoryGcOpts& history_gc_opts,
                             const MvccSnapshot& snap_to_exclude,
                             const MvccSnapshot& snap_to_include,
@@ -262,7 +263,7 @@ Status ReupdateMissedDeltas(const fs::IOContext* io_context,
 // This consumes no more rows from the compaction input than specified by the 'rows_left' parameter.
 // If 'rows_left' is nullptr, there is no limit on the number of rows to dump.
 // If the content of 'rows_left' is equal to or less than 0, no rows will be dumped.
-Status DebugDumpCompactionInput(CompactionInput* input, int64_t* rows_left,
+Status DebugDumpCompactionInput(CompactionOrFlushInput* input, int64_t* rows_left,
                                 std::vector<std::string>* lines);
 
 // Helper methods to print a row with full history.

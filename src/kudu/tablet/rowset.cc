@@ -142,7 +142,7 @@ Status DuplicatingRowSet::NewRowIterator(const RowIteratorOptions& opts,
 Status DuplicatingRowSet::NewCompactionInput(const Schema* /*projection*/,
                                              const MvccSnapshot& /*snap*/,
                                              const IOContext* /*io_context*/,
-                                             unique_ptr<CompactionInput>* /*out*/) const  {
+                                             unique_ptr<CompactionOrFlushInput>* /*out*/) const  {
   LOG(FATAL) << "duplicating rowsets do not act as compaction input";
   return Status::OK();
 }
