@@ -284,6 +284,22 @@ class KuduScanner::Data {
   std::string DebugString() const;
 
  private:
+  // Callback for sending keep alive requests asynchronously.
+  struct KeepAliveResponseCallback {
+   public:
+    KeepAliveResponseCallback() = default;
+
+    void Run();
+
+    tserver::ScannerKeepAliveRequestPB request;
+    tserver::ScannerKeepAliveResponsePB response;
+    rpc::RpcController controller;
+
+   private:
+    // Prevent instances of this class from being allocated on the stack.
+    ~KeepAliveResponseCallback() = default;
+  };
+
   // Analyze the response of the last Scan RPC made by this scanner.
   //
   // The error handling of a scan RPC is fairly complex, since we have to handle

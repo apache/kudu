@@ -100,6 +100,14 @@ KuduScanner::Data::~Data() {
   }
 }
 
+void KuduScanner::Data::KeepAliveResponseCallback::Run() {
+  if (!controller.status().ok()) {
+    LOG(WARNING) << Substitute("Failed to send keep-alive request: $0",
+                               controller.status().ToString());
+  }
+  delete this;
+}
+
 Status KuduScanner::Data::StartKeepAlivePeriodically(uint64_t keep_alive_interval_ms,
                                                      std::shared_ptr<Messenger> messenger) {
   if (!open_) return Status::IllegalState("Scanner was not open.");
@@ -107,9 +115,23 @@ Status KuduScanner::Data::StartKeepAlivePeriodically(uint64_t keep_alive_interva
     return Status::OK();
   }
   keep_alive_timer_ = PeriodicTimer::Create(
-      messenger,
+      std::move(messenger),
       [&]() {
-        return KeepAlive();
+        if (!open_) return Status::IllegalState("Scanner was not open.");
+        // If there is no scanner to keep alive, we still return Status::OK().
+        if (!last_response_.IsInitialized() || !last_response_.has_more_results() ||
+            !next_req_.has_scanner_id()) {
+          return Status::OK();
+        }
+        // 'cb' deletes itself upon completion.
+        auto* cb = new KeepAliveResponseCallback();
+        cb->request.set_scanner_id(next_req_.scanner_id());
+        cb->controller.set_timeout(configuration_.timeout());
+        // PeriodicTimer does not allow waiting, so calling ScannerKeepAliveAsync()
+        // instead of ScannerKeepAlive().
+        proxy_->ScannerKeepAliveAsync(cb->request, &cb->response, &cb->controller,
+                                      [cb]() { cb->Run(); });
+        return Status::OK();
       },
       MonoDelta::FromMilliseconds(keep_alive_interval_ms));
   keep_alive_timer_->Start();
