@@ -8796,11 +8796,11 @@ TEST_F(ToolTest, TestParseMetrics) {
         &stdout));
     // Spot check a few of the things that should be in the output.
     ASSERT_STR_CONTAINS(stdout, "timestamp\tsize_bytes\tbytes_rate");
-    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t69705682\t0");
-    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t69705682\t0");
-    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t69712809\t118.78313932087244");
-    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t69712809\t0");
-    ASSERT_STR_CONTAINS(stdout, "1661840031227204\t69712809\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t69705682\t           ?");
+    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t69705682\t       0.000");
+    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t69712809\t     118.783");
+    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t69712809\t       0.000");
+    ASSERT_STR_CONTAINS(stdout, "1661840031227204\t69712809\t       0.000");
   }
   // Check out table metrics.
   {
@@ -8812,10 +8812,10 @@ TEST_F(ToolTest, TestParseMetrics) {
         &stdout));
     // Spot check a few of the things that should be in the output.
     ASSERT_STR_CONTAINS(stdout, "timestamp\trow_count\tsize");
-    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t0\t0");
-    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t0\t0");
-    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t0\t0");
-    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t?\t?");
+    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t?\t?");
+    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t?\t?");
+    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t?\t?");
     ASSERT_STR_CONTAINS(stdout, "1661840031227204\t228265\t78540528");
   }
   // Check out table metrics with default metric names.
@@ -8828,10 +8828,10 @@ TEST_F(ToolTest, TestParseMetrics) {
         &stdout));
     // Spot check a few of the things that should be in the output.
     ASSERT_STR_CONTAINS(stdout, "timestamp\tlive_row_count\ton_disk_size");
-    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t0\t0");
-    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t0\t0");
-    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t0\t0");
-    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t?\t?");
+    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t?\t?");
+    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t?\t?");
+    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t?\t?");
     ASSERT_STR_CONTAINS(stdout, "1661840031227204\t228265\t78540528");
   }
 

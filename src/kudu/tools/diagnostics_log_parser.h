@@ -212,9 +212,11 @@ class MetricCollectingLogVisitor : public LogVisitor {
 
   // Calculate the sum of the plain metric (i.e. non-histogram) specified by
   // 'full_metric_name', based on the existing values in our internal map and
-  // including any new values for entities in 'mr'.
-  int64_t SumPlainWithMetricRecord(const MetricsRecord& mr,
-                                   const std::string& full_metric_name) const;
+  // including any new values for entities in 'mr'. Returns the sum wrapped
+  // into std::optional or std::nullopt if not a single value for the
+  // 'full_metric_name' is present in 'mr'.
+  std::optional<int64_t> SumPlainWithMetricRecord(
+      const MetricsRecord& mr, const std::string& full_metric_name) const;
 
   // Maps the full metric name to the mapping between entity IDs and their
   // metric value. As the visitor visits new metrics records, this gets updated
@@ -234,7 +236,7 @@ class MetricCollectingLogVisitor : public LogVisitor {
   std::optional<JsonReader> json_;
   //
   // The timestamp of the last visited metrics record.
-  int64_t last_visited_timestamp_ = 0;
+  std::optional<int64_t> last_visited_timestamp_;
 
   const MetricsCollectingOpts opts_;
 };

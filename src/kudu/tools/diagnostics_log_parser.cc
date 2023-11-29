@@ -36,6 +36,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
@@ -49,6 +50,8 @@ using std::array;
 using std::cout;
 using std::endl;
 using std::ifstream;
+using std::nullopt;
+using std::optional;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -325,28 +328,51 @@ Status MetricCollectingLogVisitor::VisitMetricsRecord(const MetricsRecord& mr) {
   // Iterate through the user-requested metrics and display what we need to, as
   // determined by 'opts_'.
   cout << mr.timestamp;
-  for (const auto& full_and_display : opts_.simple_metric_names) {
-    const auto& full_name = full_and_display.first;
-    int64_t sum = SumPlainWithMetricRecord(mr, full_name);
-    cout << Substitute("\t$0", sum);
-  }
-  const double time_delta_secs =
-      static_cast<double>(mr.timestamp - last_visited_timestamp_) / 1e6;
-  for (const auto& full_and_display : opts_.rate_metric_names) {
-    // If this is the first record we're visiting, we can't compute a rate.
-    const auto& full_name = full_and_display.first;
-    int64_t sum = SumPlainWithMetricRecord(mr, full_name);
-    if (last_visited_timestamp_ == 0) {
-      InsertOrDie(&rate_metric_prev_sum_, full_name, sum);
-      cout << "\t0";
-      continue;
+  for (const auto& [full_name, _]: opts_.simple_metric_names) {
+    const auto sum = SumPlainWithMetricRecord(mr, full_name);
+    if (sum) {
+      cout << Substitute("\t$0", *sum);
+    } else {
+      cout << "\t?";
     }
-    int64_t prev_sum = FindOrDie(rate_metric_prev_sum_, full_name);
-    cout << Substitute("\t$0", static_cast<double>(sum - prev_sum) / time_delta_secs);
-    InsertOrUpdate(&rate_metric_prev_sum_, full_name, sum);
   }
-  for (const auto& full_and_display : opts_.hist_metric_names) {
-    const auto& full_name = full_and_display.first;
+  const optional<double> time_delta_secs = last_visited_timestamp_
+      ? optional(static_cast<double>(mr.timestamp - *last_visited_timestamp_) / 1e6)
+      : nullopt;
+  for (const auto& [full_name, _] : opts_.rate_metric_names) {
+    const auto sum = SumPlainWithMetricRecord(mr, full_name);
+    optional<double> rate = nullopt;
+    if (time_delta_secs) {
+      // It's possible to compute the rate of change for a metric only if
+      // the time delta is defined, i.e. if it's not the very first entry
+      // being visited.
+      if (const auto* prev_sum = FindOrNull(rate_metric_prev_sum_, full_name)) {
+        if (sum) {
+          // Both the previous and the current metric's snapshots are available.
+          rate = static_cast<double>(*sum - *prev_sum) / *time_delta_secs;
+        } else {
+          // The value hasn't changed from previous snapshot, so the rate
+          // of change is zero for the reported time interval.
+          rate = 0.0;
+        }
+      }
+    }
+
+    // Update the sum with the value computed at the current timestamp.
+    if (sum) {
+      InsertOrUpdate(&rate_metric_prev_sum_, full_name, *sum);
+    }
+
+    if (rate) {
+      // Print out the rate of change in 'units per second', as computed.
+      cout << StringPrintf("\t%12.3f", *rate);
+    } else {
+      // Indicate that the rate of change for the metric is undefined
+      // since the necessary information to compute the rate isn't present.
+      cout << StringPrintf("\t%12s", "?");
+    }
+  }
+  for (const auto& [full_name, _]: opts_.hist_metric_names) {
     const auto& mr_entities_to_vals = FindOrDie(mr.metric_to_entities, full_name);
     const auto& entities_to_vals = FindOrDie(metric_to_entities_, full_name);
     std::map<int64_t, int> all_counts;
@@ -412,25 +438,31 @@ void MetricCollectingLogVisitor::UpdateWithMetricsRecord(const MetricsRecord& mr
   last_visited_timestamp_ = mr.timestamp;
 }
 
-int64_t MetricCollectingLogVisitor::SumPlainWithMetricRecord(
+optional<int64_t> MetricCollectingLogVisitor::SumPlainWithMetricRecord(
     const MetricsRecord& mr, const string& full_metric_name) const {
   const auto& mr_entities_to_vals = FindOrDie(mr.metric_to_entities, full_metric_name);
   const auto& entities_to_vals = FindOrDie(metric_to_entities_, full_metric_name);
   int64_t sum = 0;
   // Add all of the values for entities that didn't change, and are thus, not
   // included in the record.
-  for (const auto& e : entities_to_vals) {
-    if (!ContainsKey(mr_entities_to_vals, e.first)) {
-      CHECK(e.second.value_);
-      sum += *e.second.value_;
+  bool has_val = false;
+  for (const auto& [id, val] : entities_to_vals) {
+    if (!ContainsKey(mr_entities_to_vals, id)) {
+      DCHECK(val.value_);
+      sum += *val.value_;
+      has_val = true;
     }
   }
   // Now add the values for those that did.
-  for (const auto& e : mr_entities_to_vals) {
-    CHECK(e.second.value_);
-    sum += *e.second.value_;
+  for (const auto& [_, val] : mr_entities_to_vals) {
+    DCHECK(val.value_);
+    sum += *val.value_;
+    has_val = true;
   }
-  return sum;
+  if (has_val) {
+    return sum;
+  }
+  return nullopt;
 }
 
 Status StackDumpingLogVisitor::ParseRecord(const ParsedLine& pl) {
