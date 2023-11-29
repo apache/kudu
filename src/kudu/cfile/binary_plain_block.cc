@@ -35,6 +35,7 @@
 #include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
@@ -225,7 +226,7 @@ Status BinaryPlainBlockDecoder::ParseHeader() {
         // Only need to check 'p' overrun in the slow path, because 'p' may have
         // been within 16 bytes of 'limit'.
         LOG(WARNING) << "bad block: " << HexDump(data_);
-        return Status::Corruption(StringPrintf("unable to decode offsets in block"));
+        return Status::Corruption("unable to decode offsets in block");
       }
     }
     dst_ptr += 4;
@@ -237,8 +238,7 @@ Status BinaryPlainBlockDecoder::ParseHeader() {
     p = coding::DecodeGroupVarInt32_SlowButSafe(p, &ints[0], &ints[1], &ints[2], &ints[3]);
     if (PREDICT_FALSE(p > limit)) {
       LOG(WARNING) << "bad block: " << HexDump(data_);
-      return Status::Corruption(
-        StringPrintf("unable to decode offsets in block"));
+      return Status::Corruption("unable to decode offsets in block");
     }
 
     for (int i = 0; i < rem; i++) {

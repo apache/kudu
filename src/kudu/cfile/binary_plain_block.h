@@ -26,21 +26,21 @@
 //   raw strings that were written
 // Offsets:  [pointed to by offsets_pos]
 //   gvint-encoded offsets pointing to the beginning of each string.
-#ifndef KUDU_CFILE_BINARY_PLAIN_BLOCK_H
-#define KUDU_CFILE_BINARY_PLAIN_BLOCK_H
+#pragma once
 
 #include <sys/types.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/common/rowid.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
@@ -54,7 +54,6 @@ class SelectionVectorView;
 
 namespace cfile {
 
-class BlockHandle;
 struct WriterOptions;
 
 class BinaryPlainBlockBuilder final : public BlockBuilder {
@@ -206,5 +205,3 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif // KUDU_CFILE_BINARY_PREFIX_BLOCK_H
