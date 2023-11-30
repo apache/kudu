@@ -113,25 +113,37 @@ public class NetUtil {
   /**
    * Gets a hostname or an IP address and returns an array of InetAddresses.
    * <p>
-   * <strong>This method can block</strong> as there is no API for
-   * asynchronous DNS resolution in the JDK.
+   * <strong>This method can block for a long time</strong> if DNS resolution
+   * is slow.
    * @param host the hostname to resolve
    * @return an array of InetAddresses for the given hostname,
    * or {@code null} if the address couldn't be resolved
    */
   public static InetAddress[] getAllInetAddresses(final String host) {
+    // The 'slow DNS resolution' warning threshold is set to be the same as
+    // in HostPort::ResolveAddresses() from src/kudu/util/net/net_util.cc.
+    final long kWarningThresholdNs = 200000000; // 200 ms
+
+    // Once a DNS name is resolved into IP addresses, DNS caching layers of
+    // a contemporary OS makes follow-up resolutions faster. However, when
+    // investigating latencies of relatively fast RPC calls, make it possible
+    // to see in debug logs the exact timing of DNS resolutions that took
+    // over one millisecond.
+    final long kDebugThresholdNs = 1000000;     // 1 ms
+
     final long start = System.nanoTime();
     try {
       InetAddress[] ipAddrs = InetAddress.getAllByName(host);
-      long latency = System.nanoTime() - start;
-      if (latency > 500000/*ns*/ && LOG.isDebugEnabled()) {
-        LOG.debug("Resolved IP of `{}' to {} in {}ns", host, ipAddrs, latency);
-      } else if (latency >= 3000000/*ns*/) {
-        LOG.warn("Slow DNS lookup! Resolved IP of `{}' to {} in {}ns", host, ipAddrs, latency);
+      final long elapsedNs = System.nanoTime() - start;
+
+      if (elapsedNs > kDebugThresholdNs && LOG.isDebugEnabled()) {
+        LOG.debug("Resolved '{}' into {} in {}ns", host, ipAddrs, elapsedNs);
+      } else if (elapsedNs > kWarningThresholdNs) {
+        LOG.warn("Slow DNS lookup! Resolved '{}' into {} in {}ns", host, ipAddrs, elapsedNs);
       }
       return ipAddrs;
     } catch (UnknownHostException e) {
-      LOG.error("Failed to resolve the IP of `{}' in {}ns", host, (System.nanoTime() - start));
+      LOG.error("Failed resolving '{}' into IP addresses in {}ns", host, System.nanoTime() - start);
       return null;
     }
   }
