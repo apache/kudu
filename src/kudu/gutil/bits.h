@@ -13,19 +13,21 @@ class Bits {
   // Return the number of one bits in the given integer.
   static int CountOnesInByte(unsigned char n);
 
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   static int CountOnes(uint32 n) {
     n -= ((n >> 1) & 0x55555555);
     n = ((n >> 2) & 0x33333333) + (n & 0x33333333);
-    return static_cast<int>((((n + (n >> 4)) & 0xF0F0F0FULL) * 0x1010101ULL) >> 24);
+    return static_cast<int>((((n + (n >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24);
   }
 
   // Count bits using sideways addition [WWG'57]. See Knuth TAOCP v4 7.1.3(59)
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   static inline int CountOnes64(uint64 n) {
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__)
     n -= (n >> 1) & 0x5555555555555555ULL;
     n = ((n >> 2) & 0x3333333333333333ULL) + (n & 0x3333333333333333ULL);
-    return (((n + (n >> 4)) & 0xF0F0F0F0F0F0F0FULL)
-            * 0x101010101010101ULL) >> 56;
+    return static_cast<int>((((n + (n >> 4)) & 0xF0F0F0F0F0F0F0FULL)
+            * 0x101010101010101ULL) >> 56);
 #else
     return CountOnes(n >> 32) + CountOnes(n & 0xffffffff);
 #endif
