@@ -128,14 +128,13 @@ class MiniKdc {
   std::map<std::string, std::string> GetEnvVars() const;
 
  private:
-
   // Prepends required Kerberos environment variables to the process arguments.
   std::vector<std::string> MakeArgv(const std::vector<std::string>& in_argv);
 
-  // Creates a kdc.conf in the data root.
+  // Creates a krb5.conf in the data root.
   Status CreateKrb5Conf() const WARN_UNUSED_RESULT;
 
-  // Creates a krb5.conf in the data root.
+  // Creates a kdc.conf in the data root.
   Status CreateKdcConf() const WARN_UNUSED_RESULT;
 
   std::unique_ptr<Subprocess> kdc_process_;
