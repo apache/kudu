@@ -41,7 +41,6 @@
 #include <glog/raw_logging.h>
 #include <glog/stl_logging.h>
 
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -481,7 +480,7 @@ Status Subprocess::Start() {
     // variant of exec to do $PATH searching if the executable specified
     // by the caller isn't an absolute path.
     for (const auto& env : env_) {
-      ignore_result(setenv(env.first.c_str(), env.second.c_str(), 1 /* overwrite */));
+      PCHECK(setenv(env.first.c_str(), env.second.c_str(), 1 /* overwrite */) == 0);
     }
 
     execvp(program_.c_str(), &argv_ptrs[0]);

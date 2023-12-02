@@ -332,7 +332,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
         // Create the server principal and keytab.
         string kt_path;
         ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
-        CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+        PCHECK(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/) == 0);
         server_negotiation.set_server_fqdn("127.0.0.1");
         ASSERT_OK(server_negotiation.EnableGSSAPI());
         break;
@@ -1434,7 +1434,7 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
   // Create the server principal and keytab.
   string kt_path;
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
-  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+  PCHECK(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/) == 0);
 
   // Try to negotiate with no krb5 credentials on the client. It should fail on both
   // sides.
@@ -1469,7 +1469,7 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
   // credentials.
   // Authentication should now fail.
   ASSERT_OK(kdc.CreateServiceKeytab("otherservice/127.0.0.1", &kt_path));
-  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+  PCHECK(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/) == 0);
 
   RunNegotiationTest(
       [](unique_ptr<Socket> socket) {
@@ -1517,7 +1517,7 @@ TEST_F(TestNegotiation, TestPreflight) {
   ASSERT_OK(kdc.SetKrb5Environment());
   string kt_path;
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
-  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+  PCHECK(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/) == 0);
 
   ASSERT_OK(ServerNegotiation::PreflightCheckGSSAPI("kudu"));
 
@@ -1537,7 +1537,7 @@ TEST_F(TestNegotiation, TestPreflight) {
 
   // Try with a keytab that has the wrong credentials.
   ASSERT_OK(kdc.CreateServiceKeytab("wrong-service/127.0.0.1", &kt_path));
-  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+  PCHECK(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/) == 0);
   s = ServerNegotiation::PreflightCheckGSSAPI("kudu");
   ASSERT_FALSE(s.ok());
 #ifndef KRB5_VERSION_LE_1_10

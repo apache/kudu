@@ -205,7 +205,7 @@ class SpnegoWebserverTest : public WebserverTest {
     kdc_->SetKrb5Environment();
     string kt_path;
     ASSERT_OK(kdc_->CreateServiceKeytab("HTTP/127.0.0.1", &kt_path));
-    CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1));
+    PCHECK(setenv("KRB5_KTNAME", kt_path.c_str(), 1) == 0);
     ASSERT_OK(kdc_->CreateUserPrincipal("alice"));
 
     opts->require_spnego = true;

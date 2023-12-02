@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <climits>
 #include <cstdint>
 #include <cstdio>
@@ -2014,7 +2015,7 @@ TEST_F(ToolTest, TestPbcTools) {
                                StrCat("#!/usr/bin/env bash\n", editor_shell),
                                editor_path));
     chmod(editor_path.c_str(), 0755);
-    setenv("EDITOR", editor_path.c_str(), /* overwrite */1);
+    PCHECK(setenv("EDITOR", editor_path.c_str(), /* overwrite */1) == 0);
     return RunTool(Substitute("pbc edit $0 $1", extra_flags, instance_path),
                    stdout, stderr, nullptr, nullptr);
   };
@@ -2251,7 +2252,7 @@ TEST_F(ToolTest, TestPbcToolsOnMultipleBlocks) {
                                StrCat("#!/usr/bin/env bash\n", editor_shell),
                                editor_path));
     chmod(editor_path.c_str(), 0755);
-    setenv("EDITOR", editor_path.c_str(), /* overwrite */1);
+    PCHECK(setenv("EDITOR", editor_path.c_str(), /* overwrite */1) == 0);
     return RunTool(Substitute("pbc edit $0 $1 $2", extra_flags, metadata_path, encryption_args),
                    stdout, stderr, nullptr, nullptr);
   };
@@ -8845,7 +8846,11 @@ TEST_F(ToolTest, TestParseMetrics) {
 
 TEST_F(ToolTest, ClusterNameResolverEnvNotSet) {
   const string kClusterName = "external_mini_cluster";
-  CHECK_ERR(unsetenv("KUDU_CONFIG"));
+  if (unsetenv("KUDU_CONFIG") != 0) {
+    // unsetenv() on macOS might return EINVAL if the specified variable
+    // was not present in the environment of the process.
+    PCHECK(errno == EINVAL);
+  }
   string stderr;
   Status s = RunActionStderrString(
         Substitute("master list @$0", kClusterName),
@@ -8857,9 +8862,9 @@ TEST_F(ToolTest, ClusterNameResolverEnvNotSet) {
 
 TEST_F(ToolTest, ClusterNameResolverFileNotExist) {
   const string kClusterName = "external_mini_cluster";
-  CHECK_ERR(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1));
+  PCHECK(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1) == 0);
   SCOPED_CLEANUP({
-    CHECK_ERR(unsetenv("KUDU_CONFIG"));
+    PCHECK(unsetenv("KUDU_CONFIG") == 0);
   });
 
   string stderr;
@@ -8880,9 +8885,9 @@ TEST_F(ToolTest, ClusterNameResolverFileCorrupt) {
 
   // Prepare ${KUDU_CONFIG}.
   const string kClusterName = "external_mini_cluster";
-  CHECK_ERR(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1));
+  PCHECK(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1) == 0);
   SCOPED_CLEANUP({
-    CHECK_ERR(unsetenv("KUDU_CONFIG"));
+    PCHECK(unsetenv("KUDU_CONFIG") == 0);
   });
 
   // Missing 'clusters_info' section.
@@ -8923,9 +8928,9 @@ TEST_F(ToolTest, ClusterNameResolverNormal) {
 
   // Prepare ${KUDU_CONFIG}.
   const string kClusterName = "external_mini_cluster";
-  CHECK_ERR(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1));
+  PCHECK(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1) == 0);
   SCOPED_CLEANUP({
-    CHECK_ERR(unsetenv("KUDU_CONFIG"));
+    PCHECK(unsetenv("KUDU_CONFIG") == 0);
   });
 
   string content = Substitute(

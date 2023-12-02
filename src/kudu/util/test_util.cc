@@ -200,9 +200,9 @@ void KuduTest::OverrideKrb5Environment() {
   //
   // NOTE: we don't simply *unset* the variables, because then we'd still pick up
   // the user's /etc/krb5.conf and other default locations.
-  setenv("KRB5_CONFIG", kInvalidPath, 1);
-  setenv("KRB5_KTNAME", kInvalidPath, 1);
-  setenv("KRB5CCNAME", kInvalidPath, 1);
+  PCHECK(setenv("KRB5_CONFIG", kInvalidPath, 1) == 0);
+  PCHECK(setenv("KRB5_KTNAME", kInvalidPath, 1) == 0);
+  PCHECK(setenv("KRB5CCNAME", kInvalidPath, 1) == 0);
 }
 
 void KuduTest::SetEncryptionFlags(bool enable_encryption) {

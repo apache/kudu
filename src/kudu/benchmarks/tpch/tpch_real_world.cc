@@ -243,7 +243,7 @@ Status TpchRealWorld::CreateFifos() {
 Status TpchRealWorld::StartDbgens() {
   for (int i = 1; i <= FLAGS_tpch_num_inserters; i++) {
     // This environment variable is necessary if dbgen isn't in the current dir.
-    setenv("DSS_CONFIG", FLAGS_tpch_path_to_dbgen_dir.c_str(), 1);
+    PCHECK(setenv("DSS_CONFIG", FLAGS_tpch_path_to_dbgen_dir.c_str(), 1) == 0);
     vector<string> argv;
     argv.push_back(Substitute("$0/dbgen", FLAGS_tpch_path_to_dbgen_dir));
     argv.emplace_back("-q");

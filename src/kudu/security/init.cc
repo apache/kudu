@@ -497,19 +497,23 @@ Status Krb5ParseName(const string& principal, string* service_name,
   return Status::OK();
 }
 
-Status InitKerberosForServer(const std::string& raw_principal, const std::string& keytab_file,
-    const std::string& krb5ccname, bool disable_krb5_replay_cache) {
-  if (keytab_file.empty()) return Status::OK();
+Status InitKerberosForServer(const std::string& raw_principal,
+                             const std::string& keytab_file,
+                             const std::string& krb5ccname,
+                             bool disable_krb5_replay_cache) {
+  if (keytab_file.empty()) {
+    return Status::OK();
+  }
 
-  setenv("KRB5CCNAME", krb5ccname.c_str(), 1);
-  setenv("KRB5_KTNAME", keytab_file.c_str(), 1);
+  PCHECK(setenv("KRB5CCNAME", krb5ccname.c_str(), 1) == 0);
+  PCHECK(setenv("KRB5_KTNAME", keytab_file.c_str(), 1) == 0);
 
   if (disable_krb5_replay_cache) {
     // KUDU-1897: disable the Kerberos replay cache. The KRPC protocol includes a
     // per-connection server-generated nonce to protect against replay attacks
     // when authenticating via Kerberos. The replay cache has many performance and
     // implementation issues.
-    setenv("KRB5RCACHETYPE", "none", 1);
+    PCHECK(setenv("KRB5RCACHETYPE", "none", 1) == 0);
   }
 
   g_kinit_ctx = new KinitContext();

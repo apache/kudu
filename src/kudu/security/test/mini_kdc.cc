@@ -357,7 +357,7 @@ Status MiniKdc::SetKrb5Environment() const {
     return Status::IllegalState("KDC not started");
   }
   for (const auto& p : GetEnvVars()) {
-    CHECK_ERR(setenv(p.first.c_str(), p.second.c_str(), 1 /*overwrite*/));
+    PCHECK(setenv(p.first.c_str(), p.second.c_str(), 1 /*overwrite*/) == 0);
   }
 
   return Status::OK();

@@ -78,6 +78,9 @@ class KuduTest : public ::testing::Test {
                                std::string* key, std::string* iv, std::string* version);
 
  protected:
+  // Sets the flags to enable encryption if 'enable_encryption' is true.
+  static void SetEncryptionFlags(bool enable_encryption);
+
   // Returns absolute path based on a unit test-specific work directory, given
   // a relative path. Useful for writing test files that should be deleted after
   // the test ends.
@@ -88,9 +91,6 @@ class KuduTest : public ::testing::Test {
   // Reset flags on every test. Allocated on the heap so it can be destroyed
   // (and the flags reset) before test_dir_ is deleted.
   std::unique_ptr<google::FlagSaver> flag_saver_;
-
-  // Sets the flags to enable encryption if 'enable_encryption' is true.
-  void SetEncryptionFlags(bool enable_encryption);
 
   std::string test_dir_;
 };
