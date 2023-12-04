@@ -58,9 +58,9 @@ DEFINE_bool(log_async, true,
             "latency and stability.");
 TAG_FLAG(log_async, hidden);
 
-DEFINE_int32(log_async_buffer_bytes_per_level, 2 * 1024 * 1024,
-             "The number of bytes of buffer space used by each log "
-             "level. Only relevant when --log_async is enabled.");
+DEFINE_uint32(log_async_buffer_bytes_per_level, 2 * 1024 * 1024,
+              "The number of bytes of buffer space used by each log "
+              "level. Only relevant when --log_async is enabled.");
 TAG_FLAG(log_async_buffer_bytes_per_level, hidden);
 
 DEFINE_int32(max_log_files, 10,
@@ -282,6 +282,9 @@ void InitGoogleLoggingSafe(const char* arg) {
 
   if (FLAGS_log_async) {
     EnableAsyncLogging();
+  } else {
+    LOG(WARNING) <<
+        "disabling asynchronous logging adversely affects Kudu's performance";
   }
 
   logging_initialized = true;

@@ -20,6 +20,7 @@
 #include <string>
 #include <thread>
 
+#include "kudu/gutil/port.h"
 #include "kudu/util/monotime.h"
 
 using std::string;
@@ -27,7 +28,7 @@ using std::string;
 namespace kudu {
 
 AsyncLogger::AsyncLogger(google::base::Logger* wrapped,
-                         int max_buffer_bytes) :
+                         size_t max_buffer_bytes) :
     max_buffer_bytes_(max_buffer_bytes),
     wrapped_(DCHECK_NOTNULL(wrapped)),
     wake_flusher_cond_(&lock_),
@@ -38,10 +39,8 @@ AsyncLogger::AsyncLogger(google::base::Logger* wrapped,
   DCHECK_GT(max_buffer_bytes_, 0);
 }
 
-AsyncLogger::~AsyncLogger() {}
-
 void AsyncLogger::Start() {
-  CHECK_EQ(state_, INITTED);
+  DCHECK_EQ(state_, INITTED);
   state_ = RUNNING;
   thread_ = std::thread(&AsyncLogger::RunThread, this);
 }
@@ -49,7 +48,7 @@ void AsyncLogger::Start() {
 void AsyncLogger::Stop() {
   {
     MutexLock l(lock_);
-    CHECK_EQ(state_, RUNNING);
+    DCHECK_EQ(state_, RUNNING);
     state_ = STOPPED;
     wake_flusher_cond_.Signal();
   }
@@ -86,7 +85,7 @@ void AsyncLogger::Write(bool force_flush,
   //
   // Unfortunately, the underlying log level isn't passed through to this interface, so we
   // have to use this hack: messages from FATAL errors start with the character 'F'.
-  if (message_len > 0 && message[0] == 'F') {
+  if (PREDICT_FALSE(message_len > 0 && message[0] == 'F')) {
     Flush();
   }
 }

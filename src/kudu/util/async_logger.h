@@ -58,11 +58,11 @@ namespace kudu {
 // NOTE: the logger limits the total amount of buffer space, so if the underlying
 // log blocks for too long, eventually the threads generating the log messages
 // will block as well. This prevents runaway memory usage.
-class AsyncLogger : public google::base::Logger {
+class AsyncLogger final : public google::base::Logger {
  public:
   AsyncLogger(google::base::Logger* wrapped,
-              int max_buffer_bytes);
-  ~AsyncLogger();
+              size_t max_buffer_bytes);
+  ~AsyncLogger() override = default;
 
   void Start();
 
@@ -126,7 +126,7 @@ class AsyncLogger : public google::base::Logger {
     std::vector<Msg> messages;
 
     // Estimate of the size of 'messages'.
-    int size = 0;
+    size_t size = 0;
 
     // Whether this buffer needs an explicit flush of the
     // underlying logger.
@@ -158,7 +158,7 @@ class AsyncLogger : public google::base::Logger {
   void RunThread();
 
   // The maximum number of bytes used by the entire class.
-  const int max_buffer_bytes_;
+  const size_t max_buffer_bytes_;
   google::base::Logger* const wrapped_;
   std::thread thread_;
 
