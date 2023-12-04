@@ -1576,13 +1576,27 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
       // short-circuit further checking and reject the request immediately.
       // Otherwise, we'll defer the checking to the prepare phase of the
       // op after decoding the operations.
-      LOG(WARNING) << Substitute("rejecting Write request from $0: no write privileges",
-                                 context->requestor_string());
-      context->RespondRpcFailure(ErrorStatusPB::FATAL_UNAUTHORIZED,
-          Status::NotAuthorized("not authorized to write"));
-      return;
+      static const auto kStatus = Status::NotAuthorized("not authorized to write");
+      const auto msg = Substitute(
+          "rejecting write request: no write privileges ($0)",
+          context->requestor_string());
+      KLOG_EVERY_N_SECS(INFO, 1) << msg << THROTTLE_MSG;
+      return context->RespondRpcFailure(ErrorStatusPB::FATAL_UNAUTHORIZED,
+                                        kStatus);
     }
     authz_context = WriteAuthorizationContext{ privileges, /*requested_op_types=*/{} };
+  }
+
+  if (PREDICT_FALSE(!server_->clock()->SupportsExternalConsistencyMode(
+      req->external_consistency_mode()))) {
+    constexpr const char* const kMsg =
+        "rejecting write request: required consistency mode unsupported by clock";
+    static const auto kStatus = Status::NotSupported(kMsg);
+    KLOG_EVERY_N_SECS(INFO, 1) << kMsg << THROTTLE_MSG;
+    return SetupErrorAndRespond(resp->mutable_error(),
+                                kStatus,
+                                TabletServerErrorPB::UNKNOWN_ERROR,
+                                context);
   }
 
   shared_ptr<Tablet> tablet;
@@ -1593,40 +1607,36 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
-  uint64_t bytes = req->row_operations().rows().size() +
+  const uint64_t bytes = req->row_operations().rows().size() +
       req->row_operations().indirect_data().size();
   if (!tablet->ShouldThrottleAllow(bytes)) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::ServiceUnavailable("Rejecting Write request: throttled"),
-                         TabletServerErrorPB::THROTTLED,
-                         context);
-    return;
+    constexpr const char* const kMsg = "rejecting write request: throttled";
+    static const auto kStatus = Status::ServiceUnavailable(kMsg);
+    KLOG_EVERY_N_SECS(INFO, 1) << kMsg << THROTTLE_MSG;
+    return SetupErrorAndRespond(resp->mutable_error(),
+                                kStatus,
+                                TabletServerErrorPB::THROTTLED,
+                                context);
   }
 
   // Check for memory pressure; don't bother doing any additional work if we've
   // exceeded the limit.
   double capacity_pct;
   if (process_memory::SoftLimitExceeded(&capacity_pct)) {
+    constexpr const char* const kMsg =
+        "rejecting write request: soft memory limit exceeded";
+    static const auto kStatus = Status::ServiceUnavailable(kMsg);
     tablet->metrics()->leader_memory_pressure_rejections->Increment();
-    string msg = StringPrintf("Soft memory limit exceeded (at %.2f%% of capacity)", capacity_pct);
+    string msg = StringPrintf("%s (at %.2f%% of capacity)", kMsg, capacity_pct);
     if (capacity_pct >= FLAGS_memory_limit_warn_threshold_percentage) {
-      KLOG_EVERY_N_SECS(WARNING, 1) << "Rejecting Write request: " << msg << THROTTLE_MSG;
+      KLOG_EVERY_N_SECS(WARNING, 1) << msg << THROTTLE_MSG;
     } else {
-      KLOG_EVERY_N_SECS(INFO, 1) << "Rejecting Write request: " << msg << THROTTLE_MSG;
+      KLOG_EVERY_N_SECS(INFO, 1) << msg << THROTTLE_MSG;
     }
-    SetupErrorAndRespond(resp->mutable_error(), Status::ServiceUnavailable(msg),
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
-    return;
-  }
-
-  if (!server_->clock()->SupportsExternalConsistencyMode(req->external_consistency_mode())) {
-    Status s = Status::NotSupported("The configured clock does not support the"
-        " required consistency mode.");
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
-    return;
+    return SetupErrorAndRespond(resp->mutable_error(),
+                                kStatus,
+                                TabletServerErrorPB::THROTTLED,
+                                context);
   }
 
   // If the apply queue is overloaded, the write request might be rejected.
@@ -1642,9 +1652,11 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     // probability of an op to be rejected.
     auto time_factor = queue_otime.ToMilliseconds() / overload_threshold_ms + 1;
     if (!rng_.OneIn(time_factor * time_factor + 1)) {
-      static const Status kStatus = Status::ServiceUnavailable(
-          "op apply queue is overloaded");
+      constexpr const char* const kMsg =
+          "rejecting write request: apply queue overloaded";
+      static const auto kStatus = Status::ServiceUnavailable(kMsg);
       num_op_apply_queue_rejections_->Increment();
+      KLOG_EVERY_N_SECS(INFO, 1) << kMsg << THROTTLE_MSG;
       return SetupErrorAndRespond(resp->mutable_error(),
                                   kStatus,
                                   TabletServerErrorPB::THROTTLED,
