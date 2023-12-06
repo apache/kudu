@@ -64,6 +64,67 @@ TEST(LoggingTest, TestThrottledLogging) {
   EXPECT_THAT(msgs[1], testing::ContainsRegex("\\[suppressed [0-9]{3,} similar messages\\]"));
 }
 
+// Test the KLOG_EVERY_N_SECS(...) macro with slow-paced messages, making sure
+// no messages are lost or suppressed if they come staggered by more than
+// the suppression time interval.
+TEST(LoggingTest, ThrottledLoggingLowFrequency) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  StringVectorSink sink;
+  ScopedRegisterSink srs(&sink);
+
+  for (int i = 0; i < 5; ++i) {
+    KLOG_EVERY_N_SECS(INFO, 1) << "test " << i << THROTTLE_MSG;
+    SleepFor(MonoDelta::FromMilliseconds(1050));
+  }
+
+  const auto& msgs = sink.logged_msgs();
+  // Expecting the exact number: nothing more is logged from anywhere,
+  // and all the logged messages should be sent to the sink without any
+  // suppression.
+  ASSERT_EQ(5, msgs.size());
+
+  for (const auto& m: msgs) {
+    EXPECT_THAT(m, testing::ContainsRegex("test [0-4]$"));
+    // No messages should be suppressed.
+    ASSERT_STR_NOT_CONTAINS(m, "suppressed");
+  }
+}
+
+// A test scenario for KLOG_EVERY_N_SECS() where a short burst of messages
+// is sent through.
+//
+// This scenario sends many messages separated from each other by an interval
+// a few orders of magnitude shorter than the suppression interval,
+// and all the messages are sent within a single suppression time interval.
+//
+// Only the very first message is logged, and nothing is reported on the rest
+// that were suppresed. The information on the suppressed messages is output
+// only when another log message arrives, and it may never arrive or arrive
+// a long time after the original message burst.
+TEST(LoggingTest, ThrottledLoggingShortBurst) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  StringVectorSink sink;
+  ScopedRegisterSink srs(&sink);
+  for (int i = 0; i < 2000; ++i) {
+    KLOG_EVERY_N_SECS(INFO, 1) << "test " << i << THROTTLE_MSG;
+    SleepFor(MonoDelta::FromMicroseconds(10));
+  }
+  // Just in case, sleep for two suppression intervals.
+  SleepFor(MonoDelta::FromMilliseconds(2000));
+
+  const auto& msgs = sink.logged_msgs();
+  // Only the very first message in the burst is accounted for.
+  ASSERT_EQ(1, msgs.size());
+  ASSERT_THAT(msgs[0], testing::ContainsRegex("test 0$"));
+
+  for (const auto& m: msgs) {
+    // No information on thousands of suppressed messages yet.
+    ASSERT_STR_NOT_CONTAINS(m, "suppressed");
+  }
+}
+
 TEST(LoggingTest, TestAdvancedThrottling) {
   StringVectorSink sink;
   ScopedRegisterSink srs(&sink);
