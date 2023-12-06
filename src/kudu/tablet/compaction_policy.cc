@@ -174,9 +174,11 @@ void BudgetedCompactionPolicy::SetupKnapsackInput(
     const DiskRowSet* drs = down_cast<const DiskRowSet*>(rs);
     DiskRowSetSpace drss;
     drs->GetDiskRowSetSpaceUsage(&drss);
-    const uint64_t deltas_on_disk_size = drss.redo_deltas_size + drss.undo_deltas_size;
+    const uint64_t deltas_on_disk_size_bytes = drss.redo_deltas_size + drss.undo_deltas_size;
+    const int64_t min_deltas_size_bytes =
+        FLAGS_rowset_compaction_estimate_min_deltas_size_mb * 1024 * 1024;
 
-    if (FLAGS_rowset_compaction_estimate_min_deltas_size_mb < deltas_on_disk_size) {
+    if (min_deltas_size_bytes < deltas_on_disk_size_bytes) {
       const auto* h = metrics_->compact_rs_mem_usage_to_deltas_size_ratio->histogram();
       const bool use_metrics = !FLAGS_rowset_compaction_enforce_preset_factor &&
           h->TotalCount() > 0 && h->MeanValue() > 0;
@@ -188,7 +190,7 @@ void BudgetedCompactionPolicy::SetupKnapsackInput(
       // such a way that they load all the deltas into the memory at once.
       // With that, let's check if there is enough memory to do so.
       const int64_t estimated_mem_size = static_cast<int64_t>(
-          mem_size_factor * static_cast<double>(deltas_on_disk_size));
+          mem_size_factor * static_cast<double>(deltas_on_disk_size_bytes));
       const int64_t available_mem_size =
           process_memory::HardLimit() - process_memory::CurrentConsumption();
       if (available_mem_size < estimated_mem_size) {
