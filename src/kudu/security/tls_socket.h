@@ -20,7 +20,6 @@
 #include <openssl/ssl.h>
 
 #include <cstdint>
-#include <memory>
 #include <string>
 
 #include "kudu/gutil/port.h"
@@ -34,6 +33,9 @@ struct iovec;
 typedef struct ssl_st SSL;
 
 namespace kudu {
+
+class TransportDetailsPB;
+
 namespace security {
 
 class TlsSocket : public Socket {
@@ -50,6 +52,8 @@ class TlsSocket : public Socket {
   Status Recv(uint8_t *buf, int32_t amt, int32_t *nread) override WARN_UNUSED_RESULT;
 
   Status Close() override WARN_UNUSED_RESULT;
+
+  Status GetTransportDetails(TransportDetailsPB* pb) const override;
 
   // Get the name of the negotiated TLS protocol for the connection.
   std::string GetProtocolName() const;

@@ -17,16 +17,8 @@
 
 #include "kudu/rpc/connection.h"
 
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#ifdef __linux__
-#include <sys/ioctl.h>
-#endif
-
 #include <algorithm>
 #include <cerrno>
-#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -49,15 +41,12 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/security/tls_socket.h"
-#include "kudu/util/errno.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-using kudu::security::TlsSocket;
 using std::includes;
 using std::set;
 using std::shared_ptr;
@@ -69,132 +58,6 @@ namespace kudu {
 namespace rpc {
 
 typedef OutboundCall::Phase Phase;
-
-namespace {
-
-// tcp_info struct duplicated from linux/tcp.h.
-//
-// This allows us to decouple the compile-time Linux headers from the
-// runtime Linux kernel. The compile-time headers (and kernel) might be
-// older than the runtime kernel, in which case an ifdef-based approach
-// wouldn't allow us to get all of the info available.
-//
-// NOTE: this struct has been annotated with some local notes about the
-// contents of each field.
-struct tcp_info {
-  // Various state-tracking information.
-  // ------------------------------------------------------------
-  uint8_t    tcpi_state;
-  uint8_t    tcpi_ca_state;
-  uint8_t    tcpi_retransmits;
-  uint8_t    tcpi_probes;
-  uint8_t    tcpi_backoff;
-  uint8_t    tcpi_options;
-  uint8_t    tcpi_snd_wscale : 4, tcpi_rcv_wscale : 4;
-  uint8_t    tcpi_delivery_rate_app_limited:1;
-
-  // Configurations.
-  // ------------------------------------------------------------
-  uint32_t   tcpi_rto;
-  uint32_t   tcpi_ato;
-  uint32_t   tcpi_snd_mss;
-  uint32_t   tcpi_rcv_mss;
-
-  // Counts of packets in various states in the outbound queue.
-  // At first glance one might think these are monotonic counters, but
-  // in fact they are instantaneous counts of queued packets and thus
-  // not very useful for our purposes.
-  // ------------------------------------------------------------
-  // Number of packets outstanding that haven't been acked.
-  uint32_t   tcpi_unacked;
-
-  // Number of packets outstanding that have been selective-acked.
-  uint32_t   tcpi_sacked;
-
-  // Number of packets outstanding that have been deemed lost (a SACK arrived
-  // for a later packet)
-  uint32_t   tcpi_lost;
-
-  // Number of packets in the queue that have been retransmitted.
-  uint32_t   tcpi_retrans;
-
-  // The number of packets towards the highest SACKed sequence number
-  // (some measure of reording, removed in later Linux versions by
-  // 737ff314563ca27f044f9a3a041e9d42491ef7ce)
-  uint32_t   tcpi_fackets;
-
-  // Times when various events occurred.
-  // ------------------------------------------------------------
-  uint32_t   tcpi_last_data_sent;
-  uint32_t   tcpi_last_ack_sent;     /* Not remembered, sorry. */
-  uint32_t   tcpi_last_data_recv;
-  uint32_t   tcpi_last_ack_recv;
-
-  // Path MTU.
-  uint32_t   tcpi_pmtu;
-
-  // Receiver slow start threshold.
-  uint32_t   tcpi_rcv_ssthresh;
-
-  // Smoothed RTT estimate and variance based on the time between sending data and receiving
-  // corresponding ACK. See https://tools.ietf.org/html/rfc2988 for details.
-  uint32_t   tcpi_rtt;
-  uint32_t   tcpi_rttvar;
-
-  // Slow start threshold.
-  uint32_t   tcpi_snd_ssthresh;
-  // Sender congestion window (in number of MSS-sized packets)
-  uint32_t   tcpi_snd_cwnd;
-  // Advertised MSS.
-  uint32_t   tcpi_advmss;
-  // Amount of packet reordering allowed.
-  uint32_t   tcpi_reordering;
-
-  // Receiver-side RTT estimate per the Dynamic Right Sizing algorithm:
-  //
-  // "A system that is only transmitting acknowledgements can still estimate the round-trip
-  // time by observing the time between when a byte is first acknowledged and the receipt of
-  // data that is at least one window beyond the sequence number that was acknowledged. If the
-  // sender is being throttled by the network, this estimate will be valid. However, if the
-  // sending application did not have any data to send, the measured time could be much larger
-  // than the actual round-trip time. Thus this measurement acts only as an upper-bound on the
-  // round-trip time and should be be used only when it is the only source of round-trip time
-  // information."
-  uint32_t   tcpi_rcv_rtt;
-  uint32_t   tcpi_rcv_space;
-
-  // Total number of retransmitted packets.
-  uint32_t   tcpi_total_retrans;
-
-  // Pacing-related metrics.
-  uint64_t   tcpi_pacing_rate;
-  uint64_t   tcpi_max_pacing_rate;
-
-  // Total bytes ACKed by remote peer.
-  uint64_t   tcpi_bytes_acked;    /* RFC4898 tcpEStatsAppHCThruOctetsAcked */
-  // Total bytes received (for which ACKs have been sent out).
-  uint64_t   tcpi_bytes_received; /* RFC4898 tcpEStatsAppHCThruOctetsReceived */
-  // Segments sent and received.
-  uint32_t   tcpi_segs_out;       /* RFC4898 tcpEStatsPerfSegsOut */
-  uint32_t   tcpi_segs_in;        /* RFC4898 tcpEStatsPerfSegsIn */
-
-  // The following metrics are quite new and not in el7.
-  // ------------------------------------------------------------
-  uint32_t   tcpi_notsent_bytes;
-  uint32_t   tcpi_min_rtt;
-  uint32_t   tcpi_data_segs_in;      /* RFC4898 tcpEStatsDataSegsIn */
-  uint32_t   tcpi_data_segs_out;     /* RFC4898 tcpEStatsDataSegsOut */
-
-  // Calculated rate at which data was delivered.
-  uint64_t   tcpi_delivery_rate;
-
-  // Timers for various states.
-  uint64_t   tcpi_busy_time;      /* Time (usec) busy sending data */
-  uint64_t   tcpi_rwnd_limited;   /* Time (usec) limited by receive window */
-  uint64_t   tcpi_sndbuf_limited; /* Time (usec) limited by send buffer */
-};
-
-} // anonymous namespace
 
 ///
 /// Connection
@@ -939,127 +802,20 @@ Status Connection::DumpPB(const DumpConnectionsRequestPB& req,
                                 static_cast<uint16_t>(direction_));
       break;
   }
-#ifdef __linux__
+#if defined(__linux__)
   if (negotiation_complete_ && remote_.is_ip()) {
     // TODO(todd): it's a little strange to not set socket level stats during
     // negotiation, but we don't have access to the socket here until negotiation
     // is complete.
-    WARN_NOT_OK(GetSocketStatsPB(resp->mutable_socket_stats()),
+    WARN_NOT_OK(socket_->GetStats(resp->mutable_socket_stats()),
                 "could not fill in TCP info for RPC connection");
   }
-#endif // __linux__
+#endif // #if defined(__linux__) ...
 
   if (negotiation_complete_ && remote_.is_ip()) {
-    WARN_NOT_OK(GetTransportDetailsPB(resp->mutable_transport_details()),
+    WARN_NOT_OK(socket_->GetTransportDetails(resp->mutable_transport_details()),
                 "could not fill in transport info for RPC connection");
   }
-  return Status::OK();
-}
-
-#ifdef __linux__
-Status Connection::GetSocketStatsPB(SocketStatsPB* pb) const {
-  DCHECK(reactor_thread_->IsCurrentThread());
-  int fd = socket_->GetFd();
-  DCHECK_GE(fd, 0);
-
-  // Fetch TCP_INFO statistics from the kernel.
-  tcp_info ti = {};
-  socklen_t len = sizeof(ti);
-  int rc = getsockopt(fd, IPPROTO_TCP, TCP_INFO, &ti, &len);
-  if (rc == 0) {
-#   define HAS_FIELD(field_name) \
-        (len >= offsetof(tcp_info, field_name) + sizeof(ti.field_name))
-    if (!HAS_FIELD(tcpi_total_retrans)) {
-      // All the fields up through tcpi_total_retrans were present since very old
-      // kernel versions, beyond our minimal supported. So, we can just bail if we
-      // don't get sufficient data back.
-      return Status::NotSupported("bad length returned for TCP_INFO");
-    }
-
-    pb->set_rtt(ti.tcpi_rtt);
-    pb->set_rttvar(ti.tcpi_rttvar);
-    pb->set_snd_cwnd(ti.tcpi_snd_cwnd);
-    pb->set_total_retrans(ti.tcpi_total_retrans);
-
-    // The following fields were added later in kernel development history.
-    // In RHEL6 they were backported starting in 6.8. Even though they were
-    // backported all together as a group, we'll just be safe and check for
-    // each individually.
-    if (HAS_FIELD(tcpi_pacing_rate)) {
-      pb->set_pacing_rate(ti.tcpi_pacing_rate);
-    }
-    if (HAS_FIELD(tcpi_max_pacing_rate)) {
-      pb->set_max_pacing_rate(ti.tcpi_max_pacing_rate);
-    }
-    if (HAS_FIELD(tcpi_bytes_acked)) {
-      pb->set_bytes_acked(ti.tcpi_bytes_acked);
-    }
-    if (HAS_FIELD(tcpi_bytes_received)) {
-      pb->set_bytes_received(ti.tcpi_bytes_received);
-    }
-    if (HAS_FIELD(tcpi_segs_out)) {
-      pb->set_segs_out(ti.tcpi_segs_out);
-    }
-    if (HAS_FIELD(tcpi_segs_in)) {
-      pb->set_segs_in(ti.tcpi_segs_in);
-    }
-
-    // Calculate sender bandwidth based on the same logic used by the 'ss' utility.
-    if (ti.tcpi_rtt > 0 && ti.tcpi_snd_mss && ti.tcpi_snd_cwnd) {
-      // Units:
-      //  rtt = usec
-      //  cwnd = number of MSS-size packets
-      //  mss = bytes / packet
-      //
-      // Dimensional analysis:
-      //   packets * bytes/packet * usecs/sec / usec -> bytes/sec
-      static constexpr int kUsecsPerSec = 1000000;
-      pb->set_send_bytes_per_sec(static_cast<int64_t>(ti.tcpi_snd_cwnd) *
-                                 ti.tcpi_snd_mss * kUsecsPerSec / ti.tcpi_rtt);
-    }
-  }
-
-  // Fetch the queue sizes.
-  int queue_len = 0;
-  rc = ioctl(fd, TIOCOUTQ, &queue_len);
-  if (rc == 0) {
-    pb->set_send_queue_bytes(queue_len);
-  }
-  rc = ioctl(fd, FIONREAD, &queue_len);
-  if (rc == 0) {
-    pb->set_receive_queue_bytes(queue_len);
-  }
-  return Status::OK();
-}
-#endif // __linux__
-
-Status Connection::GetTransportDetailsPB(TransportDetailsPB* pb) const {
-  DCHECK(reactor_thread_->IsCurrentThread());
-  DCHECK(pb);
-
-  // As for the dynamic_cast below: this is not very elegant or performant code,
-  // but introducing a generic virtual method with vague semantics into the base
-  // Socket class doesn't look like a good choice either. Also, the
-  // GetTransportDetailsPB() method isn't supposed to be a part of any hot path.
-  const TlsSocket* tls_socket = dynamic_cast<TlsSocket*>(socket_.get());
-  if (tls_socket) {
-    auto* tls = pb->mutable_tls();
-    tls->set_protocol(tls_socket->GetProtocolName());
-    tls->set_cipher_suite(tls_socket->GetCipherDescription());
-  }
-
-  const int fd = socket_->GetFd();
-  DCHECK_GE(fd, 0);
-  int32_t max_seg_size = 0;
-  socklen_t optlen = sizeof(max_seg_size);
-  int ret = ::getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &max_seg_size, &optlen);
-  if (PREDICT_FALSE(ret)) {
-    int err = errno;
-    return Status::NetworkError(
-        "getsockopt(TCP_MAXSEG) failed", ErrnoToString(err), err);
-  }
-  pb->mutable_tcp()->set_max_segment_size(max_seg_size);
-
   return Status::OK();
 }
 

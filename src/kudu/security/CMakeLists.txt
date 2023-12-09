@@ -79,17 +79,18 @@ set(SECURITY_SRCS
   token_verifier.cc
   token_signer.cc
   token_signing_key.cc
-  )
+)
 
 set(SECURITY_LIBS
   gutil
   kudu_util
   token_proto
-
   gssapi_krb5
   krb5
   openssl_crypto
-  openssl_ssl)
+  openssl_ssl
+  socket_info_proto
+)
 
 ADD_EXPORTABLE_LIBRARY(security
   SRCS ${SECURITY_SRCS}

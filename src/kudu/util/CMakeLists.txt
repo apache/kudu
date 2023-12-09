@@ -114,6 +114,20 @@ ADD_EXPORTABLE_LIBRARY(pb_util_proto
   NONLINK_DEPS ${PB_UTIL_PROTO_TGTS})
 
 #######################################
+# socket_info_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(
+  SOCKET_INFO_PROTO_SRCS SOCKET_INFO_PROTO_HDRS SOCKET_INFO_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES net/socket_info.proto)
+ADD_EXPORTABLE_LIBRARY(socket_info_proto
+  SRCS ${SOCKET_INFO_PROTO_SRCS}
+  DEPS protobuf
+  NONLINK_DEPS ${SOCKET_INFO_PROTO_TGTS})
+
+#######################################
 # version_info_proto
 #######################################
 
@@ -301,6 +315,7 @@ set(UTIL_LIBS
   protobuf
   openssl_crypto
   openssl_ssl
+  socket_info_proto
   version_info_proto
   yaml
   zlib)

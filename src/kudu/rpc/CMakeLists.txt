@@ -32,8 +32,9 @@ PROTOBUF_GENERATE_CPP(
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES rpc_introspection.proto)
 set(RPC_INTROSPECTION_PROTO_LIBS
+  protobuf
   rpc_header_proto
-  protobuf)
+  socket_info_proto)
 ADD_EXPORTABLE_LIBRARY(rpc_introspection_proto
   SRCS ${RPC_INTROSPECTION_PROTO_SRCS}
   DEPS ${RPC_INTROSPECTION_PROTO_LIBS}
@@ -83,7 +84,9 @@ set(KRPC_LIBS
   libev
   rpc_header_proto
   rpc_introspection_proto
-  security)
+  security
+  socket_info_proto
+)
 
 ADD_EXPORTABLE_LIBRARY(krpc
   SRCS ${KRPC_SRCS}

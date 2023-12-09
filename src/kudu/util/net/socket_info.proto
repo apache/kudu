@@ -1,0 +1,75 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+syntax = "proto2";
+
+package kudu;
+
+option java_package = "org.apache.kudu";
+
+// The SocketStatsPB message is used to report on socket-level information
+// for TCP connections (Linux-only). Essentially, the message
+// contains some metrics and counters from Linux-specific 'tcp_info' structure
+// defined in /usr/include/linux/tcp.h. For more information on the TCP on
+// Linux, see http://man7.org/linux/man-pages/man7/tcp.7.html
+message SocketStatsPB {
+  optional uint32 rtt = 1;
+  optional uint32 rttvar = 2;
+  optional uint32 snd_cwnd = 3;
+  optional uint32 total_retrans = 4;
+
+  optional uint64 pacing_rate = 5;
+  optional uint64 max_pacing_rate = 6;
+
+  optional uint64 bytes_acked = 7;
+  optional uint64 bytes_received = 8;
+  optional uint32 segs_out = 9;
+  optional uint32 segs_in = 10;
+
+  optional uint64 send_queue_bytes = 11;
+  optional uint64 receive_queue_bytes = 12;
+
+  // Calculated sender throughput.
+  optional int64 send_bytes_per_sec = 13;
+}
+
+// Transport-related information for a socket.
+message TransportDetailsPB {
+
+  // TCP-specific details.
+  message TcpDetails {
+    // Maximum segment size for the packets: this directly maps into the
+    // TCP_MAXSEG socket option.
+    optional int32 max_segment_size = 1;
+  }
+
+  // TLS-specific details.
+  //
+  // NOTE: TLS/SSL doesn't map nicely into a single layer of the TCP/IP or
+  // the OSI model, but intuitively that's something related to the transport.
+  message TlsDetails {
+    // The name of the TLS protocol negotiated to protect the connection
+    // (e.g. TLSv1.3).
+    optional string protocol = 1;
+
+    // Description of the TLS cipher suite used.
+    optional string cipher_suite = 2;
+  }
+
+  optional TcpDetails tcp = 1;
+  optional TlsDetails tls = 2;
+}

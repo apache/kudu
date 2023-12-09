@@ -52,8 +52,6 @@ class OutboundCall;
 class ReactorThread;
 class RpcConnectionPB;
 class RpczStore;
-class SocketStatsPB;
-class TransportDetailsPB;
 
 enum class CredentialsPolicy;
 
@@ -317,10 +315,6 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Internal test function for injecting cancellation request when 'call'
   // reaches state specified in 'FLAGS_rpc_inject_cancellation_state'.
   void MaybeInjectCancellation(const std::shared_ptr<OutboundCall>& call);
-
-  Status GetSocketStatsPB(SocketStatsPB* pb) const;
-
-  Status GetTransportDetailsPB(TransportDetailsPB* pb) const;
 
   // The reactor thread that created this connection.
   ReactorThread* const reactor_thread_;

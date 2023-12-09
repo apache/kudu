@@ -26,6 +26,9 @@ struct iovec;
 
 namespace kudu {
 
+class SocketStatsPB;
+class TransportDetailsPB;
+
 class MonoDelta;
 class MonoTime;
 class Sockaddr;
@@ -160,6 +163,10 @@ class Socket {
   // heard from peer. 'retry_time_s' is the sleep time in seconds between successive
   // keepalive probes.
   Status SetTcpKeepAlive(int idle_time_s, int retry_time_s, int num_retries);
+
+  Status GetStats(SocketStatsPB* pb) const;
+
+  virtual Status GetTransportDetails(TransportDetailsPB* pb) const;
 
  private:
   // Called internally from SetSend/RecvTimeout().

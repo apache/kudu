@@ -24,6 +24,7 @@ package kudu.rpc;
 option java_package = "org.apache.kudu";
 
 import "kudu/rpc/rpc_header.proto";
+import "kudu/util/net/socket_info.proto";
 
 message RpcCallInProgressPB {
   required RequestHeader header = 1;
@@ -48,59 +49,6 @@ message RpcCallInProgressPB {
   }
 
   optional State state = 4;
-}
-
-// The SocketStatsPB message is used to report on socket-level information
-// for RPC-related TCP connections (Linux-only). Essentially, the message
-// contains some metrics and counters from Linux-specific 'tcp_info' structure
-// defined in /usr/include/linux/tcp.h. For more information on the TCP on
-// Linux, see http://man7.org/linux/man-pages/man7/tcp.7.html
-message SocketStatsPB {
-  optional uint32 rtt = 1;
-  optional uint32 rttvar = 2;
-  optional uint32 snd_cwnd = 3;
-  optional uint32 total_retrans = 4;
-
-  optional uint64 pacing_rate = 5;
-  optional uint64 max_pacing_rate = 6;
-
-  optional uint64 bytes_acked = 7;
-  optional uint64 bytes_received = 8;
-  optional uint32 segs_out = 9;
-  optional uint32 segs_in = 10;
-
-  optional uint64 send_queue_bytes = 11;
-  optional uint64 receive_queue_bytes = 12;
-
-  // Calculated sender throughput.
-  optional int64 send_bytes_per_sec = 13;
-}
-
-// Transport-related information for an RPC connection.
-message TransportDetailsPB {
-
-  // TCP-specific details.
-  message TcpDetails {
-    // Maximum segment size for the packets: this directly maps into the
-    // TCP_MAXSEG socket option.
-    optional int32 max_segment_size = 1;
-  }
-
-  // TLS-specific details.
-  //
-  // NOTE: TLS/SSL doesn't map nicely into a single layer of the TCP/IP or
-  // the OSI model, but intuitively that's something related to the transport.
-  message TlsDetails {
-    // The name of the TLS protocol negotiated to protect the connection
-    // (e.g. TLSv1.3).
-    optional string protocol = 1;
-
-    // Description of the TLS cipher suite used.
-    optional string cipher_suite = 2;
-  }
-
-  optional TcpDetails tcp = 1;
-  optional TlsDetails tls = 2;
 }
 
 // Debugging information about a currently-open RPC connection.

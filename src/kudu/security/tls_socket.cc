@@ -23,7 +23,6 @@
 
 #include <cerrno>
 #include <cstddef>
-#include <functional>
 #include <string>
 #include <utility>
 
@@ -34,6 +33,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/net/socket_info.pb.h"
 #include "kudu/util/openssl_util.h"
 
 using std::string;
@@ -255,6 +255,14 @@ Status TlsSocket::Close() {
   // Close the underlying socket.
   RETURN_NOT_OK(Socket::Close());
   return ssl_shutdown;
+}
+
+Status TlsSocket::GetTransportDetails(TransportDetailsPB* pb) const {
+  DCHECK(pb);
+  auto* tls = pb->mutable_tls();
+  tls->set_protocol(GetProtocolName());
+  tls->set_cipher_suite(GetCipherDescription());
+  return Socket::GetTransportDetails(pb);
 }
 
 string TlsSocket::GetProtocolName() const {
