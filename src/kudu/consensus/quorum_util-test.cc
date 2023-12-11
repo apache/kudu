@@ -83,12 +83,11 @@ static void AddPeer(RaftConfigPB* config,
   peer->mutable_last_known_addr()->set_host(uuid + ".example.com");
   peer->set_member_type(type);
   if (overall_health) {
-    unique_ptr<HealthReportPB> health_report(new HealthReportPB);
-    SetOverallHealth(health_report.get(), *overall_health);
-    peer->set_allocated_health_report(health_report.release());
+    auto* health_report = peer->mutable_health_report();
+    SetOverallHealth(health_report, *overall_health);
   }
   if (!attrs.empty()) {
-    unique_ptr<RaftPeerAttrsPB> attrs_pb(new RaftPeerAttrsPB);
+    auto* attrs_pb = peer->mutable_attrs();
     for (const auto& attr : attrs) {
       if (attr.first == "PROMOTE") {
         attrs_pb->set_promote(attr.second);
@@ -98,7 +97,6 @@ static void AddPeer(RaftConfigPB* config,
         FAIL() << attr.first << ": unexpected attribute to set";
       }
     }
-    peer->set_allocated_attrs(attrs_pb.release());
   }
 }
 
