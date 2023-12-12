@@ -381,9 +381,10 @@ shared_ptr<TSDescriptor> PlacementPolicy::SelectReplica(
     const set<shared_ptr<TSDescriptor>>& excluded) const {
   if (range_key_start && table_id) {
     TSDescriptorVector ts_choices;
-    auto choices_size = ts_descs.size() - excluded.size();
-    ReservoirSample(ts_descs, choices_size, excluded, rng_, &ts_choices);
-    DCHECK_EQ(ts_choices.size(), choices_size);
+    const int ts_size = static_cast<int>(ts_descs.size());
+    CHECK_GE(ts_size, 0);
+    ReservoirSample(ts_descs, ts_size, excluded, rng_, &ts_choices);
+    DCHECK_LE(ts_choices.size(), ts_size);
     if (ts_choices.size() > 1) {
       return PickTabletServer(
           ts_choices, range_key_start.value(), table_id.value(), dimension, rng_);
