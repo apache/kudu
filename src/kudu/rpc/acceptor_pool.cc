@@ -20,12 +20,14 @@
 #include <functional>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -37,16 +39,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
-namespace google {
-namespace protobuf {
-
-class Message;
-
-}
-}
-
-using google::protobuf::Message;
-using std::string;
 
 METRIC_DEFINE_counter(server, rpc_connections_accepted,
                       "RPC Connections Accepted",
@@ -69,11 +61,15 @@ DEFINE_int32(rpc_acceptor_listen_backlog, 128,
              "new inbound connection requests.");
 TAG_FLAG(rpc_acceptor_listen_backlog, advanced);
 
+using std::string;
+using strings::Substitute;
+
 namespace kudu {
 namespace rpc {
 
-AcceptorPool::AcceptorPool(Messenger* messenger, Socket* socket,
-                           Sockaddr bind_address)
+AcceptorPool::AcceptorPool(Messenger* messenger,
+                           Socket* socket,
+                           const Sockaddr& bind_address)
     : messenger_(messenger),
       socket_(socket->Release()),
       bind_address_(bind_address),
@@ -92,22 +88,23 @@ Status AcceptorPool::Start(int num_threads) {
   RETURN_NOT_OK(socket_.Listen(FLAGS_rpc_acceptor_listen_backlog));
 
   for (int i = 0; i < num_threads; i++) {
-    scoped_refptr<kudu::Thread> new_thread;
-    Status s = kudu::Thread::Create("acceptor pool", "acceptor",
-                                    [this]() { this->RunThread(); }, &new_thread);
-    if (!s.ok()) {
+    scoped_refptr<Thread> new_thread;
+    Status s = Thread::Create("acceptor pool", "acceptor",
+                              [this]() { this->RunThread(); }, &new_thread);
+    if (PREDICT_FALSE(!s.ok())) {
       Shutdown();
       return s;
     }
-    threads_.push_back(new_thread);
+    threads_.emplace_back(std::move(new_thread));
   }
   return Status::OK();
 }
 
 void AcceptorPool::Shutdown() {
-  if (Acquire_CompareAndSwap(&closing_, false, true) != false) {
-    VLOG(2) << "Acceptor Pool on " << bind_address_.ToString()
-            << " already shut down";
+  bool is_shut_down = false;
+  if (!closing_.compare_exchange_strong(is_shut_down, true)) {
+    VLOG(2) << Substitute("AcceptorPool on $0 already shut down",
+                          bind_address_.ToString());
     return;
   }
 
@@ -115,18 +112,18 @@ void AcceptorPool::Shutdown() {
   // Closing the socket will break us out of accept() if we're in it, and
   // prevent future accepts.
   WARN_NOT_OK(socket_.Shutdown(true, true),
-              strings::Substitute("Could not shut down acceptor socket on $0",
-                                  bind_address_.ToString()));
+              Substitute("Could not shut down acceptor socket on $0",
+                         bind_address_.ToString()));
 #else
   // Calling shutdown on an accepting (non-connected) socket is illegal on most
   // platforms (but not Linux). Instead, the accepting threads are interrupted
   // forcefully.
-  for (const scoped_refptr<kudu::Thread>& thread : threads_) {
+  for (const auto& thread : threads_) {
     pthread_cancel(thread.get()->pthread_id());
   }
 #endif
 
-  for (const scoped_refptr<kudu::Thread>& thread : threads_) {
+  for (const auto& thread : threads_) {
     CHECK_OK(ThreadJoiner(thread.get()).Join());
   }
   threads_.clear();
@@ -158,30 +155,32 @@ void AcceptorPool::RunThread() {
   while (true) {
     Socket new_sock;
     Sockaddr remote;
-    VLOG(2) << "calling accept() on socket " << socket_.GetFd()
-            << " listening on " << bind_address_.ToString();
-    Status s = socket_.Accept(&new_sock, &remote, Socket::FLAG_NONBLOCKING);
-    if (!s.ok()) {
-      if (Release_Load(&closing_)) {
+    VLOG(2) << Substitute("calling accept() on socket $0 listening on $1",
+                          socket_.GetFd(), bind_address_.ToString());
+    const auto s = socket_.Accept(&new_sock, &remote, Socket::FLAG_NONBLOCKING);
+    if (PREDICT_FALSE(!s.ok())) {
+      if (closing_) {
         break;
       }
-      KLOG_EVERY_N_SECS(WARNING, 1) << "AcceptorPool: accept failed: " << s.ToString()
-                                    << THROTTLE_MSG;
+      KLOG_EVERY_N_SECS(WARNING, 1)
+          << Substitute("AcceptorPool: accept() failed: $0", s.ToString())
+          << THROTTLE_MSG;
       continue;
     }
     if (remote.is_ip()) {
-      s = new_sock.SetNoDelay(true);
-      if (!s.ok()) {
-        KLOG_EVERY_N_SECS(WARNING, 1) << "Acceptor with remote = " << remote.ToString()
-                                      << " failed to set TCP_NODELAY on a newly accepted socket: "
-                                      << s.ToString() << THROTTLE_MSG;
+      if (auto s = new_sock.SetNoDelay(true); PREDICT_FALSE(!s.ok())) {
+        KLOG_EVERY_N_SECS(WARNING, 1)
+            << Substitute("unable to set TCP_NODELAY on newly accepted "
+                          "connection from $0: $1",
+                          remote.ToString(), s.ToString())
+            << THROTTLE_MSG;
         continue;
       }
     }
     rpc_connections_accepted_->Increment();
     messenger_->RegisterInboundSocket(&new_sock, remote);
   }
-  VLOG(1) << "AcceptorPool shutting down.";
+  VLOG(1) << "AcceptorPool shutting down";
 }
 
 } // namespace rpc

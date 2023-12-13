@@ -16,10 +16,10 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/net/sockaddr.h"
@@ -43,7 +43,7 @@ class AcceptorPool {
   // Create a new acceptor pool.  Calls socket::Release to take ownership of the
   // socket.
   // 'socket' must be already bound, but should not yet be listening.
-  AcceptorPool(Messenger *messenger, Socket *socket, Sockaddr bind_address);
+  AcceptorPool(Messenger* messenger, Socket* socket, const Sockaddr& bind_address);
   ~AcceptorPool();
 
   // Start listening and accepting connections.
@@ -65,14 +65,14 @@ class AcceptorPool {
  private:
   void RunThread();
 
-  Messenger *messenger_;
+  Messenger* messenger_;
   Socket socket_;
-  Sockaddr bind_address_;
-  std::vector<scoped_refptr<kudu::Thread> > threads_;
+  const Sockaddr bind_address_;
+  std::vector<scoped_refptr<Thread>> threads_;
 
   scoped_refptr<Counter> rpc_connections_accepted_;
 
-  Atomic32 closing_;
+  std::atomic<bool> closing_;
 
   DISALLOW_COPY_AND_ASSIGN(AcceptorPool);
 };
