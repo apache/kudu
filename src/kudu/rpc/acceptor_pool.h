@@ -29,6 +29,7 @@
 namespace kudu {
 
 class Counter;
+class Histogram;
 class Thread;
 
 namespace rpc {
@@ -70,9 +71,11 @@ class AcceptorPool {
   const Sockaddr bind_address_;
   std::vector<scoped_refptr<Thread>> threads_;
 
-  scoped_refptr<Counter> rpc_connections_accepted_;
-
   std::atomic<bool> closing_;
+
+  // Metrics.
+  scoped_refptr<Counter> rpc_connections_accepted_;
+  scoped_refptr<Histogram> dispatch_times_;
 
   DISALLOW_COPY_AND_ASSIGN(AcceptorPool);
 };

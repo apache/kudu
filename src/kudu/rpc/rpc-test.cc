@@ -82,6 +82,7 @@ class AcceptorPool;
 
 METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_counter(timed_out_on_response_kudu_rpc_test_CalculatorService_Sleep);
+METRIC_DECLARE_histogram(acceptor_dispatch_times);
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
@@ -1420,6 +1421,28 @@ TEST_P(TestRpc, TimedOutOnResponseMetricServiceQueue) {
   ASSERT_STR_CONTAINS(s.ToString(), "Timed out: Sleep RPC");
   ASSERT_EQ(1, timed_out_on_response->value());
   ASSERT_EQ(1, timed_out_in_queue->value());
+}
+
+// Basic verification for the numbers reported by 'acceptor_dispatch_times'.
+TEST_P(TestRpc, AcceptorDispatchingTimesMetric) {
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServer(&server_addr));
+
+  {
+    Socket socket;
+    ASSERT_OK(socket.Init(server_addr.family(), 0));
+    ASSERT_OK(socket.Connect(server_addr));
+  }
+
+  scoped_refptr<Histogram> dispatch_times =
+      METRIC_acceptor_dispatch_times.Instantiate(server_messenger_->metric_entity());
+  // Using ASSERT_EVENTUALLY below because of relaxed memory ordering when
+  // fetching metrics' values. Eventually, metrics reports readings that are
+  // consistent with the expected numbers.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, dispatch_times->TotalCount());
+    ASSERT_GT(dispatch_times->MaxValueForTests(), 0);
+  });
 }
 
 static void DestroyMessengerCallback(shared_ptr<Messenger>* messenger,

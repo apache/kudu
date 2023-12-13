@@ -30,12 +30,15 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
@@ -51,6 +54,17 @@ METRIC_DEFINE_counter(server, rpc_connections_accepted_unix_domain_socket,
                       kudu::MetricUnit::kConnections,
                       "Number of incoming UNIX Domain Socket connections made to the RPC server",
                       kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_histogram(server, acceptor_dispatch_times,
+                        "Acceptor Dispatch Times",
+                        kudu::MetricUnit::kMicroseconds,
+                        "A histogram of dispatching timings for accepted "
+                        "connections. Outliers in this histogram contribute "
+                        "to the latency of handling incoming connection "
+                        "requests and growing the backlog of pending TCP "
+                        "connections to the server.",
+                        kudu::MetricLevel::kInfo,
+                        1000000, 2);
 
 DEFINE_int32(rpc_acceptor_listen_backlog, 128,
              "Socket backlog parameter used when listening for RPC connections. "
@@ -74,10 +88,12 @@ AcceptorPool::AcceptorPool(Messenger* messenger,
       socket_(socket->Release()),
       bind_address_(bind_address),
       closing_(false) {
-  auto& accept_metric = bind_address.is_ip() ?
-      METRIC_rpc_connections_accepted :
-      METRIC_rpc_connections_accepted_unix_domain_socket;
-  rpc_connections_accepted_ = accept_metric.Instantiate(messenger->metric_entity());
+  const auto& metric_entity = messenger->metric_entity();
+  auto& connections_accepted = bind_address.is_ip()
+      ? METRIC_rpc_connections_accepted
+      : METRIC_rpc_connections_accepted_unix_domain_socket;
+  rpc_connections_accepted_ = connections_accepted.Instantiate(metric_entity);
+  dispatch_times_ = METRIC_acceptor_dispatch_times.Instantiate(metric_entity);
 }
 
 AcceptorPool::~AcceptorPool() {
@@ -152,12 +168,26 @@ int64_t AcceptorPool::num_rpc_connections_accepted() const {
 }
 
 void AcceptorPool::RunThread() {
+  const int64_t kCyclesPerSecond = static_cast<int64_t>(base::CyclesPerSecond());
+
   while (true) {
     Socket new_sock;
     Sockaddr remote;
     VLOG(2) << Substitute("calling accept() on socket $0 listening on $1",
                           socket_.GetFd(), bind_address_.ToString());
     const auto s = socket_.Accept(&new_sock, &remote, Socket::FLAG_NONBLOCKING);
+    const auto accepted_at = CycleClock::Now();
+    const auto dispatch_times_recorder = MakeScopedCleanup([&]() {
+      // The timings are captured for both success and failure paths, so the
+      // 'dispatch_times_' histogram accounts for all the connection attempts
+      // that lead to successfully extracting an item from the queue of pending
+      // connections for the listened RPC socket. Meanwhile, the
+      // 'rpc_connection_accepted_' counter accounts only for connections that
+      // were successfully dispatched to the messenger for further processing.
+      dispatch_times_->Increment(
+          (CycleClock::Now() - accepted_at) * 1000000 / kCyclesPerSecond);
+    });
+
     if (PREDICT_FALSE(!s.ok())) {
       if (closing_) {
         break;
@@ -177,8 +207,8 @@ void AcceptorPool::RunThread() {
         continue;
       }
     }
-    rpc_connections_accepted_->Increment();
     messenger_->RegisterInboundSocket(&new_sock, remote);
+    rpc_connections_accepted_->Increment();
   }
   VLOG(1) << "AcceptorPool shutting down";
 }
