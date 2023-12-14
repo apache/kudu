@@ -476,7 +476,12 @@ int CompareDuplicatedRows(const CompactionInputRow& left,
     // the row again. If that's the case, the delete with the higher timestamp
     // defines the newer input, or
     int ret = left_last->timestamp().CompareTo(right_last->timestamp());
-    CHECK_NE(0, ret);
+    // Log timestamp and mutation history, invalid ts value could mean potential corruption.
+    CHECK_NE(0, ret)
+        << Substitute("different DELETE REDO mutations must not have same timestamp, "
+                      "Left Redo Mutations: $0, Right Redo Mutations: $1",
+                      Mutation::StringifyMutationList(*left.row.schema(), left.redo_head),
+                      Mutation::StringifyMutationList(*right.row.schema(), right.redo_head));
     return ret;
   }
 
