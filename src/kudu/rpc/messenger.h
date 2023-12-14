@@ -97,6 +97,11 @@ class MessengerBuilder {
     return *this;
   }
 
+  MessengerBuilder& set_acceptor_listen_backlog(int max_queue_len) {
+    acceptor_listen_backlog_ = max_queue_len;
+    return *this;
+  }
+
   // Set the number of reactor threads that will be used for sending and
   // receiving.
   MessengerBuilder& set_num_reactors(int num_reactors) {
@@ -270,6 +275,7 @@ class MessengerBuilder {
  private:
   const std::string name_;
   MonoDelta connection_keepalive_time_;
+  int acceptor_listen_backlog_;
   int num_reactors_;
   int min_negotiation_threads_;
   int max_negotiation_threads_;
@@ -561,6 +567,11 @@ class Messenger {
 
   // Whether to set SO_REUSEPORT on the listening sockets.
   const bool reuseport_;
+
+  // Acceptor's listened socket backlog: the capacity of the queue to
+  // accommodate incoming (but not accepted yet) connection requests to the
+  // messenger's listening sockets.
+  const int acceptor_listen_backlog_;
 
   // The ownership of the Messenger object is somewhat subtle. The pointer graph
   // looks like this:

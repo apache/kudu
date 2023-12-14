@@ -69,6 +69,7 @@ const int64_t MessengerBuilder::kRpcNegotiationTimeoutMs = 3000;
 MessengerBuilder::MessengerBuilder(string name)
     : name_(std::move(name)),
       connection_keepalive_time_(MonoDelta::FromMilliseconds(65000)),
+      acceptor_listen_backlog_(AcceptorPool::kDefaultListenBacklog),
       num_reactors_(4),
       min_negotiation_threads_(0),
       max_negotiation_threads_(4),
@@ -220,9 +221,10 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
     RETURN_NOT_OK(sock.SetReusePort(true));
   }
   RETURN_NOT_OK(sock.Bind(accept_addr));
-  Sockaddr remote;
-  RETURN_NOT_OK(sock.GetSocketAddress(&remote));
-  auto acceptor_pool(std::make_shared<AcceptorPool>(this, &sock, remote));
+  Sockaddr addr;
+  RETURN_NOT_OK(sock.GetSocketAddress(&addr));
+  auto acceptor_pool(std::make_shared<AcceptorPool>(
+      this, &sock, addr, acceptor_listen_backlog_));
 
   std::lock_guard<percpu_rwlock> guard(lock_);
   acceptor_pools_.push_back(acceptor_pool);
@@ -330,6 +332,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
       sasl_proto_name_(bld.sasl_proto_name_),
       keytab_file_(bld.keytab_file_),
       reuseport_(bld.reuseport_),
+      acceptor_listen_backlog_(bld.acceptor_listen_backlog_),
       retain_self_(this) {
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));

@@ -17,9 +17,15 @@
 
 #include "kudu/server/server_base.h"
 
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
+
 #include <algorithm>
+#include <cerrno> // IWYU pragma: keep
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -72,6 +78,7 @@
 #include "kudu/util/cloud/instance_detector.h"
 #include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/env.h"
+#include "kudu/util/errno.h"  // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
@@ -303,6 +310,7 @@ DECLARE_uint32(dns_resolver_cache_capacity_mb);
 DECLARE_uint32(dns_resolver_cache_ttl_sec);
 DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int32(fs_wal_dir_available_space_cache_seconds);
+DECLARE_int32(rpc_acceptor_listen_backlog);
 DECLARE_int64(fs_wal_dir_reserved_bytes);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_string(log_filename);
@@ -624,6 +632,68 @@ int64_t GetFileCacheCapacity(Env* env) {
   return FLAGS_server_max_open_files;
 }
 
+#if defined(__linux__)
+// See https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt
+// and https://man7.org/linux/man-pages/man2/listen.2.html for details.
+constexpr const char* const kListenBacklogMax = "/proc/sys/net/core/somaxconn";
+#endif
+
+#if defined(__APPLE__)
+// See https://man.freebsd.org/cgi/man.cgi?query=listen for details.
+// NOTE: it might be not exactly relevant to Darwin/macOS, but so far nothing
+//       indicates it's not applicable at least for Darwin 20.6.0/macOS 11.7.
+constexpr const char* const kListenBacklogMax = "kern.ipc.somaxconn";
+#endif
+
+int32_t GetEffectiveListenSocketBacklog(Env* env, int backlog) {
+#if defined(__APPLE__)
+  uint32_t buf_val;
+  size_t len = sizeof(buf_val);
+  if (sysctlbyname(kListenBacklogMax, &buf_val, &len, nullptr, 0) == -1) {
+    int err = errno;
+    LOG(WARNING) << Substitute(
+        "could not retrieve $0 to get listened socket queue size limit: $1",
+        kListenBacklogMax, ErrnoToString(err));
+    return backlog;
+  }
+  DCHECK_EQ(sizeof(buf_val), len);
+#elif defined(__linux__)
+  faststring buf;
+  if (auto s = ReadFileToString(env, kListenBacklogMax, &buf); !s.ok()) {
+    LOG(WARNING) << Substitute(
+        "could not read $0 to get listened socket queue size limit: $1",
+        kListenBacklogMax, s.ToString());
+    return backlog;
+  }
+  uint32_t buf_val;
+  if (!safe_strtou32(buf.ToString(), &buf_val)) {
+    LOG(WARNING) << Substitute(
+        "could not parse contents of $0 ('$1') to get listened socket queue size limit",
+        kListenBacklogMax, buf.ToString());
+    return backlog;
+  }
+#else
+  return backlog;
+#endif
+
+  // 'rpc_acceptor_listen_backlog == -1' means the highest possible value
+  // for the backlog size.
+  uint32_t effective_backlog =
+      (backlog >= 0) ? backlog : std::numeric_limits<uint32_t>::max();
+
+  // The system-wide limit caps the 'backlog' parameter of the listen()
+  // system call.
+  effective_backlog = std::min<uint32_t>(effective_backlog, buf_val);
+
+  // A bit of paranoia w.r.t. the system-level limit:
+  //   * for a debug build, use DCHECK to make sure the value is sane
+  //   * for a release build, cap it to INT32_MAX
+  DCHECK_LE(effective_backlog, std::numeric_limits<int32_t>::max());
+  effective_backlog = std::min<uint32_t>(effective_backlog,
+                                         std::numeric_limits<int32_t>::max());
+  return effective_backlog;
+}
+
 } // anonymous namespace
 
 ServerBase::ServerBase(string name, const ServerBaseOptions& options,
@@ -812,6 +882,15 @@ Status ServerBase::Init() {
   vector<string> rpc_tls_excluded_protocols = strings::Split(
       FLAGS_rpc_tls_excluded_protocols, ",", strings::SkipEmpty());
 
+  const auto listen_backlog = FLAGS_rpc_acceptor_listen_backlog;
+  const auto effective_listen_backlog = GetEffectiveListenSocketBacklog(
+      Env::Default(), listen_backlog);
+  if (effective_listen_backlog != listen_backlog) {
+    LOG(WARNING) << Substitute(
+        "--rpc_acceptor_listen_backlog setting $0 is capped at $1 by $2",
+        listen_backlog, effective_listen_backlog, kListenBacklogMax);
+  }
+
   // Create the Messenger.
   rpc::MessengerBuilder builder(name_);
   builder.set_num_reactors(FLAGS_num_reactor_threads)
@@ -831,6 +910,7 @@ Status ServerBase::Init() {
          .set_epki_private_password_key_cmd(FLAGS_rpc_private_key_password_cmd)
          .set_keytab_file(FLAGS_keytab_file)
          .set_hostname(hostname)
+         .set_acceptor_listen_backlog(listen_backlog)
          .enable_inbound_tls();
 
   auto username = kudu::security::GetLoggedInUsernameFromKeytab();

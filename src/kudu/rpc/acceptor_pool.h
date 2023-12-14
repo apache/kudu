@@ -41,10 +41,17 @@ class Messenger;
 // shut down, if Shutdown() is called, or if the pool object is destructed.
 class AcceptorPool {
  public:
+  // Default size of the pending connections queue for a socket listened by
+  // AcceptorPool::Start().
+  static constexpr int kDefaultListenBacklog = 512;
+
   // Create a new acceptor pool.  Calls socket::Release to take ownership of the
   // socket.
   // 'socket' must be already bound, but should not yet be listening.
-  AcceptorPool(Messenger* messenger, Socket* socket, const Sockaddr& bind_address);
+  AcceptorPool(Messenger* messenger,
+               Socket* socket,
+               const Sockaddr& bind_address,
+               int listen_backlog = kDefaultListenBacklog);
   ~AcceptorPool();
 
   // Start listening and accepting connections.
@@ -69,6 +76,7 @@ class AcceptorPool {
   Messenger* messenger_;
   Socket socket_;
   const Sockaddr bind_address_;
+  const int listen_backlog_;
   std::vector<scoped_refptr<Thread>> threads_;
 
   std::atomic<bool> closing_;

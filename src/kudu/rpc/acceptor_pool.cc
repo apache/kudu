@@ -42,6 +42,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
+using std::string;
+using strings::Substitute;
 
 METRIC_DEFINE_counter(server, rpc_connections_accepted,
                       "RPC Connections Accepted",
@@ -66,27 +68,45 @@ METRIC_DEFINE_histogram(server, acceptor_dispatch_times,
                         kudu::MetricLevel::kInfo,
                         1000000, 2);
 
-DEFINE_int32(rpc_acceptor_listen_backlog, 128,
+DEFINE_int32(rpc_acceptor_listen_backlog,
+             kudu::rpc::AcceptorPool::kDefaultListenBacklog,
              "Socket backlog parameter used when listening for RPC connections. "
              "This defines the maximum length to which the queue of pending "
-             "TCP connections inbound to the RPC server may grow. If a connection "
-             "request arrives when the queue is full, the client may receive "
-             "an error. Higher values may help the server ride over bursts of "
-             "new inbound connection requests.");
+             "TCP connections inbound to the RPC server may grow. The value "
+             "might be silently capped by the system-level limit on the listened "
+             "socket's backlog. The value of -1 has the semantics of the "
+             "longest possible queue with the length up to the system-level "
+             "limit. If a connection request arrives when the queue is full, "
+             "the client may receive an error. Higher values may help "
+             "the server ride over bursts of new inbound connection requests.");
 TAG_FLAG(rpc_acceptor_listen_backlog, advanced);
 
-using std::string;
-using strings::Substitute;
+namespace {
+bool ValidateListenBacklog(const char* flagname, int value) {
+  if (value >= -1) {
+    return true;
+  }
+  LOG(ERROR) << Substitute(
+      "$0: invalid setting for $1; regular setting must be at least 0, and -1 "
+      "is a special value with the semantics of maximum possible setting "
+      "capped at the system-wide limit", value, flagname);
+  return false;
+}
+} // anonymous namespace
+DEFINE_validator(rpc_acceptor_listen_backlog, &ValidateListenBacklog);
+
 
 namespace kudu {
 namespace rpc {
 
 AcceptorPool::AcceptorPool(Messenger* messenger,
                            Socket* socket,
-                           const Sockaddr& bind_address)
+                           const Sockaddr& bind_address,
+                           int listen_backlog)
     : messenger_(messenger),
       socket_(socket->Release()),
       bind_address_(bind_address),
+      listen_backlog_(listen_backlog),
       closing_(false) {
   const auto& metric_entity = messenger->metric_entity();
   auto& connections_accepted = bind_address.is_ip()
@@ -101,7 +121,7 @@ AcceptorPool::~AcceptorPool() {
 }
 
 Status AcceptorPool::Start(int num_threads) {
-  RETURN_NOT_OK(socket_.Listen(FLAGS_rpc_acceptor_listen_backlog));
+  RETURN_NOT_OK(socket_.Listen(listen_backlog_));
 
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<Thread> new_thread;
