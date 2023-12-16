@@ -72,6 +72,7 @@ static const int kDefaultLibEvFlags = ev::KQUEUE;
 static const int kDefaultLibEvFlags = ev::AUTO;
 #endif
 
+using std::function;
 using std::string;
 using std::shared_ptr;
 using std::unique_ptr;
@@ -233,7 +234,7 @@ void ReactorThread::PollCompleteCb(struct ev_loop* loop) noexcept {
 }
 
 void ReactorThread::Shutdown(Messenger::ShutdownMode mode) {
-  CHECK(reactor_->closing()) << "Should be called after setting closing_ flag";
+  DCHECK(reactor_->closing()) << "Should be called after setting closing_ flag";
 
   VLOG(1) << name() << ": shutting down Reactor thread.";
   WakeThread();
@@ -241,7 +242,11 @@ void ReactorThread::Shutdown(Messenger::ShutdownMode mode) {
   if (mode == Messenger::ShutdownMode::SYNC) {
     // Join() will return a bad status if asked to join on the currently
     // running thread.
-    CHECK_OK(ThreadJoiner(thread_.get()).Join());
+    const auto s = ThreadJoiner(thread_.get()).Join();
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG(DFATAL) << Substitute(
+          "$0: failed to join $1", s.ToString(), thread_->ToString());
+    }
   }
 }
 
@@ -707,7 +712,8 @@ void ReactorThread::DestroyConnection(Connection* conn,
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {
     const auto range = client_conns_.equal_range(conn->outbound_connection_id());
-    CHECK(range.first != range.second) << "Couldn't find connection " << conn->ToString();
+    DCHECK(range.first != range.second)
+        << "couldn't find connection " << conn->ToString();
     // The client_conns_ container is a multi-map.
     for (auto it = range.first; it != range.second;) {
       if (it->second.get() == conn) {
@@ -728,8 +734,7 @@ void ReactorThread::DestroyConnection(Connection* conn,
   }
 }
 
-DelayedTask::DelayedTask(std::function<void(const Status&)> func,
-                         MonoDelta when)
+DelayedTask::DelayedTask(function<void(const Status&)> func, MonoDelta when)
     : func_(std::move(func)),
       when_(when),
       thread_(nullptr) {
@@ -821,7 +826,7 @@ bool Reactor::closing() const {
 // Task to call an arbitrary function within the reactor thread.
 class RunFunctionTask : public ReactorTask {
  public:
-  explicit RunFunctionTask(std::function<Status()> f)
+  explicit RunFunctionTask(function<Status()> f)
       : function_(std::move(f)), latch_(1) {}
 
   void Run(ReactorThread* /*reactor*/) override {
@@ -841,7 +846,7 @@ class RunFunctionTask : public ReactorTask {
   }
 
  private:
-  const std::function<Status()> function_;
+  const function<Status()> function_;
   Status status_;
   CountDownLatch latch_;
 };
@@ -850,7 +855,7 @@ Status Reactor::GetMetrics(ReactorMetrics* metrics) {
   return RunOnReactorThread([&]() { return this->thread_.GetMetrics(metrics); });
 }
 
-Status Reactor::RunOnReactorThread(std::function<Status()> f) {
+Status Reactor::RunOnReactorThread(function<Status()> f) {
   RunFunctionTask task(std::move(f));
   ScheduleReactorTask(&task);
   return task.Wait();
@@ -950,7 +955,7 @@ void Reactor::ScheduleReactorTask(ReactorTask* task) {
   bool was_empty;
   {
     std::unique_lock<LockType> l(lock_);
-    if (closing_) {
+    if (PREDICT_FALSE(closing_)) {
       // We guarantee the reactor lock is not taken when calling Abort().
       l.unlock();
       task->Abort(ShutdownError(false));

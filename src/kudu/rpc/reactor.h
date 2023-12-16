@@ -173,12 +173,12 @@ class ReactorThread {
   void RegisterTimeout(ev::timer* watcher);
 
   // This may be called from another thread.
-  const std::string &name() const;
+  const std::string& name() const;
 
   MonoTime cur_time() const;
 
   // This may be called from another thread.
-  Reactor *reactor();
+  Reactor* reactor();
 
   // Return true if this reactor thread is the thread currently
   // running. Should be used in DCHECK assertions.
@@ -196,7 +196,7 @@ class ReactorThread {
 
   // Collect metrics.
   // Must be called from the reactor thread.
-  Status GetMetrics(ReactorMetrics *metrics);
+  Status GetMetrics(ReactorMetrics* metrics);
 
  private:
   friend class AssignOutboundCallTask;
@@ -302,7 +302,7 @@ class ReactorThread {
   // List of current connections coming into the server.
   conn_list_t server_conns_;
 
-  Reactor *reactor_;
+  Reactor* reactor_;
 
   // If a connection has been idle for this much time, it is torn down.
   const MonoDelta connection_keepalive_time_;

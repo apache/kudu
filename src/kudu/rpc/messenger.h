@@ -203,7 +203,7 @@ class MessengerBuilder {
   // list and
   // https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_set_ciphersuites.html
   // for SSL_CTX_set_ciphersuites() API details.
-  MessengerBuilder &set_rpc_tls_ciphersuites(
+  MessengerBuilder& set_rpc_tls_ciphersuites(
       const std::string& rpc_tls_ciphersuites) {
     rpc_tls_ciphersuites_ = rpc_tls_ciphersuites;
     return *this;
@@ -211,7 +211,7 @@ class MessengerBuilder {
 
   // Set the minimum protocol version to allow when for securing RPC connections
   // with TLS. May be one of 'TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'.
-  MessengerBuilder &set_rpc_tls_min_protocol(
+  MessengerBuilder& set_rpc_tls_min_protocol(
       const std::string& rpc_tls_min_protocol) {
     rpc_tls_min_protocol_ = rpc_tls_min_protocol;
     return *this;
@@ -473,7 +473,7 @@ class Messenger {
 
   explicit Messenger(const MessengerBuilder& bld);
 
-  Reactor* RemoteToReactor(const Sockaddr& remote);
+  Reactor* RemoteToReactor(const Sockaddr& remote) const;
   Status Init();
   void RunTimeoutThread();
   void UpdateCurTime();

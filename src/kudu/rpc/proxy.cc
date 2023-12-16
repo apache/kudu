@@ -20,6 +20,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -27,7 +28,7 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/messenger.h" // IWYU pragma: keep
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/response_callback.h"
@@ -43,6 +44,7 @@
 #include "kudu/util/user.h"
 
 using google::protobuf::Message;
+using std::make_shared;
 using std::string;
 using std::shared_ptr;
 using std::unique_ptr;
@@ -52,7 +54,7 @@ using strings::Substitute;
 namespace kudu {
 namespace rpc {
 
-Proxy::Proxy(std::shared_ptr<Messenger> messenger,
+Proxy::Proxy(shared_ptr<Messenger> messenger,
              const Sockaddr& remote,
              string hostname,
              string service_name)
@@ -60,16 +62,16 @@ Proxy::Proxy(std::shared_ptr<Messenger> messenger,
       dns_resolver_(nullptr),
       messenger_(std::move(messenger)),
       is_started_(false) {
-  CHECK(messenger_ != nullptr);
+  DCHECK(messenger_);
   DCHECK(!service_name_.empty()) << "Proxy service name must not be blank";
   DCHECK(remote.is_initialized());
   // By default, we set the real user to the currently logged-in user.
   // Effective user and password remain blank.
   string real_user;
-  Status s = GetLoggedInUser(&real_user);
-  if (!s.ok()) {
-    LOG(WARNING) << "Proxy for " << service_name_ << ": Unable to get logged-in user name: "
-        << s.ToString() << " before connecting to remote: " << remote.ToString();
+  if (auto s = GetLoggedInUser(&real_user); !s.ok()) {
+    LOG(WARNING) << Substitute("$0: unable to get logged-in username "
+                               "before connecting to remote $1 via $2 proxy",
+                               s.ToString(), remote.ToString(), service_name_);
   }
 
   UserCredentials creds;
@@ -77,7 +79,7 @@ Proxy::Proxy(std::shared_ptr<Messenger> messenger,
   conn_id_ = ConnectionId(remote, std::move(hostname), std::move(creds));
 }
 
-Proxy::Proxy(std::shared_ptr<Messenger> messenger,
+Proxy::Proxy(shared_ptr<Messenger> messenger,
              HostPort hp,
              DnsResolver* dns_resolver,
              string service_name)
@@ -86,12 +88,12 @@ Proxy::Proxy(std::shared_ptr<Messenger> messenger,
       dns_resolver_(dns_resolver),
       messenger_(std::move(messenger)),
       is_started_(false) {
-  CHECK(messenger_ != nullptr);
+  DCHECK(messenger_);
   DCHECK(!service_name_.empty()) << "Proxy service name must not be blank";
   DCHECK(hp_.Initialized());
 }
 
-Sockaddr* Proxy::GetSingleSockaddr(std::vector<Sockaddr>* addrs) const {
+Sockaddr* Proxy::GetSingleSockaddr(vector<Sockaddr>* addrs) const {
   DCHECK(!addrs->empty());
   if (PREDICT_FALSE(addrs->size() > 1)) {
     LOG(WARNING) << Substitute(
@@ -110,8 +112,9 @@ void Proxy::Init(Sockaddr addr) {
   string real_user;
   Status s = GetLoggedInUser(&real_user);
   if (!s.ok()) {
-    LOG(WARNING) << "Proxy for " << service_name_ << ": Unable to get logged-in user name: "
-        << s.ToString() << " before connecting to host/port: " << hp_.ToString();
+    LOG(WARNING) << Substitute(
+      "$0: unable to get logged-in username before connecting to $1 via $2 proxy",
+      s.ToString(), hp_.ToString(), service_name_);
   }
   vector<Sockaddr> addrs;
   if (!addr.is_initialized()) {
@@ -141,9 +144,14 @@ void Proxy::EnqueueRequest(const string& method,
                            OutboundCall::CallbackBehavior cb_behavior) const {
   ConnectionId connection = conn_id();
   DCHECK(connection.remote().is_initialized());
-  controller->call_.reset(
-      new OutboundCall(connection, {service_name_, method}, std::move(req_payload),
-                       cb_behavior, response, controller, callback));
+  controller->call_ = make_shared<OutboundCall>(
+      connection,
+      RemoteMethod{service_name_, method},
+      std::move(req_payload),
+      cb_behavior,
+      response,
+      controller,
+      callback);
   controller->SetMessenger(messenger_.get());
 
   // If this fails to queue, the callback will get called immediately
@@ -151,7 +159,7 @@ void Proxy::EnqueueRequest(const string& method,
   messenger_->QueueOutboundCall(controller->call_);
 }
 
-void Proxy::RefreshDnsAndEnqueueRequest(const std::string& method,
+void Proxy::RefreshDnsAndEnqueueRequest(const string& method,
                                         unique_ptr<RequestPayload> req_payload,
                                         google::protobuf::Message* response,
                                         RpcController* controller,
@@ -169,7 +177,7 @@ void Proxy::RefreshDnsAndEnqueueRequest(const std::string& method,
       // NOTE: we need to keep a reference here because the callback may end up
       // destructing the controller and the outbound call, _while_ the callback
       // is running from within the call!
-      auto shared_call = std::make_shared<OutboundCall>(
+      auto shared_call = make_shared<OutboundCall>(
           conn_id(), RemoteMethod{service_name_, method}, response, controller, callback);
       controller->call_ = shared_call;
       controller->call_->SetFailed(s.CloneAndPrepend("failed to refresh physical address"));
@@ -194,7 +202,7 @@ void Proxy::AsyncRequest(const string& method,
                          google::protobuf::Message* response,
                          RpcController* controller,
                          const ResponseCallback& callback) {
-  CHECK(!controller->call_) << "Controller should be reset";
+  DCHECK(!controller->call_) << "Controller should be reset";
   base::subtle::NoBarrier_Store(&is_started_, true);
   // TODO(awong): it would be great if we didn't have to heap allocate the
   // payload.
@@ -261,18 +269,18 @@ Status Proxy::SyncRequest(const string& method,
 }
 
 void Proxy::set_user_credentials(UserCredentials user_credentials) {
-  CHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
-    << "It is illegal to call set_user_credentials() after request processing has started";
+  DCHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
+      << "illegal to call set_user_credentials() after request processing has started";
   conn_id_.set_user_credentials(std::move(user_credentials));
 }
 
 void Proxy::set_network_plane(string network_plane) {
-  CHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
-    << "It is illegal to call set_network_plane() after request processing has started";
+  DCHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
+      << "illegal to call set_network_plane() after request processing has started";
   conn_id_.set_network_plane(std::move(network_plane));
 }
 
-std::string Proxy::ToString() const {
+string Proxy::ToString() const {
   return Substitute("$0@$1", service_name_, conn_id_.ToString());
 }
 

@@ -30,6 +30,7 @@
 #include <limits>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -61,20 +62,62 @@ TAG_FLAG(socket_inject_short_recvs, hidden);
 TAG_FLAG(socket_inject_short_recvs, unsafe);
 
 using std::string;
+using std::numeric_limits;
 using strings::Substitute;
 
 namespace kudu {
 
+namespace {
+
+Status ParseIpAddress(const string& addr_str, Sockaddr* result) {
+  DCHECK(!addr_str.empty());
+  Sockaddr bind_host;
+  const auto s = bind_host.ParseString(addr_str, 0);
+  if (PREDICT_FALSE(!s.ok() || bind_host.port() != 0)) {
+    if (!s.ok()) {
+      return Status::InvalidArgument(
+          Substitute("$0: invalid local IP address", addr_str), s.ToString());
+    }
+    return Status::InvalidArgument(
+        Substitute("$0: unexpected port with IP address", addr_str));
+  }
+
+  if (result) {
+    *result = std::move(bind_host);
+  }
+  return Status::OK();
+}
+
+bool ValidateLocalIpForOutboundSockets(
+    const char* flagname, const string& value) {
+  if (value.empty()) {
+    // The default value should pass the validation.
+    return true;
+  }
+
+  if (auto s = ParseIpAddress(value, nullptr); !s.ok()) {
+    LOG(ERROR) << Substitute("invalid local IP '$0' for --$1: $2",
+                             value, flagname, s.ToString());
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(local_ip_for_outbound_sockets,
+                 &ValidateLocalIpForOutboundSockets);
+
+} // anonymous namespace
+
+
 Socket::Socket()
-  : fd_(-1) {
+    : fd_(-1) {
 }
 
 Socket::Socket(int fd)
-  : fd_(fd) {
+    : fd_(fd) {
 }
 
 Socket::Socket(Socket&& other) noexcept
-  : fd_(other.Release()) {
+    : fd_(other.Release()) {
 }
 
 void Socket::Reset(int fd) {
@@ -259,12 +302,11 @@ Status Socket::SetReusePort(bool flag) {
   #endif
 }
 
-Status Socket::BindAndListen(const Sockaddr &sockaddr,
+Status Socket::BindAndListen(const Sockaddr& sockaddr,
                              int listen_queue_size) {
   RETURN_NOT_OK(SetReuseAddr(true));
   RETURN_NOT_OK(Bind(sockaddr));
-  RETURN_NOT_OK(Listen(listen_queue_size));
-  return Status::OK();
+  return Listen(listen_queue_size);
 }
 
 Status Socket::Listen(int listen_queue_size) {
@@ -275,7 +317,7 @@ Status Socket::Listen(int listen_queue_size) {
   return Status::OK();
 }
 
-Status Socket::GetSocketAddress(Sockaddr *cur_addr) const {
+Status Socket::GetSocketAddress(Sockaddr* cur_addr) const {
   struct sockaddr_storage ss;
   socklen_t len = sizeof(ss);
   DCHECK_GE(fd_, 0);
@@ -287,7 +329,7 @@ Status Socket::GetSocketAddress(Sockaddr *cur_addr) const {
   return Status::OK();
 }
 
-Status Socket::GetPeerAddress(Sockaddr *cur_addr) const {
+Status Socket::GetPeerAddress(Sockaddr* cur_addr) const {
   struct sockaddr_storage addr;
   socklen_t len = sizeof(addr);
   DCHECK_GE(fd_, 0);
@@ -332,7 +374,7 @@ Status Socket::Bind(const Sockaddr& bind_addr) {
   return Status::OK();
 }
 
-Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
+Status Socket::Accept(Socket* new_conn, Sockaddr* remote, int flags) {
   TRACE_EVENT0("net", "Socket::Accept");
   struct sockaddr_storage addr;
   socklen_t olen = sizeof(addr);
@@ -371,16 +413,11 @@ Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
 
 Status Socket::BindForOutgoingConnection() {
   Sockaddr bind_host;
-  Status s = bind_host.ParseString(FLAGS_local_ip_for_outbound_sockets, 0);
-  CHECK(s.ok() && bind_host.port() == 0)
-    << "Invalid local IP set for 'local_ip_for_outbound_sockets': '"
-    << FLAGS_local_ip_for_outbound_sockets << "': " << s.ToString();
-
-  RETURN_NOT_OK(Bind(bind_host));
-  return Status::OK();
+  RETURN_NOT_OK(ParseIpAddress(FLAGS_local_ip_for_outbound_sockets, &bind_host));
+  return Bind(bind_host);
 }
 
-Status Socket::Connect(const Sockaddr &remote) {
+Status Socket::Connect(const Sockaddr& remote) {
   TRACE_EVENT1("net", "Socket::Connect",
                "remote", remote.ToString());
   if (PREDICT_FALSE(!FLAGS_local_ip_for_outbound_sockets.empty())) {
@@ -412,7 +449,7 @@ Status Socket::GetSockError() const {
   return Status::OK();
 }
 
-Status Socket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
+Status Socket::Write(const uint8_t* buf, int32_t amt, int32_t* nwritten) {
   if (amt <= 0) {
     return Status::NetworkError(
               StringPrintf("invalid send of %" PRId32 " bytes",
@@ -429,8 +466,9 @@ Status Socket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   return Status::OK();
 }
 
-Status Socket::Writev(const struct ::iovec *iov, int iov_len,
-                      int64_t *nwritten) {
+Status Socket::Writev(const struct ::iovec* iov,
+                      int iov_len,
+                      int64_t* nwritten) {
   if (PREDICT_FALSE(iov_len <= 0)) {
     return Status::NetworkError(
                 StringPrintf("writev: invalid io vector length of %d",
@@ -441,7 +479,7 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
 
   struct msghdr msg;
   memset(&msg, 0, sizeof(struct msghdr));
-  msg.msg_iov = const_cast<iovec *>(iov);
+  msg.msg_iov = const_cast<iovec*>(iov);
   msg.msg_iovlen = iov_len;
   ssize_t res;
   RETRY_ON_EINTR(res, ::sendmsg(fd_, &msg, MSG_NOSIGNAL));
@@ -455,9 +493,9 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
 }
 
 // Mostly follows writen() from Stevens (2004) or Kerrisk (2010).
-Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten,
+Status Socket::BlockingWrite(const uint8_t* buf, size_t buflen, size_t* nwritten,
     const MonoTime& deadline) {
-  DCHECK_LE(buflen, std::numeric_limits<int32_t>::max()) << "Writes > INT32_MAX not supported";
+  DCHECK_LE(buflen, numeric_limits<int32_t>::max()) << "Writes > INT32_MAX not supported";
   DCHECK(nwritten);
 
   size_t tot_written = 0;
@@ -492,15 +530,15 @@ Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten
     }
   }
 
-  if (tot_written < buflen) {
+  if (PREDICT_FALSE(tot_written < buflen)) {
     return Status::IOError("Wrote zero bytes on a BlockingWrite() call",
         StringPrintf("Transferred %zu of %zu bytes", tot_written, buflen));
   }
   return Status::OK();
 }
 
-Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
-  if (amt <= 0) {
+Status Socket::Recv(uint8_t* buf, int32_t amt, int32_t* nread) {
+  if (PREDICT_FALSE(amt <= 0)) {
     return Status::NetworkError(
           StringPrintf("invalid recv of %d bytes", amt), Slice(), EINVAL);
   }
@@ -535,8 +573,8 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
 
 // Mostly follows readn() from Stevens (2004) or Kerrisk (2010).
 // One place where we deviate: we consider EOF a failure if < amt bytes are read.
-Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoTime& deadline) {
-  DCHECK_LE(amt, std::numeric_limits<int32_t>::max()) << "Reads > INT32_MAX not supported";
+Status Socket::BlockingRecv(uint8_t* buf, size_t amt, size_t* nread, const MonoTime& deadline) {
+  DCHECK_LE(amt, numeric_limits<int32_t>::max()) << "Reads > INT32_MAX not supported";
   DCHECK(nread);
   size_t tot_read = 0;
   while (tot_read < amt) {

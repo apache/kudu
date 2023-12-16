@@ -269,9 +269,8 @@ Status Messenger::UnregisterService(const string& service_name) {
   return Status::OK();
 }
 
-void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
-  Reactor *reactor = RemoteToReactor(call->conn_id().remote());
-  reactor->QueueOutboundCall(call);
+void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall>& call) {
+  RemoteToReactor(call->conn_id().remote())->QueueOutboundCall(call);
 }
 
 void Messenger::QueueInboundCall(unique_ptr<InboundCall> call) {
@@ -304,17 +303,16 @@ void Messenger::QueueInboundCall(unique_ptr<InboundCall> call) {
   WARN_NOT_OK((*service)->QueueInboundCall(std::move(call)), "Unable to handle RPC call");
 }
 
-void Messenger::QueueCancellation(const shared_ptr<OutboundCall> &call) {
-  Reactor *reactor = RemoteToReactor(call->conn_id().remote());
+void Messenger::QueueCancellation(const shared_ptr<OutboundCall>& call) {
+  Reactor* reactor = RemoteToReactor(call->conn_id().remote());
   reactor->QueueCancellation(call);
 }
 
-void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote) {
-  Reactor *reactor = RemoteToReactor(remote);
-  reactor->RegisterInboundSocket(new_socket, remote);
+void Messenger::RegisterInboundSocket(Socket* new_socket, const Sockaddr& remote) {
+  RemoteToReactor(remote)->RegisterInboundSocket(new_socket, remote);
 }
 
-Messenger::Messenger(const MessengerBuilder &bld)
+Messenger::Messenger(const MessengerBuilder& bld)
     : name_(bld.name_),
       state_(kStarted),
       authentication_(RpcAuthentication::REQUIRED),
@@ -352,7 +350,7 @@ Messenger::~Messenger() {
   STLDeleteElements(&reactors_);
 }
 
-Reactor* Messenger::RemoteToReactor(const Sockaddr& remote) {
+Reactor* Messenger::RemoteToReactor(const Sockaddr& remote) const {
   // This is just a static partitioning; we could get a lot
   // fancier with assigning Sockaddrs to Reactors.
   return reactors_[remote.HashCode() % reactors_.size()];
