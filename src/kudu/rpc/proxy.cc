@@ -238,7 +238,7 @@ void Proxy::AsyncRequest(const string& method,
     if (PREDICT_FALSE(!controller->status().ok())) {
       KLOG_EVERY_N_SECS(WARNING, 5)
           << Substitute("Call had error, refreshing address and retrying: $0",
-                        controller->status().ToString());
+                        controller->status().ToString()) << THROTTLE_MSG;
       auto req_payload = controller->ReleaseRequestPayload();
       controller->Reset();
       RefreshDnsAndEnqueueRequest(method, std::move(req_payload), response, controller, callback);

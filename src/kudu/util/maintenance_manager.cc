@@ -335,15 +335,15 @@ void MaintenanceManager::RunSchedulerThread() {
   bool prev_iter_found_no_work = false;
 
   while (true) {
-    if (!FLAGS_enable_maintenance_manager) {
+    if (PREDICT_FALSE(!FLAGS_enable_maintenance_manager)) {
       {
-        std::unique_lock<Mutex> guard(lock_);
+        std::lock_guard<Mutex> guard(lock_);
         if (shutdown_) {
           VLOG_AND_TRACE_WITH_PREFIX("maintenance", 1) << "Shutting down maintenance manager.";
           return;
         }
       }
-      KLOG_EVERY_N_SECS(INFO, 1200)
+      KLOG_EVERY_N_SECS(INFO, 300)
           << "Maintenance manager is disabled (check --enable_maintenance_manager).";
       SleepFor(polling_interval_);
       continue;

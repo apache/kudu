@@ -1184,8 +1184,10 @@ Status TabletReplica::TxnOpDispatcher::Dispatch(
   const auto txn_id = op->request()->txn_id();
   std::lock_guard<simple_spinlock> guard(lock_);
   if (PREDICT_FALSE(unregistered_)) {
-    KLOG_EVERY_N_SECS(WARNING, 10) << Substitute(
-        "received request for unregistered TxnOpDispatcher (txn ID $0)", txn_id);
+    KLOG_EVERY_N_SECS(WARNING, 10)
+        << Substitute("received request for unregistered TxnOpDispatcher (txn ID $0)",
+                      txn_id)
+        << THROTTLE_MSG;
     // TODO(aserbin): Status::ServiceUnavailable() is more appropriate here?
     return Status::IllegalState(
         "tablet replica could not accept txn write operation");
@@ -1293,8 +1295,9 @@ Status TabletReplica::TxnOpDispatcher::Submit() {
 void TabletReplica::TxnOpDispatcher::Cancel(const Status& status,
                                             TabletServerErrorPB::Code code) {
   CHECK(!status.ok());
-  KLOG_EVERY_N_SECS(WARNING, 1) << Substitute("$0: cancelling pending write operations",
-                                              status.ToString());
+  KLOG_EVERY_N_SECS(WARNING, 1)
+      << Substitute("$0: cancelling pending write operations",
+                    status.ToString()) << THROTTLE_MSG;
   decltype(ops_queue_) ops;
   {
     std::lock_guard<simple_spinlock> guard(lock_);

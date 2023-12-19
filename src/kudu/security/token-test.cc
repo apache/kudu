@@ -21,6 +21,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -35,7 +36,6 @@
 #include "kudu/security/token_signing_key.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/openssl_util.h"
 #include "kudu/util/pb_util.h"
@@ -80,8 +80,6 @@ Status SignUntilRotatePast(TokenSigner* signer, TokenGenerator generate_token,
   auto cur_seq_num = seq_num;
   while (cur_seq_num == seq_num) {
     SleepFor(MonoDelta::FromMilliseconds(50));
-    KLOG_EVERY_N_SECS(INFO, 1) <<
-        Substitute("Generating $0 token for activity interval $1", token_type, seq_num);
     RETURN_NOT_OK_PREPEND(signer->TryRotateKey(), "Failed to attempt to rotate key");
     SignedTokenPB signed_token;
     RETURN_NOT_OK_PREPEND(generate_token(&signed_token),
@@ -816,18 +814,14 @@ TEST_F(TokenTest, TestKeyValidity) {
   const double key_validity_seconds = signer.key_validity_seconds_;
   threads.emplace_back([&first_tsk_validity_latch, key_validity_seconds] {
     SleepFor(MonoDelta::FromSeconds(key_validity_seconds));
-    LOG(INFO) << Substitute("First TSK's validity interval of $0 secs has finished!",
-                            key_validity_seconds);
     first_tsk_validity_latch.CountDown();
   });
 
   // Set up a second TSK so our threads can rotate TSKs when the time comes.
   while (true) {
-    KLOG_EVERY_N_SECS(INFO, 1) << "Waiting for a second key...";
     unique_ptr<TokenSigningPrivateKey> tsk;
     ASSERT_OK(signer.CheckNeedKey(&tsk));
     if (tsk) {
-      LOG(INFO) << "Added second key!";
       ASSERT_OK(signer.AddKey(std::move(tsk)));
       break;
     }

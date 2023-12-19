@@ -298,9 +298,9 @@ void RowSetInfo::ComputeCdfAndCollectOrdered(
     if (rs->IsAvailableForCompaction()) {
       if (is_on_memory_budget && !(*is_on_memory_budget)(rs.get())) {
         // Skip rowsets filtered out by the memory budgeting.
-        KLOG_EVERY_N_SECS(INFO, 600) << Substitute(
+        KLOG_EVERY_N_SECS(INFO, 60) << Substitute(
             "$0 removed from compaction input due to memory constraints",
-            rs->ToString());
+            rs->ToString()) << THROTTLE_MSG;
         continue;
       }
       available_rowsets.push_back(rs);

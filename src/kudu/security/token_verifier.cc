@@ -28,6 +28,7 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signing_key.h"
@@ -40,6 +41,7 @@ using std::string;
 using std::transform;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace security {
@@ -123,8 +125,10 @@ TokenVerificationResult TokenVerifier::VerifyTokenSignature(
 
   for (auto flag : token->incompatible_features()) {
     if (!TokenPB::Feature_IsValid(flag)) {
-      KLOG_EVERY_N_SECS(WARNING, 60) << "received token with unknown feature; "
-                                        "server needs to be updated";
+      constexpr const char* const kFormat =
+          "received token with unknown feature $0; consider updating server";
+      KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
+          kFormat, static_cast<uint32_t>(flag)) << THROTTLE_MSG;
       return TokenVerificationResult::INCOMPATIBLE_FEATURE;
     }
   }

@@ -64,6 +64,30 @@ TEST(LoggingTest, TestThrottledLogging) {
   EXPECT_THAT(msgs[1], testing::ContainsRegex("\\[suppressed [0-9]{3,} similar messages\\]"));
 }
 
+TEST(LoggingTest, ThrottledLoggingNoThrottleMsg) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  StringVectorSink sink;
+  ScopedRegisterSink srs(&sink);
+
+  for (int i = 0; i < 10000; i++) {
+    KLOG_EVERY_N_SECS(INFO, 1) << "test";
+    SleepFor(MonoDelta::FromMilliseconds(1));
+    if (sink.logged_msgs().size() >= 2) {
+      break;
+    }
+  }
+  const vector<string>& msgs = sink.logged_msgs();
+  ASSERT_GE(msgs.size(), 2);
+
+  for (const auto& m: msgs) {
+    // All the lines should contain the message logged.
+    ASSERT_THAT(m, testing::ContainsRegex("test$"));
+    // Since the special THROTTLE_MSG isn't used, there isn't any report on
+    // suppressed messages.
+    ASSERT_STR_NOT_CONTAINS(m, "suppressed");
+  }
+}
+
 // Test the KLOG_EVERY_N_SECS(...) macro with slow-paced messages, making sure
 // no messages are lost or suppressed if they come staggered by more than
 // the suppression time interval.

@@ -881,8 +881,10 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
                    resp->mutable_error()->mutable_status());
         resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
         rpc->RespondSuccess();
-        KLOG_EVERY_N_SECS(WARNING, 60) << Substitute("invalid request from $0: $1",
-                                                     rpc->requestor_string(), kErrMsg);
+        KLOG_EVERY_N_SECS(WARNING, 60)
+            << Substitute("invalid request from $0: $1",
+                          rpc->requestor_string(), kErrMsg)
+            << THROTTLE_MSG;
         return;
       }
 

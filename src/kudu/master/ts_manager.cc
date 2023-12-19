@@ -25,6 +25,7 @@
 #include <mutex>
 #include <optional>
 #include <ostream>
+#include <type_traits>
 #include <utility>
 
 #include <gflags/gflags.h>
@@ -155,7 +156,7 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
         ? uuid : registration.rpc_addresses(0).host();
     TRACE(Substitute("tablet server $0: assigning location", uuid));
     string location_str;
-    const auto s = location_cache_->GetLocation(cmd_arg, &location_str);
+    auto s = location_cache_->GetLocation(cmd_arg, &location_str);
     TRACE(Substitute(
         "tablet server $0: assigned location '$1'", uuid, location_str));
 
@@ -166,7 +167,7 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
       KLOG_EVERY_N_SECS(ERROR, 60) << Substitute(
           "Unable to assign location to tablet server $0: $1",
           Substitute("$0 ($1:$2)", uuid, addr.host(), addr.port()),
-          s.ToString());
+          s.ToString()) << THROTTLE_MSG;
       return s;
     }
     location.emplace(std::move(location_str));

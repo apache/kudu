@@ -74,6 +74,7 @@ using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 // Fault injection flags.
 DEFINE_double(rpc_inject_invalid_authn_token_ratio, 0,
@@ -504,12 +505,18 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
             authn_types.insert(AuthenticationType::JWT);
           }
           break;
-        case AuthenticationTypePB::TYPE_NOT_SET: {
+        case AuthenticationTypePB::TYPE_NOT_SET:
+        default: {
           Sockaddr addr;
-          RETURN_NOT_OK(socket_->GetPeerAddress(&addr));
+          const auto s = socket_->GetPeerAddress(&addr);
+          WARN_NOT_OK(s, "unable to get peer address");
+          constexpr const char* const kFormat =
+              "client at $0 supports unknown authentication type $1, consider updating server";
           KLOG_EVERY_N_SECS(WARNING, 60)
-              << "client supports unknown authentication type, consider updating server, address: "
-              << addr.ToString();
+              << Substitute(kFormat,
+                            s.ok() ? addr.ToString() : "<unknown address>",
+                            static_cast<uint32_t>(type.type_case()))
+              << THROTTLE_MSG;
           break;
         }
       }
@@ -699,8 +706,8 @@ Status ServerNegotiation::AuthenticateBySasl(faststring* recv_buf) {
     // locally for the purposes of group mapping, ACLs, etc.
     string local_name;
     RETURN_NOT_OK_PREPEND(security::MapPrincipalToLocalName(principal, &local_name),
-                          strings::Substitute("could not map krb5 principal '$0' to username",
-                                              principal));
+                          Substitute("could not map krb5 principal '$0' to username",
+                                     principal));
     authenticated_user_.SetAuthenticatedByKerberos(std::move(local_name), std::move(principal));
   } else {
     authenticated_user_.SetUnauthenticated(c_username);

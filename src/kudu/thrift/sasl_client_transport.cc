@@ -24,9 +24,9 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include <glog/logging.h>
-#include <thrift/transport/TTransport.h>
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/port.h"
@@ -159,7 +159,8 @@ void SaslClientTransport::ReadFrame() {
 
   if (payload_len > 1024 * 1024) {
     KLOG_EVERY_N_SECS(WARNING, 60) << "Received large Thrift SASL frame: "
-                                   << HumanReadableNumBytes::ToString(payload_len);
+                                   << HumanReadableNumBytes::ToString(payload_len)
+                                   << THROTTLE_MSG;
     if (payload_len > max_recv_buf_size_) {
       throw TTransportException(Substitute("Thrift SASL frame is too long: $0/$1",
                                            HumanReadableNumBytes::ToString(payload_len),
