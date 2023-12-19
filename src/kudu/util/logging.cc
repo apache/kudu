@@ -19,6 +19,8 @@
 
 #include <unistd.h>
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +37,8 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/casts.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -73,6 +77,7 @@ TAG_FLAG(max_log_files, stable);
 
 bool logging_initialized = false;
 
+using strings::Substitute;
 using base::SpinLock;
 using base::SpinLockHolder;
 using boost::uuids::random_generator;
@@ -388,8 +393,8 @@ Status DeleteExcessLogFiles(Env* env) {
   for (int severity = 0; severity < google::NUM_SEVERITIES; ++severity) {
     // Build glob pattern for input
     // e.g. /var/log/kudu/kudu-master.*.INFO.*
-    string pattern = strings::Substitute("$0/$1.*.$2.*", FLAGS_log_dir, FLAGS_log_filename,
-                                         google::GetLogSeverityName(severity));
+    string pattern = Substitute("$0/$1.*.$2.*", FLAGS_log_dir, FLAGS_log_filename,
+                                google::GetLogSeverityName(severity));
 
     // Keep the 'max_log_files' most recent log files, as compared by
     // modification time. Glog files contain a second-granularity timestamp in
@@ -402,18 +407,34 @@ Status DeleteExcessLogFiles(Env* env) {
   return Status::OK();
 }
 
+namespace logging {
+
+LogThrottler::~LogThrottler() {
+  const auto num_not_reported = num_suppressed_.load(std::memory_order_acquire);
+  if (num_not_reported > 0) {
+    const auto ts = GetMonoTimeMicros() - last_ts_.load(std::memory_order_acquire);
+    string instance_info = "LogThrottler";
+    if (string_id_) {
+      instance_info += " ";
+      instance_info += string_id_;
+      if (num_id_ > 0) {
+        instance_info += ":" + std::to_string(num_id_);
+      }
+    }
+    LOG(INFO) << Substitute("$0: suppressed but not reported on $1 messages "
+                            "since previous log ~$2 seconds ago",
+                            instance_info, num_not_reported, ts / 1000000);
+  }
+}
+
+} // namespace logging
+
 // Support for the special THROTTLE_MSG token in a log message stream.
-ostream& operator<<(ostream &os, const PRIVATE_ThrottleMsg& /*unused*/) {
+ostream& operator<<(ostream& os, const PRIVATE_ThrottleMsg& /*unused*/) {
   using google::LogMessage;
-#ifdef DISABLE_RTTI
-  LogMessage::LogStream *log = static_cast<LogMessage::LogStream*>(&os);
-#else
-  LogMessage::LogStream *log = dynamic_cast<LogMessage::LogStream*>(&os);
-#endif
-  CHECK(log && log == log->self())
-      << "You must not use COUNTER with non-glog ostream";
-  size_t ctr = log->ctr();
-  if (ctr > 0) {
+  LogMessage::LogStream* log = down_cast<LogMessage::LogStream*>(&os);
+  DCHECK(log && log == log->self()) << "COUNTER is for glog LogStream only";
+  if (auto ctr = log->ctr(); ctr > 0) {
     os << " [suppressed " << ctr << " similar messages]";
   }
   return os;

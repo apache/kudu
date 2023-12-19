@@ -14,18 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_LOGGING_H
-#define KUDU_UTIL_LOGGING_H
+#pragma once
 
-#include <cstddef>
+#include <atomic>
+#include <cstdint>
 #include <iosfwd>
 #include <string>
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/logging_callback.h"
@@ -133,49 +131,39 @@ class ScopedDisableRedaction {
 // -----------------------------------
 // For cases where the throttling should be scoped to a given class instance,
 // you may define a logging::LogThrottler object and pass it to the
-// KLOG_EVERY_N_SECS_THROTTLER(...) macro. In addition, you must pass a "tag".
-// Only log messages with equal tags (by pointer equality) will be throttled.
-// For example:
+// KLOG_THROTTLER(...) macro. For example:
 //
 //    struct MyThing {
 //      string name;
-//      LogThrottler throttler;
+//      LogThrottler throttler(10);
 //    };
 //
 //    if (...) {
-//      LOG_EVERY_N_SECS_THROTTLER(INFO, 1, my_thing->throttler, "coffee") <<
-//        my_thing->name << " needs coffee!";
-//    } else {
-//      LOG_EVERY_N_SECS_THROTTLER(INFO, 1, my_thing->throttler, "wine") <<
-//        my_thing->name << " needs wine!";
+//      KLOG_THROTTLER(INFO, my_thing->throttler)
+//          << my_thing->name << " needs coffee!";
 //    }
 //
-// In this example, the "coffee"-related message will be collapsed into other
-// such messages within the prior one second; however, if the state alternates
-// between the "coffee" message and the "wine" message, then each such alternation
-// will yield a message.
+// In this example, the message will be collapsed into other such messages
+// within the prior ten seconds.
 
-#define KLOG_EVERY_N_SECS_THROTTLER(severity, n_secs, throttler, tag) \
-  int VARNAME_LINENUM(num_suppressed) = 0;                            \
-  if ((throttler).ShouldLog(n_secs, tag, &VARNAME_LINENUM(num_suppressed)))  \
-    google::LogMessage( \
-      __FILE__, __LINE__, google::GLOG_ ## severity, VARNAME_LINENUM(num_suppressed), \
-      &google::LogMessage::SendToLog).stream()
+#define KLOG_THROTTLER(severity, throttler)                                   \
+  if (int64_t _nsupp = 0; (throttler).ShouldLog(&_nsupp))                     \
+    google::LogMessage(__FILE__, __LINE__, google::GLOG_ ## severity, _nsupp, \
+                         &google::LogMessage::SendToLog).stream()
 
 #define KLOG_EVERY_N_SECS(severity, n_secs) \
-  static ::kudu::logging::LogThrottler LOG_THROTTLER;  \
-  KLOG_EVERY_N_SECS_THROTTLER(severity, n_secs, LOG_THROTTLER, "no-tag")
+  static ::kudu::logging::LogThrottler LOG_THROTTLER(n_secs, __FILE__, __LINE__); \
+  KLOG_THROTTLER(severity, LOG_THROTTLER)
 
-#define WARN_NOT_OK_EVERY_N_SECS(to_call, warning_prefix, n_secs) do {                 \
-    const ::kudu::Status& _s = (to_call);                                              \
-    if (PREDICT_FALSE(!_s.ok())) {                                                     \
-      KLOG_EVERY_N_SECS(WARNING, n_secs) << (warning_prefix) << ": " << _s.ToString()  \
-                                         << THROTTLE_MSG;                              \
-    }                                                                                  \
-  } while (0)
+#define WARN_NOT_OK_EVERY_N_SECS(to_call, warning_prefix, n_secs) do {        \
+    if (const ::kudu::Status& _s = (to_call); PREDICT_FALSE(!_s.ok())) {      \
+      KLOG_EVERY_N_SECS(WARNING, n_secs)                                      \
+          << (warning_prefix) << ": " << _s.ToString() << THROTTLE_MSG;       \
+    }                                                                         \
+  } while (false)
 
 namespace kudu {
-enum PRIVATE_ThrottleMsg {THROTTLE_MSG};
+enum PRIVATE_ThrottleMsg {THROTTLE_MSG}; // NOLINT(readability-identifier-naming)
 } // namespace kudu
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -316,41 +304,42 @@ namespace logging {
 // A LogThrottler instance tracks the throttling state for a particular
 // log message.
 //
-// This is used internally by KLOG_EVERY_N_SECS, but can also be used
-// explicitly in conjunction with KLOG_EVERY_N_SECS_THROTTLER. See the
-// macro descriptions above for details.
-class LogThrottler {
+// This is used internally by KLOG_EVERY_N_SECS, but can also be used explicitly
+// in conjunction with KLOG_THROTTLER. See the macro descriptions above
+// for details.
+class LogThrottler final {
  public:
-  LogThrottler() : num_suppressed_(0), last_ts_(0), last_tag_(nullptr) {
-    ANNOTATE_BENIGN_RACE_SIZED(this, sizeof(*this), "OK to be sloppy with log throttling");
+  explicit LogThrottler(uint32_t n_secs,
+                        const char* string_id = nullptr,
+                        uint32_t num_id = 0)
+      : throttle_interval_us_(n_secs * 1000000LL),
+        string_id_(string_id),
+        num_id_(num_id),
+        last_ts_(0),
+        num_suppressed_(0) {
   }
 
-  bool ShouldLog(size_t n_secs, const char* tag, int* num_suppressed) {
-    MicrosecondsInt64 ts = GetMonoTimeMicros();
+  ~LogThrottler();
 
-    // When we switch tags, we should not show the "suppressed" messages, because
-    // in fact it's a different message that we skipped. So, reset it to zero,
-    // and always log the new message.
-    if (tag != last_tag_) {
-      *num_suppressed = num_suppressed_ = 0;
-      last_tag_ = tag;
-      last_ts_ = ts;
-      return true;
-    }
-
-    if (ts - last_ts_ < n_secs * 1000000) {
-      *num_suppressed = base::subtle::NoBarrier_AtomicIncrement(&num_suppressed_, 1);
+  bool ShouldLog(int64_t* num_suppressed) {
+    const MicrosecondsInt64 ts = GetMonoTimeMicros();
+    if (ts - last_ts_.load(std::memory_order_acquire) < throttle_interval_us_) {
+      *num_suppressed = num_suppressed_.fetch_add(1, std::memory_order_relaxed);
       return false;
     }
-    last_ts_ = ts;
-    *num_suppressed = base::subtle::NoBarrier_AtomicExchange(&num_suppressed_, 0);
+    last_ts_.store(ts, std::memory_order_release);
+    *num_suppressed = num_suppressed_.exchange(0, std::memory_order_acq_rel);
     return true;
   }
+
  private:
-  Atomic32 num_suppressed_;
-  MicrosecondsInt64 last_ts_;
-  const char* last_tag_;
+  const int64_t throttle_interval_us_;
+  const char* const string_id_;
+  const uint32_t num_id_;
+  std::atomic<MicrosecondsInt64> last_ts_;
+  std::atomic<int64_t> num_suppressed_;
 };
+
 } // namespace logging
 
 std::ostream& operator<<(std::ostream &os, const PRIVATE_ThrottleMsg&);
@@ -369,5 +358,3 @@ std::ostream& operator<<(std::ostream &os, const PRIVATE_ThrottleMsg&);
   << LogPrefix()
 
 } // namespace kudu
-
-#endif // KUDU_UTIL_LOGGING_H

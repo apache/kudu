@@ -48,7 +48,6 @@
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -1367,15 +1366,16 @@ void ServerBase::UnregisterAllServices() {
 }
 
 void ServerBase::ServiceQueueOverflowed(rpc::ServicePool* service) {
-  if (!diag_log_) return;
+  if (!diag_log_) {
+    return;
+  }
 
   // Logging all of the stacks is relatively heavy-weight, so if we are in a persistent
   // state of overload, it's probably not a good idea to start compounding the issue with
-  // a lot of stack-logging activity. So, we limit the frequency of stack-dumping.
-  static logging::LogThrottler throttler;
-  const int kStackDumpFrequencySecs = 5;
-  int suppressed = 0;
-  if (PREDICT_TRUE(!throttler.ShouldLog(kStackDumpFrequencySecs, "", &suppressed))) {
+  // a lot of stack-logging activity. So, we limit the frequency of stack-dumping
+  // to happen no more than once in five (5) seconds.
+  static logging::LogThrottler throttler(5, "Service Queue Overflow");
+  if (int64_t suppressed = 0; !throttler.ShouldLog(&suppressed)) {
     return;
   }
 

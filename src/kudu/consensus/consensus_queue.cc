@@ -151,7 +151,10 @@ PeerMessageQueue::TrackedPeer::TrackedPeer(RaftPeerPB peer_pb)
       wal_catchup_possible(true),
       remote_server_quiescing(false),
       last_overall_health_status(HealthReportPB::UNKNOWN),
-      status_log_throttler(std::make_shared<logging::LogThrottler>()),
+      status_log_throttler_lag(
+          std::make_shared<logging::LogThrottler>(3, "TrackedPeer Lag")),
+      status_log_throttler_wal_gc(
+          std::make_shared<logging::LogThrottler>(60, "TrackedPeer WAL GC")),
       last_seen_term_(0) {
 }
 
@@ -734,7 +737,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
       // the leader has GCed its logs. The follower replica will hang around
       // for a while until it's evicted.
       if (PREDICT_TRUE(s.IsNotFound())) {
-        KLOG_EVERY_N_SECS_THROTTLER(INFO, 60, *peer_copy.status_log_throttler, "logs_gced")
+        KLOG_THROTTLER(INFO, *peer_copy.status_log_throttler_wal_gc)
             << LogPrefixUnlocked()
             << Substitute("The logs necessary to catch up peer $0 have been "
                           "garbage collected. The follower will never be able "
@@ -780,7 +783,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   if (request->ops_size() > 0) {
     int64_t last_op_sent = request->ops(request->ops_size() - 1).id().index();
     if (last_op_sent < request->committed_index()) {
-      KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, *peer_copy.status_log_throttler, "lagging")
+      KLOG_THROTTLER(INFO, *peer_copy.status_log_throttler_lag)
           << LogPrefixUnlocked() << "Peer " << uuid << " is lagging by at least "
           << (request->committed_index() - last_op_sent)
           << " ops behind the committed index " << THROTTLE_MSG;

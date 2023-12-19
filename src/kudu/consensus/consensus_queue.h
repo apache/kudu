@@ -173,9 +173,10 @@ class PeerMessageQueue {
     // The peer's latest overall health status.
     HealthReportPB::HealthStatus last_overall_health_status;
 
-    // Throttler for how often we will log status messages pertaining to this
-    // peer (eg when it is lagging, etc).
-    std::shared_ptr<logging::LogThrottler> status_log_throttler;
+    // Throttlers for how often we will log status messages pertaining to this
+    // peer: when it is lagging, WAL are GC-ed and it cannot catch up.
+    std::shared_ptr<logging::LogThrottler> status_log_throttler_lag;
+    std::shared_ptr<logging::LogThrottler> status_log_throttler_wal_gc;
 
    private:
     // The last term we saw from a given peer.

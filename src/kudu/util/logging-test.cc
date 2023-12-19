@@ -125,37 +125,43 @@ TEST(LoggingTest, ThrottledLoggingShortBurst) {
   }
 }
 
-TEST(LoggingTest, TestAdvancedThrottling) {
+TEST(LoggingTest, LogThrottleDestructorReport) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   StringVectorSink sink;
   ScopedRegisterSink srs(&sink);
 
-  logging::LogThrottler throttle_a;
+  {
+    logging::LogThrottler throttler(5, "in test");
 
-  // First, log only using a single tag and throttler.
-  for (int i = 0; i < 100000; i++) {
-    KLOG_EVERY_N_SECS_THROTTLER(INFO, 1, throttle_a, "tag_a") << "test" << THROTTLE_MSG;
-    SleepFor(MonoDelta::FromMilliseconds(1));
-    if (sink.logged_msgs().size() >= 2) break;
+    for (int i = 0; i < 100; ++i) {
+      KLOG_THROTTLER(INFO, throttler) << "test " << i << THROTTLE_MSG;
+    }
+    // Sleep for a second to check for the proper timings reported in the
+    // summary output by the LogThrottler's destructor.
+    SleepFor(MonoDelta::FromMilliseconds(1000));
+
+    const auto& msgs = sink.logged_msgs();
+    // Only the very first message in the burst is accounted for.
+    ASSERT_EQ(1, msgs.size());
+    ASSERT_THAT(msgs.front(), testing::ContainsRegex("test 0$"));
+
+    for (const auto& m: msgs) {
+      // No information on suppressed messages yet.
+      ASSERT_STR_NOT_CONTAINS(m, "suppressed");
+    }
   }
-  auto& msgs = sink.logged_msgs();
-  ASSERT_GE(msgs.size(), 2);
 
-  // The first log line shouldn't have a suppression count.
-  EXPECT_THAT(msgs[0], testing::ContainsRegex("test$"));
-  // The second one should have suppressed at least three digits worth of log messages.
-  EXPECT_THAT(msgs[1], testing::ContainsRegex("\\[suppressed [0-9]{3,} similar messages\\]"));
-  msgs.clear();
-
-  // Now, try logging using two different tags in rapid succession. This should not
-  // throttle, because the tag is switching.
-  KLOG_EVERY_N_SECS_THROTTLER(INFO, 1, throttle_a, "tag_b") << "test b" << THROTTLE_MSG;
-  KLOG_EVERY_N_SECS_THROTTLER(INFO, 1, throttle_a, "tag_b") << "test b" << THROTTLE_MSG;
-  KLOG_EVERY_N_SECS_THROTTLER(INFO, 1, throttle_a, "tag_c") << "test c" << THROTTLE_MSG;
-  KLOG_EVERY_N_SECS_THROTTLER(INFO, 1, throttle_a, "tag_b") << "test b" << THROTTLE_MSG;
-  ASSERT_EQ(msgs.size(), 3);
-  EXPECT_THAT(msgs[0], testing::ContainsRegex("test b$"));
-  EXPECT_THAT(msgs[1], testing::ContainsRegex("test c$"));
-  EXPECT_THAT(msgs[2], testing::ContainsRegex("test b$"));
+  // The throttler should report on the suppressed but not yet logged messages
+  // in the destructor. To avoid flakiness due to scheduling anomalies on busy
+  // test nodes, the expected timing is flexible to accommodate for several
+  // extra seconds between the first message logged and the time when the
+  // LogThrottler's destructor has run.
+  const auto& msgs = sink.logged_msgs();
+  ASSERT_EQ(2, msgs.size());
+  ASSERT_THAT(msgs.back(), testing::ContainsRegex(
+      "suppressed but not reported on 99 messages "
+      "since previous log \\~[1-9] seconds ago"));
 }
 
 // Test Logger implementation that just counts the number of messages
