@@ -139,6 +139,9 @@ class LogCache {
   // Returns another bad Status if the log index fails to load (eg. due to an IO error).
   Status LookupOpId(int64_t op_index, OpId* op_id) const;
 
+  // Clear the log cache.
+  void Clear();
+
  private:
   FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
   FRIEND_TEST(LogCacheTest, TestGlobalMemoryLimit);

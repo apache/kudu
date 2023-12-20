@@ -22,6 +22,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -31,7 +32,7 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
-#include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_reader.h" // IWYU pragma: keep
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
@@ -113,8 +114,7 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
 }
 
 LogCache::~LogCache() {
-  tracker_->Release(tracker_->consumption());
-  cache_.clear();
+  Clear();
 }
 
 void LogCache::Init(const OpId& preceding_op) {
@@ -475,6 +475,11 @@ void LogCache::DumpToHtml(std::ostream& out) const {
                       msg->ByteSizeLong(), SecureShortDebugString(msg->id())) << endl;
   }
   out << "</table>";
+}
+
+void LogCache::Clear() {
+  tracker_->Release(tracker_->consumption());
+  cache_.clear();
 }
 
 #define INSTANTIATE_METRIC(x) \
