@@ -1427,9 +1427,11 @@ void PeerMessageQueue::ClearUnlocked() {
 
 void PeerMessageQueue::Close() {
   raft_pool_observers_token_->Shutdown();
-
-  std::lock_guard<simple_spinlock> lock(queue_lock_);
-  ClearUnlocked();
+  {
+    std::lock_guard<simple_spinlock> lock(queue_lock_);
+    ClearUnlocked();
+  }
+  log_cache_.Clear();
 }
 
 int64_t PeerMessageQueue::GetQueuedOperationsSizeBytesForTests() const {

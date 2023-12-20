@@ -370,12 +370,14 @@ class PeerMessageQueue {
   void EndWatchForSuccessor();
 
  private:
+  FRIEND_TEST(ConsensusQueueTest, ClearLogCacheWhileClosing);
   FRIEND_TEST(ConsensusQueueTest, TestQueueAdvancesCommittedIndex);
   FRIEND_TEST(ConsensusQueueTest, TestQueueMovesWatermarksBackward);
   FRIEND_TEST(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics);
   FRIEND_TEST(ConsensusQueueTest, TestStatusMessagesToFailedUnrecoverablePeer);
   FRIEND_TEST(ConsensusQueueUnitTest, PeerHealthStatus);
   FRIEND_TEST(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty);
+
 
   // Mode specifies how the queue currently behaves:
   // LEADER - Means the queue tracks remote peers and replicates whatever messages

@@ -44,6 +44,7 @@
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/log_cache.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
@@ -1188,6 +1189,18 @@ TEST(ConsensusQueueUnitTest, PeerHealthStatus) {
 
   peer.last_exchange_status = PeerStatus::TABLET_FAILED;
   EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, PeerMessageQueue::PeerHealthStatus(peer));
+}
+
+// Test the log cache will be cleared if Close() is called. The method is called while
+// tombstoning a replica, so the log cache will be cleared if a replica is tombstoned.
+TEST_F(ConsensusQueueTest, ClearLogCacheWhileClosing) {
+  queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, BuildRaftConfigPBForTests(3));
+  AppendReplicateMessagesToQueue(queue_.get(), clock_.get(), 1, 100);
+
+  ASSERT_LT(0, queue_->log_cache_.BytesUsed());
+  queue_->Close();
+
+  ASSERT_EQ(0, queue_->log_cache_.BytesUsed());
 }
 
 }  // namespace consensus
