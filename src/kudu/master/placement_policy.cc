@@ -350,6 +350,12 @@ Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs
 // multiple tablet servers, the total number of replicas will be considered. If
 // there's still a tie, a tablet server will be randomly chosen.
 //
+// When choosing a tablet server to place a replica on from the set of tablet
+// servers "ts_descs", any tablet servers from the set "excluded" that are also
+// in the set "ts_descs" will not be chosen. It's possible that there's no
+// overlap between these two sets as "excluded" can contain tservers from
+// other locations and thus have no relation to the set "ts_descs".
+//
 // The old replica selection algorithm follows the idea from
 // "Power of Two Choices in Randomized Load Balancing"[1]. For each replica,
 // we randomly select two tablet servers, and then assign the replica to the
@@ -381,8 +387,7 @@ shared_ptr<TSDescriptor> PlacementPolicy::SelectReplica(
     const set<shared_ptr<TSDescriptor>>& excluded) const {
   if (range_key_start && table_id) {
     TSDescriptorVector ts_choices;
-    const int ts_size = static_cast<int>(ts_descs.size());
-    CHECK_GE(ts_size, 0);
+    const auto ts_size = ts_descs.size();
     ReservoirSample(ts_descs, ts_size, excluded, rng_, &ts_choices);
     DCHECK_LE(ts_choices.size(), ts_size);
     if (ts_choices.size() > 1) {
@@ -393,23 +398,22 @@ shared_ptr<TSDescriptor> PlacementPolicy::SelectReplica(
       return ts_choices.front();
     }
     return nullptr;
-  } else {
-    // Pick two random servers, excluding those we've already picked.
-    // If we've only got one server left, 'two_choices' will actually
-    // just contain one element.
-    TSDescriptorVector two_choices;
-    ReservoirSample(ts_descs, 2, excluded, rng_, &two_choices);
-    DCHECK_LE(two_choices.size(), 2);
-
-    if (two_choices.size() == 2) {
-      // Pick the better of the two.
-      return PickBetterTabletServer(two_choices, dimension, rng_);
-    }
-    if (two_choices.size() == 1) {
-      return two_choices.front();
-    }
-    return nullptr;
   }
+  // Pick two random servers, excluding those we've already picked.
+  // If we've only got one server left, 'two_choices' will actually
+  // just contain one element.
+  TSDescriptorVector two_choices;
+  ReservoirSample(ts_descs, 2, excluded, rng_, &two_choices);
+  DCHECK_LE(two_choices.size(), 2);
+
+  if (two_choices.size() == 2) {
+    // Pick the better of the two.
+    return PickBetterTabletServer(two_choices, dimension, rng_);
+  }
+  if (two_choices.size() == 1) {
+    return two_choices.front();
+  }
+  return nullptr;
 }
 
 Status PlacementPolicy::SelectLocation(

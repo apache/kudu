@@ -34,6 +34,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/util/random.h"
@@ -140,6 +141,15 @@ class PlacementPolicyTest : public ::testing::Test {
       }
     }
     return Status::OK();
+  }
+
+  shared_ptr<TSDescriptor> SelectReplica(const TSDescriptorVector& source_ts_descs,
+                       const optional<string>& dimension,
+                       const optional<string>& range_key_start,
+                       const optional<string>& table_id,
+                       const std::set<shared_ptr<TSDescriptor>>& excluded) {
+    PlacementPolicy policy(descriptors_, &rng_);
+    return policy.SelectReplica(source_ts_descs, dimension, range_key_start, table_id, excluded);
   }
 
   static Status TSDescriptorVectorToMap(const TSDescriptorVector& v_descs,
@@ -1552,6 +1562,39 @@ TEST_F(PlacementPolicyTest, PlaceRangeAwareTabletReplicasWithLocations) {
     ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, "a1", "t1", &extra_ts));
     ASSERT_TRUE(extra_ts);
     ASSERT_TRUE(extra_ts->permanent_uuid() == "A_ts2") << extra_ts->permanent_uuid();
+  }
+}
+
+// This test is more granular and specifically tests SelectReplica() and its
+// various tiebreaker scenarios when choosing a tablet server to place a replica on.
+TEST_F(PlacementPolicyTest, TestSelectReplicaTieBreakers) {
+  constexpr int nReplicationFactor = 3;
+  TabletNumByRangeMap range({ {"a1", 100} });
+  TabletNumByRangeMap ranges({ {"a1", 100}, {"b1", 100} });
+  const vector<LocationInfo> cluster_info = {
+      {
+          "",
+          {
+              { "ts0", 200, { }, { {"t1", range }, {"t2", range }, } },
+              { "ts1", 100, { }, { {"t1", range }, } },
+              { "ts2", 200, { }, { {"t1", ranges }, } },
+          }
+      },
+  };
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    std::set<shared_ptr<TSDescriptor>> selected;
+    // All tablet servers have the same number of replicas per range "a1" of table "t1".
+    // "ts1" is chosen first since it has the least number of replicas overall.
+    // "ts0" is chosen next since it has the least number of replicas of table "t1".
+    vector<string> chosen_tservers_in_order = {"ts1", "ts0", "ts2"};
+    for (int i = 0; i < nReplicationFactor; ++i) {
+      auto ts = SelectReplica(descriptors(), nullopt, "a1", "t1", selected);
+      ASSERT_TRUE(ts);
+      ASSERT_TRUE(ts->permanent_uuid() == chosen_tservers_in_order[i]) << ts->permanent_uuid();
+      EmplaceOrDie(&selected, std::move(ts));
+    }
   }
 }
 
