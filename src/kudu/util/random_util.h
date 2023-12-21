@@ -79,11 +79,11 @@ std::vector<T> SelectRandomSubset(const Container& c, int min_to_return, Rand* r
 // The results are not stored in a randomized order: the order of results will
 // match their order in the input collection.
 template<class Collection, class Set, class T, typename Rand>
-void ReservoirSample(const Collection& c, int k, const Set& avoid,
+void ReservoirSample(const Collection& c, uint32_t k, const Set& avoid,
                      Rand* r, std::vector<T>* result) {
   result->clear();
   result->reserve(k);
-  int i = 0;
+  uint32_t i = 0;
   for (const T& elem : c) {
     if (ContainsKey(avoid, elem)) {
       continue;
@@ -95,7 +95,7 @@ void ReservoirSample(const Collection& c, int k, const Set& avoid,
       continue;
     }
     // Otherwise replace existing elements with decreasing probability.
-    int j = r->Uniform(i);
+    uint32_t j = r->Uniform(i);
     if (j < k) {
       (*result)[j] = elem;
     }
