@@ -3744,8 +3744,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
       partition_schema_updated;
   // Set to true if metadata changes need to be applied to existing tablets.
   const bool has_metadata_changes_for_existing_tablets =
-    has_metadata_changes &&
-    (table->num_tablets() > tablets_to_drop.size() || num_replicas_changed);
+    has_metadata_changes && table->num_tablets() > tablets_to_drop.size();
 
   // Skip empty requests...
   if (!has_metadata_changes && !has_partitioning_changes) {

@@ -2639,4 +2639,44 @@ TEST_F(AlterTableTest, AddAndRemoveImmutableAttribute) {
   EXPECT_EQ("(int32 c0=50331648, int32 c1=3, int32 c2=3)", rows[3]);
 }
 
+TEST_F(ReplicatedAlterTableTest, CheckTableStateAfterReplicatedAlter) {
+  ASSERT_OK(client_->DeleteTable(kTableName));
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+              .schema(&schema_)
+              .set_range_partition_columns({ "c0" })
+              .num_replicas(1)
+              .Create());
+
+  // Drop the partition.
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->DropRangePartition(schema_.NewRow(), schema_.NewRow())
+              ->wait(true)->Alter());
+
+  // Check that there are not any tablets in the table.
+  ASSERT_EVENTUALLY([&] {
+    master::GetTableLocationsResponsePB table_locations;
+    ASSERT_OK(itest::GetTableLocations(
+      cluster_->master_proxy(),
+      kTableName,
+      MonoDelta::FromSeconds(30), master::VOTER_REPLICA,
+      /*table_id=*/std::nullopt,
+      &table_locations));
+    ASSERT_EQ(0, table_locations.tablet_locations_size());
+  });
+
+  // Set replication factor to 3.
+  ASSERT_OK(SetReplicationFactor(kTableName, 3));
+  ASSERT_EVENTUALLY([&] {
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+    ASSERT_EQ(3, table->num_replicas());
+  });
+
+  // The state of the table should not be ALTERING.
+  bool is_altering;
+  ASSERT_OK(client_->IsAlterTableInProgress(kTableName, &is_altering));
+  ASSERT_FALSE(is_altering);
+}
+
 } // namespace kudu
