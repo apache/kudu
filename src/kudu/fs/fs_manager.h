@@ -237,7 +237,7 @@ class FsManager {
   // Registers an error-handling callback with the FsErrorManager.
   //
   // If a disk failure is detected, this callback will be invoked with the
-  // relevant DataDir's UUID as its input parameter.
+  // relevant Dir's UUID as its input parameter.
   void SetErrorNotificationCb(fs::ErrorHandlerType e, fs::ErrorNotificationCb cb);
 
   // Unregisters the error-handling callback with the FsErrorManager.

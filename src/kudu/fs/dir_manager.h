@@ -153,11 +153,11 @@ class Dir {
 
   // The amount of time to cache the amount of available space in this
   // directory.
-  virtual int available_space_cache_secs() const = 0;
+  static int available_space_cache_secs();
 
   // The number of bytes to reserve in each directory for non-Kudu usage. A
   // value of -1 means 1% of the disk space in a directory will be reserved.
-  virtual int reserved_bytes() const = 0;
+  static int reserved_bytes();
 
  private:
   Env* env_;

@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/fs/dir_util.h"
@@ -55,6 +56,9 @@ using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
+DECLARE_int64(fs_data_dirs_reserved_bytes);
 
 namespace kudu {
 
@@ -157,6 +161,14 @@ Status Dir::RefreshAvailableSpace(RefreshMode mode) {
       LOG(FATAL) << "Unknown check mode";
   }
   return Status::OK();
+}
+
+int Dir::available_space_cache_secs() {
+  return FLAGS_fs_data_dirs_available_space_cache_seconds;
+}
+
+int Dir::reserved_bytes() {
+  return FLAGS_fs_data_dirs_reserved_bytes;
 }
 
 DirManagerOptions::DirManagerOptions(string dir_type,

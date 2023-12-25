@@ -86,20 +86,6 @@ class DataDirGroup {
 
 }  // namespace internal
 
-// Instantiation of a directory that uses the appropriate gflags.
-class DataDir : public Dir {
- public:
-  DataDir(Env* env,
-          DirMetrics* metrics,
-          FsType fs_type,
-          std::string dir,
-          std::unique_ptr<DirInstanceMetadataFile> metadata_file,
-          std::unique_ptr<ThreadPool> pool);
-
-  int available_space_cache_secs() const override;
-  int reserved_bytes() const override;
-};
-
 struct DataDirManagerOptions : public DirManagerOptions {
   DataDirManagerOptions();
 };

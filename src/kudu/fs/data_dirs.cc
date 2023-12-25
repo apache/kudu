@@ -51,7 +51,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util_prod.h"
-#include "kudu/util/threadpool.h"
+#include "kudu/util/threadpool.h" // IWYU pragma: keep
 
 DEFINE_int32(fs_target_data_dirs_per_tablet, 3,
              "Indicates the target number of data dirs to spread each "
@@ -193,33 +193,16 @@ Status DataDirGroup::CopyToPB(const UuidByUuidIndexMap& uuid_by_uuid_idx,
 }
 
 ////////////////////////////////////////////////////////////
-// DataDir
+// DataDirManager
 ////////////////////////////////////////////////////////////
-
-DataDir::DataDir(Env* env, DirMetrics* metrics, FsType fs_type, std::string dir,
-                 std::unique_ptr<DirInstanceMetadataFile> metadata_file,
-                 std::unique_ptr<ThreadPool> pool)
-    : Dir(env, metrics, fs_type, std::move(dir), std::move(metadata_file), std::move(pool)) {}
 
 std::unique_ptr<Dir> DataDirManager::CreateNewDir(
     Env* env, DirMetrics* metrics, FsType fs_type,
     std::string dir, std::unique_ptr<DirInstanceMetadataFile> metadata_file,
     std::unique_ptr<ThreadPool> pool) {
-  return unique_ptr<Dir>(new DataDir(env, metrics, fs_type, std::move(dir),
-                                     std::move(metadata_file), std::move(pool)));
+  return std::make_unique<Dir>(env, metrics, fs_type, std::move(dir),
+                               std::move(metadata_file), std::move(pool));
 }
-
-int DataDir::available_space_cache_secs() const {
-  return FLAGS_fs_data_dirs_available_space_cache_seconds;
-}
-
-int DataDir::reserved_bytes() const {
-  return FLAGS_fs_data_dirs_reserved_bytes;
-}
-
-////////////////////////////////////////////////////////////
-// DataDirManager
-////////////////////////////////////////////////////////////
 
 DataDirManagerOptions::DataDirManagerOptions()
     : DirManagerOptions(FLAGS_block_manager, fs::kDefaultTenantID) {}
