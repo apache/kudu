@@ -445,8 +445,9 @@ class Connection extends SimpleChannelInboundHandler<Object> {
       // If the connection was explicitly disconnected via a call to disconnect(), we should
       // have either gotten a ClosedChannelException or an SSLException.
       assert !explicitlyDisconnected;
-      String message = String.format("%s unexpected exception from downstream on %s",
-                                     getLogPrefix(), ctx.channel());
+      String channelInfo = ctx == null ? "" : String.format(" on %s", ctx.channel());
+      String message = String.format(
+          "%s unexpected exception from downstream%s", getLogPrefix(), channelInfo);
       error = new RecoverableException(Status.NetworkError(message), e);
       LOG.error(message, e);
     }
