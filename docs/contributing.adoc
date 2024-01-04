@@ -210,15 +210,16 @@ git commit -a --amend
 Kudu's code base makes the following notable exceptions from the Google Style Guide
 referenced above:
 
-==== Notes on {cpp} 11
+==== Notes on {cpp}-17
 
-Kudu uses {cpp} 11. Check out this handy guide to {cpp} 11 move semantics and rvalue
+Kudu code uses the {cpp}-17 standard internally, but Kudu {cpp} client API
+is still kept compatible with {cpp}-98.
+
+Usage of the moving semantics (introduced in {cpp}-11) is encouraged. Check out
+this handy guide to move semantics and rvalue
 references: https://www.chromium.org/rvalue-references
 
-We aim to follow most of the same guidelines, such as, where possible, migrating
-away from `foo.Pass()` in favor of `std::move(foo)`.
-
-==== Limitations on `boost` Use
+==== Limitations on `boost` library usage
 
 `boost` classes from header-only libraries can be used in cases where a suitable
 replacement does not exist in the Kudu code base. However:
