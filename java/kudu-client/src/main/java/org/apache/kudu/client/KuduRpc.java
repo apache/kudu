@@ -397,6 +397,9 @@ public abstract class KuduRpc<R> {
       buf.append(tablet.getTabletId());
     }
     buf.append(", attempt=").append(attempt);
+    if (isRequestTracked()) {
+      buf.append(", sequence_id=").append(sequenceId);
+    }
     buf.append(", ").append(timeoutTracker);
     // Cheating a bit, we're not actually logging but we'll augment the information provided by
     // this method if DEBUG is enabled.
