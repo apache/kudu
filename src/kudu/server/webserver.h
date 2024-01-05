@@ -67,17 +67,17 @@ class Webserver : public WebCallbackRegistry {
 
   // Register a route 'path' to be rendered via template.
   // The appropriate template to use is determined by 'path'.
-  // If 'is_styled' is true, the page will be styled and include a header and footer.
+  // If 'style_mode' is StyleMode::STYLED, the page will be styled and include a header and footer.
   // If 'is_on_nav_bar' is true, a link to the page will be placed on the navbar
   // in the header of styled pages. The link text is given by 'alias'.
   void RegisterPathHandler(const std::string& path, const std::string& alias,
                            const PathHandlerCallback& callback,
-                           bool is_styled, bool is_on_nav_bar) override;
+                           StyleMode style_mode, bool is_on_nav_bar) override;
 
   // Register a route 'path'. See the RegisterPathHandler for details.
   void RegisterPrerenderedPathHandler(const std::string& path, const std::string& alias,
                                       const PrerenderedPathHandlerCallback& callback,
-                                      bool is_styled,
+                                      StyleMode style_mode,
                                       bool is_on_nav_bar) override;
 
   // Register route 'path' for application/octet-stream (binary data) responses.
@@ -105,21 +105,21 @@ class Webserver : public WebCallbackRegistry {
   // Container class for a list of path handler callbacks for a single URL.
   class PathHandler {
    public:
-    PathHandler(bool is_styled, bool is_on_nav_bar, std::string alias,
+    PathHandler(StyleMode style_mode, bool is_on_nav_bar, std::string alias,
                 PrerenderedPathHandlerCallback callback)
-        : is_styled_(is_styled),
+        : style_mode_(style_mode),
           is_on_nav_bar_(is_on_nav_bar),
           alias_(std::move(alias)),
           callback_(std::move(callback)) {}
 
-    bool is_styled() const { return is_styled_; }
+    StyleMode style_mode() const { return style_mode_; }
     bool is_on_nav_bar() const { return is_on_nav_bar_; }
     const std::string& alias() const { return alias_; }
     const PrerenderedPathHandlerCallback& callback() const { return callback_; }
 
    private:
-    // If true, the page appears is rendered styled.
-    const bool is_styled_;
+    // The style mode controls how the page is rendered, and what content-type header is used.
+    const StyleMode style_mode_;
 
     // If true, the page appears in the navigation bar.
     const bool is_on_nav_bar_;
@@ -156,7 +156,7 @@ class Webserver : public WebCallbackRegistry {
 
   // Renders the template corresponding to 'path' (if available), using
   // fields in 'ej'.
-  void Render(const std::string& path, const EasyJson& ej, bool use_style,
+  void Render(const std::string& path, const EasyJson& ej, StyleMode style_mode,
               std::stringstream* output);
 
   // Dispatch point for all incoming requests.
@@ -188,19 +188,10 @@ class Webserver : public WebCallbackRegistry {
   //
   // 'req' may be null if we're early enough in processing that we haven't
   // parsed the request yet (e.g. an early error out).
-  //
-  // If 'mode' is STYLED, includes page styling elements like CSS, navigation bar, etc.
-  //
-  // BINARY is a rare case when a binary data is sent as a response.
-  enum class StyleMode {
-    STYLED,
-    UNSTYLED,
-    BINARY,
-  };
   void SendResponse(struct sq_connection* connection,
                     PrerenderedWebResponse* resp,
                     const WebRequest* req = nullptr,
-                    StyleMode mode = StyleMode::UNSTYLED);
+                    StyleMode style_mode = StyleMode::UNSTYLED);
 
   const WebserverOptions opts_;
 

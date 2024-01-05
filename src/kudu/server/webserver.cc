@@ -442,7 +442,7 @@ Status Webserver::Start() {
                       [this](const WebRequest& req, WebResponse* resp) {
                         this->RootHandler(req, resp);
                       },
-                      /*is_styled=*/true, /*is_on_nav_bar=*/true);
+                      StyleMode::STYLED, /*is_on_nav_bar=*/true);
 
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(GetBoundAddresses(&addrs));
@@ -682,8 +682,8 @@ sq_callback_result_t Webserver::RunPathHandler(
   }
 
   // Should we render with css styles?
-  StyleMode use_style = handler.is_styled() && !ContainsKey(req.parsed_args, "raw") ?
-                        StyleMode::STYLED : StyleMode::UNSTYLED;
+  StyleMode use_style = ContainsKey(req.parsed_args, "raw") ?
+                        StyleMode::UNSTYLED : handler.style_mode();
   SendResponse(connection, resp, &req, use_style);
   return SQ_HANDLED_OK;
 }
@@ -834,7 +834,7 @@ string Webserver::MustachePartialTag(const string& path) {
 }
 
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
-    const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
+    const PathHandlerCallback& callback, StyleMode style_mode, bool is_on_nav_bar) {
   string render_path = (path == "/") ? "/home" : path;
   auto wrapped_cb = [=](const WebRequest& req, PrerenderedWebResponse* rendered_resp) {
     WebResponse resp;
@@ -846,17 +846,17 @@ void Webserver::RegisterPathHandler(const string& path, const string& alias,
     // do not render the page
     if (render_path != "/home" || is_started_) {
       stringstream out;
-      Render(render_path, resp.output, is_styled, &out);
+      Render(render_path, resp.output, style_mode, &out);
       rendered_resp->output << out.rdbuf();
     }
   };
-  RegisterPrerenderedPathHandler(path, alias, wrapped_cb, is_styled, is_on_nav_bar);
+  RegisterPrerenderedPathHandler(path, alias, wrapped_cb, style_mode, is_on_nav_bar);
 }
 
 void Webserver::RegisterPrerenderedPathHandler(const string& path, const string& alias,
-    const PrerenderedPathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
+    const PrerenderedPathHandlerCallback& callback, StyleMode style_mode, bool is_on_nav_bar) {
   std::lock_guard l(lock_);
-  InsertOrDie(&path_handlers_, path, new PathHandler(is_styled, is_on_nav_bar, alias, callback));
+  InsertOrDie(&path_handlers_, path, new PathHandler(style_mode, is_on_nav_bar, alias, callback));
 }
 
 void Webserver::RegisterBinaryDataPathHandler(
@@ -864,7 +864,7 @@ void Webserver::RegisterBinaryDataPathHandler(
     const string& alias,
     const PrerenderedPathHandlerCallback& callback) {
   std::lock_guard l(lock_);
-  InsertOrDie(&path_handlers_, path, new PathHandler(false /*is_styled*/,
+  InsertOrDie(&path_handlers_, path, new PathHandler(StyleMode::BINARY,
                                                      false /*is_on_nav_bar*/,
                                                      alias,
                                                      callback));
@@ -954,11 +954,11 @@ void Webserver::RenderMainTemplate(
   RenderTemplate(kMainTemplate, opts_.doc_root, ej.value(), output);
 }
 
-void Webserver::Render(const string& path, const EasyJson& ej, bool use_style,
+void Webserver::Render(const string& path, const EasyJson& ej, StyleMode style_mode,
                        stringstream* output) {
   if (MustacheTemplateAvailable(path)) {
     RenderTemplate(MustachePartialTag(path), opts_.doc_root, ej.value(), output);
-  } else if (use_style) {
+  } else if (style_mode == StyleMode::STYLED) {
     (*output) << "<pre>" << ej.ToString() << "</pre>";
   } else {
     (*output) << ej.ToString();

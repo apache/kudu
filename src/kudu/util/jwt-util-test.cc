@@ -851,7 +851,7 @@ class JWKSMockServer {
     opts.bind_interface = "127.0.0.1";
     webserver_.reset(new Webserver(opts));
     webserver_->RegisterPrerenderedPathHandler("/jwks", "JWKS", SimpleJWKSHandler,
-                                               /*is_styled*/false, /*is_on_nav_bar*/false);
+                                               StyleMode::UNSTYLED, /*is_on_nav_bar*/false);
     RETURN_NOT_OK(webserver_->Start());
     vector<Sockaddr> addrs;
     RETURN_NOT_OK(webserver_->GetBoundAddresses(&addrs));
@@ -876,7 +876,7 @@ class JWKSMockServer {
             resp->output << jwks;
             resp->status_code = HttpStatusCode::Ok;
           },
-          /*is_styled*/false, /*is_on_nav_bar*/false);
+          StyleMode::UNSTYLED, /*is_on_nav_bar*/false);
     }
     RETURN_NOT_OK(webserver_->Start());
     vector<Sockaddr> addrs;

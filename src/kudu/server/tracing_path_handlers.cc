@@ -277,8 +277,7 @@ void TracingPathHandlers::RegisterHandlers(Webserver* server) {
         e.first, "", [e](const Webserver::WebRequest& req,
                          Webserver::PrerenderedWebResponse* resp) {
           HandleRequest(e.second, req, resp);
-        },
-      false /* styled */, false /* is_on_nav_bar */);
+        }, StyleMode::UNSTYLED, false /* is_on_nav_bar */);
   }
 }
 

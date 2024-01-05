@@ -202,55 +202,55 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
       this->HandleScansPage(req, resp);
     },
-    true /* styled */, false /* is_on_nav_bar */);
+    StyleMode::STYLED, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablets", "Tablets",
     [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
       this->HandleTabletsPage(req, resp);
     },
-    true /* styled */, true /* is_on_nav_bar */);
+    StyleMode::STYLED, true /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablet", "",
     [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
       this->HandleTabletPage(req, resp);
     },
-    true /* styled */, false /* is_on_nav_bar */);
+    StyleMode::STYLED, false /* is_on_nav_bar */);
   server->RegisterPrerenderedPathHandler(
     "/transactions", "",
     [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
       this->HandleTransactionsPage(req, resp);
     },
-    true /* styled */, false /* is_on_nav_bar */);
+    StyleMode::STYLED, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablet-rowsetlayout-svg", "",
     [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
       this->HandleTabletSVGPage(req, resp);
     },
-    true /* styled */, false /* is_on_nav_bar */);
+    StyleMode::STYLED, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablet-consensus-status", "",
     [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
       this->HandleConsensusStatusPage(req, resp);
     },
-    true /* styled */, false /* is_on_nav_bar */);
+    StyleMode::STYLED, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/log-anchors", "",
     [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
       this->HandleLogAnchorsPage(req, resp);
     },
-    true /* styled */, false /* is_on_nav_bar */);
+    StyleMode::STYLED, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/dashboards", "Dashboards",
     [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
       this->HandleDashboardsPage(req, resp);
     },
-    true /* styled */, true /* is_on_nav_bar */);
+    StyleMode::STYLED, true /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/maintenance-manager", "",
     [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
       this->HandleMaintenanceManagerPage(req, resp);
     },
-    true /* styled */, false /* is_on_nav_bar */);
+    StyleMode::STYLED, false /* is_on_nav_bar */);
 
   return Status::OK();
 }

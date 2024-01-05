@@ -21,11 +21,12 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/rpc/messenger.h" // IWYU pragma: keep
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpcz_store.h"
 #include "kudu/server/webserver.h"
@@ -81,7 +82,7 @@ void AddRpczPathHandlers(const shared_ptr<Messenger>& messenger, Webserver* webs
       [messenger](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
         RpczPathHandler(messenger, req, resp);
       },
-      false, true);
+      StyleMode::UNSTYLED, true /*is_on_nav_bar*/);
 }
 
 } // namespace kudu

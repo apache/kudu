@@ -873,44 +873,43 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
 }
 
 Status MasterPathHandlers::Register(Webserver* server) {
-  constexpr const bool is_styled = true;
   constexpr const bool is_on_nav_bar = true;
   server->RegisterPathHandler(
       "/tablet-servers", "Tablet Servers",
       [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
         this->HandleTabletServers(req, resp);
       },
-      is_styled, is_on_nav_bar);
+      StyleMode::STYLED, is_on_nav_bar);
   server->RegisterPathHandler(
       "/tables", "Tables",
       [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
         this->HandleCatalogManager(req, resp);
       },
-      is_styled, is_on_nav_bar);
+      StyleMode::STYLED, is_on_nav_bar);
   server->RegisterPathHandler(
       "/table", "",
       [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
         this->HandleTablePage(req, resp);
       },
-      is_styled, false);
+      StyleMode::STYLED, false);
   server->RegisterPathHandler(
       "/masters", "Masters",
       [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
         this->HandleMasters(req, resp);
       },
-      is_styled, is_on_nav_bar);
+      StyleMode::STYLED, is_on_nav_bar);
   server->RegisterPrerenderedPathHandler(
       "/ipki-ca-cert", "IPKI CA certificate",
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
         this->HandleIpkiCaCert(DataFormat::PEM, req, resp);
       },
-      false /*is_styled*/, true /*is_on_nav_bar*/);
+      StyleMode::UNSTYLED , true /*is_on_nav_bar*/);
   server->RegisterPrerenderedPathHandler(
       "/ipki-ca-cert-pem", "IPKI CA certificate (PEM format)",
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
         this->HandleIpkiCaCert(DataFormat::PEM, req, resp);
       },
-      false /*is_styled*/, false /*is_on_nav_bar*/);
+      StyleMode::UNSTYLED, false /*is_on_nav_bar*/);
   server->RegisterBinaryDataPathHandler(
       "/ipki-ca-cert-der", "IPKI CA certificate (DER format)",
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
@@ -921,7 +920,7 @@ Status MasterPathHandlers::Register(Webserver* server) {
       [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
         this->HandleDumpEntities(req, resp);
       },
-      false, false);
+      StyleMode::UNSTYLED, false);
   return Status::OK();
 }
 

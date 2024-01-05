@@ -37,6 +37,18 @@ enum class HttpStatusCode {
   ServiceUnavailable, // 503
 };
 
+// StyleMode is an enumeration used to define the format of the server's response to the client.
+// This format determines how the response data is presented and interpreted by the client.
+enum class StyleMode {
+  // This mode includes additional styling elements in the response,
+  // such as CSS, navigation bar, etc.
+  STYLED,
+  // In this mode, the response is sent without any styling elements.
+  UNSTYLED,
+  // In rare cases when a binary data is sent as a response.
+  BINARY
+};
+
 // Interface for registering webserver callbacks.
 //
 // To register a webserver callback for /example/path:
@@ -104,25 +116,25 @@ class WebCallbackRegistry {
   virtual ~WebCallbackRegistry() = default;
 
   // Register a callback for a URL path. Path should not include the
-  // http://hostname/ prefix. If is_styled is true, the page is meant to be for
+  // http://hostname/ prefix. If style_mode is StyleMode::STYLED, the page is meant to be for
   // people to look at and is styled.  If false, it is meant to be for machines to
   // scrape.  If is_on_nav_bar is true,  a link to this page is
   // printed in the navigation bar at the top of each debug page. Otherwise the
   // link does not appear, and the page is rendered without HTML headers and
   // footers.
-  // The first registration's choice of is_styled overrides all
+  // The first registration's choice of style_mode overrides all
   // subsequent registrations for that URL.
   // For each call to RegisterPathHandler(), the file $KUDU_HOME/www<path>.mustache
   // should exist.
   virtual void RegisterPathHandler(const std::string& path, const std::string& alias,
                                    const PathHandlerCallback& callback,
-                                   bool is_styled, bool is_on_nav_bar) = 0;
+                                   StyleMode style_mode, bool is_on_nav_bar) = 0;
 
   // Same as RegisterPathHandler(), except that callback produces prerendered HTML.
   // Use RegisterPathHandler() with a mustache template instead.
   virtual void RegisterPrerenderedPathHandler(const std::string& path, const std::string& alias,
                                               const PrerenderedPathHandlerCallback& callback,
-                                              bool is_styled,
+                                              StyleMode style_mode,
                                               bool is_on_nav_bar) = 0;
 
   // Register a callback for a URL path that returns binary data, a.k.a. octet

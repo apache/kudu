@@ -126,7 +126,7 @@ Status MiniOidc::Start() {
                                      kRsaInvalidPubKeyJwkN, kRsaPubKeyJwkE),
               resp->status_code = HttpStatusCode::Ok;
         },
-        /*is_styled*/ false,
+        StyleMode::UNSTYLED,
         /*is_on_nav_bar*/ false);
   }
 
@@ -146,7 +146,7 @@ Status MiniOidc::Start() {
                                    kRsaPubKeyJwkE),
         resp->status_code = HttpStatusCode::Ok;
       },
-      /*is_styled*/ false,
+      StyleMode::UNSTYLED,
       /*is_on_nav_bar*/ false);
 
   LOG(INFO) << "Starting JWKS server";
@@ -183,7 +183,7 @@ Status MiniOidc::Start() {
                            Webserver::PrerenderedWebResponse* resp) {
         OidcDiscoveryHandler(req, resp, discovery_jwks_url);
       },
-      /*is_styled*/ false,
+      StyleMode::UNSTYLED,
       /*is_on_nav_bar*/ false);
 
   LOG(INFO) << "Starting OIDC Discovery server";

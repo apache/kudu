@@ -26,6 +26,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <gtest/gtest.h>
 
@@ -200,6 +201,20 @@ Status WaitForUdpBindAtPort(const std::vector<std::string>& addresses,
 Status FindHomeDir(const std::string& name,
                    const std::string& bin_dir,
                    std::string* home_dir) WARN_UNUSED_RESULT;
+
+// Contains the endpoints which are to be found on Master and TServer as well.
+// Key: endpoint name, value: content-type header for that particular endpoint.
+const std::unordered_map<std::string, std::string>& GetCommonWebserverEndpoints();
+
+// Contains the endpoints which are to be found on TServer only.
+// Key: endpoint name, value: content-type header for that particular endpoint.
+const std::unordered_map<std::string, std::string>& GetTServerWebserverEndpoints(
+    const std::string& tablet_id);
+
+// Contains the endpoints which are to be found on Master only.
+// Key: endpoint name, value: content-type header for that particular endpoint.
+const std::unordered_map<std::string, std::string>& GetMasterWebserverEndpoints(
+    const std::string& table_id);
 
 } // namespace kudu
 #endif
