@@ -178,7 +178,7 @@ class PasswdWebserverTest : public WebserverTest {
 // the request as the .htpasswd is presented to webserver.
 TEST_F(PasswdWebserverTest, TestPasswdMissing) {
   if (fips_mode) {
-    return;
+    GTEST_SKIP();
   }
   Status status = curl_.FetchURL(url_, &buf_);
   ASSERT_EQ("Remote error: HTTP 401", status.ToString());
@@ -186,7 +186,7 @@ TEST_F(PasswdWebserverTest, TestPasswdMissing) {
 
 TEST_F(PasswdWebserverTest, TestPasswdPresent) {
   if (fips_mode) {
-    return;
+    GTEST_SKIP();
   }
   ASSERT_OK(curl_.set_auth(CurlAuthType::DIGEST, security::kTestAuthUsername,
                            security::kTestAuthPassword));
@@ -195,7 +195,7 @@ TEST_F(PasswdWebserverTest, TestPasswdPresent) {
 
 TEST_F(PasswdWebserverTest, TestCrashInFIPSMode) {
   if (!fips_mode) {
-    return;
+    GTEST_SKIP();
   }
 
   Status s = server_->Start();

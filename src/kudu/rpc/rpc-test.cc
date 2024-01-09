@@ -65,6 +65,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/net/socket_info.pb.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -242,7 +243,9 @@ TEST_P(TestRpc, TestCall) {
 // Test for KUDU-2091 and KUDU-2220.
 TEST_P(TestRpc, TestCallWithChainCertAndChainCA) {
   // We're only interested in running this test with TLS enabled.
-  if (!enable_ssl()) return;
+  if (!enable_ssl()) {
+    GTEST_SKIP();
+  }
 
   string rpc_certificate_file;
   string rpc_private_key_file;
@@ -273,7 +276,9 @@ TEST_P(TestRpc, TestCallWithChainCertAndChainCA) {
 // Test for KUDU-2041.
 TEST_P(TestRpc, TestCallWithChainCertAndRootCA) {
   // We're only interested in running this test with TLS enabled.
-  if (!enable_ssl()) return;
+  if (!enable_ssl()) {
+    GTEST_SKIP();
+  }
 
   string rpc_certificate_file;
   string rpc_private_key_file;
@@ -305,7 +310,9 @@ TEST_P(TestRpc, TestCallWithChainCertAndRootCA) {
 // private key.
 TEST_P(TestRpc, TestCallWithPasswordProtectedKey) {
   // We're only interested in running this test with TLS enabled.
-  if (!enable_ssl()) return;
+  if (!enable_ssl()) {
+    GTEST_SKIP();
+  }
 
   string rpc_certificate_file;
   string rpc_private_key_file;
@@ -341,7 +348,9 @@ TEST_P(TestRpc, TestCallWithPasswordProtectedKey) {
 // the wrong password for that private key, causes a server startup failure.
 TEST_P(TestRpc, TestCallWithBadPasswordProtectedKey) {
   // We're only interested in running this test with TLS enabled.
-  if (!enable_ssl()) return;
+  if (!enable_ssl()) {
+    GTEST_SKIP();
+  }
 
   string rpc_certificate_file;
   string rpc_private_key_file;
@@ -437,8 +446,7 @@ TEST_P(TestRpc, TestHighFDs) {
   const int kNumFakeFiles = 3500;
   const int kMinUlimit = kNumFakeFiles + 100;
   if (env_->GetResourceLimit(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS) < kMinUlimit) {
-    LOG(INFO) << "Test skipped: must increase ulimit -n to at least " << kMinUlimit;
-    return;
+    GTEST_SKIP() << "Test skipped: must increase ulimit -n to at least " << kMinUlimit;
   }
 
   // Open a bunch of fds just to increase our fd count.

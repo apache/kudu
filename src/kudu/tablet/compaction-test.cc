@@ -1387,8 +1387,7 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
 // would result in orphaning near-empty cfile blocks on the disk.
 TEST_F(TestCompaction, TestEmptyFlushDoesntLeakBlocks) {
   if (FLAGS_block_manager != "log") {
-    LOG(WARNING) << "Test requires the log block manager";
-    GTEST_SKIP();
+    GTEST_SKIP() << "Test requires the log block manager";
   }
 
   // Fetch the metric for the number of on-disk blocks, so we can later verify

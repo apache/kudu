@@ -246,8 +246,7 @@ bool TestEnv::fallocate_punch_hole_supported_ = false;
 
 TEST_F(TestEnv, TestPreallocate) {
   if (!fallocate_supported_) {
-    LOG(INFO) << "fallocate not supported, skipping test";
-    return;
+    GTEST_SKIP() << "fallocate not supported, skipping test";
   }
   LOG(INFO) << "Testing PreAllocate()";
   string test_path = GetTestPath("test_env_wf");
@@ -285,8 +284,7 @@ TEST_F(TestEnv, TestPreallocate) {
 // be smaller than the mmapped regions size).
 TEST_F(TestEnv, TestConsecutivePreallocate) {
   if (!fallocate_supported_) {
-    LOG(INFO) << "fallocate not supported, skipping test";
-    return;
+    GTEST_SKIP() << "fallocate not supported, skipping test";
   }
   LOG(INFO) << "Testing consecutive PreAllocate()";
   string test_path = GetTestPath("test_env_wf");
@@ -345,8 +343,7 @@ TEST_F(TestEnv, TestConsecutivePreallocate) {
 
 TEST_F(TestEnv, TestHolePunch) {
   if (!fallocate_punch_hole_supported_) {
-    LOG(INFO) << "hole punching not supported, skipping test";
-    return;
+    GTEST_SKIP() << "hole punching not supported, skipping test";
   }
   string test_path = GetTestPath("test_env_wf");
   unique_ptr<RWFile> file;
@@ -382,8 +379,7 @@ TEST_F(TestEnv, TestHolePunchBenchmark) {
   const int kHoleSize = 10 * kOneMb;
   const int kNumRuns = 1000;
   if (!fallocate_punch_hole_supported_) {
-    LOG(INFO) << "hole punching not supported, skipping test";
-    return;
+    GTEST_SKIP() << "hole punching not supported, skipping test";
   }
   Random r(SeedRandom());
 

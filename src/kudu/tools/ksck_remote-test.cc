@@ -517,10 +517,9 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotLastingLongerThanAHM) {
   // happen during the wait to start the checksum, for each tablet. It's likely
   // this sometimes won't happen in builds that are slower, so we'll just
   // disable the test for those builds.
-  #if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
-    LOG(WARNING) << "test is skipped in TSAN and ASAN builds";
-    return;
-  #endif
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  GTEST_SKIP() << "test is skipped in TSAN and ASAN builds";
+#endif
 
   // Write something so we have rows to checksum, and because we need a valid
   // timestamp from the client to use for a checksum scan.

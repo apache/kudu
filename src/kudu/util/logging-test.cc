@@ -348,8 +348,7 @@ TEST(LoggingTest, TestLogTiming) {
 // in hot code paths.
 TEST(LoggingTest, TestVlogDoesNotEvaluateMessage) {
   if (VLOG_IS_ON(1)) {
-    LOG(INFO) << "Test skipped: verbose level is at least 1";
-    return;
+    GTEST_SKIP() << "Test skipped: verbose level is at least 1";
   }
 
   int numVlogs = 0;

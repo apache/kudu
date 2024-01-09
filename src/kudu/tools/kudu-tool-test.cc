@@ -8083,8 +8083,7 @@ static void CreateTableWithFlushedData(const string& table_name,
 // data directories, which is not supported.
 TEST_F(ToolTest, TestFsSwappingDirectoriesFailsGracefully) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test, only log block manager is supported";
-    return;
+    GTEST_SKIP() << "Skipping test, only log block manager is supported";
   }
 
   // Configure the server to share the data root and wal root.
@@ -8270,8 +8269,7 @@ TEST_F(ToolTest, TestStartEndMaintenanceMode) {
 
 TEST_F(ToolTest, TestFsRemoveDataDirWithTombstone) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test, only log block manager is supported";
-    return;
+    GTEST_SKIP() << "Skipping test, only log block manager is supported";
   }
 
   // Start a cluster whose tserver has multiple data directories and create a
@@ -8309,8 +8307,7 @@ TEST_F(ToolTest, TestFsAddRemoveDataDirEndToEnd) {
   const string kTableBar = "bar";
 
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test, only log block manager is supported";
-    return;
+    GTEST_SKIP() << "Skipping test, only log block manager is supported";
   }
 
   // Disable the available space heuristic as it can interfere with the desired

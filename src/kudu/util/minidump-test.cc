@@ -116,14 +116,14 @@ TEST_P(MinidumpSignalDeathTest, TestHaveMinidumpAndStackTrace) {
 #if defined(ADDRESS_SANITIZER)
   // ASAN appears to catch SIGBUS, SIGSEGV, and SIGFPE and the process is not killed.
   if (signal == SIGBUS || signal == SIGSEGV || signal == SIGFPE) {
-    return;
+    GTEST_SKIP();
   }
 #endif
 
 #if defined(THREAD_SANITIZER)
   // TSAN appears to catch SIGTERM and the process is not killed.
   if (signal == SIGTERM) {
-    return;
+    GTEST_SKIP();
   }
 #endif
 

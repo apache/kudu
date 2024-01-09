@@ -932,8 +932,7 @@ TEST_P(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
 
 TEST_P(FsManagerTestBase, TestAddRemoveDataDirs) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test, file block manager not supported";
-    return;
+    GTEST_SKIP() << "Skipping test, file block manager not supported";
   }
 
   // Try to open with a new data dir in the list to be opened; Kudu should
@@ -974,8 +973,7 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirs) {
 
 TEST_P(FsManagerTestBase, TestEIOWhileChangingDirs) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "The file block manager doesn't support updating directories";
-    return;
+    GTEST_SKIP() << "The file block manager doesn't support updating directories";
   }
   const string kTestPathBase = GetTestPath("testpath");
   const int kMaxDirs = 10;
@@ -1009,8 +1007,7 @@ TEST_P(FsManagerTestBase, TestEIOWhileChangingDirs) {
 // happens, we should ensure that the our failures to update get rolled back.
 TEST_P(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "The file block manager doesn't support updating directories";
-    return;
+    GTEST_SKIP() << "The file block manager doesn't support updating directories";
   }
   const string kTestPathBase = GetTestPath("testpath");
   // Helper to get a new root.
@@ -1100,8 +1097,7 @@ TEST_P(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
 
 TEST_P(FsManagerTestBase, TestReAddRemovedDataDir) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test, file block manager not supported";
-    return;
+    GTEST_SKIP() << "Skipping test, file block manager not supported";
   }
 
   // Add a new data directory, remove it, and add it back.
@@ -1137,8 +1133,7 @@ TEST_P(FsManagerTestBase, TestReAddRemovedDataDir) {
 
 TEST_P(FsManagerTestBase, TestCannotRemoveDataDirServingAsMetadataDir) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test, file block manager not supported";
-    return;
+    GTEST_SKIP() << "Skipping test, file block manager not supported";
   }
 
   // Create a new fs layout with a metadata root explicitly set to the first
@@ -1173,8 +1168,7 @@ TEST_P(FsManagerTestBase, TestCannotRemoveDataDirServingAsMetadataDir) {
 
 TEST_P(FsManagerTestBase, TestAddRemoveSpeculative) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test, file block manager not supported";
-    return;
+    GTEST_SKIP() << "Skipping test, file block manager not supported";
   }
 
   // Add a second data directory.
@@ -1238,8 +1232,7 @@ TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
   const int kNumAttempts = AllowSlowTests() ? 1000 : 100;
 
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test, file block manager not supported";
-    return;
+    GTEST_SKIP() << "Skipping test, file block manager not supported";
   }
 
   Random rng_(SeedRandom());

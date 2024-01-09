@@ -320,8 +320,7 @@ TEST_F(TestIntervalTree, TestEmpty) {
 
 TEST_F(TestIntervalTree, TestBigO) {
 #ifndef NDEBUG
-  LOG(WARNING) << "big-O results are not valid if DCHECK is enabled";
-  return;
+  GTEST_SKIP() << "big-O results are not valid if DCHECK is enabled";
 #endif
   SeedRandom();
 

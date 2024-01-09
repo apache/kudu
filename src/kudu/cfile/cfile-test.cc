@@ -1075,7 +1075,9 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestCacheKeysAreStable) {
 
 // Inject failures in nvm allocation and ensure that we can still read a file.
 TEST_P(TestCFileBothCacheMemoryTypes, TestNvmAllocationFailure) {
-  if (GetParam() != Cache::MemoryType::NVM) return;
+  if (GetParam() != Cache::MemoryType::NVM) {
+    GTEST_SKIP();
+  }
   RETURN_IF_NO_NVM_CACHE(GetParam());
 
   FLAGS_nvm_cache_simulate_allocation_failure = true;

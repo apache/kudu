@@ -237,9 +237,8 @@ TEST_P(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
 // that are referenced by a tablet will not be reused.
 TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
   if (GetParam() != "log") {
-    LOG(INFO) << "Missing blocks is currently only supported by the log "
-                 "block manager. Exiting early!";
-    return;
+    GTEST_SKIP() << "Missing blocks is currently only supported by the log "
+                    "block manager. Exiting early!";
   }
   // Set up a basic server that flushes often so we create blocks quickly.
   NO_FATALS(StartClusterOneTs({

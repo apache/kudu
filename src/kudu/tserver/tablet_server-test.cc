@@ -1152,8 +1152,8 @@ TEST_F(TabletServerTest, TestEIODuringDelete) {
 // across the removed directories.
 TEST_F(TabletServerTest, TestAddRemoveDirectory) {
   if (FLAGS_block_manager == "file") {
-    LOG(INFO) << "Skipping test since the file block manager does not support updating directories";
-    return;
+    GTEST_SKIP() << "Skipping test since the file block manager does not support "
+                    "updating directories";
   }
   // Start with multiple data dirs so the dirs are suffixed with numbers, and
   // so when we remove a data dirs, we'll be using the same set of dirs.

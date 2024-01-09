@@ -97,8 +97,8 @@ METRIC_DECLARE_gauge_uint64(data_dirs_full);
 #define RETURN_NOT_LOG_BLOCK_MANAGER() \
   do { \
     if (FLAGS_block_manager != "log") { \
-      LOG(INFO) << "This platform does not use the log block manager by default. Skipping test."; \
-      return; \
+      GTEST_SKIP() << "This platform does not use the log block manager by default. " \
+                      "Skipping test."; \
     } \
   } while (false)
 

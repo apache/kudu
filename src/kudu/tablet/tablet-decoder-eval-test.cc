@@ -91,8 +91,7 @@ public:
 
   void ScanAndFilter(size_t cardinality, size_t lower, size_t upper, int null_upper) {
     if (GetParam() == LARGE && !AllowSlowTests()) {
-      LOG(INFO) << "Skipped large test case";
-      return;
+      GTEST_SKIP() << "Skipped large test case";
     }
     size_t nrows = static_cast<size_t>(GetParam());
     // The correctness check of this test requires that the int and string
@@ -220,8 +219,7 @@ public:
 
   void TestMultipleColumnPredicates(size_t cardinality, size_t lower, size_t upper) {
     if (GetParam() == LARGE && !AllowSlowTests()) {
-      LOG(INFO) << "Skipped large test case";
-      return;
+      GTEST_SKIP() << "Skipped large test case";
     }
     size_t nrows = static_cast<size_t>(GetParam());
     size_t strlen = std::max({static_cast<size_t>(FLAGS_decoder_eval_test_strlen),
