@@ -562,21 +562,6 @@ Status Socket::Connect(const Sockaddr& remote) {
   return Status::OK();
 }
 
-Status Socket::GetSockError() const {
-  int val = 0, ret;
-  socklen_t val_len = sizeof(val);
-  DCHECK_GE(fd_, 0);
-  ret = ::getsockopt(fd_, SOL_SOCKET, SO_ERROR, &val, &val_len);
-  if (ret) {
-    int err = errno;
-    return Status::NetworkError("getsockopt(SO_ERROR) failed", ErrnoToString(err), err);
-  }
-  if (val != 0) {
-    return Status::NetworkError(ErrnoToString(val), Slice(), val);
-  }
-  return Status::OK();
-}
-
 Status Socket::Write(const uint8_t* buf, int32_t amt, int32_t* nwritten) {
   if (amt <= 0) {
     return Status::NetworkError(

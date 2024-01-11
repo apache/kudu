@@ -126,9 +126,6 @@ class Socket {
   // start connecting this socket to a remote address.
   Status Connect(const Sockaddr& remote);
 
-  // get the error status using getsockopt(2)
-  Status GetSockError() const;
-
   // Write up to 'amt' bytes from 'buf' to the socket. The number of bytes
   // actually written will be stored in 'nwritten'. If an error is returned,
   // the value of 'nwritten' is undefined.
