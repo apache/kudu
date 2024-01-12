@@ -267,6 +267,10 @@ set(UTIL_SRCS
   zlib.cc
 )
 
+if(NOT APPLE)
+  set(UTIL_SRCS ${UTIL_SRCS} net/diagnostic_socket.cc)
+endif()
+
 if(NOT NO_TESTS)
   set(UTIL_SRCS ${UTIL_SRCS} test_graph.cc)
 endif()
@@ -592,6 +596,7 @@ ADD_KUDU_TEST(yamlreader-test)
 
 if (NOT APPLE)
   ADD_KUDU_TEST(minidump-test)
+  ADD_KUDU_TEST(net/diagnostic_socket-test)
 endif()
 
 #######################################
