@@ -63,12 +63,6 @@ const char kHolePunchErrorMsg[] =
     "server. Raw error message follows";
 
 Status CheckHolePunch(Env* env, const string& path) {
-  // Arbitrary constants.
-  static uint64_t kFileSize = 4096 * 4;
-  static uint64_t kHoleOffset = 4096;
-  static uint64_t kHoleSize = 8192;
-  static uint64_t kPunchedFileSize = kFileSize - kHoleSize;
-
   // Open the test file.
   string filename = JoinPathSegments(path, "hole_punch_test_file");
   unique_ptr<RWFile> file;
@@ -78,6 +72,14 @@ Status CheckHolePunch(Env* env, const string& path) {
   // for the hole punch test.
   opts.is_sensitive = false;
   RETURN_NOT_OK(env->NewRWFile(opts, filename, &file));
+
+  // Arbitrary constants.
+  uint64_t kBlockSize = 0;
+  RETURN_NOT_OK(env->GetBlockSize(filename, &kBlockSize));
+  const uint64_t kFileSize = kBlockSize * 4;
+  const uint64_t kHoleOffset = kBlockSize;
+  const uint64_t kHoleSize = kBlockSize * 2;
+  const uint64_t kPunchedFileSize = kFileSize - kHoleSize;
 
   // The file has been created; delete it on exit no matter what happens.
   auto file_deleter = MakeScopedCleanup([&]() {
