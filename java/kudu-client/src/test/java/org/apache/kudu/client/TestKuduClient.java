@@ -48,6 +48,7 @@ import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
 
 import java.io.Closeable;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
@@ -71,6 +72,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
+import io.netty.util.Timeout;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -390,6 +392,124 @@ public class TestKuduClient {
       fail("Exception was not thrown when calling keepAlive on a closed scanner");
     } catch (IllegalStateException ex) {
       assertThat(ex.getMessage(), containsString("Scanner has already been closed"));
+    }
+  }
+
+  /*
+   * Test keeping a scanner alive periodically beyond scanner ttl.
+   */
+  @Test(timeout = 100000)
+  @TabletServerConfig(flags = {
+      "--scanner_ttl_ms=" + SHORT_SCANNER_TTL_MS / 5,
+      "--scanner_gc_check_interval_us=" + SHORT_SCANNER_GC_US,
+  })
+  public void testKeepAlivePeriodically() throws Exception {
+    // Create a basic table and load it with data.
+    int numRows = 1000;
+    client.createTable(
+        TABLE_NAME,
+        basicSchema,
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 3));
+    KuduSession session = client.newSession();
+    KuduTable table = client.openTable(TABLE_NAME);
+
+    for (int i = 0; i < numRows; i++) {
+      Insert insert = createBasicSchemaInsert(table, i);
+      session.apply(insert);
+    }
+
+    // Start keep-alive timer and read all data out. After read out all data,
+    // the keep-alive timer will be cancelled.
+    {
+      KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+          .replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
+          .batchSizeBytes(100)
+          .build();
+
+      scanner.startKeepAlivePeriodically(SHORT_SCANNER_TTL_MS / 10);
+      int rowCount = 0;
+      while (scanner.hasMoreRows()) {
+        // Sleep a long time to make scanner easy to be expired.
+        Thread.sleep(SHORT_SCANNER_TTL_MS / 2);
+        rowCount += scanner.nextRows().getNumRows();
+      }
+      assertEquals(numRows, rowCount);
+      // Check that keepAliveTimeout is cancelled.
+      Field fieldAsyncScanner = KuduScanner.class.getDeclaredField("asyncScanner");
+      fieldAsyncScanner.setAccessible(true);
+      AsyncKuduScanner asyncScanner = (AsyncKuduScanner)fieldAsyncScanner.get(scanner);
+      Field fieldKeepaliveTimeout =
+          AsyncKuduScanner.class.getDeclaredField("keepAliveTimeout");
+      fieldKeepaliveTimeout.setAccessible(true);
+      Timeout keepAliveTimeout = (Timeout)fieldKeepaliveTimeout.get(asyncScanner);
+      assertTrue(keepAliveTimeout.isCancelled());
+    }
+
+    // Start keep-alive timer then close it. After closing the client,
+    // the keep-alive timer will be closed.
+    {
+      KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+          .replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
+          .batchSizeBytes(100)
+          .build();
+
+      scanner.startKeepAlivePeriodically(SHORT_SCANNER_TTL_MS / 10);
+
+      // Check that keepAliveTimeout is not cancelled.
+      Field fieldAsyncScanner = KuduScanner.class.getDeclaredField("asyncScanner");
+      fieldAsyncScanner.setAccessible(true);
+      AsyncKuduScanner asyncScanner = (AsyncKuduScanner)fieldAsyncScanner.get(scanner);
+      Field fieldKeepaliveTimeout =
+          AsyncKuduScanner.class.getDeclaredField("keepAliveTimeout");
+      fieldKeepaliveTimeout.setAccessible(true);
+      Timeout keepAliveTimeout = (Timeout)fieldKeepaliveTimeout.get(asyncScanner);
+      assertFalse(keepAliveTimeout.isCancelled());
+
+      // Check that keepAliveTimeout is cancelled.
+      scanner.close();
+      assertTrue(keepAliveTimeout.isCancelled());
+    }
+  }
+
+  /*
+   * Test stoping the keep-alive timer.
+   */
+  @Test(timeout = 100000)
+  @TabletServerConfig(flags = {
+      "--scanner_ttl_ms=" + SHORT_SCANNER_TTL_MS / 5,
+      "--scanner_gc_check_interval_us=" + SHORT_SCANNER_GC_US,
+  })
+  public void testStopKeepAlivePeriodically() throws Exception {
+    // Create a basic table and load it with data.
+    int numRows = 1000;
+    client.createTable(
+        TABLE_NAME,
+        basicSchema,
+        new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 3));
+    KuduSession session = client.newSession();
+    KuduTable table = client.openTable(TABLE_NAME);
+
+    for (int i = 0; i < numRows; i++) {
+      Insert insert = createBasicSchemaInsert(table, i);
+      session.apply(insert);
+    }
+
+    KuduScanner scanner = new KuduScanner.KuduScannerBuilder(asyncClient, table)
+        .replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
+        .batchSizeBytes(100) // Use a small batch size so we can call nextRows many times.
+        .build();
+    // Start the keep-alive timer and then close it. Read data will timeout.
+    assertTrue(scanner.startKeepAlivePeriodically(SHORT_SCANNER_TTL_MS / 10));
+    assertTrue(scanner.stopKeepAlivePeriodically());
+    while (scanner.hasMoreRows()) {
+      try {
+        // Sleep a long time to make scanner easy to be expired.
+        Thread.sleep(SHORT_SCANNER_TTL_MS / 2);
+        scanner.nextRows();
+      } catch (Exception e) {
+        assertTrue(e.toString().contains("not found (it may have expired)"));
+        break;
+      }
     }
   }
 

@@ -39,13 +39,18 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
+import io.netty.util.TimerTask;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
@@ -287,6 +292,12 @@ public final class AsyncKuduScanner {
 
   private String queryId;
 
+  private final HashedWheelTimer timer = new HashedWheelTimer(
+        new ThreadFactoryBuilder().setDaemon(true).build(), 20,
+        TimeUnit.MILLISECONDS);
+
+  private Timeout keepAliveTimeout;
+
   /**
    * UUID of the tserver which the scanner is bound with. The following scans of
    * this scanner will be sent to the tserver.
@@ -477,7 +488,11 @@ public final class AsyncKuduScanner {
    * @return true if there might be more data to scan, else false
    */
   public boolean hasMoreRows() {
-    return this.canRequestMore || cachedPrefetcherDeferred.get() != null;
+    boolean hasMore = this.canRequestMore || cachedPrefetcherDeferred.get() != null;
+    if (!hasMore) {
+      stopKeepAlivePeriodically();
+    }
+    return hasMore;
   }
 
   /**
@@ -837,6 +852,7 @@ public final class AsyncKuduScanner {
     if (closed) {
       return Deferred.fromResult(null);
     }
+    stopKeepAlivePeriodically();
     return client.closeScanner(this).addCallback(closedCallback()); // TODO errBack ?
   }
 
@@ -958,6 +974,41 @@ public final class AsyncKuduScanner {
       throw new IllegalStateException("Scanner has already been closed");
     }
     return client.keepAlive(this);
+  }
+
+  /**
+   * Package-private access point for {@link AsyncKuduScanner}s to keep themselves
+   * alive on tablet servers by sending keep-alive requests periodically.
+   * @param keepAliveIntervalMS the interval of sending keep-alive requests.
+   * @return true if starting keep-alive timer successfully.
+   */
+  boolean startKeepAlivePeriodically(int keepAliveIntervalMS) {
+    if (closed) {
+      return false;
+    }
+    final class KeepAliveTimer implements TimerTask {
+      @Override
+      public void run(final Timeout timeout) {
+        keepAlive();
+        keepAliveTimeout = AsyncKuduClient.newTimeout(timer, this, keepAliveIntervalMS);
+      }
+    }
+
+    keepAliveTimeout = AsyncKuduClient.newTimeout(timer, new KeepAliveTimer(),
+                                                  keepAliveIntervalMS);
+    return true;
+  }
+
+  /**
+   * Package-private access point for {@link AsyncKuduScanner}s to stop
+   * keep-alive timer.
+   * @return true if stopping keep-alive timer successfully.
+   */
+  boolean stopKeepAlivePeriodically() {
+    if (keepAliveTimeout != null) {
+      return keepAliveTimeout.cancel();
+    }
+    return true;
   }
 
   /**

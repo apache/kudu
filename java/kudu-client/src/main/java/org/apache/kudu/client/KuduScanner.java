@@ -103,6 +103,39 @@ public class KuduScanner implements Iterable<RowResult> {
   }
 
   /**
+   * Keep the current remote scanner alive by sending keep-alive requests periodically.
+   * <p>
+   * startKeepAlivePeriodically() uses a timer to call keepAlive() periodically,
+   * which is defined by parameter keepAliveIntervalMS. It sends keep-alive requests to
+   * the server periodically using a separate thread. This is useful if the client
+   * takes long time to handle the fetched data before having the chance to call
+   * keepAlive(). This can be called after the scanner is opened and the timer can be
+   * stopped by calling stopKeepAlivePeriodically().
+   * <p>
+   * @throws KuduException if anything went wrong.
+   * <p>
+   * * @return true if starting keep-alive timer successfully.
+   */
+  public final boolean startKeepAlivePeriodically(int keepAliveIntervalMS) throws KuduException {
+    return asyncScanner.startKeepAlivePeriodically(keepAliveIntervalMS);
+  }
+
+  /**
+   * Stop keeping the current remote scanner alive periodically.
+   * <p>
+   * This function stops to send keep-alive requests to the server periodically.
+   * After function startKeepAlivePeriodically is called, this function can be used to
+   * stop the keep-alive timer at any time. The timer will be stopped automatically
+   * after finishing scanning. But it can also be stopped manually by calling this
+   * function.
+   * <p>
+   * @return true if stopping keep-alive timer successfully.
+   */
+  public final boolean stopKeepAlivePeriodically() {
+    return asyncScanner.stopKeepAlivePeriodically();
+  }
+
+  /**
    * @return true if the scanner has been closed.
    */
   public boolean isClosed() {
