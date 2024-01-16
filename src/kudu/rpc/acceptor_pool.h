@@ -84,6 +84,7 @@ class AcceptorPool {
   // Metrics.
   scoped_refptr<Counter> rpc_connections_accepted_;
   scoped_refptr<Histogram> dispatch_times_;
+  scoped_refptr<Histogram> listen_socket_queue_size_;
 
   DISALLOW_COPY_AND_ASSIGN(AcceptorPool);
 };

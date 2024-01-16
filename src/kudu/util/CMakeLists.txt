@@ -222,6 +222,7 @@ set(UTIL_SRCS
   minidump.cc
   monotime.cc
   mutex.cc
+  net/diagnostic_socket.cc
   net/dns_resolver.cc
   net/net_util.cc
   net/sockaddr.cc
@@ -266,10 +267,6 @@ set(UTIL_SRCS
   yamlreader.cc
   zlib.cc
 )
-
-if(NOT APPLE)
-  set(UTIL_SRCS ${UTIL_SRCS} net/diagnostic_socket.cc)
-endif()
 
 if(NOT NO_TESTS)
   set(UTIL_SRCS ${UTIL_SRCS} test_graph.cc)

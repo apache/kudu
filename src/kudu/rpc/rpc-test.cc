@@ -63,6 +63,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/diagnostic_socket.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/net/socket_info.pb.h"
@@ -86,8 +87,11 @@ METRIC_DECLARE_counter(timed_out_on_response_kudu_rpc_test_CalculatorService_Sle
 METRIC_DECLARE_histogram(acceptor_dispatch_times);
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
+METRIC_DECLARE_histogram(rpc_listen_socket_rx_queue_size);
 
 DECLARE_bool(rpc_reopen_outbound_connections);
+DECLARE_bool(rpc_suppress_negotiation_trace);
+DECLARE_int32(rpc_listen_socket_stats_every_log2);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
 DECLARE_int32(tcp_keepalive_probe_period_s);
 DECLARE_int32(tcp_keepalive_retry_period_s);
@@ -1438,7 +1442,7 @@ TEST_P(TestRpc, AcceptorDispatchingTimesMetric) {
 
   {
     Socket socket;
-    ASSERT_OK(socket.Init(server_addr.family(), 0));
+    ASSERT_OK(socket.Init(server_addr.family(), /*flags=*/0));
     ASSERT_OK(socket.Connect(server_addr));
   }
 
@@ -1841,6 +1845,215 @@ TEST_P(TestRpc, TestCallId) {
     ASSERT_EQ(i, controller.call_id());
   }
 }
+
+#if defined(__linux__)
+// A test to verify collecting information on the RX queue size of a listening
+// socket using the DiagnosticSocket wrapper.
+class TestRpcSocketTxRxQueue : public TestRpc {
+ protected:
+  TestRpcSocketTxRxQueue() = default;
+
+  Status RunAndGetSocketInfo(int listen_backlog,
+                             size_t num_clients,
+                             DiagnosticSocket::TcpSocketInfo* info) {
+    // Limit the backlog for the socket being listened to.
+    Sockaddr s_addr = bind_addr();
+    Socket s_sock;
+    RETURN_NOT_OK(StartFakeServer(&s_sock, &s_addr, listen_backlog));
+
+    vector<shared_ptr<Messenger>> c_messengers(num_clients);
+    vector<unique_ptr<Proxy>> proxies(num_clients);
+    vector<AddRequestPB> requests(num_clients);
+    vector<AddResponsePB> responses(num_clients);
+    vector<RpcController> ctls(num_clients);
+
+    for (auto i = 0; i < num_clients; ++i) {
+      RETURN_NOT_OK(CreateMessenger("client" + std::to_string(i), &c_messengers[i]));
+      proxies[i].reset(new Proxy(c_messengers[i],
+                                 s_addr,
+                                 kRemoteHostName,
+                                 GenericCalculatorService::static_service_name()));
+      requests[i].set_x(2 * i);
+      requests[i].set_y(2 * i + 1);
+      proxies[i]->AsyncRequest(GenericCalculatorService::kAddMethodName,
+                               requests[i],
+                               &responses[i],
+                               &ctls[i],
+                               []() {});
+    }
+
+    // Let the messengers to send connect() requests.
+    // TODO(aserbin): find a more reliable way to track this.
+    SleepFor(MonoDelta::FromMilliseconds(250));
+
+    DiagnosticSocket ds;
+    RETURN_NOT_OK(ds.Init());
+
+    DiagnosticSocket::TcpSocketInfo result;
+    RETURN_NOT_OK(ds.Query(s_sock, &result));
+    *info = result;
+
+    // Close the socket explicitly to allow the connecting clients receiving
+    // RST on the connection to end up the connection negotiation attempts fast.
+    return s_sock.Close();
+  }
+};
+// All the tests run without SSL on TCP sockets: TestRpcSocketTxRxQueue inherits
+// from TestRpc, and the latter is parameterized. Running with SSL doesn't make
+// much sense since it's the same in this context: all the action happens
+// at the TCP level, and RPC connection negotiation doesn't happen.
+INSTANTIATE_TEST_SUITE_P(Parameters, TestRpcSocketTxRxQueue,
+                         testing::Combine(testing::Values(false),
+                                          testing::Values(false)));
+
+// This test scenario verifies the reported socket's stats when it's more than
+// enough space in the listening socket's RX queue to accommodate all the
+// incoming requests.
+TEST_P(TestRpcSocketTxRxQueue, UnderCapacity) {
+  constexpr int kListenBacklog = 16;
+  constexpr size_t kClientsNum = 5;
+
+  DiagnosticSocket::TcpSocketInfo info;
+  ASSERT_OK(RunAndGetSocketInfo(kListenBacklog, kClientsNum, &info));
+
+  // Since the fake server isn't handling incoming requests at all and even not
+  // accepting the corresponding TCP connections, all the connetions request
+  // end up in the RX queue.
+  ASSERT_EQ(kClientsNum, info.rx_queue_size);
+
+  // The TX queue size for a listening socket set to the size of the backlog
+  // as specified by the second parameter of the listen() system call, capped
+  // by the system-wide limit in /proc/sys/net/core/somaxconn).
+  ASSERT_EQ(kListenBacklog, info.tx_queue_size);
+}
+
+// This scenario is similar to the TestRpcSocketTxRxQueue.UnderCapacity scenario
+// above, but in this case the listening socket's backlog length equals
+// to the number of pending client TCP connections.
+TEST_P(TestRpcSocketTxRxQueue, AtCapacity) {
+  constexpr int kListenBacklog = 8;
+  constexpr size_t kClientsNum = 8;
+
+  DiagnosticSocket::TcpSocketInfo info;
+  ASSERT_OK(RunAndGetSocketInfo(kListenBacklog, kClientsNum, &info));
+
+  ASSERT_EQ(kClientsNum, info.rx_queue_size);
+  ASSERT_EQ(kListenBacklog, info.tx_queue_size);
+}
+
+// This scenario is similar to the couple of scenarios above, but it's not
+// enough space in the socket's RX queue to accommodate all the pending TCP
+// connections.
+TEST_P(TestRpcSocketTxRxQueue, OverCapacity) {
+  constexpr int kListenBacklog = 5;
+  constexpr size_t kClientsNum = 16;
+
+  DiagnosticSocket::TcpSocketInfo info;
+  ASSERT_OK(RunAndGetSocketInfo(kListenBacklog, kClientsNum, &info));
+
+  // Even if there are many more connection requests than the backlog of the
+  // listening socket can accommodate, the size of the socket's RX queue
+  // reflects only the requests that are fit into the backlog plus one extra.
+  // The rest of the incoming TCP packets do not affect the size of the RX
+  // queue as seen via the sock_diag netlink facility. Same behavior can also be
+  // observed via /proc/self/net/tcp, 'netstat', and 'ss' system utilities.
+  //
+  // On Linux, with the default setting of the net.ipv4.tcp_abort_on_overflow
+  // sysctl variable (see [1] for more details), the server's TCP stack just
+  // drops overflow packets, so the client's TCP stack retries sending initial
+  // SYN packet to re-attempt the TCP connection. That's exactly what the
+  // following paragraph from [2] refers to:
+  //
+  //   The backlog argument defines the maximum length to which the
+  //   queue of pending connections for sockfd may grow.  If a
+  //   connection request arrives when the queue is full, the client may
+  //   receive an error with an indication of ECONNREFUSED or, if the
+  //   underlying protocol supports retransmission, the request may be
+  //   ignored so that a later reattempt at connection succeeds.
+  //
+  // [1] https://sysctl-explorer.net/net/ipv4/tcp_abort_on_overflow/
+  // [2] https://man7.org/linux/man-pages/man2/listen.2.html
+  //
+  ASSERT_EQ(kListenBacklog + 1, info.rx_queue_size);
+  ASSERT_EQ(kListenBacklog, info.tx_queue_size);
+}
+
+// Basic verification for the numbers reported by the
+// 'rpc_listen_socket_rx_queue_size' histogram metric.
+TEST_P(TestRpcSocketTxRxQueue, AcceptorRxQueueSizeMetric) {
+  // Capture listening socket's metrics upon every accepted connection.
+  FLAGS_rpc_listen_socket_stats_every_log2 = 0;
+
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServer(&server_addr));
+
+  {
+    Socket socket;
+    ASSERT_OK(socket.Init(server_addr.family(), /*flags=*/0));
+    ASSERT_OK(socket.Connect(server_addr));
+  }
+
+  const auto& metric_entity = server_messenger_->metric_entity();
+  scoped_refptr<Histogram> rx_queue_size =
+      METRIC_rpc_listen_socket_rx_queue_size.Instantiate(metric_entity);
+
+  // Using ASSERT_EVENTUALLY below because of relaxed memory ordering when
+  // fetching metrics' values. Eventually, metrics reports readings that are
+  // consistent with the expected numbers.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, rx_queue_size->TotalCount());
+    // The metric had been sampled after the only pending connection was
+    // accepted, so the maximum metric's value should be 0.
+    ASSERT_GE(rx_queue_size->MaxValueForTests(), 0);
+  });
+}
+
+TEST_P(TestRpcSocketTxRxQueue, DisableAcceptorRxQueueSampling) {
+  n_acceptor_pool_threads_ = 1;
+
+  // Disable listening RPC socket's statistics sampling.
+  FLAGS_rpc_listen_socket_stats_every_log2 = -1;
+
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServer(&server_addr));
+
+  for (auto i = 0; i < 100; ++i) {
+    Socket socket;
+    ASSERT_OK(socket.Init(server_addr.family(), /*flags=*/0));
+    ASSERT_OK(socket.Connect(server_addr));
+  }
+
+  const auto& metric_entity = server_messenger_->metric_entity();
+  scoped_refptr<Histogram> rx_queue_size =
+      METRIC_rpc_listen_socket_rx_queue_size.Instantiate(metric_entity);
+  ASSERT_EQ(0, rx_queue_size->TotalCount());
+}
+
+TEST_P(TestRpcSocketTxRxQueue, CustomAcceptorRxQueueSamplingFrequency) {
+  n_acceptor_pool_threads_ = 1;
+
+  // Sampling the listening socket's stats every 8th request.
+  FLAGS_rpc_listen_socket_stats_every_log2 = 3;
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServer(&server_addr));
+
+  for (auto i = 0; i < 16; ++i) {
+    Socket socket;
+    ASSERT_OK(socket.Init(server_addr.family(), /*flags=*/0));
+    ASSERT_OK(socket.Connect(server_addr));
+  }
+
+  const auto& metric_entity = server_messenger_->metric_entity();
+  scoped_refptr<Histogram> rx_queue_size =
+      METRIC_rpc_listen_socket_rx_queue_size.Instantiate(metric_entity);
+  // Using ASSERT_EVENTUALLY below because of relaxed memory ordering when
+  // fetching metrics' values. Eventually, metrics reports readings that are
+  // consistent with the expected numbers.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(2, rx_queue_size->TotalCount());
+  });
+}
+#endif
 
 } // namespace rpc
 } // namespace kudu

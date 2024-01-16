@@ -22,9 +22,15 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
+#include <gtest/gtest_prod.h>
+
 struct iovec;
 
 namespace kudu {
+
+namespace rpc {
+class RpcAcceptorBench_MeasureAcceptorDispatchTimes_Test;
+}
 
 class SocketStatsPB;
 class TransportDetailsPB;
@@ -166,11 +172,29 @@ class Socket {
   virtual Status GetTransportDetails(TransportDetailsPB* pb) const;
 
  private:
+  FRIEND_TEST(rpc::RpcAcceptorBench, MeasureAcceptorDispatchTimes);
+
   // Called internally from SetSend/RecvTimeout().
   Status SetTimeout(int opt, const char* optname, const MonoDelta& timeout);
 
   // Called internally during socket setup.
   Status SetCloseOnExec();
+
+  // Set SO_LINGER (SO_LINGER_SEC on macOS): turn on/off the "linger on close"
+  // behavior for this socket according to the 'enable' parameter, setting
+  // the linger timeout (in seconds) to 'linger_timeout_sec'.
+  //
+  // Enabling the "lingering on close" behavior with zero linger timeout allows
+  // for short-circuiting the standard way of closing TCP sockets. For such a
+  // socket, the TCP stack discards any data from the socket's buffer and sends
+  // an RST packet to the peer immediately upon calling Close(). With that, the
+  // socket skips being in the TIME_WAIT state for the necessary period of time.
+  //
+  // The "short-circuiting on close" might be useful in various performance
+  // tests involving a lot of socket churn. To avoid unexpected complications,
+  // don't use it in the code that's a part of a system running in production
+  // environment.
+  Status SetLinger(bool enable, int linger_timeout_sec = 0);
 
   // Bind the socket to a local address before making an outbound connection,
   // based on the value of FLAGS_local_ip_for_outbound_sockets.

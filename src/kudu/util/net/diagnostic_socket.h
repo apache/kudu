@@ -86,6 +86,10 @@ class DiagnosticSocket final {
   // from the kernel using the netlink facility via the API of this class.
   Status Init() WARN_UNUSED_RESULT;
 
+  // Whether this wrapper has been initialized: the underlying netlink socket
+  // successfully opened, etc.
+  bool IsInitialized() const { return fd_ >= 0; }
+
   // Close the Socket, checking for errors.
   Status Close();
 

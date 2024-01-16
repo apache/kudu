@@ -72,6 +72,12 @@ DEFINE_bool(rpc_encrypt_loopback_connections, false,
             "an attacker.");
 TAG_FLAG(rpc_encrypt_loopback_connections, advanced);
 
+DEFINE_bool(rpc_suppress_negotiation_trace, false,
+            "Whether to suppress all negotiation traces: do not dump trace "
+            "of a connection negotiation into the log, even for a failed one. "
+            "For testing only!");
+TAG_FLAG(rpc_suppress_negotiation_trace, unsafe);
+
 using kudu::security::RpcAuthentication;
 using kudu::security::RpcEncryption;
 using std::string;
@@ -327,7 +333,8 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
       (s.IsNetworkError() && s.posix_code() == ECONNREFUSED) ||
       s.IsNotAuthorized());
 
-  if (is_bad || FLAGS_rpc_trace_negotiation) {
+  if ((is_bad || FLAGS_rpc_trace_negotiation) &&
+      PREDICT_TRUE(!FLAGS_rpc_suppress_negotiation_trace)) {
     string msg = Trace::CurrentTrace()->DumpToString();
     if (is_bad) {
       LOG(WARNING) << "Failed RPC negotiation. Trace:\n" << msg;

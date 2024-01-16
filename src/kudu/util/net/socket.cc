@@ -404,6 +404,28 @@ Status Socket::SetCloseOnExec() {
   return Status::OK();
 }
 
+Status Socket::SetLinger(bool enable, int linger_timeout_sec) {
+#if defined(__APPLE__)
+  #ifdef SO_LINGER_SEC
+    struct linger arg = { enable ? 1 : 0, linger_timeout_sec };
+    RETURN_NOT_OK_PREPEND(SetSockOpt(SOL_SOCKET, SO_LINGER_SEC, arg),
+                          "failed to set SO_LINGER_SEC");
+    return Status::OK();
+  #else
+    return Status::NotSupported("failed to set SO_LINGER_SEC: protocol not available");
+  #endif
+#else
+  #ifdef SO_LINGER
+    struct linger arg = { enable ? 1 : 0, linger_timeout_sec };
+    RETURN_NOT_OK_PREPEND(SetSockOpt(SOL_SOCKET, SO_LINGER, arg),
+                          "failed to set SO_LINGER");
+    return Status::OK();
+  #else
+    return Status::NotSupported("failed to set SO_LINGER: protocol not available");
+  #endif
+#endif // #if defined(__APPLE__) ... #else ...
+}
+
 Status Socket::SetSendTimeout(const MonoDelta& timeout) {
   return SetTimeout(SO_SNDTIMEO, "SO_SNDTIMEO", timeout);
 }

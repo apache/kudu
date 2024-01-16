@@ -36,6 +36,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/net/diagnostic_socket.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -68,6 +69,14 @@ METRIC_DEFINE_histogram(server, acceptor_dispatch_times,
                         kudu::MetricLevel::kInfo,
                         1000000, 2);
 
+METRIC_DEFINE_histogram(server, rpc_listen_socket_rx_queue_size,
+                        "Listening RPC Socket Backlog",
+                        kudu::MetricUnit::kEntries,
+                        "A histogram of the pending connections queue size for "
+                        "the listening RPC socket that this acceptor pool serves.",
+                        kudu::MetricLevel::kInfo,
+                        1000000, 2);
+
 DEFINE_int32(rpc_acceptor_listen_backlog,
              kudu::rpc::AcceptorPool::kDefaultListenBacklog,
              "Socket backlog parameter used when listening for RPC connections. "
@@ -81,7 +90,16 @@ DEFINE_int32(rpc_acceptor_listen_backlog,
              "the server ride over bursts of new inbound connection requests.");
 TAG_FLAG(rpc_acceptor_listen_backlog, advanced);
 
+DEFINE_int32(rpc_listen_socket_stats_every_log2, 3,
+             "Listening RPC socket's statistics sampling frequency. With "
+             "--rpc_listen_socket_stats_every_log2=N, the statistics are "
+             "sampled every 2^N connection request by each acceptor thread. "
+             "Set this flag to -1 to disable statistics collection on "
+             "the listening RPC socket.");
+TAG_FLAG(rpc_listen_socket_stats_every_log2, advanced);
+
 namespace {
+
 bool ValidateListenBacklog(const char* flagname, int value) {
   if (value >= -1) {
     return true;
@@ -92,8 +110,21 @@ bool ValidateListenBacklog(const char* flagname, int value) {
       "capped at the system-wide limit", value, flagname);
   return false;
 }
+
+bool ValidateStatsCollectionFrequency(const char* flagname, int value) {
+  if (value < 64) {
+    return true;
+  }
+  LOG(ERROR) << Substitute("$0: invalid setting for $1; must be less than 64",
+                           value, flagname);
+  return false;
+}
+
 } // anonymous namespace
+
 DEFINE_validator(rpc_acceptor_listen_backlog, &ValidateListenBacklog);
+DEFINE_validator(rpc_listen_socket_stats_every_log2,
+                 &ValidateStatsCollectionFrequency);
 
 
 namespace kudu {
@@ -114,6 +145,8 @@ AcceptorPool::AcceptorPool(Messenger* messenger,
       : METRIC_rpc_connections_accepted_unix_domain_socket;
   rpc_connections_accepted_ = connections_accepted.Instantiate(metric_entity);
   dispatch_times_ = METRIC_acceptor_dispatch_times.Instantiate(metric_entity);
+  listen_socket_queue_size_ =
+      METRIC_rpc_listen_socket_rx_queue_size.Instantiate(metric_entity);
 }
 
 AcceptorPool::~AcceptorPool() {
@@ -190,6 +223,34 @@ int64_t AcceptorPool::num_rpc_connections_accepted() const {
 void AcceptorPool::RunThread() {
   const int64_t kCyclesPerSecond = static_cast<int64_t>(base::CyclesPerSecond());
 
+  // Fetch and keep the information on the listening socket's address to avoid
+  // re-fetching it every time when accepting a new connection.
+  // The diagnostic socket is needed to fetch information on the RX queue size.
+  Sockaddr cur_addr;
+  WARN_NOT_OK(socket_.GetSocketAddress(&cur_addr),
+              "unable to get address info on RPC socket");
+  const auto& cur_addr_str = cur_addr.ToString();
+
+  DiagnosticSocket ds;
+  const int ds_query_freq_log2 = FLAGS_rpc_listen_socket_stats_every_log2;
+  const bool ds_query_enabled = (ds_query_freq_log2 >= 0);
+  const uint64_t ds_query_freq_mask =
+      ds_query_enabled ? (1ULL << ds_query_freq_log2) - 1 : 0;
+  if (ds_query_enabled) {
+    if (const auto s = ds.Init(); s.ok()) {
+      LOG(INFO) << Substitute(
+          "collecting diagnostics on the listening RPC socket $0 "
+          "every $1 connection(s)", cur_addr_str, ds_query_freq_mask + 1);
+    } else {
+      WARN_NOT_OK(s, "unable to open diagnostic socket");
+    }
+  } else {
+    LOG(INFO) << Substitute(
+        "collecting diagnostics on the listening RPC socket $0 is disabled",
+        cur_addr_str);
+  }
+
+  uint64_t counter = 0;
   while (true) {
     Socket new_sock;
     Sockaddr remote;
@@ -197,11 +258,29 @@ void AcceptorPool::RunThread() {
                           socket_.GetFd(), bind_address_.ToString());
     const auto s = socket_.Accept(&new_sock, &remote, Socket::FLAG_NONBLOCKING);
     const auto accepted_at = CycleClock::Now();
+
+    if (ds_query_enabled && ds.IsInitialized() &&
+        (counter & ds_query_freq_mask) == ds_query_freq_mask) {
+      VLOG(2) << "getting stats on the listening socket";
+      // Once removing an element from the pending connections queue
+      // (a.k.a. listen backlog), collect information on the number
+      // of connections in the queue still waiting to be accepted.
+      DiagnosticSocket::TcpSocketInfo info;
+      if (auto s = ds.Query(socket_, &info); PREDICT_TRUE(s.ok())) {
+        listen_socket_queue_size_->Increment(info.rx_queue_size);
+      } else if (!closing_) {
+        KLOG_EVERY_N_SECS(WARNING, 60)
+            << Substitute("unable to collect diagnostics on RPC socket $0: $1",
+                          cur_addr_str, s.ToString());
+      }
+    }
+    ++counter;
+
     const auto dispatch_times_recorder = MakeScopedCleanup([&]() {
       // The timings are captured for both success and failure paths, so the
       // 'dispatch_times_' histogram accounts for all the connection attempts
       // that lead to successfully extracting an item from the queue of pending
-      // connections for the listened RPC socket. Meanwhile, the
+      // connections for the listening RPC socket. Meanwhile, the
       // 'rpc_connection_accepted_' counter accounts only for connections that
       // were successfully dispatched to the messenger for further processing.
       dispatch_times_->Increment(

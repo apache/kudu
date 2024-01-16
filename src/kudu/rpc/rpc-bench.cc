@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -29,8 +32,10 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/messenger.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/messenger.h" // IWYU pragma: keep
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rtest.pb.h"
@@ -40,16 +45,19 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::atomic;
 using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 DEFINE_int32(client_threads, 16,
              "Number of client threads. For the synchronous benchmark, each thread has "
@@ -64,14 +72,20 @@ DEFINE_int32(async_call_concurrency, 60,
 DEFINE_int32(worker_threads, 1,
              "Number of server worker threads");
 
+DEFINE_int32(acceptor_threads, 1,
+             "Number of threads in the messenger's acceptor pool");
+
 DEFINE_int32(server_reactors, 4,
              "Number of server reactor threads");
+
+DEFINE_bool(enable_encryption, false, "Whether to enable TLS encryption for rpc-bench");
 
 DEFINE_int32(run_seconds, 1, "Seconds to run the test");
 
 DECLARE_bool(rpc_encrypt_loopback_connections);
-DEFINE_bool(enable_encryption, false, "Whether to enable TLS encryption for rpc-bench");
+DECLARE_bool(rpc_suppress_negotiation_trace);
 
+METRIC_DECLARE_histogram(acceptor_dispatch_times);
 METRIC_DECLARE_histogram(reactor_load_percent);
 METRIC_DECLARE_histogram(reactor_active_latency_us);
 
@@ -284,6 +298,91 @@ TEST_F(RpcBench, BenchmarkCallsAsync) {
   }
 
   SummarizePerf(sw.elapsed(), total_reqs, false);
+}
+
+class RpcAcceptorBench : public RpcTestBase {
+ protected:
+  RpcAcceptorBench()
+      : should_run_(true),
+        server_addr_(Sockaddr::Wildcard()) {
+    // Instantiate as many acceptor pool's threads as requested.
+    n_acceptor_pool_threads_ = FLAGS_acceptor_threads;
+
+    // This test connects to the RPC socket and immediately closes the
+    // connection once it has been established. However, the server side passes
+    // the accepted connection to the connection negotiation handlers.
+    // To make the server side to be able to accept as many connections as
+    // possible, make sure the acceptor isn't not going to receive the
+    // Status::ServiceUnavailable status because the negotiation thread pool is
+    // at capacity and not able to accept one more connection negotiation task.
+    // The connection negotiations tasks are very fast because they end up with
+    // an error when trying to operate on a connection that has been already
+    // closed at the client side.
+    n_negotiation_threads_ = 2 * FLAGS_client_threads;
+
+    // Suppress connection negotiation tracing to avoid flooding the output
+    // with the traces of failed RPC connection negotiation attempts. In this
+    // test, all the opened TCP connections are closed immediately by the
+    // client side.
+    FLAGS_rpc_suppress_negotiation_trace = true;
+  }
+
+  void SetUp() override {
+    NO_FATALS(RpcTestBase::SetUp());
+    ASSERT_OK(StartTestServer(&server_addr_));
+  }
+
+  atomic<bool> should_run_;
+  Sockaddr server_addr_;
+};
+
+TEST_F(RpcAcceptorBench, MeasureAcceptorDispatchTimes) {
+  const size_t threads_num = FLAGS_client_threads;
+
+  thread threads[threads_num];
+  Status status[threads_num];
+
+  for (auto i = 0; i < threads_num; ++i) {
+    auto* my_status = &status[i];
+    threads[i] = thread([this, my_status]() {
+      while (should_run_) {
+        Socket socket;
+        if (auto s = socket.Init(server_addr_.family(), /*flags=*/0);
+            PREDICT_FALSE(!s.ok())) {
+          *my_status = s;
+          return;
+        }
+        if (auto s = socket.SetLinger(true); PREDICT_FALSE(!s.ok())) {
+          *my_status = s;
+          return;
+        }
+        if (auto s = socket.Connect(server_addr_); PREDICT_FALSE(!s.ok())) {
+          *my_status = s;
+          return;
+        }
+      }
+    });
+  }
+
+  SleepFor(MonoDelta::FromSeconds(FLAGS_run_seconds));
+  should_run_ = false;
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  for (auto i = 0; i < threads_num; ++i) {
+    SCOPED_TRACE(Substitute("thread idx $0", i));
+    ASSERT_OK(status[i]);
+  }
+
+  scoped_refptr<Histogram> t =
+      METRIC_acceptor_dispatch_times.Instantiate(server_messenger_->metric_entity());
+  LOG(INFO) << Substitute("Dispatched $0 connection requests in $1 seconds",
+                          t->TotalCount(), FLAGS_run_seconds);
+  LOG(INFO) << Substitute(
+      "Request dispatching time (us): min $0 max $1 average $2",
+      t->MinValueForTests(), t->MaxValueForTests(), t->MeanValueForTests());
 }
 
 } // namespace rpc

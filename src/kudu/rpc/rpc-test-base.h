@@ -420,6 +420,7 @@ class RpcTestBase : public KuduTest {
  public:
   RpcTestBase()
       : n_acceptor_pool_threads_(2),
+        n_negotiation_threads_(4),
         n_server_reactor_threads_(3),
         n_worker_threads_(3),
         keepalive_time_ms_(1000),
@@ -470,9 +471,13 @@ class RpcTestBase : public KuduTest {
     }
     bld.set_metric_entity(metric_entity_);
     bld.set_rpc_negotiation_timeout_ms(rpc_negotiation_timeout_ms_);
+    bld.set_min_negotiation_threads(n_negotiation_threads_);
+    bld.set_max_negotiation_threads(n_negotiation_threads_);
+
     std::string hostname;
     RETURN_NOT_OK(GetFQDN(&hostname));
     bld.set_hostname(hostname);
+
     return bld.Build(messenger);
   }
 
@@ -613,13 +618,15 @@ static void DoTestSidecar(Proxy* p, int size1, int size2) {
 
   // Start a simple socket listening on a local port, returning the address.
   // This isn't an RPC server -- just a plain socket which can be helpful for testing.
-  static Status StartFakeServer(Socket *listen_sock, Sockaddr *listen_addr) {
+  static Status StartFakeServer(Socket* listen_sock,
+                                Sockaddr* listen_addr,
+                                int listen_backlog = 1) {
     Sockaddr bind_addr = Sockaddr::Wildcard();
     bind_addr.set_port(0);
     RETURN_NOT_OK(listen_sock->Init(bind_addr.family(), 0));
-    RETURN_NOT_OK(listen_sock->BindAndListen(bind_addr, 1));
+    RETURN_NOT_OK(listen_sock->BindAndListen(bind_addr, listen_backlog));
     RETURN_NOT_OK(listen_sock->GetSocketAddress(listen_addr));
-    LOG(INFO) << "Bound to: " << listen_addr->ToString();
+    VLOG(1) << "Bound to: " << listen_addr->ToString();
     return Status::OK();
   }
 
@@ -670,6 +677,7 @@ static void DoTestSidecar(Proxy* p, int size1, int size2) {
 
  protected:
   int n_acceptor_pool_threads_;
+  int n_negotiation_threads_;
   int n_server_reactor_threads_;
   int n_worker_threads_;
   int keepalive_time_ms_;
