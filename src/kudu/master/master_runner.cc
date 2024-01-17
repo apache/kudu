@@ -455,6 +455,7 @@ Status RunMasterServer() {
     // If we succeeded, wipe the system catalog on this node and initiate a
     // copy from another node.
     RETURN_NOT_OK(ClearLocalSystemCatalogAndCopy(leader_hp));
+    server.reset();
     server.reset(new Master(opts));
     RETURN_NOT_OK(server->Init());
     RETURN_NOT_OK(server->Start());

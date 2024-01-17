@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <kudu/gutil/strings/util.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -28,6 +30,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -35,7 +38,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <kudu/gutil/strings/util.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
@@ -1456,7 +1458,7 @@ struct MultiMasterClusterArgs {
 
 class AutoAddMasterTest : public KuduTest {
  public:
-  Status SetUpWithTestArgs(const MultiMasterClusterArgs& args) {
+  virtual Status SetUpWithTestArgs(const MultiMasterClusterArgs& args) {
     opts_.num_masters = args.orig_num_masters;
     opts_.enable_kerberos = args.is_secure;
     args_ = args;
@@ -1475,6 +1477,17 @@ class AutoAddMasterTest : public KuduTest {
   MultiMasterClusterArgs args_;
   ExternalMiniClusterOptions opts_;
   unique_ptr<ExternalMiniCluster> cluster_;
+};
+
+class MinidumpTest : public AutoAddMasterTest {
+ public:
+  Status SetUpWithTestArgs(const MultiMasterClusterArgs& args) override {
+    // By default minidump is disabled for all ExternalMiniCluster instances.
+    // This made a bug undetected during testing, so a positive regression test
+    // was added where minidump is enabled.
+    opts_.extra_master_flags.emplace_back("--enable_minidumps=true");
+    return AutoAddMasterTest::SetUpWithTestArgs(args);
+  }
 };
 
 constexpr const int64_t kShortRetryIntervalSecs = 1;
@@ -1763,6 +1776,33 @@ TEST_F(AutoAddMasterTest, TestAddNewMaster) {
   // issues.
   ASSERT_OK(cluster_->Restart());
   ASSERT_OK(cluster_->master(0)->WaitForCatalogManager());
+
+  // Let's create the new master and start it to ensure it starts up okay.
+  scoped_refptr<ExternalMaster> peer;
+  auto idx = cluster_->master_rpc_addrs().size();
+  ASSERT_OK(cluster_->CreateMaster(master_addrs, idx, &peer));
+  ASSERT_OK(peer->Start());
+  ASSERT_OK(peer->WaitForCatalogManager());
+  auto expected_num_masters = ++idx;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(VerifyVotersOnAllMasters(expected_num_masters, cluster_.get()));
+  });
+  NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// Regression test for KUDU-3491
+TEST_F(MinidumpTest, TestAddNewMasterMinidumpsEnabled) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // Let's get the current master addresses and add a new one to them
+  vector<HostPort> master_addrs = cluster_->master_rpc_addrs();
+  unique_ptr<Socket> reserved_socket;
+  ASSERT_OK(MiniCluster::ReserveDaemonSocket(
+      MiniCluster::DaemonType::MASTER, master_addrs.size(), opts_.bind_mode, &reserved_socket));
+
+  Sockaddr addr;
+  ASSERT_OK(reserved_socket->GetSocketAddress(&addr));
+  master_addrs.emplace_back(addr.host(), addr.port());
 
   // Let's create the new master and start it to ensure it starts up okay.
   scoped_refptr<ExternalMaster> peer;
