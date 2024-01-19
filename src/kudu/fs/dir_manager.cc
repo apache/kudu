@@ -448,7 +448,7 @@ Status DirManager::LoadInstances(
     string instance_filename = JoinPathSegments(dir, instance_metadata_filename());
 
     // Initialize the instance with a backup UUID. In case the load fails, this
-    // will be the UUID for our instnace.
+    // will be the UUID for our instance.
     string backup_uuid = gen.Next();
     unique_ptr<DirInstanceMetadataFile> instance(
         new DirInstanceMetadataFile(env_, std::move(backup_uuid), opts_.dir_type,

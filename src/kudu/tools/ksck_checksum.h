@@ -164,7 +164,7 @@ class KsckChecksumManager : public std::enable_shared_from_this<KsckChecksumMana
   };
 
   // Blocks until the number of replica results and errors reported equals
-  // the number of replicas that need to be processed, until the this instnce's
+  // the number of replicas that need to be processed, until the this instance's
   // timeout expires, or until the checksum process makes no progress for longer
   // than this instance's idle timeout, whichever comes first. Progress messages
   // are printed to 'out' if it is non-null.

@@ -77,7 +77,7 @@ class MinidumpExceptionHandler {
   void StopUserSignalHandlerThread();
   void RunUserSignalHandlerThread();
 
-  // The number of instnaces of this class that are currently in existence.
+  // The number of instances of this class that are currently in existence.
   // We keep this counter in order to force a crash if more than one is running
   // at a time, as a sanity check.
   static std::atomic<size_t> current_num_instances_;
