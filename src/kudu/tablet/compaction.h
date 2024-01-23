@@ -203,16 +203,15 @@ struct CompactionInputRow {
 // Function shared by flushes and compactions. Removes UNDO Mutations
 // considered "ancient" from the given CompactionInputRow, modifying the undo
 // mutation list in-place.
-// 'is_garbage_collected': Set to true if the row was marked as deleted prior
-// to the ancient history mark, with no reinsertions after that. In such a
-// case, all traces of the row should be removed from disk by the caller.
+// Return true if the row was marked as deleted prior to the ancient history mark,
+// with no reinsertions after that. In such a case, all traces of the row should
+// be removed from disk by the caller.
 //
 // This is supposed to be called after ApplyMutationsAndGenerateUndos() where REDOS
 // are transformed in UNDOs. There can be at most one REDO in 'redo_head', a DELETE.
-void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts,
-                        Mutation** undo_head,
+bool RemoveAncientUndos(const HistoryGcOpts& history_gc_opts,
                         const Mutation* redo_head,
-                        bool* is_garbage_collected);
+                        Mutation** undo_head);
 
 // Function shared by flushes, compactions and major delta compactions. Applies all the REDO
 // mutations from 'src_row' to the 'dst_row', and generates the related UNDO mutations. Some
@@ -224,11 +223,11 @@ void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts,
 //                            ignored.
 Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       const CompactionInputRow& src_row,
-                                      Mutation** new_undo_head,
-                                      Mutation** new_redo_head,
                                       Arena* arena,
+                                      const HistoryGcOpts& history_gc_opts,
                                       RowBlockRow* dst_row,
-                                      const HistoryGcOpts& history_gc_opts);
+                                      Mutation** new_undo_head,
+                                      Mutation** new_redo_head);
 
 // Iterate through this compaction input, flushing all rows to the given RollingDiskRowSetWriter.
 // The 'snap' argument should match the MvccSnapshot used to create the compaction input.

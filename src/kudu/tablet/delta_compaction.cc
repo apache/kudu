@@ -179,16 +179,16 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
       DVLOG(3) << "MDC Input Row - RowId: " << row_id << " "
                << CompactionInputRowToString(*input_row);
 
-      // NOTE: This is presently ignored.
-      bool is_garbage_collected;
-
-      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(
-          snap, *input_row, &new_undos_head, &new_redos_head, &mem.arena,
-          &dst_row, history_gc_opts_));
+      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
+                                                   *input_row,
+                                                   &mem.arena,
+                                                   history_gc_opts_,
+                                                   &dst_row,
+                                                   &new_undos_head,
+                                                   &new_redos_head));
       RemoveAncientUndos(history_gc_opts_,
-                         &new_undos_head,
                          new_redos_head,
-                         &is_garbage_collected);
+                         &new_undos_head);
 
       DVLOG(3) << "MDC Output Row - RowId: " << row_id << " "
                << RowToString(dst_row, new_undos_head, new_redos_head);
