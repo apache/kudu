@@ -46,6 +46,7 @@
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/util/flags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
@@ -53,6 +54,14 @@
 #include "kudu/util/status.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
+
+METRIC_DEFINE_gauge_int32(server, rpc_pending_connections,
+                          "Pending RPC Connections",
+                          kudu::MetricUnit::kUnits,
+                          "The current size of the longest backlog of pending "
+                          "connections among all the listening sockets "
+                          "of this RPC server",
+                          kudu::MetricLevel::kInfo);
 
 using kudu::security::RpcAuthentication;
 using kudu::security::RpcEncryption;
@@ -156,6 +165,23 @@ void Messenger::AllExternalReferencesDropped() {
   retain_self_.reset();
 }
 
+int32_t Messenger::GetPendingConnectionsNum() {
+  auto pool_reports_num = 0;
+  int32_t total_count = 0;
+  for (const auto& p : acceptor_pools_) {
+    uint32_t count;
+    if (auto s = p->GetPendingConnectionsNum(&count); !s.ok()) {
+      KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
+          "$0: no data on pending connections for acceptor pool at $1",
+          s.ToString(), p->bind_address().ToString()) << THROTTLE_MSG;
+      continue;
+    }
+    ++pool_reports_num;
+    total_count += static_cast<int32_t>(count);
+  }
+  return pool_reports_num == 0 ? -1 : total_count;
+}
+
 void Messenger::Shutdown() {
   ShutdownInternal(ShutdownMode::SYNC);
 }
@@ -223,12 +249,21 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
   RETURN_NOT_OK(sock.Bind(accept_addr));
   Sockaddr addr;
   RETURN_NOT_OK(sock.GetSocketAddress(&addr));
-  auto acceptor_pool(std::make_shared<AcceptorPool>(
-      this, &sock, addr, acceptor_listen_backlog_));
 
-  std::lock_guard<percpu_rwlock> guard(lock_);
-  acceptor_pools_.push_back(acceptor_pool);
-  pool->swap(acceptor_pool);
+  {
+    std::lock_guard<percpu_rwlock> guard(lock_);
+    acceptor_pools_.emplace_back(std::make_shared<AcceptorPool>(
+        this, &sock, addr, acceptor_listen_backlog_));
+    *pool = acceptor_pools_.back();
+  }
+
+  // 'rpc_pending_connections' metric is instantiated only when a messenger
+  // contains at least one acceptor pool. So, this metric is instantiated
+  // only for a server-side messenger.
+  METRIC_rpc_pending_connections.InstantiateFunctionGauge(
+      metric_entity_, [this]() { return this->GetPendingConnectionsNum(); })->
+      AutoDetachToLastValue(&metric_detacher_);
+
   return Status::OK();
 }
 

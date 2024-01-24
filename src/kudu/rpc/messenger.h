@@ -491,6 +491,12 @@ class Messenger {
   // any references. See 'retain_self_' for more info.
   void AllExternalReferencesDropped();
 
+  // Get the total number of currently pending connections across all the RPC
+  // endpoints this messenger is bound to. This utility method returns -1
+  // if the information on the listened socket's backlog cannot be retrieved
+  // from all of the RPC endpoints.
+  int32_t GetPendingConnectionsNum();
+
   const std::string name_;
 
   // Protects closing_, acceptor_pools_, rpc_services_.
@@ -617,6 +623,8 @@ class Messenger {
   // reactor threads, which deadlocks if the user destructs the Messenger from
   // within a Reactor thread itself.
   std::shared_ptr<Messenger> retain_self_;
+
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(Messenger);
 };

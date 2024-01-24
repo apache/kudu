@@ -70,6 +70,11 @@ class AcceptorPool {
   // Return the number of connections accepted by this messenger. Thread-safe.
   int64_t num_rpc_connections_accepted() const;
 
+  // Upon success, return Status::OK() and write the current size of the
+  // listening socket's RX queue into the 'result' out parameter. Otherwise,
+  // return corresponding status and leave the 'result' out parameter untouched.
+  Status GetPendingConnectionsNum(uint32_t* result) const;
+
  private:
   void RunThread();
 

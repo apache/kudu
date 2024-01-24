@@ -220,6 +220,17 @@ int64_t AcceptorPool::num_rpc_connections_accepted() const {
   return rpc_connections_accepted_->value();
 }
 
+Status AcceptorPool::GetPendingConnectionsNum(uint32_t* result) const {
+  DiagnosticSocket ds;
+  RETURN_NOT_OK(ds.Init());
+
+  DiagnosticSocket::TcpSocketInfo info;
+  RETURN_NOT_OK(ds.Query(socket_, &info));
+  *result = info.rx_queue_size;
+
+  return Status::OK();
+}
+
 void AcceptorPool::RunThread() {
   const int64_t kCyclesPerSecond = static_cast<int64_t>(base::CyclesPerSecond());
 

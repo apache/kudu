@@ -84,6 +84,7 @@ class AcceptorPool;
 
 METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_counter(timed_out_on_response_kudu_rpc_test_CalculatorService_Sleep);
+METRIC_DECLARE_gauge_int32(rpc_pending_connections);
 METRIC_DECLARE_histogram(acceptor_dispatch_times);
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
@@ -1455,6 +1456,35 @@ TEST_P(TestRpc, AcceptorDispatchingTimesMetric) {
     ASSERT_EQ(1, dispatch_times->TotalCount());
     ASSERT_GT(dispatch_times->MaxValueForTests(), 0);
   });
+}
+
+// Basic verification of the 'rpc_pending_connections' metric.
+TEST_P(TestRpc, RpcPendingConnectionsMetric) {
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServer(&server_addr));
+
+  {
+    Socket socket;
+    ASSERT_OK(socket.Init(server_addr.family(), /*flags=*/0));
+    ASSERT_OK(socket.Connect(server_addr));
+  }
+
+  // Get the reference to already registered metric with the proper callback
+  // to fetch the necessary information. The { 'return -3'; } fake callback
+  // is to make sure the actual gauge returns a proper value,
+  // which is verified below.
+  auto pending_connections_gauge =
+      METRIC_rpc_pending_connections.InstantiateFunctionGauge(
+          server_messenger_->metric_entity(), []() { return -3; });
+
+  // There should be no connection pending -- the only received connection
+  // request has been handled already above. The number of pending connections
+  // is properly reported at Linux only as of now; on macOS it should report -1.
+#if defined(__linux__)
+  ASSERT_EQ(0, pending_connections_gauge->value());
+#else
+  ASSERT_EQ(-1, pending_connections_gauge->value());
+#endif
 }
 
 static void DestroyMessengerCallback(shared_ptr<Messenger>* messenger,
