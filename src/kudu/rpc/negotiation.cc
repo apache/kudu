@@ -257,13 +257,10 @@ static Status DoServerNegotiation(Connection* conn,
                                   bool encrypt_loopback,
                                   const MonoTime& deadline) {
   auto* messenger = conn->reactor_thread()->reactor()->messenger();
-  if (authentication == RpcAuthentication::REQUIRED &&
-      messenger->keytab_file().empty() &&
-      !messenger->tls_context().is_external_cert()) {
-    return Status::InvalidArgument("RPC authentication (--rpc_authentication) may not be "
-                                   "required unless Kerberos (--keytab_file) or external PKI "
-                                   "(--rpc_certificate_file et al) are configured");
-  }
+  DCHECK(authentication != RpcAuthentication::REQUIRED ||
+      !messenger->keytab_file().empty() ||
+      messenger->tls_context().is_external_cert())
+      << "misconfiguration: check ValidateRpcAuthnFlags() for details";
 
   if (FLAGS_rpc_negotiation_inject_delay_ms > 0) {
     LOG(WARNING) << "Injecting " << FLAGS_rpc_negotiation_inject_delay_ms
