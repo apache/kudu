@@ -70,6 +70,7 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_bool(log_block_manager_delete_dead_container);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
@@ -155,6 +156,18 @@ class BlockManagerTest : public KuduTest {
   }
 
  protected:
+
+  Status CreateBlock(BlockId* out, const string& data, int repeat_data = 1) {
+    unique_ptr<WritableBlock> block;
+    RETURN_NOT_OK(bm_->CreateBlock(test_block_opts_, &block));
+    for (int i = 0; i < repeat_data; i++) {
+      RETURN_NOT_OK(block->Append(data));
+    }
+    RETURN_NOT_OK(block->Finalize());
+    RETURN_NOT_OK(block->Close());
+    *out = block->id();
+    return Status::OK();
+  }
 
   T* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
                         const shared_ptr<MemTracker>& parent_mem_tracker) {
@@ -916,6 +929,73 @@ TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
   }
 }
 
+// Regression test for KUDU-3528.
+// We should handle the following case:
+//   + A container becomes full.
+//   + All blocks in this container are deleted so we try to delete it
+//   + We delete the ".metadata" file, but fail to delete the ".data"
+//   + Block manager restarts (e.g  Kudu tserver restarts)
+// Current behaviour:
+//   + Block manager fails to start, because it can't handle a .data file whose
+//     corresponding .metadata file is not present.
+// Expected:
+//   + We should either do a more error resistant delete (see KUDU-3528) or
+//     make blockmanager handle the situation at start.
+// Keep test disabled until KUDU-3528 is fixed. Comments in the test might need
+// to be rephrased/revisited after KUDU-3528 is fixed.
+TYPED_TEST(BlockManagerTest, DISABLED_TestReloadBlockManagerDespiteFileDeleteFailure) {
+  // If you update the parameters, please also update the calculations in
+  // the comments.
+  constexpr int kBlocksWritten = 500;
+  constexpr int kMaxBlocksInContainer = 2;
+  FLAGS_log_block_manager_delete_dead_container = true;
+  const string kTestData = string(500, 'L');
+  uint64_t block_size = 0;
+  ASSERT_OK(this->env_->GetBlockSize(this->test_dir_, &block_size));
+  ASSERT_LE(kTestData.size(), block_size);
+
+  FLAGS_log_container_max_size = kMaxBlocksInContainer * block_size;
+  FLAGS_log_container_preallocate_bytes = FLAGS_log_container_max_size;
+
+  FLAGS_crash_on_eio = false;
+  // We don't want any error when writing, only when deleting.
+  FLAGS_env_inject_eio = 0.0;
+
+  vector<BlockId> ids(kBlocksWritten);
+  for (auto& id : ids) {
+    ASSERT_OK(this->CreateBlock(&id, kTestData));
+  }
+
+  {
+    google::FlagSaver saver;
+    // If we have a full container file, we want to be left with a .data without
+    // a .metadata file.
+    // let x = FLAGS_env_inject_eio
+    // The chance that we delete the
+    // .metadata but fail to delete the .data file is (1-x) * x
+    // best chance is 1/4 at x=0.5.
+    // We have approximately 250 containers, so the chance that we will be
+    // left with a .data file whose corresponding .metadata file is not present
+    // is
+    // [1 - (0.75)^250] ~ 0.99999999999999999999999999999994174.
+    FLAGS_env_inject_eio = 0.5;
+
+    vector<BlockId> deleted;
+    shared_ptr<BlockDeletionTransaction> deletion_transaction = this->bm_->NewDeletionTransaction();
+    for (const auto& id : ids) {
+      deletion_transaction->AddDeletedBlock(id);
+    }
+    ignore_result(deletion_transaction->CommitDeletedBlocks(&deleted));
+    LOG(INFO) << Substitute(
+        "Successfully deleted $0 blocks on $1 attempts", deleted.size(), ids.size());
+  }
+
+  ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                     shared_ptr<MemTracker>(),
+                                     {GetTestDataDirectory()},
+                                     false /* create */));
+}
+
 // Regression test for KUDU-1793.
 TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
   const int kNumTries = 3;
@@ -929,6 +1009,22 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
   FLAGS_log_container_max_size = 256 * 1024;
   FLAGS_log_container_preallocate_bytes = 8 * 1024;
 
+  // Make sure no whole container file deletion is triggered!
+  // That case is tested by TestReloadBlockManagerDespiteFileDeleteFailure
+  // If we delete every block with 50% chance, there is a (1/2)^32 chance
+  // (we have 6080 byte blocks padded to 8k)
+  // that we clear a whole container with 4k alignment. It is even
+  // much lower per file than (1/2)^32 if you consider that we delete exactly
+  // half the blocks across all container files.
+  // If we use 64k block alignment (e.g possible on RHEL ARM 8.8 with 64K page
+  // size) we will have 4 blocks per container file, and we will have around
+  // ~125 files. It means we almost always delete some file
+  // (99.8% chance according to my test runs).
+  // So this flag only affects 64k block alignment in practice.
+  // (it would affect 32k alignment with a measurable chance too if we had such
+  // a system.)
+  FLAGS_log_block_manager_delete_dead_container = false;
+
   // Force some file operations to fail.
   FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 0.1;
@@ -936,21 +1032,6 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
   // Compact log block manager metadata aggressively at startup; injected
   // errors may also crop up here.
   FLAGS_log_container_live_metadata_before_compact_ratio = 0.5;
-
-  // Creates a block with the given 'test_data', writing the result
-  // to 'out' on success.
-  auto create_a_block = [&](BlockId* out, const string& test_data) {
-    unique_ptr<WritableBlock> block;
-    RETURN_NOT_OK(this->bm_->CreateBlock(this->test_block_opts_, &block));
-    for (int i = 0; i < kNumAppends; i++) {
-      RETURN_NOT_OK(block->Append(test_data));
-    }
-
-    RETURN_NOT_OK(block->Finalize());
-    RETURN_NOT_OK(block->Close());
-    *out = block->id();
-    return Status::OK();
-  };
 
   // Reads a block given by 'id', comparing its contents. Note that
   // we need to compare with both kLongTestData and kShortTestData as we
@@ -986,7 +1067,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
       BlockId id;
       // Inject different size of data to better simulate
       // real world case.
-      Status s = create_a_block(&id, i % 2 ? kShortTestData : kLongTestData);
+      Status s = this->CreateBlock(&id, i % 2 ? kShortTestData : kLongTestData, kNumAppends);
 
       if (s.ok()) {
         InsertOrDie(&ids, id);
