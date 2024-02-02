@@ -202,23 +202,22 @@ TEST_F(MetricsTest, SimpleStringGaugeForMergeTest) {
             state_for_merge->unique_values());
 }
 
-TEST_F(MetricsTest, StringGaugePrometheusTest) {
+TEST_F(MetricsTest, StringGaugeForPrometheus) {
   scoped_refptr<StringGauge> state =
       new StringGauge(&METRIC_test_string_gauge, "Healthy");
 
   ostringstream output;
   PrometheusWriter writer(&output);
   ASSERT_OK(state->WriteAsPrometheus(&writer, {}));
-  // String Gauges are not representable in Prometheus, empty output is expected
+  // String-based gauges are not consumable by Prometheus.
   ASSERT_EQ("", output.str());
 
-  // Make sure proper methods are called when relying on method overrides.
+  // Test that proper methods are called when relying on virtual overrides.
   {
     const Metric* g = state.get();
     ostringstream output;
     PrometheusWriter writer(&output);
     ASSERT_OK(g->WriteAsPrometheus(&writer, {}));
-    // String Gauges are not representable in Prometheus, empty output is expected
     ASSERT_EQ("", output.str());
   }
   {
@@ -228,6 +227,27 @@ TEST_F(MetricsTest, StringGaugePrometheusTest) {
     ASSERT_OK(m->WriteAsPrometheus(&writer, {}));
     ASSERT_EQ("", output.str());
   }
+}
+
+METRIC_DEFINE_gauge_string(test_entity,
+                           string_function_gauge,
+                           "String Function Gauge",
+                           MetricUnit::kState,
+                           "Description of string function gauge",
+                           kudu::MetricLevel::kInfo);
+
+TEST_F(MetricsTest, StringFunctionGaugeForPrometheus) {
+  scoped_refptr<FunctionGauge<string>> gauge =
+      METRIC_string_function_gauge.InstantiateFunctionGauge(
+          entity_, []() { return "string function gauge"; });
+  FunctionGaugeDetacher detacher;
+  gauge->AutoDetachToLastValue(&detacher);
+
+  ostringstream output;
+  PrometheusWriter writer(&output);
+  ASSERT_OK(gauge->WriteAsPrometheus(&writer, {}));
+  // String-based gauges are not consumable by Prometheus.
+  ASSERT_EQ("", output.str());
 }
 
 METRIC_DEFINE_gauge_double(test_entity, test_mean_gauge, "Test mean Gauge",
