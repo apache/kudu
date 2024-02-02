@@ -17,6 +17,7 @@
 #include "kudu/util/metrics.h"
 
 #include <iostream>
+#include <tuple>
 #include <utility>
 
 #include <gflags/gflags.h>
@@ -69,13 +70,13 @@ void WriteMetricsToJson(JsonWriter* writer,
   writer->EndArray();
 }
 
-template<typename Collection>
-void WriteMetricsToPrometheus(PrometheusWriter* writer,
-                              const Collection& metrics,
-                              const std::string& prefix) {
+void WriteMetricsPrometheus(PrometheusWriter* writer,
+                            const MetricEntity::MetricMap& metrics,
+                            const string& prefix) {
   for (const auto& [name, val] : metrics) {
     WARN_NOT_OK(val->WriteAsPrometheus(writer, prefix),
-                Substitute("Failed to write $0 as Prometheus", name));
+                Substitute("unable to write '$0' ($1) in Prometheus format",
+                           name, val->prototype()->description()));
   }
 }
 
@@ -424,12 +425,12 @@ Status MetricEntity::WriteAsPrometheus(PrometheusWriter* writer) const {
   if (strcmp(prototype_->name(), "server") == 0) {
     if (id_ == master_server) {
       // attach kudu_master_ as prefix to metrics
-      WriteMetricsToPrometheus(writer, metrics, master_prefix);
+      WriteMetricsPrometheus(writer, metrics, master_prefix);
       return Status::OK();
     }
     if (id_ == tablet_server) {
       // attach kudu_tserver_ as prefix to metrics
-      WriteMetricsToPrometheus(writer, metrics, tserver_prefix);
+      WriteMetricsPrometheus(writer, metrics, tserver_prefix);
       return Status::OK();
     }
   }
@@ -735,7 +736,8 @@ void MetricPrototype::WriteFields(JsonWriter* writer,
   }
 }
 
-void MetricPrototype::WriteFields(PrometheusWriter* writer, const string &prefix) const {
+void MetricPrototype::WriteHelpAndType(PrometheusWriter* writer,
+                                       const string& prefix) const {
   writer->WriteEntry(Substitute("# HELP $0$1 $2\n# TYPE $3$4 $5\n",
                                 prefix, name(), description(),
                                 prefix, name(), MetricType::Name(type())));
@@ -818,9 +820,8 @@ Status Gauge::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Gauge::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
-  prototype_->WriteFields(writer, prefix);
-
+Status Gauge::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
+  prototype_->WriteHelpAndType(writer, prefix);
   WriteValue(writer, prefix);
 
   return Status::OK();
@@ -1029,12 +1030,10 @@ Status Counter::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Counter::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
-  prototype_->WriteFields(writer, prefix);
-
+Status Counter::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
+  prototype_->WriteHelpAndType(writer, prefix);
   writer->WriteEntry(Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
                                 MetricUnit::Name(prototype_->unit()), value()));
-
   return Status::OK();
 }
 
@@ -1094,20 +1093,17 @@ Status Histogram::WriteAsJson(JsonWriter* writer,
   return Status::OK();
 }
 
-Status Histogram::WriteAsPrometheus(PrometheusWriter* writer, const std::string& prefix) const {
-  prototype_->WriteFields(writer, prefix);
-  std::string output = "";
-  MetricJsonOptions opts;
+Status Histogram::WriteAsPrometheus(PrometheusWriter* writer, const string& prefix) const {
   // Snapshot is taken to preserve the consistency across metrics and
   // requirements given by Prometheus. The value for the _bucket in +Inf
   // quantile needs to be equal to the total _count
   HistogramSnapshotPB snapshot;
-  RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, opts));
+  RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, {}));
 
-  output = Substitute("$0$1$2{unit_type=\"$3\", le=\"0.75\"} $4\n",
-                       prefix, prototype_->name(), "_bucket",
-                       MetricUnit::Name(prototype_->unit()),
-                       snapshot.percentile_75());
+  auto output = Substitute("$0$1$2{unit_type=\"$3\", le=\"0.75\"} $4\n",
+                           prefix, prototype_->name(), "_bucket",
+                           MetricUnit::Name(prototype_->unit()),
+                           snapshot.percentile_75());
 
   SubstituteAndAppend(&output, "$0$1$2{unit_type=\"$3\", le=\"0.95\"} $4\n",
                        prefix, prototype_->name(), "_bucket",
@@ -1144,6 +1140,7 @@ Status Histogram::WriteAsPrometheus(PrometheusWriter* writer, const std::string&
                        MetricUnit::Name(prototype_->unit()),
                        snapshot.total_count());
 
+  prototype_->WriteHelpAndType(writer, prefix);
   writer->WriteEntry(output);
 
   return Status::OK();

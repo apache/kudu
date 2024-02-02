@@ -583,8 +583,9 @@ class MetricPrototype {
   void WriteFields(JsonWriter* writer,
                    const MetricJsonOptions& opts) const;
 
-  void WriteFields(PrometheusWriter* writer, const std::string& prefix) const;
-
+  // Write TYPE and HELP meta-info for a metric in Prometheus format.
+  virtual void WriteHelpAndType(PrometheusWriter* writer,
+                                const std::string& prefix) const;
  protected:
   explicit MetricPrototype(CtorArgs args);
   virtual ~MetricPrototype() {
@@ -1015,6 +1016,14 @@ class GaugePrototype : public MetricPrototype {
     }
   }
 
+  void WriteHelpAndType(PrometheusWriter* writer,
+                        const std::string& prefix) const override {
+    if constexpr (std::is_arithmetic_v<T>) {
+      // Non-arithmetic gauges aren't supported by Prometheus.
+      MetricPrototype::WriteHelpAndType(writer, prefix);
+    }
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(GaugePrototype);
 };
@@ -1049,14 +1058,13 @@ class StringGauge : public Gauge {
   virtual bool IsUntouched() const override {
     return false;
   }
-  void MergeFrom(const scoped_refptr<Metric>& other) OVERRIDE;
-
+  void MergeFrom(const scoped_refptr<Metric>& other) override;
+  Status WriteAsPrometheus(PrometheusWriter* w, const std::string& prefix) const override;
  protected:
   FRIEND_TEST(MetricsTest, SimpleStringGaugeForMergeTest);
-  FRIEND_TEST(MetricsTest, StringGaugePrometheusTest);
-  Status WriteAsPrometheus(PrometheusWriter* w, const std::string& prefix) const OVERRIDE;
-  void WriteValue(JsonWriter* writer) const OVERRIDE;
-  void WriteValue(PrometheusWriter* writer, const std::string& prefix) const OVERRIDE;
+  FRIEND_TEST(MetricsTest, StringGaugeForPrometheus);
+  void WriteValue(JsonWriter* writer) const override;
+  void WriteValue(PrometheusWriter* writer, const std::string& prefix) const override;
   void FillUniqueValuesUnlocked();
   std::unordered_set<std::string> unique_values();
  private:
@@ -1093,6 +1101,30 @@ class MeanGauge : public Gauge {
   mutable simple_spinlock lock_;  // Guards total_sum_ and total_count_
   DISALLOW_COPY_AND_ASSIGN(MeanGauge);
 };
+
+// A helper function for writing a gauge's value in Prometheus format.
+template<typename T>
+void WriteValuePrometheus(PrometheusWriter* writer,
+                          const std::string& prefix,
+                          const char* proto_name,
+                          const char* unit_name,
+                          const T& value) {
+  static constexpr const char* const kFmt = "$0$1{unit_type=\"$2\"} $3\n";
+
+  if constexpr (!std::is_arithmetic_v<T>) {
+    // Non-arithmetic gauges aren't supported by Prometheus.
+    return;
+  }
+
+  // For a boolean gauge, convert false/true to 0/1 for Prometheus.
+  if constexpr (std::is_same_v<T, bool>) {
+    return writer->WriteEntry(
+        strings::Substitute(kFmt, prefix, proto_name, unit_name, value ? 1 : 0));
+  } else {
+    return writer->WriteEntry(
+        strings::Substitute(kFmt, prefix, proto_name, unit_name, value));
+  }
+}
 
 // Lock-free implementation for types that are convertible to/from int64_t.
 template <typename T>
@@ -1163,24 +1195,12 @@ class AtomicGauge : public Gauge {
     writer->Value(value());
   }
 
-  void WriteValue(PrometheusWriter* writer,const std::string& prefix) const OVERRIDE {
-    std::string output = "";
-
-    // If Boolean Gauge, convert false/true to 0/1 for Prometheus
-    if constexpr (std::is_same_v<T, bool> ) {
-      int check = 0;
-      if (value() == true) {
-        check = 1;
-      } else {
-        check = 0;
-      }
-      output = strings::Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
-                                   MetricUnit::Name(prototype_->unit()), check);
-    } else {
-      output = strings::Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
-                                   MetricUnit::Name(prototype_->unit()), value());
-    }
-    writer->WriteEntry(output);
+  void WriteValue(PrometheusWriter* writer,const std::string& prefix) const override {
+    return WriteValuePrometheus(writer,
+                                prefix,
+                                prototype_->name(),
+                                MetricUnit::Name(prototype_->unit()),
+                                value());
   }
  private:
   AtomicInt<int64_t> value_;
@@ -1274,24 +1294,14 @@ class FunctionGauge : public Gauge {
     writer->Value(value());
   }
 
-  void WriteValue(PrometheusWriter* writer, const std::string& prefix) const OVERRIDE {
-    std::string output = "";
-    // If Boolean Gauge, convert false/true to 0/1 for Prometheus
-    if constexpr (std::is_same_v<T, bool> ) {
-      int check = 0;
-      if (value() == true) {
-        check = 1;
-      } else {
-        check = 0;
-      }
-      output = strings::Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
-                                   MetricUnit::Name(prototype_->unit()), check);
-    } else {
-      output = strings::Substitute("$0$1{unit_type=\"$2\"} $3\n", prefix, prototype_->name(),
-                                   MetricUnit::Name(prototype_->unit()), value());
-    }
-    writer->WriteEntry(output);
+  void WriteValue(PrometheusWriter* writer, const std::string& prefix) const override {
+    return WriteValuePrometheus(writer,
+                                prefix,
+                                prototype_->name(),
+                                MetricUnit::Name(prototype_->unit()),
+                                value());
   }
+
   // Reset this FunctionGauge to return a specific value.
   // This should be used during destruction. If you want a settable
   // Gauge, use a normal Gauge instead of a FunctionGauge.
