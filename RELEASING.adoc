@@ -210,7 +210,7 @@ Example doc: https://s.apache.org/kudu1.16rn
   # Take a note of the identifier of the key you want to use for signing.
   gpg --list-secret-keys --keyid-format=short
   cd java
-  ./gradlew clean install -PforceSigning -Psigning.gnupg.keyName=<8-character-pgp-key-id>
+  ./gradlew clean assemble  -PforceSigning -Psigning.gnupg.keyName=<8-character-pgp-key-id>
 ----
 
 . Create a new version update commit which removes the -SNAPSHOT suffix (same
@@ -252,11 +252,11 @@ Example doc: https://s.apache.org/kudu1.16rn
   # Run a gpg-agent if you don't normally
   gpg-agent --daemon
   cd java
-  ./gradlew clean assemble
+  ./gradlew clean assemble -PforceSigning -Psigning.gnupg.keyName=<8-character-pgp-key-id>
   # Turn off bash history: this is to avoid exposing the credentials
   # via .bash_history file.
   set +o history
-  ./gradlew --no-parallel uploadArchives \
+  ./gradlew --no-parallel publish \
       -Psigning.gnupg.keyName=<8-character-pgp-key-id> \
       -PmavenUsername='<APACHE-LDAP-USERNAME>' \
       -PmavenPassword='<APACHE-LDAP-PASSWORD>'
@@ -264,7 +264,7 @@ Example doc: https://s.apache.org/kudu1.16rn
   set -o history
 ----
 +
-NOTE: If `uploadArchives` is executed without `--no-parallel`, uploading a
+NOTE: If `publish` is executed without `--no-parallel`, uploading a
 number of artifacts fails with "peer not authenticated" errors.
 
 . Build and deploy new binary test JARs for the RC on macOS and Linux. Build

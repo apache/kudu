@@ -17,7 +17,7 @@
 
 // This file contains common tasks and configuration for artifact publishing.
 
-apply plugin: "maven"
+apply plugin: "maven-publish"
 apply plugin: "signing"
 
 ext {
@@ -40,51 +40,57 @@ ext {
   mavenPassword = propertyWithDefault("mavenPassword", "")
 }
 
-uploadArchives {
-  repositories {
-    signing {
-      required { shouldSign }
-      // Check if we are going to sign, because CI environments may not have
-      // gpg on their path and useGpgCmd evaluates eagerly.
-      if (shouldSign) {
-        useGpgCmd() // Use gpg-agent to sign
+publishing {
+  publications {
+    maven(MavenPublication) {
+      from components.java
+
+      groupId "org.apache.kudu"
+      version "${project.version}"
+
+      artifact(sourcesJar) {
+        classifier = "sources"
       }
-      sign configurations.archives
-      mavenDeployer {
-        beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
-        repository(url: "${mavenPublishUrl}") {
-          authentication(userName: "${mavenUsername}", password: "${mavenPassword}")
-        }
-        afterEvaluate {
-          pom.project {
-            url = "$url"
-            licenses {
-              license {
-                name = "The Apache Software License, Version 2.0"
-                url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
-                distribution = "repo"
-              }
-            }
+      artifact(testSourcesJar) {
+        classifier = "testSources"
+      }
+      artifact(javadocJar) {
+        classifier = "javadoc"
+      }
+
+      pom {
+        url = "$url"
+        licenses {
+          license {
+            name = "The Apache License, Version 2.0"
+            url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+            distribution = "repo"
           }
         }
       }
     }
   }
-}
 
-// Add the install task to the "Upload" group so it's visible in the tasks output.
-install.group = "Upload"
-
-// Sort the generated maven dependencies to make pom comparisons easier.
-tasks.withType(Upload) {
-  def installer = install.repositories.mavenInstaller
-  def deployer = uploadArchives.repositories.mavenDeployer
-
-  [installer, deployer]*.pom*.whenConfigured { pom ->
-    pom.dependencies = pom.dependencies.sort { dep ->
-      "$dep.scope:$dep.optional:$dep.groupId:$dep.artifactId"
+  repositories {
+    maven {
+      url "${mavenPublishUrl}"
+      credentials {
+        username "${mavenUsername}"
+        password "${mavenPassword}"
+      }
     }
   }
 }
 
+signing {
+  required { shouldSign }
+  if (shouldSign) {
+    useGpgCmd() // Use gpg-agent to sign
+  }
+
+  sign configurations.archives
+}
+
+// Add the install task to the "Upload" group so it's visible in the tasks output.
+publish.group = "Upload"
 

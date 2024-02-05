@@ -19,28 +19,61 @@ apply plugin: "scala"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
-  compile project(path: ":kudu-client", configuration: "shadow")
-  compile project(path: ":kudu-spark", configuration: "shadow")
+  implementation project(path: ":kudu-client", configuration: "shadow")
+  implementation project(':kudu-spark')
   // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
-  compile libs.yetusAnnotations
-  compile (libs.scopt)  {
+  implementation libs.yetusAnnotations
+  implementation (libs.scopt)  {
     // Make sure wrong Scala version is not pulled in.
     exclude group: "org.scala-lang", module: "scala-library"
   }
 
-  provided libs.scalaLibrary
-  provided libs.sparkAvro
-  provided libs.sparkCore
-  provided libs.sparkSql
-  provided libs.slf4jApi
+  implementation libs.sparkCore
+  implementation libs.sparkSql
 
-  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile project(path: ":kudu-spark", configuration: "test")
-  testCompile libs.junit
-  testCompile libs.log4jApi
-  testCompile libs.log4jCore
-  testCompile libs.log4jSlf4jImpl
-  testCompile libs.scalatest
+  compileOnly libs.scalaLibrary
+  compileOnly libs.slf4jApi
+
+  testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
+  testImplementation project(path: ":kudu-spark", configuration: "test")
+  testImplementation libs.junit
+  testImplementation libs.log4jApi
+  testImplementation libs.log4jCore
+  testImplementation libs.log4jSlf4jImpl
+  testImplementation libs.scalatest
+  testImplementation libs.sparkAvro
+}
+
+shadowJar {
+  dependencies {
+    exclude(dependency(libs.sparkCore))
+    exclude(dependency(libs.sparkSql))
+    exclude(dependency("log4j:log4j:.*"))
+    exclude(dependency("org.apache.avro::.*"))
+    exclude(dependency("org.apache.commons::.*"))
+    exclude(dependency("org.apache.curator::.*"))
+    exclude(dependency("org.apache.hadoop::.*"))
+    exclude(dependency("org.apache.ivy:ivy::.*"))
+    exclude(dependency("org.apache.parquet:.*"))
+    exclude(dependency("org.apache.spark::.*"))
+    exclude(dependency("org.codehaus.janino::.*"))
+    exclude(dependency("org.glassfish.jersey.core::.*"))
+    exclude(dependency("org.scala-lang::.*"))
+    exclude(dependency("org.xerial.snappy::.*"))
+  }
+  exclude '**/*.adoc'
+  exclude '**/*.default'
+  exclude '**/*.dll'
+  exclude '**/*.dylib'
+  exclude '**/*.html'
+  exclude '**/*.md'
+  exclude 'META-INF/services/**'
+  exclude 'META-INF/versions/11/org/roaringbitmap/**'
+  exclude 'codegen/**'
+  exclude 'javax/**'
+  exclude 'org/jetbrains/**'
+
+  minimize()
 }
 
 // Adjust the artifact name to match the maven build.

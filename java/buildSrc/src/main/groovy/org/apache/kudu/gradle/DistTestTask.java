@@ -116,6 +116,10 @@ public class DistTestTask extends DefaultTask {
     return fc;
   }
 
+  public File getOutputDir() {
+    return this.outputDir;
+  }
+
   @TaskAction
   public void doStuff() throws IOException {
     getProject().delete(outputDir);

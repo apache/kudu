@@ -18,7 +18,7 @@
 apply from: "$rootDir/gradle/protobuf.gradle"
 
 dependencies {
-  compile libs.protobufJava
+  implementation libs.protobufJava
 }
 
 // Add protobuf files to the proto source set.
@@ -38,5 +38,5 @@ javadoc {
 }
 
 // Skip publishing kudu-proto artifact because it will always be shaded into kudu-client.
-uploadArchives.enabled = false
-install.enabled = false
+publish.enabled = false
+publishToMavenLocal.enabled = false

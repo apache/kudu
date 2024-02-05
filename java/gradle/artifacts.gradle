@@ -23,29 +23,29 @@ configurations.create("test")
 task testJar(type: Jar, dependsOn: testClasses, group: "Build") {
   description = "Assembles a jar archive containing the test classes."
   from sourceSets.test.output
-  classifier = "tests"
-  extension "jar"
+  archiveClassifier = "tests"
+  archiveExtension = "jar"
 }
 
 task sourcesJar(type: Jar, dependsOn: classes, group: "Build") {
   description = "Assembles a jar archive containing the main source."
   from sourceSets.main.allSource
-  classifier "sources"
-  extension "jar"
+  archiveClassifier = "sources"
+  archiveExtension = "jar"
 }
 
 task testSourcesJar(type: Jar, dependsOn: testJar, group: "Build") {
   description = "Assembles a jar archive containing the test source."
   from sourceSets.test.allSource
-  classifier "test-sources"
-  extension "jar"
+  archiveClassifier = "test-sources"
+  archiveExtension = "jar"
 }
 
 task javadocJar(type: Jar, dependsOn: javadoc, group: "Build") {
   description = "Assembles a jar archive containing the javadoc."
   from javadoc.destinationDir
-  classifier "javadoc"
-  extension "jar"
+  archiveClassifier = "javadoc"
+  archiveExtension = "jar"
 }
 
 tasks.withType(Jar) {

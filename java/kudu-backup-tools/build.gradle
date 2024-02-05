@@ -19,23 +19,30 @@ apply plugin: "scala"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
-  compile project(path: ":kudu-backup-common")
-  compile project(path: ":kudu-client", configuration: "shadow")
-  compile (libs.scopt)  {
+  implementation project(path: ":kudu-backup-common")
+  implementation project(path: ":kudu-client", configuration: "shadow")
+  implementation libs.protobufJava
+  implementation (libs.scopt)  {
     // Make sure wrong Scala version is not pulled in.
     exclude group: "org.scala-lang", module: "scala-library"
   }
-  compile libs.scalaLibrary
-  compile libs.slf4jApi
+  implementation libs.scalaLibrary
+  implementation libs.slf4jApi
 
-  provided libs.hadoopClient
+  compileOnly libs.hadoopClient
 
-  optional libs.yetusAnnotations
+  implementation libs.yetusAnnotations
 
-  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile libs.hadoopMiniCluster
-  testCompile libs.junit
-  testCompile libs.scalatest
+  testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
+  testImplementation libs.hadoopMiniCluster
+  testImplementation libs.junit
+  testImplementation libs.scalatest
+}
+
+shadowJar {
+  dependencies {
+    minimize()
+  }
 }
 
 // kudu-backup-tools has no public Javadoc.

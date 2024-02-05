@@ -49,6 +49,7 @@ import org.junit.Before
 import org.junit.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import nl.altindag.log.LogCaptor
 
 import scala.collection.JavaConverters._
 
@@ -234,8 +235,11 @@ class TestKuduBackup extends KuduTestSuite {
     // table that does exist, it should not throw an exception, and it should return 1 to indicate
     // some error. The logs should contain a message about the missing table.
     val options = createBackupOptions(Seq("missingTable", tableName))
-    val logs = captureLogs(() => assertFalse(KuduBackup.run(options, ss)))
-    assertTrue(logs.contains("the table does not exist"))
+    // Setting up log capture for the class that generates the logs we're
+    // interested in and not for the test class.
+    val logCaptor = LogCaptor.forClass(KuduBackup.getClass)
+    assertFalse(KuduBackup.run(options, ss))
+    assertTrue(logCaptor.getLogs().toString().contains("the table does not exist"))
 
     // Restore the backup of the non-failed table and validate the end result.
     restoreAndValidateTable(tableName, 100)
@@ -264,11 +268,13 @@ class TestKuduBackup extends KuduTestSuite {
     insertRows(table, 100)
     KuduBackup.run(createBackupOptions(Seq(tableName)), ss)
 
+    // setting up log capture for the class that generates the logs we're
+    // interested in and not for the test class
+    val logCaptor = LogCaptor.forClass(KuduRestore.getClass)
     // There's no guarantee about the order restores run in, so it doesn't work to test fail-fast
     // and then the default no-fail-fast because the actual table may have been restored.
-    val logs = captureLogs(
-      () => assertFalse(runRestore(createRestoreOptions(Seq("missingTable", tableName)))))
-    assertTrue(logs.contains("Failed to restore table"))
+    assertFalse(runRestore(createRestoreOptions(Seq("missingTable", tableName))))
+    assertTrue(logCaptor.getLogs().toString().contains("Failed to restore table"))
   }
 
   @Test
@@ -283,10 +289,16 @@ class TestKuduBackup extends KuduTestSuite {
     // Force an incremental backup without a full backup.
     // It will use a diff scan and won't check the existing dependency graph.
     val options = createBackupOptions(Seq(tableName), fromMs = beforeMs)
-    val logs = captureLogs { () =>
-      assertTrue(runBackup(options))
-    }
-    assertTrue(logs.contains("Performing an incremental backup: fromMs was set to"))
+
+    // setting up log capture for the class that generates the logs we're
+    // interested in and not for the test class
+    val logCaptor = LogCaptor.forClass(KuduBackup.getClass)
+    assertTrue(runBackup(options))
+    assertTrue(
+      logCaptor
+        .getLogs()
+        .toString()
+        .contains("Performing an incremental backup: fromMs was set to"))
     validateBackup(options, 100, true)
   }
 
@@ -299,10 +311,12 @@ class TestKuduBackup extends KuduTestSuite {
 
     // Force a full backup. It should contain all the rows.
     val options = createBackupOptions(Seq(tableName), forceFull = true)
-    val logs = captureLogs { () =>
-      assertTrue(runBackup(options))
-    }
-    assertTrue(logs.contains("Performing a full backup: forceFull was set to true"))
+
+    // setting up log capture for the class that generates the logs we're
+    // interested in and not for the test class
+    val logCaptor = LogCaptor.forClass(KuduBackup.getClass)
+    assertTrue(runBackup(options))
+    assertTrue(logCaptor.getLogs().contains("Performing a full backup: forceFull was set to true"))
     validateBackup(options, 200, false)
   }
 

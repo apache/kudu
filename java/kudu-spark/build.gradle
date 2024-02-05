@@ -19,22 +19,56 @@ apply plugin: "scala"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
-  compile project(path: ":kudu-client", configuration: "shadow")
-  compile libs.hdrhistogram
+  implementation project(path: ":kudu-client", configuration: "shadow")
+  implementation libs.hdrhistogram
   // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
-  compile libs.yetusAnnotations
+  implementation libs.yetusAnnotations
 
-  provided libs.scalaLibrary
-  provided libs.sparkCore
-  provided libs.sparkSql
-  provided libs.slf4jApi
+  implementation libs.sparkCore
+  implementation libs.sparkSql
 
-  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile libs.junit
-  testCompile libs.scalatest
-  testCompile libs.log4jApi
-  testCompile libs.log4jCore
-  testCompile libs.log4jSlf4jImpl
+  compileOnly libs.scalaLibrary
+  compileOnly libs.slf4jApi
+
+  testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
+  testImplementation libs.junit
+  testImplementation libs.scalatest
+  testImplementation libs.log4jApi
+  testImplementation libs.log4jCore
+  testImplementation libs.log4jSlf4jImpl
+}
+
+shadowJar {
+  dependencies {
+    exclude(dependency("com.fasterxml.jackson.core::.*"))
+    exclude(dependency("com.github.luben::.*"))
+    exclude(dependency("javax.servlet.jsp::.*"))
+    exclude(dependency("log4j:log4j:.*"))
+    exclude(dependency("org.apache.avro::.*"))
+    exclude(dependency("org.apache.commons::.*"))
+    exclude(dependency("org.apache.curator::.*"))
+    exclude(dependency("org.apache.hadoop::.*"))
+    exclude(dependency("org.apache.ivy:ivy::.*"))
+    exclude(dependency("org.apache.parquet:.*"))
+    exclude(dependency("org.apache.spark::.*"))
+    exclude(dependency("org.codehaus.janino::.*"))
+    exclude(dependency("org.glassfish.jersey.core::.*"))
+    exclude(dependency("org.scala-lang::.*"))
+    exclude(dependency("org.xerial.snappy::.*"))
+  }
+  exclude '**/*.adoc'
+  exclude '**/*.default'
+  exclude '**/*.dll'
+  exclude '**/*.dylib'
+  exclude '**/*.html'
+  exclude '**/*.md'
+  exclude 'META-INF/services/**'
+  exclude 'META-INF/versions/11/org/roaringbitmap/**'
+  exclude 'codegen/**'
+  exclude 'javax/**'
+  exclude 'org/jetbrains/**'
+
+  minimize()
 }
 
 // Adjust the artifact name to include the spark and scala base versions.

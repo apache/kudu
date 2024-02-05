@@ -48,7 +48,6 @@ subprojects {
   // These are common to all subprojects. However, subprojects may
   // include their own plugins and scripts as well.
   apply plugin: "java"
-  apply from: "$rootDir/gradle/scopes.gradle"
   apply from: "$rootDir/gradle/compile.gradle"
   apply from: "$rootDir/gradle/tests.gradle"
   apply from: "$rootDir/gradle/quality.gradle"
@@ -58,19 +57,17 @@ subprojects {
   // Ignore the transitive annotations libraries that are
   // not marked as optional in Guava version 22.0+.
   // See https://github.com/google/guava/issues/2824
-  configurations.compile {
+  configurations.implementation {
     exclude group: "com.google.errorprone", module: "error_prone_annotations"
-    exclude group: "com.google.code.findbugs", module: "jsr305"
     exclude group: "com.google.j2objc", module: "j2objc-annotations"
     exclude group: "org.checkerframework", module: "checker-compat-qual"
     exclude group: "org.codehaus.mojo", module: "animal-sniffer-annotations"
   }
 
-  sourceSets {
-    all {
-      configurations.all { conf ->
-        attributes.attribute(Attribute.of("org.gradle.jvm.environment", String), "standard-jvm")
-      }
+  // Force gradle to use the same (declared in dependencies) guava version everywhere
+  configurations.all {
+    resolutionStrategy {
+      force libs.guava
     }
   }
 }
@@ -96,10 +93,7 @@ task javadocAggregate(type: Javadoc, group: "Documentation") {
 task copyDistTestJars(type: Copy) {
   into "$buildDir/jars/"
   from subprojects.collect {
-    it.configurations.testRuntime
-  }
-  from subprojects.collect {
-    it.configurations.provided
+    it.configurations.testRuntimeClasspath
   }
 }
 
@@ -111,4 +105,9 @@ task distTest(type: DistTestTask, dependsOn: copyDistTestJars) {
       addTestTask it
     }
   }
+}
+
+// Task alias to keep compatibility with previous Gradle version's publishing plugin
+task uploadArchives () {
+  dependsOn 'publish'
 }

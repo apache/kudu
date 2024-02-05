@@ -40,7 +40,7 @@ if (!propertyExists("skipCodeStyleChecks")) {
 
   checkstyle {
     toolVersion = versions.checkstyle
-    configDir = file("$rootProject.projectDir/config/checkstyle")
+    configDirectory = file("$rootProject.projectDir/config/checkstyle")
     ignoreFailures = ignoreCheckFailures
     maxWarnings = 0
     showViolations = true

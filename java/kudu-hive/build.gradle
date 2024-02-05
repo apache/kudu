@@ -17,21 +17,66 @@
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
-  compile project(path: ":kudu-client", configuration: "shadow")
+  implementation project(path: ":kudu-client", configuration: "shadow")
 
-  provided libs.hiveMetastore
-  provided libs.slf4jApi
+  implementation libs.hiveMetastore
+  compileOnly libs.slf4jApi
   // Transitively required through hive-metastore,
   // which has marked it as an optional dependency.
-  provided libs.hadoopCommon
-  provided libs.hadoopMRClientCommon
+  compileOnly libs.hadoopCommon
+  testImplementation libs.hadoopMRClientCommon
 
-  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile libs.hiveTestUtils
-  testCompile libs.junit
-  testCompile libs.log4jApi
-  testCompile libs.log4jCore
-  testCompile libs.log4jSlf4jImpl
+  testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
+  testImplementation libs.hiveTestUtils
+  testImplementation libs.junit
+  testImplementation libs.log4jApi
+  testImplementation libs.log4jCore
+  testImplementation libs.log4jSlf4jImpl
+}
+
+shadowJar {
+  dependencies {
+    exclude(dependency("log4j::.*"))
+    exclude(dependency("org.apache.hadoop::.*"))
+    exclude(dependency("org.apache.hive::.*"))
+    exclude(dependency("org.apache.hbase::.*"))
+    exclude(dependency("org.apache.hbase.thirdparty::.*"))
+    exclude(dependency("junit::.*"))
+    exclude(dependency("javax.servlet.jsp::.*"))
+    exclude(dependency("javax.jdo::.*"))
+    exclude(dependency("com.fasterxml.woodstox:::.*"))
+    exclude(dependency("org.fusesource.leveldbjni::.*"))
+    exclude(dependency("org.apache.parquet:.*"))
+    exclude(dependency("com.fasterxml.jackson.core::.*"))
+    exclude(dependency("org.codehaus.jackson::.*"))
+    exclude(dependency("com.fasterxml.jackson.jaxrs::.*"))
+    exclude(dependency("com.fasterxml.jackson.module::.*"))
+    exclude(dependency("commons-dbcp::.*"))
+    exclude(dependency("org.apache.kerby:.*"))
+    exclude(dependency("org.apache.commons::.*"))
+    exclude(dependency("org.eclipse.jetty::.*"))
+    exclude(dependency("com.nimbusds::.*"))
+    exclude(dependency("org.apache.curator::.*"))
+    exclude(dependency("joda-time::.*"))
+    exclude(dependency("org.apache.logging.log4j::.*"))
+    exclude(dependency("org.apache.orc::.*"))
+    exclude(dependency("org.xerial.snappy::.*"))
+    exclude(dependency("org.datanucleus::.*"))
+    exclude(dependency("com.sun.jersey::.*"))
+    exclude(dependency("sqlline::.*"))
+    exclude(dependency("org.apache.thrift::.*"))
+    exclude(dependency("org.ehcache::.*"))
+    exclude(dependency("com.sun.xml.bind::.*"))
+  }
+  exclude 'META-INF/services/**'
+  exclude 'tables/**'
+  exclude 'codegen/**'
+  exclude 'javax/**'
+  exclude '**/*.dll'
+  exclude 'images/**'
+  exclude 'org/apache/tools/ant/**'
+
+  minimize()
 }
 
 // kudu-hive has no public Javadoc.

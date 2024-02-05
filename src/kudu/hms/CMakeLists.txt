@@ -66,7 +66,7 @@ execute_process(COMMAND ln -nsf
 set(HMS_PLUGIN_JAR ${EXECUTABLE_OUTPUT_PATH}/hms-plugin.jar)
 
 add_custom_command(OUTPUT ${HMS_PLUGIN_JAR}
-  COMMAND ./gradlew :kudu-hive:jar ${GRADLE_FLAGS}
+  COMMAND ./gradlew :kudu-hive:assemble ${GRADLE_FLAGS}
   COMMAND cp -f
     "${JAVA_DIR}/kudu-hive/build/libs/kudu-hive-${KUDU_VERSION_NUMBER}.jar"
     "${HMS_PLUGIN_JAR}"

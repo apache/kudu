@@ -20,34 +20,68 @@ apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   // Note: We don't use the shaded version, so we can control the dependencies.
-  compile(project(path: ":kudu-backup-common")) {
+  implementation(project(path: ":kudu-backup-common")) {
     // Ensure we use the hadoop-client provided by Spark to avoid any compatibility issues.
     exclude group: "org.apache.hadoop", module: "hadoop-common"
     // Ensure we use the scala-library provided by Spark to avoid any compatibility issues.
     exclude group: "org.scala-lang", module: "scala-library"
   }
-  compile project(path: ":kudu-client", configuration: "shadow")
-  compile project(path: ":kudu-spark", configuration: "shadow")
-  compile (libs.scopt)  {
+  implementation project(path: ":kudu-client", configuration: "shadow")
+  implementation project(path: ":kudu-spark", configuration: "shadow")
+  implementation libs.protobufJava
+  implementation (libs.scopt)  {
     // Make sure wrong Scala version is not pulled in.
     exclude group: "org.scala-lang", module: "scala-library"
   }
   // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
-  compile libs.yetusAnnotations
+  implementation libs.yetusAnnotations
 
-  provided libs.scalaLibrary
-  provided libs.sparkAvro
-  provided libs.sparkCore
-  provided libs.sparkSql
-  provided libs.slf4jApi
+  implementation libs.scalaLibrary
+  implementation libs.sparkAvro
+  implementation libs.sparkCore
+  implementation libs.sparkSql
+  implementation libs.slf4jApi
 
-  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile project(path: ":kudu-spark", configuration: "test")
-  testCompile libs.junit
-  testCompile libs.log4jApi
-  testCompile libs.log4jCore
-  testCompile libs.log4jSlf4jImpl
-  testCompile libs.scalatest
+  testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
+  testImplementation project(path: ":kudu-spark", configuration: "test")
+  testImplementation libs.junit
+  testImplementation libs.log4jApi
+  testImplementation libs.log4jCore
+  testImplementation libs.log4jSlf4jImpl
+  testImplementation libs.scalatest
+  testImplementation libs.logCaptor
+}
+
+shadowJar {
+  dependencies {
+    exclude(dependency(libs.jsr305))
+    exclude(dependency("log4j:log4j:.*"))
+    exclude(dependency("org.apache.arrow::.*"))
+    exclude(dependency("org.apache.avro::.*"))
+    exclude(dependency("org.apache.curator::.*"))
+    exclude(dependency("org.apache.hadoop::.*"))
+    exclude(dependency("org.apache.ivy:ivy::.*"))
+    exclude(dependency("org.apache.parquet:.*"))
+    exclude(dependency("org.apache.spark::.*"))
+    exclude(dependency("org.codehaus.janino::.*"))
+    exclude(dependency("org.glassfish.jersey.core::.*"))
+    exclude(dependency("org.scala-lang::.*"))
+    exclude(dependency("org.xerial.snappy::.*"))
+  }
+  exclude '**/*.adoc'
+  exclude '**/*.default'
+  exclude '**/*.dll'
+  exclude '**/*.dylib'
+  exclude '**/*.html'
+  exclude '**/*.md'
+  exclude 'META-INF/services/**'
+  exclude 'META-INF/versions/11/org/roaringbitmap/**'
+  exclude 'codegen/**'
+  exclude 'assets/**'
+  exclude 'javax/**'
+  exclude 'org/jetbrains/**'
+
+  minimize()
 }
 
 // Adjust the artifact name to match the maven build.

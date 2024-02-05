@@ -33,13 +33,13 @@ repositories {
 }
 
 dependencies {
-  compile project(path: ":kudu-client", configuration: "shadow")
-  compile project(path: ":kudu-test-utils", configuration: "shadow")
-  compile libs.clojure
-  compile libs.clojureToolsCli
-  compile libs.jepsen
+  implementation project(path: ":kudu-client", configuration: "shadow")
+  implementation project(path: ":kudu-test-utils", configuration: "shadow")
+  implementation libs.clojure
+  implementation libs.clojureToolsCli
+  implementation libs.jepsen
 
-  optional libs.yetusAnnotations
+  implementation libs.yetusAnnotations
 }
 
 compileClojure {
@@ -69,8 +69,8 @@ task runJepsen(type: JavaExec) {
 }
 
 // We don't publish kudu-jepsen
-uploadArchives.enabled = false
-install.enabled = false
+publish.enabled = false
+publishToMavenLocal.enabled = false
 
 // SpotBugs doesn't work on Clojure.
 spotbugsMain.enabled = false

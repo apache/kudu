@@ -19,27 +19,38 @@ apply from: "$rootDir/gradle/shadow.gradle"
 apply from: "$rootDir/gradle/benchmarks.gradle"
 
 dependencies {
-  compile project(path: ":kudu-proto")
+  implementation project(path: ":kudu-proto")
+  implementation libs.protobufJava
+
   // Not shaded in the client JAR because it's part of the public API.
-  compileUnshaded(libs.async) {
+  compileUnshaded (libs.async) {
     // async uses versions ranges for slf4j making builds non-deterministic.
     // Remove this once the following is merged: https://github.com/OpenTSDB/async/pull/8
     exclude group: "org.slf4j", module: "slf4j-api"
   }
   compileUnshaded libs.slf4jApi
 
-  compile libs.guava
-  compile libs.micrometerCore
-  compile libs.murmur
-  compile libs.netty
+  implementation (libs.guava) {
+    exclude(group: "com.google.errorprone")
+  }
+  implementation libs.micrometerCore
+  implementation libs.murmur
+  implementation libs.netty
 
-  optional libs.jsr305
-  optional libs.yetusAnnotations
+  compileOnly libs.jsr305
+  compileOnly libs.yetusAnnotations
 
-  testCompile project(":kudu-test-utils")
-  testCompile libs.junit
-  testCompile libs.log4jApi
-  testCompile libs.log4jCore
-  testCompile libs.log4jSlf4jImpl
-  testCompile libs.mockitoCore
+  testImplementation project(":kudu-test-utils")
+  testImplementation libs.junit
+  testImplementation libs.log4jApi
+  testImplementation libs.log4jCore
+  testImplementation libs.log4jSlf4jImpl
+  testImplementation libs.mockitoCore
+
+  shadowJar {
+    dependencies {
+      exclude(dependency(libs.jsr305))
+    }
+    minimize()
+  }
 }

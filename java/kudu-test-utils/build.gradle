@@ -18,14 +18,25 @@
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
-  compile project(path: ":kudu-client")
-  compile libs.commonsIo
-  compile libs.guava
-  compile libs.httpClient
-  compile libs.httpMime
-  compile libs.osdetector
+  implementation project(path: ":kudu-client")
+  implementation project(path: ":kudu-proto")
+  implementation libs.commonsIo
+  implementation(libs.guava) {
+    exclude(group: "com.google.errorprone")
+  }
+  implementation libs.httpClient
+  implementation libs.httpMime
+  implementation libs.osdetector
+  implementation libs.protobufJava
 
-  compileUnshaded libs.hamcrest
+  // Not shaded in the client JAR because it's part of the public API.
+  compileUnshaded(libs.async) {
+    // async uses versions ranges for slf4j making builds non-deterministic.
+    // Remove this once the following is merged: https://github.com/OpenTSDB/async/pull/8
+    exclude group: "org.slf4j", module: "slf4j-api"
+  }
+
+  implementation libs.hamcrest
   compileUnshaded(libs.junit) {
     // Use the Kudu specified hamcrest.
     exclude group: "org.hamcrest"
@@ -36,19 +47,33 @@ dependencies {
   if (propertyExists("useBinJar")) {
     apply plugin: "com.google.osdetector"
     def jarVersion = propertyWithDefault("useBinJar", project.version)
-    runtime "org.apache.kudu:kudu-binary:$jarVersion:${osdetector.classifier}"
+    runtimeOnly "org.apache.kudu:kudu-binary:$jarVersion:${osdetector.classifier}"
   }
 
   // Needed for CapturingLogAppender. Optional otherwise.
-  optional libs.log4jApi
-  optional libs.log4jCore
-  optional libs.log4jSlf4jImpl
+  implementation libs.log4jApi
+  implementation libs.log4jCore
+  implementation libs.log4jSlf4jImpl
 
-  optional libs.jsr305
-  optional libs.yetusAnnotations
+  compileOnly libs.jsr305
+  compileOnly libs.yetusAnnotations
 
-  testCompile libs.jetty
-  testCompile libs.jettyServlet
+  testImplementation libs.jetty
+  testImplementation libs.jettyServlet
+}
+
+shadowJar {
+  dependencies {
+    exclude(dependency("log4j:log4j:.*"))
+    exclude(dependency(libs.jsr305))
+    exclude(dependency(libs.log4jApi))
+    exclude(dependency(libs.log4jCore))
+    exclude(dependency(libs.log4jSlf4jImpl))
+    exclude(dependency(libs.junit))
+    exclude(dependency("org.jacoco::.*"))
+  }
+
+  minimize()
 }
 
 // kudu-test-utils has no public Javadoc.

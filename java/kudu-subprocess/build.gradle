@@ -21,8 +21,8 @@ apply from: "$rootDir/gradle/shadow.gradle"
 shadowIncludeSlf4j = true
 
 dependencies {
-  compile project(path: ":kudu-proto")
-  compile(libs.hadoopCommon) {
+  implementation project(path: ":kudu-proto")
+  implementation(libs.hadoopCommon) {
     // Exclude io.netty to ensure we use our own versions.
     // The dependency on io.netty is a transitive one through the chain
     // hadoop-common --> hadoop-auth --> zookeeper --> io.netty.netty-xxx
@@ -33,9 +33,9 @@ dependencies {
     exclude group: "log4j"
     exclude group: "org.slf4j"
   }
-  compile libs.protobufJavaUtil
+  implementation libs.protobufJavaUtil
 
-  compile(libs.rangerPlugin) {
+  implementation(libs.rangerPlugin) {
     // rangerPlugin depends on kafka which includes different versions
     // of jersey than rangerPlugin.
     exclude group: "org.apache.kafka"
@@ -43,29 +43,29 @@ dependencies {
     exclude group: "log4j"
     exclude group: "org.slf4j"
   }
-  compile libs.slf4jApi
-  compile libs.log4jApi
-  compile libs.log4jCore
-  compile libs.log4jCompat
-  compile libs.log4jSlf4jImpl
+  implementation libs.slf4jApi
+  implementation libs.log4jApi
+  implementation libs.log4jCore
+  implementation libs.log4jCompat
+  implementation libs.log4jSlf4jImpl
 
   // Compiling exact modules from the io.netty group for hadoop-common:
   // for some reason, if compiling just the libs.netty umbrella package
   // (i.e. io.netty:netty-all), hadoop-common still depends on its own
   // version of io.netty:netty-transport-native-epoll.
-  compile libs.nettyBuffer
-  compile libs.nettyCommon
-  compile libs.nettyHandler
-  compile libs.nettyTransport
-  compile libs.nettyTransportEpoll
-  compile libs.nettyTransportUnix
+  implementation libs.nettyBuffer
+  implementation libs.nettyCommon
+  implementation libs.nettyHandler
+  implementation libs.nettyTransport
+  implementation libs.nettyTransportEpoll
+  implementation libs.nettyTransportUnix
 
-  optional libs.jsr305
-  optional libs.yetusAnnotations
+  compileOnly libs.jsr305
+  implementation libs.yetusAnnotations
 
-  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile libs.junit
-  testCompile libs.mockitoCore
+  testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
+  testImplementation libs.junit
+  testImplementation libs.mockitoCore
 }
 
 // kudu-subprocess has no public Javadoc.
@@ -74,5 +74,5 @@ javadoc {
 }
 
 // Skip publishing kudu-subprocess artifact because it's not intended for external use.
-uploadArchives.enabled = false
-install.enabled = false
+publish.enabled = false
+publishToMavenLocal.enabled = false
