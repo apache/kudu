@@ -45,6 +45,7 @@ DEFINE_double(cache_memtracker_approximation_ratio, 0.01,
               "this ratio to improve performance. For tests.");
 TAG_FLAG(cache_memtracker_approximation_ratio, hidden);
 
+using RLHandle = kudu::Cache::RLHandle;
 using std::atomic;
 using std::shared_ptr;
 using std::string;
@@ -68,130 +69,6 @@ const Cache::IterationFunc Cache::kIterateOverAllEntriesFunc = [](
 
 namespace {
 
-// Recency list cache implementations (FIFO, LRU, etc.)
-
-// Recency list handle. An entry is a variable length heap-allocated structure.
-// Entries are kept in a circular doubly linked list ordered by some recency
-// criterion (e.g., access time for LRU policy, insertion time for FIFO policy).
-struct RLHandle {
-  Cache::EvictionCallback* eviction_callback;
-  RLHandle* next_hash;
-  RLHandle* next;
-  RLHandle* prev;
-  size_t charge;      // TODO(opt): Only allow uint32_t?
-  uint32_t key_length;
-  uint32_t val_length;
-  std::atomic<int32_t> refs;
-  uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
-
-  // The storage for the key/value pair itself. The data is stored as:
-  //   [key bytes ...] [padding up to 8-byte boundary] [value bytes ...]
-  uint8_t kv_data[1];   // Beginning of key/value pair
-
-  Slice key() const {
-    return Slice(kv_data, key_length);
-  }
-
-  uint8_t* mutable_val_ptr() {
-    int val_offset = KUDU_ALIGN_UP(key_length, sizeof(void*));
-    return &kv_data[val_offset];
-  }
-
-  const uint8_t* val_ptr() const {
-    return const_cast<RLHandle*>(this)->mutable_val_ptr();
-  }
-
-  Slice value() const {
-    return Slice(val_ptr(), val_length);
-  }
-};
-
-// We provide our own simple hash table since it removes a whole bunch
-// of porting hacks and is also faster than some of the built-in hash
-// table implementations in some of the compiler/runtime combinations
-// we have tested.  E.g., readrandom speeds up by ~5% over the g++
-// 4.4.3's builtin hashtable.
-class HandleTable {
- public:
-  HandleTable() : length_(0), elems_(0), list_(nullptr) { Resize(); }
-  ~HandleTable() { delete[] list_; }
-
-  RLHandle* Lookup(const Slice& key, uint32_t hash) {
-    return *FindPointer(key, hash);
-  }
-
-  RLHandle* Insert(RLHandle* h) {
-    RLHandle** ptr = FindPointer(h->key(), h->hash);
-    RLHandle* old = *ptr;
-    h->next_hash = (old == nullptr ? nullptr : old->next_hash);
-    *ptr = h;
-    if (old == nullptr) {
-      ++elems_;
-      if (elems_ > length_) {
-        // Since each cache entry is fairly large, we aim for a small
-        // average linked list length (<= 1).
-        Resize();
-      }
-    }
-    return old;
-  }
-
-  RLHandle* Remove(const Slice& key, uint32_t hash) {
-    RLHandle** ptr = FindPointer(key, hash);
-    RLHandle* result = *ptr;
-    if (result != nullptr) {
-      *ptr = result->next_hash;
-      --elems_;
-    }
-    return result;
-  }
-
- private:
-  // The table consists of an array of buckets where each bucket is
-  // a linked list of cache entries that hash into the bucket.
-  uint32_t length_;
-  uint32_t elems_;
-  RLHandle** list_;
-
-  // Return a pointer to slot that points to a cache entry that
-  // matches key/hash.  If there is no such cache entry, return a
-  // pointer to the trailing slot in the corresponding linked list.
-  RLHandle** FindPointer(const Slice& key, uint32_t hash) {
-    RLHandle** ptr = &list_[hash & (length_ - 1)];
-    while (*ptr != nullptr &&
-           ((*ptr)->hash != hash || key != (*ptr)->key())) {
-      ptr = &(*ptr)->next_hash;
-    }
-    return ptr;
-  }
-
-  void Resize() {
-    uint32_t new_length = 16;
-    while (new_length < elems_ * 1.5) {
-      new_length *= 2;
-    }
-    auto new_list = new RLHandle*[new_length];
-    memset(new_list, 0, sizeof(new_list[0]) * new_length);
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < length_; i++) {
-      RLHandle* h = list_[i];
-      while (h != nullptr) {
-        RLHandle* next = h->next_hash;
-        uint32_t hash = h->hash;
-        RLHandle** ptr = &new_list[hash & (new_length - 1)];
-        h->next_hash = *ptr;
-        *ptr = h;
-        h = next;
-        count++;
-      }
-    }
-    DCHECK_EQ(elems_, count);
-    delete[] list_;
-    list_ = new_list;
-    length_ = new_length;
-  }
-};
-
 string ToString(Cache::EvictionPolicy p) {
   switch (p) {
     case Cache::EvictionPolicy::FIFO:
@@ -212,7 +89,7 @@ class CacheShard {
   explicit CacheShard(MemTracker* tracker);
   ~CacheShard();
 
-  // Separate from constructor so caller can easily make an array of CacheShard
+  // Separate from constructor so caller can easily make an array of CacheShard.
   void SetCapacity(size_t capacity) {
     capacity_ = capacity;
     max_deferred_consumption_ = capacity * FLAGS_cache_memtracker_approximation_ratio;
@@ -270,10 +147,10 @@ class CacheShard {
   size_t usage_;
 
   // Dummy head of recency list.
-  // rl.prev is newest entry, rl.next is oldest entry.
+  // rl.prev is the newest entry, rl.next is the oldest entry.
   RLHandle rl_;
 
-  HandleTable table_;
+  Cache::HandleTable<RLHandle> table_;
 
   MemTracker* mem_tracker_;
   atomic<int64_t> deferred_consumption_ { 0 };
@@ -403,7 +280,7 @@ Cache::Handle* CacheShard<policy>::Lookup(const Slice& key,
     }
   }
 
-  // Do the metrics outside of the lock.
+  // Do the metrics outside the lock.
   UpdateMetricsLookup(e != nullptr, caching);
 
   return reinterpret_cast<Cache::Handle*>(e);
@@ -422,8 +299,7 @@ template<Cache::EvictionPolicy policy>
 Cache::Handle* CacheShard<policy>::Insert(
     RLHandle* handle,
     Cache::EvictionCallback* eviction_callback) {
-  // Set the remaining RLHandle members which were not already allocated during
-  // Allocate().
+  // Set the remaining RLHandle members which were not already allocated during Allocate().
   handle->eviction_callback = eviction_callback;
   // Two refs for the handle: one from CacheShard, one for the returned handle.
   handle->refs.store(2, std::memory_order_relaxed);
@@ -459,8 +335,7 @@ Cache::Handle* CacheShard<policy>::Insert(
     }
   }
 
-  // we free the entries here outside of mutex for
-  // performance reasons
+  // We free the entries here outside the mutex for performance reasons.
   while (to_remove_head != nullptr) {
     RLHandle* next = to_remove_head->next;
     FreeEntry(to_remove_head);
@@ -482,8 +357,8 @@ void CacheShard<policy>::Erase(const Slice& key, uint32_t hash) {
       last_reference = Unref(e);
     }
   }
-  // mutex not held here
-  // last_reference will only be true if e != NULL
+  // Mutex not held here.
+  // last_reference will only be true if e != NULL.
   if (last_reference) {
     FreeEntry(e);
   }
@@ -524,7 +399,7 @@ size_t CacheShard<policy>::Invalidate(const Cache::InvalidationControl& ctl) {
   }
   // Once removed from the lookup table and the recency list, the entries
   // with no references left must be deallocated because Cache::Release()
-  // wont be called for them from elsewhere.
+  // won't be called for them from elsewhere.
   while (to_remove_head != nullptr) {
     RLHandle* next = to_remove_head->next;
     FreeEntry(to_remove_head);
@@ -602,7 +477,7 @@ class ShardedCache : public Cache {
   }
 
   UniqueHandle Insert(UniquePendingHandle handle,
-                      Cache::EvictionCallback* eviction_callback) override {
+                      EvictionCallback* eviction_callback) override {
     RLHandle* h = reinterpret_cast<RLHandle*>(DCHECK_NOTNULL(handle.release()));
     return UniqueHandle(
         shards_[Shard(h->hash)]->Insert(h, eviction_callback),

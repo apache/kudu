@@ -16,14 +16,46 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include <glog/logging.h>
 
 #include "kudu/util/cache.h"
+#include "kudu/util/slice.h"
 
 namespace kudu {
+namespace util {
+
+// An entry is a variable length heap-allocated structure.  Entries
+// are kept in a circular doubly linked list ordered by access time.
+struct LRUHandle {
+  Cache::EvictionCallback* eviction_callback;
+  LRUHandle* next_hash;
+  LRUHandle* next;
+  LRUHandle* prev;
+  size_t charge;      // TODO(opt): Only allow uint32_t?
+  uint32_t key_length;
+  uint32_t val_length;
+  std::atomic<int32_t> refs;
+  uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
+  uint8_t* kv_data;
+
+  Slice key() const {
+    return Slice(kv_data, key_length);
+  }
+
+  Slice value() const {
+    return Slice(&kv_data[key_length], val_length);
+  }
+
+  uint8_t* mutable_val_ptr() const {
+    return &kv_data[key_length];
+  }
+};
+} // namespace util
 
 // Convenience macro for invoking CanUseNVMCacheForTests.
 #define RETURN_IF_NO_NVM_CACHE(memory_type) do { \

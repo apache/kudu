@@ -17,15 +17,20 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <iosfwd>
 #include <memory>
 #include <string>
 #include <utility>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/macros.h"
+#include "kudu/util/alignment.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
@@ -41,8 +46,7 @@ class Cache {
   };
 
   // Supported eviction policies for the cache. Eviction policy determines what
-  // items to evict if the cache is at capacity when trying to accommodate
-  // an extra item.
+  // items to evict if the cache is at capacity when trying to accommodate an extra item.
   enum class EvictionPolicy {
     // The earliest added items are evicted (a.k.a. queue).
     FIFO,
@@ -51,12 +55,136 @@ class Cache {
     LRU,
   };
 
-  // Callback interface which is called when an entry is evicted from the
-  // cache.
+  // Callback interface which is called when an entry is evicted from the cache.
   class EvictionCallback {
    public:
     virtual ~EvictionCallback() = default;
     virtual void EvictedEntry(Slice key, Slice value) = 0;
+  };
+
+  // Recency list cache implementations (FIFO, LRU, etc.)
+
+  // Recency list handle. An entry is a variable length heap-allocated structure.
+  // Entries are kept in a circular doubly linked list ordered by some recency
+  // criterion (e.g., access time for LRU policy, insertion time for FIFO policy).
+  struct RLHandle {
+    EvictionCallback* eviction_callback;
+    RLHandle* next_hash;
+    RLHandle* next;
+    RLHandle* prev;
+    size_t charge;      // TODO(opt): Only allow uint32_t?
+    uint32_t key_length;
+    uint32_t val_length;
+    std::atomic<int32_t> refs;
+    uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
+
+    // The storage for the key/value pair itself. The data is stored as:
+    //   [key bytes ...] [padding up to 8-byte boundary] [value bytes ...]
+    uint8_t kv_data[1];   // Beginning of key/value pair
+
+    Slice key() const {
+      return Slice(kv_data, key_length);
+    }
+
+    uint8_t* mutable_val_ptr() {
+      int val_offset = KUDU_ALIGN_UP(key_length, sizeof(void*));
+      return &kv_data[val_offset];
+    }
+
+    const uint8_t* val_ptr() const {
+      return const_cast<RLHandle*>(this)->mutable_val_ptr();
+    }
+
+    Slice value() const {
+      return Slice(val_ptr(), val_length);
+    }
+  };
+
+  // We provide our own simple hash table since it removes a bunch
+  // of porting hacks and is also faster than some built-in hash
+  // table implementations in some compiler/runtime combinations
+  // we have tested.  E.g., readrandom speeds up by ~5% over the g++
+  // 4.4.3's builtin hashtable.
+  template <typename HandleType>
+  class HandleTable {
+   public:
+    HandleTable() : length_(0), elems_(0), list_(nullptr) { Resize(); }
+    ~HandleTable() { delete[] list_; }
+
+    HandleType* Lookup(const Slice& key, uint32_t hash) {
+      return *FindPointer(key, hash);
+    }
+
+    HandleType* Insert(HandleType* h) {
+      HandleType** ptr = FindPointer(h->key(), h->hash);
+      HandleType* old = *ptr;
+      h->next_hash = (old == nullptr ? nullptr : old->next_hash);
+      *ptr = h;
+      if (old == nullptr) {
+        ++elems_;
+        if (elems_ > length_) {
+          // Since each cache entry is fairly large, we aim for a small
+          // average linked list length (<= 1).
+          Resize();
+        }
+      }
+      return old;
+    }
+
+    HandleType* Remove(const Slice& key, uint32_t hash) {
+      HandleType** ptr = FindPointer(key, hash);
+      HandleType* result = *ptr;
+      if (result != nullptr) {
+        *ptr = result->next_hash;
+        --elems_;
+      }
+      return result;
+    }
+
+   private:
+    // The table consists of an array of buckets where each bucket is
+    // a linked list of cache entries that hash into the bucket.
+    uint32_t length_;
+    uint32_t elems_;
+    HandleType** list_;
+
+    // Return a pointer to slot that points to a cache entry that
+    // matches key/hash.  If there is no such cache entry, return a
+    // pointer to the trailing slot in the corresponding linked list.
+    HandleType** FindPointer(const Slice& key, uint32_t hash) {
+      HandleType** ptr = &list_[hash & (length_ - 1)];
+      while (*ptr != nullptr &&
+          ((*ptr)->hash != hash || key != (*ptr)->key())) {
+        ptr = &(*ptr)->next_hash;
+      }
+      return ptr;
+    }
+
+    void Resize() {
+      uint32_t new_length = 16;
+      while (new_length < elems_ * 1.5) {
+        new_length *= 2;
+      }
+      auto* new_list = new HandleType*[new_length];
+      memset(new_list, 0, sizeof(new_list[0]) * new_length);
+      uint32_t count = 0;
+      for (uint32_t i = 0; i < length_; i++) {
+        HandleType* h = list_[i];
+        while (h != nullptr) {
+          HandleType* next = h->next_hash;
+          uint32_t hash = h->hash;
+          HandleType** ptr = &new_list[hash & (new_length - 1)];
+          h->next_hash = *ptr;
+          *ptr = h;
+          h = next;
+          count++;
+        }
+      }
+      DCHECK_EQ(elems_, count);
+      delete[] list_;
+      list_ = new_list;
+      length_ = new_length;
+    }
   };
 
   Cache() = default;
@@ -94,7 +222,7 @@ class Cache {
         : c_(c) {
     }
 
-    void operator()(Cache::Handle* h) const {
+    void operator()(Handle* h) const {
       if (h != nullptr) {
         c_->Release(h);
       }
@@ -122,7 +250,7 @@ class Cache {
         : c_(c) {
     }
 
-    void operator()(Cache::PendingHandle* h) const {
+    void operator()(PendingHandle* h) const {
       if (h != nullptr) {
         c_->Free(h);
       }
@@ -141,7 +269,7 @@ class Cache {
   typedef std::unique_ptr<PendingHandle, PendingHandleDeleter> UniquePendingHandle;
 
   // Passing EXPECT_IN_CACHE will increment the hit/miss metrics that track the number of times
-  // blocks were requested that the users were hoping to get the block from the cache, along with
+  // blocks were requested that the users were hoping to get the block from the cache, along
   // with the basic metrics.
   // Passing NO_EXPECT_IN_CACHE will only increment the basic metrics.
   // This helps in determining if we are effectively caching the blocks that matter the most.
@@ -179,8 +307,7 @@ class Cache {
   // to it have been released.
   virtual void Erase(const Slice& key) = 0;
 
-  // Return the value encapsulated in a raw handle returned by a successful
-  // Lookup().
+  // Return the value encapsulated in a raw handle returned by a successful Lookup().
   virtual Slice Value(const UniqueHandle& handle) const = 0;
 
 
@@ -188,7 +315,7 @@ class Cache {
   // Insertion path
   // ------------------------------------------------------------
   //
-  // Because some cache implementations (eg NVM) manage their own memory, and because we'd
+  // Because some cache implementations (e.g. NVM) manage their own memory, and because we'd
   // like to read blocks directly into cache-managed memory rather than causing an extra
   // memcpy, the insertion of a new element into the cache requires two phases. First, a
   // PendingHandle is allocated with space for the value, and then it is later inserted.
@@ -216,7 +343,7 @@ class Cache {
   //
   // If 'charge' is not 'kAutomaticCharge', then the cache capacity will be charged
   // the explicit amount. This is useful when caching items that are small but need to
-  // maintain a bounded count (eg file descriptors) rather than caring about their actual
+  // maintain a bounded count (e.g. file descriptors) rather than caring about their actual
   // memory usage. It is also useful when caching items for whom calculating
   // memory usage is a complex affair (i.e. items containing pointers to
   // additional heap allocations).
@@ -258,7 +385,7 @@ class Cache {
 
   // Invalidate cache's entries, effectively evicting non-valid ones from the
   // cache. The invalidation process iterates over the cache's recency list(s),
-  // from best candidate for eviction to the worst.
+  // from the best candidate for eviction to the worst.
   //
   // The provided control structure 'ctl' is responsible for the following:
   //   * determine whether an entry is valid or not
