@@ -8503,9 +8503,16 @@ TEST_F(ToolTest, TestCheckFSWithNonDefaultMetadataDir) {
   SCOPED_TRACE(stdout);
 }
 
-TEST_F(ToolTest, TestRecreateCMeta) {
+class RecreateCMetaTest :
+    public ToolTest,
+    public ::testing::WithParamInterface<bool> {
+};
+
+INSTANTIATE_TEST_SUITE_P(, RecreateCMetaTest, ::testing::Bool());
+TEST_P(RecreateCMetaTest, TestRecreateCMeta) {
   SKIP_IF_SLOW_NOT_ALLOWED();
-  constexpr int kNumTservers = 3;
+  const bool singleTserver = GetParam();
+  const int kNumTservers = singleTserver ? 1 : 3;
   constexpr int kNumTablets = 1;
   constexpr int kNumRows = 1000;
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);

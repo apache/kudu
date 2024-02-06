@@ -5453,9 +5453,17 @@ Status CatalogManager::ProcessTabletReport(
         // the leader because the follower doing the reporting may not know who
         // the leader is yet (it may have just started up). It is safe to reuse
         // the previous leader if the reported cstate has the same term as the
-        // previous cstate, and the leader was known for that term.
+        // previous cstate, and the leader was known for that term. An extra
+        // condition is to check whether it's a report from a former leader
+        // replica which currently doesn't maintain the leadership role.  Such a
+        // situation is possible when the replica's cmeta file had been deleted
+        // and then recreated (e.g. by the "kudu local_replica cmeta unsafe_recreate"
+        // CLI tool). The code below assumes that the replica effectively has
+        // the leadership if the 'leader_uuid' field is set, but that's not so
+        // (see KUDU-2335).
         if (cstate.current_term() == prev_cstate.current_term()) {
-          if (cstate.leader_uuid().empty() && !prev_cstate.leader_uuid().empty()) {
+          if (cstate.leader_uuid().empty() && !prev_cstate.leader_uuid().empty() &&
+              ts_desc->permanent_uuid() != prev_cstate.leader_uuid()) {
             cstate.set_leader_uuid(prev_cstate.leader_uuid());
             // Sanity check to detect consensus divergence bugs.
           } else if (!cstate.leader_uuid().empty() &&
