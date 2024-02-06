@@ -38,4 +38,33 @@ struct CacheMetrics {
   scoped_refptr<AtomicGauge<uint64_t>> cache_usage;
 };
 
+// TODO(mreddy): Calculate high-level cache metrics by using
+//  information from segment-level metrics.
+struct SLRUCacheMetrics : public CacheMetrics {
+  explicit SLRUCacheMetrics(const scoped_refptr<MetricEntity>& entity);
+
+  scoped_refptr<Counter> upgrades;
+  scoped_refptr<Counter> downgrades;
+
+  scoped_refptr<Counter> probationary_segment_inserts;
+  scoped_refptr<Counter> probationary_segment_lookups;
+  scoped_refptr<Counter> probationary_segment_evictions;
+  scoped_refptr<Counter> probationary_segment_cache_hits;
+  scoped_refptr<Counter> probationary_segment_cache_hits_caching;
+  scoped_refptr<Counter> probationary_segment_cache_misses;
+  scoped_refptr<Counter> probationary_segment_cache_misses_caching;
+
+  scoped_refptr<AtomicGauge<uint64_t>> probationary_segment_cache_usage;
+
+  scoped_refptr<Counter> protected_segment_inserts;
+  scoped_refptr<Counter> protected_segment_lookups;
+  scoped_refptr<Counter> protected_segment_evictions;
+  scoped_refptr<Counter> protected_segment_cache_hits;
+  scoped_refptr<Counter> protected_segment_cache_hits_caching;
+  scoped_refptr<Counter> protected_segment_cache_misses;
+  scoped_refptr<Counter> protected_segment_cache_misses_caching;
+
+  scoped_refptr<AtomicGauge<uint64_t>> protected_segment_cache_usage;
+};
+
 } // namespace kudu

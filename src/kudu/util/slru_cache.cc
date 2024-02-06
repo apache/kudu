@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -30,13 +31,17 @@
 #include "kudu/gutil/bits.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/cache_metrics.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/test_util_prod.h"
 
 DECLARE_bool(cache_force_single_shard);
 DECLARE_double(cache_memtracker_approximation_ratio);
@@ -47,17 +52,20 @@ using EvictionCallback = kudu::Cache::EvictionCallback;
 
 namespace kudu {
 
-SLRUCacheShard::SLRUCacheShard(MemTracker* tracker, size_t capacity)
+template<Segment segment>
+SLRUCacheShard<segment>::SLRUCacheShard(MemTracker* tracker, size_t capacity)
     : capacity_(capacity),
       usage_(0),
-      mem_tracker_(tracker) {
+      mem_tracker_(tracker),
+      metrics_(nullptr) {
   max_deferred_consumption_ = capacity * FLAGS_cache_memtracker_approximation_ratio;
   // Make empty circular linked list.
   rl_.next = &rl_;
   rl_.prev = &rl_;
 }
 
-SLRUCacheShard::~SLRUCacheShard() {
+template<Segment segment>
+SLRUCacheShard<segment>::~SLRUCacheShard() {
   for (SLRUHandle* e = rl_.next; e != &rl_; ) {
     SLRUHandle* next = e->next;
     DCHECK_EQ(e->refs.load(std::memory_order_relaxed), 1)
@@ -70,25 +78,49 @@ SLRUCacheShard::~SLRUCacheShard() {
   mem_tracker_->Consume(deferred_consumption_);
 }
 
-bool SLRUCacheShard::Unref(SLRUHandle* e) {
+template<Segment segment>
+bool SLRUCacheShard<segment>::Unref(SLRUHandle* e) {
   DCHECK_GT(e->refs.load(std::memory_order_relaxed), 0);
   return e->refs.fetch_sub(1) == 1;
 }
 
-void SLRUCacheShard::FreeEntry(SLRUHandle* e) {
+template<Segment segment>
+void SLRUCacheShard<segment>::FreeEntry(SLRUHandle* e) {
   DCHECK_EQ(e->refs.load(std::memory_order_relaxed), 0);
   if (e->eviction_callback) {
     e->eviction_callback->EvictedEntry(e->key(), e->value());
   }
   UpdateMemTracker(-static_cast<int64_t>(e->charge));
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->cache_usage->DecrementBy(e->charge);
+    metrics_->evictions->Increment();
+    UpdateMetricsEviction(e->charge);
+  }
   delete [] e;
 }
 
-void SLRUCacheShard::SoftFreeEntry(SLRUHandle* e) {
+template<Segment segment>
+void SLRUCacheShard<segment>::SoftFreeEntry(SLRUHandle* e) {
   UpdateMemTracker(-static_cast<int64_t>(e->charge));
+  if (PREDICT_TRUE(metrics_)) {
+    UpdateMetricsEviction(e->charge);
+  }
 }
 
-void SLRUCacheShard::UpdateMemTracker(int64_t delta) {
+template<>
+void SLRUCacheShard<Segment::kProbationary>::UpdateMetricsEviction(size_t charge) {
+  metrics_->probationary_segment_cache_usage->DecrementBy(charge);
+  metrics_->probationary_segment_evictions->Increment();
+}
+
+template<>
+void SLRUCacheShard<Segment::kProtected>::UpdateMetricsEviction(size_t charge) {
+  metrics_->protected_segment_cache_usage->DecrementBy(charge);
+  metrics_->protected_segment_evictions->Increment();
+}
+
+template<Segment segment>
+void SLRUCacheShard<segment>::UpdateMemTracker(int64_t delta) {
   int64_t old_deferred = deferred_consumption_.fetch_add(delta);
   int64_t new_deferred = old_deferred + delta;
 
@@ -99,14 +131,77 @@ void SLRUCacheShard::UpdateMemTracker(int64_t delta) {
   }
 }
 
-void SLRUCacheShard::RL_Remove(SLRUHandle* e) {
+template<Segment segment>
+void SLRUCacheShard<segment>::UpdateMetricsLookup(bool was_hit, bool caching) {
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->lookups->Increment();
+    if (was_hit) {
+      if (caching) {
+        metrics_->cache_hits_caching->Increment();
+      } else {
+        metrics_->cache_hits->Increment();
+      }
+    } else {
+      if (caching) {
+        metrics_->cache_misses_caching->Increment();
+      } else {
+        metrics_->cache_misses->Increment();
+      }
+    }
+  }
+}
+
+template<>
+void SLRUCacheShard<Segment::kProbationary>::UpdateSegmentMetricsLookup(bool was_hit,
+                                                                        bool caching) {
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->probationary_segment_lookups->Increment();
+    if (was_hit) {
+      if (caching) {
+        metrics_->probationary_segment_cache_hits_caching->Increment();
+      } else {
+        metrics_->probationary_segment_cache_hits->Increment();
+      }
+    } else {
+      if (caching) {
+        metrics_->probationary_segment_cache_misses_caching->Increment();
+      } else {
+        metrics_->probationary_segment_cache_misses->Increment();
+      }
+    }
+  }
+}
+
+template<>
+void SLRUCacheShard<Segment::kProtected>::UpdateSegmentMetricsLookup(bool was_hit, bool caching) {
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->protected_segment_lookups->Increment();
+    if (was_hit) {
+      if (caching) {
+        metrics_->protected_segment_cache_hits_caching->Increment();
+      } else {
+        metrics_->protected_segment_cache_hits->Increment();
+      }
+    } else {
+      if (caching) {
+        metrics_->protected_segment_cache_misses_caching->Increment();
+      } else {
+        metrics_->protected_segment_cache_misses->Increment();
+      }
+    }
+  }
+}
+
+template<Segment segment>
+void SLRUCacheShard<segment>::RL_Remove(SLRUHandle* e) {
   e->next->prev = e->prev;
   e->prev->next = e->next;
   DCHECK_GE(usage_, e->charge);
   usage_ -= e->charge;
 }
 
-void SLRUCacheShard::RL_Append(SLRUHandle* e) {
+template<Segment segment>
+void SLRUCacheShard<segment>::RL_Append(SLRUHandle* e) {
   // Make "e" newest entry by inserting just before rl_.
   e->next = &rl_;
   e->prev = rl_.prev;
@@ -115,7 +210,8 @@ void SLRUCacheShard::RL_Append(SLRUHandle* e) {
   usage_ += e->charge;
 }
 
-void SLRUCacheShard::RL_UpdateAfterLookup(SLRUHandle* e) {
+template<Segment segment>
+void SLRUCacheShard<segment>::RL_UpdateAfterLookup(SLRUHandle* e) {
   RL_Remove(e);
   RL_Append(e);
 }
@@ -123,22 +219,26 @@ void SLRUCacheShard::RL_UpdateAfterLookup(SLRUHandle* e) {
 // No mutex is needed here since all the SLRUCacheShardPair methods that access the underlying
 // shards and its tables are protected by mutexes. Same logic applies to the all the below
 // methods in SLRUCacheShard.
-Handle* SLRUCacheShard::Lookup(const Slice& key, uint32_t hash, bool caching) {
+template<Segment segment>
+Handle* SLRUCacheShard<segment>::Lookup(const Slice& key, uint32_t hash, bool caching) {
   SLRUHandle* e = table_.Lookup(key, hash);
   if (e != nullptr) {
     e->refs.fetch_add(1, std::memory_order_relaxed);
     e->lookups++;
     RL_UpdateAfterLookup(e);
   }
+  UpdateSegmentMetricsLookup(e != nullptr, caching);
 
   return reinterpret_cast<Handle*>(e);
 }
 
-bool SLRUCacheShard::Contains(const Slice& key, uint32_t hash) {
+template<Segment segment>
+bool SLRUCacheShard<segment>::Contains(const Slice& key, uint32_t hash) {
   return table_.Lookup(key, hash) != nullptr;
 }
 
-void SLRUCacheShard::Release(Handle* handle) {
+template<Segment segment>
+void SLRUCacheShard<segment>::Release(Handle* handle) {
   SLRUHandle* e = reinterpret_cast<SLRUHandle*>(handle);
   // If this is the last reference of the handle, the entry will be freed.
   if (Unref(e)) {
@@ -146,14 +246,20 @@ void SLRUCacheShard::Release(Handle* handle) {
   }
 }
 
-Handle* SLRUCacheShard::Insert(SLRUHandle* handle,
-                               EvictionCallback* eviction_callback) {
+template<>
+Handle* SLRUCacheShard<Segment::kProbationary>::Insert(SLRUHandle* handle,
+                                                       EvictionCallback* eviction_callback) {
   // Set the remaining SLRUHandle members which were not already allocated during Allocate().
   handle->eviction_callback = eviction_callback;
   // Two refs for the handle: one from SLRUCacheShard, one for the returned handle.
   handle->refs.store(2, std::memory_order_relaxed);
   UpdateMemTracker(handle->charge);
-
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->cache_usage->IncrementBy(handle->charge);
+    metrics_->inserts->Increment();
+    metrics_->probationary_segment_cache_usage->IncrementBy(handle->charge);
+    metrics_->probationary_segment_inserts->Increment();
+  }
   RL_Append(handle);
 
   SLRUHandle* old_entry = table_.Insert(handle);
@@ -176,10 +282,17 @@ Handle* SLRUCacheShard::Insert(SLRUHandle* handle,
   return reinterpret_cast<Handle*>(handle);
 }
 
-vector<SLRUHandle*> SLRUCacheShard::InsertAndReturnEvicted(SLRUHandle* handle) {
+template<>
+vector<SLRUHandle*> SLRUCacheShard<Segment::kProtected>::InsertAndReturnEvicted(
+    SLRUHandle* handle) {
   handle->refs.fetch_add(1, std::memory_order_relaxed);
   handle->in_protected_segment.store(true, std::memory_order_relaxed);
   UpdateMemTracker(handle->charge);
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->upgrades->Increment();
+    metrics_->protected_segment_cache_usage->IncrementBy(handle->charge);
+    metrics_->protected_segment_inserts->Increment();
+  }
 
   vector<SLRUHandle*> evicted_entries;
   handle->Sanitize();
@@ -201,12 +314,19 @@ vector<SLRUHandle*> SLRUCacheShard::InsertAndReturnEvicted(SLRUHandle* handle) {
   return evicted_entries;
 }
 
-Handle* SLRUCacheShard::ProtectedInsert(SLRUHandle* handle,
-                                        EvictionCallback* eviction_callback,
-                                        vector<SLRUHandle*>* evictions) {
+template<>
+Handle* SLRUCacheShard<Segment::kProtected>::ProtectedInsert(SLRUHandle* handle,
+                                                             EvictionCallback* eviction_callback,
+                                                             vector<SLRUHandle*>* evictions) {
   handle->eviction_callback = eviction_callback;
   handle->refs.store(2, std::memory_order_relaxed);
   UpdateMemTracker(handle->charge);
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->cache_usage->IncrementBy(handle->charge);
+    metrics_->inserts->Increment();
+    metrics_->protected_segment_cache_usage->IncrementBy(handle->charge);
+    metrics_->protected_segment_inserts->Increment();
+  }
 
   RL_Append(handle);
 
@@ -230,10 +350,16 @@ Handle* SLRUCacheShard::ProtectedInsert(SLRUHandle* handle,
   return reinterpret_cast<Handle*>(handle);
 }
 
-void SLRUCacheShard::ReInsert(SLRUHandle* handle) {
+template<>
+void SLRUCacheShard<Segment::kProbationary>::ReInsert(SLRUHandle* handle) {
   handle->refs.fetch_add(1, std::memory_order_relaxed);
   handle->in_protected_segment.store(false, std::memory_order_relaxed);
   UpdateMemTracker(handle->charge);
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->downgrades->Increment();
+    metrics_->probationary_segment_cache_usage->IncrementBy(handle->charge);
+    metrics_->probationary_segment_inserts->Increment();
+  }
 
   handle->Sanitize();
   RL_Append(handle);
@@ -252,7 +378,8 @@ void SLRUCacheShard::ReInsert(SLRUHandle* handle) {
   }
 }
 
-void SLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
+template<Segment segment>
+void SLRUCacheShard<segment>::Erase(const Slice& key, uint32_t hash) {
   SLRUHandle* e = table_.Remove(key, hash);
   if (e != nullptr) {
     RL_Remove(e);
@@ -263,7 +390,8 @@ void SLRUCacheShard::Erase(const Slice& key, uint32_t hash) {
   }
 }
 
-void SLRUCacheShard::SoftErase(const Slice& key, uint32_t hash) {
+template<Segment segment>
+void SLRUCacheShard<segment>::SoftErase(const Slice& key, uint32_t hash) {
   SLRUHandle* e = table_.Remove(key, hash);
   if (e != nullptr) {
     RL_Remove(e);
@@ -272,13 +400,22 @@ void SLRUCacheShard::SoftErase(const Slice& key, uint32_t hash) {
   }
 }
 
+template class SLRUCacheShard<Segment::kProtected>;
+template class SLRUCacheShard<Segment::kProbationary>;
+
 SLRUCacheShardPair::SLRUCacheShardPair(MemTracker* mem_tracker,
                                        size_t probationary_capacity,
                                        size_t protected_capacity,
                                        uint32_t lookups) :
-    probationary_shard_(SLRUCacheShard(mem_tracker, probationary_capacity)),
-    protected_shard_(SLRUCacheShard(mem_tracker, protected_capacity)),
+    probationary_shard_(SLRUCacheShard<Segment::kProbationary>(mem_tracker, probationary_capacity)),
+    protected_shard_(SLRUCacheShard<Segment::kProtected>(mem_tracker, protected_capacity)),
     lookups_threshold_(lookups) {
+}
+
+void SLRUCacheShardPair::SetMetrics(SLRUCacheMetrics* metrics) {
+  std::lock_guard l(mutex_);
+  probationary_shard_.SetMetrics(metrics);
+  protected_shard_.SetMetrics(metrics);
 }
 
 // Commit a prepared entry into the probationary segment if entry does not exist or if it
@@ -306,7 +443,7 @@ Handle* SLRUCacheShardPair::Insert(SLRUHandle* handle,
 Handle* SLRUCacheShardPair::Lookup(const Slice& key, uint32_t hash, bool caching) {
   // Lookup protected segment:
   //  - Hit: Return handle.
-  //  - Miss: Lookup probationary segment
+  //  - Miss: Lookup probationary segment:
   //      - Hit: If the number of lookups is < than 'lookups_threshold_', return the lookup handle.
   //             If the number of lookups is >= than 'lookups_threshold_', upgrade the entry:
   //                Erase entry from the probationary segment and insert entry into the protected
@@ -314,20 +451,25 @@ Handle* SLRUCacheShardPair::Lookup(const Slice& key, uint32_t hash, bool caching
   //                protected segment, insert them into the probationary segment.
   //      - Miss: Return the handle.
   //
+  // Lookup metrics for both segments and the high-level cache are updated with each lookup.
   std::lock_guard<decltype(mutex_)> l(mutex_);
   Handle* protected_handle = protected_shard_.Lookup(key, hash, caching);
 
   // If the key exists in the protected segment, return the result from the lookup of the
   // protected segment.
   if (protected_handle) {
+    protected_shard_.UpdateMetricsLookup(true, caching);
+    probationary_shard_.UpdateSegmentMetricsLookup(false, caching);
     return protected_handle;
   }
   Handle* probationary_handle = probationary_shard_.Lookup(key, hash, caching);
 
   // Return null handle if handle is not found in either the probationary or protected segment.
   if (!probationary_handle) {
+    protected_shard_.UpdateMetricsLookup(false, caching);
     return probationary_handle;
   }
+  protected_shard_.UpdateMetricsLookup(true, caching);
   auto* val_handle = reinterpret_cast<SLRUHandle*>(probationary_handle);
   // If the number of lookups for entry isn't at the minimum number required before
   // upgrading to the protected segment, return the entry found in probationary segment.
@@ -447,6 +589,21 @@ Cache::UniqueHandle ShardedSLRUCache::Insert(UniquePendingHandle handle,
   SLRUHandle* h = reinterpret_cast<SLRUHandle*>(DCHECK_NOTNULL(handle.release()));
   return UniqueHandle(shards_[Shard(h->hash)]->Insert(h, eviction_callback),
                       HandleDeleter(this));
+}
+
+void ShardedSLRUCache::SetMetrics(std::unique_ptr<CacheMetrics> metrics,
+                                  ExistingMetricsPolicy metrics_policy) {
+  std::lock_guard l(metrics_lock_);
+  if (metrics_ && metrics_policy == ExistingMetricsPolicy::kKeep) {
+    CHECK(IsGTest()) << "Metrics should only be set once per Cache";
+    return;
+  }
+  metrics_ = std::move(metrics);
+  auto* metrics_ptr = dynamic_cast<SLRUCacheMetrics*>(metrics_.get());
+  DCHECK(metrics_ptr != nullptr);
+  for (auto& shard_pair : shards_) {
+    shard_pair->SetMetrics(metrics_ptr);
+  }
 }
 
 void ShardedSLRUCache::Release(Handle* handle) {

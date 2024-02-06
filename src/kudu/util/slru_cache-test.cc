@@ -28,10 +28,13 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/cache_metrics.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/test_util.h"
 
@@ -131,6 +134,15 @@ class SLRUCacheBaseTest : public KuduTest,
      MemTracker::FindTracker("slru_cache_test-sharded_slru_cache", &mem_tracker_);
 
      ASSERT_TRUE(mem_tracker_.get());
+
+     // slru_cache_ will be null if we're trying to set up a test for the NVM cache
+     // and were unable to do so.
+     if (slru_cache_) {
+       scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
+           &metric_registry_, "test");
+       std::unique_ptr<SLRUCacheMetrics> metrics(new SLRUCacheMetrics(entity));
+       slru_cache_->SetMetrics(std::move(metrics), Cache::ExistingMetricsPolicy::kKeep);
+     }
   }
 
    const size_t probationary_segment_size_;
@@ -141,6 +153,7 @@ class SLRUCacheBaseTest : public KuduTest,
    std::vector<int> evicted_values_;
    std::shared_ptr<MemTracker> mem_tracker_;
    std::unique_ptr<ShardedSLRUCache> slru_cache_;
+   MetricRegistry metric_registry_;
 };
 
 class SLRUCacheTest :

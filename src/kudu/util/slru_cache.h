@@ -27,6 +27,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/cache_metrics.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/slice.h"
 
@@ -43,7 +44,6 @@ namespace kudu {
 // result of upgrade of entries would then be inserted into the MRU end of the probationary segment.
 
 class MemTracker;
-struct CacheMetrics;
 
 struct SLRUHandle {
   EvictionCallback* eviction_callback;
@@ -94,9 +94,14 @@ struct SLRUHandle {
     next_hash = nullptr;
   }
 };
-// TODO(mreddy): Add an extra layer of inheritance to SLRUCacheShard for ProtectedShard and
-// ProbationaryShard so segment-specific methods can be divided accordingly.
+
+enum class Segment {
+  kProbationary,
+  kProtected,
+};
+
 // A single shard of sharded SLRU cache.
+template <Segment segment>
 class SLRUCacheShard {
  public:
   SLRUCacheShard(MemTracker* tracker, size_t capacity);
@@ -105,6 +110,8 @@ class SLRUCacheShard {
   size_t capacity() const {
     return capacity_;
   }
+
+  void SetMetrics(SLRUCacheMetrics* metrics) { metrics_ = metrics; }
 
   // Inserts handle into shard and removes any entries if past capacity.
   Handle* Insert(SLRUHandle* handle, EvictionCallback* eviction_callback);
@@ -130,6 +137,10 @@ class SLRUCacheShard {
   // Like Insert but sets refs to 1 and no possibility for upsert case.
   // Used when evicted entries from protected segment are being added to probationary segment.
   void ReInsert(SLRUHandle* handle);
+  // Update the high-level metrics for a lookup operation.
+  void UpdateMetricsLookup(bool was_hit, bool caching);
+  // Update the segment-level metrics for a lookup operation.
+  void UpdateSegmentMetricsLookup(bool was_hit, bool caching);
 
  private:
   void RL_Remove(SLRUHandle* e);
@@ -144,6 +155,8 @@ class SLRUCacheShard {
   // Updates memtracker to reflect entry being erased from cache.
   // Unlike FreeEntry(), the eviction callback is not called and the entry is not freed.
   void SoftFreeEntry(SLRUHandle* e);
+  // Updates eviction related metrics.
+  void UpdateMetricsEviction(size_t charge);
 
 
   // Update the memtracker's consumption by the given amount.
@@ -180,6 +193,8 @@ class SLRUCacheShard {
   MemTracker* mem_tracker_;
   std::atomic<int64_t> deferred_consumption_ { 0 };
 
+  SLRUCacheMetrics* metrics_;
+
   // Initialized based on capacity_ to ensure an upper bound on the error on the
   // MemTracker consumption.
   int64_t max_deferred_consumption_;
@@ -195,6 +210,8 @@ class SLRUCacheShardPair {
                      size_t protected_capacity,
                      uint32_t lookups);
 
+  void SetMetrics(SLRUCacheMetrics* metrics);
+
   Handle* Insert(SLRUHandle* handle, EvictionCallback* eviction_callback);
   // Like Cache::Lookup, but with an extra "hash" parameter.
   Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
@@ -204,8 +221,8 @@ class SLRUCacheShardPair {
   bool ProtectedContains(const Slice& key, uint32_t hash);
 
  private:
-  SLRUCacheShard probationary_shard_;
-  SLRUCacheShard protected_shard_;
+  SLRUCacheShard<Segment::kProbationary> probationary_shard_;
+  SLRUCacheShard<Segment::kProtected> protected_shard_;
 
   // If an entry is looked up at least 'lookups_threshold_' times,
   // it's upgraded to the protected segment.
@@ -239,7 +256,7 @@ class ShardedSLRUCache : public Cache {
                       EvictionCallback* eviction_callback) override;
 
   void SetMetrics(std::unique_ptr<CacheMetrics> metrics,
-                  ExistingMetricsPolicy metrics_policy) override { }
+                  ExistingMetricsPolicy metrics_policy) override;
 
   size_t Invalidate(const InvalidationControl& ctl) override { return 0; }
 
@@ -261,11 +278,16 @@ class ShardedSLRUCache : public Cache {
   // The destructor for 'shards_' must be called first since it releases all the memory consumed.
   std::shared_ptr<MemTracker> mem_tracker_;
 
+  std::unique_ptr<CacheMetrics> metrics_;
+
   // The first shard in the pair belongs to the probationary segment, second one to the protected.
   std::vector<std::unique_ptr<SLRUCacheShardPair>> shards_;
 
   // Number of bits of hash used to determine the shard.
   const int shard_bits_;
+
+  // Used only when metrics are set to ensure that they are set only once in test environments.
+  simple_spinlock metrics_lock_;
 };
 
 // Creates a new SLRU cache with 'probationary_capacity' being the capacity of
