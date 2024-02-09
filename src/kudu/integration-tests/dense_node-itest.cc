@@ -22,7 +22,6 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -31,8 +30,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/schema.h"
-#include "kudu/fs/block_manager.h"
-#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -78,7 +75,6 @@ using client::KuduColumnSchema;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
 using cluster::ExternalMiniClusterOptions;
-using kudu::fs::BlockManager;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -87,13 +83,10 @@ using strings::Substitute;
 
 class DenseNodeTest :
   public ExternalMiniClusterITestBase,
-  public testing::WithParamInterface<std::tuple<bool, string>> {
+  public testing::WithParamInterface<bool> {
 };
 
-INSTANTIATE_TEST_SUITE_P(, DenseNodeTest,
-                         ::testing::Combine(
-                             ::testing::Bool(),
-                             ::testing::ValuesIn(BlockManager::block_manager_types())));
+INSTANTIATE_TEST_SUITE_P(, DenseNodeTest, testing::Values(false, true));
 
 // Integration test that simulates "dense" Kudu nodes.
 //
@@ -159,14 +152,10 @@ TEST_P(DenseNodeTest, RunTest) {
     opts.extra_master_flags.emplace_back("--never_fsync=false");
   }
 
-  if (std::get<0>(GetParam())) {
+  if (GetParam()) {
     opts.extra_master_flags.emplace_back("--encrypt_data_at_rest=true");
     opts.extra_tserver_flags.emplace_back("--encrypt_data_at_rest=true");
   }
-
-  FLAGS_block_manager = std::get<1>(GetParam());
-  opts.extra_master_flags.emplace_back(Substitute("--block_manager=$0", FLAGS_block_manager));
-  opts.extra_tserver_flags.emplace_back(Substitute("--block_manager=$0", FLAGS_block_manager));
 
   // With the amount of data we're going to write, we need to make sure the
   // tserver has enough time to start back up (startup is only considered to be
@@ -210,7 +199,7 @@ TEST_P(DenseNodeTest, RunTest) {
   // metrics are logged so that they're easier to find in the log output.
   vector<pair<string, int64_t>> metrics;
   vector<GaugePrototype<uint64>*> metric_prototypes;
-  if (FsManager::IsLogType(FLAGS_block_manager)) {
+  if (FLAGS_block_manager == "log") {
     metric_prototypes = { &METRIC_log_block_manager_blocks_under_management,
                           &METRIC_log_block_manager_bytes_under_management,
                           &METRIC_log_block_manager_containers,

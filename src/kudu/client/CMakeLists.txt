@@ -280,8 +280,7 @@ endif()
 SET_KUDU_TEST_LINK_LIBS(
   itest_util
   kudu_client
-  mini_cluster
-  rocksdb)
+  mini_cluster)
 ADD_KUDU_TEST(client-test NUM_SHARDS 8 PROCESSORS 2
                           DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(client-unittest)

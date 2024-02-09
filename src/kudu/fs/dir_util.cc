@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #include "kudu/fs/dir_util.h"
 
 #include <cstdint>
@@ -26,7 +25,6 @@
 #include <glog/logging.h>
 
 #include "kudu/fs/fs.pb.h"
-#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -170,7 +168,7 @@ Status DirInstanceMetadataFile::Create(const set<string>& all_uuids,
 
   // If we're initializing the log block manager, check that we support
   // hole-punching.
-  if (FsManager::IsLogType(dir_type_)) {
+  if (dir_type_ == "log") {
     RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(CheckHolePunch(env_, dir_name),
                                         kHolePunchErrorMsg);
   }

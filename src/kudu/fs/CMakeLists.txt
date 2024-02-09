@@ -43,8 +43,7 @@ target_link_libraries(kudu_fs
   fs_proto
   kudu_util
   gutil
-  ranger_kms_client
-  rocksdb)
+  ranger_kms_client)
 
 if(NOT NO_TESTS)
   add_library(kudu_fs_test_util
@@ -61,7 +60,7 @@ endif()
 # Unit tests
 #######################################
 
-SET_KUDU_TEST_LINK_LIBS(kudu_fs kudu_fs_test_util rocksdb lz4)
+SET_KUDU_TEST_LINK_LIBS(kudu_fs kudu_fs_test_util)
 ADD_KUDU_TEST(block_manager-test)
 ADD_KUDU_TEST(block_manager-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(data_dirs-test)

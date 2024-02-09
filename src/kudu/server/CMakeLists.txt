@@ -83,8 +83,6 @@ SET_KUDU_TEST_LINK_LIBS(
   kudu_curl_util
   mini_kdc
   server_process
-  security_test_util
-  rocksdb
-  lz4)
+  security_test_util)
 ADD_KUDU_TEST(rpc_server-test)
 ADD_KUDU_TEST(webserver-test)
