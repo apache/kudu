@@ -16,10 +16,12 @@
 // under the License.
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -30,7 +32,6 @@
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_verifier.h"
@@ -129,10 +130,8 @@ class TokenSignerITest : public KuduTest {
   unique_ptr<InternalMiniCluster> cluster_;
 };
 
-// Check that once cluster has started, the TSK for signing is available at the
-// leader master and nothing is available at master-followers. The follower
-// masters do not poll the system table for TSK entries nor TSK information
-// is transferred to them from the leader master in any other way.
+// Check that once cluster has started, token signing keys are available at the
+// leader master.
 TEST_F(TokenSignerITest, TskAtLeaderMaster) {
   // Check the leader can sign tokens: this guarantees at least one TSK has been
   // generated and is available for token signing.
@@ -142,11 +141,18 @@ TEST_F(TokenSignerITest, TskAtLeaderMaster) {
   // Get the public part of the signing key from the leader.
   vector<TokenSigningPublicKeyPB> leader_public_keys;
   ASSERT_OK(GetLeaderPublicKeys(&leader_public_keys));
-  ASSERT_EQ(1, leader_public_keys.size());
-  EXPECT_EQ(t.signing_key_seq_num(), leader_public_keys[0].key_seq_num());
+  ASSERT_LE(1, leader_public_keys.size());
+  bool found_signing_key = false;
+  for (const auto& k : leader_public_keys) {
+    if (t.signing_key_seq_num() == k.key_seq_num()) {
+      found_signing_key = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_signing_key);
 }
 
-// New TSK is generated upon start of the leader master and persisted in
+// A new TSK is generated upon start of the leader master and persisted in
 // the system catalog table. So, check that appropriate TSK
 // information is available upon start of the cluster and it's persistent
 // for some time after restart (until the expiration time, actually;
@@ -158,47 +164,62 @@ TEST_F(TokenSignerITest, TskClusterRestart) {
 
   vector<TokenSigningPublicKeyPB> public_keys_before;
   ASSERT_OK(GetLeaderPublicKeys(&public_keys_before));
-  ASSERT_EQ(1, public_keys_before.size());
+  // New TSKs might be generated if it takes longer than the TSK rotation
+  // interval to get here after the first TSK was generated upon starting
+  // the mini-cluster's master the very first time.
+  ASSERT_GE(public_keys_before.size(), 1);
 
   ASSERT_OK(RestartCluster());
 
   // Check the leader can sign tokens after the restart.
   SignedTokenPB t_post;
   ASSERT_OK(MakeSignedToken(&t_post));
-  EXPECT_EQ(t_post.signing_key_seq_num(), t_pre.signing_key_seq_num());
+  // New TSKs might be generated if it takes longer than the TSK rotation
+  // interval to restart the mini-cluster.
+  EXPECT_GE(t_post.signing_key_seq_num(), t_pre.signing_key_seq_num());
 
   vector<TokenSigningPublicKeyPB> public_keys_after;
   ASSERT_OK(GetLeaderPublicKeys(&public_keys_after));
-  ASSERT_EQ(1, public_keys_after.size());
-  EXPECT_EQ(public_keys_before[0].SerializeAsString(),
-            public_keys_after[0].SerializeAsString());
+  ASSERT_GE(public_keys_after.size(), public_keys_before.size());
+  // Make sure the existing TSKs do not change upon system catalog's restart.
+  for (size_t i = 0; i < public_keys_before.size(); ++i) {
+    SCOPED_TRACE(i);
+    EXPECT_EQ(public_keys_before[i].SerializeAsString(),
+              public_keys_after[i].SerializeAsString());
+  }
 }
 
-// Test that if leadership changes, the new leader has the same TSK information
-// for token verification as the former leader
-// (it's assumed no new TSK generation happened in between).
+// If system catalog's leadership changes, a new leader has to have the same
+// information on existing TSKs as the former one which generated those.
+// A new leader might generate new TSKs if the leadership transition takes
+// longer than the TSK rotation internval.
 TEST_F(TokenSignerITest, TskMasterLeadershipChange) {
   SignedTokenPB t_former_leader;
   ASSERT_OK(MakeSignedToken(&t_former_leader));
 
   vector<TokenSigningPublicKeyPB> public_keys;
   ASSERT_OK(GetLeaderPublicKeys(&public_keys));
-  ASSERT_EQ(1, public_keys.size());
+  ASSERT_GE(public_keys.size(), 1);
 
   ASSERT_OK(ShutdownLeader());
   ASSERT_OK(WaitForNewLeader());
 
-  // The new leader should use the same signing key.
+  // The new leader should use the same or a new TSK: the latter is the case
+  // when it took longer than the TSK rotation interval to get here.
   SignedTokenPB t_new_leader;
   ASSERT_OK(MakeSignedToken(&t_new_leader));
-  EXPECT_EQ(t_new_leader.signing_key_seq_num(),
+  EXPECT_GE(t_new_leader.signing_key_seq_num(),
             t_former_leader.signing_key_seq_num());
 
   vector<TokenSigningPublicKeyPB> public_keys_new_leader;
   ASSERT_OK(GetLeaderPublicKeys(&public_keys_new_leader));
-  ASSERT_EQ(1, public_keys_new_leader.size());
-  EXPECT_EQ(public_keys[0].SerializeAsString(),
-            public_keys_new_leader[0].SerializeAsString());
+  ASSERT_GE(public_keys_new_leader.size(), public_keys.size());
+  // Make sure the existing TSKs do not change upon system catalog's restart.
+  for (size_t i = 0; i < public_keys.size(); ++i) {
+    SCOPED_TRACE(i);
+    EXPECT_EQ(public_keys[i].SerializeAsString(),
+              public_keys_new_leader[i].SerializeAsString());
+  }
 }
 
 // Check for authn token verification results during and past its lifetime.
@@ -216,7 +237,7 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   vector<TokenSigningPublicKeyPB> public_keys;
   ASSERT_OK(GetLeaderPublicKeys(&public_keys));
-  ASSERT_EQ(1, public_keys.size());
+  ASSERT_GE(public_keys.size(), 1);
   const TokenSigningPublicKeyPB& public_key = public_keys[0];
   ASSERT_TRUE(public_key.has_key_seq_num());
   const int64_t key_seq_num = public_key.key_seq_num();
