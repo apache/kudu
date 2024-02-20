@@ -403,11 +403,19 @@ public abstract class KuduRpc<R> {
     buf.append(", ").append(timeoutTracker);
     // Cheating a bit, we're not actually logging but we'll augment the information provided by
     // this method if DEBUG is enabled.
+    //
+    // Lock the traces array and get a copy of it before traverse the traces. This method is
+    // mostly called when some exceptions are raised, so the influence of performance should be
+    // acceptable.
+    List<RpcTraceFrame> tracesCopy;
+    synchronized (traces) {
+      tracesCopy = new ArrayList<>(traces);
+    }
     if (LOG.isDebugEnabled()) {
-      buf.append(", ").append(RpcTraceFrame.getHumanReadableStringForTraces(traces));
+      buf.append(", ").append(RpcTraceFrame.getHumanReadableStringForTraces(tracesCopy));
       buf.append(", deferred=").append(deferred);
     } else {
-      buf.append(", ").append(RpcTraceFrame.getHumanReadableSummaryStringForTraces(traces));
+      buf.append(", ").append(RpcTraceFrame.getHumanReadableSummaryStringForTraces(tracesCopy));
     }
     buf.append(')');
     return buf.toString();
