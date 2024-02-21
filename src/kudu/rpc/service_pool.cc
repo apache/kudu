@@ -176,7 +176,7 @@ Status ServicePool::QueueInboundCall(unique_ptr<InboundCall> call) {
     return Status::OK();
   }
 
-  if (PREDICT_TRUE(evicted)) {
+  if (PREDICT_FALSE(evicted.has_value())) {
     RejectTooBusy(*evicted);
   }
 

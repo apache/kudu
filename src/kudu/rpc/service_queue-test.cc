@@ -74,7 +74,7 @@ void ProducerThread(Queue* queue) {
       break;
     }
 
-    if (PREDICT_TRUE(evicted)) {
+    if (PREDICT_FALSE(evicted.has_value())) {
       LOG(INFO) << "call evicted: producer exiting";
       delete *evicted;
       break;
