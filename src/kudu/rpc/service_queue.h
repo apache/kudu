@@ -16,13 +16,15 @@
 // under the License.
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <optional>
-#include <string>
 #include <set>
+#include <string>
 #include <vector>
 
 #include <glog/logging.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
@@ -70,11 +72,14 @@ enum QueueStatus {
 // NOTE: because of the use of thread-local consumer records, once a consumer
 // thread accesses one LifoServiceQueue, it becomes "bound" to that queue and
 // must never access any other instance.
-class LifoServiceQueue {
+class LifoServiceQueue final {
  public:
-  explicit LifoServiceQueue(int max_size);
-
+  explicit LifoServiceQueue(size_t max_size);
   ~LifoServiceQueue();
+
+  size_t max_size() const {
+    return max_queue_size_;
+  }
 
   // Get an element from the queue.  Returns false if we were shut down prior to
   // getting the element.
@@ -99,34 +104,11 @@ class LifoServiceQueue {
   // returning false.
   void Shutdown();
 
-  bool empty() const;
-
-  int max_size() const;
-
   std::string ToString() const;
 
-  // Return an estimate of the current queue length.
-  int estimated_queue_length() const {
-    ANNOTATE_IGNORE_READS_BEGIN();
-    // The C++ standard says that std::multiset::size must be constant time,
-    // so this method won't try to traverse any actual nodes of the underlying
-    // RB tree. Investigation of the libstdcxx implementation confirms that
-    // size() is a simple field access of the _Rb_tree structure.
-    int ret = queue_.size();
-    ANNOTATE_IGNORE_READS_END();
-    return ret;
-  }
-
-  // Return an estimate of the number of idle threads currently awaiting work.
-  int estimated_idle_worker_count() const {
-    ANNOTATE_IGNORE_READS_BEGIN();
-    // Size of a vector is a simple field access so this is safe.
-    int ret = waiting_consumers_.size();
-    ANNOTATE_IGNORE_READS_END();
-    return ret;
-  }
-
  private:
+  FRIEND_TEST(TestServiceQueue, LifoServiceQueuePerf);
+
   // Comparison function which orders calls by their deadlines.
   static bool DeadlineLess(const InboundCall* a,
                            const InboundCall* b) {
@@ -162,8 +144,8 @@ class LifoServiceQueue {
     }
 
     void Post(InboundCall* call) {
-      DCHECK(call_ == nullptr);
       MutexLock l(lock_);
+      DCHECK(!call_);
       call_ = call;
       should_wake_ = true;
       cond_.Signal();
@@ -171,7 +153,7 @@ class LifoServiceQueue {
 
     InboundCall* Wait() {
       MutexLock l(lock_);
-      while (should_wake_ == false) {
+      while (!should_wake_) {
         cond_.Wait();
       }
       should_wake_ = false;
@@ -195,11 +177,32 @@ class LifoServiceQueue {
     LifoServiceQueue* bound_queue_;
   };
 
-  static __thread ConsumerState* tl_consumer_;
+  // Return an estimate of the current queue length.
+  size_t estimated_queue_length() const {
+    ANNOTATE_IGNORE_READS_BEGIN();
+    // The C++ standard says that std::multiset::size must be constant time,
+    // so this method won't try to traverse any actual nodes of the underlying
+    // RB tree. Investigation of the libstdcxx implementation confirms that
+    // size() is a simple field access of the _Rb_tree structure.
+    auto ret = queue_.size();
+    ANNOTATE_IGNORE_READS_END();
+    return ret;
+  }
 
+  // Return an estimate of the number of idle threads currently awaiting work.
+  size_t estimated_idle_worker_count() const {
+    ANNOTATE_IGNORE_READS_BEGIN();
+    // Size of a vector is a simple field access so this is safe.
+    auto ret = waiting_consumers_.size();
+    ANNOTATE_IGNORE_READS_END();
+    return ret;
+  }
+
+  thread_local static ConsumerState* tl_consumer_;
+
+  const size_t max_queue_size_;
   mutable simple_spinlock lock_;
   bool shutdown_;
-  int max_queue_size_;
 
   // Stack of consumer threads which are currently waiting for work.
   std::vector<ConsumerState*> waiting_consumers_;
@@ -209,6 +212,9 @@ class LifoServiceQueue {
   std::multiset<InboundCall*, DeadlineLessStruct> queue_;
 
   // The total set of consumers who have ever accessed this queue.
+  // This container is necessary to maintain proper lifecycle and ownership
+  // of the corresponding ConsumerState objects while their raw pointers
+  // are used elsewhere in this class (e.g., in 'waiting_consumers_').
   std::vector<std::unique_ptr<ConsumerState>> consumers_;
 
   DISALLOW_COPY_AND_ASSIGN(LifoServiceQueue);

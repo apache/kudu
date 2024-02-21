@@ -27,7 +27,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
@@ -170,7 +169,7 @@ Status ServicePool::QueueInboundCall(unique_ptr<InboundCall> call) {
 
   // Queue message on service queue
   std::optional<InboundCall*> evicted;
-  auto queue_status = service_queue_.Put(c, &evicted);
+  const auto queue_status = service_queue_.Put(c, &evicted);
   if (queue_status == QUEUE_FULL) {
     RejectTooBusy(c);
     return Status::OK();
@@ -214,14 +213,12 @@ void ServicePool::RunThread() {
       rpcs_timed_out_in_queue_->Increment();
 
       // Respond as a failure, even though the client will probably ignore
-      // the response anyway.
-      incoming->RespondFailure(
+      // the response anyway. Must release the raw pointer since the
+      // RespondFailure() call below ends up taking ownership of the object.
+      incoming.release()->RespondFailure(
         ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
         Status::TimedOut("Call waited in the queue past client deadline"));
 
-      // Must release since RespondFailure above ends up taking ownership
-      // of the object.
-      ignore_result(incoming.release());
       continue;
     }
 

@@ -26,12 +26,12 @@
 namespace kudu {
 namespace rpc {
 
-__thread LifoServiceQueue::ConsumerState* LifoServiceQueue::tl_consumer_ = nullptr;
+thread_local LifoServiceQueue::ConsumerState* LifoServiceQueue::tl_consumer_ = nullptr;
 
-LifoServiceQueue::LifoServiceQueue(int max_size)
-   : shutdown_(false),
-     max_queue_size_(max_size) {
-  CHECK_GT(max_queue_size_, 0);
+LifoServiceQueue::LifoServiceQueue(size_t max_size)
+   : max_queue_size_(max_size),
+     shutdown_(false) {
+  DCHECK_GT(max_queue_size_, 0);
 }
 
 LifoServiceQueue::~LifoServiceQueue() {
@@ -40,7 +40,7 @@ LifoServiceQueue::~LifoServiceQueue() {
 }
 
 bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall>* out) {
-  auto consumer = tl_consumer_;
+  auto* consumer = tl_consumer_;
   if (PREDICT_FALSE(!consumer)) {
     consumer = tl_consumer_ = new ConsumerState(this);
     std::lock_guard<simple_spinlock> l(lock_);
@@ -59,7 +59,9 @@ bool LifoServiceQueue::BlockingGet(std::unique_ptr<InboundCall>* out) {
       if (PREDICT_FALSE(shutdown_)) {
         return false;
       }
+#if DCHECK_IS_ON()
       consumer->DCheckBoundInstance(this);
+#endif
       waiting_consumers_.push_back(consumer);
     }
     InboundCall* call = consumer->Wait();
@@ -79,11 +81,11 @@ QueueStatus LifoServiceQueue::Put(InboundCall* call,
     return QUEUE_SHUTDOWN;
   }
 
-  DCHECK(!(waiting_consumers_.size() > 0 && queue_.size() > 0));
+  DCHECK(waiting_consumers_.empty() || queue_.empty());
 
   // fast path
-  if (queue_.empty() && waiting_consumers_.size() > 0) {
-    auto consumer = waiting_consumers_[waiting_consumers_.size() - 1];
+  if (queue_.empty() && !waiting_consumers_.empty()) {
+    auto* consumer = waiting_consumers_.back();
     waiting_consumers_.pop_back();
     // Notify condition var(and wake up consumer thread) takes time,
     // so put it out of spinlock scope.
@@ -118,15 +120,6 @@ void LifoServiceQueue::Shutdown() {
     cs->Post(nullptr);
   }
   waiting_consumers_.clear();
-}
-
-bool LifoServiceQueue::empty() const {
-  std::lock_guard<simple_spinlock> l(lock_);
-  return queue_.empty();
-}
-
-int LifoServiceQueue::max_size() const {
-  return max_queue_size_;
 }
 
 std::string LifoServiceQueue::ToString() const {
