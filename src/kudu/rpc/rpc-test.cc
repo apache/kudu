@@ -1250,7 +1250,7 @@ TEST_P(TestRpc, TestRpcHandlerLatencyMetric) {
 
 // Set of basic test scenarios for the per-RPC 'timed_out_on_response' metric.
 TEST_P(TestRpc, TimedOutOnResponseMetric) {
-  constexpr uint64_t kSleepMicros = 20 * 1000;
+  constexpr uint64_t kSleepMicros = 50 * 1000;
   const string kMethodName = "Sleep";
 
   // Set RPC connection negotiation timeout to be very high to avoid flakiness
@@ -1289,7 +1289,7 @@ TEST_P(TestRpc, TimedOutOnResponseMetric) {
   }
 
   // Run the sequence of sub-scenarios where the requests successfully complete
-  // at the server side, but the client might mark them as timed.
+  // at the server side, but the client might mark them as timed out.
   SleepRequestPB req;
   req.set_sleep_micros(kSleepMicros);
 
@@ -1313,11 +1313,13 @@ TEST_P(TestRpc, TimedOutOnResponseMetric) {
     ASSERT_EQ(0, timed_out_on_response->value());
   }
 
-  // Set the timeout for the RPC to the minimum recognizable by the server
-  // side value greater than 0.
+  // Set the timeout for the RPC very low to make sure the request times out
+  // because of the explicitly requested sleep interval but keep it high enough
+  // to avoid timing out the request in the RPC queue if a scheduler anomaly
+  // hapens.
   {
     RpcController ctl;
-    ctl.set_timeout(MonoDelta::FromMilliseconds(1));
+    ctl.set_timeout(MonoDelta::FromMicroseconds(kSleepMicros / 2));
     SleepResponsePB resp;
     const auto s = p.SyncRequest(kMethodName, req, &resp, &ctl);
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
