@@ -41,6 +41,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -57,10 +58,12 @@
 #include "kudu/security/init.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
@@ -138,6 +141,11 @@ DEFINE_uint32(auto_rebalancing_rpc_timeout_seconds, 60,
 DEFINE_uint32(auto_rebalancing_wait_for_replica_moves_seconds, 1,
               "How long to wait before checking to see if the scheduled replica movement "
               "in this iteration of auto-rebalancing has completed.");
+
+DEFINE_bool(auto_rebalancing_fail_moves_for_test, false,
+            "All CheckMoveCompleted will fail with IllegalState if this flag is true. "
+            "This is only used for test.");
+TAG_FLAG(auto_rebalancing_fail_moves_for_test, unsafe);
 
 DECLARE_bool(auto_rebalancing_enabled);
 
@@ -722,6 +730,45 @@ Status AutoRebalancerTask::CheckReplicaMovesCompleted(
         moves_per_tserver_[dst_ts_uuid]--;
       }
 
+      // If a move fails, clear the replace marker so the master doesn't keep
+      // trying to replace the replica indefinitely (especially for leaders).
+      BulkChangeConfigRequestPB req;
+      auto* modify_peer = req.add_config_changes();
+      modify_peer->set_type(MODIFY_PEER);
+      *modify_peer->mutable_peer()->mutable_permanent_uuid() = move.ts_uuid_from;
+      modify_peer->mutable_peer()->mutable_attrs()->set_replace(false);
+      string leader_uuid;
+      HostPort leader_hp;
+      Status clear_replace_status = GetTabletLeader(move.tablet_uuid, &leader_uuid, &leader_hp);
+      // Best-effort cleanup: failures here should not keep the move queued.
+      if (!clear_replace_status.ok()) {
+        LOG(WARNING) << "Removing replace marker failed: "
+                     << clear_replace_status.message().ToString();
+      } else {
+        ChangeConfigResponsePB resp;
+        RpcController rpc;
+        rpc.set_timeout(MonoDelta::FromSeconds(FLAGS_auto_rebalancing_rpc_timeout_seconds));
+        req.set_dest_uuid(leader_uuid);
+        req.set_tablet_id(move.tablet_uuid);
+        vector<Sockaddr> resolved;
+        clear_replace_status = leader_hp.ResolveAddresses(&resolved);
+        if (!clear_replace_status.ok()) {
+          LOG(WARNING) << "Removing replace marker failed: "
+                       << clear_replace_status.message().ToString();
+        } else {
+          ConsensusServiceProxy proxy(messenger_, resolved[0], leader_hp.host());
+          clear_replace_status = proxy.BulkChangeConfig(req, &resp, &rpc);
+          if (clear_replace_status.ok() && resp.has_error()) {
+            clear_replace_status = StatusFromPB(resp.error().status());
+          }
+          if (!clear_replace_status.ok()) {
+            LOG(WARNING) << "Removing replace marker failed: "
+                         << clear_replace_status.message().ToString();
+          }
+        }
+      }
+
+      // Always drop the failed move so rebalancing can make progress.
       replica_moves->erase(replica_moves->begin() + i);
       LOG(WARNING) << Substitute("Could not move replica: $0", s.ToString());
       return s;
@@ -768,6 +815,10 @@ Status AutoRebalancerTask::CheckReplicaMovesCompleted(
 Status AutoRebalancerTask::CheckMoveCompleted(
     const rebalance::Rebalancer::ReplicaMove& replica_move,
     bool* is_complete) {
+
+  if (PREDICT_FALSE(FLAGS_auto_rebalancing_fail_moves_for_test)) {
+    return Status::IllegalState("Injected artificial test failure.");
+  }
 
   DCHECK(is_complete);
   *is_complete = false;

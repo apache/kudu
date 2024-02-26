@@ -28,9 +28,12 @@
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include "kudu/util/scoped_cleanup.h"
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
@@ -46,6 +49,7 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/metrics.h"
@@ -56,9 +60,13 @@
 
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
+using kudu::consensus::GetConsensusStateRequestPB;
+using kudu::consensus::GetConsensusStateResponsePB;
 using kudu::itest::GetTableLocations;
 using kudu::itest::ListTabletServers;
 using kudu::master::GetTableLocationsResponsePB;
+using kudu::rpc::RpcController;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -69,6 +77,7 @@ using strings::Substitute;
 
 DECLARE_bool(auto_leader_rebalancing_enabled);
 DECLARE_bool(auto_rebalancing_enabled);
+DECLARE_bool(auto_rebalancing_fail_moves_for_test);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
 DECLARE_int32(raft_heartbeat_interval_ms);
@@ -823,6 +832,59 @@ TEST_F(AutoRebalancerTest, TestDeletedTables) {
                    JoinStrings(tablets_on_new_ts, ","));
   }
   NO_FATALS(CheckNoLeaderMovesScheduled());
+}
+
+// Test that the replace marker will be cleared if a rebalancing move fails.
+TEST_F(AutoRebalancerTest, TestRemoveReplaceFlagIfMoveFails) {
+  bool auto_leader_rebalancing_enabled = false; // Disable for testing.
+  const bool original_fail_moves = FLAGS_auto_rebalancing_fail_moves_for_test;
+  SCOPED_CLEANUP({ FLAGS_auto_rebalancing_fail_moves_for_test = original_fail_moves; });
+
+  const int kNumTservers = 3;
+  const int kNumTablets = 4;
+
+  cluster_opts_.num_tablet_servers = kNumTservers;
+  ASSERT_OK(CreateAndStartCluster(auto_leader_rebalancing_enabled));
+
+  NO_FATALS(CheckAutoRebalancerStarted());
+
+  CreateWorkloadTable(kNumTablets, /*num_replicas*/3);
+
+  // Set the test flag to true so that the moves are all regarded as failed.
+  FLAGS_auto_rebalancing_fail_moves_for_test = true;
+
+  // Bring up a new tserver.
+  ASSERT_OK(cluster_->AddTabletServer());
+
+  // The TSManager should still believe the original tservers are available,
+  // so the auto-rebalancer should attempt to schedule replica moves from those
+  // tservers to the new one.
+  NO_FATALS(CheckSomeMovesScheduled());
+
+  // Stop the auto rebalancing after current loop.
+  FLAGS_auto_rebalancing_enabled = false;
+
+  // Check all the replace markers are false.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    const auto& tserver = cluster_->mini_tablet_server(i);
+    const auto& tablet_ids = tserver->ListTablets();
+    for (const auto& tablet_id: tablet_ids) {
+      GetConsensusStateRequestPB req;
+      GetConsensusStateResponsePB resp;
+      RpcController controller;
+      controller.set_timeout(MonoDelta::FromSeconds(60));
+      req.set_dest_uuid(tserver->uuid());
+      req.add_tablet_ids(tablet_id);
+      req.set_report_health(EXCLUDE_HEALTH_REPORT);
+      ASSERT_OK(cluster_->tserver_consensus_proxy(i)->GetConsensusState(req, &resp, &controller));
+
+      const auto& committed_config = resp.tablets(0).cstate().committed_config();
+      for (int p = 0; p < committed_config.peers_size(); p++) {
+        const auto& peer = committed_config.peers(p);
+        ASSERT_FALSE(peer.attrs().replace());
+      }
+    }
+  }
 }
 
 } // namespace master
