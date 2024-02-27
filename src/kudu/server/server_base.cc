@@ -35,6 +35,9 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#ifdef TCMALLOC_ENABLED
+#include <gperftools/malloc_extension.h>
+#endif
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
@@ -303,6 +306,18 @@ DEFINE_uint32(wall_clock_jump_threshold_sec, 15 * 60,
               "is enabled");
 TAG_FLAG(wall_clock_jump_threshold_sec, experimental);
 
+DEFINE_uint64(tcmalloc_max_total_thread_cache_bytes, 128 * 1024 * 1024,
+              "Upper limit on total number of bytes stored across all thread cache "
+              "in tcmalloc. Increasing this value helps in reducing lock contention "
+              "in tcmalloc for memory-intensive workloads. WARNING: This flag will "
+              "cover the TCMALLOC_MAX_TOTAL_THREAD_CACHE_BYTES environment variable. "
+              "Please change the max size of all thread caches via this flag. Note "
+              "that This bound is not strict, so it is possible for the cache to go "
+              "over this bound in certain circumstances. And the maximum value of this "
+              "flag is capped to 1 GB");
+TAG_FLAG(tcmalloc_max_total_thread_cache_bytes, advanced);
+TAG_FLAG(tcmalloc_max_total_thread_cache_bytes, experimental);
+
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
@@ -376,6 +391,16 @@ enum class TriState {
   ENABLED,
   DISABLED,
 };
+
+bool ValidateThreadCacheMaxTotalSize(const char* flagname, uint64_t value) {
+  if (value >= 0 && value <= 1 * 1024 * 1024 * 1024) {
+    return true;
+  }
+  LOG(ERROR) << Substitute("$0 must be a value in range [0, 1GB], value $1 is invalid.",
+                           flagname, value);
+  return false;
+}
+DEFINE_validator(tcmalloc_max_total_thread_cache_bytes, &ValidateThreadCacheMaxTotalSize);
 
 // This is a helper function to parse a flag that has three possible values:
 // "auto", "enabled", "disabled".  That directly maps into the TriState enum.
@@ -797,7 +822,15 @@ Status ServerBase::Init() {
   init->Start();
   glog_metrics_.reset(new ScopedGLogMetrics(metric_entity_));
   tcmalloc::RegisterMetrics(metric_entity_);
+
+#ifdef TCMALLOC_ENABLED
+  MallocExtension::instance()->SetNumericProperty(
+    "tcmalloc.max_total_thread_cache_bytes", FLAGS_tcmalloc_max_total_thread_cache_bytes);
   RegisterSpinLockContentionMetrics(metric_entity_);
+#else
+  LOG(INFO) << "Flag tcmalloc_max_total_thread_cache_bytes is not working since tcmalloc "
+               "is not enabled.";
+#endif
 
   InitSpinLockContentionProfiling();
 

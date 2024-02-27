@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -41,7 +42,8 @@ using std::vector;
 METRIC_DECLARE_entity(server);
 METRIC_DECLARE_gauge_uint64(generic_current_allocated_bytes);
 METRIC_DECLARE_gauge_uint64(tcmalloc_pageheap_free_bytes);
-
+METRIC_DECLARE_gauge_uint64(spinlock_contention_time);
+METRIC_DECLARE_gauge_uint64(tcmalloc_max_total_thread_cache_bytes);
 namespace kudu {
 
 using cluster::ExternalMiniClusterOptions;
@@ -87,7 +89,7 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(2),
                               "gc_tcmalloc_memory_interval_seconds", "0"));
 
-  // Write some data for scan later.
+  // Write some data to be scanned later on.
   {
     TestWorkload workload(cluster_.get());
     workload.set_num_tablets(60);
@@ -103,14 +105,14 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
     workload.StopAndJoin();
   }
 
-  // Start scan, then more memory will be allocated by tcmalloc.
+  // Additional memory is allocated during scan operations below.
   {
     TestWorkload workload(cluster_.get());
     workload.set_num_write_threads(0);
     workload.set_num_read_threads(8);
     workload.Setup();
     workload.Start();
-    // Sleep a long time to ensure memory consumed more.
+    // Run the scan workload for a long time to let it allocate/deallocate a lot of memory.
     SleepFor(MonoDelta::FromSeconds(8));
     workload.StopAndJoin();
   }
@@ -127,6 +129,110 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
       ASSERT_GE(ratio, 0.1) << "tserver-2";
     );
   });
+}
+
+// Test if the lock contention decreases if increasing the flag
+// tcmalloc_max_total_thread_cache_bytes.
+TEST_F(MemoryGcITest, TestLockContentionInVariousThreadCacheSize) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  ExternalMiniClusterOptions opts;
+  // Set the max_total_thread_cache_bytes to 1MB.
+  vector<string> ts_flags;
+  ts_flags.emplace_back("--tcmalloc_max_total_thread_cache_bytes=1048576");
+  opts.num_tablet_servers = 3;
+  opts.extra_tserver_flags = std::move(ts_flags);
+  NO_FATALS(StartClusterWithOpts(opts));
+
+  // Set --max_total_thread_cache_bytes to 8MB for the second tablet server.
+  auto *ts = cluster_->tablet_server(1);
+  ts->mutable_flags()->emplace_back("--tcmalloc_max_total_thread_cache_bytes=8388608");
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+
+  // Set --max_total_thread_cache_bytes to 64MB for the third tablet server.
+  ts = cluster_->tablet_server(2);
+  ts->mutable_flags()->emplace_back("--tcmalloc_max_total_thread_cache_bytes=67108864");
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+
+  // Make sure the flag works.
+  int64_t total_size = 0;
+  itest::GetInt64Metric(cluster_->tablet_server(0)->bound_http_hostport(),
+                        &METRIC_ENTITY_server,
+                        "kudu.tabletserver",
+                        &METRIC_tcmalloc_max_total_thread_cache_bytes,
+                        "value",
+                        &total_size);
+  ASSERT_EQ(1048576, total_size);
+  itest::GetInt64Metric(cluster_->tablet_server(1)->bound_http_hostport(),
+                        &METRIC_ENTITY_server,
+                        "kudu.tabletserver",
+                        &METRIC_tcmalloc_max_total_thread_cache_bytes,
+                        "value",
+                        &total_size);
+  ASSERT_EQ(8388608, total_size);
+  itest::GetInt64Metric(cluster_->tablet_server(2)->bound_http_hostport(),
+                        &METRIC_ENTITY_server,
+                        "kudu.tabletserver",
+                        &METRIC_tcmalloc_max_total_thread_cache_bytes,
+                        "value",
+                        &total_size);
+  ASSERT_EQ(67108864, total_size);
+
+  // Write some data to be scanned later on.
+  {
+    TestWorkload workload(cluster_.get());
+    workload.set_num_tablets(60);
+    workload.set_num_replicas(3);
+    workload.set_num_write_threads(20);
+    workload.set_write_batch_size(100);
+    workload.set_payload_bytes(1024);
+    workload.Setup();
+    workload.Start();
+    ASSERT_EVENTUALLY([&]() {
+      ASSERT_GE(workload.rows_inserted(), 30000);
+    });
+    workload.StopAndJoin();
+  }
+
+  // Additional memory is allocated during scan operations below.
+  {
+    TestWorkload workload(cluster_.get());
+    workload.set_num_write_threads(0);
+    workload.set_num_read_threads(20);
+    workload.Setup();
+    workload.Start();
+    // Run the scan workload for a long time to let it allocate/deallocate a lot of memory.
+    SleepFor(MonoDelta::FromSeconds(8));
+    workload.StopAndJoin();
+  }
+
+  // Compare the lock contention.
+  int64_t contention_0 = 0;
+  itest::GetInt64Metric(cluster_->tablet_server(0)->bound_http_hostport(),
+                        &METRIC_ENTITY_server,
+                        "kudu.tabletserver",
+                        &METRIC_spinlock_contention_time,
+                        "value",
+                        &contention_0);
+  int64_t contention_1 = 1;
+  itest::GetInt64Metric(cluster_->tablet_server(1)->bound_http_hostport(),
+                        &METRIC_ENTITY_server,
+                        "kudu.tabletserver",
+                        &METRIC_spinlock_contention_time,
+                        "value",
+                        &contention_1);
+  int64_t contention_2 = 2;
+  itest::GetInt64Metric(cluster_->tablet_server(2)->bound_http_hostport(),
+                        &METRIC_ENTITY_server,
+                        "kudu.tabletserver",
+                        &METRIC_spinlock_contention_time,
+                        "value",
+                        &contention_2);
+  LOG(INFO) << "The lock contention metric of Tablet server 0 is " << contention_0;
+  LOG(INFO) << "The lock contention metric of Tablet server 1 is " << contention_1;
+  LOG(INFO) << "The lock contention metric of Tablet server 2 is " << contention_2;
 }
 
 } // namespace kudu
