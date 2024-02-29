@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -339,7 +340,7 @@ class TabletCopier {
                                               FLAGS_tablet_copy_throttler_bytes_per_sec,
                                               FLAGS_tablet_copy_throttler_burst_factor);
     }
-
+    std::atomic<bool> has_failed_tablets(false);
     // Start to copy tablets.
     for (const auto& tablet_id : tablet_ids_to_copy_) {
       RETURN_NOT_OK(copy_pool->Submit([&]() {
@@ -381,6 +382,10 @@ class TabletCopier {
           }
           copying_replicas_by_tablet_id.erase(tablet_id);
 
+          if (!failed_tablet_ids.empty()) {
+            has_failed_tablets.store(true);
+          }
+
           LOG(INFO) << Substitute("$0/$1 tablets, $2 bytes copied, include $3 failed tablets.",
                                   succeed_tablet_count + failed_tablet_ids.size(),
                                   total_tablet_count,
@@ -396,6 +401,9 @@ class TabletCopier {
     latch.CountDown();
     check_thread->Join();
 
+    if (has_failed_tablets.load()) {
+      return Status::RuntimeError("some tablets failed to copy: check error messages for details");
+    }
     return Status::OK();
   }
 

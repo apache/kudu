@@ -9539,6 +9539,33 @@ TEST_F(ToolTest, TestLocalReplicaCopyRemoteWithSpeedLimit) {
   }
 }
 
+TEST_F(ToolTest, TestLocalReplicaCopyRemoteCanReturnError) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 2;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+  NO_FATALS(CreateTableWithFlushedData("table1", mini_cluster_.get(), 3, 1));
+  const auto source_tserver_rpc_addr = mini_cluster_->mini_tablet_server(0)
+                                                    ->bound_rpc_addr().ToString();
+  const auto wal_dir = mini_cluster_->mini_tablet_server(1)->options()->fs_opts.wal_root;
+  const auto data_dirs = JoinStrings(mini_cluster_->mini_tablet_server(1)
+                                                  ->options()->fs_opts.data_roots, ",");
+  NO_FATALS(mini_cluster_->mini_tablet_server(1)->Shutdown());
+
+  // An attempt to copy a non-existent tablet fails, and the return value is not OK.
+  string stderr;
+  Status s = RunActionStderrString(
+      Substitute("local_replica copy_from_remote $0 $1 "
+                 "-fs_data_dirs=$2 -fs_wal_dir=$3 ",
+                 "non-existent-tablet-ids-str",
+                 source_tserver_rpc_addr,
+                 data_dirs,
+                 wal_dir), &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr,
+      "some tablets failed to copy: check error messages for details");
+}
+
 
 class DownloadSuperblockInBatchTest :
     public ToolTest,
