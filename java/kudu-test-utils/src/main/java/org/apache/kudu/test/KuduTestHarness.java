@@ -337,6 +337,30 @@ public class KuduTestHarness extends ExternalResource {
   }
 
   /**
+   * Set a run-time flag for a tablet server identified by its host and port.
+   * @param hp HostAndPort object identifying the target tablet server
+   * @param flag a flag to set (prefix dash(es) omitted)
+   * @param value a stringified representation of the flag's value to set
+   * @throws IOException
+   */
+  public void setTabletServerFlag(HostAndPort hp, String flag, String value) throws IOException {
+    miniCluster.setTServerFlag(hp, flag, value);
+  }
+
+  /**
+   * Kills and starts back a tablet server that serves the given tablet's leader.
+   * @param tablet a LocatedTablet which is hosted by the target tablet server
+   * @return the host and port of the restarted tablet server
+   * @throws Exception
+   */
+  public HostAndPort restartTabletLeader(LocatedTablet tablet) throws Exception {
+    HostAndPort hp = findLeaderTabletServer(tablet);
+    miniCluster.killTabletServer(hp);
+    miniCluster.startTabletServer(hp);
+    return hp;
+  }
+
+  /**
    * Kills and restarts the leader master.
    * @return the host and port of the restarted master
    * @throws Exception
@@ -384,6 +408,17 @@ public class KuduTestHarness extends ExternalResource {
    */
   public void resumeMaster(HostAndPort hp) throws Exception {
     miniCluster.resumeMasterServer(hp);
+  }
+
+  /**
+   * Set a run-time flag for a Kudu master identified by its host and port.
+   * @param hp HostAndPort object identifying the target master
+   * @param flag a flag to set (prefix dash(es) omitted)
+   * @param value a stringified representation of the flag's value to set
+   * @throws IOException
+   */
+  public void setMasterFlag(HostAndPort hp, String flag, String value) throws IOException {
+    miniCluster.setMasterFlag(hp, flag, value);
   }
 
   /**
