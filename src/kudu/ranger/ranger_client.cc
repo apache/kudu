@@ -392,6 +392,12 @@ bool ValidateRangerConfiguration() {
                                ranger_jar_path);
       return false;
     }
+
+    // If kerberos keytab file is not provided, ranger subprocess cannot start.
+    if (FLAGS_keytab_file.empty()) {
+      LOG(ERROR) << Substitute("--keytab_file is not set");
+      return false;
+    }
   }
   return true;
 }

@@ -50,6 +50,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_string(keytab_file);
 DECLARE_string(log_dir);
 DECLARE_string(ranger_config_path);
 DECLARE_string(ranger_log_config_dir);
@@ -346,14 +347,21 @@ TEST_F(RangerClientTest, TestInvalidJARFails) {
   ASSERT_FALSE(ValidateRangerConfiguration());
 }
 
+TEST_F(RangerClientTest, TestEmptyKeytabFile) {
+  FLAGS_ranger_config_path = test_dir_;
+  ASSERT_FALSE(ValidateRangerConfiguration());
+}
+
 TEST_F(RangerClientTest, TestMultipleInvalidJARsLeftUnchecked) {
   FLAGS_ranger_config_path = test_dir_;
   FLAGS_ranger_jar_path = "/this/is/not/a/real/location/hopefully.jar:/another/invalid/path.jar";
+  FLAGS_keytab_file = "/this/is/a/dummy/keytab_file";
   ASSERT_TRUE(ValidateRangerConfiguration());
 }
 
 TEST_F(RangerClientTest, TestDefaultJARPath) {
   FLAGS_ranger_config_path = test_dir_;
+  FLAGS_keytab_file = "/this/is/a/dummy/keytab_file";
   ASSERT_TRUE(ValidateRangerConfiguration());
 }
 
