@@ -435,6 +435,22 @@ NOTE: see the <<hash-range-partitioning-example>> and the
 <<hash-hash-partitioning-example>> for further discussion of multilevel
 partitioning.
 
+[[flexible-partitioning]]
+=== Flexible Partitioning
+
+As of 1.17, Kudu supports range-specific hash schema for tables. It's now
+possible to add ranges with their own unique hash schema independent of the
+table-wide hash schema. This can be done while creating or altering the table.
+This feature helps mitigate potential hotspotting as more buckets can be
+added for a hash schema of a range that expects more workload.
+
+[[same-number-of-hash-levels]]
+[IMPORTANT]
+.Same Number of Hash Levels
+The number of hash partition levels must be the same across for all the ranges
+in a table. See <<multilevel-partitioning>> for more details on hash partition
+levels.
+
 [[partition-pruning]]
 === Partition Pruning
 
