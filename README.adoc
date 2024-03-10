@@ -182,8 +182,7 @@ $ ctest -j8
 ----
 
 TSAN may truncate a few lines of the stack trace when reporting where the error
-is. This can be bewildering. It's documented for TSANv1 here:
-https://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm
+is. This can be bewildering. It's documented for TSANv1 https://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm[here]
 It is not mentioned in the documentation for TSANv2, but has been observed.
 In order to find out what is _really_ happening, set a breakpoint on the TSAN
 report in GDB using the following incantation:
