@@ -332,29 +332,25 @@ bool AutoDigitLessThan(const char* a, int alen,
 bool StrictAutoDigitLessThan(const char* a, int alen,
                              const char* b, int blen);
 
-struct autodigit_less
-  : public std::binary_function<const std::string&, const std::string&, bool> {
+struct autodigit_less {
   bool operator()(const std::string& a, const std::string& b) const {
     return AutoDigitLessThan(a.data(), a.size(), b.data(), b.size());
   }
 };
 
-struct autodigit_greater
-  : public std::binary_function<const std::string&, const std::string&, bool> {
+struct autodigit_greater {
   bool operator()(const std::string& a, const std::string& b) const {
     return AutoDigitLessThan(b.data(), b.size(), a.data(), a.size());
   }
 };
 
-struct strict_autodigit_less
-  : public std::binary_function<const std::string&, const std::string&, bool> {
+struct strict_autodigit_less {
   bool operator()(const std::string& a, const std::string& b) const {
     return StrictAutoDigitLessThan(a.data(), a.size(), b.data(), b.size());
   }
 };
 
-struct strict_autodigit_greater
-  : public std::binary_function<const std::string&, const std::string&, bool> {
+struct strict_autodigit_greater {
   bool operator()(const std::string& a, const std::string& b) const {
     return StrictAutoDigitLessThan(b.data(), b.size(), a.data(), a.size());
   }
