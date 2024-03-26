@@ -38,6 +38,10 @@ src:*/boost/uuid/sha1.hpp
 src:*/boost/container/detail/copy_move_algo.hpp
 # include/boost/container_hash/hash.hpp:343:15: runtime error: unsigned integer overflow: 2700868258 * 14313749767032793493 cannot be represented in type 'unsigned long'
 src:*/boost/container_hash/hash.hpp
+# boost/container_hash/detail/hash_range.hpp:267:11: runtime error: unsigned integer overflow: 16840693252317653710 + 11400714819323198485 cannot be represented in type 'unsigned long'
+src:*/boost/container_hash/detail/hash_range.hpp
+# boost/container_hash/detail/hash_mix.hpp:74:11: runtime error: unsigned integer overflow: 5632919982981563844 * 1051668233026429277 cannot be represented in type 'unsigned long'
+src:*/boost/container_hash/detail/hash_mix.hpp
 # include/boost/functional/hash/hash.hpp:212:52: runtime error: unsigned integer overflow: 18389307270159922987 + 1512985112272252029 cannot be represented in type 'unsigned long'
 src:*/boost/functional/hash/hash.hpp
 

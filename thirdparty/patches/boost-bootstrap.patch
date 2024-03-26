@@ -1,0 +1,14 @@
+--- bootstrap.sh.orig	2024-03-28 10:43:30.211479344 -0700
++++ bootstrap.sh	2024-03-28 10:45:08.738096743 -0700
+@@ -226,7 +226,10 @@
+ if test "x$BJAM" = x; then
+   $ECHO "Building B2 engine.."
+   pwd=`pwd`
+-  CXX= CXXFLAGS= "$my_dir/tools/build/src/engine/build.sh" ${TOOLSET}
++  CXX= CXXFLAGS= "$my_dir/tools/build/src/engine/build.sh"\
++    --cxx=${CXX}\
++    --cxxflags=${CXXFLAGS}\
++    ${TOOLSET}
+   if [ $? -ne 0 ]; then
+       echo
+       echo "Failed to build B2 build engine"
