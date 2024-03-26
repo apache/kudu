@@ -165,6 +165,21 @@ function(GET_LINKER_VERSION)
     set(LINKER_FOUND TRUE)
     set(LINKER_FAMILY "ld64")
     set(LINKER_VERSION "${CMAKE_MATCH_1}")
+  elseif (LINKER_STDERR MATCHES "PROJECT:ld")
+    # ld outputs the versioning information into stderr.
+    # This is an example of output from newer versions of the LLVM's linker:
+    # e.g. the linker which comes along with CLANG 15.0.0 (clang-1500.3.9.4)
+    # as a part of Xcode 15.3 on macOS.
+    #
+    # Sample:
+    #   @(#)PROGRAM:ld PROJECT:ld-1053.12
+    if (NOT "${LINKER_STDERR}" MATCHES "PROJECT:ld-([0-9]+(\\.[0-9]+)?)")
+      message(SEND_ERROR "Could not extract ld version. "
+        "Linker version output: ${LINKER_STDOUT}")
+    endif()
+    set(LINKER_FOUND TRUE)
+    set(LINKER_FAMILY "ld64")
+    set(LINKER_VERSION "${CMAKE_MATCH_1}")
   else()
     set(LINKER_FOUND FALSE)
   endif()
