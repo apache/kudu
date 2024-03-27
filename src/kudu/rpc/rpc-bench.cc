@@ -337,6 +337,15 @@ class RpcAcceptorBench : public RpcTestBase {
 };
 
 TEST_F(RpcAcceptorBench, MeasureAcceptorDispatchTimes) {
+  // It's enough to have just one client thread to verify that the acceptor
+  // dispatch times metric works as expected, so let's set this minimum viable
+  // configuration as the default one. The option of changing the default
+  // setting for --client_threads for all the test scenarios in this file
+  // doesn't look attractive since other scenarios rely on client-side
+  // concurrency to provide some meaningful test coverage.
+  ASSERT_NE("", SetCommandLineOptionWithMode("client_threads",
+                                             "1",
+                                             gflags::SET_FLAGS_DEFAULT));
   const size_t threads_num = FLAGS_client_threads;
 
   thread threads[threads_num];
