@@ -113,7 +113,7 @@ Status DiagnosticSocket::Close() {
 Status DiagnosticSocket::Query(const Sockaddr& socket_src_addr,
                                const Sockaddr& socket_dst_addr,
                                const vector<SocketState>& socket_states,
-                               vector<TcpSocketInfo>* info) {
+                               vector<TcpSocketInfo>* info) const {
   DCHECK_GE(fd_, 0) << "requires calling Init() first";
   DCHECK(info);
 
@@ -134,7 +134,8 @@ Status DiagnosticSocket::Query(const Sockaddr& socket_src_addr,
 #endif // #if !defined(__linux__) ... #else ...
 }
 
-Status DiagnosticSocket::Query(const Socket& socket, TcpSocketInfo* info) {
+Status DiagnosticSocket::Query(const Socket& socket,
+                               TcpSocketInfo* info) const {
   DCHECK_GE(fd_, 0) << "requires calling Init() first";
   DCHECK(info);
 

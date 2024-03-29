@@ -166,11 +166,23 @@ void Messenger::AllExternalReferencesDropped() {
 }
 
 int32_t Messenger::GetPendingConnectionsNum() {
+  // This method might be called when the messenger is shutting down;
+  // making a copy of acceptor_pools_ is necessary to avoid data races.
+  decltype(acceptor_pools_) acceptor_pools;
+  {
+    std::lock_guard<percpu_rwlock> guard(lock_);
+    if (state_ == kClosing) {
+      return -1;
+    }
+    acceptor_pools.reserve(acceptor_pools_.size());
+    acceptor_pools = acceptor_pools_;
+  }
+
   auto pool_reports_num = 0;
   int32_t total_count = 0;
-  for (const auto& p : acceptor_pools_) {
+  for (const auto& p : acceptor_pools) {
     uint32_t count;
-    if (auto s = p->GetPendingConnectionsNum(&count); !s.ok()) {
+    if (auto s = p->GetPendingConnectionsNum(&count); PREDICT_FALSE(!s.ok())) {
       KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
           "$0: no data on pending connections for acceptor pool at $1",
           s.ToString(), p->bind_address().ToString()) << THROTTLE_MSG;
@@ -255,14 +267,19 @@ Status Messenger::AddAcceptorPool(const Sockaddr& accept_addr,
     acceptor_pools_.emplace_back(std::make_shared<AcceptorPool>(
         this, &sock, addr, acceptor_listen_backlog_));
     *pool = acceptor_pools_.back();
-  }
 
-  // 'rpc_pending_connections' metric is instantiated only when a messenger
-  // contains at least one acceptor pool. So, this metric is instantiated
-  // only for a server-side messenger.
-  METRIC_rpc_pending_connections.InstantiateFunctionGauge(
-      metric_entity_, [this]() { return this->GetPendingConnectionsNum(); })->
-      AutoDetachToLastValue(&metric_detacher_);
+#if defined(__linux__)
+    if (acceptor_pools_.size() == 1) {
+      // 'rpc_pending_connections' metric is instantiated when the messenger
+      // contains exactly one acceptor pool: this metric makes sense
+      // only for server-side messengers, and it's enough to instantiate the
+      // metric only once.
+      METRIC_rpc_pending_connections.InstantiateFunctionGauge(
+          metric_entity_, [this]() { return this->GetPendingConnectionsNum(); })->
+          AutoDetachToLastValue(&metric_detacher_);
+    }
+#endif // #if defined(__linux__) ...
+  }
 
   return Status::OK();
 }

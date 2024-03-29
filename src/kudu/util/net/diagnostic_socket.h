@@ -99,12 +99,12 @@ class DiagnosticSocket final {
   Status Query(const Sockaddr& socket_src_addr,
                const Sockaddr& socket_dst_addr,
                const std::vector<SocketState>& socket_states,
-               std::vector<TcpSocketInfo>* info);
+               std::vector<TcpSocketInfo>* info) const;
 
   // Get diagnostic information on the specified socket. This is a handy
   // shortcut to the Query() method above for a single active socket in the
   // SS_ESTABLISHED or SS_LISTEN.
-  Status Query(const Socket& socket, TcpSocketInfo* info);
+  Status Query(const Socket& socket, TcpSocketInfo* info) const;
 
  private:
   // Build and send netlink request, writing it into the diagnostic socket.

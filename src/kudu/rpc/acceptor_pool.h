@@ -22,6 +22,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/net/diagnostic_socket.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
@@ -83,6 +84,7 @@ class AcceptorPool {
   const Sockaddr bind_address_;
   const int listen_backlog_;
   std::vector<scoped_refptr<Thread>> threads_;
+  DiagnosticSocket diag_socket_;
 
   std::atomic<bool> closing_;
 

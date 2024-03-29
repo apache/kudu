@@ -155,6 +155,9 @@ AcceptorPool::~AcceptorPool() {
 
 Status AcceptorPool::Start(int num_threads) {
   RETURN_NOT_OK(socket_.Listen(listen_backlog_));
+#if defined(__linux__)
+  WARN_NOT_OK(diag_socket_.Init(), "could not initialize diagnostic socket");
+#endif
 
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<Thread> new_thread;
@@ -197,6 +200,8 @@ void AcceptorPool::Shutdown() {
   }
   threads_.clear();
 
+  WARN_NOT_OK(diag_socket_.Close(), "error closing diagnostic socket");
+
   // Close the socket: keeping the descriptor open and, possibly, receiving late
   // not-to-be-read messages from the peer does not make much sense. The
   // Socket::Close() method is called upon destruction of the aggregated socket_
@@ -221,11 +226,8 @@ int64_t AcceptorPool::num_rpc_connections_accepted() const {
 }
 
 Status AcceptorPool::GetPendingConnectionsNum(uint32_t* result) const {
-  DiagnosticSocket ds;
-  RETURN_NOT_OK(ds.Init());
-
   DiagnosticSocket::TcpSocketInfo info;
-  RETURN_NOT_OK(ds.Query(socket_, &info));
+  RETURN_NOT_OK(diag_socket_.Query(socket_, &info));
   *result = info.rx_queue_size;
 
   return Status::OK();
