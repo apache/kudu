@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -24,7 +25,6 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -56,7 +56,7 @@ class RowProjector;
 // unnecessary dependencies on state and lifetime of top-level and
 // intermediary classes which should not be aware of the code generation's
 // use in the first place.
-class CompilationManager {
+class CompilationManager final {
  public:
   // Waits for all async tasks to finish.
   ~CompilationManager();
@@ -87,18 +87,17 @@ class CompilationManager {
 
  private:
   friend class Singleton<CompilationManager>;
-  CompilationManager();
 
   static void Shutdown();
+
+  CompilationManager();
 
   CodeGenerator generator_;
   CodeCache cache_;
   std::unique_ptr<ThreadPool> pool_;
 
-  AtomicInt<int64_t> hit_counter_;
-  AtomicInt<int64_t> query_counter_;
-
-  static const int kThreadTimeoutMs = 100;
+  std::atomic<uint64_t> hit_counter_;
+  std::atomic<uint64_t> query_counter_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationManager);
 };

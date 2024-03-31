@@ -22,6 +22,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -32,6 +33,7 @@
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
@@ -60,17 +62,17 @@ DEFINE_int32(codegen_queue_capacity, 100, "Number of tasks which may be put in t
              "generation task queue.");
 TAG_FLAG(codegen_queue_capacity, experimental);
 
-METRIC_DEFINE_gauge_int64(server, code_cache_hits, "Codegen Cache Hits",
-                          kudu::MetricUnit::kCacheHits,
-                          "Number of codegen cache hits since start",
-                          kudu::MetricLevel::kDebug,
-                          kudu::EXPOSE_AS_COUNTER);
-METRIC_DEFINE_gauge_int64(server, code_cache_queries, "Codegen Cache Queries",
-                          kudu::MetricUnit::kCacheQueries,
-                          "Number of codegen cache queries (hits + misses) "
-                          "since start",
-                          kudu::MetricLevel::kDebug,
-                          kudu::EXPOSE_AS_COUNTER);
+METRIC_DEFINE_gauge_uint64(server, code_cache_hits, "Codegen Cache Hits",
+                           kudu::MetricUnit::kCacheHits,
+                           "Number of codegen cache hits since start",
+                           kudu::MetricLevel::kDebug,
+                           kudu::EXPOSE_AS_COUNTER);
+METRIC_DEFINE_gauge_uint64(server, code_cache_queries, "Codegen Cache Queries",
+                           kudu::MetricUnit::kCacheQueries,
+                           "Number of codegen cache queries (hits + misses) "
+                           "since start",
+                           kudu::MetricLevel::kDebug,
+                           kudu::EXPOSE_AS_COUNTER);
 namespace kudu {
 namespace codegen {
 
@@ -138,7 +140,7 @@ CompilationManager::CompilationManager()
            .set_min_threads(0)
            .set_max_threads(1)
            .set_max_queue_size(FLAGS_codegen_queue_capacity)
-           .set_idle_timeout(MonoDelta::FromMilliseconds(kThreadTimeoutMs))
+           .set_idle_timeout(MonoDelta::FromMilliseconds(100))
            .Build(&pool_));
   // We call std::atexit after the implicit default construction of
   // generator_ to ensure static LLVM constants would not have been destructed
@@ -166,12 +168,16 @@ Status CompilationManager::StartInstrumentation(const scoped_refptr<MetricEntity
   // register the same metric in multiple registries. Using a gauge which loads
   // an atomic int is a suitable workaround: each TS's registry ends up with a
   // unique gauge which reads the value of the singleton's integer.
-  metric_entity->NeverRetire(
-      METRIC_code_cache_hits.InstantiateFunctionGauge(
-          metric_entity, [this]() { return this->hit_counter_.Load(kMemOrderNoBarrier); }));
-  metric_entity->NeverRetire(
-      METRIC_code_cache_queries.InstantiateFunctionGauge(
-          metric_entity, [this]() { return this->query_counter_.Load(kMemOrderNoBarrier); }));
+  metric_entity->NeverRetire(METRIC_code_cache_hits.InstantiateFunctionGauge(
+      metric_entity,
+      [this]() {
+        return this->hit_counter_.load(std::memory_order::memory_order_relaxed);
+      }));
+  metric_entity->NeverRetire(METRIC_code_cache_queries.InstantiateFunctionGauge(
+      metric_entity,
+      [this]() {
+        return this->query_counter_.load(std::memory_order::memory_order_relaxed);
+      }));
   return Status::OK();
 }
 
@@ -179,10 +185,12 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
                                              const Schema* projection,
                                              unique_ptr<RowProjector>* out) {
   faststring key;
-  Status s = RowProjectorFunctions::EncodeKey(*base_schema, *projection, &key);
+  const auto s = RowProjectorFunctions::EncodeKey(*base_schema, *projection, &key);
   WARN_NOT_OK(s, "RowProjector compilation request encode key failed");
-  if (!s.ok()) return false;
-  query_counter_.Increment();
+  if (PREDICT_FALSE(!s.ok())) {
+    return false;
+  }
+  ++query_counter_;
 
   scoped_refptr<RowProjectorFunctions> cached(
     down_cast<RowProjectorFunctions*>(cache_.Lookup(key).get()));
@@ -196,7 +204,7 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
     return false;
   }
 
-  hit_counter_.Increment();
+  ++hit_counter_;
 
   out->reset(new RowProjector(base_schema, projection, cached));
   return true;
