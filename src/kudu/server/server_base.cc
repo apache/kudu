@@ -582,15 +582,17 @@ shared_ptr<MemTracker> CreateMemTrackerForServer() {
 
 // Calculates the free space on the given WAL/data directory's disk. Returns -1 in case of disk
 // failure.
-inline int64_t CalculateAvailableSpace(const ServerBaseOptions& options, const string& dir,
-                                       int64_t flag_reserved_bytes, SpaceInfo* space_info) {
-  if (!options.env->GetSpaceInfo(dir, space_info).ok()) {
+int64_t CalculateAvailableSpace(const ServerBaseOptions& options,
+                                const string& dir,
+                                int64_t flag_reserved_bytes,
+                                SpaceInfo* space_info) {
+  if (PREDICT_FALSE(!options.env->GetSpaceInfo(dir, space_info).ok())) {
     return -1;
   }
-  bool should_reserve_one_percent = flag_reserved_bytes == -1;
-  int reserved_bytes = should_reserve_one_percent ?
+  const bool should_reserve_one_percent = flag_reserved_bytes == -1;
+  int64_t reserved_bytes = should_reserve_one_percent ?
       space_info->capacity_bytes / 100 : flag_reserved_bytes;
-  return std::max(static_cast<int64_t>(0), space_info->free_bytes - reserved_bytes);
+  return std::max<int64_t>(0, space_info->free_bytes - reserved_bytes);
 }
 
 int64_t GetFileCacheCapacity(Env* env) {

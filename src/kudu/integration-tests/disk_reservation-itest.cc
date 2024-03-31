@@ -33,20 +33,23 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::itest::GetInt64Metric;
 using std::string;
 using std::vector;
 using strings::Substitute;
 
 METRIC_DECLARE_entity(server);
+METRIC_DECLARE_gauge_int64(wal_dir_space_available_bytes);
+METRIC_DECLARE_gauge_int64(data_dirs_space_available_bytes);
 METRIC_DECLARE_gauge_uint64(data_dirs_full);
 
 namespace kudu {
-
-using cluster::ExternalMiniClusterOptions;
 
 class DiskReservationITest : public ExternalMiniClusterITestBase {
 };
@@ -159,6 +162,91 @@ TEST_F(DiskReservationITest, TestWalWriteToFullDiskAborts) {
 
   ASSERT_OK(cluster_->tablet_server(0)->WaitForFatal(MonoDelta::FromSeconds(10)));
   workload.StopAndJoin();
+}
+
+// Make sure the metrics on the available space in the WAL and the data
+// directories behave consistently with and without space reservations.
+TEST_F(DiskReservationITest, AvailableSpaceMetrics) {
+  constexpr const char* const kMetricValue = "value";
+
+  // To speed up the test, do not cache the metrics on the available disk space.
+  const vector<string> ts_flags = {
+    "--fs_data_dirs_available_space_cache_seconds=0",
+    "--fs_wal_dir_available_space_cache_seconds=0",
+  };
+  NO_FATALS(StartCluster(ts_flags, {}, 1));
+
+  auto* ts = cluster_->tablet_server(0);
+  DCHECK_NE(nullptr, ts);
+  const auto& addr = ts->bound_http_hostport();
+
+  auto space_getter_data_dirs = [&](int64_t* available_bytes) {
+    return GetInt64Metric(addr,
+                          &METRIC_ENTITY_server,
+                          nullptr,
+                          &METRIC_data_dirs_space_available_bytes,
+                          kMetricValue,
+                          available_bytes);
+  };
+  auto space_getter_wal_dir = [&](int64_t* available_bytes) {
+    return GetInt64Metric(addr,
+                          &METRIC_ENTITY_server,
+                          nullptr,
+                          &METRIC_wal_dir_space_available_bytes,
+                          kMetricValue,
+                          available_bytes);
+  };
+
+  constexpr const char* const kFlagDataReserved = "fs_data_dirs_reserved_bytes";
+  constexpr const char* const kFlagWalReserved = "fs_wal_dir_reserved_bytes";
+
+  // Make sure metrics capture non-negative numbers if the space reservations
+  // use their default settings: 1% of the available disk space for the WAL
+  // and the data directories.
+  {
+    int64_t data_dirs_space_bytes = -1;
+    ASSERT_OK(space_getter_data_dirs(&data_dirs_space_bytes));
+    ASSERT_GE(data_dirs_space_bytes, 0);
+
+    int64_t wal_dir_space_bytes = -1;
+    ASSERT_OK(space_getter_wal_dir(&wal_dir_space_bytes));
+    ASSERT_GE(wal_dir_space_bytes, 0);
+  }
+
+  // Set space reservation to 0 bytes.
+  ASSERT_OK(cluster_->SetFlag(ts, kFlagDataReserved, "0"));
+  ASSERT_OK(cluster_->SetFlag(ts, kFlagWalReserved, "0"));
+
+  int64_t data_dirs_space_bytes_no_reserve = -1;
+  ASSERT_OK(space_getter_data_dirs(&data_dirs_space_bytes_no_reserve));
+  ASSERT_GE(data_dirs_space_bytes_no_reserve, 0);
+
+  int64_t wal_dir_space_bytes_no_reserve = -1;
+  ASSERT_OK(space_getter_wal_dir(&wal_dir_space_bytes_no_reserve));
+  ASSERT_GE(wal_dir_space_bytes_no_reserve, 0);
+
+  // Set space reservation to 1027 GiB: this is to test for integer overflow
+  // in the related code. Essentially, it would be enough to set the reservation
+  // to anything beyond 2 GiB. However, to make this test scenario stable upon
+  // concurrent activity at the test node, it's necessary to have a wide margin
+  // for the comparison between the available space metrics for data/WAL
+  // directories with&without space reservation.
+  constexpr const char* const k1027GiB = "1102732853248";
+  ASSERT_OK(cluster_->SetFlag(ts, kFlagDataReserved, k1027GiB));
+  ASSERT_OK(cluster_->SetFlag(ts, kFlagWalReserved, k1027GiB));
+
+  int64_t data_dirs_space_bytes_reserve = -1;
+  ASSERT_OK(space_getter_data_dirs(&data_dirs_space_bytes_reserve));
+  ASSERT_GE(data_dirs_space_bytes_reserve, 0);
+
+  int64_t wal_dir_space_bytes_reserve = -1;
+  ASSERT_OK(space_getter_wal_dir(&wal_dir_space_bytes_reserve));
+  ASSERT_GE(wal_dir_space_bytes_reserve, 0);
+
+  // The available space without reservation should not be less than
+  // the available space with reservation.
+  ASSERT_GE(data_dirs_space_bytes_no_reserve, data_dirs_space_bytes_reserve);
+  ASSERT_GE(wal_dir_space_bytes_no_reserve, wal_dir_space_bytes_reserve);
 }
 
 } // namespace kudu

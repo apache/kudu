@@ -77,18 +77,22 @@ TAG_FLAG(fs_data_dirs_reserved_bytes, runtime);
 TAG_FLAG(fs_data_dirs_reserved_bytes, evolving);
 
 DEFINE_int32(fs_data_dirs_available_space_cache_seconds, 10,
-             "Number of seconds we cache the available disk space in the block manager.");
+             "TTL for the cached metric of the available disk space "
+             "in the data directories, in seconds");
 DEFINE_validator(fs_data_dirs_available_space_cache_seconds,
                  [](const char* /*n*/, int32_t v) { return v >= 0; });
 TAG_FLAG(fs_data_dirs_available_space_cache_seconds, advanced);
 TAG_FLAG(fs_data_dirs_available_space_cache_seconds, evolving);
+TAG_FLAG(fs_data_dirs_available_space_cache_seconds, runtime);
 
 DEFINE_int32(fs_wal_dir_available_space_cache_seconds, 10,
-             "Number of seconds we cache the available disk space the WAL directory.");
+             "TTL for the cached metric of the available disk space "
+             "in the WAL directories, in seconds");
 DEFINE_validator(fs_wal_dir_available_space_cache_seconds,
                  [](const char* /*n*/, int32_t v) { return v >= 0; });
 TAG_FLAG(fs_wal_dir_available_space_cache_seconds, advanced);
 TAG_FLAG(fs_wal_dir_available_space_cache_seconds, evolving);
+TAG_FLAG(fs_wal_dir_available_space_cache_seconds, runtime);
 
 DEFINE_bool(fs_lock_data_dirs, true,
             "Lock the data directories to prevent concurrent usage. "

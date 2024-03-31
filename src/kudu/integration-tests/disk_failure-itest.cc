@@ -57,8 +57,8 @@ METRIC_DECLARE_gauge_int32(num_raft_leaders);
 METRIC_DECLARE_gauge_size(num_rowsets_on_disk);
 METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 METRIC_DECLARE_gauge_uint32(tablets_num_failed);
-METRIC_DECLARE_gauge_uint64(wal_dir_space_available_bytes);
-METRIC_DECLARE_gauge_uint64(data_dirs_space_available_bytes);
+METRIC_DECLARE_gauge_int64(wal_dir_space_available_bytes);
+METRIC_DECLARE_gauge_int64(data_dirs_space_available_bytes);
 
 using kudu::client::sp::shared_ptr;
 using kudu::client::KuduClient;
@@ -321,7 +321,7 @@ TEST_P(TabletServerDiskErrorITest, TestFailOnBootstrap) {
   // Wait for the cluster to return to a healthy state.
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
-};
+}
 
 TEST_P(TabletServerDiskErrorITest, TestSpaceAvailableMetrics) {
   // Get the wal_dir_space_available_bytes, data_dirs_space_available_bytes and make sure
@@ -367,7 +367,7 @@ TEST_P(TabletServerDiskErrorITest, TestSpaceAvailableMetrics) {
   ASSERT_OK(get_metrics(&wal_dir_space, &data_dir_space));
   ASSERT_NE(wal_dir_space, -1);
   ASSERT_EQ(data_dir_space, -1);
-};
+}
 
 TEST_P(TabletServerDiskErrorITest, TestFailDuringScanWorkload) {
   // Make one server to be more likely to host leader replicas: its Raft
