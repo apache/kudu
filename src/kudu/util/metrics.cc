@@ -405,15 +405,25 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& op
 }
 
 Status MetricEntity::WriteAsPrometheus(PrometheusWriter* writer) const {
-  MetricMap metrics;
-  AttributeMap attrs;
+  static const string kIdMaster = "kudu.master";
+  static const string kIdTabletServer = "kudu.tabletserver";
+
+  if (strcmp(prototype_->name(), "server") != 0) {
+    // Only server-level metrics are emitted in Prometheus format as of now,
+    // non-server metric entities are currently silently skipped.
+    //
+    // TODO(KUDU-3563): output tablet-level metrics in Prometheus format as well
+    return Status::OK();
+  }
+
+  // Empty filters result in getting all the metrics for this MetricEntity.
+  //
+  // TODO(aserbin): instead of hard-coding, pass MetricFilters as a parameter
   MetricFilters filters;
   filters.entity_level = "debug";
-  const string master_prefix = "kudu_master_";
-  const string tserver_prefix = "kudu_tserver_";
-  const string master_server = "kudu.master";
-  const string tablet_server = "kudu.tabletserver";
-  // Empty filters results in getting all the metrics for this MetricEntity.
+
+  MetricMap metrics;
+  AttributeMap attrs;
   const auto s = GetMetricsAndAttrs(filters, &metrics, &attrs);
   if (s.IsNotFound()) {
     // Status::NotFound is returned when this entity has been filtered, treat it
@@ -421,21 +431,22 @@ Status MetricEntity::WriteAsPrometheus(PrometheusWriter* writer) const {
     return Status::OK();
   }
   RETURN_NOT_OK(s);
-  // Only emit server level metrics
-  if (strcmp(prototype_->name(), "server") == 0) {
-    if (id_ == master_server) {
-      // attach kudu_master_ as prefix to metrics
-      WriteMetricsPrometheus(writer, metrics, master_prefix);
-      return Status::OK();
-    }
-    if (id_ == tablet_server) {
-      // attach kudu_tserver_ as prefix to metrics
-      WriteMetricsPrometheus(writer, metrics, tserver_prefix);
-      return Status::OK();
-    }
+
+  if (id_ == kIdMaster) {
+    // Prefix all master metrics with 'kudu_master_'.
+    static const string kMasterPrefix = "kudu_master_";
+    WriteMetricsPrometheus(writer, metrics, kMasterPrefix);
+    return Status::OK();
+  }
+  if (id_ == kIdTabletServer) {
+    // Prefix all tablet server metrics with 'kudu_tserver_'.
+    static const string kTabletServerPrefix = "kudu_tserver_";
+    WriteMetricsPrometheus(writer, metrics, kTabletServerPrefix);
+    return Status::OK();
   }
 
-  return Status::NotFound("Entity is not relevant to Prometheus");
+  return Status::NotSupported(
+      Substitute("$0: unexpected server-level metric entity", id_));
 }
 
 Status MetricEntity::CollectTo(MergedEntityMetrics* collections,
