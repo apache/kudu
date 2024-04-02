@@ -56,57 +56,50 @@ set(IR_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/precompiled.cc)
 set(IR_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/precompiled.ll)
 set(IR_OUTPUT_CC ${IR_OUTPUT}.cc)
 
-# Retrieve all includes directories needed for precompilation.
-get_directory_property(IR_INCLUDES
-  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  INCLUDE_DIRECTORIES)
-foreach(noprefix ${IR_INCLUDES})
-  set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES} -I${noprefix})
-endforeach()
-
+# Set proper include directories to run CLANG from the Kudu's thirdparty
+# when generating the pre-compiled.ll target (a.k.a. IR_OUTPUT). To avoid
+# mixing third-party CLANG's headers with the headers of the C++ compiler
+# used to build the top-level project, one shouldn't rely on the cmake's
+# INCLUDE_DIRECTORIES property, but instead explicitly specify
+# only the required paths with the '-cxx-isystem', '-isystem', and '-I' flags.
+# Otherwise, the contaminated header file space might lead either to
+# compilation errors or inconsistencies in the built binaries
+# if the compilation succeeds. The latter, in its turn, might result
+# in undefined behavior of the LLVM-generated code.
 if (APPLE)
-  # The macOS keeps the libc++ headers in a non-standard location so
-  # that the thirdparty CLANG does not know about by default.
-  #
-  # Xcode starting with version 12.5 has the libc++ headers under
-  # Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk,
-  # which corresponds to CMAKE_OSX_SYSROOT, so it's enough to add -isysroot
-  # pointing to CMAKE_OSX_SYSROOT.
-  #
-  # Xcode prior to version 12.5 (12.4 and earlier, inclusive) doesn't have the
-  # libc++ headers under CMAKE_OSX_SYSROOT, but instead keeps those under
-  # Contents/Developer/Toolchains/XcodeDefault.xctoolchain: with that,
-  # it's easy to deduce the path to the libc++ headers from the output
-  # produced by `clang++ --version`.
-  #
-  # For non-clang compilers, assume the libc++ include directory provided
-  # with the Xcode command line tools.
-  if (NOT "${COMPILER_FAMILY}" STREQUAL "clang")
-    set(PREFIXED_IR_INCLUDES
-      ${PREFIXED_IR_INCLUDES}
-      -cxx-isystem "/Library/Developer/CommandLineTools/usr/include/c++/v1")
-  elseif (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 12.0.5)
-    execute_process(
-      COMMAND ${CMAKE_CXX_COMPILER} --version
-      COMMAND grep -E "^InstalledDir: "
-      COMMAND sed "s/^InstalledDir: \\(.*\\)$/\\1/"
-      RESULT_VARIABLE CXX_INSTALLED_DIR_CMD_EXIT_CODE
-      OUTPUT_VARIABLE CXX_INSTALLED_DIR_CMD_OUT
-      OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if (${CXX_INSTALLED_DIR_CMD_EXIT_CODE} EQUAL 0 AND
-        NOT ${CXX_INSTALLED_DIR_CMD_OUT} STREQUAL "")
-      set(PREFIXED_IR_INCLUDES
-        ${PREFIXED_IR_INCLUDES}
-        -cxx-isystem "${CXX_INSTALLED_DIR_CMD_OUT}/../include/c++/v1")
-    else()
-      message(FATAL_ERROR "failed to deduce path to libc++ headers")
-    endif()
+  # On macOS, the built-in C++ header search directories in the 3rd-party CLANG
+  # disappear upon adding "-isystem ${CMAKE_OSX_SYSROOT}/usr/include" below,
+  # so let's add them back.
+  if (${KUDU_USE_TSAN})
+    # NOTE: TSAN isn't yet supported on macOS, but it's better to keep
+    #       paths consistent if that changes in the future.
+    set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES}
+      -isystem "${THIRDPARTY_INSTALL_TSAN_DIR}/include/c++/v1")
   else()
-    set(PREFIXED_IR_INCLUDES
-      ${PREFIXED_IR_INCLUDES}
-      -isysroot "${CMAKE_OSX_SYSROOT}")
+    set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES}
+      -isystem "${THIRDPARTY_INSTALL_UNINSTRUMENTED_DIR}/include/c++/v1")
   endif()
+
+  # A contemporary macOS does not keep its system header files under
+  # /usr/include anymore. It's necessary to explicitly point to proper
+  # location so that the CLANG from the Kudu's third-party can pick them up.
+  set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES}
+    -isystem ${CMAKE_OSX_SYSROOT}/usr/include)
 endif()
+
+if (${KUDU_USE_TSAN})
+  set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES}
+    -I${THIRDPARTY_INSTALL_TSAN_DIR}/include)
+else()
+  set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES}
+    -I${THIRDPARTY_INSTALL_UNINSTRUMENTED_DIR}/include)
+endif()
+set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES}
+  -I${THIRDPARTY_INSTALL_COMMON_DIR}/include)
+set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES}
+  -I${CMAKE_SOURCE_DIR}/src)
+set(PREFIXED_IR_INCLUDES ${PREFIXED_IR_INCLUDES}
+  -I${CMAKE_BINARY_DIR}/src)
 
 # Get preprocessing definitions, which enable directives for glog and gtest.
 get_directory_property(IR_PP_DEFINITIONS
@@ -124,17 +117,6 @@ set(IR_FLAGS
   ${CMAKE_CXX_FLAGS}
   ${PREFIXED_IR_PP_DEFS}
   ${PREFIXED_IR_INCLUDES})
-
-# /usr/include doesn't have the necessary headers on macOS 10.14 (Mojave) with
-# Xcode 10[1]+. In this case the --sysroot has to be set to the output of "xcrun
-# --show-sdk-path" for the thirdparty clang-6.0 to work correctly.
-#
-# [1] https://developer.apple.com/documentation/xcode_release_notes/xcode_10_release_notes
-if (APPLE AND NOT EXISTS /usr/include/libc.h)
-  set(IR_FLAGS
-    ${IR_FLAGS}
-    --sysroot="${CMAKE_OSX_SYSROOT}")
-endif()
 
 # Provide clang with any explicitly defined system prefix path. If there isn't
 # one, clang will search for it on its own.
