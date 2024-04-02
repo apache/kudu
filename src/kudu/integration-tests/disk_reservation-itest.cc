@@ -177,7 +177,7 @@ TEST_F(DiskReservationITest, AvailableSpaceMetrics) {
   NO_FATALS(StartCluster(ts_flags, {}, 1));
 
   auto* ts = cluster_->tablet_server(0);
-  DCHECK_NE(nullptr, ts);
+  ASSERT_NE(nullptr, ts);
   const auto& addr = ts->bound_http_hostport();
 
   auto space_getter_data_dirs = [&](int64_t* available_bytes) {
