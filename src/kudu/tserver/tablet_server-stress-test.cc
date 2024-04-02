@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <functional>
 #include <ostream>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -24,7 +25,9 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/cfile/block_cache.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/jsonwriter.h"
@@ -46,6 +49,7 @@ DEFINE_int32(num_inserts_per_thread, 100000000,
              "default is set high so that, typically, the 'runtime_secs' parameter determines "
              "how long this test will run.");
 DECLARE_bool(enable_maintenance_manager);
+DECLARE_string(block_cache_eviction_policy);
 
 METRIC_DEFINE_histogram(test, insert_latency,
                         "Insert Latency",
@@ -122,7 +126,24 @@ void TSStressTest::InserterThread(int thread_idx) {
   LOG(INFO) << "Inserter thread " << thread_idx << " complete";
 }
 
-TEST_F(TSStressTest, TestMTInserts) {
+class TSStressTestWithEvictionPolicy :
+    public TSStressTest,
+    public ::testing::WithParamInterface<std::string> {
+ protected:
+  void SetUp() override {
+    FLAGS_block_cache_eviction_policy = GetParam();
+    TSStressTest::SetUp();
+  }
+
+  void TearDown() override {
+    Singleton<cfile::BlockCache>::UnsafeReset();
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(EvictionPolicyTypes, TSStressTestWithEvictionPolicy,
+                         ::testing::Values("LRU", "SLRU"));
+
+TEST_P(TSStressTestWithEvictionPolicy, TestMTInserts) {
   thread timeout_thread;
   StartThreads();
   Stopwatch s(Stopwatch::ALL_THREADS);

@@ -19,12 +19,14 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/cfile/block_cache.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
@@ -34,6 +36,7 @@
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/util/faststring.h"
@@ -46,6 +49,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_int32(flush_threshold_mb);
+DECLARE_string(block_cache_eviction_policy);
 
 DEFINE_int32(rounds, 100,
              "How many rounds of updates will be performed. More rounds make the "
@@ -170,12 +174,26 @@ class HeavyUpdateCompactionITest : public KuduTest {
   Random rand_;
 };
 
+class HeavyUpdateCompactionITestWithEvictionPolicy :
+    public HeavyUpdateCompactionITest,
+    public ::testing::WithParamInterface<std::string> {
+ protected:
+  void SetUp() override {
+    FLAGS_block_cache_eviction_policy = GetParam();
+    HeavyUpdateCompactionITest::SetUp();
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(EvictionPolicyTypes, HeavyUpdateCompactionITestWithEvictionPolicy,
+                         ::testing::Values("LRU", "SLRU"));
+
 // Repro for KUDU-2231, which is an integer overflow in the RowSetInfo class.
 // This test creates a rowset with a very large amount of REDO delta files
 // (the bug was a 2GiB overflow), as well as mixed inserts. This causes the
 // maintanance manager to schedule rowset compactions, which sometimes
 // reproduces the overflow.
-TEST_F(HeavyUpdateCompactionITest, TestHeavyUpdateCompaction) {
+TEST_P(HeavyUpdateCompactionITestWithEvictionPolicy, TestHeavyUpdateCompaction) {
+  Singleton<cfile::BlockCache>::UnsafeReset();
   NO_FATALS(CreateTable());
   shared_ptr<KuduSession> session = CreateSession();
 

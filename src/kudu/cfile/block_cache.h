@@ -21,6 +21,8 @@
 #include <memory>
 #include <utility>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -42,10 +44,6 @@ class BlockCacheHandle;
 // Provides a singleton and LRU cache for CFile blocks.
 class BlockCache {
  public:
-  // Parse the gflag which configures the block cache. FATALs if the flag is
-  // invalid.
-  static Cache::MemoryType GetConfiguredCacheMemoryTypeOrDie();
-
   // BlockId refers to the unique identifier for a Kudu block, that is, for an
   // entire CFile. This is different than the block cache's notion of a block,
   // which is just a portion of a CFile.
@@ -119,6 +117,10 @@ class BlockCache {
 
   explicit BlockCache(size_t capacity);
 
+  BlockCache(size_t probationary_segment_capacity,
+             size_t protected_segment_capacity,
+             size_t lookups);
+
   // Lookup the given block in the cache.
   //
   // If the entry is found, then sets *handle to refer to the entry.
@@ -164,7 +166,19 @@ class BlockCache {
 
  private:
   friend class Singleton<BlockCache>;
+  FRIEND_TEST(BlockCacheTest, TestBasics);
   BlockCache();
+
+  // Parse the gflag which configures the block cache. FATALs if the flag is invalid.
+  static Cache::MemoryType GetConfiguredCacheMemoryTypeOrDie();
+
+  // Parse the gflag which configure the block cache eviction policy. FATALs if flag is invalid.
+  static Cache::EvictionPolicy GetCacheEvictionPolicyOrDie();
+
+  static Cache* CreateCache(int64_t capacity);
+  static Cache* CreateCache(int64_t probationary_segment_capacity,
+                            int64_t protected_segment_capacity,
+                            uint32_t lookups);
 
   DISALLOW_COPY_AND_ASSIGN(BlockCache);
 
@@ -228,7 +242,17 @@ inline void BlockCache::PendingEntry::reset() {
 
 // Validates the block cache capacity. Won't permit the cache to grow large
 // enough to cause pernicious flushing behavior. See KUDU-2318.
+// Only necessary for DRAM-based caches. See KUDU-2920 for more details.
 bool ValidateBlockCacheCapacity();
+
+// Does same as ValidateBlockCacheCapacity() except for block caches with SLRU eviction policy.
+bool ValidateBlockCacheSegmentCapacity();
+
+// Validates number of lookups before upgrade for block cache of SLRU eviction policy. Must be > 0.
+bool ValidateLookups();
+
+// Validates the eviction policy for block cache, either LRU or SLRU.
+bool ValidateEvictionPolicy();
 
 } // namespace cfile
 } // namespace kudu

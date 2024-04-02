@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -59,6 +60,7 @@ METRIC_DECLARE_gauge_uint64(threads_running);
 
 DECLARE_bool(enable_rowset_compaction);
 DECLARE_string(block_manager);
+DECLARE_string(block_cache_eviction_policy);
 
 DEFINE_bool(measure_startup_drop_caches, false,
             "Whether to drop kernel caches before measuring startup time. Must be root");
@@ -88,13 +90,14 @@ using strings::Substitute;
 
 class DenseNodeTest :
   public ExternalMiniClusterITestBase,
-  public testing::WithParamInterface<std::tuple<bool, string>> {
+  public testing::WithParamInterface<std::tuple<bool, string, string>> {
 };
 
 INSTANTIATE_TEST_SUITE_P(, DenseNodeTest,
                          ::testing::Combine(
                              ::testing::Bool(),
-                             ::testing::ValuesIn(BlockManager::block_manager_types())));
+                             ::testing::ValuesIn(BlockManager::block_manager_types()),
+                             ::testing::Values("LRU", "SLRU")));
 
 // Integration test that simulates "dense" Kudu nodes.
 //
@@ -105,6 +108,10 @@ INSTANTIATE_TEST_SUITE_P(, DenseNodeTest,
 // proxy for data in areas we care about (such as start up time, thread count,
 // memory usage, etc.).
 TEST_P(DenseNodeTest, RunTest) {
+  #ifdef THREAD_SANITIZER
+    SKIP_IF_SLOW_NOT_ALLOWED();
+  #endif
+
   ExternalMiniClusterOptions opts;
 
   opts.extra_tserver_flags = {
@@ -160,14 +167,22 @@ TEST_P(DenseNodeTest, RunTest) {
     opts.extra_master_flags.emplace_back("--never_fsync=false");
   }
 
-  if (std::get<0>(GetParam())) {
+  const auto& setup = GetParam();
+
+  if (std::get<0>(setup)) {
     opts.extra_master_flags.emplace_back("--encrypt_data_at_rest=true");
     opts.extra_tserver_flags.emplace_back("--encrypt_data_at_rest=true");
   }
 
-  FLAGS_block_manager = std::get<1>(GetParam());
+  FLAGS_block_manager = std::get<1>(setup);
   opts.extra_master_flags.emplace_back(Substitute("--block_manager=$0", FLAGS_block_manager));
   opts.extra_tserver_flags.emplace_back(Substitute("--block_manager=$0", FLAGS_block_manager));
+
+  FLAGS_block_cache_eviction_policy = std::get<2>(setup);
+  opts.extra_master_flags.emplace_back(Substitute("--block_cache_eviction_policy=$0",
+                                                  FLAGS_block_cache_eviction_policy));
+  opts.extra_tserver_flags.emplace_back(Substitute("--block_cache_eviction_policy=$0",
+                                                   FLAGS_block_cache_eviction_policy));
 
   // With the amount of data we're going to write, we need to make sure the
   // tserver has enough time to start back up (startup is only considered to be

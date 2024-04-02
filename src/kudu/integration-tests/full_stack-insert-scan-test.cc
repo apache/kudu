@@ -32,6 +32,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/cfile/block_cache.h"
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
@@ -44,6 +45,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
@@ -84,6 +86,7 @@ DEFINE_bool(perf_record_scan_callgraph, false,
 DEFINE_bool(perf_stat_scan, false, "Print \"perf stat\" results during "
             "scan to stdout, disabled by default");
 DECLARE_bool(enable_maintenance_manager);
+DECLARE_string(block_cache_eviction_policy);
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -282,14 +285,31 @@ void ReportAllDone(int id, int numids) {
 
 const char* const FullStackInsertScanTest::kTableName = "full-stack-mrs-test-tbl";
 
-TEST_F(FullStackInsertScanTest, MRSOnlyStressTest) {
+class FullStackInsertScanTestWithEvictionPolicy :
+    public FullStackInsertScanTest,
+    public ::testing::WithParamInterface<std::string> {
+ protected:
+  void SetUp() override {
+    FLAGS_block_cache_eviction_policy = GetParam();
+    FullStackInsertScanTest::SetUp();
+  }
+
+  void TearDown() override {
+    Singleton<cfile::BlockCache>::UnsafeReset();
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(EvictionPolicyTypes, FullStackInsertScanTestWithEvictionPolicy,
+                         ::testing::Values("LRU", "SLRU"));
+
+TEST_P(FullStackInsertScanTestWithEvictionPolicy, MRSOnlyStressTest) {
   FLAGS_enable_maintenance_manager = false;
   NO_FATALS(CreateTable());
   NO_FATALS(DoConcurrentClientInserts());
   NO_FATALS(DoTestScans());
 }
 
-TEST_F(FullStackInsertScanTest, WithDiskStressTest) {
+TEST_P(FullStackInsertScanTestWithEvictionPolicy, WithDiskStressTest) {
   NO_FATALS(CreateTable());
   NO_FATALS(DoConcurrentClientInserts());
   NO_FATALS(FlushToDisk());
