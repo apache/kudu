@@ -22,6 +22,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -256,7 +257,7 @@ TEST_P(OpTrackerTest, TestTooManyOps) {
                      d->Abort(Status::Aborted(""));
                    }
                  });
-  for (int i = 0; s.ok(); i++) {
+  while (s.ok()) {
     s = AddDrivers(1, &drivers);
   }
 

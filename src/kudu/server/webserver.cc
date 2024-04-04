@@ -365,7 +365,13 @@ Status Webserver::Start() {
       return Status::InvalidArgument("Unable to configure web server for SPNEGO authentication: "
                                      "must configure a keytab file for the server");
     }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    // NOTE: this call is wrapped into 'ignored' pragma to suppress compilation
+    //       warnings on macOS with Xcode where many gssapi_krb5 functions are
+    //       deprecated in favor of GSS.framework.
     krb5_gss_register_acceptor_identity(kt_file);
+#pragma GCC diagnostic pop
   }
 
   options.emplace_back("listening_ports");

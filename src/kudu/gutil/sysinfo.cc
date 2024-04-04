@@ -101,6 +101,7 @@ void SleepForMilliseconds(int64_t milliseconds) {
   SleepForNanoseconds(milliseconds * 1000 * 1000);
 }
 
+#if !(defined(__MACH__) && defined(__APPLE__))
 // Helper function estimates cycles/sec by observing cycles elapsed during
 // sleep(). Using small sleep time decreases accuracy significantly.
 static int64 EstimateCyclesPerSecond(const int estimate_time_ms) {
@@ -114,6 +115,7 @@ static int64 EstimateCyclesPerSecond(const int estimate_time_ms) {
   const int64 guess = int64(multiplier * (CycleClock::Now() - start_ticks));
   return guess;
 }
+#endif
 
 // ReadIntFromFile is only called on linux and cygwin platforms.
 #if defined(__linux__) || defined(__CYGWIN__) || defined(__CYGWIN32__)
@@ -236,8 +238,8 @@ static void InitializeSystemInfo() {
   if (already_called)  return;
   already_called = true;
 
+#if defined(__linux__) || defined(__CYGWIN__) || defined(__CYGWIN32__)
   bool saw_mhz = false;
-
   if (RunningOnValgrind()) {
     // Valgrind may slow the progress of time artificially (--scale-time=N
     // option). We thus can't rely on CPU Mhz info stored in /sys or /proc
@@ -246,7 +248,6 @@ static void InitializeSystemInfo() {
     saw_mhz = true;
   }
 
-#if defined(__linux__) || defined(__CYGWIN__) || defined(__CYGWIN32__)
   char line[1024];
   char* err;
   int freq;

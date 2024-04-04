@@ -3057,7 +3057,6 @@ Status Tablet::DeleteAncientDeletedRowsets() {
   // We'll take our the rowsets' locks to ensure we don't GC the rowsets while
   // they're being compacted.
   RowSetVector to_delete;
-  int num_unavailable_for_delete = 0;
   vector<std::unique_lock<std::mutex>> rowset_locks;
   int64_t bytes_deleted = 0;
   {
@@ -3066,7 +3065,6 @@ Status Tablet::DeleteAncientDeletedRowsets() {
       // Check if this rowset has been locked by a compaction. If so, we
       // shouldn't attempt to delete it.
       if (!rowset->IsAvailableForCompaction()) {
-        num_unavailable_for_delete++;
         continue;
       }
       bool deleted_and_empty = false;

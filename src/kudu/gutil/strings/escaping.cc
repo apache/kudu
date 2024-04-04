@@ -492,6 +492,11 @@ bool CUnescapeForNullTerminatedString(const StringPiece& source,
   return CUnescapeInternal(source, kLeaveNullsEscaped, dest, error);
 }
 
+// Avoid warnings about sprintf() deprecation from contemporary compilers.
+// Silencing warnings seems to be a good option because this code has been
+// imported to Kudu from an external project repo and doesn't change much.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 // ----------------------------------------------------------------------
 // CEscapeString()
 // CHexEscapeString()
@@ -551,6 +556,7 @@ int CEscapeInternal(const char* src, int src_len, char* dest,
   dest[used] = '\0';   // doesn't count towards return value though
   return used;
 }
+#pragma GCC diagnostic pop
 
 int CEscapeString(const char* src, int src_len, char* dest, int dest_len) {
   return CEscapeInternal(src, src_len, dest, dest_len, false, false);
