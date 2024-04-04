@@ -367,6 +367,14 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   const uint8_t* row_data_;
 };
 
+// std::iterator has been deprecated in C++17, but this code should still be
+// compilable by legacy C++98 compilers as well. It's also necessary to keep
+// backward compatibility with the ABI provided by earlier Kudu releases,
+// so modifiying the inheritance chain isn't an option. Instead of removing
+// the inheritance from std::iterator<...> and explicitly defining the types
+// required by the STL iterator traits, the deprecation warnings are silenced.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 class KUDU_EXPORT KuduScanBatch::const_iterator
     : public std::iterator<std::forward_iterator_tag, KuduScanBatch::RowPtr> {
  public:
@@ -435,7 +443,7 @@ class KUDU_EXPORT KuduScanBatch::const_iterator
   const KuduScanBatch* const batch_;
   int idx_;
 };
-
+#pragma GCC diagnostic pop
 
 inline KuduScanBatch::const_iterator KuduScanBatch::begin() const {
   return const_iterator(this, 0);

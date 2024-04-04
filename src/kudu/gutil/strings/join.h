@@ -204,7 +204,7 @@ void JoinStringsIterator(const ITERATOR& start,
 
   // Precompute resulting length so we can reserve() memory in one shot.
   if (start != end) {
-    int length = delim.size()*(distance(start, end)-1);
+    auto length = delim.size() * (std::distance(start, end) - 1);
     for (ITERATOR iter = start; iter != end; ++iter) {
       length += iter->size();
     }

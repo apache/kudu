@@ -142,9 +142,15 @@ class FixedBitSet {
 
 // Forward iterator class for a FixedBitSet.
 template <typename IntType, size_t MaxVals>
-class FixedBitSet<IntType, MaxVals>::iterator :
-    public std::iterator<std::forward_iterator_tag, IntType> {
+class FixedBitSet<IntType, MaxVals>::iterator {
  public:
+  // Types required by the iterator traits.
+  using iterator_category = std::forward_iterator_tag;
+  using value_type = IntType;
+  using difference_type = std::ptrdiff_t;
+  using pointer = IntType*;
+  using reference = IntType&;
+
   // Returns the value currently pointed at by this iterator.
   IntType operator*() {
     return static_cast<IntType>(idx_);
