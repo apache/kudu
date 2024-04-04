@@ -194,7 +194,6 @@ using kudu::tserver::TSTabletManager;
 using std::cout;
 using std::endl;
 using std::map;
-using std::move;
 using std::pair;
 using std::shared_ptr;
 using std::set;
@@ -257,10 +256,10 @@ class TabletCopier {
                FsManager* dst_fs_manager,
                scoped_refptr<ConsensusMetadataManager> dst_cmeta_manager,
                HostPort source_addr) :
-                  tablet_ids_to_copy_(move(tablet_ids_to_copy)),
+                  tablet_ids_to_copy_(std::move(tablet_ids_to_copy)),
                   dst_fs_manager_(dst_fs_manager),
-                  dst_cmeta_manager_(move(dst_cmeta_manager)),
-                  source_addr_(move(source_addr)),
+                  dst_cmeta_manager_(std::move(dst_cmeta_manager)),
+                  source_addr_(std::move(source_addr)),
                   copy_type_(CopyType::FROM_REMOTE) {
   }
 
@@ -269,11 +268,11 @@ class TabletCopier {
                scoped_refptr<ConsensusMetadataManager> dst_cmeta_manager,
                FsManager* src_fs_manager,
                set<string> src_tablet_ids_set) :
-                  tablet_ids_to_copy_(move(tablet_ids_to_copy)),
+                  tablet_ids_to_copy_(std::move(tablet_ids_to_copy)),
                   dst_fs_manager_(dst_fs_manager),
-                  dst_cmeta_manager_(move(dst_cmeta_manager)),
-                  src_fs_manager_(move(src_fs_manager)),
-                  src_tablet_ids_set_(move(src_tablet_ids_set)),
+                  dst_cmeta_manager_(std::move(dst_cmeta_manager)),
+                  src_fs_manager_(src_fs_manager),
+                  src_tablet_ids_set_(std::move(src_tablet_ids_set)),
                   copy_type_(CopyType::FROM_LOCAL) {
   }
 
@@ -753,7 +752,10 @@ Status CopyFromRemote(const RunnerContext& context) {
   RETURN_NOT_OK(fs_manager.Open());
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
 
-  TabletCopier copier(move(tablet_ids_to_copy), &fs_manager, move(cmeta_manager), move(hp));
+  TabletCopier copier(std::move(tablet_ids_to_copy),
+                      &fs_manager,
+                      std::move(cmeta_manager),
+                      std::move(hp));
   return copier.CopyTablets();
 }
 
@@ -787,11 +789,11 @@ Status CopyFromLocal(const RunnerContext& context) {
   RETURN_NOT_OK(src_fs_manager.ListTabletIds(&src_tablet_ids));
   set<string> src_tablet_ids_set(src_tablet_ids.begin(), src_tablet_ids.end());
 
-  TabletCopier copier(move(tablet_ids_to_copy),
+  TabletCopier copier(std::move(tablet_ids_to_copy),
                       &dst_fs_manager,
-                      move(dst_cmeta_manager),
+                      std::move(dst_cmeta_manager),
                       &src_fs_manager,
-                      move(src_tablet_ids_set));
+                      std::move(src_tablet_ids_set));
   return copier.CopyTablets();
 }
 

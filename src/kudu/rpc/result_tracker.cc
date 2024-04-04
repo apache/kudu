@@ -67,7 +67,6 @@ using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using rpc::InboundCall;
 using std::make_pair;
-using std::move;
 using std::lock_guard;
 using std::pair;
 using std::shared_ptr;

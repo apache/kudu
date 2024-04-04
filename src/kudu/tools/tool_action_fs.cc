@@ -162,7 +162,6 @@ using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletMetadata;
 using std::cout;
 using std::endl;
-using std::move;
 using std::nullopt;
 using std::optional;
 using std::shared_ptr;

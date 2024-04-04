@@ -35,7 +35,6 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
 
-using std::move;
 using std::string;
 using std::vector;
 
@@ -46,7 +45,7 @@ ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
                                  const void* lower,
                                  const void* upper)
     : predicate_type_(predicate_type),
-      column_(move(column)),
+      column_(std::move(column)),
       lower_(lower),
       upper_(upper) {
 }
@@ -55,7 +54,7 @@ ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
                                  ColumnSchema column,
                                  vector<const void*>* values)
     : predicate_type_(predicate_type),
-      column_(move(column)),
+      column_(std::move(column)),
       lower_(nullptr),
       upper_(nullptr) {
   values_.swap(*values);
@@ -67,21 +66,21 @@ ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
                                  const void* lower,
                                  const void* upper)
     : predicate_type_(predicate_type),
-      column_(move(column)),
+      column_(std::move(column)),
       lower_(lower),
       upper_(upper),
-      bloom_filters_(move(bfs)) {}
+      bloom_filters_(std::move(bfs)) {}
 
 ColumnPredicate ColumnPredicate::Equality(ColumnSchema column, const void* value) {
   CHECK(value != nullptr);
-  return ColumnPredicate(PredicateType::Equality, move(column), value, nullptr);
+  return ColumnPredicate(PredicateType::Equality, std::move(column), value, nullptr);
 }
 
 ColumnPredicate ColumnPredicate::Range(ColumnSchema column,
                                        const void* lower,
                                        const void* upper) {
   CHECK(lower != nullptr || upper != nullptr);
-  ColumnPredicate pred(PredicateType::Range, move(column), lower, upper);
+  ColumnPredicate pred(PredicateType::Range, std::move(column), lower, upper);
   pred.Simplify();
   return pred;
 }
@@ -101,7 +100,7 @@ ColumnPredicate ColumnPredicate::InList(ColumnSchema column,
                             }),
                 values->end());
 
-  ColumnPredicate pred(PredicateType::InList, move(column), values);
+  ColumnPredicate pred(PredicateType::InList, std::move(column), values);
   pred.Simplify();
   return pred;
 }
@@ -111,8 +110,8 @@ ColumnPredicate ColumnPredicate::InBloomFilter(ColumnSchema column,
                                                const void* lower,
                                                const void* upper) {
   CHECK(!bfs.empty());
-  ColumnPredicate pred(PredicateType::InBloomFilter, move(column), move(bfs), lower,
-                       upper);
+  ColumnPredicate pred(
+      PredicateType::InBloomFilter, std::move(column), std::move(bfs), lower, upper);
   pred.Simplify();
   return pred;
 }
@@ -135,7 +134,7 @@ std::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema colu
           // If incrementing the upper bound fails and the column is nullable,
           // then return an IS NOT NULL predicate, so that null values will be
           // filtered.
-          return ColumnPredicate::IsNotNull(move(column));
+          return ColumnPredicate::IsNotNull(std::move(column));
         }
         return std::nullopt;
       }
@@ -144,7 +143,7 @@ std::optional<ColumnPredicate> ColumnPredicate::InclusiveRange(ColumnSchema colu
       upper = buf;
     }
   }
-  return ColumnPredicate::Range(move(column), lower, upper);
+  return ColumnPredicate::Range(std::move(column), lower, upper);
 }
 
 ColumnPredicate ColumnPredicate::ExclusiveRange(ColumnSchema column,
@@ -161,26 +160,25 @@ ColumnPredicate ColumnPredicate::ExclusiveRange(ColumnSchema column,
     memcpy(buf, lower, size);
     if (!key_util::IncrementCell(column, buf, arena)) {
       // If incrementing the lower bound fails then the predicate can match no values.
-      return ColumnPredicate::None(move(column));
-    } else {
-      lower = buf;
+      return ColumnPredicate::None(std::move(column));
     }
+    lower = buf;
   }
-  return ColumnPredicate::Range(move(column), lower, upper);
+  return ColumnPredicate::Range(std::move(column), lower, upper);
 }
 
 ColumnPredicate ColumnPredicate::IsNotNull(ColumnSchema column) {
-  return ColumnPredicate(PredicateType::IsNotNull, move(column), nullptr, nullptr);
+  return ColumnPredicate(PredicateType::IsNotNull, std::move(column), nullptr, nullptr);
 }
 
 ColumnPredicate ColumnPredicate::IsNull(ColumnSchema column) {
   return column.is_nullable() ?
-         ColumnPredicate(PredicateType::IsNull, move(column), nullptr, nullptr) :
-         None(move(column));
+         ColumnPredicate(PredicateType::IsNull, std::move(column), nullptr, nullptr) :
+         None(std::move(column));
 }
 
 ColumnPredicate ColumnPredicate::None(ColumnSchema column) {
-  return ColumnPredicate(PredicateType::None, move(column), nullptr, nullptr);
+  return ColumnPredicate(PredicateType::None, std::move(column), nullptr, nullptr);
 }
 
 void ColumnPredicate::SetToNone() {

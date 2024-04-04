@@ -67,7 +67,7 @@ class BlockBloomFilterTest : public KuduTest {
 
     unique_ptr<BlockBloomFilter> bf(new BlockBloomFilter(allocator_));
     CHECK_OK(bf->Init(log_space_bytes, FAST_HASH, 0));
-    bloom_filters_.emplace_back(move(bf));
+    bloom_filters_.emplace_back(std::move(bf));
     return bloom_filters_.back().get();
   }
 

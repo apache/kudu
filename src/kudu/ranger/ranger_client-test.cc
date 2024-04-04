@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-#include <boost/container_hash/extensions.hpp>
+#include <boost/container_hash/hash.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/any.pb.h>
@@ -66,7 +66,6 @@ using kudu::subprocess::SubprocessMetrics;
 using kudu::subprocess::SubprocessRequestPB;
 using kudu::subprocess::SubprocessResponsePB;
 using kudu::subprocess::SubprocessServer;
-using std::move;
 using std::string;
 using std::unordered_map;
 using std::unordered_set;
@@ -162,11 +161,11 @@ class RangerClientTest : public KuduTest {
   void Allow(string user_name, ActionPB action, string database_name,
              string table_name, string column_name = "") {
     AuthorizedAction authorized_action;
-    authorized_action.user_name = move(user_name);
+    authorized_action.user_name = std::move(user_name);
     authorized_action.action = action;
-    authorized_action.database_name = move(database_name);
-    authorized_action.table_name = move(table_name);
-    authorized_action.column_name = move(column_name);
+    authorized_action.database_name = std::move(database_name);
+    authorized_action.table_name = std::move(table_name);
+    authorized_action.column_name = std::move(column_name);
 
     next_response_->emplace(authorized_action);
   }

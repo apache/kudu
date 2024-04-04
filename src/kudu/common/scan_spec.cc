@@ -46,7 +46,6 @@
 
 using std::any_of;
 using std::max;
-using std::move;
 using std::pair;
 using std::string;
 using std::unordered_set;
@@ -61,7 +60,7 @@ void ScanSpec::AddPredicate(ColumnPredicate pred) {
     predicate->Merge(pred);
   } else {
     string column_name = pred.column().name();
-    predicates_.emplace(move(column_name), move(pred));
+    predicates_.emplace(std::move(column_name), std::move(pred));
   }
 }
 
@@ -341,7 +340,7 @@ void ScanSpec::LiftPrimaryKeyBounds(const Schema& schema, Arena* arena) {
                                               lower_bound_key_->raw_keys()[col_idx + 1],
                                               nullptr));
         }
-        AddPredicate(move(predicate));
+        AddPredicate(std::move(predicate));
       } else {
         auto pred = ColumnPredicate::InclusiveRange(column, lower, upper, arena);
         if (pred) AddPredicate(*pred);

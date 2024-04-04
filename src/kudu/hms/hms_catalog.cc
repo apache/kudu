@@ -49,7 +49,6 @@
 #include "kudu/util/thread.h"
 
 using std::optional;
-using std::move;
 using std::string;
 using std::vector;
 using strings::Substitute;

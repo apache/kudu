@@ -51,7 +51,6 @@ using std::find;
 using std::iota;
 using std::lower_bound;
 using std::memcpy;
-using std::move;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;

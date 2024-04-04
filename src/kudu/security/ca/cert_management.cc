@@ -23,12 +23,12 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
-#include <algorithm>
 #include <cstdio>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 
@@ -40,7 +40,6 @@
 #include "kudu/util/status.h"
 
 using std::lock_guard;
-using std::move;
 using std::string;
 using strings::Substitute;
 

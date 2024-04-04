@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <optional>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -38,7 +39,6 @@
 #include "kudu/util/status.h"
 
 using std::optional;
-using std::move;
 using std::shared_ptr;
 using std::unique_ptr;
 using std::vector;
@@ -71,7 +71,7 @@ KuduPredicate* KuduPredicate::Clone() const {
 ComparisonPredicateData::ComparisonPredicateData(ColumnSchema col,
                                                  KuduPredicate::ComparisonOp op,
                                                  KuduValue* val)
-    : col_(move(col)),
+    : col_(std::move(col)),
       op_(op),
       val_(val) {
 }
@@ -122,7 +122,7 @@ Status ComparisonPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
 
 InListPredicateData::InListPredicateData(ColumnSchema col,
                                          vector<KuduValue*>* values)
-    : col_(move(col)) {
+    : col_(std::move(col)) {
   vals_.swap(*values);
 }
 

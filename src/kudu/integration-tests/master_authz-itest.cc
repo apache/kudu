@@ -82,7 +82,6 @@ using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
 using kudu::transactions::TxnSystemClient;
 using std::function;
-using std::move;
 using std::nullopt;
 using std::optional;
 using std::ostream;
@@ -393,7 +392,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     // IsCreateTableDone() requires METADATA on the table level.
     policy.tables.emplace_back("*");
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::CREATE}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -403,7 +402,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::DROP}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -420,7 +419,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALTER}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -431,7 +430,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALTER}, true));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -442,13 +441,13 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     // IsCreateTableDone() requires METADATA on the table level.
     policy_new_table.tables.emplace_back("*");
     policy_new_table.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::CREATE}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(policy_new_table)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy_new_table)));
 
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -458,7 +457,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::METADATA}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -468,7 +467,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::METADATA}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -478,7 +477,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -487,12 +486,12 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy db_policy;
     db_policy.databases.emplace_back(p.db_name);
     db_policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(db_policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(db_policy)));
     AuthorizationPolicy tbl_policy;
     tbl_policy.databases.emplace_back(p.db_name);
     tbl_policy.tables.emplace_back("*");
     tbl_policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, false));
-    ASSERT_OK(ranger_->AddPolicy(move(tbl_policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(tbl_policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -502,7 +501,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, true));
-    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -512,12 +511,12 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy db_policy;
     db_policy.databases.emplace_back(p.db_name);
     db_policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, true));
-    ASSERT_OK(ranger_->AddPolicy(move(db_policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(db_policy)));
     AuthorizationPolicy tbl_policy;
     tbl_policy.databases.emplace_back(p.db_name);
     tbl_policy.tables.emplace_back("*");
     tbl_policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, true));
-    ASSERT_OK(ranger_->AddPolicy(move(tbl_policy)));
+    ASSERT_OK(ranger_->AddPolicy(std::move(tbl_policy)));
     NO_FATALS(RefreshAuthzPolicies(cluster));
   }
 
@@ -555,7 +554,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(kDatabaseName);
     policy.tables.emplace_back("*");
     policy.items.emplace_back(PolicyItem({kAdminUser}, {ActionPB::ALL}, true));
-    return ranger_->AddPolicy(move(policy));
+    return ranger_->AddPolicy(std::move(policy));
   }
 
  private:

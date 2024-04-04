@@ -94,7 +94,6 @@ using llvm::SMDiagnostic;
 using llvm::TargetMachine;
 using llvm::Type;
 using llvm::Value;
-using std::move;
 using std::ostream;
 using std::ostringstream;
 using std::string;
@@ -331,7 +330,7 @@ Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
   Level opt_level = llvm::CodeGenOpt::None;
 #endif
   Module* module = module_.get();
-  EngineBuilder ebuilder(move(module_));
+  EngineBuilder ebuilder(std::move(module_));
   ebuilder.setErrorStr(&str);
   ebuilder.setOptLevel(opt_level);
   ebuilder.setMCPU(llvm::sys::getHostCPUName());

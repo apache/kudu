@@ -186,7 +186,6 @@ namespace ranger {
 using kudu::security::GetKrb5ConfigFile;
 using kudu::subprocess::SubprocessMetrics;
 using kudu::subprocess::SubprocessServer;
-using std::move;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -493,11 +492,11 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name, con
   unordered_set<string> allowed_columns;
   for (auto i = 0; i < req_list.requests_size(); ++i) {
     if (resp_list.responses(i).allowed()) {
-      EmplaceOrDie(&allowed_columns, move(req_list.requests(i).column()));
+      EmplaceOrDie(&allowed_columns, req_list.requests(i).column());
     }
   }
 
-  *column_names = move(allowed_columns);
+  *column_names = std::move(allowed_columns);
 
   return Status::OK();
 }
@@ -537,11 +536,11 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name, cons
   unordered_map<string, bool> allowed_tables;
   for (auto i = 0; i < orig_table_names.size(); ++i) {
     if (resp_list.responses(i).allowed()) {
-      EmplaceOrDie(&allowed_tables, move(orig_table_names[i]));
+      EmplaceOrDie(&allowed_tables, std::move(orig_table_names[i]));
     }
   }
 
-  *tables = move(allowed_tables);
+  *tables = std::move(allowed_tables);
 
   return Status::OK();
 }
@@ -574,11 +573,11 @@ Status RangerClient::AuthorizeActions(const string& user_name, const string& dat
   unordered_set<ActionPB, ActionHash> allowed_actions;
   for (auto i = 0; i < req_list.requests_size(); ++i) {
     if (resp_list.responses(i).allowed()) {
-      EmplaceOrDie(&allowed_actions, move(req_list.requests(i).action()));
+      EmplaceOrDie(&allowed_actions, req_list.requests(i).action());
     }
   }
 
-  *actions = move(allowed_actions);
+  *actions = std::move(allowed_actions);
 
   return Status::OK();
 }

@@ -23,7 +23,6 @@
 #include <openssl/x509.h>
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
 
@@ -33,8 +32,8 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/openssl_util.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/openssl_util.h"
 #include "kudu/util/status.h"
 
 // Forward declarations for the relevant OpenSSL typedefs
