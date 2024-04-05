@@ -807,9 +807,7 @@ bool PartitionSchema::PartitionMayContainRow(const Partition& partition,
     return false;
   }
 
-  string range_key;
-  EncodeColumns(row, range_schema_.column_ids, &range_key);
-  const auto& hash_schema = GetHashSchemaForRange(range_key);
+  const auto& hash_schema = GetHashSchemaForRange(partition.begin_.range_key());
   for (size_t i = 0; i < hash_schema.size(); ++i) {
     const auto& hash_dimension = hash_schema[i];
     if (hash_dimension.column_ids.size() == 1 &&
