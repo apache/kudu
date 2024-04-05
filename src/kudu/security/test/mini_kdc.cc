@@ -110,6 +110,7 @@ Status GetBinaryPath(const string& binary, string* path) {
     "/opt/local/sbin", // Macports
     "/opt/local/bin", // Macports
     "/usr/lib/mit/sbin", // SLES
+    "/usr/lib/mit/bin", // SLES
     "/usr/sbin", // Linux
   };
   return FindExecutable(binary, kCommonLocations, path);
