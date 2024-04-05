@@ -464,7 +464,7 @@ void ColumnPredicate::MergeIntoIsNull(const ColumnPredicate &other) {
 
 void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
   CHECK(predicate_type_ == PredicateType::InList);
-  DCHECK(values_.size() > 1);
+  DCHECK(values_.size() >= 1);
 
   switch (other.predicate_type()) {
     case PredicateType::None: {
