@@ -1461,15 +1461,12 @@ TEST_P(TestRpc, AcceptorDispatchingTimesMetric) {
 }
 
 // Basic verification of the 'rpc_pending_connections' metric.
+// The number of pending connections is properly reported on Linux; on other
+// platforms that don't support sock_diag() netlink facility (e.g., macOS)
+// the metric should report -1.
 TEST_P(TestRpc, RpcPendingConnectionsMetric) {
   Sockaddr server_addr;
   ASSERT_OK(StartTestServer(&server_addr));
-
-  {
-    Socket socket;
-    ASSERT_OK(socket.Init(server_addr.family(), /*flags=*/0));
-    ASSERT_OK(socket.Connect(server_addr));
-  }
 
   // Get the reference to already registered metric with the proper callback
   // to fetch the necessary information. The { 'return -3'; } fake callback
@@ -1479,9 +1476,26 @@ TEST_P(TestRpc, RpcPendingConnectionsMetric) {
       METRIC_rpc_pending_connections.InstantiateFunctionGauge(
           server_messenger_->metric_entity(), []() { return -3; });
 
-  // There should be no connection pending -- the only received connection
-  // request has been handled already above. The number of pending connections
-  // is properly reported at Linux only as of now; on macOS it should report -1.
+  // No connection attempts have been made yet.
+#if defined(__linux__)
+  ASSERT_EQ(0, pending_connections_gauge->value());
+#else
+  ASSERT_EQ(-1, pending_connections_gauge->value());
+#endif
+
+  {
+    Socket socket;
+    ASSERT_OK(socket.Init(server_addr.family(), /*flags=*/0));
+    ASSERT_OK(socket.Connect(server_addr));
+  }
+
+  // A small pause below is to avoid reading 1 from the metric: it's not quite
+  // clear why the sock_diag() netlink facility reports stale data on very fast
+  // machines in rare cases.
+  SleepFor(MonoDelta::FromMilliseconds(10));
+
+  // At this point, there should be no connection pending: the only received
+  // connection request has already been handled above.
 #if defined(__linux__)
   ASSERT_EQ(0, pending_connections_gauge->value());
 #else
