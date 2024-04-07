@@ -173,6 +173,7 @@ class DataDirManager : public DirManager,
   std::unique_ptr<Dir> CreateNewDir(Env* env,
                                     DirMetrics* metrics,
                                     FsType fs_type,
+                                    bool initial_opening,
                                     std::string dir,
                                     std::unique_ptr<DirInstanceMetadataFile> metadata_file,
                                     std::unique_ptr<ThreadPool> pool) override;

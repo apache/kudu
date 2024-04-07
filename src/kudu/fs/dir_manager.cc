@@ -207,10 +207,12 @@ int Dir::reserved_bytes() {
 shared_ptr<rocksdb::Cache> RdbDir::s_block_cache_;
 RdbDir::RdbDir(Env* env, DirMetrics* metrics,
                FsType fs_type,
+               bool initial_opening,
                string dir,
                unique_ptr<DirInstanceMetadataFile> metadata_file,
                unique_ptr<ThreadPool> pool)
-    : Dir(env, metrics, fs_type, std::move(dir), std::move(metadata_file), std::move(pool)) {}
+    : Dir(env, metrics, fs_type, std::move(dir), std::move(metadata_file), std::move(pool)),
+      initial_opening_(initial_opening) {}
 
 Status RdbDir::Prepare() {
   DCHECK_STREQ(FLAGS_block_manager.c_str(), "logr");
@@ -227,11 +229,13 @@ Status RdbDir::Prepare() {
   // https://github.com/facebook/rocksdb/blob/main/include/rocksdb/options.h
   rocksdb::Options opts;
   // A RocksDB instance is created if it does not exist when opening the Dir.
-  // TODO(yingchun): We should distinguish creating new data directory and opening existing data
-  //                 directory, and set proper options to avoid mishaps.
-  //                 When creating new data directory, set opts.error_if_exists = true.
-  //                 When opening existing data directory, set opts.create_if_missing = false.
-  opts.create_if_missing = true;
+  if (initial_opening_) {
+      opts.create_if_missing = true;
+      opts.error_if_exists = true;
+  } else {
+      opts.create_if_missing = false;
+      opts.error_if_exists = false;
+  }
   // TODO(yingchun): parameterize more rocksDB options, including:
   //  opts.use_fsync
   //  opts.error_if_exists
@@ -379,13 +383,15 @@ Status DirManager::Create() {
 
   // If none of the instances exist, we can assume this is a new deployment and
   // we should try creating some a new set of instance files.
-  RETURN_NOT_OK_PREPEND(CreateNewDirectoriesAndUpdateInstances(std::move(loaded_instances)),
+  RETURN_NOT_OK_PREPEND(CreateNewDirectoriesAndUpdateInstances(std::move(loaded_instances),
+                                                               nullptr),
                         "could not create new data directories");
   return Status::OK();
 }
 
 Status DirManager::CreateNewDirectoriesAndUpdateInstances(
-    vector<unique_ptr<DirInstanceMetadataFile>> instances) {
+    vector<unique_ptr<DirInstanceMetadataFile>> instances,
+    set<string>* initial_opening_dirs) {
   CHECK(!opts_.read_only);
   CHECK_NE(UpdateInstanceBehavior::DONT_UPDATE, opts_.update_instances);
 
@@ -469,6 +475,9 @@ Status DirManager::CreateNewDirectoriesAndUpdateInstances(
 
   // Success: don't delete any files.
   deleter.cancel();
+  if (initial_opening_dirs) {
+      *initial_opening_dirs = set<string>(created_dirs.begin(), created_dirs.end());
+  }
   return Status::OK();
 }
 
@@ -666,10 +675,11 @@ Status DirManager::Open() {
   }
   // Note: the file block manager should not be updated because its block
   // indexing algorithm depends on a fixed set of directories.
+  set<string> initial_opening_dirs;
   if (!opts_.read_only && opts_.dir_type != "file" &&
       opts_.update_instances != UpdateInstanceBehavior::DONT_UPDATE) {
     RETURN_NOT_OK_PREPEND(
-        CreateNewDirectoriesAndUpdateInstances(std::move(loaded_instances)),
+        CreateNewDirectoriesAndUpdateInstances(std::move(loaded_instances), &initial_opening_dirs),
         "could not add new directories");
     vector<unique_ptr<DirInstanceMetadataFile>> new_loaded_instances;
     RETURN_NOT_OK_PREPEND(LoadInstances(&new_loaded_instances, &has_healthy_instances),
@@ -717,8 +727,9 @@ Status DirManager::Open() {
                   .set_max_threads(num_threads_per_dir_)
                   .set_trace_metric_prefix("dirs")
                   .Build(&pool));
-    unique_ptr<Dir> new_dir = CreateNewDir(env_, metrics_.get(), fs_type, dir, std::move(instance),
-                                           std::move(pool));
+    unique_ptr<Dir> new_dir = CreateNewDir(env_, metrics_.get(), fs_type,
+                                           ContainsKey(initial_opening_dirs, dir),
+                                           dir, std::move(instance), std::move(pool));
     dirs.emplace_back(std::move(new_dir));
   }
 

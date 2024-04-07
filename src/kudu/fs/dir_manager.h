@@ -203,6 +203,7 @@ class RdbDir: public Dir {
   RdbDir(Env* env,
          DirMetrics* metrics,
          FsType fs_type,
+         bool initial_opening,
          std::string dir,
          std::unique_ptr<DirInstanceMetadataFile> metadata_file,
          std::unique_ptr<ThreadPool> pool);
@@ -218,6 +219,10 @@ class RdbDir: public Dir {
   rocksdb::DB* rdb();
 
  private:
+  // Indicate whether it's the initial opening. Should be false when opening
+  // existing directory.
+  bool initial_opening_;
+
   // The shared RocksDB instance for this directory.
   std::unique_ptr<rocksdb::DB> db_;
   // The RocksDB full path.
@@ -347,6 +352,7 @@ class DirManager {
   virtual std::unique_ptr<Dir> CreateNewDir(Env* env,
                                             DirMetrics* metrics,
                                             FsType fs_type,
+                                            bool initial_opening,
                                             std::string dir,
                                             std::unique_ptr<DirInstanceMetadataFile>,
                                             std::unique_ptr<ThreadPool> pool) = 0;
@@ -422,6 +428,9 @@ class DirManager {
   //
   // Returns an error if there is a configuration error, e.g. if the existing
   // instances believe there should be a different block size.
+  // 'initial_opening_dirs' is filled in the directories which are openning
+  // initially, either when creating the initial file system layout, or adding
+  // new directories.
   //
   // If in UPDATE_AND_IGNORE_FAILURES mode, an error is not returned in the event of a disk
   // error. Instead, it is up to the caller to reload the instance files and
@@ -430,7 +439,8 @@ class DirManager {
   // If in UPDATE_AND_ERROR_ON_FAILURE mode, a failure to update instances will
   // surface as an error.
   Status CreateNewDirectoriesAndUpdateInstances(
-      std::vector<std::unique_ptr<DirInstanceMetadataFile>> instances);
+      std::vector<std::unique_ptr<DirInstanceMetadataFile>> instances,
+      std::set<std::string>* initial_opening_dirs);
 
   // Updates the on-disk instance files specified by 'instances_to_update'
   // (presumably those whose 'all_uuids' field doesn't match 'new_all_uuids')

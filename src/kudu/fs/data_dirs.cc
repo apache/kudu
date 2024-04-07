@@ -202,11 +202,11 @@ Status DataDirGroup::CopyToPB(const UuidByUuidIndexMap& uuid_by_uuid_idx,
 ////////////////////////////////////////////////////////////
 
 std::unique_ptr<Dir> DataDirManager::CreateNewDir(
-    Env* env, DirMetrics* metrics, FsType fs_type,
+    Env* env, DirMetrics* metrics, FsType fs_type, bool initial_opening,
     std::string dir, std::unique_ptr<DirInstanceMetadataFile> metadata_file,
     std::unique_ptr<ThreadPool> pool) {
   if (FLAGS_block_manager == "logr") {
-    return std::make_unique<RdbDir>(env, metrics, fs_type, std::move(dir),
+    return std::make_unique<RdbDir>(env, metrics, fs_type, initial_opening, std::move(dir),
                                     std::move(metadata_file), std::move(pool));
   }
   return std::make_unique<Dir>(env, metrics, fs_type, std::move(dir),
